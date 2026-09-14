@@ -798,7 +798,6 @@
               "required": [
                 "enabled",
                 "appId",
-                "appSlug",
                 "issueLabel",
                 "privateKeySecretKey",
                 "webhookSecretKey"
@@ -810,10 +809,6 @@
                 "appId": {
                   "type": "string",
                   "maxLength": 31
-                },
-                "appSlug": {
-                  "type": "string",
-                  "maxLength": 100
                 },
                 "issueLabel": {
                   "type": "string",

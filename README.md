@@ -128,6 +128,10 @@ Cube effects may remain UNKNOWN: this is semantic recovery, not exactly-once she
 execution or restoration of lost process memory. Kafka retention follows safe PG
 recovery progress plus a grace interval; token fragments do not become PG rows.
 
+A cancellation-cleanup failure does not permanently strand the conversation:
+after positive Agent exit and committed seal, the same Session may accept a new
+Run. The failed Run is retained, never automatically replayed.
+
 Workspace files belong to persistent Cube Volumes, without per-Run archives or
 settlement heads. Sessions can share an elastic Workspace and its warm Cube;
 user-owned machines have an independent lifecycle and Sessions select directories

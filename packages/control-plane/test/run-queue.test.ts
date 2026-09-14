@@ -1,6 +1,9 @@
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { RunExecutor, type TurnExecutionBackend } from "@pi-cloud/runtime-core/run-executor";
-import { TurnExecutionCancelledError } from "@pi-cloud/runtime-core/run-executor";
+import {
+  TurnExecutionCancelledError,
+  TurnExecutionBackendError,
+} from "@pi-cloud/runtime-core/run-executor";
 import {
   RunCancellationExecutor,
   TurnCancellationBackendError,
@@ -8,30 +11,44 @@ import {
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { sql, type Kysely } from "kysely";
+import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fact.ts";
+import { confirmAgentExit } from "../../runtime-core/src/quarantined-session-recovery.ts";
 
 let pglite: PGlite;
 let socket: PGLiteSocketServer;
 let database: Kysely<Database>;
 let store: ControlPlaneStore;
 let tenantId: string;
+const external = process.env.PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL;
+let admin: Pool | undefined;
+let testDatabase: string | undefined;
 
 beforeAll(async () => {
-  pglite = await PGlite.create();
-  socket = new PGLiteSocketServer({
-    db: pglite,
-    host: "127.0.0.1",
-    port: 0,
-    maxConnections: 8,
-  });
-  await socket.start();
-  database = createDatabase({
-    connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
-    maxConnections: 8,
-  });
+  if (external) {
+    admin = new Pool({ connectionString: external, max: 1 });
+    testDatabase = `pi_queue_${crypto.randomUUID().replaceAll("-", "")}`;
+    await admin.query(`create database "${testDatabase}"`);
+    const url = new URL(external);
+    url.pathname = `/${testDatabase}`;
+    database = createDatabase({ connectionString: url.toString(), maxConnections: 8 });
+  } else {
+    pglite = await PGlite.create();
+    socket = new PGLiteSocketServer({
+      db: pglite,
+      host: "127.0.0.1",
+      port: 0,
+      maxConnections: 8,
+    });
+    await socket.start();
+    database = createDatabase({
+      connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
+      maxConnections: 8,
+    });
+  }
   await runMigrations(database, "up");
   const tenant = await createPrivateTenant(database, {
     slug: "run-queue-test",
@@ -49,96 +66,197 @@ afterAll(async () => {
   await database?.destroy();
   await socket?.stop();
   await pglite?.close();
+  if (admin) {
+    if (testDatabase) await admin.query(`drop database "${testDatabase}"`);
+    await admin.end();
+  }
 });
 
 describe.sequential("Run queue authority", () => {
-  it("seals the output and releases task authority when acknowledged cancellation fails", async () => {
-    const project = await store.createProject({
-      name: "cancel-failure",
-      source: { kind: "empty" },
-    });
-    await database
-      .updateTable("environment_versions")
-      .set({ state: "validated", validated_at: new Date() })
-      .where("id", "=", project.environment.environmentVersionId)
-      .execute();
-    const session = await store.createSession(
-      project.projectId,
-      project.workspaceId,
-      "Cancellation failure",
-      "elastic",
-    );
-    const accepted = await store.acceptTurn(session.sessionId, "cancel-failure-target", {
-      prompt: "wait",
-    });
-    let started!: () => void, interrupt!: () => void;
-    const running = new Promise<void>((resolve) => {
-      started = resolve;
-    });
-    const interrupted = new Promise<void>((resolve) => {
-      interrupt = resolve;
-    });
-    const executor = new RunExecutor({
-      database,
-      claimOwnerId: "cancel-failure-worker",
-      backend: {
-        async execute(_request, lifecycle) {
-          await lifecycle.started();
-          started();
-          await interrupted;
-          throw new TurnExecutionCancelledError("user_request", false);
+  it.each(["exit-first", "seal-first", "no-exit-proof"])(
+    "recovers cancellation failure only after exit and seal (%s)",
+    async (order) => {
+      const project = await store.createProject({
+        name: `cancel-failure-${order}`,
+        source: { kind: "empty" },
+      });
+      await database
+        .updateTable("environment_versions")
+        .set({ state: "validated", validated_at: new Date() })
+        .where("id", "=", project.environment.environmentVersionId)
+        .execute();
+      const session = await store.createSession(
+        project.projectId,
+        project.workspaceId,
+        "Cancellation failure",
+        "elastic",
+      );
+      const accepted = await store.acceptTurn(session.sessionId, "cancel-failure-target", {
+        prompt: "wait",
+      });
+      let started!: () => void, interrupt!: () => void;
+      const running = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const interrupted = new Promise<void>((resolve) => {
+        interrupt = resolve;
+      });
+      let executionIdentity!: Parameters<typeof confirmAgentExit>[1];
+      const executor = new RunExecutor({
+        database,
+        claimOwnerId: "cancel-failure-worker",
+        backend: {
+          async execute(_request, lifecycle) {
+            executionIdentity = _request;
+            await lifecycle.started();
+            started();
+            await interrupted;
+            if (order !== "no-exit-proof") lifecycle.executionExited();
+            throw new TurnExecutionCancelledError("user_request", false);
+          },
         },
-      },
-    });
-    const execution = executor.dispatchRun(accepted.runId);
-    await running;
-    await store.acceptTurnCancellation(session.sessionId, accepted.turnId, "cancel-failed", {});
-    const authority = { async assertCurrent() {}, releaseCurrent: vi.fn(async () => {}) };
-    const cancellation = new RunCancellationExecutor({
-      database,
-      executionAuthority: authority,
-      backend: {
-        async cancel(_request, lifecycle) {
-          await lifecycle.started({ executionReference: "test-cancellation-authority" });
-          interrupt();
-          throw new TurnCancellationBackendError(
-            "cleanup_failed",
-            "Cleanup was not confirmed",
-            false,
-          );
+      });
+      const execution = executor.dispatchRun(accepted.runId);
+      await running;
+      await store.acceptTurnCancellation(session.sessionId, accepted.turnId, "cancel-failed", {});
+      const authority = { async assertCurrent() {}, releaseCurrent: vi.fn(async () => {}) };
+      const cancellation = new RunCancellationExecutor({
+        database,
+        executionAuthority: authority,
+        backend: {
+          async cancel(_request, lifecycle) {
+            await lifecycle.started({ executionReference: "test-cancellation-authority" });
+            throw new TurnCancellationBackendError(
+              "cleanup_failed",
+              "Cleanup was not confirmed",
+              false,
+            );
+          },
         },
-      },
-    });
-    const [outcome] = await Promise.all([
-      cancellation.dispatchTargetRun(accepted.runId),
-      execution,
-    ]);
-    expect(outcome).toMatchObject({
-      status: "failed",
-      phase: "after_start",
-      failureCode: "cleanup_failed",
-    });
-    expect.soft(authority.releaseCurrent).toHaveBeenCalledOnce();
-    const seals = await database
-      .selectFrom("outbox")
-      .select("payload")
-      .where("aggregate_type", "=", "session_terminal_event")
-      .where(sql<boolean>`payload #>> '{scope,runId}' = ${accepted.runId}`)
-      .execute();
-    expect(seals).toHaveLength(1);
-    await new ExecutionStreamProjector(database).project({
-      fact: parseKafkaAcceptedFact(JSON.stringify(seals[0]!.payload)),
-      topic: "cancel-failure-seal-test",
-      partition: 0,
-      offset: 0n,
-    });
-    const terminal = await database
-      .selectFrom("session_terminal_events")
-      .select("type")
-      .where("run_id", "=", accepted.runId)
-      .executeTakeFirstOrThrow();
-    expect(terminal.type).toBe("turn.failed");
-  });
+      });
+      const outcome = await cancellation.dispatchTargetRun(accepted.runId);
+      expect(outcome).toMatchObject({
+        status: "failed",
+        phase: "after_start",
+        failureCode: "cleanup_failed",
+      });
+      expect.soft(authority.releaseCurrent).toHaveBeenCalledOnce();
+      const seals = await database
+        .selectFrom("outbox")
+        .select("payload")
+        .where("aggregate_type", "=", "session_terminal_event")
+        .where(sql<boolean>`payload #>> '{scope,runId}' = ${accepted.runId}`)
+        .execute();
+      expect(seals).toHaveLength(1);
+      const attemptBefore = await database
+        .selectFrom("run_attempts")
+        .selectAll()
+        .where("run_id", "=", accepted.runId)
+        .executeTakeFirstOrThrow();
+      expect(attemptBefore.agent_exited_at).toBeNull();
+      await expect(
+        store.acceptTurn(session.sessionId, "too-early", { prompt: "next" }),
+      ).rejects.toMatchObject({ code: "conflict" });
+      if (order === "exit-first") {
+        interrupt();
+        await execution;
+        await expect(
+          store.acceptTurn(session.sessionId, "still-unsealed", { prompt: "next" }),
+        ).rejects.toMatchObject({ code: "conflict" });
+      }
+      const projector = new ExecutionStreamProjector(database);
+      const seal = {
+        fact: parseKafkaAcceptedFact(JSON.stringify(seals[0]!.payload)),
+        topic: `cancel-failure-${session.sessionId}`,
+        partition: 0,
+        offset: 0n,
+      };
+      await projector.project(seal);
+      if (order !== "exit-first") {
+        await expect(
+          store.acceptTurn(session.sessionId, "sealed-but-live", { prompt: "next" }),
+        ).rejects.toMatchObject({ code: "conflict" });
+        interrupt();
+        await execution;
+      }
+      if (order === "no-exit-proof") {
+        // A terminal task and expired claim do not attest physical loop exit.
+        await database
+          .updateTable("run_attempts")
+          .set({
+            claimed_at: new Date(Date.now() - 120_000),
+            claim_expires_at: new Date(Date.now() - 60_000),
+          })
+          .where("run_id", "=", accepted.runId)
+          .execute();
+        await expect(
+          store.acceptTurn(session.sessionId, "expired-is-not-exited", { prompt: "next" }),
+        ).rejects.toMatchObject({ code: "conflict" });
+        await confirmAgentExit(database, { ...executionIdentity, tenantId: crypto.randomUUID() });
+        await expect(
+          store.acceptTurn(session.sessionId, "foreign-proof", { prompt: "next" }),
+        ).rejects.toMatchObject({ code: "conflict" });
+        // Represents the exact owner-stop confirmation, not an unavailable endpoint.
+        await confirmAgentExit(database, executionIdentity);
+      }
+      const next = await store.acceptTurn(session.sessionId, "next-after-recovery", {
+        prompt: "next",
+      });
+      expect(next.runId).not.toBe(accepted.runId);
+      expect(next.sessionId).toBe(session.sessionId);
+      await projector.project(seal);
+      await confirmAgentExit(database, executionIdentity);
+      expect(
+        (await store.acceptTurn(session.sessionId, "next-after-recovery", { prompt: "next" }))
+          .runId,
+      ).toBe(next.runId);
+      expect(
+        await database
+          .selectFrom("runs")
+          .select("state")
+          .where("id", "=", accepted.runId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ state: "failed" });
+      const terminal = await database
+        .selectFrom("session_terminal_events")
+        .select("type")
+        .where("run_id", "=", accepted.runId)
+        .executeTakeFirstOrThrow();
+      expect(terminal.type).toBe("turn.failed");
+      // A late confirmation from an earlier failure cannot unlock a newer quarantine.
+      const failing = new RunExecutor({
+        database,
+        claimOwnerId: "next-worker",
+        backend: {
+          async execute(_request, lifecycle) {
+            await lifecycle.started();
+            throw new TurnExecutionBackendError(
+              "new_failure",
+              "New execution exit unconfirmed",
+              false,
+              true,
+            );
+          },
+        },
+      });
+      expect(await failing.dispatchRun(next.runId)).toMatchObject({ status: "failed" });
+      const nextSeal = await database
+        .selectFrom("outbox")
+        .select("payload")
+        .where("aggregate_type", "=", "session_terminal_event")
+        .where(sql<boolean>`payload #>> '{scope,runId}' = ${next.runId}`)
+        .executeTakeFirstOrThrow();
+      await projector.project({
+        ...seal,
+        fact: parseKafkaAcceptedFact(JSON.stringify(nextSeal.payload)),
+        offset: 1n,
+      });
+      await confirmAgentExit(database, executionIdentity);
+      await expect(
+        store.acceptTurn(session.sessionId, "stale-proof", { prompt: "next" }),
+      ).rejects.toMatchObject({ code: "conflict" });
+    },
+  );
 
   it("retries a rolled-back terminal commit without re-executing the Agent Loop", async () => {
     const project = await store.createProject({

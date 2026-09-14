@@ -177,7 +177,10 @@ export class PiWorkerRuntime {
   #runWorker: SupervisorRunWorker | undefined;
   #runClaimReadiness: RunClaimReadinessMonitor | undefined;
   #closing: Promise<void> | undefined;
-  #ownerStopSettled = false;
+  #starting: Promise<void> | undefined;
+  #startupFinished = false;
+  #stopRequested = false;
+  #ownerStopping: Promise<void> | undefined;
   #terminalSettled = false;
   #terminalFailureCode: string | undefined;
 
@@ -259,9 +262,42 @@ export class PiWorkerRuntime {
     return this.#terminalPromise;
   }
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
     if (this.#state !== "idle") throw new Error("Supervisor host runtime can only start once");
     this.#state = "starting";
+    this.#starting = this.#start().finally(() => {
+      this.#startupFinished = true;
+    });
+    return this.#starting.catch(async (error: unknown) => {
+      this.#state = "failed";
+      let failure = error;
+      try {
+        await this.close();
+      } catch (cleanupError) {
+        failure = new AggregateError([error, cleanupError], "Worker startup and cleanup failed", {
+          cause: error,
+        });
+      }
+      if (failure instanceof PiWorkerRuntimeError) throw failure;
+      throw new PiWorkerRuntimeError(
+        "pi_worker_start_failed",
+        "Supervisor host failed to start",
+        true,
+        { cause: failure },
+      );
+    });
+  }
+
+  #assertStarting(): void {
+    if (this.#stopRequested)
+      throw new PiWorkerRuntimeError(
+        "pi_worker_start_cancelled",
+        "Worker stopped during startup",
+        false,
+      );
+  }
+
+  async #start(): Promise<void> {
     const identity: SupervisorHostBootIdentity = {
       supervisorId: this.#config.supervisorId,
       bootId: this.#idGenerator(),
@@ -274,6 +310,7 @@ export class PiWorkerRuntime {
       idGenerator: this.#idGenerator,
     });
     await ledger.beginBoot(identity);
+    this.#assertStarting();
 
     let client: ReconnectingSupervisorWebSocketClient | undefined;
     const managementServer = new SupervisorManagementServer({
@@ -287,20 +324,7 @@ export class PiWorkerRuntime {
         client?.state === "connected" &&
         this.#runWorker?.state === "running" &&
         this.#runClaimReadiness?.ready === true,
-      stopCurrentBoot: async () => {
-        if (this.#state === "draining" || this.#state === "stopped") return;
-        this.#state = "draining";
-        client?.setAcceptingAssignments(false);
-        this.#runSupervisor?.revokeAllAssignments();
-        await this.#runWorker?.stop();
-        await client?.stop();
-        await this.#runSupervisor?.waitUntilAssignmentsSettled();
-        if (!this.#ownerStopSettled) {
-          this.#ownerStopSettled = true;
-          this.#resolveOwnerStopped();
-          this.#settleTerminal("owner_stopped");
-        }
-      },
+      stopCurrentBoot: () => this.#stopCurrentBoot(),
       assignmentInventory: this.#toolBroker,
       subagentCommand: async (command) => {
         if (!this.#nativeSessions || !this.#subagentControl)
@@ -352,305 +376,339 @@ export class PiWorkerRuntime {
       },
     });
     this.#managementServer = managementServer;
-    try {
-      await managementServer.listen();
-      await sql`select 1`.execute(this.#database);
+    await managementServer.listen();
+    this.#assertStarting();
+    await sql`select 1`.execute(this.#database);
+    this.#assertStarting();
 
-      const secret = connectionSecret(this.#connectionSecretGenerator());
-      const request: SupervisorBootProvisionRequest = {
-        protocolVersion: 1,
-        type: "supervisor.boot.provision",
-        requestId: this.#idGenerator(),
-        supervisorId: identity.supervisorId,
-        bootId: identity.bootId,
-        sandboxId: identity.sandboxId,
-        credentialId: this.#idGenerator(),
-        credentialSha256: createHash("sha256").update(secret).digest("hex"),
-        maxConcurrentSessions: this.#config.maxConcurrentSessions,
-        managementBaseUrl: this.#config.managementAdvertisedBaseUrl,
-      };
-      await this.#provisioningClient.provision(request);
+    const secret = connectionSecret(this.#connectionSecretGenerator());
+    const request: SupervisorBootProvisionRequest = {
+      protocolVersion: 1,
+      type: "supervisor.boot.provision",
+      requestId: this.#idGenerator(),
+      supervisorId: identity.supervisorId,
+      bootId: identity.bootId,
+      sandboxId: identity.sandboxId,
+      credentialId: this.#idGenerator(),
+      credentialSha256: createHash("sha256").update(secret).digest("hex"),
+      maxConcurrentSessions: this.#config.maxConcurrentSessions,
+      managementBaseUrl: this.#config.managementAdvertisedBaseUrl,
+    };
+    await this.#provisioningClient.provision(request);
+    this.#assertStarting();
 
-      const workspaceSeedResolver = new PostgresWorkspaceSeedResolver({
-        database: this.#database,
+    const workspaceSeedResolver = new PostgresWorkspaceSeedResolver({
+      database: this.#database,
+    });
+    const modelGateway = new TenantModelGateway({
+      host: this.#config.modelGatewayHost,
+      port: this.#config.modelGatewayPort,
+      advertisedBaseUrl: this.#config.modelGatewayAdvertisedBaseUrl,
+      providerGatewayBaseUrl: this.#config.providerGatewayBaseUrl,
+      providerGatewayApiKey: this.#config.providerGatewayApiKey,
+      capabilityTtlMs: this.#config.modelGatewayCapabilityTtlMs,
+      maximumRequestsPerTurn: this.#config.modelGatewayMaximumRequestsPerTurn,
+      upstreamConnectTimeoutMs: this.#config.modelGatewayUpstreamConnectTimeoutMs,
+      upstreamIdleTimeoutMs: this.#config.modelGatewayUpstreamIdleTimeoutMs,
+      piRequestTimeoutMs: this.#config.piModelRequestTimeoutMs,
+      piTurnTimeoutMs: this.#config.piTurnTimeoutMs,
+      ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
+    });
+    this.#modelGateway = modelGateway;
+    await modelGateway.start();
+    this.#assertStarting();
+    await modelGateway.checkProviderHealth();
+    this.#assertStarting();
+    const runWorkerIdentity = `postgres:${identity.supervisorId}:${identity.bootId}`;
+    let executionLogs = this.#executionLogs;
+    if (!executionLogs) {
+      const bus = new KafkaAcceptedFactBus({
+        manageTopic: false,
+        brokers: this.#config.kafka.brokers,
+        partitions: this.#config.kafka.partitions,
+        replicas: this.#config.kafka.replicas,
+        retentionMs: this.#config.kafka.retentionMs,
+        clientId: runWorkerIdentity,
+        capacity: loadProducerCapacity(process.env),
+        ...(this.#metrics ? { metrics: this.#metrics } : {}),
       });
-      const modelGateway = new TenantModelGateway({
-        host: this.#config.modelGatewayHost,
-        port: this.#config.modelGatewayPort,
-        advertisedBaseUrl: this.#config.modelGatewayAdvertisedBaseUrl,
-        providerGatewayBaseUrl: this.#config.providerGatewayBaseUrl,
-        providerGatewayApiKey: this.#config.providerGatewayApiKey,
-        capabilityTtlMs: this.#config.modelGatewayCapabilityTtlMs,
-        maximumRequestsPerTurn: this.#config.modelGatewayMaximumRequestsPerTurn,
-        upstreamConnectTimeoutMs: this.#config.modelGatewayUpstreamConnectTimeoutMs,
-        upstreamIdleTimeoutMs: this.#config.modelGatewayUpstreamIdleTimeoutMs,
-        piRequestTimeoutMs: this.#config.piModelRequestTimeoutMs,
-        piTurnTimeoutMs: this.#config.piTurnTimeoutMs,
-        ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
-      });
-      this.#modelGateway = modelGateway;
-      await modelGateway.start();
-      await modelGateway.checkProviderHealth();
-      const runWorkerIdentity = `postgres:${identity.supervisorId}:${identity.bootId}`;
-      let executionLogs = this.#executionLogs;
-      if (!executionLogs) {
-        const bus = new KafkaAcceptedFactBus({
-          manageTopic: false,
-          brokers: this.#config.kafka.brokers,
-          partitions: this.#config.kafka.partitions,
-          replicas: this.#config.kafka.replicas,
-          retentionMs: this.#config.kafka.retentionMs,
-          clientId: runWorkerIdentity,
-          capacity: loadProducerCapacity(process.env),
-          ...(this.#metrics ? { metrics: this.#metrics } : {}),
-        });
-        executionLogs = new DirectExecutionLog(
-          this.#database!,
-          bus,
-          loadProducerCapacity(process.env),
-        );
-        this.#activeExecutionLogs = executionLogs;
-        this.#ownsExecutionLogs = true;
-        await bus.start();
-      }
+      executionLogs = new DirectExecutionLog(
+        this.#database!,
+        bus,
+        loadProducerCapacity(process.env),
+      );
       this.#activeExecutionLogs = executionLogs;
-      this.#ownsExecutionLogs = this.#executionLogs === undefined;
-      await executionLogs.checkHealth?.();
-      const sessionMutationProducer =
-        this.#configuredSessionMutationProducer ??
-        new NativeSessionLogPublisher({
-          channels: executionLogResolver(executionLogs),
-          ...(this.#metrics ? { metrics: this.#metrics } : {}),
-        });
-      this.#ownsSessionMutationProducer = this.#configuredSessionMutationProducer === undefined;
-      await sessionMutationProducer.checkHealth();
-      this.#sessionMutationProducer = sessionMutationProducer;
-      const runClaimReadiness = new RunClaimReadinessMonitor({
-        check: async () => {
-          try {
-            await Promise.all([executionLogs.checkHealth?.(), modelGateway.checkProviderHealth()]);
-          } catch (error) {
-            if (error instanceof AcceptedFactPublisherFailedError && this.#state === "ready") {
-              operationalLog({
-                service: "pi-cloud-pi-worker",
-                level: "error",
-                event: "execution-log.failed",
-                attributes: { failureCode: error.code },
-              });
-              this.#terminalFailureCode = error.code;
-              this.#state = "failed";
-              this.#client?.setAcceptingAssignments(false);
-              this.#runSupervisor?.revokeAllAssignments();
-              this.#settleTerminal("connection_failed");
-            }
-            throw error;
-          }
-        },
-      });
-      await runClaimReadiness.start();
-      this.#runClaimReadiness = runClaimReadiness;
-      const sessionEntryPayloadCache = new PostgresPiSessionEntryPayloadCache();
-      const nativeSessions = new PostgresNativeSessionHost({
-        database: this.#database,
-        entryPayloadCache: sessionEntryPayloadCache,
-        ...(this.#metrics
-          ? {
-              onViewRead: (sample) => {
-                this.#metrics!.sessionViewReads.inc({ source: sample.source });
-                this.#metrics!.sessionViewReadDuration.observe(
-                  { source: sample.source },
-                  sample.durationMs / 1000,
-                );
-                this.#metrics!.sessionViewStorageBytes.inc(sample.storageBytes);
-              },
-            }
-          : {}),
-      });
-      this.#nativeSessions = nativeSessions;
-      this.#subagentControl = new SubagentControlClient((lease) =>
-        executionLogResolver(executionLogs).resolve(lease),
-      );
-      const trustedTools = new PostgresTrustedToolRuntime({
-        database: this.#database,
-        nativeLanes: nativeSessions,
-        control: this.#subagentControl,
-        treePolicy: {
-          maximumDepth: this.#config.subagentMaximumDepth,
-          maximumNodes: this.#config.subagentMaximumNodes,
-        },
-      });
-      const modelPermits = new FamilyModelPermits({
-        maximum: this.#config.modelConcurrency,
-        perFamily: this.#config.familyModelConcurrency,
-        onWait: (ms) => this.#metrics?.modelPermitWait.observe(ms / 1000),
-        onChange: (sample) => {
-          this.#metrics?.modelPermitsActive.set(sample.active);
-          this.#metrics?.modelPermitsWaiting.set(sample.waiting);
-        },
-      });
-      this.#modelPermits = modelPermits;
-      const runner = new RemoteToolSandboxTurnRunner({
-        acquireModelPermit: (command, signal) =>
-          modelPermits.acquire(
-            `${command.payload.tenantId}:${command.payload.piSession.id}`,
-            signal,
-          ),
-        publishToolCommand: (command) => {
-          const channel = executionLogResolver(executionLogs).resolve(command.executionReference);
-          if (!channel) throw new Error("Tool command Fact Stream is unavailable");
-          return channel.publishToolCommand(command);
-        },
-        broker: this.#toolBroker,
-        runtimeIdentity: identity,
-        trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
-        openAgentSession: (command) =>
-          nativeSessions.open({
-            scope: {
-              tenantId: command.payload.tenantId,
-              sessionId: command.payload.sessionId,
-              piSessionId: command.payload.piSession.id,
-              piSessionLane: command.payload.piSession.lane,
-              turnId: command.payload.turnId,
-              runId: command.payload.runId,
-            },
-            executionReference: command.payload.executionReference,
-            writerId: command.payload.piSession.writerId,
-            publisher: sessionMutationProducer.scoped({
-              tenantId: command.payload.tenantId,
-              sessionId: command.payload.sessionId,
-              piSessionId: command.payload.piSession.id,
-              piSessionLane: command.payload.piSession.lane,
-              writerId: command.payload.piSession.writerId,
-              turnId: command.payload.turnId,
-              runId: command.payload.runId,
-              executionReference: command.payload.executionReference,
-            }),
-          }),
-        createTrustedTools: (command, context) => trustedTools.create({ command, ...context }),
-        runAttemptPhaseObserver: new PostgresRunAttemptPhaseObserver({
-          database: this.#database,
-        }),
-        scenario: resolveProductionSandboxScenario,
-        modelRuntimeLeaseResolver: (command) => modelGateway.issue(command),
-        workspaceSeedResolver: (command, signal) => workspaceSeedResolver.resolve(command, signal),
-        turnTimeoutMs: this.#config.piTurnTimeoutMs,
-        ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
-      });
-      await runner.warm();
-      this.#agentRunner = runner;
-      const runSupervisor = new AgentRunSupervisor({
-        runner,
-        maxConcurrentSessions: this.#config.maxConcurrentSessions,
-        maximumLanesPerFamily: this.#config.subagentMaximumNodes + 1,
-      });
-      this.#runSupervisor = runSupervisor;
-      client = new ReconnectingSupervisorWebSocketClient({
-        url: this.#config.supervisorWebSocketUrl,
-        authorizationHeader: `Bearer ${request.credentialId}.${secret}`,
-        registration: {
-          ...identity,
-          maxConcurrentSessions: this.#config.maxConcurrentSessions,
-        },
-        runtime: runSupervisor,
-      });
-      // The WebSocket remains a liveness/ownership and management channel.
-      // PostgreSQL is the sole production authority that assigns Run work.
-      client.setAcceptingAssignments(false);
-      this.#client = client;
-      await client.start();
-      const leaseCoordinator = new SessionLeaseCoordinator({
-        database: this.#database,
-        sandboxId: identity.sandboxId,
-      });
-      const runBackend = new AgentRunExecutionBackend({
-        supervisor: runSupervisor,
-        leaseCoordinator,
-        executionLogs,
-        ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
-        onUnexpectedError: (error) =>
-          operationalLog({
-            service: "pi-cloud-pi-worker",
-            level: "error",
-            event: "supervisor.execution-unexpected-failure",
-            attributes: {
-              name: error instanceof Error ? error.name : "UnknownError",
-              message: error instanceof Error ? error.message : "Unknown execution failure",
-            },
-          }),
-      });
-      const runWorker = this.#runWorkerFactory({
-        database: this.#database,
-        notificationConnectionString: this.#config.databaseNotificationUrl,
-        identity: runWorkerIdentity,
-        maximumActiveFamilies: this.#config.maxConcurrentSessions,
-        maximumLanesPerFamily: this.#config.subagentMaximumNodes + 1,
-        onCapacity: (sample) => this.#metrics?.activeSessionFamilies.set(sample.families),
-        canClaimRuns: () =>
-          (this.#state === "ready" || this.#state === "draining") && client?.state === "connected",
-        admitRunClaims: async () => runClaimReadiness.ready,
-        runExecutor: new RunExecutor({
-          database: this.#database,
-          backend: runBackend,
-          executionAuthority: leaseCoordinator,
-          claimOwnerId: runWorkerIdentity,
-          ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
-        }),
-        cancellationExecutor: new RunCancellationExecutor({
-          database: this.#database,
-          backend: runBackend,
-          executionAuthority: leaseCoordinator,
-        }),
-        onFailure: (operation, error) =>
-          operationalLog({
-            service: "pi-cloud-pi-worker",
-            level: "error",
-            event: "postgres-run-worker.failure",
-            attributes: {
-              operation,
-              name: error instanceof Error ? error.name : "UnknownError",
-              code:
-                typeof error === "object" &&
-                error !== null &&
-                "code" in error &&
-                typeof error.code === "string"
-                  ? error.code
-                  : "unexpected_error",
-              message:
-                error instanceof Error ? error.message : "Unexpected PostgreSQL Worker failure",
-            },
-          }),
-      });
-      this.#runWorker = runWorker;
-      await runWorker.start();
-      this.#state = "ready";
-      void client.waitUntilStopped().then((result) => this.#observeClientStop(result));
-    } catch (error: unknown) {
-      this.#state = "failed";
-      await this.close().catch(() => undefined);
-      if (error instanceof PiWorkerRuntimeError) throw error;
-      throw new PiWorkerRuntimeError(
-        "pi_worker_start_failed",
-        "Supervisor host failed to start",
-        true,
-        { cause: error },
-      );
+      this.#ownsExecutionLogs = true;
+      await bus.start();
+      this.#assertStarting();
     }
+    this.#activeExecutionLogs = executionLogs;
+    this.#ownsExecutionLogs = this.#executionLogs === undefined;
+    await executionLogs.checkHealth?.();
+    this.#assertStarting();
+    const sessionMutationProducer =
+      this.#configuredSessionMutationProducer ??
+      new NativeSessionLogPublisher({
+        channels: executionLogResolver(executionLogs),
+        ...(this.#metrics ? { metrics: this.#metrics } : {}),
+      });
+    this.#ownsSessionMutationProducer = this.#configuredSessionMutationProducer === undefined;
+    this.#sessionMutationProducer = sessionMutationProducer;
+    await sessionMutationProducer.checkHealth();
+    this.#assertStarting();
+    const runClaimReadiness = new RunClaimReadinessMonitor({
+      check: async () => {
+        try {
+          await Promise.all([executionLogs.checkHealth?.(), modelGateway.checkProviderHealth()]);
+        } catch (error) {
+          if (error instanceof AcceptedFactPublisherFailedError && this.#state === "ready") {
+            operationalLog({
+              service: "pi-cloud-pi-worker",
+              level: "error",
+              event: "execution-log.failed",
+              attributes: { failureCode: error.code },
+            });
+            this.#terminalFailureCode = error.code;
+            this.#state = "failed";
+            this.#client?.setAcceptingAssignments(false);
+            this.#runSupervisor?.revokeAllAssignments();
+            this.#settleTerminal("connection_failed");
+          }
+          throw error;
+        }
+      },
+    });
+    this.#runClaimReadiness = runClaimReadiness;
+    await runClaimReadiness.start();
+    this.#assertStarting();
+    const sessionEntryPayloadCache = new PostgresPiSessionEntryPayloadCache();
+    const nativeSessions = new PostgresNativeSessionHost({
+      database: this.#database,
+      entryPayloadCache: sessionEntryPayloadCache,
+      ...(this.#metrics
+        ? {
+            onViewRead: (sample) => {
+              this.#metrics!.sessionViewReads.inc({ source: sample.source });
+              this.#metrics!.sessionViewReadDuration.observe(
+                { source: sample.source },
+                sample.durationMs / 1000,
+              );
+              this.#metrics!.sessionViewStorageBytes.inc(sample.storageBytes);
+            },
+          }
+        : {}),
+    });
+    this.#nativeSessions = nativeSessions;
+    this.#subagentControl = new SubagentControlClient((lease) =>
+      executionLogResolver(executionLogs).resolve(lease),
+    );
+    const trustedTools = new PostgresTrustedToolRuntime({
+      database: this.#database,
+      nativeLanes: nativeSessions,
+      control: this.#subagentControl,
+      treePolicy: {
+        maximumDepth: this.#config.subagentMaximumDepth,
+        maximumNodes: this.#config.subagentMaximumNodes,
+      },
+    });
+    const modelPermits = new FamilyModelPermits({
+      maximum: this.#config.modelConcurrency,
+      perFamily: this.#config.familyModelConcurrency,
+      onWait: (ms) => this.#metrics?.modelPermitWait.observe(ms / 1000),
+      onChange: (sample) => {
+        this.#metrics?.modelPermitsActive.set(sample.active);
+        this.#metrics?.modelPermitsWaiting.set(sample.waiting);
+      },
+    });
+    this.#modelPermits = modelPermits;
+    const runner = new RemoteToolSandboxTurnRunner({
+      acquireModelPermit: (command, signal) =>
+        modelPermits.acquire(`${command.payload.tenantId}:${command.payload.piSession.id}`, signal),
+      publishToolCommand: (command) => {
+        const channel = executionLogResolver(executionLogs).resolve(command.executionReference);
+        if (!channel) throw new Error("Tool command Fact Stream is unavailable");
+        return channel.publishToolCommand(command);
+      },
+      broker: this.#toolBroker,
+      runtimeIdentity: identity,
+      trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
+      openAgentSession: (command) =>
+        nativeSessions.open({
+          scope: {
+            tenantId: command.payload.tenantId,
+            sessionId: command.payload.sessionId,
+            piSessionId: command.payload.piSession.id,
+            piSessionLane: command.payload.piSession.lane,
+            turnId: command.payload.turnId,
+            runId: command.payload.runId,
+          },
+          executionReference: command.payload.executionReference,
+          writerId: command.payload.piSession.writerId,
+          publisher: sessionMutationProducer.scoped({
+            tenantId: command.payload.tenantId,
+            sessionId: command.payload.sessionId,
+            piSessionId: command.payload.piSession.id,
+            piSessionLane: command.payload.piSession.lane,
+            writerId: command.payload.piSession.writerId,
+            turnId: command.payload.turnId,
+            runId: command.payload.runId,
+            executionReference: command.payload.executionReference,
+          }),
+        }),
+      createTrustedTools: (command, context) => trustedTools.create({ command, ...context }),
+      runAttemptPhaseObserver: new PostgresRunAttemptPhaseObserver({
+        database: this.#database,
+      }),
+      scenario: resolveProductionSandboxScenario,
+      modelRuntimeLeaseResolver: (command) => modelGateway.issue(command),
+      workspaceSeedResolver: (command, signal) => workspaceSeedResolver.resolve(command, signal),
+      turnTimeoutMs: this.#config.piTurnTimeoutMs,
+      ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
+    });
+    this.#agentRunner = runner;
+    await runner.warm();
+    this.#assertStarting();
+    const runSupervisor = new AgentRunSupervisor({
+      runner,
+      maxConcurrentSessions: this.#config.maxConcurrentSessions,
+      maximumLanesPerFamily: this.#config.subagentMaximumNodes + 1,
+    });
+    this.#runSupervisor = runSupervisor;
+    client = new ReconnectingSupervisorWebSocketClient({
+      url: this.#config.supervisorWebSocketUrl,
+      authorizationHeader: `Bearer ${request.credentialId}.${secret}`,
+      registration: {
+        ...identity,
+        maxConcurrentSessions: this.#config.maxConcurrentSessions,
+      },
+      runtime: runSupervisor,
+    });
+    // The WebSocket remains a liveness/ownership and management channel.
+    // PostgreSQL is the sole production authority that assigns Run work.
+    client.setAcceptingAssignments(false);
+    this.#client = client;
+    await client.start();
+    this.#assertStarting();
+    const leaseCoordinator = new SessionLeaseCoordinator({
+      database: this.#database,
+      sandboxId: identity.sandboxId,
+    });
+    const runBackend = new AgentRunExecutionBackend({
+      supervisor: runSupervisor,
+      leaseCoordinator,
+      executionLogs,
+      ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
+      onUnexpectedError: (error) =>
+        operationalLog({
+          service: "pi-cloud-pi-worker",
+          level: "error",
+          event: "supervisor.execution-unexpected-failure",
+          attributes: {
+            name: error instanceof Error ? error.name : "UnknownError",
+            message: error instanceof Error ? error.message : "Unknown execution failure",
+          },
+        }),
+    });
+    const runWorker = this.#runWorkerFactory({
+      database: this.#database,
+      notificationConnectionString: this.#config.databaseNotificationUrl,
+      identity: runWorkerIdentity,
+      maximumActiveFamilies: this.#config.maxConcurrentSessions,
+      maximumLanesPerFamily: this.#config.subagentMaximumNodes + 1,
+      onCapacity: (sample) => this.#metrics?.activeSessionFamilies.set(sample.families),
+      canClaimRuns: () =>
+        (this.#state === "ready" || this.#state === "draining") && client?.state === "connected",
+      admitRunClaims: async () => runClaimReadiness.ready,
+      runExecutor: new RunExecutor({
+        database: this.#database,
+        backend: runBackend,
+        executionAuthority: leaseCoordinator,
+        claimOwnerId: runWorkerIdentity,
+        ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
+      }),
+      cancellationExecutor: new RunCancellationExecutor({
+        database: this.#database,
+        backend: runBackend,
+        executionAuthority: leaseCoordinator,
+      }),
+      onFailure: (operation, error) =>
+        operationalLog({
+          service: "pi-cloud-pi-worker",
+          level: "error",
+          event: "postgres-run-worker.failure",
+          attributes: {
+            operation,
+            name: error instanceof Error ? error.name : "UnknownError",
+            code:
+              typeof error === "object" &&
+              error !== null &&
+              "code" in error &&
+              typeof error.code === "string"
+                ? error.code
+                : "unexpected_error",
+            message:
+              error instanceof Error ? error.message : "Unexpected PostgreSQL Worker failure",
+          },
+        }),
+    });
+    this.#runWorker = runWorker;
+    await runWorker.start();
+    this.#assertStarting();
+    this.#state = "ready";
+    void client.waitUntilStopped().then((result) => this.#observeClientStop(result));
+  }
+
+  #stopCurrentBoot(): Promise<void> {
+    this.#ownerStopping ??= (async () => {
+      // A drain is not an exit proof. Revoke and join even when close() has
+      // already set draining, and prevent suspended startup from admitting work.
+      this.#stopRequested = true;
+      this.#state = "draining";
+      this.#client?.setAcceptingAssignments(false);
+      this.#runSupervisor?.revokeAllAssignments();
+      await this.#runWorker?.stop();
+      await this.#client?.stop();
+      await this.#runSupervisor?.waitUntilAssignmentsSettled();
+      this.#resolveOwnerStopped();
+      this.#settleTerminal("owner_stopped");
+    })();
+    return this.#ownerStopping;
   }
 
   close(): Promise<void> {
+    this.#stopRequested = true;
     this.#closing ??= this.#close();
     return this.#closing;
   }
 
   async #close(): Promise<void> {
     if (this.#state !== "failed") this.#state = "draining";
+    const errors: unknown[] = [];
+    if (this.#starting && !this.#startupFinished) {
+      // Registration can wait for reconnect indefinitely. Interrupt existing
+      // startup waiters, then join acquisition before disposing its resources.
+      for (const stop of [() => this.#client?.stop(), () => this.#runWorker?.stop()]) {
+        try {
+          await stop();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      await this.#starting.catch(() => undefined); // start() reports the startup failure.
+    }
+    if (this.#ownerStopping) {
+      try {
+        await this.#ownerStopping;
+      } catch (error) {
+        errors.push(error);
+      }
+    }
     this.#client?.setAcceptingAssignments(false);
     this.#runClaimReadiness?.close();
     this.#runClaimReadiness = undefined;
     // A Kubernetes scale-in is a drain, not a fencing event. Stop queue
     // polling first and give the active Runs their bounded settlement window;
     // owner replacement still uses stopCurrentBoot(), which revokes immediately.
-    const errors: unknown[] = [];
     for (const close of [
       () => this.#runWorker?.stop(),
       () => this.#runSupervisor?.waitUntilAssignmentsSettled(),

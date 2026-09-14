@@ -56,7 +56,6 @@ export type ProductionControlPlaneConfig = {
   publicOriginBaseUrl: string;
   githubApp?: {
     appId: string;
-    appSlug: string;
     privateKeyPem: string;
     webhookSecret: string;
     issueLabel: string;
@@ -170,13 +169,6 @@ function required(environment: ProductionControlPlaneEnvironment, name: string):
 function bounded(value: string, name: string, maximum = 256): string {
   if (value.length < 1 || value.length > maximum || /[\u0000-\u001f\u007f]/.test(value)) {
     throw new TypeError(`${name} is invalid`);
-  }
-  return value;
-}
-
-function githubAppSlug(value: string): string {
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/.test(value)) {
-    throw new TypeError("PI_CLOUD_GITHUB_APP_SLUG is invalid");
   }
   return value;
 }
@@ -401,15 +393,12 @@ export async function loadProductionControlPlaneConfig(
   const databaseUrl = await loadProductionDatabaseUrl(environment);
   const githubFields = [
     environment.PI_CLOUD_GITHUB_APP_ID,
-    environment.PI_CLOUD_GITHUB_APP_SLUG,
     environment.PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE,
     environment.PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE,
   ];
   const githubConfigured = githubFields.some((value) => value !== undefined && value.length > 0);
   if (githubConfigured && githubFields.some((value) => value === undefined || value.length === 0)) {
-    throw new TypeError(
-      "GitHub App configuration must provide ID, slug, private key and Webhook secret",
-    );
+    throw new TypeError("GitHub App configuration must provide ID, private key and Webhook secret");
   }
   const previewPublicOriginBaseUrl = managementUrl(
     required(environment, "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL"),
@@ -562,7 +551,6 @@ export async function loadProductionControlPlaneConfig(
               "PI_CLOUD_GITHUB_APP_ID",
               31,
             ),
-            appSlug: githubAppSlug(required(environment, "PI_CLOUD_GITHUB_APP_SLUG")),
             privateKeyPem: await privatePem(
               required(environment, "PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE"),
             ),

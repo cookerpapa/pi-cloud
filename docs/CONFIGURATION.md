@@ -247,26 +247,19 @@ its Webhook URL and put the configured credential-master-key entry in
 
 ### Optional GitHub App backend
 
-Do not enable the installation entry for users until the caller-to-installation
-authorization gap in [the current audit](reports/repository-audit-20260915.md)
-is resolved. A PiCloud login and installation callback state alone do not prove
-GitHub access. Environment-local GitHub credentials are a separate feature.
+GitHub App onboarding is unavailable: the installation-link and setup-callback
+endpoints have been removed (ADR-0169). PiCloud login does not prove GitHub
+installation access. Ordinary environment-local GitHub credentials and Git clone
+remain available, and GitLab Issue integration is unchanged.
 
-Register one GitHub App for the PiCloud deployment. Configure its Setup URL as
-`https://<picloud-host>/v1/source-control/github/callback` and Webhook URL as
-`https://<picloud-host>/v1/source-control/github/webhook`. Grant repository
-permissions `Metadata: read` and `Issues: read`; subscribe to Issue and
-Issue-comment events. Platform-driven PR creation, repository writes and Issue
-delivery are not part of this intake integration. See GitHub's
-[webhook permission requirements](https://docs.github.com/en/webhooks/webhook-events-and-payloads#issues).
-Generate a private key and a high-entropy Webhook secret, then add these
-restart-bound settings to the private runtime `.env`:
+The optional App backend serves **already-bound** integrations only. Its Webhook
+URL is `https://<picloud-host>/v1/source-control/github/webhook`. These restart-bound
+settings preserve their repository refresh and Issue intake:
 
 | Variable | Meaning |
 | --- | --- |
 | `PI_CLOUD_PUBLIC_ORIGIN_BASE_URL` | public PiCloud origin used in Issue/PR links |
 | `PI_CLOUD_GITHUB_APP_ID` | numeric App ID |
-| `PI_CLOUD_GITHUB_APP_SLUG` | App slug from its public page URL |
 | `PI_CLOUD_GITHUB_APP_PRIVATE_KEY_PATH` | host path to the mode-0600 PEM file |
 | `PI_CLOUD_GITHUB_WEBHOOK_SECRET_PATH` | host path to the mode-0600 Webhook-secret file |
 | `PI_CLOUD_GITHUB_ISSUE_LABEL` | explicit automation label, default `picloud` |
@@ -275,15 +268,9 @@ The Compose deployment routes `api.github.com` and `github.com` through the
 same bounded trusted egress relay used by model providers. In Kubernetes,
 enable `controlPlane.sourceControl.github`, place the private-key and Webhook
 secret entries in `global.existingSecret`, and ensure the configured provider
-proxy plus NetworkPolicy allow those two hosts. The current Web resource page
-does not expose this provider; installation and callback endpoints remain for
-deployments that operate the GitHub adapter directly.
-
-GitHub tokens are never valid configuration values: PiCloud mints a short-lived
-installation token when needed. For an enabled unattended GitHub Issue Run, the
-token is written to that Workspace's hidden Git Home and the Agent performs the
-ordinary clone. Later delivery needs a fresh user-directed authorization after
-the installation token expires.
+proxy plus NetworkPolicy allow those two hosts. This does not enable new App
+installation bindings. App discovery tokens are transient; user Git authorization
+is a separate environment-local credential and is not supplied by the App backend.
 
 ### SSH and optional profiles
 

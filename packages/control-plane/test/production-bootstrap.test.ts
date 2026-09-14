@@ -272,7 +272,6 @@ describe.sequential("production bootstrap and configuration", () => {
       ...environment,
       PI_CLOUD_PUBLIC_ORIGIN_BASE_URL: "https://picloud.example.com",
       PI_CLOUD_GITHUB_APP_ID: "12345",
-      PI_CLOUD_GITHUB_APP_SLUG: "picloud-test",
       PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE: githubPrivateKeyPath,
       PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE: await secret(
         root,
@@ -282,7 +281,6 @@ describe.sequential("production bootstrap and configuration", () => {
     });
     expect(githubRuntime.githubApp).toMatchObject({
       appId: "12345",
-      appSlug: "picloud-test",
       issueLabel: "picloud",
       webhookSecret: "github-webhook-secret-with-at-least-32-bytes",
     });

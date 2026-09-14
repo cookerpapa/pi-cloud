@@ -307,7 +307,10 @@ export default function ChatApp() {
       state.sessionState === "cold" ||
       state.sessionState === "idle" ||
       state.sessionState === "running" ||
-      state.sessionState === "cancelling");
+      state.sessionState === "cancelling" ||
+      // A failed snapshot can outlive confirmed exit/seal recovery. The API,
+      // not this cached view, decides whether the next message is admissible.
+      state.sessionState === "failed");
   const conversationChildren = useMemo(() => {
     const children = new Map<string, ConversationSummaryResource[]>();
     for (const conversation of conversations) {

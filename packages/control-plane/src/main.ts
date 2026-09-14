@@ -258,7 +258,6 @@ export async function startControlPlane(): Promise<void> {
     if (config.githubApp !== undefined) {
       const dispatcher = sourceControlDispatcher!;
       githubRuntime = {
-        appSlug: config.githubApp.appSlug,
         issueLabel: config.githubApp.issueLabel,
         client: new GitHubAppClient({
           appId: config.githubApp.appId,

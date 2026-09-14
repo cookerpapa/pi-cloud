@@ -10,6 +10,10 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0169](0169-confirmed-session-recovery-and-github-entry.md) — resume a
+   quarantined Session only after confirmed exit and seal; remove unauthenticated
+   GitHub App installation binding.
+
 1. [ADR-0168](0168-direct-workspace-storage.md) — direct Volume/full-VM file
    storage and live browsing, without per-Run objects or raw Tool-output archives.
 

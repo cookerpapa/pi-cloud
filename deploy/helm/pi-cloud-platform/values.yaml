@@ -79,7 +79,6 @@ controlPlane:
     github:
       enabled: false
       appId: ""
-      appSlug: ""
       issueLabel: picloud
       privateKeySecretKey: github-app-private-key.pem
       webhookSecretKey: github-webhook-secret

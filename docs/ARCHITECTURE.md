@@ -140,6 +140,15 @@ the local live view directly. There is no second Kafka commit notice or buffer
 waiting for such a notice. A successor is released by the PG closure, not by a
 browser ACK. Incomplete Tools remain UNKNOWN; no successful result is invented.
 
+A quarantined Session becomes idle only after its latest failed execution has
+both positive Agent exit evidence and a committed seal (ADR-0169). Exit is recorded
+after the local Runner settles, or after an exact Worker-stop confirmation;
+lease expiry and an unreachable management endpoint do not establish that fact.
+The two facts may arrive in either order. Recovery accepts a new Run, retains the
+old failure, and never replays its Tool calls. This adds no per-delta or per-Step
+database barrier. A stale browser failure state may submit a new-message request,
+but admission remains server-authoritative until recovery actually completes.
+
 Kafka automatic time/size expiry is disabled. Safe retention stays behind
 canonical progress and every unsealed start, with an additional grace interval.
 Missing progress or PG failure stops reclamation. A known missing unsealed

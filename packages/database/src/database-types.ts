@@ -109,16 +109,6 @@ export interface AgentRevisionTable {
   created_at: GeneratedTimestamp;
 }
 
-export interface SourceControlInstallationRequestTable {
-  state_sha256: string;
-  tenant_id: string;
-  user_id: string;
-  provider: SourceControlProvider;
-  expires_at: Timestamp;
-  consumed_at: NullableTimestamp;
-  created_at: GeneratedTimestamp;
-}
-
 export interface SourceControlInstallationTable {
   id: string;
   tenant_id: string;
@@ -799,6 +789,7 @@ export interface RunAttemptTable {
   lease_id: string | null;
   fencing_token: NullableInt8;
   execution_released_at: GeneratedNullable<Date>;
+  agent_exited_at: GeneratedNullable<Date>;
   failure_code: string | null;
   failure_message: string | null;
   failure_retryable: boolean | null;
@@ -1184,7 +1175,6 @@ export interface Database {
   accepted_fact_projection_offsets: { topic: string; partition: number; next_offset: Int8 };
   agent_definitions: AgentDefinitionTable;
   agent_revisions: AgentRevisionTable;
-  source_control_installation_requests: SourceControlInstallationRequestTable;
   source_control_installations: SourceControlInstallationTable;
   source_control_repositories: SourceControlRepositoryTable;
   source_control_webhook_deliveries: SourceControlWebhookDeliveryTable;

@@ -26,6 +26,10 @@ import {
   type SupervisorRunWorker,
   type PostgresPiWorkerOptions,
 } from "../src/index.ts";
+import {
+  SupervisorManagementServer,
+  SUPERVISOR_MANAGEMENT_PATH,
+} from "../src/management-server.ts";
 
 const CONTROL_PLANE_ID = "90000000-0000-4000-8000-000000000001";
 const SUPERVISOR_ID = "supervisor-host-runtime-test";
@@ -159,11 +163,25 @@ describe("PiWorkerRuntime", () => {
     const address = await server.listen({ host: "127.0.0.1", port: 0 });
     const runWorkerOptions: PostgresPiWorkerOptions[] = [];
     let stopFailure: Error | undefined;
+    let drainGate: Promise<void> | undefined;
+    let releaseDrain: (() => void) | undefined;
+    let stopCalls = 0;
+    const managementAddresses: string[] = [];
+    const listen = SupervisorManagementServer.prototype.listen;
+    const listenSpy = vi
+      .spyOn(SupervisorManagementServer.prototype, "listen")
+      .mockImplementation(async function (this: SupervisorManagementServer) {
+        const address = await listen.call(this);
+        managementAddresses.push(address);
+        return address;
+      });
     const runWorkerFactory = (options: PostgresPiWorkerOptions): SupervisorRunWorker => {
       runWorkerOptions.push(options);
       const worker = runWorker();
       const stop = worker.stop.bind(worker);
       worker.stop = async () => {
+        stopCalls++;
+        await drainGate;
         await stop();
         if (stopFailure) throw stopFailure;
       };
@@ -271,7 +289,37 @@ describe("PiWorkerRuntime", () => {
       expect(first.state).toBe("ready");
       const firstIdentity = first.identity!;
       expect(gateway.activeConnectionCount).toBe(1);
-      await first.close();
+      drainGate = new Promise<void>((resolve) => {
+        releaseDrain = resolve;
+      });
+      const closing = first.close();
+      await vi.waitFor(() => expect(stopCalls).toBeGreaterThan(0));
+      let stopProofReturned = false;
+      const proof = fetch(`${managementAddresses[0]}${SUPERVISOR_MANAGEMENT_PATH}`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${MANAGEMENT_TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          protocolVersion: 1,
+          type: "owner.stop_and_confirm",
+          requestId: crypto.randomUUID(),
+          identity: firstIdentity,
+        }),
+      }).then(async (response) => {
+        const body = await response.json();
+        stopProofReturned = true;
+        expect(response.status).toBe(200);
+        return body;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const prematureProof = stopProofReturned;
+      releaseDrain!();
+      drainGate = undefined;
+      expect(await proof).toMatchObject({ type: "owner.stopped", identity: firstIdentity });
+      await closing;
+      expect(prematureProof, "Draining is not confirmation that the execution stopped").toBe(false);
       expect(first.state).toBe("stopped");
 
       second = new PiWorkerRuntime({
@@ -329,7 +377,7 @@ describe("PiWorkerRuntime", () => {
         state: { history: Array<{ bootId: string; status: string }> };
       };
       expect(ledger.state.history).toContainEqual(
-        expect.objectContaining({ bootId: firstIdentity.bootId, status: "exited" }),
+        expect.objectContaining({ bootId: firstIdentity.bootId, status: "stopped" }),
       );
 
       publisherFailure = new Error("temporary metadata outage");
@@ -408,7 +456,77 @@ describe("PiWorkerRuntime", () => {
         health.mockRestore();
         for (const gateway of gateways) await gateway.close();
       }
+      for (const outcome of ["resolve", "reject"]) {
+        let entered!: () => void, release!: () => void;
+        const checking = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const blockedHealth = vi
+          .spyOn(TenantModelGateway.prototype, "checkProviderHealth")
+          .mockImplementationOnce(async () => {
+            entered();
+            await gate;
+            if (outcome === "reject") throw new Error("startup health failed");
+          });
+        const latePublisher = vi.fn(async () => {
+          throw new Error("post-stop acquisition");
+        });
+        const stopping = new PiWorkerRuntime({
+          config: {
+            ...baseConfig,
+            supervisorId: `${SUPERVISOR_ID}-startup-${outcome}`,
+            bootStateDirectory: join(root, `startup-${outcome}`),
+          },
+          database,
+          toolBroker: runtimeToolBroker,
+          runWorkerFactory,
+          provisioningClient: {
+            async provision() {
+              return { accepted: true } as never;
+            },
+          },
+          executionLogs: {
+            async open() {
+              throw new Error("unused");
+            },
+            async checkHealth() {},
+          },
+          sessionMutationProducer: {
+            scoped() {
+              return { async publish() {} };
+            },
+            checkHealth: latePublisher,
+            async close() {},
+          },
+        });
+        const opening = stopping.start().catch((error) => error);
+        try {
+          await checking;
+          let closed = false;
+          const closing = stopping.close().then(() => {
+            closed = true;
+          });
+          await new Promise((resolve) => setTimeout(resolve, 15));
+          const premature = closed;
+          release();
+          await Promise.all([opening, closing]);
+          expect(premature, "Close must join startup before claiming all resources are gone").toBe(
+            false,
+          );
+          expect(latePublisher).not.toHaveBeenCalled();
+        } finally {
+          release();
+          blockedHealth.mockRestore();
+          await opening;
+          await stopping.close();
+        }
+      }
     } finally {
+      releaseDrain?.();
+      listenSpy.mockRestore();
       await second?.close().catch(() => undefined);
       await first?.close().catch(() => undefined);
       gateway.shutdown();

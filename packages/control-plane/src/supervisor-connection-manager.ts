@@ -12,6 +12,7 @@ import {
   type SupervisorRegisteredMessage,
 } from "@pi-cloud/protocol";
 import { PINNED_PI_CODING_AGENT_VERSION } from "@pi-cloud/sandbox-supervisor/pi-turn-runtime";
+import { confirmStoppedWorkerExecutions } from "@pi-cloud/runtime-core/quarantined-session-recovery";
 import { createHash } from "node:crypto";
 import type { Kysely, Transaction } from "kysely";
 import type {
@@ -755,6 +756,7 @@ export class SupervisorConnectionManager {
       try {
         await this.#ownerBoundary.stopAndConfirm(claim.identity);
         ownerStopConfirmed = true;
+        await confirmStoppedWorkerExecutions(this.#database, claim.identity.sandboxId);
         await this.#renewRetirementClaim(claim, validDate(this.#clock));
         reconciliation = await retirer.retireSandbox();
       } catch (error: unknown) {

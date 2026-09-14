@@ -385,6 +385,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         if (tracked.failure !== undefined) throw tracked.failure;
         return result;
       } finally {
+        lifecycle.executionExited();
         try {
           await this.#closeTrackedChannel(tracked);
         } finally {

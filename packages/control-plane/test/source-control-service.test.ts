@@ -537,7 +537,6 @@ describe.sequential("source-control App boundary", () => {
         workspaceBaseUrl: "https://gitlab.workspace.example.com",
       },
       github: {
-        appSlug: "picloud-test",
         issueLabel: "picloud",
         client: new GitHubAppClient({
           appId: "12345",
@@ -547,12 +546,28 @@ describe.sequential("source-control App boundary", () => {
         }),
       },
     });
-    const link = await service.beginGitHubInstall(identity(tenant));
-    const state = new URL(link.url).searchParams.get("state")!;
-    await service.completeGitHubInstall(identity(tenant), state, "77");
-    await expect(
-      service.completeGitHubInstall(identity(tenant), state, "77"),
-    ).rejects.toMatchObject({ code: "source_control_authorization_denied" });
+    // Existing authorized bindings are retained; there is no public App onboarding route.
+    const installationId = randomUUID();
+    await database
+      .insertInto("source_control_installations")
+      .values({
+        id: installationId,
+        tenant_id: tenant.tenantId,
+        connected_by_user_id: identity(tenant).userId,
+        provider: "github",
+        provider_base_url: "https://github.com",
+        provider_installation_id: "77",
+        account_id: "456",
+        account_login: "example",
+        account_type: "Organization",
+        repository_selection: "selected",
+        state: "active",
+        suspended_at: null,
+        installed_at: new Date(),
+        updated_at: new Date(),
+      })
+      .execute();
+    await service.refreshInstallation(identity(tenant), installationId);
     const configured = await service.configuration(identity(tenant));
     expect(configured.installations).toHaveLength(1);
     expect(configured.installations[0]?.repositories[0]).toMatchObject({

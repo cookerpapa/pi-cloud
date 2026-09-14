@@ -1,4 +1,5 @@
 import type { Database } from "@pi-cloud/database";
+import { recoverQuarantinedSession } from "./quarantined-session-recovery.ts";
 import { parsePiCloudEvent, type PiCloudEvent } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { AcceptedExecutionSealFact, AcceptedFact } from "./accepted-fact.ts";
@@ -356,6 +357,7 @@ export class ExecutionStreamProjector {
         .where("id", "=", fact.scope.attemptId)
         .execute();
       await recordFactProjection(transaction, position);
+      if (event.type === "turn.failed") await recoverQuarantinedSession(transaction, fact.scope);
       if (
         event.type !== "turn.completed" &&
         event.type !== "turn.failed" &&

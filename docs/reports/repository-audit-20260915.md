@@ -79,7 +79,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | SC-03 | Claim-note sync clears its pending bit before the external effect | Candidate lost notification after process death; validate crash and concurrent claim ordering before choosing the smallest durable fix |
 | SC-04 | Issue credential authorization omitted the machine owner check used by ordinary Code Host connections | Reproduced successful preflight as another user in the same tenant. Share the existing ownership check before credential requests |
 | SC-05 | Single-Issue mutation responses searched only the newest 100 jobs; list query fetched unused large Issue bodies | Reproduced durable claim followed by not-found after 101 newer jobs. Filter detail by tenant/ID and select only public summary columns; no Issue bodies in list reads |
-| SC-06 | Optional GitHub App callback validates PiCloud state but not caller access to the supplied installation | Architecture decision ARCH-02 requested: disable the App installation entry or add GitHub user authorization; environment-local credentials are separate and remain unchanged |
+| SC-06 | Optional GitHub App callback validates PiCloud state but not caller access to the supplied installation | Owner approved removal (ADR-0169). Removed installation/callback routes, link schema, state-request table and slug configuration. Authenticated HTTP probes return 404; bound integration refresh/Webhooks and ordinary environment credentials retain coverage |
 | UI-14 | Blank-line segmentation split lists, four-backtick fences and indented code; settlement replaced already-rendered paragraphs | Four rendering failures and a Chrome DOM-replacement failure reproduced. Use the same remark/GFM parser, retain the two unresolved suffix blocks, invalidate reference-dependent blocks, and keep nodes at settlement. Every-character prefix checks pass for six syntax cases |
 | SC-07 | Non-object GitLab webhook JSON raised TypeError before the intended shape rejection | Three payload-shape regressions reproduced 500-class errors; reject through the existing invalid-webhook contract |
 | SC-08 | Missing Workspace credential-service configuration fabricated a known placeholder token | Reproduced misleading Broker URL error; fail explicitly as unconfigured instead of sending a placeholder credential |
@@ -125,16 +125,29 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | LIFE-06 | A synchronous Runner startup throw bypassed the common completion cleanup and stranded its slot | Reproduced active count remaining 1. Make the event-boundary method async so synchronous and asynchronous failures share finalization; regression passes |
 | LIFE-07 | Worker entrypoint acquired observability/DB before its cleanup scope; constructor failures leaked acquired resources and secondary errors were swallowed | Three regressions failed before. One ordered cleanup path covers partial acquisition, preserves primary/cleanup errors, and removes signal listeners; four lifecycle tests pass |
 | LIFE-08 | Runtime swallowed drain/teardown errors and could overwrite its first fatal cause with a later control-channel failure | Reproduced a failed drain reported as successful. Attempt every owned cleanup in order, retain the aggregate error and first terminal cause; six entrypoint/runtime regressions pass |
+| LIFE-09 | Runtime close could finish while startup was suspended; owner-stop also treated draining as proof of exit | Reproduced premature close before health completion. Join startup acquisition, latch stop at asynchronous boundaries, and join exact owner shutdown even during drain. Actual management HTTP regression verifies no stop proof until gated work settles |
 | TIME-01 | Lease/claim timestamps are captured before potentially blocked SQL updates | Probe delayed renewal versus actual expiry/seal with real PG; do not silently change the authority clock model |
 
-Architecture question ARCH-01 (asked, awaiting owner): should a Session quarantined
-after cancellation cleanup failure accept a new Turn after the old loop's exit and
-committed seal are confirmed? Existing behavior only permits Fork/prune. No old
-Run/Tool replay is proposed; ordinary failure-closure bugs are fixed independently.
+ARCH-01 implemented locally: positive Agent exit and committed seal restore the
+failed Session's admission, without changing the old failure or replaying Tools.
+Both arrival orders pass; expiry-only, foreign-tenant and stale-old-attempt proofs
+remain rejected. Only failure/cancellation persists the local exit confirmation;
+normal completion adds no PG round trip. Exact owner-stop may also confirm exit;
+an unreachable endpoint cannot. Browser fixture includes a cached failed Session.
 
 GitHub's [setup-URL guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-setup-url)
 explicitly requires checking the caller's access to the supplied installation;
-ARCH-02 is awaiting the owner. No real GitHub account or installation was probed.
+ARCH-02 approved: remove the installation entry/callback, preserving ordinary
+environment Git credentials and existing bound integration reads. No real GitHub
+account or installation was probed. Local implementation follows ADR-0169.
+
+Approved-slice validation: 352 tests passed across Control Plane/runtime/Worker/Web,
+five external-PG-only checks skipped in that offline invocation. A dedicated real
+PostgreSQL container then passed all nine queue/recovery cases plus concurrent
+Run settlement (10 tests, 12.10 seconds). All workspace type checks, the Web build,
+Chrome presentation interactions, documentation and Helm checks passed. Full
+package tests with the isolated PG fixture are still running. These are not paid
+model, deployed Cube or complete audit acceptance; production remains unchanged.
 
 Remote CI passed completely at `aadcb725` ([run](https://github.com/cookerpapa/pi-cloud/actions/runs/34899010082)),
 including the quality, browser and image/security jobs. Later slices require their

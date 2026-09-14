@@ -62,15 +62,6 @@ export const SourceControlConfigurationResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SourceControlInstallLinkResourceSchema = Type.Object(
-  {
-    provider: ProviderSchema,
-    url: Type.String({ minLength: 8, maxLength: 4_096 }),
-    expiresAt: UtcTimestampSchema,
-  },
-  { additionalProperties: false },
-);
-
 export const SourceControlIssueJobResourceSchema = Type.Object(
   {
     jobId: UuidSchema,
@@ -311,9 +302,6 @@ export type SourceControlInstallationResource = Static<
 export type SourceControlConfigurationResource = Static<
   typeof SourceControlConfigurationResourceSchema
 >;
-export type SourceControlInstallLinkResource = Static<
-  typeof SourceControlInstallLinkResourceSchema
->;
 export type SourceControlIssueJobResource = Static<typeof SourceControlIssueJobResourceSchema>;
 export type StartSourceControlIssueJobRequest = Static<
   typeof StartSourceControlIssueJobRequestSchema
@@ -377,12 +365,6 @@ export const parseSourceControlConfigurationResource = (value: unknown) =>
     SourceControlConfigurationResourceSchema,
     value,
     "source-control configuration resource",
-  );
-export const parseSourceControlInstallLinkResource = (value: unknown) =>
-  parse<SourceControlInstallLinkResource>(
-    SourceControlInstallLinkResourceSchema,
-    value,
-    "source-control install link resource",
   );
 export const parseSourceControlIssueJobListResource = (value: unknown) =>
   parse<SourceControlIssueJobListResource>(

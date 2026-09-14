@@ -373,7 +373,6 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       `/v1/sessions/${sessionA.sessionId}/workspace/directory?path=a&path=b`,
       `/v1/development-environments/${projectA.workspaceId}/directory`,
       `/v1/development-environments/${projectA.workspaceId}/directory?path=a&path=b`,
-      "/v1/source-control/github/callback?state=test",
     ];
     for (const url of paths) {
       const response = await http.inject({
@@ -383,6 +382,18 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       });
       expect(response.statusCode, url).toBe(400);
       expect(response.json()).toMatchObject({ error: { code: "invalid_request" } });
+    }
+  });
+
+  it("has no GitHub App installation or setup-callback entry, even for authenticated users", async () => {
+    for (const method of ["GET", "POST"] as const) {
+      for (const url of [
+        "/v1/source-control/github/installations",
+        "/v1/source-control/github/callback?state=test&installation_id=77",
+      ]) {
+        const response = await http.inject({ method, url, headers: authorization(memberAToken) });
+        expect(response.statusCode, `${method} ${url}`).toBe(404);
+      }
     }
   });
 

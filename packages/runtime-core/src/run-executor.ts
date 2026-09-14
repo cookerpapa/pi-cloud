@@ -32,6 +32,7 @@ import {
   selectNativeSessionWriter,
 } from "./pi-session-worker-ownership.ts";
 import { requestExecutionStreamSeal } from "./execution-stream-seal.ts";
+import { confirmAgentExit } from "./quarantined-session-recovery.ts";
 import { retryTransaction } from "@pi-cloud/database";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
@@ -87,6 +88,8 @@ export type RunClaimAdmission = Readonly<{
 
 export type TurnExecutionLifecycle = {
   started(grant?: TurnExecutionReference): Promise<void>;
+  /** Positive local Agent Loop exit, independent of guest Tool cleanup. */
+  executionExited(): void;
 };
 
 export type TurnExecutionResult = {
@@ -421,6 +424,8 @@ export class RunExecutor {
     this.#metrics?.queueWait.observe(Math.max(0, observedAt - claim.queuedAt.valueOf()) / 1_000);
     this.#metrics?.activeRuns.inc();
     const executionStartedAt = performance.now();
+    let agentExited = false;
+    let completed = false;
     try {
       const result = await withSpan<RunExecutionResult>({
         serviceName: "pi-cloud-control-plane",
@@ -437,6 +442,9 @@ export class RunExecutor {
           let startedPromise: Promise<void> | undefined;
           let startFailure: unknown;
           const lifecycle: TurnExecutionLifecycle = {
+            executionExited: () => {
+              agentExited = true;
+            },
             started: (candidate) => {
               if (this.#executionAuthority !== undefined && candidate === undefined) {
                 return Promise.reject(
@@ -511,6 +519,7 @@ export class RunExecutor {
           }
 
           await this.#complete(claim, executionResult, acknowledgement);
+          completed = true;
           return {
             status: "completed",
             runId: claim.request.runId,
@@ -535,6 +544,9 @@ export class RunExecutor {
       throw error;
     } finally {
       this.#metrics?.activeRuns.dec();
+      // Normal completion already leaves the Session idle. Failure/cancellation
+      // may race the seal, so retain positive exit evidence for either order.
+      if (agentExited && !completed) await confirmAgentExit(this.#database, claim.request);
     }
   }
 

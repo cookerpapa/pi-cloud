@@ -120,7 +120,7 @@ window.renderNavigation=()=>{
 window.renderInspector=(refreshSignal=0)=>root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},
   React.createElement(WorkspaceInspector,{api:inspectorApi,sessionId:"session-fixture",workspaceId:"workspace-fixture",
     workspaceName:"fixture",developmentEnvironmentId:null,workingDirectory:"/workspace",refreshSignal,onClose:()=>{},onError:()=>{}})));
-window.renderChat = () => {
+window.renderChat = (sessionState='idle') => {
   window.requestAnimationFrame = nativeRaf; window.cancelAnimationFrame = nativeCancelRaf;
   const sid = "10000000-0000-4000-8000-000000000001";
   const profileId = "20000000-0000-4000-8000-000000000001";
@@ -142,7 +142,7 @@ window.renderChat = () => {
     getConversationTree:async()=>({branches:[],delegatedSessions:[]}),
     createSession:async (projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,model)=>{
       selection=model; window.savedSelection=selection;
-      session={sessionId:sid,projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,state:"idle",workspaceState:"attached",modelProfileId:profileId,createdAt:new Date().toISOString()};
+      session={sessionId:sid,projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,state:sessionState,workspaceState:"attached",modelProfileId:profileId,createdAt:new Date().toISOString()};
       return session;
     },
     getSessionModel:async()=>modelResource(),
@@ -278,7 +278,9 @@ try {
       await page.evaluate('document.body.classList.contains("product-panel-resizing")'),
       false,
     );
-    await page.evaluate("renderChat()");
+    // A cached failed Session must still be able to request server-authoritative
+    // admission after its execution exit/seal recover; rejected input stays intact.
+    await page.evaluate("renderChat('failed')");
     await page.waitFor('document.querySelector(".product-model-menu-trigger")');
     const fill = async (selector, value) => {
       await page.evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});

@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Accepted; new GitHub App onboarding is removed by ADR-0169. Existing authorized
+bindings and Webhooks remain supported; normal environment Git credentials are
+independent of App integration.
 
 ## Context
 
@@ -24,9 +26,7 @@ deployment/API concern; the Web product exposes Issue tasks, PiCloud claims and
 execution selection after a configured Webhook creates them.
 
 ```text
-Browser -> GitHub App install -> PiCloud installation/repository grants
-
-GitHub Webhook -> HMAC gate -> pending Issue Job
+Already-bound GitHub Webhook -> HMAC gate -> pending Issue Job
        -> PiCloud claim + selected environment Code Host connection
        -> ordinary Project / Workspace / Session / Run
        -> Pi Worker -> Agent git clone -> Cube Git/Tools
@@ -72,7 +72,7 @@ non-exclusive human claim. Claims are an
 idempotent expression of intent, not a scheduler lock and not an Agent
 ExecutionReference. A claimant explicitly starts the request by choosing a new
 Issue-dedicated elastic Workspace/profile, a compatible existing Workspace, or
-a directory under `/home/user` in one owned running cloud development machine.
+a selected absolute directory in one owned running cloud development machine.
 The claimant also names the conversation.
 
 Each selected directory is a normal repository. One owned development machine
@@ -101,5 +101,5 @@ queue.
 
 Both providers are optional. A deployment without either adapter retains the
 empty/sample Workspace behavior. GitLab can be accepted locally with the pinned
-CE lab deployment; live GitHub acceptance still requires an operator to
-register the App and a user or organization owner to install it once.
+CE lab deployment. New GitHub App bindings require an approved GitHub
+user-authorization design before that entry can return.

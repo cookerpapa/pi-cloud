@@ -80,7 +80,6 @@ spec:
             - { name: HTTP_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
             {{- if .Values.controlPlane.sourceControl.github.enabled }}
             - { name: PI_CLOUD_GITHUB_APP_ID, value: {{ .Values.controlPlane.sourceControl.github.appId | quote }} }
-            - { name: PI_CLOUD_GITHUB_APP_SLUG, value: {{ .Values.controlPlane.sourceControl.github.appSlug | quote }} }
             - { name: PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE, value: /run/pi-cloud-secrets/github-app-private-key.pem }
             - { name: PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE, value: /run/pi-cloud-secrets/github-webhook-secret }
             - { name: PI_CLOUD_GITHUB_ISSUE_LABEL, value: {{ .Values.controlPlane.sourceControl.github.issueLabel | quote }} }

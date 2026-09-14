@@ -10,7 +10,6 @@ import type {
   ConnectCodeHostRequest,
   ConnectGitLabProjectRequest,
   SourceControlConfigurationResource,
-  SourceControlInstallLinkResource,
   SourceControlIssueJobListResource,
   SourceControlIssueJobResource,
   StartSourceControlIssueJobRequest,
@@ -29,7 +28,6 @@ import {
 import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
-const INSTALL_STATE_TTL_MS = 10 * 60_000;
 const TRUSTED_ISSUE_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 
 export class SourceControlServiceError extends Error {
@@ -51,7 +49,6 @@ export class SourceControlServiceError extends Error {
 }
 
 export type GitHubAppRuntime = Readonly<{
-  appSlug: string;
   client: GitHubAppClient;
   issueLabel: string;
 }>;
@@ -112,10 +109,6 @@ function iso(value: Date | string): string {
     );
   }
   return date.toISOString();
-}
-
-function stateDigest(value: string): string {
-  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -267,110 +260,6 @@ export class SourceControlService {
           })),
       })),
     };
-  }
-
-  async beginGitHubInstall(
-    identity: TenantRequestIdentity,
-  ): Promise<SourceControlInstallLinkResource> {
-    const github = this.#requireGitHub();
-    if (identity.role === "viewer") {
-      throw new SourceControlServiceError(
-        "source_control_authorization_denied",
-        "Viewer accounts cannot connect source repositories",
-      );
-    }
-    const state = randomBytes(32).toString("base64url");
-    const now = this.#clock();
-    const expiresAt = new Date(now.valueOf() + INSTALL_STATE_TTL_MS);
-    await this.#database
-      .deleteFrom("source_control_installation_requests")
-      .where("expires_at", "<", new Date(now.valueOf() - 24 * 60 * 60_000))
-      .execute();
-    await this.#database
-      .insertInto("source_control_installation_requests")
-      .values({
-        state_sha256: stateDigest(state),
-        tenant_id: identity.tenantId,
-        user_id: identity.userId,
-        provider: "github",
-        expires_at: expiresAt,
-        consumed_at: null,
-        created_at: now,
-      })
-      .executeTakeFirstOrThrow();
-    return {
-      provider: "github",
-      url: `https://github.com/apps/${encodeURIComponent(github.appSlug)}/installations/new?state=${encodeURIComponent(state)}`,
-      expiresAt: expiresAt.toISOString(),
-    };
-  }
-
-  async completeGitHubInstall(
-    identity: TenantRequestIdentity,
-    state: string,
-    installationId: string,
-  ): Promise<SourceControlConfigurationResource> {
-    const github = this.#requireGitHub();
-    if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !/^[1-9][0-9]{0,30}$/.test(installationId)) {
-      throw new SourceControlServiceError(
-        "source_control_authorization_denied",
-        "GitHub installation callback is invalid",
-      );
-    }
-    const request = await this.#database
-      .selectFrom("source_control_installation_requests")
-      .selectAll()
-      .where("state_sha256", "=", stateDigest(state))
-      .executeTakeFirst();
-    const now = this.#clock();
-    if (
-      request === undefined ||
-      request.tenant_id !== identity.tenantId ||
-      request.user_id !== identity.userId ||
-      request.consumed_at !== null ||
-      new Date(request.expires_at) <= now
-    ) {
-      throw new SourceControlServiceError(
-        "source_control_authorization_denied",
-        "GitHub installation request expired or was already used",
-      );
-    }
-    let installation;
-    let repositories;
-    try {
-      [installation, repositories] = await Promise.all([
-        github.client.installation(installationId),
-        github.client.repositories(installationId),
-      ]);
-    } catch (error: unknown) {
-      throw this.#githubFailure(error);
-    }
-    await this.#database.transaction().execute(async (transaction) => {
-      const locked = await transaction
-        .selectFrom("source_control_installation_requests")
-        .selectAll()
-        .where("state_sha256", "=", stateDigest(state))
-        .forUpdate()
-        .executeTakeFirstOrThrow();
-      if (
-        locked.tenant_id !== identity.tenantId ||
-        locked.user_id !== identity.userId ||
-        locked.consumed_at !== null ||
-        new Date(locked.expires_at) <= now
-      ) {
-        throw new SourceControlServiceError(
-          "source_control_authorization_denied",
-          "GitHub installation request expired or was already used",
-        );
-      }
-      await this.#upsertInstallation(transaction, identity, installation, repositories, now);
-      await transaction
-        .updateTable("source_control_installation_requests")
-        .set({ consumed_at: now })
-        .where("state_sha256", "=", locked.state_sha256)
-        .executeTakeFirstOrThrow();
-    });
-    return this.configuration(identity);
   }
 
   async connectGitLabProject(

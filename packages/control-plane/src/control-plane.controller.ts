@@ -73,7 +73,6 @@ import {
   type DevelopmentEnvironmentDirectoryResource,
   type SshAccessTicketResource,
   type SourceControlConfigurationResource,
-  type SourceControlInstallLinkResource,
   type SourceControlIssueJobListResource,
   type SourceControlIssueJobResource,
   type SourceControlIssueGitCredentialResource,
@@ -279,33 +278,6 @@ export class ControlPlaneController {
     @Req() request: FastifyRequest,
   ): Promise<SourceControlConfigurationResource> {
     return this.sourceControl.configuration(this.tenantRequestContext.resolve(request));
-  }
-
-  @Post("source-control/github/installations")
-  async beginGitHubInstallation(
-    @Req() request: FastifyRequest,
-  ): Promise<SourceControlInstallLinkResource> {
-    return this.sourceControl.beginGitHubInstall(
-      this.tenantRequestContext.requireMutation(request),
-    );
-  }
-
-  @Get("source-control/github/callback")
-  async completeGitHubInstallation(
-    @Req() request: FastifyRequest,
-    @Query("state") state: unknown,
-    @Query("installation_id") installationId: unknown,
-    @Res() reply: FastifyReply,
-  ): Promise<void> {
-    if (typeof state !== "string" || typeof installationId !== "string") {
-      throw new ControlPlaneApiValidationError("GitHub installation callback is invalid");
-    }
-    await this.sourceControl.completeGitHubInstall(
-      this.tenantRequestContext.requireMutation(request),
-      state,
-      installationId,
-    );
-    reply.code(303).header("location", "/?sourceControl=connected").send();
   }
 
   @Post("source-control/installations/:installationId/refresh")

@@ -5,6 +5,11 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] ADR-0169: recover quarantined Sessions after confirmed Agent exit and seal;
+      remove unsafe GitHub App onboarding while preserving environment Git
+      credentials. Local boundary tests pass; deployed acceptance remains part
+      of the current audit gate.
+
 - [x] ADR-0168: remove Workspace settlement/object dependencies and raw Tool
       archives; keep direct Volume/full-VM storage, activation validation and
       isolated copies. [Implementation and paid acceptance](reports/direct-workspace-storage-20260914.md).
@@ -144,9 +149,9 @@ Volume architecture. Historical experiments remain in Git history.
 - [ ] Add deployment-specific Kafka TLS/SASL/ACL examples.
 - [ ] Validate backup/restore and retention changes with active Runs.
 - [ ] Replace placeholder Alertmanager delivery with the operator's on-call system.
-- [ ] Run live GitHub App installation/private-clone/Issue-to-Run acceptance on
-      a public HTTPS deployment; deterministic tests use a fake GitHub API and
-      local credentialed Git fixture.
+- [ ] Design GitHub user authorization before reintroducing App onboarding
+      (ADR-0169); current tests cover already-bound Webhooks and ordinary
+      environment-local credentials, not new App installation.
 - [ ] Repeat GitLab project-token/private-clone/Issue-to-Run acceptance against
       an external TLS-enabled self-managed instance after the local CE gate.
 - [ ] Validate multi-user non-exclusive GitLab Issue claims and
