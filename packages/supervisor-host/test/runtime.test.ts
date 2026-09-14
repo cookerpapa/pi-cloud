@@ -158,9 +158,16 @@ describe("PiWorkerRuntime", () => {
     gateway.install(server);
     const address = await server.listen({ host: "127.0.0.1", port: 0 });
     const runWorkerOptions: PostgresPiWorkerOptions[] = [];
+    let stopFailure: Error | undefined;
     const runWorkerFactory = (options: PostgresPiWorkerOptions): SupervisorRunWorker => {
       runWorkerOptions.push(options);
-      return runWorker();
+      const worker = runWorker();
+      const stop = worker.stop.bind(worker);
+      worker.stop = async () => {
+        await stop();
+        if (stopFailure) throw stopFailure;
+      };
+      return worker;
     };
     let toolBrokerHealthy = true;
     let publisherFailure: Error | undefined;
@@ -355,7 +362,15 @@ describe("PiWorkerRuntime", () => {
       expect(second.terminalFailureCode).toBe("event_publisher_failed");
       publisherFailure = undefined;
 
-      await second.close();
+      stopFailure = new Error("Worker drain failed after stopping claims");
+      const closedGateway = vi.spyOn(TenantModelGateway.prototype, "close");
+      await expect(second.close()).rejects.toMatchObject({
+        code: "pi_worker_cleanup_failed",
+        cause: { errors: [stopFailure] },
+      });
+      expect(closedGateway).toHaveBeenCalledTimes(1);
+      closedGateway.mockRestore();
+      stopFailure = undefined;
       const gateways: TenantModelGateway[] = [];
       const startGateway = TenantModelGateway.prototype.start;
       const started = vi

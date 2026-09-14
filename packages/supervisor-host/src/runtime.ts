@@ -431,6 +431,12 @@ export class PiWorkerRuntime {
             await Promise.all([executionLogs.checkHealth?.(), modelGateway.checkProviderHealth()]);
           } catch (error) {
             if (error instanceof AcceptedFactPublisherFailedError && this.#state === "ready") {
+              operationalLog({
+                service: "pi-cloud-pi-worker",
+                level: "error",
+                event: "execution-log.failed",
+                attributes: { failureCode: error.code },
+              });
               this.#terminalFailureCode = error.code;
               this.#state = "failed";
               this.#client?.setAcceptingAssignments(false);
@@ -644,21 +650,36 @@ export class PiWorkerRuntime {
     // A Kubernetes scale-in is a drain, not a fencing event. Stop queue
     // polling first and give the active Runs their bounded settlement window;
     // owner replacement still uses stopCurrentBoot(), which revokes immediately.
-    await this.#runWorker?.stop().catch(() => undefined);
-    await this.#runSupervisor?.waitUntilAssignmentsSettled().catch(() => undefined);
-    this.#modelPermits?.close();
-    this.#nativeSessions?.close();
-    this.#subagentControl?.close();
-    await this.#client?.stop().catch(() => undefined);
-    await this.#managementServer?.close().catch(() => undefined);
-    await this.#modelGateway?.close().catch(() => undefined);
-    if (this.#ownsSessionMutationProducer) {
-      await this.#sessionMutationProducer?.close().catch(() => undefined);
+    const errors: unknown[] = [];
+    for (const close of [
+      () => this.#runWorker?.stop(),
+      () => this.#runSupervisor?.waitUntilAssignmentsSettled(),
+      () => this.#modelPermits?.close(),
+      () => this.#nativeSessions?.close(),
+      () => this.#subagentControl?.close(),
+      () => this.#client?.stop(),
+      () => this.#managementServer?.close(),
+      () => this.#modelGateway?.close(),
+      () =>
+        this.#ownsSessionMutationProducer ? this.#sessionMutationProducer?.close() : undefined,
+      () => (this.#ownsExecutionLogs ? this.#activeExecutionLogs?.close?.() : undefined),
+      () => (this.#ownsDatabase ? this.#database.destroy() : undefined),
+    ]) {
+      try {
+        await close();
+      } catch (error) {
+        errors.push(error);
+      }
     }
-    if (this.#ownsExecutionLogs) {
-      await this.#activeExecutionLogs?.close?.().catch(() => undefined);
+    if (errors.length > 0) {
+      this.#state = "failed";
+      throw new PiWorkerRuntimeError(
+        "pi_worker_cleanup_failed",
+        "Pi Worker resource cleanup failed",
+        false,
+        { cause: new AggregateError(errors, "Worker cleanup failures") },
+      );
     }
-    if (this.#ownsDatabase) await this.#database.destroy();
     if (this.#state !== "failed") this.#state = "stopped";
   }
 
@@ -679,7 +700,7 @@ export class PiWorkerRuntime {
         initiatedByClient: result.lastClose?.initiatedByClient ?? false,
       },
     });
-    if (result.reason === "terminal_failure") {
+    if (result.reason === "terminal_failure" && !this.#terminalSettled) {
       this.#terminalFailureCode = result.failureCode ?? "supervisor_connection_failed";
       this.#state = "failed";
       this.#settleTerminal("connection_failed");
