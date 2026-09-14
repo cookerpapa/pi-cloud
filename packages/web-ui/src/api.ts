@@ -16,7 +16,6 @@ import {
   parseCubeProxyConfigurationResource,
   parseLogoutResource,
   parseProjectResource,
-  parseRunResource,
   parseSessionResource,
   parseTenantIdentityResource,
   parseTenantRegistrationResource,
@@ -52,7 +51,6 @@ import {
   type SessionModelResource,
   type CubeProxyConfigurationResource,
   type LogoutResource,
-  type RunResource,
   type ExecutionMode,
   type SessionResource,
   type TenantIdentityResource,
@@ -654,17 +652,6 @@ export class PiCloudApi {
         this.#fetch,
         `/v1/conversations/${encodeURIComponent(sessionId)}/prunes`,
         jsonRequest({ turnId, entryId }, idempotencyKey),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async getRun(runId: string): Promise<RunResource> {
-    return parseRunResource(
-      await request(
-        this.#fetch,
-        `/v1/runs/${encodeURIComponent(runId)}`,
-        { method: "GET" },
         this.#authorizationToken,
       ),
     );

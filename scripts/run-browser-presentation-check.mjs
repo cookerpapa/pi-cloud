@@ -14,7 +14,13 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { ConversationTurn } from "/src/ConversationTurn.tsx";
 import { useResizablePanel } from "/src/use-resizable-panel.ts";
+import ChatApp from "/src/ChatApp.tsx";
+import { PiCloudApi } from "/src/api.ts";
+import { I18nProvider } from "/src/i18n.tsx";
+import { DEVELOPMENT_ENVIRONMENT_PROFILES, DEFAULT_NEW_CONVERSATION_MODEL } from "@pi-cloud/protocol";
+import "/src/product.css";
 
+const nativeRaf = window.requestAnimationFrame, nativeCancelRaf = window.cancelAnimationFrame;
 let frames = new Map(), frameId = 0;
 window.requestAnimationFrame = callback => { frames.set(++frameId, callback); return frameId; };
 window.cancelAnimationFrame = id => frames.delete(id);
@@ -35,6 +41,53 @@ window.renderTurn = (text, recoveredTextLength = 0) => root.render(
     status:"running",startedSequence:1,terminalSequence:null,stopReason:null,failure:null,cancellation:null,
     items:[{kind:"text",key:"text:1",text,firstSequence:1,lastSequence:2,recoveredTextLength}]
   }})));
+window.turnBodies = [];
+window.renderChat = () => {
+  window.requestAnimationFrame = nativeRaf; window.cancelAnimationFrame = nativeCancelRaf;
+  const sid = "10000000-0000-4000-8000-000000000001";
+  const profileId = "20000000-0000-4000-8000-000000000001";
+  const project = {projectId:"30000000-0000-4000-8000-000000000001",workspaceId:"40000000-0000-4000-8000-000000000001",name:"fixture",createdAt:new Date().toISOString()};
+  const models = [
+    {...DEFAULT_NEW_CONVERSATION_MODEL,displayName:"Fixture GPT",default:true,thinkingLevels:["off","medium","high"],defaultThinkingLevel:"medium",fastModeAvailable:true},
+    {provider:"deepseek",modelId:"deepseek-v4-pro",displayName:"Fixture DeepSeek",default:false,thinkingLevels:["off","medium","high"],defaultThinkingLevel:"high",fastModeAvailable:false}
+  ];
+  let selection = {...DEFAULT_NEW_CONVERSATION_MODEL,thinkingLevel:"medium",fastMode:false};
+  let session;
+  const modelResource = () => ({sessionId:sid,modelProfileId:profileId,...selection,
+    displayName:models.find(m=>m.provider===selection.provider).displayName});
+  Object.assign(PiCloudApi.prototype, {
+    getIdentity:async()=>({tenantId:"test-tenant",userId:"test-user",displayName:"Fixture",role:"owner",platformAdministrator:false}),
+    listConversations:async()=>({conversations:[],delegatedSessions:[]}),
+    listWorkspaces:async()=>({workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false}),
+    listDevelopmentEnvironments:async()=>({environments:[],profiles:DEVELOPMENT_ENVIRONMENT_PROFILES,truncated:false}),
+    getModelCatalog:async()=>({models}),
+    getConversationTree:async()=>({branches:[],delegatedSessions:[]}),
+    createSession:async (projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,model)=>{
+      selection=model; window.savedSelection=selection;
+      session={sessionId:sid,projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,state:"idle",workspaceState:"attached",modelProfileId:profileId,createdAt:new Date().toISOString()};
+      return session;
+    },
+    getSessionModel:async()=>modelResource(),
+    getConversation:async()=>({project,session,inheritedMessages:[],turns:[],historyTruncated:false}),
+  });
+  const nativeFetch=window.fetch;
+  window.fetch=async (url,init={})=>{
+    if(String(url).endsWith("/events")) return new Response(new ReadableStream({start(controller){
+      init.signal?.addEventListener("abort",()=>controller.close(),{once:true});
+    }}),{headers:{"content-type":"text/event-stream"}});
+    if(String(url).endsWith("/model") && init.method==="PUT") {
+      selection=JSON.parse(init.body); window.savedSelection=selection;
+      return Response.json(modelResource());
+    }
+    if(String(url).endsWith("/turns")) {
+      window.turnBodies.push(JSON.parse(init.body));
+      // Capture the real request builder without creating a model Run.
+      return Response.json({error:{code:"conflict",message:"Fixture does not execute models"}},{status:409});
+    }
+    return nativeFetch(url,init);
+  };
+  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp)));
+};
 window.fixtureReady = true;
 `;
 const server = await createServer({
@@ -111,6 +164,73 @@ try {
       await page.evaluate('document.body.classList.contains("product-panel-resizing")'),
       false,
     );
+    await page.evaluate("renderChat()");
+    await page.waitFor('document.querySelector(".product-model-menu-trigger")');
+    const fill = async (selector, value) => {
+      await page.evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});
+        const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto,'value').set.call(el,${JSON.stringify(value)});
+        el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    };
+    await fill(".product-composer textarea", "initial prompt");
+    await page.waitFor('!document.querySelector(".product-send-button").disabled');
+    await page.evaluate('document.querySelector(".product-send-button").click()');
+    await page.waitFor('document.querySelector(".product-execution-mode-choice input")');
+    await page.evaluate('document.querySelector(".product-execution-mode-choice input").click()');
+    await page.waitFor('document.querySelector(".product-progressive-options input")');
+    await fill(".product-progressive-options input", "Model contract");
+    await page.evaluate('document.querySelector(".product-workspace-modal").requestSubmit()');
+    await page.waitFor("window.turnBodies.length===1");
+    assert.equal(await page.evaluate("savedSelection.thinkingLevel"), "medium");
+
+    const openModel = async (providerIndex) => {
+      await page.waitFor('!document.querySelector(".product-model-menu-trigger").disabled');
+      await page.evaluate('document.querySelector(".product-model-menu-trigger").click()');
+      await page.waitFor('document.querySelector(".product-model-menu-panel")');
+      await page.evaluate(
+        `document.querySelectorAll('.product-model-menu-panel')[0].querySelectorAll('button')[${providerIndex}].click()`,
+      );
+      await page.waitFor('document.querySelectorAll(".product-model-menu-panel").length===2');
+      await page.evaluate(
+        'document.querySelectorAll(".product-model-menu-panel")[1].querySelector("button").click()',
+      );
+      await page.waitFor('document.querySelectorAll(".product-model-menu-panel").length===3');
+    };
+    const high = async () => {
+      await page.waitFor(
+        '!document.querySelectorAll(".product-model-menu-panel")[2].querySelector("button").disabled',
+      );
+      await page.evaluate(
+        `Array.from(document.querySelectorAll('.product-model-menu-panel')[2].querySelectorAll('button')).find(b=>b.querySelector('span')?.textContent==='High').click()`,
+      );
+      await page.waitFor('!document.querySelector(".product-model-menu-panel")');
+    };
+    await openModel(0);
+    await page.evaluate('document.querySelector(".product-model-menu-fast").click()');
+    await page.waitFor("savedSelection.fastMode===true");
+    await high();
+    assert.deepEqual(await page.evaluate("savedSelection"), {
+      provider: "openai-codex",
+      modelId: "gpt-5.6-sol",
+      thinkingLevel: "high",
+      fastMode: true,
+    });
+    await fill(".product-composer textarea", "existing prompt");
+    await page.waitFor('!document.querySelector(".product-send-button").disabled');
+    await page.evaluate('document.querySelector(".product-send-button").click()');
+    await page.waitFor("window.turnBodies.length===2");
+    await openModel(1);
+    await high();
+    assert.equal(await page.evaluate("savedSelection.fastMode"), false);
+    await fill(".product-composer textarea", "DeepSeek prompt");
+    await page.waitFor('!document.querySelector(".product-send-button").disabled');
+    await page.evaluate('document.querySelector(".product-send-button").click()');
+    await page.waitFor("window.turnBodies.length===3");
+    assert.deepEqual(
+      await page.evaluate("turnBodies.map(body=>body.thinkingLevel??null)"),
+      [null, null, null],
+      "Composer must use persisted Session settings, not an old per-Turn override",
+    );
   });
   console.log(
     JSON.stringify({
@@ -120,6 +240,8 @@ try {
       initialPanelWidth: true,
       resizeUnmountCleanup: true,
       pointerCancellation: true,
+      composerSessionSettings: true,
+      providerSwitchClearsFast: true,
     }),
   );
 } finally {

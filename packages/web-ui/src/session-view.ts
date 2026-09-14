@@ -5,7 +5,6 @@ import type {
   ConversationSessionResource,
   ProjectResource,
   ProjectEnvironmentResource,
-  RunResource,
   SessionState,
   SessionResource,
 } from "@pi-cloud/protocol";
@@ -134,10 +133,6 @@ export type SessionViewAction =
   | { type: "project.environment.refreshed"; environment: ProjectEnvironmentResource }
   | { type: "turn.accepted"; accepted: AcceptedTurnResource; prompt: string }
   | { type: "turn.cancellation.requested"; turnId: string }
-  | {
-      type: "run.reconciled";
-      run: Pick<RunResource, "runId" | "state" | "stopReason" | "failure">;
-    }
   | { type: "stream.status"; status: SessionStreamStatus }
   | { type: "stream.event"; event: PiCloudEvent }
   | { type: "api.error"; message: string }
@@ -696,75 +691,12 @@ export function sessionViewReducer(
       mailboxPosition: action.accepted.mailboxPosition,
       prompt: action.prompt,
       acceptedAt: action.accepted.acceptedAt,
-      status: turn.startedSequence === null ? "queued" : turn.status,
+      status:
+        turn.startedSequence === null && !["completed", "failed", "cancelled"].includes(turn.status)
+          ? "queued"
+          : turn.status,
     }));
     return { ...state, turns, apiError: null };
-  }
-  if (action.type === "run.reconciled") {
-    const turns = state.turns.map((turn): TurnView => {
-      if (turn.runId !== action.run.runId) return turn;
-      if (turn.status === "completed" || turn.status === "failed" || turn.status === "cancelled") {
-        return turn;
-      }
-      if (
-        turn.startedSequence !== null &&
-        ["completed", "failed", "cancelled", "timed_out", "superseded"].includes(action.run.state)
-      )
-        return turn;
-      if (action.run.state === "completed") {
-        // Once the durable event stream has started this Turn, its ordered
-        // terminal event is the only authority allowed to end presentation.
-        // Completing from the polling fallback would set streaming=false and
-        // flush the remaining progressive text before SSE reaches the browser.
-        if (turn.startedSequence !== null) return turn;
-        return {
-          ...turn,
-          status: "completed",
-          stopReason: action.run.stopReason ?? "stop",
-        };
-      }
-      if (action.run.state === "cancelled") {
-        return {
-          ...turn,
-          status: "cancelled",
-          stopReason: "cancelled",
-          cancellation: { reason: "cancelled", forced: false },
-        };
-      }
-      if (
-        action.run.state === "failed" ||
-        action.run.state === "timed_out" ||
-        action.run.state === "superseded"
-      ) {
-        return {
-          ...turn,
-          status: "failed",
-          failure:
-            action.run.failure === undefined
-              ? action.run.state === "timed_out"
-                ? { code: "run_timed_out", message: "运行超时，请重试。", retryable: true }
-                : { code: "run_failed", message: "这次运行失败了，请重试。", retryable: true }
-              : {
-                  ...action.run.failure,
-                  message: action.run.failure.message ?? "这次运行失败了，请重试。",
-                },
-        };
-      }
-      if (action.run.state === "cancel_requested") return { ...turn, status: "cancelling" };
-      if (action.run.state === "running" || action.run.state === "settling") {
-        return { ...turn, status: "running" };
-      }
-      return { ...turn, status: "queued" };
-    });
-    const hasActiveTurn = turns.some(
-      (turn) =>
-        turn.status === "queued" || turn.status === "running" || turn.status === "cancelling",
-    );
-    return {
-      ...state,
-      turns,
-      sessionState: hasActiveTurn ? state.sessionState : "idle",
-    };
   }
   if (action.type === "turn.cancellation.requested") {
     return {

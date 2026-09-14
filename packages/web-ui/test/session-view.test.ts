@@ -119,6 +119,37 @@ function preparedState(): SessionViewState {
 }
 
 describe("session transcript reducer", () => {
+  it("does not undo a streamed terminal when the input acceptance reply arrives later", () => {
+    const terminalEvents: PiCloudEvent[] = [
+      envelope(1, { type: "turn.completed", payload: { stopReason: "stop" } }),
+      envelope(1, {
+        type: "turn.failed",
+        payload: { code: "preparation_failed", message: "Not started", retryable: false },
+      }),
+      envelope(1, { type: "turn.cancelled", payload: { reason: "user_request", forced: false } }),
+    ];
+    for (const event of terminalEvents) {
+      let state = sessionViewReducer(createInitialSessionView(), {
+        type: "session.created",
+        project,
+        session,
+      });
+      state = sessionViewReducer(state, { type: "stream.event", event });
+      const terminal = state.turns[0]!.status;
+      state = sessionViewReducer(state, {
+        type: "turn.accepted",
+        accepted,
+        prompt: "Late HTTP acknowledgement",
+      });
+      expect(state.turns[0]).toMatchObject({
+        status: terminal,
+        prompt: "Late HTTP acknowledgement",
+        terminalSequence: 1,
+      });
+      expect(activeTurn(state)).toBeUndefined();
+    }
+  });
+
   it("keeps durable mailbox positions for queued follow-ups", () => {
     const state = sessionViewReducer(preparedState(), {
       type: "turn.accepted",
@@ -743,18 +774,17 @@ describe("session transcript reducer", () => {
     });
   });
 
-  it("reconciles a provisioning failure even when no session event was published", () => {
+  it("renders a sealed preparation failure without a preceding turn.started", () => {
     const state = sessionViewReducer(preparedState(), {
-      type: "run.reconciled",
-      run: {
-        runId: accepted.runId,
-        state: "failed",
-        failure: {
+      type: "stream.event",
+      event: envelope(1, {
+        type: "turn.failed",
+        payload: {
           code: "workspace_seed_unavailable",
           message: "Workspace source could not be provisioned",
           retryable: true,
         },
-      },
+      }),
     });
 
     expect(activeTurn(state)).toBeUndefined();
@@ -766,7 +796,7 @@ describe("session transcript reducer", () => {
     });
   });
 
-  it("does not let Run polling terminate an active SSE transcript", () => {
+  it("keeps a streamed transcript active until its ordered terminal event", () => {
     let state = preparedState();
     state = sessionViewReducer(state, {
       type: "stream.event",
@@ -777,14 +807,6 @@ describe("session transcript reducer", () => {
       event: envelope(2, { type: "assistant.text.delta", payload: { text: "still streaming" } }),
     });
 
-    state = sessionViewReducer(state, {
-      type: "run.reconciled",
-      run: {
-        runId: accepted.runId,
-        state: "completed",
-        stopReason: "stop",
-      },
-    });
     expect(state.turns[0]).toMatchObject({
       status: "running",
       items: [expect.objectContaining({ kind: "text", text: "still streaming" })],

@@ -711,57 +711,6 @@ export default function ChatApp() {
     update,
   ]);
 
-  // A Run can fail before the trusted Runner publishes its first session
-  // event (for example during Sandbox provisioning). Polling is only a
-  // terminal-state fallback for that pre-stream interval; an active SSE Turn
-  // remains owned by its ordered terminal event.
-  useEffect(() => {
-    const runId = currentTurn?.runId;
-    if (
-      runId === null ||
-      runId === undefined ||
-      currentTurn?.startedSequence !== null ||
-      authPhase !== "authenticated"
-    ) {
-      return;
-    }
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async (): Promise<void> => {
-      try {
-        const run = await api.getRun(runId);
-        if (cancelled) return;
-        update({ type: "run.reconciled", run });
-        if (
-          run.state === "completed" ||
-          run.state === "failed" ||
-          run.state === "cancelled" ||
-          run.state === "timed_out" ||
-          run.state === "superseded"
-        ) {
-          setInspectorRefreshSignal((value) => value + 1);
-          await refreshConversations().catch(() => undefined);
-          return;
-        }
-      } catch {
-        if (cancelled) return;
-      }
-      timer = setTimeout(() => void poll(), 1_000);
-    };
-    timer = setTimeout(() => void poll(), 500);
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [
-    api,
-    authPhase,
-    currentTurn?.runId,
-    currentTurn?.startedSequence,
-    refreshConversations,
-    update,
-  ]);
-
   const followConversationTail = useCallback((follow: boolean): void => {
     followingConversationTailRef.current = follow;
     setFollowingConversationTail(follow);
@@ -1043,7 +992,6 @@ export default function ChatApp() {
           session.sessionId,
           pendingInitialPrompt,
           newIdempotencyKey("turn"),
-          "off",
         );
         update({ type: "turn.accepted", accepted, prompt: pendingInitialPrompt });
         setPrompt("");
@@ -1228,12 +1176,7 @@ export default function ChatApp() {
           );
         }
       }
-      const accepted = await api.acceptTurn(
-        session.sessionId,
-        text,
-        newIdempotencyKey("turn"),
-        "off",
-      );
+      const accepted = await api.acceptTurn(session.sessionId, text, newIdempotencyKey("turn"));
       update({ type: "turn.accepted", accepted, prompt: text });
       followConversationTail(true);
       setPrompt("");

@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import WebSocket from "ws";
@@ -26,13 +26,20 @@ function chromeBinary() {
   throw new Error("A Chrome/Chromium binary is required for browser acceptance");
 }
 
-async function connectCdp(portNumber) {
+async function connectCdp(profile, chrome) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
+    if (chrome.exitCode !== null || chrome.signalCode !== null)
+      throw new Error("Test Chrome exited before its debugger became ready");
     try {
-      const targets = await fetch(`http://127.0.0.1:${String(portNumber)}/json`).then((response) =>
-        response.json(),
+      // Read the endpoint created in THIS process's private profile. A random
+      // fixed port could attach a parallel test to somebody else's browser.
+      const portNumber = Number(
+        (await readFile(resolve(profile, "DevToolsActivePort"), "utf8")).split("\n")[0],
       );
+      const targets = await fetch(`http://127.0.0.1:${String(portNumber)}/json`, {
+        signal: AbortSignal.timeout(2000),
+      }).then((response) => response.json());
       const page = targets.find((candidate) => candidate.type === "page");
       if (page?.webSocketDebuggerUrl !== undefined) {
         const socket = new WebSocket(page.webSocketDebuggerUrl);
@@ -42,6 +49,13 @@ async function connectCdp(portNumber) {
         });
         let nextId = 0;
         const pending = new Map();
+        const disconnected = () => {
+          for (const request of pending.values())
+            request.reject(new Error("Test Chrome debugger disconnected"));
+          pending.clear();
+        };
+        socket.on("close", disconnected);
+        socket.on("error", disconnected);
         socket.on("message", (raw) => {
           const message = JSON.parse(String(raw));
           if (message.id === undefined || !pending.has(message.id)) return;
@@ -84,8 +98,8 @@ async function stopChrome(chrome, profile) {
     try {
       await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       return;
-    } catch {
-      if (attempt === 5) return;
+    } catch (error) {
+      if (attempt === 5) throw error;
       await wait(attempt * 100);
     }
   }
@@ -100,15 +114,18 @@ export async function withChromePage(
   } = {},
   operation,
 ) {
+  const binary = chromeBinary();
   const profile = await mkdtemp(resolve(tmpdir(), profilePrefix));
-  const debuggingPort = 9_300 + Math.floor(Math.random() * 300);
   const chrome = spawn(
-    chromeBinary(),
+    binary,
     [
       "--headless=new",
       "--no-sandbox",
       "--disable-gpu",
-      `--remote-debugging-port=${String(debuggingPort)}`,
+      "--disable-background-networking",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--remote-debugging-port=0",
       `--user-data-dir=${profile}`,
       ...additionalArguments,
       "about:blank",
@@ -117,7 +134,7 @@ export async function withChromePage(
   );
   let cdp;
   try {
-    cdp = await connectCdp(debuggingPort);
+    cdp = await connectCdp(profile, chrome);
     await cdp.send("Page.enable");
     await cdp.send("Runtime.enable");
     await cdp.send("Network.enable");
