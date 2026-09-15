@@ -123,8 +123,17 @@ async function replaceControlPlane() {
         { encoding: "utf8" },
       ).trim(),
     );
-  const beforeHead = logHead();
   await executeCompose(["kill", "--signal", "SIGKILL", "control-plane"]);
+  assert.equal(
+    execFileSync(
+      "docker",
+      ["inspect", "--format", "{{.State.Running}}", "pi-cloud-production-control-plane-1"],
+      { encoding: "utf8" },
+    ).trim(),
+    "false",
+    "Control Plane did not remain stopped during the outage probe",
+  );
+  const beforeHead = logHead();
   await new Promise((resolve) => setTimeout(resolve, 1500));
   recordsProducedWhileProjectorDown = logHead() - beforeHead;
   await executeCompose(["up", "--detach", "--no-deps", "--wait", "control-plane"]);
@@ -171,11 +180,21 @@ if (
 const api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production restart check requires a real model");
+const selection = {
+  provider: "deepseek",
+  modelId: "deepseek-v4-flash",
+  thinkingLevel: "off",
+  fastMode: false,
+};
 const project = await api.createProject(`Control Plane restart ${suffix}`);
 const session = await api.createSession(
   project.projectId,
   project.workspaceId,
   "Control Plane restart continuity",
+  "elastic",
+  "starter",
+  "/workspace",
+  selection,
 );
 const startedAt = performance.now();
 const accepted = await api.acceptTurn(
@@ -183,7 +202,7 @@ const accepted = await api.acceptTurn(
   [
     "Do not call tools.",
     `Start with this exact marker: ${marker}.`,
-    "Then write forty numbered Chinese sentences about durable cloud agent execution.",
+    "Then write one hundred and twenty numbered Chinese sentences about durable cloud agent execution.",
     "Each sentence must contain at least fifteen Chinese characters so the response remains streaming while infrastructure restarts.",
   ].join(" "),
   newIdempotencyKey("control-plane-restart"),
@@ -291,8 +310,8 @@ try {
     accepted: true,
     piCloudRevision: testedRevision,
     checkedAt: new Date().toISOString(),
-    provider: model.provider,
-    modelId: model.modelId,
+    provider: selection.provider,
+    modelId: selection.modelId,
     runId: accepted.runId,
     turnId: accepted.turnId,
     firstTextSequence,

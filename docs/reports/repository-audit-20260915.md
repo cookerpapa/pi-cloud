@@ -319,6 +319,15 @@ The two owned old browser/Snake artifact directories were removed (about 500 KiB
 Original identities and formal logs remain untouched. New test identity rows,
 the baseline fixtures and the isolated PostgreSQL container still require cleanup.
 
+Real Control Plane/Projector SIGKILL during a paid DeepSeek stream passed on
+runtime `5558ab15`: 41 Kafka records were produced after verifying the CP was
+actually stopped; Worker boots did not change. SSE reconnected, the previously
+visible prefix survived byte-for-byte, live text matched canonical history and
+the Run completed with one Attempt (18.86 s total including outage/replacement).
+This does not certify Worker death or physical multi-node failures. The probe now
+measures its Kafka baseline after the kill and explicitly selects/reports the
+tested model instead of reporting an unrelated tenant default.
+
 Before mutation, inventory existing tenants/users/resources, image revisions and
 configuration digests without disclosing credentials. Register test resources
 explicitly. Delete only those fixtures after drain/seal/physical purge; preserve
