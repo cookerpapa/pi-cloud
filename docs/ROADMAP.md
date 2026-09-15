@@ -39,9 +39,9 @@
 
 ## Current release gate
 
-- [ ] ADR-0171: replace Subagent Workspace copies with shared-Volume temporary
-      compute and explicit cwd; validate Git worktree coding and local merge.
-      [Current work record](reports/subagent-compute-20260915.md).
+- [x] ADR-0171: shared-Volume temporary compute and explicit cwd; real Git
+      worktree coding/local merge, nested compute and same-port home-Volume previews.
+      [Acceptance](reports/subagent-compute-20260915.md).
 
 - [x] Log-driven Subagent starts, messages and cancellations; Cube-only workflow
       scripts and Worker-native Lanes; [paid acceptance and boundaries](reports/log-driven-subagents-20260913.md).

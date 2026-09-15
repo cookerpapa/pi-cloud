@@ -3,6 +3,11 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+Latest slice: [ADR-0171 acceptance](subagent-compute-20260915.md) retires the
+LOCK-01 copy path through owner-approved shared-Volume compute scopes. Worker/
+templates run `fd07a098`; Broker/Volume Gateway run `b84ecb30`. Its paid fixtures
+are cleaned; the older audit baseline and remaining review gates are still open.
+
 ## Scope and execution
 
 Read maintained code, tests, migrations, deployment, configuration, CI and current
@@ -135,7 +140,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | FILE-02 | Credential reads followed a Workspace symlink outside its volume | Reproduced against an owned fixture; open non-following, nonblocking regular file and bound actual bytes read |
 | FILE-03 | Browser path validation could race a parent-directory replacement before open/readdir | Reproduced outside fixture content/names. Validate the opened Linux descriptor and retain it for listing; bound reads if files grow after stat. Volume regression suite passes |
 | PERF-02 | Git preflight held the Volume lock/PG lock connection during remote network wait | Reproduced blocked directory access; release after reading the credential, then perform the independent network probe |
-| LOCK-01 | Volume advisory-lock connection failure is detected after the filesystem callback completes | Confirmed with two real Gateway instances, isolated PG and temporary files: pause A after copy, terminate its PG backend, let B publish and write a marker, resume A. A reports failure but its recursive target removal changes B's acknowledged generation and deletes B's marker. Storage-contract change requested; no fix applied yet. Proposed atomic non-overwriting publication must coordinate with Cube Plugin's initially nonempty Workspace directory. No real Workspace was affected |
+| LOCK-01 | Lost copy lock let an old copier remove a newer acknowledged target | Reproduced on owned temporary files. The owner chose shared-Volume compute instead of independent child copies (ADR-0171). Copy APIs/lifecycle are removed; real worktree, parallel/nested compute and home-Volume acceptance pass. No new atomic-copy protocol or Volume Plugin change is introduced |
 | MEM-02 | Supervisor retained completed Assignments and publisher contexts, plus command/control bookkeeping | Reproduced 64 completed synthetic Runs retaining all 64 publishers and ~65 MiB of owned buffers with zero active Sessions. Clear the publisher at completion/pre-start release: zero publishers and ~1 MiB remain; completed duplicate commands still reuse their outcome. Long-term command/control/epoch bookkeeping retention remains under review |
 | LIFE-06 | A synchronous Runner startup throw bypassed the common completion cleanup and stranded its slot | Reproduced active count remaining 1. Make the event-boundary method async so synchronous and asynchronous failures share finalization; regression passes |
 | LIFE-07 | Worker entrypoint acquired observability/DB before its cleanup scope; constructor failures leaked acquired resources and secondary errors were swallowed | Three regressions failed before. One ordered cleanup path covers partial acquisition, preserves primary/cleanup errors, and removes signal listeners; four lifecycle tests pass |
@@ -173,9 +178,9 @@ high/Standard smoke Runs completed. DeepSeek API/SSE first text was 1,828.1 ms,
 including 1,482.5 ms on the provider route; GPT's cross-process breakdown was
 rejected because the host wall clock stepped, not used as a latency claim.
 Full `npm run check` at this slice completed with **928 passed / two gated skips**
-and all workspace type checks passing. LOCK-01 is a separate intentionally failing
-private reproduction, not a skipped or solved regression. The owner requested a
-detailed storage-contract discussion; no Workspace storage changes have been made.
+and all workspace type checks passing. At that earlier checkpoint LOCK-01 had
+only a failing private reproduction. The subsequent owner-approved ADR-0171
+retires that copy path; see the latest slice above, not the old copy proposal.
 
 ARCH-01 implemented locally: positive Agent exit and committed seal restore the
 failed Session's admission, without changing the old failure or replaying Tools.

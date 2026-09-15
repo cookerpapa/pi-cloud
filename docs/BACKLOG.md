@@ -33,7 +33,7 @@ Volume architecture. Historical experiments remain in Git history.
       Deployed Web repetition passes 93 controls and measures first text paint;
       LOCK-01 has a real lock-loss/Volume-overwrite reproduction. The owner
       approved removing Subagent copies rather than extending the copy protocol
-      (ADR-0171); cutover acceptance remains open.
+      (ADR-0171); shared-Volume compute cutover and live acceptance now pass.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;
@@ -203,9 +203,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Subagent execution
 
-- [ ] ADR-0171: shared persistent Volume, optional temporary compute and frozen
+- [x] ADR-0171: shared persistent Volume, optional temporary compute and frozen
       cwd; remove copy APIs, validate worktree creation/merge and scope-specific
-      cleanup. [Current work record](reports/subagent-compute-20260915.md).
+      cleanup. [Acceptance](reports/subagent-compute-20260915.md).
 
 - [x] ADR-0166: ordered Projector-driven child admission and communication,
       Worker-owned native Lanes, event-driven result delivery, isolated Cube

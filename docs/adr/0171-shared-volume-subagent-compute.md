@@ -1,6 +1,8 @@
 # ADR-0171: Subagent compute placement and explicit working directories
 
-Status: accepted by owner on 2026-09-15; implementation in progress.
+Status: accepted and implemented on 2026-09-15.
+
+[Implementation and live acceptance](../reports/subagent-compute-20260915.md).
 
 ## Decision
 
