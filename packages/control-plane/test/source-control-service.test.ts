@@ -3,6 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createHmac, generateKeyPairSync, randomUUID } from "node:crypto";
 import type { Kysely } from "kysely";
+import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ToolBrokerClient } from "@pi-cloud/tool-broker/client";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
@@ -32,27 +33,43 @@ function stubCredentialBroker() {
 let pglite: PGlite;
 let socket: PGLiteSocketServer;
 let database: Kysely<Database>;
+const external = process.env.PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL;
+let administrator: Pool | undefined;
+let testDatabase: string | undefined;
 
 beforeAll(async () => {
-  pglite = await PGlite.create();
-  socket = new PGLiteSocketServer({
-    db: pglite,
-    host: "127.0.0.1",
-    port: 0,
-    maxConnections: 4,
-  });
-  await socket.start();
-  database = createDatabase({
-    connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
-    maxConnections: 2,
-  });
+  if (external) {
+    administrator = new Pool({ connectionString: external, max: 1 });
+    testDatabase = `pi_source_control_${randomUUID().replaceAll("-", "")}`;
+    await administrator.query(`create database "${testDatabase}"`);
+    const endpoint = new URL(external);
+    endpoint.pathname = `/${testDatabase}`;
+    database = createDatabase({ connectionString: endpoint.toString(), maxConnections: 4 });
+  } else {
+    pglite = await PGlite.create();
+    socket = new PGLiteSocketServer({
+      db: pglite,
+      host: "127.0.0.1",
+      port: 0,
+      maxConnections: 4,
+    });
+    await socket.start();
+    database = createDatabase({
+      connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
+      maxConnections: 2,
+    });
+  }
   await runMigrations(database, "up");
 });
 
 afterAll(async () => {
   await database.destroy();
-  await socket.stop();
-  await pglite.close();
+  await socket?.stop();
+  await pglite?.close();
+  if (administrator && testDatabase) {
+    await administrator.query(`drop database "${testDatabase}"`);
+    await administrator.end();
+  }
 });
 
 function identity(tenant: Awaited<ReturnType<typeof createPrivateTenant>>): TenantRequestIdentity {
@@ -99,6 +116,9 @@ describe.sequential("source-control App boundary", () => {
     });
     let signingToken = "";
     let rejectClaimNotes = false;
+    let inspectPendingSync: (() => Promise<void>) | undefined;
+    const claimNotes: Array<{ id: number; body: string }> = [];
+    let loseNoteAcknowledgement = false;
     const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (
@@ -130,10 +150,23 @@ describe.sequential("source-control App boundary", () => {
         return new Response("{}", { status: 404 });
       }
       if (url.includes("/api/v4/projects/501/issues/12/notes") && init?.method === undefined) {
-        return new Response("[]", { status: 200 });
+        return new Response(JSON.stringify(claimNotes), { status: 200 });
       }
       if (url.endsWith("/api/v4/projects/501/issues/12/notes") && init?.method === "POST") {
+        await inspectPendingSync?.();
+        claimNotes.push({
+          id: 701,
+          body: (JSON.parse(String(init.body)) as { body: string }).body,
+        });
         return new Response(JSON.stringify({ id: 701 }), { status: 201 });
+      }
+      if (url.endsWith("/api/v4/projects/501/issues/12/notes/701") && init?.method === "PUT") {
+        claimNotes[0]!.body = (JSON.parse(String(init.body)) as { body: string }).body;
+        if (loseNoteAcknowledgement) {
+          loseNoteAcknowledgement = false;
+          throw new Error("Fixture lost the reply after applying the note update");
+        }
+        return new Response(JSON.stringify({ id: 701 }), { status: 200 });
       }
       return new Response("{}", { status: 404 });
     });
@@ -409,7 +442,38 @@ describe.sequential("source-control App boundary", () => {
     await expect(service.unclaimIssueJob(claimant, pendingJob.jobId)).rejects.toMatchObject({
       code: "source_control_conflict",
     });
+    inspectPendingSync = async () => {
+      // Independent transaction visibility requires real PostgreSQL; PGlite's
+      // single backend serializes a second connection behind the held transaction.
+      if (!external) return;
+      const pending = await database
+        .selectFrom("source_control_issue_jobs")
+        .select("claim_sync_pending")
+        .where("id", "=", pendingJob.jobId)
+        .executeTakeFirstOrThrow();
+      expect
+        .soft(pending.claim_sync_pending, "Unfinished external effect must remain durably pending")
+        .toBe(true);
+      await expect(service.reconcileNextClaimSync()).resolves.toBe(false);
+    };
     await expect(service.reconcileNextClaimSync()).resolves.toBe(true);
+    inspectPendingSync = undefined;
+    await database
+      .updateTable("source_control_issue_jobs")
+      .set({ claim_sync_pending: true })
+      .where("id", "=", pendingJob.jobId)
+      .execute();
+    loseNoteAcknowledgement = true;
+    await expect(service.reconcileNextClaimSync()).rejects.toMatchObject({ retryable: true });
+    expect(
+      await database
+        .selectFrom("source_control_issue_jobs")
+        .select("claim_sync_pending")
+        .where("id", "=", pendingJob.jobId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ claim_sync_pending: true });
+    await expect(service.reconcileNextClaimSync()).resolves.toBe(true);
+    expect(claimNotes).toHaveLength(1);
     rejectClaimNotes = true;
     await database
       .updateTable("source_control_issue_jobs")

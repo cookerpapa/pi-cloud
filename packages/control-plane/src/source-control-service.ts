@@ -812,7 +812,7 @@ export class SourceControlService {
   }
 
   async reconcileNextClaimSync(): Promise<boolean> {
-    const jobId = await this.#database.transaction().execute(async (transaction) => {
+    const result = await this.#database.transaction().execute(async (transaction) => {
       const pending = await transaction
         .selectFrom("source_control_issue_jobs")
         .select("id")
@@ -824,27 +824,31 @@ export class SourceControlService {
         .skipLocked()
         .executeTakeFirst();
       if (pending === undefined) return undefined;
+      // This low-volume metadata upsert holds the job lock through the bounded
+      // provider call. A crash leaves it pending; another reconciler cannot race
+      // its note creation or overwrite a newer claim with an older snapshot.
+      let failure: unknown;
+      try {
+        await this.#syncGitLabIssueClaims(pending.id, transaction);
+      } catch (error) {
+        failure = error;
+        if (
+          !(
+            error instanceof GitLabProjectClientError || error instanceof SourceControlServiceError
+          ) ||
+          error.retryable
+        )
+          return { failure };
+      }
       await transaction
         .updateTable("source_control_issue_jobs")
         .set({ claim_sync_pending: false })
         .where("id", "=", pending.id)
         .executeTakeFirstOrThrow();
-      return pending.id;
+      return { failure };
     });
-    if (jobId === undefined) return false;
-    try {
-      await this.#syncGitLabIssueClaims(jobId);
-    } catch (error: unknown) {
-      const retryable = !(error instanceof GitLabProjectClientError) || error.retryable;
-      await this.#database
-        .updateTable("source_control_issue_jobs")
-        .set({ claim_sync_pending: retryable, updated_at: this.#clock() })
-        .where("id", "=", jobId)
-        .execute()
-        .catch(() => undefined);
-      throw error;
-    }
-    return true;
+    if (result?.failure !== undefined) throw result.failure;
+    return result !== undefined;
   }
 
   async acceptGitHubWebhook(
@@ -1897,12 +1901,15 @@ export class SourceControlService {
     return undefined;
   }
 
-  async #gitlabClient(installation: Selectable<SourceControlInstallationTable>): Promise<{
+  async #gitlabClient(
+    installation: Selectable<SourceControlInstallationTable>,
+    database: Kysely<Database> = this.#database,
+  ): Promise<{
     client: GitLabProjectClient;
     credential: import("./source-control-credential-vault.ts").GitLabProjectCredential;
   }> {
     const runtime = this.#requireGitLab();
-    const sealed = await this.#database
+    const sealed = await database
       .selectFrom("source_control_credentials")
       .select([
         "version",
@@ -1950,8 +1957,12 @@ export class SourceControlService {
     };
   }
 
-  async #gitlabClientByInternalInstallation(tenantId: string, installationId: string) {
-    const installation = await this.#database
+  async #gitlabClientByInternalInstallation(
+    tenantId: string,
+    installationId: string,
+    database: Kysely<Database> = this.#database,
+  ) {
+    const installation = await database
       .selectFrom("source_control_installations")
       .selectAll()
       .where("tenant_id", "=", tenantId)
@@ -1965,7 +1976,7 @@ export class SourceControlService {
         "GitLab project connection is unavailable",
       );
     }
-    return this.#gitlabClient(installation);
+    return this.#gitlabClient(installation, database);
   }
 
   async #assertIssueClaimable(identity: TenantRequestIdentity, jobId: string): Promise<void> {
@@ -2020,8 +2031,8 @@ export class SourceControlService {
     return job;
   }
 
-  async #syncGitLabIssueClaims(jobId: string): Promise<void> {
-    const job = await this.#database
+  async #syncGitLabIssueClaims(jobId: string, transaction: Transaction<Database>): Promise<void> {
+    const job = await transaction
       .selectFrom("source_control_issue_jobs as job")
       .innerJoin("source_control_repositories as repository", (join) =>
         join
@@ -2040,7 +2051,7 @@ export class SourceControlService {
       .where("job.provider", "=", "gitlab")
       .executeTakeFirst();
     if (job === undefined) return;
-    const claims = await this.#database
+    const claims = await transaction
       .selectFrom("source_control_issue_claims as claim")
       .select([
         "claim.username",
@@ -2068,6 +2079,7 @@ export class SourceControlService {
     const { client } = await this.#gitlabClientByInternalInstallation(
       job.tenantId,
       job.installationId,
+      transaction,
     );
     const existing = await client.findIssueNote({
       projectId: job.providerRepositoryId,
