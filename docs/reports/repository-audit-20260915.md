@@ -15,6 +15,11 @@ The shared adapter now bounds named SELECTs to 128 per connection. Actual PG
 regressions cover changing values/JSON/int8, cache exhaustion, transaction rollback,
 idle reconnection and in-flight cancellation with a one-connection pool.
 Implementation rollout/paid performance validation are still pending.
+The first full run found shared-backend statement-name collisions in PGlite
+boot-provisioning tests and was stopped after retaining the failures. Names now
+use a per-client namespace and bounded ordinal, not a SQL-only hash shared across
+clients. A two-client regression and all five provisioning regressions pass;
+the complete fixed-revision gate must be rerun before deployment.
 References: [pg named statements](https://node-postgres.com/features/queries#prepared-statements),
 [Kysely-maintained alternate dialect](https://github.com/kysely-org/kysely-postgres-js).
 

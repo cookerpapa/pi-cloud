@@ -1,6 +1,6 @@
 import { Kysely, PostgresDialect, type PostgresPoolClient } from "kysely";
 import { Client, Pool, type PoolClient } from "pg";
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { Database } from "./database-types.ts";
 
 export type CreateDatabaseOptions = {
@@ -48,6 +48,8 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
             // parameterized SELECTs a name so PostgreSQL can reuse their plans.
             // Bound server-side plans too; other SQL keeps pg's unnamed behavior.
             const statements = new Map<string, string>();
+            // Names remain client-local even behind a multiplexing test backend.
+            const namespace = `pc_${randomUUID().replaceAll("-", "")}_`;
             connection = {
               get processID() {
                 return (client as PoolClient & { processID: number }).processID;
@@ -57,7 +59,7 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
                 if (typeof text === "string" && /^\s*select\s/i.test(text) && parameters?.length) {
                   let name = statements.get(text);
                   if (!name && statements.size < MAX_PREPARED_SELECTS_PER_CONNECTION) {
-                    name = `pc_${createHash("sha256").update(text).digest("base64url")}`;
+                    name = `${namespace}${statements.size}`;
                     statements.set(text, name);
                   }
                   if (name) return client.query({ name, text, values: [...parameters] });
