@@ -91,3 +91,25 @@ Seven real-PG tenant/Broker tests pass with that teardown.
 
 Template retention selected eight old templates but Cube cleanup still times out
 against the stale node endpoint; none of those eight is counted as deleted.
+
+## Extended live boundaries
+
+The second DeepSeek pass completed 13 parent Turns and 17 children, including a
+shared grandchild in ephemeral child compute. PG/runtime evidence shows child and
+grandchild share the same compute scope, physical Cube, cwd and family lease.
+Usage: input 25,066, cacheRead 389,376, output 9,410. Its Volume purge is confirmed.
+
+The development-machine run also passed: a temporary child mounts the same home
+Volume at `/home/user`, does not inherit the parent's `/etc` marker, writes a file
+visible to the parent and serves a distinct page on the parent's port 5173.
+Both preview routes, Terminal/SSH, Broker restart, VM pause/resume and final
+machine/Volume release passed. See the latest development-environment report.
+
+A real negative cwd case exposed a gap: a deterministic Volume error became the
+Broker's generic retryable error, leaving preparation queued indefinitely.
+Additionally, raw missing-path errno from an initialized Volume was classified
+as transient by the Volume HTTP boundary. The patch preserves known typed Volume
+errors through Broker RPC and converts deterministic browse errno to a redacted,
+non-retryable path error. It does not retry, create directories or fall back.
+Forty targeted regressions pass; live rejection verification is pending. The
+stuck owned test Run was explicitly cancelled and archived before deployment.

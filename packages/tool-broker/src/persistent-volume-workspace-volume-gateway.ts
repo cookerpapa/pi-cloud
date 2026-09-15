@@ -74,6 +74,21 @@ function safeBrowsePath(value: string, allowEmpty: boolean): string {
   return path;
 }
 
+function rethrowBrowseFailure(error: unknown): never {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    ["ENOENT", "ENOTDIR", "EACCES", "EPERM", "ELOOP"].includes(String(error.code))
+  ) {
+    throw new WorkspaceVolumeGatewayError(
+      "workspace_path_unavailable",
+      "Workspace path does not exist or is not accessible",
+      false,
+    );
+  }
+  throw error;
+}
+
 function privateGitHost(hostname: string): boolean {
   if (
     hostname === "localhost" ||
@@ -418,7 +433,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       } finally {
         await handle.close();
       }
-    });
+    }).catch(rethrowBrowseFailure);
   }
 
   async readFile(input: WorkspaceVolumeGatewayReadFileInput): Promise<{
@@ -467,7 +482,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       } finally {
         await handle.close();
       }
-    });
+    }).catch(rethrowBrowseFailure);
   }
 
   async authorizeSourceCredential(

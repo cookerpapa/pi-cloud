@@ -319,7 +319,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     expect(await readdir(workspaceRoot)).toEqual([]);
     await expect(
       mover.listDirectory({ ...identity("empty"), rootPath: "", path: "missing" }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ retryable: false });
     await mover.close();
   });
 
@@ -354,8 +354,11 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       for (const invalid of ["missing", "escape", "../escape"]) {
         await expect(
           client.listDirectory({ ...scope, rootPath: "", path: invalid }),
-        ).rejects.toThrow();
+        ).rejects.toMatchObject({ retryable: false });
       }
+      await expect(
+        client.readFile({ ...scope, rootPath: "", path: "missing.txt", maximumBytes: 32 }),
+      ).rejects.toMatchObject({ code: "workspace_path_unavailable", retryable: false });
     } finally {
       await client.close();
       await server.close();

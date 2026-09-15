@@ -28,6 +28,7 @@ import {
   ToolBrokerClient,
   ToolBrokerOwnerRedirectError,
   ToolBrokerServer,
+  WorkspaceVolumeGatewayError,
   type ToolBrokerBackend,
 } from "../src/index.ts";
 
@@ -218,6 +219,45 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
 }
 
 describe("Tool Broker authenticated RPC", () => {
+  it.each([false, true])(
+    "preserves a Volume error's retryability across Broker RPC: %s",
+    async (retryable) => {
+      const broker = backend();
+      vi.spyOn(broker, "listWorkspaceDirectory").mockRejectedValueOnce(
+        new WorkspaceVolumeGatewayError(
+          "workspace_path_unavailable",
+          "Workspace path is unavailable",
+          retryable,
+        ),
+      );
+      const server = new ToolBrokerServer({
+        commands,
+        host: "127.0.0.1",
+        port: 0,
+        serviceToken: SERVICE_TOKEN,
+        workspaceServiceToken: WORKSPACE_SERVICE_TOKEN,
+        broker,
+      });
+      servers.push(server);
+      const client = new ToolBrokerClient({
+        baseUrl: await server.listen(),
+        serviceToken: WORKSPACE_SERVICE_TOKEN,
+        allowInsecureHttp: true,
+      });
+      await expect(
+        client.listWorkspaceDirectory({
+          toolBrokerProtocolVersion: 1,
+          type: "workspace.list_directory",
+          requestId: crypto.randomUUID(),
+          tenantId: assignment.tenantId,
+          workspaceId: assignment.workspaceId,
+          sessionId: assignment.sessionId,
+          rootPath: "",
+          path: "missing",
+        }),
+      ).rejects.toMatchObject({ code: "workspace_path_unavailable", retryable });
+    },
+  );
   it("closes its HTTP listener even when the provider teardown fails", async () => {
     const broker = backend();
     const failure = new Error("provider cleanup failed");

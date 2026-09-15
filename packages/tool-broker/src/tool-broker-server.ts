@@ -37,6 +37,7 @@ import {
   TOOL_BROKER_SOURCE_CONTROL_PATH,
 } from "./tool-broker-client.ts";
 import { ToolBrokerError } from "./sandbox-provider.ts";
+import { WorkspaceVolumeGatewayError } from "./workspace-volume-gateway-contract.ts";
 import { ToolBrokerOwnerRedirectError, type ToolBroker } from "./tool-broker.ts";
 import { TOOL_BROKER_LOG_DELIVERY_PATH, type ToolLogDelivery } from "./tool-command-router.ts";
 import type { ToolCommandExecutor } from "./tool-command-executor.ts";
@@ -124,6 +125,8 @@ function bearer(value: string | undefined): string | undefined {
 
 function safeFailure(error: unknown): ToolBrokerError {
   if (error instanceof ToolBrokerError) return error;
+  if (error instanceof WorkspaceVolumeGatewayError)
+    return new ToolBrokerError(error.code, error.message, error.retryable);
   if (
     typeof error === "object" &&
     error !== null &&
