@@ -153,6 +153,13 @@ observe pool wait time under the configured model/Lane concurrency, and use a
 connection proxy before multiplying connections across many replicas. Broker
 heartbeat must leave more than one missed interval before lease expiry.
 
+The shared database adapter retains at most 128 named, parameterized SELECT
+statements per physical connection. PostgreSQL may reuse their plans; query
+results and parameter values are never cached. Other statements use the same
+`pg` client normally. This adds neither a query retry nor a database round trip.
+The bound lives in `packages/database/src/client.ts`; schema-changing deployment
+still requires draining/restarting the affected processes.
+
 Lease/startup-claim deadlines and final expiry decisions use primary PostgreSQL
 time after authority locks (ADR-0170). Worker/Broker local timers use conservative
 monotonic observations, not application wall clocks. There is no legacy-clock
@@ -359,7 +366,11 @@ Kubernetes Secret for credentials. Important value groups are:
 - `networkPolicy.externalEgressCidrs`;
 - `images` and `global.imageRevision`.
 
-The database URL may use PgBouncer transaction pooling. The separate
+The database URL may use PgBouncer transaction pooling with protocol-level
+prepared-statement tracking enabled (`max_prepared_statements > 0`, PgBouncer
+1.21 or newer; start with 128). Do not use SQL-level PREPARE/EXECUTE wrappers.
+See [PgBouncer's configuration contract](https://www.pgbouncer.org/config.html#max_prepared_statements).
+The separate
 notification URL must connect directly to PostgreSQL because `LISTEN` is
 session-scoped. The Volume Gateway also mounts this direct Secret key for its
 session-scoped advisory locks; transaction-pooling endpoints must not be used

@@ -130,7 +130,8 @@ web:
 
 external:
   database:
-    # database-url should target PgBouncer transaction pooling. The separate
+    # PgBouncer transaction pooling requires protocol prepared-statement tracking
+    # (PgBouncer >=1.21, max_prepared_statements >0; start with 128). The separate
     # database-notification-url Secret key must target PostgreSQL directly.
     secretKey: database-url
     notificationSecretKey: database-notification-url

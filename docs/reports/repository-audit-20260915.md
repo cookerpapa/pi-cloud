@@ -3,6 +3,39 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+September 16 continuation: remote CI for `7b5b7587` is green. Isolated actual PG
+profiling with `pg_stat_statements.track_planning` confirms the two main claim
+queries spend substantially more time planning than executing. Scalar-subquery
+rewrites did not show stable benefit and were reverted; no planner GUC changed
+in production. A pg-native named-statement experiment improved claim latency.
+Kysely's maintained Postgres.js dialect was evaluated but rejected for direct
+adoption: its JSON parameter serialization changed an existing recipe into a
+JSON string. Keep the current pg driver, encoders, pool errors and no-retry behavior.
+The shared adapter now bounds named SELECTs to 128 per connection. Actual PG
+regressions cover changing values/JSON/int8, cache exhaustion, transaction rollback,
+idle reconnection and in-flight cancellation with a one-connection pool.
+Implementation rollout/paid performance validation are still pending.
+References: [pg named statements](https://node-postgres.com/features/queries#prepared-statements),
+[Kysely-maintained alternate dialect](https://github.com/kysely-org/kysely-postgres-js).
+
+Controlled final A/B uses fresh databases, identical 48-Run waves, four pooled
+connections, a two-CPU/768-MiB PG container, default planner settings, and the
+same real Run admission/settlement code with a no-model backend. No Kafka/Cube
+or model time is included. The after case uses the actual `createDatabase`
+implementation, not the earlier two-query prototype. This is one paired sample,
+not a deployment SLO or a universal claim about all SQL workloads.
+
+| Concurrent dispatch calls | Before claim p50/p95 (ms) | Prepared SELECTs p50/p95 (ms) |
+| --- | ---: | ---: |
+| 1 | 41.5 / 52.0 | 27.8 / 54.0 |
+| 4 | 77.5 / 103.1 | 54.0 / 116.6 |
+| 16 | 260.3 / 397.9 | 110.3 / 161.0 |
+
+At 16, the context query plans 48 times before and zero times after its prior
+warm-up waves. Cold low-concurrency p95 did not improve in this sample; no claim
+that every individual request becomes faster. Production rollout/paid workload
+repetition remains the next gate.
+
 Build/test-tooling slice: a scratch Docker fixture reproduced private/generated
 paths being re-included by broad directory exceptions in `.dockerignore`.
 Narrow build-input patterns retain all local inputs across ten Dockerfiles

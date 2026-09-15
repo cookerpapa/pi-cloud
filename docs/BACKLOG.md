@@ -50,6 +50,11 @@ Volume architecture. Historical experiments remain in Git history.
       actual browser disconnect and presentation regressions pass.
       Removed the uncalled Bash test-command classifier and its self-only tests;
       current Subagent ADRs now describe shared-Volume compute and one family lease.
+      Claim profiling confirms repeated plan generation is a major cost. Bounded
+      pg-native prepared SELECTs now reuse plans without changing SQL/authority,
+      parameter serialization or retry behavior. Real-PG binding/cache-bound,
+      rollback, idle loss and saturated-pool cancellation tests pass; rollout and
+      final real-user performance acceptance are pending.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

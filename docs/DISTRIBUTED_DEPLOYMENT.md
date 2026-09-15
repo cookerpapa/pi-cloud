@@ -6,7 +6,8 @@ external durable authorities.
 
 ## External requirements
 
-- PostgreSQL HA plus optional PgBouncer;
+- PostgreSQL HA plus optional PgBouncer 1.21+ with protocol-level prepared-statement
+  tracking enabled (`max_prepared_statements > 0`);
 - Kafka with replication factor 3, `min.insync.replicas>=2`, topic ACLs and
   bounded AcceptedFact retention;
 - one direct PostgreSQL connection for migrations, `LISTEN/NOTIFY` and KEDA;

@@ -19,7 +19,7 @@ it.skipIf(!endpoint)(
     import { sql } from 'kysely';
     const db = createDatabase({connectionString:process.env.POOL_TEST_URL,maxConnections:1});
     const send = value => process.send(value);
-    const probe = async phase => send({phase,...(await sql\`select pg_backend_pid() as pid, 1 as value\`.execute(db)).rows[0]});
+    const probe = async phase => send({phase,...(await sql\`select pg_backend_pid() as pid, \${1}::int as value\`.execute(db)).rows[0]});
     process.on('message', async command => {
       if(command==='query') await probe('recovered');
       else if(command==='active') {
