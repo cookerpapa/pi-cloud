@@ -9,7 +9,7 @@ PostgreSQL, Cube or provider credentials directly.
 - username/password registration and HttpOnly-cookie login;
 - tenant-scoped named Workspaces and conversations;
 - resizable conversation list and focused/full Pi Session tree;
-- read-only Subagent Lane views with context/Workspace-mode labels;
+- read-only Subagent Lane views with context and shared/ephemeral compute labels;
 - ordered assistant, Tool and lifecycle rendering from durable SSE;
 - active Turn cancellation and steer;
 - conversation forks, recursive subtree deletion and settled-answer tail

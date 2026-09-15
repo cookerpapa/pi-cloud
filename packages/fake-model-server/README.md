@@ -13,6 +13,8 @@ scenario through the `x-pi-cloud-scenario` request header:
 | `tool_call` | A fragmented `inspect_workspace({"path":"src"})` tool call; after a tool-result message, a final text response |
 | `java_repair` | Successive `bash`, `edit`, and `bash` calls driven by prior tool-result count, followed by final text |
 | `java_followup` | Requires the prior Java-repair assistant message, then verifies the restored source and test in one `bash` call |
+| `coding_eval` | Selects a focused Java repair by the current prompt's task ID |
+| `tool_hold` | Emits a long-running Bash call for cancellation tests |
 | `rate_limit` | OpenAI-style HTTP 429 with `Retry-After` |
 | `timeout` | Withholds HTTP response headers until timeout/abort closes the request |
 | `malformed` | Sends invalid SSE JSON |

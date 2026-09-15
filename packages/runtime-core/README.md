@@ -8,11 +8,11 @@ Supervisor WebSocket transport.
 ## Owned boundaries
 
 - exact-command Run and cancellation execution;
-- RunAttempt, lease, fence and terminal-state transitions;
-- compact Pi Session references and lightweight Workspace settlements;
-- durable event ingestion and cross-replica notifications;
-- conversation projection and terminal-event construction;
-- structured test evidence primitives.
+- physical-Session ownership, task Attempts and terminal-state transitions;
+- direct Kafka native append and ordered execution closure;
+- one Session Projector for semantic history, live views and Tool/control routing;
+- cursor-free snapshots, cross-replica stream forwarding and bounded retention;
+- native publication, conversation projection and interrupted-prefix recovery.
 
 ## Dependency direction
 

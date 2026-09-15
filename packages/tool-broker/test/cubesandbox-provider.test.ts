@@ -572,6 +572,16 @@ describe("CubeSandbox Provider contract", () => {
       path: "/home/user",
       entries: [{ name: "new-project", path: "/home/user/new-project", kind: "directory" }],
     });
+    for (const name of ["x".repeat(255), "目".repeat(85)]) {
+      await expect(provider.createDirectory(handle, "/home/user", name)).resolves.toMatchObject({
+        entries: [{ name }],
+      });
+    }
+    await expect(
+      provider.createDirectory(handle, "/home/user", "目".repeat(86)),
+    ).rejects.toMatchObject({
+      code: "development_environment_directory_invalid",
+    });
     const preview = await provider.openPreviewConnection(handle, 5173);
     expect(preview).toBeInstanceOf(PassThrough);
     preview.destroy();

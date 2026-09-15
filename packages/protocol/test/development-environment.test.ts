@@ -100,4 +100,17 @@ describe("development environment Broker protocol", () => {
       }),
     ).toThrow(DevelopmentEnvironmentProtocolError);
   });
+
+  it("bounds directory components by UTF-8 bytes, not JavaScript characters", () => {
+    for (const name of ["x".repeat(255), "目".repeat(85)]) {
+      expect(
+        parseCreateDevelopmentEnvironmentDirectoryRequest({ path: "/home/user", name }).name,
+      ).toBe(name);
+    }
+    for (const name of ["x".repeat(256), "目".repeat(86)]) {
+      expect(() =>
+        parseCreateDevelopmentEnvironmentDirectoryRequest({ path: "/home/user", name }),
+      ).toThrow(DevelopmentEnvironmentProtocolError);
+    }
+  });
 });

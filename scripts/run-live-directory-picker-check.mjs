@@ -77,29 +77,33 @@ async function waitFor(check, label, timeoutMs = 120_000) {
 const suffix = Date.now().toString(36);
 const username = `directory.acceptance.${suffix}`.slice(0, 48);
 const password = `Directory acceptance ${suffix} 9!`;
-const folderName = `ui-project-${suffix}`;
+const folderName = `ui-project-${suffix}-${"folder".repeat(28)}`;
 const cookieFetch = new BrowserCookieFetch();
 const api = new PiCloudApi(cookieFetch.fetch);
 await api.registerAccount(username, "Directory Acceptance", password);
-const development = await api.createDevelopmentEnvironment(
-  `Directory machine ${suffix}`,
-  "standard",
-  newIdempotencyKey("environment"),
-);
-await waitFor(
-  async () =>
-    (await api.listDevelopmentEnvironments()).environments.find(
-      (candidate) =>
-        candidate.environmentId === development.environmentId && candidate.state === "running",
-    ),
-  "running exclusive environment",
-  180_000,
-);
-
+let development;
 const screenshotPath = resolve("/tmp", "pi-cloud-directory-picker-latest.png");
 let acceptanceError;
 let cleanupError;
 try {
+  development = await api.createDevelopmentEnvironment(
+    `Directory machine ${suffix}`,
+    "standard",
+    newIdempotencyKey("environment"),
+  );
+  process.stdout.write(
+    `${JSON.stringify({ event: "directory_acceptance_fixture", account: username, environmentId: development.environmentId, projectId: development.projectId, workspaceId: development.workspaceId })}\n`,
+  );
+  await waitFor(
+    async () =>
+      (await api.listDevelopmentEnvironments()).environments.find(
+        (candidate) =>
+          candidate.environmentId === development.environmentId && candidate.state === "running",
+      ),
+    "running exclusive environment",
+    180_000,
+  );
+
   await withChromePage(
     { profilePrefix: "pi-cloud-directory-picker-", width: 1_360, height: 900 },
     async (page) => {
@@ -177,15 +181,33 @@ try {
     true,
     "Created directory was not visible through the trusted listing API",
   );
+  const unicodeName = "目".repeat(85);
+  const unicodeListing = await api.createDevelopmentEnvironmentDirectory(
+    development.environmentId,
+    "/home/user",
+    unicodeName,
+  );
+  assert(unicodeListing.entries.some((entry) => entry.name === unicodeName));
+  const rejected = await cookieFetch.fetch(
+    `/v1/development-environments/${development.environmentId}/directory`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "/home/user", name: "目".repeat(86) }),
+    },
+  );
+  assert.equal(rejected.status, 400);
+  await rejected.body?.cancel();
 } catch (error) {
   acceptanceError = error;
 } finally {
   try {
-    await api.developmentEnvironmentAction(
-      development.environmentId,
-      "release",
-      newIdempotencyKey("environment"),
-    );
+    if (development)
+      await api.developmentEnvironmentAction(
+        development.environmentId,
+        "release",
+        newIdempotencyKey("environment"),
+      );
     await rm(screenshotPath, { force: true });
   } catch (error) {
     cleanupError = error;
@@ -204,6 +226,9 @@ const report = {
   createdDirectory: `/home/user/${folderName}`,
   screenshotCaptured: true,
   cleanupCompleted: true,
+  longAsciiDirectoryPassed: true,
+  unicode255ByteDirectoryPassed: true,
+  oversizedUnicodeRejectedBeforeGuest: true,
 };
 await writeFile(
   resolve(repositoryRoot, "docs/reports/directory-picker-acceptance-latest.json"),

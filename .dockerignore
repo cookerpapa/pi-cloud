@@ -42,7 +42,6 @@
 !packages/workspace-runtime/src/
 !packages/workspace-runtime/src/**
 !packages/sandbox-supervisor/
-!packages/sandbox-supervisor/Dockerfile
 !packages/sandbox-supervisor/package.json
 !packages/sandbox-supervisor/src/
 !packages/sandbox-supervisor/src/**
@@ -66,21 +65,6 @@
 !packages/web-ui/tsconfig.json
 !packages/web-ui/vite.config.ts
 
-!spikes/
-!spikes/pi-extension-compat/
-!spikes/pi-extension-compat/Dockerfile
-!spikes/pi-extension-compat/package.json
-!spikes/pi-extension-compat/extension/
-!spikes/pi-extension-compat/extension/**
-!spikes/pi-extension-compat/src/
-!spikes/pi-extension-compat/src/**
-!spikes/pi-embedded-rehydrate/
-!spikes/pi-embedded-rehydrate/Dockerfile
-!spikes/pi-embedded-rehydrate/package.json
-!spikes/pi-embedded-rehydrate/src/
-!spikes/pi-embedded-rehydrate/src/**
-
 !deploy/
 !deploy/cubesandbox/
 !deploy/cubesandbox/Dockerfile.tool
-!deploy/cubesandbox/tool-entrypoint.sh

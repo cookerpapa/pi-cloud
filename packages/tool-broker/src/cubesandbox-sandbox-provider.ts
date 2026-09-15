@@ -2,6 +2,7 @@ import { workflowGuestSource } from "./workflow-guest-source.ts";
 import type { Duplex } from "node:stream";
 import {
   isExpectedDefaultToolchain,
+  validGuestDirectoryName,
   parseEnvironmentToolchainReport,
   createExecutionReference,
   parseExecutionReference,
@@ -1391,14 +1392,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         true,
       );
     }
-    if (
-      name.length < 1 ||
-      name.length > 128 ||
-      name === "." ||
-      name === ".." ||
-      name.includes("/") ||
-      /[\u0000-\u001f\u007f]/u.test(name)
-    ) {
+    if (!validGuestDirectoryName(name)) {
       throw new ToolBrokerError(
         "development_environment_directory_invalid",
         "Cube guest directory name was invalid",

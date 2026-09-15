@@ -34,6 +34,20 @@ export function validMachineDirectory(path: string): boolean {
   );
 }
 
+/** Linux NAME_MAX counts encoded bytes; API, Broker and guest share this boundary. */
+export function validGuestDirectoryName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 255 &&
+    value !== "." &&
+    value !== ".." &&
+    value.trim() === value &&
+    !/[\/\u0000-\u001f\u007f]/u.test(value) &&
+    new TextEncoder().encode(value).byteLength <= 255
+  );
+}
+
 const DevelopmentEnvironmentBrokerStateSchema = Type.Union([
   Type.Literal("provisioning"),
   Type.Literal("running"),
@@ -255,7 +269,17 @@ function parse<Schema extends TSchema>(
 export function parseDevelopmentEnvironmentBrokerRequest(
   value: unknown,
 ): DevelopmentEnvironmentBrokerRequest {
-  return parse(DevelopmentEnvironmentBrokerRequestSchema, value, "development environment request");
+  const request = parse(
+    DevelopmentEnvironmentBrokerRequestSchema,
+    value,
+    "development environment request",
+  );
+  if (
+    request.type === "development_environment.create_directory" &&
+    !validGuestDirectoryName(request.name)
+  )
+    throw new DevelopmentEnvironmentProtocolError("Directory name must fit in 255 UTF-8 bytes");
+  return request;
 }
 
 export function parseDevelopmentEnvironmentBrokerResponse(
@@ -291,9 +315,12 @@ export function parseDevelopmentEnvironmentDirectoryResource(
 export function parseCreateDevelopmentEnvironmentDirectoryRequest(
   value: unknown,
 ): CreateDevelopmentEnvironmentDirectoryRequest {
-  return parse(
+  const request = parse(
     CreateDevelopmentEnvironmentDirectoryRequestSchema,
     value,
     "create development environment directory request",
   );
+  if (!validGuestDirectoryName(request.name))
+    throw new DevelopmentEnvironmentProtocolError("Directory name must fit in 255 UTF-8 bytes");
+  return request;
 }

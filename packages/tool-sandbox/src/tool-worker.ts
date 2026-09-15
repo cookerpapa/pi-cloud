@@ -433,10 +433,8 @@ export function safeToolEnvironment(webProxy?: ToolWebProxyBootstrap): NodeJS.Pr
     LC_ALL: "C.UTF-8",
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: `${gitCredentialRoot}/.gitconfig`,
-    // Kubernetes emptyDir volumes are mounted with root ownership and the
-    // Pod's fsGroup, even though every process and repository entry is owned
-    // by uid 1000. Pin Git's trust exception to the one fixed workspace root;
-    // never accept a user-controlled path here.
+    // A persistent Volume root may have different ownership from the Tool UID.
+    // Trust only this admitted working directory, never all repositories.
     GIT_CONFIG_COUNT: "3",
     GIT_CONFIG_KEY_0: "safe.directory",
     GIT_CONFIG_VALUE_0: TOOL_WORKSPACE_DIRECTORY,

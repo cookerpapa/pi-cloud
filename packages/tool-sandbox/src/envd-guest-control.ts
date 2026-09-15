@@ -1,4 +1,5 @@
 import { constants } from "node:fs";
+import { validGuestDirectoryName } from "@pi-cloud/protocol";
 import { chown, lstat, mkdir, open, readFile, readdir, realpath, rmdir } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
@@ -111,15 +112,7 @@ async function listDirectory(path: string): Promise<Record<string, unknown>> {
 }
 
 async function createDirectory(path: string, name: unknown): Promise<Record<string, unknown>> {
-  if (
-    typeof name !== "string" ||
-    name.length < 1 ||
-    name.length > 128 ||
-    name === "." ||
-    name === ".." ||
-    name.includes("/") ||
-    /[\u0000-\u001f\u007f]/u.test(name)
-  ) {
+  if (!validGuestDirectoryName(name)) {
     throw new Error("Guest directory name was invalid");
   }
   const parent = await realpath(path);

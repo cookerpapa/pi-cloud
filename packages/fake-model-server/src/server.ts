@@ -12,7 +12,6 @@ export const fakeModelScenarios = [
   "java_repair",
   "java_followup",
   "coding_eval",
-  "settlement_gate",
   "tool_hold",
   "rate_limit",
   "timeout",
@@ -33,11 +32,6 @@ export type FakeModelRequestObservation = {
   model: string;
   messageCount: number;
   toolCount: number;
-  thinkingType?: "enabled" | "disabled";
-  storePresent: boolean;
-  developerMessageCount: number;
-  strictToolCount: number;
-  maxTokensField?: "max_tokens" | "max_completion_tokens";
   authorizationPresent: boolean;
   responseStatus: number | null;
   completion: FakeModelRequestCompletion;
@@ -58,14 +52,8 @@ type ChatCompletionRequest = {
   model: string;
   messages: unknown[];
   tools?: unknown[];
-  thinking?: { type: "enabled" | "disabled" };
-  store?: unknown;
-  max_tokens?: unknown;
-  max_completion_tokens?: unknown;
   stream: true;
 };
-
-type MutableObservation = FakeModelRequestObservation;
 
 class SafeHttpError extends Error {
   readonly status: number;
@@ -242,20 +230,10 @@ function parseChatCompletionRequest(value: unknown): ChatCompletionRequest {
   if (value.tools !== undefined && !Array.isArray(value.tools)) {
     throw new SafeHttpError(400, "tools must be an array when present");
   }
-  const thinking = value.thinking;
-  if (
-    thinking !== undefined &&
-    (!isRecord(thinking) || (thinking.type !== "enabled" && thinking.type !== "disabled"))
-  ) {
-    throw new SafeHttpError(400, "thinking.type must be enabled or disabled when present");
-  }
   return {
     model: value.model,
     messages: value.messages,
     ...(Array.isArray(value.tools) ? { tools: value.tools } : {}),
-    ...(isRecord(thinking) && (thinking.type === "enabled" || thinking.type === "disabled")
-      ? { thinking: { type: thinking.type } }
-      : {}),
     stream: true,
   };
 }
@@ -391,8 +369,8 @@ export class FakeModelServer {
   readonly #promptTokens: number;
   readonly #server: Server;
   readonly #sockets = new Set<Socket>();
-  readonly #heldResponses = new Map<ServerResponse, MutableObservation>();
-  readonly #observations: MutableObservation[] = [];
+  readonly #heldResponses = new Map<ServerResponse, FakeModelRequestObservation>();
+  readonly #observations: FakeModelRequestObservation[] = [];
   #started = false;
   #stopped = false;
   #requestSequence = 0;
@@ -548,16 +526,7 @@ export class FakeModelServer {
     const payload = parseChatCompletionRequest(await readJsonBody(request, this.#maxRequestBytes));
     const sequence = ++this.#requestSequence;
     const requestId = `chatcmpl-picloud-${String(sequence).padStart(4, "0")}`;
-    const developerMessageCount = payload.messages.filter(
-      (message) => isRecord(message) && message.role === "developer",
-    ).length;
-    const strictToolCount = (payload.tools ?? []).filter(
-      (tool) =>
-        isRecord(tool) &&
-        isRecord(tool.function) &&
-        Object.prototype.hasOwnProperty.call(tool.function, "strict"),
-    ).length;
-    const observation: MutableObservation = {
+    const observation: FakeModelRequestObservation = {
       requestId,
       scenario,
       method: "POST",
@@ -565,15 +534,6 @@ export class FakeModelServer {
       model: payload.model,
       messageCount: payload.messages.length,
       toolCount: payload.tools?.length ?? 0,
-      ...(payload.thinking === undefined ? {} : { thinkingType: payload.thinking.type }),
-      storePresent: Object.prototype.hasOwnProperty.call(payload, "store"),
-      developerMessageCount,
-      strictToolCount,
-      ...(Object.prototype.hasOwnProperty.call(payload, "max_tokens")
-        ? { maxTokensField: "max_tokens" as const }
-        : Object.prototype.hasOwnProperty.call(payload, "max_completion_tokens")
-          ? { maxTokensField: "max_completion_tokens" as const }
-          : {}),
       authorizationPresent: true,
       responseStatus: scenario === "timeout" ? null : scenario === "rate_limit" ? 429 : 200,
       completion: scenario === "timeout" ? "pending" : "completed",
@@ -743,44 +703,6 @@ export class FakeModelServer {
       );
       return;
     }
-    if (scenario === "settlement_gate") {
-      const gateFollowUp = (latestUserText(payload.messages) ?? "").includes(
-        "project-defined verification step",
-      );
-      const completedTools = currentTurnToolResultCount(payload.messages);
-      if (!gateFollowUp && completedTools === 0) {
-        await this.#streamNamedToolCall(
-          response,
-          requestId,
-          sequence,
-          payload.model,
-          "call_picloud_settlement_write",
-          "write",
-          { path: "settlement.txt", content: "changed\n" },
-        );
-        return;
-      }
-      if (gateFollowUp && completedTools === 0) {
-        await this.#streamNamedToolCall(
-          response,
-          requestId,
-          sequence,
-          payload.model,
-          "call_picloud_settlement_verify",
-          "bash",
-          { command: "npm test" },
-        );
-        return;
-      }
-      await this.#streamText(
-        response,
-        requestId,
-        sequence,
-        payload.model,
-        gateFollowUp ? "Project verification completed." : "Workspace change completed.",
-      );
-      return;
-    }
     if (scenario === "tool_hold" && currentTurnToolResultCount(payload.messages) === 0) {
       await this.#streamNamedToolCall(
         response,
@@ -905,7 +827,7 @@ export class FakeModelServer {
 
   async #disconnectDuringStream(
     response: ServerResponse,
-    observation: MutableObservation,
+    observation: FakeModelRequestObservation,
     requestId: string,
     sequence: number,
     model: string,
@@ -925,7 +847,10 @@ export class FakeModelServer {
     response.destroy();
   }
 
-  #holdUntilClientCloses(response: ServerResponse, observation: MutableObservation): Promise<void> {
+  #holdUntilClientCloses(
+    response: ServerResponse,
+    observation: FakeModelRequestObservation,
+  ): Promise<void> {
     // Deliberately do not send response headers. The OpenAI SDK's timeoutMs
     // covers waiting for the HTTP response; an already-open but idle SSE body
     // is a separate stream-idle concern owned by the caller/supervisor.

@@ -390,18 +390,24 @@ try {
     undefined,
     "/home/user/empty-project",
   );
+  // Bootstrap tenants may use a deterministic fixture provider. Paid machine
+  // acceptance must select its real route rather than inherit that default.
+  await api.updateSessionModel(session.sessionId, {
+    provider: "deepseek",
+    modelId: "deepseek-v4-flash",
+    thinkingLevel: "low",
+    fastMode: false,
+  });
   const agentRun = await api.acceptTurn(
     session.sessionId,
     "Fix the pre-seeded Calculator implementation and run its test script.",
     newIdempotencyKey("turn"),
-    "off",
   );
   await waitForRun(agentRun.runId);
   const continuityRun = await api.acceptTurn(
     session.sessionId,
     "Verify the repaired Calculator again without changing it.",
     newIdempotencyKey("turn"),
-    "off",
   );
   await waitForRun(continuityRun.runId);
   await api.updateSessionModel(session.sessionId, {

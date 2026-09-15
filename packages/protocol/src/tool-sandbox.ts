@@ -500,23 +500,6 @@ export const ToolWorkerInputSchema = Type.Union([
     },
     { additionalProperties: false },
   ),
-  Type.Object(
-    {
-      ...WorkerEnvelope,
-      type: Type.Literal("worker.cancel"),
-      activationId: UuidSchema,
-      operationId: UuidSchema,
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...WorkerEnvelope,
-      type: Type.Literal("worker.shutdown"),
-      activationId: UuidSchema,
-    },
-    { additionalProperties: false },
-  ),
 ]);
 
 export const ToolWorkerOutputSchema = Type.Union([

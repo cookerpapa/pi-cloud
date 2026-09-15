@@ -167,14 +167,19 @@ describe("Tool Sandbox protocol", () => {
     });
   });
 
-  it("keeps Workspace settlement on the provider checkpoint path", () => {
-    expect(() =>
-      parseToolWorkerInput({
-        toolWorkerProtocolVersion: 1,
-        type: "worker.capture",
-        activationId: "10000000-0000-4000-8000-000000000008",
-        requestId: "10000000-0000-4000-8000-000000000009",
-      }),
-    ).toThrow(ToolSandboxProtocolError);
-  });
+  it.each(["worker.capture", "worker.cancel", "worker.shutdown"])(
+    "rejects unsupported guest daemon command %s",
+    (type) => {
+      expect(() =>
+        parseToolWorkerInput({
+          toolWorkerProtocolVersion: 1,
+          type,
+          activationId: "10000000-0000-4000-8000-000000000008",
+          ...(type === "worker.cancel"
+            ? { operationId: "10000000-0000-4000-8000-000000000009" }
+            : {}),
+        }),
+      ).toThrow(ToolSandboxProtocolError);
+    },
+  );
 });

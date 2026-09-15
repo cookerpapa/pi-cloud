@@ -2,8 +2,7 @@ import { Type, type Static } from "typebox";
 import { DeepSeekModelIdSchema, OpenAICodexModelIdSchema } from "./control-plane-api.ts";
 import { UuidSchema } from "./protocol-primitives.ts";
 
-// Provider-native Workspace settlements carry only a bounded Volume reference.
-// Workspace bytes remain in the persistent Provider Volume.
+// Initial provisioning bundles only; existing Workspace bytes live in Cube Volumes.
 export const MAX_WORKSPACE_BLOB_BYTES = 32 * 1_024 * 1_024;
 
 const MAX_BASE64_WORKSPACE_BLOB_LENGTH = Math.ceil(MAX_WORKSPACE_BLOB_BYTES / 3) * 4;

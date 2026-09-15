@@ -1,22 +1,22 @@
 {
   "accepted": true,
-  "piCloudRevision": "fd07a09836a9959fd01782ad4474ae0d61fabf3c",
-  "testRevision": "4eb956649c1122f12afbf0c3bc13d1618b40fe77",
-  "checkedAt": "2026-09-15T09:54:58.773Z",
-  "developmentEnvironmentId": "bb08a3f0-2d0f-4f01-a674-265e837a25b0",
-  "workspaceId": "081bca5e-df22-4b7e-9ee3-2520a2ff2951",
+  "piCloudRevision": "642878b90916746acd52bdf0d24b9c17968282e0",
+  "testRevision": "642878b90916746acd52bdf0d24b9c17968282e0",
+  "checkedAt": "2026-09-15T12:11:53.680Z",
+  "developmentEnvironmentId": "2241e39d-1828-46c9-8234-6c4167d93fec",
+  "workspaceId": "e5486146-d365-44fa-b405-43a4fc4d2e8e",
   "cubeIdentityStableAcrossPause": true,
   "processSurvivedTerminalReconnect": true,
   "processSurvivedPauseResume": true,
   "agentRunBorrowedAndReturnedSameCube": true,
   "sharedSubagentInheritedDevelopmentEnvironment": true,
   "temporarySubagent": {
-    "childSessionId": "6dfe3a45-c839-406b-9e34-2c6b200fdb04",
+    "childSessionId": "86e5d612-632a-4bcd-b45a-70c8523b9a87",
     "state": "completed",
-    "computeSessionId": "6dfe3a45-c839-406b-9e34-2c6b200fdb04",
-    "workspaceId": "081bca5e-df22-4b7e-9ee3-2520a2ff2951",
+    "computeSessionId": "86e5d612-632a-4bcd-b45a-70c8523b9a87",
+    "workspaceId": "e5486146-d365-44fa-b405-43a4fc4d2e8e",
     "cwd": "/home/user/empty-project",
-    "runtimeName": "36b69471b67d4f97ad15dffa9ea82517"
+    "runtimeName": "e13f98b86bd848f297be628b62f10d56"
   },
   "temporaryComputeSharesHomeButNotSystemDisk": true,
   "parentAndChildPreviewSamePortIsolated": true,
@@ -34,5 +34,7 @@
   "emptyDirectoryBrowsePassed": true,
   "deletedConversationDidNotReleaseMachine": true,
   "oneTimeSshGatewayPassed": true,
-  "selectedProfile": "standard"
+  "selectedProfile": "starter",
+  "defaultMachineDirectoryAndProfilePassed": true,
+  "oldPauseReplayDidNotUndoResume": true
 }

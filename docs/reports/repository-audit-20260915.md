@@ -3,16 +3,32 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
-Latest local slice fixes task-scoped cold-read cancellation, machine lifecycle
+Latest slice (`642878b9`) fixes task-scoped cold-read cancellation, machine lifecycle
 confirmation and machine Session defaults; removes unused Domain surfaces.
 `npm run check` passes 917 tests with 25 explicit live/PG skips; a separate real
 PostgreSQL run passes 24 cases. The paused-projection Parent/Child Host regression
 also verifies cancelled cold reads, valid final writes and replacement-Host recovery.
-Rollout and paid repetition of this slice are not yet complete.
+Control Plane, both Workers and Web are deployed and healthy. Two machine
+acceptance repetitions pass; the first inherited a fake provider for its first
+two coding Turns and is excluded from paid-coding evidence. The corrected rerun
+uses DeepSeek for two coding Turns and GPT for two parent/two child Runs: all six
+complete, with 26,257 input / 81,280 cache-read / 2,116 output tokens. It validates
+starter-profile inheritance, home-directory default, old-pause replay, same-Volume
+temporary compute, separate same-port Preview, SSH, pause/resume, Broker restart,
+process continuity and machine/Volume removal. The rerun includes the explicit
+DeepSeek test-script change made after the named deployment commit.
+
+Two additional DeepSeek coding Turns pass seven Tools and both Python suites.
+One timing sample is excluded from stage analysis because WSL wall time jumped
+696 ms. GPT high/Fast and DeepSeek high recall probes pass with persisted
+configuration; the GPT Turn runs on a different Worker from its preceding coding
+Turn. First-text API/SSE receipt is 3,293/2,003 ms, provider-route first text
+3,103/1,816 ms and non-provider time 190/187 ms. These are two observations,
+not percentiles or browser-paint measurements. No full-audit completion claim.
 
 [ADR-0171 acceptance](subagent-compute-20260915.md) retires the LOCK-01 copy path
-through owner-approved shared-Volume compute scopes. Worker/templates run
-`fd07a098`; Broker/Volume Gateway run `b84ecb30`. Its paid fixtures are cleaned;
+through owner-approved shared-Volume compute scopes. The `fd07a098` guest templates
+remain compatible; Broker/Volume Gateway run `b84ecb30`. Its paid fixtures are cleaned;
 the older audit baseline and remaining review gates are still open.
 
 ## Scope and execution
@@ -120,7 +136,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | UI-17 | Markdown export spread every backtick run into `Math.max`, exhausting the engine argument limit | Reproduced with a 280K-character owned code fixture. Compute the longest fence iteratively; three export tests pass. Removed an obsolete cast that hid an invalid resource fixture |
 | UI-18 | An interrupted sampling left Hosted Search running, then a successful Run terminal relabelled it completed; snapshot folding also retained abandoned Tool preparation | Failed/aborted sampling regressions reproduced this. Close those display activities at the sampling boundary in both live and snapshot reducers; 28 projection/UI tests pass. This does not fabricate a hosted search result in model context |
 | MUT-01 | Rebind and cancel check idempotency before acquiring their lifecycle row locks, then reject concurrent replay | Both reproduced with real PostgreSQL barriers: rebind returned not-found after its joined row changed; cancel returned already-in-progress. Lock the Session/lifecycle before reading replay; rebind reads the current Workspace after the lock. Remove the cancellation constraint-retry wrapper. Six real-PG admission/replay cases pass; compiler rerun is tracked below |
-| LIFE-03 | Active Lane cold-history waits used only the shared writer signal | Two regressions reproduce cancellation/close leaving a cold read waiting. Forward task read cancellation to native Lane waits and abort those waits on close; retain final writes and sibling authority. 113 related tests pass, including signal wiring and parent/child restoration; rollout/live check pending |
+| LIFE-03 | Active Lane cold-history waits used only the shared writer signal | Two regressions reproduce cancellation/close leaving a cold read waiting. Forward task read cancellation to native Lane waits and abort those waits on close; retain final writes and sibling authority. 113 related tests and a paused-projection Parent/Child Host test pass. Deployed coding/child repetition passes; deliberate production projection-stall cancellation remains outside this slice |
 | CANCEL-01 | `abort()` was lost before the native Agent existed; cancellation during intent ACK still called the Tool | Reproduced model/effect calls after cancellation. Latched cancellation, checked the existing signal after intent commit, and kept aborted native outcome; unit regressions pass |
 | CANCEL-02 | A local pre-sampling abort was classified as an assistant completion missing a Cloud Step | Reproduced through Runner; recognize the explicit no-sampling cancellation without inventing a Step. Runner/Harness suite: 48 pass |
 | CANCEL-03 | Acknowledged cancellation failure changed business state but omitted the output seal and task-authority release | Reproduced missing Outbox terminal and zero release calls. Reuse failure closure in the same transaction; seven queue tests pass. Keeps the existing failed/quarantined Session state, not a successful cancellation |
@@ -133,9 +149,17 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CFG-03 | CP/Broker/Volume Gateway rejected group-readable secrets while Helm mounts them 0440 under fsGroup | CP and Broker loaders reproduced failure with owned 0440 fixtures; aligned process-group read permissions while rejecting group writes/world access/symlinks. 44 Bootstrap/Broker/cleanup regressions pass. Actual Kubernetes startup and Volume Gateway child-process check remain pending |
 | CFG-04 | Several private RPCs followed Node's global provider proxy, breaking Pod-IP/cluster routes | A real child process with an owned rejecting proxy reproduced Broker unavailability. Explicit direct dispatchers now cover Broker, Volume, Cube control, machine lifecycle and Worker enrollment; configured private GitLab routing is separate from public provider routing. A positive control confirms normal requests still use the proxy; 32 related regressions pass |
 | DEV-01 | Machine creation checked replay before the tenant lock | Real PostgreSQL barrier reproduced one identical request failing `projects_tenant_live_name_unique`. Move replay into the existing tenant-locked admission; both return one running machine. Nine real-PG lifecycle cases pass |
-| DEV-05 | Pause/resume replay treated a recorded request as a completed effect; later actions could overwrite the recorded result | Three HTTP fault regressions reproduce lost request/reply being treated as processed and pause being recorded as a later running state. Persist the Broker acknowledgement instead of an extra latest-state read; reject unconfirmed pause/resume replay without re-executing it. Eleven lifecycle cases pass locally; rollout/live check pending. This does not add Cube-native operation fencing |
+| DEV-05 | Pause/resume replay treated a recorded request as a completed effect; later actions could overwrite the recorded result | Three HTTP fault regressions reproduce lost request/reply being treated as processed and pause being recorded as a later running state. Persist the Broker acknowledgement instead of an extra latest-state read; reject unconfirmed pause/resume replay without re-executing it. Real Cube old-pause replay after resume passes twice without stopping the preserved process. This does not add Cube-native operation fencing |
 | DEV-06 | API/client defaulted machine Sessions to elastic `/workspace`; the client also forced the standard profile | Server/client regressions reproduce both defaults. Machine cwd defaults to `/home/user` and an omitted profile is inherited from the machine; elastic defaults stay unchanged. Explicit choices remain intact; no old-data conversion |
 | CLEAN-07 | Domain exported an unused resolved-model parser/schema and unused transition/terminal predicate wrappers | Repository-wide caller checks found only self-tests. Remove unused surfaces; retain actual transition enforcement, Run terminal checks and credential-safe model-profile validation. Domain tests pass |
+| CLEAN-08 | Fake-model fixture retained an unreferenced settlement scenario and unused observation fields; some fields had already been discarded by parsing | Remove the unused scenario/metadata instead of presenting misleading compatibility evidence; all 17 HTTP/Pi fixture tests pass. Guest Git ownership comment now describes persistent Volumes, not retired Kubernetes emptyDir storage |
+| CLEAN-09 | Guest protocol accepted cancel/shutdown envelopes with no producer or handler; one test/comment still described removed provider checkpoints | Remove unused daemon commands from the one-shot guest input schema; retain current Cube process cancellation. Negative protocol tests now reject retired commands; seed documentation describes initial provisioning only |
+| CLEAN-10 | Build/formatter ignore files referenced deleted spikes, guest entrypoint, Supervisor Dockerfile and execution-plane chart | Remove stale exceptions; do not delete untracked local directories. Image source closure and actual image builds remain required |
+| DOC-04 | Package READMEs still described Workspace settlements, Run-local leases and Child Workspace modes | Align Control Plane/database/runtime/Web package summaries with physical-Session ownership, direct Kafka projection, persistent Volumes and shared/ephemeral compute; remove unsupported migration-down deployment guidance |
+| DIR-01 | Public create-directory accepts 255 characters while Broker/guest reject above 128; Linux also limits component bytes rather than JS characters | Two regressions reproduce long ASCII rejection and oversized Unicode acceptance. API, Broker and guest now share a 255-byte UTF-8 name rule; 21 protocol/provider cases and actual guest CLI on owned local directories pass. New Cube template rollout and live directory repetition pending |
+| TOOL-04 | Guest request JSON is written before the final abort check; on a persistent machine, cancellation before command dispatch does not run the shell cleanup trap | Source path identified during full Provider read; controlled cancellation/file-retention reproduction and error-path cleanup review remain pending |
+| DIAG-02 | Cube readiness loop records the last error, then discards it at timeout | Preserve the first useful cause without widening public errors after a focused failure regression; not changed in the current directory slice |
+| TEST-04 | Development-machine acceptance inherited the bootstrap tenant's fake model for its first two coding Turns | Live DB inspection identified both deterministic Turns; excluded from paid coding. Explicit DeepSeek selection and GPT Subagent rerun passes all six real-model Runs, with provider/usage verified in native PG entries |
 | DEV-02 | Machine lifecycle descriptor requires an active Domain and non-failed environment profile, including release | Reproduced both rejected releases via the actual Broker HTTP fixture. Separate owner-scoped existing-machine routing from new provisioning descriptor; directory operations and release no longer depend on allocation policy. Cross-user checks remain. Local regression slice passes; deployed Cube repetition pending |
 | DEV-03 | Broker concurrent duplicate machine provisioning created two provider runtimes; simultaneous first task bindings chose the same binding ID | Both reproduced. Reuse existing per-Workspace provisioning critical section for machine provisioning/binding creation, not Tool execution. Concurrent parent/child bindings now stay distinct and reuse one runtime |
 | DEV-04 | Machine handle entered the ready map before durable state publication; failure destroyed the VM but retained that handle | Reproduced phantom active count. Publish PG state before installing the ready handle; clean failure no longer advertises a destroyed runtime |

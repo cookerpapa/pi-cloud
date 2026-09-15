@@ -10,10 +10,10 @@ PiCloud.
 - Run/Attempt admission, idempotency and Session ordering;
 - leases, fencing tokens, heartbeats and terminal commit;
 - canonical Pi Session persistence and replacement-snapshot SSE reconnects;
-- lightweight Workspace settlements and live directory/file browsing;
+- Workspace/machine lifecycle and live directory/file browsing;
 - PostgreSQL-backed Run queue publication and cancellation;
 - model/proxy configuration and usage;
-- tenant-scoped live Workspace browser APIs.
+- Session Projector: native history, live views and ordered Tool/Subagent routing.
 
 It does not execute user commands and does not control Cube directly.
 
@@ -46,8 +46,9 @@ durable side effects.
 ## State
 
 PostgreSQL is authoritative for business state, complete Pi Session records,
-Run history and settled conversation projections. Kafka owns the
-bounded live-event tail; persistent Cube Volumes own Workspace bytes.
+Run history and settled conversation projections. Kafka durably accepts native
+records, display events and Tool/control commands before projection; persistent
+Cube Volumes own Workspace bytes.
 
 Conversation titles are independent from Workspace names. A Workspace may be
 shared by multiple conversations. Archived conversations are excluded from

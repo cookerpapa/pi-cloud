@@ -5,8 +5,8 @@ migrations. PostgreSQL stores product/control state and canonical Pi Session
 records; it does not own the Kafka AcceptedFact log or Workspace file bytes.
 
 The current schema enforces tenant-consistent foreign keys, idempotent command
-intake, Session ordering, Run/Attempt leases and fences, Pi SessionStorage,
-Workspace settlements, Tool Broker ownership, Subagent relations and
+intake, Lane ordering, physical-Session leases and task references, Pi SessionStorage,
+resource metadata, Tool Broker ownership, Subagent relations and
 administrator/model configuration. Application state machines still own legal
 transition order.
 
@@ -16,9 +16,10 @@ documentation; use the root README and `docs/ARCHITECTURE.md` for that.
 
 ```bash
 DATABASE_URL=postgresql://... npm run db:migrate
-DATABASE_URL=postgresql://... npm run db:migrate:down
 npm test --workspace @pi-cloud/database
 ```
 
 The migration CLI never prints `DATABASE_URL`. PGlite is test-only; production
 uses PostgreSQL through `pg`/Kysely.
+Destructive pre-release cutovers are not reversible by `migrate:down`; recovery
+requires the matching database backup.

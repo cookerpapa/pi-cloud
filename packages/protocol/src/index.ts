@@ -146,6 +146,7 @@ export {
   DevelopmentEnvironmentProtocolError,
   DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
   validMachineDirectory,
+  validGuestDirectoryName,
   DEVELOPMENT_ENVIRONMENT_PROFILES,
   DevelopmentEnvironmentProfileKeySchema,
   parseDevelopmentEnvironmentBrokerRequest,
