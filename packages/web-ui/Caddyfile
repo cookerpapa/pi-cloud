@@ -24,7 +24,7 @@
 	}
 
 	handle /v1/* {
-		reverse_proxy control-plane:3000
+		reverse_proxy {$PI_CLOUD_CONTROL_PLANE_UPSTREAM:control-plane:3000}
 	}
 
 	handle {

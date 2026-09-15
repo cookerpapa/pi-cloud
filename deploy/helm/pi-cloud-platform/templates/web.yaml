@@ -36,6 +36,9 @@ spec:
         - name: web
           image: {{ include "pi-cloud-platform.image" .Values.images.web | quote }}
           imagePullPolicy: {{ .Values.images.web.pullPolicy }}
+          env:
+            - { name: PI_CLOUD_CONTROL_PLANE_UPSTREAM, value: {{ printf "%s-control-plane:3000" $name | quote }} }
+            - { name: PI_CLOUD_PREVIEW_UPSTREAM, value: {{ printf "%s-control-plane:3001" $name | quote }} }
           ports: [{ name: http, containerPort: 8080 }]
           readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }

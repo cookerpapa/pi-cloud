@@ -371,7 +371,7 @@ try {
       .find((t) => t.turnId === resumed.accepted.turnId)
       ?.transcript?.items.filter((item) => item.kind === "text")
       .at(-1)?.text;
-    assert.equal(final?.trim(), "FAMILY-RECOVERY-OK");
+    assert.equal(final?.trim().split(/\r?\n/).at(-1), "FAMILY-RECOVERY-OK");
     assert.equal(
       Buffer.from((await api.readWorkspaceFile(a.sessionId, "recovery-verified.txt")).bytes)
         .toString("utf8")

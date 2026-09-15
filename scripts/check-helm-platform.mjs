@@ -50,6 +50,13 @@ assert.equal(
 assert.match(environment.PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES, /\{supervisorId\}/);
 assert(find("StatefulSet", "pi-cloud-pi-worker-primary-v1"));
 assert(find("Deployment", "pi-cloud-workspace-volume-gateway"));
+const web = find("Deployment", "pi-cloud-web");
+assert(web);
+const webEnvironment = Object.fromEntries(
+  web.spec.template.spec.containers[0].env?.map((entry) => [entry.name, entry.value]) ?? [],
+);
+assert.equal(webEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "pi-cloud-control-plane:3000");
+assert.equal(webEnvironment.PI_CLOUD_PREVIEW_UPSTREAM, "pi-cloud-control-plane:3001");
 const customDatabaseKeys = parseAllDocuments(
   run([
     "template",

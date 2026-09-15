@@ -62,6 +62,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | MEM-01 | Control Plane cached management wrappers for every historical Worker URL | Removed unused object cache: wrappers hold no connections and already share the HTTP dispatcher; no routing/authority change |
 | RESTORE-01 | Investigated whether open fetches already-reconciled interruption prefixes | Ruled out: native projection clears the prefix and migration 131 provides a pending-only partial index; no extra cache or query rewrite added |
 | UI-01 | Product/admin origin detection and redirects hard-code ports 8080/8081 | Source-confirmed configuration assumption; test supported custom deployment ports |
+| DEPLOY-02 | Helm deploys a release-prefixed Control Plane service but Caddy hard-coded Compose DNS | Helm regression reproduced missing upstream configuration. Pass chart-derived API/Preview upstreams and parameterize Caddy's API route. Isolated Caddy/HTTP fixture validates both routes under a different service name; admin-origin/port behavior remains UI-01 |
 | UI-02 | Logout silently treated network failure as success and retained machine/dialog state in the mounted app | Browser reproduced false logout. Surface failure; successful/expired logout replaces the document so old account callbacks/caches cannot reach the next login |
 | UI-03 | Composer and initial-prompt creation both sent `thinkingLevel: off`, overriding persisted Session settings | Real React/Chrome request-builder regression captured `off` in all three submissions despite medium/high selection. Remove obsolete overrides; GPT Fast/high → DeepSeek also tested without model execution |
 | UI-04 | A terminal SSE arriving before the HTTP acceptance reply was reset to queued by `turn.accepted` | Reproduced; preserve terminal status while filling accepted prompt/Run metadata. Covers completed, failed and cancelled |
@@ -327,6 +328,17 @@ the Run completed with one Attempt (18.86 s total including outage/replacement).
 This does not certify Worker death or physical multi-node failures. The probe now
 measures its Kafka baseline after the kill and explicitly selects/reports the
 tested model instead of reporting an unrelated tenant default.
+Single Kafka-broker SIGKILL also passed with one Attempt, preserved prefix and
+identical canonical/live text (23.84 s including recovery). No SSE reconnect was
+needed in that run. Full Session-family fairness/Worker-loss rerun passed:
+one Worker, two family slots, one model permit, five active tasks sharing two
+family leases; another family progressed while three child Tools waited. Killing
+the owning Worker closed the family before replacement, and the new Worker checked
+the files/tests without repeating the old append. The first run stopped at an
+over-strict exact-answer assertion although checks had succeeded; the rerun keeps
+exact file/side-effect assertions and accepts explanation before the final marker.
+Paid rerun usage: 11,799 uncached input, 107,904 cache-read, 5,213 output tokens.
+Both Workers/configuration were restored; test conversations/Workspaces deleted.
 
 Before mutation, inventory existing tenants/users/resources, image revisions and
 configuration digests without disclosing credentials. Register test resources
