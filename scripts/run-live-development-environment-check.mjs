@@ -342,6 +342,9 @@ try {
     "standard",
     newIdempotencyKey("environment"),
   );
+  process.stdout.write(
+    `${JSON.stringify({ event: "development_acceptance_fixture", environmentId: development.environmentId, workspaceId: development.workspaceId, projectId: development.projectId })}\n`,
+  );
   await waitForEnvironment(development.environmentId, "running");
   const runtimeName = await psql(
     `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
@@ -442,6 +445,46 @@ try {
     workingDirectory: "/home/user/empty-project",
     childRunState: "completed",
   });
+  const temporarySubagentRun = await api.acceptTurn(
+    session.sessionId,
+    [
+      'Call subagent action:"run" exactly once with context:"fresh", sandbox:"ephemeral", cwd:"/home/user/empty-project", task:',
+      '"Use bash to verify pwd is /home/user/empty-project, ./test.sh passes and /etc/pi-cloud-exclusive-marker does NOT exist in this new compute environment. Create child-home-index.html containing HOME-COMPUTE-OK in the current directory. Start python3 -m http.server 5173 --bind 0.0.0.0 --directory /home/user/empty-project as a detached background server with all stdio redirected. Verify the server, call preview for port 5173 and path /child-home-index.html, then reply HOME-COMPUTE-OK. Do not create subagents."',
+      "After the actual child finishes, reply HOME-COMPUTE-OK. Do not start a server yourself.",
+    ].join(" "),
+    newIdempotencyKey("turn"),
+    "off",
+  );
+  await waitForRun(temporarySubagentRun.runId);
+  const temporarySubagentEvidence = JSON.parse(
+    await psql(`select json_build_object(
+    'childSessionId',e.child_session_id,'state',r.state,'computeSessionId',r.compute_session_id,
+    'workspaceId',r.workspace_id,'cwd',r.working_directory,'runtimeName',a.runtime_name
+  )::text from subagent_executions e join runs r on r.id=e.child_run_id
+    join tool_broker_workspace_runtimes a on a.tenant_id=e.tenant_id and a.workspace_id=r.workspace_id and a.compute_session_id=r.compute_session_id
+  where e.parent_run_id=${sqlLiteral(temporarySubagentRun.runId)} order by a.created_at desc limit 1`),
+  );
+  assert.equal(temporarySubagentEvidence.state, "completed");
+  assert.equal(
+    temporarySubagentEvidence.computeSessionId,
+    temporarySubagentEvidence.childSessionId,
+  );
+  assert.equal(temporarySubagentEvidence.workspaceId, development.workspaceId);
+  assert.equal(temporarySubagentEvidence.cwd, "/home/user/empty-project");
+  assert.notEqual(temporarySubagentEvidence.runtimeName, runtimeName);
+  const childPreview = await fetchFromProduction(
+    `/v1/conversations/${temporarySubagentEvidence.childSessionId}/preview/${previewPort}/child-home-index.html`,
+    {
+      headers: { authorization: `Bearer ${token}`, accept: "text/html" },
+    },
+  );
+  assert.equal(childPreview.status, 200);
+  assert.match(await childPreview.text(), /HOME-COMPUTE-OK/);
+  await terminalCommand(
+    `/v1/development-environments/${development.environmentId}/terminal`,
+    'grep -F HOME-COMPUTE-OK /home/user/empty-project/child-home-index.html && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo HOME_VOLUME_SHARED_OK',
+    "HOME_VOLUME_SHARED_OK",
+  );
   const discoveredPreviewResponse = await fetchFromProduction(
     `/v1/conversations/${session.sessionId}/preview/${String(previewPort)}/`,
     { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
@@ -454,6 +497,7 @@ try {
        from pi_session_entries
       where tenant_id = ${sqlLiteral(bootstrapTenantId)}
         and session_id = (select pi_session_id from sessions where id = ${sqlLiteral(session.sessionId)})
+        and turn_id in (select id from turns where session_id=${sqlLiteral(session.sessionId)})
         and custom_type = 'pi-cloud.sandbox_reset'`,
     ),
     "0",
@@ -588,7 +632,18 @@ try {
 
   const report = {
     accepted: true,
-    piCloudRevision: await capture("git", ["rev-parse", "HEAD"]),
+    piCloudRevision: await capture("docker", [
+      "inspect",
+      "--format",
+      '{{ index .Config.Labels "org.opencontainers.image.revision" }}',
+      await capture(process.execPath, [
+        "scripts/production-compose.mjs",
+        "ps",
+        "--quiet",
+        "supervisor-host",
+      ]),
+    ]),
+    testRevision: await capture("git", ["rev-parse", "HEAD"]),
     checkedAt: new Date().toISOString(),
     developmentEnvironmentId: development.environmentId,
     workspaceId: development.workspaceId,
@@ -600,6 +655,9 @@ try {
     processSurvivedPauseResume: true,
     agentRunBorrowedAndReturnedSameCube: true,
     sharedSubagentInheritedDevelopmentEnvironment: true,
+    temporarySubagent: temporarySubagentEvidence,
+    temporaryComputeSharesHomeButNotSystemDisk: true,
+    parentAndChildPreviewSamePortIsolated: true,
     consecutiveAgentRunsPreservedPhysicalContinuity: true,
     machineVolumeDeletedOnRelease: true,
     cubeVolumeMetadataDeleted: true,

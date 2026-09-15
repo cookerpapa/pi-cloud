@@ -41,8 +41,8 @@ Local targeted runs: 73 core tests, 35 provider/workflow tests and 36 directory/
 schema/context/preview tests passed (overlapping suites, not an additive total).
 Coverage includes same Volume/different runtime, inherited scope, missing/symlink
 directory rejection, long directories, no local eager activation, fixed cwd,
-scope authorization and no parent storage deletion. Full check and real deployed
-acceptance are still pending; no live-VM claim follows from these fakes/contracts.
+scope authorization and no parent storage deletion. Subsequent full/deployed
+gates are recorded below; no live-VM claim follows from these fakes/contracts.
 
 Real PostgreSQL (owned disposable database) passed the three Broker ownership
 contracts, including scope mismatch rejection and two compute reservations on
@@ -58,4 +58,36 @@ All 26 deterministic fault cases pass after replacing the retired copy target
 with compute-scope expiry. The report marks its uncommitted working tree so it
 cannot be mistaken for an unchanged baseline revision. Browser presentation
 checks pass (15 grouped invariants); Helm, runtime-policy, image-closure and
-documentation checks pass. Deployment and paid acceptance remain pending.
+documentation checks pass. These local gates alone do not prove deployed acceptance.
+
+## First deployed acceptance
+
+Runtime `fd07a098` is deployed with schema 141 and matching Cube templates.
+All services returned healthy. DeepSeek Flash completed 12 parent Turns and
+15 children (including one deliberately cancelled child): direct and scripted
+tasks, fresh/branch Lanes, tool-less/lazy activation, shared compute, separate
+worktree compute, parallel worktrees, recursion, messages and supervisor replies.
+Native Tool calls confirm ordinary Git worktree creation, child commits and
+parent local merges; executable Python checks and the merged marker pass.
+The two parallel child runtimes differ from each other and the parent, while
+all use the same Workspace/Volume. No child Workspace was allocated.
+
+Reported usage: input 33,048, cacheRead 317,824, output 7,884. API admission
+p50/p95: 20.8/39.4 ms; first model dispatch p50: 164.3 ms; Pi text event → SSE
+client p50: 9.0 ms. Parent text often follows delegation, so it is not a
+single-model TTFT. Two wall-clock-jump samples exclude cross-process stage
+decomposition; their monotonic totals remain recorded. These are API receipts,
+not browser paint or multi-node latency claims.
+
+Fixture `subagent-mu2hb5yc`: conversation views archived, all four compute
+runtimes released and the one Volume purge confirmed. Its archived metadata
+remains until final scoped cleanup. A stronger nested-compute case and a
+machine-home/same-port Preview case are queued for the next live pass.
+
+Historical CI failure `34940633675` came from FORCE-dropping a test database while
+closing PG sockets still existed. The fixture now waits for server-observed
+connection exit and uses ordinary DROP, rather than swallowing terminal errors.
+Seven real-PG tenant/Broker tests pass with that teardown.
+
+Template retention selected eight old templates but Cube cleanup still times out
+against the stale node endpoint; none of those eight is counted as deleted.

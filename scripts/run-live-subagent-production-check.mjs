@@ -299,6 +299,9 @@ async function recursiveTreeEvidence(rootRunId) {
       'childRunId', execution.child_run_id,
       'childRunState', child_run.state,
       'rootWorker', root_attempt.claim_owner_id,
+      'computeSessionId', child_run.compute_session_id,
+      'cwd', child_run.working_directory,
+      'runtimeId', (select runtime_id from tool_broker_workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child_run.workspace_id and compute_session_id is not distinct from child_run.compute_session_id order by created_at desc limit 1),
       'childWorker', child_attempt.claim_owner_id,
       'sameWorker', root_attempt.claim_owner_id = child_attempt.claim_owner_id,
       'sameOwnerLease', root_attempt.lease_id = child_attempt.lease_id
@@ -397,7 +400,19 @@ function assertLaneBacked(evidence, rootPiSessionId) {
 }
 
 const suffix = `${Date.now().toString(36)}`;
-const testedRevision = await capture("git", ["rev-parse", "HEAD"]);
+const testRevision = await capture("git", ["rev-parse", "HEAD"]);
+const workerContainer = await capture(process.execPath, [
+  "scripts/production-compose.mjs",
+  "ps",
+  "--quiet",
+  "supervisor-host",
+]);
+const testedRevision = await capture("docker", [
+  "inspect",
+  "--format",
+  '{{ index .Config.Labels "org.opencontainers.image.revision" }}',
+  workerContainer,
+]);
 const registration = await new PiCloudApi(fetchFromProduction).registerTenant(
   `subagent-${suffix}`.slice(0, 63),
   "Subagent production acceptance",
@@ -551,6 +566,33 @@ try {
     "/workspace/worktrees/right",
   ]);
   assert.match(parallelCompute.text, /PARALLEL-WORKTREES-MERGED/u);
+
+  const nestedComputeTask = [
+    "Use bash to verify pwd is /workspace/worktrees/feature-a.",
+    'Call subagent action:"run" once with context:"fresh", sandbox:"shared", task:"Use bash to verify pwd is /workspace/worktrees/feature-a. Write nested-shared.txt containing NESTED-COMPUTE-OK and read it back. Do not create subagents. Reply NESTED-COMPUTE-OK.".',
+    "Wait for the actual result, then read nested-shared.txt yourself and reply NESTED-COMPUTE-OK.",
+  ].join(" ");
+  const nestedCompute = await runTurn(
+    session.sessionId,
+    [
+      `Call subagent action:"run" exactly once with context:"fresh", sandbox:"ephemeral", cwd:"/workspace/worktrees/feature-a", task:${JSON.stringify(nestedComputeTask)}.`,
+      "After it returns, read /workspace/worktrees/feature-a/nested-shared.txt using bash and reply NESTED-COMPUTE-OK.",
+    ].join(" "),
+  );
+  const nestedComputeEvidence = await recursiveTreeEvidence(nestedCompute.accepted.runId);
+  assert.equal(nestedComputeEvidence.length, 2);
+  const nestedRoot = nestedComputeEvidence.find((e) => e.depth === 1);
+  const nestedLeaf = nestedComputeEvidence.find((e) => e.depth === 2);
+  assert(nestedRoot && nestedLeaf && nestedRoot.runtimeId);
+  for (const child of nestedComputeEvidence) {
+    assert.equal(child.childRunState, "completed");
+    assert.equal(child.computeSessionId, nestedRoot.childSessionId);
+    assert.equal(child.runtimeId, nestedRoot.runtimeId);
+    assert.equal(child.cwd, "/workspace/worktrees/feature-a");
+    assert.equal(child.sameWorker, true);
+    assert.equal(child.sameOwnerLease, true);
+  }
+  assert.match(nestedCompute.text, /NESTED-COMPUTE-OK/u);
 
   const nestedTask = [
     "Call the subagent Tool exactly once and do not call file or bash Tools.",
@@ -735,6 +777,7 @@ try {
   const report = {
     architecture: "shared-volume-subagent-compute",
     revision: testedRevision,
+    testRevision,
     timings: measurements,
     usage: JSON.parse(
       await psql(`select json_build_object(
@@ -757,6 +800,7 @@ try {
       parallelCompute: parallelComputeEvidence,
     },
     recursiveTree: recursiveEvidence,
+    nestedCompute: nestedComputeEvidence,
     coding: codingEvidence,
     messaging: { child: messagingEvidence, ...mailboxEvidence },
     supervisor: supervisorEvidence,

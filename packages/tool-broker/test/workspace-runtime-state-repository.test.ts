@@ -10,7 +10,7 @@ import {
   parseEnvironmentValidationReport,
 } from "@pi-cloud/protocol";
 import type { SandboxHandle } from "../src/sandbox-provider.ts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostgresWorkspaceRuntimeStateRepository } from "../src/index.ts";
 import { CubePersistentCapsuleCodec } from "../src/cube-persistent-capsule.ts";
 import { PostgresToolCommandRoutes } from "../src/tool-command-routes.ts";
@@ -27,7 +27,18 @@ async function fixtureDatabase() {
     const name = `pi_compute_${randomUUID().replaceAll("-", "")}`;
     const admin = createDatabase({ connectionString: endpoint, maxConnections: 1 });
     resources.push(async () => {
-      await sql`drop database if exists ${sql.id(name)} with (force)`.execute(admin);
+      await vi.waitFor(
+        async () => {
+          const remaining = await sql<{
+            count: number;
+          }>`select count(*)::int as count from pg_stat_activity where datname=${name}`.execute(
+            admin,
+          );
+          expect(remaining.rows[0]?.count).toBe(0);
+        },
+        { timeout: 5_000 },
+      );
+      await sql`drop database if exists ${sql.id(name)}`.execute(admin);
       await admin.destroy();
     });
     await sql`create database ${sql.id(name)}`.execute(admin);

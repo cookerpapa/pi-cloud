@@ -127,7 +127,21 @@ it.skipIf(!external)(
       await Promise.allSettled(pending);
       await blocker?.end();
       await Promise.all(clients.map((client) => client.destroy()));
-      if (created) await admin.query(`drop database "${name}" with (force)`);
+      if (created) {
+        // pool.end() closes local sockets; wait for PG to observe their exit.
+        // FORCE can otherwise send FATAL into a client's still-closing socket.
+        await vi.waitFor(
+          async () => {
+            const remaining = await admin.query(
+              "select count(*)::int as count from pg_stat_activity where datname=$1",
+              [name],
+            );
+            expect(remaining.rows[0].count).toBe(0);
+          },
+          { timeout: 5_000 },
+        );
+        await admin.query(`drop database "${name}"`);
+      }
       await admin.end();
     }
   },
