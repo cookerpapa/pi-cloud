@@ -284,6 +284,7 @@ export class CloudAgentRuntime {
   readonly #id: () => string;
   readonly #compaction: CompactionSettings;
   #agent: Agent | undefined;
+  readonly #agentReady = Promise.withResolvers<void>();
   readonly #agentInputIds = new WeakMap<object, string>();
   readonly #queuedAgentInputs = new Set<string>();
   #started = false;
@@ -548,6 +549,7 @@ export class CloudAgentRuntime {
         }
       });
 
+      this.#agentReady.resolve();
       try {
         const retry = this.#options.retry;
         for (;;) {
@@ -693,15 +695,26 @@ export class CloudAgentRuntime {
     } finally {
       removeAuthorityAbort?.();
       this.#agent = undefined;
+      this.#agentReady.resolve();
     }
   }
 
-  steer(text: string): void {
+  async #inputAgent(): Promise<Agent> {
+    if (!this.#started) throw new Error("Target Agent is not running");
+    // The Run/Runtime exists before native Session bootstrap and Agent creation.
+    // Keep accepted mailbox delivery pending through that interval, not failed.
+    await this.#agentReady.promise;
+    await this.#options.authority.assertCurrent();
+    if (!this.#agent || this.#abortRequested) throw new Error("Target Agent is not running");
+    return this.#agent;
+  }
+
+  async steer(text: string): Promise<void> {
     if (text.trim().length === 0 || text.length > 100_000) {
       throw new TypeError("Steer text is invalid");
     }
-    if (this.#agent === undefined) throw new Error("Cloud Agent Run is not active");
-    this.#agent.steer(createUserMessage(text));
+    const agent = await this.#inputAgent();
+    agent.steer(createUserMessage(text));
   }
 
   async agentInput(
@@ -709,17 +722,18 @@ export class CloudAgentRuntime {
     text: string,
     delivery: "notify" | "steer" | "follow_up",
   ): Promise<void> {
-    await this.#options.authority.assertCurrent();
-    if (!this.#agent) throw new Error("Target Agent is not running");
+    const agent = await this.#inputAgent();
     const entryId = `pc-agent-input-${id}`;
     if (this.#queuedAgentInputs.has(entryId) || (await this.#options.session.getEntry(entryId)))
       return;
     if (this.#queuedAgentInputs.has(entryId)) return;
+    if (this.#agent !== agent || this.#abortRequested)
+      throw new Error("Target Agent is not running");
     const message = createUserMessage(text);
     this.#agentInputIds.set(message, entryId);
     this.#queuedAgentInputs.add(entryId);
-    if (delivery === "follow_up") this.#agent.followUp(message);
-    else this.#agent.steer(message);
+    if (delivery === "follow_up") agent.followUp(message);
+    else agent.steer(message);
   }
 
   abort(): void {

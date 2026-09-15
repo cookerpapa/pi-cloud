@@ -278,6 +278,110 @@ afterAll(async () => {
 });
 
 describe.sequential("CloudAgentRuntime", () => {
+  it.each(["steer", "follow_up", "notify"] as const)(
+    "accepts %s Agent input during native bootstrap exactly once",
+    async (delivery) => {
+      const storage = await createStorage();
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const contexts: Context[] = [];
+      const runtime = new CloudAgentRuntime({
+        ...(await withNativeSession(storage)),
+        lane: "main",
+        authority: new TestAuthority(),
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: async () => {
+          entered.resolve();
+          await release.promise;
+          return "test";
+        },
+        streamFn: scriptedStream(["done", "done"], contexts),
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      });
+      const running = runtime.run("initial task");
+      await entered.promise;
+      const inputId = crypto.randomUUID();
+      const deliveries = Promise.allSettled([
+        runtime.agentInput(inputId, "bootstrap-mailbox-marker", delivery),
+        runtime.agentInput(inputId, "bootstrap-mailbox-marker", delivery),
+      ]);
+      release.resolve();
+      expect(await deliveries).toEqual([
+        { status: "fulfilled", value: undefined },
+        { status: "fulfilled", value: undefined },
+      ]);
+      expect(await running).toMatchObject({ kind: "completed" });
+      expect(
+        JSON.stringify(contexts.at(-1)?.messages).match(/bootstrap-mailbox-marker/g),
+      ).toHaveLength(1);
+      expect(await storage.getEntry(`pc-agent-input-${inputId}`)).toMatchObject({
+        type: "message",
+      });
+      await expect(runtime.agentInput(crypto.randomUUID(), "too late", delivery)).rejects.toThrow(
+        /not (running|active)/,
+      );
+    },
+  );
+
+  it("settles a waiting Agent input when bootstrap fails without recording it as consumed", async () => {
+    const storage = await createStorage();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const runtime = new CloudAgentRuntime({
+      ...(await withNativeSession(storage)),
+      lane: "main",
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: async () => {
+        entered.resolve();
+        await release.promise;
+        throw new Error("bootstrap fixture failure");
+      },
+      streamFn: scriptedStream([]),
+    });
+    const running = runtime.run("initial task").catch((error: unknown) => error);
+    await entered.promise;
+    const inputId = crypto.randomUUID();
+    const input = runtime
+      .agentInput(inputId, "unconsumed", "steer")
+      .catch((error: unknown) => error);
+    release.resolve();
+    expect(await running).toMatchObject({ message: "bootstrap fixture failure" });
+    expect(await input).toBeInstanceOf(Error);
+    expect(await storage.getEntry(`pc-agent-input-${inputId}`)).toBeUndefined();
+  });
+
+  it("does not deliver a pending bootstrap input after cancellation", async () => {
+    const storage = await createStorage();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const contexts: Context[] = [];
+    const runtime = new CloudAgentRuntime({
+      ...(await withNativeSession(storage)),
+      lane: "main",
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: async () => {
+        entered.resolve();
+        await release.promise;
+        return "test";
+      },
+      streamFn: scriptedStream([], contexts),
+    });
+    const running = runtime.run("cancel bootstrap");
+    await entered.promise;
+    const inputId = crypto.randomUUID();
+    const input = runtime
+      .agentInput(inputId, "not consumed", "steer")
+      .catch((error: unknown) => error);
+    runtime.abort();
+    release.resolve();
+    expect(await running).toMatchObject({ kind: "aborted" });
+    expect(await input).toBeInstanceOf(Error);
+    expect(await storage.getEntry(`pc-agent-input-${inputId}`)).toBeUndefined();
+    expect(contexts).toHaveLength(0);
+  });
+
   it("remembers cancellation during bootstrap before the Pi Agent exists", async () => {
     const storage = await createStorage();
     const execution = await withNativeSession(storage);

@@ -437,7 +437,7 @@ export class PiCloudTurnRunner {
         const waiter = { resolve: resolvePromise, reject: rejectPromise };
         this.#steerWaiters.add(waiter);
       }));
-    runtime.steer(text);
+    await runtime.steer(text);
   }
   async agentInput(
     id: string,

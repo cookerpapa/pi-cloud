@@ -131,6 +131,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | DEPLOY-01 | Relay image build disabled networking although its pinned OS security updates require package download | Real deployment build failed against localhost proxy in the isolated build namespace. Match the other images' host build network; keep image-only runtime networking disabled. Relay image rebuild succeeds |
 | TEST-02 | Template HTTP probe compared a real newline against literal backslash-n | Actual envd response was exit 0, expected marker plus newline. Correct only the expected bytes and retain response diagnostics; entire image probe rerun passes |
 | MODEL-01 | Actual upstream 401/auth expiry was presented as generic retryable model failure | Provider adapter now emits a safe authentication-specific, non-retryable terminal without exposing upstream payloads; three regressions failed before, 33 adapter/Runner tests pass after. This display change is not yet deployed |
+| SUB-01 | A started Child Runtime rejected a mailbox message before its native Pi Agent was constructed | Paid workflow reproduced 409 and child cancellation. Join native Agent readiness before input delivery; bootstrap failure/cancellation settle waiting delivery without marking input consumed. Keep existing PG mailbox and native entry deduplication; no sleep/retry or second queue. Three delivery-mode regressions failed before, pass after; paid deployed repetition pending |
 | TIME-01 | Lease/claim timestamps are captured before potentially blocked SQL updates | Probe delayed renewal versus actual expiry/seal with real PG; do not silently change the authority clock model |
 
 ARCH-01 implemented locally: positive Agent exit and committed seal restore the
@@ -272,6 +273,15 @@ resources/screenshots; test identity rows still await final cleanup. Remote CI a
 `d32a9fe7` passed; that revision's tree refresh fix is not yet deployed.
 Private fixture IDs/credentials stay in `.cache/audit-live-baseline-state.json`,
 not this report. The baseline and new test users/resources require final cleanup.
+
+Live Subagent acceptance passed seven rounds: fresh/no-Tool, lazy Tool-capable,
+parallel children, shared Workspace, isolated Branch, recursive tree and parallel
+coding. Round eight reproduced SUB-01 rather than passing: immediate mailbox input
+arrived during native bootstrap, received 409 and caused the workflow to cancel
+its child. Local fix validation passed 97 Session tests (one separate real-PG plan
+test not enabled in that invocation) and 104 Runner tests, including native
+bootstrap failure/cancellation and duplicate delivery. Full deployed repetition,
+supervisor interaction and child cancellation acceptance are still pending.
 
 Before mutation, inventory existing tenants/users/resources, image revisions and
 configuration digests without disclosing credentials. Register test resources
