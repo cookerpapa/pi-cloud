@@ -133,8 +133,10 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | MODEL-01 | Actual upstream 401/auth expiry was presented as generic retryable model failure | Provider adapter now emits a safe authentication-specific, non-retryable terminal without exposing upstream payloads; three regressions failed before, 33 adapter/Runner tests pass after. This display change is not yet deployed |
 | SUB-01 | A started Child Runtime rejected a mailbox message before its native Pi Agent was constructed | Paid workflow reproduced 409 and child cancellation. Join native Agent readiness before input delivery; bootstrap failure/cancellation settle waiting delivery without marking input consumed. Keep existing PG mailbox and native entry deduplication; no sleep/retry or second queue. Three delivery-mode regressions failed before, pass after; paid deployed repetition pending |
 | LIFE-10 | Cube Authorizer's async HTTP listener rejected an interrupted body outside any request error boundary | A real child process exited with ECONNRESET after its client disconnected. Catch only body-read failures and close that request without granting access; listener survives and the body-limit response remains covered |
+| LIFE-11 | Provider relay opened an upstream even when its CONNECT client disappeared during DNS | Controlled-socket regression reproduced the late connection. Check the actual client lifetime immediately after DNS; no retry or new timeout. Five relay tests pass |
 | CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace type checks finished successfully after correction; remote CI rerun pending |
 | TIME-01 | Lease/claim timestamps are captured before potentially blocked SQL updates | Probe delayed renewal versus actual expiry/seal with real PG; do not silently change the authority clock model |
+| PERF-01 | Sixteen concurrent Sessions with sufficient slots still spend substantial time before provider dispatch | Real sample: non-provider TTFT p50/p95 836/1,322 ms versus provider 1,036/2,071 ms; eight of 32 Turns are internal-time dominant. Worker metrics show claim averaging 122 ms. Investigate statement/lock/pool time before changing admission; no claim of full latency acceptance |
 
 ARCH-01 implemented locally: positive Agent exit and committed seal restore the
 failed Session's admission, without changing the old failure or replaying Tools.
@@ -300,6 +302,22 @@ first-text p50/p95 2,406/5,109 ms; queue 683/3,552 ms; peak active Runs remained
 eight. This is capacity queueing, not Kafka saturation. A temporary 16-slot/
 16-model-permit configuration on each Worker is being tested separately;
 restore the original four/four settings afterwards.
+The first expanded-capacity wave completed all 32 Runs but was rejected as timing
+evidence because the WSL wall clock jumped 1.744 seconds. A separate rerun passed:
+16 simultaneously active Runs, no marker leaks, first-text p50/p95 1,904/3,209 ms,
+queue 555/1,003 ms. Do not combine its clock-invalid predecessor into percentiles.
+The remaining pre-provider delay is tracked as PERF-01, not blamed on the model.
+Both Workers and the CP have returned to the original four-family/four-model
+configuration and are healthy. A separate Kafka-only steady run on three brokers
+published 747,520 records in 10.011 seconds with 1,024 synthetic Sessions:
+74,668 records/s, ACK p50/p95/p99 12.17/22.39/28.09 ms. This excludes PG, Projector,
+Tool execution, provider requests and browser rendering. Its temporary topic was
+deleted; verify physical cleanup at the final inventory gate.
+Remote CI at `7e929c67` passed all quality, browser and image/security jobs
+([run](https://github.com/cookerpapa/pi-cloud/actions/runs/34920234169)).
+The two owned old browser/Snake artifact directories were removed (about 500 KiB).
+Original identities and formal logs remain untouched. New test identity rows,
+the baseline fixtures and the isolated PostgreSQL container still require cleanup.
 
 Before mutation, inventory existing tenants/users/resources, image revisions and
 configuration digests without disclosing credentials. Register test resources

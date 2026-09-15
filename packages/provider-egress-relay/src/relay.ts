@@ -228,6 +228,7 @@ export function createProviderHostProxy(options: ProviderHostProxyOptions): Serv
       } catch {
         addresses = [];
       }
+      if (client.destroyed) return;
       if (
         addresses.length < 1 ||
         addresses.length > 16 ||

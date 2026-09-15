@@ -1,4 +1,4 @@
-import { connect, createServer, type Server } from "node:net";
+import { connect, createServer, Socket, type Server } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -75,6 +75,42 @@ afterEach(async () => {
 });
 
 describe("provider egress relay", () => {
+  it("does not open an upstream after the client disappears during DNS resolution", async () => {
+    const resolving = Promise.withResolvers<void>();
+    const addresses = Promise.withResolvers<readonly string[]>();
+    const upstream = new Socket();
+    upstream.on("error", () => {});
+    const connectDirect = vi.fn(() => upstream);
+    const proxy = createProviderHostProxy({
+      allowedHosts: ["api.deepseek.com"],
+      resolveHost: async () => {
+        resolving.resolve();
+        return addresses.promise;
+      },
+      connectDirect,
+    });
+    const port = await listenTcp(proxy);
+    let peer: import("node:stream").Duplex | undefined;
+    proxy.on("connect", (_request, client) => {
+      peer = client;
+    });
+    const client = connect(port, "127.0.0.1");
+    client.on("error", () => {});
+    try {
+      client.write("CONNECT api.deepseek.com:443 HTTP/1.1\r\nHost: api.deepseek.com:443\r\n\r\n");
+      await resolving.promise;
+      peer!.destroy();
+      addresses.resolve(["1.1.1.1"]);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(connectDirect).not.toHaveBeenCalled();
+    } finally {
+      addresses.resolve([]);
+      peer?.destroy();
+      client.destroy();
+      upstream.destroy();
+    }
+  });
+
   it("keeps an established tunnel open beyond three minutes and audits the initiating EOF", async () => {
     const echo = createServer((socket) => socket.pipe(socket));
     const echoPort = await listenTcp(echo);
