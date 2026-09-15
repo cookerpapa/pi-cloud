@@ -15,6 +15,23 @@
 		respond "ok" 200
 	}
 
+	# Only this code-owned response is a template; never evaluate user Preview content.
+	handle /ui-config.json {
+		header Content-Type application/json
+		header Cache-Control no-store
+		templates {
+			mime application/json
+		}
+		respond <<JSON
+		{"productUrl": {{env "PI_CLOUD_PUBLIC_ORIGIN_BASE_URL" | toJson}}, "adminUrl": {{env "PI_CLOUD_ADMIN_ORIGIN_BASE_URL" | toJson}}, "managementUrls": {
+		"providerGateway": {{env "PI_CLOUD_PROVIDER_MANAGEMENT_URL" | toJson}},
+		"grafana": {{env "PI_CLOUD_GRAFANA_URL" | toJson}},
+		"prometheus": {{env "PI_CLOUD_PROMETHEUS_URL" | toJson}},
+		"alertmanager": {{env "PI_CLOUD_ALERTMANAGER_URL" | toJson}},
+		"jaeger": {{env "PI_CLOUD_JAEGER_URL" | toJson}}}}
+		JSON
+	}
+
 	handle /internal/* {
 		respond 404
 	}

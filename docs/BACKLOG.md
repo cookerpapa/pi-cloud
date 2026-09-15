@@ -27,6 +27,9 @@ Volume architecture. Historical experiments remain in Git history.
       passed paid repetition. A lock-delayed renewal revived an expired lease
       in a controlled real-PG test (TIME-01); the owner approved ADR-0170 and its
       implementation/acceptance passed at `9f62b365`. Other audit and cleanup gates remain open.
+      Web product/admin origins now come from deployment configuration rather
+      than fixed ports; actual Caddy/Chrome custom-port navigation, Helm routes
+      and existing browser interaction checks pass locally.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

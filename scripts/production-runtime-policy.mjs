@@ -29,6 +29,32 @@ export function validateProductionRuntimeEnvironment(environment) {
   booleanValue(environment, "PI_CLOUD_PUBLIC_REGISTRATION_ENABLED", "true");
   bounded(environment, "PI_CLOUD_HTTP_BIND_ADDRESS", "127.0.0.1", /^[A-Za-z0-9:._-]+$/u, 128);
   integer(environment, "PI_CLOUD_HTTP_PORT", 8_080, 1, 65_535);
+  integer(environment, "PI_CLOUD_ADMIN_PORT", 8_081, 1, 65_535);
+  integer(environment, "PI_CLOUD_CLI_PROXY_MANAGEMENT_PORT", 8_318, 1, 65_535);
+  for (const name of [
+    "PI_CLOUD_PUBLIC_ORIGIN_BASE_URL",
+    "PI_CLOUD_ADMIN_ORIGIN_BASE_URL",
+    "PI_CLOUD_PROVIDER_MANAGEMENT_URL",
+    "PI_CLOUD_GRAFANA_URL",
+    "PI_CLOUD_PROMETHEUS_URL",
+    "PI_CLOUD_ALERTMANAGER_URL",
+    "PI_CLOUD_JAEGER_URL",
+  ]) {
+    const value = environment[name];
+    if (value === undefined || value === "") continue;
+    let url;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new Error(`${name} must be an HTTP URL`);
+    }
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
+      throw new Error(`${name} must be a credential-free HTTP URL`);
+    }
+    if (name.endsWith("ORIGIN_BASE_URL") && (url.pathname !== "/" || url.search || url.hash)) {
+      throw new Error(`${name} must be an origin without a path`);
+    }
+  }
   booleanValue(environment, "PI_CLOUD_WEB_SESSION_COOKIE_SECURE", "false");
   integer(
     environment,

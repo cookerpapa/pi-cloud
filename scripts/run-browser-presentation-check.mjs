@@ -42,6 +42,8 @@ function Panel() {
   return React.createElement("div", {id:"panel", "data-width":panel.width, onPointerDown:panel.beginResize}, "drag");
 }
 const root = createRoot(document.getElementById("root"));
+const configuration={productUrl:location.origin,adminUrl:location.origin,
+  managementUrls:{providerGateway:'https://models.example.test/management.html',grafana:'',prometheus:'',alertmanager:'',jaeger:''}};
 window.renderPanel = () => root.render(React.createElement(React.StrictMode, null, React.createElement(Panel)));
 window.renderTurn = (text, recoveredTextLength = 0, status = "running") => root.render(
   React.createElement(React.StrictMode, null, React.createElement(ConversationTurn, {turn:{
@@ -52,6 +54,7 @@ window.renderTurn = (text, recoveredTextLength = 0, status = "running") => root.
 window.turnBodies = [];
 window.copyFixtureText=copyMessageText;
 window.renderAdmin=()=>root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(AdminPage,{
+  managementUrls:configuration.managementUrls,
   api:{getCubeProxyConfiguration:()=>new Promise(()=>{}),getModelConfiguration:()=>new Promise(()=>{})},
   identity:{displayName:'Fixture administrator',platformAdministrator:true},onLogout:()=>{}
 })));
@@ -182,7 +185,7 @@ window.renderChat = (sessionState='idle', history=false) => {
     }
     return nativeFetch(url,init);
   };
-  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:String(history)})));
+  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:String(history),configuration})));
 };
 window.fixtureReady = true;
 `;
@@ -204,6 +207,23 @@ const server = await createServer({
       },
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
+          if (req.url === "/ui-config.json") {
+            const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+            res.setHeader("content-type", "application/json");
+            return res.end(
+              JSON.stringify({
+                productUrl: origin,
+                adminUrl: origin,
+                managementUrls: {
+                  providerGateway: "",
+                  grafana: "",
+                  prometheus: "",
+                  alertmanager: "",
+                  jaeger: "",
+                },
+              }),
+            );
+          }
           if (req.url === "/v1/identity") {
             res.statusCode = 401;
             res.setHeader("content-type", "application/json");

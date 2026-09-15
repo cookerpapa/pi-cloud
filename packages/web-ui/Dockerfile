@@ -15,7 +15,6 @@ COPY packages/web-ui/index.html packages/web-ui/index.html
 COPY packages/web-ui/src packages/web-ui/src
 COPY packages/web-ui/tsconfig.json packages/web-ui/tsconfig.json
 COPY packages/web-ui/vite.config.ts packages/web-ui/vite.config.ts
-ENV VITE_PI_CLOUD_AUTH_REQUIRED=true
 RUN npm run build --workspace @pi-cloud/web-ui
 
 FROM golang:1.26.6-alpine3.23@sha256:5978cc992ad5ef96a7469713c8af849c1433824761ce3be2c56381403cd8d9a3 AS caddy-builder

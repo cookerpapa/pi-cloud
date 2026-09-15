@@ -53,6 +53,7 @@ import { errorMessage } from "./ui-errors.ts";
 import { WorkspaceInspector } from "./WorkspaceInspector.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
 import { useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
+import { identityDestination, type WebConfiguration } from "./web-configuration.ts";
 
 const AdminPage = lazy(async () => ({
   default: (await import("./AdminPage.tsx")).AdminPage,
@@ -68,8 +69,6 @@ const WorkspaceDirectoryPicker = lazy(async () => ({
 }));
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
-const PRODUCT_PORT = "8080";
-const ADMIN_PORT = "8081";
 const RECONNECT_DISPLAY_GRACE_MS = 1_000;
 
 type PresentedConnectionPhase = "offline" | "connecting" | "live" | "reconnecting" | "failed";
@@ -97,19 +96,6 @@ function usePresentedConnectionPhase(phase: PresentedConnectionPhase): Presented
     commit(phase);
   }, [phase]);
   return presented;
-}
-
-function onAdminOrigin(): boolean {
-  return window.location.port === ADMIN_PORT;
-}
-
-function replaceOriginPort(port: string): void {
-  const destination = new URL(window.location.href);
-  destination.port = port;
-  destination.pathname = "/";
-  destination.search = "";
-  destination.hash = "";
-  window.location.replace(destination);
 }
 
 function conversationTitle(prompt: string, fallback: string): string {
@@ -171,7 +157,7 @@ function developmentStateLabel(
   return t(`resource.state.${state}` as const);
 }
 
-export default function ChatApp() {
+export default function ChatApp({ configuration }: { configuration: WebConfiguration }) {
   const { language, t } = useI18n();
   const api = useMemo(() => new PiCloudApi(), []);
   const [authPhase, setAuthPhase] = useState<AuthPhase>("checking");
@@ -520,12 +506,13 @@ export default function ChatApp() {
 
   useEffect(() => {
     if (authPhase !== "authenticated" || identity === null) return;
-    if (identity.platformAdministrator && !onAdminOrigin()) {
-      replaceOriginPort(ADMIN_PORT);
-    } else if (!identity.platformAdministrator && onAdminOrigin()) {
-      replaceOriginPort(PRODUCT_PORT);
-    }
-  }, [authPhase, identity]);
+    const destination = identityDestination(
+      configuration,
+      identity.platformAdministrator,
+      window.location.origin,
+    );
+    if (destination !== null) window.location.replace(destination);
+  }, [authPhase, identity, configuration]);
 
   useEffect(() => {
     if (authPhase !== "authenticated" || identity?.platformAdministrator === true) return;
@@ -1343,13 +1330,21 @@ export default function ChatApp() {
       />
     );
   }
-  if (identity.platformAdministrator !== onAdminOrigin()) {
+  if (
+    identityDestination(configuration, identity.platformAdministrator, window.location.origin) !==
+    null
+  ) {
     return <main className="product-loading-page" />;
   }
   if (identity.platformAdministrator) {
     return (
       <Suspense fallback={<main className="product-loading-page" />}>
-        <AdminPage api={api} identity={identity} onLogout={logout} />
+        <AdminPage
+          api={api}
+          identity={identity}
+          onLogout={logout}
+          managementUrls={configuration.managementUrls}
+        />
       </Suspense>
     );
   }

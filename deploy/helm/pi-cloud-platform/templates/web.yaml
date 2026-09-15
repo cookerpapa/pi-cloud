@@ -39,7 +39,14 @@ spec:
           env:
             - { name: PI_CLOUD_CONTROL_PLANE_UPSTREAM, value: {{ printf "%s-control-plane:3000" $name | quote }} }
             - { name: PI_CLOUD_PREVIEW_UPSTREAM, value: {{ printf "%s-control-plane:3001" $name | quote }} }
-          ports: [{ name: http, containerPort: 8080 }]
+            - { name: PI_CLOUD_PUBLIC_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.publicOriginBaseUrl | quote }} }
+            - { name: PI_CLOUD_ADMIN_ORIGIN_BASE_URL, value: {{ .Values.web.adminOriginBaseUrl | quote }} }
+            - { name: PI_CLOUD_PROVIDER_MANAGEMENT_URL, value: {{ .Values.web.managementUrls.providerGateway | quote }} }
+            - { name: PI_CLOUD_GRAFANA_URL, value: {{ .Values.web.managementUrls.grafana | quote }} }
+            - { name: PI_CLOUD_PROMETHEUS_URL, value: {{ .Values.web.managementUrls.prometheus | quote }} }
+            - { name: PI_CLOUD_ALERTMANAGER_URL, value: {{ .Values.web.managementUrls.alertmanager | quote }} }
+            - { name: PI_CLOUD_JAEGER_URL, value: {{ .Values.web.managementUrls.jaeger | quote }} }
+          ports: [{ name: http, containerPort: 8080 }, { name: admin, containerPort: 8081 }]
           readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }
           securityContext:
@@ -61,7 +68,7 @@ kind: Service
 metadata: { name: {{ $name }}-web }
 spec:
   selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: web }
-  ports: [{ name: http, port: 8080, targetPort: http }]
+  ports: [{ name: http, port: 8080, targetPort: http }, { name: admin, port: 8081, targetPort: admin }]
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -104,10 +111,18 @@ spec:
   tls:
     - hosts:
         - {{ .Values.web.ingress.host | quote }}
+        - {{ .Values.web.ingress.adminHost | quote }}
         - {{ printf "*.preview.%s" .Values.web.ingress.host | quote }}
       secretName: {{ .Values.web.ingress.tlsSecretName }}
   {{- end }}
   rules:
+    - host: {{ .Values.web.ingress.adminHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: {{ $name }}-web, port: { number: 8081 } }
     - host: {{ .Values.web.ingress.host | quote }}
       http:
         paths:

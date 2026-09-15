@@ -16,6 +16,18 @@ regressions → real product/API/UI and concurrent workloads → failures/latenc
 analysis → final clean-state retest → fixture cleanup → final report → resume.
 Resume changes wait until completion and use v11; existing v9/ESG work is preserved.
 
+Web-origin slice: `web:deployment:check` exercises the current built frontend
+through the real Caddy image on allocated product/admin ports, with an owned
+identity-only HTTP fixture. Both account-type redirects and configured-only
+management links pass; the container, listener and Chrome profile are removed.
+This is deployment/UI acceptance, not paid model acceptance. A separate isolated
+Caddy probe also checks custom upstream DNS, Preview routing and JSON escaping
+for configured link values. The existing Chrome presentation suite, installer,
+Helm, documentation, 134 Web tests, Web types/build and formatting checks pass.
+Production Web rollout is still pending. Runtime configuration is evaluated only
+on the fixed code-owned endpoint, never on user Preview responses, following
+[Caddy's template boundary guidance](https://caddyserver.com/docs/caddyfile/directives/templates).
+
 ## Coverage
 
 Initial inventory: 922 tracked files. The large line count includes tests,
@@ -25,16 +37,16 @@ lockfiles need dependency/CI validation rather than manual source review.
 | Area | Code review | Runtime/combination acceptance |
 | --- | --- | --- |
 | Implementation map / README | Entry-point/data-flow map updated; detailed file coverage continues | Runtime inventory read-only |
-| API, auth, resources, Run admission | Controller/auth/composition/store and machine service read; remaining resource/control services in progress | Local HTTP regressions only; live pending |
-| Worker ownership, queue, capacity | Pending | Pending |
-| Native log, Harness, Lanes, Compaction | Session backend package read; cancellation/projection-wait finding remains open | 92 offline tests pass; real PG plan case and live combinations pending |
-| Kafka, projection, streaming and recovery | Pending | Pending |
-| Tools, Cube, Volumes, machines, Preview/SSH | Broker/transport/Volume implementations read; Cube adapter and remaining lifecycle code pending | Owned local fault regressions only; Cube acceptance pending |
-| Model routing/configuration and hosted search | Pending | Pending |
-| Subagent lifecycle and communication | Pending | Pending |
-| Frontend pages, controls and rendered latency | Pending | Pending |
-| Configuration, deployment, migration, CI, monitoring | Pending | Pending |
-| Scripts/tests/current docs and unused-code cleanup | Pending | Pending |
+| API, auth, resources, Run admission | Controller/auth/composition/store and machine service read; remaining resource/control services in progress | Paid product-surface, six real-PG admission/replay cases and cross-tenant rejection pass |
+| Worker ownership, queue, capacity | Authority/claim paths reviewed and corrected; remaining Worker coverage tracked privately | Family renewal, Worker SIGKILL/replacement and 16 active Sessions tested; pre-provider latency remains open |
+| Native log, Harness, Lanes, Compaction | Session backend package read; cancellation/projection-wait finding remains open | Real-PG plans; two native Compactions during 13 coding rounds; combined child/Compaction coverage still incomplete |
+| Kafka, projection, streaming and recovery | Producer/startup policy and selected projection/seal paths reviewed; remaining code pending | R=3 throughput, CP/Kafka SIGKILL, visible-prefix recovery pass; final combined rerun pending |
+| Tools, Cube, Volumes, machines, Preview/SSH | Broker/transport/Volume implementations read; remaining Cube lifecycle code pending | Paid coding, same-Workspace concurrency, actual Snake browser play and machine controls pass; remaining lifecycle faults pending |
+| Model routing/configuration and hosted search | Adapter/relay and configuration paths reviewed; remaining code pending | GPT/DeepSeek, reasoning/Fast, Worker handoff and search around Compaction pass on recorded revisions |
+| Subagent lifecycle and communication | Core lifecycle/mailbox/native bootstrap paths reviewed; remaining code pending | 11 paid production scenarios pass at 9f62b365, plus family fairness and Worker-loss recovery |
+| Frontend pages, controls and rendered latency | Main components and browser interaction fixtures reviewed; remaining paths pending | 93 deployed controls and actual terminal pass; DOM timing is not yet a compositor-paint measurement |
+| Configuration, deployment, migration, CI, monitoring | Partial coverage; current pending findings below | CI passed at 9f62b365; actual custom Web origins under test; separate K3s Authorizer rollout pending |
+| Scripts/tests/current docs and unused-code cleanup | Partial hash/range coverage; not a full-read claim | Local check: 919 pass / two gated skips at 9f62b365; clean-state final matrix/cleanup/resume not complete |
 
 ## Required live matrix
 
@@ -61,7 +73,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | LIFE-02 | Control Plane orderly shutdown stopped cleanup after the first rejected close | Reproduced skipped Projector/DB/metrics closes. Share one ordered teardown on startup failure and shutdown; attempt every close and surface aggregated errors. Two lifecycle regressions pass |
 | MEM-01 | Control Plane cached management wrappers for every historical Worker URL | Removed unused object cache: wrappers hold no connections and already share the HTTP dispatcher; no routing/authority change |
 | RESTORE-01 | Investigated whether open fetches already-reconciled interruption prefixes | Ruled out: native projection clears the prefix and migration 131 provides a pending-only partial index; no extra cache or query rewrite added |
-| UI-01 | Product/admin origin detection and redirects hard-code ports 8080/8081 | Source-confirmed configuration assumption; test supported custom deployment ports |
+| UI-01 | Product/admin origin detection and redirects hard-code ports 8080/8081; management links guess ports of optional services | Web now loads a non-secret deployment configuration once per document; explicit origins replace port inference and absent component links are hidden. Helm exposes the admin Service/Ingress route. 134 Web tests, types/build, custom Helm render and actual Caddy + Chrome bidirectional redirects on allocated ports pass; deployed repetition pending |
 | DEPLOY-02 | Helm deploys a release-prefixed Control Plane service but Caddy hard-coded Compose DNS | Helm regression reproduced missing upstream configuration. Pass chart-derived API/Preview upstreams and parameterize Caddy's API route. Isolated Caddy/HTTP fixture validates both routes under a different service name; admin-origin/port behavior remains UI-01 |
 | UI-02 | Logout silently treated network failure as success and retained machine/dialog state in the mounted app | Browser reproduced false logout. Surface failure; successful/expired logout replaces the document so old account callbacks/caches cannot reach the next login |
 | UI-03 | Composer and initial-prompt creation both sent `thinkingLevel: off`, overriding persisted Session settings | Real React/Chrome request-builder regression captured `off` in all three submissions despite medium/high selection. Remove obsolete overrides; GPT Fast/high → DeepSeek also tested without model execution |
@@ -121,7 +133,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | FILE-01 | Trusted Git preflight discovered a Workspace's `.git/config` | Owned fake-SSH marker reproduced local config execution. Run network preflight outside user directories and disable global Git config; no real credentials or external server involved |
 | FILE-02 | Credential reads followed a Workspace symlink outside its volume | Reproduced against an owned fixture; open non-following, nonblocking regular file and bound actual bytes read |
 | FILE-03 | Browser path validation could race a parent-directory replacement before open/readdir | Reproduced outside fixture content/names. Validate the opened Linux descriptor and retain it for listing; bound reads if files grow after stat. Volume regression suite passes |
-| PERF-01 | Git preflight held the Volume lock/PG lock connection during remote network wait | Reproduced blocked directory access; release after reading the credential, then perform the independent network probe |
+| PERF-02 | Git preflight held the Volume lock/PG lock connection during remote network wait | Reproduced blocked directory access; release after reading the credential, then perform the independent network probe |
 | LOCK-01 | Volume advisory-lock connection failure is detected after the filesystem callback completes | Needs real PG disconnect + fork/delete interleaving proof; do not change storage/authority semantics without discussion if a local atomic-filesystem fix is insufficient |
 | MEM-02 | Supervisor retained completed Assignments and publisher contexts, plus command/control bookkeeping | Reproduced 64 completed synthetic Runs retaining all 64 publishers and ~65 MiB of owned buffers with zero active Sessions. Clear the publisher at completion/pre-start release: zero publishers and ~1 MiB remain; completed duplicate commands still reuse their outcome. Long-term command/control/epoch bookkeeping retention remains under review |
 | LIFE-06 | A synchronous Runner startup throw bypassed the common completion cleanup and stranded its slot | Reproduced active count remaining 1. Make the event-boundary method async so synchronous and asynchronous failures share finalization; regression passes |
@@ -131,11 +143,11 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CLEAN-06 | Template registration retained unreachable kubectl forwarding/execution and an old v1-evidence bypass | All valid configuration branches already select direct Cube management. Remove unreachable mode/child cleanup and reject unsupported evidence explicitly; preserve missing-file first install. Syntax/install gates and actual template registration are the checks |
 | DEPLOY-01 | Relay image build disabled networking although its pinned OS security updates require package download | Real deployment build failed against localhost proxy in the isolated build namespace. Match the other images' host build network; keep image-only runtime networking disabled. Relay image rebuild succeeds |
 | TEST-02 | Template HTTP probe compared a real newline against literal backslash-n | Actual envd response was exit 0, expected marker plus newline. Correct only the expected bytes and retain response diagnostics; entire image probe rerun passes |
-| MODEL-01 | Actual upstream 401/auth expiry was presented as generic retryable model failure | Provider adapter now emits a safe authentication-specific, non-retryable terminal without exposing upstream payloads; three regressions failed before, 33 adapter/Runner tests pass after. This display change is not yet deployed |
-| SUB-01 | A started Child Runtime rejected a mailbox message before its native Pi Agent was constructed | Paid workflow reproduced 409 and child cancellation. Join native Agent readiness before input delivery; bootstrap failure/cancellation settle waiting delivery without marking input consumed. Keep existing PG mailbox and native entry deduplication; no sleep/retry or second queue. Three delivery-mode regressions failed before, pass after; paid deployed repetition pending |
+| MODEL-01 | Actual upstream 401/auth expiry was presented as generic retryable model failure | Provider adapter now emits a safe authentication-specific, non-retryable terminal without exposing upstream payloads; three regressions failed before, 33 adapter/Runner tests pass after. Included in deployed 9f62b365 |
+| SUB-01 | A started Child Runtime rejected a mailbox message before its native Pi Agent was constructed | Paid workflow reproduced 409 and child cancellation. Join native Agent readiness before input delivery; bootstrap failure/cancellation settle waiting delivery without marking input consumed. Keep existing PG mailbox and native entry deduplication; no sleep/retry or second queue. Three delivery-mode regressions and paid 11-scenario repetitions at 5558ab15 and 9f62b365 pass |
 | LIFE-10 | Cube Authorizer's async HTTP listener rejected an interrupted body outside any request error boundary | A real child process exited with ECONNRESET after its client disconnected. Catch only body-read failures and close that request without granting access; listener survives and the body-limit response remains covered |
 | LIFE-11 | Provider relay opened an upstream even when its CONNECT client disappeared during DNS | Controlled-socket regression reproduced the late connection. Check the actual client lifetime immediately after DNS; no retry or new timeout. Five relay tests pass |
-| CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace type checks finished successfully after correction; remote CI rerun pending |
+| CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace types and remote CI at 9f62b365 pass |
 | TIME-01 | Lease/claim timestamps were captured before potentially blocked SQL updates | Real PG reproduced a lock-delayed renewal reviving an expired lease. ADR-0170 is deployed at 9f62b365: issuance, renewal, validation and retirement use PG decision time; local deadlines are monotonic hints. Nine real-PG boundaries, local checks, CI and paid multi-round/Subagent/Worker-loss acceptance pass. Wider audit remains open; no post-seal corruption or tenant leak was demonstrated |
 | PERF-01 | Sixteen concurrent Sessions with sufficient slots still spend substantial time before provider dispatch | Real sample: non-provider TTFT p50/p95 836/1,322 ms versus provider 1,036/2,071 ms; eight of 32 Turns are internal-time dominant. Worker metrics show claim averaging 122 ms. Investigate statement/lock/pool time before changing admission; no claim of full latency acceptance |
 

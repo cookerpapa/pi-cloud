@@ -10,6 +10,7 @@ import { PiCloudApiError, type PiCloudApi } from "./api.ts";
 import { errorMessage } from "./ui-errors.ts";
 import { useI18n } from "./i18n.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
+import type { WebConfiguration } from "./web-configuration.ts";
 
 const MODEL_OPTIONS: readonly (ProviderModelSelection & { label: string })[] = REVIEWED_MODELS.map(
   (model) =>
@@ -28,25 +29,16 @@ function plainSelection(selection: ProviderModelSelection): ProviderModelSelecti
     : { provider: "openai-codex", modelId: selection.modelId };
 }
 
-function operatorUrl(port: number, path = "/"): string {
-  const url = new URL(
-    typeof window === "undefined" ? "http://127.0.0.1:8081/" : window.location.href,
-  );
-  url.port = String(port);
-  url.pathname = path;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
-}
-
 export function AdminPage({
   api,
   identity,
   onLogout,
+  managementUrls,
 }: {
   api: PiCloudApi;
   identity: TenantIdentityResource;
   onLogout: () => void | Promise<void>;
+  managementUrls: WebConfiguration["managementUrls"];
 }) {
   const { t } = useI18n();
   const [modelConfiguration, setModelConfiguration] = useState<ModelConfigurationResource | null>(
@@ -66,21 +58,21 @@ export function AdminPage({
     {
       title: t("admin.providerGateway"),
       description: t("admin.providerGatewayDescription"),
-      href: operatorUrl(8318, "/management.html"),
+      href: managementUrls.providerGateway,
     },
-    { title: "Grafana", description: t("admin.grafanaDescription"), href: operatorUrl(3001) },
+    { title: "Grafana", description: t("admin.grafanaDescription"), href: managementUrls.grafana },
     {
       title: "Prometheus",
       description: t("admin.prometheusDescription"),
-      href: operatorUrl(9090),
+      href: managementUrls.prometheus,
     },
     {
       title: "Alertmanager",
       description: t("admin.alertmanagerDescription"),
-      href: operatorUrl(9093),
+      href: managementUrls.alertmanager,
     },
-    { title: "Jaeger", description: t("admin.jaegerDescription"), href: operatorUrl(16686) },
-  ];
+    { title: "Jaeger", description: t("admin.jaegerDescription"), href: managementUrls.jaeger },
+  ].filter((link) => link.href.length > 0);
 
   useEffect(() => {
     let cancelled = false;

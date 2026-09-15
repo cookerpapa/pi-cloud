@@ -12,9 +12,36 @@ const apiProxy = {
     changeOrigin: false,
   },
 };
+const configure = (server: import("vite").ViteDevServer | import("vite").PreviewServer) => {
+  server.middlewares.use("/ui-config.json", (request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    response.setHeader("Cache-Control", "no-store");
+    const origin = `http://${request.headers.host}`;
+    response.end(
+      JSON.stringify({
+        productUrl: origin,
+        adminUrl: origin,
+        managementUrls: {
+          providerGateway: "",
+          grafana: "",
+          prometheus: "",
+          alertmanager: "",
+          jaeger: "",
+        },
+      }),
+    );
+  });
+};
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "local-web-configuration",
+      configureServer: configure,
+      configurePreviewServer: configure,
+    },
+  ],
   server: {
     host: "127.0.0.1",
     port: webPort,

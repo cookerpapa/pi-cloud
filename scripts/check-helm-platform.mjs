@@ -57,6 +57,57 @@ const webEnvironment = Object.fromEntries(
 );
 assert.equal(webEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "pi-cloud-control-plane:3000");
 assert.equal(webEnvironment.PI_CLOUD_PREVIEW_UPSTREAM, "pi-cloud-control-plane:3001");
+assert.equal(
+  webEnvironment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL,
+  environment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL,
+);
+assert.equal(webEnvironment.PI_CLOUD_ADMIN_ORIGIN_BASE_URL, "https://admin.pi-cloud.example.com");
+assert.equal(webEnvironment.PI_CLOUD_GRAFANA_URL, "");
+assert(
+  find("Service", "pi-cloud-web").spec.ports.some(
+    (port) => port.name === "admin" && port.port === 8081,
+  ),
+);
+const customIngress = parseAllDocuments(
+  run([
+    "template",
+    "custom",
+    chart,
+    "--set",
+    "web.ingress.enabled=true",
+    "--set",
+    "web.ingress.host=chat.company.test",
+    "--set",
+    "web.ingress.adminHost=ops.company.test",
+    "--set",
+    "controlPlane.publicOriginBaseUrl=https://chat.company.test",
+    "--set",
+    "web.adminOriginBaseUrl=https://ops.company.test",
+    "--set",
+    "web.ingress.tlsSecretName=company-web-tls",
+    "--set",
+    "web.managementUrls.grafana=https://metrics.company.test/grafana/",
+  ]),
+)
+  .map((document) => document.toJSON())
+  .filter(Boolean);
+const ingress = customIngress.find((resource) => resource.kind === "Ingress");
+assert.equal(
+  ingress.spec.rules.find((rule) => rule.host === "ops.company.test").http.paths[0].backend.service
+    .port.number,
+  8081,
+);
+assert(ingress.spec.tls[0].hosts.includes("ops.company.test"));
+const customWeb = customIngress.find(
+  (resource) => resource.kind === "Deployment" && resource.metadata.name === "custom-web",
+);
+assert(customWeb);
+const customWebEnvironment = Object.fromEntries(
+  customWeb.spec.template.spec.containers[0].env.map((entry) => [entry.name, entry.value]),
+);
+assert.equal(customWebEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "custom-control-plane:3000");
+assert.equal(customWebEnvironment.PI_CLOUD_ADMIN_ORIGIN_BASE_URL, "https://ops.company.test");
+assert.equal(customWebEnvironment.PI_CLOUD_GRAFANA_URL, "https://metrics.company.test/grafana/");
 const customDatabaseKeys = parseAllDocuments(
   run([
     "template",

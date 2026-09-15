@@ -44,6 +44,7 @@ bootstrap:
   defaultModelProfileId: 2320c0e8-bec5-4074-9c85-01e50f26d85f
 
 controlPlane:
+  publicOriginBaseUrl: https://pi-cloud.example.com
   platformModelSourceTenantId: 4e0e7b96-4fe4-4f69-aef3-491335662c6f
   platformOperatorTenantId: 4e0e7b96-4fe4-4f69-aef3-491335662c6f
 
@@ -55,10 +56,12 @@ sshGateway:
   serviceType: LoadBalancer
 
 web:
+  adminOriginBaseUrl: https://admin.pi-cloud.example.com
   ingress:
     enabled: true
     className: nginx
     host: pi-cloud.example.com
+    adminHost: admin.pi-cloud.example.com
     tlsSecretName: pi-cloud-web-tls
 
 external:

@@ -177,7 +177,8 @@ It does not request model credentials or administrator passwords.
    npm run production:administrator -- --username <registered-username>
    ```
 
-3. Open the administrator site at `http://127.0.0.1:8081`. Configure model routes
+3. Open the administrator site at `http://127.0.0.1:8081` (local default; public
+   product/admin origins are configured in the deployment settings). Configure model routes
    and Cube networking; follow its link to the Provider Gateway on port `8318`
    for subscription/API credentials. Retrieve the management key with
    `npm run production:provider-gateway:key`.

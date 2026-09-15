@@ -83,6 +83,7 @@
     "production:preview-isolation-check": "node --import tsx scripts/run-live-preview-isolation-check.mjs",
     "production:browser-ui-check": "node --import tsx scripts/run-live-browser-ui-check.mjs",
     "browser:presentation:check": "node scripts/run-browser-presentation-check.mjs",
+    "web:deployment:check": "npm run build --workspace @pi-cloud/web-ui && node scripts/run-web-deployment-check.mjs",
     "production:directory-picker-check": "node --import tsx scripts/run-live-directory-picker-check.mjs",
     "production:subagents-check": "node --import tsx scripts/run-live-subagent-production-check.mjs",
     "production:session-family-check": "node --import tsx scripts/run-live-session-family-check.mjs",

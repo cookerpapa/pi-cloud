@@ -12,6 +12,19 @@ import { ResourceManagementPage, resourceRefreshPending } from "../src/ResourceM
 import type { TurnView } from "../src/session-view.ts";
 import { WorkspaceDirectoryPicker } from "../src/WorkspaceDirectoryPicker.tsx";
 import { WorkspaceInspector } from "../src/WorkspaceInspector.tsx";
+import type { WebConfiguration } from "../src/web-configuration.ts";
+
+const configuration: WebConfiguration = {
+  productUrl: "https://chat.example.test/",
+  adminUrl: "https://admin.example.test/",
+  managementUrls: {
+    providerGateway: "https://models.example.test/management.html",
+    grafana: "",
+    prometheus: "",
+    alertmanager: "",
+    jaeger: "",
+  },
+};
 
 function turn(turnId: string, prompt: string): TurnView {
   return {
@@ -63,7 +76,7 @@ describe("product chat experience", () => {
   });
 
   it("restores a durable login without rendering the old operator console", () => {
-    const markup = renderToStaticMarkup(<ChatApp />);
+    const markup = renderToStaticMarkup(<ChatApp configuration={configuration} />);
     expect(markup).toContain("正在恢复登录状态");
     expect(markup).not.toContain(">A<");
     expect(markup).not.toContain("PostgreSQL outbox");
@@ -88,6 +101,7 @@ describe("product chat experience", () => {
   it("renders platform configuration in a dedicated administrator page", () => {
     const markup = renderToStaticMarkup(
       <AdminPage
+        managementUrls={configuration.managementUrls}
         api={new PiCloudApi(async () => new Response(null, { status: 500 }))}
         identity={{
           tenantId: "10000000-0000-4000-8000-000000000001",
@@ -105,6 +119,9 @@ describe("product chat experience", () => {
     expect(markup).toContain("Pi Worker 模型");
     expect(markup).toContain("CubeSandbox 公网代理");
     expect(markup).not.toContain("最近对话");
+    expect(markup).toContain('href="https://models.example.test/management.html"');
+    expect(markup).not.toContain("Grafana");
+    expect(markup).not.toContain(":8318");
   });
 
   it("renders the Workspace as a directory without executing browser effects", () => {

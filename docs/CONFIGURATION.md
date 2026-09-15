@@ -3,8 +3,8 @@
 PiCloud has four configuration surfaces. A setting belongs to exactly one of
 them:
 
-1. the PiCloud administrator page on port `8081` for hot product settings;
-2. CLIProxyAPI's native management page on port `8318` for provider accounts;
+1. the PiCloud administrator origin (local default port `8081`) for hot product settings;
+2. CLIProxyAPI's native management page (local default port `8318`) for provider accounts;
 3. the private one-host `.env` for restart-bound deployment settings;
 4. Helm values and Kubernetes Secrets for distributed deployments.
 
@@ -84,6 +84,10 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_ADMIN_BIND_ADDRESS` | `127.0.0.1` | operator-only listener bind address |
 | `PI_CLOUD_ADMIN_PORT` | `8081` | PiCloud operator landing page |
 | `PI_CLOUD_CLI_PROXY_MANAGEMENT_PORT` | `8318` | native Provider Gateway management page |
+| `PI_CLOUD_PUBLIC_ORIGIN_BASE_URL` | `http://127.0.0.1:<HTTP_PORT>` | browser-visible product origin, also used by Preview authorization |
+| `PI_CLOUD_ADMIN_ORIGIN_BASE_URL` | `http://127.0.0.1:<ADMIN_PORT>` | browser-visible administrator origin; independent from bind address/port |
+| `PI_CLOUD_PROVIDER_MANAGEMENT_URL` | `http://127.0.0.1:<CLI_PROXY_MANAGEMENT_PORT>/management.html` | administrator link to the provider console |
+| `PI_CLOUD_GRAFANA_URL`, `PI_CLOUD_PROMETHEUS_URL`, `PI_CLOUD_ALERTMANAGER_URL`, `PI_CLOUD_JAEGER_URL` | empty | optional browser-visible console links; empty hides the link |
 | `PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID` | empty | set by `production:administrator` |
 | `PI_CLOUD_PUBLIC_REGISTRATION_ENABLED` | `true` | allow new browser accounts |
 | `PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS` | `1000` | maximum public tenants |
@@ -91,6 +95,20 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS` | `100` | Sessions per public tenant |
 | `PI_CLOUD_WEB_SESSION_TTL_MS` | `2592000000` | browser login lifetime (30 days) |
 | `PI_CLOUD_WEB_SESSION_COOKIE_SECURE` | `false` | set `true` when the public endpoint is HTTPS |
+
+For LAN/HTTPS deployments, set the browser-visible origins explicitly; `0.0.0.0`
+is a bind address, not a browser destination. Product/admin URLs are origins
+without subpaths. Web serves this non-secret configuration at `/ui-config.json`
+on page load; it is not queried per message and requires no Control Plane round
+trip. Recreate Web after changing it. Authentication cookies remain host-only:
+separate administrator/product hostnames require signing in on each hostname.
+Vite's local demo explicitly uses one origin for both account types.
+
+Helm uses `controlPlane.publicOriginBaseUrl`, `web.adminOriginBaseUrl`, and
+`web.managementUrls`. Configure `web.ingress.host` / `adminHost` and a certificate
+covering both hosts plus `*.preview.<product-host>` when enabling Ingress.
+The chart routes the separate admin host to port 8081; links never infer public
+addresses from Pod ports. Optional management links do not enable their services.
 
 ### Worker, Subagent and Sandbox capacity
 

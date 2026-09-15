@@ -106,6 +106,13 @@ sshGateway:
 
 web:
   replicas: 2
+  adminOriginBaseUrl: https://admin.pi-cloud.example.com
+  managementUrls:
+    providerGateway: ""
+    grafana: ""
+    prometheus: ""
+    alertmanager: ""
+    jaeger: ""
   autoscaling:
     enabled: true
     minReplicas: 2
@@ -115,6 +122,7 @@ web:
     enabled: false
     className: ""
     host: pi-cloud.example.com
+    adminHost: admin.pi-cloud.example.com
     tlsSecretName: ""
   resources:
     requests: { cpu: 50m, memory: 64Mi }

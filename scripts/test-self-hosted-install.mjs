@@ -72,6 +72,23 @@ assert.match(
   "The image-only service must remain unrunnable on the application network",
 );
 validateProductionRuntimeEnvironment({});
+validateProductionRuntimeEnvironment({
+  PI_CLOUD_HTTP_PORT: "18080",
+  PI_CLOUD_ADMIN_PORT: "19090",
+  PI_CLOUD_PUBLIC_ORIGIN_BASE_URL: "https://chat.company.test",
+  PI_CLOUD_ADMIN_ORIGIN_BASE_URL: "https://ops.company.test",
+  PI_CLOUD_GRAFANA_URL: "https://monitor.company.test/grafana/",
+});
+for (const value of [
+  "javascript:alert(1)",
+  "http://user:secret@ops.company.test",
+  "https://ops.company.test/admin",
+]) {
+  assert.throws(
+    () => validateProductionRuntimeEnvironment({ PI_CLOUD_ADMIN_ORIGIN_BASE_URL: value }),
+    /PI_CLOUD_ADMIN_ORIGIN_BASE_URL/,
+  );
+}
 assert.throws(
   () =>
     validateProductionRuntimeEnvironment({
