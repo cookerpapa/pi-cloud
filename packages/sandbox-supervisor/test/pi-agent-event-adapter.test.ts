@@ -107,6 +107,34 @@ describe("PiAgentEventAdapter", () => {
     });
   });
 
+  it.each([
+    "Provided authentication token is expired. Please try signing in again.",
+    '401 {"error":{"code":"invalid_api_key","key":"must-not-pass"}}',
+    '401 {"error":{"code":"auth_unavailable","detail":"must-not-pass"}}',
+  ])(
+    "reports provider authentication failure without suggesting an automatic retry: %s",
+    (errorMessage) => {
+      const adapter = createAdapter();
+      adapter.adapt({ type: "agent_start" });
+      adapter.adapt({
+        type: "message_end",
+        message: { role: "assistant", stopReason: "error", errorMessage },
+      });
+      const settled = adapter.adapt({ type: "agent_settled" });
+      expect(settled).toMatchObject({
+        kind: "settled",
+        result: {
+          status: "failed",
+          code: "model_authentication_failed",
+          retryable: false,
+          message:
+            "Model provider authentication failed; ask the administrator to reconnect the provider",
+        },
+      });
+      expect(JSON.stringify(settled)).not.toContain("must-not-pass");
+    },
+  );
+
   it("correlates one logical Step across a bounded provider retry and Tool result", () => {
     let eventId = 0;
     const adapter = new PiAgentEventAdapter(

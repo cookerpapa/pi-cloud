@@ -130,6 +130,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CLEAN-06 | Template registration retained unreachable kubectl forwarding/execution and an old v1-evidence bypass | All valid configuration branches already select direct Cube management. Remove unreachable mode/child cleanup and reject unsupported evidence explicitly; preserve missing-file first install. Syntax/install gates and actual template registration are the checks |
 | DEPLOY-01 | Relay image build disabled networking although its pinned OS security updates require package download | Real deployment build failed against localhost proxy in the isolated build namespace. Match the other images' host build network; keep image-only runtime networking disabled. Relay image rebuild succeeds |
 | TEST-02 | Template HTTP probe compared a real newline against literal backslash-n | Actual envd response was exit 0, expected marker plus newline. Correct only the expected bytes and retain response diagnostics; entire image probe rerun passes |
+| MODEL-01 | Actual upstream 401/auth expiry was presented as generic retryable model failure | Provider adapter now emits a safe authentication-specific, non-retryable terminal without exposing upstream payloads; three regressions failed before, 33 adapter/Runner tests pass after. This display change is not yet deployed |
 | TIME-01 | Lease/claim timestamps are captured before potentially blocked SQL updates | Probe delayed renewal versus actual expiry/seal with real PG; do not silently change the authority clock model |
 
 ARCH-01 implemented locally: positive Agent exit and committed seal restore the
@@ -194,6 +195,42 @@ Architecture-level issues block only their own modifications; continue
 independent review and verification while awaiting the owner.
 
 ## Resources and final gate
+
+### Live campaign started
+
+Read-only pre-rollout inventory: 35 users, 33 tenants, zero Sessions/live Workspaces/
+machines/active Runs/pending seals/pending Outbox. Preserve those identities.
+Registered template catalog and service images at `2bc942b8`; applied migrations
+139/140 with no user reset and rolled the idle stack. All services became healthy.
+Four old template deletions were deferred by Cube with node-cleanup timeouts;
+the four new templates are READY. Do not claim old template bytes were removed.
+
+Paid diagnostic calls (small samples, not a throughput or statistical ablation):
+DeepSeek Flash before rollout had one cold first-text sample of 5,062 ms, including
+4,157 ms until model dispatch; a later sample was 645 ms (provider route 324 ms,
+non-provider 321 ms). These baseline calls overlapped image build and are not an
+idle-machine SLO. The first marker response was translated by the model, so its
+exact-marker assertion failed; a clarified ASCII test passed. After rollout,
+restoring the same Sessions on new Worker boots gave 1,087/1,157 ms for Flash
+medium/Pro high, with 304/270 ms non-provider time. These are API/SSE receipt times,
+not browser paint. Persisted model/reasoning/Fast snapshots matched the request.
+
+Two paid coding Turns created and tested stable insertion sort, then read/preserved
+it and added first-match binary search. Both completed, used different Workers,
+one physical Workspace Cube and two Tool bindings (8 operations). Provider usage:
+2,947 uncached input, 44,416 cache-read, 3,302 output tokens across those two Turns.
+Final assistant text arrived after earlier Tool-generating sampling, so it is not
+initial Agent activity. One Turn had a 1.57-second host wall-clock step; its cross-
+process timing breakdown is explicitly unavailable, not silently used.
+
+GPT currently fails upstream authentication: its configured access-only credential
+expired and has no refresh token. Started the normal device authorization workflow
+and asked the owner to complete it; no alternate credential was copied. Official
+[Codex authentication guidance](https://learn.chatgpt.com/docs/auth) was checked
+using OpenAI Docs. Product-surface GPT acceptance stopped on this actual failure;
+it is not a passed test. DeepSeek Snake/browser acceptance is running independently.
+Private fixture IDs/credentials stay in `.cache/audit-live-baseline-state.json`,
+not this report. The baseline and new test users/resources require final cleanup.
 
 Before mutation, inventory existing tenants/users/resources, image revisions and
 configuration digests without disclosing credentials. Register test resources

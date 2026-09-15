@@ -96,32 +96,43 @@ function assistantStopReason(value: unknown): AssistantStopReason | undefined {
   }
 }
 
-function safeAssistantFailureMessage(value: unknown): string | undefined {
+function safeAssistantFailure(
+  value: unknown,
+): Readonly<{ code: string; message: string; retryable: boolean }> | undefined {
   if (!isRecord(value) || value.role !== "assistant" || value.stopReason !== "error") {
     return undefined;
   }
   const raw = typeof value.errorMessage === "string" ? value.errorMessage.trim() : "";
   const normalized = raw.toLowerCase();
   if (
+    normalized.includes("authentication token is expired") ||
+    normalized.includes("invalid_api_key") ||
+    normalized.includes("auth_unavailable")
+  ) {
+    return {
+      code: "model_authentication_failed",
+      message:
+        "Model provider authentication failed; ask the administrator to reconnect the provider",
+      retryable: false,
+    };
+  }
+  let message: string | undefined;
+  if (
     normalized === "terminated" ||
     normalized.includes("stream ended before") ||
     isIncompleteModelStreamError(raw)
   ) {
-    return "Model response stream ended before completion";
+    message = "Model response stream ended before completion";
+  } else if (normalized.includes("response stream became idle")) {
+    message = "Model response stream became idle before completion";
+  } else if (normalized.includes("response headers timed out")) {
+    message = "Model provider did not return response headers in time";
+  } else if (normalized.includes("usage limit") || normalized.includes("insufficient_quota")) {
+    message = "Model provider usage limit was reached";
+  } else if (normalized.includes("rate limit") || normalized.includes("rate_limit")) {
+    message = "Model provider rate limit was reached";
   }
-  if (normalized.includes("response stream became idle")) {
-    return "Model response stream became idle before completion";
-  }
-  if (normalized.includes("response headers timed out")) {
-    return "Model provider did not return response headers in time";
-  }
-  if (normalized.includes("usage limit") || normalized.includes("insufficient_quota")) {
-    return "Model provider usage limit was reached";
-  }
-  if (normalized.includes("rate limit") || normalized.includes("rate_limit")) {
-    return "Model provider rate limit was reached";
-  }
-  return undefined;
+  return message === undefined ? undefined : { code: "model_error", message, retryable: true };
 }
 
 /**
@@ -136,7 +147,7 @@ export class PiAgentEventAdapter {
   #piTurnActive = false;
   #settled = false;
   #lastAssistantStopReason: AssistantStopReason | undefined;
-  #lastAssistantFailureMessage: string | undefined;
+  #lastAssistantFailure: ReturnType<typeof safeAssistantFailure>;
   #cancellationReason: TurnCancellationReason | undefined;
   #compactionActive = false;
   #activeSampling: ModelSamplingIdentity | undefined;
@@ -431,7 +442,7 @@ export class PiAgentEventAdapter {
       const stopReason = assistantStopReason(value.message);
       this.#lastAssistantStopReason = stopReason ?? this.#lastAssistantStopReason;
       if (stopReason !== undefined) {
-        this.#lastAssistantFailureMessage = safeAssistantFailureMessage(value.message);
+        this.#lastAssistantFailure = safeAssistantFailure(value.message);
       }
       if (stopReason === undefined) return { kind: "ignored", sourceType: value.type };
       if (this.#activeSampling === undefined) {
@@ -543,7 +554,7 @@ export class PiAgentEventAdapter {
         const stopReason = assistantStopReason(value.messages[index]);
         if (stopReason !== undefined) {
           this.#lastAssistantStopReason = stopReason;
-          this.#lastAssistantFailureMessage = safeAssistantFailureMessage(value.messages[index]);
+          this.#lastAssistantFailure = safeAssistantFailure(value.messages[index]);
           break;
         }
       }
@@ -569,9 +580,11 @@ export class PiAgentEventAdapter {
           terminal: true,
           result: {
             status: "failed",
-            code: "model_error",
-            message: this.#lastAssistantFailureMessage ?? "Model request failed",
-            retryable: true,
+            ...(this.#lastAssistantFailure ?? {
+              code: "model_error",
+              message: "Model request failed",
+              retryable: true,
+            }),
           },
         };
       }
