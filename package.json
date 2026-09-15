@@ -40,6 +40,7 @@
     "cubesandbox:down": "node scripts/production-compose.mjs down",
     "helm:check": "node scripts/check-helm-pi-worker-pool.mjs && node scripts/check-helm-platform.mjs && node scripts/check-distributed-values-policy.mjs",
     "image:closure-check": "node scripts/check-supervisor-image-closure.mjs",
+    "image:context-check": "node scripts/check-docker-build-context.mjs",
     "kubernetes:pi-workers:install-runtime": "node scripts/ensure-k3d.mjs",
     "kubernetes:pi-workers:up": "node scripts/local-kubernetes-pi-workers.mjs up",
     "kubernetes:pi-workers:down": "node scripts/local-kubernetes-pi-workers.mjs down",

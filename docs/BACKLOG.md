@@ -44,6 +44,10 @@ Volume architecture. Historical experiments remain in Git history.
       fault proof passes after installing pg's standard error listener, with no
       query retry; deployed paid stream survival, product-surface repetition and
       CI now pass. Wider repository coverage and combination gates remain open.
+      Docker context filtering now excludes private runtime/cache files while a
+      real scratch-build CI probe preserves every local COPY input. Chrome
+      acceptance also rejects calls after debugger disconnection instead of hanging;
+      actual browser disconnect and presentation regressions pass.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

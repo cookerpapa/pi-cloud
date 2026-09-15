@@ -6,6 +6,28 @@ import { join } from "node:path";
 import { createServer } from "vite";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 
+// A dead debugger must fail the acceptance run, never leave a pending RPC
+// hanging forever. Exercise both an in-flight call and a call after disconnect.
+await withChromePage({}, async (page) => {
+  const { targetInfo } = await page.send("Target.getTargetInfo");
+  const pending = page.evaluate("new Promise(() => {})").catch((error) => error);
+  await page.send("Target.closeTarget", { targetId: targetInfo.targetId });
+  let timer;
+  try {
+    await Promise.race([
+      (async () => {
+        assert.match((await pending).message, /debugger disconnected/u);
+        await assert.rejects(page.evaluate("1 + 1"), /debugger disconnected/u);
+      })(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Closed debugger left an RPC pending")), 5_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 // Real React effects/DOM, without a model, database or user account. In
 // particular, server-render-only tests cannot catch StrictMode RAF cleanup.
 const cacheDir = await mkdtemp(join(tmpdir(), "pi-cloud-render-vite-"));
@@ -660,6 +682,7 @@ try {
   console.log(
     JSON.stringify({
       accepted: true,
+      debuggerDisconnect: true,
       strictModeAnimation: true,
       reconnectSnapshotImmediate: true,
       initialPanelWidth: true,

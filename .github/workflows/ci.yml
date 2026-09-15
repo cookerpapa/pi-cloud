@@ -55,6 +55,9 @@ jobs:
           PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL: postgresql://pi_conformance:pi_conformance@127.0.0.1:5432/pi_conformance
           PI_CLOUD_POSTGRES_INTEGRATION_URL: postgresql://pi_conformance:pi_conformance@127.0.0.1:5432/pi_conformance
 
+      - name: Verify Docker build context excludes local runtime data
+        run: npm run image:context-check
+
       - name: Prepare root evidence directory
         run: mkdir -p dist/ci-evidence
 

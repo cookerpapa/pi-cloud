@@ -3,6 +3,17 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+Build/test-tooling slice: a scratch Docker fixture reproduced private/generated
+paths being re-included by broad directory exceptions in `.dockerignore`.
+Narrow build-input patterns now retain all 463 local inputs across ten Dockerfiles
+and exclude all 14 canaries. Only harmless placeholder contents entered this
+probe; no real secret was exported. The check is now an explicit CI gate.
+A real Chrome target-close test also reproduced an RPC hanging when sent after
+disconnect. Reject closed-socket sends and handle send errors; the disconnect
+regression and all existing browser presentation assertions pass. Temporary
+profiles, Vite cache and build-fixture directories are removed. Runtime images
+are unchanged by this tooling-only slice; final combined acceptance remains open.
+
 Latest runtime: Control Plane/Workers/Broker `ea4ae725`, existing Web/Cube template
 `97995c0f`. **953 tests pass / two separate environment gates skipped**, with real
 PG enabled; types/build/format pass and [CI is green](https://github.com/cookerpapa/pi-cloud/actions/runs/34979016595).
@@ -211,6 +222,8 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CLEAN-02 | Native Lane exposed its private reader despite having no caller; one Fork test name incorrectly implied no payload copy anywhere | Removed unused getter; clarified shared query projection versus self-contained Fork log. No persistence semantics changed |
 | CLEAN-03 | UI still polled Run state as a second pre-stream completion fallback | Removed UI poll/action. Live Snake exposed that removing the API client's `getRun` also broke diagnostic/acceptance callers outside the Web package; restored that required read-only method and added an API contract test, without reintroducing UI polling. Full live matrix remains pending |
 | TEST-01 | Chrome helper selected a random fixed port, risking another browser under concurrent tests; debugger disconnect could strand pending RPCs | Use Chrome's allocated port from its own private profile, reject pending calls on disconnect, and report cleanup failures. Browser presentation/composer regression passes; parallel browser stress still pending |
+| TEST-06 | Chrome helper accepted new RPCs after its disconnect handler had already cleared pending calls | Actual owned target-close test hung until its five-second failure guard. Reject calls on a non-open socket and remove/reject failed sends. Both in-flight and post-disconnect calls now reject; the complete existing Chrome presentation suite also passes |
+| DEPLOY-02 | `.dockerignore` re-included entire parent directories, including runtime files and local dependency/build caches | Scratch Docker export with harmless canaries reproduced 11 excluded paths entering the context. Replace broad directory exceptions with build-input patterns and nested local-file exclusions. All 463 COPY inputs remain available, all 14 excluded paths are absent. No evidence of actual credential disclosure; follows [Docker build-context semantics](https://docs.docker.com/build/concepts/context/#dockerignore-files) |
 | LIFE-05 | Broker HTTP listener remained open after provider teardown failed | Reproduced with actual local listener; close HTTP in `finally`. Eight RPC/server regressions pass. Also removed unreachable HTTP-side Tool timing branch; executor owns execution timing |
 | FILE-01 | Trusted Git preflight discovered a Workspace's `.git/config` | Owned fake-SSH marker reproduced local config execution. Run network preflight outside user directories and disable global Git config; no real credentials or external server involved |
 | FILE-02 | Credential reads followed a Workspace symlink outside its volume | Reproduced against an owned fixture; open non-following, nonblocking regular file and bound actual bytes read |

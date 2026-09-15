@@ -67,10 +67,17 @@ async function connectCdp(profile, chrome) {
         return {
           socket,
           send(method, params = {}) {
+            if (socket.readyState !== WebSocket.OPEN)
+              return Promise.reject(new Error("Test Chrome debugger disconnected"));
+            const id = ++nextId;
+            const data = JSON.stringify({ id, method, params });
             return new Promise((resolvePromise, rejectPromise) => {
-              const id = ++nextId;
               pending.set(id, { resolve: resolvePromise, reject: rejectPromise });
-              socket.send(JSON.stringify({ id, method, params }));
+              socket.send(data, (error) => {
+                if (!error) return;
+                pending.delete(id);
+                rejectPromise(error);
+              });
             });
           },
         };
