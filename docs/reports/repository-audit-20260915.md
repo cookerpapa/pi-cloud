@@ -99,7 +99,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CANCEL-02 | A local pre-sampling abort was classified as an assistant completion missing a Cloud Step | Reproduced through Runner; recognize the explicit no-sampling cancellation without inventing a Step. Runner/Harness suite: 48 pass |
 | CANCEL-03 | Acknowledged cancellation failure changed business state but omitted the output seal and task-authority release | Reproduced missing Outbox terminal and zero release calls. Reuse failure closure in the same transaction; seven queue tests pass. Keeps the existing failed/quarantined Session state, not a successful cancellation |
 | LIFE-04 | A destroyed publisher blocked every later claim but left the Worker apparently healthy forever | Reproduced no terminal signal after permanent failure. The log port distinguishes unreusable publisher failure from transient metadata outage; Worker stops local execution and signals process replacement only for the former. Readiness follows actual admission readiness. Seven transport/runtime regressions pass, including transient recovery |
-| CFG-01 | Producer startup checks partition count but not existing topic replication/retention policy | Verify actual settings and configuration contract in isolated broker tests |
+| CFG-01 | Producer startup checked partition count but not existing topic replication/retention policy | Six negative startup cases reproduced accepting unsafe settings. Validate assigned replica count and the same policy used at creation; no automatic reconfiguration or per-event check. Eleven unit cases and a real three-broker test with seven disposable topics pass; all temporary topics deleted. Do not confuse configured replicas with currently healthy ISR members |
 | MUT-02 | Tenant admission locks the smallest existing tenant UUID, which can change when a new tenant is inserted | Three real-PG requests reproduced exceeding the configured limit. Use the same short tenant-table writer lock for registration; no Agent/Workspace lock added. Four administration cases pass; compiler rerun is tracked below |
 | OBS-01 | Rejected metric collection escaped a native HTTP async callback | Reproduced a hanging scrape plus unhandled rejection. Return 503 for that scrape; next scrape succeeds |
 | OBS-02 | Trace status used a safe error code but exception events still exported the raw message/stack | Reproduced with a synthetic secret in an owned error. Export only classification, rethrow the original error to its caller |
@@ -295,7 +295,11 @@ Runs, restored all eight markers and rejected eight foreign-tenant API reads.
 No Tool calls or marker leaks occurred; each Worker handled eight Runs.
 API/SSE first text p50/p95: 1,534/2,772 ms; admission 31/53 ms; queue 148/360 ms.
 This is a bounded concurrency sample, not a saturation or browser-paint claim.
-The next 16-Session wave is separate evidence and must not overwrite this sample.
+With the same eight slots, four tenants × four Sessions completed 32 Runs:
+first-text p50/p95 2,406/5,109 ms; queue 683/3,552 ms; peak active Runs remained
+eight. This is capacity queueing, not Kafka saturation. A temporary 16-slot/
+16-model-permit configuration on each Worker is being tested separately;
+restore the original four/four settings afterwards.
 
 Before mutation, inventory existing tenants/users/resources, image revisions and
 configuration digests without disclosing credentials. Register test resources

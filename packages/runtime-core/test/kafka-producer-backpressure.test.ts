@@ -4,6 +4,8 @@ import { Writable } from "node:stream";
 const transport = vi.hoisted(() => ({
   streams: [] as ControlledStream[],
   metadataUnavailable: false,
+  replicas: 3,
+  configOverrides: {} as Record<string, string>,
 }));
 class ControlledStream extends Writable {
   writes: unknown[] = [];
@@ -35,7 +37,35 @@ vi.mock("@platformatic/kafka", () => ({
       return ["test"];
     }
     async metadata() {
-      return { topics: new Map([["test", { partitionsCount: 4 }]]) };
+      return {
+        topics: new Map([
+          [
+            "test",
+            {
+              partitionsCount: 4,
+              partitions: Array.from({ length: 4 }, () => ({
+                replicas: Array.from({ length: transport.replicas }, (_, i) => i),
+                isr: [0, 1],
+              })),
+            },
+          ],
+        ]),
+      };
+    }
+    async describeConfigs() {
+      return [
+        {
+          resourceName: "test",
+          configs: Object.entries({
+            "cleanup.policy": "delete",
+            "retention.ms": "-1",
+            "retention.bytes": "-1",
+            "message.timestamp.type": "LogAppendTime",
+            "min.insync.replicas": "2",
+            ...transport.configOverrides,
+          }).map(([name, value]) => ({ name, value })),
+        },
+      ];
     }
     async close() {}
   },
@@ -48,6 +78,7 @@ vi.mock("@platformatic/kafka", () => ({
     async close() {}
   },
   ProduceAcks: { ALL: -1 },
+  ConfigResourceTypes: { TOPIC: 2 },
   ProducerStreamReportModes: { BATCH: "batch" },
   stringSerializers: {},
 }));
@@ -60,6 +91,8 @@ const buses: KafkaAcceptedFactBus[] = [];
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 afterEach(async () => {
   transport.metadataUnavailable = false;
+  transport.replicas = 3;
+  transport.configOverrides = {};
   for (const stream of transport.streams) stream.destroy(new Error("test shutdown"));
   for (const bus of buses.splice(0)) await bus.close().catch(() => undefined);
   transport.streams.length = 0;
@@ -100,6 +133,22 @@ async function fixture(capacity = { maximumPendingBytes: 100000, maximumPendingF
   await bus.start();
   return bus;
 }
+
+it.each([
+  ["cleanup.policy", "compact"],
+  ["retention.ms", "3600000"],
+  ["retention.bytes", "1024"],
+  ["message.timestamp.type", "CreateTime"],
+  ["min.insync.replicas", "1"],
+])("rejects an existing topic with incompatible %s", async (name, value) => {
+  transport.configOverrides[name] = value;
+  await expect(fixture()).rejects.toThrow(name);
+});
+
+it("rejects an existing topic with too few assigned replicas", async () => {
+  transport.replicas = 1;
+  await expect(fixture()).rejects.toThrow(/replica/);
+});
 
 it("waits for drain per lane, not PubAck globally, and preserves duplicate identity", async () => {
   const bus = await fixture(),
