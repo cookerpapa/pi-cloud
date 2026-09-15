@@ -3,6 +3,19 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+Latest runtime: Control Plane/Workers/Broker `ea4ae725`, existing Web/Cube template
+`97995c0f`. **953 tests pass / two separate environment gates skipped**, with real
+PG enabled; types/build/format pass and [CI is green](https://github.com/cookerpapa/pi-cloud/actions/runs/34979016595).
+During a paid DeepSeek stream, the test Worker was paused for 357 ms to select
+and terminate one confirmed idle PG backend, then resumed. Its boot did not
+change; the Run completed with one Attempt, unchanged visible prefix and identical
+live/canonical text (19.735 s total; 230 input / 2,432 cache-read / 2,820 output
+tokens). No arbitrary query was replayed. All fixture metadata was removed.
+The paid product-surface rerun also passes login, Fork/prune, coding, bounded
+output, Terminal/Agent concurrency, shared-Workspace Sessions, Steer, cancellation
+recovery, tenant denial, rebinding and purge. Its two accounts, 12 Runs, four
+views/native Sessions and three Workspaces were removed. Full audit/resume remain open.
+
 Broker `6a718115` is deployed. Actual Cube pre/post-upload cancellation and
 same-VM continuity pass, as do two paid DeepSeek coding Turns (eight Tools,
 3,053 input / 226,560 cache-read / 1,851 output tokens). Four tenants/eight
@@ -13,7 +26,7 @@ This load overlapped an isolated SQL diagnostic; its timing is not an idle SLO.
 All four new load tenants and both adapter-fixture projects were removed after
 archive/purge checks and FK-enforced deletion rehearsal.
 
-Current rollout: Control Plane `f561e041`; Workers/Broker/Web and Cube templates
+Earlier directory slice: Control Plane `f561e041`; Workers/Broker/Web and Cube templates
 `97995c0f`. Actual Chrome directory selection/creation now passes for long ASCII
 and 255-byte Chinese names; oversized input returns 400. All three directory
 fixture accounts, projects, machines and Volumes were removed after purge.
@@ -31,7 +44,7 @@ and ran both Python suites against the existing Volume. Usage: 3,261 input /
 187,264 cache-read / 1,645 output tokens. One host-clock-stepped stage breakdown
 is excluded; final text followed earlier Tool calls, not the initial sampling.
 
-Latest slice (`642878b9`) fixes task-scoped cold-read cancellation, machine lifecycle
+Earlier slice (`642878b9`) fixes task-scoped cold-read cancellation, machine lifecycle
 confirmation and machine Session defaults; removes unused Domain surfaces.
 `npm run check` passes 917 tests with 25 explicit live/PG skips; a separate real
 PostgreSQL run passes 24 cases. The paused-projection Parent/Child Host regression
@@ -218,8 +231,8 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | LIFE-11 | Provider relay opened an upstream even when its CONNECT client disappeared during DNS | Controlled-socket regression reproduced the late connection. Check the actual client lifetime immediately after DNS; no retry or new timeout. Five relay tests pass |
 | LIFE-12 | Control Plane acquired telemetry/DB and constructed Subagents outside its cleanup scope | Four regressions failed before, including a real listener left open. Acquisition is now inside the cleanup scope; an unadopted Subagent controller is closed if Projector construction fails. Preserve primary and teardown errors. Four regressions and CP types pass; not yet deployed |
 | LIFE-13 | Projector teardown stopped after the first failed drain, leaving its other owned resources open | Simulated relay/consumer failures reproduced skipped closures. Share one shutdown promise, attempt every owned close in dependency order and report all errors. Seven Projector handoff cases pass, including concurrent close; runtime types pass. No execution/order semantics changed |
-| LIFE-14 | Worker claim loop awaited cancellation settlement, blocking unrelated ready families with free slots | Controlled delayed-cancellation regression reproduces starvation. Track one in-flight cancellation per target Run, keep admission progressing, and join cancellation settlement during drain. Success/failure and duplicate-target cases pass with queue-wake/reconnect/family-drain regressions (12 cases). PG cancellation authority/retry cadence are unchanged; deployment/paid surface repetition pending |
-| DB-01 / CI-03 | Shared PG pool had no idle-error listener; CI forced database deletion could terminate a still-closing idle client | Independent child-process test reproduces an idle backend termination killing the process. Add the pg Pool error listener with code-only diagnostics; pg evicts the broken client. Real PG test proves a later explicit query reconnects while an interrupted active query still rejects with 57P01, without replay. Authority test teardown now waits for zero connections and drops normally instead of FORCE. Ten targeted cases pass twice; full CI/redeploy pending |
+| LIFE-14 | Worker claim loop awaited cancellation settlement, blocking unrelated ready families with free slots | Controlled delayed-cancellation regression reproduces starvation. Track one in-flight cancellation per target Run, keep admission progressing, and join cancellation settlement during drain. Success/failure and duplicate-target cases pass with queue-wake/reconnect/family-drain regressions (12 cases). PG cancellation authority/retry cadence are unchanged; deployed paid product surface and full regression pass |
+| DB-01 / CI-03 | Shared PG pool had no idle-error listener; CI forced database deletion could terminate a still-closing idle client | Independent child-process test reproduces an idle backend termination killing the process. Add the pg Pool error listener with code-only diagnostics; pg evicts the broken client. Real PG test proves a later explicit query reconnects while an interrupted active query still rejects with 57P01, without replay. Authority teardown waits for zero connections and drops normally instead of FORCE. Targeted tests, full CI and paid same-Worker stream fault pass; follows [pg's documented idle-error contract](https://node-postgres.com/apis/pool#events) |
 | TEST-03 | Browser acceptance waited for text until timeout after an already-visible failed Run | Actual proxy failure reproduced the misleading 180-second wait. First-text wait now also detects the existing terminal error element and reports it immediately. Real repetition pending |
 | ENV-01 | Deployed model relay retained localhost:10808 from an earlier shell, while the current proxy is localhost:12450 | Old port returned ECONNREFUSED before model execution. Owner selected 12450 permanently. Persist the explicit relay proxy in private .env; runtime Compose no longer selects it from generic shell HTTPS_PROXY. Installer/config tests and an opposing-shell-proxy render pass. Paid browser repetition and both model smoke calls pass through the selected proxy; provider credentials unchanged |
 | CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace types and remote CI at 9f62b365 pass |
@@ -284,7 +297,7 @@ the reusable baseline coding Sessions still await final scoped cleanup.
 Remaining work:
 
 - finish all maintained source, test, deployment, migration and documentation reads;
-- roll out TOOL-04/DIAG-02 and finish MEM-02 and PERF-01 investigation;
+- finish MEM-02 and PERF-01 investigation; TOOL-04/DIAG-02 are deployed and validated;
 - complete further regression slices; directory template/browser rollout passed;
 - repeat the combined child/Compaction/search/provider/Worker and failure matrices
   on the final revision, including multi-replica control and UI races;

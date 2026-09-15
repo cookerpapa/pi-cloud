@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Format, types, tests, and zero-token spikes
+    name: Format, types, tests, and deployment checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
