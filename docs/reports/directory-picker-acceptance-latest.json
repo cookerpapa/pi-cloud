@@ -1,10 +1,13 @@
 {
   "accepted": true,
-  "piCloudRevision": "02bb47eb03cca4fc747ae83567a112c92277f470",
-  "checkedAt": "2026-08-30T16:48:27.297Z",
-  "account": "directory.acceptance.mtg1mu3x",
-  "environmentId": "fda32690-e840-488c-b236-0bb9b3f5d067",
-  "createdDirectory": "/home/user/ui-project-mtg1mu3x",
+  "piCloudRevision": "f561e041a67c9bd392c791f5e22f76606454becf",
+  "checkedAt": "2026-09-15T12:36:07.175Z",
+  "account": "directory.acceptance.mu2nnyxf",
+  "environmentId": "1cdda8f1-97a2-42cb-a302-da78998135ca",
+  "createdDirectory": "/home/user/ui-project-mu2nnyxf-folderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolderfolder",
   "screenshotCaptured": true,
-  "cleanupCompleted": true
+  "cleanupCompleted": true,
+  "longAsciiDirectoryPassed": true,
+  "unicode255ByteDirectoryPassed": true,
+  "oversizedUnicodeRejectedBeforeGuest": true
 }

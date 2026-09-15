@@ -3,6 +3,24 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+Current rollout: Control Plane `f561e041`; Workers/Broker/Web and Cube templates
+`97995c0f`. Actual Chrome directory selection/creation now passes for long ASCII
+and 255-byte Chinese names; oversized input returns 400. All three directory
+fixture accounts, projects, machines and Volumes were removed after purge.
+Post-rollout GPT high/Fast and DeepSeek high recall pass on a new Worker boot;
+API/SSE first text 3,848/1,355 ms, provider 3,537/1,004 ms, internal 311/351 ms.
+These two samples overlapped local test work and are not an idle latency SLO.
+The fixed-revision `f561e041` check completed with **944 passed / two independent
+Kafka/Cube gated skips**, both real-PG URLs enabled. Types, build, format and docs
+checks pass; [all CI jobs passed](https://github.com/cookerpapa/pi-cloud/actions/runs/34969677689).
+The owned tmpfs PostgreSQL container was removed after zero remaining test
+databases/connections were confirmed. This is not final repository-audit acceptance.
+Post-rollout two-round DeepSeek coding also passes on different Workers with
+eight Tools: retained insertion sort, added/verified first-match binary search,
+and ran both Python suites against the existing Volume. Usage: 3,261 input /
+187,264 cache-read / 1,645 output tokens. One host-clock-stepped stage breakdown
+is excluded; final text followed earlier Tool calls, not the initial sampling.
+
 Latest slice (`642878b9`) fixes task-scoped cold-read cancellation, machine lifecycle
 confirmation and machine Session defaults; removes unused Domain surfaces.
 `npm run check` passes 917 tests with 25 explicit live/PG skips; a separate real
@@ -156,12 +174,12 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CLEAN-09 | Guest protocol accepted cancel/shutdown envelopes with no producer or handler; one test/comment still described removed provider checkpoints | Remove unused daemon commands from the one-shot guest input schema; retain current Cube process cancellation. Negative protocol tests now reject retired commands; seed documentation describes initial provisioning only |
 | CLEAN-10 | Build/formatter ignore files referenced deleted spikes, guest entrypoint, Supervisor Dockerfile and execution-plane chart | Remove stale exceptions; do not delete untracked local directories. Image source closure and actual image builds remain required |
 | DOC-04 | Package READMEs still described Workspace settlements, Run-local leases and Child Workspace modes | Align Control Plane/database/runtime/Web package summaries with physical-Session ownership, direct Kafka projection, persistent Volumes and shared/ephemeral compute; remove unsupported migration-down deployment guidance |
-| DIR-01 | Public create-directory accepts 255 characters while Broker/guest reject above 128; Linux also limits component bytes rather than JS characters | Two regressions reproduce long ASCII rejection and oversized Unicode acceptance. API, Broker and guest now share a 255-byte UTF-8 name rule; 21 protocol/provider cases and actual guest CLI on owned local directories pass. New Cube template rollout and live directory repetition pending |
-| DIR-02 | Create-directory parser errors bypassed public request validation mapping | Real browser/API test created valid long names but an oversized Chinese name returned 500. Convert this route's input parser error to a 400 only at admission, after authentication; retain downstream protocol failures as server errors. Add HTTP regression for empty/traversal/oversized bodies and unauthenticated input |
+| DIR-01 | Public create-directory accepts 255 characters while Broker/guest reject above 128; Linux also limits component bytes rather than JS characters | Two regressions reproduce long ASCII rejection and oversized Unicode acceptance. API, Broker and guest now share a 255-byte UTF-8 name rule; 21 protocol/provider cases, actual guest CLI and deployed Chrome/Cube repetition pass |
+| DIR-02 | Create-directory parser errors bypassed public request validation mapping | Real browser/API test created valid long names but an oversized Chinese name returned 500. Convert this route's input parser error to a 400 only at admission, after authentication; retain downstream protocol failures as server errors. Eight HTTP tests and the deployed browser/API rerun pass |
 | TOOL-04 | Guest request JSON is written before the final abort check; on a persistent machine, cancellation before command dispatch does not run the shell cleanup trap | Source path identified during full Provider read; controlled cancellation/file-retention reproduction and error-path cleanup review remain pending |
 | DIAG-02 | Cube readiness loop records the last error, then discards it at timeout | Preserve the first useful cause without widening public errors after a focused failure regression; not changed in the current directory slice |
 | TEST-04 | Development-machine acceptance inherited the bootstrap tenant's fake model for its first two coding Turns | Live DB inspection identified both deterministic Turns; excluded from paid coding. Explicit DeepSeek selection and GPT Subagent rerun passes all six real-model Runs, with provider/usage verified in native PG entries |
-| TEST-05 | Bash/background test used a 750 ms wall-clock bound against a one-second child sleep | Full real-PG regression under image-build load observed 790 ms and failed this test only. Replace timing inference with a gated child: Tool must settle before the test releases the background process; confirm it then continues. All 14 Tool tests pass; full repetition pending |
+| TEST-05 | Bash/background test used a 750 ms wall-clock bound against a one-second child sleep | Full real-PG regression under image-build load observed 790 ms and failed this test only. Replace timing inference with a gated child: Tool must settle before the test releases the background process; confirm it then continues. All 14 Tool tests and the fixed-revision full rerun pass |
 | DEV-02 | Machine lifecycle descriptor requires an active Domain and non-failed environment profile, including release | Reproduced both rejected releases via the actual Broker HTTP fixture. Separate owner-scoped existing-machine routing from new provisioning descriptor; directory operations and release no longer depend on allocation policy. Cross-user checks remain. Local regression slice passes; deployed Cube repetition pending |
 | DEV-03 | Broker concurrent duplicate machine provisioning created two provider runtimes; simultaneous first task bindings chose the same binding ID | Both reproduced. Reuse existing per-Workspace provisioning critical section for machine provisioning/binding creation, not Tool execution. Concurrent parent/child bindings now stay distinct and reuse one runtime |
 | DEV-04 | Machine handle entered the ready map before durable state publication; failure destroyed the VM but retained that handle | Reproduced phantom active count. Publish PG state before installing the ready handle; clean failure no longer advertises a destroyed runtime |
@@ -242,7 +260,7 @@ Remaining work:
 
 - finish all maintained source, test, deployment, migration and documentation reads;
 - reproduce/fix TOOL-04 and DIAG-02; finish MEM-02 and PERF-01 investigation;
-- complete the directory template/browser rollout and any further regression slices;
+- complete further regression slices; directory template/browser rollout passed;
 - repeat the combined child/Compaction/search/provider/Worker and failure matrices
   on the final revision, including multi-replica control and UI races;
 - finish full CI/build/security/fault gates and clean-state product acceptance;
