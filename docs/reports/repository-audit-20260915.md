@@ -210,8 +210,7 @@ does not remove pauses after that read or cross-machine clock differences.
 The owner approved the fix. It keeps PG, Session-family Lease/Fence and Kafka seals,
 but makes lease decisions use PG time at the locked decision point. Worker timers
 remain local cancellation hints, not authority. It does not replay a Run/Tool or
-relax seals. Implementation is in progress under ADR-0170; new live acceptance
-and final checks must finish before it is treated as a completed deployment.
+relax seals. ADR-0170 is deployed at `9f62b365`; its paid acceptance passed.
 Other audit items remain open, including UI origins, pre-provider latency,
 remaining line review and combination tests. Resume v11 has not been changed.
 
@@ -228,8 +227,24 @@ The repeated `npm run check` completed successfully with both real-PG fixture
 URLs enabled. Format/docs/Helm/runtime-policy checks passed. The Worker startup
 test's unrelated 500ms connection deadline was replaced with the production 30s
 default after it preempted the intended publisher-failure injection; dedicated
-expiry tests still use actual short-deadline lock waits. Deployment and paid
-clock-cutover acceptance have not yet been completed.
+expiry tests still use actual short-deadline lock waits. Local check recorded
+919 passed tests and two environment-gated skips (standalone Cube and Kafka
+integration gates); this is not a full audit completion count.
+
+Deployed API, Worker and Broker image labels were verified at `9f62b365`.
+Paid GPT Sol high/Fast and DeepSeek Pro high/Standard restored their markers;
+first-text non-provider time was 290/360 ms (provider route 4,201/1,128 ms).
+Two DeepSeek coding Turns passed sorting/search tests with a Worker change.
+All 11 Subagent scenarios passed (16,007 input / 184,832 cache-read / 5,030
+output tokens). Family acceptance also passed: a 62.73-second coding Run crossed
+the initial lease lifetime; other families progressed; Worker SIGKILL caused
+ordered family closure and replacement without repeating the old append.
+Family usage: 14,071 input / 107,264 cache-read / 6,757 output tokens.
+Its test conversations/Workspaces were released and both Workers restored to
+four family slots/four model permits. New test identity rows remain in the
+private cleanup ledger, together with the original baseline fixtures.
+CI passed at `9f62b365` ([run](https://github.com/cookerpapa/pi-cloud/actions/runs/34930661277)).
+The four old offline-node templates remain deferred, not falsely reported deleted.
 
 ### Live campaign started
 

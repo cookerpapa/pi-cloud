@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] ADR-0170: use locked PostgreSQL decision time for execution leases,
+      conservative monotonic observations and non-overlapping Broker renewal.
+      Real lock-wait/skew regressions and paid multi-round/family recovery pass.
+
 - [x] ADR-0169: recover quarantined Sessions after confirmed Agent exit and seal;
       remove unsafe GitHub App onboarding while preserving environment Git
       credentials. Local boundary tests pass; deployed acceptance remains part
@@ -22,7 +26,7 @@ Volume architecture. Historical experiments remain in Git history.
       have real-PG regressions; the Subagent startup mailbox race is fixed and
       passed paid repetition. A lock-delayed renewal revived an expired lease
       in a controlled real-PG test (TIME-01); the owner approved ADR-0170 and its
-      implementation/acceptance is in progress. Other audit and cleanup gates remain open.
+      implementation/acceptance passed at `9f62b365`. Other audit and cleanup gates remain open.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

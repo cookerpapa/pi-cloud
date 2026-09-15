@@ -1,6 +1,7 @@
 # ADR-0170 — PostgreSQL decision time for execution authority
 
-Status: accepted by the owner; implementation and validation in progress.
+Status: accepted; implemented and deployed at `9f62b365`, with real-PG and paid
+model/Cube acceptance. Wider repository audit remains in progress.
 
 The audit reproduced a renewal sampled at t+2 s, blocked on a row until t+4 s,
 and accepted after the old t+3 s deadline. Caller time cannot decide lease
