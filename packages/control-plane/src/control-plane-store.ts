@@ -1410,6 +1410,7 @@ export class ControlPlaneStore {
           "session_row.execution_mode",
           "session_row.development_environment_id",
           "session_row.working_directory",
+          "session_row.compute_session_id",
           "session_row.sandbox_profile_key",
           "session_row.next_event_seq",
           "session_row.next_mailbox_position",
@@ -1588,6 +1589,7 @@ export class ControlPlaneStore {
           available_at: sql<Date>`now()`,
           environment_version_id: environment.environmentVersionId,
           working_directory: session.working_directory,
+          compute_session_id: session.compute_session_id,
           sandbox_profile_key: session.sandbox_profile_key,
           tool_capability_snapshot: sql<unknown[]>`${JSON.stringify(toolCapabilities)}::jsonb`,
           conversation_base_seq: Math.max(

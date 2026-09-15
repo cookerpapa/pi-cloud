@@ -26,6 +26,9 @@ beforeEach(() => {
   calls.config.mockResolvedValue({
     databaseUrl: "postgresql://fixture",
     toolDispatchToken: "fixture-dispatch-token".repeat(3),
+    toolBrokerBaseUrls: ["http://tool-broker.test"],
+    workspaceServiceToken: "fixture-workspace-token".repeat(3),
+    allowInsecureInternalHttp: true,
   });
 });
 afterEach(() => vi.restoreAllMocks());

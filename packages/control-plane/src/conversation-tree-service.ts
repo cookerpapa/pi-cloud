@@ -534,7 +534,7 @@ export class ConversationTreeService {
         forkedFromEntryId: anchor?.entryId ?? null,
         current: summary.sessionId === currentSessionId,
         contextMode: summary.contextMode,
-        workspaceMode: summary.workspaceMode,
+        sandboxMode: summary.sandboxMode,
         delegatedState: summary.state,
         entries: mapped.map(({ index: _index, ...entry }) => entry),
       });
@@ -606,7 +606,7 @@ export class ConversationTreeService {
         forkedFromEntryId: null,
         current: true,
         contextMode: selectedDelegated.contextMode,
-        workspaceMode: selectedDelegated.workspaceMode,
+        sandboxMode: selectedDelegated.sandboxMode,
         delegatedState: selectedDelegated.state,
         entries: mapped.map(({ index: _index, ...entry }) => entry),
       };

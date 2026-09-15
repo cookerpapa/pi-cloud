@@ -14,8 +14,6 @@ import {
   type ToolBrokerListWorkspaceDirectoryResponse,
   type ToolBrokerReadWorkspaceFileRequest,
   type ToolBrokerReadWorkspaceFileResponse,
-  type ToolBrokerWorkspaceForkRequest,
-  type ToolBrokerWorkspaceForkResponse,
   type SupervisorManagementRequest,
   type SupervisorManagementResponse,
   type SupervisorRuntimeAssignment,
@@ -300,25 +298,6 @@ export class ToolBrokerClient {
       );
     }
     return parsed;
-  }
-
-  async forkWorkspace(
-    request: ToolBrokerWorkspaceForkRequest,
-  ): Promise<ToolBrokerWorkspaceForkResponse> {
-    const response = await this.#service(request);
-    if (
-      response.type !== "workspace.forked" ||
-      response.requestId !== request.requestId ||
-      response.sourceActivationId !== request.sourceActivationId ||
-      response.targetWorkspaceId !== request.target.workspaceId
-    ) {
-      throw new ToolBrokerClientError(
-        "tool_broker_protocol_error",
-        "Workspace fork response identity did not match",
-        false,
-      );
-    }
-    return response;
   }
 
   async listWorkspaceDirectory(
@@ -690,10 +669,6 @@ export class ReplicatedToolBrokerClient {
       operationId,
       signal,
     );
-  }
-
-  forkWorkspace(request: ToolBrokerWorkspaceForkRequest): Promise<ToolBrokerWorkspaceForkResponse> {
-    return this.#ownedClient(request.sourceActivationId).forkWorkspace(request);
   }
 
   listWorkspaceDirectory(

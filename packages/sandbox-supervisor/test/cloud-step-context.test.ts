@@ -89,6 +89,10 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
       ...command,
       payload: { ...command.payload, executionMode: "development_environment" },
     });
+    const changedCompute = createCloudTurnContext({
+      ...command,
+      payload: { ...command.payload, computeSessionId: "20000000-0000-4000-8000-000000000009" },
+    });
     const retryCommand: ExecuteTurnCommandMessage = {
       ...command,
       messageId: "20000000-0000-4000-8000-000000000001",
@@ -122,6 +126,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
     expect(first.sha256).toBe(retriedTurn.sha256);
     expect(first.sha256).not.toBe(changedWorkspace.sha256);
     expect(first.sha256).not.toBe(changedRetention.sha256);
+    expect(first.sha256).not.toBe(changedCompute.sha256);
     expect(firstAttempt.sha256).not.toBe(retryAttempt.sha256);
     expect(firstAttempt.context.turnContextSha256).toBe(first.sha256);
     expect(Object.isFrozen(first.context)).toBe(true);

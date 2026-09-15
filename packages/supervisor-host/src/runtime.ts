@@ -96,7 +96,6 @@ export type SupervisorToolBroker = Pick<
   | "listAssignments"
   | "terminateAndConfirmAbsent"
   | "confirmAbsent"
-  | "forkWorkspace"
 >;
 
 export type SupervisorHostTerminalReason = "owner_stopped" | "connection_failed";
@@ -341,8 +340,6 @@ export class PiWorkerRuntime {
             command.delivery,
             command.executionReference,
           );
-        } else if (command.action === "fork_workspace") {
-          return this.#toolBroker.forkWorkspace(command.request);
         } else if (command.action === "prepare_lane") {
           await this.#nativeSessions.createChildLane({
             executionReference: command.executionReference,

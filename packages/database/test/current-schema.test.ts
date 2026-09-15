@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(140);
+      expect(firstMigrationPass.rows).toHaveLength(141);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("140_confirmed_agent_exit");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("141_subagent_compute_scopes");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -112,6 +112,7 @@ describe("current PiCloud schema", () => {
       const keys = new Set(columns.rows.map((row) => `${row.table_name}.${row.column_name}`));
       expect(keys.has("workspaces.seed_kind")).toBe(true);
       expect(keys.has("workspaces.object_snapshot_key")).toBe(false);
+      expect(keys.has("workspaces.parent_workspace_id")).toBe(false);
       expect(keys.has("runs.source_set_snapshot")).toBe(false);
       expect(keys.has("runs.mailbox_position")).toBe(true);
       expect(keys.has("runs.request_sha256")).toBe(true);
@@ -122,6 +123,11 @@ describe("current PiCloud schema", () => {
       expect(keys.has("sessions.desired_service_tier")).toBe(true);
       expect(keys.has("sessions.pi_session_id")).toBe(true);
       expect(keys.has("sessions.pi_session_lane")).toBe(true);
+      expect(keys.has("sessions.compute_session_id")).toBe(true);
+      expect(keys.has("runs.compute_session_id")).toBe(true);
+      expect(keys.has("subagent_executions.sandbox_mode")).toBe(true);
+      expect(keys.has("subagent_executions.workspace_mode")).toBe(false);
+      expect(keys.has("subagent_executions.child_workspace_id")).toBe(false);
       expect(keys.has("subagent_executions.pi_context_base_entry_id")).toBe(true);
       expect(keys.has("turns.service_tier")).toBe(true);
       expect(keys.has("runs.agent_revision_id")).toBe(true);
@@ -136,14 +142,14 @@ describe("current PiCloud schema", () => {
           from pg_indexes
          where schemaname = 'public'
            and indexname in (
-             'tool_broker_workspace_runtime_live_unique',
+             'tool_broker_compute_live_unique',
              'tool_broker_workspace_live_unique',
              'tool_broker_workspace_live_idx'
            )
       `.execute(database);
       expect(activationIndexes.rows).toEqual([
         expect.objectContaining({
-          indexname: "tool_broker_workspace_runtime_live_unique",
+          indexname: "tool_broker_compute_live_unique",
           indexdef: expect.stringContaining("UNIQUE"),
         }),
       ]);
@@ -151,7 +157,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("140_confirmed_agent_exit");
+      expect(applied.rows.at(-1)?.name).toBe("141_subagent_compute_scopes");
 
       const sessionLogConstraint = await sql<{ definition: string }>`
         select pg_get_constraintdef(oid) as definition

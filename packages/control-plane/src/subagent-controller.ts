@@ -8,13 +8,12 @@ import {
   parseExecutionReference,
   type SubagentHostRequest,
   type SubagentControlResult,
-  type ToolBrokerWorkspaceForkRequest,
-  type ToolBrokerWorkspaceForkResponse,
 } from "@pi-cloud/protocol";
 import {
   PostgresSubagentJobProvider,
   type StartCloudSubagentJobInput,
   type CloudSubagentTreePolicy,
+  type SubagentDirectoryTarget,
 } from "@pi-cloud/trusted-tool-runtime/subagent-jobs";
 import { PostgresSubagentSupervisorChannel } from "@pi-cloud/trusted-tool-runtime/subagent-supervisor";
 import { sql, type Kysely, type Selectable } from "kysely";
@@ -44,9 +43,7 @@ export class SubagentController {
       allowInsecureHttp: boolean;
       ownsPartition(partition: number): boolean;
       treePolicy?: CloudSubagentTreePolicy;
-      forkWorkspace?(
-        request: ToolBrokerWorkspaceForkRequest,
-      ): Promise<ToolBrokerWorkspaceForkResponse>;
+      validateDirectory?(target: SubagentDirectoryTarget): Promise<void>;
       sendInput?(input: {
         tenantId: string;
         sessionId: string;
@@ -63,13 +60,7 @@ export class SubagentController {
     this.#jobs = new PostgresSubagentJobProvider({
       database: options.database,
       ...(options.treePolicy ? { treePolicy: options.treePolicy } : {}),
-      forkWorkspace:
-        options.forkWorkspace ??
-        ((request) =>
-          this.#host<ToolBrokerWorkspaceForkResponse>(request.sourceAssignment.executionReference, {
-            action: "fork_workspace",
-            request,
-          })),
+      ...(options.validateDirectory ? { validateDirectory: options.validateDirectory } : {}),
       nativeLanes: {
         childAnchor() {
           throw new Error("The Worker must freeze the Child context anchor");
@@ -239,9 +230,9 @@ export class SubagentController {
       prompt: request.task,
       contextMode: request.context,
       contextAnchor: request.anchor,
-      workspaceMode: request.workspace,
+      sandboxMode: request.sandbox,
+      ...(request.cwd !== undefined ? { cwd: request.cwd } : {}),
       ...(request.tools ? { requestedToolCapabilities: request.tools } : {}),
-      ...(request.parentActivation ? { parentActivation: request.parentActivation } : {}),
     };
   }
 

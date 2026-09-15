@@ -74,7 +74,6 @@ export type ToolBrokerBackend = Pick<
   | "checkHealth"
   | "create"
   | "refreshServices"
-  | "forkWorkspace"
   | "release"
   | "stop"
   | "listWorkspaceDirectory"
@@ -690,17 +689,6 @@ export class ToolBrokerServer {
             requestId: message.requestId,
             activationId: message.activationId,
           });
-          return;
-        }
-        if (message.type === "workspace.fork") {
-          await reply.code(200).send(
-            await this.#observed({
-              request,
-              spanName: "workspace.fork",
-              operation: "workspace_fork",
-              run: () => this.#broker.forkWorkspace(message),
-            }),
-          );
           return;
         }
         message satisfies never;

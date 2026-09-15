@@ -10,7 +10,6 @@ import type {
   ToolSandboxAssignment,
   ToolSandboxOperationRequest,
   ToolSandboxOperationResponse,
-  ToolBrokerWorkspaceForkRequest,
   SourceControlWorkspaceCredentialAuthorizeRequest,
   SourceControlWorkspaceCredentialDisconnectRequest,
   SourceControlWorkspaceCredentialDisconnectResponse,
@@ -70,6 +69,7 @@ export type SandboxCreateSpec = Readonly<{
   policy: SandboxPolicy;
   toolRoot?: string;
   lifetime?: "development_environment";
+  volumeMountPath?: "/workspace" | "/home/user";
   sandboxProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
 }>;
 
@@ -84,12 +84,6 @@ export type SandboxHandle = Readonly<{
   assignment: ToolSandboxAssignment;
   environment: EnvironmentRuntimeSnapshot;
   environmentValidation: EnvironmentValidationReport;
-}>;
-
-export type SandboxWorkspaceForkResult = Readonly<{
-  sourceHandle: SandboxHandle;
-  sourceVolumeGeneration: string;
-  targetVolumeGeneration: string;
 }>;
 
 export type SandboxHttpServiceDiscovery = Readonly<{
@@ -243,10 +237,6 @@ export interface SandboxProvider {
     path: string,
     name: string,
   ): Promise<SandboxDirectoryListing>;
-  forkWorkspace?(
-    handle: SandboxHandle,
-    request: ToolBrokerWorkspaceForkRequest,
-  ): Promise<SandboxWorkspaceForkResult>;
   stop(handle: SandboxHandle): Promise<void>;
   destroy(handle: SandboxHandle): Promise<void>;
   inspect(handle: SandboxHandle): Promise<SandboxInspection>;

@@ -55,9 +55,6 @@ describe("PostgresTrustedToolRuntime", () => {
     const tools = await runtime.create({
       command,
       refreshServices: async () => undefined,
-      ensureActivation: async () => {
-        throw new Error("Tool-free trusted Tools must not activate a Sandbox");
-      },
     });
 
     expect(tools.map(({ executionPlane, tool }) => [tool.name, executionPlane])).toEqual([

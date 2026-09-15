@@ -18,12 +18,24 @@ describe("role-free log-driven Subagent Tool", () => {
       signal = new AbortController().signal;
     const result = await tool.execute(
       "call",
-      { action: "run", task: "inspect", context: "branch", workspace: "isolated" },
+      {
+        action: "run",
+        task: "inspect",
+        context: "branch",
+        sandbox: "ephemeral",
+        cwd: "/workspace/worktrees/feature-a",
+      },
       signal,
     );
     expect(backend.run).toHaveBeenCalledWith(
       "call",
-      { key: "task", task: "inspect", context: "branch", workspace: "isolated" },
+      {
+        key: "task",
+        task: "inspect",
+        context: "branch",
+        sandbox: "ephemeral",
+        cwd: "/workspace/worktrees/feature-a",
+      },
       signal,
     );
     expect(backend.workflow).not.toHaveBeenCalled();
@@ -46,6 +58,15 @@ describe("role-free log-driven Subagent Tool", () => {
     const tool = createCloudSubagentTool(runtime());
     expect(Value.Check(tool.parameters, { agent: "researcher", task: "inspect" })).toBe(false);
     expect(Value.Check(tool.parameters, { workflowScript: "return 1" })).toBe(false);
+    expect(
+      Value.Check(tool.parameters, { action: "run", task: "inspect", workspace: "isolated" }),
+    ).toBe(false);
+    expect(
+      Value.Check(tool.parameters, { action: "run", task: "inspect", sandbox: "isolated" }),
+    ).toBe(false);
+    expect(
+      Value.Check(tool.parameters, { action: "run", task: "inspect", cwd: "relative/path" }),
+    ).toBe(false);
     expect(Value.Check(tool.parameters, { action: "run", task: "inspect", context: "fork" })).toBe(
       false,
     );
@@ -54,7 +75,7 @@ describe("role-free log-driven Subagent Tool", () => {
         action: "run",
         task: "inspect",
         context: "fresh",
-        workspace: "shared",
+        sandbox: "shared",
       }),
     ).toBe(true);
   });

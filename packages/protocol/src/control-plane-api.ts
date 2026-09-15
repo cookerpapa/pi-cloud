@@ -432,10 +432,10 @@ export const DelegatedSessionContextModeSchema = Type.Union([
   Type.Literal("branch"),
 ]);
 
-export const DelegatedSessionWorkspaceModeSchema = Type.Union([
+export const DelegatedSessionSandboxModeSchema = Type.Union([
   Type.Literal("none"),
   Type.Literal("shared"),
-  Type.Literal("isolated"),
+  Type.Literal("ephemeral"),
 ]);
 
 export const DelegatedSessionStateSchema = Type.Union([
@@ -465,7 +465,7 @@ export const DelegatedSessionSummaryResourceSchema = Type.Object(
     parentTurnId: UuidSchema,
     title: Type.String({ minLength: 1, maxLength: 256 }),
     contextMode: DelegatedSessionContextModeSchema,
-    workspaceMode: DelegatedSessionWorkspaceModeSchema,
+    sandboxMode: DelegatedSessionSandboxModeSchema,
     state: DelegatedSessionStateSchema,
     workspaceName: Type.String({ minLength: 1, maxLength: 256 }),
     createdAt: UtcTimestampSchema,
@@ -849,7 +849,7 @@ export const ConversationTreeBranchResourceSchema = Type.Object(
     forkedFromEntryId: Type.Union([PiEntryIdSchema, Type.Null()]),
     current: Type.Boolean(),
     contextMode: Type.Optional(DelegatedSessionContextModeSchema),
-    workspaceMode: Type.Optional(DelegatedSessionWorkspaceModeSchema),
+    sandboxMode: Type.Optional(DelegatedSessionSandboxModeSchema),
     delegatedState: Type.Optional(DelegatedSessionStateSchema),
     entries: Type.Array(ConversationTreeEntryResourceSchema, { maxItems: 10_000 }),
   },
@@ -1026,7 +1026,7 @@ export const RunResourceSchema = Type.Object(
 export const WorkspaceDirectoryEntryResourceSchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 255 }),
-    path: Type.String({ minLength: 1, maxLength: 512 }),
+    path: Type.String({ minLength: 1, maxLength: 4_096 }),
     kind: Type.Union([Type.Literal("directory"), Type.Literal("file"), Type.Literal("symlink")]),
     sizeBytes: Type.Optional(NonNegativeSafeIntegerSchema),
     executable: Type.Optional(Type.Boolean()),
@@ -1038,7 +1038,7 @@ export const WorkspaceDirectoryResourceSchema = Type.Object(
   {
     sessionId: UuidSchema,
     workspaceId: UuidSchema,
-    path: Type.String({ minLength: 0, maxLength: 512 }),
+    path: Type.String({ minLength: 0, maxLength: 4_096 }),
     entries: Type.Array(WorkspaceDirectoryEntryResourceSchema, { maxItems: 4_096 }),
     truncated: Type.Boolean(),
   },
@@ -1177,7 +1177,7 @@ export type DevelopmentEnvironmentListResource = Static<
 export type ConversationTurnState = Static<typeof ConversationTurnStateSchema>;
 export type ConversationSummaryResource = Static<typeof ConversationSummaryResourceSchema>;
 export type DelegatedSessionContextMode = Static<typeof DelegatedSessionContextModeSchema>;
-export type DelegatedSessionWorkspaceMode = Static<typeof DelegatedSessionWorkspaceModeSchema>;
+export type DelegatedSessionSandboxMode = Static<typeof DelegatedSessionSandboxModeSchema>;
 export type DelegatedSessionState = Static<typeof DelegatedSessionStateSchema>;
 export type DelegatedSessionSummaryResource = Static<typeof DelegatedSessionSummaryResourceSchema>;
 export type ConversationListResource = Static<typeof ConversationListResourceSchema>;

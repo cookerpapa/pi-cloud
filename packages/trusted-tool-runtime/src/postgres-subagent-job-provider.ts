@@ -1,17 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
+import { posix } from "node:path";
 import type {
   Database,
   SubagentContextMode,
   SubagentExecutionState,
-  SubagentWorkspaceMode,
+  SubagentSandboxMode,
 } from "@pi-cloud/database";
 import {
   parseCloudToolCapabilitySnapshot,
   parseExecutionReference,
   type CloudToolCapabilitySnapshot,
-  type ToolBrokerWorkspaceForkRequest,
-  type ToolBrokerWorkspaceForkResponse,
-  type ToolSandboxAssignment,
 } from "@pi-cloud/protocol";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { sql, type Kysely } from "kysely";
@@ -28,14 +26,11 @@ export type StartCloudSubagentJobInput = Readonly<{
   prompt: string;
   systemPrompt?: string;
   contextMode: SubagentContextMode;
-  workspaceMode: SubagentWorkspaceMode;
+  sandboxMode: SubagentSandboxMode;
+  cwd?: string;
   requestedToolCapabilities?: CloudToolCapabilitySnapshot;
   /** Frozen by the owning Session Host before the control command is logged. */
   contextAnchor?: string | null;
-  parentActivation?: Readonly<{
-    activationId: string;
-    assignment: ToolSandboxAssignment;
-  }>;
 }>;
 
 export type CloudSubagentJobHandle = Readonly<{
@@ -82,9 +77,16 @@ export class PostgresSubagentJobError extends Error {
 }
 
 type IdGenerator = () => string;
-type IsolatedWorkspaceForker = (
-  request: ToolBrokerWorkspaceForkRequest,
-) => Promise<ToolBrokerWorkspaceForkResponse>;
+export type SubagentDirectoryTarget = Readonly<{
+  tenantId: string;
+  workspaceId: string;
+  sessionId: string;
+  cwd: string;
+  executionMode: "elastic" | "development_environment";
+  computeSessionId: string | null;
+  developmentEnvironmentId: string | null;
+  userId: string | null;
+}>;
 export interface NativeSubagentLanes {
   childAnchor(executionReference: string, inherit: boolean): string | null;
   createChildLane(input: {
@@ -142,7 +144,8 @@ function requestSha256(input: StartCloudSubagentJobInput, tools: readonly string
         stepIndex: input.stepIndex,
         tools,
         workflowRunId: input.workflowRunId,
-        workspaceMode: input.workspaceMode,
+        sandboxMode: input.sandboxMode,
+        cwd: input.cwd,
       }),
       "utf8",
     )
@@ -160,9 +163,9 @@ function traceId(runId: string): string {
 function intersectTools(
   parent: unknown,
   requested: CloudToolCapabilitySnapshot | undefined,
-  workspaceMode: StartCloudSubagentJobInput["workspaceMode"],
+  sandboxMode: StartCloudSubagentJobInput["sandboxMode"],
 ): CloudToolCapabilitySnapshot {
-  if (workspaceMode === "none") return [];
+  if (sandboxMode === "none") return [];
   const parentTools = parseCloudToolCapabilitySnapshot(parent);
   if (requested === undefined) return parentTools;
   const requestedTools = parseCloudToolCapabilitySnapshot(requested);
@@ -201,7 +204,7 @@ function assistantText(message: AgentMessage): string | undefined {
 export class PostgresSubagentJobProvider {
   readonly #database: Kysely<Database>;
   readonly #id: IdGenerator;
-  readonly #forkWorkspace: IsolatedWorkspaceForker | undefined;
+  readonly #validateDirectory: ((target: SubagentDirectoryTarget) => Promise<void>) | undefined;
   readonly #treePolicy: CloudSubagentTreePolicy;
   readonly #nativeLanes: NativeSubagentLanes;
 
@@ -209,13 +212,13 @@ export class PostgresSubagentJobProvider {
     database: Kysely<Database>;
     nativeLanes: NativeSubagentLanes;
     idGenerator?: IdGenerator;
-    forkWorkspace?: IsolatedWorkspaceForker;
+    validateDirectory?: (target: SubagentDirectoryTarget) => Promise<void>;
     treePolicy?: CloudSubagentTreePolicy;
   }) {
     this.#database = options.database;
     this.#nativeLanes = options.nativeLanes;
     this.#id = options.idGenerator ?? randomUUID;
-    this.#forkWorkspace = options.forkWorkspace;
+    this.#validateDirectory = options.validateDirectory;
     const treePolicy = options.treePolicy ?? DEFAULT_CLOUD_SUBAGENT_TREE_POLICY;
     for (const [name, value] of Object.entries(treePolicy)) {
       if (!Number.isSafeInteger(value) || value < 1 || value > 10_000) {
@@ -242,18 +245,17 @@ export class PostgresSubagentJobProvider {
       throw new TypeError("Subagent context mode is invalid");
     }
     if (
-      input.workspaceMode !== "none" &&
-      input.workspaceMode !== "shared" &&
-      input.workspaceMode !== "isolated"
+      input.sandboxMode !== "none" &&
+      input.sandboxMode !== "shared" &&
+      input.sandboxMode !== "ephemeral"
     ) {
-      throw new TypeError("Subagent Workspace mode is invalid");
+      throw new TypeError("Subagent Sandbox mode is invalid");
     }
-    if (input.workspaceMode === "isolated" && input.parentActivation === undefined) {
-      throw new PostgresSubagentJobError(
-        "parent_sandbox_unavailable",
-        "Isolated Subagent execution requires an active parent Sandbox",
-      );
-    }
+    if (
+      input.cwd !== undefined &&
+      (!posix.isAbsolute(input.cwd) || input.cwd.length > 4096 || /[\x00-\x1f\x7f]/.test(input.cwd))
+    )
+      throw new TypeError("Subagent cwd must be an absolute directory");
 
     const pending = await this.#database.transaction().execute(async (transaction) => {
       const parent = await transaction
@@ -298,8 +300,9 @@ export class PostgresSubagentJobProvider {
           "parent_session.created_by_user_id as createdByUserId",
           "parent_session.execution_mode as executionMode",
           "parent_session.development_environment_id as developmentEnvironmentId",
-          "parent_session.sandbox_profile_key as sandboxProfileKey",
-          "parent_session.working_directory as workingDirectory",
+          "parent_run.sandbox_profile_key as sandboxProfileKey",
+          "parent_run.working_directory as workingDirectory",
+          "parent_run.compute_session_id as computeSessionId",
           "parent_session.session_kind as sessionKind",
           "parent_workspace.sandbox_domain_id as sandboxDomainId",
           "parent_turn.model_profile_id as turnModelProfileId",
@@ -322,7 +325,7 @@ export class PostgresSubagentJobProvider {
       const tools = intersectTools(
         parent.parentTools,
         input.requestedToolCapabilities,
-        input.workspaceMode,
+        input.sandboxMode,
       );
       const fingerprint = requestSha256(input, tools);
       const replay = await transaction
@@ -466,30 +469,21 @@ export class PostgresSubagentJobProvider {
       const childPiSessionLane = `subagent-${executionId}`;
       const childTurnId = this.#id();
       const childRunId = this.#id();
-      const childWorkspaceId = input.workspaceMode === "isolated" ? this.#id() : parent.workspaceId;
-      const idempotencyKey = `subagent:${executionId}`;
-      if (input.workspaceMode === "isolated") {
-        await transaction
-          .insertInto("workspaces")
-          .values({
-            id: childWorkspaceId,
-            tenant_id: input.tenantId,
-            project_id: parent.projectId,
-            sandbox_domain_id: parent.sandboxDomainId,
-            seed_kind: "empty",
-            workspace_kind: "subagent_isolated",
-            parent_workspace_id: parent.workspaceId,
-          })
-          .executeTakeFirstOrThrow();
-        await transaction
-          .updateTable("sandbox_domains")
-          .set({
-            assigned_workspaces: sql<string>`${sql.ref("assigned_workspaces")} + 1`,
-            updated_at: sql<Date>`now()`,
-          })
-          .where("id", "=", parent.sandboxDomainId)
-          .executeTakeFirstOrThrow();
+      const childWorkspaceId = parent.workspaceId;
+      const workingDirectory =
+        input.cwd === undefined ? parent.workingDirectory : posix.resolve(input.cwd);
+      const computeSessionId =
+        input.sandboxMode === "ephemeral" ? childSessionId : parent.computeSessionId;
+      if (computeSessionId !== null) {
+        const root =
+          parent.executionMode === "development_environment" ? "/home/user" : "/workspace";
+        if (workingDirectory !== root && !workingDirectory.startsWith(root + "/"))
+          throw new PostgresSubagentJobError(
+            "subagent_directory_outside_volume",
+            "Temporary compute requires a directory on the parent's shared Volume",
+          );
       }
+      const idempotencyKey = `subagent:${executionId}`;
 
       await transaction
         .insertInto("sessions")
@@ -507,12 +501,11 @@ export class PostgresSubagentJobProvider {
           agent_revision_id: parent.agentRevisionId,
           created_by_user_id: parent.createdByUserId,
           state: "cold",
-          execution_mode: input.workspaceMode === "shared" ? parent.executionMode : "elastic",
-          development_environment_id:
-            input.workspaceMode === "shared" ? parent.developmentEnvironmentId : null,
+          execution_mode: parent.executionMode,
+          development_environment_id: parent.developmentEnvironmentId,
+          compute_session_id: computeSessionId,
           sandbox_profile_key: parent.sandboxProfileKey,
-          working_directory:
-            input.workspaceMode === "isolated" ? "/workspace" : parent.workingDirectory,
+          working_directory: workingDirectory,
           session_kind: "subagent",
           tool_capabilities: sql<unknown[]>`${JSON.stringify(tools)}::jsonb`,
           forked_from_session_id: null,
@@ -554,6 +547,9 @@ export class PostgresSubagentJobProvider {
           workspace_id: childWorkspaceId,
           session_id: childSessionId,
           turn_id: childTurnId,
+          compute_session_id: computeSessionId,
+          working_directory: workingDirectory,
+          sandbox_profile_key: parent.sandboxProfileKey,
           agent_revision_id: parent.agentRevisionId,
           mailbox_position: 1,
           request_sha256: fingerprint,
@@ -602,11 +598,10 @@ export class PostgresSubagentJobProvider {
           request_sha256: fingerprint,
           child_session_id: childSessionId,
           child_run_id: childRunId,
-          child_workspace_id: input.workspaceMode === "isolated" ? childWorkspaceId : null,
           agent_name: input.agentName,
           context_mode: input.contextMode,
           pi_context_base_entry_id: childLaneStart,
-          workspace_mode: input.workspaceMode,
+          sandbox_mode: input.sandboxMode,
           state: "preparing",
           result_entry_id: null,
           failure_code: null,
@@ -632,8 +627,6 @@ export class PostgresSubagentJobProvider {
     pending: CloudSubagentJobHandle,
   ): Promise<CloudSubagentJobHandle> {
     const parentGrant = parseExecutionReference(input.parentExecutionReference);
-    const activation = input.parentActivation;
-    const forkWorkspace = this.#forkWorkspace;
     const target = await this.#database
       .selectFrom("subagent_executions as execution")
       .innerJoin("sessions as child", (join) =>
@@ -643,7 +636,12 @@ export class PostgresSubagentJobProvider {
       )
       .select([
         "execution.state",
-        "execution.child_workspace_id as workspaceId",
+        "child.workspace_id as workspaceId",
+        "child.working_directory as cwd",
+        "child.compute_session_id as computeSessionId",
+        "child.execution_mode as executionMode",
+        "child.development_environment_id as developmentEnvironmentId",
+        "child.created_by_user_id as userId",
         "child.project_id as projectId",
         "child.id as sessionId",
         "child.pi_session_lane as lane",
@@ -654,44 +652,33 @@ export class PostgresSubagentJobProvider {
       .executeTakeFirstOrThrow();
     if (target.state !== "preparing") return { ...pending, state: target.state };
     try {
+      if (input.cwd !== undefined) {
+        if (!this.#validateDirectory)
+          throw new PostgresSubagentJobError(
+            "subagent_directory_validation_unavailable",
+            "Subagent directory validation is unavailable",
+          );
+        try {
+          await this.#validateDirectory({ ...target, tenantId: input.tenantId });
+        } catch (error) {
+          if (
+            error &&
+            typeof error === "object" &&
+            "retryable" in error &&
+            error.retryable === true
+          )
+            throw error;
+          throw new PostgresSubagentJobError(
+            "subagent_directory_unavailable",
+            `Subagent cwd is not an accessible directory: ${target.cwd}`,
+          );
+        }
+      }
       await this.#nativeLanes.createChildLane({
         executionReference: input.parentExecutionReference,
         lane: target.lane,
         at: target.anchor,
       });
-      if (input.workspaceMode === "isolated") {
-        if (!activation || !forkWorkspace)
-          throw new PostgresSubagentJobError(
-            "workspace_fork_unavailable",
-            "Isolated Workspace fork service is unavailable",
-          );
-        if (
-          target.workspaceId === null ||
-          activation.assignment.tenantId !== input.tenantId ||
-          activation.assignment.projectId !== target.projectId ||
-          activation.assignment.workspaceId === target.workspaceId ||
-          activation.assignment.sessionId !== input.parentSessionId ||
-          activation.assignment.executionReference !== input.parentExecutionReference
-        ) {
-          throw new PostgresSubagentJobError(
-            "workspace_fork_identity_invalid",
-            "Isolated Workspace fork did not match the parent Run authority",
-          );
-        }
-        await forkWorkspace({
-          toolBrokerProtocolVersion: 1,
-          type: "workspace.fork",
-          requestId: pending.executionId,
-          sourceActivationId: activation.activationId,
-          sourceAssignment: activation.assignment,
-          target: {
-            tenantId: input.tenantId,
-            projectId: target.projectId,
-            workspaceId: target.workspaceId,
-            sessionId: target.sessionId,
-          },
-        });
-      }
       return await this.#database.transaction().execute(async (transaction) => {
         const authority = await transaction
           .selectFrom("runs as parent_run")
@@ -731,7 +718,7 @@ export class PostgresSubagentJobProvider {
         ) {
           throw new PostgresSubagentJobError(
             "parent_authority_expired",
-            "Parent Agent Run lost authority while preparing the isolated Workspace",
+            "Parent Agent Run lost authority while preparing the child",
           );
         }
         await transaction
@@ -753,9 +740,12 @@ export class PostgresSubagentJobProvider {
     } catch (error: unknown) {
       if (error && typeof error === "object" && "retryable" in error && error.retryable === true)
         throw error;
-      await this.#failPreparation(input.tenantId, pending, "child_preparation_failed").catch(
-        () => undefined,
-      );
+      await this.#failPreparation(
+        input.tenantId,
+        pending,
+        error instanceof PostgresSubagentJobError ? error.code : "child_preparation_failed",
+        error instanceof PostgresSubagentJobError ? error.message : "Subagent preparation failed",
+      ).catch(() => undefined);
       throw error;
     }
   }
@@ -764,12 +754,13 @@ export class PostgresSubagentJobProvider {
     tenantId: string,
     pending: CloudSubagentJobHandle,
     failureCode: string,
+    failureMessage: string,
   ): Promise<void> {
     const now = new Date();
     await this.#database.transaction().execute(async (transaction) => {
       const execution = await transaction
         .selectFrom("subagent_executions")
-        .select(["state", "child_session_id", "child_run_id", "child_workspace_id"])
+        .select(["state", "child_session_id", "child_run_id"])
         .where("tenant_id", "=", tenantId)
         .where("id", "=", pending.executionId)
         .forUpdate()
@@ -786,7 +777,7 @@ export class PostgresSubagentJobProvider {
         .set({
           state: "failed",
           failure_code: failureCode,
-          failure_message: "Isolated Workspace preparation failed",
+          failure_message: failureMessage,
           settled_at: now,
           updated_at: now,
         })
@@ -798,7 +789,7 @@ export class PostgresSubagentJobProvider {
         .set({
           state: "failed",
           failure_code: failureCode,
-          failure_message: "Isolated Workspace preparation failed",
+          failure_message: failureMessage,
           failure_retryable: false,
           settled_at: now,
           updated_at: now,
@@ -811,7 +802,7 @@ export class PostgresSubagentJobProvider {
         .set({
           state: "failed",
           failure_code: failureCode,
-          failure_message: "Isolated Workspace preparation failed",
+          failure_message: failureMessage,
           failure_retryable: false,
           settled_at: now,
         })
@@ -824,26 +815,6 @@ export class PostgresSubagentJobProvider {
         .where("tenant_id", "=", tenantId)
         .where("id", "=", execution.child_session_id)
         .executeTakeFirstOrThrow();
-      if (execution.child_workspace_id !== null) {
-        const workspace = await transaction
-          .updateTable("workspaces")
-          .set({ deleted_at: now, updated_at: now })
-          .where("tenant_id", "=", tenantId)
-          .where("id", "=", execution.child_workspace_id)
-          .where("deleted_at", "is", null)
-          .returning("sandbox_domain_id")
-          .executeTakeFirst();
-        if (workspace !== undefined) {
-          await transaction
-            .updateTable("sandbox_domains")
-            .set({
-              assigned_workspaces: sql<string>`greatest(${sql.ref("assigned_workspaces")} - 1, 0)`,
-              updated_at: now,
-            })
-            .where("id", "=", workspace.sandbox_domain_id)
-            .executeTakeFirst();
-        }
-      }
     });
   }
 
@@ -861,8 +832,7 @@ export class PostgresSubagentJobProvider {
           and a.output_sealed_at is null)`.as("awaitingSeal"),
         "execution.child_session_id as childSessionId",
         "execution.child_run_id as childRunId",
-        "execution.child_workspace_id as childWorkspaceId",
-        "execution.workspace_mode as workspaceMode",
+        "execution.sandbox_mode as sandboxMode",
         "execution.state as executionState",
         "child_run.state as runState",
         "child_run.failure_code as failureCode",
@@ -901,26 +871,6 @@ export class PostgresSubagentJobProvider {
         .where("id", "=", executionId)
         .where("state", "in", ["preparing", "queued", "running"])
         .executeTakeFirst();
-      if (terminal && row.workspaceMode === "isolated" && row.childWorkspaceId !== null) {
-        const workspace = await transaction
-          .updateTable("workspaces")
-          .set({ deleted_at: sql<Date>`coalesce(deleted_at, now())`, updated_at: sql<Date>`now()` })
-          .where("tenant_id", "=", tenantId)
-          .where("id", "=", row.childWorkspaceId)
-          .where("deleted_at", "is", null)
-          .returning("sandbox_domain_id")
-          .executeTakeFirst();
-        if (workspace !== undefined) {
-          await transaction
-            .updateTable("sandbox_domains")
-            .set({
-              assigned_workspaces: sql<string>`greatest(${sql.ref("assigned_workspaces")} - 1, 0)`,
-              updated_at: sql<Date>`now()`,
-            })
-            .where("id", "=", workspace.sandbox_domain_id)
-            .executeTakeFirst();
-        }
-      }
     });
     return {
       executionId: row.executionId,
@@ -1167,7 +1117,8 @@ export class PostgresSubagentJobProvider {
           childRunId: row.childRunId,
           state: row.state,
         },
-        "workspace_fork_abandoned",
+        "subagent_preparation_abandoned",
+        "Subagent preparation did not complete before its deadline",
       );
       reaped += 1;
     }

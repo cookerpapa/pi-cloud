@@ -11,7 +11,7 @@ import {
   parseExecutionReference,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
-import { Duplex, PassThrough, Writable } from "node:stream";
+import { PassThrough } from "node:stream";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -127,11 +127,6 @@ function providerFixture() {
   const discoverHttpServices = vi.fn<NonNullable<SandboxProvider["discoverHttpServices"]>>(
     async () => ({ listeningPorts: [], httpServices: [] }),
   );
-  const forkWorkspace = vi.fn<NonNullable<SandboxProvider["forkWorkspace"]>>(async (handle) => ({
-    sourceHandle: handle,
-    sourceVolumeGeneration: "a".repeat(64),
-    targetVolumeGeneration: "b".repeat(64),
-  }));
   const listWorkspaceDirectory = vi.fn<NonNullable<SandboxProvider["listWorkspaceDirectory"]>>(
     async (request) => ({
       toolBrokerProtocolVersion: 1,
@@ -242,7 +237,6 @@ function providerFixture() {
     probeExecution,
     adoptPersistentCapsule,
     detachPersistent,
-    forkWorkspace,
     listWorkspaceDirectory,
     readWorkspaceFile,
     async stop() {
@@ -288,7 +282,6 @@ function providerFixture() {
     provider,
     exec,
     discoverHttpServices,
-    forkWorkspace,
     listWorkspaceDirectory,
     readWorkspaceFile,
     terminalInput,
@@ -337,6 +330,104 @@ function operation(
 }
 
 describe("provider-backed Tool Tool Broker", () => {
+  it("separates compute on one Workspace and keeps each binding's explicit cwd", async () => {
+    const fixture = providerFixture();
+    let now = 1_000;
+    const stop = vi.spyOn(fixture.provider, "stop");
+    const created: SandboxCreateSpec[] = [];
+    const original = fixture.provider.create;
+    fixture.provider.create = async (spec) => {
+      created.push(spec);
+      return { ...(await original(spec)), runtimeId: spec.activationId };
+    };
+    const manager = testBroker({
+      provider: fixture.provider,
+      maximumActiveSandboxes: 4,
+      warmTtlMs: 1_000,
+      clock: () => now,
+    });
+    const scope = crypto.randomUUID();
+    const childAssignment = (suffix: string): ToolSandboxAssignment => ({
+      ...assignment,
+      sessionId: suffix,
+      runId: suffix,
+      turnId: suffix,
+      executionReference: createExecutionReference(crypto.randomUUID(), crypto.randomUUID(), 5),
+    });
+    const child = childAssignment("child"),
+      descendant = childAssignment("descendant");
+    try {
+      const root = await manager.create(createRequest);
+      const one = await manager.create({
+        ...createRequest,
+        assignment: child,
+        computeSessionId: scope,
+        toolRoot: "/workspace/worktrees/a",
+      });
+      const two = await manager.create({
+        ...createRequest,
+        assignment: descendant,
+        computeSessionId: scope,
+        toolRoot: "/workspace/worktrees/b",
+      });
+      expect(created).toHaveLength(0);
+      for (const [binding, owner] of [
+        [root, assignment],
+        [one, child],
+        [two, descendant],
+      ] as const)
+        await manager.execute(owner.executionReference, {
+          ...operation(crypto.randomUUID()),
+          activationId: binding.activationId,
+        });
+      expect(created).toHaveLength(2);
+      expect(created.map((spec) => spec.assignment.workspaceId)).toEqual([
+        assignment.workspaceId,
+        assignment.workspaceId,
+      ]);
+      expect(created.map((spec) => spec.volumeMountPath)).toEqual(["/workspace", "/workspace"]);
+      expect(fixture.exec.mock.calls.map((call) => call[3])).toEqual([
+        "/workspace",
+        "/workspace/worktrees/a",
+        "/workspace/worktrees/b",
+      ]);
+      expect(one.continuityId).toBe(two.continuityId);
+      expect(root.continuityId).not.toBe(one.continuityId);
+      await manager.stop(one.activationId, child);
+      expect(fixture.stopped).toBe(false);
+      await manager.execute(assignment.executionReference, {
+        ...operation(crypto.randomUUID()),
+        activationId: root.activationId,
+      });
+      await manager.execute(descendant.executionReference, {
+        ...operation(crypto.randomUUID()),
+        activationId: two.activationId,
+      });
+      expect(created).toHaveLength(2);
+      await manager.release({
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.release",
+        requestId: crypto.randomUUID(),
+        activationId: two.activationId,
+        assignment: descendant,
+        disposition: "keep_warm",
+      });
+      expect(manager.warmCount).toBe(1);
+      now += 2_000;
+      await manager.reapWarm();
+      expect(manager.warmCount).toBe(0);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(stop.mock.calls[0]?.[0].activationId).toBe(created[1]?.activationId);
+      expect(manager.ownsToolBinding(root.activationId)).toBe(true);
+      await manager.execute(assignment.executionReference, {
+        ...operation(crypto.randomUUID()),
+        activationId: root.activationId,
+      });
+      expect(created).toHaveLength(2);
+    } finally {
+      await manager.close();
+    }
+  });
   it("does not retain a destroyed development handle when state publication fails", async () => {
     const fixture = providerFixture();
     const repository = new InMemoryWorkspaceRuntimeStateRepository();
@@ -1633,140 +1724,6 @@ describe("provider-backed Tool Tool Broker", () => {
       ),
     ).resolves.toMatchObject({ operation: "bash.exec" });
     expect(fixture.createCount).toBe(1);
-    await manager.stop(parent.activationId, assignment);
-  });
-
-  it("creates an isolated Workspace fork without revoking the parent lease", async () => {
-    const fixture = providerFixture();
-    const manager = testBroker({
-      provider: fixture.provider,
-      idGenerator: () => ACTIVATION_ID,
-    });
-    const parent = await manager.create(createRequest);
-    await manager.execute(
-      assignment.executionReference,
-      operation("73400000-0000-4000-8000-000000000001"),
-    );
-    const forked = await manager.forkWorkspace({
-      toolBrokerProtocolVersion: 1,
-      type: "workspace.fork",
-      requestId: "73400000-0000-4000-8000-000000000002",
-      sourceActivationId: parent.activationId,
-      sourceAssignment: assignment,
-      target: {
-        tenantId: assignment.tenantId,
-        projectId: assignment.projectId,
-        workspaceId: "73400000-0000-4000-8000-000000000003",
-        sessionId: "73400000-0000-4000-8000-000000000004",
-      },
-    });
-    expect(forked).toMatchObject({
-      type: "workspace.forked",
-      sourceVolumeGeneration: "a".repeat(64),
-      targetVolumeGeneration: "b".repeat(64),
-    });
-    await expect(
-      manager.execute(
-        assignment.executionReference,
-        operation("73400000-0000-4000-8000-000000000005"),
-      ),
-    ).resolves.toMatchObject({ exitCode: 0 });
-    expect(fixture.forkWorkspace).toHaveBeenCalledTimes(1);
-    await manager.stop(parent.activationId, assignment);
-  });
-
-  it("allows a waiting workflow to fork while still rejecting active filesystem Tools, and deduplicates fork replies", async () => {
-    const fixture = providerFixture(),
-      output = new PassThrough();
-    const stream = Duplex.from({
-      readable: output,
-      writable: new Writable({
-        write(_chunk, _encoding, done) {
-          done();
-        },
-      }),
-    });
-    const manager = testBroker({
-      provider: { ...fixture.provider, openWorkflow: async () => stream },
-      idGenerator: () => ACTIVATION_ID,
-    });
-    const parent = await manager.create(createRequest);
-    const base = operation(crypto.randomUUID());
-    if (base.operation !== "bash.exec") throw new Error("Expected Bash fixture");
-    const { command: _command, ...envelope } = base;
-    const request = {
-      ...envelope,
-      operation: "workflow.exec" as const,
-      script: "await runs.run('child', {task:'inspect'})",
-      timeoutMs: 10000,
-    };
-    const running = manager.execute(assignment.executionReference, request);
-    let observed!: () => void;
-    const waiting = new Promise<void>((resolve) => {
-      observed = resolve;
-    });
-    const controller = new AbortController();
-    const bridge = await manager.attachWorkflow(
-      parent.activationId,
-      request.operationId,
-      assignment.executionReference,
-      (frame) => {
-        if (frame.type === "call") observed();
-      },
-      controller.signal,
-    );
-    output.write(
-      JSON.stringify({
-        type: "call",
-        id: 1,
-        method: "run",
-        args: { key: "child", task: { task: "inspect", workspace: "isolated" } },
-      }) + "\n",
-    );
-    await waiting;
-    const fork = {
-      toolBrokerProtocolVersion: 1 as const,
-      type: "workspace.fork" as const,
-      requestId: crypto.randomUUID(),
-      sourceActivationId: parent.activationId,
-      sourceAssignment: assignment,
-      target: {
-        tenantId: assignment.tenantId,
-        projectId: assignment.projectId,
-        workspaceId: crypto.randomUUID(),
-        sessionId: crypto.randomUUID(),
-      },
-    };
-    let started!: () => void, release!: () => void;
-    const startedPromise = new Promise<void>((resolve) => {
-      started = resolve;
-    });
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const execute = fixture.exec.getMockImplementation()!;
-    fixture.exec.mockImplementationOnce(async (...args) => {
-      started();
-      await gate;
-      return execute(...args);
-    });
-    const writing = manager.execute(assignment.executionReference, operation(crypto.randomUUID()));
-    await startedPromise;
-    await expect(manager.forkWorkspace(fork)).rejects.toMatchObject({
-      code: "workspace_runtime_busy",
-    });
-    release();
-    await writing;
-    const first = await manager.forkWorkspace(fork);
-    await expect(manager.forkWorkspace(fork)).resolves.toEqual(first);
-    expect(fixture.forkWorkspace).toHaveBeenCalledTimes(1);
-    output.write(JSON.stringify({ type: "complete", ok: true, value: "done" }) + "\n");
-    await expect(running).resolves.toMatchObject({
-      operation: "workflow.exec",
-      ok: true,
-      value: "done",
-    });
-    bridge.close();
     await manager.stop(parent.activationId, assignment);
   });
 

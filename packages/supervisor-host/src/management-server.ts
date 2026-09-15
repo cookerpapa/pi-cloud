@@ -169,10 +169,7 @@ export class SupervisorManagementServer {
         if (!this.#subagentCommand)
           return reply.code(503).send({ error: "Subagent host is unavailable" });
         const body = request.body as SubagentHostRequest;
-        if (
-          !body ||
-          !["prepare_lane", "schedule", "result", "fork_workspace", "input"].includes(body.action)
-        )
+        if (!body || !["prepare_lane", "schedule", "result", "input"].includes(body.action))
           return reply.code(400).send({ error: "Invalid Subagent control request" });
         try {
           const result = await this.#subagentCommand(body);

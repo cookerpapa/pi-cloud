@@ -21,11 +21,6 @@ export class WorkflowChannels {
   constructor() {
     this.#changed.setMaxListeners(0);
   }
-  waitingCount(activations: ReadonlySet<string>): number {
-    return [...this.#channels.values()].filter(
-      (channel) => activations.has(channel.activationId) && channel.calls.size > 0,
-    ).length;
-  }
 
   async run(
     request: Extract<ToolSandboxOperationRequest, { operation: "workflow.exec" }>,

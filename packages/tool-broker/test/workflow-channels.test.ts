@@ -50,6 +50,35 @@ async function start(script: string, timeoutMs = 2000) {
   return { channels, controller, result, request, cwd };
 }
 describe("workflow guest request/response contract", () => {
+  it.each([
+    [
+      '{task:"x",sandbox:"shared",cwd:"/workspace/a"}',
+      '{task:"x",sandbox:"ephemeral",cwd:"/workspace/a"}',
+    ],
+    [
+      '{task:"x",sandbox:"ephemeral",cwd:"/workspace/a"}',
+      '{task:"x",sandbox:"ephemeral",cwd:"/workspace/b"}',
+    ],
+  ])("rejects key reuse when compute or cwd changes: %s", async (first, second) => {
+    const f = await start(`await runs.run("a",${first}); return runs.run("a",${second});`);
+    const calls: WorkflowFrame[] = [];
+    const bridge = await f.channels.attach(
+      f.request.activationId,
+      f.request.operationId,
+      (frame) => {
+        if (frame.type === "call") {
+          calls.push(frame);
+          bridge.respond({ id: frame.id, ok: true, value: { state: "completed", output: "done" } });
+        }
+      },
+      f.controller.signal,
+    );
+    await expect(f.result).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining("different arguments"),
+    });
+    expect(calls).toHaveLength(1);
+  });
   it("returns only the script-selected JSON result and keeps its source in the Workspace", async () => {
     const script =
       'const a=await runs.run("a",{task:"first"}); const b=await runs.run("b",{task:"second"}); console.log(a.output); return {selected:b.output};';

@@ -84,9 +84,6 @@ function toolBroker(): SupervisorToolBroker {
     async create() {
       throw new Error("unused");
     },
-    async forkWorkspace() {
-      throw new Error("unused");
-    },
     async release() {
       throw new Error("unused");
     },

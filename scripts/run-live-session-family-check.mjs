@@ -318,7 +318,7 @@ try {
 
   const next = await start(
     a,
-    "Use subagent action run with context branch and workspace shared. Ask it to read the three algorithm files from the previous turn, run all three test suites and verify that each .done file has exactly one line. After its actual result, reply FAMILY-RESTORE-OK.",
+    "Use subagent action run with context branch and sandbox shared. Ask it to read the three algorithm files from the previous turn, run all three test suites and verify that each .done file has exactly one line. After its actual result, reply FAMILY-RESTORE-OK.",
     "multi-round-branch",
   );
   const nextResult = await succeeded(next.finished);
@@ -332,7 +332,7 @@ try {
   if (process.env.PI_CLOUD_LIVE_FAMILY_FAULT === "1") {
     const crash = await start(
       a,
-      "Use subagent action run, context fresh, workspace shared. Its task: run bash with timeout:90 to append exactly one line to crash-once.txt, then sleep 60. Wait for the actual child result.",
+      "Use subagent action run, context fresh, sandbox shared. Its task: run bash with timeout:90 to append exactly one line to crash-once.txt, then sleep 60. Wait for the actual child result.",
       "worker-loss",
     );
     await until(async () => {

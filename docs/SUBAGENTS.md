@@ -7,16 +7,34 @@ language; they do not configure Workers or Kafka.
 ## Direct task
 
 ```js
-subagent({ action: "run", task: "Check the collision logic", context: "branch", workspace: "shared" })
+subagent({ action: "run", task: "Check the collision logic", context: "branch", sandbox: "shared" })
 ```
 
 `fresh` starts from the task. `branch` inherits the frozen history before the
 current parent prompt, not intermediate reasoning or Tool results produced
 during that Run; pass any such findings explicitly in the child task.
-`shared` uses the parent environment; `isolated` prepares a separate Workspace
-copy. Optional `tools` narrows file/shell permissions; `[]` disables those tools,
-not hosted search or delegation. Direct tasks do not allocate Cube unless an
-actual local operation or an explicit Workspace copy needs it.
+`sandbox: "shared"` uses the parent's compute environment; `"ephemeral"` uses a
+separate temporary Cube with the **same persistent Volume**. Optional absolute
+`cwd` selects an existing directory and otherwise inherits the parent's frozen
+Run directory. Shared descendants keep the parent's compute scope. Context
+inheritance, compute placement and directory selection are independent.
+
+The parent can run `git worktree add` through Bash, then pass that worktree's
+path as `cwd`. All Cubes mount the Volume at the same path, so Git's shared
+metadata remains valid and the parent can inspect or merge locally. PiCloud
+does not initialize Git, commit/stash, merge, copy files or remove worktrees on
+task completion. Uncommitted changes are not automatically included in a new
+worktree. Sharing writable storage is collaboration, not security isolation.
+
+Elastic storage is mounted at `/workspace`; a machine's shared home Volume is
+mounted at `/home/user`. Other machine system-disk directories cannot be selected
+for ephemeral compute. Missing or inaccessible directories fail before child
+execution, never fall back or create directories implicitly.
+
+Optional `tools` narrows file/shell permissions; `[]` disables those tools, not
+hosted search or delegation. Direct tasks allocate no Cube until an actual local
+operation. Temporary compute follows the existing elastic idle TTL; recycling
+compute does not remove the shared Volume or worktree.
 
 ## Workflow
 
@@ -64,6 +82,6 @@ message. Lost notifications are redelivered from persisted state. Seals and
 native Tool completion retire unfinished owned work, except an explicit
 supervisor handoff that remains owned by the parent Run. Already-issued guest
 effects may be UNKNOWN. There is no automatic script replay or JS-memory resume.
-Workspace copies are ordinary copies, not atomic snapshots of running programs.
 
-See [ADR-0166](adr/0166-log-driven-subagents.md) and [configuration](CONFIGURATION.md).
+See [ADR-0166](adr/0166-log-driven-subagents.md),
+[ADR-0171](adr/0171-shared-volume-subagent-compute.md) and [configuration](CONFIGURATION.md).

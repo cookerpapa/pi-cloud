@@ -129,13 +129,13 @@ function delegatedContextLabel(
   return mode === "branch" ? t("chat.context.inherited") : t("chat.context.fresh");
 }
 
-function delegatedWorkspaceLabel(
-  mode: DelegatedSessionSummaryResource["workspaceMode"],
+function delegatedSandboxLabel(
+  mode: DelegatedSessionSummaryResource["sandboxMode"],
   t: Translate,
 ): string {
-  if (mode === "shared") return t("chat.workspace.shared");
-  if (mode === "isolated") return t("chat.workspace.isolated");
-  return t("chat.workspace.none");
+  if (mode === "shared") return t("chat.sandbox.shared");
+  if (mode === "ephemeral") return t("chat.sandbox.ephemeral");
+  return t("chat.sandbox.none");
 }
 
 function delegatedStateLabel(
@@ -1257,7 +1257,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             <small>
               {t("chat.subagentDepth", { depth: delegated.depth })} ·{" "}
               {delegatedContextLabel(delegated.contextMode, t)} ·{" "}
-              {delegatedWorkspaceLabel(delegated.workspaceMode, t)} ·{" "}
+              {delegatedSandboxLabel(delegated.sandboxMode, t)} ·{" "}
               {delegatedStateLabel(delegated.state, t)}
             </small>
           </button>
@@ -1484,7 +1484,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               <span className="product-delegated-title">
                 {t("chat.subagentTitle")} ·{" "}
                 {delegatedContextLabel(selectedDelegatedSession.contextMode, t)} ·{" "}
-                {delegatedWorkspaceLabel(selectedDelegatedSession.workspaceMode, t)} ·{" "}
+                {delegatedSandboxLabel(selectedDelegatedSession.sandboxMode, t)} ·{" "}
                 {t("chat.readOnly")}
               </span>
             )}

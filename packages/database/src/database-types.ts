@@ -69,9 +69,9 @@ export type EnvironmentOperationKind = "create" | "activate" | "rollback" | "val
 export type SandboxDomainState = "active" | "draining" | "disabled";
 export type ExecutionMode = "elastic" | "development_environment";
 export type SessionKind = "conversation" | "subagent";
-export type WorkspaceKind = "user" | "development_environment" | "subagent_isolated";
+export type WorkspaceKind = "user" | "development_environment";
 export type SubagentContextMode = "fresh" | "branch";
-export type SubagentWorkspaceMode = "none" | "shared" | "isolated";
+export type SubagentSandboxMode = "none" | "shared" | "ephemeral";
 export type SubagentExecutionState =
   "preparing" | "queued" | "running" | "completed" | "failed" | "cancelled" | "unknown";
 export type SubagentSupervisorReason = "need_decision" | "interview_request" | "progress_update";
@@ -259,6 +259,7 @@ export interface ToolBrokerInstanceTable {
 }
 
 export interface ToolBrokerWorkspaceRuntimeTable {
+  compute_session_id: GeneratedNullable<string>;
   /** Stable physical identity while one elastic Cube exists. */
   workspace_runtime_id: string;
   sandbox_domain_id: string;
@@ -554,7 +555,6 @@ export interface WorkspaceTable {
   sandbox_domain_id: string;
   seed_kind: Generated<WorkspaceSeedKind>;
   workspace_kind: Generated<WorkspaceKind>;
-  parent_workspace_id: GeneratedNullable<string>;
   row_version: GeneratedInt8;
   deleted_at: NullableTimestamp;
   storage_purged_at: NullableTimestamp;
@@ -600,6 +600,7 @@ export interface ModelProfileTable {
 }
 
 export interface SessionTable {
+  compute_session_id: GeneratedNullable<string>;
   id: string;
   pi_session_id: string;
   pi_session_lane: string;
@@ -648,11 +649,10 @@ export interface SubagentExecutionTable {
   request_sha256: string;
   child_session_id: string;
   child_run_id: string;
-  child_workspace_id: GeneratedNullable<string>;
   agent_name: string;
   context_mode: SubagentContextMode;
   pi_context_base_entry_id: GeneratedNullable<string>;
-  workspace_mode: SubagentWorkspaceMode;
+  sandbox_mode: SubagentSandboxMode;
   state: SubagentExecutionState;
   result_entry_id: string | null;
   failure_code: string | null;
@@ -743,6 +743,7 @@ export interface TurnTable {
 }
 
 export interface RunTable {
+  compute_session_id: GeneratedNullable<string>;
   id: string;
   tenant_id: string;
   project_id: string;

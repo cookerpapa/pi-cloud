@@ -1,9 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import type {
-  ExecuteTurnCommandMessage,
-  SubagentControlRequest,
-  ToolSandboxAssignment,
-} from "@pi-cloud/protocol";
+import type { ExecuteTurnCommandMessage, SubagentControlRequest } from "@pi-cloud/protocol";
 import {
   createCloudSubagentTool,
   validateSubagentTask,
@@ -31,9 +27,6 @@ export type WorkflowCall = WorkflowHostCall;
 export type TrustedToolRunContext = Readonly<{
   command: ExecuteTurnCommandMessage;
   refreshServices(): Promise<void>;
-  ensureActivation(): Promise<
-    Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>
-  >;
   executeWorkflow?: WorkflowExecutor;
 }>;
 export interface TrustedToolRuntime {
@@ -59,7 +52,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
     this.#jobs = new PostgresSubagentJobProvider(options);
   }
   async create(context: TrustedToolRunContext): Promise<readonly TrustedAgentTool[]> {
-    const { command, ensureActivation, refreshServices } = context;
+    const { command, refreshServices } = context;
     const scope = command.payload;
     const requests = new Map<
       string,
@@ -114,7 +107,8 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
       const specification = JSON.stringify({
         task: task.task,
         context: task.context ?? "fresh",
-        workspace: task.workspace ?? "shared",
+        sandbox: task.sandbox ?? "shared",
+        cwd: task.cwd ?? null,
         tools: task.tools?.slice().sort() ?? null,
       });
       const previous = requests.get(key);
@@ -134,8 +128,6 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
       });
       void publication.catch(() => {});
       const promise = (async () => {
-        const parentActivation =
-          task.workspace === "isolated" ? await ensureActivation() : undefined;
         const started = await control(
           toolCallId,
           {
@@ -143,15 +135,10 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
             key: task.key,
             task: task.task,
             context: task.context ?? "fresh",
-            workspace:
-              task.workspace === "isolated"
-                ? "isolated"
-                : task.tools?.length === 0
-                  ? "none"
-                  : "shared",
+            sandbox: task.tools?.length === 0 ? "none" : (task.sandbox ?? "shared"),
+            ...(task.cwd !== undefined ? { cwd: task.cwd } : {}),
             anchor,
             ...(task.tools ? { tools: task.tools } : {}),
-            ...(parentActivation ? { parentActivation } : {}),
           },
           signal,
           published,

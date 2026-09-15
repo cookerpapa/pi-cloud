@@ -94,9 +94,6 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     context: Readonly<{
       executeWorkflow: WorkflowExecutor;
       refreshServices(): Promise<void>;
-      ensureActivation(): Promise<
-        Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>
-      >;
     }>,
   ) => Promise<readonly TrustedAgentTool[]> | readonly TrustedAgentTool[];
   runAttemptPhaseObserver?: RunAttemptPhaseObserver;
@@ -372,6 +369,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       attemptContextSha256: cloudAttempt.sha256,
       allowedTools: cloudTurn.context.tools.names,
       executionMode: command.payload.executionMode,
+      ...(command.payload.computeSessionId === undefined
+        ? {}
+        : { computeSessionId: command.payload.computeSessionId }),
       sandboxProfileKey: command.payload.sandboxProfileKey,
       toolRoot: command.payload.workingDirectory,
       environment: command.payload.environment,
@@ -410,7 +410,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       return stopPromise;
     };
     const abortSandbox = (): void => {
-      if (command.payload.executionMode === "elastic") {
+      if (
+        command.payload.executionMode === "elastic" ||
+        command.payload.computeSessionId !== undefined
+      ) {
         void stopSandbox().catch(() => undefined);
       }
     };
@@ -521,10 +524,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           refreshServices: async () => {
             const active = await ensureActivation();
             await this.#broker.refreshServices(active.activationId, toolAssignment);
-          },
-          ensureActivation: async () => {
-            const active = await ensureActivation();
-            return { activationId: active.activationId, assignment: toolAssignment };
           },
         })) ?? ([] as readonly TrustedAgentTool[]);
       const trustedTools = trustedToolBindings.map((binding) => binding.tool);
@@ -779,7 +778,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       signal.removeEventListener("abort", abortSandbox);
       await fakeModel?.stop().catch(() => undefined);
       let cleanupError: unknown;
-      if (activation !== undefined && command.payload.executionMode === "development_environment") {
+      if (
+        activation !== undefined &&
+        command.payload.executionMode === "development_environment" &&
+        command.payload.computeSessionId === undefined
+      ) {
         await this.#broker
           .release(activation.activationId, toolAssignment, { kind: "detach" })
           .catch((error: unknown) => {

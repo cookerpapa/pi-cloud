@@ -176,6 +176,7 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
         agent: AgentRevisionSnapshotSchema,
         input: PromptInputSchema,
         executionMode: ExecutionModeSchema,
+        computeSessionId: Type.Optional(UuidSchema),
         sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
         workingDirectory: Type.String({
           minLength: 1,

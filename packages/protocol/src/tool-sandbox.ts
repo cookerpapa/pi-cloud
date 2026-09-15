@@ -107,6 +107,7 @@ export const ToolSandboxCreateRequestSchema = Type.Object(
     attemptContextSha256: Sha256Schema,
     allowedTools: CloudToolCapabilitySnapshotSchema,
     executionMode: ExecutionModeSchema,
+    computeSessionId: Type.Optional(UuidSchema),
     sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
     toolRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     environment: EnvironmentRuntimeSnapshotSchema,
@@ -136,39 +137,6 @@ export const ToolSandboxCreateRedirectResponseSchema = Type.Object(
     type: Type.Literal("tool_sandbox.owner_redirect"),
     requestId: UuidSchema,
     ownerBaseUrl: Type.String({ minLength: 8, maxLength: 2_048 }),
-  },
-  { additionalProperties: false },
-);
-
-export const ToolBrokerWorkspaceForkRequestSchema = Type.Object(
-  {
-    ...ToolSandboxEnvelope,
-    type: Type.Literal("workspace.fork"),
-    requestId: UuidSchema,
-    sourceActivationId: UuidSchema,
-    sourceAssignment: ToolSandboxAssignmentSchema,
-    target: Type.Object(
-      {
-        tenantId: OpaqueIdSchema,
-        projectId: OpaqueIdSchema,
-        workspaceId: UuidSchema,
-        sessionId: UuidSchema,
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
-export const ToolBrokerWorkspaceForkResponseSchema = Type.Object(
-  {
-    ...ToolSandboxEnvelope,
-    type: Type.Literal("workspace.forked"),
-    requestId: UuidSchema,
-    sourceActivationId: UuidSchema,
-    targetWorkspaceId: UuidSchema,
-    sourceVolumeGeneration: Sha256Schema,
-    targetVolumeGeneration: Sha256Schema,
   },
   { additionalProperties: false },
 );
@@ -221,7 +189,7 @@ export const ToolSandboxStopResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const WorkspaceBrowserPathSchema = Type.String({ minLength: 0, maxLength: 512 });
+const WorkspaceBrowserPathSchema = Type.String({ minLength: 0, maxLength: 4_096 });
 const MachineBrowserTargetSchema = Type.Object(
   {
     environmentId: UuidSchema,
@@ -258,7 +226,7 @@ export const ToolBrokerListWorkspaceDirectoryResponseSchema = Type.Object(
       Type.Object(
         {
           name: Type.String({ minLength: 1, maxLength: 255 }),
-          path: Type.String({ minLength: 1, maxLength: 512 }),
+          path: Type.String({ minLength: 1, maxLength: 4_096 }),
           kind: Type.Union([
             Type.Literal("directory"),
             Type.Literal("file"),
@@ -286,7 +254,7 @@ export const ToolBrokerReadWorkspaceFileRequestSchema = Type.Object(
     workspaceId: OpaqueIdSchema,
     sessionId: OpaqueIdSchema,
     rootPath: WorkspaceBrowserPathSchema,
-    path: Type.String({ minLength: 1, maxLength: 512 }),
+    path: Type.String({ minLength: 1, maxLength: 4_096 }),
     maximumBytes: Type.Integer({ minimum: 1, maximum: MAX_TOOL_FILE_BYTES }),
   },
   { additionalProperties: false },
@@ -299,7 +267,7 @@ export const ToolBrokerReadWorkspaceFileResponseSchema = Type.Object(
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: OpaqueIdSchema,
-    path: Type.String({ minLength: 1, maxLength: 512 }),
+    path: Type.String({ minLength: 1, maxLength: 4_096 }),
     content: Base64Schema,
     sha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
     executable: Type.Boolean(),
@@ -322,7 +290,6 @@ export const ToolBrokerRequestSchema = Type.Union([
   ToolSandboxCreateRequestSchema,
   ToolSandboxReleaseRequestSchema,
   ToolSandboxStopRequestSchema,
-  ToolBrokerWorkspaceForkRequestSchema,
 ]);
 
 export const ToolBrokerResponseSchema = Type.Union([
@@ -339,7 +306,6 @@ export const ToolBrokerResponseSchema = Type.Union([
   ToolSandboxCreateRedirectResponseSchema,
   ToolSandboxReleaseResponseSchema,
   ToolSandboxStopResponseSchema,
-  ToolBrokerWorkspaceForkResponseSchema,
 ]);
 
 const OperationEnvelope = {
@@ -595,8 +561,6 @@ export type ToolSandboxReleaseRequest = Static<typeof ToolSandboxReleaseRequestS
 export type ToolSandboxReleaseResponse = Static<typeof ToolSandboxReleaseResponseSchema>;
 export type ToolSandboxStopRequest = Static<typeof ToolSandboxStopRequestSchema>;
 export type ToolSandboxStopResponse = Static<typeof ToolSandboxStopResponseSchema>;
-export type ToolBrokerWorkspaceForkRequest = Static<typeof ToolBrokerWorkspaceForkRequestSchema>;
-export type ToolBrokerWorkspaceForkResponse = Static<typeof ToolBrokerWorkspaceForkResponseSchema>;
 export type ToolBrokerListWorkspaceDirectoryRequest = Static<
   typeof ToolBrokerListWorkspaceDirectoryRequestSchema
 >;

@@ -129,11 +129,11 @@
       "invariant": "An ambiguous Tool transport never blindly replays an arbitrary command."
     },
     {
-      "id": "recreated-volume-copy-source",
+      "id": "subagent-compute-scope-expiry",
       "workspace": "@pi-cloud/tool-broker",
-      "file": "test/workspace-volume-gateway.test.ts",
-      "test": "creates an idempotent isolated Volume copy that no longer follows the parent",
-      "invariant": "A copied Workspace stays independent, and a recreated source Volume cannot be mistaken for the original resource."
+      "file": "test/tool-broker.test.ts",
+      "test": "separates compute on one Workspace and keeps each binding's explicit cwd",
+      "invariant": "Expiring a child's independent compute scope keeps the shared Volume and the active parent's runtime; each binding uses its own frozen cwd."
     },
     {
       "id": "cancel-stop-failure",

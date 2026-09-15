@@ -31,7 +31,7 @@ export {
   type SubagentExecutionTable,
   type SubagentSupervisorReason,
   type SubagentSupervisorRequestTable,
-  type SubagentWorkspaceMode,
+  type SubagentSandboxMode,
   type ToolBrokerWorkspaceRuntimeState,
   type ToolBrokerInstanceState,
   type ToolBrokerOperationState,

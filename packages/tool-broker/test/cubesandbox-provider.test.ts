@@ -105,10 +105,6 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
       volumes.add(volumeId);
       return { attached };
     }),
-    fork: vi.fn(async () => ({
-      sourceVolumeGeneration: "a".repeat(64),
-      targetVolumeGeneration: "c".repeat(64),
-    })),
     listDirectory: vi.fn(async () => ({
       entries: [
         {
@@ -402,6 +398,54 @@ function operation(activationId: string): ToolSandboxOperationRequest {
 }
 
 describe("CubeSandbox Provider contract", () => {
+  it("mounts a machine's home Volume in temporary child compute without cloning or deleting storage", async () => {
+    const runtime = new FakeCubeRuntimeClient(),
+      volume = fakeWorkspaceVolumeGateway();
+    const deleteVolume = vi.spyOn(runtime, "deleteVolume");
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: volume,
+    });
+    const parent = await provider.create({
+      activationId: ACTIVATION_ID,
+      assignment,
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+      policy: provider.defaultPolicy,
+      lifetime: "development_environment",
+      toolRoot: "/home/user/project",
+    });
+    const child = await provider.create({
+      activationId: "10000000-0000-4000-8000-000000000011",
+      assignment: { ...assignment, sessionId: "child-session" },
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+      policy: provider.defaultPolicy,
+      volumeMountPath: "/home/user",
+      toolRoot: "/home/user/worktrees/feature-a",
+    });
+    expect(child.runtimeId).not.toBe(parent.runtimeId);
+    expect(runtime.creates[0]?.volumeMounts).toEqual(runtime.creates[1]?.volumeMounts);
+    expect(runtime.creates[1]?.volumeMounts?.[0]?.path).toBe("/home/user");
+    expect(runtime.creates[1]).not.toHaveProperty("lifecycle");
+    expect(
+      runtime.requests.some(
+        ({ sandboxId, guestRequest }) =>
+          sandboxId === child.runtimeName &&
+          (guestRequest.initialization as { toolRoot?: string } | undefined)?.toolRoot ===
+            "/home/user/worktrees/feature-a",
+      ),
+    ).toBe(true);
+    await provider.destroy(child);
+    expect(runtime.destroyed).not.toContain(parent.runtimeName);
+    expect(deleteVolume).not.toHaveBeenCalled();
+    expect(volume.prepareDelete).not.toHaveBeenCalled();
+    await provider.destroy(parent);
+    await provider.close();
+  });
   it("executes a verified warm handle without a control-plane GET", async () => {
     const runtime = new FakeCubeRuntimeClient(),
       volume = fakeWorkspaceVolumeGateway();
@@ -902,55 +946,6 @@ describe("CubeSandbox Provider contract", () => {
     await expect(provider.inspect(parent)).resolves.toMatchObject({ state: "running" });
     expect(runtime.creates).toHaveLength(1);
     await provider.destroy(parent);
-    await provider.close();
-  });
-
-  it("forks an isolated persistent Volume while keeping the parent Cube usable", async () => {
-    const runtime = new FakeCubeRuntimeClient();
-    const gateway = fakeWorkspaceVolumeGateway();
-    const provider = testCubeProvider({
-      templateId: "pi-cloud-tool-v1",
-      imageRevision: "development",
-      webProxy: WEB_PROXY,
-      runtimeClient: runtime,
-      workspaceVolumeGateway: gateway,
-    });
-    const parent = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
-    const targetWorkspaceId = "20000000-0000-4000-8000-000000000060";
-    const forked = await provider.forkWorkspace(parent, {
-      toolBrokerProtocolVersion: 1,
-      type: "workspace.fork",
-      requestId: "20000000-0000-4000-8000-000000000061",
-      sourceActivationId: ACTIVATION_ID,
-      sourceAssignment: assignment,
-      target: {
-        tenantId: assignment.tenantId,
-        projectId: assignment.projectId,
-        workspaceId: targetWorkspaceId,
-        sessionId: "20000000-0000-4000-8000-000000000062",
-      },
-    });
-    expect(forked).toMatchObject({
-      sourceVolumeGeneration: "a".repeat(64),
-      targetVolumeGeneration: "c".repeat(64),
-    });
-    expect(gateway.fork).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceWorkspaceId: assignment.workspaceId,
-        targetWorkspaceId,
-      }),
-    );
-    await expect(
-      provider.exec(forked.sourceHandle, operation(ACTIVATION_ID)),
-    ).resolves.toMatchObject({ exitCode: 0 });
-    expect(runtime.creates).toHaveLength(1);
-    await provider.destroy(forked.sourceHandle);
     await provider.close();
   });
 

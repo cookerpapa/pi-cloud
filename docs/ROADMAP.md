@@ -30,7 +30,7 @@
   Session desired settings and immutable Turn snapshots.
 - composer-level cascading Provider/model/reasoning selection, with new Web
   conversations starting on GPT-5.6 Sol, medium reasoning and Standard service.
-- role-free neutral Subagents with explicit task/context/Workspace/Tool settings
+- role-free neutral Subagents with explicit task/context/compute/cwd/Tool settings
   and lazy Cube activation on the first local Tool call.
 - owner-local Lane-bound Subagents sharing one durable Pi Session Entry DAG
   without per-Entry inherited-context references.
@@ -38,6 +38,10 @@
   stable-region Markdown rendering for citation-heavy streams.
 
 ## Current release gate
+
+- [ ] ADR-0171: replace Subagent Workspace copies with shared-Volume temporary
+      compute and explicit cwd; validate Git worktree coding and local merge.
+      [Current work record](reports/subagent-compute-20260915.md).
 
 - [x] Log-driven Subagent starts, messages and cancellations; Cube-only workflow
       scripts and Worker-native Lanes; [paid acceptance and boundaries](reports/log-driven-subagents-20260913.md).

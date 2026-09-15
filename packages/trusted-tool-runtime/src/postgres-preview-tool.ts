@@ -30,13 +30,14 @@ export function createCloudPreviewTool(options: {
       await options.refreshServices();
       const session = await options.database
         .selectFrom("sessions")
-        .select("development_environment_id")
+        .select(["development_environment_id", "compute_session_id"])
         .where("tenant_id", "=", options.tenantId)
         .where("id", "=", options.sessionId)
         .executeTakeFirstOrThrow();
-      const targetKind =
-        session.development_environment_id === null ? "conversation" : "development_environment";
-      const targetId = session.development_environment_id ?? options.sessionId;
+      const machine =
+        session.development_environment_id !== null && session.compute_session_id === null;
+      const targetKind = machine ? "development_environment" : "conversation";
+      const targetId = machine ? session.development_environment_id! : options.sessionId;
       const service = await options.database
         .selectFrom("sandbox_http_services")
         .select("id")

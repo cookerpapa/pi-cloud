@@ -26,7 +26,6 @@ export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
 export const MAXIMUM_RESPONSE_BYTES = 8 * 1_024 * 1_024;
 
 export const WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH = "/v1/workspaces/prepare";
-export const WORKSPACE_VOLUME_GATEWAY_FORK_PATH = "/v1/workspaces/fork";
 export const WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH = "/v1/workspaces/list-directory";
 export const WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH = "/v1/workspaces/read-file";
 export const WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH = "/v1/workspaces/prepare-delete";
@@ -72,16 +71,6 @@ export type WorkspaceVolumeDirectoryEntry = Readonly<{
   executable?: boolean;
 }>;
 
-export type WorkspaceVolumeGatewayForkInput = Readonly<{
-  tenantId: string;
-  sourceWorkspaceId: string;
-  sourceSessionId: string;
-  sourceVolumeId: string;
-  targetWorkspaceId: string;
-  targetSessionId: string;
-  targetVolumeId: string;
-}>;
-
 export type WorkspaceVolumeGatewayDeleteInput = WorkspaceVolumeGatewayVolumeIdentity;
 
 export type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput = WorkspaceVolumeGatewayIdentity &
@@ -111,10 +100,6 @@ export type WorkspaceVolumeGatewaySourceCredentialDisconnectInput = WorkspaceVol
 export interface WorkspaceVolumeGateway {
   checkHealth(): Promise<void>;
   prepare(input: WorkspaceVolumeGatewayPrepareInput): Promise<{ attached: boolean }>;
-  fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
-    sourceVolumeGeneration: string;
-    targetVolumeGeneration: string;
-  }>;
   listDirectory(
     input: WorkspaceVolumeGatewayPathInput,
   ): Promise<{ entries: readonly WorkspaceVolumeDirectoryEntry[]; truncated: boolean }>;
@@ -171,7 +156,6 @@ export type VolumeState = Readonly<{
   workspaceId: string;
   volumeId: string;
   volumeGeneration: string;
-  forkedFrom?: Readonly<{ workspaceId: string; volumeGeneration: string }>;
 }>;
 
 export class WorkspaceVolumeGatewayError extends Error {
@@ -270,7 +254,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function safeRelativeFile(value: string): string {
   if (
     value.length < 1 ||
-    value.length > 512 ||
+    value.length > 4_096 ||
     value.startsWith("/") ||
     value.includes("\\") ||
     /[\u0000-\u001f\u007f]/.test(value)

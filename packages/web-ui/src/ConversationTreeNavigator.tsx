@@ -60,13 +60,13 @@ function contextLabel(
   return mode === "branch" ? t("chat.context.inherited") : t("chat.context.fresh");
 }
 
-function workspaceLabel(
-  mode: NonNullable<ConversationTreeBranchResource["workspaceMode"]>,
+function sandboxLabel(
+  mode: NonNullable<ConversationTreeBranchResource["sandboxMode"]>,
   t: Translate,
 ): string {
-  if (mode === "shared") return t("chat.workspace.shared");
-  if (mode === "isolated") return t("chat.workspace.isolated");
-  return t("chat.workspace.none");
+  if (mode === "shared") return t("chat.sandbox.shared");
+  if (mode === "ephemeral") return t("chat.sandbox.ephemeral");
+  return t("chat.sandbox.none");
 }
 
 function TreeBranch({
@@ -98,9 +98,9 @@ function TreeBranch({
             <strong>{branch.kind === "subagent" ? t("chat.subagentTitle") : branch.title}</strong>
             {branch.kind === "subagent" &&
             branch.contextMode !== undefined &&
-            branch.workspaceMode !== undefined ? (
+            branch.sandboxMode !== undefined ? (
               <small>
-                {contextLabel(branch.contextMode, t)} · {workspaceLabel(branch.workspaceMode, t)} ·{" "}
+                {contextLabel(branch.contextMode, t)} · {sandboxLabel(branch.sandboxMode, t)} ·{" "}
                 {branch.delegatedState}
               </small>
             ) : null}

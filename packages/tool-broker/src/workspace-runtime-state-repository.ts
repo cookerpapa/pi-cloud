@@ -21,6 +21,7 @@ import { databaseTime } from "@pi-cloud/database";
 
 export type WorkspaceRuntimeReservation = {
   activationId: string;
+  computeSessionId?: string;
   assignment: ToolSandboxAssignment;
   turnContextSha256: string;
   attemptContextSha256: string;
@@ -206,6 +207,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   assertLocalOwnership(): void {}
   async reserve(input: WorkspaceRuntimeReservation): Promise<WorkspaceRuntimeReservationResult> {
     if (
+      input.computeSessionId === undefined &&
       [...this.#developmentEnvironments.values()].some(
         ({ reservation: environment, state }) =>
           environment.tenantId === input.assignment.tenantId &&
@@ -264,6 +266,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       ) + 1;
     const currentActivation = [...this.#activations.values()].find(
       (activation) =>
+        activation.computeSessionId === undefined &&
         activation.assignment.tenantId === input.tenantId &&
         activation.assignment.workspaceId === input.workspaceId,
     );
@@ -287,6 +290,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     if (
       [...this.#activations.values()].some(
         (activation) =>
+          activation.computeSessionId === undefined &&
           activation.assignment.tenantId === input.tenantId &&
           activation.assignment.workspaceId === input.workspaceId,
       ) ||
@@ -634,37 +638,43 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         );
       }
       await this.#assertCurrentOwner(transaction);
-      const liveTerminal = await transaction
-        .selectFrom("workspace_terminal_sessions")
-        .select(["owner_instance_id", "owner_base_url"])
-        .where("tenant_id", "=", input.assignment.tenantId)
-        .where("workspace_id", "=", input.assignment.workspaceId)
-        .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
-        .executeTakeFirst();
+      const liveTerminal =
+        input.computeSessionId !== undefined
+          ? undefined
+          : await transaction
+              .selectFrom("workspace_terminal_sessions")
+              .select(["owner_instance_id", "owner_base_url"])
+              .where("tenant_id", "=", input.assignment.tenantId)
+              .where("workspace_id", "=", input.assignment.workspaceId)
+              .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
+              .executeTakeFirst();
       if (liveTerminal !== undefined && liveTerminal.owner_instance_id !== this.#instanceId) {
         return { status: "redirect", ownerBaseUrl: liveTerminal.owner_base_url };
       }
-      const liveDevelopmentEnvironment = await transaction
-        .selectFrom("development_environments")
-        .select([
-          "id",
-          "owner_instance_id",
-          "owner_base_url",
-          "state",
-          "agent_activation_id",
-          "terminal_active",
-        ])
-        .where("tenant_id", "=", input.assignment.tenantId)
-        .where("workspace_id", "=", input.assignment.workspaceId)
-        .where("state", "in", [
-          "requested",
-          "provisioning",
-          "running",
-          "paused",
-          "releasing",
-          "unknown",
-        ])
-        .executeTakeFirst();
+      const liveDevelopmentEnvironment =
+        input.computeSessionId !== undefined
+          ? undefined
+          : await transaction
+              .selectFrom("development_environments")
+              .select([
+                "id",
+                "owner_instance_id",
+                "owner_base_url",
+                "state",
+                "agent_activation_id",
+                "terminal_active",
+              ])
+              .where("tenant_id", "=", input.assignment.tenantId)
+              .where("workspace_id", "=", input.assignment.workspaceId)
+              .where("state", "in", [
+                "requested",
+                "provisioning",
+                "running",
+                "paused",
+                "releasing",
+                "unknown",
+              ])
+              .executeTakeFirst();
       let borrowedDevelopmentEnvironmentId: string | undefined;
       let claimDevelopmentEnvironment = false;
       if (liveDevelopmentEnvironment !== undefined) {
@@ -688,6 +698,13 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       }
       const authority = await transaction
         .selectFrom("active_execution_scopes")
+        .select(
+          sql<
+            string | null
+          >`(select compute_session_id from runs where id=${input.assignment.runId}::uuid)`.as(
+            "compute_session_id",
+          ),
+        )
         .select([
           "tenant_id",
           "project_id",
@@ -715,7 +732,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         authority.session_id !== input.assignment.sessionId ||
         authority.run_id !== input.assignment.runId ||
         authority.turn_id !== input.assignment.turnId ||
-        authority.sandbox_id !== input.assignment.sandboxId
+        authority.sandbox_id !== input.assignment.sandboxId ||
+        authority.compute_session_id !== (input.computeSessionId ?? null)
       ) {
         throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
@@ -727,6 +745,9 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .selectAll()
         .where("tenant_id", "=", input.assignment.tenantId)
         .where("workspace_id", "=", input.assignment.workspaceId)
+        .where(
+          sql<boolean>`compute_session_id is not distinct from ${input.computeSessionId ?? null}::uuid`,
+        )
         .where("state", "in", [
           "reserved",
           "materializing",
@@ -826,6 +847,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       }
       const activationValues = {
         workspace_runtime_id: input.activationId,
+        compute_session_id: input.computeSessionId ?? null,
         sandbox_domain_id: this.#sandboxDomainId,
         owner_instance_id: this.#instanceId,
         owner_base_url: this.#ownerBaseUrl,
@@ -974,6 +996,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         ])
         .where("tenant_id", "=", input.tenantId)
         .where("workspace_id", "=", input.workspaceId)
+        .where("compute_session_id", "is", null)
         .where("state", "in", ["reserved", "materializing", "active", "warm"])
         .executeTakeFirst();
       const developmentEnvironment = await transaction
@@ -1131,6 +1154,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .select("workspace_runtime_id")
         .where("tenant_id", "=", input.tenantId)
         .where("workspace_id", "=", input.workspaceId)
+        .where("compute_session_id", "is", null)
         .where("state", "in", [
           "reserved",
           "materializing",
@@ -1723,6 +1747,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("activation.workspace_runtime_id", "=", workspaceRuntimeId)
         .where("activation.owner_instance_id", "=", this.#instanceId)
         .where("activation.state", "in", ["reserved", "materializing", "active"])
+        .where(
+          sql<boolean>`activation.compute_session_id is not distinct from
+          (select compute_session_id from runs where id=${assignment.runId}::uuid)`,
+        )
         .where("authority.lease_id", "=", execution.leaseId)
         .where("authority.accepting_effects", "=", true)
         .where("authority.attempt_id", "=", execution.attemptId)
@@ -1910,9 +1938,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           sql<boolean>`not exists (
             select 1
               from active_execution_scopes authority
+              join runs task on task.id = authority.run_id
              where authority.tenant_id = ${sql.ref("activation.tenant_id")}
                and authority.project_id = ${sql.ref("activation.project_id")}
                and authority.workspace_id = ${sql.ref("activation.workspace_id")}
+               and task.compute_session_id is not distinct from ${sql.ref("activation.compute_session_id")}
                and authority.valid_until > clock_timestamp()
           )`,
         )

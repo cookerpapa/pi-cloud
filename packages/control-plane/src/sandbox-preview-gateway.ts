@@ -456,6 +456,7 @@ export class SandboxPreviewGateway {
       .where("session_row.id", "=", target.sessionId)
       .where("session_row.archived_at", "is", null)
       .where("session_row.execution_mode", "=", "development_environment")
+      .where("session_row.compute_session_id", "is", null)
       .where("development.owner_user_id", "=", userId)
       .where("development.state", "=", "running")
       .orderBy("development.updated_at", "desc")

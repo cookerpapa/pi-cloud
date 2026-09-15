@@ -20,8 +20,6 @@ import type {
   ToolBrokerListWorkspaceDirectoryResponse,
   ToolBrokerReadWorkspaceFileRequest,
   ToolBrokerReadWorkspaceFileResponse,
-  ToolBrokerWorkspaceForkRequest,
-  ToolBrokerWorkspaceForkResponse,
   CloudToolName,
   SandboxPreviewConnectionRequest,
   SourceControlWorkspaceCredentialAuthorizeRequest,
@@ -100,7 +98,6 @@ type ManagedToolBinding = {
   handle?: SandboxHandle;
   usedPhysicalRuntime: boolean;
   activeOperations: number;
-  exclusiveOperation: boolean;
   operations: Map<
     string,
     Readonly<{
@@ -110,7 +107,6 @@ type ManagedToolBinding = {
     }>
   >;
 
-  forks?: Map<string, { hash: string; result: Promise<ToolBrokerWorkspaceForkResponse> }>;
   elasticRuntime?: ManagedElasticRuntime;
   developmentEnvironmentId?: string;
 };
@@ -124,7 +120,6 @@ type ManagedElasticRuntime = {
   bindingIds: Set<string>;
   initialBindingIssued: boolean;
   activeOperations: number;
-  exclusiveOperation: boolean;
   environment: EnvironmentRuntimeSnapshot;
   sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
   expiresAt: number;
@@ -1238,7 +1233,7 @@ export class ToolBroker {
   async create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse> {
     this.#assertCreateEnvironment(request);
     return this.#serializeWorkspaceRuntimeProvisioning(request.assignment, () =>
-      request.executionMode === "elastic"
+      request.executionMode === "elastic" || request.computeSessionId !== undefined
         ? this.#createElasticBinding(request)
         : this.#createDevelopmentEnvironmentBinding(request),
     );
@@ -1265,8 +1260,11 @@ export class ToolBroker {
   async #createElasticBinding(
     request: ToolSandboxCreateRequest,
   ): Promise<ToolSandboxCreateResponse> {
-    const workspaceKey = workspaceIdentityKey(request.assignment);
+    const workspaceKey =
+      workspaceIdentityKey(request.assignment) +
+      (request.computeSessionId ? `:compute:${request.computeSessionId}` : "");
     if (
+      request.computeSessionId === undefined &&
       [...this.#developmentEnvironments.values()].some(
         (environment) =>
           environment.reservation.tenantId === request.assignment.tenantId &&
@@ -1283,12 +1281,15 @@ export class ToolBroker {
       (activation) => activation.elasticRuntime?.workspaceKey === workspaceKey,
     )?.elasticRuntime;
     runtime ??= this.#warm.get(workspaceKey);
-    const workspaceTerminal = [...this.#terminals.entries()].find(
-      ([, terminal]) =>
-        terminal.assignment.tenantId === request.assignment.tenantId &&
-        terminal.assignment.projectId === request.assignment.projectId &&
-        terminal.assignment.workspaceId === request.assignment.workspaceId,
-    );
+    const workspaceTerminal =
+      request.computeSessionId !== undefined
+        ? undefined
+        : [...this.#terminals.entries()].find(
+            ([, terminal]) =>
+              terminal.assignment.tenantId === request.assignment.tenantId &&
+              terminal.assignment.projectId === request.assignment.projectId &&
+              terminal.assignment.workspaceId === request.assignment.workspaceId,
+          );
     runtime ??= workspaceTerminal?.[1].workspaceRuntime;
     if (
       runtime !== undefined &&
@@ -1318,13 +1319,14 @@ export class ToolBroker {
           workspaceSeed: request.workspaceSeed,
           policy: this.#provider.defaultPolicy,
           toolRoot: request.toolRoot,
+          volumeMountPath:
+            request.executionMode === "development_environment" ? "/home/user" : "/workspace",
           sandboxProfileKey: request.sandboxProfileKey,
         },
         ...(workspaceTerminal === undefined ? {} : { handle: workspaceTerminal[1].handle }),
         bindingIds: new Set(),
         initialBindingIssued: false,
         activeOperations: 0,
-        exclusiveOperation: false,
         environment: request.environment,
         sandboxProfileKey: request.sandboxProfileKey,
         expiresAt: Number.POSITIVE_INFINITY,
@@ -1349,6 +1351,9 @@ export class ToolBroker {
     const allowedTools = parseCloudToolCapabilitySnapshot(request.allowedTools);
     const reservationInput: WorkspaceRuntimeReservation = {
       activationId: runtime.physicalActivationId,
+      ...(request.computeSessionId === undefined
+        ? {}
+        : { computeSessionId: request.computeSessionId }),
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
       attemptContextSha256: request.attemptContextSha256,
@@ -1397,12 +1402,11 @@ export class ToolBroker {
       turnContextSha256: request.turnContextSha256,
       attemptContextSha256: request.attemptContextSha256,
       allowedTools: new Set(allowedTools),
-      spec: { ...runtime.spec, assignment: request.assignment },
+      spec: { ...runtime.spec, assignment: request.assignment, toolRoot: request.toolRoot },
       reservation: reservationInput,
       elasticRuntime: runtime,
       usedPhysicalRuntime: false,
       activeOperations: 0,
-      exclusiveOperation: false,
       operations: new Map(),
     });
     if (runtime.handle !== undefined) {
@@ -1519,7 +1523,6 @@ export class ToolBroker {
       handle: environment.handle,
       usedPhysicalRuntime: false,
       activeOperations: 0,
-      exclusiveOperation: false,
       operations: new Map(),
 
       developmentEnvironmentId: environment.reservation.environmentId,
@@ -1544,13 +1547,6 @@ export class ToolBroker {
   ): Promise<ToolSandboxOperationResponse> {
     const activation = this.#authorizedBinding(request.activationId, executionReference);
     const elasticRuntime = activation.elasticRuntime;
-    if (activation.exclusiveOperation || elasticRuntime?.exclusiveOperation) {
-      throw new ToolBrokerError(
-        "workspace_runtime_busy",
-        "Workspace is establishing an isolated Subagent fork",
-        true,
-      );
-    }
     if (!activation.allowedTools.has(request.toolName)) {
       throw new ToolBrokerError(
         "tool_not_granted",
@@ -1748,90 +1744,6 @@ export class ToolBroker {
     const handle = await this.#materialize(activation);
     const discovery = await this.#provider.discoverHttpServices(handle);
     await this.#observeHttpServices(activation, handle, randomUUID(), discovery);
-  }
-
-  async forkWorkspace(
-    request: ToolBrokerWorkspaceForkRequest,
-  ): Promise<ToolBrokerWorkspaceForkResponse> {
-    if (this.#provider.forkWorkspace === undefined) {
-      throw new ToolBrokerError(
-        "workspace_fork_unsupported",
-        "The configured Sandbox Provider cannot create isolated Workspace forks",
-        false,
-      );
-    }
-    const activation = this.#ownedBinding(request.sourceActivationId, request.sourceAssignment);
-    const hash = createHash("sha256").update(JSON.stringify(request)).digest("hex");
-    const previous = activation.forks?.get(request.requestId);
-    if (previous) {
-      if (previous.hash !== hash)
-        throw new ToolBrokerError(
-          "workspace_fork_identity_conflict",
-          "Workspace fork identity was reused",
-          false,
-        );
-      return previous.result;
-    }
-    const elasticRuntime = activation.elasticRuntime;
-    // A coordinator awaiting a child is not a filesystem Tool holding the fork
-    // barrier. Background user processes remain ordinary Linux concurrency;
-    // this file copy has never been an atomic VM/filesystem snapshot.
-    const waitingHere = this.#workflowChannels.waitingCount(new Set([request.sourceActivationId]));
-    const peers = new Set(
-      [...this.#toolBindings.entries()]
-        .filter(
-          ([, binding]) =>
-            binding.elasticRuntime === elasticRuntime && elasticRuntime !== undefined,
-        )
-        .map(([id]) => id),
-    );
-    const waitingPeers = this.#workflowChannels.waitingCount(peers);
-    if (
-      activation.exclusiveOperation ||
-      activation.activeOperations - waitingHere !== 0 ||
-      elasticRuntime?.exclusiveOperation ||
-      (elasticRuntime?.activeOperations ?? 0) - waitingPeers !== 0 ||
-      elasticRuntime?.materializing !== undefined
-    ) {
-      throw new ToolBrokerError(
-        "workspace_runtime_busy",
-        "Parent Workspace is busy and cannot be isolated",
-        true,
-      );
-    }
-    activation.exclusiveOperation = true;
-    if (elasticRuntime !== undefined) elasticRuntime.exclusiveOperation = true;
-    const result = (async (): Promise<ToolBrokerWorkspaceForkResponse> => {
-      try {
-        const handle = await this.#materialize(activation);
-        const forked = await this.#provider.forkWorkspace!(handle, request);
-        if (elasticRuntime === undefined) activation.handle = forked.sourceHandle;
-        else elasticRuntime.handle = forked.sourceHandle;
-        activation.usedPhysicalRuntime = true;
-        return {
-          toolBrokerProtocolVersion: 1,
-          type: "workspace.forked",
-          requestId: request.requestId,
-          sourceActivationId: request.sourceActivationId,
-          targetWorkspaceId: request.target.workspaceId,
-          sourceVolumeGeneration: forked.sourceVolumeGeneration,
-          targetVolumeGeneration: forked.targetVolumeGeneration,
-        };
-      } catch (error) {
-        if (error instanceof ToolBrokerError && !error.retryable) throw error;
-        throw new ToolBrokerError(
-          "workspace_fork_outcome_unknown",
-          "Workspace fork outcome could not be confirmed; it will not be replayed",
-          false,
-          error,
-        );
-      } finally {
-        activation.exclusiveOperation = false;
-        if (elasticRuntime !== undefined) elasticRuntime.exclusiveOperation = false;
-      }
-    })();
-    (activation.forks ??= new Map()).set(request.requestId, { hash, result });
-    return result;
   }
 
   async release(request: ToolSandboxReleaseRequest): Promise<ToolSandboxReleaseResponse> {
@@ -2660,9 +2572,8 @@ export class ToolBroker {
         runtime.bindingIds.delete(id);
         this.#revokeBinding(id);
       }
-      const key = workspaceIdentityKey(orphan.assignment);
-      const warm = this.#warm.get(key);
-      if (warm?.physicalActivationId === orphan.activationId) {
+      for (const [key, warm] of this.#warm) {
+        if (warm.physicalActivationId !== orphan.activationId) continue;
         handle ??= warm.handle;
         this.#warm.delete(key);
       }

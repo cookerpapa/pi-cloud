@@ -124,17 +124,6 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         continuityId: ACTIVATION_ID,
       };
     },
-    async forkWorkspace(request) {
-      return {
-        toolBrokerProtocolVersion: 1,
-        type: "workspace.forked",
-        requestId: request.requestId,
-        sourceActivationId: request.sourceActivationId,
-        targetWorkspaceId: request.target.workspaceId,
-        sourceVolumeGeneration: "a".repeat(64),
-        targetVolumeGeneration: "b".repeat(64),
-      };
-    },
     async release(request) {
       return {
         toolBrokerProtocolVersion: 1,
@@ -779,24 +768,6 @@ describe("Tool Broker authenticated RPC", () => {
     ).resolves.toMatchObject({
       operation: "bash.exec",
       exitCode: 0,
-    });
-    await expect(
-      client.forkWorkspace({
-        toolBrokerProtocolVersion: 1,
-        type: "workspace.fork",
-        requestId: "10000000-0000-4000-8000-000000000014",
-        sourceActivationId: ACTIVATION_ID,
-        sourceAssignment: assignment,
-        target: {
-          tenantId: assignment.tenantId,
-          projectId: assignment.projectId,
-          workspaceId: "10000000-0000-4000-8000-000000000015",
-          sessionId: "10000000-0000-4000-8000-000000000016",
-        },
-      }),
-    ).resolves.toMatchObject({
-      type: "workspace.forked",
-      targetWorkspaceId: "10000000-0000-4000-8000-000000000015",
     });
     await expect(client.listAssignments(runtimeAssignment.sandboxId)).resolves.toEqual([
       runtimeAssignment,

@@ -15,7 +15,6 @@ import {
   type ToolBrokerListWorkspaceDirectoryResponse,
   type ToolBrokerReadWorkspaceFileRequest,
   type ToolBrokerReadWorkspaceFileResponse,
-  type ToolBrokerWorkspaceForkRequest,
   type SupervisorRuntimeAssignment,
   type ToolSandboxAssignment,
   type ToolSandboxOperationRequest,
@@ -865,6 +864,8 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     const exclusiveMachine = spec.lifetime === "development_environment";
+    const volumeMountPath =
+      spec.volumeMountPath ?? (exclusiveMachine ? "/home/user" : "/workspace");
     const toolRoot = spec.toolRoot ?? (exclusiveMachine ? "/home/user" : "/workspace");
     const bindingSha256 = physicalBindingSha256(
       spec.activationId,
@@ -898,7 +899,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         ),
         allowInternetAccess: true,
         allowPublicTraffic: false,
-        volumeMounts: [{ name: volumeId, path: exclusiveMachine ? "/home/user" : "/workspace" }],
+        volumeMounts: [{ name: volumeId, path: volumeMountPath }],
         ...(spec.lifetime === "development_environment"
           ? { lifecycle: { onTimeout: "pause" as const, autoResume: true } }
           : {}),
@@ -1661,48 +1662,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     this.#activations.delete(handle.activationId);
-  }
-
-  async forkWorkspace(
-    handle: SandboxHandle,
-    request: ToolBrokerWorkspaceForkRequest,
-  ): Promise<{
-    sourceHandle: SandboxHandle;
-    sourceVolumeGeneration: string;
-    targetVolumeGeneration: string;
-  }> {
-    if (
-      request.sourceAssignment.tenantId !== handle.assignment.tenantId ||
-      request.sourceAssignment.projectId !== handle.assignment.projectId ||
-      request.sourceAssignment.workspaceId !== handle.assignment.workspaceId ||
-      request.target.tenantId !== handle.assignment.tenantId ||
-      request.target.projectId !== handle.assignment.projectId ||
-      request.target.workspaceId === handle.assignment.workspaceId ||
-      request.target.sessionId === handle.assignment.sessionId
-    ) {
-      throw new ToolBrokerError(
-        "workspace_fork_identity_invalid",
-        "Isolated Workspace fork identity did not match its parent activation",
-        false,
-      );
-    }
-    const source = this.#dataOwned(handle);
-    const targetVolumeId = workspaceVolumeId(request.target);
-    await this.#client.ensureVolume(targetVolumeId, "picloud-posix");
-    const forked = await this.#workspaceVolumeGateway.fork({
-      tenantId: request.target.tenantId,
-      sourceWorkspaceId: handle.assignment.workspaceId,
-      sourceSessionId: handle.assignment.sessionId,
-      sourceVolumeId: source.volumeId,
-      targetWorkspaceId: request.target.workspaceId,
-      targetSessionId: request.target.sessionId,
-      targetVolumeId,
-    });
-    return {
-      sourceHandle: handle,
-      sourceVolumeGeneration: forked.sourceVolumeGeneration,
-      targetVolumeGeneration: forked.targetVolumeGeneration,
-    };
   }
 
   async stop(handle: SandboxHandle): Promise<void> {

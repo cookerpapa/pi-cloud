@@ -278,16 +278,16 @@ platform adapter; user-supplied Worker extensions are not supported.
 
 ## Workspaces and development machines
 
-An elastic Workspace owns one persistent Cube Volume and at most one bounded-warm
-physical Cube. Different Sessions receive independently fenced Tool bindings to
+An elastic Workspace owns one persistent Cube Volume and one default bounded-warm
+compute scope. Different ordinary Sessions receive independently fenced Tool bindings to
 that same environment. Files, ports and processes are shared intentionally. Human
 terminals may use it concurrently. Pure chat does not reserve compute. Ordinary
 directory/file browsing reads current bytes, not a per-Run file index or archive.
 No runtime object or Workspace settlement head is required to start a Run or
 retain compute. Environment validation is recorded at activation. Oversized
 raw Tool output is not archived; the native result contains bounded output and
-truncation guidance. Independent copies use physical Volume identity, not
-a synthetic per-Run content revision.
+truncation guidance. Subagents can create additional temporary compute scopes
+mounting the same Volume; stopping a scope never deletes shared files.
 
 A user-owned development machine is allocated independently, with a selected
 CPU/memory/disk template. It retains node-affine full-VM state and has its own home
@@ -321,17 +321,19 @@ Image input/generation remain outside the current public feature boundary.
 
 The role-free Subagent tool uses Pi's public runtime/storage contracts and the
 community `runs.run`/`runs.all` programming model, not a CLI-emulation backend.
-Fresh context and inherited context are independent of shared/isolated Workspace
-selection. All active Lanes share one physical Session owner; PG holds durable
+Fresh context and inherited context are independent of shared/ephemeral compute
+selection and working directory. All active Lanes share one physical Session owner; PG holds durable
 parent/child communication and cancellation state. Defaults bound recursive depth
 to 4 and total descendants to 32. Worker and per-Session model request limits
 default to 4; children are not rejected merely because another child is waiting.
-Isolated children use
-internal Workspace copies; the context/communication model is unchanged.
-Copies exclude active file/shell tool mutations, but do not claim atomic
-filesystem snapshots against user background processes. A workflow waiting for
-its child does not hold that copy barrier. Successful fork replies are idempotent
-within their owning binding; uncertain copy effects are not blindly replayed.
+An ephemeral child uses a new lazy, bounded-warm Cube against the parent Volume.
+Shared descendants inherit that compute scope. The accepted Run freezes the scope
+and cwd; explicit directories must exist. Elastic Volumes retain `/workspace` and
+machine home Volumes retain `/home/user` in every Cube. A machine's system disk
+is not exposed through this mode. The parent can create worktrees using Git,
+then pass their paths; PiCloud neither copies Workspaces nor initializes,
+commits or merges repositories. This is cooperative shared storage, not file
+security isolation. See [ADR-0171](adr/0171-shared-volume-subagent-compute.md).
 
 Blocking supervisor requests remain supported through the same control log.
 Agent-input IDs identify native consumption, preventing a replayed notification

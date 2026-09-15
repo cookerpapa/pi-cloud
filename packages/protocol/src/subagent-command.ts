@@ -1,5 +1,4 @@
 import type { CloudToolCapabilitySnapshot } from "./tool-capabilities.ts";
-import type { ToolSandboxAssignment, ToolBrokerWorkspaceForkRequest } from "./tool-sandbox.ts";
 
 /** Runtime control, not an assistant message or a guest shell command. */
 export type SubagentControlRequest =
@@ -20,10 +19,10 @@ export type SubagentControlRequest =
       key: string;
       task: string;
       context: "fresh" | "branch";
-      workspace: "none" | "shared" | "isolated";
+      sandbox: "none" | "shared" | "ephemeral";
+      cwd?: string;
       anchor: string | null;
       tools?: CloudToolCapabilitySnapshot;
-      parentActivation?: { activationId: string; assignment: ToolSandboxAssignment };
     }>
   | Readonly<{ action: "status" | "wait" | "cancel"; target: string }>
   | Readonly<{
@@ -63,7 +62,6 @@ export type SubagentHostRequest =
       message: string;
       delivery: "notify" | "steer" | "follow_up";
     }>
-  | Readonly<{ action: "fork_workspace"; request: ToolBrokerWorkspaceForkRequest }>
   | Readonly<{
       action: "prepare_lane";
       executionReference: string;

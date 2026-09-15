@@ -243,7 +243,7 @@ describe("product chat experience", () => {
               parentTurnId: rootTurnId,
               title: "Subagent",
               contextMode: "branch",
-              workspaceMode: "shared",
+              sandboxMode: "shared",
               state: "completed",
               workspaceName: "sorting",
               createdAt: "2026-08-15T00:00:00.500Z",
@@ -258,7 +258,7 @@ describe("product chat experience", () => {
               parentTurnId: rootTurnId,
               title: "Subagent",
               contextMode: "fresh",
-              workspaceMode: "none",
+              sandboxMode: "none",
               state: "completed",
               workspaceName: "sorting",
               createdAt: "2026-08-15T00:00:00.600Z",
@@ -314,7 +314,7 @@ describe("product chat experience", () => {
               forkedFromEntryId: rootEntryId,
               current: false,
               contextMode: "branch",
-              workspaceMode: "shared",
+              sandboxMode: "shared",
               delegatedState: "completed",
               entries: [],
             },
@@ -327,7 +327,7 @@ describe("product chat experience", () => {
               forkedFromEntryId: rootEntryId,
               current: false,
               contextMode: "fresh",
-              workspaceMode: "none",
+              sandboxMode: "none",
               delegatedState: "completed",
               entries: [],
             },
@@ -345,10 +345,10 @@ describe("product chat experience", () => {
     expect(markup).toContain("product-tree-assistant");
     expect(markup).toContain("Subagent");
     expect(markup).toContain("继承上下文");
-    expect(markup).toContain("共享工作区");
+    expect(markup).toContain("共享计算环境");
     expect(markup).not.toContain("scout");
     expect(markup).toContain("独立上下文");
-    expect(markup).toContain("无工具");
+    expect(markup).toContain("无本地工具");
   });
 
   it("renders an active Snapshot prefix immediately instead of replaying it from empty", () => {

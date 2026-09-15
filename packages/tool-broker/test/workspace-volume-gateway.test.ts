@@ -327,6 +327,41 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     expect(identity("session-a").volumeId).toBe(identity("session-b").volumeId);
   });
 
+  it("validates explicit task directories through the HTTP browser, including long paths and symlink escape", async () => {
+    const workspaceRoot = await root(),
+      outside = await root();
+    const scope = identity("subagent-directory");
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    await mover.prepare(scope);
+    const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
+    const path = Array.from({ length: 6 }, (_, i) => `task-${i}-${"x".repeat(90)}`).join("/");
+    await mkdir(join(workspace, path), { recursive: true });
+    await symlink(outside, join(workspace, "escape"));
+    const token = "directory-contract-" + "x".repeat(32);
+    const server = new WorkspaceVolumeGatewayServer({
+      gateway: mover,
+      serviceToken: token,
+      host: "127.0.0.1",
+      port: 0,
+    });
+    const address = await server.listen();
+    const client = new HttpWorkspaceVolumeGateway({ baseUrl: address, serviceToken: token });
+    try {
+      await expect(client.listDirectory({ ...scope, rootPath: "", path })).resolves.toEqual({
+        entries: [],
+        truncated: false,
+      });
+      for (const invalid of ["missing", "escape", "../escape"]) {
+        await expect(
+          client.listDirectory({ ...scope, rootPath: "", path: invalid }),
+        ).rejects.toThrow();
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("reattaches current files without a per-Run settlement", async () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
@@ -405,55 +440,6 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         maximumBytes: 64,
       }),
     ).rejects.toMatchObject({ code: "workspace_path_escape" });
-  });
-
-  it("creates an idempotent isolated Volume copy that no longer follows the parent", async () => {
-    const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
-    const source = identity("session-parent");
-    await mover.prepare(source);
-    const sourceRoot = join(workspaceRoot, `picloud-posix-${source.volumeId}`, "workspace");
-    await writeFile(join(sourceRoot, "answer.txt"), "parent-v1\n");
-    const target = {
-      tenantId: source.tenantId,
-      workspaceId: "workspace-volume-isolated",
-      sessionId: "session-child",
-      volumeId: workspaceVolumeId({
-        tenantId: source.tenantId,
-        workspaceId: "workspace-volume-isolated",
-      }),
-    };
-    await mkdir(join(workspaceRoot, `picloud-posix-${target.volumeId}`, "workspace"), {
-      recursive: true,
-    });
-    const request = {
-      tenantId: source.tenantId,
-      sourceWorkspaceId: source.workspaceId,
-      sourceSessionId: source.sessionId,
-      sourceVolumeId: source.volumeId,
-      targetWorkspaceId: target.workspaceId,
-      targetSessionId: target.sessionId,
-      targetVolumeId: target.volumeId,
-    };
-    const first = await mover.fork(request);
-    await writeFile(join(sourceRoot, "answer.txt"), "parent-v2\n");
-    await expect(mover.fork(request)).resolves.toEqual(first);
-    await expect(
-      readFile(
-        join(workspaceRoot, `picloud-posix-${target.volumeId}`, "workspace", "answer.txt"),
-        "utf8",
-      ),
-    ).resolves.toBe("parent-v1\n");
-    // A retry keeps the original copy, but a deleted/recreated source is not
-    // the same physical resource even when tenant/Workspace IDs are unchanged.
-    await rm(join(workspaceRoot, `picloud-posix-${source.volumeId}`), {
-      recursive: true,
-      force: true,
-    });
-    await mover.prepare(source);
-    await expect(mover.fork(request)).rejects.toMatchObject({
-      code: "workspace_fork_target_conflict",
-    });
   });
 
   it("rejects an unbound Cube workspace that already contains user bytes", async () => {
@@ -652,12 +638,6 @@ describe("HttpWorkspaceVolumeGateway", () => {
       async checkHealth() {},
       async prepare() {
         return { attached: true };
-      },
-      async fork() {
-        return {
-          sourceVolumeGeneration: "2".repeat(64),
-          targetVolumeGeneration: "3".repeat(64),
-        };
       },
       async listDirectory() {
         return { entries, truncated: false };

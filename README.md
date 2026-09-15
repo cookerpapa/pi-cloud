@@ -12,7 +12,7 @@ the guest environment.
 - per-conversation Provider/model/reasoning settings and GPT Fast mode, frozen
   for each accepted Turn; native Web Search on verified GPT/DeepSeek routes;
 - recursive Subagents with bounded depth and concurrency: inherited or empty
-  Lanes share a physical Pi Session, with shared or isolated Workspaces;
+  Lanes share a physical Pi Session and Volume, with shared or temporary compute;
 - elastic Workspaces and named, user-owned development machines;
 - live file browsing, Web Terminal, machine SSH and authenticated application previews;
 - optional GitLab Issue intake and environment-local GitLab/GitHub credentials;
@@ -69,7 +69,7 @@ flowchart TD
   TB --> CC["Cube control plane<br/>internal MySQL / Redis"]
   CC --> VM["Cubelet / KVM microVM<br/>file / shell Tools and workflow JavaScript"]
   VM <--> V["Cube Volume Plugin / persistent POSIX storage"]
-  TB -->|"HTTP live file access / copy / delete"| VG["Workspace Volume Gateway"] --> V
+  TB -->|"HTTP live file access / delete"| VG["Workspace Volume Gateway"] --> V
   GL["Optional GitLab Issue intake"] -.-> API
 ```
 
@@ -135,7 +135,10 @@ Run. The failed Run is retained, never automatically replayed.
 Workspace files belong to persistent Cube Volumes, without per-Run archives or
 settlement heads. Sessions can share an elastic Workspace and its warm Cube;
 user-owned machines have an independent lifecycle and Sessions select directories
-inside them. Machine snapshots are node-affine. Deleting a resource preserves its
+inside them. A Subagent may mount the same Volume in a temporary independent Cube
+and select an existing working directory. The Agent manages Git worktrees and
+merges with ordinary Git; PiCloud does not copy child Workspaces. Machine snapshots
+are node-affine. Deleting a resource preserves its
 conversations but requires rebinding before further work. Browsing reads current
 files; it does not invoke the Agent or replay its log. Raw Tool output is bounded,
 not archived. Cube's MySQL/Redis manage Cube, not PiCloud Runs.
@@ -216,6 +219,8 @@ upgrade. Drain Runs, project all seals/Outbox, back up and release old runtime
 instances, then stop the old execution services. Apply the current migrations and deploy
 matching Worker, Control Plane/Projector and Broker images. New records use the
 v8 Kafka topic and task execution references; there is no old-wire decoder.
+Migration 141 also requires deliberate retirement of old isolated child Workspace
+copies before the shared-Volume compute cutover; it never relabels or deletes them.
 PG semantic history, identities and configuration are not reset by migration.
 Remove the retired v7 topic only after confirming its complete projection.
 

@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0171](0171-shared-volume-subagent-compute.md) — explicit child cwd and
+   temporary compute scopes on a shared Volume; user-managed Git worktrees.
+
 1. [ADR-0170](0170-postgres-authority-time.md) — database decision-time authority
    after lock waits; monotonic local cancellation observations.
 

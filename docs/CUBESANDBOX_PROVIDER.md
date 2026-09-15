@@ -52,8 +52,9 @@ environment, like credentials on an ordinary developer machine.
 
 The filesystem owns file durability independently of Run completion. There is
 no per-Run capture, reference object or Workspace settlement head in PostgreSQL.
-Initialization and live reads address the bound Volume directly. Isolated
-Workspace copies record source Volume generation, not a file-content version.
+Initialization and live reads address the bound Volume directly. Subagents never
+copy this Volume: optional temporary Cubes mount it at the same guest path.
+Machine home Volumes use `/home/user`, not the machine's private system disk.
 
 A Workspace-owned Cube runtime may remain warm for one deployment-bounded TTL.
 Its processes, sockets and PTYs survive only while that exact runtime
@@ -87,8 +88,11 @@ authenticated browser WebSocket
 ```
 
 A human terminal and any number of authorized Agent Runs may write the same
-Workspace at the same time. They use one Workspace-owned Cube; a cloud
-development machine likewise uses one Cube. Standard SSH is
+Workspace at the same time. Ordinary Sessions use the default Workspace-owned
+Cube; a cloud development machine likewise uses one Cube. Subagents may select
+another temporary compute scope on the same Volume and an existing cwd, including
+a user-created Git worktree. Each scope has its own runtime lifetime; retiring
+one cannot delete the Volume or stop its siblings. Standard SSH is
 terminated by PiCloud's trusted ticket gateway and translated into this PTY
 protocol; Cube port 22 remains private. Envd is the single generic guest agent
 and holds no PiCloud, model or database credential.

@@ -57,6 +57,7 @@ export type TurnExecutionRequest = {
     prompt: string;
   };
   executionMode: import("@pi-cloud/protocol").ExecutionMode;
+  computeSessionId?: string;
   sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
   workingDirectory: string;
   toolCapabilities: CloudToolCapabilitySnapshot;
@@ -743,6 +744,7 @@ export class RunExecutor {
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
           "run.agent_system_prompt as agentSystemPrompt",
           "run.working_directory as workingDirectory",
+          "run.compute_session_id as computeSessionId",
           "run.sandbox_profile_key as sandboxProfileKey",
           "run.queued_at as runQueuedAt",
           "run.state as runState",
@@ -1008,6 +1010,7 @@ export class RunExecutor {
           nextEventSeq: row.nextEventSeq,
           input: { kind: "prompt", prompt: row.inputText },
           executionMode: row.executionMode,
+          ...(row.computeSessionId === null ? {} : { computeSessionId: row.computeSessionId }),
           sandboxProfileKey: row.sandboxProfileKey,
           workingDirectory: row.workingDirectory,
           toolCapabilities,

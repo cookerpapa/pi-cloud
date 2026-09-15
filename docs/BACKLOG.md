@@ -16,7 +16,7 @@ Volume architecture. Historical experiments remain in Git history.
 
 - [x] ADR-0168: remove Workspace settlement/object dependencies and raw Tool
       archives; keep direct Volume/full-VM storage, activation validation and
-      isolated copies. [Implementation and paid acceptance](reports/direct-workspace-storage-20260914.md).
+      live file access. [Implementation and paid acceptance](reports/direct-workspace-storage-20260914.md).
 
 - [ ] Complete the renewed September 15 repository audit and system validation:
       hash/range-based code coverage, real combinations, browser paint latency,
@@ -31,9 +31,9 @@ Volume architecture. Historical experiments remain in Git history.
       than fixed ports; actual Caddy/Chrome custom-port navigation, Helm routes
       and existing browser interaction checks pass locally.
       Deployed Web repetition passes 93 controls and measures first text paint;
-      LOCK-01 now has a real lock-loss/Volume-overwrite reproduction and awaits
-      agreement on the filesystem publication contract. Do not treat passing
-      ordinary tests as resolving that fault boundary.
+      LOCK-01 has a real lock-loss/Volume-overwrite reproduction. The owner
+      approved removing Subagent copies rather than extending the copy protocol
+      (ADR-0171); cutover acceptance remains open.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;
@@ -203,6 +203,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Subagent execution
 
+- [ ] ADR-0171: shared persistent Volume, optional temporary compute and frozen
+      cwd; remove copy APIs, validate worktree creation/merge and scope-specific
+      cleanup. [Current work record](reports/subagent-compute-20260915.md).
+
 - [x] ADR-0166: ordered Projector-driven child admission and communication,
       Worker-owned native Lanes, event-driven result delivery, isolated Cube
       workflow scripts; remove CLI emulation and validate the cutover live.
@@ -214,7 +218,7 @@ Volume architecture. Historical experiments remain in Git history.
       child count before raising the default tree and model concurrency.
 - [x] Remove persona/role profiles from the cloud contract and keep one
       task-based Subagent Tool, with no CLI or fake Session adapter.
-- [x] Keep context inheritance, Workspace placement and local Tool grants
+- [x] Keep context inheritance, compute placement and local Tool grants
       explicit and independent.
 - [x] Bind elastic and owned-machine Tools on the first actual local operation;
       observe physical continuity at the next clean model boundary.

@@ -95,7 +95,7 @@ const start = (key: string, workflowId?: string) =>
       key,
       task: "Check a bounded task",
       context: "fresh",
-      workspace: "shared",
+      sandbox: "shared",
       anchor: null,
     },
     workflowId,

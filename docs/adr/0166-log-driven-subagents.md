@@ -73,10 +73,13 @@ Verified duplicate start/lost notification, Lane readiness before claim,
 cancellation during preparation, late invocation rejection, idempotent native
 input consumption/cold restore, bounded transport and non-starving control scans.
 Real DeepSeek/Cube acceptance covers eleven parent Turns and thirteen children:
-pure research without Cube, parallel coding, shared/isolated Workspaces, recursive
+pure research without Cube, parallel coding, then-current Workspace placement, recursive
 delegation, in-flight steering, supervisor decisions and cancellation.
 
 See [measured evidence](../reports/subagent-production-acceptance-latest.json)
 and [release notes](../reports/log-driven-subagents-20260913.md). This remains a
 foreground semantic-recovery contract, not a resumable workflow VM or multi-node
 chaos benchmark.
+
+ADR-0171 replaces child Workspace copies with shared-Volume compute scopes and cwd;
+the ordered control/Lane/communication contract above is unchanged.

@@ -1,4 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
+import { randomUUID } from "node:crypto";
+import { sql } from "kysely";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import {
@@ -19,19 +21,40 @@ afterEach(async () => {
   for (const close of resources.splice(0).reverse()) await close();
 });
 
-describe("PostgreSQL Tool Broker ownership", () => {
-  it("resolves a Workspace through its Sandbox Domain without ambiguous columns", async () => {
-    const pglite = await PGlite.create();
-    const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
-    await socket.start();
-    const database = createDatabase({
-      connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
-      maxConnections: 2,
+async function fixtureDatabase() {
+  const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
+  if (endpoint) {
+    const name = `pi_compute_${randomUUID().replaceAll("-", "")}`;
+    const admin = createDatabase({ connectionString: endpoint, maxConnections: 1 });
+    resources.push(async () => {
+      await sql`drop database if exists ${sql.id(name)} with (force)`.execute(admin);
+      await admin.destroy();
     });
-    resources.push(async () => pglite.close());
-    resources.push(async () => socket.stop());
+    await sql`create database ${sql.id(name)}`.execute(admin);
+    const url = new URL(endpoint);
+    url.pathname = `/${name}`;
+    const database = createDatabase({ connectionString: url.toString(), maxConnections: 4 });
     resources.push(async () => database.destroy());
     await runMigrations(database, "up");
+    return database;
+  }
+  const pglite = await PGlite.create();
+  resources.push(async () => pglite.close());
+  const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
+  await socket.start();
+  resources.push(async () => socket.stop());
+  const database = createDatabase({
+    connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
+    maxConnections: 2,
+  });
+  resources.push(async () => database.destroy());
+  await runMigrations(database, "up");
+  return database;
+}
+
+describe("PostgreSQL Tool Broker ownership", () => {
+  it("resolves a Workspace through its Sandbox Domain without ambiguous columns", async () => {
+    const database = await fixtureDatabase();
 
     const tenantId = "20000000-0000-4000-8000-000000000001";
     const projectId = "20000000-0000-4000-8000-000000000002";
@@ -417,7 +440,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         child_run_id: childRunId,
         agent_name: "cloud-child",
         context_mode: "branch",
-        workspace_mode: "shared",
+        sandbox_mode: "shared",
         state: "queued",
       })
       .executeTakeFirstOrThrow();
@@ -563,6 +586,52 @@ describe("PostgreSQL Tool Broker ownership", () => {
       operationTiming.started_at.valueOf(),
     );
     await database
+      .updateTable("runs")
+      .set({ compute_session_id: delegatedSessionId })
+      .where("id", "=", childRunId)
+      .execute();
+    const childCompute = {
+      ...childActivation,
+      activationId: crypto.randomUUID(),
+      computeSessionId: delegatedSessionId,
+    };
+    await expect(repository.reserve(childCompute)).resolves.toEqual({ status: "reserved" });
+    await expect(
+      repository.reserve({ ...childCompute, computeSessionId: crypto.randomUUID() }),
+    ).rejects.toMatchObject({ code: "ownership_lost" });
+    await expect(
+      repository.beginOperation(
+        activation.activationId,
+        crypto.randomUUID(),
+        childActivation.assignment,
+        crypto.randomUUID(),
+        "7".repeat(64),
+      ),
+    ).rejects.toMatchObject({ code: "ownership_lost" });
+    await expect(
+      repository.beginOperation(
+        childCompute.activationId,
+        crypto.randomUUID(),
+        childActivation.assignment,
+        crypto.randomUUID(),
+        "8".repeat(64),
+      ),
+    ).resolves.toBe("started");
+    expect(
+      await database
+        .selectFrom("tool_broker_workspace_runtimes")
+        .select("workspace_runtime_id")
+        .where("workspace_id", "=", workspaceId)
+        .where("state", "in", ["active", "reserved"])
+        .execute(),
+    ).toHaveLength(2);
+    await repository.setWorkspaceRuntimeState(childCompute.activationId, "released");
+    await database
+      .updateTable("runs")
+      .set({ compute_session_id: null })
+      .where("id", "=", childRunId)
+      .execute();
+    await database
       .deleteFrom("session_leases")
       .where("lease_id", "=", "20000000-0000-4000-8000-000000000009")
       .executeTakeFirstOrThrow();
@@ -697,17 +766,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
   }, 30_000);
 
   it("fences an expired replica before a surviving owner stays Ready", async () => {
-    const pglite = await PGlite.create();
-    const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
-    await socket.start();
-    const database = createDatabase({
-      connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
-      maxConnections: 2,
-    });
-    resources.push(async () => pglite.close());
-    resources.push(async () => socket.stop());
-    resources.push(async () => database.destroy());
-    await runMigrations(database, "up");
+    const database = await fixtureDatabase();
 
     let now = new Date("2026-08-09T00:00:00.000Z");
     let monotonic = 0;
@@ -765,17 +824,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
   }, 30_000);
 
   it("waits for the prior same-URL lease instead of crash-looping during replacement", async () => {
-    const pglite = await PGlite.create();
-    const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
-    await socket.start();
-    const database = createDatabase({
-      connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
-      maxConnections: 2,
-    });
-    resources.push(async () => pglite.close());
-    resources.push(async () => socket.stop());
-    resources.push(async () => database.destroy());
-    await runMigrations(database, "up");
+    const database = await fixtureDatabase();
 
     const now = new Date();
     const priorInstanceId = "10000000-0000-4000-8000-000000000201";

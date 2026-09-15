@@ -1,6 +1,7 @@
 import * as directWorkspaceStorage from "./138_direct_workspace_storage.ts";
 import * as removeGithubInstallationEntry from "./139_remove_github_installation_entry.ts";
 import * as confirmedAgentExit from "./140_confirmed_agent_exit.ts";
+import * as subagentComputeScopes from "./141_subagent_compute_scopes.ts";
 import type { MigrationProvider } from "kysely/migration";
 import * as initialControlPlane from "./001_initial_control_plane.ts";
 import * as durableEventDelivery from "./002_durable_event_delivery.ts";
@@ -283,6 +284,7 @@ export const migrationProvider: MigrationProvider = {
       "138_direct_workspace_storage": directWorkspaceStorage,
       "139_remove_github_installation_entry": removeGithubInstallationEntry,
       "140_confirmed_agent_exit": confirmedAgentExit,
+      "141_subagent_compute_scopes": subagentComputeScopes,
     };
   },
 };

@@ -16,11 +16,9 @@ table. Environment validation belongs to activation, not file settlement. A
 missing old reference must not prevent reading a real directory or starting a
 conversation. Session-native log projection, ordered seals and Lease/Fence remain.
 
-Keep independent Workspace copying. A copy identifies its source physical Volume
-generation and target identity; it does not invent a content revision. Existing
-Tool/copy admission boundaries remain, without claiming an atomic snapshot of
-user background writes. Resource generation protects deletion/recreation, not
-ordinary file edits or concurrent user Sessions.
+Resource generation protects deletion/recreation, not ordinary file edits or
+concurrent user Sessions. ADR-0171 supersedes this decision's former child-copy
+path with shared-Volume compute scopes; no copy adapter remains.
 
 Do not archive oversized raw Tool output. Retain the bounded native Tool Result
 and honest truncation guidance; no artifact IDs or full-output recovery promises.
@@ -33,7 +31,7 @@ require PostgreSQL byte blobs or a new archival service.
 Deploy matching components without an old-wire compatibility mode. Drop obsolete
 object/settlement data and columns, preserving identities, native conversations,
 actual Volumes and machines. Verify empty/live browsing, multi-round coding,
-warm/cold compute, isolated/shared child Workspaces, large output truncation and
+warm/cold compute, shared-Volume Subagents, large output truncation and
 cleanup. Measure request/settlement overhead separately from provider latency.
 
 This supersedes the settlement half of ADR-0135; live filesystem browsing stays.

@@ -431,7 +431,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       agentName: "cloud-child",
       prompt: "Review the approach without using tools",
       contextMode: "fresh" as const,
-      workspaceMode: "none" as const,
+      sandboxMode: "none" as const,
     };
     const started = await provider.start(request);
     expect(await provider.start(request)).toEqual(started);
@@ -550,7 +550,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       prompt: "Inspect the repository",
       systemPrompt: "Execute only this delegated task.",
       contextMode: "branch",
-      workspaceMode: "shared",
+      sandboxMode: "shared",
       requestedToolCapabilities: ["read", "bash"],
     });
     const binding = await database
@@ -651,7 +651,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           parentSessionId: null,
           current: true,
           contextMode: "branch",
-          workspaceMode: "shared",
+          sandboxMode: "shared",
           entries: [
             { role: "user", text: "Earlier context" },
             { role: "assistant", text: "Subagent result from PostgreSQL" },
@@ -707,6 +707,11 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       })
       .where("id", "=", parentSessionId)
       .executeTakeFirstOrThrow();
+    await database
+      .updateTable("runs")
+      .set({ working_directory: "/home/user/research" })
+      .where("id", "=", parentRunId)
+      .execute();
     try {
       const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
       const child = await provider.start({
@@ -720,7 +725,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         agentName: "cloud-child",
         prompt: "Use the shared machine only if the delegated task needs local tools",
         contextMode: "fresh",
-        workspaceMode: "shared",
+        sandboxMode: "shared",
         requestedToolCapabilities: ["read", "write", "edit", "bash"],
       });
       await expect(
@@ -740,6 +745,11 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       });
     } finally {
       await database
+        .updateTable("runs")
+        .set({ working_directory: "/workspace" })
+        .where("id", "=", parentRunId)
+        .execute();
+      await database
         .updateTable("sessions")
         .set({
           execution_mode: "elastic",
@@ -751,30 +761,22 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     }
   });
 
-  it("prepares an isolated internal Workspace before dispatching the Child Run", async () => {
+  it("freezes a child cwd and compute scope without allocating a Workspace", async () => {
     const parent = await database
       .selectFrom("runs")
-      .select(["project_id", "workspace_id", "turn_id", "id"])
+      .select(["workspace_id", "working_directory"])
       .where("id", "=", parentRunId)
       .executeTakeFirstOrThrow();
-    const requests: Array<{ targetWorkspaceId: string; targetSessionId: string }> = [];
+    const before = await database
+      .selectFrom("workspaces")
+      .select(({ fn }) => fn.countAll<string>().as("count"))
+      .executeTakeFirstOrThrow();
+    const validated: string[] = [];
     const provider = new PostgresSubagentJobProvider({
       database,
       nativeLanes,
-      forkWorkspace: async (request) => {
-        requests.push({
-          targetWorkspaceId: request.target.workspaceId,
-          targetSessionId: request.target.sessionId,
-        });
-        return {
-          toolBrokerProtocolVersion: 1,
-          type: "workspace.forked",
-          requestId: request.requestId,
-          sourceActivationId: request.sourceActivationId,
-          targetWorkspaceId: request.target.workspaceId,
-          sourceVolumeGeneration: "a".repeat(64),
-          targetVolumeGeneration: "b".repeat(64),
-        };
+      validateDirectory: async (target) => {
+        validated.push(target.cwd);
       },
     });
     const started = await provider.start({
@@ -782,61 +784,148 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       parentSessionId,
       parentRunId,
       parentExecutionReference: parentExecutionReference(),
-      parentToolCallId: "subagent-tool-isolated",
-      workflowRunId: "workflow-isolated",
+      parentToolCallId: "subagent-compute",
+      workflowRunId: "workflow-compute",
       stepIndex: 2,
       agentName: "cloud-child",
       prompt: "Implement an independent approach",
       contextMode: "branch",
-      workspaceMode: "isolated",
-      requestedToolCapabilities: ["read", "write", "edit", "bash"],
-      parentActivation: {
-        activationId: crypto.randomUUID(),
-        assignment: {
-          tenantId,
-          projectId: parent.project_id,
-          workspaceId: parent.workspace_id,
-          supervisorId: "test-worker",
-          bootId: crypto.randomUUID(),
-          sandboxId: parentSandboxId,
-          runId: parent.id,
-          sessionId: parentSessionId,
-          turnId: parent.turn_id,
-          executionReference: parentExecutionReference(),
-        },
-      },
+      sandboxMode: "ephemeral",
+      cwd: "/workspace/worktrees/a/",
     });
     expect(started.state).toBe("queued");
-    expect(requests).toHaveLength(1);
-    const isolated = await database
-      .selectFrom("subagent_executions as execution")
-      .innerJoin("workspaces as workspace", "workspace.id", "execution.child_workspace_id")
-      .innerJoin("runs as child_run", "child_run.id", "execution.child_run_id")
-      .select([
-        "execution.state",
-        "execution.workspace_mode as workspaceMode",
-        "workspace.id as workspaceId",
-        "workspace.workspace_kind as workspaceKind",
-        "workspace.parent_workspace_id as parentWorkspaceId",
-        "child_run.workspace_id as runWorkspaceId",
-      ])
-      .where("execution.id", "=", started.executionId)
+    expect(validated).toEqual(["/workspace/worktrees/a"]);
+    const child = await database
+      .selectFrom("sessions")
+      .select(["workspace_id", "working_directory", "compute_session_id"])
+      .where("id", "=", started.childSessionId)
       .executeTakeFirstOrThrow();
-    expect(isolated).toEqual({
-      state: "queued",
-      workspaceMode: "isolated",
-      workspaceId: requests[0]!.targetWorkspaceId,
-      workspaceKind: "subagent_isolated",
-      parentWorkspaceId: parent.workspace_id,
-      runWorkspaceId: requests[0]!.targetWorkspaceId,
+    const run = await database
+      .selectFrom("runs")
+      .select(["workspace_id", "working_directory", "compute_session_id"])
+      .where("id", "=", started.childRunId)
+      .executeTakeFirstOrThrow();
+    expect(child).toEqual({
+      workspace_id: parent.workspace_id,
+      working_directory: "/workspace/worktrees/a",
+      compute_session_id: started.childSessionId,
     });
-    await expect(
-      database
-        .selectFrom("outbox")
+    expect(run).toEqual(child);
+    expect(
+      await database
+        .selectFrom("workspaces")
         .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("aggregate_id", "=", started.childSessionId)
         .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ count: "0" });
+    ).toEqual(before);
+  });
+
+  it("fails a missing explicit directory before queueing a child and preserves shared storage", async () => {
+    const provider = new PostgresSubagentJobProvider({
+      database,
+      nativeLanes,
+      validateDirectory: async () => {
+        throw new Error("directory missing");
+      },
+    });
+    const input = {
+      tenantId,
+      parentSessionId,
+      parentRunId,
+      parentExecutionReference: parentExecutionReference(),
+      parentToolCallId: "missing-cwd",
+      workflowRunId: "missing-cwd",
+      stepIndex: 0,
+      agentName: "cloud-child",
+      prompt: "Inspect",
+      contextMode: "fresh" as const,
+      sandboxMode: "shared" as const,
+      cwd: "/workspace/missing",
+    };
+    await expect(provider.start(input)).rejects.toThrow(
+      "Subagent cwd is not an accessible directory",
+    );
+    const child = await database
+      .selectFrom("subagent_executions")
+      .select(["child_run_id", "child_session_id", "state"])
+      .where("parent_tool_call_id", "=", "missing-cwd")
+      .executeTakeFirstOrThrow();
+    expect(child.state).toBe("failed");
+    const workspace = await database
+      .selectFrom("sessions as s")
+      .innerJoin("workspaces as w", "w.id", "s.workspace_id")
+      .select("w.deleted_at")
+      .where("s.id", "=", child.child_session_id)
+      .executeTakeFirstOrThrow();
+    expect(workspace.deleted_at).toBeNull();
+    expect(
+      (
+        await database
+          .selectFrom("runs")
+          .select("state")
+          .where("id", "=", child.child_run_id)
+          .executeTakeFirstOrThrow()
+      ).state,
+    ).toBe("failed");
+  });
+
+  it("shared descendants inherit frozen compute/cwd, while ephemeral descendants allocate another scope", async () => {
+    await database
+      .updateTable("runs")
+      .set({
+        compute_session_id: parentSessionId,
+        working_directory: "/workspace/worktrees/parent",
+      })
+      .where("id", "=", parentRunId)
+      .execute();
+    const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
+    try {
+      for (const sandboxMode of ["shared", "ephemeral"] as const) {
+        const child = await provider.start({
+          tenantId,
+          parentSessionId,
+          parentRunId,
+          parentExecutionReference: parentExecutionReference(),
+          parentToolCallId: `nested-compute-${sandboxMode}`,
+          workflowRunId: "nested-compute",
+          stepIndex: 0,
+          agentName: "cloud-child",
+          prompt: "Inspect",
+          contextMode: "fresh",
+          sandboxMode,
+        });
+        const row = await database
+          .selectFrom("runs")
+          .select(["compute_session_id", "working_directory"])
+          .where("id", "=", child.childRunId)
+          .executeTakeFirstOrThrow();
+        expect(row).toEqual({
+          compute_session_id: sandboxMode === "shared" ? parentSessionId : child.childSessionId,
+          working_directory: "/workspace/worktrees/parent",
+        });
+      }
+      await expect(
+        provider.start({
+          tenantId,
+          parentSessionId,
+          parentRunId,
+          parentExecutionReference: parentExecutionReference(),
+          parentToolCallId: "outside-volume",
+          workflowRunId: "outside",
+          stepIndex: 0,
+          agentName: "cloud-child",
+          prompt: "Inspect",
+          contextMode: "fresh",
+          sandboxMode: "ephemeral",
+          cwd: "/etc",
+        }),
+      ).rejects.toThrow("shared Volume");
+    } finally {
+      await database
+        .updateTable("runs")
+        .set({ compute_session_id: null, working_directory: "/workspace" })
+        .where("id", "=", parentRunId)
+        .execute();
+    }
   });
 
   it("cancels a queued Child Run durably before it consumes a Worker slot", async () => {
@@ -852,7 +941,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       agentName: "cloud-child",
       prompt: "Cancel this queued review",
       contextMode: "fresh",
-      workspaceMode: "none",
+      sandboxMode: "none",
     });
     await expect(provider.cancel(tenantId, started.executionId)).resolves.toMatchObject({
       state: "cancelled",
@@ -888,7 +977,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       agentName: "cloud-child",
       prompt: "Ask the parent only if a material decision is required",
       contextMode: "branch",
-      workspaceMode: "none",
+      sandboxMode: "none",
     });
     await database
       .updateTable("subagent_executions")
@@ -958,7 +1047,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       agentName: "cloud-child",
       prompt: "Investigate only this task and report one durable progress fact",
       contextMode: "fresh",
-      workspaceMode: "none",
+      sandboxMode: "none",
     });
     const child = await database
       .selectFrom("sessions")
@@ -1033,7 +1122,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       agentName: "cloud-child",
       prompt: "Delegate one bounded verification task",
       contextMode: "branch",
-      workspaceMode: "none",
+      sandboxMode: "none",
     });
     const childExecutionReference = await activateChildRun(child.childSessionId, child.childRunId);
     const childBinding = await database
@@ -1077,7 +1166,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       agentName: "cloud-child",
       prompt: "Verify the child result without tools",
       contextMode: "branch",
-      workspaceMode: "none",
+      sandboxMode: "none",
     });
     const persisted = await database
       .selectFrom("subagent_executions")
@@ -1182,7 +1271,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         agentName: "cloud-child",
         prompt: "This node must not be created",
         contextMode: "fresh",
-        workspaceMode: "none",
+        sandboxMode: "none",
       }),
     ).rejects.toMatchObject({ code: "subagent_tree_depth_exhausted" });
     await provider.cancel(tenantId, child.executionId);
@@ -1216,7 +1305,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         agentName: "cloud-child",
         prompt: "Must not start",
         contextMode: "fresh",
-        workspaceMode: "none",
+        sandboxMode: "none",
       }),
     ).rejects.toBeInstanceOf(PostgresSubagentJobError);
   });

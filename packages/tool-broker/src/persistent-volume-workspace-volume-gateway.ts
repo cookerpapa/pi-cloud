@@ -3,7 +3,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import {
   chmod,
-  cp,
   lstat,
   mkdir,
   open,
@@ -17,7 +16,6 @@ import {
 import { dirname, join, resolve, sep } from "node:path";
 import { isIPv4 } from "node:net";
 import {
-  SHA256_PATTERN,
   VOLUME_GENERATION_FILE,
   VOLUME_GENERATION_PATTERN,
   VOLUME_METADATA_DIRECTORY,
@@ -36,7 +34,6 @@ import {
   type WorkspaceVolumeGateway,
   type WorkspaceVolumeGatewayLock,
   type WorkspaceVolumeGatewayDeleteInput,
-  type WorkspaceVolumeGatewayForkInput,
   type WorkspaceVolumeGatewayPathInput,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewayReadFileInput,
@@ -363,108 +360,6 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         volumeGeneration,
       });
       return { attached: false };
-    });
-  }
-
-  async fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
-    sourceVolumeGeneration: string;
-    targetVolumeGeneration: string;
-  }> {
-    const source = validatedIdentity({
-      tenantId: input.tenantId,
-      workspaceId: input.sourceWorkspaceId,
-      sessionId: input.sourceSessionId,
-      volumeId: input.sourceVolumeId,
-    });
-    const target = validatedIdentity({
-      tenantId: input.tenantId,
-      workspaceId: input.targetWorkspaceId,
-      sessionId: input.targetSessionId,
-      volumeId: input.targetVolumeId,
-    });
-    if (source.workspaceId === target.workspaceId || source.volumeId === target.volumeId) {
-      throw new WorkspaceVolumeGatewayError(
-        "workspace_fork_identity_invalid",
-        "Workspace fork target must be independent",
-        false,
-      );
-    }
-    return this.#withVolumeLocks([source.volumeId, target.volumeId], async () => {
-      await this.checkHealth();
-      const sourceDirectory = await this.#validatedVolume(source);
-      const sourceGeneration = (await this.#readVolumeGeneration(sourceDirectory))!;
-      const targetDirectory = await this.#ensureVolumeDirectory(target.volumeId);
-      const existingState = await this.#readState(targetDirectory);
-      const existingGeneration = await this.#readVolumeGeneration(targetDirectory);
-      if (existingState !== undefined || existingGeneration !== undefined) {
-        if (
-          existingState === undefined ||
-          existingGeneration === undefined ||
-          existingState.tenantId !== target.tenantId ||
-          existingState.workspaceId !== target.workspaceId ||
-          existingState.volumeId !== target.volumeId ||
-          existingState.volumeGeneration !== existingGeneration ||
-          existingState.forkedFrom?.workspaceId !== source.workspaceId ||
-          existingState.forkedFrom.volumeGeneration !== sourceGeneration
-        ) {
-          throw new WorkspaceVolumeGatewayError(
-            "workspace_fork_target_conflict",
-            "Workspace fork target was already bound to another source",
-            false,
-          );
-        }
-        return {
-          sourceVolumeGeneration: sourceGeneration,
-          targetVolumeGeneration: existingGeneration,
-        };
-      }
-      const targetEntries = await readdir(targetDirectory);
-      const pristine =
-        targetEntries.length === 0 ||
-        (targetEntries.length === 1 &&
-          targetEntries[0] === VOLUME_WORKSPACE_DIRECTORY &&
-          (await readdir(join(targetDirectory, VOLUME_WORKSPACE_DIRECTORY))).length === 0);
-      if (!pristine) {
-        throw new WorkspaceVolumeGatewayError(
-          "workspace_fork_target_conflict",
-          "Workspace fork target was not pristine",
-          false,
-        );
-      }
-
-      const temporary = `${targetDirectory}.fork-${process.pid}-${randomBytes(8).toString("hex")}`;
-      try {
-        await cp(sourceDirectory, temporary, {
-          recursive: true,
-          force: false,
-          errorOnExist: true,
-          preserveTimestamps: true,
-          verbatimSymlinks: true,
-        });
-        const volumeGeneration = randomBytes(32).toString("hex");
-        const generationPath = join(temporary, VOLUME_METADATA_DIRECTORY, VOLUME_GENERATION_FILE);
-        await rm(generationPath, { force: true });
-        await writeFile(generationPath, `${volumeGeneration}\n`, { mode: 0o400, flag: "wx" });
-        await this.#writeState(temporary, {
-          schemaVersion: 2,
-          tenantId: target.tenantId,
-          workspaceId: target.workspaceId,
-          volumeId: target.volumeId,
-          volumeGeneration,
-          forkedFrom: {
-            workspaceId: source.workspaceId,
-            volumeGeneration: sourceGeneration,
-          },
-        });
-        await rm(targetDirectory, { recursive: true, force: true });
-        await rename(temporary, targetDirectory);
-        return {
-          sourceVolumeGeneration: sourceGeneration,
-          targetVolumeGeneration: volumeGeneration,
-        };
-      } finally {
-        await rm(temporary, { recursive: true, force: true }).catch(() => undefined);
-      }
     });
   }
 
@@ -934,17 +829,8 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         "workspaceId",
         "volumeId",
         "volumeGeneration",
-        ...(value.forkedFrom === undefined ? [] : ["forkedFrom"]),
       ];
       if (Object.keys(value).sort().join("\0") !== expectedKeys.sort().join("\0")) return undefined;
-      if (
-        value.forkedFrom !== undefined &&
-        (!isRecord(value.forkedFrom) ||
-          typeof value.forkedFrom.workspaceId !== "string" ||
-          typeof value.forkedFrom.volumeGeneration !== "string" ||
-          !SHA256_PATTERN.test(value.forkedFrom.volumeGeneration))
-      )
-        return undefined;
       return value as unknown as VolumeState;
     } catch {
       return undefined;
@@ -1016,26 +902,6 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       );
     }
     return { absolute, relative: path, root: selectedRoot };
-  }
-
-  async #withVolumeLocks<T>(volumeIds: readonly string[], operation: () => Promise<T>): Promise<T> {
-    const ordered = [...new Set(volumeIds)].sort();
-    const acquireLocal = (index: number): Promise<T> => {
-      const volumeId = ordered[index];
-      return volumeId === undefined
-        ? operation()
-        : this.#withLocalVolumeLock(volumeId, () => acquireLocal(index + 1));
-    };
-    if (this.#distributedLock?.withLocks !== undefined) {
-      return this.#distributedLock.withLocks(ordered, () => acquireLocal(0));
-    }
-    const acquire = (index: number): Promise<T> => {
-      const volumeId = ordered[index];
-      return volumeId === undefined
-        ? operation()
-        : this.#withVolumeLock(volumeId, () => acquire(index + 1));
-    };
-    return acquire(0);
   }
 
   async #withLocalVolumeLock<T>(volumeId: string, operation: () => Promise<T>): Promise<T> {

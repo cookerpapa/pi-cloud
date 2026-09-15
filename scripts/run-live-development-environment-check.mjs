@@ -411,7 +411,7 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once.",
-      'Use subagent action:"workflow" with this exact script: return runs.run("development-shared", {context:"fresh", workspace:"shared", tools:["read","bash"], task:"Use bash to confirm the current directory is /home/user/empty-project and ./test.sh passes, then reply exactly DEVELOPMENT-SUBAGENT-OK"})',
+      'Use subagent action:"workflow" with this exact script: return runs.run("development-shared", {context:"fresh", sandbox:"shared", tools:["read","bash"], task:"Use bash to confirm the current directory is /home/user/empty-project and ./test.sh passes, then reply exactly DEVELOPMENT-SUBAGENT-OK"})',
       "After it finishes, reply exactly DEVELOPMENT-SUBAGENT-OK.",
     ].join(" "),
     newIdempotencyKey("turn"),
@@ -420,7 +420,7 @@ try {
   await waitForRun(sharedSubagentRun.runId);
   const sharedSubagentEvidenceValue = await psql(`
     select json_build_object(
-      'workspaceMode', execution.workspace_mode,
+      'sandboxMode', execution.sandbox_mode,
       'executionMode', child_session.execution_mode,
       'developmentEnvironmentId', child_session.development_environment_id,
       'workingDirectory', child_session.working_directory,
@@ -436,7 +436,7 @@ try {
   assert(sharedSubagentEvidenceValue, "Development-machine parent created no Subagent execution");
   const sharedSubagentEvidence = JSON.parse(sharedSubagentEvidenceValue);
   assert.deepEqual(sharedSubagentEvidence, {
-    workspaceMode: "shared",
+    sandboxMode: "shared",
     executionMode: "development_environment",
     developmentEnvironmentId: development.environmentId,
     workingDirectory: "/home/user/empty-project",

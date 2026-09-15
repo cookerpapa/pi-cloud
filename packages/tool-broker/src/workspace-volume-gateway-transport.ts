@@ -8,7 +8,6 @@ import {
   MAXIMUM_REQUEST_BYTES,
   MAXIMUM_RESPONSE_BYTES,
   TOKEN_PATTERN,
-  WORKSPACE_VOLUME_GATEWAY_FORK_PATH,
   WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH,
   WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH,
   WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH,
@@ -23,7 +22,6 @@ import {
   isRecord,
   type WorkspaceVolumeGateway,
   type WorkspaceVolumeGatewayDeleteInput,
-  type WorkspaceVolumeGatewayForkInput,
   type WorkspaceVolumeGatewayPathInput,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewayReadFileInput,
@@ -49,7 +47,6 @@ export type WorkspaceVolumeGatewayServerOptions = Readonly<{
 
 type WorkspaceVolumeGatewayOperation =
   | "prepare"
-  | "fork"
   | "list_directory"
   | "read_file"
   | "prepare_delete"
@@ -160,15 +157,6 @@ export class WorkspaceVolumeGatewayServer {
       try {
         return await this.#run("prepare", () =>
           this.#gateway.prepare(request.body as WorkspaceVolumeGatewayPrepareInput),
-        );
-      } catch (error: unknown) {
-        return this.#failure(reply, error);
-      }
-    });
-    this.#server.post(WORKSPACE_VOLUME_GATEWAY_FORK_PATH, async (request, reply) => {
-      try {
-        return await this.#run("fork", () =>
-          this.#gateway.fork(request.body as WorkspaceVolumeGatewayForkInput),
         );
       } catch (error: unknown) {
         return this.#failure(reply, error);
@@ -478,32 +466,6 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     return this.#request(WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH, input) as Promise<{
       attached: boolean;
     }>;
-  }
-
-  async fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
-    sourceVolumeGeneration: string;
-    targetVolumeGeneration: string;
-  }> {
-    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_FORK_PATH, input);
-    if (
-      !isRecord(response) ||
-      Object.keys(response).sort().join("\0") !==
-        ["sourceVolumeGeneration", "targetVolumeGeneration"].sort().join("\0") ||
-      typeof response.sourceVolumeGeneration !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.sourceVolumeGeneration) ||
-      typeof response.targetVolumeGeneration !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.targetVolumeGeneration)
-    ) {
-      throw new WorkspaceVolumeGatewayError(
-        "workspace_volume_gateway_response_invalid",
-        "Workspace Volume Gateway response was invalid",
-        false,
-      );
-    }
-    return {
-      sourceVolumeGeneration: response.sourceVolumeGeneration,
-      targetVolumeGeneration: response.targetVolumeGeneration,
-    };
   }
 
   async listDirectory(input: WorkspaceVolumeGatewayPathInput): Promise<{

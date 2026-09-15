@@ -9,6 +9,11 @@ const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
+const dirtyWorktree =
+  execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  }).trim().length > 0;
 const argumentsList = process.argv.slice(2);
 
 function argument(name, fallback) {
@@ -129,6 +134,7 @@ const successful = results.filter((result) => result.success).length;
 const report = {
   format: "pi-cloud.fault-eval-report.v1",
   piCloudRevision: testedRevision,
+  dirtyWorktree,
   generatedAt: new Date().toISOString(),
   methodology: "deterministic_targeted_fault_injection",
   liveChaosExperiment: false,
@@ -143,6 +149,7 @@ const markdown =
   `# PiCloud deterministic fault evaluation\n\n` +
   `Generated: ${report.generatedAt}\n\n` +
   `Revision: ${report.piCloudRevision}\n\n` +
+  `Uncommitted changes at test start: ${report.dirtyWorktree ? "yes" : "no"}\n\n` +
   `These are targeted, deterministic fault injections against the durable execution protocol. ` +
   `They complement the production smoke test's live container restart; they are not presented as a distributed chaos benchmark.\n\n` +
   `- Cases: ${report.caseCount}\n` +

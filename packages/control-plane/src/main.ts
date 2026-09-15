@@ -105,12 +105,46 @@ export async function startControlPlane(): Promise<void> {
     ownedObservability = observability;
     const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
     ownedDatabase = database;
+    const workspaceBrowserClient = new ReplicatedToolBrokerClient({
+      baseUrls: config.toolBrokerBaseUrls,
+      serviceToken: config.workspaceServiceToken,
+      allowInsecureHttp: config.allowInsecureInternalHttp,
+    });
     const subagents = new SubagentController({
       database,
       managementToken: config.supervisorManagementToken,
       allowInsecureHttp: config.allowInsecureInternalHttp,
       ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
       treePolicy: config.subagentTreePolicy,
+      validateDirectory: async (target) => {
+        const machine =
+          target.executionMode === "development_environment" && target.computeSessionId === null;
+        const root =
+          target.executionMode === "development_environment" ? "/home/user" : "/workspace";
+        if (!machine && target.cwd !== root && !target.cwd.startsWith(root + "/"))
+          throw new Error("Subagent directory is outside the shared Volume");
+        if (machine && (!target.developmentEnvironmentId || !target.userId))
+          throw new Error("Subagent machine ownership is unavailable");
+        await workspaceBrowserClient.listWorkspaceDirectory({
+          toolBrokerProtocolVersion: 1,
+          type: "workspace.list_directory",
+          requestId: randomUUID(),
+          tenantId: target.tenantId,
+          workspaceId: target.workspaceId,
+          sessionId: target.sessionId,
+          rootPath: "",
+          path: machine ? "" : target.cwd.slice(root.length).replace(/^\//, ""),
+          ...(machine
+            ? {
+                machine: {
+                  environmentId: target.developmentEnvironmentId!,
+                  userId: target.userId!,
+                  directory: target.cwd,
+                },
+              }
+            : {}),
+        });
+      },
       onError: (error) =>
         operationalLog({
           service: "pi-cloud-control-plane",
@@ -207,11 +241,6 @@ export async function startControlPlane(): Promise<void> {
         leaseCoordinator: new SessionLeaseCoordinator({ database, sandboxId }),
       });
     };
-    const workspaceBrowserClient = new ReplicatedToolBrokerClient({
-      baseUrls: config.toolBrokerBaseUrls,
-      serviceToken: config.workspaceServiceToken,
-      allowInsecureHttp: config.allowInsecureInternalHttp,
-    });
     const provisioner = new SupervisorBootProvisioner({
       database,
       allowedSupervisorIdPrefix: config.supervisorIdPrefix,

@@ -257,7 +257,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                     agentName: "cloud-child",
                     prompt: "child task",
                     contextMode: "branch",
-                    workspaceMode: "none",
+                    sandboxMode: "none",
                   });
                   childId = child.childSessionId;
                   childExecutionId = child.executionId;

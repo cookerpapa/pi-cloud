@@ -49,7 +49,7 @@ function browserPath(value: string, allowEmpty: boolean): string {
   if (allowEmpty && value.length === 0) return "";
   if (
     value.length < 1 ||
-    value.length > 512 ||
+    value.length > 4_096 ||
     value.startsWith("/") ||
     value.includes("\\") ||
     value.split("/").some((part) => part.length === 0 || part === "." || part === "..")

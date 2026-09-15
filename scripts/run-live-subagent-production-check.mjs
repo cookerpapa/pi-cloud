@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { access, mkdir, open, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format } from "prettier";
@@ -213,16 +213,20 @@ async function runTurn(sessionId, prompt) {
   }
 }
 
-async function executionEvidence(parentRunId) {
+async function executionEvidence(parentRunId, executionId) {
   const value = await psql(`
     select json_build_object(
       'executionId', execution.id,
-      'workspaceMode', execution.workspace_mode,
+      'sandboxMode', execution.sandbox_mode,
       'state', execution.state,
       'childSessionId', execution.child_session_id,
       'childRunId', execution.child_run_id,
       'parentWorkspaceId', parent_run.workspace_id,
       'childWorkspaceId', child_run.workspace_id,
+      'computeSessionId', child_run.compute_session_id,
+      'cwd', child_run.working_directory,
+      'parentRuntimeId', (select runtime_id from tool_broker_workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=parent_run.workspace_id and compute_session_id is not distinct from parent_run.compute_session_id order by created_at desc limit 1),
+      'childRuntimeId', (select runtime_id from tool_broker_workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child_run.workspace_id and compute_session_id is not distinct from child_run.compute_session_id order by created_at desc limit 1),
       'childRunState', child_run.state,
       'parentWorker', parent_attempt.claim_owner_id,
       'childWorker', child_attempt.claim_owner_id,
@@ -274,6 +278,7 @@ async function executionEvidence(parentRunId) {
     join run_attempts as child_attempt on child_attempt.id = child_run.current_attempt_id
     join workspaces as child_workspace on child_workspace.id = child_run.workspace_id
     where execution.parent_run_id = ${sqlLiteral(parentRunId)}
+      ${executionId === undefined ? "" : `and execution.id = ${sqlLiteral(executionId)}`}
     order by execution.created_at desc
     limit 1
   `);
@@ -413,6 +418,7 @@ const session = await api.createSession(
   project.workspaceId,
   `Subagent production acceptance ${suffix}`,
   "elastic",
+  "starter",
 );
 await api.updateSessionModel(session.sessionId, acceptanceModel);
 process.stdout.write(
@@ -429,7 +435,7 @@ try {
     ].join(" "),
   );
   const noneEvidence = await executionEvidence(none.accepted.runId);
-  assert.equal(noneEvidence.workspaceMode, "none");
+  assert.equal(noneEvidence.sandboxMode, "none");
   assert.equal(noneEvidence.childRunState, "completed");
   assert.equal(noneEvidence.contextBaseEntryId, null);
   assertLaneBacked(noneEvidence, session.sessionId);
@@ -438,12 +444,12 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once and do not call any file or bash Tool yourself.",
-      'Use subagent with action:"run", context:"fresh", workspace:"shared", tools:["bash"], task:"Do not call any local Tool. Reply exactly SUBAGENT-LAZY-OK". Keep the bash capability enabled but unused; do not pass tools:[].',
+      'Use subagent with action:"run", context:"fresh", sandbox:"ephemeral", tools:["bash"], task:"Do not call any local Tool. Reply exactly SUBAGENT-LAZY-OK". Keep the bash capability enabled but unused; do not pass tools:[].',
       "After it finishes, reply with SUBAGENT-LAZY-OK.",
     ].join(" "),
   );
   const lazyEvidence = await executionEvidence(lazy.accepted.runId);
-  assert.equal(lazyEvidence.workspaceMode, "shared");
+  assert.equal(lazyEvidence.sandboxMode, "ephemeral");
   assert.equal(lazyEvidence.childRunState, "completed");
   assert.equal(lazyEvidence.contextBaseEntryId, null);
   assertLaneBacked(lazyEvidence, session.sessionId);
@@ -481,33 +487,70 @@ try {
     session.sessionId,
     [
       "First use bash to write exactly SHARED-PARENT-OK into /workspace/shared-parent-marker.txt.",
-      "Then call the subagent Tool exactly once with action:run and workspace:shared.",
-      'Use subagent with action:"run", context:"fresh", workspace:"shared", task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK".',
+      "Then call the subagent Tool exactly once with action:run and sandbox:shared.",
+      'Use subagent with action:"run", context:"fresh", sandbox:"shared", task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK".',
       "After it finishes, reply with SHARED-CHILD-OK.",
     ].join(" "),
   );
   const sharedEvidence = await executionEvidence(shared.accepted.runId);
-  assert.equal(sharedEvidence.workspaceMode, "shared");
+  assert.equal(sharedEvidence.sandboxMode, "shared");
   assert.equal(sharedEvidence.childWorkspaceId, sharedEvidence.parentWorkspaceId);
   assert.equal(sharedEvidence.childRunState, "completed");
   assert.equal(sharedEvidence.contextBaseEntryId, null);
+  assert(sharedEvidence.parentRuntimeId);
+  assert.equal(sharedEvidence.childRuntimeId, sharedEvidence.parentRuntimeId);
   assertLaneBacked(sharedEvidence, session.sessionId);
 
-  const isolated = await runTurn(
+  const ephemeral = await runTurn(
     session.sessionId,
     [
-      "Call the subagent Tool exactly once with action:workflow; its child must use workspace:isolated.",
-      'Use subagent action:"workflow" with script: return runs.run("isolated", {context:"branch", workspace:"isolated", task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"});',
-      "Do not create isolated-child-only.txt yourself. After the child finishes, reply with ISOLATED-CHILD-OK.",
+      "Use bash to create /workspace/project, git init -b main there, configure repository-local user.name Audit and user.email audit@example.invalid, create README.md, git add and commit the baseline.",
+      "Use git -C /workspace/project worktree add -b feature-a /workspace/worktrees/feature-a. Do not copy files or clone another repository.",
+      'Then call subagent action:"workflow" exactly once with script: return runs.run("feature-a", {context:"branch", sandbox:"ephemeral", cwd:"/workspace/worktrees/feature-a", task:"Use bash to verify pwd is /workspace/worktrees/feature-a. Create feature.py implementing add(a,b), with executable assertions for zero, negative and positive integers. Run python3 feature.py. Write feature-marker.txt containing WORKTREE-CHILD-OK. git add feature.py feature-marker.txt and git commit locally. Reply WORKTREE-CHILD-OK. Do not create more subagents."});',
+      "After the child finishes, YOU must git -C /workspace/project merge --ff-only feature-a, run python3 /workspace/project/feature.py and read /workspace/project/feature-marker.txt. Do not create or edit the child files yourself. Only after the tests pass, reply WORKTREE-MERGED-OK.",
     ].join(" "),
   );
-  const isolatedEvidence = await executionEvidence(isolated.accepted.runId);
-  assert.equal(isolatedEvidence.workspaceMode, "isolated");
-  assert.notEqual(isolatedEvidence.childWorkspaceId, isolatedEvidence.parentWorkspaceId);
-  assert.equal(isolatedEvidence.workspaceKind, "subagent_isolated");
-  assert.equal(isolatedEvidence.workspaceDeleted, true);
-  assert(isolatedEvidence.contextBaseEntryId);
-  assertLaneBacked(isolatedEvidence, session.sessionId);
+  const ephemeralEvidence = await executionEvidence(ephemeral.accepted.runId);
+  assert.equal(ephemeralEvidence.sandboxMode, "ephemeral");
+  assert.equal(ephemeralEvidence.childWorkspaceId, ephemeralEvidence.parentWorkspaceId);
+  assert.equal(ephemeralEvidence.computeSessionId, ephemeralEvidence.childSessionId);
+  assert.equal(ephemeralEvidence.cwd, "/workspace/worktrees/feature-a");
+  assert.equal(ephemeralEvidence.workspaceKind, "user");
+  assert.equal(ephemeralEvidence.workspaceDeleted, false);
+  assert(ephemeralEvidence.parentRuntimeId && ephemeralEvidence.childRuntimeId);
+  assert.notEqual(ephemeralEvidence.childRuntimeId, ephemeralEvidence.parentRuntimeId);
+  assert(ephemeralEvidence.contextBaseEntryId);
+  assert.match(ephemeral.text, /WORKTREE-MERGED-OK/u);
+  assertLaneBacked(ephemeralEvidence, session.sessionId);
+
+  const parallelCompute = await runTurn(
+    session.sessionId,
+    [
+      "In /workspace/project use git worktree add to create branches parallel-left and parallel-right at /workspace/worktrees/left and /workspace/worktrees/right from current main.",
+      'Call subagent action:"workflow" exactly once with script: return runs.all([ {key:"left",context:"fresh",sandbox:"ephemeral",cwd:"/workspace/worktrees/left",task:"Use bash to check pwd. Write left.py defining double(x)=x*2 with executable assertions; run python3 left.py, then git add left.py and git commit. Do not create subagents. Reply LEFT-OK."}, {key:"right",context:"branch",sandbox:"ephemeral",cwd:"/workspace/worktrees/right",task:"Use bash to check pwd. Write right.py defining square(x)=x*x with executable assertions; run python3 right.py, then git add right.py and git commit. Do not create subagents. Reply RIGHT-OK."} ]);',
+      "Wait for BOTH children. Then merge both branches locally into /workspace/project (use --no-edit), run python3 left.py and python3 right.py there. Do not create the files yourself. Reply PARALLEL-WORKTREES-MERGED only after both tests pass.",
+    ].join(" "),
+  );
+  const parallelComputeChildren = await parallelExecutionEvidence(parallelCompute.accepted.runId);
+  assert.equal(parallelComputeChildren.length, 2);
+  const parallelComputeEvidence = [];
+  for (const child of parallelComputeChildren) {
+    const evidence = await executionEvidence(parallelCompute.accepted.runId, child.executionId);
+    assert.equal(evidence.childRunState, "completed");
+    assert.equal(evidence.sandboxMode, "ephemeral");
+    assert.equal(evidence.childWorkspaceId, project.workspaceId);
+    assert.equal(evidence.computeSessionId, evidence.childSessionId);
+    assert(evidence.childRuntimeId && evidence.parentRuntimeId);
+    assert.notEqual(evidence.childRuntimeId, evidence.parentRuntimeId);
+    assertLaneBacked(evidence, session.sessionId);
+    parallelComputeEvidence.push(evidence);
+  }
+  assert.equal(new Set(parallelComputeEvidence.map((child) => child.childRuntimeId)).size, 2);
+  assert.deepEqual(parallelComputeEvidence.map((child) => child.cwd).sort(), [
+    "/workspace/worktrees/left",
+    "/workspace/worktrees/right",
+  ]);
+  assert.match(parallelCompute.text, /PARALLEL-WORKTREES-MERGED/u);
 
   const nestedTask = [
     "Call the subagent Tool exactly once and do not call file or bash Tools.",
@@ -562,7 +605,7 @@ try {
   }
 
   const messageMarker = `MAILBOX-${suffix}`;
-  const messageScript = `const child = runs.run("receiver", {context:"fresh",workspace:"shared",task:"First use bash to sleep 3 seconds. Then reply with the secret code received in an Agent message. The code is not in this initial task. Do not read files to look for the code. If no message arrives, say MISSING and finish."}); const receipt = await runs.send("receiver", ${JSON.stringify(messageMarker)}, "steer"); return {receipt, child:await child};`;
+  const messageScript = `const child = runs.run("receiver", {context:"fresh",sandbox:"shared",task:"First use bash to sleep 3 seconds. Then reply with the secret code received in an Agent message. The code is not in this initial task. Do not read files to look for the code. If no message arrives, say MISSING and finish."}); const receipt = await runs.send("receiver", ${JSON.stringify(messageMarker)}, "steer"); return {receipt, child:await child};`;
   const messaging = await runTurn(
     session.sessionId,
     `Call subagent action:workflow exactly once with this script: ${messageScript} Then briefly report the child result.`,
@@ -656,7 +699,8 @@ try {
     lazyEvidence,
     ...parallelEvidence,
     sharedEvidence,
-    isolatedEvidence,
+    ephemeralEvidence,
+    ...parallelComputeEvidence,
     ...recursiveEvidence,
   ]) {
     const detail = await api.getConversation(child.childSessionId);
@@ -680,16 +724,16 @@ try {
     `select tenant_id::text from sessions where id = ${sqlLiteral(session.sessionId)}`,
   );
   const volumeId = workspaceVolumeId({ tenantId, workspaceId: session.workspaceId });
-  const possibleParentFile = resolve(
+  const mergedParentFile = resolve(
     runtimeDirectory,
     "state/cube-shared/volume",
     `picloud-posix-${volumeId}`,
-    "workspace/isolated-child-only.txt",
+    "workspace/project/feature-marker.txt",
   );
-  await assert.rejects(access(possibleParentFile), (error) => error?.code === "ENOENT");
+  assert.equal((await readFile(mergedParentFile, "utf8")).trim(), "WORKTREE-CHILD-OK");
 
   const report = {
-    architecture: "log-driven-subagents-v1",
+    architecture: "shared-volume-subagent-compute",
     revision: testedRevision,
     timings: measurements,
     usage: JSON.parse(
@@ -709,7 +753,8 @@ try {
       lazyToolCapable: lazyEvidence,
       parallel: parallelEvidence,
       shared: sharedEvidence,
-      isolated: isolatedEvidence,
+      ephemeral: ephemeralEvidence,
+      parallelCompute: parallelComputeEvidence,
     },
     recursiveTree: recursiveEvidence,
     coding: codingEvidence,

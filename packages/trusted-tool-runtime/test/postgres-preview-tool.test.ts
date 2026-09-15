@@ -11,6 +11,52 @@ afterEach(async () => {
 });
 
 describe("trusted Preview Tool", () => {
+  it.each([null, "child-compute"])(
+    "routes machine previews according to compute scope %s",
+    async (compute) => {
+      const filters: unknown[][] = [];
+      const database = {
+        selectFrom(table: string) {
+          const query = {
+            select() {
+              return query;
+            },
+            where(...args: unknown[]) {
+              if (table === "sandbox_http_services") filters.push(args);
+              return query;
+            },
+            orderBy() {
+              return query;
+            },
+            async executeTakeFirstOrThrow() {
+              return { development_environment_id: "parent-machine", compute_session_id: compute };
+            },
+            async executeTakeFirst() {
+              return { id: "service" };
+            },
+          };
+          return query;
+        },
+      } as unknown as Parameters<typeof createCloudPreviewTool>[0]["database"];
+      const tool = createCloudPreviewTool({
+        database,
+        tenantId: "tenant",
+        sessionId: "child",
+        refreshServices: async () => {},
+      });
+      await tool.execute("call", { port: 3000 });
+      expect(filters).toContainEqual([
+        "target_kind",
+        "=",
+        compute === null ? "development_environment" : "conversation",
+      ]);
+      expect(filters).toContainEqual([
+        "target_id",
+        "=",
+        compute === null ? "parent-machine" : "child",
+      ]);
+    },
+  );
   it("resolves only a verified active service into an authenticated conversation route", async () => {
     const pglite = await PGlite.create();
     const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });

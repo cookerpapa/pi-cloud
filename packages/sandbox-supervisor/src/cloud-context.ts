@@ -45,6 +45,7 @@ export type CloudTurnContext = Readonly<{
   workspace: Readonly<{ workingDirectory: string }>;
   sandbox: Readonly<{
     executionMode: ExecuteTurnCommandMessage["payload"]["executionMode"];
+    computeSessionId?: string;
     profileKey: ExecuteTurnCommandMessage["payload"]["sandboxProfileKey"];
   }>;
   tools: Readonly<{
@@ -161,6 +162,9 @@ export function createCloudTurnContext(command: ExecuteTurnCommandMessage): Froz
     },
     sandbox: {
       executionMode: payload.executionMode,
+      ...(payload.computeSessionId === undefined
+        ? {}
+        : { computeSessionId: payload.computeSessionId }),
       profileKey: payload.sandboxProfileKey,
     },
     tools: {
