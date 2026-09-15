@@ -29,6 +29,7 @@ export type NativeSessionOpen = {
   writerId: string;
   executionReference: string;
   publisher: PiSessionAppendPublisher;
+  readSignal?: AbortSignal;
 };
 
 /** Worker composition only. Cold bootstrap reads PG; the public SessionStorage
@@ -240,6 +241,7 @@ export class PostgresNativeSessionHost {
         {
           branch,
           reader,
+          ...(input.readSignal ? { readSignal: input.readSignal } : {}),
           openOperations: rows
             .filter((r) => r.type === "operation_started")
             .map((r) => ({

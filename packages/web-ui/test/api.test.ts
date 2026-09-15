@@ -254,16 +254,9 @@ describe("tenant-aware browser API", () => {
     });
   });
 
-  it("sends the selected Sandbox retention policy when creating a conversation", async () => {
-    const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
+  it("defaults a development-machine conversation to its home directory", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
       expect(String(input)).toBe("/v1/projects/20000000-0000-4000-8000-000000000001/sessions");
-      expect(JSON.parse(String(init?.body))).toEqual({
-        workspaceId: "30000000-0000-4000-8000-000000000001",
-        title: "Persistent development environment",
-        executionMode: "development_environment",
-        sandboxProfileKey: "standard",
-        workingDirectory: "/workspace",
-      });
       return new Response(
         JSON.stringify({
           sessionId: "40000000-0000-4000-8000-000000000001",
@@ -274,7 +267,7 @@ describe("tenant-aware browser API", () => {
           state: "cold",
           executionMode: "development_environment",
           sandboxProfileKey: "standard",
-          workingDirectory: "/workspace",
+          workingDirectory: "/home/user",
           modelProfileId: "50000000-0000-4000-8000-000000000001",
           createdAt: "2026-07-19T00:00:00.000Z",
         }),
@@ -290,6 +283,12 @@ describe("tenant-aware browser API", () => {
         "development_environment",
       ),
     ).resolves.toMatchObject({ executionMode: "development_environment" });
+    expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body))).toEqual({
+      workspaceId: "30000000-0000-4000-8000-000000000001",
+      title: "Persistent development environment",
+      executionMode: "development_environment",
+      workingDirectory: "/home/user",
+    });
   });
 
   it("deletes a Workspace with an idempotency key", async () => {

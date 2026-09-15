@@ -339,7 +339,7 @@ let development, session, replacementSession;
 try {
   development = await api.createDevelopmentEnvironment(
     `Recovery machine ${suffix}`,
-    "standard",
+    "starter",
     newIdempotencyKey("environment"),
   );
   process.stdout.write(
@@ -387,7 +387,7 @@ try {
     development.workspaceId,
     `Agent binding to exclusive environment ${suffix}`,
     "development_environment",
-    "standard",
+    undefined,
     "/home/user/empty-project",
   );
   const agentRun = await api.acceptTurn(
@@ -562,10 +562,11 @@ try {
     "EXCLUSIVE_BROKER_SSH_OK",
   );
 
+  const pauseKey = newIdempotencyKey("environment");
   const paused = await api.developmentEnvironmentAction(
     development.environmentId,
     "pause",
-    newIdempotencyKey("environment"),
+    pauseKey,
   );
   assert.equal(paused.state, "paused");
   assert.equal((await cube.read(runtimeName))?.state, "paused");
@@ -575,6 +576,12 @@ try {
     newIdempotencyKey("environment"),
   );
   assert.equal(resumed.state, "running");
+  assert.equal(
+    (await api.developmentEnvironmentAction(development.environmentId, "pause", pauseKey)).state,
+    "running",
+    "Replaying a completed pause must not undo the later resume",
+  );
+  assert.equal((await cube.read(runtimeName))?.state, "running");
   assert.equal(
     await psql(
       `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
@@ -593,9 +600,9 @@ try {
     development.workspaceId,
     `Replacement conversation ${suffix}`,
     "development_environment",
-    "standard",
-    "/home/user/empty-project",
   );
+  assert.equal(replacementSession.workingDirectory, "/home/user");
+  assert.equal(replacementSession.sandboxProfileKey, development.profileKey);
   assert.equal(
     (await api.getConversation(replacementSession.sessionId)).session.sessionId,
     replacementSession.sessionId,
@@ -673,6 +680,8 @@ try {
     deletedConversationDidNotReleaseMachine: true,
     oneTimeSshGatewayPassed: true,
     selectedProfile: development.profileKey,
+    defaultMachineDirectoryAndProfilePassed: true,
+    oldPauseReplayDidNotUndoResume: true,
   };
   await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
   await writeFile(

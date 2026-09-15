@@ -150,35 +150,16 @@ function transition<State extends string>(
   return to;
 }
 
-export function canTransitionSession(from: SessionState, to: SessionState): boolean {
-  return canTransition(sessionTransitions, from, to);
-}
-
 export function transitionSession(from: SessionState, to: SessionState): SessionState {
   return transition("session", sessionTransitions, from, to);
-}
-
-export function canTransitionTurn(from: TurnState, to: TurnState): boolean {
-  return canTransition(turnTransitions, from, to);
 }
 
 export function transitionTurn(from: TurnState, to: TurnState): TurnState {
   return transition("turn", turnTransitions, from, to);
 }
 
-export function canTransitionSandbox(from: SandboxState, to: SandboxState): boolean {
-  return canTransition(sandboxTransitions, from, to);
-}
-
 export function transitionSandbox(from: SandboxState, to: SandboxState): SandboxState {
   return transition("sandbox", sandboxTransitions, from, to);
-}
-
-export function canTransitionTurnControlRequest(
-  from: TurnControlRequestState,
-  to: TurnControlRequestState,
-): boolean {
-  return canTransition(controlRequestTransitions, from, to);
 }
 
 export function transitionTurnControlRequest(
@@ -188,32 +169,12 @@ export function transitionTurnControlRequest(
   return transition("control_request", controlRequestTransitions, from, to);
 }
 
-export function canTransitionRun(from: RunState, to: RunState): boolean {
-  return canTransition(runTransitions, from, to);
-}
-
 export function transitionRun(from: RunState, to: RunState): RunState {
   return transition("run", runTransitions, from, to);
 }
 
-export function canTransitionRunAttempt(from: RunAttemptState, to: RunAttemptState): boolean {
-  return canTransition(runAttemptTransitions, from, to);
-}
-
 export function transitionRunAttempt(from: RunAttemptState, to: RunAttemptState): RunAttemptState {
   return transition("run_attempt", runAttemptTransitions, from, to);
-}
-
-export function isTerminalTurnState(state: TurnState): boolean {
-  return state === "completed" || state === "failed" || state === "cancelled";
-}
-
-export function isTerminalSandboxState(state: SandboxState): boolean {
-  return state === "terminated";
-}
-
-export function isTerminalTurnControlRequestState(state: TurnControlRequestState): boolean {
-  return state === "completed" || state === "failed";
 }
 
 export function isTerminalRunState(state: RunState): boolean {

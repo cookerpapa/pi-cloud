@@ -87,7 +87,10 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   scenario?: AgentTurnScenario | AgentTurnScenarioResolver;
   modelRuntimeLeaseResolver?: TrustedModelRuntimeLeaseResolver;
   workspaceSeedResolver?: AgentWorkspaceSeedResolver;
-  openAgentSession: (command: ExecuteTurnCommandMessage) => Promise<PiCloudSessionHandle>;
+  openAgentSession: (
+    command: ExecuteTurnCommandMessage,
+    readSignal?: AbortSignal,
+  ) => Promise<PiCloudSessionHandle>;
   publishToolCommand?: import("@pi-cloud/protocol").ToolCommandPublisher["publishToolCommand"];
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,

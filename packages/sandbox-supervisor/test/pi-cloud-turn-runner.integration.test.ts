@@ -129,12 +129,14 @@ describe("PiCloudTurnRunner integration", () => {
         api: "openai-completions",
         apiKey: FAKE_MODEL_API_KEY,
       }),
-      openSession: async () => {
+      openSession: async (_command, readSignal) => {
+        expect(readSignal).toBeInstanceOf(AbortSignal);
         controller.abort({
           kind: "pi-cloud.turn-cancellation",
           reason: "user_request",
           gracePeriodMs: 0,
         });
+        expect(readSignal?.aborted).toBe(true);
         return { session, lane: "main", authority };
       },
       sandboxContinuity: {

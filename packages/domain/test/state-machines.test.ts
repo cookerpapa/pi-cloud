@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   DomainTransitionError,
-  canTransitionTurnControlRequest,
-  canTransitionTurn,
-  isTerminalTurnControlRequestState,
-  isTerminalSandboxState,
-  isTerminalTurnState,
   transitionTurnControlRequest,
   transitionRun,
   transitionRunAttempt,
@@ -58,7 +53,6 @@ describe("domain state machines", () => {
   it("walks a turn through execution and completion", () => {
     const state = walkTurn("queued", ["running", "completed"]);
     expect(state).toBe("completed");
-    expect(isTerminalTurnState(state)).toBe(true);
     expect(() => transitionTurn("completed", "running")).toThrow(DomainTransitionError);
   });
 
@@ -70,7 +64,6 @@ describe("domain state machines", () => {
   );
 
   it("does not requeue a Turn after execution has started", () => {
-    expect(canTransitionTurn("running", "queued")).toBe(false);
     expect(() => transitionTurn("running", "queued")).toThrow(DomainTransitionError);
     expect(transitionTurn("running", "failed")).toBe("failed");
   });
@@ -78,27 +71,14 @@ describe("domain state machines", () => {
   it("retries control requests only before acknowledgement", () => {
     expect(transitionTurnControlRequest("pending", "dispatched")).toBe("dispatched");
     expect(transitionTurnControlRequest("dispatched", "pending")).toBe("pending");
-    expect(canTransitionTurnControlRequest("acknowledged", "pending")).toBe(false);
     expect(() => transitionTurnControlRequest("acknowledged", "pending")).toThrow(
       DomainTransitionError,
     );
   });
 
   it("makes completed and failed commands terminal", () => {
-    expect(
-      isTerminalTurnControlRequestState(
-        transitionTurnControlRequest(
-          transitionTurnControlRequest("pending", "dispatched"),
-          "acknowledged",
-        ),
-      ),
-    ).toBe(false);
-    expect(
-      isTerminalTurnControlRequestState(transitionTurnControlRequest("acknowledged", "completed")),
-    ).toBe(true);
-    expect(
-      isTerminalTurnControlRequestState(transitionTurnControlRequest("dispatched", "failed")),
-    ).toBe(true);
+    expect(transitionTurnControlRequest("acknowledged", "completed")).toBe("completed");
+    expect(transitionTurnControlRequest("dispatched", "failed")).toBe("failed");
     expect(() => transitionTurnControlRequest("completed", "failed")).toThrow(
       DomainTransitionError,
     );
@@ -109,7 +89,7 @@ describe("domain state machines", () => {
     expect(transitionSandbox("ready", "leased")).toBe("leased");
     expect(transitionSandbox("leased", "ready")).toBe("ready");
     expect(transitionSandbox("ready", "draining")).toBe("draining");
-    expect(isTerminalSandboxState(transitionSandbox("draining", "terminated"))).toBe(true);
+    expect(transitionSandbox("draining", "terminated")).toBe("terminated");
     expect(() => transitionSandbox("terminated", "ready")).toThrow(DomainTransitionError);
   });
 

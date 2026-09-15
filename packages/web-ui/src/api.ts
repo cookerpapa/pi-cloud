@@ -713,8 +713,12 @@ export class PiCloudApi {
     workspaceId: string,
     title: string,
     executionMode: ExecutionMode,
-    sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey = "standard",
-    workingDirectory = "/workspace",
+    sandboxProfileKey:
+      import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey | undefined = executionMode ===
+    "development_environment"
+      ? undefined
+      : "standard",
+    workingDirectory = executionMode === "development_environment" ? "/home/user" : "/workspace",
     model?: SessionModelSelection,
   ): Promise<SessionResource> {
     return parseSessionResource(
@@ -726,7 +730,7 @@ export class PiCloudApi {
           title,
           ...(model === undefined ? {} : { model }),
           executionMode,
-          sandboxProfileKey,
+          ...(sandboxProfileKey === undefined ? {} : { sandboxProfileKey }),
           workingDirectory,
         }),
         this.#authorizationToken,

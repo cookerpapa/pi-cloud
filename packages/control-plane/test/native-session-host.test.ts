@@ -18,7 +18,7 @@ import { NativeSessionLogPublisher } from "../../runtime-core/src/native-session
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import type { AcceptedFact, AcceptedFactWriter } from "../../runtime-core/src/accepted-fact.ts";
 import { PostgresSubagentJobProvider } from "../../trusted-tool-runtime/src/postgres-subagent-job-provider.ts";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restores on a replacement Host", async () => {
   const pg = await PGlite.create(),
@@ -112,10 +112,12 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                 },
               });
               channels.set(grant.executionReference, channel);
+              const readCancellation = new AbortController();
               const session = await host.open({
                 scope,
                 writerId: request.piSessionWriterId,
                 executionReference: grant.executionReference,
+                readSignal: readCancellation.signal,
                 publisher: publisher.scoped({
                   ...scope,
                   writerId: request.piSessionWriterId,
@@ -285,8 +287,26 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                     },
                     session.lane,
                   );
-                } else if (request.piSessionLane !== "main")
+                } else if (request.piSessionLane !== "main") {
                   expect(request.piSessionWriterId).toBe(parentWriterId);
+                  // Projection is deliberately stopped. Cancel only this task's
+                  // cold read, then complete its native writes and the parent.
+                  let readOutcome: unknown = "pending";
+                  const history = session.session.getLog().then(
+                    () => {
+                      readOutcome = "resolved";
+                    },
+                    (error) => {
+                      readOutcome = error;
+                    },
+                  );
+                  await new Promise((resolve) => setTimeout(resolve, 50));
+                  expect(readOutcome).toBe("pending");
+                  const reason = new Error("Child history read cancelled");
+                  readCancellation.abort(reason);
+                  await vi.waitFor(() => expect(readOutcome).toBe(reason));
+                  await history;
+                }
                 await session.session.view(session.lane).appendMessage({
                   role: "assistant",
                   content: [

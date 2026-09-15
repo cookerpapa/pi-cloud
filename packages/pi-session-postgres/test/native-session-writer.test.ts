@@ -51,6 +51,81 @@ async function fixture(
 }
 
 describe("Kafka-acknowledged native Session writer", () => {
+  it.each(["cancel", "close"] as const)(
+    "interrupts only the Lane's cold-history wait on %s",
+    async (action) => {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const taskAbort = new AbortController();
+      const poison = vi.fn(async () => {});
+      let observedSignal: AbortSignal | undefined;
+      const writer = new NativeSessionWriter({
+        id: "scoped-reader",
+        metadata,
+        nextSequence: 1,
+        lanes: [
+          { lane: "main", leafId: null },
+          { lane: "child", leafId: null },
+        ],
+        hasId: async () => false,
+        fail: poison,
+        waitProjected: async (_through, signal) => {
+          observedSignal = signal;
+          entered.resolve();
+          await new Promise<void>((resolve, reject) => {
+            const abort = () => reject(signal?.reason);
+            if (signal?.aborted) {
+              abort();
+              return;
+            }
+            signal?.addEventListener("abort", abort, { once: true });
+            void release.promise.then(() => {
+              signal?.removeEventListener("abort", abort);
+              resolve();
+            });
+          });
+        },
+      });
+      const publisher = { publish: async () => {} };
+      const reader = new InMemorySessionStorage(metadata);
+      const parent = await writer.open(
+        { lane: "main", turnId: "parent", attemptId: "parent" },
+        { branch: [], openOperations: [], reader },
+        publisher,
+      );
+      const child = await writer.open(
+        { lane: "child", turnId: "child", attemptId: "child" },
+        { branch: [], openOperations: [], reader, readSignal: taskAbort.signal },
+        publisher,
+      );
+      const reading = child.getLog().then(
+        () => "read",
+        () => "cancelled",
+      );
+      try {
+        await entered.promise;
+        if (action === "close") child.close();
+        else taskAbort.abort(new Error("child cancelled"));
+        expect(
+          await Promise.race([
+            reading,
+            new Promise((resolve) => setTimeout(() => resolve("still waiting"), 50)),
+          ]),
+        ).toBe("cancelled");
+        expect(observedSignal?.aborted).toBe(true);
+        expect(writer.failed).toBe(false);
+        expect(poison).not.toHaveBeenCalled();
+        await parent.appendEntry(value(writer.idGenerator()), "main");
+        if (action === "cancel") await child.appendEntry(value(writer.idGenerator()), "child");
+        expect(writer.throughSequence).toBe(action === "cancel" ? 2 : 1);
+      } finally {
+        release.resolve();
+        await reading;
+        child.close();
+        parent.close();
+      }
+    },
+  );
   it("matches upstream branch-query semantics across order, bounds, filters and cursors", async () => {
     const reader = new InMemorySessionStorage(metadata);
     const entries: Entry[] = [];

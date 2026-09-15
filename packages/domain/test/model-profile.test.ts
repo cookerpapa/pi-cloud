@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  DomainModelValidationError,
-  parseModelProfile,
-  parseResolvedTurnModel,
-  resolveTurnModel,
-} from "../src/index.ts";
+import { DomainModelValidationError, parseModelProfile, resolveTurnModel } from "../src/index.ts";
 
 function modelProfile() {
   return {
@@ -20,7 +15,7 @@ function modelProfile() {
 }
 
 describe("model profiles", () => {
-  it("resolves the default allowlisted profile into an immutable turn-shaped snapshot", () => {
+  it("resolves a server profile into the selected Turn model fields", () => {
     expect(resolveTurnModel(modelProfile())).toEqual({
       profileId: "default-codex",
       provider: "openai-codex",
@@ -63,13 +58,5 @@ describe("model profiles", () => {
         baseUrl: "https://unreviewed.invalid",
       }),
     ).toThrow(DomainModelValidationError);
-  });
-
-  it("validates persisted resolved snapshots as a closed schema", () => {
-    const snapshot = resolveTurnModel(modelProfile());
-    expect(parseResolvedTurnModel(snapshot)).toEqual(snapshot);
-    expect(() => parseResolvedTurnModel({ ...snapshot, accessToken: "secret" })).toThrow(
-      DomainModelValidationError,
-    );
   });
 });

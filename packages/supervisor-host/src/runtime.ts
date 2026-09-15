@@ -529,8 +529,9 @@ export class PiWorkerRuntime {
       broker: this.#toolBroker,
       runtimeIdentity: identity,
       trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
-      openAgentSession: (command) =>
+      openAgentSession: (command, readSignal) =>
         nativeSessions.open({
+          ...(readSignal ? { readSignal } : {}),
           scope: {
             tenantId: command.payload.tenantId,
             sessionId: command.payload.sessionId,

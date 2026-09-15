@@ -62,7 +62,10 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   resolveModelRuntime: (
     model: ExecuteTurnCommandMessage["payload"]["model"],
   ) => Promise<PiModelRuntimeConfig> | PiModelRuntimeConfig;
-  openSession: (command: ExecuteTurnCommandMessage) => Promise<PiCloudSessionHandle>;
+  openSession: (
+    command: ExecuteTurnCommandMessage,
+    readSignal?: AbortSignal,
+  ) => Promise<PiCloudSessionHandle>;
   modelRuntimePool?: PiModelRuntimePool;
   acquireModelPermit?: (signal?: AbortSignal) => Promise<() => void>;
   metrics?: PiCloudMetrics;
@@ -457,6 +460,9 @@ export class PiCloudTurnRunner {
     publishEvent: PiEventPublisher,
     signal?: AbortSignal,
   ): Promise<PiTurnResult> {
+    const timeout = new AbortController();
+    const combined =
+      signal === undefined ? timeout.signal : AbortSignal.any([signal, timeout.signal]);
     if (command.payload.input.kind !== "prompt") {
       throw new PiTurnError(
         "unsupported_input",
@@ -476,7 +482,7 @@ export class PiCloudTurnRunner {
       return { config, lease };
     });
     const sessionPreparation = this.#measurePreparation("pi_session_open", () =>
-      this.#options.openSession(command),
+      this.#options.openSession(command, combined),
     );
     const [modelPrepared, sessionPrepared] = await Promise.allSettled([
       modelPreparation,
@@ -875,7 +881,6 @@ export class PiCloudTurnRunner {
         for (const waiter of this.#steerWaiters) waiter.resolve(runtime);
         this.#steerWaiters.clear();
 
-        const timeout = new AbortController();
         const timer = setTimeout(
           () =>
             timeout.abort({
@@ -886,8 +891,6 @@ export class PiCloudTurnRunner {
           this.#turnTimeoutMs,
         );
         timer.unref();
-        const combined =
-          signal === undefined ? timeout.signal : AbortSignal.any([signal, timeout.signal]);
         const abort = (): void => {
           const cancellation = cancellationSignal(combined.reason);
           try {

@@ -376,7 +376,9 @@ export class ControlPlaneStore {
     existingTransaction?: Transaction<Database>,
   ): Promise<SessionResource> {
     const sessionId = this.#idGenerator();
-    const workingDirectory = execution.workingDirectory ?? "/workspace";
+    const workingDirectory =
+      execution.workingDirectory ??
+      (executionMode === "development_environment" ? "/home/user" : "/workspace");
     if (!validMachineDirectory(workingDirectory)) {
       throw new ControlPlaneStoreError(
         "invalid_request",

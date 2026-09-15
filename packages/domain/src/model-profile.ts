@@ -30,21 +30,12 @@ export const ModelProfileSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ResolvedTurnModelSchema = Type.Object(
-  {
-    profileId: OpaqueIdSchema,
-    provider: OpaqueIdSchema,
-    modelId: OpaqueIdSchema,
-    thinkingLevel: ModelThinkingLevelSchema,
-    credentialBindingId: OpaqueIdSchema,
-    credentialBindingVersion: PositiveSafeIntegerSchema,
-  },
-  { additionalProperties: false },
-);
-
 export type ModelThinkingLevel = Static<typeof ModelThinkingLevelSchema>;
 export type ModelProfile = Static<typeof ModelProfileSchema>;
-export type ResolvedTurnModel = Static<typeof ResolvedTurnModelSchema>;
+export type ResolvedTurnModel = Pick<
+  ModelProfile,
+  "profileId" | "provider" | "modelId" | "credentialBindingId" | "credentialBindingVersion"
+> & { thinkingLevel: ModelThinkingLevel };
 
 export class DomainModelValidationError extends Error {
   constructor(message: string) {
@@ -68,17 +59,6 @@ export function parseModelProfile(value: unknown): ModelProfile {
     );
   }
   return profile;
-}
-
-export function parseResolvedTurnModel(value: unknown): ResolvedTurnModel {
-  if (!Value.Check(ResolvedTurnModelSchema, value)) {
-    const issue = [...Value.Errors(ResolvedTurnModelSchema, value)][0];
-    const location = issue?.instancePath.length ? issue.instancePath : "/";
-    throw new DomainModelValidationError(
-      `Invalid resolved turn model at ${location}: ${issue?.message ?? "schema validation failed"}`,
-    );
-  }
-  return value as ResolvedTurnModel;
 }
 
 export function resolveTurnModel(

@@ -559,7 +559,16 @@ export class DevelopmentEnvironmentService {
         }
         // A persisted request is not proof that its external effect completed.
         // Release is irreversible and can be retried against the same machine.
-        if (request.action !== "release" || replay.result_state === "released") return true;
+        if (request.action !== "release") {
+          const expected = request.action === "pause" ? "paused" : "running";
+          if (replay.result_state !== expected)
+            throw new ControlPlaneStoreError(
+              "conflict",
+              "Previous environment action was not confirmed; refresh its state before requesting another action",
+            );
+          return true;
+        }
+        if (replay.result_state === "released") return true;
       }
       const alreadyReleased = request.action === "release" && environment.state === "released";
       const allowed =
@@ -614,6 +623,7 @@ export class DevelopmentEnvironmentService {
       return alreadyReleased;
     });
     if (!replayed) {
+      let resultState: DevelopmentEnvironmentResource["state"];
       if (request.action === "release") {
         const current = await this.get(identity, environmentId);
         if (current.state === "requested" || current.state === "failed") {
@@ -633,16 +643,16 @@ export class DevelopmentEnvironmentService {
             .where("owner_user_id", "=", identity.userId)
             .where("id", "=", environmentId)
             .executeTakeFirstOrThrow();
+          resultState = "released";
         } else {
-          await this.#lifecycle(identity, environmentId, request.action);
+          resultState = await this.#lifecycle(identity, environmentId, request.action);
         }
       } else {
-        await this.#lifecycle(identity, environmentId, request.action);
+        resultState = await this.#lifecycle(identity, environmentId, request.action);
       }
-      const settled = await this.get(identity, environmentId);
       await this.#database
         .updateTable("development_environment_operations")
-        .set({ result_state: settled.state })
+        .set({ result_state: resultState })
         .where("tenant_id", "=", identity.tenantId)
         .where("environment_id", "=", environmentId)
         .where("idempotency_key", "=", idempotencyKey)
@@ -878,9 +888,9 @@ export class DevelopmentEnvironmentService {
     identity: MachineOwner,
     environmentId: string,
     action: "pause" | "resume" | "release",
-  ): Promise<void> {
+  ) {
     const descriptor = await this.#machineRoute(identity, environmentId);
-    await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
+    const response = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.lifecycle",
       requestId: this.#id(),
@@ -889,6 +899,17 @@ export class DevelopmentEnvironmentService {
       userId: identity.userId,
       action,
     });
+    const expected = action === "pause" ? "paused" : action === "resume" ? "running" : "released";
+    if (
+      response.type !== "development_environment.state" ||
+      response.environmentId !== environmentId ||
+      response.state !== expected
+    )
+      throw new ControlPlaneStoreError(
+        "conflict",
+        "Tool Broker did not confirm the requested environment state",
+      );
+    return response.state;
   }
 
   // Managing existing compute is independent of whether the Domain/profile is

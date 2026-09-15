@@ -752,6 +752,97 @@ describe("user-owned development environments", () => {
     },
   );
 
+  it.each(["request", "response"] as const)(
+    "does not report an unconfirmed pause as completed after lost %s",
+    async (failure) => {
+      const machine = await service.create(identity, `pause-gap-${failure}`, {
+        name: `Pause gap ${failure}`,
+        profileKey: "starter",
+      });
+      const originalFetch = (await vi.importActual<typeof import("undici")>("undici")).fetch;
+      const before = pauses.mock.calls.length;
+      vi.mocked(undici.fetch).mockImplementationOnce(async (...args) => {
+        if (failure === "response") await (await originalFetch(...args)).arrayBuffer();
+        throw new Error("lost pause transport");
+      });
+      try {
+        await expect(
+          service.action(identity, machine.environmentId, "uncertain-pause", { action: "pause" }),
+        ).rejects.toThrow("lost pause transport");
+        vi.mocked(undici.fetch).mockImplementation(originalFetch);
+        await expect(
+          service.action(identity, machine.environmentId, "uncertain-pause", { action: "pause" }),
+        ).rejects.toMatchObject({
+          code: "conflict",
+          message: expect.stringContaining("not confirmed"),
+        });
+        expect(pauses.mock.calls.length - before).toBe(failure === "response" ? 1 : 0);
+      } finally {
+        vi.mocked(undici.fetch).mockImplementation(originalFetch);
+        await service.action(identity, machine.environmentId, "cleanup-pause-gap", {
+          action: "release",
+        });
+      }
+    },
+  );
+
+  it("records the acknowledged action result, not a later opposite action's state", async () => {
+    const machine = await service.create(identity, "opposite-state", {
+      name: "Opposite state",
+      profileKey: "starter",
+    });
+    const originalFetch = (await vi.importActual<typeof import("undici")>("undici")).fetch;
+    const before = pauses.mock.calls.length;
+    vi.mocked(undici.fetch).mockImplementationOnce(async (...args) => {
+      const response = await originalFetch(...args);
+      await service.action(identity, machine.environmentId, "later-resume", { action: "resume" });
+      return response;
+    });
+    try {
+      await expect(
+        service.action(identity, machine.environmentId, "earlier-pause", { action: "pause" }),
+      ).resolves.toMatchObject({ state: "running" });
+      const receipt = await database
+        .selectFrom("development_environment_operations")
+        .select("result_state")
+        .where("environment_id", "=", machine.environmentId)
+        .where("idempotency_key", "=", "earlier-pause")
+        .executeTakeFirstOrThrow();
+      expect(receipt.result_state).toBe("paused");
+      await expect(
+        service.action(identity, machine.environmentId, "earlier-pause", { action: "pause" }),
+      ).resolves.toMatchObject({ state: "running" });
+      expect(pauses.mock.calls.length - before).toBe(1);
+    } finally {
+      vi.mocked(undici.fetch).mockImplementation(originalFetch);
+      await service.action(identity, machine.environmentId, "cleanup-opposite", {
+        action: "release",
+      });
+    }
+  });
+
+  it("defaults a machine Session without an explicit directory to /home/user", async () => {
+    const machine = await service.create(identity, "default-machine-cwd", {
+      name: "Default cwd",
+      profileKey: "starter",
+    });
+    try {
+      const session = await store.createSession(
+        machine.projectId,
+        machine.workspaceId,
+        "default directory",
+        "development_environment",
+        { ownerUserId: identity.userId },
+      );
+      expect(session.workingDirectory).toBe("/home/user");
+      expect(session.sandboxProfileKey).toBe("starter");
+    } finally {
+      await service.action(identity, machine.environmentId, "cleanup-default-cwd", {
+        action: "release",
+      });
+    }
+  });
+
   it("retires an abandoned pre-provision request without creating a Cube", async () => {
     const projectId = "77777777-7777-4777-8777-777777777701";
     const abandonedWorkspaceId = "77777777-7777-4777-8777-777777777702";

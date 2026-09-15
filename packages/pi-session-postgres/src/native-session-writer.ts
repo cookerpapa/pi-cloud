@@ -29,6 +29,7 @@ export type NativeLaneSeed = Readonly<{
   openOperations: readonly { record: OperationStartedRecord; turnId: string | null }[];
   records?: readonly LaneRecord[];
   reader: SessionStorage;
+  readSignal?: AbortSignal;
 }>;
 export type NativeWriterOptions = Readonly<{
   id: string;
@@ -122,8 +123,28 @@ export class NativeSessionWriter {
     return id;
   };
 
-  async readBarrier() {
-    await this.#tail;
+  async readBarrier(signal?: AbortSignal) {
+    if (signal) {
+      signal.throwIfAborted();
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => {
+          signal.removeEventListener("abort", abort);
+          reject(signal.reason);
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        void this.#tail.then(
+          () => {
+            signal.removeEventListener("abort", abort);
+            resolve();
+          },
+          (error) => {
+            signal.removeEventListener("abort", abort);
+            reject(error);
+          },
+        );
+      });
+      signal.throwIfAborted();
+    } else await this.#tail;
     if (this.#failure) throw this.#failure;
   }
   lanes() {
@@ -132,9 +153,10 @@ export class NativeSessionWriter {
   seedFor(lane: string) {
     return this.#seeds.get(lane);
   }
-  async waitProjected() {
-    await this.readBarrier();
-    await this.#options.waitProjected(this.throughSequence, this.signal);
+  async waitProjected(signal: AbortSignal = this.signal) {
+    await this.readBarrier(signal);
+    await this.#options.waitProjected(this.throughSequence, signal);
+    signal.throwIfAborted();
   }
   release(lane: NativeLaneSessionStorage) {
     if (this.#active.get(lane.scope.lane) === lane) this.#active.delete(lane.scope.lane);
@@ -263,6 +285,8 @@ export class NativeLaneSessionStorage implements SessionStorage {
   readonly publisher: PiSessionAppendPublisher;
   readonly #writer: NativeSessionWriter;
   readonly #reader: SessionStorage;
+  readonly #close = new AbortController();
+  readonly #readSignal: AbortSignal;
   #native: InMemorySessionStorage;
   #localThrough = 0;
   #closed = false;
@@ -285,6 +309,13 @@ export class NativeLaneSessionStorage implements SessionStorage {
     this.#writer = writer;
     this.scope = scope;
     this.#reader = seed.reader;
+    // Cancel cold reads per task; keep its final abort/settlement writes and
+    // sibling Lanes authorized until the normal execution close.
+    this.#readSignal = AbortSignal.any([
+      writer.signal,
+      this.#close.signal,
+      ...(seed.readSignal ? [seed.readSignal] : []),
+    ]);
     this.publisher = publisher;
     this.#native = new InMemorySessionStorage(writer.metadata);
     this.#branch = structuredClone([...seed.branch]);
@@ -304,6 +335,7 @@ export class NativeLaneSessionStorage implements SessionStorage {
   }
   close() {
     this.#closed = true;
+    this.#close.abort(new SessionError("storage", "Native Lane is closed"));
     this.#writer.release(this);
     this.#branch = [];
     this.#baseBranch = [];
@@ -381,7 +413,7 @@ export class NativeLaneSessionStorage implements SessionStorage {
         const index = source.findIndex((entry) => entry.id === at);
         if (index >= 0) branch = source.slice(0, index + 1);
         else {
-          await this.#writer.waitProjected();
+          await this.#writer.waitProjected(this.#readSignal);
           branch = (
             await this.#reader.findEntriesOnBranch({
               start: at,
@@ -589,7 +621,7 @@ export class NativeLaneSessionStorage implements SessionStorage {
     const value = this.#writer.memoryEntry(id);
     if (value) return value;
     if (this.#writer.isUnwrittenId(id)) return undefined;
-    if (this.#writer.hasWrittenId(id)) await this.#writer.waitProjected();
+    if (this.#writer.hasWrittenId(id)) await this.#writer.waitProjected(this.#readSignal);
     return this.#reader.getEntry(id);
   }
   async getName() {
@@ -601,15 +633,15 @@ export class NativeLaneSessionStorage implements SessionStorage {
     return this.#writer.label(id, this.#reader);
   }
   async getStats() {
-    await this.#writer.waitProjected();
+    await this.#writer.waitProjected(this.#readSignal);
     return this.#reader.getStats();
   }
   async getLog(options?: { afterSeq?: number; limit?: number }): Promise<LogItem[]> {
-    await this.#writer.waitProjected();
+    await this.#writer.waitProjected(this.#readSignal);
     return this.#reader.getLog(options);
   }
   async findEntries(query?: EntryQuery) {
-    await this.#writer.waitProjected();
+    await this.#writer.waitProjected(this.#readSignal);
     return this.#reader.findEntries(query);
   }
   async findEntriesOnBranch(
@@ -657,7 +689,8 @@ export class NativeLaneSessionStorage implements SessionStorage {
         // Only the unseen ancestry before this bounded branch remains. The
         // original Run base may now be on another branch after moveLane().
         const base = this.#branch[0]?.parentId;
-        if (base && this.#writer.hasWrittenId(base)) await this.#writer.waitProjected();
+        if (base && this.#writer.hasWrittenId(base))
+          await this.#writer.waitProjected(this.#readSignal);
         this.#latest.set(
           key,
           base
@@ -668,7 +701,7 @@ export class NativeLaneSessionStorage implements SessionStorage {
       const entry = this.#latest.get(key);
       return entry ? [structuredClone(entry)] : [];
     }
-    await this.#writer.waitProjected();
+    await this.#writer.waitProjected(this.#readSignal);
     return this.#reader.findEntriesOnBranch(query);
   }
   findRecords<K extends LaneRecord["type"]>(
@@ -694,7 +727,7 @@ export class NativeLaneSessionStorage implements SessionStorage {
       if (query.order !== "oldestFirst") records = records.slice().reverse();
       return structuredClone(query.limit ? records.slice(0, query.limit) : records);
     }
-    await this.#writer.waitProjected();
+    await this.#writer.waitProjected(this.#readSignal);
     return this.#reader.findRecords(query);
   }
   async findOpenOperations(lane: string, options?: { limit?: number }) {

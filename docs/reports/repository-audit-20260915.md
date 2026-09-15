@@ -3,10 +3,17 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
-Latest slice: [ADR-0171 acceptance](subagent-compute-20260915.md) retires the
-LOCK-01 copy path through owner-approved shared-Volume compute scopes. Worker/
-templates run `fd07a098`; Broker/Volume Gateway run `b84ecb30`. Its paid fixtures
-are cleaned; the older audit baseline and remaining review gates are still open.
+Latest local slice fixes task-scoped cold-read cancellation, machine lifecycle
+confirmation and machine Session defaults; removes unused Domain surfaces.
+`npm run check` passes 917 tests with 25 explicit live/PG skips; a separate real
+PostgreSQL run passes 24 cases. The paused-projection Parent/Child Host regression
+also verifies cancelled cold reads, valid final writes and replacement-Host recovery.
+Rollout and paid repetition of this slice are not yet complete.
+
+[ADR-0171 acceptance](subagent-compute-20260915.md) retires the LOCK-01 copy path
+through owner-approved shared-Volume compute scopes. Worker/templates run
+`fd07a098`; Broker/Volume Gateway run `b84ecb30`. Its paid fixtures are cleaned;
+the older audit baseline and remaining review gates are still open.
 
 ## Scope and execution
 
@@ -58,7 +65,7 @@ lockfiles need dependency/CI validation rather than manual source review.
 
 Track separately: single/multi-round/reload; same-user multi-Session; multi-tenant;
 Worker handoff; provider/model/reasoning/Fast handoff; repeated Compaction with
-coding/search/children; direct/workflow, fresh/branch, shared/isolated Subagents;
+coding/search/children; direct/workflow, fresh/branch, shared/ephemeral Subagents;
 multiple services in one Session and across Sessions; actual Preview behavior;
 cancel/failure/restart and cleanup; every reachable core UI action.
 Use gradual bounded load in this project's environment. Hosted search uses the
@@ -113,7 +120,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | UI-17 | Markdown export spread every backtick run into `Math.max`, exhausting the engine argument limit | Reproduced with a 280K-character owned code fixture. Compute the longest fence iteratively; three export tests pass. Removed an obsolete cast that hid an invalid resource fixture |
 | UI-18 | An interrupted sampling left Hosted Search running, then a successful Run terminal relabelled it completed; snapshot folding also retained abandoned Tool preparation | Failed/aborted sampling regressions reproduced this. Close those display activities at the sampling boundary in both live and snapshot reducers; 28 projection/UI tests pass. This does not fabricate a hosted search result in model context |
 | MUT-01 | Rebind and cancel check idempotency before acquiring their lifecycle row locks, then reject concurrent replay | Both reproduced with real PostgreSQL barriers: rebind returned not-found after its joined row changed; cancel returned already-in-progress. Lock the Session/lifecycle before reading replay; rebind reads the current Workspace after the lock. Remove the cancellation constraint-retry wrapper. Six real-PG admission/replay cases pass; compiler rerun is tracked below |
-| LIFE-03 | Active Lane cold-history waits use the shared writer signal, not the task's cancellation signal | Candidate blocked cancellation; trace Runtime abort and test projection lag without poisoning sibling Lanes |
+| LIFE-03 | Active Lane cold-history waits used only the shared writer signal | Two regressions reproduce cancellation/close leaving a cold read waiting. Forward task read cancellation to native Lane waits and abort those waits on close; retain final writes and sibling authority. 113 related tests pass, including signal wiring and parent/child restoration; rollout/live check pending |
 | CANCEL-01 | `abort()` was lost before the native Agent existed; cancellation during intent ACK still called the Tool | Reproduced model/effect calls after cancellation. Latched cancellation, checked the existing signal after intent commit, and kept aborted native outcome; unit regressions pass |
 | CANCEL-02 | A local pre-sampling abort was classified as an assistant completion missing a Cloud Step | Reproduced through Runner; recognize the explicit no-sampling cancellation without inventing a Step. Runner/Harness suite: 48 pass |
 | CANCEL-03 | Acknowledged cancellation failure changed business state but omitted the output seal and task-authority release | Reproduced missing Outbox terminal and zero release calls. Reuse failure closure in the same transaction; seven queue tests pass. Keeps the existing failed/quarantined Session state, not a successful cancellation |
@@ -126,7 +133,9 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CFG-03 | CP/Broker/Volume Gateway rejected group-readable secrets while Helm mounts them 0440 under fsGroup | CP and Broker loaders reproduced failure with owned 0440 fixtures; aligned process-group read permissions while rejecting group writes/world access/symlinks. 44 Bootstrap/Broker/cleanup regressions pass. Actual Kubernetes startup and Volume Gateway child-process check remain pending |
 | CFG-04 | Several private RPCs followed Node's global provider proxy, breaking Pod-IP/cluster routes | A real child process with an owned rejecting proxy reproduced Broker unavailability. Explicit direct dispatchers now cover Broker, Volume, Cube control, machine lifecycle and Worker enrollment; configured private GitLab routing is separate from public provider routing. A positive control confirms normal requests still use the proxy; 32 related regressions pass |
 | DEV-01 | Machine creation checked replay before the tenant lock | Real PostgreSQL barrier reproduced one identical request failing `projects_tenant_live_name_unique`. Move replay into the existing tenant-locked admission; both return one running machine. Nine real-PG lifecycle cases pass |
-| DEV-05 | Pause/resume replay treats a recorded request as a completed effect | Remaining candidate: distinguish a lost request/reply and a later opposing action without replaying obsolete lifecycle effects |
+| DEV-05 | Pause/resume replay treated a recorded request as a completed effect; later actions could overwrite the recorded result | Three HTTP fault regressions reproduce lost request/reply being treated as processed and pause being recorded as a later running state. Persist the Broker acknowledgement instead of an extra latest-state read; reject unconfirmed pause/resume replay without re-executing it. Eleven lifecycle cases pass locally; rollout/live check pending. This does not add Cube-native operation fencing |
+| DEV-06 | API/client defaulted machine Sessions to elastic `/workspace`; the client also forced the standard profile | Server/client regressions reproduce both defaults. Machine cwd defaults to `/home/user` and an omitted profile is inherited from the machine; elastic defaults stay unchanged. Explicit choices remain intact; no old-data conversion |
+| CLEAN-07 | Domain exported an unused resolved-model parser/schema and unused transition/terminal predicate wrappers | Repository-wide caller checks found only self-tests. Remove unused surfaces; retain actual transition enforcement, Run terminal checks and credential-safe model-profile validation. Domain tests pass |
 | DEV-02 | Machine lifecycle descriptor requires an active Domain and non-failed environment profile, including release | Reproduced both rejected releases via the actual Broker HTTP fixture. Separate owner-scoped existing-machine routing from new provisioning descriptor; directory operations and release no longer depend on allocation policy. Cross-user checks remain. Local regression slice passes; deployed Cube repetition pending |
 | DEV-03 | Broker concurrent duplicate machine provisioning created two provider runtimes; simultaneous first task bindings chose the same binding ID | Both reproduced. Reuse existing per-Workspace provisioning critical section for machine provisioning/binding creation, not Tool execution. Concurrent parent/child bindings now stay distinct and reuse one runtime |
 | DEV-04 | Machine handle entered the ready map before durable state publication; failure destroyed the VM but retained that handle | Reproduced phantom active count. Publish PG state before installing the ready handle; clean failure no longer advertises a destroyed runtime |
