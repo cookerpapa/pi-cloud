@@ -30,6 +30,10 @@ Volume architecture. Historical experiments remain in Git history.
       Web product/admin origins now come from deployment configuration rather
       than fixed ports; actual Caddy/Chrome custom-port navigation, Helm routes
       and existing browser interaction checks pass locally.
+      Deployed Web repetition passes 93 controls and measures first text paint;
+      LOCK-01 now has a real lock-loss/Volume-overwrite reproduction and awaits
+      agreement on the filesystem publication contract. Do not treat passing
+      ordinary tests as resolving that fault boundary.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

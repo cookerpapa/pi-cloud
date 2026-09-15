@@ -29,6 +29,7 @@ export class SessionProjector {
   readonly #publication: ExecutionPublicationBoundary;
   #partitions = 0;
   #ready = false;
+  #closing: Promise<void> | undefined;
   constructor(
     readonly options: KafkaAcceptedFactConfiguration & {
       database: Kysely<Database>;
@@ -142,14 +143,27 @@ export class SessionProjector {
   statistics() {
     return { liveTail: this.eventStore.statistics() };
   }
-  async close(): Promise<void> {
+  close(): Promise<void> {
     this.#ready = false;
-    await this.#relay.close();
-    await this.#consumer.close();
-    await this.options.toolCommands.close?.();
-    await this.options.subagentCommands?.close?.();
-    await this.#retention.close();
-    this.eventStore.close();
-    await this.#bus.close();
+    return (this.#closing ??= this.#close());
+  }
+  async #close(): Promise<void> {
+    const errors: unknown[] = [];
+    for (const close of [
+      () => this.#relay.close(),
+      () => this.#consumer.close(),
+      () => this.options.toolCommands.close?.(),
+      () => this.options.subagentCommands?.close?.(),
+      () => this.#retention.close(),
+      () => this.eventStore.close(),
+      () => this.#bus.close(),
+    ]) {
+      try {
+        await close();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, "Session Projector cleanup failed");
   }
 }

@@ -9,6 +9,7 @@ const f = vi.hoisted(() => ({
   project: vi.fn(),
   applies: vi.fn(),
   parse: vi.fn(),
+  close: vi.fn<(resource: string) => Promise<void>>(),
   decode: undefined as undefined | ((value: Buffer) => any),
   handler: undefined as undefined | ((record: any, current?: () => boolean) => Promise<void>),
 }));
@@ -18,13 +19,17 @@ vi.mock("@pi-cloud/event-log", () => ({
       f.handler = options.handler;
       f.decode = options.decode;
     }
-    async close() {}
+    async close() {
+      await f.close("consumer");
+    }
   },
 }));
 vi.mock("../src/kafka-accepted-fact.ts", () => ({
   ACCEPTED_FACT_TOPIC: "test",
   KafkaAcceptedFactBus: class {
-    async close() {}
+    async close() {
+      await f.close("producer");
+    }
   },
   kafkaProducerLane: () => 0,
   parseKafkaAcceptedFact: f.parse,
@@ -43,19 +48,26 @@ vi.mock("../src/execution-stream-projection.ts", async (original) => ({
 }));
 vi.mock("../src/accepted-fact-terminal-outbox-relay.ts", () => ({
   AcceptedFactTerminalOutboxRelay: class {
-    async close() {}
+    async close() {
+      await f.close("relay");
+    }
   },
 }));
 vi.mock("../src/kafka-safe-retention.ts", () => ({
   KafkaSafeRetention: class {
-    async close() {}
+    async close() {
+      await f.close("retention");
+    }
   },
 }));
 import { SessionProjector } from "../src/session-projector.ts";
 
 let projector: SessionProjector;
 let route: ReturnType<typeof vi.fn>;
+let shutdownAsserted = false;
 beforeEach(() => {
+  shutdownAsserted = false;
+  f.close.mockReset().mockResolvedValue(undefined);
   f.accept.mockReset().mockResolvedValue(true);
   f.project.mockReset().mockResolvedValue(undefined);
   f.applies.mockReset().mockResolvedValue(true);
@@ -69,11 +81,12 @@ beforeEach(() => {
     replicas: 3,
     retentionMs: 7_200_000,
     advertisedBaseUrl: "http://projector",
-    toolCommands: { consume: route },
+    toolCommands: { consume: route, close: () => f.close("tools") },
+    subagentCommands: { consume: async () => {}, close: () => f.close("subagents") },
   });
 });
 afterEach(async () => {
-  await projector.close();
+  if (!shutdownAsserted) await projector.close();
 });
 function event(
   sessionId = "session",
@@ -108,6 +121,33 @@ function deferred<T>() {
 }
 
 describe("Unified Projector handoff boundaries (transport/PG simulated)", () => {
+  it("closes every owner after a failed relay/consumer drain and shares concurrent shutdown", async () => {
+    const relayFailure = new Error("Relay drain failed"),
+      consumerFailure = new Error("Consumer close failed");
+    f.close.mockImplementation(async (resource) => {
+      if (resource === "relay") throw relayFailure;
+      if (resource === "consumer") throw consumerFailure;
+    });
+    const viewClose = vi.spyOn(projector.eventStore, "close");
+    const first = projector.close(),
+      second = projector.close();
+    const results = await Promise.allSettled([first, second]);
+    shutdownAsserted = true;
+    expect(first).toBe(second);
+    expect(results[0]).toMatchObject({
+      status: "rejected",
+      reason: { errors: [relayFailure, consumerFailure] },
+    });
+    expect(f.close.mock.calls.map(([resource]) => resource)).toEqual([
+      "relay",
+      "consumer",
+      "tools",
+      "subagents",
+      "retention",
+      "producer",
+    ]);
+    expect(viewClose).toHaveBeenCalledOnce();
+  });
   it("decodes once and passes the same decoded record to projections without JSON round trips", async () => {
     const r = record();
     r.fact = f.decode!(Buffer.from(JSON.stringify(r.fact)));

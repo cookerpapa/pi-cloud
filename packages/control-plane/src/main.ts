@@ -71,11 +71,9 @@ async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Pro
 
 export async function startControlPlane(): Promise<void> {
   const config = await loadProductionControlPlaneConfig();
-  const observability = await startServiceObservability({
-    serviceName: "pi-cloud-control-plane",
-    defaultMetricsPort: 9464,
-  });
-  const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
+  let ownedObservability: Awaited<ReturnType<typeof startServiceObservability>> | undefined;
+  let ownedDatabase: ReturnType<typeof createDatabase> | undefined;
+  let unattachedSubagents: SubagentController | undefined;
   const controlPlaneInstanceId = randomUUID();
   let agentEvents: SessionProjector | undefined;
   let runtime: ControlPlaneRuntime | undefined;
@@ -92,27 +90,36 @@ export async function startControlPlane(): Promise<void> {
       () => developmentEnvironmentService?.close(),
       () => operationalMetrics?.close(),
       () => agentEvents?.close(),
+      () => unattachedSubagents?.close(),
       () => sourceControlDispatcher?.close(),
       () => internalSourceControlDispatcher?.close(),
-      () => database.destroy(),
-      () => observability.close(),
+      () => ownedDatabase?.destroy(),
+      () => ownedObservability?.close(),
     ]));
   };
-  const subagents = new SubagentController({
-    database,
-    managementToken: config.supervisorManagementToken,
-    allowInsecureHttp: config.allowInsecureInternalHttp,
-    ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
-    treePolicy: config.subagentTreePolicy,
-    onError: (error) =>
-      operationalLog({
-        service: "pi-cloud-control-plane",
-        level: "warn",
-        event: "subagent.delivery_retry",
-        attributes: { reason: error instanceof Error ? error.message : "unknown" },
-      }),
-  });
   try {
+    const observability = await startServiceObservability({
+      serviceName: "pi-cloud-control-plane",
+      defaultMetricsPort: 9464,
+    });
+    ownedObservability = observability;
+    const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
+    ownedDatabase = database;
+    const subagents = new SubagentController({
+      database,
+      managementToken: config.supervisorManagementToken,
+      allowInsecureHttp: config.allowInsecureInternalHttp,
+      ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
+      treePolicy: config.subagentTreePolicy,
+      onError: (error) =>
+        operationalLog({
+          service: "pi-cloud-control-plane",
+          level: "warn",
+          event: "subagent.delivery_retry",
+          attributes: { reason: error instanceof Error ? error.message : "unknown" },
+        }),
+    });
+    unattachedSubagents = subagents;
     agentEvents = new SessionProjector({
       database,
       brokers: config.kafkaBrokers,
@@ -130,6 +137,8 @@ export async function startControlPlane(): Promise<void> {
       metrics: observability.metrics,
       retentionMs: config.acceptedFactRetentionMs,
     });
+    // The completed Projector now owns/drains its command consumers.
+    unattachedSubagents = undefined;
     const activeAgentEvents = agentEvents;
     await verifyBootstrap(database);
     await activeAgentEvents.start();

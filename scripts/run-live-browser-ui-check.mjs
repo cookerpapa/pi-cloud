@@ -6,6 +6,11 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
+import {
+  installFirstAssistantTextTiming,
+  firstAssistantTextTiming,
+} from "./lib/browser-text-timing.mjs";
+import { readWorkerModelTimings } from "./lib/live-run-timing.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -107,6 +112,8 @@ function selectorExpression(selector) {
 let acceptanceError;
 let chatFirstAssistantTextMs;
 let chatCompleteVisibleMs;
+let browserFirstText;
+let firstModelTiming;
 try {
   await withChromePage(
     { profilePrefix: "pi-cloud-browser-ui-", width: 1_440, height: 960 },
@@ -257,18 +264,24 @@ try {
         "Do not call tools. Reply with exactly BROWSER-UI-CHAT-OK.",
       );
       await page.waitFor('!document.querySelector(".product-send-button").disabled');
+      await installFirstAssistantTextTiming(page);
       const chatSubmittedAt = performance.now();
       await click(".product-send-button", "composer.send");
       await page.waitFor(
-        '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.trim().length>0)',
+        '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.trim().length>0) || document.querySelector(".product-turn-error") !== null',
         180_000,
       );
+      const earlyFailure = await page.evaluate(
+        'document.querySelector(".product-turn-error")?.textContent ?? null',
+      );
+      assert.equal(earlyFailure, null, `First model Run failed before text: ${earlyFailure}`);
       chatFirstAssistantTextMs = Math.round(performance.now() - chatSubmittedAt);
       await page.waitFor(
         '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-CHAT-OK"))',
         180_000,
       );
       chatCompleteVisibleMs = Math.round(performance.now() - chatSubmittedAt);
+      browserFirstText = await firstAssistantTextTiming(page);
       const elasticConversation = await waitFor(
         async () =>
           (await api.listConversations()).conversations.find(
@@ -276,6 +289,26 @@ try {
           ),
         "elastic conversation",
       );
+      const firstTurn = (await api.getConversation(elasticConversation.sessionId)).turns[0];
+      const modelTimings = await readWorkerModelTimings(
+        [firstTurn.runId],
+        browserFirstText.submittedWallAt,
+      );
+      assert.equal(
+        modelTimings.length,
+        1,
+        "First-paint comparison requires one non-retried sampling",
+      );
+      const modelTiming = modelTimings[0];
+      assert(Number.isFinite(modelTiming.firstTextMs));
+      firstModelTiming = {
+        providerRouteToFirstTextMs: modelTiming.firstTextMs - modelTiming.upstreamStartMs,
+        nonProviderClickToPaintMs:
+          browserFirstText.userClickToFirstTextPaintMs -
+          (modelTiming.firstTextMs - modelTiming.upstreamStartMs),
+        measurement:
+          "Subtract same-sampling provider interval from browser click-to-paint; no cross-process wall-clock subtraction",
+      };
       const initialModel = await api.getSessionModel(elasticConversation.sessionId);
       assert.deepEqual(
         {
@@ -908,6 +941,27 @@ if (acceptanceError !== undefined || cleanupErrors.length) {
 const report = {
   accepted: true,
   piCloudRevision: testedRevision,
+  harnessWorkingTreeDirty:
+    execFileSync("git", ["status", "--porcelain"], { cwd: repositoryRoot, encoding: "utf8" }).trim()
+      .length > 0,
+  runtimeRevisions: Object.fromEntries(
+    JSON.parse(
+      execFileSync(
+        "docker",
+        [
+          "inspect",
+          "pi-cloud-production-web-1",
+          "pi-cloud-production-control-plane-1",
+          "pi-cloud-production-supervisor-host-1",
+          "pi-cloud-production-tool-broker-1",
+        ],
+        { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 },
+      ),
+    ).map((container) => [
+      container.Name.slice(1),
+      container.Config.Labels["org.opencontainers.image.revision"],
+    ]),
+  ),
   checkedAt: new Date().toISOString(),
   account: username,
   clickedControls: clicked,
@@ -916,6 +970,8 @@ const report = {
     userSubmitToFirstAssistantText: chatFirstAssistantTextMs,
     userSubmitToCompleteReply: chatCompleteVisibleMs,
   },
+  browserFirstText,
+  firstModelTiming,
   testMode: process.argv.includes("--reopen-only") ? "reopen" : "full",
   screenshotCaptured: !process.argv.includes("--reopen-only"),
   cleanupCompleted: true,

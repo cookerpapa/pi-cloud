@@ -1,10 +1,15 @@
 {
   "accepted": true,
-  "piCloudRevision": "2bc942b8ebfeb4b3b974020d0415f60419c84443",
-  "testHarnessRevision": "d32a9fe70e2197f7f2c5a57e5da349fa8c029a05",
-  "testHarnessWorkingTreeDirty": true,
-  "checkedAt": "2026-09-15T01:38:25.942Z",
-  "account": "browser.acceptance.mu204grq",
+  "piCloudRevision": "d923dbb9e03113de705d2264e9300778864ce84d",
+  "harnessWorkingTreeDirty": true,
+  "runtimeRevisions": {
+    "pi-cloud-production-web-1": "d923dbb9e03113de705d2264e9300778864ce84d",
+    "pi-cloud-production-control-plane-1": "9f62b365a4b631e77ce4ac33d90a0a27a69df55a",
+    "pi-cloud-production-supervisor-host-1": "9f62b365a4b631e77ce4ac33d90a0a27a69df55a",
+    "pi-cloud-production-tool-broker-1": "9f62b365a4b631e77ce4ac33d90a0a27a69df55a"
+  },
+  "checkedAt": "2026-09-15T06:50:25.157Z",
+  "account": "browser.acceptance.mu2b9jmj",
   "clickedControls": [
     "auth.localOnly",
     "auth.registerTab",
@@ -102,9 +107,20 @@
   ],
   "clickedControlCount": 93,
   "latencyMs": {
-    "measurement": "Browser DOM polling observation; not a compositor paint timestamp",
-    "userSubmitToFirstAssistantText": 2043,
-    "userSubmitToCompleteReply": 2147
+    "userSubmitToFirstAssistantText": 4596,
+    "userSubmitToCompleteReply": 4801
+  },
+  "browserFirstText": {
+    "submittedWallAt": 1789454936077,
+    "userClickToFirstDomMs": 4593,
+    "userClickToFirstTextPaintMs": 4606.399999999907,
+    "domToFirstTextPaintMs": 13.399999999906868,
+    "measurement": "Chrome Element Timing text-paint; one browser monotonic clock; headless rendering"
+  },
+  "firstModelTiming": {
+    "providerRouteToFirstTextMs": 4329.754,
+    "nonProviderClickToPaintMs": 276.64599999990696,
+    "measurement": "Subtract same-sampling provider interval from browser click-to-paint; no cross-process wall-clock subtraction"
   },
   "testMode": "full",
   "screenshotCaptured": true,
