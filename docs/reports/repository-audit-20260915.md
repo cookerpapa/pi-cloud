@@ -93,14 +93,14 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CI-01 | Helm check still required the Control Plane notification-DB mount removed under CFG-02 | Confirmed from remote CI run 34897307551. Assert its absence and CP pooled-key mapping; preserve the Worker's real notification connection check. Local Helm/docs checks pass |
 | UI-17 | Markdown export spread every backtick run into `Math.max`, exhausting the engine argument limit | Reproduced with a 280K-character owned code fixture. Compute the longest fence iteratively; three export tests pass. Removed an obsolete cast that hid an invalid resource fixture |
 | UI-18 | An interrupted sampling left Hosted Search running, then a successful Run terminal relabelled it completed; snapshot folding also retained abandoned Tool preparation | Failed/aborted sampling regressions reproduced this. Close those display activities at the sampling boundary in both live and snapshot reducers; 28 projection/UI tests pass. This does not fabricate a hosted search result in model context |
-| MUT-01 | Rebind and cancel check idempotency before acquiring their lifecycle row locks, then reject concurrent replay | Both reproduced with real PostgreSQL barriers: rebind returned not-found after its joined row changed; cancel returned already-in-progress. Lock the Session/lifecycle before reading replay; rebind reads the current Workspace after the lock. Remove the cancellation constraint-retry wrapper. Six real-PG admission/replay cases and type check pass |
+| MUT-01 | Rebind and cancel check idempotency before acquiring their lifecycle row locks, then reject concurrent replay | Both reproduced with real PostgreSQL barriers: rebind returned not-found after its joined row changed; cancel returned already-in-progress. Lock the Session/lifecycle before reading replay; rebind reads the current Workspace after the lock. Remove the cancellation constraint-retry wrapper. Six real-PG admission/replay cases pass; compiler rerun is tracked below |
 | LIFE-03 | Active Lane cold-history waits use the shared writer signal, not the task's cancellation signal | Candidate blocked cancellation; trace Runtime abort and test projection lag without poisoning sibling Lanes |
 | CANCEL-01 | `abort()` was lost before the native Agent existed; cancellation during intent ACK still called the Tool | Reproduced model/effect calls after cancellation. Latched cancellation, checked the existing signal after intent commit, and kept aborted native outcome; unit regressions pass |
 | CANCEL-02 | A local pre-sampling abort was classified as an assistant completion missing a Cloud Step | Reproduced through Runner; recognize the explicit no-sampling cancellation without inventing a Step. Runner/Harness suite: 48 pass |
 | CANCEL-03 | Acknowledged cancellation failure changed business state but omitted the output seal and task-authority release | Reproduced missing Outbox terminal and zero release calls. Reuse failure closure in the same transaction; seven queue tests pass. Keeps the existing failed/quarantined Session state, not a successful cancellation |
 | LIFE-04 | A destroyed publisher blocked every later claim but left the Worker apparently healthy forever | Reproduced no terminal signal after permanent failure. The log port distinguishes unreusable publisher failure from transient metadata outage; Worker stops local execution and signals process replacement only for the former. Readiness follows actual admission readiness. Seven transport/runtime regressions pass, including transient recovery |
 | CFG-01 | Producer startup checks partition count but not existing topic replication/retention policy | Verify actual settings and configuration contract in isolated broker tests |
-| MUT-02 | Tenant admission locks the smallest existing tenant UUID, which can change when a new tenant is inserted | Three real-PG requests reproduced exceeding the configured limit. Use the same short tenant-table writer lock for registration; no Agent/Workspace lock added. Four administration cases and type check pass |
+| MUT-02 | Tenant admission locks the smallest existing tenant UUID, which can change when a new tenant is inserted | Three real-PG requests reproduced exceeding the configured limit. Use the same short tenant-table writer lock for registration; no Agent/Workspace lock added. Four administration cases pass; compiler rerun is tracked below |
 | OBS-01 | Rejected metric collection escaped a native HTTP async callback | Reproduced a hanging scrape plus unhandled rejection. Return 503 for that scrape; next scrape succeeds |
 | OBS-02 | Trace status used a safe error code but exception events still exported the raw message/stack | Reproduced with a synthetic secret in an owned error. Export only classification, rethrow the original error to its caller |
 | CFG-02 | Control Plane parsed/mounted an unused dedicated PG notification URL | Deleted CP option/mount; Worker's actual LISTEN connection and bootstrap direct-PG settings remain |
@@ -132,6 +132,8 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | TEST-02 | Template HTTP probe compared a real newline against literal backslash-n | Actual envd response was exit 0, expected marker plus newline. Correct only the expected bytes and retain response diagnostics; entire image probe rerun passes |
 | MODEL-01 | Actual upstream 401/auth expiry was presented as generic retryable model failure | Provider adapter now emits a safe authentication-specific, non-retryable terminal without exposing upstream payloads; three regressions failed before, 33 adapter/Runner tests pass after. This display change is not yet deployed |
 | SUB-01 | A started Child Runtime rejected a mailbox message before its native Pi Agent was constructed | Paid workflow reproduced 409 and child cancellation. Join native Agent readiness before input delivery; bootstrap failure/cancellation settle waiting delivery without marking input consumed. Keep existing PG mailbox and native entry deduplication; no sleep/retry or second queue. Three delivery-mode regressions failed before, pass after; paid deployed repetition pending |
+| LIFE-10 | Cube Authorizer's async HTTP listener rejected an interrupted body outside any request error boundary | A real child process exited with ECONNRESET after its client disconnected. Catch only body-read failures and close that request without granting access; listener survives and the body-limit response remains covered |
+| CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace type checks finished successfully after correction; remote CI rerun pending |
 | TIME-01 | Lease/claim timestamps are captured before potentially blocked SQL updates | Probe delayed renewal versus actual expiry/seal with real PG; do not silently change the authority clock model |
 
 ARCH-01 implemented locally: positive Agent exit and committed seal restore the
@@ -281,7 +283,19 @@ arrived during native bootstrap, received 409 and caused the workflow to cancel
 its child. Local fix validation passed 97 Session tests (one separate real-PG plan
 test not enabled in that invocation) and 104 Runner tests, including native
 bootstrap failure/cancellation and duplicate delivery. Full deployed repetition,
-supervisor interaction and child cancellation acceptance are still pending.
+supervisor interaction and child cancellation acceptance initially remained pending.
+After deploying `5558ab15`, all 11 paid Subagent rounds passed, including immediate
+mailbox delivery exactly once, parent decision/reply, cancellation and guest-only
+workflow execution. Usage: 13,834 uncached input, 183,680 cache-read, 5,141 output
+tokens. Four new templates became READY; four prior catalog templates were deleted,
+while the same four older node-orphan templates still report cleanup timeouts.
+
+Four tenants × two Sessions completed 16 real DeepSeek Runs with peak eight active
+Runs, restored all eight markers and rejected eight foreign-tenant API reads.
+No Tool calls or marker leaks occurred; each Worker handled eight Runs.
+API/SSE first text p50/p95: 1,534/2,772 ms; admission 31/53 ms; queue 148/360 ms.
+This is a bounded concurrency sample, not a saturation or browser-paint claim.
+The next 16-Session wave is separate evidence and must not overwrite this sample.
 
 Before mutation, inventory existing tenants/users/resources, image revisions and
 configuration digests without disclosing credentials. Register test resources

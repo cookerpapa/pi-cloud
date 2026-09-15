@@ -1,4 +1,9 @@
-import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
+import {
+  createServer,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+  type Server,
+} from "node:http";
 import { authorizeCubeApiRequest } from "./authorization.ts";
 
 const MAXIMUM_BODY_BYTES = 4 * 1_024;
@@ -8,7 +13,7 @@ function header(headers: IncomingHttpHeaders, name: string): string | undefined 
   return typeof value === "string" ? value : undefined;
 }
 
-async function discardBoundedBody(request: NodeJS.ReadableStream): Promise<boolean> {
+async function discardBoundedBody(request: IncomingMessage): Promise<boolean> {
   let bytes = 0;
   for await (const chunk of request) {
     bytes += Buffer.byteLength(chunk);
@@ -31,9 +36,19 @@ export function createCubeApiAuthorizerServer(credential: string): Server {
       response.end('{"error":"not_found"}');
       return;
     }
-    if (!(await discardBoundedBody(request))) {
+    let withinLimit: boolean;
+    try {
+      withinLimit = await discardBoundedBody(request);
+    } catch {
+      // A broken request body never grants authorization or kills the listener.
+      response.destroy();
+      return;
+    }
+    if (!withinLimit) {
+      response.shouldKeepAlive = false;
       response.statusCode = 413;
       response.end('{"error":"body_too_large"}');
+      request.resume();
       return;
     }
     const authorization = header(request.headers, "authorization");
