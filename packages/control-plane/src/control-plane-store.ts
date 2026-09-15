@@ -989,6 +989,21 @@ export class ControlPlaneStore {
       .digest("hex");
     const operationId = this.#idGenerator();
     return this.#database.transaction().execute(async (transaction) => {
+      const session = await transaction
+        .selectFrom("sessions")
+        .select([
+          "id",
+          "workspace_id as currentWorkspaceId",
+          "session_kind as sessionKind",
+          "archived_at as archivedAt",
+        ])
+        .where("tenant_id", "=", this.#tenantId)
+        .where("id", "=", sessionId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (session === undefined) {
+        throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+      }
       const replay = await transaction
         .selectFrom("conversation_workspace_rebind_operations as operation")
         .innerJoin("workspaces as workspace", (join) =>
@@ -1033,31 +1048,16 @@ export class ControlPlaneStore {
         };
       }
 
-      const session = await transaction
-        .selectFrom("sessions as session_row")
-        .innerJoin("workspaces as current_workspace", (join) =>
-          join
-            .onRef("current_workspace.tenant_id", "=", "session_row.tenant_id")
-            .onRef("current_workspace.id", "=", "session_row.workspace_id"),
-        )
-        .select([
-          "session_row.id",
-          "session_row.workspace_id as currentWorkspaceId",
-          "session_row.session_kind as sessionKind",
-          "session_row.archived_at as archivedAt",
-          "current_workspace.deleted_at as workspaceDeletedAt",
-        ])
-        .where("session_row.tenant_id", "=", this.#tenantId)
-        .where("session_row.id", "=", sessionId)
-        .forUpdate("session_row")
-        .executeTakeFirst();
-      if (session === undefined) {
-        throw new ControlPlaneStoreError("not_found", "Conversation was not found");
-      }
       if (session.sessionKind !== "conversation" || session.archivedAt !== null) {
         throw new ControlPlaneStoreError("conflict", "Conversation cannot change Workspace");
       }
-      if (session.workspaceDeletedAt === null) {
+      const currentWorkspace = await transaction
+        .selectFrom("workspaces")
+        .select("deleted_at")
+        .where("tenant_id", "=", this.#tenantId)
+        .where("id", "=", session.currentWorkspaceId)
+        .executeTakeFirstOrThrow();
+      if (currentWorkspace.deleted_at === null) {
         throw new ControlPlaneStoreError(
           "conflict",
           "Conversation Workspace is still available and does not need rebinding",
@@ -1379,47 +1379,6 @@ export class ControlPlaneStore {
     };
   }
 
-  async acceptTurnCancellation(
-    sessionId: string,
-    turnId: string,
-    idempotencyKey: string,
-    request: CreateTurnCancellationRequest,
-  ): Promise<AcceptedTurnCancellationResource> {
-    const gracePeriodMs = request.gracePeriodMs ?? DEFAULT_CANCELLATION_GRACE_PERIOD_MS;
-    const fingerprint = cancellationRequestFingerprint(gracePeriodMs);
-    const existing = await this.#findAcceptedTurnCancellation(sessionId, idempotencyKey);
-    if (existing !== undefined) {
-      if (existing.turnId !== turnId) {
-        throw new ControlPlaneStoreError(
-          "idempotency_conflict",
-          "Idempotency-Key was already used for a different cancellation request",
-        );
-      }
-      return acceptedTurnCancellationResource(existing, fingerprint, true);
-    }
-    try {
-      return await this.#acceptNewTurnCancellation(
-        sessionId,
-        turnId,
-        idempotencyKey,
-        gracePeriodMs,
-        fingerprint,
-      );
-    } catch (error) {
-      if (!isPostgresConstraint(error, "turn_control_requests_session_idempotency_unique")) {
-        throw error;
-      }
-      const concurrentWinner = await this.#findAcceptedTurnCancellation(sessionId, idempotencyKey);
-      if (concurrentWinner === undefined || concurrentWinner.turnId !== turnId) {
-        throw new ControlPlaneStoreError(
-          "idempotency_conflict",
-          "Idempotency-Key was already used for a different control request",
-        );
-      }
-      return acceptedTurnCancellationResource(concurrentWinner, fingerprint, true);
-    }
-  }
-
   async #acceptNewTurn(
     sessionId: string,
     idempotencyKey: string,
@@ -1707,13 +1666,14 @@ export class ControlPlaneStore {
     return row;
   }
 
-  async #acceptNewTurnCancellation(
+  async acceptTurnCancellation(
     sessionId: string,
     turnId: string,
     idempotencyKey: string,
-    gracePeriodMs: number,
-    fingerprint: string,
+    request: CreateTurnCancellationRequest,
   ): Promise<AcceptedTurnCancellationResource> {
+    const gracePeriodMs = request.gracePeriodMs ?? DEFAULT_CANCELLATION_GRACE_PERIOD_MS;
+    const fingerprint = cancellationRequestFingerprint(gracePeriodMs);
     const controlRequestId = this.#idGenerator();
     return this.#database.transaction().execute(async (transaction) => {
       const lifecycle = await transaction
@@ -1736,6 +1696,20 @@ export class ControlPlaneStore {
         .executeTakeFirst();
       if (lifecycle === undefined) {
         throw new ControlPlaneStoreError("not_found", "Turn was not found");
+      }
+      const existing = await this.#findAcceptedTurnCancellation(
+        transaction,
+        sessionId,
+        idempotencyKey,
+      );
+      if (existing !== undefined) {
+        if (existing.turnId !== turnId) {
+          throw new ControlPlaneStoreError(
+            "idempotency_conflict",
+            "Idempotency-Key was already used for a different cancellation request",
+          );
+        }
+        return acceptedTurnCancellationResource(existing, fingerprint, true);
       }
       const activePair = lifecycle.turnState === "running" && lifecycle.sessionState === "running";
       if (!activePair) {
@@ -1819,10 +1793,11 @@ export class ControlPlaneStore {
   }
 
   async #findAcceptedTurnCancellation(
+    transaction: Transaction<Database>,
     sessionId: string,
     idempotencyKey: string,
   ): Promise<AcceptedTurnCancellationRow | undefined> {
-    return this.#database
+    return transaction
       .selectFrom("turn_control_requests as request")
       .innerJoin("turns as turn", "turn.id", "request.turn_id")
       .select([

@@ -18,6 +18,9 @@ Volume architecture. Historical experiments remain in Git history.
       hash/range-based code coverage, real combinations, browser paint latency,
       scoped cleanup and resume update only after completion.
       [Current work record](reports/repository-audit-20260915.md).
+      Concurrent tenant admission and cancellation/Workspace-rebind replay now
+      have real-PG regressions; live Subagent mailbox validation found another
+      startup race that remains under investigation.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

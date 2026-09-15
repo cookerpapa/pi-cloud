@@ -1,6 +1,6 @@
 import type { Database, TenantApiCredentialRole } from "@pi-cloud/database";
 import { randomUUID } from "node:crypto";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import {
   generateTenantApiCredential,
   issueTenantApiCredential,
@@ -196,26 +196,22 @@ export async function createPrivateTenant(
   try {
     await database.transaction().execute(async (transaction) => {
       if (maximumTenants !== undefined) {
-        const admissionAnchor = await transaction
-          .selectFrom("tenants")
-          .select("id")
-          .orderBy("id", "asc")
-          .limit(1)
-          .forUpdate()
-          .executeTakeFirst();
-        if (admissionAnchor === undefined) {
-          throw new TenantAdministrationError(
-            "tenant_capacity_reached",
-            "Tenant registration admission is unavailable",
-          );
-        }
+        // A new smaller UUID can replace a row-based admission anchor. Serialize
+        // only tenant writes; normal tenant reads and Agent execution stay concurrent.
+        await sql`lock table tenants in share row exclusive mode`.execute(transaction);
         const tenantCount = await transaction
           .selectFrom("tenants")
           .select((expression) => expression.fn.countAll<string>().as("count"))
           .executeTakeFirstOrThrow();
         const parsedTenantCount = Number(tenantCount.count);
-        if (!Number.isSafeInteger(parsedTenantCount) || parsedTenantCount < 1) {
+        if (!Number.isSafeInteger(parsedTenantCount) || parsedTenantCount < 0) {
           throw new Error("Persisted tenant count is invalid");
+        }
+        if (parsedTenantCount === 0) {
+          throw new TenantAdministrationError(
+            "tenant_capacity_reached",
+            "Tenant registration admission is unavailable",
+          );
         }
         if (parsedTenantCount >= maximumTenants) {
           throw new TenantAdministrationError(

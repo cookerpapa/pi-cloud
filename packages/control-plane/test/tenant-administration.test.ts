@@ -1,8 +1,9 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
-import type { Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sql, type Kysely } from "kysely";
+import { Pool } from "pg";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   PostgresTenantApiAuthenticator,
   TenantAdministrationError,
@@ -36,6 +37,102 @@ beforeAll(async () => {
   });
   await runMigrations(database, "up");
 });
+
+const external = process.env.PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL;
+it.skipIf(!external)(
+  "keeps tenant admission serialized when a smaller tenant ID is inserted",
+  async () => {
+    const admin = new Pool({ connectionString: external, max: 1 });
+    const name = `pi_tenant_admission_${crypto.randomUUID().replaceAll("-", "")}`;
+    const clients: Kysely<Database>[] = [];
+    const pending: Promise<unknown>[] = [];
+    const counted = Promise.withResolvers<void>();
+    const continueCount = Promise.withResolvers<void>();
+    let blocker: Pool | undefined;
+    let created = false;
+    try {
+      await admin.query(`create database "${name}"`);
+      created = true;
+      const endpoint = new URL(external!);
+      endpoint.pathname = `/${name}`;
+      const connect = (application: string) => {
+        const url = new URL(endpoint);
+        url.searchParams.set("application_name", application);
+        const client = createDatabase({ connectionString: url.toString(), maxConnections: 1 });
+        clients.push(client);
+        return client;
+      };
+      const observer = connect("tenant-admission-observer");
+      await runMigrations(observer, "up");
+      await observer.insertInto("tenants").values({ id: IDS[0], slug: "anchor" }).execute();
+      blocker = new Pool({ connectionString: endpoint.toString(), max: 1 });
+      await blocker.query("begin");
+      // Hold both a row and its table's writer lock so either implementation queues.
+      await blocker.query("update tenants set slug = slug where id = $1", [IDS[0]]);
+      const waiting = async (application: string) => {
+        const result = await sql<{ waiting: boolean }>`select exists (
+        select 1 from pg_stat_activity
+        where application_name = ${application} and wait_event_type = 'Lock'
+      ) as waiting`.execute(observer);
+        return result.rows[0]!.waiting;
+      };
+      const request = (client: Kysely<Database>, slug: string, prefix: string) => {
+        let id = 0;
+        const promise = createPrivateTenant(client, {
+          slug,
+          ownerDisplayName: slug,
+          maximumTenants: 3,
+          idGenerator: () => `${prefix}-0000-4000-8000-${String(++id).padStart(12, "0")}`,
+        }).then(
+          () => "created",
+          (error: unknown) => {
+            if (error instanceof TenantAdministrationError) return error.code;
+            throw error;
+          },
+        );
+        pending.push(promise);
+        return promise;
+      };
+      const first = request(connect("tenant-admission-a"), "first", "00000000");
+      await vi.waitFor(async () => expect(await waiting("tenant-admission-a")).toBe(true));
+      const secondClient = connect("tenant-admission-b").withPlugin({
+        transformQuery: ({ node }) => node,
+        async transformResult({ result }) {
+          if (result.rows[0]?.["count"] === "2") {
+            counted.resolve();
+            await continueCount.promise;
+          }
+          return result;
+        },
+      });
+      const second = request(secondClient, "second", "b0000000");
+      await vi.waitFor(async () => expect(await waiting("tenant-admission-b")).toBe(true));
+      await blocker.query("commit");
+      expect(await first).toBe("created");
+      await counted.promise;
+      // C starts after A commits the new smallest ID, while B still owns admission.
+      let thirdFinished = false;
+      const third = request(connect("tenant-admission-c"), "third", "c0000000").finally(() => {
+        thirdFinished = true;
+      });
+      await vi.waitFor(async () =>
+        expect(thirdFinished || (await waiting("tenant-admission-c"))).toBe(true),
+      );
+      continueCount.resolve();
+      expect(await Promise.all([second, third])).toEqual(["created", "tenant_capacity_reached"]);
+      expect(await observer.selectFrom("tenants").select("id").execute()).toHaveLength(3);
+    } finally {
+      continueCount.resolve();
+      await blocker?.query("rollback");
+      await Promise.allSettled(pending);
+      await blocker?.end();
+      await Promise.all(clients.map((client) => client.destroy()));
+      if (created) await admin.query(`drop database "${name}" with (force)`);
+      await admin.end();
+    }
+  },
+  30_000,
+);
 
 afterAll(async () => {
   await database?.destroy();

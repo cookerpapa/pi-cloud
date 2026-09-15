@@ -101,6 +101,81 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     );
   }
 
+  it("replays a concurrent Workspace rebind after the first request changes the binding", async () => {
+    const { project, session } = await fixture("rebind-replay");
+    const target = await store.createProject({ name: "rebind-target", source: { kind: "empty" } });
+    await store.deleteWorkspace(project.workspaceId, "remove-original");
+    const paused = pauseAfterInsert("conversation_workspace_rebind_operations");
+    const first = paused.store.rebindConversationWorkspace(
+      session.sessionId,
+      target.workspaceId,
+      "same-rebind",
+    );
+    let replay: Promise<unknown> | undefined;
+    try {
+      await paused.waiting;
+      replay = store
+        .rebindConversationWorkspace(session.sessionId, target.workspaceId, "same-rebind")
+        .then(
+          (value) => value,
+          (error) => ({ rejected: error }),
+        );
+      await waitForContender();
+    } finally {
+      paused.release();
+    }
+    const original = await first;
+    expect(await replay).toEqual({ ...original, replayed: true });
+    await expect(
+      store.rebindConversationWorkspace(session.sessionId, project.workspaceId, "same-rebind"),
+    ).rejects.toMatchObject({ code: "idempotency_conflict" });
+  });
+
+  it("replays cancellation already accepted by a concurrent request", async () => {
+    const { session } = await fixture("cancel-replay");
+    const turn = await store.acceptTurn(session.sessionId, "message", { prompt: "cancel me" });
+    await database
+      .updateTable("sessions")
+      .set({ state: "running" })
+      .where("id", "=", session.sessionId)
+      .execute();
+    await database
+      .updateTable("turns")
+      .set({ state: "running" })
+      .where("id", "=", turn.turnId)
+      .execute();
+    await database
+      .updateTable("runs")
+      .set({ state: "running" })
+      .where("id", "=", turn.runId)
+      .execute();
+    const paused = pauseAfterInsert("turn_control_requests");
+    const first = paused.store.acceptTurnCancellation(
+      session.sessionId,
+      turn.turnId,
+      "same-cancel",
+      {},
+    );
+    let replay: Promise<unknown> | undefined;
+    try {
+      await paused.waiting;
+      replay = store.acceptTurnCancellation(session.sessionId, turn.turnId, "same-cancel", {}).then(
+        (value) => value,
+        (error) => ({ rejected: error }),
+      );
+      await waitForContender();
+    } finally {
+      paused.release();
+    }
+    const original = await first;
+    expect(await replay).toEqual({ ...original, replayed: true });
+    await expect(
+      store.acceptTurnCancellation(session.sessionId, turn.turnId, "same-cancel", {
+        gracePeriodMs: 1234,
+      }),
+    ).rejects.toMatchObject({ code: "idempotency_conflict" });
+  });
+
   it("rejects a message if concurrent deletion commits after its Workspace lookup begins", async () => {
     const { project, session } = await fixture("deletion-first");
     const paused = pauseAfterInsert("workspace_delete_operations");
