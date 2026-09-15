@@ -24,7 +24,7 @@ Read the documents in this order:
    storage and live browsing, without per-Run objects or raw Tool-output archives.
 
 1. [ADR-0167](0167-session-family-capacity.md) — active physical-Session capacity
-   and independent model-request fairness; implementation/acceptance in progress.
+   and independent model-request fairness.
 1. [ADR-0166](0166-log-driven-subagents.md) — Projector-admitted Subagent control,
    Worker-native Lanes and Cube-isolated workflows.
 1. [ADR-0165](0165-message-level-display-and-framed-snapshots.md) — idempotent

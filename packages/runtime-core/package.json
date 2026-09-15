@@ -25,7 +25,6 @@
     "./session-event-stream": "./src/session-event-stream.ts",
     "./session-lease-coordinator": "./src/session-lease-coordinator.ts",
     "./worker-family-capacity": "./src/worker-family-capacity.ts",
-    "./structured-test-command": "./src/structured-test-command.ts",
     "./execution-stream-seal": "./src/execution-stream-seal.ts",
     "./quarantined-session-recovery": "./src/quarantined-session-recovery.ts"
   },

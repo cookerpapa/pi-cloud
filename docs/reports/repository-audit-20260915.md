@@ -5,7 +5,7 @@ Prior reports are historical evidence, not a substitute for this campaign.
 
 Build/test-tooling slice: a scratch Docker fixture reproduced private/generated
 paths being re-included by broad directory exceptions in `.dockerignore`.
-Narrow build-input patterns now retain all 463 local inputs across ten Dockerfiles
+Narrow build-input patterns retain all local inputs across ten Dockerfiles
 and exclude all 14 canaries. Only harmless placeholder contents entered this
 probe; no real secret was exported. The check is now an explicit CI gate.
 A real Chrome target-close test also reproduced an RPC hanging when sent after
@@ -13,6 +13,25 @@ disconnect. Reject closed-socket sends and handle send errors; the disconnect
 regression and all existing browser presentation assertions pass. Temporary
 profiles, Vite cache and build-fixture directories are removed. Runtime images
 are unchanged by this tooling-only slice; final combined acceptance remains open.
+
+At `8e6cad2b`, the complete local `npm run ci` exits successfully: 953 tests pass,
+two separate live gates skip, and types/build/format/docs/deployment/fault/backup
+checks pass. The standalone actual R=3 Kafka policy test also passes, including
+seven valid/invalid topic configurations; its temporary topics are absent afterward.
+The dependency audit passes its high-severity gate, but still reports moderate
+development-only Vitest/mocker findings; this is not a zero-vulnerability claim.
+The remaining `runtime-core` and `supervisor-host` files/tests have now been read.
+An uncalled Bash test-classifier and its three self-only tests are removed in the
+following cleanup; the 953 count belongs to the preceding fixed revision.
+
+Four more paid baseline Runs pass on deployed `ea4ae725`: GPT high/Fast and
+DeepSeek high restore their saved settings/marker, followed by two DeepSeek coding
+Turns on different Workers (seven Tools; insertion/binary search assertions pass).
+Native usage totals 27,549 input / 217,088 cache-read / 1,734 output tokens.
+Chat first-text API/SSE receipt is 3,777/1,819 ms, provider 3,421/1,565 ms and
+internal 355/254 ms. These two observations overlap local CI, not an idle SLO.
+Coding first text follows earlier Tool sampling, so it is not initial model TTFT.
+The reused audit baseline is retained for the unfinished campaign's final matrix.
 
 Latest runtime: Control Plane/Workers/Broker `ea4ae725`, existing Web/Cube template
 `97995c0f`. **953 tests pass / two separate environment gates skipped**, with real
@@ -220,6 +239,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | TOOL-01 | A reused persistent-machine binding could return a cached response belonging to an earlier Attempt | Reproduced by delaying old-body retirement while rebinding. Match the reader Attempt as well as binding ID; no PG round trip added |
 | CLEAN-01 | Binding-local `materializing` was never written; old terminal-capacity transfer path had no reachable caller | Removed the field/branches/transfer method and its dead-feature test. Physical runtime materialization and concurrent Tool execution remain |
 | CLEAN-02 | Native Lane exposed its private reader despite having no caller; one Fork test name incorrectly implied no payload copy anywhere | Removed unused getter; clarified shared query projection versus self-contained Fork log. No persistence semantics changed |
+| CLEAN-07 | The Bash test-command classifier had no runtime caller, only its own tests and exports | Remove 188 lines of classifier, its three self-only tests and both exports. Actual Bash execution, outputs and user-invoked tests are unchanged. Current Subagent ADR wording also drops the retired Workspace-copy path and uses the shared family lease |
 | CLEAN-03 | UI still polled Run state as a second pre-stream completion fallback | Removed UI poll/action. Live Snake exposed that removing the API client's `getRun` also broke diagnostic/acceptance callers outside the Web package; restored that required read-only method and added an API contract test, without reintroducing UI polling. Full live matrix remains pending |
 | TEST-01 | Chrome helper selected a random fixed port, risking another browser under concurrent tests; debugger disconnect could strand pending RPCs | Use Chrome's allocated port from its own private profile, reject pending calls on disconnect, and report cleanup failures. Browser presentation/composer regression passes; parallel browser stress still pending |
 | TEST-06 | Chrome helper accepted new RPCs after its disconnect handler had already cleared pending calls | Actual owned target-close test hung until its five-second failure guard. Reject calls on a non-open socket and remove/reject failed sends. Both in-flight and post-disconnect calls now reject; the complete existing Chrome presentation suite also passes |

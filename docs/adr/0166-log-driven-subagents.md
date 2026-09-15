@@ -18,15 +18,16 @@ owning Worker under its existing execution publication to the same physical
 Session Kafka partition. Program requests are control records, not synthetic
 assistant Tool Calls. The Projector applies commands in log order and retains
 idempotent command/dispatch state in PostgreSQL before advancing delivery.
-Control handlers do not await a child model, a long Workspace fork, or a later
-record's PG projection on the partition consumer stack.
+Control handlers do not await a child model or a later record's PG projection
+on the partition consumer stack.
 
 The Worker owns the only active native Session writer. Child admission prepares
 a durable Child Run, asks that Worker to create the named Lane, and makes the
 Run runnable only after preparation. Lane creation still appends native records
-through Kafka. Shared/isolated Workspace placement is independent from
-fresh/branch context, and the branch anchor is frozen before dispatch. All
-active Lanes remain on one Worker and use the existing PG Run queue and leases.
+through Kafka. Shared/ephemeral compute and explicit cwd are independent from
+fresh/branch context (ADR-0171); all children retain the parent Volume. The branch
+anchor is frozen before dispatch. All active Lanes remain on one Worker and use
+the existing PG Run queue and one physical-Session owner lease (ADR-0167).
 
 Use the Worker control transport for correlated progress/results. Persisted
 command and Child Run state support reconnection; no 100ms result polling and
@@ -81,5 +82,6 @@ and [release notes](../reports/log-driven-subagents-20260913.md). This remains a
 foreground semantic-recovery contract, not a resumable workflow VM or multi-node
 chaos benchmark.
 
-ADR-0171 replaces child Workspace copies with shared-Volume compute scopes and cwd;
-the ordered control/Lane/communication contract above is unchanged.
+Current compute/cwd acceptance is recorded with
+[ADR-0171](0171-shared-volume-subagent-compute.md); the ordered control/Lane/
+communication contract is unchanged.

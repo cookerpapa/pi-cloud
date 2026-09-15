@@ -13,7 +13,6 @@ export * from "./run-cancellation-executor.ts";
 export * from "./run-executor.ts";
 export * from "./session-event-hub.ts";
 export * from "./session-lease-coordinator.ts";
-export * from "./structured-test-command.ts";
 export * from "./execution-stream-seal.ts";
 export * from "./execution-stream-projection.ts";
 export {

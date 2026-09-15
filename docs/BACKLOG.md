@@ -48,6 +48,8 @@ Volume architecture. Historical experiments remain in Git history.
       real scratch-build CI probe preserves every local COPY input. Chrome
       acceptance also rejects calls after debugger disconnection instead of hanging;
       actual browser disconnect and presentation regressions pass.
+      Removed the uncalled Bash test-command classifier and its self-only tests;
+      current Subagent ADRs now describe shared-Volume compute and one family lease.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;
