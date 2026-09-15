@@ -49,14 +49,16 @@ describe("tenant-aware browser API", () => {
     const transport = vi.fn<typeof fetch>(async (input, init) => {
       expect(input).toBe("/v1/runs/owned%2Frun");
       expect(init?.method).toBe("GET");
-      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-credential");
+      expect(new Headers(init?.headers).get("authorization")).toBe(
+        "Bearer test-inspection-credential-00000000",
+      );
       return Response.json(
         { error: { code: "not_found", message: "Run was not found" } },
         { status: 404 },
       );
     });
     await expect(
-      new PiCloudApi(transport, "test-credential").getRun("owned/run"),
+      new PiCloudApi(transport, "test-inspection-credential-00000000").getRun("owned/run"),
     ).rejects.toMatchObject({ status: 404, code: "not_found" });
     expect(transport).toHaveBeenCalledOnce();
   });

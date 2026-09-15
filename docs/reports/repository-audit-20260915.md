@@ -231,7 +231,17 @@ using OpenAI Docs. Product-surface GPT acceptance stopped on this actual failure
 it is not a passed test. First DeepSeek Snake coding completed, but the next
 acceptance step failed because the shared API client lacked `getRun` (CLEAN-03).
 The script released that test machine and conversation. Fixed the client contract;
-41 API/view regressions pass, and full paid Snake/browser repetition is running.
+42 API/view regressions pass after fixing the regression fixture's short token.
+Full paid DeepSeek Snake repetition passed: 14 Tools/preparation activities,
+1,198 ms first durable activity, 52,191 ms settled, isolated Preview HTTP 200,
+and actual Chrome Start/movement/Pause/Reset assertions. The preview's tick advanced
+0→5, remained 5 during Pause, and returned to 0 on Reset. Its machine and
+conversation were released; aggregate evidence records deployed image `2bc942b8`
+separately from the local harness revision. Test users still await final cleanup.
+The Codex device login timed out after 15 minutes; that code is no longer usable.
+GPT-dependent cases remain blocked on normal owner authorization, not marked passed.
+The long-context coding/search campaign is running against the normal 128K
+DeepSeek configuration, without reducing its Compaction threshold.
 Private fixture IDs/credentials stay in `.cache/audit-live-baseline-state.json`,
 not this report. The baseline and new test users/resources require final cleanup.
 
