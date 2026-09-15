@@ -18,14 +18,11 @@ const runtimeDirectory = resolve(
   repositoryRoot,
   process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
 );
-const explicitKubeconfig = process.env.KUBECONFIG;
-const kubeconfig = explicitKubeconfig ?? "/etc/rancher/k3s/k3s.yaml";
 let directCubeMasterAddress = process.env.PI_CLOUD_CUBE_MASTER_ADDRESS;
 let directCubeMasterPort = process.env.PI_CLOUD_CUBE_MASTER_PORT ?? "8089";
 let directCubeMasterCli = process.env.PI_CLOUD_CUBE_MASTER_CLI;
 let directRegistryAddress = process.env.PI_CLOUD_CUBE_REGISTRY_ADDRESS;
 let directRegistryPort = process.env.PI_CLOUD_CUBE_REGISTRY_PORT ?? "5000";
-let directManagement = false;
 const registryHost = "localhost:5000";
 const registryRepository = `${registryHost}/pi-cloud/cubesandbox-tool`;
 const clusterRegistryRepository =
@@ -36,7 +33,6 @@ const credentialPath = resolve(runtimeDirectory, "secrets/cubesandbox-api-key");
 const nodeDirectory = dirname(process.execPath);
 const environment = {
   ...process.env,
-  KUBECONFIG: kubeconfig,
   PATH: `${nodeDirectory}:${process.env.PATH ?? ""}`,
 };
 function directEnvironment() {
@@ -190,123 +186,44 @@ async function readPrivate(path, maximumBytes, label) {
 }
 
 async function startRegistryForward() {
-  if (directManagement) {
-    const sockets = new Set();
-    const server = createServer((downstream) => {
-      sockets.add(downstream);
-      const upstream = connect({
-        host: directRegistryAddress,
-        port: Number(directRegistryPort),
-      });
-      sockets.add(upstream);
-      downstream.pipe(upstream);
-      upstream.pipe(downstream);
-      const closePair = () => {
-        downstream.destroy();
-        upstream.destroy();
-      };
-      downstream.once("error", closePair);
-      upstream.once("error", closePair);
-      downstream.once("close", () => {
-        sockets.delete(downstream);
-        sockets.delete(upstream);
-      });
+  const sockets = new Set();
+  const server = createServer((downstream) => {
+    sockets.add(downstream);
+    const upstream = connect({
+      host: directRegistryAddress,
+      port: Number(directRegistryPort),
     });
-    await new Promise((resolvePromise, rejectPromise) => {
-      server.once("error", rejectPromise);
-      server.listen(5_000, "127.0.0.1", resolvePromise);
-    });
-    return {
-      async stop() {
-        for (const socket of sockets) socket.destroy();
-        await new Promise((resolvePromise) => server.close(resolvePromise));
-      },
+    sockets.add(upstream);
+    downstream.pipe(upstream);
+    upstream.pipe(downstream);
+    const closePair = () => {
+      downstream.destroy();
+      upstream.destroy();
     };
-  }
-  const child = spawn(
-    "kubectl",
-    [
-      "-n",
-      "cube-system",
-      "port-forward",
-      "service/pi-cloud-cube-template-registry",
-      "5000:5000",
-      "--address",
-      "127.0.0.1",
-    ],
-    {
-      cwd: repositoryRoot,
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  let output = "";
-  const ready = new Promise((resolvePromise, rejectPromise) => {
-    const accept = (chunk) => {
-      output = `${output}${chunk.toString("utf8")}`.slice(-8_192);
-      if (output.includes("Forwarding from 127.0.0.1:5000")) resolvePromise();
-    };
-    child.stdout.on("data", accept);
-    child.stderr.on("data", accept);
-    child.once("error", rejectPromise);
-    child.once("exit", (code, signal) => {
-      rejectPromise(
-        new Error(
-          `Cube registry port-forward exited before readiness (code=${String(code)}, signal=${String(signal)}): ${output.trim()}`,
-        ),
-      );
+    downstream.once("error", closePair);
+    upstream.once("error", closePair);
+    downstream.once("close", () => {
+      sockets.delete(downstream);
+      sockets.delete(upstream);
     });
   });
-  await Promise.race([
-    ready,
-    new Promise((_, rejectPromise) =>
-      setTimeout(
-        () => rejectPromise(new Error("Cube registry port-forward timed out")),
-        15_000,
-      ).unref(),
-    ),
-  ]);
+  await new Promise((resolvePromise, rejectPromise) => {
+    server.once("error", rejectPromise);
+    server.listen(5_000, "127.0.0.1", resolvePromise);
+  });
   return {
     async stop() {
-      await stopChild(child);
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolvePromise) => server.close(resolvePromise));
     },
   };
 }
 
-async function stopChild(child) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolvePromise) => child.once("exit", resolvePromise)),
-    new Promise((resolvePromise) => setTimeout(resolvePromise, 5_000)),
-  ]);
-  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-}
-
 async function cubeMasterCli(args, timeout) {
-  if (directManagement) {
-    return capture(
-      directCubeMasterCli,
-      ["--address", directCubeMasterAddress, "--port", directCubeMasterPort, ...args],
-      { timeout, environment: directEnvironment() },
-    );
-  }
   return capture(
-    "kubectl",
-    [
-      "-n",
-      "cube-system",
-      "exec",
-      "deployment/cube-cubemastercli",
-      "--",
-      "cubemastercli",
-      "--address",
-      "cube-master",
-      "--port",
-      "8089",
-      ...args,
-    ],
-    { timeout },
+    directCubeMasterCli,
+    ["--address", directCubeMasterAddress, "--port", directCubeMasterPort, ...args],
+    { timeout, environment: directEnvironment() },
   );
 }
 
@@ -345,11 +262,6 @@ async function currentTemplateEvidence() {
       /^tpl-[a-z0-9]{24}$/.test(current?.development?.[key]?.templateId ?? ""),
     )
   ) {
-    // Pre-release format v1 is intentionally not migrated. Its template is
-    // left for the normal retention pass after the v2 catalog is ready.
-    if (current?.formatVersion === 1 && /^tpl-[a-z0-9]{24}$/.test(current?.templateId ?? "")) {
-      return undefined;
-    }
     throw new Error("Existing Cube template evidence is invalid");
   }
   return current;
@@ -430,10 +342,6 @@ if (!explicitlyConfiguredDirectManagement) {
   directRegistryAddress = cluster.registry.host;
   directRegistryPort = String(cluster.registry.port);
 }
-directManagement =
-  directCubeMasterAddress !== undefined &&
-  directCubeMasterCli !== undefined &&
-  directRegistryAddress !== undefined;
 for (const [label, value] of [
   ["CubeMaster port", directCubeMasterPort],
   ["Cube registry port", directRegistryPort],
@@ -441,11 +349,6 @@ for (const [label, value] of [
   if (!/^[1-9][0-9]{0,4}$/.test(value) || Number(value) > 65_535) {
     throw new Error(`${label} is invalid`);
   }
-}
-if (process.getuid?.() !== 0 && explicitKubeconfig === undefined && !directManagement) {
-  throw new Error(
-    "Non-root CubeSandbox template registration requires direct Cube management or an explicit readable KUBECONFIG",
-  );
 }
 const credentialFile = await readPrivate(credentialPath, 4_096, "CubeAPI credential");
 const credentialOwner = credentialFile.metadata;
@@ -462,22 +365,8 @@ if (
 ) {
   throw new Error("Cube cluster evidence and API credential ownership do not match");
 }
-if (directManagement) {
-  await capture("test", ["-x", directCubeMasterCli]);
-} else {
-  await capture("test", ["-r", kubeconfig]);
-}
+await capture("test", ["-x", directCubeMasterCli]);
 await capture("test", ["-r", "/etc/docker/certs.d/localhost:5000/ca.crt"]);
-if (!directManagement) {
-  await capture("kubectl", [
-    "-n",
-    "cube-system",
-    "rollout",
-    "status",
-    "deployment/pi-cloud-cube-template-registry",
-    "--timeout=120s",
-  ]);
-}
 
 const previousTemplateEvidence = await currentTemplateEvidence();
 const previousTemplateIds =

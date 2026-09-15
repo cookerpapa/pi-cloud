@@ -18,6 +18,7 @@ import {
   type SandboxProvider,
 } from "@pi-cloud/tool-broker";
 import { sql, type Kysely } from "kysely";
+import { Pool } from "pg";
 import * as undici from "undici";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
@@ -46,6 +47,9 @@ let identity: TenantRequestIdentity;
 let otherIdentity: TenantRequestIdentity;
 let workspaceId: string;
 let sessionId: string;
+const external = process.env.PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL;
+let admin: Pool | undefined;
+let testDatabase: string | undefined;
 const pauses = vi.fn(async () => undefined);
 const resumes = vi.fn(async (handle: SandboxHandle) => handle);
 const destroys = vi.fn(async (_handle: SandboxHandle) => undefined);
@@ -156,13 +160,22 @@ function provider(): SandboxProvider {
 }
 
 beforeAll(async () => {
-  pglite = await PGlite.create();
-  socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
-  await socket.start();
-  database = createDatabase({
-    connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
-    maxConnections: 2,
-  });
+  if (external) {
+    admin = new Pool({ connectionString: external, max: 1 });
+    testDatabase = `pi_machines_${crypto.randomUUID().replaceAll("-", "")}`;
+    await admin.query(`create database "${testDatabase}"`);
+    const url = new URL(external);
+    url.pathname = `/${testDatabase}`;
+    database = createDatabase({ connectionString: url.toString(), maxConnections: 4 });
+  } else {
+    pglite = await PGlite.create();
+    socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
+    await socket.start();
+    database = createDatabase({
+      connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
+      maxConnections: 2,
+    });
+  }
   await runMigrations(database, "up");
   const tenant = await createPrivateTenant(database, {
     slug: "development-environment",
@@ -255,9 +268,82 @@ afterAll(async () => {
   await database?.destroy();
   await socket?.stop();
   await pglite?.close();
+  if (admin) {
+    if (testDatabase) await admin.query(`drop database "${testDatabase}"`);
+    await admin.end();
+  }
 });
 
 describe("user-owned development environments", () => {
+  it.skipIf(!external)(
+    "commits one machine when two identical create requests overlap",
+    async () => {
+      // Hold the tenant lock so both requests can begin admission before either
+      // commits. The production transaction, not a process-local lock, must dedup.
+      let locked!: () => void, release!: () => void;
+      const lockHeld = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const unblock = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const blocker = database.transaction().execute(async (tx) => {
+        await tx
+          .selectFrom("tenant_runtime_policies")
+          .select("tenant_id")
+          .where("tenant_id", "=", identity.tenantId)
+          .forUpdate()
+          .executeTakeFirstOrThrow();
+        locked();
+        await unblock;
+      });
+      await lockHeld;
+      const requests = [0, 1].map(() =>
+        service.create(identity, "duplicate-machine-create", {
+          name: "Concurrent machine",
+          profileKey: "starter",
+        }),
+      );
+      const outcomes = Promise.allSettled(requests);
+      try {
+        await vi.waitFor(async () => {
+          const waiting = await sql<{
+            count: number;
+          }>`select count(*)::int as count from pg_stat_activity
+          where datname=current_database() and wait_event_type='Lock'`.execute(database);
+          expect(waiting.rows[0]?.count).toBe(2);
+        });
+        release();
+        await blocker;
+        const results = await outcomes;
+        expect(results).toEqual([
+          expect.objectContaining({ status: "fulfilled" }),
+          expect.objectContaining({ status: "fulfilled" }),
+        ]);
+        const machines = results.flatMap((result) =>
+          result.status === "fulfilled" ? [result.value] : [],
+        );
+        expect(new Set(machines.map((machine) => machine.environmentId)).size).toBe(1);
+        expect(machines.every((machine) => machine.state === "running")).toBe(true);
+      } finally {
+        release();
+        await blocker;
+        await outcomes;
+        const machine = await database
+          .selectFrom("development_environments")
+          .select("id")
+          .where("tenant_id", "=", identity.tenantId)
+          .where("idempotency_key", "=", "duplicate-machine-create")
+          .executeTakeFirst();
+        if (machine)
+          await service.action(identity, machine.id, "cleanup-duplicate-machine", {
+            action: "release",
+          });
+        destroys.mockClear();
+      }
+    },
+  );
+
   it("provisions, isolates visibility, pauses, resumes and releases one Workspace KVM", async () => {
     const created = await service.create(identity, "create-exclusive", {
       name: "Backend machine",

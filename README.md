@@ -212,7 +212,7 @@ npm run production:down
 
 **Existing installations:** this pre-release protocol cutover is not a rolling
 upgrade. Drain Runs, project all seals/Outbox, back up and release old runtime
-instances, then stop the old execution services. Apply migrations through 138 and deploy
+instances, then stop the old execution services. Apply the current migrations and deploy
 matching Worker, Control Plane/Projector and Broker images. New records use the
 v8 Kafka topic and task execution references; there is no old-wire decoder.
 PG semantic history, identities and configuration are not reset by migration.

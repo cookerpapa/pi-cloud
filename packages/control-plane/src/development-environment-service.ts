@@ -361,6 +361,20 @@ export class DevelopmentEnvironmentService {
   ): Promise<DevelopmentEnvironmentResource> {
     const fingerprint = requestHash(request);
     const environmentId = await this.#database.transaction().execute(async (transaction) => {
+      // Admission and replay must observe the same serialized tenant state.
+      // Checking replay first lets concurrent requests both create a Project.
+      const policy = await transaction
+        .selectFrom("tenant_runtime_policies")
+        .select("maximum_projects")
+        .where("tenant_id", "=", identity.tenantId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (policy === undefined) {
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Tenant project capacity policy is unavailable",
+        );
+      }
       const replay = await transaction
         .selectFrom("development_environments")
         .select(["id", "request_sha256"])
@@ -382,18 +396,6 @@ export class DevelopmentEnvironmentService {
       const workspaceId = this.#id();
       const environmentVersionId = this.#id();
       const selectedProfile = profile(request.profileKey);
-      const policy = await transaction
-        .selectFrom("tenant_runtime_policies")
-        .select("maximum_projects")
-        .where("tenant_id", "=", identity.tenantId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (policy === undefined) {
-        throw new ControlPlaneStoreError(
-          "control_plane_misconfigured",
-          "Tenant project capacity policy is unavailable",
-        );
-      }
       const projectCountRow = await transaction
         .selectFrom("projects")
         .select(({ fn }) => fn.countAll<string>().as("count"))
