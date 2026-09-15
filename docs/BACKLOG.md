@@ -34,6 +34,9 @@ Volume architecture. Historical experiments remain in Git history.
       LOCK-01 has a real lock-loss/Volume-overwrite reproduction. The owner
       approved removing Subagent copies rather than extending the copy protocol
       (ADR-0171); shared-Volume compute cutover and live acceptance now pass.
+      Cancelled guest uploads now retire their temporary input before dispatch,
+      with real Cube adapter proof; readiness errors retain their cause. Remaining
+      Worker bookkeeping retention and final combination gates are still open.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

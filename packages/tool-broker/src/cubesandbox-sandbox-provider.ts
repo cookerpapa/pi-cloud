@@ -750,7 +750,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    await this.#client.writeGuestFile(instance, path, bytes);
     const program = {
       tool: "/opt/pi-cloud/bin/envd-tool-exec.mjs",
       control: "/opt/pi-cloud/bin/envd-guest-control.mjs",
@@ -774,6 +773,28 @@ export class CubeSandboxProvider implements SandboxProvider {
       ? `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && `
       : `/bin/chmod 0400 ${path} && `;
     options.signal?.throwIfAborted();
+    await this.#client.writeGuestFile(instance, path, bytes);
+    if (options.signal?.aborted) {
+      // The guest has not received the execution request, so its EXIT trap
+      // cannot own cleanup yet. Never use an already-cancelled signal here.
+      try {
+        const cleanup = await this.#client.runCommand(instance, {
+          command: `/bin/rm -f -- ${path}`,
+          cwd: "/",
+          user: "root",
+          timeoutMs: 5_000,
+          maximumOutputBytes: 1_024,
+        });
+        if (cleanup.exitCode !== 0)
+          throw new Error(`Guest request cleanup exited with code ${cleanup.exitCode}`);
+      } catch (error) {
+        throw new AggregateError(
+          [options.signal.reason, error],
+          "Cancelled guest request cleanup failed",
+        );
+      }
+      throw options.signal.reason;
+    }
     options.onDispatch?.();
     const result = await this.#client.runCommand(instance, {
       command: `trap '/bin/rm -f -- ${path}' EXIT; ${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
@@ -967,6 +988,9 @@ export class CubeSandboxProvider implements SandboxProvider {
           "environment_preflight_mismatch",
           "CubeSandbox environment initialization did not settle",
           false,
+          ready.type === "worker.failed"
+            ? new ToolBrokerError(ready.code, ready.message, ready.retryable)
+            : undefined,
         );
       }
       const toolchain = parseEnvironmentToolchainReport(ready.environment);
@@ -2110,11 +2134,11 @@ export class CubeSandboxProvider implements SandboxProvider {
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
     }
-    void lastError;
     throw new ToolBrokerError(
       "cubesandbox_data_plane_unavailable",
       "CubeSandbox Tool data plane did not become ready",
       true,
+      lastError,
     );
   }
 

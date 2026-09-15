@@ -214,6 +214,18 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     instance: CubeSandboxInstance,
     input: CubeSandboxGuestCommandRequest,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    const cleanup = /^\/bin\/rm -f -- (\/tmp\/pi-cloud-envd-[0-9a-f-]{36}\.json)$/u.exec(
+      input.command,
+    );
+    if (cleanup) {
+      this.requests.push({
+        sandboxId: instance.sandboxId,
+        input,
+        guestRequest: { mode: "remove_input", path: cleanup[1] },
+      });
+      this.guestFiles.delete(cleanup[1]!);
+      return { stdout: "", stderr: "", exitCode: 0 };
+    }
     if (input.command.includes("eval(Buffer.from('") && input.command.includes("base64")) {
       this.requests.push({
         sandboxId: instance.sandboxId,
@@ -1010,6 +1022,144 @@ describe("CubeSandbox Provider contract", () => {
     expect(upgradedRuntime.creates).toHaveLength(1);
     await upgradedProvider.destroy(upgradedHandle);
     await upgradedProvider.close();
+  });
+
+  it.each(["before_upload", "after_upload", "cleanup_failure", "cleanup_nonzero"] as const)(
+    "retires an unstarted request without executing its Tool (%s)",
+    async (phase) => {
+      const runtime = new FakeCubeRuntimeClient();
+      const provider = testCubeProvider({
+        templateId: "pi-cloud-tool-v1",
+        imageRevision: "development",
+        webProxy: WEB_PROXY,
+        runtimeClient: runtime,
+        workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+      });
+      const handle = await provider.create({
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+        lifetime: "development_environment",
+      });
+      const abort = new AbortController();
+      const reason = new Error("Task cancelled before guest dispatch");
+      const originalWrite = runtime.writeGuestFile.bind(runtime);
+      const writes = vi.spyOn(runtime, "writeGuestFile").mockImplementation(async (...args) => {
+        await originalWrite(...args);
+        abort.abort(reason);
+      });
+      const cleanupError = new Error("Guest cleanup channel is unavailable");
+      const originalRun = runtime.runCommand.bind(runtime);
+      const calls = vi.spyOn(runtime, "runCommand").mockImplementation(async (instance, input) => {
+        if (phase === "cleanup_failure") throw cleanupError;
+        if (phase === "cleanup_nonzero") return { stdout: "", stderr: "denied", exitCode: 7 };
+        return originalRun(instance, input);
+      });
+      if (phase === "before_upload") abort.abort(reason);
+      try {
+        const result = await provider
+          .exec(handle, operation(ACTIVATION_ID), abort.signal)
+          .catch((error) => error);
+        expect(result).toMatchObject({ code: "tool_cancelled", retryable: false });
+        if (phase === "cleanup_failure" || phase === "cleanup_nonzero") {
+          expect(result.cause).toBeInstanceOf(AggregateError);
+          expect(result.cause.errors[0]).toBe(reason);
+          if (phase === "cleanup_failure") expect(result.cause.errors[1]).toBe(cleanupError);
+          else expect(result.cause.errors[1].message).toContain("code 7");
+          expect(runtime.guestFiles.size).toBe(1);
+        } else {
+          expect(result.cause).toBe(reason);
+          expect(runtime.guestFiles.size).toBe(0);
+        }
+        expect(writes).toHaveBeenCalledTimes(phase === "before_upload" ? 0 : 1);
+        expect(calls).toHaveBeenCalledTimes(phase === "before_upload" ? 0 : 1);
+        for (const [, request] of calls.mock.calls) {
+          expect(request.command).toMatch(/^\/bin\/rm -f -- \/tmp\/pi-cloud-envd-/);
+          expect(request.signal).toBeUndefined();
+        }
+        expect(runtime.destroyed).toEqual([]);
+        await expect(provider.exec(handle, operation(ACTIVATION_ID))).rejects.toMatchObject({
+          code: "tool_operation_replay",
+        });
+      } finally {
+        writes.mockRestore();
+        calls.mockRestore();
+        await provider.destroy(handle);
+        await provider.close();
+      }
+    },
+  );
+
+  it("retains an initialization rejection without enabling creation retries", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const original = runtime.runCommand.bind(runtime);
+    runtime.runCommand = async (instance, input) =>
+      runtime.requestForCommand(input).mode === "initialize"
+        ? {
+            stdout: JSON.stringify({
+              toolWorkerProtocolVersion: 1,
+              type: "worker.failed",
+              code: "workspace_attach_invalid",
+              message: "Preserved workspace could not be attached",
+              retryable: true,
+            }),
+            stderr: "",
+            exitCode: 0,
+          }
+        : original(instance, input);
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    });
+    try {
+      await expect(
+        provider.create({
+          activationId: ACTIVATION_ID,
+          assignment,
+          environment,
+          workspaceSeed: { kind: "sample_java" },
+          policy: provider.defaultPolicy,
+        }),
+      ).rejects.toMatchObject({
+        code: "environment_preflight_mismatch",
+        retryable: false,
+        cause: {
+          code: "workspace_attach_invalid",
+          message: "Preserved workspace could not be attached",
+        },
+      });
+      expect(runtime.destroyed).toEqual(["cube-sandbox-1"]);
+    } finally {
+      await provider.close();
+    }
+  });
+
+  it("retains the readiness failure cause while releasing the probe VM", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const cause = new Error("Guest transport disconnected");
+    vi.spyOn(runtime, "runCommand").mockRejectedValue(cause);
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+      readyTimeoutMs: 30,
+    });
+    try {
+      await expect(provider.checkHealth()).rejects.toMatchObject({
+        code: "cubesandbox_data_plane_unavailable",
+        cause,
+      });
+      expect(runtime.destroyed).toEqual(["cube-sandbox-1"]);
+    } finally {
+      await provider.close();
+    }
   });
 
   it("destroys an uncertain VM without replaying a disconnected Tool command", async () => {
