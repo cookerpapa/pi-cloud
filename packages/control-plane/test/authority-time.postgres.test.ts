@@ -36,8 +36,24 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
   afterAll(async () => {
     await db?.destroy();
     if (admin) {
-      await sql`drop database if exists ${sql.id(name)} with (force)`.execute(admin);
-      await admin.destroy();
+      try {
+        // Pool handles can drain before PG observes the last socket close.
+        // Do not FORCE-kill a closing client or conceal a leaked connection.
+        await vi.waitFor(
+          async () => {
+            const result = await sql<{
+              n: number;
+            }>`select count(*)::int as n from pg_stat_activity where datname=${name}`.execute(
+              admin,
+            );
+            expect(result.rows[0]!.n).toBe(0);
+          },
+          { timeout: 5_000, interval: 20 },
+        );
+        await sql`drop database if exists ${sql.id(name)}`.execute(admin);
+      } finally {
+        await admin.destroy();
+      }
     }
   });
   async function fixture(

@@ -40,6 +40,9 @@ Volume architecture. Historical experiments remain in Git history.
       Delayed cancellation no longer blocks unrelated family admission in local
       regressions; shutdown still joins it. Query profiling identified substantial
       claim-planning time; no unvalidated planner/driver change has been deployed.
+      CI also exposed an unhandled idle PG pool error. Child-process/real-PG
+      fault proof passes after installing pg's standard error listener, with no
+      query retry; final deployment and CI repetition remain in the audit gate.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;
