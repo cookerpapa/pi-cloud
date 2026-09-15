@@ -3,6 +3,16 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+Broker `6a718115` is deployed. Actual Cube pre/post-upload cancellation and
+same-VM continuity pass, as do two paid DeepSeek coding Turns (eight Tools,
+3,053 input / 226,560 cache-read / 1,851 output tokens). Four tenants/eight
+Sessions complete 16 paid Runs, with eight marker restores and eight foreign
+reads denied; no marker leaks or Tool calls. Both Workers handle eight Runs.
+The 7,177 input / 21,504 cache-read / 3,035 output tokens are native usage.
+This load overlapped an isolated SQL diagnostic; its timing is not an idle SLO.
+All four new load tenants and both adapter-fixture projects were removed after
+archive/purge checks and FK-enforced deletion rehearsal.
+
 Current rollout: Control Plane `f561e041`; Workers/Broker/Web and Cube templates
 `97995c0f`. Actual Chrome directory selection/creation now passes for long ASCII
 and 255-byte Chinese names; oversized input returns 400. All three directory
@@ -208,6 +218,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | LIFE-11 | Provider relay opened an upstream even when its CONNECT client disappeared during DNS | Controlled-socket regression reproduced the late connection. Check the actual client lifetime immediately after DNS; no retry or new timeout. Five relay tests pass |
 | LIFE-12 | Control Plane acquired telemetry/DB and constructed Subagents outside its cleanup scope | Four regressions failed before, including a real listener left open. Acquisition is now inside the cleanup scope; an unadopted Subagent controller is closed if Projector construction fails. Preserve primary and teardown errors. Four regressions and CP types pass; not yet deployed |
 | LIFE-13 | Projector teardown stopped after the first failed drain, leaving its other owned resources open | Simulated relay/consumer failures reproduced skipped closures. Share one shutdown promise, attempt every owned close in dependency order and report all errors. Seven Projector handoff cases pass, including concurrent close; runtime types pass. No execution/order semantics changed |
+| LIFE-14 | Worker claim loop awaited cancellation settlement, blocking unrelated ready families with free slots | Controlled delayed-cancellation regression reproduces starvation. Track one in-flight cancellation per target Run, keep admission progressing, and join cancellation settlement during drain. Success/failure and duplicate-target cases pass with queue-wake/reconnect/family-drain regressions (12 cases). PG cancellation authority/retry cadence are unchanged; deployment/paid surface repetition pending |
 | TEST-03 | Browser acceptance waited for text until timeout after an already-visible failed Run | Actual proxy failure reproduced the misleading 180-second wait. First-text wait now also detects the existing terminal error element and reports it immediately. Real repetition pending |
 | ENV-01 | Deployed model relay retained localhost:10808 from an earlier shell, while the current proxy is localhost:12450 | Old port returned ECONNREFUSED before model execution. Owner selected 12450 permanently. Persist the explicit relay proxy in private .env; runtime Compose no longer selects it from generic shell HTTPS_PROXY. Installer/config tests and an opposing-shell-proxy render pass. Paid browser repetition and both model smoke calls pass through the selected proxy; provider credentials unchanged |
 | CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace types and remote CI at 9f62b365 pass |
@@ -215,6 +226,19 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | PERF-01 | Sixteen concurrent Sessions with sufficient slots still spend substantial time before provider dispatch | Real sample: non-provider TTFT p50/p95 836/1,322 ms versus provider 1,036/2,071 ms; eight of 32 Turns are internal-time dominant. Worker metrics show claim averaging 122 ms. Investigate statement/lock/pool time before changing admission; no claim of full latency acceptance |
 
 ## Earlier evidence retained for final regression planning
+
+PERF-01 diagnostic: isolated PG, four pooled connections, 48 Runs per wave and
+no model/Kafka/Cube. Claim p50/p95 were 39.6/47.4 ms at concurrency one,
+55.1/146.0 ms at four, and 236.2/371.8 ms at sixteen. These include pool waits;
+the benchmark also settles fixture Runs and is not a production throughput claim.
+The two main captured queries spent 8.0/11.8 ms planning versus 0.3/0.5 ms
+executing after fixture settlement. A diagnostic-only join-order limit reduced
+planning to 4.1/4.4 ms but changed estimated costs; no production planner setting
+or driver was changed. Follow up with eligible-row/mixed-Lane datasets before
+choosing an optimization. PostgreSQL documents the [planning search tradeoff](https://www.postgresql.org/docs/current/explicit-joins.html)
+and [prepared-plan reuse](https://www.postgresql.org/docs/current/sql-prepare.html).
+The current Kysely driver sends unnamed parameterized queries; adding named plans
+would also require proving connection-pool/PgBouncer behavior, not only speed.
 
 These are measurements of the named revisions, not claims about the latest
 deployment. The finding table above and private hash/range ledger track what

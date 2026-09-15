@@ -149,6 +149,7 @@ export class PostgresPiWorker {
     string,
     Readonly<{ execution: Promise<void>; reference?: RunClaimReference }>
   >();
+  readonly #activeCancellations = new Map<string, Promise<void>>();
   #claiming = false;
   #state: PostgresPiWorkerState = "idle";
   #controller: AbortController | undefined;
@@ -287,7 +288,10 @@ export class PostgresPiWorker {
   async #run(signal: AbortSignal): Promise<void> {
     while (
       !signal.aborted &&
-      (this.#state !== "stopping" || this.#activeRuns.size > 0 || this.#claiming)
+      (this.#state !== "stopping" ||
+        this.#activeRuns.size > 0 ||
+        this.#activeCancellations.size > 0 ||
+        this.#claiming)
     ) {
       const observedGeneration = this.#queueWake.generation;
       this.#refreshListener();
@@ -346,15 +350,24 @@ export class PostgresPiWorker {
   async #dispatchCancellations(): Promise<void> {
     if (this.#activeRuns.size === 0) return;
     const references = await this.#cancellationReferences();
-    await Promise.all(
-      references.map(async (reference) => {
-        try {
-          await this.#cancellationExecutor.dispatchTargetRun(reference.targetRunId);
-        } catch (error: unknown) {
-          this.#observeFailure("cancel", error);
-        }
-      }),
-    );
+    for (const { targetRunId } of references) {
+      if (this.#activeCancellations.has(targetRunId)) continue;
+      // Cancellation can wait for guest/Agent cleanup. It must not hold the
+      // shared claim loop, but shutdown must still join its durable settlement.
+      const task = Promise.resolve()
+        .then(() => this.#cancellationExecutor.dispatchTargetRun(targetRunId))
+        .then(
+          () => {},
+          (error) => this.#observeFailure("cancel", error),
+        )
+        .finally(() => {
+          this.#activeCancellations.delete(targetRunId);
+          // Normal retry timing belongs to PG and the poll loop, not a
+          // self-waking rejection loop. Only drain needs an immediate wake.
+          if (this.#state === "stopping") this.#queueWake.notify();
+        });
+      this.#activeCancellations.set(targetRunId, task);
+    }
   }
 
   async #cancellationReferences(): Promise<CancellationReference[]> {
