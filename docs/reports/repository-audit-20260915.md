@@ -52,8 +52,8 @@ This is deployment/UI acceptance, not paid model acceptance. A separate isolated
 Caddy probe also checks custom upstream DNS, Preview routing and JSON escaping
 for configured link values. The existing Chrome presentation suite, installer,
 Helm, documentation, 134 Web tests, Web types/build and formatting checks pass.
-Production Web is deployed at `d923dbb9`; its configuration endpoint returns the
-expected local origins. Other application images remain `9f62b365`. Runtime configuration is evaluated only
+That earlier Web deployment's configuration endpoint returned the expected
+local origins. Runtime configuration is evaluated only
 on the fixed code-owned endpoint, never on user Preview responses, following
 [Caddy's template boundary guidance](https://caddyserver.com/docs/caddyfile/directives/templates).
 
@@ -68,14 +68,14 @@ lockfiles need dependency/CI validation rather than manual source review.
 | Implementation map / README | Entry-point/data-flow map updated; detailed file coverage continues | Runtime inventory read-only |
 | API, auth, resources, Run admission | Controller/auth/composition/store and machine service read; remaining resource/control services in progress | Paid product-surface, six real-PG admission/replay cases and cross-tenant rejection pass |
 | Worker ownership, queue, capacity | Authority/claim paths reviewed and corrected; remaining Worker coverage tracked privately | Family renewal, Worker SIGKILL/replacement and 16 active Sessions tested; pre-provider latency remains open |
-| Native log, Harness, Lanes, Compaction | Session backend package read; cancellation/projection-wait finding remains open | Real-PG plans; two native Compactions during 13 coding rounds; combined child/Compaction coverage still incomplete |
+| Native log, Harness, Lanes, Compaction | Session backend package read; task-scoped cold-read cancellation fixed | Real-PG plans and cancelled cold reads; two native Compactions during 13 coding rounds; combined child/Compaction coverage still incomplete |
 | Kafka, projection, streaming and recovery | Producer/startup policy and selected projection/seal paths reviewed; remaining code pending | R=3 throughput, CP/Kafka SIGKILL, visible-prefix recovery pass; final combined rerun pending |
 | Tools, Cube, Volumes, machines, Preview/SSH | Broker/transport/Volume implementations read; remaining Cube lifecycle code pending | Paid coding, same-Workspace concurrency, actual Snake browser play and machine controls pass; remaining lifecycle faults pending |
 | Model routing/configuration and hosted search | Adapter/relay and configuration paths reviewed; remaining code pending | GPT/DeepSeek, reasoning/Fast, Worker handoff and search around Compaction pass on recorded revisions |
 | Subagent lifecycle and communication | Core lifecycle/mailbox/native bootstrap paths reviewed; remaining code pending | 11 paid production scenarios pass at 9f62b365, plus family fairness and Worker-loss recovery |
-| Frontend pages, controls and rendered latency | Main components and browser interaction fixtures reviewed; remaining paths pending | 93 deployed controls and actual terminal pass; DOM timing is not yet a compositor-paint measurement |
+| Frontend pages, controls and rendered latency | Main components and browser interaction fixtures reviewed; remaining paths pending | 93 deployed controls, actual terminal and one Element Timing paint sample pass; final-revision repetition pending |
 | Configuration, deployment, migration, CI, monitoring | Partial coverage; current pending findings below | CI passed at 9f62b365; actual custom Web origins under test; separate K3s Authorizer rollout pending |
-| Scripts/tests/current docs and unused-code cleanup | Partial hash/range coverage; not a full-read claim | Local check: 919 pass / two gated skips at 9f62b365; clean-state final matrix/cleanup/resume not complete |
+| Scripts/tests/current docs and unused-code cleanup | Partial hash/range coverage; not a full-read claim | Latest completed local checks are recorded above; clean-state final matrix/cleanup/resume not complete |
 
 ## Required live matrix
 
@@ -157,9 +157,11 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CLEAN-10 | Build/formatter ignore files referenced deleted spikes, guest entrypoint, Supervisor Dockerfile and execution-plane chart | Remove stale exceptions; do not delete untracked local directories. Image source closure and actual image builds remain required |
 | DOC-04 | Package READMEs still described Workspace settlements, Run-local leases and Child Workspace modes | Align Control Plane/database/runtime/Web package summaries with physical-Session ownership, direct Kafka projection, persistent Volumes and shared/ephemeral compute; remove unsupported migration-down deployment guidance |
 | DIR-01 | Public create-directory accepts 255 characters while Broker/guest reject above 128; Linux also limits component bytes rather than JS characters | Two regressions reproduce long ASCII rejection and oversized Unicode acceptance. API, Broker and guest now share a 255-byte UTF-8 name rule; 21 protocol/provider cases and actual guest CLI on owned local directories pass. New Cube template rollout and live directory repetition pending |
+| DIR-02 | Create-directory parser errors bypassed public request validation mapping | Real browser/API test created valid long names but an oversized Chinese name returned 500. Convert this route's input parser error to a 400 only at admission, after authentication; retain downstream protocol failures as server errors. Add HTTP regression for empty/traversal/oversized bodies and unauthenticated input |
 | TOOL-04 | Guest request JSON is written before the final abort check; on a persistent machine, cancellation before command dispatch does not run the shell cleanup trap | Source path identified during full Provider read; controlled cancellation/file-retention reproduction and error-path cleanup review remain pending |
 | DIAG-02 | Cube readiness loop records the last error, then discards it at timeout | Preserve the first useful cause without widening public errors after a focused failure regression; not changed in the current directory slice |
 | TEST-04 | Development-machine acceptance inherited the bootstrap tenant's fake model for its first two coding Turns | Live DB inspection identified both deterministic Turns; excluded from paid coding. Explicit DeepSeek selection and GPT Subagent rerun passes all six real-model Runs, with provider/usage verified in native PG entries |
+| TEST-05 | Bash/background test used a 750 ms wall-clock bound against a one-second child sleep | Full real-PG regression under image-build load observed 790 ms and failed this test only. Replace timing inference with a gated child: Tool must settle before the test releases the background process; confirm it then continues. All 14 Tool tests pass; full repetition pending |
 | DEV-02 | Machine lifecycle descriptor requires an active Domain and non-failed environment profile, including release | Reproduced both rejected releases via the actual Broker HTTP fixture. Separate owner-scoped existing-machine routing from new provisioning descriptor; directory operations and release no longer depend on allocation policy. Cross-user checks remain. Local regression slice passes; deployed Cube repetition pending |
 | DEV-03 | Broker concurrent duplicate machine provisioning created two provider runtimes; simultaneous first task bindings chose the same binding ID | Both reproduced. Reuse existing per-Workspace provisioning critical section for machine provisioning/binding creation, not Tool execution. Concurrent parent/child bindings now stay distinct and reuse one runtime |
 | DEV-04 | Machine handle entered the ready map before durable state publication; failure destroyed the VM but retained that handle | Reproduced phantom active count. Publish PG state before installing the ready handle; clean failure no longer advertises a destroyed runtime |
@@ -194,276 +196,61 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | TIME-01 | Lease/claim timestamps were captured before potentially blocked SQL updates | Real PG reproduced a lock-delayed renewal reviving an expired lease. ADR-0170 is deployed at 9f62b365: issuance, renewal, validation and retirement use PG decision time; local deadlines are monotonic hints. Nine real-PG boundaries, local checks, CI and paid multi-round/Subagent/Worker-loss acceptance pass. Wider audit remains open; no post-seal corruption or tenant leak was demonstrated |
 | PERF-01 | Sixteen concurrent Sessions with sufficient slots still spend substantial time before provider dispatch | Real sample: non-provider TTFT p50/p95 836/1,322 ms versus provider 1,036/2,071 ms; eight of 32 Turns are internal-time dominant. Worker metrics show claim averaging 122 ms. Investigate statement/lock/pool time before changing admission; no claim of full latency acceptance |
 
-Latest browser repetition (`d923dbb9` Web, `9f62b365` backend/Workers): all 93
-controls pass after temporarily pointing the relay at the available proxy.
-Same-browser monotonic [Element Timing](https://w3c.github.io/element-timing/)
-measured click → first actual text paint at **4,606.4 ms**, click → DOM text at
-4,593 ms, and DOM → paint at 13.4 ms. The matching single provider sampling took
-4,329.754 ms to first text; total non-provider click-to-paint was 276.646 ms.
-This is one paid GPT sample in headless Chrome, not a concurrent-load percentile.
-Sessions/Workspaces/machine, screenshots/downloads and browser profile were
-removed; the two test identities remain in the campaign cleanup ledger.
-Raw test-only Volume race evidence is retained privately pending the storage
-decision; both temporary filesystem trees and database connections were cleaned.
+## Earlier evidence retained for final regression planning
 
-Control Plane `5b8bd9aa` is deployed; its post-rollout GPT high/Fast and DeepSeek
-high/Standard smoke Runs completed. DeepSeek API/SSE first text was 1,828.1 ms,
-including 1,482.5 ms on the provider route; GPT's cross-process breakdown was
-rejected because the host wall clock stepped, not used as a latency claim.
-Full `npm run check` at this slice completed with **928 passed / two gated skips**
-and all workspace type checks passing. At that earlier checkpoint LOCK-01 had
-only a failing private reproduction. The subsequent owner-approved ADR-0171
-retires that copy path; see the latest slice above, not the old copy proposal.
+These are measurements of the named revisions, not claims about the latest
+deployment. The finding table above and private hash/range ledger track what
+still needs review or repetition.
 
-ARCH-01 implemented locally: positive Agent exit and committed seal restore the
-failed Session's admission, without changing the old failure or replaying Tools.
-Both arrival orders pass; expiry-only, foreign-tenant and stale-old-attempt proofs
-remain rejected. Only failure/cancellation persists the local exit confirmation;
-normal completion adds no PG round trip. Exact owner-stop may also confirm exit;
-an unreachable endpoint cannot. Browser fixture includes a cached failed Session.
+| Scenario | Recorded evidence |
+| --- | --- |
+| Real browser, `d923dbb9` Web / `9f62b365` runtime | 93 controls pass. One paid GPT sample: click → text paint 4,606 ms; provider first text 4,330 ms; non-provider 277 ms. Element Timing measured paint, not just DOM insertion |
+| Long context, `2bc942b8` runtime | 13 algorithm-coding rounds; two threshold Compactions at 112,473→26,824 and 112,297→24,935 estimated tokens. Marker recall, later coding, Worker replacement, GPT Fast search and DeepSeek search pass. Native assistant totals: 324,994 input / 9,849,088 cache-read / 210,023 output tokens; excludes Compaction and unrecorded retries |
+| Subagents, `9f62b365` | 11 paid cases pass after SUB-01 repair: immediate mailbox delivery, supervisor reply, child cancellation, recursion and guest-only workflow. 16,007 input / 184,832 cache-read / 5,030 output tokens. These preceded ADR-0171's compute change |
+| Shared-Volume compute, `fd07a098` / `b84ecb30` Broker | [Dedicated acceptance](subagent-compute-20260915.md): 25 parent Turns / 32 children across repetitions, worktree merge, nested compute, machine home Volume and separate same-port previews |
+| Product surface, `2bc942b8` | Login/logout, Fork/prune, coding, bounded output, browsing, Terminal concurrency, two Sessions sharing Cube, Steer, cancellation recovery, tenant denial, rebinding and purge pass |
+| Snake, `2bc942b8` | Actual Chrome Start/movement/Pause/Reset pass: tick 0→5, remains 5 while paused, resets to 0; isolated Preview returns 200. First durable activity 1,198 ms; settled 52,191 ms |
+| Multi-tenant bounded load | Four tenants × two Sessions: 16 real DeepSeek Runs, peak eight active; first-text p50/p95 1,534/2,772 ms. Four tenants × four Sessions under the same eight slots: 32 Runs, p50/p95 2,406/5,109 ms, queue p95 3,552 ms. No marker leaks; foreign-tenant reads rejected |
+| Expanded slots | Temporary 16-family/16-model settings: 16 simultaneously active Runs, first-text p50/p95 1,904/3,209 ms, queue 555/1,003 ms. A clock-stepped predecessor is excluded. PERF-01 remains open; settings restored to four/four |
+| Kafka-only transport | Three brokers, 1,024 synthetic Sessions, 747,520 records / 10.011 s: 74,668 records/s; ACK p50/p95/p99 12.17/22.39/28.09 ms. Excludes PG/Projector/Tool/model/browser. Temporary topic deleted |
+| CP/Projector SIGKILL, `5558ab15` | 41 records produced after CP was confirmed stopped; same Worker boot and one Attempt complete. Visible prefix preserved byte-for-byte; live and canonical text match; total 18.86 s including outage |
+| One Kafka broker SIGKILL, `5558ab15` | One Attempt, preserved prefix and matching live/canonical output; total 23.84 s including recovery |
+| Session-family loss/fairness | One Worker, two family slots, one model permit: five tasks share two leases; another family progresses while three child Tools wait. Worker SIGKILL seals family before replacement; recovery checks existing files without repeating the old append. 11,799 input / 107,904 cache-read / 5,213 output tokens |
+| Authority clock, `9f62b365` | Nine real-PG lock/skew tests and paid family renewal/recovery pass under ADR-0170; local timers remain hints, PG and ordered closure remain authoritative |
+| CI | [`642878b9` passed](https://github.com/cookerpapa/pi-cloud/actions/runs/34966690777). Later commits require their own checks |
 
-GitHub's [setup-URL guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-setup-url)
-explicitly requires checking the caller's access to the supplied installation;
-ARCH-02 approved: remove the installation entry/callback, preserving ordinary
-environment Git credentials and existing bound integration reads. No real GitHub
-account or installation was probed. Local implementation follows ADR-0169.
+Do not combine different revisions, fixtures or invalid-clock samples into a
+single percentile. API/SSE receipt, first durable activity, first assistant text
+and browser paint are distinct metrics. Earlier partial local test counts are
+superseded by each completed full invocation, not added together.
 
-Approved-slice validation: 352 tests passed across Control Plane/runtime/Worker/Web,
-five external-PG-only checks skipped in that offline invocation. A dedicated real
-PostgreSQL container then passed all nine queue/recovery cases plus concurrent
-Run settlement (10 tests, 12.10 seconds). All workspace type checks, the Web build,
-Chrome presentation interactions, documentation and Helm checks passed. Full
-package tests with the isolated PG fixture finished: 877 passed, one schema-ledger
-assertion still expected migration 138 and one live Cube test was disabled.
-Updated that assertion to migration 140 and explicitly checked the removed table
-and positive-exit column; all seven database tests then passed (878 corrected
-package cases in total, one live Cube case pending). Five acceptance timing-helper
-tests also passed. The isolated PG container and all its per-test databases were
-removed; no formal users, Sessions or machines were deleted. These are not paid
-model, deployed Cube or complete audit acceptance; production remains unchanged.
-The maintained fault evaluator also passed all 26 targeted cases; its current
-report distinguishes simulated protocol failures from actual local process kills.
-No result here certifies physical multi-node failure or paid model behavior.
+## Cleanup and remaining gates
 
-Remote CI passed completely at `aadcb725` ([run](https://github.com/cookerpapa/pi-cloud/actions/runs/34899010082)),
-including the quality, browser and image/security jobs. Later slices require their
-own final rerun; this is not evidence that paid end-to-end validation is finished.
+Original baseline: 35 users / 33 tenants and no Sessions, live Workspaces,
+machines or active Runs. Preserve those pre-existing identities and formal logs.
+Private fixtures and exact cleanup state are in
+`.cache/audit-20260915-resources.json`; reviewed paths/hashes/ranges are in
+`.cache/audit-20260915-state.json`.
 
-Latest UI/resource slice: all 117 tests across 18 files pass, plus the actual
-Chrome presentation/interaction fixture (including rejected clipboard cleanup).
-These are local contract/browser tests, not paid model or deployed Cube acceptance.
-Markdown follow-up: 126 Web tests and Chrome interaction checks pass. Synthetic
-Node parser measurements (not end-to-end latency): parsing the whole 10,192-character
-document each update had p50 18.96 ms; incremental suffix updates on a 10–11K
-document had p50 0.41 ms / p95 1.12 ms. At 50–51K characters, incremental p50
-0.73 ms / p95 1.24 ms. A single very large unresolved block still costs proportional
-parsing work; these measurements do not claim constant-time arbitrary Markdown.
-Control Plane follow-up: 134 tests passed, five real-PG-only checks initially
-skipped by the offline suite and subsequently exercised below.
-The dedicated PostgreSQL run subsequently passed all six checks across Workspace
-admission/deletion races, concurrent settlement and indexed native-context queries
-(16.26 s suite wall time). This is database integration, not full-stack recovery
-or paid model validation. Its databases were dropped by the fixtures; the sole
-owned test container and anonymous data volume were removed (absence verified).
+ADR-0171 paid fixtures and the two `642878b9` machine fixtures were removed after
+physical Cube/Volume confirmation and FK-enforced deletion rehearsal. The latter
+removed exactly 12 Runs, eight views, four native Sessions and two machines/
+Workspaces/projects; no active Runs remained. Older campaign identity rows and
+the reusable baseline coding Sessions still await final scoped cleanup.
 
-Local regression slices passed: three
-runtime-composition tests; 50 Worker/Runner/Harness tests; 12 auth/gateway tests;
-69 Broker/admission/Tool-result/bootstrap/shutdown/monitoring tests. These slices
-overlap earlier runs and are not a full-suite total. Native storage package: 92
-offline tests pass, one real-PG-only plan test pending. Volume/RPC follow-up: 27
-pass. Affected type checks passed. No paid/live
-test was run in this campaign yet. Fixes are not deployed to the running stack yet.
-Architecture-level issues block only their own modifications; continue
-independent review and verification while awaiting the owner.
+Remaining work:
 
-## Resources and final gate
+- finish all maintained source, test, deployment, migration and documentation reads;
+- reproduce/fix TOOL-04 and DIAG-02; finish MEM-02 and PERF-01 investigation;
+- complete the directory template/browser rollout and any further regression slices;
+- repeat the combined child/Compaction/search/provider/Worker and failure matrices
+  on the final revision, including multi-replica control and UI races;
+- finish full CI/build/security/fault gates and clean-state product acceptance;
+- verify final resources, test topics/logs and temporary PostgreSQL removal;
+- resolve the eight old Cube template cleanup timeouts; K3s Authorizer rollout
+  still needs legitimate cluster-admin access;
+- update resume v11 only after all engineering gates pass.
 
-### Approved authority-clock correction — TIME-01 / ADR-0170
-
-Pre-fix renewal compared `valid_until` with an application timestamp sampled
-before transaction/lock waits. Refreshing the timestamp earlier in the caller
-does not remove pauses after that read or cross-machine clock differences.
-The owner approved the fix. It keeps PG, Session-family Lease/Fence and Kafka seals,
-but makes lease decisions use PG time at the locked decision point. Worker timers
-remain local cancellation hints, not authority. It does not replay a Run/Tool or
-relax seals. ADR-0170 is deployed at `9f62b365`; its paid acceptance passed.
-Other audit items remain open, including UI origins, pre-provider latency,
-remaining line review and combination tests. Resume v11 has not been changed.
-
-Nine real-PG regressions pass: application clocks offset by ±1 hour; renewal,
-grant and publication expiry during actual row waits; reaper clock independence;
-startup-claim expiry during Session acquisition; delayed Broker renewal; a stale
-retirement candidate after an earlier valid renewal commits.
-Local observers use monotonic remaining lifetime including request elapsed time.
-The unused absolute Supervisor lease deadline was removed. Delayed Broker renewal
-also exposed overlapping timer requests; one in-flight heartbeat prevents them
-from filling the connection pool. Fake-clock expiry tests now set explicit expired
-database rows. The full suite is being repeated after those test corrections.
-The repeated `npm run check` completed successfully with both real-PG fixture
-URLs enabled. Format/docs/Helm/runtime-policy checks passed. The Worker startup
-test's unrelated 500ms connection deadline was replaced with the production 30s
-default after it preempted the intended publisher-failure injection; dedicated
-expiry tests still use actual short-deadline lock waits. Local check recorded
-919 passed tests and two environment-gated skips (standalone Cube and Kafka
-integration gates); this is not a full audit completion count.
-
-Deployed API, Worker and Broker image labels were verified at `9f62b365`.
-Paid GPT Sol high/Fast and DeepSeek Pro high/Standard restored their markers;
-first-text non-provider time was 290/360 ms (provider route 4,201/1,128 ms).
-Two DeepSeek coding Turns passed sorting/search tests with a Worker change.
-All 11 Subagent scenarios passed (16,007 input / 184,832 cache-read / 5,030
-output tokens). Family acceptance also passed: a 62.73-second coding Run crossed
-the initial lease lifetime; other families progressed; Worker SIGKILL caused
-ordered family closure and replacement without repeating the old append.
-Family usage: 14,071 input / 107,264 cache-read / 6,757 output tokens.
-Its test conversations/Workspaces were released and both Workers restored to
-four family slots/four model permits. New test identity rows remain in the
-private cleanup ledger, together with the original baseline fixtures.
-CI passed at `9f62b365` ([run](https://github.com/cookerpapa/pi-cloud/actions/runs/34930661277)).
-The four old offline-node templates remain deferred, not falsely reported deleted.
-
-### Live campaign started
-
-Read-only pre-rollout inventory: 35 users, 33 tenants, zero Sessions/live Workspaces/
-machines/active Runs/pending seals/pending Outbox. Preserve those identities.
-Registered template catalog and service images at `2bc942b8`; applied migrations
-139/140 with no user reset and rolled the idle stack. All services became healthy.
-Four old template deletions were deferred by Cube with node-cleanup timeouts;
-the four new templates are READY. Do not claim old template bytes were removed.
-
-Paid diagnostic calls (small samples, not a throughput or statistical ablation):
-DeepSeek Flash before rollout had one cold first-text sample of 5,062 ms, including
-4,157 ms until model dispatch; a later sample was 645 ms (provider route 324 ms,
-non-provider 321 ms). These baseline calls overlapped image build and are not an
-idle-machine SLO. The first marker response was translated by the model, so its
-exact-marker assertion failed; a clarified ASCII test passed. After rollout,
-restoring the same Sessions on new Worker boots gave 1,087/1,157 ms for Flash
-medium/Pro high, with 304/270 ms non-provider time. These are API/SSE receipt times,
-not browser paint. Persisted model/reasoning/Fast snapshots matched the request.
-
-Two paid coding Turns created and tested stable insertion sort, then read/preserved
-it and added first-match binary search. Both completed, used different Workers,
-one physical Workspace Cube and two Tool bindings (8 operations). Provider usage:
-2,947 uncached input, 44,416 cache-read, 3,302 output tokens across those two Turns.
-Final assistant text arrived after earlier Tool-generating sampling, so it is not
-initial Agent activity. One Turn had a 1.57-second host wall-clock step; its cross-
-process timing breakdown is explicitly unavailable, not silently used.
-
-GPT initially failed upstream authentication: its configured access-only credential
-expired and has no refresh token. Started the normal device authorization workflow
-and asked the owner to complete it; no alternate credential was copied. Official
-[Codex authentication guidance](https://learn.chatgpt.com/docs/auth) was checked
-using OpenAI Docs. Product-surface GPT acceptance stopped on this actual failure;
-it is not a passed test. First DeepSeek Snake coding completed, but the next
-acceptance step failed because the shared API client lacked `getRun` (CLEAN-03).
-The script released that test machine and conversation. Fixed the client contract;
-42 API/view regressions pass after fixing the regression fixture's short token.
-Full paid DeepSeek Snake repetition passed: 14 Tools/preparation activities,
-1,198 ms first durable activity, 52,191 ms settled, isolated Preview HTTP 200,
-and actual Chrome Start/movement/Pause/Reset assertions. The preview's tick advanced
-0→5, remained 5 during Pause, and returned to 0 on Reset. Its machine and
-conversation were released; aggregate evidence records deployed image `2bc942b8`
-separately from the local harness revision. Test users still await final cleanup.
-The first Codex device code expired; the owner completed a second normal device
-login. A refresh-capable credential is now active and the expired access-only entry
-was disabled via the management API. A paid GPT Sol high/Fast call recovered the
-prior marker (first text 3,738 ms; non-provider 211 ms); DeepSeek Pro high/Standard
-also recovered correctly (917 ms; non-provider 166 ms). No local Codex credential
-was copied or modified.
-
-Long-context acceptance passed against the normal 128K DeepSeek configuration:
-13 algorithm-coding rounds and two threshold Compactions, at 112,473→26,824 and
-112,297→24,935 estimated tokens. Early-marker recall, further coding, new Worker
-restoration of the same Cube, GPT Luna medium/Fast search, and DeepSeek Pro
-high/Standard search all passed. Native assistant usage covered 177 messages:
-324,994 uncached input, 9,849,088 cache-read and 210,023 output tokens; excludes
-unrecorded retries and Compaction usage. The harness's Git revision differs from
-deployed runtime image `2bc942b8`; no claim is made that later UI fixes were deployed.
-Its Session/Workspace were deleted and both Workers restored. Test identity cleanup
-is pending. Current aggregate evidence comes from the private campaign log.
-
-The re-run product-surface suite passed cookie login/logout, Fork/prune, coding,
-bounded output, live browsing, terminal/Agent concurrency, two Sessions sharing
-one Cube, Steer, cancellation recovery, cross-tenant denial, Workspace rebinding
-and physical purge. Pure-chat first text was 2,330 ms: provider route 2,145 ms,
-non-provider 186 ms. This remains API/SSE receipt, not browser paint.
-Full real-browser acceptance passed 93 controls, including terminal commands,
-model cascades, Steer/Stop, Fork/prune, directory creation, machine pause/resume,
-SSH actions and resource deletion. Browser DOM-observed first text was 2,043 ms;
-this is not a compositor paint measurement. The first browser run exposed an
-obsolete terminal-label assertion and swallowed cleanup conflicts, not a broken
-terminal. The script now executes a real terminal command and reports acceptance
-and bounded resource-cleanup failures together. The successful rerun removed its
-resources/screenshots; test identity rows still await final cleanup. Remote CI at
-`d32a9fe7` passed; that revision's tree refresh fix is not yet deployed.
-Private fixture IDs/credentials stay in `.cache/audit-live-baseline-state.json`,
-not this report. The baseline and new test users/resources require final cleanup.
-
-Live Subagent acceptance passed seven rounds: fresh/no-Tool, lazy Tool-capable,
-parallel children, shared Workspace, isolated Branch, recursive tree and parallel
-coding. Round eight reproduced SUB-01 rather than passing: immediate mailbox input
-arrived during native bootstrap, received 409 and caused the workflow to cancel
-its child. Local fix validation passed 97 Session tests (one separate real-PG plan
-test not enabled in that invocation) and 104 Runner tests, including native
-bootstrap failure/cancellation and duplicate delivery. Full deployed repetition,
-supervisor interaction and child cancellation acceptance initially remained pending.
-After deploying `5558ab15`, all 11 paid Subagent rounds passed, including immediate
-mailbox delivery exactly once, parent decision/reply, cancellation and guest-only
-workflow execution. Usage: 13,834 uncached input, 183,680 cache-read, 5,141 output
-tokens. Four new templates became READY; four prior catalog templates were deleted,
-while the same four older node-orphan templates still report cleanup timeouts.
-
-Four tenants × two Sessions completed 16 real DeepSeek Runs with peak eight active
-Runs, restored all eight markers and rejected eight foreign-tenant API reads.
-No Tool calls or marker leaks occurred; each Worker handled eight Runs.
-API/SSE first text p50/p95: 1,534/2,772 ms; admission 31/53 ms; queue 148/360 ms.
-This is a bounded concurrency sample, not a saturation or browser-paint claim.
-With the same eight slots, four tenants × four Sessions completed 32 Runs:
-first-text p50/p95 2,406/5,109 ms; queue 683/3,552 ms; peak active Runs remained
-eight. This is capacity queueing, not Kafka saturation. A temporary 16-slot/
-16-model-permit configuration on each Worker is being tested separately;
-restore the original four/four settings afterwards.
-The first expanded-capacity wave completed all 32 Runs but was rejected as timing
-evidence because the WSL wall clock jumped 1.744 seconds. A separate rerun passed:
-16 simultaneously active Runs, no marker leaks, first-text p50/p95 1,904/3,209 ms,
-queue 555/1,003 ms. Do not combine its clock-invalid predecessor into percentiles.
-The remaining pre-provider delay is tracked as PERF-01, not blamed on the model.
-Both Workers and the CP have returned to the original four-family/four-model
-configuration and are healthy. A separate Kafka-only steady run on three brokers
-published 747,520 records in 10.011 seconds with 1,024 synthetic Sessions:
-74,668 records/s, ACK p50/p95/p99 12.17/22.39/28.09 ms. This excludes PG, Projector,
-Tool execution, provider requests and browser rendering. Its temporary topic was
-deleted; verify physical cleanup at the final inventory gate.
-Remote CI at `7e929c67` passed all quality, browser and image/security jobs
-([run](https://github.com/cookerpapa/pi-cloud/actions/runs/34920234169)).
-The two owned old browser/Snake artifact directories were removed (about 500 KiB).
-Original identities and formal logs remain untouched. New test identity rows,
-the original baseline fixtures still require cleanup. The isolated PostgreSQL
-container was removed after ADR-0171 acceptance; later PG gates need a fresh fixture.
-
-Real Control Plane/Projector SIGKILL during a paid DeepSeek stream passed on
-runtime `5558ab15`: 41 Kafka records were produced after verifying the CP was
-actually stopped; Worker boots did not change. SSE reconnected, the previously
-visible prefix survived byte-for-byte, live text matched canonical history and
-the Run completed with one Attempt (18.86 s total including outage/replacement).
-This does not certify Worker death or physical multi-node failures. The probe now
-measures its Kafka baseline after the kill and explicitly selects/reports the
-tested model instead of reporting an unrelated tenant default.
-Single Kafka-broker SIGKILL also passed with one Attempt, preserved prefix and
-identical canonical/live text (23.84 s including recovery). No SSE reconnect was
-needed in that run. Full Session-family fairness/Worker-loss rerun passed:
-one Worker, two family slots, one model permit, five active tasks sharing two
-family leases; another family progressed while three child Tools waited. Killing
-the owning Worker closed the family before replacement, and the new Worker checked
-the files/tests without repeating the old append. The first run stopped at an
-over-strict exact-answer assertion although checks had succeeded; the rerun keeps
-exact file/side-effect assertions and accepts explanation before the final marker.
-Paid rerun usage: 11,799 uncached input, 107,904 cache-read, 5,213 output tokens.
-Both Workers/configuration were restored; test conversations/Workspaces deleted.
-
-Before mutation, inventory existing tenants/users/resources, image revisions and
-configuration digests without disclosing credentials. Register test resources
-explicitly. Delete only those fixtures after drain/seal/physical purge; preserve
-formal diagnostic logs and real user data. Keep aggregate results, not raw
-transcripts or credentials. Final CI checks, clean-state matrix, cleanup and
-resume update are all pending.
+Physical multi-node failover, Cube-native effect fencing and arbitrary shell
+exactly-once are not certified by this single-host campaign. Architecture changes
+still require owner discussion; ordinary implementation fixes continue locally.

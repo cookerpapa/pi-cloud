@@ -146,6 +146,12 @@ try {
         "exclusive mode",
       );
       await setValue(".product-progressive-options > label input", `Directory UI ${suffix}`);
+      await page.waitFor(
+        `document.querySelector('.product-exclusive-environment-choice select option[value="${development.environmentId}"]')`,
+      );
+      await page.evaluate(
+        `(()=>{const select=document.querySelector('.product-exclusive-environment-choice select');select.value=${JSON.stringify(development.environmentId)};select.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+      );
       await click(".product-working-directory-choice button", "directory picker");
       await page.waitFor('document.querySelector(".product-directory-picker")');
       await page.waitFor(

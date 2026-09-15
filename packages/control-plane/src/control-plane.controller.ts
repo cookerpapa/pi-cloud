@@ -18,6 +18,7 @@ import {
 } from "@nestjs/common";
 import {
   ControlPlaneApiValidationError,
+  DevelopmentEnvironmentProtocolError,
   parseAcceptTurnRequest,
   parseLoginAccountRequest,
   parseRegisterAccountRequest,
@@ -499,11 +500,16 @@ export class ControlPlaneController {
     @Param("environmentId") environmentIdValue: unknown,
     @Body() body: unknown,
   ): Promise<DevelopmentEnvironmentDirectoryResource> {
-    return this.developmentEnvironments.createDirectory(
-      this.tenantRequestContext.requireMutation(request),
-      parseUuidPathParameter(environmentIdValue, "environmentId"),
-      parseCreateDevelopmentEnvironmentDirectoryRequest(body),
-    );
+    const identity = this.tenantRequestContext.requireMutation(request);
+    const environmentId = parseUuidPathParameter(environmentIdValue, "environmentId");
+    let directory;
+    try {
+      directory = parseCreateDevelopmentEnvironmentDirectoryRequest(body);
+    } catch (error) {
+      if (!(error instanceof DevelopmentEnvironmentProtocolError)) throw error;
+      throw new ControlPlaneApiValidationError(error.message);
+    }
+    return this.developmentEnvironments.createDirectory(identity, environmentId, directory);
   }
 
   @Post("development-environments/:environmentId/actions")

@@ -366,6 +366,25 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     }
   });
 
+  it("reports invalid directory bodies as client errors before contacting a machine", async () => {
+    const url = `/v1/development-environments/${projectA.workspaceId}/directory`;
+    for (const payload of [
+      {},
+      { path: "/home/user", name: ".." },
+      { path: "/home/user", name: "目".repeat(86) },
+    ]) {
+      const response = await http.inject({
+        method: "POST",
+        url,
+        headers: authorization(memberAToken),
+        payload,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error: { code: "invalid_request" } });
+    }
+    expect((await http.inject({ method: "POST", url, payload: {} })).statusCode).toBe(401);
+  });
+
   it("returns client errors for missing or repeated resource query parameters", async () => {
     const paths = [
       `/v1/sessions/${sessionA.sessionId}/workspace/file`,

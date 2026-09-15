@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   canonicalEnvironmentRecipeJson,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
@@ -433,22 +433,48 @@ describe("credential-free Tool Sandbox worker", () => {
 
   it("settles a Bash Tool after its shell exits while a quiet background process continues", async () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-bash-background-"));
+    const child = spawn(
+      "/bin/bash",
+      [
+        "--noprofile",
+        "--norc",
+        "-lc",
+        "(while [ ! -f release ]; do sleep 0.02; done; printf alive > background.txt) &",
+      ],
+      {
+        cwd: workspace,
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     try {
-      const child = spawn(
-        "/bin/bash",
-        ["--noprofile", "--norc", "-lc", "(sleep 1; printf alive > background.txt) &"],
-        {
-          cwd: workspace,
-          detached: process.platform !== "win32",
-          stdio: ["ignore", "pipe", "pipe"],
+      // Prove lifecycle ordering instead of racing a fixed sleep against host load.
+      let result: { code: number | null } | { error: unknown } | undefined;
+      const settled = waitForShellProcess(child).then(
+        (code) => {
+          result = { code };
+        },
+        (error) => {
+          result = { error };
         },
       );
-      const startedAt = Date.now();
-      await expect(waitForShellProcess(child)).resolves.toBe(0);
-      expect(Date.now() - startedAt).toBeLessThan(750);
-      await delay(1_100);
-      await expect(readFile(resolve(workspace, "background.txt"), "utf8")).resolves.toBe("alive");
+      await vi.waitFor(() => expect(result).toEqual({ code: 0 }), { timeout: 5_000 });
+      await settled;
+      await expect(access(resolve(workspace, "background.txt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await writeFile(resolve(workspace, "release"), "");
+      await vi.waitFor(async () => {
+        expect(await readFile(resolve(workspace, "background.txt"), "utf8")).toBe("alive");
+      });
     } finally {
+      if (child.pid !== undefined) {
+        try {
+          process.kill(process.platform === "win32" ? child.pid : -child.pid, "SIGKILL");
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+        }
+      }
       await rm(workspace, { recursive: true, force: true });
     }
   });
