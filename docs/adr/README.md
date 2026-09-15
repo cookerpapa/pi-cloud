@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0170](0170-postgres-authority-time.md) — database decision-time authority
+   after lock waits; monotonic local cancellation observations.
+
 1. [ADR-0169](0169-confirmed-session-recovery-and-github-entry.md) — resume a
    quarantined Session only after confirmed exit and seal; remove unauthenticated
    GitHub App installation binding.

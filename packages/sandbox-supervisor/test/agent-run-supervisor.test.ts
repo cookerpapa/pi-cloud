@@ -595,75 +595,81 @@ describe("AgentRunSupervisor", () => {
     await expect(parentRun).rejects.toBeInstanceOf(PiTurnCancelledError);
   });
 
-  it("batches every active session into one supervisor heartbeat", async () => {
-    const abortingRunner: SupervisorTurnRunner = {
-      async run(_value, _publishEvent, signal) {
-        return new Promise((_resolve, reject) => {
-          signal.addEventListener(
-            "abort",
-            () => {
-              const reason = signal.reason as { reason: "session_lease_revoked" };
-              reject(new PiTurnCancelledError(reason.reason, false));
-            },
-            { once: true },
-          );
-        });
-      },
-    };
-    const supervisor = new AgentRunSupervisor({
-      runner: abortingRunner,
-      maxConcurrentSessions: 2,
-      clock: () => new Date("2026-07-18T08:00:00.000Z"),
-    });
-    const first = supervisor.prepare(command(), rejectUnexpectedEvent);
-    const second = supervisor.prepare(
-      command({
-        runId: IDS.command2,
-        leaseId: IDS.lease2,
-        generation: 2,
-        sessionId: "session-2",
-      }),
-      rejectUnexpectedEvent,
-    );
-    const executions = [first.run(), second.run()];
-    for (const execution of executions) void execution.catch(() => undefined);
-    const heartbeat = supervisor.createHeartbeat({
-      supervisorId: "supervisor-1",
-      bootId: IDS.boot,
-      connectionId: IDS.connection,
-    });
-
-    expect(heartbeat.payload.families.map((value) => value.piSessionId).sort()).toEqual([
-      "session-1",
-      "session-2",
-    ]);
-    expect(
-      supervisor.applyHeartbeatAcknowledgement(heartbeat, {
-        protocolVersion: 1,
-        messageId: IDS.heartbeatAck,
-        sentAt: "2026-07-18T08:00:01.000Z",
-        type: "supervisor.heartbeat.ack",
-        payload: {
-          acknowledgedMessageId: heartbeat.messageId,
-          connectionId: IDS.connection,
-          familyLeaseRenewals: heartbeat.payload.families.map((value) => ({
-            leaseId: value.leaseId,
-            fencingToken: value.fencingToken,
-            validUntil: "2026-07-18T08:01:00.000Z",
-          })),
+  it.each([0, 61000])(
+    "checks one family heartbeat batch after %i ms in transit",
+    async (elapsed) => {
+      let monotonic = 0;
+      const abortingRunner: SupervisorTurnRunner = {
+        async run(_value, _publishEvent, signal) {
+          return new Promise((_resolve, reject) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                const reason = signal.reason as { reason: "session_lease_revoked" };
+                reject(new PiTurnCancelledError(reason.reason, false));
+              },
+              { once: true },
+            );
+          });
         },
-      }),
-    ).toEqual({
-      renewedAssignments: 2,
-      revokedAssignments: 0,
-      revokedSessionIds: [],
-    });
+      };
+      const supervisor = new AgentRunSupervisor({
+        runner: abortingRunner,
+        maxConcurrentSessions: 2,
+        clock: () => new Date("2026-07-18T08:00:00.000Z"),
+        monotonicNow: () => monotonic,
+      });
+      const first = supervisor.prepare(command(), rejectUnexpectedEvent);
+      const second = supervisor.prepare(
+        command({
+          runId: IDS.command2,
+          leaseId: IDS.lease2,
+          generation: 2,
+          sessionId: "session-2",
+        }),
+        rejectUnexpectedEvent,
+      );
+      const executions = [first.run(), second.run()];
+      for (const execution of executions) void execution.catch(() => undefined);
+      const heartbeat = supervisor.createHeartbeat({
+        supervisorId: "supervisor-1",
+        bootId: IDS.boot,
+        connectionId: IDS.connection,
+      });
 
-    first.revokeExecution();
-    second.revokeExecution();
-    await Promise.all(executions.map((execution) => expect(execution).rejects.toBeDefined()));
-    expect(supervisor.activeSessionCount).toBe(0);
-  });
+      expect(heartbeat.payload.families.map((value) => value.piSessionId).sort()).toEqual([
+        "session-1",
+        "session-2",
+      ]);
+      monotonic = elapsed;
+      expect(
+        supervisor.applyHeartbeatAcknowledgement(heartbeat, {
+          protocolVersion: 1,
+          messageId: IDS.heartbeatAck,
+          sentAt: "2026-07-18T08:00:01.000Z",
+          type: "supervisor.heartbeat.ack",
+          payload: {
+            acknowledgedMessageId: heartbeat.messageId,
+            connectionId: IDS.connection,
+            familyLeaseRenewals: heartbeat.payload.families.map((value) => ({
+              leaseId: value.leaseId,
+              fencingToken: value.fencingToken,
+              validUntil: "2026-07-18T08:01:00.000Z",
+            })),
+          },
+        }),
+      ).toEqual({
+        renewedAssignments: elapsed === 0 ? 2 : 0,
+        revokedAssignments: elapsed === 0 ? 0 : 2,
+        revokedSessionIds: elapsed === 0 ? [] : ["session-1", "session-2"],
+      });
+
+      first.revokeExecution();
+      second.revokeExecution();
+      await Promise.all(executions.map((execution) => expect(execution).rejects.toBeDefined()));
+      expect(supervisor.activeSessionCount).toBe(0);
+    },
+  );
 
   it("revokes a running assignment when its heartbeat ACK omits the renewal", async () => {
     let observedSignal: AbortSignal | undefined;

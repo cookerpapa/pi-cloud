@@ -17,6 +17,7 @@ import { DEVELOPMENT_ENVIRONMENT_PROFILES } from "@pi-cloud/protocol";
 import type { SandboxHandle } from "./sandbox-provider.ts";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
+import { databaseTime } from "@pi-cloud/database";
 
 export type WorkspaceRuntimeReservation = {
   activationId: string;
@@ -411,6 +412,7 @@ export type PostgresWorkspaceRuntimeStateRepositoryOptions = {
   leaseMs?: number;
   heartbeatMs?: number;
   clock?: () => Date;
+  monotonicNow?: () => number;
 };
 
 function validDate(clock: () => Date): Date {
@@ -478,9 +480,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   readonly #leaseMs: number;
   readonly #heartbeatMs: number;
   readonly #clock: () => Date;
+  readonly #monotonicNow: () => number;
   #heartbeat: NodeJS.Timeout | undefined;
+  #heartbeatTask: Promise<void> | undefined;
   #closed = false;
-  #confirmedLeaseExpiresAt = 0;
+  #ownershipDeadline = 0;
 
   constructor(options: PostgresWorkspaceRuntimeStateRepositoryOptions) {
     this.#database = options.database;
@@ -493,6 +497,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       throw new TypeError("Tool Broker heartbeat must leave lease failure margin");
     }
     this.#clock = options.clock ?? (() => new Date());
+    this.#monotonicNow = options.monotonicNow ?? (() => performance.now());
   }
 
   async start(): Promise<void> {
@@ -502,8 +507,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const startupDeadline = Date.now() + this.#leaseMs * 2;
     let leaseExpiresAt: Date | undefined;
     while (leaseExpiresAt === undefined) {
-      const now = validDate(this.#clock);
-      const candidateLease = new Date(now.valueOf() + this.#leaseMs);
+      const now = await databaseTime(this.#database);
       const currentOwner = await this.#database
         .selectFrom("tool_broker_instances")
         .select("lease_expires_at")
@@ -528,22 +532,23 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         continue;
       }
       try {
-        await this.#database.transaction().execute(async (transaction) => {
+        const issued = await this.#database.transaction().execute(async (transaction) => {
           await this.#markExpiredOwnersLost(transaction, now);
-          await transaction
+          return transaction
             .insertInto("tool_broker_instances")
             .values({
               instance_id: this.#instanceId,
               sandbox_domain_id: this.#sandboxDomainId,
               owner_base_url: this.#ownerBaseUrl,
               state: "ready",
-              lease_expires_at: candidateLease,
-              last_heartbeat_at: now,
+              lease_expires_at: sql<Date>`clock_timestamp() + ${this.#leaseMs} * interval '1 millisecond'`,
+              last_heartbeat_at: sql<Date>`clock_timestamp()`,
               updated_at: now,
             })
+            .returning("lease_expires_at")
             .executeTakeFirstOrThrow();
         });
-        leaseExpiresAt = candidateLease;
+        leaseExpiresAt = issued.lease_expires_at;
       } catch (error: unknown) {
         if (!readyOwnerUrlConflict(error) || Date.now() >= startupDeadline) throw error;
         const existing = await this.#database
@@ -567,22 +572,30 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         await delay(waitMs);
       }
     }
-    this.#confirmedLeaseExpiresAt = leaseExpiresAt.valueOf();
-    this.#heartbeat = setInterval(
-      () => void this.#renew().catch(() => undefined),
-      this.#heartbeatMs,
-    );
+    await this.checkHealth();
+    this.#heartbeat = setInterval(() => {
+      if (this.#closed || this.#heartbeatTask) return;
+      this.#heartbeatTask = this.#renew()
+        .catch(() => undefined)
+        .finally(() => {
+          this.#heartbeatTask = undefined;
+        });
+    }, this.#heartbeatMs);
     this.#heartbeat.unref();
   }
 
   async checkHealth(): Promise<void> {
-    const now = validDate(this.#clock);
+    const requestedAt = this.#monotonicNow();
     const row = await this.#database
       .selectFrom("tool_broker_instances")
-      .select("lease_expires_at")
+      .select(
+        sql<string>`extract(epoch from (lease_expires_at-clock_timestamp()))*1000`.as(
+          "remaining_ms",
+        ),
+      )
       .where("instance_id", "=", this.#instanceId)
       .where("state", "=", "ready")
-      .where("lease_expires_at", ">", now)
+      .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
       .executeTakeFirst();
     if (row === undefined) {
       throw new WorkspaceRuntimeStateRepositoryError(
@@ -590,15 +603,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         "Tool Broker database ownership lease is not current",
       );
     }
-    this.#confirmedLeaseExpiresAt = timestampValue(
-      row.lease_expires_at,
-      "Tool Broker confirmed lease",
-    );
+    this.#ownershipDeadline = requestedAt + Number(row.remaining_ms);
   }
 
   assertLocalOwnership(): void {
-    const now = validDate(this.#clock);
-    if (this.#closed || now.valueOf() >= this.#confirmedLeaseExpiresAt) {
+    if (this.#closed || this.#monotonicNow() >= this.#ownershipDeadline) {
       throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Tool Broker locally confirmed ownership lease expired",
@@ -610,7 +619,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const now = validDate(this.#clock);
     const execution = executionIdentity(input.assignment);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
       const workspace = await transaction
         .selectFrom("workspaces")
         .select("sandbox_domain_id")
@@ -625,6 +633,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "Workspace is not assigned to this Sandbox Domain",
         );
       }
+      await this.#assertCurrentOwner(transaction);
       const liveTerminal = await transaction
         .selectFrom("workspace_terminal_sessions")
         .select(["owner_instance_id", "owner_base_url"])
@@ -696,7 +705,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           where a.id=${execution.attemptId}::uuid and writer.native_writer_failed_at is null and writer.native_writer_sealed_at is null)`,
         )
         .where("fencing_token", "=", String(execution.fencingToken))
-        .where("valid_until", ">", now)
+        .where("valid_until", ">", sql<Date>`clock_timestamp()`)
         .executeTakeFirst();
       if (
         authority === undefined ||
@@ -907,7 +916,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const now = validDate(this.#clock);
     const leaseExpiresAt = new Date(now.valueOf() + this.#leaseMs);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const workspace = await transaction
         .selectFrom("workspaces")
         .select(["sandbox_domain_id", "project_id"])
@@ -1067,7 +1076,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<DevelopmentEnvironmentReservationResult> {
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const environment = await transaction
         .selectFrom("development_environments")
         .selectAll()
@@ -1182,7 +1191,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     environmentId: string,
   ): Promise<DevelopmentEnvironmentOwnerResult> {
     this.assertLocalOwnership();
-    const now = validDate(this.#clock);
     const row = await this.#database
       .selectFrom("development_environments")
       .select([
@@ -1216,7 +1224,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
               .select("owner_base_url")
               .where("instance_id", "=", row.owner_instance_id)
               .where("state", "=", "ready")
-              .where("lease_expires_at", ">", now)
+              .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
               .executeTakeFirst();
       return owner === undefined
         ? { status: "unavailable" }
@@ -1295,7 +1303,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<void> {
     const now = validDate(this.#clock);
     const updated = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       return transaction
         .updateTable("development_environments")
         .set({
@@ -1340,7 +1348,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<void> {
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const returned = await transaction
         .updateTable("development_environments")
         .set({
@@ -1380,7 +1388,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   async reserveDevelopmentEnvironmentTerminal(environmentId: string): Promise<boolean> {
     const now = validDate(this.#clock);
     const reserved = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       return transaction
         .updateTable("development_environments")
         .set({ terminal_active: true, updated_at: now })
@@ -1409,7 +1417,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const boundedLimit = positiveInteger(limit, "development environment orphan limit");
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const rows = await transaction
         .selectFrom("development_environments")
         .select([
@@ -1467,7 +1475,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const excluded = [...new Set(excludeEnvironmentIds)];
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const candidates = transaction
         .selectFrom("development_environments as environment")
         .leftJoin("tool_broker_instances as owner", (join) =>
@@ -1496,7 +1504,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             expression("environment.owner_instance_id", "=", this.#instanceId),
             expression("owner.instance_id", "is", null),
             expression("owner.state", "!=", "ready"),
-            expression("owner.lease_expires_at", "<=", now),
+            expression("owner.lease_expires_at", "<=", sql<Date>`clock_timestamp()`),
           ]),
         )
         .orderBy("environment.updated_at", "asc");
@@ -1547,14 +1555,14 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<void> {
     const now = validDate(this.#clock);
     const updated = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       return transaction
         .updateTable("workspace_terminal_sessions")
         .set({
           state,
           runtime_id: detail.handle?.runtimeId ?? null,
           runtime_name: detail.handle?.runtimeName ?? null,
-          lease_expires_at: new Date(now.valueOf() + this.#leaseMs),
+          lease_expires_at: sql<Date>`clock_timestamp() + ${this.#leaseMs} * interval '1 millisecond'`,
           last_heartbeat_at: now,
           failure_code: failureCode(detail.failureCode),
           updated_at: now,
@@ -1576,7 +1584,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const boundedLimit = positiveInteger(limit, "terminal orphan cleanup limit");
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const rows = await transaction
         .selectFrom("workspace_terminal_sessions")
         .select([
@@ -1602,7 +1610,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             owner_instance_id: this.#instanceId,
             owner_base_url: this.#ownerBaseUrl,
             state: "cleaning",
-            lease_expires_at: new Date(now.valueOf() + this.#leaseMs),
+            lease_expires_at: sql<Date>`clock_timestamp() + ${this.#leaseMs} * interval '1 millisecond'`,
             last_heartbeat_at: now,
             updated_at: now,
           })
@@ -1629,7 +1637,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<void> {
     const now = validDate(this.#clock);
     const updated = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const result = await transaction
         .updateTable("tool_broker_workspace_runtimes")
         .set({
@@ -1695,7 +1703,13 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<"started" | "unknown"> {
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await transaction
+        .selectFrom("tool_broker_workspace_runtimes")
+        .select("workspace_runtime_id")
+        .where("workspace_runtime_id", "=", workspaceRuntimeId)
+        .forUpdate()
+        .execute();
+      await this.#assertCurrentOwner(transaction);
       const execution = executionIdentity(assignment);
       const activation = await transaction
         .selectFrom("tool_broker_workspace_runtimes as activation")
@@ -1721,8 +1735,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("authority.run_id", "=", assignment.runId)
         .where("authority.turn_id", "=", assignment.turnId)
         .where("authority.sandbox_id", "=", assignment.sandboxId)
-        .where("authority.valid_until", ">", now)
-        .forUpdate()
+        .where("authority.valid_until", ">", sql<Date>`clock_timestamp()`)
         .executeTakeFirst();
       if (activation === undefined) {
         throw new WorkspaceRuntimeStateRepositoryError(
@@ -1767,7 +1780,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<void> {
     const now = validDate(this.#clock);
     const settled = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       return transaction
         .updateTable("tool_broker_operations")
         .set({
@@ -1794,7 +1807,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const boundedLimit = positiveInteger(limit, "orphan cleanup limit");
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const rows = await transaction
         .selectFrom("tool_broker_workspace_runtimes")
         .select([
@@ -1872,7 +1885,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     // Workspace lease as orphaned.
     const orphanedBefore = new Date(now.valueOf() - minimumUnboundAgeMs);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const rows = await transaction
         .selectFrom("tool_broker_workspace_runtimes as activation")
         .select([
@@ -1900,7 +1913,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
              where authority.tenant_id = ${sql.ref("activation.tenant_id")}
                and authority.project_id = ${sql.ref("activation.project_id")}
                and authority.workspace_id = ${sql.ref("activation.workspace_id")}
-               and authority.valid_until > ${now}
+               and authority.valid_until > clock_timestamp()
           )`,
         )
         .orderBy("activation.updated_at", "asc")
@@ -1955,9 +1968,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
 
   async listRetiredWarmWorkspaceRuntimeIds(): Promise<readonly string[]> {
-    const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       const rows = await transaction
         .selectFrom("tool_broker_workspace_runtimes as activation")
         .innerJoin("workspaces as workspace", (join) =>
@@ -2022,7 +2034,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const now = validDate(this.#clock);
     const execution = executionIdentity(assignment);
     await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
+      await this.#assertCurrentOwner(transaction);
       await transaction
         .updateTable("tool_broker_workspace_runtimes")
         .set({ state: "released", failure_code: null, updated_at: now })
@@ -2055,8 +2067,9 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
-    this.#confirmedLeaseExpiresAt = 0;
+    this.#ownershipDeadline = 0;
     if (this.#heartbeat !== undefined) clearInterval(this.#heartbeat);
+    await this.#heartbeatTask;
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
       await transaction
@@ -2105,25 +2118,33 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
 
   async #renew(): Promise<void> {
-    const now = validDate(this.#clock);
+    const requestedAt = this.#monotonicNow();
     const renewed = await this.#database.transaction().execute(async (transaction) => {
+      await transaction
+        .selectFrom("tool_broker_instances")
+        .select("instance_id")
+        .where("instance_id", "=", this.#instanceId)
+        .forNoKeyUpdate()
+        .execute();
+      const now = await databaseTime(transaction);
       await this.#markExpiredOwnersLost(transaction, now);
       const owner = await transaction
         .updateTable("tool_broker_instances")
         .set({
-          last_heartbeat_at: now,
-          lease_expires_at: new Date(now.valueOf() + this.#leaseMs),
+          last_heartbeat_at: sql<Date>`clock_timestamp()`,
+          lease_expires_at: sql<Date>`clock_timestamp() + ${this.#leaseMs} * interval '1 millisecond'`,
           updated_at: now,
         })
         .where("instance_id", "=", this.#instanceId)
         .where("state", "=", "ready")
-        .where("lease_expires_at", ">", now)
+        .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
+        .returning(["lease_expires_at", "last_heartbeat_at"])
         .executeTakeFirst();
-      if (owner.numUpdatedRows === 1n) {
+      if (owner) {
         await transaction
           .updateTable("workspace_terminal_sessions")
           .set({
-            lease_expires_at: new Date(now.valueOf() + this.#leaseMs),
+            lease_expires_at: owner.lease_expires_at,
             last_heartbeat_at: now,
             updated_at: now,
           })
@@ -2133,22 +2154,23 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       }
       return owner;
     });
-    if (renewed.numUpdatedRows !== 1n) {
+    if (!renewed) {
       throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Tool Broker ownership heartbeat was fenced",
       );
     }
-    this.#confirmedLeaseExpiresAt = now.valueOf() + this.#leaseMs;
+    this.#ownershipDeadline =
+      requestedAt + renewed.lease_expires_at.valueOf() - renewed.last_heartbeat_at.valueOf();
   }
 
-  async #assertCurrentOwner(transaction: Transaction<Database>, now: Date): Promise<void> {
+  async #assertCurrentOwner(transaction: Transaction<Database>): Promise<void> {
     const owner = await transaction
       .selectFrom("tool_broker_instances")
       .select("instance_id")
       .where("instance_id", "=", this.#instanceId)
       .where("state", "=", "ready")
-      .where("lease_expires_at", ">", now)
+      .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
       .executeTakeFirst();
     if (owner === undefined) {
       throw new WorkspaceRuntimeStateRepositoryError(
@@ -2190,14 +2212,19 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
 
   async #markExpiredOwnersLost(transaction: Transaction<Database>, now: Date): Promise<void> {
-    const lostInstances = await transaction
-      .updateTable("tool_broker_instances")
-      .set({ state: "lost", updated_at: now })
-      .where("sandbox_domain_id", "=", this.#sandboxDomainId)
-      .where("state", "=", "ready")
-      .where("lease_expires_at", "<=", now)
-      .returning("instance_id")
-      .execute();
+    const lostInstances = (
+      await sql<{ instance_id: string }>`
+      with candidates as materialized (
+        select instance_id from tool_broker_instances
+        where sandbox_domain_id=${this.#sandboxDomainId} and state='ready'
+          and lease_expires_at<=clock_timestamp()
+        order by instance_id for update skip locked
+      )
+      update tool_broker_instances i set state='lost',updated_at=clock_timestamp()
+      from candidates c where i.instance_id=c.instance_id and i.state='ready'
+        and i.lease_expires_at<=clock_timestamp() returning i.instance_id
+    `.execute(transaction)
+    ).rows;
     const lostIds = lostInstances.map((instance) => instance.instance_id);
     if (lostIds.length === 0) return;
     await transaction

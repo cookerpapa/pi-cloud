@@ -1,6 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import { SessionError } from "@earendil-works/pi-agent-core";
-import type { Kysely, Transaction } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
 import type { ActiveExecutionAuthority } from "./execution-authority.ts";
 
 export type PostgresSessionExecutionAuthorityOptions = {
@@ -10,7 +10,7 @@ export type PostgresSessionExecutionAuthorityOptions = {
   leaseId: string;
   writerId: string;
   fencingToken: number;
-  clock?: () => Date;
+  monotonicNow?: () => number;
   pollIntervalMs?: number;
 };
 
@@ -27,18 +27,18 @@ export class PostgresSessionExecutionAuthority implements ActiveExecutionAuthori
   readonly #database: Kysely<Database>;
   readonly #tenantId: string;
   readonly #identity: PostgresSessionExecutionAuthorityOptions;
-  readonly #clock: () => Date;
+  readonly #monotonicNow: () => number;
   readonly #pollIntervalMs: number;
   readonly #abort = new AbortController();
   #watch: Promise<void> | undefined;
   #closed = false;
-  #validUntil: Date | undefined;
+  #deadline: number | undefined;
 
   constructor(options: PostgresSessionExecutionAuthorityOptions) {
     this.#database = options.database;
     this.#tenantId = options.tenantId;
     this.#identity = options;
-    this.#clock = options.clock ?? (() => new Date());
+    this.#monotonicNow = options.monotonicNow ?? (() => performance.now());
     this.#pollIntervalMs = positiveInteger(options.pollIntervalMs ?? 1_000, "pollIntervalMs");
   }
 
@@ -57,25 +57,31 @@ export class PostgresSessionExecutionAuthority implements ActiveExecutionAuthori
     }
     // Cold restore can outlive the first observation while the Worker heartbeat
     // keeps renewing the real lease. An expired cache is not proof of owner loss.
-    if (database || this.#validUntil === undefined || this.#validUntil <= this.#clock())
+    if (database || this.#deadline === undefined || this.#deadline <= this.#monotonicNow())
       return this.#verify(database ?? this.#database);
   }
 
   async #verify(authority: Kysely<Database>) {
+    const requestedAt = this.#monotonicNow();
     const row = await authority
       .selectFrom("session_leases")
       .innerJoin("run_attempts as writer", "writer.id", "session_leases.writer_id")
-      .select("session_leases.valid_until")
+      .select(
+        sql<string>`extract(epoch from (session_leases.valid_until-clock_timestamp())) * 1000`.as(
+          "remaining_ms",
+        ),
+      )
       .where("session_leases.lease_id", "=", this.#identity.leaseId)
       .where("session_leases.writer_id", "=", this.#identity.writerId)
       .where("session_leases.fencing_token", "=", String(this.#identity.fencingToken))
       .where("session_leases.tenant_id", "=", this.#tenantId)
       .where("session_leases.pi_session_id", "=", this.#identity.piSessionId)
-      .where("valid_until", ">", this.#clock())
+      .where("valid_until", ">", sql<Date>`clock_timestamp()`)
       .where("writer.native_writer_failed_at", "is", null)
       .where("writer.native_writer_sealed_at", "is", null)
       .executeTakeFirst();
-    if (row === undefined) {
+    const deadline = row === undefined ? undefined : requestedAt + Number(row.remaining_ms);
+    if (deadline === undefined || deadline <= this.#monotonicNow()) {
       const error = new SessionError(
         "storage",
         "Pi Session mutation was rejected by a stale ExecutionReference",
@@ -83,7 +89,7 @@ export class PostgresSessionExecutionAuthority implements ActiveExecutionAuthori
       this.#abort.abort(error);
       throw error;
     }
-    this.#validUntil = row.valid_until;
+    this.#deadline = deadline;
   }
 
   async close(): Promise<void> {

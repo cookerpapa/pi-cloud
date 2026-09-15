@@ -557,7 +557,6 @@ export class RunCancellationExecutor {
         transaction,
         claim.request.target,
         acknowledgement,
-        now,
       );
       await transitionCurrentRunAttempt(
         transaction,
@@ -644,7 +643,6 @@ export class RunCancellationExecutor {
         transaction,
         claim.request.target,
         acknowledgement,
-        now,
       );
       if (result.lastEventSeq !== undefined) {
         const boundary = await transaction

@@ -14,7 +14,8 @@ import {
 import { PINNED_PI_CODING_AGENT_VERSION } from "@pi-cloud/sandbox-supervisor/pi-turn-runtime";
 import { confirmStoppedWorkerExecutions } from "@pi-cloud/runtime-core/quarantined-session-recovery";
 import { createHash } from "node:crypto";
-import type { Kysely, Transaction } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
+import { databaseTime } from "@pi-cloud/database";
 import type {
   SandboxRetirementResult,
   AssignmentReconciliationResult,
@@ -326,7 +327,6 @@ export class SupervisorConnectionManager {
     const message = this.#parseRegistration(value);
     this.#validateAuthority(authority, message.payload);
     const fingerprint = registrationFingerprint(message);
-    const now = validDate(this.#clock);
     const result = await this.#database
       .transaction()
       .execute(async (transaction): Promise<RegistrationTransactionResult> => {
@@ -395,6 +395,7 @@ export class SupervisorConnectionManager {
                 .orderBy("connection_id", "asc")
                 .forUpdate()
                 .execute();
+        const now = await databaseTime(transaction);
         const transportConnection = connections.find(
           (connection) => connection.transport_id === authority.transportId,
         );
@@ -482,7 +483,7 @@ export class SupervisorConnectionManager {
           currentActive !== undefined &&
           new Date(currentActive.expires_at).valueOf() <= now.valueOf()
         ) {
-          const freshExecution = await this.#hasFreshExecution(transaction, current.id, now);
+          const freshExecution = await this.#hasFreshExecution(transaction, current.id);
           if (!freshExecution) {
             await this.#fenceSandbox(transaction, current, "heartbeat_timeout", now);
             return this.#registrationRejection(
@@ -521,8 +522,7 @@ export class SupervisorConnectionManager {
           this.#idGenerator(),
           "generated registered messageId",
         );
-        const expiresAt = new Date(now.valueOf() + this.#heartbeatTimeoutMs);
-        await transaction
+        const persisted = await transaction
           .insertInto("supervisor_connections")
           .values({
             connection_id: connectionId,
@@ -545,11 +545,12 @@ export class SupervisorConnectionManager {
             heartbeat_interval_ms: this.#heartbeatIntervalMs,
             heartbeat_timeout_ms: this.#heartbeatTimeoutMs,
             accepting_assignments: message.payload.acceptingAssignments,
-            registered_at: now,
-            last_heartbeat_at: now,
-            expires_at: expiresAt,
+            registered_at: sql<Date>`clock_timestamp()`,
+            last_heartbeat_at: sql<Date>`clock_timestamp()`,
+            expires_at: sql<Date>`clock_timestamp() + ${this.#heartbeatTimeoutMs} * interval '1 millisecond'`,
             closed_at: null,
           })
+          .returning(["registered_at", "expires_at"])
           .executeTakeFirstOrThrow();
         return {
           kind: "accepted",
@@ -567,8 +568,8 @@ export class SupervisorConnectionManager {
             selected_protocol_version: 1,
             heartbeat_interval_ms: this.#heartbeatIntervalMs,
             heartbeat_timeout_ms: this.#heartbeatTimeoutMs,
-            registered_at: now,
-            expires_at: expiresAt,
+            registered_at: persisted.registered_at,
+            expires_at: persisted.expires_at,
           },
         };
       });
@@ -592,25 +593,32 @@ export class SupervisorConnectionManager {
     }
     this.#validateAuthority(authority, parsed.payload);
     if (parsed.payload.families.length === 0) {
-      const now = validDate(this.#clock);
-      const expiresAt = new Date(now.valueOf() + this.#heartbeatTimeoutMs);
-      const updated = await this.#database
-        .updateTable("supervisor_connections")
-        .set({
-          accepting_assignments: parsed.payload.acceptingAssignments,
-          last_heartbeat_at: now,
-          expires_at: expiresAt,
-        })
-        .where("connection_id", "=", parsed.payload.connectionId)
-        .where("sandbox_id", "=", authority.sandboxId)
-        .where("supervisor_id", "=", authority.supervisorId)
-        .where("boot_id", "=", authority.bootId)
-        .where("transport_id", "=", authority.transportId)
-        .where("control_plane_instance_id", "=", this.#controlPlaneInstanceId)
-        .where("state", "=", "active")
-        .where("expires_at", ">", now)
-        .executeTakeFirst();
-      if (updated.numUpdatedRows !== 1n) {
+      const updated = await this.#database.transaction().execute(async (tx) => {
+        await tx
+          .selectFrom("supervisor_connections")
+          .select("connection_id")
+          .where("connection_id", "=", parsed.payload.connectionId)
+          .forNoKeyUpdate()
+          .execute();
+        return tx
+          .updateTable("supervisor_connections")
+          .set({
+            accepting_assignments: parsed.payload.acceptingAssignments,
+            last_heartbeat_at: sql<Date>`clock_timestamp()`,
+            expires_at: sql<Date>`clock_timestamp() + ${this.#heartbeatTimeoutMs} * interval '1 millisecond'`,
+          })
+          .where("connection_id", "=", parsed.payload.connectionId)
+          .where("sandbox_id", "=", authority.sandboxId)
+          .where("supervisor_id", "=", authority.supervisorId)
+          .where("boot_id", "=", authority.bootId)
+          .where("transport_id", "=", authority.transportId)
+          .where("control_plane_instance_id", "=", this.#controlPlaneInstanceId)
+          .where("state", "=", "active")
+          .where("expires_at", ">", sql<Date>`clock_timestamp()`)
+          .returning("last_heartbeat_at")
+          .executeTakeFirst();
+      });
+      if (!updated) {
         throw new SupervisorConnectionManagerError(
           "stale_connection",
           "Supervisor connection authority is stale",
@@ -620,7 +628,7 @@ export class SupervisorConnectionManager {
       const acknowledgement = parseControlToSupervisorMessage({
         protocolVersion: 1,
         messageId: this.#idGenerator(),
-        sentAt: now.toISOString(),
+        sentAt: updated.last_heartbeat_at.toISOString(),
         type: "supervisor.heartbeat.ack",
         payload: {
           acknowledgedMessageId: parsed.messageId,
@@ -702,6 +710,7 @@ export class SupervisorConnectionManager {
         "expires_at",
       ])
       .where("connection_id", "=", connectionId)
+      .where("expires_at", ">", sql<Date>`clock_timestamp()`)
       .executeTakeFirst();
     if (
       connection === undefined ||
@@ -710,8 +719,7 @@ export class SupervisorConnectionManager {
       connection.boot_id !== authority.bootId ||
       connection.transport_id !== authority.transportId ||
       connection.control_plane_instance_id !== this.#controlPlaneInstanceId ||
-      connection.state !== "active" ||
-      new Date(connection.expires_at).valueOf() <= validDate(this.#clock).valueOf()
+      connection.state !== "active"
     ) {
       throw new SupervisorConnectionManagerError(
         "stale_connection",
@@ -724,19 +732,18 @@ export class SupervisorConnectionManager {
 
   async expireConnections(limit = DEFAULT_SWEEP_LIMIT): Promise<SupervisorConnectionSweepResult> {
     const boundedLimit = positiveInteger(limit, "limit");
-    const now = validDate(this.#clock);
     const candidates = await this.#database
       .selectFrom("supervisor_connections")
       .select(["connection_id"])
       .where("state", "=", "active")
-      .where("expires_at", "<=", now)
+      .where("expires_at", "<=", sql<Date>`clock_timestamp()`)
       .orderBy("expires_at", "asc")
       .orderBy("connection_id", "asc")
       .limit(boundedLimit)
       .execute();
     const expiredConnectionIds: string[] = [];
     for (const candidate of candidates) {
-      const expired = await this.#expireConnection(candidate.connection_id, now);
+      const expired = await this.#expireConnection(candidate.connection_id);
       if (expired) expiredConnectionIds.push(candidate.connection_id);
     }
     return {
@@ -1000,7 +1007,7 @@ export class SupervisorConnectionManager {
       .executeTakeFirst();
   }
 
-  async #expireConnection(connectionId: string, now: Date): Promise<boolean> {
+  async #expireConnection(connectionId: string): Promise<boolean> {
     const candidate = await this.#database
       .selectFrom("supervisor_connections")
       .select(["sandbox_id"])
@@ -1027,6 +1034,7 @@ export class SupervisorConnectionManager {
         .where("connection_id", "=", connectionId)
         .forUpdate()
         .executeTakeFirst();
+      const now = await databaseTime(transaction);
       if (
         connection === undefined ||
         connection.state !== "active" ||
@@ -1034,10 +1042,12 @@ export class SupervisorConnectionManager {
       ) {
         return false;
       }
-      if (await this.#hasFreshExecution(transaction, sandbox.id, now)) {
+      if (await this.#hasFreshExecution(transaction, sandbox.id)) {
         const deferred = await transaction
           .updateTable("supervisor_connections")
-          .set({ expires_at: new Date(now.valueOf() + this.#heartbeatTimeoutMs) })
+          .set({
+            expires_at: sql<Date>`clock_timestamp() + ${this.#heartbeatTimeoutMs} * interval '1 millisecond'`,
+          })
           .where("connection_id", "=", connectionId)
           .where("state", "=", "active")
           .where("expires_at", "<=", now)
@@ -1053,15 +1063,17 @@ export class SupervisorConnectionManager {
   async #hasFreshExecution(
     database: Kysely<Database> | Transaction<Database>,
     sandboxId: string,
-    now: Date,
   ): Promise<boolean> {
-    const freshnessBoundary = new Date(now.valueOf() - this.#heartbeatTimeoutMs);
     const lease = await database
       .selectFrom("session_leases")
       .select("lease_id")
       .where("sandbox_id", "=", sandboxId)
-      .where("valid_until", ">", now)
-      .where("renewed_at", ">", freshnessBoundary)
+      .where("valid_until", ">", sql<Date>`clock_timestamp()`)
+      .where(
+        "renewed_at",
+        ">",
+        sql<Date>`clock_timestamp() - ${this.#heartbeatTimeoutMs} * interval '1 millisecond'`,
+      )
       .executeTakeFirst();
     return lease !== undefined;
   }

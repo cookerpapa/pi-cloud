@@ -4,7 +4,7 @@ import {
   releaseExecutionScope,
   releaseIdleSessionLease,
 } from "@pi-cloud/runtime-core/worker-family-capacity";
-import { retryTransaction } from "@pi-cloud/database";
+import { databaseTime, retryTransaction } from "@pi-cloud/database";
 import {
   transitionRun,
   transitionRunAttempt,
@@ -152,10 +152,10 @@ export class AssignmentReconciler {
   async retireExpiredAssignments(
     limit = DEFAULT_RECONCILIATION_LIMIT,
   ): Promise<AssignmentReconciliationResult> {
-    const now = validDate(this.#clock),
+    const now = await databaseTime(this.#database),
       result = emptyResult(0);
     await this.#releaseIdleFamilies(now);
-    const expired = (await this.#loadDurableAssignments()).filter((a) => a.validUntil <= now);
+    const expired = await this.#loadDurableAssignments(true);
     const families = new Set(
       [...new Set(expired.map((a) => parseExecutionReference(a.executionReference).leaseId))].slice(
         0,
@@ -167,7 +167,7 @@ export class AssignmentReconciler {
     );
     for (const target of targets) {
       const finalized = await retryTransaction(this.#database, async (tx) => {
-        const outcome = await this.#finalizeLease(tx, target, validDate(this.#clock), true);
+        const outcome = await this.#finalizeLease(tx, target, true);
         if (outcome !== "skipped") await this.#synchronizeCapacity(tx, validDate(this.#clock));
         return outcome;
       });
@@ -265,7 +265,7 @@ export class AssignmentReconciler {
     }
   }
 
-  async #loadDurableAssignments(): Promise<DurableAssignment[]> {
+  async #loadDurableAssignments(expiredOnly = false): Promise<DurableAssignment[]> {
     const grants = await this.#database
       .selectFrom("active_execution_scopes")
       .select([
@@ -278,6 +278,7 @@ export class AssignmentReconciler {
         "turn_id",
       ])
       .where("sandbox_id", "=", this.#sandboxId)
+      .where(sql<boolean>`(${!expiredOnly} or valid_until <= clock_timestamp())`)
       .orderBy("valid_until", "asc")
       .execute();
     return grants.map((grant) => ({
@@ -296,7 +297,6 @@ export class AssignmentReconciler {
   async #finalizeLease(
     transaction: Transaction<Database>,
     candidate: DurableAssignment,
-    now: Date,
     requireExpired: boolean,
   ): Promise<Finalization> {
     const execution = parseExecutionReference(candidate.executionReference);
@@ -307,7 +307,7 @@ export class AssignmentReconciler {
       .innerJoin("sessions as session", "session.id", "turn.session_id")
       .innerJoin("runs as run", "run.turn_id", "turn.id")
       .innerJoin("run_attempts as attempt", "attempt.id", "run.current_attempt_id")
-      .select("run.id")
+      .select(["run.id", "session.tenant_id", "session.pi_session_id"])
       .where("turn.id", "=", candidate.turnId)
       .where("session.id", "=", candidate.sessionId)
       .where("run.id", "=", candidate.runId)
@@ -315,21 +315,41 @@ export class AssignmentReconciler {
       .forNoKeyUpdate(["turn", "session", "run", "attempt"])
       .executeTakeFirst();
     if (!current) return "skipped";
+    await transaction
+      .selectFrom("pi_sessions")
+      .select("id")
+      .where("tenant_id", "=", current.tenant_id)
+      .where("id", "=", current.pi_session_id)
+      .forUpdate()
+      .executeTakeFirstOrThrow();
+    await transaction
+      .selectFrom("sandboxes")
+      .select("id")
+      .where("id", "=", this.#sandboxId)
+      .forNoKeyUpdate()
+      .executeTakeFirstOrThrow();
+    await transaction
+      .selectFrom("session_leases")
+      .select("lease_id")
+      .where("lease_id", "=", execution.leaseId)
+      .forNoKeyUpdate()
+      .execute();
     const grant = await transaction
       .selectFrom("active_execution_scopes")
       .select(["lease_id", "attempt_id", "sandbox_id", "fencing_token", "valid_until"])
       .where("session_id", "=", candidate.sessionId)
+      .where(sql<boolean>`(${!requireExpired} or valid_until <= clock_timestamp())`)
       .executeTakeFirst();
     if (
       grant === undefined ||
       grant.lease_id !== execution.leaseId ||
       grant.attempt_id !== execution.attemptId ||
       grant.sandbox_id !== this.#sandboxId ||
-      safeInteger(grant.fencing_token, "final fencing token") !== execution.fencingToken ||
-      (requireExpired && new Date(grant.valid_until).valueOf() > now.valueOf())
+      safeInteger(grant.fencing_token, "final fencing token") !== execution.fencingToken
     ) {
       return "skipped";
     }
+    const now = await databaseTime(transaction);
 
     const session = await transaction
       .selectFrom("sessions")
@@ -591,7 +611,7 @@ export class AssignmentReconciler {
   ): Promise<SandboxRetirementResult> {
     await this.#database.transaction().execute(async (transaction) => {
       for (const assignment of assignments) {
-        const finalized = await this.#finalizeLease(transaction, assignment, now, false);
+        const finalized = await this.#finalizeLease(transaction, assignment, false);
         if (finalized === "requeued") result.requeuedAssignments += 1;
         if (finalized === "settled" || finalized === "released") {
           result.settledAssignments += 1;

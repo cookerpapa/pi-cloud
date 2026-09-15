@@ -21,13 +21,12 @@ export function piSessionWorkerAvailable(
   tenantId: RawBuilder<unknown>,
   piSessionId: RawBuilder<unknown>,
   expectedWorkerId: string,
-  now: Date,
   candidateRunId?: RawBuilder<unknown>,
 ): RawBuilder<boolean> {
   return sql<boolean>`not exists(
     select 1 from session_leases l join run_attempts w on w.id=l.writer_id
      where l.tenant_id=${tenantId} and l.pi_session_id=${piSessionId}
-       and (l.valid_until<=${now} or w.claim_owner_id<>${expectedWorkerId}
+       and (l.valid_until<=clock_timestamp() or w.claim_owner_id<>${expectedWorkerId}
          or w.native_writer_failed_at is not null or w.native_writer_sealed_at is not null)
   ) and not exists(
     select 1 from sessions s join runs r on r.session_id=s.id join run_attempts a on a.id=r.current_attempt_id
@@ -35,7 +34,7 @@ export function piSessionWorkerAvailable(
        and a.lease_id is null and a.state in ('claimed','provisioning','restoring','running','settling','cancel_requested')
        and r.state in ('claimed','provisioning','restoring','running','settling','cancel_requested')
        and ${candidateRunId ? sql`r.id<>${candidateRunId}` : sql`true`}
-       and (a.claim_expires_at<=${now} or a.claim_owner_id<>${expectedWorkerId})
+       and (a.claim_expires_at<=clock_timestamp() or a.claim_owner_id<>${expectedWorkerId})
   ) and (
     exists(select 1 from session_leases l where l.tenant_id=${tenantId} and l.pi_session_id=${piSessionId})
     or not exists(select 1 from sessions s join runs r on r.session_id=s.id join run_attempts a on a.run_id=r.id
@@ -63,7 +62,6 @@ export async function conflictingPiSessionWorker(
     tenantId: string;
     piSessionId: string;
     expectedWorkerId: string;
-    now: Date;
   },
 ): Promise<string | undefined> {
   const owner = await tx
@@ -72,7 +70,7 @@ export async function conflictingPiSessionWorker(
     .select("w.claim_owner_id")
     .where("l.tenant_id", "=", input.tenantId)
     .where("l.pi_session_id", "=", input.piSessionId)
-    .where("l.valid_until", ">", input.now)
+    .where("l.valid_until", ">", sql<Date>`clock_timestamp()`)
     .where("w.claim_owner_id", "!=", input.expectedWorkerId)
     .executeTakeFirst();
   if (owner) return owner.claim_owner_id;
@@ -85,7 +83,7 @@ export async function conflictingPiSessionWorker(
     .where("s.pi_session_id", "=", input.piSessionId)
     .where("a.lease_id", "is", null)
     .where("a.state", "in", [...ACTIVE_STATES])
-    .where("a.claim_expires_at", ">", input.now)
+    .where("a.claim_expires_at", ">", sql<Date>`clock_timestamp()`)
     .where("a.claim_owner_id", "!=", input.expectedWorkerId)
     .limit(1)
     .executeTakeFirst();
@@ -100,7 +98,6 @@ export async function selectNativeSessionWriter(
     runId: string;
     workerId: string;
     attemptId: string;
-    now: Date;
   },
 ): Promise<string | undefined> {
   const lease = await tx
@@ -115,12 +112,13 @@ export async function selectNativeSessionWriter(
     ])
     .where("l.tenant_id", "=", input.tenantId)
     .where("l.pi_session_id", "=", input.piSessionId)
+    .select(sql<boolean>`l.valid_until <= clock_timestamp()`.as("expired"))
     .executeTakeFirst();
   let writerId = input.attemptId;
   if (lease) {
     if (
       lease.claim_owner_id !== input.workerId ||
-      lease.valid_until <= input.now ||
+      lease.expired ||
       lease.native_writer_failed_at ||
       lease.native_writer_sealed_at
     )
@@ -131,15 +129,18 @@ export async function selectNativeSessionWriter(
       .selectFrom("sessions as s")
       .innerJoin("runs as r", "r.session_id", "s.id")
       .innerJoin("run_attempts as a", "a.id", "r.current_attempt_id")
-      .select(["a.native_writer_id", "a.claim_owner_id", "a.claim_expires_at"])
+      .select([
+        "a.native_writer_id",
+        "a.claim_owner_id",
+        sql<boolean>`a.claim_expires_at <= clock_timestamp()`.as("expired"),
+      ])
       .where("s.tenant_id", "=", input.tenantId)
       .where("s.pi_session_id", "=", input.piSessionId)
       .where("r.id", "!=", input.runId)
       .where("r.state", "in", [...ACTIVE_STATES])
       .execute();
     if (peers.length) {
-      if (peers.some((p) => p.claim_owner_id !== input.workerId || p.claim_expires_at <= input.now))
-        return undefined;
+      if (peers.some((p) => p.claim_owner_id !== input.workerId || p.expired)) return undefined;
       writerId = peers[0]!.native_writer_id!;
       if (!writerId || peers.some((p) => p.native_writer_id !== writerId))
         throw new PiSessionWorkerOwnershipError(

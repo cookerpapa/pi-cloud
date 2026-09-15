@@ -57,7 +57,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
         database: db,
         sandboxId: workerId,
         clock,
-        leaseDurationMs: 1000,
+        leaseDurationMs: 60000,
       });
     const released = new Map<string, () => void>(),
       started = new Map<string, () => void>();
@@ -86,6 +86,11 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
       secondRun = executor.dispatchRun(second.runId);
     await secondReady;
     now += 600;
+    await db
+      .updateTable("session_leases")
+      .set({ valid_until: new Date(Date.now() - 1) })
+      .where("pi_session_id", "=", a.sessionId)
+      .execute();
     const reconciler = new AssignmentReconciler({
       database: db,
       sandboxId: workerId,

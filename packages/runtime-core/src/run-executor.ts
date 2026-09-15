@@ -33,7 +33,7 @@ import {
 } from "./pi-session-worker-ownership.ts";
 import { requestExecutionStreamSeal } from "./execution-stream-seal.ts";
 import { confirmAgentExit } from "./quarantined-session-recovery.ts";
-import { retryTransaction } from "@pi-cloud/database";
+import { databaseTime, retryTransaction } from "@pi-cloud/database";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -114,13 +114,11 @@ export interface TurnExecutionAuthority {
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
     grant: TurnExecutionReference,
-    now: Date,
   ): Promise<void>;
   assertCurrentOrExpired?(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
     grant: TurnExecutionReference,
-    now: Date,
   ): Promise<void>;
   releaseCurrent(
     transaction: Transaction<Database>,
@@ -605,13 +603,13 @@ export class RunExecutor {
       and not (${key} = any(${[...admission.blockedFamilyKeys]}::text[]))`;
   }
 
-  #taskOwnerAvailable(runAlias: string, now: Date) {
+  #taskOwnerAvailable(runAlias: string) {
     // Delegated work belongs to a live parent task, not merely to historical
     // Session ancestry. A departed parent's queued child cannot start a new owner.
     return sql<boolean>`not exists(select 1 from subagent_executions e
       where e.child_run_id=${sql.ref(`${runAlias}.id`)} and not exists(
         select 1 from active_execution_scopes parent where parent.attempt_id=e.parent_attempt_id
-          and parent.run_id=e.parent_run_id and parent.accepting_effects and parent.valid_until>${now}
+          and parent.run_id=e.parent_run_id and parent.accepting_effects and parent.valid_until>clock_timestamp()
       ))`;
   }
 
@@ -619,10 +617,8 @@ export class RunExecutor {
     runId?: string,
     admission?: RunClaimAdmission,
   ): Promise<ClaimedTurn | undefined> {
-    const now = safeDate(this.#clock);
-    const leaseUntil = new Date(now.valueOf() + this.#claimLeaseMs);
-
     return this.#database.transaction().execute(async (transaction) => {
+      let now = await databaseTime(transaction);
       let selectedRunId = runId;
       if (selectedRunId === undefined) {
         const candidate = await transaction
@@ -654,7 +650,7 @@ export class RunExecutor {
           )`,
           )
           .where(this.#familyAdmission("candidate_session", admission))
-          .where(this.#taskOwnerAvailable("candidate", now))
+          .where(this.#taskOwnerAvailable("candidate"))
           .where("candidate_policy.enabled", "=", true)
           .where("candidate_agent.runtime_kind", "=", this.#agentRuntimeKind)
           .where(
@@ -662,7 +658,6 @@ export class RunExecutor {
               sql.ref("candidate_session.tenant_id"),
               sql.ref("candidate_session.pi_session_id"),
               this.#claimOwnerId,
-              now,
               sql.ref("candidate.id"),
             ),
           )
@@ -760,7 +755,7 @@ export class RunExecutor {
         .where("run.available_at", "<=", now)
         .where("run.id", "=", selectedRunId)
         .where(this.#familyAdmission("session_row", admission))
-        .where(this.#taskOwnerAvailable("run", now))
+        .where(this.#taskOwnerAvailable("run"))
         .where("run.state", "in", ["queued", "claimed"])
         .where(
           sql<boolean>`not exists (
@@ -775,7 +770,6 @@ export class RunExecutor {
             sql.ref("session_row.tenant_id"),
             sql.ref("session_row.pi_session_id"),
             this.#claimOwnerId,
-            now,
             sql.ref("run.id"),
           ),
         )
@@ -861,11 +855,11 @@ export class RunExecutor {
       const row = { ...context, ...configuration };
 
       await lockPiSessionWorkerOwnership(transaction, row.tenantId, row.piSessionId);
+      now = await databaseTime(transaction);
       const conflictingWorker = await conflictingPiSessionWorker(transaction, {
         tenantId: row.tenantId,
         piSessionId: row.piSessionId,
         expectedWorkerId: this.#claimOwnerId,
-        now,
       });
       if (conflictingWorker !== undefined) return undefined;
 
@@ -891,7 +885,6 @@ export class RunExecutor {
         runId: row.runId,
         workerId: this.#claimOwnerId,
         attemptId,
-        now,
       });
       if (!piSessionWriterId) return undefined;
       const attemptNumber = row.runAttemptCount + 1;
@@ -938,28 +931,28 @@ export class RunExecutor {
         transitionCount: number;
         runCount: number;
       }>`
-        with inserted_attempt as (
+        with decision as materialized (select clock_timestamp() as at), inserted_attempt as (
           insert into run_attempts (
             id, tenant_id, run_id, attempt_number, state, claim_owner_id,
             claim_expires_at, last_event_seq, claimed_at, created_at, updated_at, native_writer_anchor_id
-          ) values (
+          ) select
             ${attemptId}::uuid, ${row.tenantId}::uuid, ${row.runId}::uuid,
-            ${attemptNumber}, 'claimed', ${this.#claimOwnerId}, ${leaseUntil},
-            ${Math.max(0, Number(row.nextEventSeq) - 1)}::bigint, ${now}, ${now}, ${now}, ${piSessionWriterId}::uuid
-          )
+            ${attemptNumber}, 'claimed', ${this.#claimOwnerId}, d.at + ${this.#claimLeaseMs} * interval '1 millisecond',
+            ${Math.max(0, Number(row.nextEventSeq) - 1)}::bigint, d.at, d.at, d.at, ${piSessionWriterId}::uuid
+          from decision d
           returning id
         ), inserted_transition as (
           insert into run_attempt_transitions (
             id, tenant_id, run_id, attempt_id, from_state, to_state, reason, occurred_at
           )
           select ${transitionId}::uuid, ${row.tenantId}::uuid, ${row.runId}::uuid,
-                 id, null, 'claimed', 'run_claimed', ${now}
-            from inserted_attempt
+                 id, null, 'claimed', 'run_claimed', d.at
+            from inserted_attempt cross join decision d
           returning id
         ), updated_run as (
           update runs
              set state = 'claimed',
-                 available_at = ${leaseUntil},
+                 available_at = (select at + ${this.#claimLeaseMs} * interval '1 millisecond' from decision),
                  current_attempt_id = ${attemptId}::uuid,
                  attempt_count = ${attemptNumber},
                  stop_reason = null,
@@ -968,7 +961,7 @@ export class RunExecutor {
                  failure_retryable = null,
                  settled_at = null,
                  row_version = row_version + 1,
-                 updated_at = ${now}
+                 updated_at = (select at from decision)
            where tenant_id = ${row.tenantId}::uuid
              and id = ${row.runId}::uuid
              and row_version = ${row.runVersion}::bigint
@@ -1088,12 +1081,7 @@ export class RunExecutor {
         throw new RunExecutorInvariantError("Only a claimed Run with a queued Turn can start");
       }
       if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
-        await this.#executionAuthority.assertCurrent(
-          transaction,
-          claim.request,
-          acknowledgement,
-          now,
-        );
+        await this.#executionAuthority.assertCurrent(transaction, claim.request, acknowledgement);
       }
       await transitionCurrentRunAttempt(
         transaction,
@@ -1177,12 +1165,7 @@ export class RunExecutor {
       }
 
       if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
-        await this.#executionAuthority.assertCurrent(
-          transaction,
-          claim.request,
-          acknowledgement,
-          now,
-        );
+        await this.#executionAuthority.assertCurrent(transaction, claim.request, acknowledgement);
       }
       await this.#storeEventBoundary(
         transaction,
@@ -1369,15 +1352,9 @@ export class RunExecutor {
             transaction,
             claim.request,
             acknowledgement,
-            now,
           );
         } else {
-          await this.#executionAuthority.assertCurrent(
-            transaction,
-            claim.request,
-            acknowledgement,
-            now,
-          );
+          await this.#executionAuthority.assertCurrent(transaction, claim.request, acknowledgement);
         }
       }
       await this.#storeEventBoundary(

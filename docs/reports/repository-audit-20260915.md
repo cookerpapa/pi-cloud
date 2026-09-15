@@ -136,7 +136,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | LIFE-10 | Cube Authorizer's async HTTP listener rejected an interrupted body outside any request error boundary | A real child process exited with ECONNRESET after its client disconnected. Catch only body-read failures and close that request without granting access; listener survives and the body-limit response remains covered |
 | LIFE-11 | Provider relay opened an upstream even when its CONNECT client disappeared during DNS | Controlled-socket regression reproduced the late connection. Check the actual client lifetime immediately after DNS; no retry or new timeout. Five relay tests pass |
 | CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace type checks finished successfully after correction; remote CI rerun pending |
-| TIME-01 | Lease/claim timestamps are captured before potentially blocked SQL updates | Reproduced on isolated real PG with a controlled application clock: a renewal sampled time at t+2 s, waited on the lease row until t+4 s (old expiry t+3 s), then renewed it into the future. Probe returned expiredBeforeLockReleased=true, renewalCount=1, renewedIntoFuture=true; its database was dropped. No stale post-seal write or tenant leak was demonstrated. Proposed: PG decision-time expiry after acquiring the relevant locks, not caller timestamps; align issuance/renewal/authority checks and retain conservative local cancellation. This changes the authority clock contract, so implementation is paused for owner confirmation |
+| TIME-01 | Lease/claim timestamps were captured before potentially blocked SQL updates | Real PG reproduced a lock-delayed renewal reviving an expired lease. Owner approved ADR-0170. Issuance, renewal, validation and retirement now use PG decision time; local deadlines are monotonic hints. Nine real-PG boundary regressions pass, including a stale reaper candidate and Broker renewal. Full checks/deployed acceptance remain pending; no post-seal data corruption or tenant leak was demonstrated |
 | PERF-01 | Sixteen concurrent Sessions with sufficient slots still spend substantial time before provider dispatch | Real sample: non-provider TTFT p50/p95 836/1,322 ms versus provider 1,036/2,071 ms; eight of 32 Turns are internal-time dominant. Worker metrics show claim averaging 122 ms. Investigate statement/lock/pool time before changing admission; no claim of full latency acceptance |
 
 ARCH-01 implemented locally: positive Agent exit and committed seal restore the
@@ -202,17 +202,34 @@ independent review and verification while awaiting the owner.
 
 ## Resources and final gate
 
-### Owner decision required — authority clock (TIME-01)
+### Approved authority-clock correction — TIME-01 / ADR-0170
 
-Current renewal compares `valid_until` with an application timestamp sampled
+Pre-fix renewal compared `valid_until` with an application timestamp sampled
 before transaction/lock waits. Refreshing the timestamp earlier in the caller
 does not remove pauses after that read or cross-machine clock differences.
-The recommended complete fix keeps PG, Session-family Lease/Fence and Kafka seals,
+The owner approved the fix. It keeps PG, Session-family Lease/Fence and Kafka seals,
 but makes lease decisions use PG time at the locked decision point. Worker timers
 remain local cancellation hints, not authority. It does not replay a Run/Tool or
-relax seals. Do not implement this clock-contract change before owner approval.
+relax seals. Implementation is in progress under ADR-0170; new live acceptance
+and final checks must finish before it is treated as a completed deployment.
 Other audit items remain open, including UI origins, pre-provider latency,
 remaining line review and combination tests. Resume v11 has not been changed.
+
+Nine real-PG regressions pass: application clocks offset by ±1 hour; renewal,
+grant and publication expiry during actual row waits; reaper clock independence;
+startup-claim expiry during Session acquisition; delayed Broker renewal; a stale
+retirement candidate after an earlier valid renewal commits.
+Local observers use monotonic remaining lifetime including request elapsed time.
+The unused absolute Supervisor lease deadline was removed. Delayed Broker renewal
+also exposed overlapping timer requests; one in-flight heartbeat prevents them
+from filling the connection pool. Fake-clock expiry tests now set explicit expired
+database rows. The full suite is being repeated after those test corrections.
+The repeated `npm run check` completed successfully with both real-PG fixture
+URLs enabled. Format/docs/Helm/runtime-policy checks passed. The Worker startup
+test's unrelated 500ms connection deadline was replaced with the production 30s
+default after it preempted the intended publisher-failure injection; dedicated
+expiry tests still use actual short-deadline lock waits. Deployment and paid
+clock-cutover acceptance have not yet been completed.
 
 ### Live campaign started
 

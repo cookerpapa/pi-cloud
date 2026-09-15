@@ -124,6 +124,12 @@ one connection can serve many model-waiting Runs. Start with four per Worker,
 observe pool wait time under the configured model/Lane concurrency, and use a
 connection proxy before multiplying connections across many replicas. Broker
 heartbeat must leave more than one missed interval before lease expiry.
+
+Lease/startup-claim deadlines and final expiry decisions use primary PostgreSQL
+time after authority locks (ADR-0170). Worker/Broker local timers use conservative
+monotonic observations, not application wall clocks. There is no legacy-clock
+switch. Keep the database host clock disciplined; this does not certify clock
+continuity across an untested database failover.
 `production:config` rejects incoherent lease combinations.
 
 The default admits four active families, not one parent plus three children.

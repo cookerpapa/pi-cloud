@@ -1,5 +1,6 @@
 export { createDatabase, type CreateDatabaseOptions } from "./client.ts";
 export { retryTransaction } from "./retry-transaction.ts";
+export { databaseTime } from "./authority-time.ts";
 
 export {
   type TurnControlRequestKind,

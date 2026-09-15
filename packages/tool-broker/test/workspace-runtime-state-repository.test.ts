@@ -710,6 +710,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
     await runMigrations(database, "up");
 
     let now = new Date("2026-08-09T00:00:00.000Z");
+    let monotonic = 0;
     const first = new PostgresWorkspaceRuntimeStateRepository({
       database,
       sandboxDomainId: "sandbox-domain-0001",
@@ -718,6 +719,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       leaseMs: 3_000,
       heartbeatMs: 1_000,
       clock: () => now,
+      monotonicNow: () => monotonic,
     });
     resources.push(async () => first.close());
     await first.start();
@@ -725,9 +727,15 @@ describe("PostgreSQL Tool Broker ownership", () => {
     expect(() => first.assertLocalOwnership()).not.toThrow();
 
     now = new Date("2026-08-09T00:00:04.000Z");
+    monotonic = 4000;
     expect(() => first.assertLocalOwnership()).toThrowError(
       "Tool Broker locally confirmed ownership lease expired",
     );
+    await database
+      .updateTable("tool_broker_instances")
+      .set({ lease_expires_at: new Date(Date.now() - 1) })
+      .where("instance_id", "=", "10000000-0000-4000-8000-000000000101")
+      .execute();
     const second = new PostgresWorkspaceRuntimeStateRepository({
       database,
       sandboxDomainId: "sandbox-domain-0001",
@@ -736,6 +744,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       leaseMs: 3_000,
       heartbeatMs: 1_000,
       clock: () => now,
+      monotonicNow: () => monotonic,
     });
     resources.push(async () => second.close());
     await second.start();

@@ -9,7 +9,7 @@ import { it, expect } from "vitest";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
 
-async function fixture(capacity = 1, leaseMs = 3000) {
+async function fixture(capacity = 1, leaseMs = 60000) {
   const pg = await PGlite.create(),
     socket = new PGLiteSocketServer({ db: pg, host: "127.0.0.1", port: 0 });
   await socket.start();
@@ -69,12 +69,9 @@ async function fixture(capacity = 1, leaseMs = 3000) {
       active_sessions: 0,
     })
     .execute();
-  let time = Date.now();
-  const clock = () => new Date(time);
   const coordinator = new SessionLeaseCoordinator({
     database: db,
     sandboxId: workerId,
-    clock,
     leaseDurationMs: leaseMs,
   });
   const tasks = new Map<
@@ -86,7 +83,6 @@ async function fixture(capacity = 1, leaseMs = 3000) {
   const executor = new RunExecutor({
     database: db,
     claimOwnerId: "family-worker",
-    clock,
     executionAuthority: coordinator,
     backend: {
       execute: async (request, lifecycle) => {
@@ -103,7 +99,6 @@ async function fixture(capacity = 1, leaseMs = 3000) {
   });
   async function start(sessionId: string) {
     const run = await store.acceptTurn(sessionId, crypto.randomUUID(), { prompt: "test" });
-    time = Math.max(time, Date.now() + 1);
     const started = new Promise<void>((r) => ready.set(run.runId, r));
     const done = executor.dispatchRun(run.runId);
     running.push(done);
@@ -122,7 +117,7 @@ async function fixture(capacity = 1, leaseMs = 3000) {
     return coordinator.renewFromHeartbeat({
       protocolVersion: 1,
       messageId: crypto.randomUUID(),
-      sentAt: clock().toISOString(),
+      sentAt: new Date().toISOString(),
       type: "supervisor.heartbeat",
       payload: {
         ...identity,
@@ -167,10 +162,6 @@ async function fixture(capacity = 1, leaseMs = 3000) {
     start,
     renew,
     projectSeals,
-    clock,
-    advance: (ms: number) => {
-      time += ms;
-    },
     close: async () => {
       for (const task of tasks.values()) task.release();
       await Promise.allSettled(running);
@@ -193,9 +184,8 @@ it("shares one owner lease, renews once, and releases capacity only after the fi
     expect(a.attemptId).not.toBe(b.attemptId);
     expect(await f.db.selectFrom("session_leases").selectAll().execute()).toHaveLength(1);
     expect(await f.db.selectFrom("active_execution_scopes").selectAll().execute()).toHaveLength(2);
-    f.advance(1000);
     // A child has made no progress and its old startup claim date is past.
-    const past = new Date(f.clock().valueOf() - 1);
+    const past = new Date(Date.now() - 1);
     await f.db
       .updateTable("run_attempts")
       .set({ claim_expires_at: past })
@@ -223,7 +213,6 @@ it("shares one owner lease, renews once, and releases capacity only after the fi
     await expect(
       f.coordinator.assertCurrentGrant(main.request, { executionReference: main.reference }),
     ).rejects.toThrow();
-    f.advance(500);
     expect((await f.renew()).payload.familyLeaseRenewals).toHaveLength(1);
     await f.coordinator.assertCurrentGrant(child.request, { executionReference: child.reference });
     child.release();
@@ -250,17 +239,19 @@ it("shares one owner lease, renews once, and releases capacity only after the fi
 }, 30000);
 
 it("retires every task of an expired Session, even with a one-family recovery limit", async () => {
-  const f = await fixture(2, 1000);
+  const f = await fixture(2);
   try {
     const main = await f.start(f.main.sessionId),
       child = await f.start(f.child.sessionId);
-    f.advance(500);
     const other = await f.start(f.foreign.sessionId);
-    f.advance(600);
+    await f.db
+      .updateTable("session_leases")
+      .set({ valid_until: new Date(Date.now() - 1) })
+      .where("pi_session_id", "=", f.main.sessionId)
+      .execute();
     const reconciler = new AssignmentReconciler({
       database: f.db,
       sandboxId: f.workerId,
-      clock: f.clock,
       inventory: {
         listAssignments: async () => {
           throw new Error("Semantic retirement must not kill a healthy Worker");

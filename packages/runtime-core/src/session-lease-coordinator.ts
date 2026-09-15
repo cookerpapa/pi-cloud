@@ -1,4 +1,4 @@
-import type { Database } from "@pi-cloud/database";
+import { databaseTime, type Database } from "@pi-cloud/database";
 import { releaseExecutionScope, releaseIdleSessionLease } from "./worker-family-capacity.ts";
 import { transitionSandbox } from "@pi-cloud/domain";
 import {
@@ -183,9 +183,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         "Worker heartbeat connection is stale",
         false,
       );
-    const now = validDate(this.#clock),
-      validUntil = new Date(now.valueOf() + this.#leaseDurationMs);
-    const renewals = await this.#database.transaction().execute(async (tx) => {
+    const { renewals, now } = await this.#database.transaction().execute(async (tx) => {
       const worker = await tx
         .selectFrom("sandboxes")
         .selectAll()
@@ -206,50 +204,76 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       const connection = await this.#currentRegisteredConnection(
         tx,
         { supervisorId: worker.supervisor_id, bootId: worker.boot_id },
-        now,
         false,
       );
-      if (connection)
+      // One update per physical Session. Task progress/timeouts are not owner liveness.
+      const families = heartbeat.payload.families;
+      if (families.length) {
         await tx
+          .selectFrom("session_leases")
+          .select("lease_id")
+          .where("sandbox_id", "=", this.#sandboxId)
+          .where(
+            "lease_id",
+            "in",
+            families.map((family) => family.leaseId),
+          )
+          .orderBy("lease_id")
+          .forNoKeyUpdate()
+          .execute();
+      }
+      if (connection) {
+        const renewed = await tx
           .updateTable("supervisor_connections")
           .set({
             accepting_assignments: heartbeat.payload.acceptingAssignments,
-            last_heartbeat_at: now,
-            expires_at: new Date(now.valueOf() + this.#connectionGuard!.heartbeatTimeoutMs),
+            last_heartbeat_at: sql<Date>`clock_timestamp()`,
+            expires_at: sql<Date>`clock_timestamp() + ${this.#connectionGuard!.heartbeatTimeoutMs} * interval '1 millisecond'`,
           })
           .where("connection_id", "=", this.#heartbeatConnectionId)
           .where("state", "=", "active")
-          .execute();
-      // One update per physical Session. Task progress/timeouts are not owner liveness.
-      const families = heartbeat.payload.families;
+          .where("expires_at", ">", sql<Date>`clock_timestamp()`)
+          .executeTakeFirst();
+        if (renewed.numUpdatedRows !== 1n)
+          throw new SessionLeaseCoordinatorError(
+            "stale_connection",
+            "Worker connection expired during renewal",
+            false,
+          );
+      }
       const rows =
         families.length === 0
           ? []
           : (
-              await sql<{ lease_id: string; fencing_token: string }>`
-        with reported as (
+              await sql<{
+                lease_id: string;
+                fencing_token: string;
+                valid_until: Date;
+                renewed_at: Date;
+              }>`
+        with decision as materialized (select clock_timestamp() as at), reported as (
           select * from jsonb_to_recordset(${JSON.stringify(families)}::jsonb)
             as x("tenantId" uuid,"piSessionId" text,"leaseId" uuid,"writerId" uuid,"fencingToken" bigint)
         )
-        update session_leases l set valid_until=${validUntil}, renewed_at=${now}
-          from reported p,run_attempts w
+        update session_leases l set valid_until=d.at + ${this.#leaseDurationMs} * interval '1 millisecond', renewed_at=d.at
+          from reported p,run_attempts w,decision d,sandboxes owner
          where l.lease_id=p."leaseId" and l.tenant_id=p."tenantId" and l.pi_session_id=p."piSessionId"
            and l.writer_id=p."writerId" and l.fencing_token=p."fencingToken" and l.sandbox_id=${this.#sandboxId}::uuid
-           and l.valid_until>${now} and w.id=l.writer_id
+           and l.valid_until>d.at and w.id=l.writer_id
+           and owner.id=l.sandbox_id and owner.state in ('ready','leased')
            and w.native_writer_failed_at is null and w.native_writer_sealed_at is null
-        returning l.lease_id,l.fencing_token
+        returning l.lease_id,l.fencing_token,l.valid_until,l.renewed_at
       `.execute(tx)
             ).rows;
-      await tx
-        .updateTable("sandboxes")
-        .set({ updated_at: now })
-        .where("id", "=", this.#sandboxId)
-        .execute();
-      return rows.map((r) => ({
-        leaseId: r.lease_id,
-        fencingToken: Number(r.fencing_token),
-        validUntil: validUntil.toISOString(),
-      }));
+      const now = rows[0]?.renewed_at ?? (await databaseTime(tx));
+      return {
+        now,
+        renewals: rows.map((r) => ({
+          leaseId: r.lease_id,
+          fencingToken: Number(r.fencing_token),
+          validUntil: r.valid_until.toISOString(),
+        })),
+      };
     });
     const ack = parseControlToSupervisorMessage({
       protocolVersion: 1,
@@ -289,7 +313,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   }
 
   async acquire(request: TurnExecutionRequest): Promise<TurnExecutionReference> {
-    const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (tx) => {
       const session = await tx
         .selectFrom("sessions")
@@ -340,7 +363,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         attempt.state !== "claimed" ||
         attempt.runState !== "claimed" ||
         attempt.lease_id ||
-        attempt.claim_expires_at <= now ||
         attempt.native_writer_id !== request.piSessionWriterId
       )
         throw new SessionLeaseCoordinatorError(
@@ -352,7 +374,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         tenantId: request.tenantId,
         piSessionId: request.piSessionId,
         expectedWorkerId: attempt.claim_owner_id,
-        now,
       });
       if (conflict)
         throw new SessionLeaseCoordinatorError(
@@ -375,7 +396,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       await this.#currentRegisteredConnection(
         tx,
         { supervisorId: worker.supervisor_id, bootId: worker.boot_id },
-        now,
         true,
       );
       let lease = await tx
@@ -383,7 +403,15 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         .selectAll()
         .where("tenant_id", "=", request.tenantId)
         .where("pi_session_id", "=", request.piSessionId)
+        .forNoKeyUpdate()
         .executeTakeFirst();
+      const now = await databaseTime(tx);
+      if (attempt.claim_expires_at <= now)
+        throw new SessionLeaseCoordinatorError(
+          "stale_attempt",
+          "Run claim expired during acquisition",
+          false,
+        );
       if (
         lease &&
         (lease.sandbox_id !== worker.id ||
@@ -426,9 +454,9 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
             sandbox_id: worker.id,
             writer_id: request.piSessionWriterId,
             fencing_token: epoch,
-            valid_until: new Date(now.valueOf() + this.#leaseDurationMs),
-            acquired_at: now,
-            renewed_at: now,
+            valid_until: sql<Date>`clock_timestamp() + ${this.#leaseDurationMs} * interval '1 millisecond'`,
+            acquired_at: sql<Date>`clock_timestamp()`,
+            renewed_at: sql<Date>`clock_timestamp()`,
           })
           .returningAll()
           .executeTakeFirstOrThrow();
@@ -459,6 +487,16 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         .where("id", "=", request.attemptId)
         .where("state", "=", "claimed")
         .where("lease_id", "is", null)
+        .where("claim_expires_at", ">", sql<Date>`clock_timestamp()`)
+        .where(
+          sql<boolean>`(${this.#connectionGuard === undefined} or exists(
+          select 1 from supervisor_connections where connection_id=${this.#heartbeatConnectionId}::uuid
+            and state='active' and accepting_assignments and expires_at>clock_timestamp()
+        ))`,
+        )
+        .where(
+          sql<boolean>`exists(select 1 from session_leases where lease_id=${lease.lease_id}::uuid and valid_until>clock_timestamp())`,
+        )
         .executeTakeFirst();
       expectOne(bound.numUpdatedRows, "binding a task to its Session lease");
       return {
@@ -475,32 +513,28 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
     acknowledgement: TurnExecutionReference,
-    now: Date,
   ): Promise<void> {
-    await this.#currentGrant(transaction, request, acknowledgement, now, true);
+    await this.#currentGrant(transaction, request, acknowledgement, true);
   }
 
   async assertCurrentOrExpired(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
     acknowledgement: TurnExecutionReference,
-    now: Date,
   ): Promise<void> {
-    await this.#currentGrant(transaction, request, acknowledgement, now, false);
+    await this.#currentGrant(transaction, request, acknowledgement, false);
   }
 
   async assertCurrentGrant(
     request: TurnExecutionRequest,
     acknowledgement: TurnExecutionReference,
   ): Promise<void> {
-    const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
-      await this.#currentGrant(transaction, request, acknowledgement, now, true);
+      await this.#currentGrant(transaction, request, acknowledgement, true);
     });
   }
 
   async currentAssignment(request: CurrentAssignmentRequest): Promise<TurnExecutionReference> {
-    const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
       const session = await transaction
         .selectFrom("sessions")
@@ -532,6 +566,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         .selectFrom("active_execution_scopes")
         .selectAll()
         .where("session_id", "=", request.sessionId)
+        .where("valid_until", ">", sql<Date>`clock_timestamp()`)
         .executeTakeFirst();
       const generation =
         grant === undefined
@@ -545,8 +580,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         grant.workspace_id !== request.workspaceId ||
         grant.run_id !== request.runId ||
         grant.turn_id !== request.turnId ||
-        grant.attempt_id !== request.attemptId ||
-        new Date(grant.valid_until).valueOf() <= now.valueOf()
+        grant.attempt_id !== request.attemptId
       ) {
         throw new SessionLeaseCoordinatorError(
           "stale_session_lease",
@@ -566,7 +600,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     acknowledgement: TurnExecutionReference,
     now: Date,
   ): Promise<void> {
-    await this.#currentGrant(transaction, request, acknowledgement, now, false);
+    await this.#currentGrant(transaction, request, acknowledgement, false);
     const identity = parseExecutionReference(acknowledgement.executionReference);
     await releaseExecutionScope(transaction, {
       tenantId: request.tenantId,
@@ -608,7 +642,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
     acknowledgement: TurnExecutionReference,
-    now: Date,
     requireUnexpired: boolean,
   ) {
     const identity = parseExecutionReference(acknowledgement.executionReference);
@@ -631,6 +664,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       .where("session_id", "=", request.sessionId)
       .where("lease_id", "=", identity.leaseId)
       .where("fencing_token", "=", String(identity.fencingToken))
+      .where(sql<boolean>`(${!requireUnexpired} or valid_until > clock_timestamp())`)
       .executeTakeFirst();
     if (
       grant === undefined ||
@@ -640,8 +674,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       grant.run_id !== request.runId ||
       grant.turn_id !== request.turnId ||
       grant.attempt_id !== request.attemptId ||
-      grant.sandbox_id !== this.#sandboxId ||
-      (requireUnexpired && new Date(grant.valid_until).valueOf() <= now.valueOf())
+      grant.sandbox_id !== this.#sandboxId
     ) {
       throw new SessionLeaseCoordinatorError(
         "stale_session_lease",
@@ -655,7 +688,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   async #currentRegisteredConnection(
     transaction: Transaction<Database>,
     identity: { supervisorId: string; bootId: string },
-    now: Date,
     requireAcceptingAssignments: boolean,
   ): Promise<{ acceptingAssignments: boolean } | undefined> {
     if (this.#connectionGuard === undefined) return undefined;
@@ -674,6 +706,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       .where("connection_id", "=", this.#heartbeatConnectionId)
       .forUpdate()
       .executeTakeFirst();
+    const now = await databaseTime(transaction);
     if (
       connection === undefined ||
       connection.sandbox_id !== this.#sandboxId ||

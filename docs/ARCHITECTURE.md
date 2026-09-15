@@ -74,6 +74,15 @@ the family, and a successor waits for all affected ordered closures to project.
 Workspace access across different Sessions is deliberately ordinary user-managed
 Linux concurrency, not a scheduling lock or tenant concurrency quota.
 
+Lease decisions use primary PostgreSQL `clock_timestamp()` after authority-row
+locks, not application timestamps or transaction-start `now()` (ADR-0170).
+Renewal cannot revive an expired owner after a lock wait, and retirement checks
+the current locked lease again. Local Worker/Broker deadlines use a conservative
+monotonic observation of the database's remaining lifetime. They trigger local
+cancellation; the database and ordered seals still decide authority. This adds
+no per-token or per-Step SQL check. Database clock/failover discipline remains an
+operator responsibility.
+
 ## Direct execution log
 
 At Run opening the PG authority freezes publication scope against the exact

@@ -153,7 +153,9 @@ describe("PiWorkerRuntime", () => {
         },
       }),
       heartbeatIntervalMs: 50,
-      heartbeatTimeoutMs: 500,
+      // This case injects publisher/startup failures, not heartbeat expiry.
+      // A 500ms authority lease adds a competing failure under CI/clock jitter.
+      heartbeatTimeoutMs: 30000,
     });
     const gateway = new SupervisorWebSocketGateway({
       manager,

@@ -15,6 +15,18 @@ export async function openExecutionPublication(
 ): Promise<ExecutionPublication> {
   const lease = parseExecutionReference(request.executionReference);
   return retryTransaction(database, async (tx) => {
+    await tx
+      .selectFrom("run_attempts")
+      .select("id")
+      .where("id", "=", lease.attemptId)
+      .forNoKeyUpdate()
+      .execute();
+    await tx
+      .selectFrom("session_leases")
+      .select("lease_id")
+      .where("lease_id", "=", lease.leaseId)
+      .forKeyShare()
+      .execute();
     const row = await tx
       .selectFrom("run_attempts as a")
       .innerJoin("active_execution_scopes as l", "l.attempt_id", "a.id")
@@ -39,7 +51,6 @@ export async function openExecutionPublication(
       .where("l.fencing_token", "=", String(lease.fencingToken))
       .where("l.valid_until", ">", sql<Date>`clock_timestamp()`)
       .where("l.accepting_effects", "=", true)
-      .forNoKeyUpdate("a")
       .executeTakeFirst();
     if (
       !row ||

@@ -328,7 +328,15 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
       ).toEqual({ state: "ready" });
       expect(ownerStops).toBe(0);
 
-      now = new Date(now.valueOf() + 2_001);
+      now = new Date(now.valueOf() + 3600000);
+      expect((await gateway.manager.expireConnections()).expiredConnectionIds).not.toContain(
+        registered.payload.connectionId,
+      );
+      await database
+        .updateTable("supervisor_connections")
+        .set({ expires_at: new Date(Date.now() - 1) })
+        .where("connection_id", "=", registered.payload.connectionId)
+        .execute();
       const sweep = await gateway.manager.expireConnections();
       expect(sweep.expiredConnectionIds).toContain(registered.payload.connectionId);
       expect(ownerStops).toBe(0);

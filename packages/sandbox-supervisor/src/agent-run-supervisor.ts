@@ -78,6 +78,7 @@ export type AgentRunSupervisorOptions = {
   maxConcurrentSessions?: number;
   maximumLanesPerFamily?: number;
   clock?: () => Date;
+  monotonicNow?: () => number;
   idGenerator?: () => string;
 };
 
@@ -91,7 +92,6 @@ type Assignment = {
   abortController: AbortController;
   state: AssignmentState;
   runPromise?: Promise<PiTurnResult>;
-  leaseValidUntil?: string;
   lastProducedSeq: number;
   lastAcknowledgedSeq: number;
 };
@@ -159,6 +159,8 @@ export class AgentRunSupervisor {
   readonly #maxConcurrentSessions: number;
   readonly #maximumLanesPerFamily: number;
   readonly #clock: () => Date;
+  readonly #monotonicNow: () => number;
+  readonly #heartbeatStarted = new WeakMap<SupervisorHeartbeatMessage, number>();
   readonly #idGenerator: () => string;
   readonly #currentBySession = new Map<string, Assignment>();
   readonly #byRun = new Map<string, Assignment>();
@@ -179,6 +181,7 @@ export class AgentRunSupervisor {
       "maxConcurrentSessions",
     );
     this.#clock = options.clock ?? (() => new Date());
+    this.#monotonicNow = options.monotonicNow ?? (() => performance.now());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
   }
 
@@ -274,6 +277,7 @@ export class AgentRunSupervisor {
     if (message.type !== "supervisor.heartbeat") {
       throw new AgentRunSupervisorError("invalid_heartbeat", "Supervisor heartbeat was invalid");
     }
+    this.#heartbeatStarted.set(message, this.#monotonicNow());
     return message;
   }
 
@@ -293,6 +297,17 @@ export class AgentRunSupervisor {
       );
     }
     this.#assertHeartbeatRenewalScope(heartbeat, acknowledgement);
+    // The control channel strips family renewals; only the direct PG heartbeat
+    // measures owner lifetime. Its transport copy has no execution observation.
+    if (heartbeat.payload.families.length === 0)
+      return { renewedAssignments: 0, revokedAssignments: 0, revokedSessionIds: [] };
+    const requestedAt = this.#heartbeatStarted.get(heartbeat);
+    if (requestedAt === undefined)
+      throw new AgentRunSupervisorError(
+        "invalid_heartbeat_ack",
+        "Heartbeat was not issued by this runtime",
+      );
+    this.#heartbeatStarted.delete(heartbeat);
 
     const renewals = new Map(
       acknowledgement.payload.familyLeaseRenewals.map((r) => [r.leaseId, r]),
@@ -301,7 +316,7 @@ export class AgentRunSupervisor {
     let renewedAssignments = 0,
       revokedAssignments = 0;
     const revokedSessionIds: string[] = [];
-    const now = validDate(this.#clock).valueOf();
+    const now = this.#monotonicNow();
     for (const assignment of this.#currentBySession.values()) {
       const ref = parseExecutionReference(assignment.command.payload.executionReference);
       const sent = observed.get(ref.leaseId);
@@ -310,9 +325,8 @@ export class AgentRunSupervisor {
       if (
         renewal &&
         renewal.fencingToken === ref.fencingToken &&
-        Date.parse(renewal.validUntil) > now
+        requestedAt + Date.parse(renewal.validUntil) - Date.parse(acknowledgement.sentAt) > now
       ) {
-        assignment.leaseValidUntil = renewal.validUntil;
         renewedAssignments++;
         continue;
       }
