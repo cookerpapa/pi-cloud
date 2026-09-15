@@ -19,8 +19,10 @@ Volume architecture. Historical experiments remain in Git history.
       scoped cleanup and resume update only after completion.
       [Current work record](reports/repository-audit-20260915.md).
       Concurrent tenant admission and cancellation/Workspace-rebind replay now
-      have real-PG regressions; live Subagent mailbox validation found another
-      startup race that remains under investigation.
+      have real-PG regressions; the Subagent startup mailbox race is fixed and
+      passed paid repetition. A lock-delayed renewal revived an expired lease
+      in a controlled real-PG test (TIME-01); the authority-clock change awaits
+      owner confirmation. Other audit and final-cleanup gates remain open.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;
