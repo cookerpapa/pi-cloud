@@ -25,7 +25,31 @@ function bounded(environment, name, fallback, pattern, maximum = 256) {
   return value;
 }
 
+export function validateProviderRelayProxy(value = "") {
+  if (value === "") return value;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY must be an HTTP proxy URL");
+  }
+  if (
+    value.length > 4096 ||
+    /[\x00-\x1f\x7f]/.test(value) ||
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error(
+      "PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY must be an HTTP proxy URL without a path",
+    );
+  }
+  return value;
+}
+
 export function validateProductionRuntimeEnvironment(environment) {
+  validateProviderRelayProxy(environment.PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY);
   booleanValue(environment, "PI_CLOUD_PUBLIC_REGISTRATION_ENABLED", "true");
   bounded(environment, "PI_CLOUD_HTTP_BIND_ADDRESS", "127.0.0.1", /^[A-Za-z0-9:._-]+$/u, 128);
   integer(environment, "PI_CLOUD_HTTP_PORT", 8_080, 1, 65_535);

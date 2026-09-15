@@ -5,6 +5,7 @@ import { chmod, chown, lstat, mkdir, open, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { validateProviderRelayProxy } from "./production-runtime-policy.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const defaultRuntimeDirectory = resolve(repositoryRoot, "deploy/production/runtime");
@@ -678,8 +679,15 @@ if (application.changeOwnership) {
   );
 }
 
+const providerRelayProxy = validateProviderRelayProxy(
+  process.env.PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY ??
+    process.env.HTTPS_PROXY ??
+    process.env.https_proxy ??
+    "",
+);
 const environment = [
   `PI_CLOUD_RUNTIME_DIRECTORY=${runtimeDirectory}`,
+  `PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY=${providerRelayProxy}`,
   `PI_CLOUD_IMAGE_VERSION=${imageVersion}`,
   "NPM_CONFIG_REGISTRY=https://registry.npmjs.org",
   `PI_CLOUD_HTTP_BIND_ADDRESS=${bindAddress}`,

@@ -58,6 +58,20 @@ const productionCompose = await readFile(
 assert.match(productionCompose, /kafka-1:9092,kafka-2:9092,kafka-3:9092/u);
 assert.match(productionCompose, /PI_CLOUD_KAFKA_REPLICAS: "3"/u);
 assert.doesNotMatch(productionCompose, /event-gateway|valkey|nats-/u);
+assert(
+  productionCompose.includes(
+    "PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: ${PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY:-}",
+  ),
+);
+validateProductionRuntimeEnvironment({
+  PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: "http://127.0.0.1:12450",
+});
+for (const proxy of ["socks5://127.0.0.1:12450", "http://proxy/path", "http://proxy\nEVIL=true"]) {
+  assert.throws(
+    () => validateProductionRuntimeEnvironment({ PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: proxy }),
+    /PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY/,
+  );
+}
 const relayImage = productionCompose
   .split("  provider-egress-relay-image:")[1]
   ?.split("\nnetworks:")[0];

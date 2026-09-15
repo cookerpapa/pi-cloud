@@ -453,7 +453,7 @@ services:
       PI_CLOUD_PROVIDER_RELAY_MODE: host
       PI_CLOUD_PROVIDER_RELAY_SOCKET: /run/pi-cloud-provider-relay/provider-egress.sock
       PI_CLOUD_PROVIDER_RELAY_ALLOWED_HOSTS: api.deepseek.com,api.github.com,github.com,api.openai.com,auth.openai.com,chatgpt.com
-      PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: ${HTTPS_PROXY:-}
+      PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: ${PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY:-}
     volumes:
       - provider-relay:/run/pi-cloud-provider-relay
     network_mode: host

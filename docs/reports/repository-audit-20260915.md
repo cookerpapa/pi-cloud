@@ -151,7 +151,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | LIFE-12 | Control Plane acquired telemetry/DB and constructed Subagents outside its cleanup scope | Four regressions failed before, including a real listener left open. Acquisition is now inside the cleanup scope; an unadopted Subagent controller is closed if Projector construction fails. Preserve primary and teardown errors. Four regressions and CP types pass; not yet deployed |
 | LIFE-13 | Projector teardown stopped after the first failed drain, leaving its other owned resources open | Simulated relay/consumer failures reproduced skipped closures. Share one shutdown promise, attempt every owned close in dependency order and report all errors. Seven Projector handoff cases pass, including concurrent close; runtime types pass. No execution/order semantics changed |
 | TEST-03 | Browser acceptance waited for text until timeout after an already-visible failed Run | Actual proxy failure reproduced the misleading 180-second wait. First-text wait now also detects the existing terminal error element and reports it immediately. Real repetition pending |
-| ENV-01 | Deployed model relay retained localhost:10808 from an earlier shell, while the current proxy is localhost:12450 | Old port returns ECONNREFUSED; proxy CONNECT failed before model execution. Affected paid browser Run is failed, not counted as accepted. Temporary relay reconfiguration is separate from the owner's pending permanent proxy choice; no provider credential was changed |
+| ENV-01 | Deployed model relay retained localhost:10808 from an earlier shell, while the current proxy is localhost:12450 | Old port returned ECONNREFUSED before model execution. Owner selected 12450 permanently. Persist the explicit relay proxy in private .env; runtime Compose no longer selects it from generic shell HTTPS_PROXY. Installer/config tests and an opposing-shell-proxy render pass. Paid browser repetition and both model smoke calls pass through the selected proxy; provider credentials unchanged |
 | CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace types and remote CI at 9f62b365 pass |
 | TIME-01 | Lease/claim timestamps were captured before potentially blocked SQL updates | Real PG reproduced a lock-delayed renewal reviving an expired lease. ADR-0170 is deployed at 9f62b365: issuance, renewal, validation and retirement use PG decision time; local deadlines are monotonic hints. Nine real-PG boundaries, local checks, CI and paid multi-round/Subagent/Worker-loss acceptance pass. Wider audit remains open; no post-seal corruption or tenant leak was demonstrated |
 | PERF-01 | Sixteen concurrent Sessions with sufficient slots still spend substantial time before provider dispatch | Real sample: non-provider TTFT p50/p95 836/1,322 ms versus provider 1,036/2,071 ms; eight of 32 Turns are internal-time dominant. Worker metrics show claim averaging 122 ms. Investigate statement/lock/pool time before changing admission; no claim of full latency acceptance |
@@ -167,6 +167,15 @@ Sessions/Workspaces/machine, screenshots/downloads and browser profile were
 removed; the two test identities remain in the campaign cleanup ledger.
 Raw test-only Volume race evidence is retained privately pending the storage
 decision; both temporary filesystem trees and database connections were cleaned.
+
+Control Plane `5b8bd9aa` is deployed; its post-rollout GPT high/Fast and DeepSeek
+high/Standard smoke Runs completed. DeepSeek API/SSE first text was 1,828.1 ms,
+including 1,482.5 ms on the provider route; GPT's cross-process breakdown was
+rejected because the host wall clock stepped, not used as a latency claim.
+Full `npm run check` at this slice completed with **928 passed / two gated skips**
+and all workspace type checks passing. LOCK-01 is a separate intentionally failing
+private reproduction, not a skipped or solved regression. The owner requested a
+detailed storage-contract discussion; no Workspace storage changes have been made.
 
 ARCH-01 implemented locally: positive Agent exit and committed seal restore the
 failed Session's admission, without changing the old failure or replaying Tools.

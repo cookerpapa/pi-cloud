@@ -110,6 +110,16 @@ covering both hosts plus `*.preview.<product-host>` when enabling Ingress.
 The chart routes the separate admin host to port 8081; links never infer public
 addresses from Pod ports. Optional management links do not enable their services.
 
+### Provider egress
+
+`PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY` is the persisted HTTP(S) proxy for model
+egress in the one-host deployment; empty means direct egress. Set it in the
+private `.env` and recreate `provider-host-egress-relay`. The installer captures
+the explicit value (or the installer's `HTTPS_PROXY`) on a fresh installation.
+Later service launches do not inherit a different shell's generic proxy setting.
+This is distinct from Cube guest egress and from build-time HTTP(S) proxies.
+Do not commit proxy credentials or expose a local proxy publicly.
+
 ### Worker, Subagent and Sandbox capacity
 
 | Variable | Default | Meaning |
