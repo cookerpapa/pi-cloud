@@ -120,7 +120,7 @@ window.renderNavigation=()=>{
 window.renderInspector=(refreshSignal=0)=>root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},
   React.createElement(WorkspaceInspector,{api:inspectorApi,sessionId:"session-fixture",workspaceId:"workspace-fixture",
     workspaceName:"fixture",developmentEnvironmentId:null,workingDirectory:"/workspace",refreshSignal,onClose:()=>{},onError:()=>{}})));
-window.renderChat = (sessionState='idle') => {
+window.renderChat = (sessionState='idle', history=false) => {
   window.requestAnimationFrame = nativeRaf; window.cancelAnimationFrame = nativeCancelRaf;
   const sid = "10000000-0000-4000-8000-000000000001";
   const profileId = "20000000-0000-4000-8000-000000000001";
@@ -131,6 +131,10 @@ window.renderChat = (sessionState='idle') => {
   ];
   let selection = {...DEFAULT_NEW_CONVERSATION_MODEL,thinkingLevel:"medium",fastMode:false};
   let session;
+  const fixtureTurnId='50000000-0000-4000-8000-000000000011';
+  const tree=(label)=>({currentSessionId:sid,branches:[{sessionId:sid,parentSessionId:null,kind:'conversation',title:'Fixture tree',current:true,
+    entries:[{entryId:'answer-entry',turnId:fixtureTurnId,role:'assistant',text:label,finalAssistant:true}]}],delegatedSessions:[]});
+  window.treeRequests=[];window.deferTrees=false;
   const modelResource = () => ({sessionId:sid,modelProfileId:profileId,...selection,
     displayName:models.find(m=>m.provider===selection.provider).displayName});
   Object.assign(PiCloudApi.prototype, {
@@ -139,14 +143,20 @@ window.renderChat = (sessionState='idle') => {
     listWorkspaces:async()=>({workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false}),
     listDevelopmentEnvironments:async()=>({environments:[],profiles:DEVELOPMENT_ENVIRONMENT_PROFILES,truncated:false}),
     getModelCatalog:async()=>({models}),
-    getConversationTree:async()=>({branches:[],delegatedSessions:[]}),
+    getConversationTree:async(_sessionId,view)=>window.deferTrees
+      ?new Promise(resolve=>window.treeRequests.push({view,resolve:label=>resolve(tree(label))}))
+      :history?tree('Initial tree'):{branches:[],delegatedSessions:[]},
+    pruneConversation:async()=>({prunedTurnCount:0}),
     createSession:async (projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,model)=>{
       selection=model; window.savedSelection=selection;
       session={sessionId:sid,projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,state:sessionState,workspaceState:"attached",modelProfileId:profileId,createdAt:new Date().toISOString()};
       return session;
     },
     getSessionModel:async()=>modelResource(),
-    getConversation:async()=>({project,session,inheritedMessages:[],turns:[],historyTruncated:false}),
+    getConversation:async()=>({project,session,inheritedMessages:[],turns:history?[{
+      turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',mailboxPosition:1,prompt:'Tree question',state:'completed',acceptedAt:new Date().toISOString(),
+      transcript:{items:[{kind:'text',itemId:'answer',entryId:'answer-entry',text:'Tree answer',firstSequence:1,lastSequence:1}],stopReason:'stop'}
+    }]:[],historyTruncated:false}),
   });
   const nativeFetch=window.fetch;
   window.fetch=async (url,init={})=>{
@@ -172,7 +182,7 @@ window.renderChat = (sessionState='idle') => {
     }
     return nativeFetch(url,init);
   };
-  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp)));
+  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:String(history)})));
 };
 window.fixtureReady = true;
 `;
@@ -577,6 +587,34 @@ try {
       { mobileChat: true, adminScroll: true, directoryChoice: true },
     );
     await page.send("Emulation.clearDeviceMetricsOverride");
+    await page.evaluate("renderChat('idle',true)");
+    await page.waitFor("document.querySelector('.product-new-chat')");
+    await page.evaluate("document.querySelector('.product-new-chat').click()");
+    await page.waitFor("document.querySelector('.product-execution-mode-choice input')");
+    await page.evaluate("document.querySelector('.product-execution-mode-choice input').click()");
+    await page.waitFor("document.querySelector('.product-progressive-options input')");
+    await fill(".product-progressive-options input", "Tree response race");
+    await page.evaluate("document.querySelector('.product-workspace-modal').requestSubmit()");
+    await page.waitFor("document.querySelector('.product-prune-action')?.disabled===false");
+    await page.evaluate(
+      "window.deferTrees=true;window.confirm=()=>true;document.querySelector('.product-prune-action').click()",
+    );
+    await page.waitFor("treeRequests.length===1");
+    await page.evaluate("document.querySelectorAll('.product-tree-view-switch button')[1].click()");
+    await page.waitFor("treeRequests.length===2");
+    await page.evaluate("treeRequests[1].resolve('Current full tree')");
+    await page.waitFor(
+      "document.querySelector('.product-tree-panel').textContent.includes('Current full tree')",
+    );
+    await page.evaluate("treeRequests[0].resolve('Stale focus tree')");
+    await page.wait(50);
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-tree-panel').textContent.includes('Current full tree')",
+      ),
+      true,
+      "A late refresh from the old tree view must not replace the current tree",
+    );
     await page.evaluate("renderChat(); window.rejectLogout=true");
     await page.waitFor('document.querySelector(".product-account-menu-trigger")');
     await page.evaluate('document.querySelector(".product-account-menu-trigger").click()');

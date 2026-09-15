@@ -197,6 +197,9 @@ export default function ChatApp() {
     useState<DelegatedSessionSummaryResource | null>(null);
   const [conversationTree, setConversationTree] = useState<ConversationTreeResource | null>(null);
   const [treeView, setTreeView] = useState<ConversationTreeView>("focus");
+  const currentTreeView = useRef(treeView);
+  currentTreeView.current = treeView;
+  const treeRequest = useRef(0);
   const [treeLoading, setTreeLoading] = useState(false);
   const [workspaces, setWorkspaces] = useState<readonly WorkspaceSummaryResource[]>([]);
   const [developmentEnvironments, setDevelopmentEnvironments] = useState<
@@ -460,11 +463,20 @@ export default function ChatApp() {
 
   const refreshConversationTree = useCallback(
     async (sessionId: string, view: ConversationTreeView): Promise<void> => {
+      if (currentStreamSession.current !== sessionId || currentTreeView.current !== view) return;
+      const request = ++treeRequest.current;
+      const current = () =>
+        request === treeRequest.current &&
+        currentStreamSession.current === sessionId &&
+        currentTreeView.current === view;
       setTreeLoading(true);
       try {
-        setConversationTree(await api.getConversationTree(sessionId, view));
+        const tree = await api.getConversationTree(sessionId, view);
+        if (current()) setConversationTree(tree);
+      } catch (error) {
+        if (current()) throw error;
       } finally {
-        setTreeLoading(false);
+        if (current()) setTreeLoading(false);
       }
     },
     [api],
@@ -601,28 +613,20 @@ export default function ChatApp() {
   useEffect(() => {
     const sessionId = state.session?.sessionId;
     if (authPhase !== "authenticated" || sessionId === undefined) {
+      treeRequest.current++;
       setConversationTree(null);
+      setTreeLoading(false);
       return;
     }
     let cancelled = false;
-    setTreeLoading(true);
-    void api
-      .getConversationTree(sessionId, treeView)
-      .then(
-        (tree) => {
-          if (!cancelled) setConversationTree(tree);
-        },
-        (error: unknown) => {
-          if (!cancelled) update({ type: "api.error", message: errorMessage(error, t) });
-        },
-      )
-      .finally(() => {
-        if (!cancelled) setTreeLoading(false);
-      });
+    void refreshConversationTree(sessionId, treeView).catch((error: unknown) => {
+      if (!cancelled) update({ type: "api.error", message: errorMessage(error, t) });
+    });
     return () => {
       cancelled = true;
+      treeRequest.current++;
     };
-  }, [api, authPhase, state.session?.sessionId, treeView, update]);
+  }, [refreshConversationTree, authPhase, state.session?.sessionId, treeView, update]);
 
   const streamPresentation = useRef({ treeView, t, elasticWorkspaces });
   streamPresentation.current = { treeView, t, elasticWorkspaces };
@@ -799,6 +803,7 @@ export default function ChatApp() {
     setConversationLoading(sessionId);
     update({ type: "api.error.cleared" });
     try {
+      if (currentStreamSession.current !== sessionId) setConversationTree(null);
       currentStreamSession.current = sessionId;
       setStreamSessionId(sessionId);
       if (streamSessionId === sessionId) setReconnectGeneration((value) => value + 1);

@@ -65,7 +65,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | UI-02 | Logout silently treated network failure as success and retained machine/dialog state in the mounted app | Browser reproduced false logout. Surface failure; successful/expired logout replaces the document so old account callbacks/caches cannot reach the next login |
 | UI-03 | Composer and initial-prompt creation both sent `thinkingLevel: off`, overriding persisted Session settings | Real React/Chrome request-builder regression captured `off` in all three submissions despite medium/high selection. Remove obsolete overrides; GPT Fast/high → DeepSeek also tested without model execution |
 | UI-04 | A terminal SSE arriving before the HTTP acceptance reply was reset to queued by `turn.accepted` | Reproduced; preserve terminal status while filling accepted prompt/Run metadata. Covers completed, failed and cancelled |
-| UI-05 | Tree refreshes can finish after selecting another Session; new-chat/resource actions are not all guarded during pending mutations | Reproduce controlled response delays through the browser fixture before changing request lifecycle |
+| UI-05 | Tree refreshes can finish after selecting another Session; new-chat/resource actions are not all guarded during pending mutations | Chrome reproduced a late prune-triggered focus refresh replacing the selected full tree. One generation/scope guard now covers automatic and explicit tree reads; stale responses/errors/loading changes are ignored. 130 Web tests and the browser fixture pass. Pending-mutation navigation still needs its own check |
 | UI-06 | IME Enter submitted text; accepted sends/Steers cleared newer drafts | Browser reproduced IME submission and lost pending draft. Ignore composing Enter, clear only the submitted draft revision, preserve an already-focused caret |
 | UI-07 | Late file A response appeared below selected file B; directory refresh retained stale loading flags | Browser reproduced wrong selected content. Per-file request identity plus directory generation; clear obsolete loading state |
 | UI-08 | Run completion refresh unmounted the human terminal; Inspector inferred machine identity by fetching its entire catalog | Browser reproduced unmount. Separate file refresh from terminal lifetime; pass exact Session binding/directory, refresh files on Workspace change, remove redundant catalog lookup |
@@ -238,10 +238,30 @@ and actual Chrome Start/movement/Pause/Reset assertions. The preview's tick adva
 0→5, remained 5 during Pause, and returned to 0 on Reset. Its machine and
 conversation were released; aggregate evidence records deployed image `2bc942b8`
 separately from the local harness revision. Test users still await final cleanup.
-The Codex device login timed out after 15 minutes; that code is no longer usable.
-GPT-dependent cases remain blocked on normal owner authorization, not marked passed.
-The long-context coding/search campaign is running against the normal 128K
-DeepSeek configuration, without reducing its Compaction threshold.
+The first Codex device code expired; the owner completed a second normal device
+login. A refresh-capable credential is now active and the expired access-only entry
+was disabled via the management API. A paid GPT Sol high/Fast call recovered the
+prior marker (first text 3,738 ms; non-provider 211 ms); DeepSeek Pro high/Standard
+also recovered correctly (917 ms; non-provider 166 ms). No local Codex credential
+was copied or modified.
+
+Long-context acceptance passed against the normal 128K DeepSeek configuration:
+13 algorithm-coding rounds and two threshold Compactions, at 112,473→26,824 and
+112,297→24,935 estimated tokens. Early-marker recall, further coding, new Worker
+restoration of the same Cube, GPT Luna medium/Fast search, and DeepSeek Pro
+high/Standard search all passed. Native assistant usage covered 177 messages:
+324,994 uncached input, 9,849,088 cache-read and 210,023 output tokens; excludes
+unrecorded retries and Compaction usage. The harness's Git revision differs from
+deployed runtime image `2bc942b8`; no claim is made that later UI fixes were deployed.
+Its Session/Workspace were deleted and both Workers restored. Test identity cleanup
+is pending. Current aggregate evidence comes from the private campaign log.
+
+The re-run product-surface suite passed cookie login/logout, Fork/prune, coding,
+bounded output, live browsing, terminal/Agent concurrency, two Sessions sharing
+one Cube, Steer, cancellation recovery, cross-tenant denial, Workspace rebinding
+and physical purge. Pure-chat first text was 2,330 ms: provider route 2,145 ms,
+non-provider 186 ms. This remains API/SSE receipt, not browser paint. Full live
+browser control traversal is running separately.
 Private fixture IDs/credentials stay in `.cache/audit-live-baseline-state.json`,
 not this report. The baseline and new test users/resources require final cleanup.
 
