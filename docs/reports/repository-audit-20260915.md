@@ -24,6 +24,15 @@ The remaining `runtime-core` and `supervisor-host` files/tests have now been rea
 An uncalled Bash test-classifier and its three self-only tests are removed in the
 following cleanup; the 953 count belongs to the preceding fixed revision.
 
+Cleanup revision `b0cbd2c7` also completes a fresh real-PG `npm run check`:
+**950 pass / two live gates skipped**, exactly three fewer self-only tests.
+Format/build/docs and the real Docker context check pass (462 retained inputs).
+The standalone Kafka policy gate passed separately; the Cube-only gated test
+is not counted as passed here. Remote CI for this revision was still running
+at handoff. The isolated tmpfs PostgreSQL fixture had zero test databases and
+zero other client connections before removal; no persistent Docker Volume.
+No new product account or Workspace was created by the four reused-baseline Runs.
+
 Four more paid baseline Runs pass on deployed `ea4ae725`: GPT high/Fast and
 DeepSeek high restore their saved settings/marker, followed by two DeepSeek coding
 Turns on different Workers (seven Tools; insertion/binary search assertions pass).
