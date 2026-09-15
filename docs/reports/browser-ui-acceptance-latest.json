@@ -1,8 +1,10 @@
 {
   "accepted": true,
-  "piCloudRevision": "1da357d3cc79b6420ecd8c6e51d7c9133e418226",
-  "checkedAt": "2026-09-14T09:54:50.380Z",
-  "account": "browser.acceptance.mu12f1rl",
+  "piCloudRevision": "2bc942b8ebfeb4b3b974020d0415f60419c84443",
+  "testHarnessRevision": "d32a9fe70e2197f7f2c5a57e5da349fa8c029a05",
+  "testHarnessWorkingTreeDirty": true,
+  "checkedAt": "2026-09-15T01:38:25.942Z",
+  "account": "browser.acceptance.mu204grq",
   "clickedControls": [
     "auth.localOnly",
     "auth.registerTab",
@@ -59,6 +61,7 @@
     "workspace.refresh",
     "workspace.terminalTab",
     "workspace.terminalConnect",
+    "workspace.terminalExecute",
     "workspace.terminalDisconnect",
     "workspace.filesTab",
     "workspace.close",
@@ -97,10 +100,11 @@
     "account.menuOpenForLogout",
     "account.logout"
   ],
-  "clickedControlCount": 92,
+  "clickedControlCount": 93,
   "latencyMs": {
-    "userSubmitToFirstAssistantText": 3060,
-    "userSubmitToCompleteReply": 3062
+    "measurement": "Browser DOM polling observation; not a compositor paint timestamp",
+    "userSubmitToFirstAssistantText": 2043,
+    "userSubmitToCompleteReply": 2147
   },
   "testMode": "full",
   "screenshotCaptured": true,

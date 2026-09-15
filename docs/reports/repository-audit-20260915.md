@@ -223,7 +223,7 @@ Final assistant text arrived after earlier Tool-generating sampling, so it is no
 initial Agent activity. One Turn had a 1.57-second host wall-clock step; its cross-
 process timing breakdown is explicitly unavailable, not silently used.
 
-GPT currently fails upstream authentication: its configured access-only credential
+GPT initially failed upstream authentication: its configured access-only credential
 expired and has no refresh token. Started the normal device authorization workflow
 and asked the owner to complete it; no alternate credential was copied. Official
 [Codex authentication guidance](https://learn.chatgpt.com/docs/auth) was checked
@@ -260,8 +260,16 @@ The re-run product-surface suite passed cookie login/logout, Fork/prune, coding,
 bounded output, live browsing, terminal/Agent concurrency, two Sessions sharing
 one Cube, Steer, cancellation recovery, cross-tenant denial, Workspace rebinding
 and physical purge. Pure-chat first text was 2,330 ms: provider route 2,145 ms,
-non-provider 186 ms. This remains API/SSE receipt, not browser paint. Full live
-browser control traversal is running separately.
+non-provider 186 ms. This remains API/SSE receipt, not browser paint.
+Full real-browser acceptance passed 93 controls, including terminal commands,
+model cascades, Steer/Stop, Fork/prune, directory creation, machine pause/resume,
+SSH actions and resource deletion. Browser DOM-observed first text was 2,043 ms;
+this is not a compositor paint measurement. The first browser run exposed an
+obsolete terminal-label assertion and swallowed cleanup conflicts, not a broken
+terminal. The script now executes a real terminal command and reports acceptance
+and bounded resource-cleanup failures together. The successful rerun removed its
+resources/screenshots; test identity rows still await final cleanup. Remote CI at
+`d32a9fe7` passed; that revision's tree refresh fix is not yet deployed.
 Private fixture IDs/credentials stay in `.cache/audit-live-baseline-state.json`,
 not this report. The baseline and new test users/resources require final cleanup.
 

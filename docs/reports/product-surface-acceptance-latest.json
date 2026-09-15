@@ -1,36 +1,38 @@
 {
   "accepted": true,
-  "piCloudRevision": "a4984f5f9ec4f65b1de64eb532e9fce60061b37c",
-  "checkedAt": "2026-09-14T13:58:20.317Z",
+  "piCloudRevision": "2bc942b8ebfeb4b3b974020d0415f60419c84443",
+  "testHarnessRevision": "2220ac03a188d46bb6880c85b0edebc5b168bf96",
+  "testHarnessWorkingTreeDirty": false,
+  "checkedAt": "2026-09-15T01:26:58.745Z",
   "browserCookieAuth": true,
   "latencyMs": {
     "pureChat": {
-      "accepted": 18,
-      "firstDurableActivity": 2920,
+      "accepted": 13,
+      "firstDurableActivity": 2330,
       "firstToolStarted": null,
-      "firstAssistantText": 2920,
-      "settled": 3499,
+      "firstAssistantText": 2330,
+      "settled": 3248,
       "stages": {
-        "firstModelDispatchMs": 182.364,
-        "providerRouteToFirstTextMs": 2726.899,
-        "parsedTextToPiEventMs": 0.737,
-        "piEventToClientTextMs": 9.947,
+        "firstModelDispatchMs": 175.443,
+        "providerRouteToFirstTextMs": 2144.579,
+        "parsedTextToPiEventMs": 0.978,
+        "piEventToClientTextMs": 9.337,
         "firstTextFollowsEarlierSampling": false,
-        "nonProviderTtftMs": 193.048,
+        "nonProviderTtftMs": 185.758,
         "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; synchronized host clocks"
       }
     },
     "coding": {
-      "accepted": 17,
-      "firstDurableActivity": 4215,
-      "firstToolStarted": 6592,
-      "firstAssistantText": 15004,
-      "settled": 15800,
+      "accepted": 23,
+      "firstDurableActivity": 6446,
+      "firstToolStarted": 11323,
+      "firstAssistantText": 16685,
+      "settled": 17381,
       "stages": {
-        "firstModelDispatchMs": 154.368,
-        "providerRouteToFirstTextMs": 2935.331,
-        "parsedTextToPiEventMs": 0.383,
-        "piEventToClientTextMs": 7.722,
+        "firstModelDispatchMs": 195.56,
+        "providerRouteToFirstTextMs": 1747.343,
+        "parsedTextToPiEventMs": 0.283,
+        "piEventToClientTextMs": 10.393,
         "firstTextFollowsEarlierSampling": true,
         "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; synchronized host clocks"
       }

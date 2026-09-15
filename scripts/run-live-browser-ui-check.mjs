@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -594,7 +594,51 @@ try {
         "连接终端",
         "workspace.terminalConnect",
       );
-      await page.waitFor('document.body.innerText.includes("已连接 · /workspace")', 90_000);
+      await page.waitFor(
+        'document.querySelector(".workspace-terminal-toolbar small")?.textContent==="已连接"',
+        90_000,
+      );
+      let terminalOutput = "";
+      const stopTerminalOutput = page.onNetworkEvent((method, params) => {
+        if (method !== "Network.webSocketFrameReceived") return;
+        const frame = JSON.parse(params.response.payloadData);
+        if (frame.type === "workspace_terminal.output") {
+          terminalOutput = (
+            terminalOutput + Buffer.from(frame.data, "base64").toString("utf8")
+          ).slice(-8192);
+        }
+      });
+      try {
+        await page.evaluate('document.querySelector(".workspace-terminal-host textarea").focus()');
+        const command = Buffer.from("pwd; printf 'BROWSER-TERMINAL-EXECUTED\\n'", "utf8").toString(
+          "base64",
+        );
+        await page.send("Input.insertText", {
+          text: `printf '%s' '${command}' | base64 -d | /bin/bash`,
+        });
+        await page.send("Input.dispatchKeyEvent", {
+          type: "keyDown",
+          key: "Enter",
+          code: "Enter",
+          windowsVirtualKeyCode: 13,
+        });
+        await page.send("Input.dispatchKeyEvent", {
+          type: "keyUp",
+          key: "Enter",
+          code: "Enter",
+          windowsVirtualKeyCode: 13,
+        });
+        await waitFor(
+          () =>
+            terminalOutput.includes("BROWSER-TERMINAL-EXECUTED") &&
+            terminalOutput.includes("/workspace"),
+          "browser terminal command",
+          15_000,
+        );
+        record("workspace.terminalExecute");
+      } finally {
+        stopTerminalOutput();
+      }
       await clickText(".workspace-terminal-toolbar button", "断开", "workspace.terminalDisconnect");
       await clickText(".workspace-view-tabs button", "文件", "workspace.filesTab");
       await click('.workspace-directory-header button[title="关闭"]', "workspace.close");
@@ -790,43 +834,76 @@ try {
   acceptanceError = error;
 }
 
-const remainingConversations = (await api.listConversations()).conversations;
-for (const conversation of remainingConversations) {
-  await api
-    .deleteConversation(conversation.sessionId, newIdempotencyKey("delete"))
-    .catch(() => undefined);
+const cleanupErrors = [];
+async function releaseFixture(operation, label) {
+  try {
+    await waitFor(
+      async () => {
+        try {
+          await operation();
+          return true;
+        } catch (error) {
+          // Chrome closing a PTY precedes the Broker's asynchronous release.
+          // Only that bounded conflict window is retryable, not arbitrary errors.
+          if (error instanceof PiCloudApiError && error.status === 409) return false;
+          throw error;
+        }
+      },
+      label,
+      10_000,
+    );
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
 }
-for (const development of (await api.listDevelopmentEnvironments()).environments) {
-  if (development.state === "released") continue;
-  await api
-    .developmentEnvironmentAction(
-      development.environmentId,
-      "release",
-      newIdempotencyKey("environment"),
-    )
-    .catch(() => undefined);
+try {
+  for (const conversation of (await api.listConversations()).conversations) {
+    const key = newIdempotencyKey("delete");
+    await releaseFixture(
+      () => api.deleteConversation(conversation.sessionId, key),
+      "conversation cleanup",
+    );
+  }
+  for (const development of (await api.listDevelopmentEnvironments()).environments) {
+    if (development.state === "released") continue;
+    const key = newIdempotencyKey("environment");
+    await releaseFixture(
+      () => api.developmentEnvironmentAction(development.environmentId, "release", key),
+      "machine cleanup",
+    );
+  }
+  for (const workspace of (await api.listWorkspaces()).workspaces) {
+    const key = newIdempotencyKey("delete");
+    await releaseFixture(
+      () => api.deleteWorkspace(workspace.workspaceId, key),
+      "workspace cleanup",
+    );
+  }
+  assert.equal(
+    (await api.listConversations()).conversations.length,
+    0,
+    "Conversation cleanup failed",
+  );
+  assert.equal((await api.listWorkspaces()).workspaces.length, 0, "Workspace cleanup failed");
+  assert.equal(
+    (await api.listDevelopmentEnvironments()).environments.some(
+      (environment) => environment.state !== "released",
+    ),
+    false,
+    "Development environment cleanup failed",
+  );
+} catch (error) {
+  cleanupErrors.push(error);
+} finally {
+  await rm(artifactsDirectory, { recursive: true }).catch((error) => cleanupErrors.push(error));
 }
-for (const workspace of (await api.listWorkspaces()).workspaces) {
-  await api
-    .deleteWorkspace(workspace.workspaceId, newIdempotencyKey("delete"))
-    .catch(() => undefined);
+if (acceptanceError !== undefined || cleanupErrors.length) {
+  throw new AggregateError(
+    [...(acceptanceError === undefined ? [] : [acceptanceError]), ...cleanupErrors],
+    "Browser acceptance or fixture cleanup failed",
+    { cause: acceptanceError },
+  );
 }
-assert.equal(
-  (await api.listConversations()).conversations.length,
-  0,
-  "Conversation cleanup failed",
-);
-assert.equal((await api.listWorkspaces()).workspaces.length, 0, "Workspace cleanup failed");
-assert.equal(
-  (await api.listDevelopmentEnvironments()).environments.some(
-    (environment) => environment.state !== "released",
-  ),
-  false,
-  "Development environment cleanup failed",
-);
-await rm(artifactsDirectory, { recursive: true });
-
-if (acceptanceError !== undefined) throw acceptanceError;
 
 const report = {
   accepted: true,
