@@ -80,6 +80,9 @@ test tenants plus the machine's scoped project data: **70 Run records and 43
 Session views**. User identities outside these fixtures were preserved. Three
 older, already-purged copy-fixture tenants were also removed for schema cutover.
 Cleanup used FK-enforced transactions and rollback rehearsals, not global resets.
+The disposable PG container, temporary test scripts and logs are removed. A
+Control Plane restart after fixture purge returned healthy; formal service logs
+and the wider audit's original baseline were preserved.
 
 Eight unrelated old Cube templates still fail cleanup against a stale node
 endpoint; they are **not** counted as deleted. Multi-node Volume attachment and

@@ -405,7 +405,8 @@ Remote CI at `7e929c67` passed all quality, browser and image/security jobs
 ([run](https://github.com/cookerpapa/pi-cloud/actions/runs/34920234169)).
 The two owned old browser/Snake artifact directories were removed (about 500 KiB).
 Original identities and formal logs remain untouched. New test identity rows,
-the baseline fixtures and the isolated PostgreSQL container still require cleanup.
+the original baseline fixtures still require cleanup. The isolated PostgreSQL
+container was removed after ADR-0171 acceptance; later PG gates need a fresh fixture.
 
 Real Control Plane/Projector SIGKILL during a paid DeepSeek stream passed on
 runtime `5558ab15`: 41 Kafka records were produced after verifying the CP was
