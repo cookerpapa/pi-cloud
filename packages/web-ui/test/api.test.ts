@@ -45,6 +45,22 @@ const environment = {
 } as const;
 
 describe("tenant-aware browser API", () => {
+  it("keeps the Run inspection API used by live acceptance scripts without restoring UI polling", async () => {
+    const transport = vi.fn<typeof fetch>(async (input, init) => {
+      expect(input).toBe("/v1/runs/owned%2Frun");
+      expect(init?.method).toBe("GET");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-credential");
+      return Response.json(
+        { error: { code: "not_found", message: "Run was not found" } },
+        { status: 404 },
+      );
+    });
+    await expect(
+      new PiCloudApi(transport, "test-credential").getRun("owned/run"),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    expect(transport).toHaveBeenCalledOnce();
+  });
+
   it("manages user-owned development environments through same-origin APIs", async () => {
     const createdAt = "2026-08-20T00:00:00.000Z";
     const environmentId = "10000000-0000-4000-8000-000000000021";

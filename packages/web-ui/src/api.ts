@@ -16,6 +16,7 @@ import {
   parseCubeProxyConfigurationResource,
   parseLogoutResource,
   parseProjectResource,
+  parseRunResource,
   parseSessionResource,
   parseTenantIdentityResource,
   parseTenantRegistrationResource,
@@ -44,6 +45,7 @@ import {
   type AcceptedTurnResource,
   type TurnSteerResource,
   type ProjectResource,
+  type RunResource,
   type ProviderModelSelection,
   type SessionModelSelection,
   type ModelConfigurationResource,
@@ -282,6 +284,18 @@ export class PiCloudApi {
       await request(
         this.#fetch,
         `/v1/sessions/${encodeURIComponent(sessionId)}/model`,
+        { method: "GET" },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  /** Used by diagnostic/acceptance clients, not as a second browser stream poll. */
+  async getRun(runId: string): Promise<RunResource> {
+    return parseRunResource(
+      await request(
+        this.#fetch,
+        `/v1/runs/${encodeURIComponent(runId)}`,
         { method: "GET" },
         this.#authorizationToken,
       ),

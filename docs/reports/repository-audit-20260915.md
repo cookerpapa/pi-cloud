@@ -114,7 +114,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | TOOL-01 | A reused persistent-machine binding could return a cached response belonging to an earlier Attempt | Reproduced by delaying old-body retirement while rebinding. Match the reader Attempt as well as binding ID; no PG round trip added |
 | CLEAN-01 | Binding-local `materializing` was never written; old terminal-capacity transfer path had no reachable caller | Removed the field/branches/transfer method and its dead-feature test. Physical runtime materialization and concurrent Tool execution remain |
 | CLEAN-02 | Native Lane exposed its private reader despite having no caller; one Fork test name incorrectly implied no payload copy anywhere | Removed unused getter; clarified shared query projection versus self-contained Fork log. No persistence semantics changed |
-| CLEAN-03 | UI still polled Run state as a second pre-stream completion fallback | Removed poll/action/unused client method, matching the current seal-projection contract. Pre-start failure and late input ACK regressions cover this path; full live fault matrix remains pending |
+| CLEAN-03 | UI still polled Run state as a second pre-stream completion fallback | Removed UI poll/action. Live Snake exposed that removing the API client's `getRun` also broke diagnostic/acceptance callers outside the Web package; restored that required read-only method and added an API contract test, without reintroducing UI polling. Full live matrix remains pending |
 | TEST-01 | Chrome helper selected a random fixed port, risking another browser under concurrent tests; debugger disconnect could strand pending RPCs | Use Chrome's allocated port from its own private profile, reject pending calls on disconnect, and report cleanup failures. Browser presentation/composer regression passes; parallel browser stress still pending |
 | LIFE-05 | Broker HTTP listener remained open after provider teardown failed | Reproduced with actual local listener; close HTTP in `finally`. Eight RPC/server regressions pass. Also removed unreachable HTTP-side Tool timing branch; executor owns execution timing |
 | FILE-01 | Trusted Git preflight discovered a Workspace's `.git/config` | Owned fake-SSH marker reproduced local config execution. Run network preflight outside user directories and disable global Git config; no real credentials or external server involved |
@@ -228,7 +228,10 @@ expired and has no refresh token. Started the normal device authorization workfl
 and asked the owner to complete it; no alternate credential was copied. Official
 [Codex authentication guidance](https://learn.chatgpt.com/docs/auth) was checked
 using OpenAI Docs. Product-surface GPT acceptance stopped on this actual failure;
-it is not a passed test. DeepSeek Snake/browser acceptance is running independently.
+it is not a passed test. First DeepSeek Snake coding completed, but the next
+acceptance step failed because the shared API client lacked `getRun` (CLEAN-03).
+The script released that test machine and conversation. Fixed the client contract;
+41 API/view regressions pass, and full paid Snake/browser repetition is running.
 Private fixture IDs/credentials stay in `.cache/audit-live-baseline-state.json`,
 not this report. The baseline and new test users/resources require final cleanup.
 
