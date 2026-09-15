@@ -1192,9 +1192,9 @@ services:
     image: pi-cloud/provider-egress-relay:${PI_CLOUD_IMAGE_VERSION:-production}
     build:
       context: ../..
+      network: host
       dockerfile: packages/provider-egress-relay/Dockerfile
       args: *application-build-args
-      network: none
     network_mode: none
     restart: "no"
 

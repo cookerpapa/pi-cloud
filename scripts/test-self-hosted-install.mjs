@@ -58,6 +58,19 @@ const productionCompose = await readFile(
 assert.match(productionCompose, /kafka-1:9092,kafka-2:9092,kafka-3:9092/u);
 assert.match(productionCompose, /PI_CLOUD_KAFKA_REPLICAS: "3"/u);
 assert.doesNotMatch(productionCompose, /event-gateway|valkey|nats-/u);
+const relayImage = productionCompose
+  .split("  provider-egress-relay-image:")[1]
+  ?.split("\nnetworks:")[0];
+assert.match(
+  relayImage ?? "",
+  /\n      network: host\n/u,
+  "Relay security-package installation must reach the configured host proxy during build",
+);
+assert.match(
+  relayImage ?? "",
+  /\n    network_mode: none\n/u,
+  "The image-only service must remain unrunnable on the application network",
+);
 validateProductionRuntimeEnvironment({});
 assert.throws(
   () =>

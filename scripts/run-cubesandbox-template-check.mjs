@@ -256,8 +256,8 @@ try {
     "curl --fail --silent http://127.0.0.1:5173/preview.txt",
   );
   assert(
-    previewResult.exitCode === 0 && previewResult.stdout === "PI_CLOUD_PREVIEW_OK\\n",
-    "Guest HTTP service failed",
+    previewResult.exitCode === 0 && previewResult.stdout === "PI_CLOUD_PREVIEW_OK\n",
+    `Guest HTTP service failed: ${JSON.stringify(previewResult)}`,
   );
   await envdRun(baseUrl, "/usr/bin/pkill -f '^python3 -m http.server 5173 '");
 
