@@ -14,16 +14,18 @@ JSON string. Keep the current pg driver, encoders, pool errors and no-retry beha
 The shared adapter now bounds named SELECTs to 128 per connection. Actual PG
 regressions cover changing values/JSON/int8, cache exhaustion, transaction rollback,
 idle reconnection and in-flight cancellation with a one-connection pool.
-Implementation rollout/paid performance validation are still pending.
 The first full run found shared-backend statement-name collisions in PGlite
 boot-provisioning tests and was stopped after retaining the failures. Names now
 use a per-client namespace and bounded ordinal, not a SQL-only hash shared across
-clients. A two-client regression and all five provisioning regressions pass;
-the complete fixed-revision gate must be rerun before deployment.
+clients. The two-client regression and provisioning regressions pass. Fixed
+`211767bd` completes full local CI (953 passed/two separate live skips, 26 fault
+cases), build and [remote CI](https://github.com/cookerpapa/pi-cloud/actions/runs/35037255930).
+Control Plane, both Workers, Broker and Volume Gateway were deployed at that
+revision; Web/Cube templates remain `97995c0f` because their code did not change.
 References: [pg named statements](https://node-postgres.com/features/queries#prepared-statements),
 [Kysely-maintained alternate dialect](https://github.com/kysely-org/kysely-postgres-js).
 
-Controlled final A/B uses fresh databases, identical 48-Run waves, four pooled
+Controlled A/B at `9ff24b0b` uses fresh databases, identical 48-Run waves, four pooled
 connections, a two-CPU/768-MiB PG container, default planner settings, and the
 same real Run admission/settlement code with a no-model backend. No Kafka/Cube
 or model time is included. The after case uses the actual `createDatabase`
@@ -38,8 +40,34 @@ not a deployment SLO or a universal claim about all SQL workloads.
 
 At 16, the context query plans 48 times before and zero times after its prior
 warm-up waves. Cold low-concurrency p95 did not improve in this sample; no claim
-that every individual request becomes faster. Production rollout/paid workload
-repetition remains the next gate.
+that every individual request becomes faster. The later client-name correction
+does not change query text, parameters or the named-plan policy.
+
+Paid `211767bd` repetition passes six baseline Runs (GPT high/Fast and DeepSeek
+settings/recall plus two coding Turns on different Workers, seven Tools) and
+16 further Runs across four tenants/eight Sessions. Both Workers handle eight
+load Runs; eight markers restore correctly, eight foreign reads return 404,
+and there are no marker leaks, unexpected Tools or extra Attempts. Native usage
+across these 22 Runs is 38,551 input / 304,896 cache-read / 4,945 output tokens.
+Load first-text API/SSE p50/p95 is 1,684/2,550 ms, queue wait 418/842 ms, and
+non-provider time 786/1,149 ms. **Ten of 16 load Runs remain internal-time dominant**:
+PERF-01 is improved at the query-planning layer, not closed as a system SLO.
+
+A baseline on the previous image exposed a separate one-time opening delay:
+`execution_opened` was created at 23:47:05.509 UTC and appended by Kafka at
+23:47:08.552; Worker `log_open` measured 3.14 s across its first two Runs.
+The later single Producer-initialization probe took 12 ms. A separate owned-topic
+experiment could not reproduce the three seconds or attribute it solely to PID
+initialization; no speculative Kafka prewarm change was shipped. That topic was
+deleted. A subsequent paid Run showed a 3.15-second host wall/monotonic mismatch;
+its split timing is excluded, though its functional result passed.
+
+The four load tenants, 16 Runs, eight native Sessions/views and four Workspaces
+were removed after physical-purge checks and a FK/check-enforced rollback rehearsal.
+The older campaign baseline remains for unfinished acceptance. The temporary
+second Worker returns to its initial stopped state; the normal first Worker
+remains running on the new image. Shared Kafka records follow existing safe
+retention, not an unsafe selective partition deletion.
 
 Build/test-tooling slice: a scratch Docker fixture reproduced private/generated
 paths being re-included by broad directory exceptions in `.dockerignore`.
@@ -80,7 +108,7 @@ internal 355/254 ms. These two observations overlap local CI, not an idle SLO.
 Coding first text follows earlier Tool sampling, so it is not initial model TTFT.
 The reused audit baseline is retained for the unfinished campaign's final matrix.
 
-Latest runtime: Control Plane/Workers/Broker `ea4ae725`, existing Web/Cube template
+Previous runtime: Control Plane/Workers/Broker `ea4ae725`, existing Web/Cube template
 `97995c0f`. **953 tests pass / two separate environment gates skipped**, with real
 PG enabled; types/build/format pass and [CI is green](https://github.com/cookerpapa/pi-cloud/actions/runs/34979016595).
 During a paid DeepSeek stream, the test Worker was paused for 357 ms to select

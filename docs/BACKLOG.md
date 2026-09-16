@@ -53,8 +53,10 @@ Volume architecture. Historical experiments remain in Git history.
       Claim profiling confirms repeated plan generation is a major cost. Bounded
       pg-native prepared SELECTs now reuse plans without changing SQL/authority,
       parameter serialization or retry behavior. Real-PG binding/cache-bound,
-      rollback, idle loss and saturated-pool cancellation tests pass; rollout and
-      final real-user performance acceptance are pending.
+      rollback, idle loss and saturated-pool cancellation tests pass. Per-client
+      statement namespaces also cover the multiplexed test backend. Full CI and
+      paid coding/provider/multi-tenant repetition pass at `211767bd`; live queue
+      latency and a separate cold Kafka opening delay remain under investigation.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;
