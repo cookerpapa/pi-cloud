@@ -45,9 +45,17 @@ npm run production:provider-gateway:deepseek-native
 ```
 
 The deploy command applies the last command automatically to configured direct
-DeepSeek V4 providers. Run it manually after adding such a Provider through the
-CLIProxyAPI management page without redeploying the rest of PiCloud; CLIProxyAPI
-hot-reloads the resulting `wire-api: responses` setting.
+DeepSeek V4 providers. It writes `wire-api: responses` and the reviewed reasoning
+capabilities, including `none` and `max`; CLIProxyAPI's generic compatibility
+defaults otherwise convert off to low. The levels come from the same model catalog
+as the UI. This changes neither provider credentials nor unrelated models.
+
+When running this file-based setup command manually after adding a Provider,
+wait for active model Runs to finish and restart **only** `cli-proxy-api` through
+`node scripts/production-compose.mjs restart cli-proxy-api`. The one-host config
+is a single-file bind mount: host-side atomic replacement is not an in-container
+hot edit. Normal account changes through CLIProxyAPI's own management page remain
+its native hot-reload path; no cluster restart is required.
 
 Configure the one-host administrator after registration:
 

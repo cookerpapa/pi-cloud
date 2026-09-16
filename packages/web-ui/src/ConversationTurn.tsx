@@ -451,6 +451,11 @@ export function ConversationTurn({
             </div>
           ) : null}
           {turn.cancellation ? <div className="product-muted-line">{t("turn.stopped")}</div> : null}
+          {turn.status === "completed" && turn.stopReason === "length" ? (
+            <div className="product-muted-line" role="status">
+              {t("turn.outputLimit")}
+            </div>
+          ) : null}
           {turn.status === "completed" && (finalAnswerText.length > 0 || onFork || onPrune) ? (
             <div className="product-answer-actions">
               {finalAnswerText.length > 0 ? (

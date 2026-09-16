@@ -69,10 +69,10 @@ const root = createRoot(document.getElementById("root"));
 const configuration={productUrl:location.origin,adminUrl:location.origin,
   managementUrls:{providerGateway:'https://models.example.test/management.html',grafana:'',prometheus:'',alertmanager:'',jaeger:''}};
 window.renderPanel = () => root.render(React.createElement(React.StrictMode, null, React.createElement(Panel)));
-window.renderTurn = (text, recoveredTextLength = 0, status = "running") => root.render(
+window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReason = null) => root.render(
   React.createElement(React.StrictMode, null, React.createElement(ConversationTurn, {turn:{
     runId:"run",turnId:"turn",mailboxPosition:null,prompt:"Question",acceptedAt:null,
-    status,startedSequence:1,terminalSequence:null,stopReason:null,failure:null,cancellation:null,
+    status,startedSequence:1,terminalSequence:null,stopReason,failure:null,cancellation:null,
     items:[{kind:"text",key:"text:1",text,firstSequence:1,lastSequence:2,recoveredTextLength}]
   }})));
 window.turnBodies = [];
@@ -361,6 +361,12 @@ try {
       true,
       "Settlement must not replace already-rendered Markdown nodes",
     );
+    await page.evaluate("renderTurn('',0,'completed','length')");
+    await page.waitFor(
+      "document.querySelector('.product-muted-line[role=status]')?.textContent.includes('输出上限')",
+    );
+    await page.evaluate("renderTurn('Complete',8,'completed','stop')");
+    await page.waitFor("!document.querySelector('.product-muted-line[role=status]')");
     await page.evaluate("renderPanel()");
     await page.waitFor('document.querySelector("#panel")');
     await page.evaluate(
@@ -861,6 +867,7 @@ try {
       accepted: true,
       debuggerDisconnect: true,
       strictModeAnimation: true,
+      outputLimitVisible: true,
       reconnectSnapshotImmediate: true,
       initialPanelWidth: true,
       resizeUnmountCleanup: true,

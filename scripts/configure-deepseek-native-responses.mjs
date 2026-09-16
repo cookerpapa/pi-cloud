@@ -1,9 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, chown, lstat, open, readFile, rename } from "node:fs/promises";
+import { chmod, chown, lstat, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMap, isSeq, parseDocument } from "yaml";
+import { REVIEWED_MODELS } from "../packages/protocol/src/model-catalog.ts";
+
+const deepSeekModels = new Map(
+  REVIEWED_MODELS.filter((model) => model.provider === "deepseek").map((model) => [
+    model.modelId,
+    model,
+  ]),
+);
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const runtimeDirectory = resolve(
@@ -29,20 +37,44 @@ if (isSeq(providers)) {
     const models = provider.get("models", true);
     if (!isSeq(models)) continue;
     const hasDeepSeekV4 = models.items.some(
-      (model) =>
-        isMap(model) &&
-        ["deepseek-v4-flash", "deepseek-v4-pro"].includes(String(model.get("name") ?? "")),
+      (model) => isMap(model) && deepSeekModels.has(String(model.get("name") ?? "")),
     );
     if (!hasDeepSeekV4) continue;
     matched += 1;
+    let providerChanged = false;
     if (
       String(provider.get("wire-api") ?? "")
         .trim()
-        .toLowerCase() === "responses"
-    )
-      continue;
-    provider.set("wire-api", "responses");
-    changed += 1;
+        .toLowerCase() !== "responses"
+    ) {
+      provider.set("wire-api", "responses");
+      providerChanged = true;
+    }
+    // CLIProxyAPI's generic compatibility default lacks none/max and silently
+    // maps disabled thinking to low. Declare the reviewed native capabilities.
+    for (const model of models.items) {
+      if (!isMap(model)) continue;
+      const reviewed = deepSeekModels.get(String(model.get("name") ?? ""));
+      if (!reviewed) continue;
+      const desired = {
+        "zero-allowed": true,
+        levels: reviewed.thinkingLevels.map((level) => (level === "off" ? "none" : level)),
+      };
+      const thinking = model.get("thinking", true);
+      if (thinking === undefined) {
+        model.set("thinking", desired);
+        providerChanged = true;
+      } else {
+        if (!isMap(thinking)) throw new Error("DeepSeek thinking configuration must be a mapping");
+        const current = thinking.toJSON();
+        for (const [key, value] of Object.entries(desired)) {
+          if (JSON.stringify(current[key]) === JSON.stringify(value)) continue;
+          thinking.set(key, value);
+          providerChanged = true;
+        }
+      }
+    }
+    if (providerChanged) changed += 1;
   }
 }
 
@@ -54,19 +86,23 @@ if (changed > 0) {
     0o600,
   );
   try {
-    await handle.writeFile(document.toString(), "utf8");
-    await handle.sync();
+    try {
+      await handle.writeFile(document.toString(), "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await chmod(temporaryPath, 0o600);
+    await chown(temporaryPath, metadata.uid, metadata.gid);
+    await rename(temporaryPath, configPath);
+    const directory = await open(dirname(configPath), constants.O_RDONLY);
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
   } finally {
-    await handle.close();
-  }
-  await chmod(temporaryPath, 0o600);
-  await chown(temporaryPath, metadata.uid, metadata.gid);
-  await rename(temporaryPath, configPath);
-  const directory = await open(dirname(configPath), constants.O_RDONLY);
-  try {
-    await directory.sync();
-  } finally {
-    await directory.close();
+    await rm(temporaryPath, { force: true });
   }
 }
 

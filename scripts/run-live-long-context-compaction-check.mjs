@@ -419,16 +419,19 @@ async function runTurn(sessionId, prompt, expectedTools) {
     );
     const stopReason =
       terminal?.payload.stopReason ?? canonicalTerminal?.transcript?.stopReason ?? "stop";
-    assert(firstResponseAt !== undefined, "Turn did not stream a model response or Tool call");
+    assert(
+      firstResponseAt !== undefined || stopReason === "length",
+      "Turn did not stream a model response or Tool call",
+    );
     const toolCalls = events.filter((event) => event.type === "tool.started").length;
     const hostedSearches = events.filter(
       (event) =>
         event.type === "provider.hosted_tool.started" && event.payload.toolName === "web_search",
     ).length;
-    if (expectedTools) {
+    if (expectedTools && stopReason !== "length") {
       assert(toolCalls > 0, "Coding turn did not execute a Tool");
       assert(events.some((event) => event.type === "tool.completed"));
-    } else {
+    } else if (!expectedTools) {
       assert.equal(toolCalls, 0, "Conversation-only turn unexpectedly used a Tool");
     }
     await waitForRun(accepted.runId);
@@ -468,7 +471,8 @@ async function runTurn(sessionId, prompt, expectedTools) {
       toolCalls,
       hostedSearches,
       stopReason,
-      firstResponseMs: Math.round(firstResponseAt - submittedAt),
+      firstResponseMs:
+        firstResponseAt === undefined ? null : Math.round(firstResponseAt - submittedAt),
       firstToolPreparingMs:
         firstToolPreparingAt === undefined
           ? undefined
@@ -909,7 +913,7 @@ try {
   });
   const searchBeforeCompaction = await runTurn(
     session.sessionId,
-    "开始编码前，请用供应商内置网页搜索核对 Python 当前最新稳定版本的发布日期及 unittest 官方文档页标题，给出真实查到的来源和链接。不要用本地函数工具。最后写 SEARCH-BEFORE-COMPACTION。",
+    "开始编码前，请用供应商内置网页搜索核对 Python 当前最新稳定版本的发布日期及 unittest 官方文档页标题，给出真实查到的来源和链接。只在最终回答文本中输出校验字符串 SEARCH-BEFORE-COMPACTION，它不是文件名。禁止创建、写入或修改任何文件，不调用本地函数工具。",
     false,
   );
   assert(

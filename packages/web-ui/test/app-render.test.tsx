@@ -44,6 +44,15 @@ function turn(turnId: string, prompt: string): TurnView {
 }
 
 describe("product chat experience", () => {
+  it("explains a thinking-only output limit instead of rendering an empty completed answer", () => {
+    const value = { ...turn("length-limit", "Continue coding"), stopReason: "length" as const };
+    const markup = renderToStaticMarkup(<ConversationTurn turn={value} />);
+    expect(markup).toContain("已达到模型输出上限");
+    expect(markup).not.toContain("这次运行失败了");
+    expect(
+      renderToStaticMarkup(<ConversationTurn turn={{ ...value, stopReason: "stop" }} />),
+    ).not.toContain("已达到模型输出上限");
+  });
   it("keeps a brief SSE reconnect from flickering the connected label", () => {
     expect(connectionPhaseDisplayDelayMs("live", "reconnecting")).toBe(1_000);
     expect(connectionPhaseDisplayDelayMs("connecting", "reconnecting")).toBe(0);
