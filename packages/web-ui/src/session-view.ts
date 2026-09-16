@@ -4,7 +4,6 @@ import type {
   ConversationDetailResource,
   ConversationSessionResource,
   ProjectResource,
-  ProjectEnvironmentResource,
   SessionState,
   SessionResource,
 } from "@pi-cloud/protocol";
@@ -130,7 +129,6 @@ export type SessionViewAction =
       sessionId: string;
       turn: ConversationDetailResource["turns"][number];
     }
-  | { type: "project.environment.refreshed"; environment: ProjectEnvironmentResource }
   | { type: "turn.accepted"; accepted: AcceptedTurnResource; prompt: string }
   | { type: "turn.cancellation.requested"; turnId: string }
   | { type: "stream.status"; status: SessionStreamStatus }
@@ -201,14 +199,12 @@ function appendText(turn: TurnView, text: string, sequence: number): TurnView {
 
 function transcriptItem(
   item: NonNullable<ConversationDetailResource["turns"][number]["transcript"]>["items"][number],
-  recovered = false,
 ): TranscriptItem {
   if (item.kind === "tool_preparing") return { ...item, key: `tool-preparing:${item.toolCallId}` };
   if (item.kind === "text") {
     return {
       ...item,
       key: `text:${String(item.firstSequence)}`,
-      ...(recovered ? { recoveredTextLength: item.text.length } : {}),
     };
   }
   if (item.kind === "hosted_search") {
@@ -687,11 +683,6 @@ export function sessionViewReducer(
         })),
       ],
     };
-  }
-  if (action.type === "project.environment.refreshed") {
-    return state.project === null
-      ? state
-      : { ...state, project: { ...state.project, environment: action.environment } };
   }
   if (action.type === "turn.accepted") {
     const turns = updateTurn(state.turns, action.accepted.turnId, (turn) => ({

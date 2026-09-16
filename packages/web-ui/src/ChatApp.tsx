@@ -68,7 +68,7 @@ const WorkspaceDirectoryPicker = lazy(async () => ({
   default: (await import("./WorkspaceDirectoryPicker.tsx")).WorkspaceDirectoryPicker,
 }));
 
-type AuthPhase = "checking" | "anonymous" | "authenticated";
+type AuthPhase = "checking" | "anonymous" | "authenticated" | "unavailable";
 const RECONNECT_DISPLAY_GRACE_MS = 1_000;
 
 type PresentedConnectionPhase = "offline" | "connecting" | "live" | "reconnecting" | "failed";
@@ -176,6 +176,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   currentStreamSession.current = streamSessionId;
   const presentedConnectionPhase = usePresentedConnectionPhase(state.connection.phase);
   const [conversations, setConversations] = useState<readonly ConversationSummaryResource[]>([]);
+  const conversationListRequest = useRef(0);
   const [delegatedSessions, setDelegatedSessions] = useState<
     readonly DelegatedSessionSummaryResource[]
   >([]);
@@ -409,9 +410,15 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }, [prompt]);
 
   const refreshConversations = useCallback(async (): Promise<void> => {
-    const listed = await api.listConversations();
-    setConversations(listed.conversations);
-    setDelegatedSessions(listed.delegatedSessions);
+    const request = ++conversationListRequest.current;
+    try {
+      const listed = await api.listConversations();
+      if (request !== conversationListRequest.current) return;
+      setConversations(listed.conversations);
+      setDelegatedSessions(listed.delegatedSessions);
+    } catch (error) {
+      if (request === conversationListRequest.current) throw error;
+    }
   }, [api]);
 
   const refreshWorkspaces = useCallback(async (): Promise<void> => {
@@ -496,13 +503,14 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           return;
         }
         setIdentity(null);
-        setAuthPhase("anonymous");
+        setAuthPhase("unavailable");
+        update({ type: "api.error", message: errorMessage(error, t) });
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, t, update]);
 
   useEffect(() => {
     if (authPhase !== "authenticated" || identity === null) return;
@@ -517,21 +525,21 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   useEffect(() => {
     if (authPhase !== "authenticated" || identity?.platformAdministrator === true) return;
     let cancelled = false;
-    void api.listConversations().then(
-      (listed) => {
-        if (!cancelled) {
-          setConversations(listed.conversations);
-          setDelegatedSessions(listed.delegatedSessions);
-        }
-      },
-      (error: unknown) => {
-        if (!cancelled) update({ type: "api.error", message: errorMessage(error, t) });
-      },
-    );
+    void refreshConversations().catch((error: unknown) => {
+      if (!cancelled) update({ type: "api.error", message: errorMessage(error, t) });
+    });
     return () => {
       cancelled = true;
+      conversationListRequest.current++;
     };
-  }, [api, authPhase, identity?.platformAdministrator, identity?.tenantId, update]);
+  }, [
+    authPhase,
+    identity?.platformAdministrator,
+    identity?.tenantId,
+    refreshConversations,
+    t,
+    update,
+  ]);
 
   useEffect(() => {
     if (authPhase !== "authenticated" || deepLinkHandledRef.current || conversations.length === 0) {
@@ -1319,6 +1327,22 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       </main>
     );
   }
+  if (authPhase === "unavailable") {
+    return (
+      <main className="product-loading-page">
+        <section className="product-auth-card product-identity-error" role="alert">
+          <p>{state.apiError}</p>
+          <button
+            className="product-primary-button"
+            onClick={() => window.location.reload()}
+            type="button"
+          >
+            {t("common.retry")}
+          </button>
+        </section>
+      </main>
+    );
+  }
   if (authPhase === "anonymous" || identity === null) {
     return (
       <AuthScreen
@@ -1408,6 +1432,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             </div>
             <button
               className="product-new-chat"
+              disabled={operation !== null}
               onClick={() => beginNewConversation()}
               type="button"
             >
@@ -1839,7 +1864,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             })()
           : null}
 
-        {workspaceRebindOpen && state.session?.workspaceState === "missing" ? (
+        {workspaceRebindOpen &&
+        selectedDelegatedSession === null &&
+        state.session?.workspaceState === "missing" ? (
           <div className="product-modal-backdrop" role="presentation">
             <form
               className="product-workspace-modal product-rebind-modal"
@@ -2048,7 +2075,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           <div className="product-workspace-missing-banner">
             <span>{t("chat.missingWorkspace")}</span>
             <button
-              disabled={!canMutate}
+              disabled={!canMutate || selectedDelegatedSession !== null}
               onClick={() => {
                 setSelectedWorkspaceId(elasticWorkspaces[0]?.workspaceId ?? "");
                 setRebindWorkspaceChoice(elasticWorkspaces.length === 0 ? "new" : "existing");

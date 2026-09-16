@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Reject stale conversation-list refreshes after deletion, distinguish
+      identity-service failure from logout, and preserve pending-input and
+      read-only Child view boundaries. Real Chrome regression coverage passes.
+
 - [x] Preserve the Web Terminal close handshake on queue overload instead of
       terminating its socket before the Close frame arrives. Cover byte and
       frame bounds plus queued-input cancellation with real WebSocket tests.

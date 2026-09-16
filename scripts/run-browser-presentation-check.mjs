@@ -44,7 +44,7 @@ import { WorkspaceInspector } from "/src/WorkspaceInspector.tsx";
 import { WorkspaceTerminal } from "/src/WorkspaceTerminal.tsx";
 import { WorkspaceDirectoryPicker } from "/src/WorkspaceDirectoryPicker.tsx";
 import { ConversationTreeNavigator } from "/src/ConversationTreeNavigator.tsx";
-import { PiCloudApi } from "/src/api.ts";
+import { PiCloudApi, PiCloudApiError } from "/src/api.ts";
 import { I18nProvider } from "/src/i18n.tsx";
 import { copyMessageText } from "/src/MessageCopyButton.tsx";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES, DEFAULT_NEW_CONVERSATION_MODEL,
@@ -174,16 +174,27 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     entries:[{entryId:'answer-entry',turnId:fixtureTurnId,role:'assistant',text:label,finalAssistant:true}]}],delegatedSessions:[]});
   window.treeRequests=[];window.deferTrees=false;
   window.historyMutations=[];
-  const conversation=(sessionId=sid)=>({project,session:{...session,sessionId},inheritedMessages:[],turns:history?[{
-    turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',mailboxPosition:1,prompt:'Tree question',state:'completed',acceptedAt:createdAt,
-    transcript:{schemaVersion:1,throughSequence:3,startedSequence:1,terminalSequence:3,stopReason:'stop',failure:null,cancellation:null,
+  window.fixtureParentDeleted=false;
+  window.holdNextConversationList=false;
+  const conversation=(sessionId=sid)=>({project,session:{...session,sessionId,...(window.fixtureWorkspaceMissing?{workspaceState:'missing'}:{})},inheritedMessages:[],turns:history?[{
+    turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',mailboxPosition:1,prompt:'Tree question',state:sessionState==='running'?'running':'completed',acceptedAt:createdAt,
+    transcript:{schemaVersion:1,throughSequence:sessionState==='running'?2:3,startedSequence:1,terminalSequence:sessionState==='running'?null:3,stopReason:sessionState==='running'?null:'stop',failure:null,cancellation:null,
       items:[{kind:'text',text:'Tree answer',firstSequence:2,lastSequence:2}]}
   }]:[],historyTruncated:false});
   const modelResource = () => ({sessionId:sid,modelProfileId:profileId,...selection,
     displayName:models.find(m=>m.provider===selection.provider).displayName});
   Object.assign(PiCloudApi.prototype, {
-    getIdentity:async()=>({tenantId:"test-tenant",userId:"test-user",displayName:"Fixture",role:"owner",platformAdministrator:false}),
-    listConversations:async()=>({conversations:childViews?[{...session,workspaceName:'fixture'}]:[],delegatedSessions:childViews?delegates:[]}),
+    getIdentity:async()=>{
+      if(window.identityErrorStatus!==undefined)throw new PiCloudApiError(window.identityErrorStatus,'fixture-unavailable','Fixture identity service unavailable');
+      return {tenantId:"test-tenant",userId:"test-user",displayName:"Fixture",role:"owner",platformAdministrator:false};
+    },
+    listConversations:async()=>{
+      const listed={conversations:childViews&&!window.fixtureParentDeleted?[{...session,workspaceName:'fixture'}]:[],
+        delegatedSessions:childViews&&!window.fixtureParentDeleted?delegates:[]};
+      if(window.holdNextConversationList){window.holdNextConversationList=false;return new Promise(resolve=>{window.finishOldConversationList=()=>resolve(listed);});}
+      return listed;
+    },
+    deleteConversation:async()=>{window.fixtureParentDeleted=true;return {};},
     listWorkspaces:async()=>{
       if(window.holdWorkspaceList) await new Promise(resolve=>{window.releaseWorkspaceList=resolve;});
       return {workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false};
@@ -211,6 +222,10 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       if(childViews) {
         const snapshot={schemaVersion:2,conversation:conversation(String(url).split('/').at(-2))};
         const frame=(event,data)=>'event: '+event+'\\n'+'data: '+JSON.stringify(data)+'\\n\\n';
+        window.finishFixtureTurn=()=>controller.enqueue(new TextEncoder().encode(frame('turn.completed',{
+          schemaVersion:1,eventId:'90000000-0000-4000-8000-000000000001',sessionId:snapshot.conversation.session.sessionId,
+          turnId:fixtureTurnId,agentId:'root',seq:3,occurredAt:new Date().toISOString(),type:'turn.completed',payload:{stopReason:'stop'}
+        })));
         controller.enqueue(new TextEncoder().encode(frame('stream.begin',{kind:'snapshot'})+
           frame('stream.part',JSON.stringify(snapshot))+frame('stream.end',{})));
       }
@@ -232,7 +247,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     }
     return nativeFetch(url,init);
   };
-  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:String(history)+String(childViews),configuration})));
+  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:sessionState+String(history)+String(childViews)+String(window.identityErrorStatus),configuration})));
 };
 window.fixtureReady = true;
 `;
@@ -452,6 +467,12 @@ try {
     await page.waitFor('!document.querySelector(".product-send-button").disabled');
     await page.evaluate('document.querySelector(".product-send-button").click()');
     await page.waitFor("typeof window.finishTurn==='function'");
+    await page.evaluate("document.querySelector('.product-new-chat').click()");
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-workspace-modal')===null"),
+      true,
+      "New chat must not reset the view while an accepted-input request is in flight",
+    );
     await fill(".product-composer textarea", "next draft");
     await page.evaluate("finishTurn()");
     await page.waitFor(
@@ -748,6 +769,71 @@ try {
     assert.deepEqual(await page.evaluate("historyMutations"), [
       { operation: "prune", sessionId: "10000000-0000-4000-8000-000000000001" },
     ]);
+    await page.waitFor(
+      "!document.querySelector('.product-delegated-session.branch > button').disabled",
+    );
+    await page.evaluate(
+      "window.fixtureWorkspaceMissing=true;document.querySelector('.product-delegated-session.branch > button').click()",
+    );
+    await page.waitFor("document.querySelector('.product-workspace-missing-banner')");
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-rebind-modal')===null"),
+      true,
+      "A read-only Child must not be asked to rebind its execution Workspace",
+    );
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-workspace-missing-banner button').disabled",
+      ),
+      true,
+    );
+    await page.evaluate(`document.querySelector(${JSON.stringify(parentButton)}).click()`);
+    await page.waitFor("document.querySelector('.product-rebind-modal')");
+    await page.evaluate(
+      "document.querySelector('.product-rebind-modal header button').click();window.fixtureWorkspaceMissing=false",
+    );
+
+    await page.evaluate("renderChat('running',true,true);window.confirm=()=>true");
+    await page.waitFor("document.querySelector('.product-delete-conversation')");
+    await page.evaluate(`document.querySelector(${JSON.stringify(parentButton)}).click()`);
+    await page.waitFor("document.querySelector('.product-stop-button')");
+    await page.evaluate("window.holdNextConversationList=true;finishFixtureTurn()");
+    await page.waitFor("typeof window.finishOldConversationList==='function'");
+    await page.evaluate("document.querySelector('.product-delete-conversation').click()");
+    await page.waitFor("document.querySelectorAll('.product-conversation-row').length===0");
+    await page.evaluate("finishOldConversationList()");
+    await page.wait(50);
+    assert.equal(
+      await page.evaluate("document.querySelectorAll('.product-conversation-row').length"),
+      0,
+      "A late pre-deletion list must not resurrect a deleted conversation or its children",
+    );
+
+    for (const status of [503, 0]) {
+      await page.evaluate(`window.identityErrorStatus=${status};renderChat()`);
+      await page.waitFor(
+        "document.querySelector('.product-identity-error, form.product-auth-card')",
+      );
+      assert.equal(
+        await page.evaluate("document.querySelector('form.product-auth-card')===null"),
+        true,
+        "Unavailable identity service must not masquerade as a logged-out user",
+      );
+      let reloads = 0;
+      const stop = page.onRequest((url) => {
+        if (url.endsWith("/review.html")) reloads++;
+      });
+      try {
+        await page.evaluate("document.querySelector('.product-identity-error button').click()");
+        await page.waitFor("window.fixtureReady && window.identityErrorStatus===undefined");
+        assert(reloads > 0, "Retry must reload the identity check");
+      } finally {
+        stop();
+      }
+    }
+    await page.evaluate("window.identityErrorStatus=401;renderChat()");
+    await page.waitFor("document.querySelector('form.product-auth-card')");
+    await page.evaluate("window.identityErrorStatus=undefined");
     await page.evaluate("renderChat(); window.rejectLogout=true");
     await page.waitFor('document.querySelector(".product-account-menu-trigger")');
     await page.evaluate('document.querySelector(".product-account-menu-trigger").click()');
@@ -786,6 +872,10 @@ try {
       logoutLifecycle: true,
       branchSelectionAndManualJump: true,
       childHistoryReadOnlyAndParentActions: true,
+      pendingInputNavigation: true,
+      childWorkspaceReadOnly: true,
+      unavailableIdentityRetry: true,
+      staleConversationListAfterDelete: true,
       terminalSocketIsolation: true,
       directoryPickerLifecycle: true,
       responsivePageScrolling: true,

@@ -7,6 +7,17 @@ Application-source reading is now covered by the private hash/range ledger;
 tests, migrations, deployment/scripts and documents still have remaining reads.
 This is coverage of reading, not a claim that every combination is already tested.
 
+Further actual-Chrome regressions reproduce and fix four UI lifecycle errors:
+New Chat could reset a pending input submission; a read-only Child opened a
+Workspace-rebind dialog; identity-service network/503 failure falsely rendered
+login; and a delayed pre-deletion list resurrected the parent and its children.
+Guard pending navigation, keep Child rebinding disabled, distinguish unavailable
+identity from genuine 401 with a working reload action, and apply only the latest
+conversation-list response. Normal parent Fork/prune/rebind and 401 login remain
+covered. Remove the uncalled environment-refresh reducer action and unused text
+recovery argument. Browser checks, 135 Web tests, types and build pass; this
+frontend slice still needs deployment verification.
+
 Tree fixes are deployed in Control Plane at `352ace33`. The final paid DeepSeek
 check completes three ordinary Turns and two Child Runs, validates inherited and
 fresh context/tree bindings, human Fork recall, actual Chrome child read-only
@@ -505,7 +516,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | UI-02 | Logout silently treated network failure as success and retained machine/dialog state in the mounted app | Browser reproduced false logout. Surface failure; successful/expired logout replaces the document so old account callbacks/caches cannot reach the next login |
 | UI-03 | Composer and initial-prompt creation both sent `thinkingLevel: off`, overriding persisted Session settings | Real React/Chrome request-builder regression captured `off` in all three submissions despite medium/high selection. Remove obsolete overrides; GPT Fast/high → DeepSeek also tested without model execution |
 | UI-04 | A terminal SSE arriving before the HTTP acceptance reply was reset to queued by `turn.accepted` | Reproduced; preserve terminal status while filling accepted prompt/Run metadata. Covers completed, failed and cancelled |
-| UI-05 | Tree refreshes can finish after selecting another Session; new-chat/resource actions are not all guarded during pending mutations | Chrome reproduced a late prune-triggered focus refresh replacing the selected full tree. One generation/scope guard now covers automatic and explicit tree reads; stale responses/errors/loading changes are ignored. 130 Web tests and the browser fixture pass. Pending-mutation navigation still needs its own check |
+| UI-05 | Tree refreshes can finish after selecting another Session; New Chat can reset a pending input submission | Chrome reproduces both. A generation/scope guard covers tree reads; New Chat is disabled only during the pending mutation, not while an accepted Agent Run generates. Browser regression also preserves the newly typed draft |
 | UI-06 | IME Enter submitted text; accepted sends/Steers cleared newer drafts | Browser reproduced IME submission and lost pending draft. Ignore composing Enter, clear only the submitted draft revision, preserve an already-focused caret |
 | UI-07 | Late file A response appeared below selected file B; directory refresh retained stale loading flags | Browser reproduced wrong selected content. Per-file request identity plus directory generation; clear obsolete loading state |
 | UI-08 | Run completion refresh unmounted the human terminal; Inspector inferred machine identity by fetching its entire catalog | Browser reproduced unmount. Separate file refresh from terminal lifetime; pass exact Session binding/directory, refresh files on Workspace change, remove redundant catalog lookup |
