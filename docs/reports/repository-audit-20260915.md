@@ -15,6 +15,20 @@ protocol errors. Three before-fix regressions fail; retain retryability for HTTP
 5xx while still rejecting malformed successful responses. Nine targeted client/
 server tests pass. The failed paid fixture is not counted as a pass; repair its
 scoped cleanup and rerun the independent fault case after deployment.
+After deploying CP `c28ce385`, the fresh k3d repeat passes: cross-Worker marker
+recall, genuine exit 137, seal-before-successor and exact visible-prefix recovery,
+plus four concurrent Turns across both Workers. Seven completed real DeepSeek Pro
+requests report 591 input / 19,712 cache-read / 1,204 output tokens; the interrupted
+request is excluded from that usage sum. The first fixture required requeuing
+exactly its two blocked retirement jobs for cleanup; no Run was manually marked
+successful or replayed. Kubernetes Workers run `ae5c5ff3`; this is a one-host
+packaging/recovery result, not physical multi-node certification.
+
+Remove the unmaintained `eval:coding` script and its otherwise unused manifest.
+They call the retired `/runs/:id/test-results` endpoint (authenticated probe
+returns 404), expect automatic sample-repository provisioning and leave their
+fixtures behind. Current real coding/browser and deterministic runtime tests
+remain; no production feature is removed.
 
 Local Worker cutover had three rollback holes: a failure inside the CP switch
 lost the caller's rollback state, a failed pool was not removed before Compose

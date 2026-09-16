@@ -1,46 +1,60 @@
 {
   "accepted": true,
-  "checkedAt": "2026-09-10T15:18:42.296Z",
-  "model": { "provider": "openai-codex", "modelId": "gpt-5.6-terra" },
-  "workerDeployment": "compose",
-  "workers": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
+  "checkedAt": "2026-09-16T13:41:56.371Z",
+  "model": {
+    "provider": "deepseek",
+    "modelId": "deepseek-v4-pro",
+    "thinkingLevel": "off",
+    "fastMode": false
+  },
+  "workerDeployment": "kubernetes",
+  "workers": ["pi-cloud-pi-worker-local-v1-0", "pi-cloud-pi-worker-local-v1-1"],
   "failover": {
-    "firstWorker": "pi-cloud-worker-2",
-    "followUpWorker": "pi-cloud-worker-1",
+    "firstWorker": "pi-cloud-pi-worker-local-v1-1",
+    "followUpWorker": "pi-cloud-pi-worker-local-v1-0",
     "differentWorker": true,
     "postgresSessionRestored": true,
     "markerRecovered": true,
-    "firstSettledMs": 4785,
-    "followUpSettledMs": 5503,
+    "firstSettledMs": 2675,
+    "followUpSettledMs": 1945,
     "candidateRuns": 1
   },
   "activeCrashRecovery": {
-    "killedWorker": "pi-cloud-worker-1",
+    "injection": {
+      "mode": "kubernetes-crash",
+      "supervisorId": "pi-cloud-pi-worker-local-v1-0",
+      "exitCode": 137,
+      "restartCount": 2
+    },
+    "killedWorker": "pi-cloud-pi-worker-local-v1-0",
     "terminalState": "failed",
     "firstVisibleSequence": 3,
-    "terminalSequence": 7,
+    "terminalSequence": 30,
     "acceptedPrefixProjected": true,
     "exactVisiblePrefixPreservedInContext": true,
     "sealedPredecessors": 1,
-    "replacementRunId": "7a5358e1-e966-48fd-b441-9863f9363802"
+    "replacementRunId": "ff81ced2-f1b9-4a43-9921-02edd06b43ea"
   },
   "concurrency": {
     "runs": 4,
     "workerIds": [
-      "pi-cloud-worker-2",
-      "pi-cloud-worker-1",
-      "pi-cloud-worker-1",
-      "pi-cloud-worker-2"
+      "pi-cloud-pi-worker-local-v1-1",
+      "pi-cloud-pi-worker-local-v1-0",
+      "pi-cloud-pi-worker-local-v1-1",
+      "pi-cloud-pi-worker-local-v1-1"
     ],
     "distinctWorkers": 2,
-    "observedWorkerIds": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
-    "settledMs": [7158, 8795, 8084, 7927]
+    "observedWorkerIds": [
+      "pi-cloud-pi-worker-local-v1-0",
+      "pi-cloud-pi-worker-local-v1-1"
+    ],
+    "settledMs": [7570, 8218, 8356, 8553]
   },
   "totalUsage": {
     "requests": 7,
-    "inputTokens": 12265,
-    "outputTokens": 721,
-    "cacheReadTokens": 54016,
+    "inputTokens": 591,
+    "outputTokens": 1204,
+    "cacheReadTokens": 19712,
     "cacheWriteTokens": 0
   }
 }
