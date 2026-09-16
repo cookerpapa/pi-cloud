@@ -19,6 +19,7 @@ import {
   Session,
 } from "@earendil-works/pi-agent-core";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -34,6 +35,7 @@ import {
   resolveCompactionReserveTokens,
   type PiModelRuntimeConfig,
   type ProviderHostedActivity,
+  applyProviderHostedTranscript,
   type ToolBrokerBoundary,
 } from "../src/index.ts";
 
@@ -111,6 +113,152 @@ function deferred<T>() {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it.each(["deepseek", "foreign-provider"])(
+    "samples a compacted native search tail without exposing extension blocks to Pi Models: %s",
+    async (sourceProvider) => {
+      const requests: { input: { type: string; id?: string }[] }[] = [];
+      const server = createServer(async (request, response) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(
+          `data: ${JSON.stringify({
+            type: "response.completed",
+            response: {
+              id: "response-fixture",
+              status: "completed",
+              output: [],
+              usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+            },
+          })}\n\n`,
+        );
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") throw new Error("Test listener missing");
+        const modelId = "deepseek-v4-pro";
+        const selection = { ...command.payload.model, provider: "deepseek", modelId };
+        const input = { ...command, payload: { ...command.payload, model: selection } };
+        const session = new Session(
+          new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: 1 }),
+        );
+        const searchMessage: import("@earendil-works/pi-ai").AssistantMessage = {
+          role: "assistant",
+          api: "openai-responses",
+          provider: sourceProvider,
+          model: modelId,
+          content: [
+            {
+              type: "text",
+              text: "Earlier search answer",
+              textSignature: JSON.stringify({ v: 1, id: "msg-search" }),
+            },
+          ],
+          usage: {
+            input: 50000,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 50001,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "stop",
+          timestamp: 1,
+        };
+        applyProviderHostedTranscript(searchMessage, {
+          provider: sourceProvider,
+          api: "openai-responses",
+          modelId,
+          stepSequence: 1,
+          stepSha256: "a".repeat(64),
+          samplingAttempt: 1,
+          items: [
+            {
+              outputIndex: 0,
+              type: "web_search_call",
+              id: "search-1",
+              nativeItem: {
+                type: "web_search_call",
+                id: "search-1",
+                status: "completed",
+                action: { type: "search", query: "fixture search" },
+              },
+            },
+            { outputIndex: 1, type: "message", id: "msg-search" },
+          ],
+        });
+        const compacted = await session.appendEntry(
+          {
+            id: "compact-search",
+            type: "compaction",
+            summary: "Earlier work",
+            retainedTail: [searchMessage],
+            tokensBefore: 100000,
+          },
+          "main",
+        );
+        const turn = createCloudTurnContext(input);
+        const runner = new PiCloudTurnRunner({
+          resolveModelRuntime: () => ({
+            provider: "deepseek",
+            modelId,
+            api: "openai-responses",
+            baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            apiKey: FAKE_MODEL_API_KEY,
+            contextWindow: 128000,
+            maxTokens: 8192,
+          }),
+          openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
+          sandboxContinuity: {
+            continuityId: "unused",
+            continuity: "cold_restore",
+            environmentSha256: turn.environmentSha256,
+            workspaceBindingSha256: turn.workspaceBindingSha256,
+            toolPolicySha256: turn.toolPolicySha256,
+          },
+          createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
+            tools: [],
+            systemPrompt: async (base) => base,
+            executeWorkflow: async () => {
+              throw new Error("No guest work expected");
+            },
+            transformHeaders: async (headers = {}) => headers,
+            async transformContext(messages) {
+              await captureSamplingStep(async () => {
+                const captured = await stepWorldState.capture();
+                return {
+                  step: createCloudStepContext({
+                    sequence: 1,
+                    turnContextSha256: turn.sha256,
+                    attemptContextSha256: "b".repeat(64),
+                    allowedTools: [],
+                    activeTools: [],
+                    worldState: captured.worldState,
+                  }),
+                  modelMessages: captured.modelMessages,
+                };
+              });
+              return messages;
+            },
+          }),
+        });
+        await expect(runner.run(input, () => {})).resolves.toMatchObject({ stopReason: "stop" });
+        expect(requests).toHaveLength(1);
+        expect(requests[0]!.input.filter((item) => item.type === "web_search_call")).toHaveLength(
+          sourceProvider === "deepseek" ? 1 : 0,
+        );
+        expect(await session.getEntry("compact-search")).toEqual(compacted);
+        expect(JSON.stringify(compacted)).toContain("providerHostedToolCall");
+      } finally {
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+    },
+  );
+
   it.each(["missing", "throws"])(
     "releases Session authority when model lookup %s",
     async (failure) => {

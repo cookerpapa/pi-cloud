@@ -31,6 +31,7 @@ import { PiSamplingStepController, type PiSamplingStepCapture } from "./pi-sampl
 import { mergeProviderHostedTools, mergeProviderServiceTier } from "./provider-hosted-tools.ts";
 import {
   applyProviderHostedTranscript,
+  nativeProviderContext,
   replayProviderHostedTranscripts,
 } from "./provider-hosted-transcript.ts";
 import {
@@ -764,6 +765,8 @@ export class PiCloudTurnRunner {
           authority: sessionHandle.authority,
           model,
           models: modelRuntime,
+          streamFn: (targetModel, context, options) =>
+            modelRuntime.streamSimple(targetModel, nativeProviderContext(context), options),
           systemPrompt: () => {
             const alignment =
               command.payload.input.kind === "prompt"

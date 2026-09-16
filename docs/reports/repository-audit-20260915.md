@@ -7,6 +7,24 @@ Maintained application source, tests, migrations, deployment and script reading
 is covered by the private hash/range ledger; document/evidence cleanup continues.
 This is coverage of reading, not a claim that every combination is already tested.
 
+The matched `985a8508` deployment finishes 18 paid algorithm rounds, two natural
+Compactions, marker recall, post-compaction coding, cross-Kubernetes-Worker
+restore, GPT medium/Fast search and a switch back to Pro high/no-Fast search.
+The following delegation Run fails **before dispatching its model request**, so
+the combined acceptance does not pass. A third Compaction succeeds, but Pi AI's
+native structural token estimator treats PiCloud's `providerHostedToolCall` block
+as a function call and dereferences its missing `name`. Newer summary timestamps
+invalidate earlier usage estimates, exposing the unsupported content type.
+Replaying the actual retained context locally reproduces that exact stack.
+
+The repair is confined to the existing model adapter: pass only native Pi blocks
+to Pi Models, while the existing payload hook keeps the original context and
+replays same-model native search items. Stored history is unchanged; foreign-model
+search items are still not replayed. Both same/foreign-provider HTTP integration
+regressions fail before and pass after; all 21 Runner/search tests pass. Paid
+repetition and rollout are still required. The failed fixture's API resources
+were removed; retained identity/history await final scoped purge.
+
 Two new shutdown regressions fail before the repair: Cube Provider silently
 ignores failed VM deletions, and a later transport-close error overwrites the
 deletion failure. Aggregate all destruction/transport outcomes; Broker can mark
@@ -929,8 +947,9 @@ planning to 4.1/4.4 ms but changed estimated costs; no production planner settin
 or driver was changed. Follow up with eligible-row/mixed-Lane datasets before
 choosing an optimization. PostgreSQL documents the [planning search tradeoff](https://www.postgresql.org/docs/current/explicit-joins.html)
 and [prepared-plan reuse](https://www.postgresql.org/docs/current/sql-prepare.html).
-The current Kysely driver sends unnamed parameterized queries; adding named plans
-would also require proving connection-pool/PgBouncer behavior, not only speed.
+That initial diagnostic used unnamed queries. The maintained database adapter
+now bounds named SELECT plans per connection; later measurements must use that
+adapter rather than infer production planning costs from a raw `pg` client.
 
 These are measurements of the named revisions, not claims about the latest
 deployment. The finding table above and private hash/range ledger track what

@@ -49,6 +49,18 @@ function isHostedToolBlock(value: unknown): value is ProviderHostedToolCallConte
   );
 }
 
+/** Native Pi estimators accept only Pi content blocks; replay uses the original context. */
+export function nativeProviderContext(context: Context): Context {
+  return {
+    ...context,
+    messages: context.messages.map((message) =>
+      message.role === "assistant" && message.content.some(isHostedToolBlock)
+        ? { ...message, content: message.content.filter((block) => !isHostedToolBlock(block)) }
+        : message,
+    ),
+  };
+}
+
 function nearestItemId(
   items: ProviderHostedTranscript["items"],
   start: number,

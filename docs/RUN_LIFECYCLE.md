@@ -36,8 +36,11 @@ It creates a RunAttempt with a startup claim deadline, then binds it to the
 physical Session's owner lease. The Worker renews that owner once per heartbeat;
 it does not renew a child task's startup deadline. Each task carries an
 `ExecutionReference`: the shared lease/epoch plus its own Attempt identity. The
-reference is never placed in model context or Cube. Task states/deadlines are
-managed independently; lack of child output does not imply owner loss.
+reference is never placed in model context or the guest Tool runtime. Cube's
+trusted management metadata retains the creation identity for inventory and
+orphan reconciliation; it is not authority for later Tool calls. Task
+states/deadlines are managed independently; lack of child output does not imply
+owner loss.
 
 Once a minute, the Worker releases completed in-memory Run/control outcomes
 only after PG confirms a terminal Run, projected seal and terminal control
