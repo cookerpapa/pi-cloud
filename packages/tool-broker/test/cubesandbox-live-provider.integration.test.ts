@@ -13,7 +13,7 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { connect } from "node:net";
 import { release as hostKernelRelease } from "node:os";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CubeSandboxProvider,
   HttpWorkspaceVolumeGateway,
@@ -336,6 +336,110 @@ async function waitForNoManagedInstances(
 }
 
 describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
+  it("does not claim cleanup when deletion of a real owned VM is unconfirmed", async () => {
+    const config = await configuration();
+    const assigned = assignment(randomUUID(), 1);
+    const gatewayOptions = {
+      baseUrl: required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL"),
+      serviceToken: await readPrivateKey(required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE")),
+    };
+    const runtime = new OfficialCubeSandboxRuntimeClient(config.runtime);
+    const repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const setState = vi.spyOn(repository, "setWorkspaceRuntimeState");
+    const provider = new CubeSandboxProvider({
+      templateId: config.templateId,
+      developmentTemplateIds: {
+        starter: config.templateId,
+        standard: config.templateId,
+        performance: config.templateId,
+      },
+      imageRevision: config.imageRevision,
+      webProxy: config.webProxy,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: new HttpWorkspaceVolumeGateway(gatewayOptions),
+    });
+    const broker = testBroker({
+      provider,
+      stateRepository: repository,
+      imageRevision: config.imageRevision,
+    });
+    const errors: unknown[] = [];
+    let closeAttempted = false;
+    try {
+      const binding = await broker.create(createRequest(assigned, config.imageRevision));
+      expect(
+        output(
+          await broker.execute(
+            binding.executionReference,
+            operation(binding.activationId, "printf real-vm"),
+          ),
+        ),
+      ).toBe("real-vm");
+      const failure = new Error("Owned test VM DELETE did not reach Cube");
+      vi.spyOn(runtime, "destroy").mockRejectedValueOnce(failure);
+      setState.mockClear();
+      closeAttempted = true;
+      await expect(broker.close()).rejects.toMatchObject({ errors: [failure] });
+      expect(setState.mock.calls.some(([, state]) => state === "released")).toBe(false);
+      const inventory = new OfficialCubeSandboxRuntimeClient(config.runtime);
+      try {
+        const surviving = (await inventory.list()).filter(
+          (instance) =>
+            instance.metadata["picloud.tenant_id"] === assigned.tenantId &&
+            instance.metadata["picloud.workspace_id"] === assigned.workspaceId,
+        );
+        expect(surviving).toHaveLength(1);
+      } finally {
+        await inventory.close();
+      }
+    } catch (error) {
+      errors.push(error);
+    } finally {
+      if (!closeAttempted) await broker.close().catch((error) => errors.push(error));
+      const cleanup = new OfficialCubeSandboxRuntimeClient(config.runtime);
+      const gateway = new HttpWorkspaceVolumeGateway(gatewayOptions);
+      try {
+        for (const instance of await cleanup.list()) {
+          if (
+            instance.metadata["picloud.tenant_id"] === assigned.tenantId &&
+            instance.metadata["picloud.workspace_id"] === assigned.workspaceId
+          )
+            await cleanup.destroy(instance.sandboxId);
+        }
+        await waitForNoManagedInstances(config, [assigned]);
+        const identity = {
+          tenantId: assigned.tenantId,
+          workspaceId: assigned.workspaceId,
+          volumeId: workspaceVolumeId(assigned),
+        };
+        await gateway.prepareDelete(identity);
+        await cleanup.deleteVolume(identity.volumeId);
+        await gateway.finalizeDelete(identity);
+      } catch (error) {
+        errors.push(error);
+      } finally {
+        for (const close of [() => cleanup.close(), () => gateway.close()])
+          await close().catch((error) => errors.push(error));
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length)
+      throw new AggregateError(errors, "Real Cube deletion-failure gate failed", {
+        cause: errors[0],
+      });
+    process.stdout.write(
+      JSON.stringify({
+        cubeDeletionFailureGate: {
+          closeRejected: true,
+          nativeSurvivorConfirmed: true,
+          releasedNotReported: true,
+          cleanupConfirmed: true,
+          scope: "real Cube; controlled DELETE failure; in-memory ownership fixture",
+        },
+      }) + "\n",
+    );
+  }, 120_000);
+
   it(
     "proves two-tenant isolation, full-public egress, private denial, cancellation and cleanup",
     async () => {

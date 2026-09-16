@@ -4,13 +4,14 @@ import { readPrivateRuntimeFile as readPrivate } from "./lib/runtime-file-policy
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { format } from "prettier";
+import { format, resolveConfig } from "prettier";
 import { workspaceVolumeId } from "../packages/tool-broker/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import {
   isDurableAgentActivity,
+  localWorkerProcesses,
   readWorkerModelTimings,
   runStageTiming,
 } from "./lib/live-run-timing.mjs";
@@ -388,18 +389,8 @@ function assertLaneBacked(evidence, rootPiSessionId) {
 
 const suffix = `${Date.now().toString(36)}`;
 const testRevision = await capture("git", ["rev-parse", "HEAD"]);
-const workerContainer = await capture(process.execPath, [
-  "scripts/production-compose.mjs",
-  "ps",
-  "--quiet",
-  "supervisor-host",
-]);
-const testedRevision = await capture("docker", [
-  "inspect",
-  "--format",
-  '{{ index .Config.Labels "org.opencontainers.image.revision" }}',
-  workerContainer,
-]);
+const workerImages = (await localWorkerProcesses()).map(({ name, image }) => ({ name, image }));
+assert(workerImages.length > 0, "No live Worker for Subagent acceptance");
 const registration = await new PiCloudApi(fetchFromProduction).registerTenant(
   `subagent-${suffix}`.slice(0, 63),
   "Subagent production acceptance",
@@ -408,26 +399,68 @@ api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 authorizationToken = registration.apiToken;
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must use a real model");
+const testProvider = process.env.PI_CLOUD_LIVE_SUBAGENT_PROVIDER ?? "deepseek";
+assert(["deepseek", "openai-codex"].includes(testProvider), "Unsupported Subagent test Provider");
 const acceptanceModel = {
-  provider: "deepseek",
-  modelId: "deepseek-v4-pro",
+  provider: testProvider,
+  modelId: testProvider === "deepseek" ? "deepseek-v4-pro" : "gpt-5.6-luna",
   thinkingLevel: "low",
   fastMode: false,
 };
-const project = await api.createProject(`Subagent production acceptance ${suffix}`);
-const session = await api.createSession(
-  project.projectId,
-  project.workspaceId,
-  `Subagent production acceptance ${suffix}`,
-  "elastic",
-  "starter",
-);
-await api.updateSessionModel(session.sessionId, acceptanceModel);
-process.stdout.write(
-  `${JSON.stringify({ event: "subagent_acceptance_fixture", sessionId: session.sessionId, workspaceId: project.workspaceId })}\n`,
-);
+let project, session, primaryFailure;
+let cleanupAttempted = false;
+async function cleanup() {
+  cleanupAttempted = true;
+  if (process.env.PI_CLOUD_LIVE_KEEP_FIXTURES === "1") return;
+  const errors = [];
+  if (session) {
+    try {
+      const active = (turn) => ["queued", "running", "cancelling"].includes(turn.state);
+      for (const turn of (await api.getConversation(session.sessionId)).turns.filter(active))
+        if (turn.state !== "cancelling")
+          await api.cancelTurn(session.sessionId, turn.turnId, newIdempotencyKey("cancel"));
+      const deadline = performance.now() + 120000;
+      while ((await api.getConversation(session.sessionId)).turns.some(active)) {
+        if (performance.now() > deadline) throw new Error("Subagent fixture did not retire");
+        await wait(200);
+      }
+      await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (project) {
+    try {
+      await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  const credentialId = registration.apiToken.slice(4, registration.apiToken.indexOf("."));
+  try {
+    await psql(`update tenant_api_credentials set revoked_at=clock_timestamp()
+      where tenant_id=${sqlLiteral(registration.tenantId)} and credential_id=${sqlLiteral(credentialId)}`);
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length)
+    throw new AggregateError(errors, "Subagent acceptance cleanup failed", { cause: errors[0] });
+}
 
 try {
+  project = await api.createProject(`Subagent production acceptance ${suffix}`);
+  session = await api.createSession(
+    project.projectId,
+    project.workspaceId,
+    `Subagent production acceptance ${suffix}`,
+    "elastic",
+    "starter",
+  );
+  await api.updateSessionModel(session.sessionId, acceptanceModel);
+  process.stdout.write(
+    `${JSON.stringify({ event: "subagent_acceptance_fixture", sessionId: session.sessionId, workspaceId: project.workspaceId })}\n`,
+  );
+
   const none = await runTurn(
     session.sessionId,
     [
@@ -763,7 +796,7 @@ try {
 
   const report = {
     architecture: "shared-volume-subagent-compute",
-    revision: testedRevision,
+    workerImages,
     testRevision,
     timings: measurements,
     usage: JSON.parse(
@@ -800,16 +833,33 @@ try {
       nestedFocusRoot: focusedTree.rootSessionId,
     },
   };
+  await cleanup();
+  report.cleanupCompleted = process.env.PI_CLOUD_LIVE_KEEP_FIXTURES !== "1";
   await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
   await writeFile(
     resolve(repositoryRoot, "docs/reports/subagent-production-acceptance-latest.json"),
-    await format(JSON.stringify(report), { parser: "json" }),
+    await format(JSON.stringify(report), {
+      ...(await resolveConfig(
+        resolve(repositoryRoot, "docs/reports/subagent-production-acceptance-latest.json"),
+      )),
+      parser: "json",
+    }),
     "utf8",
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);
+} catch (error) {
+  primaryFailure = error;
+  throw error;
 } finally {
-  if (process.env.PI_CLOUD_LIVE_KEEP_FIXTURES !== "1") {
-    await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
-    await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
+  if (!cleanupAttempted) {
+    try {
+      await cleanup();
+    } catch (error) {
+      throw new AggregateError(
+        [primaryFailure, error].filter(Boolean),
+        "Subagent acceptance or cleanup failed",
+        { cause: primaryFailure ?? error },
+      );
+    }
   }
 }

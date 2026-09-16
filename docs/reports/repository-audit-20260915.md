@@ -13,9 +13,9 @@ deployment journals and superseded measurements remain in Git history.
 - PostgreSQL remains the sole Run/Session ownership authority; Workers append
   directly to Kafka; one Session Projector drives PG history, live views and
   owner-routed effects. No new scheduler, cache, storage authority or Tool replay.
-- Both local Kubernetes Workers run `0a54573e`, including the hosted-search
+- Both local Kubernetes Workers run `3abf8184`, including the hosted-search
   context repair. Control Plane/Broker/Web/Volume Gateway and guest templates
-  remain matched `985a8508`. Balance-error diagnostics in `f9ce3abf` await rollout.
+  remain matched `985a8508`. Balance-error diagnostics in `f9ce3abf` are now deployed.
 - Remote CI is green at `f9ce3abf`. The fresh local full CI on that source also
   passes with real PostgreSQL: 1,010 workspace tests, 30 helper tests, 26 targeted
   fault cases, build/types/configuration/security gates and zero observed clock
@@ -40,7 +40,7 @@ deployment journals and superseded measurements remain in Git history.
 | MODEL-04 | A thinking-only output-limited answer looked like an empty successful reply | Show an output-limit notice, not invented text or automatic Tool replay. Rendering and real Chrome checks pass |
 | MODEL-05 | After Compaction, Pi AI's structural estimator treated PiCloud's hosted-search block as a function call and read missing `name.length` | Actual failed context reproduces the stack. Existing model adapter passes only native blocks to Pi Models; the payload hook still replays original same-model search items. Stored history is unchanged. Two before-fail/after-pass HTTP cases, 21 Runner/search tests and types pass; Worker rollout done, paid long repeat blocked by balance |
 | MODEL-06 | Provider 402 appeared as generic retryable model failure | Safe non-retryable balance diagnostic; reproduced before and 23 adapter tests pass afterward. Deployment/real UI repeat pending |
-| LIFE-15 | Provider shutdown ignored VM-deletion failures and later transport errors overwrote them | Aggregate failures; Broker cannot mark released without confirmed cleanup. Four regressions and 79 Provider/Broker/RPC tests pass. Controlled real deletion-failure repetition pending |
+| LIFE-15 | Provider shutdown ignored VM-deletion failures and later transport errors overwrote them | Aggregate failures; Broker cannot mark released without confirmed cleanup. Four regressions and 79 Provider/Broker/RPC tests pass. Real owned Cube plus controlled DELETE rejection confirms the VM survives and cleanup is not reported successful; fresh-client cleanup removes it and its Volume. The ownership fixture in this isolated gate is in-memory, not a real PG outage |
 | LIFE-16 | Broker partial startup leaked acquired resources; failed teardown skipped later closures | Ordered once-only cleanup retains primary/secondary errors and always closes the listener. Four startup/lifecycle and 13 HTTP cases pass; deployed at `985a8508` |
 | TEST-07 | Older live gates assumed Compose-only Workers, Flash availability and destructive cancellation | Actual process inventory supports K8s container replacement, live scripts use visible Pro, faults restart existing containers. Cube gate confirms started effects remain UNKNOWN and checks native VM/Volume cleanup. Thirty helper contracts pass |
 
