@@ -6,7 +6,7 @@ import {
   type ConversationTurnTranscriptResource,
 } from "@pi-cloud/protocol";
 import { normalizeProviderHostedWebSearchAction, toolResultIsUnknown } from "@pi-cloud/protocol";
-import type { Kysely, Transaction } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
 
 export const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";
 
@@ -345,6 +345,20 @@ function projectPiEntries(
   });
 }
 
+// Fork copies retain origin Turn IDs. They are inherited history, not additional
+// output from that Turn's execution Session, even after projection rebuild.
+function ownedTurnSession(table: "pi_session_entries" | "pi_session_records") {
+  return sql<boolean>`exists (
+    select 1 from turns as owner_turn
+      join sessions as owner_session
+        on owner_session.tenant_id = owner_turn.tenant_id
+       and owner_session.id = owner_turn.session_id
+     where owner_turn.tenant_id = ${sql.ref(`${table}.tenant_id`)}
+       and owner_turn.id = ${sql.ref(`${table}.turn_id`)}
+       and owner_session.pi_session_id = ${sql.ref(`${table}.session_id`)}
+  )`;
+}
+
 export async function readCanonicalPiTurnTranscripts(
   database: Kysely<Database>,
   input: { tenantId: string; turnIds: readonly string[] },
@@ -362,6 +376,7 @@ export async function readCanonicalPiTurnTranscripts(
       .select(["turn_id", "seq", "timestamp_ms", "payload"])
       .where("tenant_id", "=", input.tenantId)
       .where("turn_id", "in", turnIds)
+      .where(ownedTurnSession("pi_session_entries"))
       .orderBy("seq", "asc")
       .execute(),
     database
@@ -369,6 +384,7 @@ export async function readCanonicalPiTurnTranscripts(
       .select(["turn_id", "seq", "timestamp_ms", "payload"])
       .where("tenant_id", "=", input.tenantId)
       .where("turn_id", "in", turnIds)
+      .where(ownedTurnSession("pi_session_records"))
       .where("type", "=", "tool_started")
       .orderBy("seq", "asc")
       .execute(),
@@ -476,6 +492,7 @@ export async function readInterruptedAssistantPrefix(
     .select("payload")
     .where("tenant_id", "=", input.tenantId)
     .where("turn_id", "=", input.turnId)
+    .where(ownedTurnSession("pi_session_entries"))
     .orderBy("seq", "asc")
     .execute();
   const canonicalText = existingRows

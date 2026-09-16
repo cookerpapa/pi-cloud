@@ -11,6 +11,7 @@ import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { ConversationTreeService } from "../src/conversation-tree-service.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
+import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
@@ -159,6 +160,29 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
   it("retains inherited Turn bindings in a Fork's self-contained log and projection rebuild", async () => {
     const f = await fixture();
     const first = await f.turn("fork anchor", "completed");
+    await db
+      .insertInto("session_terminal_events")
+      .values({
+        event_id: randomUUID(),
+        tenant_id: f.tenantId,
+        session_id: f.session.sessionId,
+        turn_id: first.turnId,
+        run_id: first.runId,
+        agent_id: "root",
+        schema_version: 1,
+        seq: 3,
+        type: "turn.completed",
+        payload: { stopReason: "stop" },
+        occurred_at: new Date(),
+      })
+      .execute();
+    const before = await readCanonicalPiTurnTranscripts(db, {
+      tenantId: f.tenantId,
+      turnIds: [first.turnId],
+    });
+    expect(before.get(first.turnId)?.items).toMatchObject([
+      { kind: "text", text: "fork anchor answer" },
+    ]);
     const fork = await f.service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
       turnId: first.turnId,
       entryId: first.answer!.id,
@@ -182,6 +206,9 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       .where("session_id", "=", fork.session.sessionId)
       .execute();
     expect(entries.map((row) => row.turn_id)).toEqual([first.turnId, first.turnId]);
+    expect(
+      await readCanonicalPiTurnTranscripts(db, { tenantId: f.tenantId, turnIds: [first.turnId] }),
+    ).toEqual(before);
     const tree = await f.service.tree(f.tenantId, fork.session.sessionId, "focus");
     expect(tree.branches[0]!.entries.map((e) => e.turnId)).toEqual([first.turnId, first.turnId]);
     expect(tree.branches[1]!.entries).toEqual([]);

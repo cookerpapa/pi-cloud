@@ -44,6 +44,8 @@ transaction. This is an internal code boundary, not another service or database.
 Tree navigation also uses one repeatable-read snapshot and each native Entry's
 persisted Turn binding; it never pairs prompts and answers by message count.
 Human Fork copies preserve that binding in their self-contained log.
+Canonical Turn reads select its actual execution Session, excluding inherited
+copies even after a Fork's query projections are rebuilt.
 
 ## Durable input and scheduling
 

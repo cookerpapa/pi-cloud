@@ -54,6 +54,13 @@ unbound earlier parent prompt to the Child Turn. Seed an actual completed parent
 Turn and a separate Child prompt, and require exact IDs for all four navigation
 entries. That eleven-case file and its types now pass. Full CI repetition and
 deployed paid checks remain pending; the failed first CI is not reported as green.
+The Fork/rebuild regression was then strengthened to compare complete parent
+transcripts before and after rebuilding the child's projection. It reproduced
+duplicated parent text once inherited entries retained their Turn IDs. Canonical
+message/intent and interruption-prefix reads now select only the Turn's actual
+execution Session; copied history cannot become another output producer. All 36
+focused tree, Child and seal cases and the affected types pass. The second full
+CI was deliberately stopped before editing; final repetition is still required.
 The owner chose read-only
 child views rather than adding human Fork-from-Lane semantics. The actual Chrome
 test reproduces enabled child Fork/prune buttons before the fix; after the fix,
