@@ -1039,6 +1039,55 @@ describe.sequential("CloudAgentRuntime", () => {
   );
 
   it.each([false, true])(
+    "keeps private failure diagnostics out of the model-visible interruption (native append=%s)",
+    async (cached) => {
+      const storage = await createStorage();
+      const privateDiagnostic =
+        "provider failure at https://private.invalid?token=PRIVATE_DIAGNOSTIC_CANARY attempt=internal-attempt";
+      const common = {
+        lane: "main",
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      };
+      const failed = new CloudAgentRuntime({
+        ...common,
+        ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
+        authority: new TestAuthority(),
+        streamFn: () => {
+          const stream = new MockAssistantStream();
+          queueMicrotask(() =>
+            stream.push({
+              type: "error",
+              reason: "error",
+              error: assistantError(privateDiagnostic),
+            }),
+          );
+          return stream;
+        },
+      });
+      expect(await failed.run("first task")).toMatchObject({ kind: "failed" });
+      expect(JSON.stringify(await storage.findRecords({ type: "operation_finished" }))).toContain(
+        privateDiagnostic,
+      );
+      const contexts: Context[] = [];
+      const next = new CloudAgentRuntime({
+        ...common,
+        ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
+        authority: new TestAuthority(),
+        streamFn: scriptedStream(["checked state"], contexts),
+      });
+      expect(await next.run("continue after the interruption")).toMatchObject({
+        kind: "completed",
+      });
+      const prompt = JSON.stringify(contexts[0]?.messages);
+      expect(prompt).toContain("<turn_aborted>");
+      expect(prompt).not.toContain("PRIVATE_DIAGNOSTIC_CANARY");
+      expect(prompt).not.toContain("internal-attempt");
+    },
+  );
+
+  it.each([false, true])(
     "excludes transient failed responses (native append=%s)",
     async (cached) => {
       const storage = await createStorage();

@@ -116,6 +116,13 @@ export type CloudAgentRunResult = Readonly<{
 }>;
 
 const INTERRUPTION_CUSTOM_TYPE = "pi-cloud.run_interrupted";
+// Diagnostics remain in the operation record, never in the next model request.
+const INTERRUPTION_CONTEXT = [
+  "<turn_aborted>",
+  "The previous agent Run did not finish normally.",
+  "Treat unfinished work as uncertain and inspect relevant state before continuing.",
+  "</turn_aborted>",
+].join("\n");
 const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";
 const UNKNOWN_TOOL_EFFECT_TEXT =
   "The previous Worker stopped while this Tool was active. Its side effects are unknown. " +
@@ -226,16 +233,6 @@ function interruptedAssistantPrefixProjector(entry: {
       timestamp: entry.timestamp,
     } as AgentMessage,
   ];
-}
-
-function recoveryMarker(reason: string): string {
-  return [
-    "<turn_aborted>",
-    "The previous agent Run did not finish normally.",
-    `Reason: ${reason}`,
-    "Treat unfinished work as uncertain and inspect relevant state before continuing.",
-    "</turn_aborted>",
-  ].join("\n");
 }
 
 function retainedCustomType(message: AgentMessage, types: ReadonlySet<string>): string | undefined {
@@ -635,11 +632,7 @@ export class CloudAgentRuntime {
           );
         }
         await tree.appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
-          content: recoveryMarker(
-            kind === "failed"
-              ? (finalMessage.errorMessage ?? "Model request failed")
-              : "The Run was aborted",
-          ),
+          content: INTERRUPTION_CONTEXT,
         });
       }
       await session.appendRecord({
@@ -677,7 +670,7 @@ export class CloudAgentRuntime {
       if (!authority.signal.aborted) {
         await tree
           .appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
-            content: recoveryMarker(failure.message),
+            content: INTERRUPTION_CONTEXT,
           })
           .catch(() => undefined);
         await session
@@ -1032,7 +1025,7 @@ export class CloudAgentRuntime {
       }
     }
     await tree.appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
-      content: recoveryMarker("Worker execution was interrupted before durable settlement"),
+      content: INTERRUPTION_CONTEXT,
     });
     await session.appendRecord({
       id: this.#id(),
