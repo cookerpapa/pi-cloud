@@ -7,6 +7,15 @@ Application-source reading is now covered by the private hash/range ledger;
 tests, migrations, deployment/scripts and documents still have remaining reads.
 This is coverage of reading, not a claim that every combination is already tested.
 
+Local Worker cutover had three rollback holes: a failure inside the CP switch
+lost the caller's rollback state, a failed pool was not removed before Compose
+restart, and previously stopped Workers were unconditionally started. Five
+before-fix tests reproduce them. Capture the prior service states before changing
+anything, await Helm removal and remaining Pod deletion, propagate shutdown
+errors, and restore only prior running capacity. Additional contracts reject
+Runs arriving during image builds and ready-but-old Worker images. Eight targeted
+tests pass; these are CLI coordination tests, not a fresh full k3d deployment.
+
 The owner approved removing the old whole-system backup/restore entry rather
 than building a new disaster-recovery system. Exact restore-code fixtures
 reproduce 0755→0600 permission loss and rejected valid Workspace symlinks; the

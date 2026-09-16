@@ -679,13 +679,13 @@ async function waitForComposeHealthy(service, timeoutMs = 120_000) {
   throw new Error(`${service} did not become healthy`);
 }
 
-async function switchControlPlaneToKubernetes(runtimeEnvironment, revision) {
+async function captureComposeSwitchState(runtimeEnvironment, revision) {
   const controlPlaneImageRevision = await runningServiceEnvironmentValue(
     "control-plane",
     "PI_CLOUD_IMAGE_REVISION",
   );
   const previous = {
-    formatVersion: 1,
+    formatVersion: 2,
     switchedAt: new Date().toISOString(),
     revision,
     controlPlaneImageRevision,
@@ -694,8 +694,18 @@ async function switchControlPlaneToKubernetes(runtimeEnvironment, revision) {
     supervisorManagementUrlTemplate:
       runtimeEnvironment.PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES ??
       "http://{supervisorId}:4100",
+    composeWorkers: (await composeWorkerContainers()).map(({ service, state }) => {
+      if (!["running", "exited", "created"].includes(state)) {
+        throw new Error(`Refusing Worker cutover while ${service} is ${state}`);
+      }
+      return { service, running: state === "running" };
+    }),
   };
   await writePrivate(switchStatePath, `${JSON.stringify(previous, null, 2)}\n`);
+  return previous;
+}
+
+async function switchControlPlaneToKubernetes(previous) {
   await replaceRuntimeEnvironment({
     PI_CLOUD_PI_WORKER_DEPLOYMENT: "kubernetes",
     PI_CLOUD_SUPERVISOR_ID_PREFIX: workerPrefix,
@@ -704,10 +714,9 @@ async function switchControlPlaneToKubernetes(runtimeEnvironment, revision) {
   await stopAndRemoveComposeWorkers();
   await productionCompose(
     ["up", "--detach", "--no-deps", "control-plane"],
-    controlPlaneImageRevision,
+    previous.controlPlaneImageRevision,
   );
   await waitForComposeHealthy("control-plane");
-  return previous;
 }
 
 async function restoreComposeWorkers(previous) {
@@ -721,10 +730,13 @@ async function restoreComposeWorkers(previous) {
     previous.controlPlaneImageRevision,
   );
   await waitForComposeHealthy("control-plane");
-  await productionCompose(
-    ["up", "--detach", "--no-deps", "supervisor-host", "supervisor-host-1"],
-    previous.controlPlaneImageRevision,
-  );
+  for (const worker of previous.composeWorkers) {
+    await productionCompose(
+      worker.running
+        ? ["up", "--detach", "--no-deps", worker.service]
+        : ["create", "--no-deps", worker.service],
+    );
+  }
 }
 
 async function buildAndImportWorkerImage(revision) {
@@ -867,13 +879,41 @@ async function currentHelmRevision() {
     helm,
     ["status", releaseName, "--namespace", workerNamespace, "--output", "json"],
     { environment: kubeEnvironment() },
-  ).catch(() => undefined);
-  if (status === undefined) return undefined;
+  );
   const revision = JSON.parse(status).version;
   if (!Number.isSafeInteger(revision) || revision < 1) {
     throw new Error("Current Pi Worker Helm revision is invalid");
   }
   return revision;
+}
+
+async function removeKubernetesWorkerPool() {
+  await run(
+    helm,
+    [
+      "uninstall",
+      releaseName,
+      "--namespace",
+      workerNamespace,
+      "--ignore-not-found",
+      "--wait",
+      "--timeout",
+      "7m",
+    ],
+    { environment: kubeEnvironment() },
+  );
+  // A failed or interrupted Helm operation may have left terminating Pods.
+  // Do not re-enable Compose until the old executors have actually disappeared.
+  await kubectlRun([
+    "--namespace",
+    workerNamespace,
+    "wait",
+    "--for=delete",
+    "pod",
+    "--selector",
+    `pi-cloud.io/worker-pool=${poolName}`,
+    "--timeout=2m",
+  ]);
 }
 
 async function rollbackKubernetesWorkerPool(revision) {
@@ -958,6 +998,8 @@ async function checkDeployment(expectedRevision) {
   if (runtimeEnvironment.PI_CLOUD_PI_WORKER_DEPLOYMENT !== "kubernetes") {
     throw new Error("Production is not configured for Kubernetes Pi Workers");
   }
+  const revision = expectedRevision ?? (await repositoryRevision());
+  const expectedImage = `pi-cloud/supervisor-host:kubernetes-${revision.slice(0, 12)}`;
   const pods = JSON.parse(
     await kubectlCapture([
       "--namespace",
@@ -978,14 +1020,18 @@ async function checkDeployment(expectedRevision) {
       (condition) => condition.type === "Ready" && condition.status === "True",
     );
     if (!ready) throw new Error(`Worker Pod ${pod.metadata?.name} is not Ready`);
+    if (
+      pod.spec?.containers?.find((container) => container.name === "pi-worker")?.image !==
+      expectedImage
+    ) {
+      throw new Error(`Worker Pod ${pod.metadata?.name} does not run ${expectedImage}`);
+    }
   }
   const controlPlane = await composeContainer("control-plane");
   await waitForManagementRoutes(controlPlane);
 
   const postgres = await composeContainer("postgres");
   await waitForWorkerEnrollment(postgres);
-
-  const revision = expectedRevision ?? (await repositoryRevision());
 
   process.stdout.write(
     `${JSON.stringify({
@@ -1011,24 +1057,36 @@ async function up() {
   await ensureCluster();
   const resolvedTargets = await bridgeComposeServices();
   const { tag } = await buildAndImportWorkerImage(revision);
+  // Building/importing images may take minutes. Recheck the maintenance window
+  // immediately before stopping executors, not only before starting the build.
+  const activeBeforeCutover = await activeRunCount();
+  if (activeBeforeCutover !== 0) {
+    throw new Error(`Refusing Worker cutover while ${activeBeforeCutover} Run(s) are not terminal`);
+  }
   const upgradingKubernetes = runtimeEnvironment.PI_CLOUD_PI_WORKER_DEPLOYMENT === "kubernetes";
   const previousHelmRevision = upgradingKubernetes ? await currentHelmRevision() : undefined;
-  let previous;
+  const previous = upgradingKubernetes
+    ? undefined
+    : await captureComposeSwitchState(runtimeEnvironment, revision);
   try {
-    if (!upgradingKubernetes) {
-      previous = await switchControlPlaneToKubernetes(runtimeEnvironment, revision);
+    if (previous !== undefined) {
+      await switchControlPlaneToKubernetes(previous);
     }
     await deployWorkerPool(tag, resolvedTargets, runtimeEnvironment);
     await checkDeployment(revision);
   } catch (error) {
-    if (previous !== undefined) {
-      await restoreComposeWorkers(previous).catch((rollbackError) => {
-        process.stderr.write(`Automatic Compose rollback failed: ${String(rollbackError)}\n`);
-      });
-    } else if (previousHelmRevision !== undefined) {
-      await rollbackKubernetesWorkerPool(previousHelmRevision).catch((rollbackError) => {
-        process.stderr.write(`Automatic Kubernetes rollback failed: ${String(rollbackError)}\n`);
-      });
+    try {
+      if (previous !== undefined) {
+        await removeKubernetesWorkerPool();
+        await restoreComposeWorkers(previous);
+      } else {
+        await rollbackKubernetesWorkerPool(previousHelmRevision);
+      }
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [error, rollbackError],
+        "Worker deployment and rollback failed; repair the deployment before resuming work",
+      );
     }
     throw error;
   }
@@ -1041,18 +1099,19 @@ async function down() {
     throw new Error(`Refusing Worker rollback while ${active} Run(s) are not terminal`);
   }
   const previous = JSON.parse(await readFile(switchStatePath, "utf8"));
+  if (previous.formatVersion !== 2)
+    throw new Error("Worker switch state does not describe the current rollback contract");
   if (await k3dClusterExists()) {
     const kubeconfig = await capture(k3d, ["kubeconfig", "get", clusterName]);
     await writePrivate(runtimeKubeconfigPath, `${kubeconfig}\n`);
-    await run(helm, ["uninstall", releaseName, "--namespace", workerNamespace, "--wait"], {
-      environment: kubeEnvironment(),
-    }).catch(() => undefined);
+    await removeKubernetesWorkerPool();
   }
   await restoreComposeWorkers(previous);
   if (await k3dClusterExists()) {
     await run(k3d, ["cluster", "delete", clusterName]);
   }
   await rm(runtimeKubeconfigPath, { force: true });
+  await rm(switchStatePath);
 }
 
 async function status() {

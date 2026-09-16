@@ -228,6 +228,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Operations
 
+- [x] Preserve local Worker running/stopped state through cutover rollback and
+      confirm Kubernetes executor shutdown before restoring Compose. Partial
+      switch/uninstall failure contracts pass; readiness rejects stale images.
+
 - [x] Detect stale/missing operational sampling per Control Plane replica;
       a healthy sibling must not mask it. Native Prometheus rule regressions
       cover stale, missing, healthy and unreachable targets.

@@ -10,10 +10,18 @@ k3d Pi Workers -> bridged PostgreSQL / Control Plane / Tool Broker
 ```
 
 Workers consume the same PostgreSQL Run queue as Compose Workers. The cutover
-checks for active Runs before starting, switches Control Plane management
+checks for active Runs before building and again before cutover, switches Control Plane management
 routes, deploys the Helm pool and verifies enrollment/readiness. Perform it in
 a maintenance window without new submissions; the initial check is not an
 admission lock.
+
+On failed cutover or explicit downgrade, the helper first confirms the Kubernetes
+executor Pods are gone, then restores Compose and each Worker's prior running/
+stopped state. Failed shutdown aborts rollback rather than enabling both pools.
+An upgrade within Kubernetes rolls back to the previous Helm revision. Readiness
+checks verify the requested Worker image as well as enrollment and routes.
+Compose restoration uses the installed production Worker image and template;
+it restores the deployment mode/capacity, not a historical binary version.
 
 ```bash
 npm run kubernetes:pi-workers:up
