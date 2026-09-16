@@ -173,12 +173,17 @@ if (
 const api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production restart check requires a real model");
-const selection = {
-  provider: "deepseek",
-  modelId: "deepseek-v4-pro",
-  thinkingLevel: "off",
-  fastMode: false,
-};
+const testProvider = process.env.PI_CLOUD_LIVE_FAULT_PROVIDER ?? "deepseek";
+assert(["deepseek", "openai-codex"].includes(testProvider), "Unsupported fault-test Provider");
+const selection =
+  testProvider === "deepseek"
+    ? {
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+        thinkingLevel: "off",
+        fastMode: false,
+      }
+    : { provider: "openai-codex", modelId: "gpt-5.6-luna", thinkingLevel: "low", fastMode: false };
 const startedAt = performance.now();
 let project, session, accepted, primaryFailure;
 let cleanupCompleted = false;
@@ -266,7 +271,6 @@ try {
       "Each sentence must contain at least fifteen Chinese characters so the response remains streaming while infrastructure restarts.",
     ].join(" "),
     newIdempotencyKey("control-plane-restart"),
-    "off",
   );
   await streamSessionEvents({
     sessionId: session.sessionId,
@@ -302,7 +306,10 @@ try {
     },
     onEvent: observeEvent,
   });
-  assert(replacement, "The model did not stream before Control Plane replacement");
+  assert(
+    replacement,
+    `The model did not stream before fault injection: ${JSON.stringify(terminal?.payload)}`,
+  );
   await replacement;
   assert(
     terminal?.type === "turn.completed" || snapshotTerminalSequence !== undefined,

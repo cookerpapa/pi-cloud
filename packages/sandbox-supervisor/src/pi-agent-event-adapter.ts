@@ -104,6 +104,13 @@ function safeAssistantFailure(
   }
   const raw = typeof value.errorMessage === "string" ? value.errorMessage.trim() : "";
   const normalized = raw.toLowerCase();
+  if (normalized.includes("insufficient balance")) {
+    return {
+      code: "model_balance_exhausted",
+      message: "Model provider balance is exhausted; ask the administrator to replenish it",
+      retryable: false,
+    };
+  }
   if (
     normalized.includes("authentication token is expired") ||
     normalized.includes("invalid_api_key") ||

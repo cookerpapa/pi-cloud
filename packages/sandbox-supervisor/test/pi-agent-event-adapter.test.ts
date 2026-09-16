@@ -25,6 +25,30 @@ function createAdapter() {
 }
 
 describe("PiAgentEventAdapter", () => {
+  it("reports an exhausted provider balance without exposing the upstream body or retrying", () => {
+    const adapter = createAdapter();
+    adapter.adapt({ type: "agent_start" });
+    adapter.adapt({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage:
+          'OpenAI API error (402): {"code":"invalid_request_error","message":"Insufficient Balance","private":"must-not-pass"}',
+      },
+    });
+    const settled = adapter.adapt({ type: "agent_settled" });
+    expect(settled).toMatchObject({
+      kind: "settled",
+      result: {
+        status: "failed",
+        code: "model_balance_exhausted",
+        retryable: false,
+        message: "Model provider balance is exhausted; ask the administrator to replenish it",
+      },
+    });
+    expect(JSON.stringify(settled)).not.toContain("must-not-pass");
+  });
   it("maps a complete Pi text run without exposing raw Pi objects", () => {
     const adapter = createAdapter();
     const started = adapter.adapt({ type: "agent_start" });

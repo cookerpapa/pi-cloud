@@ -1,16 +1,19 @@
 {
   "accepted": true,
-  "piCloudRevision": "260e1fba3f954e5dd86d8793ee01b02665feb102",
-  "checkedAt": "2026-09-10T14:43:54.404Z",
+  "piCloudRevision": "5163fa023eed740c27ed9aab6d82f672859b573c",
+  "checkedAt": "2026-09-16T22:13:43.849Z",
   "provider": "openai-codex",
-  "modelId": "gpt-5.6-terra",
-  "runId": "26594025-87cf-4a5f-8572-37dccc0aee77",
-  "turnId": "a5e9d876-399d-4f30-ad5a-e18d703e22aa",
+  "modelId": "gpt-5.6-luna",
+  "runId": "feae2b5f-0dd4-4985-8623-01b2178af98c",
+  "turnId": "c38fbf15-9a26-41f6-a1f6-77cb1fa9fd69",
   "firstTextSequence": 3,
-  "terminalSequence": 211,
-  "sseReconnects": 20,
+  "terminalSequence": 963,
+  "sseReconnects": 24,
   "attemptCount": 1,
   "faultMode": "control-plane",
-  "recordsProducedWhileProjectorDown": 35,
-  "elapsedMs": 24678
+  "recordsProducedWhileProjectorDown": 48,
+  "visiblePrefixPreserved": true,
+  "liveMatchesCanonical": true,
+  "elapsedMs": 42867,
+  "cleanupCompleted": true
 }

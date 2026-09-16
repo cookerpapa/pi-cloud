@@ -7,6 +7,32 @@ Maintained application source, tests, migrations, deployment and script reading
 is covered by the private hash/range ledger; document/evidence cleanup continues.
 This is coverage of reading, not a claim that every combination is already tested.
 
+September 17 follow-up: the repaired native search boundary is deployed on both
+Kubernetes Workers at `0a54573e`; Control Plane/Broker/templates remain matched
+`985a8508`. DeepSeek now returns HTTP 402 / Insufficient Balance, preventing the
+paid post-repair long-context repetition. The owner has been notified; this gate
+is **blocked, not passed**. A regression also reproduces the generic/"retryable"
+balance error shown to users; the adapter now reports a safe, non-retryable
+balance-specific failure (23 adapter tests pass; rollout pending).
+
+The renewed direct Cube gate passes: real KVM/PTY, two-tenant canaries, Volume
+reattachment, warm PID/service continuity, stale authority rejection and
+post-dispatch UNKNOWN cancellation. Exact native inventory confirms no owned VM
+before deleting its three Volumes. Earlier fixture assumptions (retained-runtime
+inventory, expiry and pre-dispatch cancellation) were corrected rather than
+changing production semantics. Guest egress uncovered a remaining deployed
+`10808` proxy setting. The existing settings service changed it to the owner's
+approved `12450`, recorded revision 5, and hot reload restored HTTPS 200.
+
+Fresh GPT/Kubernetes process-fault acceptance kills Control Plane after visible
+output. The unchanged Worker appends 48 further Kafka records during the outage;
+one Attempt completes, with the displayed prefix unchanged and reconnected text
+equal to canonical history. Owned API resources are deleted. Test helpers now
+inventory actual Compose/Kubernetes processes (including container identity) and
+restart existing containers, not deploy whatever image the worktree happens to
+name. The expanded helper suite passes 30 contracts. Kafka-broker repetition and
+the remaining matrices are still pending.
+
 The matched `985a8508` deployment finishes 18 paid algorithm rounds, two natural
 Compactions, marker recall, post-compaction coding, cross-Kubernetes-Worker
 restore, GPT medium/Fast search and a switch back to Pro high/no-Fast search.
