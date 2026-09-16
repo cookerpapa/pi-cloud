@@ -987,8 +987,8 @@ export class ToolBrokerServer {
       } catch (error: unknown) {
         reportFailure("workspace_terminal_close_failed", safeFailure(error), error);
       }
+      // Preserve an already-sent close frame; ws bounds its closing handshake.
       if (socket.readyState === socket.OPEN) socket.close(1_000, "terminal closed");
-      else if (socket.readyState !== socket.CLOSED) socket.terminate();
     };
     const fail = async (error: unknown): Promise<void> => {
       if (error instanceof ToolBrokerOwnerRedirectError) {

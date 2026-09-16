@@ -3,6 +3,31 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+Application-source reading is now covered by the private hash/range ledger;
+tests, migrations, deployment/scripts and documents still have remaining reads.
+This is coverage of reading, not a claim that every combination is already tested.
+
+Tree fixes are deployed in Control Plane at `352ace33`. The final paid DeepSeek
+check completes three ordinary Turns and two Child Runs, validates inherited and
+fresh context/tree bindings, human Fork recall, actual Chrome child read-only
+actions, missing-Workspace Fork/replay, and leaf-first cleanup. Recorded usage:
+1,399 input / 16,128 cache-read / 353 output tokens. All three repetition Volumes
+are purged, their fourteen task/conversation views archived, and no active Run
+remains. No Cube was activated by these Tool-free children. One earlier helper
+cleanup redundantly re-deleted parent-archived forks; another earlier repetition
+failed model recall. Native context reconstruction retained the exact identifier;
+the first prompt's loose substring assertion had accepted a quoted refusal.
+The final check uses unambiguous literal identifiers and exact equality. Earlier
+failures remain recorded, not merged into the passing run or a success rate.
+
+The next full CI exposed a terminal-close race: overload sent a Close frame then
+immediately called `terminate`, sometimes exposing code 1006 instead of 1009.
+Do not terminate a socket already closing; the existing ws library owns its
+bounded handshake timeout. Both byte/frame overloads reproduce forced termination
+before repair. Thirteen Broker RPC tests/types and eight repetitions of four
+terminal cases pass after repair. Full CI repetition/rollout is pending; the
+preceding CI failed and is not reported as green.
+
 Further September 16 review reproduced terminal input delivered after its socket
 closed. Bound the existing serial queue (1 MiB / 128 frames), keep control-frame
 reads live, and discard queued work after closure; already-issued effects are not

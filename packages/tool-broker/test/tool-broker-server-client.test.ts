@@ -336,7 +336,7 @@ describe("Tool Broker authenticated RPC", () => {
     ).resolves.toMatchObject({ authorized: true });
   });
 
-  it.each(["graceful", "disconnect-with-queued-input", "overloaded-input"])(
+  it.each(["graceful", "disconnect-with-queued-input", "overloaded-input", "overloaded-frames"])(
     "bridges one human PTY and retires input on %s",
     async (ending) => {
       const terminalId = "10000000-0000-4000-8000-000000000080";
@@ -468,6 +468,7 @@ describe("Tool Broker authenticated RPC", () => {
       expect(resize).toHaveBeenCalledWith({ rows: 40, cols: 120 });
       if (ending !== "graceful") {
         let closeCode: number | undefined;
+        const terminate = vi.spyOn(WebSocket.prototype, "terminate");
         socket.once("close", (code) => {
           closeCode = code;
         });
@@ -482,7 +483,9 @@ describe("Tool Broker authenticated RPC", () => {
           await vi.waitFor(() => expect(sendInput).toHaveBeenCalledWith(Buffer.from("blocked")));
           const payload =
             ending === "overloaded-input" ? "x".repeat(24 * 1024) : "must-not-reach-guest";
-          for (let index = 0; index < (ending === "overloaded-input" ? 64 : 1); index++)
+          const frames =
+            ending === "overloaded-input" ? 64 : ending === "overloaded-frames" ? 160 : 1;
+          for (let index = 0; index < frames; index++)
             socket.send(
               JSON.stringify({
                 workspaceTerminalProtocolVersion: 1,
@@ -493,12 +496,14 @@ describe("Tool Broker authenticated RPC", () => {
           if (ending === "disconnect-with-queued-input") socket.close();
           await vi.waitFor(() => expect(closeCode).toBeDefined(), { timeout: 1000 });
           await vi.waitFor(() => expect(closeTerminal).toHaveBeenCalledOnce());
-          if (ending === "overloaded-input") expect(closeCode).toBe(1009);
+          expect(terminate).not.toHaveBeenCalled();
+          if (ending.startsWith("overloaded-")) expect(closeCode).toBe(1009);
           heldInput.resolve();
           await new Promise((resolve) => setTimeout(resolve, 30));
           expect(sendInput).toHaveBeenCalledTimes(2);
           return;
         } finally {
+          terminate.mockRestore();
           heldInput.resolve();
           finishOutput();
           socket.terminate();

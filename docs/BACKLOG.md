@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Preserve the Web Terminal close handshake on queue overload instead of
+      terminating its socket before the Close frame arrives. Cover byte and
+      frame bounds plus queued-input cancellation with real WebSocket tests.
+
 - [x] Bind navigation entries to their recorded Turn, read tree heads/history in
       one snapshot, and preserve those bindings through human Fork/rebuild.
       Seven real-PG regressions also cover missing-Workspace Fork responses.
