@@ -224,6 +224,11 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Operations
 
+- [x] Bridge Kafka (including advertised broker names) and the Provider Gateway
+      into local Kubernetes Workers; preserve configured capacities through
+      cutover. Helm and native K3s before/after connection checks pass. Complete
+      fresh k3d rollout remains part of the installer acceptance below.
+
 - [x] Support custom Worker Secret key names without changing mounted file paths;
       use `IfNotPresent` for the generic Worker chart while local image import
       explicitly retains `Never`. Custom-key and full-chart render checks pass.

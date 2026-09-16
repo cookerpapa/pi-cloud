@@ -4,6 +4,12 @@ import { access, chmod, mkdir, readFile, rename, rm, stat, writeFile } from "nod
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stringify } from "yaml";
+import {
+  bridgeTargets,
+  composeBridgeResources,
+  composeNetworks,
+  localWorkerValues,
+} from "./local-worker-connections.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const runtimeDirectory = resolve(
@@ -55,45 +61,9 @@ const workerMetricsHosts = workerIds.map(
   (workerId) => `${workerId}.metrics.${managementHostSuffix}`,
 );
 
-const composeNetworks = {
-  api: "pi-cloud-production_api",
-  management: "pi-cloud-production_management",
-  database: "pi-cloud-production_database",
-  sandboxControl: "pi-cloud-production_sandbox-control",
-  modelEgress: "pi-cloud-production_model-egress",
-  observability: "pi-cloud-production_observability",
-};
-
-const bridgeTargets = [
-  {
-    name: "control-plane",
-    composeService: "control-plane",
-    network: composeNetworks.management,
-    port: 3000,
-  },
-  {
-    name: "tool-broker",
-    composeService: "tool-broker",
-    network: composeNetworks.sandboxControl,
-    port: 4300,
-  },
-  {
-    name: "provider-egress-relay",
-    composeService: "provider-egress-relay",
-    network: composeNetworks.modelEgress,
-    port: 3129,
-  },
-  {
-    name: "postgres",
-    composeService: "postgres",
-    network: composeNetworks.database,
-    port: 5432,
-  },
-];
 const optionalBridgeTargets = [
   {
     name: "jaeger",
-    composeService: "jaeger",
     network: composeNetworks.observability,
     port: 4318,
   },
@@ -562,14 +532,14 @@ async function bridgeComposeServices() {
 
   const resolved = [];
   for (const target of bridgeTargets) {
-    const container = await composeContainer(target.composeService);
+    const container = await composeContainer(target.name);
     resolved.push({
       ...target,
       address: await networkIp(container, target.network),
     });
   }
   for (const target of optionalBridgeTargets) {
-    const container = await optionalComposeContainer(target.composeService);
+    const container = await optionalComposeContainer(target.name);
     if (container === undefined) {
       await kubectlRun([
         "--namespace",
@@ -587,59 +557,7 @@ async function bridgeComposeServices() {
     });
   }
 
-  await applyManifest(
-    resolved.flatMap((target) => [
-      {
-        apiVersion: "v1",
-        kind: "Service",
-        metadata: {
-          name: target.name,
-          namespace: systemNamespace,
-          labels: { "pi-cloud.io/bridge": "compose" },
-        },
-        spec: {
-          ports: [
-            {
-              name: "tcp",
-              protocol: "TCP",
-              port: target.port,
-              targetPort: target.port,
-            },
-          ],
-        },
-      },
-      {
-        apiVersion: "discovery.k8s.io/v1",
-        kind: "EndpointSlice",
-        metadata: {
-          name: `compose-${target.name}`,
-          namespace: systemNamespace,
-          labels: {
-            "kubernetes.io/service-name": target.name,
-            "endpointslice.kubernetes.io/managed-by": "pi-cloud-local-workers",
-          },
-        },
-        addressType: "IPv4",
-        endpoints: [{ addresses: [target.address], conditions: { ready: true } }],
-        ports: [{ name: "tcp", protocol: "TCP", port: target.port }],
-      },
-    ]),
-  );
-  await applyManifest([
-    {
-      apiVersion: "v1",
-      kind: "Service",
-      metadata: {
-        name: "tool-broker",
-        namespace: workerNamespace,
-        labels: { "pi-cloud.io/bridge": "compose-owner-alias" },
-      },
-      spec: {
-        type: "ExternalName",
-        externalName: `tool-broker.${systemNamespace}.svc.cluster.local`,
-      },
-    },
-  ]);
+  await applyManifest(composeBridgeResources(resolved, systemNamespace, workerNamespace));
   return resolved;
 }
 
@@ -867,8 +785,13 @@ async function waitForWorkerPodInventory(timeoutMs = 120_000) {
   throw new Error(`Kubernetes did not create all ${String(workerReplicas)} expected Worker Pods`);
 }
 
-async function deployWorkerPool(revision, imageTag, resolvedTargets, runtimeEnvironment) {
+async function deployWorkerPool(imageTag, resolvedTargets, runtimeEnvironment) {
   await applyWorkerSecret();
+  const connectionValuesPath = join(runtimeDirectory, "kubernetes", "worker-connections.yaml");
+  await writePrivate(
+    connectionValuesPath,
+    stringify(localWorkerValues(runtimeEnvironment, systemNamespace)),
+  );
   const externalCidrs = [...new Set(resolvedTargets.map((target) => `${target.address}/32`))];
   const localJaegerAvailable = resolvedTargets.some((target) => target.name === "jaeger");
   const otlpTracesEndpoint =
@@ -884,6 +807,8 @@ async function deployWorkerPool(revision, imageTag, resolvedTargets, runtimeEnvi
     workerNamespace,
     "--timeout",
     "7m",
+    "--values",
+    connectionValuesPath,
     "--set",
     `workerPool.name=${poolName}`,
     "--set",
@@ -902,12 +827,6 @@ async function deployWorkerPool(revision, imageTag, resolvedTargets, runtimeEnvi
     `image.tag=${imageTag}`,
     "--set",
     "image.pullPolicy=Never",
-    "--set",
-    "services.controlPlaneUrl=http://control-plane.pi-cloud-system.svc.cluster.local:3000",
-    "--set",
-    "services.toolBrokerUrls[0]=http://tool-broker.pi-cloud-system.svc.cluster.local:4300",
-    "--set",
-    "services.providerProxyUrl=http://provider-egress-relay.pi-cloud-system.svc.cluster.local:3129",
     "--set-string",
     `services.otlpTracesEndpoint=${otlpTracesEndpoint}`,
     "--set",
@@ -1033,7 +952,7 @@ async function waitForWorkerEnrollment(postgres, timeoutMs = 120_000) {
   throw new Error(`Expected ${workerReplicas} enrolled Kubernetes Workers, found ${enrolled}`);
 }
 
-async function checkDeployment(expectedRevision, { emit = true } = {}) {
+async function checkDeployment(expectedRevision) {
   await ensureK3d();
   const runtimeEnvironment = await readRuntimeEnvironment();
   if (runtimeEnvironment.PI_CLOUD_PI_WORKER_DEPLOYMENT !== "kubernetes") {
@@ -1068,17 +987,16 @@ async function checkDeployment(expectedRevision, { emit = true } = {}) {
 
   const revision = expectedRevision ?? (await repositoryRevision());
 
-  if (emit)
-    process.stdout.write(
-      `${JSON.stringify({
-        kubernetesPiWorkers: "ready",
-        cluster: clusterName,
-        replicas: workerReplicas,
-        workerIds,
-        buildId: revision,
-        composePiWorkers: (await composeWorkerContainers()).length,
-      })}\n`,
-    );
+  process.stdout.write(
+    `${JSON.stringify({
+      kubernetesPiWorkers: "ready",
+      cluster: clusterName,
+      replicas: workerReplicas,
+      workerIds,
+      buildId: revision,
+      composePiWorkers: (await composeWorkerContainers()).length,
+    })}\n`,
+  );
 }
 
 async function up() {
@@ -1100,8 +1018,7 @@ async function up() {
     if (!upgradingKubernetes) {
       previous = await switchControlPlaneToKubernetes(runtimeEnvironment, revision);
     }
-    await deployWorkerPool(revision, tag, resolvedTargets, runtimeEnvironment);
-    await checkDeployment(revision, { emit: false });
+    await deployWorkerPool(tag, resolvedTargets, runtimeEnvironment);
     await checkDeployment(revision);
   } catch (error) {
     if (previous !== undefined) {

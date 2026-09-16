@@ -5,13 +5,15 @@ single-node k3d cluster while leaving the rest of the one-host topology in
 Compose.
 
 ```text
-k3d Pi Workers -> bridged Control Plane/PostgreSQL/Tool Broker
+k3d Pi Workers -> bridged PostgreSQL / Control Plane / Tool Broker
+              -> Kafka / Provider Gateway / provider egress proxy
 ```
 
 Workers consume the same PostgreSQL Run queue as Compose Workers. The cutover
-refuses to proceed while a Run is active, switches Control Plane management
-routes, deploys the Helm pool and verifies enrollment/readiness. No Temporal
-Build ID or S3 checkpoint route is involved.
+checks for active Runs before starting, switches Control Plane management
+routes, deploys the Helm pool and verifies enrollment/readiness. Perform it in
+a maintenance window without new submissions; the initial check is not an
+admission lock.
 
 ```bash
 npm run kubernetes:pi-workers:up
@@ -21,8 +23,13 @@ npm run kubernetes:pi-workers:down
 ```
 
 Each Worker receives a pooled database URL plus a direct notification URL.
-Conversation correctness remains in PostgreSQL; local Worker PVCs contain only
-boot identity.
+Workers append directly to Kafka; PostgreSQL owns execution authority and
+materialized native history. Local Worker PVCs contain only boot identity.
+The helper bridges every dependency and exposes the short Kafka hostnames
+returned by broker metadata in the Worker namespace. It carries the runtime's
+Kafka partition count, family/model limits, PG pool size and Child limits into
+Helm values instead of reverting to defaults. Re-run the helper after dependency
+container IPs change; this development bridge is not a service-discovery controller.
 
 This profile validates packaging and horizontal Worker behavior, not
 multi-node availability. Use the distributed chart for external PostgreSQL,

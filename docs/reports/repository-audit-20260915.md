@@ -39,6 +39,15 @@ both writes then pass. All owned test Volumes are removed. Installer regression
 also rejects unused network definitions; the unattached provider-egress network
 is removed, while the actual model-egress/host-relay path remains unchanged.
 
+The local k3d Worker helper omitted Kafka and Provider Gateway bridges. An owned
+native K3s namespace running the previous generated Service resources can reach
+Control Plane but not the gateway or any of the three actual Kafka-advertised
+hosts. Add their endpoint bridges and Worker-namespace aliases; the same five
+read-only network probes then pass. Extract the maintained connection manifest
+so Helm regressions exercise it directly, including customized family/model/PG
+pool/Child limits and Kafka partition count. No production Worker cutover was
+performed here; full fresh k3d install/enrollment/paid acceptance remains pending.
+
 Further actual-Chrome regressions reproduce and fix four UI lifecycle errors:
 New Chat could reset a pending input submission; a read-only Child opened a
 Workspace-rebind dialog; identity-service network/503 failure falsely rendered
