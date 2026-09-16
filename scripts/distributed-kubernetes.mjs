@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse } from "yaml";
+import { parse, parseAllDocuments } from "yaml";
 import { validateDistributedDeploymentValues } from "./distributed-values-policy.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -30,14 +30,6 @@ function run(binary, args, options = {}) {
   return result.stdout ?? "";
 }
 
-function optional(binary, args) {
-  return spawnSync(binary, args, {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    maxBuffer: 8 * 1024 * 1024,
-  });
-}
-
 function argument(name, fallback) {
   const position = process.argv.indexOf(name);
   if (position < 0) return fallback;
@@ -47,12 +39,7 @@ function argument(name, fallback) {
 }
 
 function requireBinary(binary) {
-  if (optional(binary, ["version", "--client"]).status !== 0 && binary === "kubectl") {
-    fail("kubectl is required");
-  }
-  if (optional(binary, ["version", "--short"]).status !== 0 && binary === "helm") {
-    fail("Helm 3 is required");
-  }
+  run(binary, ["version", binary === "kubectl" ? "--client" : "--short"]);
 }
 
 function loadValues(path) {
@@ -82,21 +69,26 @@ function mergeValues(base, override) {
   return merged;
 }
 
-function ensureNamespace(namespace) {
-  if (optional("kubectl", ["get", "namespace", namespace]).status !== 0) {
-    run("kubectl", ["create", "namespace", namespace], { inherit: true });
+function namespaceLabels(values) {
+  const labels = new Map();
+  const policies = [values.networkPolicy];
+  if (values.piWorkersEnabled) policies.push(values["pi-workers"].networkPolicy);
+  for (const policy of policies.filter((policy) => policy.enabled)) {
+    const { key, value } = policy.trustedNamespaceLabel;
+    if (labels.has(key) && labels.get(key) !== value) {
+      fail(`Network policies disagree on namespace label ${key}`);
+    }
+    labels.set(key, value);
   }
-  run(
-    "kubectl",
-    ["label", "namespace", namespace, "pi-cloud.io/trusted-plane=true", "--overwrite"],
-    { inherit: true },
-  );
+  return [...labels].map(([key, value]) => `${key}=${value}`);
 }
 
-function preflight(namespace, values) {
+function preflight(namespace, resources) {
   requireBinary("kubectl");
-  requireBinary("helm");
   run("kubectl", ["cluster-info"]);
+  // Secrets and the shared PVC must already exist here. An authorization or
+  // transport failure must never be mistaken for permission to create it.
+  run("kubectl", ["get", "namespace", namespace]);
   const nodes = JSON.parse(run("kubectl", ["get", "nodes", "-o", "json"]));
   const readyNodes = nodes.items.filter(
     (node) =>
@@ -110,54 +102,66 @@ function preflight(namespace, values) {
       "at least two Ready schedulable nodes are required; set PI_CLOUD_ALLOW_SINGLE_NODE_DISTRIBUTED=1 only for a non-HA test cluster",
     );
   }
-  if (optional("kubectl", ["get", "crd", "scaledobjects.keda.sh"]).status !== 0) {
-    fail("KEDA is required because Pi Workers scale from the PostgreSQL Run backlog");
+  if (resources.some((resource) => resource.kind === "ScaledObject")) {
+    run("kubectl", ["get", "crd", "scaledobjects.keda.sh"]);
+    run("kubectl", ["get", "crd", "triggerauthentications.keda.sh"]);
   }
-  if (optional("kubectl", ["get", "apiservice", "v1beta1.metrics.k8s.io"]).status !== 0) {
-    fail("Kubernetes Metrics API is required by the Web and Control Plane HPAs");
+  if (resources.some((resource) => resource.kind === "HorizontalPodAutoscaler")) {
+    run("kubectl", ["get", "apiservice", "v1beta1.metrics.k8s.io"]);
   }
-  const secretName = values.global?.existingSecret;
-  const workspaceClaim = values.sandboxPlane?.workspace?.existingClaim;
-  if (typeof secretName !== "string" || secretName.length === 0) {
-    fail("global.existingSecret is required");
+
+  // Use the exact rendered mounts, including projected-key renames and disabled
+  // components, instead of maintaining another credential list beside Helm.
+  const secrets = new Map();
+  const workspaceClaims = new Set();
+  const requireSecret = (name, keys = []) => {
+    const required = secrets.get(name) ?? new Set();
+    for (const key of keys) required.add(key);
+    secrets.set(name, required);
+  };
+  for (const resource of resources) {
+    const pod = resource.spec?.template?.spec;
+    if (pod) {
+      const mounts = pod.containers.flatMap((container) => container.volumeMounts ?? []);
+      for (const volume of pod.volumes ?? []) {
+        if (volume.secret) {
+          const keys = volume.secret.items
+            ? volume.secret.items.map((item) => item.key)
+            : mounts
+                .filter((mount) => mount.name === volume.name && mount.subPath)
+                .map((mount) => mount.subPath);
+          requireSecret(volume.secret.secretName, keys);
+        }
+        if (volume.persistentVolumeClaim)
+          workspaceClaims.add(volume.persistentVolumeClaim.claimName);
+      }
+      for (const secret of pod.imagePullSecrets ?? []) requireSecret(secret.name);
+    }
+    if (resource.kind === "TriggerAuthentication") {
+      for (const reference of resource.spec.secretTargetRef)
+        requireSecret(reference.name, [reference.key]);
+    }
+    if (resource.kind === "Ingress") {
+      for (const tls of resource.spec.tls ?? [])
+        requireSecret(tls.secretName, ["tls.crt", "tls.key"]);
+    }
   }
-  if (typeof workspaceClaim !== "string" || workspaceClaim.length === 0) {
-    fail("sandboxPlane.workspace.existingClaim is required");
+  for (const [name, keys] of secrets) {
+    const secret = JSON.parse(
+      run("kubectl", ["get", "secret", name, "-n", namespace, "-o", "json"]),
+    );
+    for (const key of keys) {
+      if (!secret.data?.[key]) fail(`Secret ${name} is missing key ${key}`);
+    }
   }
-  const secret = JSON.parse(
-    run("kubectl", ["get", "secret", secretName, "-n", namespace, "-o", "json"]),
-  );
-  const requiredSecretKeys = [
-    "api-token",
-    "cube-egress-config-token",
-    "cubesandbox-api-key",
-    "database-notification-url",
-    "database-url",
-    "metrics-token",
-    "cli-proxy-api-key",
-    "tool-broker-token",
-    "tool-dispatch-token",
-    "workspace-service-token",
-    "workspace-terminal-token",
-    "cube-persistent-state-key",
-    "supervisor-enrollment-token",
-    "supervisor-management-token",
-    "workspace-volume-gateway-token",
-  ];
-  if (values.controlPlane?.sourceControl?.gitlab?.enabled === true) {
-    requiredSecretKeys.push(values.controlPlane.sourceControl.gitlab.credentialMasterKeySecretKey);
-  }
-  for (const key of requiredSecretKeys) {
-    if (typeof secret.data?.[key] !== "string") fail(`Secret ${secretName} is missing key ${key}`);
-  }
-  const claim = JSON.parse(
-    run("kubectl", ["get", "pvc", workspaceClaim, "-n", namespace, "-o", "json"]),
-  );
-  if (!claim.spec?.accessModes?.includes("ReadWriteMany")) {
-    fail(`PVC ${workspaceClaim} must support ReadWriteMany for distributed Volume Gateways`);
+  for (const name of workspaceClaims) {
+    const claim = JSON.parse(run("kubectl", ["get", "pvc", name, "-n", namespace, "-o", "json"]));
+    if (!claim.spec?.accessModes?.includes("ReadWriteMany")) {
+      fail(`PVC ${name} must support ReadWriteMany for distributed Volume Gateways`);
+    }
   }
   process.stdout.write(
-    `Distributed preflight passed: ${readyNodes.length} Ready nodes, external authorities and shared workspace contract present.\n`,
+    `Distributed preflight passed: ${readyNodes.length} Ready nodes; rendered Secrets, PVCs and autoscaler dependencies present. External service health is not tested.\n`,
   );
 }
 
@@ -218,9 +222,17 @@ try {
 } catch (error) {
   fail(error instanceof Error ? error.message : "distributed values are invalid");
 }
-ensureNamespace(namespace);
-preflight(namespace, values);
+const labels = namespaceLabels(effectiveValues);
+const resources = parseAllDocuments(
+  run("helm", ["template", release, chart, "--namespace", namespace, "--values", valuesPath]),
+)
+  .map((document) => document.toJSON())
+  .filter(Boolean);
+preflight(namespace, resources);
 if (action === "deploy") {
+  if (labels.length) {
+    run("kubectl", ["label", "namespace", namespace, ...labels, "--overwrite"], { inherit: true });
+  }
   run(
     "helm",
     [

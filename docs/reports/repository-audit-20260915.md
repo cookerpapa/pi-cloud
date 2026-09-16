@@ -19,6 +19,17 @@ from each attempt were removed (the first cleanup wait timed out, then absence
 was confirmed). These probes test real CNI/Service/Secret behavior with synthetic
 endpoints, not Kafka throughput, paid models or full multi-node failover.
 
+Distributed preflight previously changed namespace trust labels before checking
+dependencies, treated namespace read failure as absence, ignored inherited
+defaults/custom Worker Secrets, and missed required SSH/GitHub keys. It now reads
+the rendered mounts instead of a parallel hard-coded list, checks only enabled
+autoscalers/storage, and applies configured labels only during deploy after all
+checks. Twelve CLI contracts use real Helm plus controlled kubectl; an owned K3s
+namespace also passes valid/missing-SSH-key cases without changing its labels or
+resourceVersion, then is deleted. Remove obsolete GitLab-login/object-bucket
+schema and unused HPA fields; invalid settings now fail instead of being ignored.
+Documentation no longer advertises unwired Kafka TLS/SASL or lag-based HPA.
+
 Further actual-Chrome regressions reproduce and fix four UI lifecycle errors:
 New Chat could reset a pending input submission; a read-only Child opened a
 Workspace-rebind dialog; identity-service network/503 failure falsely rendered

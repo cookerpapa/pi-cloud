@@ -9,6 +9,11 @@ Volume architecture. Historical experiments remain in Git history.
       permissions. Render contracts and owned K3s before/after probes pass; this
       is not certification of a full multi-node deployment.
 
+- [x] Make distributed preflight cluster-read-only and derive Secret/PVC checks
+      from rendered workloads. Custom-key/disabled-component regressions and
+      actual K3s missing-key/unchanged-namespace checks pass. Remove retired
+      Helm schema fields and unsupported deployment claims.
+
 - [x] Reject stale conversation-list refreshes after deletion, distinguish
       identity-service failure from logout, and preserve pending-input and
       read-only Child view boundaries. Real Chrome regression coverage passes.

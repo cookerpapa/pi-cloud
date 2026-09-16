@@ -408,7 +408,7 @@ and lightweight operation metadata. They are not tenant quotas or Workspace lock
 Keep database URLs, Provider Gateway API/management keys and OAuth Volume,
 Worker enrollment/management tokens,
 Tool Broker service/dispatch tokens, Cube API key, SSH host key and
-Kafka TLS/SASL material and source-control credential master key in the
+source-control credential master key in the
 generated private files or Kubernetes Secrets. Cube receives none of them.
 When GitHub integration is enabled, the App private key and Webhook secret are
 also deployment Secrets; installation access tokens are generated at runtime
@@ -417,3 +417,7 @@ encrypted in PostgreSQL for trusted Webhook, membership and provider API work.
 The separate user OAuth token is written only to the selected Workspace Git
 Home, is deliberately visible to its Agent and must use the least repository
 scope the workflow needs.
+
+Kafka currently uses private-network plaintext connections. The chart does not
+wire TLS/SASL credentials into the runtime; placing them in a Secret does not
+enable authenticated Kafka. Keep those listeners restricted to trusted services.

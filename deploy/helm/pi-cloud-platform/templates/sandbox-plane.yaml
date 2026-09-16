@@ -52,9 +52,8 @@ spec:
       {{- end }}
       automountServiceAccountToken: false
       enableServiceLinks: false
-      # Tool Broker may be awaiting the bounded 11-minute Volume gateway
-      # request during Workspace settlement. Keep the Pod alive long enough
-      # to finish or fail that operation explicitly.
+      # Allow an admitted Volume operation to finish or explicitly fail before
+      # terminating the Broker; the default RPC budget is 11 minutes.
       terminationGracePeriodSeconds: 720
       securityContext:
         runAsNonRoot: true

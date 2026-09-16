@@ -205,7 +205,7 @@
       }
     },
     "controlPlane": {
-      "$ref": "#/$defs/httpWorkload"
+      "$ref": "#/$defs/controlPlane"
     },
     "sshGateway": {
       "type": "object",
@@ -250,50 +250,54 @@
       }
     },
     "web": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/httpWorkload"
-        },
-        {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "replicas",
+        "autoscaling",
+        "resources",
+        "ingress",
+        "adminOriginBaseUrl",
+        "managementUrls"
+      ],
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 2, "maximum": 256 },
+        "autoscaling": { "$ref": "#/$defs/autoscaling" },
+        "resources": { "$ref": "#/$defs/resources" },
+        "adminOriginBaseUrl": { "$ref": "#/$defs/httpUrl" },
+        "managementUrls": {
           "type": "object",
-          "required": ["ingress", "adminOriginBaseUrl", "managementUrls"],
+          "additionalProperties": false,
+          "required": ["providerGateway", "grafana", "prometheus", "alertmanager", "jaeger"],
           "properties": {
-            "adminOriginBaseUrl": { "$ref": "#/$defs/httpUrl" },
-            "managementUrls": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["providerGateway", "grafana", "prometheus", "alertmanager", "jaeger"],
-              "properties": {
-                "providerGateway": { "$ref": "#/$defs/optionalHttpUrl" },
-                "grafana": { "$ref": "#/$defs/optionalHttpUrl" },
-                "prometheus": { "$ref": "#/$defs/optionalHttpUrl" },
-                "alertmanager": { "$ref": "#/$defs/optionalHttpUrl" },
-                "jaeger": { "$ref": "#/$defs/optionalHttpUrl" }
-              }
+            "providerGateway": { "$ref": "#/$defs/optionalHttpUrl" },
+            "grafana": { "$ref": "#/$defs/optionalHttpUrl" },
+            "prometheus": { "$ref": "#/$defs/optionalHttpUrl" },
+            "alertmanager": { "$ref": "#/$defs/optionalHttpUrl" },
+            "jaeger": { "$ref": "#/$defs/optionalHttpUrl" }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "className", "host", "adminHost", "tlsSecretName"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
             },
-            "ingress": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["enabled", "className", "host", "adminHost", "tlsSecretName"],
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                },
-                "className": {
-                  "$ref": "#/$defs/optionalDnsName"
-                },
-                "host": {
-                  "$ref": "#/$defs/dnsName"
-                },
-                "adminHost": { "$ref": "#/$defs/dnsName" },
-                "tlsSecretName": {
-                  "$ref": "#/$defs/optionalDnsName"
-                }
-              }
+            "className": {
+              "$ref": "#/$defs/optionalDnsName"
+            },
+            "host": {
+              "$ref": "#/$defs/dnsName"
+            },
+            "adminHost": { "$ref": "#/$defs/dnsName" },
+            "tlsSecretName": {
+              "$ref": "#/$defs/optionalDnsName"
             }
           }
         }
-      ]
+      }
     },
     "external": {
       "type": "object",
@@ -680,12 +684,6 @@
       "maxLength": 512,
       "pattern": "^[A-Za-z0-9._/-]+$"
     },
-    "bucket": {
-      "type": "string",
-      "minLength": 3,
-      "maxLength": 63,
-      "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$"
-    },
     "quantity": {
       "type": "string",
       "pattern": "^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"
@@ -756,21 +754,12 @@
           "type": "integer",
           "minimum": 10,
           "maximum": 95
-        },
-        "pollingIntervalSeconds": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 300
-        },
-        "cooldownSeconds": {
-          "type": "integer",
-          "minimum": 30,
-          "maximum": 3600
         }
       }
     },
-    "httpWorkload": {
+    "controlPlane": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["replicas", "autoscaling", "resources"],
       "properties": {
         "replicas": {
@@ -872,48 +861,6 @@
               }
             }
           }
-        },
-        "authentication": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["gitlab"],
-          "properties": {
-            "gitlab": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "enabled",
-                "issuer",
-                "clientId",
-                "clientSecretSecretKey",
-                "label",
-                "tenantId"
-              ],
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                },
-                "issuer": {
-                  "$ref": "#/$defs/httpUrl"
-                },
-                "clientId": {
-                  "type": "string",
-                  "maxLength": 256
-                },
-                "clientSecretSecretKey": {
-                  "$ref": "#/$defs/secretKey"
-                },
-                "label": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                "tenantId": {
-                  "$ref": "#/$defs/uuid"
-                }
-              }
-            }
-          }
         }
       }
     },
@@ -941,9 +888,6 @@
           "maximum": 1000000
         }
       }
-    },
-    "unused": {
-      "type": "null"
     }
   }
 }

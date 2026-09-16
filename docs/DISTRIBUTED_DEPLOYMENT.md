@@ -8,13 +8,15 @@ external durable authorities.
 
 - PostgreSQL HA plus optional PgBouncer 1.21+ with protocol-level prepared-statement
   tracking enabled (`max_prepared_statements > 0`);
-- Kafka with replication factor 3, `min.insync.replicas>=2`, topic ACLs and
-  bounded AcceptedFact retention;
+- private-network Kafka with replication factor 3, `min.insync.replicas>=2`
+  and bounded AcceptedFact retention; runtime TLS/SASL configuration is not
+  wired yet, so authenticated external brokers are not a supported drop-in;
 - one direct PostgreSQL connection for migrations, `LISTEN/NOTIFY` and KEDA;
 - ReadWriteMany persistent Workspace storage visible to Cube Volume Plugin and
   trusted Volume gateway replicas;
 - Cube control/compute plane;
-- KEDA, Metrics API, CNI NetworkPolicy and a node autoscaler.
+- CNI NetworkPolicy; KEDA and Metrics API when the corresponding autoscalers
+  are enabled, plus a node autoscaler if node elasticity is required.
 
 ## Topology
 
@@ -45,11 +47,12 @@ There are no execution Cells, private Worker queues or persistent cold-Session
 affinity records. A Workspace binds to a Sandbox Domain for Cube/storage
 locality. Any Pi Worker may acquire a cold physical Pi Session, but every
 unexpired Attempt on that Session's main and delegated Lanes must use the same
-Worker boot identity. PostgreSQL derives that active ownership from RunAttempt
-claims under a brief `pi_sessions` row lock.
+Worker boot identity under one physical-Session lease. Child tasks do not acquire
+independent leases; cold ownership is acquired under a brief `pi_sessions` row lock.
 
 ## Deploy
 
+Prepare the namespace, deployment Secrets and shared Workspace PVC first.
 Copy the example outside the repository and replace endpoints, images, UUIDs
 and CIDRs:
 
@@ -63,18 +66,24 @@ npm run kubernetes:distributed:deploy -- --values values.yaml
 `render` permits documented placeholders so the chart can be inspected without
 a cluster. `preflight` and `deploy` reject example domains, image references,
 Git revisions and Cube template IDs, run strict Helm/schema validation, and
-check the coupled Turn/lease/replay budgets before creating the namespace.
+check the coupled Turn/lease/replay budgets. Preflight is cluster-read-only:
+it checks the actual rendered Secret names/keys, shared PVCs and enabled
+autoscaler APIs. It does not prove external service health or volume mountability.
+Only `deploy`, after successful checks, applies the configured trusted-namespace
+labels and installs/upgrades the release.
 
-The platform Secret must contain database URLs, API/bootstrap credentials,
-Cube/Tool credentials, Kafka TLS/SASL material and metrics tokens.
-No S3 or Temporal credential is required.
+Secret keys follow the rendered mounts: database URLs, API/bootstrap credentials,
+Cube/Tool credentials, metrics tokens, SSH host key when enabled, and optional
+source-control credentials. Worker credentials may use a separate named Secret.
+No S3 or Temporal credential is required. External egress CIDRs and TCP ports
+must include every configured endpoint, including Kafka and provider gateways.
 
 ## Scaling
 
-- Control Plane/Web scale by CPU and Accepted-topic projection lag;
+- Control Plane/Web scale by CPU; projection lag is monitored, not an HPA input;
 - Pi Workers scale by PostgreSQL ready Run backlog;
-- Tool Broker and Volume gateway scale independently;
-- Cube compute and underlying nodes scale from active Sandbox demand.
+- Tool Broker and Volume gateway have independently configured replica counts;
+- Cube compute/node elasticity is configured in the external Cube infrastructure.
 
 KEDA is not a queue authority. If it or its metric is unavailable, the
 configured minimum Workers continue polling PostgreSQL.

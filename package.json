@@ -38,7 +38,7 @@
     "cubesandbox:ps": "node scripts/production-compose.mjs ps",
     "cubesandbox:logs": "node scripts/production-compose.mjs logs --follow",
     "cubesandbox:down": "node scripts/production-compose.mjs down",
-    "helm:check": "node scripts/check-helm-pi-worker-pool.mjs && node scripts/check-helm-platform.mjs && node scripts/check-distributed-values-policy.mjs",
+    "helm:check": "node scripts/check-helm-pi-worker-pool.mjs && node scripts/check-helm-platform.mjs && node scripts/check-distributed-values-policy.mjs && node scripts/check-distributed-preflight.mjs",
     "image:closure-check": "node scripts/check-supervisor-image-closure.mjs",
     "image:context-check": "node scripts/check-docker-build-context.mjs",
     "kubernetes:pi-workers:install-runtime": "node scripts/ensure-k3d.mjs",

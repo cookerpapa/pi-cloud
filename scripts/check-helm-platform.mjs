@@ -15,6 +15,18 @@ function run(arguments_) {
 
 run(["dependency", "build", chart]);
 run(["lint", chart, "--strict"]);
+for (const invalid of [
+  "controlPlane.authentication.gitlab.enabled=true",
+  "controlPlane.autoscaling.pollingIntervalSeconds=5",
+  "web.sourceControl.github.enabled=true",
+]) {
+  const result = spawnSync(helm, ["template", "invalid", chart, "--set", invalid], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.notEqual(result.status, 0, `Unused setting ${invalid} must not silently pass`);
+  assert.match(result.stderr, /additional properties|Additional property/i);
+}
 const rendered = run(["template", "pi-cloud", chart, "--namespace", "pi-cloud-system"]);
 assert.doesNotMatch(
   rendered,
