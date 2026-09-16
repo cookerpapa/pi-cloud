@@ -21,9 +21,9 @@ deployment journals and superseded measurements remain in Git history.
   fault cases, build/types/configuration/security gates and zero observed clock
   steps. Two independent opt-in tests are skipped, not counted as passes; the
   Cube gate ran separately. Two moderate development-only Vitest advisories remain.
-- DeepSeek returned **HTTP 402 / Insufficient Balance**; the owner has now
-  replenished it. Post-repair paid long-context/provider-combination acceptance
-  must be repeated; the failed attempt is not counted as passed.
+- After the owner replenished DeepSeek, the post-repair long-context/provider/
+  child combination passes. The preceding balance failure remains a failed
+  attempt, not part of that passing repetition.
 - PiCloud model, Docker and Cube proxy paths now use the owner's approved
   `127.0.0.1:12450`. Cube's remaining `10808` setting was changed through the
   existing settings service (revision 5); its hot reload restored HTTPS 200.
@@ -38,7 +38,7 @@ deployment journals and superseded measurements remain in Git history.
 | --- | --- | --- |
 | MODEL-03 | CLIProxyAPI generic compatibility metadata mapped Pi's `reasoning.effort=none` to low and lacked max | Declare reviewed native levels from the shared catalog, without protocol/credential changes. Configuration regression and real Pro off=0 reasoning tokens / max=49 pass |
 | MODEL-04 | A thinking-only output-limited answer looked like an empty successful reply | Show an output-limit notice, not invented text or automatic Tool replay. Rendering and real Chrome checks pass |
-| MODEL-05 | After Compaction, Pi AI's structural estimator treated PiCloud's hosted-search block as a function call and read missing `name.length` | Actual failed context reproduces the stack. Existing model adapter passes only native blocks to Pi Models; the payload hook still replays original same-model search items. Stored history is unchanged. Two before-fail/after-pass HTTP cases, 21 Runner/search tests and types pass; Worker rollout done, paid long repeat blocked by balance |
+| MODEL-05 | After Compaction, Pi AI's structural estimator treated PiCloud's hosted-search block as a function call and read missing `name.length` | Actual failed context reproduces the stack. Existing model adapter passes only native blocks to Pi Models; the payload hook still replays original same-model search items. Stored history is unchanged. Two before-fail/after-pass HTTP cases, 21 Runner/search tests and types pass; rollout and complete paid long repetition pass, including post-search parent and child Compaction |
 | MODEL-06 | Provider 402 appeared as generic retryable model failure | Safe non-retryable balance diagnostic; reproduced before and 23 adapter tests pass afterward. Deployment/real UI repeat pending |
 | PRIV-01 | A raw provider/runtime error was interpolated into the model-visible abort marker | Both direct/native append fixtures reproduce a synthetic diagnostic token and internal Attempt text reaching the next model context. Use one fixed minimal interruption fact; keep detailed diagnostics in operation records. All 44 Harness cases and types pass; rollout/real interruption repetition pending. No actual credential disclosure was established |
 | LIFE-15 | Provider shutdown ignored VM-deletion failures and later transport errors overwrote them | Aggregate failures; Broker cannot mark released without confirmed cleanup. Four regressions and 79 Provider/Broker/RPC tests pass. Real owned Cube plus controlled DELETE rejection confirms the VM survives and cleanup is not reported successful; fresh-client cleanup removes it and its Volume. The ownership fixture in this isolated gate is in-memory, not a real PG outage |
@@ -65,6 +65,7 @@ sampling request, never subtracted from an entire multi-Step coding Run.
 | Browser, Web/CP/Broker `b2cf34a3`, K8s Workers `7d65c22d` | 93 controls pass: authentication/language, tree/Fork/prune, models/Fast, copy/download, Steer/Stop, Terminal, machine pause/resume/release, directory creation and SSH copy. One actual paint sample 2,796.5 ms = provider route 2,305.8 + other 490.7 ms |
 | Snake, same deployment | 16 real Tools, authenticated host Preview HTTP 200; Chrome Start/movement 0→5, Pause stays 5, Reset 0. First text 2,373 ms; total coding 124,116 ms. Screenshot and API resources removed |
 | Preview isolation | Two simultaneous Sessions each serve 3000/8000; one adds 5173 without disturbing four existing routes. Five routes have correct isolated content |
+| Repaired long combination, Workers `3abf8184`, test `e228f00c` | 13 algorithm Turns, two coding Compactions (113,161→21,120; 111,682→22,615), then recall/coding/cross-Worker/GPT medium-Fast search/Pro high-noFast search/branch+fresh children all pass. Four Compactions total including later parent/child. Independent Web Terminal runs 370 tests, exit 0. Native assistant usage: 257 requests, 538,030 input / 16,135,296 cache / 183,727 output tokens, excluding Compaction/retry usage. API/Volume cleanup and credential revocation confirmed |
 | Multi-tenant, Workers `7fa41328` | Four tenants × two Sessions × two rounds: 16/16 complete, peak eight overlapping Runs, eight marker restores and foreign-tenant denials, no leaks or unexpected Tools; both Workers handle eight Runs. First text p50/p95 1,842/2,326 ms; queue 450/1,020 ms. Usage input/cache/output 1,906/30,720/2,389 |
 | Direct Cube gate, test `5163fa02`, template `985a8508` | Real KVM/PTY, two-tenant canaries, persistent Volume reattach, warm PID/service across a Run boundary within TTL, stale authority rejection, confirmed-start cancellation UNKNOWN. 17,011 ms total; all test VMs absent and three Volumes deleted |
 | CP SIGKILL, GPT Luna / K8s Workers `0a54573e` | Worker boots unchanged; 48 records appended after CP stopped, one Attempt completes; exact visible prefix and live/canonical equality preserved. 42,867 ms including outage; API resources cleaned |
@@ -210,9 +211,9 @@ Generated JSON reports are checked for provenance, scope, parsing and accidental
 sensitive fields rather than claimed as hand-reviewed business source. Full reads
 do not certify all combinations below.
 
-1. With the replenished DeepSeek balance, repeat the repaired long-context gate through
-   multiple Compactions, search, model/reasoning/Fast changes, cross-Worker restore
-   and inherited/fresh children. Preserve failed-run evidence until this is done.
+1. Roll out PRIV-01's minimal interruption marker, then repeat its relevant
+   recovery/Compaction boundaries. The repaired hosted-search long combination
+   has passed; keep that measured workload separate from later changes.
 2. Finish PERF-01 with the actual bounded-prepared database adapter: measure
    claim/context/pool/queue stages separately; do not change scheduling semantics
    or a PostgreSQL planner setting without evidence and required discussion.

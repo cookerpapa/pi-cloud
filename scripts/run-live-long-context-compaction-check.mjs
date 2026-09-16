@@ -1213,6 +1213,11 @@ try {
   );
   assert(testsDirectory.entries.some((entry) => entry.path === "tests/test_sorting_elementary.py"));
   const compactions = rounds.flatMap((round) => round.eventCompactions);
+  const totalNativeCompactions = Number(
+    await psql(`select count(*)
+    from pi_session_entries e join sessions s on s.pi_session_id=e.session_id and s.tenant_id=e.tenant_id
+    where s.id=${sqlLiteral(session.sessionId)} and e.tenant_id=${sqlLiteral(tenantId)} and e.type='compaction'`),
+  );
   const totalUsage = [
     ...rounds.map((round) => round.usage),
     searchBeforeUsage,
@@ -1275,6 +1280,7 @@ try {
       usage: searchBeforeUsage,
     },
     compactions,
+    totalNativeCompactions,
     compaction: {
       ...completedCompaction,
       triggeringRun: beforeCompaction,
@@ -1383,7 +1389,7 @@ try {
         `- Revision: \`${report.revision}\``,
         `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
         `- Coding Turns before ${String(report.session.requiredCompactions)} completed Compactions: ${String(report.session.codingTurnsUntilRequiredCompactions)}`,
-        `- Native Pi Compactions observed: ${String(report.compactions.length)}`,
+        `- Native Pi Compactions: ${String(report.compactions.length)} during coding; ${String(report.totalNativeCompactions)} across the full Session/Lane log`,
         `- Compaction reason/tokens: ${report.compaction.reason}, ${String(report.compaction.tokensBefore)} -> ${String(report.compaction.estimatedTokensAfter)}`,
         `- Compaction duration: ${String(report.compaction.durationMs)} ms`,
         `- Triggering Run first-response/settled: ${String(report.compaction.triggeringRun.firstResponseMs)} / ${String(report.compaction.triggeringRun.settledMs)} ms`,
