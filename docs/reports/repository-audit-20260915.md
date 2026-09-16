@@ -53,6 +53,22 @@ The compiled-query regression fails against the prior predicate; 12 queue/family
 tests and all nine real-PG authority clock/lock cases then pass. Paid rollout and
 mixed runtime performance repetition remain required.
 
+Two real Kubernetes Workers now run `7fa41328`. The 16-Run/eight-overlap DeepSeek
+repeat passes correctness with 1,906 input / 30,720 cache-read / 2,389 output tokens.
+First-text p50/p95 is 1,842/2,326 ms; non-provider p50/p95 remains 826/1,446 ms,
+versus provider p50 950 ms, and six samples remain internally dominant. Therefore
+the partial-index fix is verified but is not a complete PERF-01 resolution.
+
+Long-context acceptance now selects visible Pro instead of hidden Flash. Its
+Worker replacement supports either local Kubernetes ordinal, preserves only the
+other Pod and restores the original replica/ordinal configuration on success or
+partial failure. Five command-contract tests and actual no-Run switch/restore
+probes for ordinals 0 and 1 pass. The paid long run must still prove two native
+Compactions, provider/Worker/settings changes and fresh/branch child contexts.
+Its cleanup errors are no longer swallowed. Removed the old stream-shape report's
+obsolete per-event PG-ACK guidance and an undefined retired Volume-reference
+field from the current production report generator.
+
 Acceptance scripts no longer silently discard cleanup errors in the renewed
 Preview/Snake/load paths, cancel their own unfinished tasks before deletion,
 and retain created resource IDs even if setup partially fails. The live stream

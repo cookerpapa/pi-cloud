@@ -1421,7 +1421,7 @@ try {
         `- Elastic runtime / conversation deletion preserved Workspace ownership: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.conversationDeletionPreservedWorkspaceRuntime)}`,
         `- Workspace restored across Runs: ${String(report.multiRound.workspaceRestored)}`,
         `- Platform Git metadata absent / user-managed .git present: ${String(report.workspaceIsolation.platformGitMetadataAbsent)} / ${String(report.workspaceIsolation.userGitPresent)}`,
-        `- Large Workspace files / Volume reference: ${String(report.largeWorkspace.firstFileCount)} / ${String(report.largeWorkspace.volumeReferenceBytes)} bytes`,
+        `- Large Workspace files on the persistent Volume: ${String(report.largeWorkspace.firstFileCount)}`,
         `- Large Workspace fresh-VM cold restore: ${String(report.largeWorkspace.freshCubeMicroVm)}`,
         `- Real input/output/cache-read tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)}`,
         `- Canonical conversation: ${String(report.canonicalConversation.terminalCount)} terminal Turns / ${String(report.canonicalConversation.piEntryCount)} Pi entries / ${String(report.canonicalConversation.canonicalPayloadBytes)} bytes`,

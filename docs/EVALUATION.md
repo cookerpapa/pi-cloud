@@ -80,7 +80,6 @@ Agent activity and are measured separately by browser interaction checks.
 Current evidence:
 
 - [PostgreSQL Session projection](reports/postgres-session-projection-latest.md)
-- [Pi SDK stream shape](reports/pi-sdk-stream-shape-latest.md)
 
 These reports are single-host evidence, not managed-PostgreSQL HA or
 multi-region saturation claims.

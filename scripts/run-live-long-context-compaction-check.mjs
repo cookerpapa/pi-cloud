@@ -6,7 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { format } from "prettier";
+import { format, resolveConfig } from "prettier";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { reviewedModel } from "../packages/protocol/src/model-catalog.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
@@ -48,6 +48,15 @@ const environment = Object.fromEntries(
       return [line.slice(0, separator), line.slice(separator + 1)];
     }),
 );
+const workerDeployment = environment.PI_CLOUD_PI_WORKER_DEPLOYMENT ?? "compose";
+assert(["compose", "kubernetes"].includes(workerDeployment), "Unsupported Worker deployment");
+const kubernetesStatefulSet = "pi-cloud-pi-worker-local-v1";
+const kubernetesArgs = [
+  "--kubeconfig",
+  resolve(runtimeDirectory, "kubernetes/pi-worker-local.kubeconfig"),
+  "--namespace",
+  "pi-cloud-workers",
+];
 const bindAddress = environment.PI_CLOUD_HTTP_BIND_ADDRESS;
 const port = environment.PI_CLOUD_HTTP_PORT;
 if (bindAddress === undefined || port === undefined) {
@@ -514,20 +523,86 @@ function composeService(supervisorId) {
 }
 
 async function stopWorker(supervisorId) {
-  const service = composeService(supervisorId);
-  await capture(process.execPath, ["scripts/production-compose.mjs", "stop", service]);
-  return service;
+  assert.equal(
+    Number(
+      await psql(`select count(*) from runs
+    where tenant_id <> ${sqlLiteral(tenantId)}
+      and state not in ('completed','failed','cancelled','timed_out','superseded')`),
+    ),
+    0,
+    "Refusing Worker switch while another tenant has unfinished work",
+  );
+  if (workerDeployment === "compose") {
+    const service = composeService(supervisorId);
+    await capture(process.execPath, ["scripts/production-compose.mjs", "stop", service]);
+    return { mode: "compose", service };
+  }
+  const ordinal = [0, 1].find((index) => supervisorId === `${kubernetesStatefulSet}-${index}`);
+  assert.notEqual(ordinal, undefined, "Unknown local Kubernetes Worker");
+  const { spec } = JSON.parse(
+    await capture("kubectl", [
+      ...kubernetesArgs,
+      "get",
+      "statefulset",
+      kubernetesStatefulSet,
+      "-o",
+      "json",
+    ]),
+  );
+  assert.equal(spec.replicas, 2, "Worker switch requires the two-replica local test pool");
+  assert.equal(spec.ordinals?.start ?? 0, 0, "Worker pool already has an ordinal override");
+  const previous = { mode: "kubernetes", replicas: spec.replicas, ordinals: spec.ordinals ?? null };
+  try {
+    // Keep precisely the other Pod. Merely deleting this Pod would let the
+    // StatefulSet immediately recreate the same Worker identity.
+    await capture("kubectl", [
+      ...kubernetesArgs,
+      "patch",
+      "statefulset",
+      kubernetesStatefulSet,
+      "--type=merge",
+      "--patch",
+      JSON.stringify({ spec: { replicas: 1, ordinals: { start: 1 - ordinal } } }),
+    ]);
+    await capture("kubectl", [
+      ...kubernetesArgs,
+      "wait",
+      "--for=delete",
+      `pod/${supervisorId}`,
+      "--timeout=120s",
+    ]);
+    return previous;
+  } catch (error) {
+    try {
+      await restoreWorker(previous);
+    } catch (rollback) {
+      throw new AggregateError([error, rollback], "Worker switch and restore failed");
+    }
+    throw error;
+  }
 }
 
-async function restoreWorker(service) {
-  await capture(process.execPath, [
-    "scripts/production-compose.mjs",
-    "up",
-    "-d",
-    "--no-deps",
-    "--wait",
-    service,
-  ]);
+async function restoreWorker(previous) {
+  if (previous.mode === "compose") {
+    await capture(process.execPath, ["scripts/production-compose.mjs", "start", previous.service]);
+  } else {
+    await capture("kubectl", [
+      ...kubernetesArgs,
+      "patch",
+      "statefulset",
+      kubernetesStatefulSet,
+      "--type=merge",
+      "--patch",
+      JSON.stringify({ spec: { replicas: previous.replicas, ordinals: previous.ordinals } }),
+    ]);
+    await capture("kubectl", [
+      ...kubernetesArgs,
+      "rollout",
+      "status",
+      `statefulset/${kubernetesStatefulSet}`,
+      "--timeout=120s",
+    ]);
+  }
   await waitForWorkers(2);
 }
 
@@ -755,6 +830,52 @@ let completedCompaction;
 const requiredCompactions = 2;
 let stoppedWorkerService;
 let cleanupCompleted = false;
+let cleanupAttempted = false;
+let acceptanceFailure;
+
+async function cleanup() {
+  cleanupAttempted = true;
+  const errors = [];
+  if (stoppedWorkerService !== undefined) {
+    try {
+      await restoreWorker(stoppedWorkerService);
+      stoppedWorkerService = undefined;
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (session) {
+    try {
+      const active = (turn) => ["queued", "running", "cancelling"].includes(turn.state);
+      for (const turn of (await api.getConversation(session.sessionId)).turns.filter(active))
+        if (turn.state !== "cancelling")
+          await api.cancelTurn(session.sessionId, turn.turnId, newIdempotencyKey("cancel"));
+      const deadline = performance.now() + 120_000;
+      while ((await api.getConversation(session.sessionId)).turns.some(active)) {
+        if (performance.now() >= deadline)
+          throw new Error("Long-context fixture cancellation timed out");
+        await wait(200);
+      }
+      await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (project) {
+    try {
+      await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-workspace"));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    await revokeAcceptanceCredential(registration);
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length) throw new AggregateError(errors, "Long-context fixture cleanup failed");
+  cleanupCompleted = true;
+}
 
 try {
   const platformModel = await api.getModelConfiguration();
@@ -769,14 +890,14 @@ try {
     "/workspace",
     {
       provider: "deepseek",
-      modelId: "deepseek-v4-flash",
+      modelId: "deepseek-v4-pro",
       thinkingLevel: "off",
       fastMode: false,
     },
   );
   const model = await api.getSessionModel(session.sessionId);
   assert.equal(model.provider, "deepseek");
-  assert.equal(model.modelId, "deepseek-v4-flash");
+  assert.equal(model.modelId, "deepseek-v4-pro");
   progress(
     `starting ${model.provider}/${model.modelId} Session ${session.sessionId} on ${initialWorkers.length} Workers`,
   );
@@ -800,7 +921,7 @@ try {
   progress(`pre-compaction Pro research: hosted-search=${searchBeforeCompaction.hostedSearches}`);
   await api.updateSessionModel(session.sessionId, {
     provider: "deepseek",
-    modelId: "deepseek-v4-flash",
+    modelId: "deepseek-v4-pro",
     thinkingLevel: "off",
     fastMode: false,
   });
@@ -1012,6 +1133,65 @@ try {
   await restoreWorker(stoppedWorkerService);
   stoppedWorkerService = undefined;
 
+  const delegation = await runTurn(
+    session.sessionId,
+    [
+      "Use the subagent tool for exactly two direct tasks, then wait for both results.",
+      "First use context branch and tools []: ask the child to recall this algorithm project's exact invariant marker from its inherited conversation. Do not include the marker value in the child task.",
+      "Second use context fresh and tools []: ask it to reply exactly FRESH-CONTEXT-OK. Do not send it parent history or project identifiers.",
+      "Both children must avoid tools, searches and further delegation. Do not use a workflow script or local file tools yourself. Briefly report the two results.",
+    ].join(" "),
+    true,
+  );
+  const children = JSON.parse(
+    await psql(`select coalesce(json_agg(json_build_object(
+    'sessionId', e.child_session_id, 'runId', e.child_run_id, 'context', e.context_mode,
+    'turnId', child.turn_id, 'state', e.state)), '[]')::text
+    from subagent_executions e join runs child on child.id=e.child_run_id
+    where e.tenant_id=${sqlLiteral(tenantId)} and e.parent_run_id=${sqlLiteral(delegation.runId)}`),
+  );
+  assert.equal(
+    children.length,
+    2,
+    "Post-compaction delegation did not create exactly two children",
+  );
+  assert.deepEqual(children.map((child) => child.context).sort(), ["branch", "fresh"]);
+  const delegationUsage = [await usageForRun(delegation.runId)];
+  for (const child of children) {
+    assert.equal(child.state, "completed");
+    const detail = await api.getConversation(child.sessionId);
+    const text =
+      detail.turns
+        .find((turn) => turn.runId === child.runId)
+        ?.transcript.items.filter((item) => item.kind === "text")
+        .map((item) => item.text)
+        .join("") ?? "";
+    if (child.context === "branch")
+      assert(text.includes(marker), "Inherited child lost the compacted marker");
+    else {
+      assert(text.includes("FRESH-CONTEXT-OK"));
+      assert(!text.includes(marker), "Fresh child leaked the parent marker");
+    }
+    assert.deepEqual(await turnModelSnapshot(child.turnId), {
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      thinkingLevel: "high",
+      serviceTier: null,
+    });
+    delegationUsage.push(await usageForRun(child.runId));
+  }
+  const delegatedTurn = (await api.getConversation(session.sessionId)).turns.find(
+    (turn) => turn.runId === delegation.runId,
+  );
+  for (const item of delegatedTurn.transcript.items.filter((item) => item.kind === "tool")) {
+    assert.equal(item.toolName, "subagent");
+    assert(
+      !JSON.stringify(item.input).includes(marker),
+      "Parent supplied the marker instead of testing inheritance",
+    );
+  }
+  progress("post-compaction/provider-switch branch and fresh child contexts passed");
+
   const [algolabDirectory, testsDirectory] = await Promise.all([
     api.listWorkspaceDirectory(session.sessionId, "algolab"),
     api.listWorkspaceDirectory(session.sessionId, "tests"),
@@ -1031,6 +1211,7 @@ try {
     postCompactionUsage,
     crossWorkerUsage,
     providerSwitchUsage,
+    ...delegationUsage,
   ].reduce(
     (total, usage) => ({
       modelRequests: total.modelRequests + usage.requestCount,
@@ -1155,14 +1336,30 @@ try {
       },
     },
     totalUsage,
+    postCompactionDelegation: {
+      runId: delegation.runId,
+      contexts: children.map((child) => child.context),
+      inheritedMarkerRecovered: true,
+      freshContextIsolated: true,
+      childrenUsePersistedProHighWithoutFast: true,
+      usage: delegationUsage,
+    },
   };
 
+  await cleanup();
+  report.cleanupCompleted = cleanupCompleted;
+  progress("acceptance Session and Workspace deleted; retained Cube released");
   if (writeReport) {
     const reportDirectory = resolve(repositoryRoot, "docs/reports");
     await mkdir(reportDirectory, { recursive: true });
     await writeFile(
       resolve(reportDirectory, "long-context-compaction-acceptance-latest.json"),
-      await format(JSON.stringify(report), { parser: "json" }),
+      await format(JSON.stringify(report), {
+        ...(await resolveConfig(
+          resolve(reportDirectory, "long-context-compaction-acceptance-latest.json"),
+        )),
+        parser: "json",
+      }),
       "utf8",
     );
     await writeFile(
@@ -1196,24 +1393,18 @@ try {
     );
   }
   process.stdout.write(`${JSON.stringify(report)}\n`);
-
-  await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
-  await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-workspace"));
-  cleanupCompleted = true;
-  progress("acceptance Session and Workspace deleted; retained Cube released");
+} catch (error) {
+  acceptanceFailure = error;
+  throw error;
 } finally {
-  if (stoppedWorkerService !== undefined) {
-    await restoreWorker(stoppedWorkerService).catch(() => undefined);
+  if (!cleanupAttempted) {
+    try {
+      await cleanup();
+    } catch (error) {
+      throw new AggregateError(
+        [acceptanceFailure, error].filter(Boolean),
+        "Long-context acceptance or cleanup failed",
+      );
+    }
   }
-  if (!cleanupCompleted) {
-    if (session)
-      await api
-        .deleteConversation(session.sessionId, newIdempotencyKey("delete"))
-        .catch(() => undefined);
-    if (project)
-      await api
-        .deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-workspace"))
-        .catch(() => undefined);
-  }
-  await revokeAcceptanceCredential(registration).catch(() => undefined);
 }

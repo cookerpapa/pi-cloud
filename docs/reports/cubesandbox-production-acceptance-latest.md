@@ -15,7 +15,7 @@
 - Elastic runtime / conversation deletion preserved Workspace ownership: true / true
 - Workspace restored across Runs: true
 - Platform Git metadata absent / user-managed .git present: true / false
-- Large Workspace files / Volume reference: 1025 / undefined bytes
+- Large Workspace files on the persistent Volume: 1025
 - Large Workspace fresh-VM cold restore: true
 - Real input/output/cache-read tokens: 29405 / 2614 / 136448
 - Canonical conversation: 5 terminal Turns / 42 Pi entries / 48616 bytes
