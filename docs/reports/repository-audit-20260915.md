@@ -15,8 +15,10 @@ Guard pending navigation, keep Child rebinding disabled, distinguish unavailable
 identity from genuine 401 with a working reload action, and apply only the latest
 conversation-list response. Normal parent Fork/prune/rebind and 401 login remain
 covered. Remove the uncalled environment-refresh reducer action and unused text
-recovery argument. Browser checks, 135 Web tests, types and build pass; this
-frontend slice still needs deployment verification.
+recovery argument. Browser checks, 135 Web tests, types and build pass. Web is
+deployed at `bb217be0`; an actual deployed Chrome check blocks the identity
+request, verifies the unavailable view, retries after restoring the network and
+gets the genuine 401 login form. Remote CI at `bb217be0` and `7d4e23e7` passed.
 
 Tree fixes are deployed in Control Plane at `352ace33`. The final paid DeepSeek
 check completes three ordinary Turns and two Child Runs, validates inherited and
@@ -667,7 +669,8 @@ the reusable baseline coding Sessions still await final scoped cleanup.
 
 Remaining work:
 
-- finish all maintained source, test, deployment, migration and documentation reads;
+- finish remaining test, deployment, migration, script and documentation reads;
+  application-source reading is covered, with changed-file diffs rechecked;
 - finish PERF-01 investigation and repeat cache retirement in the final failure/
   child matrices; TOOL-04/DIAG-02 are deployed and validated;
 - complete further regression slices; directory template/browser rollout passed;
