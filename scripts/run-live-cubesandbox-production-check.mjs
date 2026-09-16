@@ -15,6 +15,7 @@ import {
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
+import { isDurableAgentActivity } from "./lib/live-run-timing.mjs";
 import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -28,6 +29,16 @@ if (process.env.PI_CLOUD_LIVE_CUBESANDBOX_CHECK !== "1") {
   );
 }
 const writeReport = process.env.PI_CLOUD_LIVE_CUBESANDBOX_REPORT !== "0";
+const deployedControlPlaneRevision = execFileSync(
+  "docker",
+  [
+    "inspect",
+    "--format",
+    '{{ index .Config.Labels "org.opencontainers.image.revision" }}',
+    "pi-cloud-production-control-plane-1",
+  ],
+  { encoding: "utf8" },
+).trim();
 
 const runtimeDirectory = resolve(
   repositoryRoot,
@@ -792,6 +803,13 @@ async function runTurn(sessionId, prompt, expectTools) {
       onSnapshot(snapshot) {
         snapshotEvidence = snapshotTurn(snapshot, accepted.turnId);
         if (!snapshotEvidence) return;
+        if (
+          snapshotEvidence.items.some((item) =>
+            ["tool_preparing", "hosted_search"].includes(item.kind),
+          )
+        ) {
+          firstDurableActivityAt ??= performance.now();
+        }
         if (snapshotEvidence.text) {
           firstDurableActivityAt ??= performance.now();
           firstAssistantTextAt ??= performance.now();
@@ -877,14 +895,15 @@ async function runTurn(sessionId, prompt, expectTools) {
   function observeEvent(event) {
     if (events.some((candidate) => candidate.eventId === event.eventId)) return;
     events.push(event);
+    if (event.turnId === accepted.turnId && isDurableAgentActivity(event)) {
+      firstDurableActivityAt ??= performance.now();
+    }
     if (event.turnId === accepted.turnId && event.type === "assistant.text.delta") {
       const observedAt = performance.now();
-      firstDurableActivityAt ??= observedAt;
       firstAssistantTextAt ??= observedAt;
     }
     if (event.turnId === accepted.turnId && event.type === "tool.started") {
       const observedAt = performance.now();
-      firstDurableActivityAt ??= observedAt;
       firstToolStartedAt ??= observedAt;
     }
     if (
@@ -1283,7 +1302,8 @@ try {
   );
   const report = {
     accepted: true,
-    piCloudRevision: testedRevision,
+    piCloudRevision: deployedControlPlaneRevision,
+    testRevision: testedRevision,
     checkedAt: new Date().toISOString(),
     upstream: "TencentCloud/CubeSandbox@v0.6.0",
     model: { provider: model.provider, modelId: model.modelId },

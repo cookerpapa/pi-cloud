@@ -57,6 +57,12 @@ than the still-old Broker/template. This is a mixed-deployment rejection, not a
 passing coding test; repeat on matching application images/templates. The same
 review adds a downgrade regression: restoring Compose after an application
 upgrade must retain the current CP image policy, not the old cutover snapshot.
+The matched `b2cf34a3` deployment subsequently passes real Cube coding/Preview,
+warm process continuity, tenant denial and a 1,025→1,026-file persistent-Volume
+cold attach. Its 21 GPT requests record 30,602 input / 138,496 cache-read / 2,600
+output tokens. The old script's “first durable activity” ignored Tool preparation;
+annotate those historical numbers and use the shared current event predicate for
+future samples. First assistant text and browser paint remain separate metrics.
 
 The owner approved removing the old whole-system backup/restore entry rather
 than building a new disaster-recovery system. Exact restore-code fixtures
