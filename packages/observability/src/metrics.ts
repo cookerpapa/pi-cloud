@@ -30,6 +30,7 @@ export class PiCloudMetrics {
   readonly cancellationDuration: Histogram<"outcome">;
   readonly turnAdmissionDuration: Histogram<"outcome">;
   readonly runClaimDuration: Histogram<"outcome">;
+  readonly runClaimStageDuration: Histogram<"stage">;
   readonly tenantAdmissionLockWait: Histogram;
   readonly activeRuns: Gauge;
   readonly activeSessionFamilies: Gauge;
@@ -218,6 +219,13 @@ export class PiCloudMetrics {
       name: "pi_cloud_run_claim_seconds",
       help: "Time to transactionally claim one exact Run",
       labelNames: ["outcome"],
+      buckets: DURATION_BUCKETS,
+      registers: [this.registry],
+    });
+    this.runClaimStageDuration = new Histogram({
+      name: "pi_cloud_run_claim_stage_seconds",
+      help: "Sequential stage time for successfully committed Run claims",
+      labelNames: ["stage"],
       buckets: DURATION_BUCKETS,
       registers: [this.registry],
     });

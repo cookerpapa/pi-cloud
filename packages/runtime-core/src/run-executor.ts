@@ -618,7 +618,15 @@ export class RunExecutor {
     runId?: string,
     admission?: RunClaimAdmission,
   ): Promise<ClaimedTurn | undefined> {
-    return this.#database.transaction().execute(async (transaction) => {
+    let previous = performance.now();
+    const stages: Array<[string, number]> = [];
+    const mark = (stage: string) => {
+      const now = performance.now();
+      stages.push([stage, (now - previous) / 1_000]);
+      previous = now;
+    };
+    const result = await this.#database.transaction().execute(async (transaction) => {
+      mark("transaction_begin");
       let now = await databaseTime(transaction);
       let selectedRunId = runId;
       if (selectedRunId === undefined) {
@@ -694,6 +702,7 @@ export class RunExecutor {
         if (candidate === undefined) return undefined;
         selectedRunId = candidate.id;
       }
+      mark("selection");
       const context = await transaction
         .selectFrom("runs as run")
         .innerJoin("turns as turn", (join) =>
@@ -806,6 +815,7 @@ export class RunExecutor {
         .skipLocked()
         .executeTakeFirst();
 
+      mark("context");
       if (!context) return undefined;
 
       // Fixed-ID configuration lookup stays in the claim transaction. Keeping
@@ -853,6 +863,7 @@ export class RunExecutor {
         .where("agent_revision.runtime_kind", "=", this.#agentRuntimeKind)
         .where("policy.enabled", "=", true)
         .executeTakeFirst();
+      mark("configuration");
       if (!configuration) return undefined;
       const row = { ...context, ...configuration };
 
@@ -889,6 +900,7 @@ export class RunExecutor {
         attemptId,
       });
       if (!piSessionWriterId) return undefined;
+      mark("ownership");
       const attemptNumber = row.runAttemptCount + 1;
       if (row.currentAttemptId !== null) {
         const previous = await transaction
@@ -982,6 +994,7 @@ export class RunExecutor {
       ) {
         throw new RunExecutorInvariantError("Run claim did not commit one atomic lifecycle");
       }
+      mark("lifecycle_write");
 
       return {
         attempt: attemptNumber,
@@ -1008,7 +1021,7 @@ export class RunExecutor {
           },
           idempotencyKey: row.idempotencyKey,
           nextEventSeq: row.nextEventSeq,
-          input: { kind: "prompt", prompt: row.inputText },
+          input: { kind: "prompt" as const, prompt: row.inputText },
           executionMode: row.executionMode,
           ...(row.computeSessionId === null ? {} : { computeSessionId: row.computeSessionId }),
           sandboxProfileKey: row.sandboxProfileKey,
@@ -1071,6 +1084,13 @@ export class RunExecutor {
         },
       };
     });
+    mark("finish");
+    // Idle scans and rolled-back claims do not contaminate successful admission
+    // timings. No SQL, lock, parameter or durable transition is added here.
+    if (result)
+      for (const [stage, seconds] of stages)
+        this.#metrics?.runClaimStageDuration.observe({ stage }, seconds);
+    return result;
   }
 
   async #markStarted(

@@ -57,6 +57,9 @@ Volume architecture. Historical experiments remain in Git history.
       statement namespaces also cover the multiplexed test backend. Full CI and
       paid coding/provider/multi-tenant repetition pass at `211767bd`; live queue
       latency and a separate cold Kafka opening delay remain under investigation.
+      Successful claims now expose sequential stage timing, without additional
+      SQL or high-cardinality labels, to separate connection/transaction waits
+      from selection, ownership and lifecycle work before further optimization.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

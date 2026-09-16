@@ -17,6 +17,7 @@ import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fact.ts";
 import { confirmAgentExit } from "../../runtime-core/src/quarantined-session-recovery.ts";
+import { PiCloudMetrics } from "@pi-cloud/observability";
 
 let pglite: PGlite;
 let socket: PGLiteSocketServer;
@@ -73,6 +74,61 @@ afterAll(async () => {
 });
 
 describe.sequential("Run queue authority", () => {
+  it("measures only committed claim stages without recording query or tenant labels", async () => {
+    const project = await store.createProject({ name: "claim timing", source: { kind: "empty" } });
+    const session = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "timing",
+      "elastic",
+    );
+    const accepted = await store.acceptTurn(session.sessionId, "claim-timing", {
+      prompt: "metric fixture",
+    });
+    const metrics = new PiCloudMetrics("claim-test");
+    const executor = new RunExecutor({
+      database,
+      metrics,
+      claimOwnerId: "claim-timing-worker",
+      backend: {
+        execute: async (_request, lifecycle) => {
+          await lifecycle.started();
+          return { stopReason: "stop" };
+        },
+      },
+    });
+    await expect(executor.dispatchNext()).resolves.toMatchObject({
+      status: "completed",
+      runId: accepted.runId,
+    });
+    await expect(executor.dispatchRun(accepted.runId)).resolves.toEqual({ status: "idle" });
+    const stages = await metrics.runClaimStageDuration.get();
+    const counts = stages.values.filter((v) => v.metricName?.endsWith("_count"));
+    expect(counts.map((v) => v.labels.stage).sort()).toEqual([
+      "configuration",
+      "context",
+      "finish",
+      "lifecycle_write",
+      "ownership",
+      "selection",
+      "transaction_begin",
+    ]);
+    expect(counts.every((v) => v.value === 1)).toBe(true);
+    expect(
+      counts.every((v) =>
+        Object.keys(v.labels).every((label) => ["service", "stage"].includes(label)),
+      ),
+    ).toBe(true);
+    const sum = stages.values
+      .filter((v) => v.metricName?.endsWith("_sum"))
+      .reduce((n, v) => n + v.value, 0);
+    const whole = (await metrics.runClaimDuration.get()).values.find(
+      (v) => v.metricName?.endsWith("_sum") && v.labels.outcome === "claimed",
+    )!.value;
+    expect(sum).toBeGreaterThan(0);
+    expect(sum).toBeLessThanOrEqual(whole);
+  });
+
   it.each(["exit-first", "seal-first", "no-exit-proof"])(
     "recovers cancellation failure only after exit and seal (%s)",
     async (order) => {

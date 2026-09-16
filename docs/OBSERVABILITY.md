@@ -69,6 +69,14 @@ admission. A task waiting for a child/Tool holds no model permit.
 `pi_cloud_queued_runs` is sampled from the
 shared PostgreSQL Run queue rather than inferred from a local Worker.
 
+`pi_cloud_run_claim_stage_seconds` splits successful claims into transaction
+acquisition/BEGIN, candidate selection, context/configuration reads, locked
+ownership selection, lifecycle writes and final mapping/COMMIT. Its only label
+is the code-owned stage; it records no query parameters, tenant or Session IDs.
+Idle scans and rolled-back claims remain in `pi_cloud_run_claim_seconds` and do
+not enter these successful-claim stage samples. Compare stage sums over the
+same measurement interval before changing admission rules or pool sizes.
+
 Transport capacity signals are process-local and should be summed across replicas:
 
 - `pi_cloud_kafka_producer_pending_bytes` / `_pending_facts`: queued and submitted
