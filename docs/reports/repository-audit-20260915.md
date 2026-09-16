@@ -7,6 +7,15 @@ Application-source reading is now covered by the private hash/range ledger;
 tests, migrations, deployment/scripts and documents still have remaining reads.
 This is coverage of reading, not a claim that every combination is already tested.
 
+Pi's local Bash has no default timeout, but the Cloud adapter silently supplied
+10 seconds and clamped explicit requests to 100–300,000 ms, potentially reporting
+the requested rather than effective timeout. Six before-fix adapter cases expose
+the mismatch. Keep the existing cloud ceiling, default to 300 seconds, declare
+the 0.1–300-second range in the Tool schema/description and reject invalid values
+before publication. Share the limits with the wire schema, provider trait and
+Worker transport budget. The 27 adapter tests and runner typecheck pass; repeat
+the greater-than-ten-second real Bash case after Worker rollout.
+
 Installer revision discovery incorrectly read `.git/HEAD` and loose branch
 files directly. An owned repository after `pack-refs` reproduces ENOENT; linked
 worktrees also use a `.git` file instead of a directory. Use `git rev-parse` and

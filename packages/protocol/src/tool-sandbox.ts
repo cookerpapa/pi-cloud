@@ -16,6 +16,8 @@ import { DevelopmentEnvironmentProfileKeySchema } from "./development-environmen
 import { ExecutionReferenceSchema } from "./execution-reference.ts";
 
 export const MAX_TOOL_COMMAND_BYTES = 64 * 1_024;
+export const MIN_TOOL_EXECUTION_TIMEOUT_MS = 100;
+export const MAX_TOOL_EXECUTION_TIMEOUT_MS = 300_000;
 export const MAX_TOOL_FILE_BYTES = 512 * 1_024;
 export const MAX_TOOL_MUTATION_FILE_BYTES = 2 * 1_024 * 1_024;
 export const MAX_TOOL_RANGE_FILE_BYTES = 64 * 1_024 * 1_024;
@@ -321,7 +323,10 @@ export const ToolSandboxOperationRequestSchema = Type.Union([
       operation: Type.Literal("workflow.exec"),
       script: Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES }),
       cwd: ToolPathSchema,
-      timeoutMs: Type.Integer({ minimum: 100, maximum: 300_000 }),
+      timeoutMs: Type.Integer({
+        minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS,
+        maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS,
+      }),
     },
     { additionalProperties: false },
   ),
@@ -331,7 +336,10 @@ export const ToolSandboxOperationRequestSchema = Type.Union([
       operation: Type.Literal("bash.exec"),
       command: Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES }),
       cwd: ToolPathSchema,
-      timeoutMs: Type.Integer({ minimum: 100, maximum: 300_000 }),
+      timeoutMs: Type.Integer({
+        minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS,
+        maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS,
+      }),
     },
     { additionalProperties: false },
   ),

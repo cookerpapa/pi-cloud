@@ -221,6 +221,11 @@ local Kubernetes cutover carries the same `.env` limits into its Worker values.
 Retention grace belongs only to the Projector's safe reaper, not the Producer:
 changing it does not enable Kafka's automatic age/size deletion.
 
+Bash has a code-owned 0.1–300-second execution range, default 300 seconds when
+omitted. Out-of-range values are rejected instead of silently clamped. This is
+distinct from the longer transport timeout and the Run deadline; long-lived
+services should detach their standard streams and be checked in a later Tool call.
+
 The code-owned SSE v2 transport limits each frame to 128 KiB; JSON parts contain
 at most 16,384 UTF-16 code units so escaping also fits. This is not a 128 KiB
 conversation limit. A blocked socket write times out after 30 seconds and closes

@@ -6,6 +6,8 @@ import {
   parseToolSandboxOperationRequest,
   CLOUD_TOOL_NAMES,
   MAX_TOOL_RESPONSE_BYTES,
+  MIN_TOOL_EXECUTION_TIMEOUT_MS,
+  MAX_TOOL_EXECUTION_TIMEOUT_MS,
   type CloudToolCapabilitySnapshot,
   type CloudToolName,
   type ToolSandboxOperationRequest,
@@ -72,11 +74,8 @@ function assertModelReadablePath(path: string): void {
 }
 
 /**
- * The Cube guest admits one cancellable Tool operation per activation. Pi must
- * therefore preserve model order before requests cross Tool RPC. Changing this
- * requires a coordinated guest-protocol and Workspace-consistency redesign;
- * marking only read as parallel is not safe because one sequential Tool makes
- * Pi serialize the complete sibling batch anyway.
+ * Keep each model's Tool batch ordered across remote requests. Other Session
+ * bindings may still operate on the same physical Workspace concurrently.
  */
 export const CLOUD_TOOL_EXECUTION_MODE = "sequential" as const;
 
@@ -686,7 +685,16 @@ export function createTrustedRemoteAgentTools(
   };
   const bashOperations = (toolCallId: string): BashOperations => ({
     exec: async (command, cwd, { onData, signal, timeout }) => {
-      const timeoutSeconds = timeout && timeout > 0 ? timeout : 10;
+      const timeoutSeconds = timeout ?? MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000;
+      if (
+        !Number.isFinite(timeoutSeconds) ||
+        timeoutSeconds < MIN_TOOL_EXECUTION_TIMEOUT_MS / 1_000 ||
+        timeoutSeconds > MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000
+      ) {
+        throw new Error(
+          `Invalid Bash timeout: use ${MIN_TOOL_EXECUTION_TIMEOUT_MS / 1_000}–${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000} seconds`,
+        );
+      }
       try {
         // Deliberately do not forward the `env` argument. It contains the
         // trusted Pi/model environment and must never cross into Tool Sandbox.
@@ -697,7 +705,7 @@ export function createTrustedRemoteAgentTools(
             operation: "bash.exec",
             command,
             cwd,
-            timeoutMs: Math.min(300_000, Math.max(100, Math.ceil(timeoutSeconds * 1_000))),
+            timeoutMs: Math.ceil(timeoutSeconds * 1_000),
           },
           signal,
         );
@@ -865,8 +873,20 @@ export function createTrustedRemoteAgentTools(
       ...bashTool,
       // Pi's validator accepts unknown properties unless the schema is closed.
       // In particular, silently ignoring `cwd` would execute in the wrong directory.
-      parameters: { ...bashTool.parameters, additionalProperties: false },
-      description: `${bashTool.description}\n\nOnly command and timeout are accepted. To change directory, use cd inside command (for example: cd /path/to/project && npm test).\n\nFor a long-running service, detach it and redirect stdin, stdout, and stderr (for example: nohup command </dev/null >server.log 2>&1 &). Verify the service in a separate bash call.`,
+      parameters: {
+        ...bashTool.parameters,
+        properties: {
+          ...bashTool.parameters.properties,
+          timeout: {
+            ...bashTool.parameters.properties.timeout,
+            minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS / 1_000,
+            maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000,
+            description: `Timeout in seconds (optional, default ${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000}; cloud maximum ${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000})`,
+          },
+        },
+        additionalProperties: false,
+      },
+      description: `${bashTool.description}\n\nOnly command and timeout are accepted. Cloud timeout: ${MIN_TOOL_EXECUTION_TIMEOUT_MS / 1_000}–${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000} seconds, default ${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000}; out-of-range values are rejected. To change directory, use cd inside command (for example: cd /path/to/project && npm test).\n\nFor a long-running service, detach it and redirect stdin, stdout, and stderr (for example: nohup command </dev/null >server.log 2>&1 &). Verify the service in a separate bash call.`,
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();
@@ -896,7 +916,7 @@ export function createTrustedRemoteAgentTools(
           operation: "workflow.exec",
           script,
           cwd: toolRoot,
-          timeoutMs: 300_000,
+          timeoutMs: MAX_TOOL_EXECUTION_TIMEOUT_MS,
         },
         signal,
         call,

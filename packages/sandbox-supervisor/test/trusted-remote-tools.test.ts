@@ -76,6 +76,82 @@ afterEach(() => {
 });
 
 describe("trusted remote Agent tools", () => {
+  it.each([
+    { timeout: undefined, timeoutMs: 300_000 },
+    { timeout: 0.1, timeoutMs: 100 },
+    { timeout: 37.25, timeoutMs: 37_250 },
+    { timeout: 300, timeoutMs: 300_000 },
+  ])("preserves the declared Bash timeout policy: %j", async ({ timeout, timeoutMs }) => {
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      const request = publishedRequest(init);
+      expect(request).toMatchObject({ operation: "bash.exec", timeoutMs });
+      return new Response(
+        JSON.stringify({
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.operation_result",
+          activationId: request.activationId,
+          operationId: request.operationId,
+          operation: "bash.exec",
+          exitCode: 0,
+          outputChunks: [],
+          outputSha256: createHash("sha256").update("").digest("hex"),
+        }),
+      );
+    });
+    const runtime = createTrustedRemoteAgentTools({
+      ...BASE_CONFIGURATION,
+      captureStepContext: createStepCapture(),
+      remainingToolCalls: 1,
+    });
+    await runtime.transformContext([]);
+    const bash = runtime.tools.find((tool) => tool.name === "bash")!;
+    await bash.execute(
+      "default-timeout",
+      { command: "npm test", timeout },
+      new AbortController().signal,
+      () => undefined,
+    );
+    expect(bash.parameters).toMatchObject({
+      properties: { timeout: { minimum: 0.1, maximum: 300 } },
+    });
+    expect(bash.description).toContain("default 300");
+  });
+
+  it.each([0, -1, 0.05, 301, Number.POSITIVE_INFINITY])(
+    "rejects Bash timeout %s before publication instead of silently changing it",
+    async (timeout) => {
+      vi.stubGlobal("fetch", async () => {
+        throw new Error("Unexpected remote IO");
+      });
+      const publishToolCommand = vi.fn(BASE_CONFIGURATION.publishToolCommand);
+      const runtime = createTrustedRemoteAgentTools({
+        ...BASE_CONFIGURATION,
+        captureStepContext: createStepCapture(),
+        publishToolCommand,
+        remainingToolCalls: 1,
+      });
+      await runtime.transformContext([]);
+      const bash = runtime.tools.find((tool) => tool.name === "bash")!;
+      expect(() =>
+        validateToolArguments(bash, {
+          type: "toolCall",
+          id: "invalid-timeout",
+          name: "bash",
+          arguments: { command: "npm test", timeout },
+        }),
+      ).toThrow(/timeout/iu);
+      await expect(
+        bash.execute(
+          "invalid-timeout",
+          { command: "npm test", timeout },
+          new AbortController().signal,
+          () => undefined,
+        ),
+      ).rejects.toThrow(/timeout/iu);
+      expect(publishToolCommand).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(["cwd", "env", "timeuot"])(
     "rejects unsupported Bash parameter %s through Pi validation",
     (name) => {

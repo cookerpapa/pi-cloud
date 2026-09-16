@@ -1,13 +1,13 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
+import { MAX_TOOL_EXECUTION_TIMEOUT_MS } from "@pi-cloud/protocol";
 import {
   loadProducerCapacity,
   type ProducerCapacity,
 } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 
 const MAX_SECRET_BYTES = 16 * 1_024;
-const MAX_REMOTE_TOOL_EXECUTION_MS = 5 * 60_000;
 const REMOTE_TOOL_TRANSPORT_MARGIN_MS = 60_000;
 const MODEL_CAPABILITY_EXPIRY_MARGIN_MS = 60_000;
 
@@ -243,7 +243,7 @@ export async function loadSupervisorHostConfig(
   const toolBrokerRequestTimeoutMs = integerValue(
     environment,
     "PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS",
-    MAX_REMOTE_TOOL_EXECUTION_MS + REMOTE_TOOL_TRANSPORT_MARGIN_MS,
+    MAX_TOOL_EXECUTION_TIMEOUT_MS + REMOTE_TOOL_TRANSPORT_MARGIN_MS,
     1_000,
     900_000,
   );
@@ -282,7 +282,10 @@ export async function loadSupervisorHostConfig(
     1_000,
     300_000,
   );
-  if (toolBrokerRequestTimeoutMs < MAX_REMOTE_TOOL_EXECUTION_MS + REMOTE_TOOL_TRANSPORT_MARGIN_MS) {
+  if (
+    toolBrokerRequestTimeoutMs <
+    MAX_TOOL_EXECUTION_TIMEOUT_MS + REMOTE_TOOL_TRANSPORT_MARGIN_MS
+  ) {
     throw new TypeError(
       "Tool Broker timeout must outlive the maximum Tool execution and transport margin",
     );

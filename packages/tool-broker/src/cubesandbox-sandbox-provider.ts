@@ -2,6 +2,7 @@ import { workflowGuestSource } from "./workflow-guest-source.ts";
 import type { Duplex } from "node:stream";
 import {
   isExpectedDefaultToolchain,
+  MAX_TOOL_EXECUTION_TIMEOUT_MS,
   validGuestDirectoryName,
   parseEnvironmentToolchainReport,
   createExecutionReference,
@@ -112,7 +113,7 @@ export const CUBESANDBOX_TOOL_POLICY: SandboxPolicy = Object.freeze({
     temporaryBytes: 1 * 1_024 * 1_024 * 1_024,
     workspaceBytes: 1 * 1_024 * 1_024 * 1_024,
     maximumOutputBytes: 1 * 1_024 * 1_024,
-    maximumCommandTimeoutMs: 300_000,
+    maximumCommandTimeoutMs: MAX_TOOL_EXECUTION_TIMEOUT_MS,
     turnWallClockTimeoutMs: 900_000,
   }),
   user: "1000:1000",

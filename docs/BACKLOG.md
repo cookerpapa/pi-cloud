@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Remove the undocumented 10-second default and silent Bash timeout clamp;
+      expose the existing cloud execution ceiling in its schema and reject
+      out-of-range values before publication. Adapter/config regressions pass.
+
 - [x] Keep non-JSON HTTP 5xx from Worker ingress retryable, so temporary Pod
       unavailability does not permanently block retirement. Malformed HTTP 200
       remains a protocol error; gateway/Worker regression tests pass.
