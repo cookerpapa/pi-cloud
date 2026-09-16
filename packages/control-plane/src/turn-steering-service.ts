@@ -83,6 +83,17 @@ function resource(row: StoredSteer, replayed: boolean): TurnSteerResource {
   };
 }
 
+function terminalResource(row: StoredSteer, replayed: boolean): TurnSteerResource | undefined {
+  if (row.state === "completed") return resource(row, replayed);
+  if (row.state === "failed") {
+    throw new TurnSteeringError(
+      "conflict",
+      "The previous steer delivery failed; use a new Idempotency-Key while the Run is active",
+    );
+  }
+  return undefined;
+}
+
 export class TurnSteeringService {
   readonly #database: Kysely<Database>;
   readonly #gateway: SupervisorWebSocketGateway | undefined;
@@ -123,13 +134,6 @@ export class TurnSteeringService {
           "Idempotency-Key was already used for a different steer request",
         );
       }
-      if (stored.state === "completed") return resource(stored, true);
-      if (stored.state === "failed") {
-        throw new TurnSteeringError(
-          "conflict",
-          "The previous steer delivery failed; use a new Idempotency-Key while the Run is active",
-        );
-      }
     } else {
       stored = await this.#create(
         identity.tenantId,
@@ -140,6 +144,9 @@ export class TurnSteeringService {
         requestHash,
       );
     }
+
+    const terminal = terminalResource(stored, replayed);
+    if (terminal !== undefined) return terminal;
 
     const inflight = this.#inflight.get(stored.controlRequestId);
     if (inflight !== undefined) {
@@ -164,6 +171,8 @@ export class TurnSteeringService {
       );
     }
     await this.#markDispatched(stored);
+    const terminal = terminalResource(stored, replayed);
+    if (terminal !== undefined) return terminal;
     const backend =
       this.#backendFactory === undefined
         ? this.#gateway!.createRemoteSteerBackend(stored.sandboxId)
@@ -186,10 +195,7 @@ export class TurnSteeringService {
       await backend.steer(delivery);
     } catch (error: unknown) {
       if (error instanceof TurnSteerBackendError && error.ambiguous) {
-        throw new TurnSteeringError(
-          "steer_transport_unavailable",
-          "Steer delivery outcome is temporarily unknown; retry with the same Idempotency-Key",
-        );
+        return this.#committedResult(stored, replayed);
       }
       const code =
         error instanceof TurnSteerBackendError &&
@@ -201,7 +207,9 @@ export class TurnSteeringService {
         ].includes(error.code)
           ? "conflict"
           : "steer_transport_unavailable";
-      await this.#markFailed(stored.controlRequestId, error).catch(() => undefined);
+      if (!(await this.#markFailed(stored, error))) {
+        return this.#committedResult(stored, replayed);
+      }
       throw new TurnSteeringError(
         code,
         code === "conflict"
@@ -210,7 +218,7 @@ export class TurnSteeringService {
       );
     }
     const deliveredAt = this.#clock();
-    await this.#database
+    const completed = await this.#database
       .updateTable("turn_control_requests")
       .set({
         state: "completed",
@@ -221,8 +229,13 @@ export class TurnSteeringService {
       .where("tenant_id", "=", stored.tenantId)
       .where("id", "=", stored.controlRequestId)
       .where("state", "in", ["pending", "dispatched", "acknowledged"])
-      .executeTakeFirstOrThrow();
-    return resource({ ...stored, state: "completed", completedAt: deliveredAt }, replayed);
+      .returning("completed_at")
+      .executeTakeFirst();
+    if (completed === undefined) return this.#committedResult(stored, replayed);
+    return resource(
+      { ...stored, state: "completed", completedAt: completed.completed_at },
+      replayed,
+    );
   }
 
   async #create(
@@ -428,30 +441,61 @@ export class TurnSteeringService {
 
   async #markDispatched(stored: StoredSteer): Promise<void> {
     if (stored.state !== "pending") return;
-    await this.#database
+    const dispatched = await this.#database
       .updateTable("turn_control_requests")
       .set({ state: "dispatched", dispatched_at: this.#clock() })
       .where("tenant_id", "=", stored.tenantId)
       .where("id", "=", stored.controlRequestId)
       .where("state", "=", "pending")
-      .executeTakeFirstOrThrow();
-    stored.state = "dispatched";
+      .returning("id")
+      .executeTakeFirst();
+    if (dispatched === undefined) {
+      await this.#refreshDisposition(stored);
+    } else {
+      stored.state = "dispatched";
+    }
   }
 
-  async #markFailed(controlRequestId: string, error: unknown): Promise<void> {
+  async #markFailed(stored: StoredSteer, error: unknown): Promise<boolean> {
     const failureCode =
       error instanceof TurnSteerBackendError && /^[a-z][a-z0-9_]{0,127}$/.test(error.code)
         ? error.code
         : "steer_delivery_failed";
-    await this.#database
+    const failed = await this.#database
       .updateTable("turn_control_requests")
       .set({
         state: "failed",
         completed_at: this.#clock(),
         failure_code: failureCode,
       })
-      .where("id", "=", controlRequestId)
+      .where("tenant_id", "=", stored.tenantId)
+      .where("id", "=", stored.controlRequestId)
       .where("state", "in", ["pending", "dispatched", "acknowledged"])
+      .returning("id")
+      .executeTakeFirst();
+    return failed !== undefined;
+  }
+
+  async #refreshDisposition(stored: StoredSteer): Promise<void> {
+    const current = await this.#database
+      .selectFrom("turn_control_requests")
+      .select(["state", "completed_at"])
+      .where("tenant_id", "=", stored.tenantId)
+      .where("id", "=", stored.controlRequestId)
       .executeTakeFirstOrThrow();
+    stored.state = current.state;
+    stored.completedAt = current.completed_at;
+  }
+
+  async #committedResult(stored: StoredSteer, replayed: boolean): Promise<TurnSteerResource> {
+    // A different API replica may have committed while this delivery was in
+    // flight. A late transport reply cannot replace that durable decision.
+    await this.#refreshDisposition(stored);
+    const terminal = terminalResource(stored, replayed);
+    if (terminal !== undefined) return terminal;
+    throw new TurnSteeringError(
+      "steer_transport_unavailable",
+      "Steer delivery outcome is temporarily unknown; retry with the same Idempotency-Key",
+    );
   }
 }

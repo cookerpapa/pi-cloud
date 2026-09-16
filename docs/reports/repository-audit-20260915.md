@@ -3,6 +3,26 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+Latest continuation: five deterministic multi-replica Steer races pass after
+fixing unchecked zero-row terminal updates and late transport replies. Before
+the fix, three cases reproduced false failure, false success and an invented
+delivery timestamp. PG remains the authority; normal delivery adds no SELECT,
+terminal retries do not contact the Worker, ambiguous nonterminal replies remain
+unknown, and database errors are no longer silently suppressed. The related
+runtime/control-channel tests and Control Plane types pass; rollout and full
+fixed-revision gates are still pending.
+
+The phase-instrumented Workers (`f312b3a8`, CP `211767bd`) complete 16 further
+paid DeepSeek Runs across four tenants/eight Sessions, with eight simultaneous
+Runs, eight successful marker restores and no cross-tenant leaks. Usage is
+3,026 input / 25,600 cache-read / 2,940 output tokens. API/SSE first-text p50/p95
+is 1,756/2,707 ms; queue wait is 390/1,017 ms. Successful claim averages 200.5 ms:
+begin 1.4, selection 45.7, context 86.5, configuration 8.0, ownership 39.8,
+lifecycle writes 8.7 and finish/commit 10.3 ms. These are sixteen-claim means,
+not per-stage p95; selection/ownership each include several SQL operations.
+The evidence does not support attributing the full delay to WAL commit. PERF-01
+remains open; detailed claim timings do not change admission or lease semantics.
+
 September 16 continuation: remote CI for `7b5b7587` is green. Isolated actual PG
 profiling with `pg_stat_statements.track_planning` confirms the two main claim
 queries spend substantially more time planning than executing. Scalar-subquery

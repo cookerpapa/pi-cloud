@@ -109,6 +109,9 @@ Volume architecture. Historical experiments remain in Git history.
 - [x] Allocate terminal sequence from the accepted stream at its seal, not lagging
       lease progress. Keep delivered Steer distinct from native consumption.
       [Real API/Worker and Cube/browser evidence](reports/execution-stream-seal-acceptance.md).
+- [x] Reconcile concurrent Steer delivery replies against the committed control
+      row; never report a late failure over success or fabricate a delivery
+      timestamp after losing the terminal update. Unknown replies remain unknown.
 - [x] ADR-0153.1–2: drain Fact publications before close; bounded transaction-free
       terminal Outbox publication, idempotent retries and consumer failure signals.
 - [x] ADR-0153.3: co-commit sampling start and Tool completion with native records.
