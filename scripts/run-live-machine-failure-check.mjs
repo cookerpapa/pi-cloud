@@ -51,11 +51,21 @@ async function sql(query) {
   );
 }
 let machine, session;
+const testProvider = process.env.PI_CLOUD_LIVE_MACHINE_PROVIDER ?? "deepseek";
+assert(["deepseek", "openai-codex"].includes(testProvider), "Unsupported machine test Provider");
+const selection = {
+  provider: testProvider,
+  modelId: testProvider === "deepseek" ? "deepseek-v4-pro" : "gpt-5.6-luna",
+  thinkingLevel: "low",
+  fastMode: false,
+};
 const report = {
   checkedAt: new Date().toISOString(),
   runs: [],
   accepted: false,
   hostPowerLossTested: false,
+  model: selection,
+  testRevision: (await exec("git", ["rev-parse", "HEAD"])).stdout.trim(),
 };
 const suffix = Date.now().toString(36);
 async function waitForMachine() {
@@ -137,7 +147,6 @@ async function run(prompt) {
     session.sessionId,
     prompt,
     newIdempotencyKey("machine-failure-turn"),
-    "off",
   );
   report.runs.push({ runId: accepted.runId });
   for (let n = 0; n < 1200; n++) {
@@ -195,9 +204,9 @@ try {
     "development_environment",
     "starter",
     "/opt/recovery-check",
-    { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "off", fastMode: false },
+    selection,
   );
-  console.log("[machine-failure] real DeepSeek coding round 1");
+  console.log("[machine-failure] real coding round 1");
   await run(
     "在当前目录编写 insertion_sort.py，实现插入排序并自带空数组、重复值、负数、逆序测试。运行 python3 insertion_sort.py，确认通过。保留已有 index.html 和 HTTP 服务，不使用子代理或搜索。",
   );
@@ -215,7 +224,11 @@ try {
       .includes("def "),
   );
   report.browserReadOutsideHome = true;
-  const active = Number(await sql("select count(*) from runs where state = 'running'"));
+  const active = Number(
+    await sql(
+      "select count(*) from runs where state not in ('completed','failed','cancelled','timed_out','superseded')",
+    ),
+  );
   assert.equal(active, 0, "Refusing Broker restart while any user Run is active");
   console.log(
     "[machine-failure] restarting only Tool Broker; Guest and application must stay alive",
@@ -225,7 +238,7 @@ try {
     await run("本轮只聊天，绝对不要调用任何工具。请只回复：BROKER_OFFLINE_CHAT_OK。");
     report.chatWhileBrokerOffline = true;
   } finally {
-    await compose("up", "--detach", "--wait", "--no-deps", "tool-broker");
+    await compose("start", "--wait", "tool-broker");
   }
   for (let n = 0; n < 120; n++) {
     try {
@@ -255,7 +268,7 @@ try {
     identity,
   );
   report.brokerRestartPreservedRootFilesProcessAndPreview = true;
-  console.log("[machine-failure] real DeepSeek coding round 2 after Broker replacement");
+  console.log("[machine-failure] real coding round 2 after Broker replacement");
   await run(
     "先读取 insertion_sort.py，保留原实现和测试。新增 binary_search.py，实现二分查找并覆盖命中、不存在、空数组、重复值。执行 python3 insertion_sort.py && python3 binary_search.py。不要修改 index.html 或 HTTP 服务，不使用子代理或搜索。",
   );
@@ -311,7 +324,10 @@ try {
     if (!report.volumeDataPurged)
       cleanupErrors.push("Released machine Volume did not purge automatically");
   }
-  if (cleanupErrors.length) report.cleanupErrors = cleanupErrors;
+  if (cleanupErrors.length) {
+    report.cleanupErrors = cleanupErrors;
+    report.accepted = false;
+  }
   await writeFile(
     "docs/reports/machine-failure-acceptance-latest.json",
     JSON.stringify(report, null, 2) + "\n",
