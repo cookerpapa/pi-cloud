@@ -24,10 +24,20 @@ an operator prerequisite for new performance acceptance. Two existing moderate
 Vitest dependency findings remain; the high/critical gate passes.
 Old baseline test Volumes were retired through the ordinary deletion API and
 confirmed physically purged. No unpurged Workspace or unreleased machine remains;
-accounts/history are retained. Broker/Gateway are intentionally stopped pending
-the operator's privileged Controller-plugin update and a matching guest/service
-rollout. This slice is not yet deployed or paid-live accepted; the whole audit
-and resume update remain incomplete.
+accounts/history are retained. The operator subsequently updated the Controller
+plugin; matching CP/Worker/Broker/Gateway/Web and guest templates are deployed at
+`18e96210`, with all services healthy. Four paid DeepSeek Pro Runs and twelve
+Tools pass: insertion sort, binary search, warm reuse, explicit compute removal
+followed by cold reuse of identical file bytes/Volume identity, then another
+Session sharing that Workspace. Usage: 9,364 input, 58,240 cache-read and 3,386
+output tokens. Three additional live API waves of twenty concurrent first-use
+requests each verify one initialized Volume; all sixty requests pass. Both
+conversation views are deleted and the coding Volume plus three direct-API test
+Volumes are physically purged, with no cleanup error. The original fixture
+account/history remains for the unfinished campaign. Twelve old Cube templates
+still fail native cleanup against their old node locator; no claim of completing
+that cleanup. Whole-repository review, final combined acceptance and resume work
+remain incomplete.
 
 September 16 continuation: a held retirement query reproduced Worker shutdown
 waiting before queue admission stopped. Join that background read only before
@@ -374,7 +384,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 
 | ID | Observation | Status / next proof |
 | --- | --- | --- |
-| STOR-01 | Interrupted Gateway initialization could leave only one of two identity files and permanently reject the Volume | Owner-approved ADR-0172 moves creation to Cube's plugin, publishes one immutable file, and leaves Gateway verification-only. Native 20-way creation, pre/post-publication SIGKILL and deletion grants pass; rollout is pending |
+| STOR-01 | Interrupted Gateway initialization could leave only one of two identity files and permanently reject the Volume | Owner-approved ADR-0172 moves creation to Cube's plugin, publishes one immutable file, and leaves Gateway verification-only. Native 20-way creation, pre/post-publication SIGKILL and deletion grants pass; matching rollout, paid coding/cold reuse and 3×20 live API requests pass at 18e96210 |
 | STOR-02 | An initializer that observed an empty directory could later clear another Session's newly written files | Remove destructive seed restore and the metadata-presence setup shortcut. Atomic no-overwrite file publication preserves user bytes/permissions in 20 concurrent initializations and the actual guest seeding code |
 | TERM-01 | Releasing one runtime marked every active terminal on the Broker UNKNOWN, including another tenant's | Scope the update to Domain, Broker, Workspace and exact runtime. Real-PG two-tenant regression passes |
 | MODEL-02 | Missing/throwing model lookup escaped Session-authority cleanup after successful preparation | Move lookup inside the existing cleanup scope; both regressions require Session close and model release |

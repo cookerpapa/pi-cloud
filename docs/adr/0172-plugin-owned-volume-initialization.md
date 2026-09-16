@@ -1,6 +1,6 @@
 # ADR-0172: plugin-owned Volume initialization
 
-Status: accepted and implemented, 2026-09-16; deployed acceptance pending.
+Status: accepted, implemented and deployed, 2026-09-16.
 
 ## Decision
 
@@ -56,3 +56,12 @@ This changes the plugin/Gateway storage contract. Drain and explicitly retire
 identified old-layout test resources before deploying matching plugin, Gateway
 and guest code. Do not silently migrate or delete real user data. Keep production
 on the previous coherent set until the privileged plugin update is available.
+
+At `18e96210`, the operator updated the Controller hook and matching CP, Worker,
+Broker/Gateway, Web and guest templates were deployed. Paid DeepSeek Pro acceptance
+completed four Runs and twelve Tools: coding, warm reuse, cold compute replacement
+with unchanged file hashes/identity, and another Session on the same Workspace.
+Three live API waves of twenty concurrent first-use requests all verified one
+plugin-created Volume per wave. Every temporary Volume was explicitly purged.
+The process-kill tests remain plugin-local; this does not certify Cube's separate
+database/plugin crash window, power loss or multi-node shared-filesystem behavior.
