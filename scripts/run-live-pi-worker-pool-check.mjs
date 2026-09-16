@@ -6,7 +6,7 @@ import { mkdir, open, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { format } from "prettier";
+import { format, resolveConfig } from "prettier";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
@@ -778,7 +778,10 @@ try {
   await mkdir(reportDirectory, { recursive: true });
   await writeFile(
     resolve(reportDirectory, "pi-worker-pool-acceptance-latest.json"),
-    await format(JSON.stringify(report), { parser: "json" }),
+    await format(JSON.stringify(report), {
+      ...(await resolveConfig(import.meta.filename)),
+      parser: "json",
+    }),
     "utf8",
   );
   await writeFile(

@@ -1,5 +1,8 @@
 {
   "accepted": true,
+  "testRevision": "c28ce3854b8259a19fb3b5f057a098c7ae0af5c2",
+  "controlPlaneRevision": "c28ce3854b8259a19fb3b5f057a098c7ae0af5c2",
+  "workerRevision": "ae5c5ff3017b1fd04ece2ae788cb4bf3b9baa0a8",
   "checkedAt": "2026-09-16T13:41:56.371Z",
   "model": {
     "provider": "deepseek",
@@ -44,10 +47,7 @@
       "pi-cloud-pi-worker-local-v1-1"
     ],
     "distinctWorkers": 2,
-    "observedWorkerIds": [
-      "pi-cloud-pi-worker-local-v1-0",
-      "pi-cloud-pi-worker-local-v1-1"
-    ],
+    "observedWorkerIds": ["pi-cloud-pi-worker-local-v1-0", "pi-cloud-pi-worker-local-v1-1"],
     "settledMs": [7570, 8218, 8356, 8553]
   },
   "totalUsage": {

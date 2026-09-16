@@ -1,6 +1,7 @@
 # Pi Worker pool production acceptance
 
 - Checked at: 2026-09-16T13:41:56.371Z
+- Test / Control Plane revision: `c28ce385`; Kubernetes Worker revision: `ae5c5ff3`.
 - Provider/model: deepseek / deepseek-v4-pro
 - Worker deployment: kubernetes
 - Active Workers: pi-cloud-pi-worker-local-v1-0, pi-cloud-pi-worker-local-v1-1
