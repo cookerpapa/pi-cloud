@@ -47,7 +47,9 @@ import { ConversationTreeNavigator } from "/src/ConversationTreeNavigator.tsx";
 import { PiCloudApi } from "/src/api.ts";
 import { I18nProvider } from "/src/i18n.tsx";
 import { copyMessageText } from "/src/MessageCopyButton.tsx";
-import { DEVELOPMENT_ENVIRONMENT_PROFILES, DEFAULT_NEW_CONVERSATION_MODEL } from "@pi-cloud/protocol";
+import { DEVELOPMENT_ENVIRONMENT_PROFILES, DEFAULT_NEW_CONVERSATION_MODEL,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE, DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+  DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256 } from "@pi-cloud/protocol";
 import "/src/product.css";
 
 const nativeRaf = window.requestAnimationFrame, nativeCancelRaf = window.cancelAnimationFrame;
@@ -145,11 +147,15 @@ window.renderNavigation=()=>{
 window.renderInspector=(refreshSignal=0)=>root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},
   React.createElement(WorkspaceInspector,{api:inspectorApi,sessionId:"session-fixture",workspaceId:"workspace-fixture",
     workspaceName:"fixture",developmentEnvironmentId:null,workingDirectory:"/workspace",refreshSignal,onClose:()=>{},onError:()=>{}})));
-window.renderChat = (sessionState='idle', history=false) => {
+window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   window.requestAnimationFrame = nativeRaf; window.cancelAnimationFrame = nativeCancelRaf;
   const sid = "10000000-0000-4000-8000-000000000001";
   const profileId = "20000000-0000-4000-8000-000000000001";
-  const project = {projectId:"30000000-0000-4000-8000-000000000001",workspaceId:"40000000-0000-4000-8000-000000000001",name:"fixture",createdAt:new Date().toISOString()};
+  const createdAt=new Date().toISOString();
+  const project = {projectId:"30000000-0000-4000-8000-000000000001",workspaceId:"40000000-0000-4000-8000-000000000001",name:"fixture",createdAt,
+    source:{kind:'empty',status:'ready'},environment:{environmentVersionId:'70000000-0000-4000-8000-000000000001',
+      versionNumber:1,profileKey:'pi-cloud-fullstack',profileVersion:'1',imageRevision:'fixture',specSha256:DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+      recipe:DEFAULT_PROJECT_ENVIRONMENT_RECIPE,recipeSha256:DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,state:'pending',active:true,createdAt}};
   const models = [
     {...DEFAULT_NEW_CONVERSATION_MODEL,displayName:"Fixture GPT",default:true,thinkingLevels:["off","medium","high"],defaultThinkingLevel:"medium",fastModeAvailable:true},
     {provider:"deepseek",modelId:"deepseek-v4-pro",displayName:"Fixture DeepSeek",default:false,thinkingLevels:["off","medium","high"],defaultThinkingLevel:"high",fastModeAvailable:false}
@@ -157,34 +163,44 @@ window.renderChat = (sessionState='idle', history=false) => {
   let selection = {...DEFAULT_NEW_CONVERSATION_MODEL,thinkingLevel:"medium",fastMode:false};
   let session;
   const fixtureTurnId='50000000-0000-4000-8000-000000000011';
-  const tree=(label)=>({currentSessionId:sid,branches:[{sessionId:sid,parentSessionId:null,kind:'conversation',title:'Fixture tree',current:true,
+  const delegates=['branch','fresh'].map((contextMode,index)=>({sessionId:'10000000-0000-4000-8000-00000000000'+(index+2),
+    executionId:'80000000-0000-4000-8000-00000000000'+(index+1),parentSessionId:sid,rootSessionId:sid,parentTurnId:fixtureTurnId,
+    depth:1,title:contextMode+' child',contextMode,sandboxMode:'shared',state:'completed',workspaceName:'fixture',createdAt}));
+  if(childViews) session={sessionId:sid,projectId:project.projectId,workspaceId:project.workspaceId,title:'Parent conversation',
+    executionMode:'elastic',sandboxProfileKey:'starter',workingDirectory:'/workspace',state:sessionState,workspaceState:'attached',modelProfileId:profileId,
+    createdAt,updatedAt:createdAt,lastActiveAt:createdAt};
+  const tree=(label,sessionId=sid)=>({currentSessionId:sessionId,branches:[{sessionId,parentSessionId:sessionId===sid?null:sid,
+    kind:sessionId===sid?'conversation':'subagent',title:'Fixture tree',current:true,
     entries:[{entryId:'answer-entry',turnId:fixtureTurnId,role:'assistant',text:label,finalAssistant:true}]}],delegatedSessions:[]});
   window.treeRequests=[];window.deferTrees=false;
+  window.historyMutations=[];
+  const conversation=(sessionId=sid)=>({project,session:{...session,sessionId},inheritedMessages:[],turns:history?[{
+    turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',mailboxPosition:1,prompt:'Tree question',state:'completed',acceptedAt:createdAt,
+    transcript:{schemaVersion:1,throughSequence:3,startedSequence:1,terminalSequence:3,stopReason:'stop',failure:null,cancellation:null,
+      items:[{kind:'text',text:'Tree answer',firstSequence:2,lastSequence:2}]}
+  }]:[],historyTruncated:false});
   const modelResource = () => ({sessionId:sid,modelProfileId:profileId,...selection,
     displayName:models.find(m=>m.provider===selection.provider).displayName});
   Object.assign(PiCloudApi.prototype, {
     getIdentity:async()=>({tenantId:"test-tenant",userId:"test-user",displayName:"Fixture",role:"owner",platformAdministrator:false}),
-    listConversations:async()=>({conversations:[],delegatedSessions:[]}),
+    listConversations:async()=>({conversations:childViews?[{...session,workspaceName:'fixture'}]:[],delegatedSessions:childViews?delegates:[]}),
     listWorkspaces:async()=>{
       if(window.holdWorkspaceList) await new Promise(resolve=>{window.releaseWorkspaceList=resolve;});
       return {workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false};
     },
     listDevelopmentEnvironments:async()=>({environments:[],profiles:DEVELOPMENT_ENVIRONMENT_PROFILES,truncated:false}),
     getModelCatalog:async()=>({models}),
-    getConversationTree:async(_sessionId,view)=>window.deferTrees
-      ?new Promise(resolve=>window.treeRequests.push({view,resolve:label=>resolve(tree(label))}))
-      :history?tree('Initial tree'):{branches:[],delegatedSessions:[]},
-    pruneConversation:async()=>({prunedTurnCount:0}),
+    getConversationTree:async(sessionId,view)=>window.deferTrees
+      ?new Promise(resolve=>window.treeRequests.push({view,resolve:label=>resolve(tree(label,sessionId))}))
+      :history?tree('Initial tree',sessionId):{branches:[],delegatedSessions:[]},
+    pruneConversation:async(sessionId)=>{window.historyMutations.push({operation:'prune',sessionId});return {prunedTurnCount:0};},
     createSession:async (projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,model)=>{
       selection=model; window.savedSelection=selection;
       session={sessionId:sid,projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,state:sessionState,workspaceState:"attached",modelProfileId:profileId,createdAt:new Date().toISOString()};
       return session;
     },
     getSessionModel:async()=>modelResource(),
-    getConversation:async()=>({project,session,inheritedMessages:[],turns:history?[{
-      turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',mailboxPosition:1,prompt:'Tree question',state:'completed',acceptedAt:new Date().toISOString(),
-      transcript:{items:[{kind:'text',itemId:'answer',entryId:'answer-entry',text:'Tree answer',firstSequence:1,lastSequence:1}],stopReason:'stop'}
-    }]:[],historyTruncated:false}),
+    getConversation:async(sessionId)=>conversation(sessionId),
   });
   const nativeFetch=window.fetch;
   window.fetch=async (url,init={})=>{
@@ -192,6 +208,12 @@ window.renderChat = (sessionState='idle', history=false) => {
       ? Response.json({error:{code:"conflict",message:"Fixture rejects logout"}},{status:503})
       : Response.json({loggedOut:true});
     if(String(url).endsWith("/events")) return new Response(new ReadableStream({start(controller){
+      if(childViews) {
+        const snapshot={schemaVersion:2,conversation:conversation(String(url).split('/').at(-2))};
+        const frame=(event,data)=>'event: '+event+'\\n'+'data: '+JSON.stringify(data)+'\\n\\n';
+        controller.enqueue(new TextEncoder().encode(frame('stream.begin',{kind:'snapshot'})+
+          frame('stream.part',JSON.stringify(snapshot))+frame('stream.end',{})));
+      }
       init.signal?.addEventListener("abort",()=>controller.close(),{once:true});
     }}),{headers:{"content-type":"text/event-stream"}});
     if(String(url).endsWith("/model") && init.method==="PUT") {
@@ -210,7 +232,7 @@ window.renderChat = (sessionState='idle', history=false) => {
     }
     return nativeFetch(url,init);
   };
-  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:String(history),configuration})));
+  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:String(history)+String(childViews),configuration})));
 };
 window.fixtureReady = true;
 `;
@@ -683,6 +705,49 @@ try {
       true,
       "A late refresh from the old tree view must not replace the current tree",
     );
+    // Exercise ChatApp's actual parent/child selection and snapshot path, not
+    // just a ConversationTurn rendered with an already-disabled prop.
+    await page.evaluate("renderChat('idle',true,true);window.confirm=()=>true");
+    await page.waitFor("document.querySelectorAll('.product-delegated-session').length===2");
+    const forkButton =
+      "Array.from(document.querySelectorAll('.product-answer-actions button')).find(b=>b.textContent.includes('↳'))";
+    const parentButton =
+      ".product-conversation-row:not(.product-delegated-session) > button:first-child";
+    await page.evaluate(`document.querySelector(${JSON.stringify(parentButton)}).click()`);
+    await page.waitFor("document.querySelector('.product-prune-action')?.disabled===false");
+    assert.equal(await page.evaluate(`${forkButton}.disabled`), false);
+    for (const mode of ["branch", "fresh"]) {
+      await page.evaluate(
+        `document.querySelector('.product-delegated-session.${mode} > button').click()`,
+      );
+      await page.waitFor(`document.querySelector('.product-delegated-session.${mode}.active')`);
+      await page.waitFor("document.querySelector('.product-prune-action')");
+      assert.deepEqual(
+        await page.evaluate(
+          `({fork:${forkButton}.disabled,prune:document.querySelector('.product-prune-action').disabled})`,
+        ),
+        { fork: true, prune: true },
+        `${mode} child history must remain read-only`,
+      );
+      await page.evaluate(
+        `${forkButton}.click();document.querySelector('.product-prune-action').click()`,
+      );
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-fork-modal')===null"),
+        true,
+      );
+      assert.deepEqual(await page.evaluate("historyMutations"), []);
+    }
+    await page.evaluate(`document.querySelector(${JSON.stringify(parentButton)}).click()`);
+    await page.waitFor("document.querySelector('.product-prune-action')?.disabled===false");
+    await page.evaluate(`${forkButton}.click()`);
+    await page.waitFor("document.querySelector('.product-fork-modal')");
+    await page.evaluate("document.querySelector('.product-fork-modal header button').click()");
+    await page.evaluate("document.querySelector('.product-prune-action').click()");
+    await page.waitFor("historyMutations.length===1");
+    assert.deepEqual(await page.evaluate("historyMutations"), [
+      { operation: "prune", sessionId: "10000000-0000-4000-8000-000000000001" },
+    ]);
     await page.evaluate("renderChat(); window.rejectLogout=true");
     await page.waitFor('document.querySelector(".product-account-menu-trigger")');
     await page.evaluate('document.querySelector(".product-account-menu-trigger").click()');
@@ -720,6 +785,7 @@ try {
       inspectorSelectionAndTerminalLifetime: true,
       logoutLifecycle: true,
       branchSelectionAndManualJump: true,
+      childHistoryReadOnlyAndParentActions: true,
       terminalSocketIsolation: true,
       directoryPickerLifecycle: true,
       responsivePageScrolling: true,

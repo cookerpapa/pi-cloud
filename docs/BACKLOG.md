@@ -252,6 +252,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Subagent execution
 
+- [x] Keep delegated task views read-only: disable human Fork/prune actions for
+      both inherited and fresh-context children; preserve ordinary conversation
+      actions. Actual Chrome parent/child switching regression passes.
+
 - [x] ADR-0171: shared persistent Volume, optional temporary compute and frozen
       cwd; remove copy APIs, validate worktree creation/merge and scope-specific
       cleanup. [Acceptance](reports/subagent-compute-20260915.md).

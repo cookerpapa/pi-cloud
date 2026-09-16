@@ -2137,12 +2137,14 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                     <ConversationTurn
                       canFork={
                         canMutate &&
+                        selectedDelegatedSession === null &&
                         operation === null &&
                         currentTurn === undefined &&
                         target !== undefined
                       }
                       canPrune={
                         canMutate &&
+                        selectedDelegatedSession === null &&
                         operation === null &&
                         currentTurn === undefined &&
                         target !== undefined &&

@@ -12,7 +12,18 @@ reservations to user Workspaces; keep the owner-only machine endpoint. Before
 regressions showed a third post-close input and an incorrectly successful elastic
 admission. Eighteen focused cases pass, including the real-PG reservation test;
 full local CI passes 981 tests, two independent live skips and 26 fault cases.
-Deployment/user-path repetition of this slice remains pending.
+Matching runtime and templates are deployed at `c5455d5b`. Paid product-surface
+repetition passes twelve Runs (eleven complete, one deliberate cancellation),
+including real Terminal/Agent concurrency, shared-Workspace Tools, normal
+Fork/prune, Steer, rebinding and cross-tenant denial. Recorded native usage is
+46,794 input / 140,288 cache-read / 729 output tokens. All four conversation views
+are archived and three fixture Volumes are physically purged; final campaign
+identity/history cleanup remains pending. Recorded timings are explicitly excluded
+from performance acceptance because of the host-clock fault below.
+
+Cube Authorizer now runs the same revision in two K3s replicas. Six deliberately
+interrupted HTTP bodies leave both replicas healthy with unchanged Pod identities
+and restart counts, closing the pending LIFE-10 rollout check.
 
 All twelve stale Cube templates are now removed via native deletion after bounded
 operator correction of their stale replica/placement node addresses. Current
@@ -32,9 +43,15 @@ remain open. No timeout was increased to conceal this issue.
 Tree review is ongoing: a retained audit Session with one failed and fourteen
 successful Turns reproduces a user-entry/Turn mismatch in navigation. The ordered
 message-count heuristic must be replaced by durable Turn binding. The tree also
-reads entries/heads/Turn status in separate snapshots. Child-view Fork/prune
-buttons exceed their current `main`-Lane implementation; that semantics decision
-is paused for the owner. No tree/state-model change has been made yet.
+reads entries/heads/Turn status in separate snapshots. The owner chose read-only
+child views rather than adding human Fork-from-Lane semantics. The actual Chrome
+test reproduces enabled child Fork/prune buttons before the fix; after the fix,
+inherited and fresh children disable both actions, attempted clicks issue no
+mutation, and returning to the parent restores ordinary actions. Tree association
+and snapshot fixes remain pending; no state-model change has been made.
+The 135 Web tests, type check, build and documentation check pass for this UI
+slice. Its browser profile/Vite cache and the idle temporary PostgreSQL container
+were removed; no production database or user content was deleted.
 
 ADR-0172 implementation now delegates Volume initialization to Cube's Controller
 plugin, with one immutable identity; Gateway verifies only. Removed the two-file
@@ -593,8 +610,8 @@ Remaining work:
   on the final revision, including multi-replica control and UI races;
 - finish full CI/build/security/fault gates and clean-state product acceptance;
 - verify final resources, test topics/logs and temporary PostgreSQL removal;
-- resolve the eight old Cube template cleanup timeouts; K3s Authorizer rollout
-  still needs legitimate cluster-admin access;
+- keep the resolved stale-template cleanup and Authorizer rollout separate from
+  the still-open upstream locator fix and final deployment gates;
 - update resume v11 only after all engineering gates pass.
 
 Physical multi-node failover, Cube-native effect fencing and arbitrary shell

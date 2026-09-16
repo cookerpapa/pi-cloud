@@ -228,6 +228,8 @@ into the next native context before sampling, together with an interruption fact
 
 Human Fork creates an independent Session with inherited history; delegated
 Branch creates a Lane. Cold administrative mutations require Session quiescence.
+Child task views are read-only; human Fork/prune actions remain available only
+in ordinary conversation views.
 Pruning hides later immutable history and moves a Lane head; it never rolls back
 Workspace bytes. Deleting a parent includes its descendant transcript views.
 
