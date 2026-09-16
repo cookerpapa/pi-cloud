@@ -331,14 +331,23 @@ export class ToolBrokerServer {
     this.#ready = false;
     for (const connection of this.#previewConnections) connection.destroy();
     clearInterval(this.#capacityMetrics);
+    const errors: unknown[] = [];
     try {
       await this.#broker.close();
-    } finally {
-      if (this.#address !== undefined) {
-        this.#address = undefined;
-        await this.#server.close();
-      }
+    } catch (error) {
+      errors.push(error);
     }
+    this.#address = undefined;
+    try {
+      await this.#server.close();
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1)
+      throw new AggregateError(errors, "Tool Broker and HTTP shutdown failed", {
+        cause: errors[0],
+      });
   }
 
   #recordCapacityMetrics(): void {

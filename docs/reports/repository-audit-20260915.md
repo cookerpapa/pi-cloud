@@ -15,6 +15,13 @@ also retains machine snapshot/detach errors and preserves the first error if
 ownership teardown fails. Four focused failure contracts, all 79 Provider/Broker/
 RPC tests and Broker typecheck pass. Controlled real-Cube repetition and deployment
 remain pending; the current long-context run was not interrupted for rollout.
+The process entrypoint has a separate reproduced acquisition leak: metrics
+startup failure skips already-acquired ownership and database cleanup. A failing
+before-fix test records only the two startup calls. Startup and signal shutdown
+now share an ordered, once-only cleanup path; early failures cannot skip later
+resources, and startup/cleanup errors remain distinguishable. Four lifecycle
+tests plus thirteen real HTTP/Broker contracts and typechecking pass. HTTP cleanup
+also runs after failed listen and retains both Broker and listener-close errors.
 
 The renewed Pro long-context run completes ten algorithm rounds and one native
 Compaction (113,324→24,818 estimated tokens). Its next response ends at the 8,192
@@ -26,6 +33,15 @@ and pinned Pi emits reasoning.effort=none, but CLIProxyAPI's absent compatibilit
 thinking metadata defaults to low/medium/high and maps none to low. A credential-
 free probe of the actual Go adapter reproduces none→low. Configuration and paid
 wire-level verification are being completed before another expensive repetition.
+The configuration regression fails before repair. Derive native reasoning levels
+from the shared reviewed model catalog, explicitly permit none/max, and preserve
+credentials and other models. A repeated run is byte-stable. After restarting only
+CLIProxyAPI, the mounted configuration matches the atomic host file. Real Pro
+requests now show off with **0 reasoning / 7 output** tokens and max with
+**49 reasoning / 57 output** tokens. This fixes selection semantics without changing
+the Provider protocol, adding a search tool or raising output limits. The two probe
+resources were API-deleted. A completed/length response also gains an honest UI
+notice, including thinking-only responses; no automatic Run or Tool replay is added.
 
 Fresh browser acceptance on Web/CP/Broker `b2cf34a3` and two Kubernetes Workers
 `7d65c22d` passes all 93 exercised controls, including real chat/Steer/cancellation,
