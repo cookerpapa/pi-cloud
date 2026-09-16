@@ -1,8 +1,8 @@
 # PiCloud deterministic fault evaluation
 
-Generated: 2026-09-16T19:55:14.347Z
+Generated: 2026-09-16T22:32:25.458Z
 
-Revision: a18bd1b2ed66138ba2ace54a6d3c26a4aeb254e0
+Revision: f9ce3abf90e9cc4853e6c791183f71aa31299ff6
 
 Uncommitted changes at test start: yes
 
@@ -10,33 +10,33 @@ These are targeted, deterministic fault injections against the durable execution
 
 - Cases: 26
 - Invariants preserved: 26/26 (100.0%)
-- p50 / p95: 3549 ms / 11341 ms
+- p50 / p95: 3392 ms / 11450 ms
 
 | Fault | Result | Protected invariant | Duration |
 | --- | --- | --- | ---: |
-| message-level-display-recovery | pass | Committed text leaves live memory before the Run ends; an unfinished suffix remains exact after failure. | 10869 ms |
-| interrupted-framed-snapshot | pass | A partial snapshot never appears in the browser or leaks into the replacement snapshot. | 1198 ms |
-| duplicate-command | pass | Duplicate delivery does not execute one Agent command twice. | 3416 ms |
-| stale-execution-reference | pass | A released task cannot reuse its execution reference under a retired Session owner. | 3128 ms |
-| stale-accepted-fact-authority | pass | Only the recorded execution scope after its opening is projectable; no per-delta authority query. | 5032 ms |
-| session-mutation-redelivery | pass | Kafka redelivery creates one canonical Pi Session mutation. | 11091 ms |
-| seal-before-successor-read | pass | A replacement Worker observes every older accepted Session mutation before reading context. | 11341 ms |
-| message-stream-independence | pass | A live-stream failure cannot roll back a complete native Pi message. | 9211 ms |
-| interrupted-visible-prefix | pass | A browser-visible interrupted prefix remains model-visible after Worker replacement. | 12272 ms |
-| terminal-tail-unload | pass | Terminal projection unloads shared live-tail memory without invalidating an in-flight browser snapshot. | 780 ms |
-| projector-prefix-rebuild | pass | A replacement Projector reconstructs the unsealed prefix without repeating native mutations. | 10555 ms |
-| opening-commit-reply-loss | pass | A lost PG COMMIT reply cannot poison opening state or cause later records to be skipped. | 5238 ms |
-| opening-rollback | pass | An opening is effective only after its transaction commits, and retries can make progress. | 4724 ms |
-| control-plane-process-sigkill | pass | Control Plane process replacement does not revoke a healthy Agent Loop. | 3332 ms |
-| stale-worker-socket | pass | A stale Worker Control Channel cannot reclaim current ownership. | 11035 ms |
-| abandoned-development-environment | pass | A Control Plane failure before provisioning cannot leak a requested development machine. | 10476 ms |
-| tool-broker-owner-fence | pass | A replacement Tool Broker fences the expired owner before serving its Workspace runtime. | 10213 ms |
-| ambiguous-tool-transport | pass | An ambiguous Tool transport never blindly replays an arbitrary command. | 3431 ms |
-| subagent-compute-scope-expiry | pass | Expiring a child's independent compute scope keeps the shared Volume and the active parent's runtime; each binding uses its own frozen cwd. | 2650 ms |
-| cancel-stop-failure | pass | Cancellation revokes Tool authority before uncertain process cleanup returns. | 3549 ms |
-| shared-runtime-loss | pass | Loss of one Workspace Cube cannot leave a surviving logical Tool binding. | 3140 ms |
-| workspace-volume-delete-race | pass | Workspace bytes are not deleted while a live Cube still owns the Volume. | 8359 ms |
-| projector-owner-ack-loss | pass | A failed owner delivery retries the same positioned record without emitting its live event twice; this test simulates PG/transport. | 3161 ms |
-| projector-rebalance-after-pg | pass | A no-longer-current consumer handler cannot continue live or Tool delivery after its pending PG operation completes. | 2852 ms |
-| broker-shutdown-admission | pass | Broker shutdown rejects pending VM creation before freeing existing capacity; it never launches the waiter during teardown. | 3347 ms |
-| broker-adopted-capacity | pass | Existing adopted machines count against a lowered capacity; new work remains queued until a physical slot is free. | 925 ms |
+| message-level-display-recovery | pass | Committed text leaves live memory before the Run ends; an unfinished suffix remains exact after failure. | 10945 ms |
+| interrupted-framed-snapshot | pass | A partial snapshot never appears in the browser or leaks into the replacement snapshot. | 1137 ms |
+| duplicate-command | pass | Duplicate delivery does not execute one Agent command twice. | 3076 ms |
+| stale-execution-reference | pass | A released task cannot reuse its execution reference under a retired Session owner. | 3266 ms |
+| stale-accepted-fact-authority | pass | Only the recorded execution scope after its opening is projectable; no per-delta authority query. | 4960 ms |
+| session-mutation-redelivery | pass | Kafka redelivery creates one canonical Pi Session mutation. | 10870 ms |
+| seal-before-successor-read | pass | A replacement Worker observes every older accepted Session mutation before reading context. | 11104 ms |
+| message-stream-independence | pass | A live-stream failure cannot roll back a complete native Pi message. | 8174 ms |
+| interrupted-visible-prefix | pass | A browser-visible interrupted prefix remains model-visible after Worker replacement. | 12478 ms |
+| terminal-tail-unload | pass | Terminal projection unloads shared live-tail memory without invalidating an in-flight browser snapshot. | 745 ms |
+| projector-prefix-rebuild | pass | A replacement Projector reconstructs the unsealed prefix without repeating native mutations. | 11450 ms |
+| opening-commit-reply-loss | pass | A lost PG COMMIT reply cannot poison opening state or cause later records to be skipped. | 4848 ms |
+| opening-rollback | pass | An opening is effective only after its transaction commits, and retries can make progress. | 5524 ms |
+| control-plane-process-sigkill | pass | Control Plane process replacement does not revoke a healthy Agent Loop. | 3299 ms |
+| stale-worker-socket | pass | A stale Worker Control Channel cannot reclaim current ownership. | 10917 ms |
+| abandoned-development-environment | pass | A Control Plane failure before provisioning cannot leak a requested development machine. | 11318 ms |
+| tool-broker-owner-fence | pass | A replacement Tool Broker fences the expired owner before serving its Workspace runtime. | 10459 ms |
+| ambiguous-tool-transport | pass | An ambiguous Tool transport never blindly replays an arbitrary command. | 3055 ms |
+| subagent-compute-scope-expiry | pass | Expiring a child's independent compute scope keeps the shared Volume and the active parent's runtime; each binding uses its own frozen cwd. | 3392 ms |
+| cancel-stop-failure | pass | Cancellation revokes Tool authority before uncertain process cleanup returns. | 3125 ms |
+| shared-runtime-loss | pass | Loss of one Workspace Cube cannot leave a surviving logical Tool binding. | 3336 ms |
+| workspace-volume-delete-race | pass | Workspace bytes are not deleted while a live Cube still owns the Volume. | 7991 ms |
+| projector-owner-ack-loss | pass | A failed owner delivery retries the same positioned record without emitting its live event twice; this test simulates PG/transport. | 2997 ms |
+| projector-rebalance-after-pg | pass | A no-longer-current consumer handler cannot continue live or Tool delivery after its pending PG operation completes. | 3189 ms |
+| broker-shutdown-admission | pass | Broker shutdown rejects pending VM creation before freeing existing capacity; it never launches the waiter during teardown. | 3264 ms |
+| broker-adopted-capacity | pass | Existing adopted machines count against a lowered capacity; new work remains queued until a physical slot is free. | 676 ms |

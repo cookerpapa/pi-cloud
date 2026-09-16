@@ -1,7 +1,7 @@
 # ADR-0158: bounded transport backpressure
 
 Accepted and implemented, 2026-09-08.
-[Acceptance](../reports/bounded-transport-acceptance.md).
+[Current overload probe](../reports/transport-backpressure-acceptance-latest.json).
 
 Keep the existing authorities, two Pi semantic checkpoints, concrete Kafka Tool
 commands and ephemeral HTTP result return. This is process-local flow control,

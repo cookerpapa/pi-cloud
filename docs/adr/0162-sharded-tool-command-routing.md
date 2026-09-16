@@ -2,9 +2,8 @@
 
 Status: accepted. The original independent Broker consumer groups were replaced
 by [ADR-0163](0163-direct-log-and-unified-projector.md). This document retains
-only the effect-routing contract that remains current. The
-[earlier report](../reports/tool-command-sharding.md) describes the pre-unification
-topology and is not a current throughput/consumer-count claim.
+only the effect-routing contract that remains current. Pre-unification consumer
+benchmarks remain in Git history, not current deployment guidance.
 
 Projector routes already-admitted Tool commands, native-result acknowledgements
 and seals to the exact binding owner. PostgreSQL stores immutable

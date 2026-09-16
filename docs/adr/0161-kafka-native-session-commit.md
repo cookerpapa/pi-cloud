@@ -1,7 +1,7 @@
 # ADR-0161: Kafka-native Session commit
 
 Accepted and implemented, 2026-09-09; replaces the PG receipt/cache boundary.
-[Production acceptance](../reports/kafka-native-session-cutover.md).
+[Validation matrix](../EVALUATION.md).
 The earlier isolated experiment (archived in Git before this production cutover)
 proved the append boundary but is not the production implementation.
 

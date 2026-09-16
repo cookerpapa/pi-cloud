@@ -1,6 +1,6 @@
 # ADR-0163 — Direct Worker log and unified Session Projector
 
-Status: accepted; implemented and [verified](../reports/unified-projector-acceptance.md).
+Status: accepted; implemented. See the [validation matrix](../EVALUATION.md).
 Publication signing was removed by [ADR-0164](0164-trusted-private-log-publication.md).
 Supersedes the remote Fact ingress
 and independent canonical/live/Tool consumer topology, not Cube effect semantics.

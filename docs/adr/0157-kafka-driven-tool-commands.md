@@ -1,6 +1,6 @@
 # ADR-0157 — Kafka-driven Tool commands
 
-Status: accepted; implemented. See the [acceptance](../reports/kafka-tool-command-acceptance.md)
+Status: accepted; implemented. See the [validation matrix](../EVALUATION.md)
 and [Cube execution-entry study](../reports/cube-execution-generation-study.md).
 
 ## Decision
@@ -69,7 +69,8 @@ route metadata; old Tool bindings are not adopted.
 
 ## Evidence and acceptance
 
-Result lifetime follow-up: [acceptance](../reports/tool-result-retirement-acceptance.md).
+Result-retirement and duplicate/effect tests are part of the maintained runtime
+and Tool Broker suites; paid coding checks verify the complete path.
 
 Kafka [delivery semantics](https://kafka.apache.org/41/design/design/#message-delivery-semantics)
 distinguish a durable log from external effects; Kafka consumer ownership alone

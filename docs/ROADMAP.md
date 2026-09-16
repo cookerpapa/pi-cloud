@@ -60,7 +60,8 @@
 - [x] Replace per-Step PG receipts with Kafka-acknowledged native Session writes;
       retain bounded cold restore and exact asynchronous PG projection.
 - [x] Complete paid model/Cube, interrupted-prefix and process-fault acceptance
-      for the native append cutover; [evidence](reports/kafka-native-session-cutover.md).
+      for the native append cutover. Current repetitions follow the
+      [validation matrix](EVALUATION.md).
 - [x] Bound Producer/Broker transport under slow downstreams, align capacity
       configuration and measure native publication independently from model time.
 
