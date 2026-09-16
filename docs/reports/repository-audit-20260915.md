@@ -7,6 +7,26 @@ Maintained application source, tests, migrations, deployment and script reading
 is covered by the private hash/range ledger; document/evidence cleanup continues.
 This is coverage of reading, not a claim that every combination is already tested.
 
+Two new shutdown regressions fail before the repair: Cube Provider silently
+ignores failed VM deletions, and a later transport-close error overwrites the
+deletion failure. Aggregate all destruction/transport outcomes; Broker can mark
+its runtime rows released only after successful Provider cleanup. Broker shutdown
+also retains machine snapshot/detach errors and preserves the first error if
+ownership teardown fails. Four focused failure contracts, all 79 Provider/Broker/
+RPC tests and Broker typecheck pass. Controlled real-Cube repetition and deployment
+remain pending; the current long-context run was not interrupted for rollout.
+
+The renewed Pro long-context run completes ten algorithm rounds and one native
+Compaction (113,324→24,818 estimated tokens). Its next response ends at the 8,192
+output-token limit with thinking only, so the test correctly does not pass. The
+Run itself is completed/length, not a lost stream. Its owned Workspace is deleted
+and physically purged; identity/history remain only for final scoped cleanup.
+Tracing finds an independent configuration defect: the Session requested off,
+and pinned Pi emits reasoning.effort=none, but CLIProxyAPI's absent compatibility
+thinking metadata defaults to low/medium/high and maps none to low. A credential-
+free probe of the actual Go adapter reproduces none→low. Configuration and paid
+wire-level verification are being completed before another expensive repetition.
+
 Fresh browser acceptance on Web/CP/Broker `b2cf34a3` and two Kubernetes Workers
 `7d65c22d` passes all 93 exercised controls, including real chat/Steer/cancellation,
 Terminal command execution, machine pause/resume/release and directory creation.

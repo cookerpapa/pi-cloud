@@ -2086,8 +2086,18 @@ export class CubeSandboxProvider implements SandboxProvider {
       .filter((activation) => activation.lifetime !== "development_environment")
       .map((activation) => activation.instance);
     this.#activations.clear();
-    await Promise.allSettled(instances.map((instance) => this.#client.destroy(instance.sandboxId)));
-    await Promise.all([this.#client.close(), this.#workspaceVolumeGateway.close()]);
+    const destroyed = await Promise.allSettled(
+      instances.map((instance) => this.#client.destroy(instance.sandboxId)),
+    );
+    const closed = await Promise.allSettled([
+      this.#client.close(),
+      this.#workspaceVolumeGateway.close(),
+    ]);
+    const errors = [...destroyed, ...closed].flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    // Broker may mark its durable runtime rows released only after this succeeds.
+    if (errors.length) throw new AggregateError(errors, "Cube Provider cleanup was not confirmed");
   }
 
   async #probeRuntime(): Promise<void> {

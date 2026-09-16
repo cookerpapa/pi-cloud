@@ -330,6 +330,49 @@ function operation(
 }
 
 describe("provider-backed Tool Tool Broker", () => {
+  it("reports a machine snapshot failure while preserving the VM and closing ownership", async () => {
+    const fixture = providerFixture(),
+      repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const closeRepository = vi.spyOn(repository, "close");
+    const closeProvider = vi.spyOn(fixture.provider, "close");
+    const broker = testBroker({ provider: fixture.provider, stateRepository: repository });
+    await broker.provisionDevelopmentEnvironment({
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.provision",
+      requestId: crypto.randomUUID(),
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "fixture-user",
+      projectId: assignment.projectId,
+      workspaceId: assignment.workspaceId,
+      generation: 1,
+      profileKey: "standard",
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+    });
+    const failure = new Error("machine snapshot unavailable");
+    fixture.persistentCapsule.mockRejectedValueOnce(failure);
+    await expect(broker.close()).rejects.toBe(failure);
+    expect(fixture.destroyed).toBe(false);
+    expect(fixture.detachPersistent).toHaveBeenCalledOnce();
+    expect(closeProvider).toHaveBeenCalledOnce();
+    expect(closeRepository).toHaveBeenCalledOnce();
+    await expect(
+      repository.developmentEnvironmentOwner(assignment.tenantId, "fixture-user", ACTIVATION_ID),
+    ).resolves.toMatchObject({ status: "owned", state: "unknown" });
+  });
+
+  it("does not overwrite the first shutdown error when ownership cleanup also fails", async () => {
+    const fixture = providerFixture(),
+      repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const first = new Error("provider close failed"),
+      second = new Error("ownership close failed");
+    vi.spyOn(fixture.provider, "close").mockRejectedValue(first);
+    vi.spyOn(repository, "close").mockRejectedValue(second);
+    const broker = testBroker({ provider: fixture.provider, stateRepository: repository });
+    await expect(broker.close()).rejects.toMatchObject({ errors: [first, second], cause: first });
+  });
+
   it("separates compute on one Workspace and keeps each binding's explicit cwd", async () => {
     const fixture = providerFixture();
     let now = 1_000;

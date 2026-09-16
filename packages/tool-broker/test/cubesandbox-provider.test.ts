@@ -408,6 +408,75 @@ function operation(activationId: string): ToolSandboxOperationRequest {
 }
 
 describe("CubeSandbox Provider contract", () => {
+  it("does not publish released when Cube deletion fails during Broker shutdown", async () => {
+    const runtime = new FakeCubeRuntimeClient(),
+      volume = fakeWorkspaceVolumeGateway();
+    const repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const setState = vi.spyOn(repository, "setWorkspaceRuntimeState");
+    const closeRepository = vi.spyOn(repository, "close");
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: volume,
+    });
+    const broker = testBroker({ provider, stateRepository: repository });
+    const binding = await broker.create({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.create",
+      requestId: crypto.randomUUID(),
+      assignment,
+      environment,
+      sandboxProfileKey: "standard",
+      toolRoot: "/workspace",
+      workspaceSeed: { kind: "sample_java" },
+      allowedTools: ["bash"],
+      executionMode: "elastic",
+      turnContextSha256: STEP_CONTEXT_SHA256,
+      attemptContextSha256: STEP_CONTEXT_SHA256,
+    });
+    await broker.execute(binding.executionReference, operation(binding.activationId));
+    setState.mockClear();
+    const failure = new Error("Cube deletion was not confirmed");
+    vi.spyOn(runtime, "destroy").mockRejectedValue(failure);
+    await expect.soft(broker.close()).rejects.toMatchObject({ errors: [failure] });
+    expect.soft(setState.mock.calls.some(([, state]) => state === "released")).toBe(false);
+    expect.soft(closeRepository).toHaveBeenCalledOnce();
+    expect.soft(runtime.closed).toBe(true);
+    expect.soft(volume.close).toHaveBeenCalledOnce();
+    expect(runtime.instances.size).toBe(1);
+  });
+
+  it("attempts every elastic destroy and both transport closes while retaining failures", async () => {
+    const runtime = new FakeCubeRuntimeClient(),
+      volume = fakeWorkspaceVolumeGateway();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: volume,
+    });
+    for (let index = 0; index < 2; index++)
+      await provider.create({
+        activationId: crypto.randomUUID(),
+        assignment: { ...assignment, workspaceId: `close-${index}` },
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+      });
+    const destroyFailure = new Error("destroy failed"),
+      closeFailure = new Error("transport close failed");
+    const destroy = vi.spyOn(runtime, "destroy").mockRejectedValueOnce(destroyFailure);
+    vi.spyOn(runtime, "close").mockRejectedValueOnce(closeFailure);
+    await expect(provider.close()).rejects.toMatchObject({
+      errors: [destroyFailure, closeFailure],
+    });
+    expect(destroy).toHaveBeenCalledTimes(2);
+    expect(volume.close).toHaveBeenCalledOnce();
+  });
+
   it("mounts a machine's home Volume in temporary child compute without cloning or deleting storage", async () => {
     const runtime = new FakeCubeRuntimeClient(),
       volume = fakeWorkspaceVolumeGateway();

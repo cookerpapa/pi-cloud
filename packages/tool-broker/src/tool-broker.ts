@@ -2222,17 +2222,24 @@ export class ToolBroker {
   }
 
   async close(): Promise<void> {
+    const errors: unknown[] = [];
     this.#admission.close();
     clearInterval(this.#reaper);
-    await this.#developmentEnvironmentRecovery?.catch(() => undefined);
+    await this.#developmentEnvironmentRecovery?.catch((error) => {
+      errors.push(error);
+    });
     await Promise.all(
       [...this.#terminals.entries()].map(([terminalId, terminal]) =>
-        this.#closeTerminal(terminalId, terminal).catch(() => undefined),
+        this.#closeTerminal(terminalId, terminal).catch((error) => {
+          errors.push(error);
+        }),
       ),
     );
     for (const [environmentId, environment] of this.#developmentEnvironments) {
       environment.terminal?.disconnect();
-      await environment.terminal?.kill().catch(() => undefined);
+      await environment.terminal?.kill().catch((error) => {
+        errors.push(error);
+      });
       let capsule: string | undefined;
       let detachableHandle = environment.handle;
       try {
@@ -2301,14 +2308,19 @@ export class ToolBroker {
         }
         await this.#provider.detachPersistent?.(detachableHandle);
       } catch (error: unknown) {
+        errors.push(error);
         await this.#stateRepository
           .setDevelopmentEnvironmentState(environmentId, "unknown", {
             handle: detachableHandle,
             failureCode: operationFailureCode(error),
             ...(capsule === undefined ? {} : { runtimeCapsule: capsule }),
           })
-          .catch(() => undefined);
-        await this.#provider.detachPersistent?.(detachableHandle).catch(() => undefined);
+          .catch((failure) => {
+            errors.push(failure);
+          });
+        await this.#provider.detachPersistent?.(detachableHandle).catch((failure) => {
+          errors.push(failure);
+        });
       }
       this.#admission.release(environmentId);
     }
@@ -2327,11 +2339,23 @@ export class ToolBroker {
     try {
       await this.#provider.close();
       for (const activationId of ownedActivationIds) {
-        await this.#stateRepository.setWorkspaceRuntimeState(activationId, "released");
+        try {
+          await this.#stateRepository.setWorkspaceRuntimeState(activationId, "released");
+        } catch (error) {
+          errors.push(error);
+        }
       }
-    } finally {
-      await this.#stateRepository.close();
+    } catch (error) {
+      errors.push(error);
     }
+    try {
+      await this.#stateRepository.close();
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1)
+      throw new AggregateError(errors, "Tool Broker shutdown failed", { cause: errors[0] });
   }
 
   async #persistentCapsule(handle: SandboxHandle): Promise<string | undefined> {
