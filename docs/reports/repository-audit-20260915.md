@@ -30,6 +30,15 @@ resourceVersion, then is deleted. Remove obsolete GitLab-login/object-bucket
 schema and unused HPA fields; invalid settings now fail instead of being ignored.
 Documentation no longer advertises unwired Kafka TLS/SASL or lag-based HPA.
 
+Compose Worker startup also failed for non-default host identities: initialization
+owned the private boot Volume with the configured UID, while the Worker retained
+the image's fixed UID 1000. Actual isolated containers at configured UID 12001
+reproduce EACCES on both boot state and private runtime directory. Set the Worker
+service user to the same configured identity (inherited by the second Worker);
+both writes then pass. All owned test Volumes are removed. Installer regression
+also rejects unused network definitions; the unattached provider-egress network
+is removed, while the actual model-egress/host-relay path remains unchanged.
+
 Further actual-Chrome regressions reproduce and fix four UI lifecycle errors:
 New Chat could reset a pending input submission; a read-only Child opened a
 Workspace-rebind dialog; identity-service network/503 failure falsely rendered

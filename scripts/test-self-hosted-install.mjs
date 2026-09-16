@@ -3,6 +3,7 @@ import { strict as assert } from "node:assert";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
 
 const execute = promisify(execFile);
@@ -58,6 +59,25 @@ const productionCompose = await readFile(
 assert.match(productionCompose, /kafka-1:9092,kafka-2:9092,kafka-3:9092/u);
 assert.match(productionCompose, /PI_CLOUD_KAFKA_REPLICAS: "3"/u);
 assert.doesNotMatch(productionCompose, /event-gateway|valkey|nats-/u);
+const compose = parse(productionCompose, {
+  customTags: [{ tag: "!override", collection: "seq", resolve: (value) => value }],
+});
+assert.equal(
+  compose.services["supervisor-host"].user,
+  "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}",
+  "Worker identity must match the owner of its private boot Volume and mounted Secrets",
+);
+assert.equal(compose.services["supervisor-host-1"].extends.service, "supervisor-host");
+assert.equal(compose.services["supervisor-host-1"].user, undefined);
+const usedNetworks = new Set(
+  Object.values(compose.services).flatMap((service) =>
+    Array.isArray(service.networks) ? service.networks : Object.keys(service.networks ?? {}),
+  ),
+);
+assert.deepEqual(
+  Object.keys(compose.networks).filter((name) => !usedNetworks.has(name)),
+  [],
+);
 assert(
   productionCompose.includes(
     "PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: ${PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY:-}",

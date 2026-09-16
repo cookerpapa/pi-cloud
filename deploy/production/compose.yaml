@@ -579,6 +579,7 @@ services:
       args: *application-build-args
       network: host
     restart: unless-stopped
+    user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
     depends_on:
       control-plane:
         condition: service_healthy
@@ -1217,7 +1218,6 @@ networks:
     internal: true
   model-egress:
     internal: true
-  provider-egress: {}
   observability:
     internal: true
   observability-edge: {}

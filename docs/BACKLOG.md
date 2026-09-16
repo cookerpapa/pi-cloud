@@ -14,6 +14,10 @@ Volume architecture. Historical experiments remain in Git history.
       actual K3s missing-key/unchanged-namespace checks pass. Remove retired
       Helm schema fields and unsupported deployment claims.
 
+- [x] Match Compose Worker UID/GID to initialized boot storage and mounted
+      Secrets. Non-default UID before/after container probes and installer
+      regression pass; remove the unused provider-egress network definition.
+
 - [x] Reject stale conversation-list refreshes after deletion, distinguish
       identity-service failure from logout, and preserve pending-input and
       read-only Child view boundaries. Real Chrome regression coverage passes.
