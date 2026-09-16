@@ -410,7 +410,7 @@ const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must use a real model");
 const acceptanceModel = {
   provider: "deepseek",
-  modelId: "deepseek-v4-flash",
+  modelId: "deepseek-v4-pro",
   thinkingLevel: "low",
   fastMode: false,
 };

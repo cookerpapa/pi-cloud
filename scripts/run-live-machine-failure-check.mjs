@@ -195,7 +195,7 @@ try {
     "development_environment",
     "starter",
     "/opt/recovery-check",
-    { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "off", fastMode: false },
+    { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "off", fastMode: false },
   );
   console.log("[machine-failure] real DeepSeek coding round 1");
   await run(

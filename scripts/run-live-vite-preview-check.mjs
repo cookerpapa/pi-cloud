@@ -68,7 +68,7 @@ try {
     "elastic",
     "standard",
     "/workspace",
-    { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "off", fastMode: false },
+    { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "off", fastMode: false },
   );
   console.log("[vite-preview] generating Vite + SSE/WebSocket services with a real model");
   await run(

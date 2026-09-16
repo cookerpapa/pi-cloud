@@ -112,7 +112,7 @@ try {
       "elastic",
       "starter",
       "/workspace",
-      { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "off", fastMode: false },
+      { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "off", fastMode: false },
     );
     sessions.push(candidate);
     const nativeId = await sql(

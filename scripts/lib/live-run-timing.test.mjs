@@ -2,12 +2,67 @@ import { describe, expect, it } from "vitest";
 import {
   isDurableAgentActivity,
   localWorkerTargets,
+  localWorkerProcesses,
   maximumRunOverlap,
   readWorkerModelTimings,
   runStageTiming,
 } from "./live-run-timing.mjs";
 
 describe("deployed Worker timing inventory", () => {
+  it("ignores stopped Compose processes and retains their exact restart identity", async () => {
+    const live = await localWorkerProcesses({
+      deployment: "compose",
+      execute: async (_binary, args) => ({
+        stdout:
+          args[0] === "ps"
+            ? "pi-cloud-production-supervisor-host-1 worker:one\npi-cloud-production-supervisor-host-2-1 worker:two\n"
+            : JSON.stringify([
+                {
+                  Id: args[1],
+                  State: { Running: !args[1].includes("-2-1"), StartedAt: "boot-one" },
+                },
+              ]),
+      }),
+    });
+    expect(live).toHaveLength(1);
+    expect(live[0].identity).toEqual(["pi-cloud-production-supervisor-host-1", "boot-one"]);
+    expect(live[0].execArgs).toEqual(["exec", "pi-cloud-production-supervisor-host-1"]);
+  });
+  it("detects container replacement even when a Kubernetes Pod keeps its name and UID", async () => {
+    let incarnation = "container-one";
+    const options = {
+      deployment: "kubernetes",
+      runtimeDirectory: "/fixture",
+      execute: async (_binary, args) => {
+        const pod = {
+          metadata: { name: "worker-0", uid: "same-pod" },
+          spec: { containers: [{ name: "pi-worker", image: "worker:one" }] },
+          status: {
+            containerStatuses: [
+              {
+                name: "pi-worker",
+                containerID: incarnation,
+                state: { running: { startedAt: "now" } },
+              },
+            ],
+          },
+        };
+        return { stdout: JSON.stringify(args.includes("pods") ? { items: [pod] } : pod) };
+      },
+    };
+    const [before] = await localWorkerProcesses(options);
+    incarnation = "container-two";
+    const [after] = await localWorkerProcesses(options);
+    expect(after.name).toBe(before.name);
+    expect(after.identity).not.toEqual(before.identity);
+    expect(after.execArgs.slice(-5)).toEqual([
+      "exec",
+      "worker-0",
+      "--container",
+      "pi-worker",
+      "--",
+    ]);
+  });
   const line = (runId, receivedAtMs) =>
     JSON.stringify({
       timestamp: "2026-09-17T00:00:00Z",

@@ -5,6 +5,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
+import { localWorkerProcesses } from "./lib/live-run-timing.mjs";
 
 if (process.env.PI_CLOUD_LIVE_TOOL_PREPARATION_CHECK !== "1")
   throw new Error(
@@ -70,43 +71,34 @@ async function resultCacheMetrics() {
 }
 async function sessionViewMetrics() {
   const samples = await Promise.all(
-    ["pi-cloud-production-supervisor-host-1", "pi-cloud-production-supervisor-host-1-1"].map(
-      async (container) => {
-        const { stdout } = await exec(
-          "docker",
-          [
-            "exec",
-            container,
-            "node",
-            "-e",
-            "const token=require('node:fs').readFileSync(process.env.PI_CLOUD_METRICS_TOKEN_FILE,'utf8').trim();fetch('http://127.0.0.1:9465/metrics',{headers:{authorization:'Bearer '+token}}).then(r=>{if(!r.ok)throw new Error('Metrics HTTP '+r.status);return r.text()}).then(t=>process.stdout.write(t))",
-          ],
-          { timeout: 10000, maxBuffer: 1024 * 1024 },
-        );
-        const metric = (name, label = "") =>
-          stdout
-            .split("\n")
-            .filter((line) => line.startsWith(name + "{") && line.includes(label))
-            .reduce((sum, line) => sum + Number(line.split(" ").at(-1)), 0);
-        return {
-          storageReads: metric("pi_cloud_session_view_reads_total", 'source="storage"'),
-          memoryReads: metric("pi_cloud_session_view_reads_total", 'source="memory"'),
-          storageBytes: metric("pi_cloud_session_view_storage_bytes_total"),
-          kafkaSeconds: metric(
-            "pi_cloud_session_mutation_wait_seconds_sum",
-            'stage="kafka_publish"',
-          ),
-          pgReceiptSeconds: metric(
-            "pi_cloud_session_mutation_wait_seconds_sum",
-            'stage="projection_receipt"',
-          ),
-          mutations: metric(
-            "pi_cloud_session_mutation_wait_seconds_count",
-            'stage="kafka_publish"',
-          ),
-        };
-      },
-    ),
+    (await localWorkerProcesses()).map(async (worker) => {
+      const { stdout } = await exec(
+        worker.binary,
+        [
+          ...worker.execArgs,
+          "node",
+          "-e",
+          "const token=require('node:fs').readFileSync(process.env.PI_CLOUD_METRICS_TOKEN_FILE,'utf8').trim();fetch('http://127.0.0.1:9465/metrics',{headers:{authorization:'Bearer '+token}}).then(r=>{if(!r.ok)throw new Error('Metrics HTTP '+r.status);return r.text()}).then(t=>process.stdout.write(t))",
+        ],
+        { timeout: 10000, maxBuffer: 1024 * 1024 },
+      );
+      const metric = (name, label = "") =>
+        stdout
+          .split("\n")
+          .filter((line) => line.startsWith(name + "{") && line.includes(label))
+          .reduce((sum, line) => sum + Number(line.split(" ").at(-1)), 0);
+      return {
+        storageReads: metric("pi_cloud_session_view_reads_total", 'source="storage"'),
+        memoryReads: metric("pi_cloud_session_view_reads_total", 'source="memory"'),
+        storageBytes: metric("pi_cloud_session_view_storage_bytes_total"),
+        kafkaSeconds: metric("pi_cloud_session_mutation_wait_seconds_sum", 'stage="kafka_publish"'),
+        pgReceiptSeconds: metric(
+          "pi_cloud_session_mutation_wait_seconds_sum",
+          'stage="projection_receipt"',
+        ),
+        mutations: metric("pi_cloud_session_mutation_wait_seconds_count", 'stage="kafka_publish"'),
+      };
+    }),
   );
   return Object.fromEntries(
     Object.keys(samples[0]).map((key) => [
@@ -129,7 +121,7 @@ try {
     "elastic",
     "starter",
     "/workspace",
-    { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "off", fastMode: false },
+    { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "off", fastMode: false },
   );
   report.sessionId = session.sessionId;
   stream = streamSessionEvents({

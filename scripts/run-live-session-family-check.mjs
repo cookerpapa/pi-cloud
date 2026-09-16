@@ -115,7 +115,7 @@ const timings = [];
 let tenantId;
 const model = {
   provider: "deepseek",
-  modelId: "deepseek-v4-flash",
+  modelId: "deepseek-v4-pro",
   thinkingLevel: "low",
   fastMode: false,
 };

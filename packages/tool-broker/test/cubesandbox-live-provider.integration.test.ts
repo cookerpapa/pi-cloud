@@ -596,7 +596,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           ),
         ).toBe(firstCanary);
 
-        const secondRuntimeBefore = (await manager.listAssignments(secondAssignment.sandboxId))[0];
+        const secondRuntimeBefore = (await provider.listAssignments(secondAssignment.sandboxId))[0];
         expect(secondRuntimeBefore).toBeDefined();
         const backgroundProgram = [
           "const fs=require('node:fs')",
@@ -682,22 +682,48 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             ),
           ),
         ).toBe(secondCanary);
-        const secondRuntimeAfter = (await manager.listAssignments(reboundAssignment.sandboxId))[0];
+        // Physical creation identity remains stable; only the Broker binding changes owner.
+        const secondRuntimeAfter = (await provider.listAssignments(secondAssignment.sandboxId))[0];
         expect(secondRuntimeAfter?.containerId).toBe(secondRuntimeBefore?.containerId);
         expect(secondRuntimeAfter?.containerName).toBe(secondRuntimeBefore?.containerName);
-        expect(secondRuntimeAfter?.executionReference).toBe(reboundAssignment.executionReference);
+        expect(second.executionReference).toBe(reboundAssignment.executionReference);
 
         const controller = new AbortController();
         const cancelled = manager.execute(
           first.executionReference,
-          operation(first.activationId, "sleep 120", 125_000),
+          operation(first.activationId, "touch cancellation-started; sleep 120", 125_000),
           controller.signal,
         );
-        setTimeout(() => controller.abort(), 500).unref();
-        await expect(cancelled).rejects.toMatchObject({ code: "tool_cancelled" });
+        void cancelled.catch(() => {});
+        try {
+          const deadline = Date.now() + 15_000;
+          for (;;) {
+            const directory = await manager.listWorkspaceDirectory({
+              toolBrokerProtocolVersion: 1,
+              type: "workspace.list_directory",
+              requestId: randomUUID(),
+              tenantId: firstAssignment.tenantId,
+              workspaceId: firstAssignment.workspaceId,
+              sessionId: firstAssignment.sessionId,
+              rootPath: "",
+              path: "",
+            });
+            if (directory.entries.some((entry) => entry.path === "cancellation-started")) break;
+            if (Date.now() > deadline) throw new Error("Cancellation probe never started in Cube");
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        } finally {
+          controller.abort();
+        }
+        await expect(cancelled).rejects.toMatchObject({ code: "cubesandbox_tool_result_unknown" });
         await expect(
           manager.inspect(first.activationId, activeFirstAssignment),
-        ).resolves.toMatchObject({ state: "absent" });
+        ).rejects.toMatchObject({ code: "cubesandbox_tool_result_unknown" });
+        await manager.stop(first.activationId, activeFirstAssignment);
+        expect(manager.ownsToolBinding(first.activationId)).toBe(false);
+        await expect(
+          manager.inspect(first.activationId, activeFirstAssignment),
+        ).rejects.toMatchObject({ code: "tool_binding_identity_mismatch" });
       } catch (error) {
         failures.push(error);
       } finally {
@@ -745,8 +771,11 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           }
         }
       }
+      if (failures.length === 1) throw failures[0];
       if (failures.length)
-        throw new AggregateError(failures, "Cube live acceptance or cleanup failed");
+        throw new AggregateError(failures, "Cube live acceptance or cleanup failed", {
+          cause: failures[0],
+        });
       process.stdout.write(
         `${JSON.stringify({
           cubeSandboxLiveGate: {
@@ -763,7 +792,8 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             fencedPtyValidated: true,
             warmProcessSurvivedRunBoundaryWithinTtl: true,
             staleToolAuthorityRejected: true,
-            cancellationRetiredToolBinding: true,
+            explicitStopRetiredCancelledToolBinding: true,
+            dispatchedCancellationRemainsUnknown: true,
             persistentVolumesRemoved: 3,
             orphanCount: 0,
           },

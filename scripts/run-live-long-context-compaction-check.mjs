@@ -13,6 +13,7 @@ import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import {
   isDurableAgentActivity,
+  localWorkerTargets,
   readWorkerModelTimings,
   runStageTiming,
 } from "./lib/live-run-timing.mjs";
@@ -822,6 +823,11 @@ function codingPrompt(task, index, marker) {
 }
 
 const initialWorkers = await waitForWorkers(2);
+const initialWorkerImages = (await localWorkerTargets()).map(({ name, image }) => ({
+  name,
+  image,
+}));
+const testedRevision = (await capture("git", ["rev-parse", "HEAD"])).trim();
 const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const marker = `ALGO-LAB-${suffix.toUpperCase()}`;
 const registration = await acceptanceIdentity(suffix);
@@ -1237,9 +1243,11 @@ try {
   const report = {
     accepted: true,
     checkedAt: new Date().toISOString(),
-    revision: (await capture("git", ["rev-parse", "HEAD"])).trim(),
+    revision: testedRevision,
     topology: {
       workers: initialWorkers,
+      workerImages: initialWorkerImages,
+      workerDeployment,
       scheduler: "postgresql-run-queue",
       sandbox: "CubeSandbox KVM",
       sessionRuntime: "Pi SDK 0.84.1 PostgreSQL SessionStorage runtime",

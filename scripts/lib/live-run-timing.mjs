@@ -40,6 +40,8 @@ export async function localWorkerTargets(options = {}) {
       name: pod.metadata.name,
       image: pod.spec.containers.find((c) => c.name === "pi-worker").image,
       binary: "kubectl",
+      execArgs: [...prefix, "exec", pod.metadata.name, "--container", "pi-worker", "--"],
+      inspectArgs: [...prefix, "get", "pod", pod.metadata.name, "--output", "json"],
       logArgs: [...prefix, "logs", "--container", "pi-worker", pod.metadata.name],
       previous:
         (pod.status.containerStatuses?.find((c) => c.name === "pi-worker")?.restartCount ?? 0) > 0,
@@ -61,8 +63,40 @@ export async function localWorkerTargets(options = {}) {
     .filter((line) => /^pi-cloud-production-supervisor-host(?:-\d+)?-\d+ /.test(line))
     .map((line) => {
       const [name, image] = line.split(" ");
-      return { name, image, binary: "docker", logArgs: ["logs", name], previous: false };
+      return {
+        name,
+        image,
+        binary: "docker",
+        logArgs: ["logs", name],
+        previous: false,
+        execArgs: ["exec", name],
+        inspectArgs: ["inspect", name],
+      };
     });
+}
+
+/** Compare live process identities across a fault without confusing a retained Pod name with its process. */
+export async function localWorkerProcesses(options = {}) {
+  const execute = options.execute ?? exec;
+  const processes = [];
+  for (const target of await localWorkerTargets(options)) {
+    const { stdout } = await execute(target.binary, target.inspectArgs);
+    const state = JSON.parse(stdout);
+    const container = target.binary === "docker" ? state[0] : undefined;
+    const running =
+      container?.State?.Running ??
+      state.status?.containerStatuses?.find((c) => c.name === "pi-worker")?.state.running;
+    if (!running) continue;
+    const identity = container
+      ? [container.Id, container.State.StartedAt]
+      : [
+          state.metadata.uid,
+          state.status.containerStatuses.find((c) => c.name === "pi-worker").containerID,
+          running.startedAt,
+        ];
+    processes.push({ ...target, identity });
+  }
+  return processes.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Public durable activity, not optimistic UI or streamed Tool argument JSON. */

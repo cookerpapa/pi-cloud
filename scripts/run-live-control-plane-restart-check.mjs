@@ -10,6 +10,7 @@ import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
+import { localWorkerProcesses } from "./lib/live-run-timing.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -82,26 +83,23 @@ let recordsProducedWhileProjectorDown = 0;
 async function replaceControlPlane() {
   if (faultMode === "kafka-broker") {
     await executeCompose(["kill", "--signal", "SIGKILL", "kafka-1"]);
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_000));
-    await executeCompose(["up", "--detach", "--no-deps", "--wait", "kafka-1"]);
+    try {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_000));
+    } finally {
+      await executeCompose(["start", "--wait", "kafka-1"]);
+    }
     return;
   }
-  const workers = [
-    "pi-cloud-production-supervisor-host-1",
-    "pi-cloud-production-supervisor-host-1-1",
-  ];
-  const boots = () =>
-    execFileSync("docker", ["inspect", "--format", "{{.State.StartedAt}}", ...workers], {
-      encoding: "utf8",
-    });
-  const beforeBoots = boots();
+  const workers = await localWorkerProcesses();
+  assert(workers.length > 0, "No live Worker for the fault probe");
+  const boots = (processes) => processes.map(({ name, identity }) => ({ name, identity }));
+  const beforeBoots = boots(workers);
   const logHead = () =>
     Number(
       execFileSync(
-        "docker",
+        workers[0].binary,
         [
-          "exec",
-          workers[0],
+          ...workers[0].execArgs,
           "node",
           "--input-type=module",
           "-e",
@@ -111,20 +109,28 @@ async function replaceControlPlane() {
       ).trim(),
     );
   await executeCompose(["kill", "--signal", "SIGKILL", "control-plane"]);
-  assert.equal(
-    execFileSync(
-      "docker",
-      ["inspect", "--format", "{{.State.Running}}", "pi-cloud-production-control-plane-1"],
-      { encoding: "utf8" },
-    ).trim(),
-    "false",
-    "Control Plane did not remain stopped during the outage probe",
+  try {
+    assert.equal(
+      execFileSync(
+        "docker",
+        ["inspect", "--format", "{{.State.Running}}", "pi-cloud-production-control-plane-1"],
+        { encoding: "utf8" },
+      ).trim(),
+      "false",
+      "Control Plane did not remain stopped during the outage probe",
+    );
+    const beforeHead = logHead();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    recordsProducedWhileProjectorDown = logHead() - beforeHead;
+  } finally {
+    // Restart the existing image/configuration; a fault test is not a deployment.
+    await executeCompose(["start", "--wait", "control-plane"]);
+  }
+  assert.deepEqual(
+    boots(await localWorkerProcesses()),
+    beforeBoots,
+    "Projector failure test restarted a Worker",
   );
-  const beforeHead = logHead();
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-  recordsProducedWhileProjectorDown = logHead() - beforeHead;
-  await executeCompose(["up", "--detach", "--no-deps", "--wait", "control-plane"]);
-  assert.equal(boots(), beforeBoots, "Projector failure test restarted a Worker");
   assert(recordsProducedWhileProjectorDown > 0, "Worker did not append during Projector outage");
 }
 
@@ -169,32 +175,41 @@ const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production restart check requires a real model");
 const selection = {
   provider: "deepseek",
-  modelId: "deepseek-v4-flash",
+  modelId: "deepseek-v4-pro",
   thinkingLevel: "off",
   fastMode: false,
 };
-const project = await api.createProject(`Control Plane restart ${suffix}`);
-const session = await api.createSession(
-  project.projectId,
-  project.workspaceId,
-  "Control Plane restart continuity",
-  "elastic",
-  "starter",
-  "/workspace",
-  selection,
-);
 const startedAt = performance.now();
-const accepted = await api.acceptTurn(
-  session.sessionId,
-  [
-    "Do not call tools.",
-    `Start with this exact marker: ${marker}.`,
-    "Then write one hundred and twenty numbered Chinese sentences about durable cloud agent execution.",
-    "Each sentence must contain at least fifteen Chinese characters so the response remains streaming while infrastructure restarts.",
-  ].join(" "),
-  newIdempotencyKey("control-plane-restart"),
-  "off",
-);
+let project, session, accepted, primaryFailure;
+let cleanupCompleted = false;
+async function cleanup() {
+  const errors = [];
+  if (session) {
+    try {
+      const active = (turn) => ["queued", "running", "cancelling"].includes(turn.state);
+      for (const turn of (await api.getConversation(session.sessionId)).turns.filter(active))
+        await api.cancelTurn(session.sessionId, turn.turnId, newIdempotencyKey("cleanup-cancel"));
+      const deadline = Date.now() + 90_000;
+      while ((await api.getConversation(session.sessionId)).turns.some(active)) {
+        if (Date.now() > deadline) throw new Error("Fault fixture Run did not retire");
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      await api.deleteConversation(session.sessionId, newIdempotencyKey("cleanup-conversation"));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (project) {
+    try {
+      await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup-workspace"));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  cleanupCompleted = true;
+  if (errors.length)
+    throw new AggregateError(errors, "Fault fixture cleanup failed", { cause: errors[0] });
+}
 
 const controller = new AbortController();
 const deadline = setTimeout(
@@ -202,6 +217,10 @@ const deadline = setTimeout(
   10 * 60_000,
 );
 let replacement;
+function startReplacement() {
+  replacement = replaceControlPlane();
+  void replacement.catch((error) => controller.abort(error));
+}
 let firstTextSequence;
 let visiblePrefixBeforeFailure;
 let terminal;
@@ -215,7 +234,7 @@ const observeEvent = (event) => {
     if (replacement === undefined) {
       firstTextSequence = event.seq;
       visiblePrefixBeforeFailure = text.join("");
-      replacement = replaceControlPlane();
+      startReplacement();
     }
   }
   if (
@@ -228,6 +247,27 @@ const observeEvent = (event) => {
   }
 };
 try {
+  project = await api.createProject(`Control Plane restart ${suffix}`);
+  session = await api.createSession(
+    project.projectId,
+    project.workspaceId,
+    "Control Plane restart continuity",
+    "elastic",
+    "starter",
+    "/workspace",
+    selection,
+  );
+  accepted = await api.acceptTurn(
+    session.sessionId,
+    [
+      "Do not call tools.",
+      `Start with this exact marker: ${marker}.`,
+      "Then write one hundred and twenty numbered Chinese sentences about durable cloud agent execution.",
+      "Each sentence must contain at least fifteen Chinese characters so the response remains streaming while infrastructure restarts.",
+    ].join(" "),
+    newIdempotencyKey("control-plane-restart"),
+    "off",
+  );
   await streamSessionEvents({
     sessionId: session.sessionId,
     signal: controller.signal,
@@ -243,7 +283,7 @@ try {
       if (partial?.text && !partial.terminal && replacement === undefined) {
         firstTextSequence = partial.throughSequence;
         visiblePrefixBeforeFailure = partial.text;
-        replacement = replaceControlPlane();
+        startReplacement();
       }
       const recovered = snapshot.conversation.turns.find(
         (turn) => turn.turnId === accepted.turnId && turn.state === "completed",
@@ -311,6 +351,8 @@ try {
     liveMatchesCanonical: true,
     elapsedMs: Math.round(performance.now() - startedAt),
   };
+  await cleanup();
+  report.cleanupCompleted = true;
   if (writeReport) {
     const reportDirectory = resolve(repositoryRoot, "docs/reports");
     await mkdir(reportDirectory, { recursive: true });
@@ -348,14 +390,31 @@ try {
     );
   }
   process.stdout.write(`${JSON.stringify(report)}\n`);
+} catch (error) {
+  primaryFailure = error;
+  throw error;
 } finally {
   clearTimeout(deadline);
   controller.abort();
-  await replacement?.catch(() => undefined);
-  await api
-    .deleteConversation(session.sessionId, newIdempotencyKey("cleanup-conversation"))
-    .catch(() => undefined);
-  await api
-    .deleteWorkspace(session.workspaceId, newIdempotencyKey("cleanup-workspace"))
-    .catch(() => undefined);
+  const failures = [];
+  if (replacement) {
+    try {
+      await replacement;
+    } catch (error) {
+      if (error !== primaryFailure) failures.push(error);
+    }
+  }
+  if (!cleanupCompleted) {
+    try {
+      await cleanup();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length)
+    throw new AggregateError(
+      [...(primaryFailure ? [primaryFailure] : []), ...failures],
+      "Fault acceptance or cleanup failed",
+      { cause: primaryFailure ?? failures[0] },
+    );
 }

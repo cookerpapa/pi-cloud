@@ -381,7 +381,7 @@ try {
   // acceptance must select its real route rather than inherit that default.
   await api.updateSessionModel(session.sessionId, {
     provider: "deepseek",
-    modelId: "deepseek-v4-flash",
+    modelId: "deepseek-v4-pro",
     thinkingLevel: "low",
     fastMode: false,
   });
