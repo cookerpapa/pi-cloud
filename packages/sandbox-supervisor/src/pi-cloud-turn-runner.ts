@@ -42,7 +42,7 @@ import {
   type PiModelRuntimeConfig,
   type PiTurnResult,
 } from "./pi-turn-runtime.ts";
-import type { TrustedRemoteAgentTools } from "./trusted-remote-tools-extension.ts";
+import type { TrustedRemoteAgentTools } from "./trusted-remote-tools.ts";
 import type {
   ProviderHostedActivitySubscriber,
   ProviderHostedTranscript,

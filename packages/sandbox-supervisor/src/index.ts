@@ -38,10 +38,9 @@ export {
 export {
   CLOUD_TOOL_EXECUTION_MODE,
   createTrustedRemoteAgentTools,
-  createTrustedRemoteToolsExtension,
   type TrustedRemoteAgentTools,
   type TrustedRemoteToolsRuntimeConfiguration,
-} from "./trusted-remote-tools-extension.ts";
+} from "./trusted-remote-tools.ts";
 export {
   createCloudSubagentTool,
   validateSubagentTask,

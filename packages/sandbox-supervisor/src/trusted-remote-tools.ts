@@ -12,7 +12,6 @@ import {
   type ToolSandboxOperationResponse,
   type ToolCommandPublisher,
 } from "@pi-cloud/protocol";
-import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
 import {
@@ -373,25 +372,33 @@ function errorForPi(error: unknown, timeoutSeconds?: number): Error {
   return new Error("Tool Sandbox request failed");
 }
 
-type TrustedRemoteToolBindings = Readonly<{
+export type TrustedRemoteAgentTools = Readonly<{
   executeWorkflow: WorkflowExecutor;
+  tools: readonly AgentTool[];
+  systemPrompt(base: string): Promise<string>;
   transformContext(
-    messages: readonly AgentMessage[],
-    purpose: "agent" | "context_maintenance",
+    messages: AgentMessage[],
+    purpose?: "agent" | "context_maintenance",
   ): Promise<AgentMessage[]>;
+  transformHeaders(headers?: ProviderHeaders): Promise<ProviderHeaders>;
 }>;
 
-function registerTrustedRemoteTools(
-  pi: ExtensionAPI,
-  runtime: ValidatedRemoteToolsRuntimeConfiguration,
-): TrustedRemoteToolBindings {
+/** Pi-native Tool operations and model hooks; no Extension API emulation. */
+export function createTrustedRemoteAgentTools(
+  configuration: TrustedRemoteToolsRuntimeConfiguration,
+): TrustedRemoteAgentTools {
+  const runtime = validateRuntimeConfiguration(configuration);
+  const tools: AgentTool[] = [];
   let remainingToolCalls = runtime.remainingToolCalls;
   let currentStep: FrozenCloudStep | undefined;
   let currentSamplingAttempt: number | undefined;
   let currentSamplingHeadersIssued = false;
 
   const captureStep = async (purpose: "agent" | "context_maintenance") => {
-    const captured = await runtime.captureStepContext(pi.getActiveTools(), purpose);
+    const captured = await runtime.captureStepContext(
+      tools.map((tool) => tool.name),
+      purpose,
+    );
     if (
       captured.step.context.turnContextSha256 !== runtime.turnContextSha256 ||
       captured.step.context.attemptContextSha256 !== runtime.attemptContextSha256 ||
@@ -406,13 +413,13 @@ function registerTrustedRemoteTools(
   };
 
   const transformContext = async (
-    event: { messages: readonly AgentMessage[] },
-    purpose: "agent" | "context_maintenance",
+    input: readonly AgentMessage[],
+    purpose: "agent" | "context_maintenance" = "agent",
   ): Promise<AgentMessage[]> => {
     currentStep = undefined;
     currentSamplingAttempt = undefined;
     const captured = await captureStep(purpose);
-    const messages = [...event.messages];
+    const messages = [...input];
     for (const message of captured.modelMessages) {
       const alreadyPresent = messages.some(
         (candidate) =>
@@ -436,7 +443,6 @@ function registerTrustedRemoteTools(
     }
     return messages;
   };
-  pi.on("context", async (event) => ({ messages: await transformContext(event, "agent") }));
 
   const consumeToolCall = (): void => {
     if (remainingToolCalls < 1) {
@@ -724,12 +730,12 @@ function registerTrustedRemoteTools(
     },
   });
 
-  pi.on("before_agent_start", async (event) => {
+  const systemPrompt = async (base: string): Promise<string> => {
     const cwdLine = /^Current working directory:.*$/m;
     const sandboxLine = `Current working directory: ${runtime.workingDirectory} (isolated Tool Sandbox)`;
-    const basePrompt = cwdLine.test(event.systemPrompt)
-      ? event.systemPrompt.replace(cwdLine, sandboxLine)
-      : `${event.systemPrompt}\n\n${sandboxLine}`;
+    const basePrompt = cwdLine.test(base)
+      ? base.replace(cwdLine, sandboxLine)
+      : `${base}\n\n${sandboxLine}`;
     const platformContext = [
       "## PiCloud execution context",
       `All file and command tools operate inside the selected machine directory ${runtime.workingDirectory}.`,
@@ -738,16 +744,15 @@ function registerTrustedRemoteTools(
       "Always use credential-free HTTPS clone and remote URLs. Never read .git-credentials or embed a token in a command, URL, output, file, or Git remote.",
     ].join("\n");
     if (runtime.projectInstructions === undefined) {
-      return { systemPrompt: `${basePrompt}\n\n${platformContext}` };
+      return `${basePrompt}\n\n${platformContext}`;
     }
-    return {
-      systemPrompt: `${basePrompt}\n\n${platformContext}\n\n## Project instructions (repository-controlled)\n${runtime.projectInstructions}`,
-    };
-  });
+    return `${basePrompt}\n\n${platformContext}\n\n## Project instructions (repository-controlled)\n${runtime.projectInstructions}`;
+  };
 
-  pi.on("before_provider_headers", async (event) => {
-    if (runtime.traceparent !== undefined) event.headers.traceparent = runtime.traceparent;
-    if (runtime.tracestate !== undefined) event.headers.tracestate = runtime.tracestate;
+  const transformHeaders = async (headers: ProviderHeaders = {}): Promise<ProviderHeaders> => {
+    const result = { ...headers };
+    if (runtime.traceparent !== undefined) result.traceparent = runtime.traceparent;
+    if (runtime.tracestate !== undefined) result.tracestate = runtime.tracestate;
     // Pi compaction and branch-summary requests use ModelRuntime directly and
     // therefore do not pass through the Agent `context` hook. Give each such
     // maintenance request a fresh governed sampling identity instead of
@@ -757,7 +762,7 @@ function registerTrustedRemoteTools(
       throw new Error("Model request preceded its Cloud Step capture");
     }
     Object.assign(
-      event.headers,
+      result,
       modelSamplingHeaders({
         stepSequence: currentStep.context.sequence,
         stepSha256: currentStep.sha256,
@@ -765,7 +770,8 @@ function registerTrustedRemoteTools(
       }),
     );
     currentSamplingHeadersIssued = true;
-  });
+    return result;
+  };
 
   const toolRoot = runtime.workingDirectory;
   const readTool = createReadTool(toolRoot);
@@ -775,7 +781,7 @@ function registerTrustedRemoteTools(
   const allowedTools = new Set(runtime.allowedTools);
 
   if (allowedTools.has("read")) {
-    pi.registerTool({
+    tools.push({
       ...readTool,
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
@@ -784,7 +790,7 @@ function registerTrustedRemoteTools(
         if (/\.(?:png|jpe?g|gif|webp|bmp)$/i.test(input.path)) {
           return createReadTool(toolRoot, { operations: readOperations("read", id) }).execute(
             id,
-            params,
+            input,
             signal,
             onUpdate,
           );
@@ -840,14 +846,14 @@ function registerTrustedRemoteTools(
     });
   }
   if (allowedTools.has("write")) {
-    pi.registerTool({
+    tools.push({
       ...writeTool,
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();
         return createWriteTool(toolRoot, { operations: writeOperations(id) }).execute(
           id,
-          params,
+          params as Parameters<typeof writeTool.execute>[1],
           signal,
           onUpdate,
         );
@@ -855,14 +861,14 @@ function registerTrustedRemoteTools(
     });
   }
   if (allowedTools.has("edit")) {
-    pi.registerTool({
+    tools.push({
       ...editTool,
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();
         return createEditTool(toolRoot, { operations: editOperations(id) }).execute(
           id,
-          params,
+          params as Parameters<typeof editTool.execute>[1],
           signal,
           onUpdate,
         );
@@ -870,7 +876,7 @@ function registerTrustedRemoteTools(
     });
   }
   if (allowedTools.has("bash")) {
-    pi.registerTool({
+    tools.push({
       ...bashTool,
       // Pi's validator accepts unknown properties unless the schema is closed.
       // In particular, silently ignoring `cwd` would execute in the wrong directory.
@@ -881,7 +887,7 @@ function registerTrustedRemoteTools(
         consumeToolCall();
         return createBashTool(toolRoot, { operations: bashOperations(id) }).execute(
           id,
-          params,
+          params as Parameters<typeof bashTool.execute>[1],
           signal,
           onUpdate,
         );
@@ -889,14 +895,11 @@ function registerTrustedRemoteTools(
     });
   }
 
-  if (allowedTools.has("bash")) {
-    pi.on("user_bash", async () => {
-      consumeToolCall();
-      return { operations: bashOperations(randomUUID()) };
-    });
-  }
   return {
-    transformContext: (messages, purpose) => transformContext({ messages }, purpose),
+    tools,
+    systemPrompt,
+    transformHeaders,
+    transformContext,
     executeWorkflow: (async (toolCallId, script, call, signal, onUpdate) => {
       if (!allowedTools.has("bash"))
         throw new Error("Workflow code requires the Bash execution capability");
@@ -925,81 +928,5 @@ function registerTrustedRemoteTools(
       if (!result.ok) throw new Error(result.error ?? "Workflow failed");
       return result.value;
     }) satisfies WorkflowExecutor,
-  };
-}
-
-export function createTrustedRemoteToolsExtension(
-  configuration: TrustedRemoteToolsRuntimeConfiguration,
-): InlineExtension {
-  const runtime = validateRuntimeConfiguration(configuration);
-  return (pi) => {
-    registerTrustedRemoteTools(pi, runtime);
-  };
-}
-
-export type TrustedRemoteAgentTools = Readonly<{
-  executeWorkflow: WorkflowExecutor;
-  tools: readonly AgentTool[];
-  systemPrompt(base: string): Promise<string>;
-  transformContext(
-    messages: AgentMessage[],
-    purpose?: "agent" | "context_maintenance",
-  ): Promise<AgentMessage[]>;
-  transformHeaders(headers?: ProviderHeaders): Promise<ProviderHeaders>;
-}>;
-
-/**
- * Exposes the reviewed remote Tool implementation to Pi's lower-level native
- * Agent runtime without duplicating the security-sensitive RPC code.
- */
-export function createTrustedRemoteAgentTools(
-  configuration: TrustedRemoteToolsRuntimeConfiguration,
-): TrustedRemoteAgentTools {
-  const runtime = validateRuntimeConfiguration(configuration);
-  const handlers = new Map<string, (event: any) => unknown | Promise<unknown>>();
-  const tools: AgentTool[] = [];
-  const extensionApi = {
-    on(type: string, handler: (event: any) => unknown | Promise<unknown>) {
-      handlers.set(type, handler);
-      return () => handlers.delete(type);
-    },
-    getActiveTools() {
-      return tools.map((tool) => tool.name);
-    },
-    registerTool(tool: AgentTool) {
-      tools.push(tool);
-    },
-  } as unknown as ExtensionAPI;
-  const bindings = registerTrustedRemoteTools(extensionApi, runtime);
-
-  const requireHandler = (type: string): ((event: any) => unknown | Promise<unknown>) => {
-    const handler = handlers.get(type);
-    if (handler === undefined) throw new Error(`Trusted remote Tool hook is missing: ${type}`);
-    return handler;
-  };
-
-  return {
-    tools,
-    executeWorkflow: bindings.executeWorkflow,
-    async systemPrompt(base) {
-      const result = await requireHandler("before_agent_start")({ systemPrompt: base });
-      if (
-        typeof result !== "object" ||
-        result === null ||
-        !("systemPrompt" in result) ||
-        typeof result.systemPrompt !== "string"
-      ) {
-        throw new Error("Trusted remote Tool system-prompt hook returned an invalid result");
-      }
-      return result.systemPrompt;
-    },
-    async transformContext(messages, purpose = "agent") {
-      return bindings.transformContext(messages, purpose);
-    },
-    async transformHeaders(headers = {}) {
-      const mutable = { ...headers };
-      await requireHandler("before_provider_headers")({ headers: mutable });
-      return mutable;
-    },
   };
 }

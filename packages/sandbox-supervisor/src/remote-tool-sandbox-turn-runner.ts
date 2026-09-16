@@ -42,7 +42,7 @@ import type {
   TrustedModelRuntimeLeaseResolver,
 } from "./agent-turn-runtime.ts";
 import type { RunAttemptPhaseObserver } from "./run-attempt-phase.ts";
-import { createTrustedRemoteAgentTools } from "./trusted-remote-tools-extension.ts";
+import { createTrustedRemoteAgentTools } from "./trusted-remote-tools.ts";
 import {
   createCloudAttemptContext,
   createCloudStepContext,

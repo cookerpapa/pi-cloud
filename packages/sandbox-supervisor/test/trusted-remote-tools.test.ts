@@ -1,4 +1,3 @@
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { createExecutionReference, type CandidateToolCommand } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
@@ -6,13 +5,8 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  createTrustedRemoteAgentTools,
-  createTrustedRemoteToolsExtension,
-  redactToolSecrets,
-} from "../src/trusted-remote-tools-extension.ts";
+import { createTrustedRemoteAgentTools, redactToolSecrets } from "../src/trusted-remote-tools.ts";
 
-const ACTIVE_TOOLS = ["read", "write", "edit", "bash"] as const;
 const TURN_CONTEXT_SHA256 = "b".repeat(64);
 const ATTEMPT_CONTEXT_SHA256 = "e".repeat(64);
 const EXECUTION_LEASE = createExecutionReference(
@@ -50,12 +44,6 @@ function createStepCapture() {
   };
 }
 
-async function captureContext(handlers: Map<string, (...args: never[]) => unknown>): Promise<void> {
-  const handler = handlers.get("context");
-  if (handler === undefined) throw new Error("Context handler was not installed");
-  await handler({ type: "context", messages: [] } as never);
-}
-
 let latestPublishedCommand: CandidateToolCommand | undefined;
 function publishedRequest(init: RequestInit) {
   expect(init.method).toBe("GET");
@@ -82,20 +70,12 @@ const BASE_CONFIGURATION = {
   traceparent: "00-11111111111111111111111111111111-2222222222222222-01",
 } as const;
 
-function installInlineExtension(
-  extension: ReturnType<typeof createTrustedRemoteToolsExtension>,
-  pi: ExtensionAPI,
-): void {
-  if (typeof extension === "function") extension(pi);
-  else extension.factory(pi);
-}
-
 afterEach(() => {
   latestPublishedCommand = undefined;
   vi.unstubAllGlobals();
 });
 
-describe("trusted remote tools extension governance", () => {
+describe("trusted remote Agent tools", () => {
   it.each(["cwd", "env", "timeuot"])(
     "rejects unsupported Bash parameter %s through Pi validation",
     (name) => {
@@ -142,7 +122,7 @@ describe("trusted remote tools extension governance", () => {
     expect(redacted).toContain("[PI_CLOUD_REDACTED]");
   });
 
-  it("exposes the identical governed Tool set to a SessionStorage Harness", async () => {
+  it("exposes governed Tools and model hooks to the SessionStorage Harness", async () => {
     const runtime = createTrustedRemoteAgentTools({
       ...BASE_CONFIGURATION,
       projectInstructions: "Keep the durable Harness boundary explicit.",
@@ -161,11 +141,13 @@ describe("trusted remote tools extension governance", () => {
       "Keep the durable Harness boundary explicit.",
     );
     await expect(runtime.transformContext([])).resolves.toEqual([]);
-    await expect(runtime.transformHeaders({ "x-test": "yes" })).resolves.toMatchObject({
+    const headers = { "x-test": "yes" };
+    await expect(runtime.transformHeaders(headers)).resolves.toMatchObject({
       "x-test": "yes",
       traceparent: BASE_CONFIGURATION.traceparent,
       "x-pi-cloud-step-sequence": "1",
     });
+    expect(headers).toEqual({ "x-test": "yes" });
   });
 
   it("exposes only the immutable Run capability snapshot to one Agent runtime", () => {
@@ -247,50 +229,9 @@ describe("trusted remote tools extension governance", () => {
     expect(resumedAgentHeaders["x-pi-cloud-step-sequence"]).toBe("3");
   });
 
-  it("binds SDK tool identity from an activation-local object instead of process.env", () => {
-    const registered: ToolDefinition[] = [];
-    const handlers = new Map<string, (...args: never[]) => unknown>();
-    const extension = createTrustedRemoteToolsExtension({
-      publishToolCommand: BASE_CONFIGURATION.publishToolCommand,
-      operationResultUrl: "http://127.0.0.1:4999/v1/tool-operations",
-      activationId: "10000000-0000-4000-8000-000000000099",
-      executionReference: EXECUTION_LEASE,
-      turnContextSha256: TURN_CONTEXT_SHA256,
-      attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
-      captureStepContext: createStepCapture(),
-      remainingToolCalls: 0,
-      maximumToolOutputBytes: 1_024,
-
-      workingDirectory: "/workspace",
-      projectInstructions: "SDK activation-local instructions.",
-    });
-    if (typeof extension !== "function") throw new Error("Expected an inline extension factory");
-    extension({
-      registerTool(tool: ToolDefinition) {
-        registered.push(tool);
-      },
-      on(name: string, handler: (...args: never[]) => unknown) {
-        handlers.set(name, handler);
-      },
-      getActiveTools() {
-        return [...ACTIVE_TOOLS];
-      },
-    } as unknown as ExtensionAPI);
-
-    expect(registered.map((tool) => tool.name).sort()).toEqual(["bash", "edit", "read", "write"]);
-    expect(registered.every((tool) => tool.executionMode === "sequential")).toBe(true);
-    expect(handlers.has("before_agent_start")).toBe(true);
-  });
-
   it("rejects a Pi tool call before Tool RPC when the durable run budget is exhausted", async () => {
-    const registered: ToolDefinition[] = [];
-    const pi = {
-      registerTool(tool: ToolDefinition) {
-        registered.push(tool);
-      },
-      on() {},
-    } as unknown as ExtensionAPI;
-    installInlineExtension(createTrustedRemoteToolsExtension(BASE_CONFIGURATION), pi);
+    const runtime = createTrustedRemoteAgentTools(BASE_CONFIGURATION);
+    const registered = runtime.tools;
     expect(registered.map((tool) => tool.name).sort()).toEqual(["bash", "edit", "read", "write"]);
     await expect(
       registered
@@ -300,29 +241,15 @@ describe("trusted remote tools extension governance", () => {
           { path: "README.md" },
           new AbortController().signal,
           () => undefined,
-          undefined as never,
         ),
     ).rejects.toThrow("tool_budget_exhausted");
   });
 
   it("captures every Pi sampling boundary and binds Tool RPC to the latest Step", async () => {
-    const registered: ToolDefinition[] = [];
-    const handlers = new Map<string, (...args: never[]) => unknown>();
     const capturedSteps: Array<ReturnType<ReturnType<typeof createStepCapture>>> = [];
     const capture = createStepCapture();
     const onToolOperationStarted = vi.fn();
     let requestBody: Record<string, unknown> | undefined;
-    const pi = {
-      registerTool(tool: ToolDefinition) {
-        registered.push(tool);
-      },
-      on(name: string, handler: (...args: never[]) => unknown) {
-        handlers.set(name, handler);
-      },
-      getActiveTools() {
-        return [...ACTIVE_TOOLS];
-      },
-    } as unknown as ExtensionAPI;
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       requestBody = publishedRequest(init) as Record<string, unknown>;
       return new Response(
@@ -339,19 +266,17 @@ describe("trusted remote tools extension governance", () => {
         { status: 200, headers: { "content-type": "application/json" } },
       );
     });
-    installInlineExtension(
-      createTrustedRemoteToolsExtension({
-        ...BASE_CONFIGURATION,
-        remainingToolCalls: 2,
-        captureStepContext: (activeTools) => {
-          const captured = capture(activeTools);
-          capturedSteps.push(captured);
-          return captured;
-        },
-        onToolOperationStarted,
-      }),
-      pi,
-    );
+    const runtime = createTrustedRemoteAgentTools({
+      ...BASE_CONFIGURATION,
+      remainingToolCalls: 2,
+      captureStepContext: (activeTools) => {
+        const captured = capture(activeTools);
+        capturedSteps.push(captured);
+        return captured;
+      },
+      onToolOperationStarted,
+    });
+    const registered = runtime.tools;
 
     await expect(
       registered
@@ -361,11 +286,10 @@ describe("trusted remote tools extension governance", () => {
           { command: "pwd", timeout: 10 },
           new AbortController().signal,
           () => undefined,
-          undefined as never,
         ),
     ).rejects.toThrow("step_context_unavailable");
-    await captureContext(handlers);
-    await captureContext(handlers);
+    await runtime.transformContext([]);
+    await runtime.transformContext([]);
     await registered
       .find((tool) => tool.name === "bash")!
       .execute(
@@ -373,7 +297,6 @@ describe("trusted remote tools extension governance", () => {
         { command: "pwd", timeout: 10 },
         new AbortController().signal,
         () => undefined,
-        undefined as never,
       );
 
     expect(capturedSteps.map((entry) => entry.step.context.sequence)).toEqual([1, 2]);
@@ -388,65 +311,29 @@ describe("trusted remote tools extension governance", () => {
   });
 
   it("injects one model-visible world-state delta at repeated context boundaries", async () => {
-    const registered: ToolDefinition[] = [];
-    const handlers = new Map<string, (...args: never[]) => unknown>();
     const capture = createStepCapture();
-    const pi = {
-      registerTool(tool: ToolDefinition) {
-        registered.push(tool);
-      },
-      on(name: string, handler: (...args: never[]) => unknown) {
-        handlers.set(name, handler);
-      },
-      getActiveTools() {
-        return [...ACTIVE_TOOLS];
-      },
-    } as unknown as ExtensionAPI;
-    installInlineExtension(
-      createTrustedRemoteToolsExtension({
-        ...BASE_CONFIGURATION,
-        captureStepContext: (activeTools) => ({
-          ...capture(activeTools),
-          modelMessages: [
-            {
-              customType: "pi-cloud.sandbox_reset",
-              content: "<sandbox_reset>reset</sandbox_reset>",
-              display: false,
-              details: { schemaVersion: 1, changeSha256: "e".repeat(64) },
-            },
-          ],
-        }),
+    const runtime = createTrustedRemoteAgentTools({
+      ...BASE_CONFIGURATION,
+      captureStepContext: (activeTools) => ({
+        ...capture(activeTools),
+        modelMessages: [
+          {
+            customType: "pi-cloud.sandbox_reset",
+            content: "<sandbox_reset>reset</sandbox_reset>",
+            display: false,
+            details: { schemaVersion: 1, changeSha256: "e".repeat(64) },
+          },
+        ],
       }),
-      pi,
-    );
-    const handler = handlers.get("context");
-    if (handler === undefined) throw new Error("Context handler was not installed");
-    const first = (await handler({ type: "context", messages: [] } as never)) as {
-      messages: unknown[];
-    };
-    const second = (await handler({ type: "context", messages: first.messages } as never)) as {
-      messages: unknown[];
-    };
-
-    expect(first.messages).toHaveLength(1);
-    expect(second.messages).toHaveLength(1);
+    });
+    const first = await runtime.transformContext([]);
+    const second = await runtime.transformContext(first);
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
   });
 
   it("marks the Step world unavailable when Cube can no longer prove a Tool result", async () => {
-    const registered: ToolDefinition[] = [];
-    const handlers = new Map<string, (...args: never[]) => unknown>();
     const onToolOperationUnavailable = vi.fn();
-    const pi = {
-      registerTool(tool: ToolDefinition) {
-        registered.push(tool);
-      },
-      on(name: string, handler: (...args: never[]) => unknown) {
-        handlers.set(name, handler);
-      },
-      getActiveTools() {
-        return [...ACTIVE_TOOLS];
-      },
-    } as unknown as ExtensionAPI;
     vi.stubGlobal(
       "fetch",
       async () =>
@@ -461,15 +348,13 @@ describe("trusted remote tools extension governance", () => {
           { status: 503, headers: { "content-type": "application/json" } },
         ),
     );
-    installInlineExtension(
-      createTrustedRemoteToolsExtension({
-        ...BASE_CONFIGURATION,
-        remainingToolCalls: 1,
-        onToolOperationUnavailable,
-      }),
-      pi,
-    );
-    await captureContext(handlers);
+    const runtime = createTrustedRemoteAgentTools({
+      ...BASE_CONFIGURATION,
+      remainingToolCalls: 1,
+      onToolOperationUnavailable,
+    });
+    const registered = runtime.tools;
+    await runtime.transformContext([]);
 
     await expect(
       registered
@@ -479,28 +364,14 @@ describe("trusted remote tools extension governance", () => {
           { command: "migrate", timeout: 10 },
           new AbortController().signal,
           () => undefined,
-          undefined as never,
         ),
     ).rejects.toThrow("cubesandbox_tool_result_unknown");
     expect(onToolOperationUnavailable).toHaveBeenCalledTimes(1);
   });
 
   it("layers bounded project instructions and preserves a large read result", async () => {
-    const directory = await mkdtemp(resolve(tmpdir(), "pi-cloud-tool-output-extension-test-"));
+    const directory = await mkdtemp(resolve(tmpdir(), "pi-cloud-tool-output-test-"));
     try {
-      const registered: ToolDefinition[] = [];
-      const handlers = new Map<string, (...args: never[]) => unknown>();
-      const pi = {
-        registerTool(tool: ToolDefinition) {
-          registered.push(tool);
-        },
-        on(name: string, handler: (...args: never[]) => unknown) {
-          handlers.set(name, handler);
-        },
-        getActiveTools() {
-          return [...ACTIVE_TOOLS];
-        },
-      } as unknown as ExtensionAPI;
       vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
         expect(new Headers(init.headers).get("traceparent")).toBe(BASE_CONFIGURATION.traceparent);
         const request = publishedRequest(init) as {
@@ -530,33 +401,18 @@ describe("trusted remote tools extension governance", () => {
           headers: { "content-type": "application/json" },
         });
       });
-      installInlineExtension(
-        createTrustedRemoteToolsExtension({
-          ...BASE_CONFIGURATION,
-          remainingToolCalls: 1,
+      const runtime = createTrustedRemoteAgentTools({
+        ...BASE_CONFIGURATION,
+        remainingToolCalls: 1,
 
-          projectInstructions: "Prefer deterministic tests.",
-        }),
-        pi,
-      );
-      const beforeAgentStart = handlers.get("before_agent_start");
-      expect(beforeAgentStart).toBeDefined();
-      const context = (await beforeAgentStart!({
-        type: "before_agent_start",
-        prompt: "fix it",
-        systemPrompt: "Current working directory: /trusted",
-        systemPromptOptions: {},
-      } as never)) as { systemPrompt: string };
-      expect(context.systemPrompt).toContain("Current working directory: /workspace");
-      expect(context.systemPrompt).toContain("Prefer deterministic tests.");
-      const beforeProviderHeaders = handlers.get("before_provider_headers");
-      expect(beforeProviderHeaders).toBeDefined();
-      const providerHeaders: Record<string, string | null> = {};
-      await captureContext(handlers);
-      await beforeProviderHeaders!({
-        type: "before_provider_headers",
-        headers: providerHeaders,
-      } as never);
+        projectInstructions: "Prefer deterministic tests.",
+      });
+      const registered = runtime.tools;
+      const prompt = await runtime.systemPrompt("Current working directory: /trusted");
+      expect(prompt).toContain("Current working directory: /workspace");
+      expect(prompt).toContain("Prefer deterministic tests.");
+      await runtime.transformContext([]);
+      const providerHeaders = await runtime.transformHeaders();
       expect(providerHeaders.traceparent).toBe(BASE_CONFIGURATION.traceparent);
       expect(providerHeaders["x-pi-cloud-step-sequence"]).toMatch(/^[1-9][0-9]*$/);
       expect(providerHeaders["x-pi-cloud-sampling-attempt"]).toBe("1");
@@ -568,7 +424,6 @@ describe("trusted remote tools extension governance", () => {
           { path: "large.txt" },
           new AbortController().signal,
           () => undefined,
-          undefined as never,
         );
       expect(await readdir(directory)).toEqual([]);
     } finally {
@@ -579,23 +434,10 @@ describe("trusted remote tools extension governance", () => {
   it("selects one bounded head-tail Bash preview without archiving from the original output", async () => {
     const directory = await mkdtemp(resolve(tmpdir(), "pi-cloud-bash-preview-test-"));
     try {
-      const registered: ToolDefinition[] = [];
-      const handlers = new Map<string, (...args: never[]) => unknown>();
       const original = Buffer.from(
         `BEGIN-${"a".repeat(2_000)}-MIDDLE-${"b".repeat(2_000)}-FINAL-COMPILER-ERROR`,
         "utf8",
       );
-      const pi = {
-        registerTool(tool: ToolDefinition) {
-          registered.push(tool);
-        },
-        on(name: string, handler: (...args: never[]) => unknown) {
-          handlers.set(name, handler);
-        },
-        getActiveTools() {
-          return [...ACTIVE_TOOLS];
-        },
-      } as unknown as ExtensionAPI;
       vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
         const request = publishedRequest(init) as {
           activationId: string;
@@ -624,14 +466,12 @@ describe("trusted remote tools extension governance", () => {
           { status: 200, headers: { "content-type": "application/json" } },
         );
       });
-      installInlineExtension(
-        createTrustedRemoteToolsExtension({
-          ...BASE_CONFIGURATION,
-          remainingToolCalls: 1,
-        }),
-        pi,
-      );
-      await captureContext(handlers);
+      const runtime = createTrustedRemoteAgentTools({
+        ...BASE_CONFIGURATION,
+        remainingToolCalls: 1,
+      });
+      const registered = runtime.tools;
+      await runtime.transformContext([]);
 
       const result = (await registered
         .find((tool) => tool.name === "bash")!
@@ -640,7 +480,6 @@ describe("trusted remote tools extension governance", () => {
           { command: "compile", timeout: 10 },
           new AbortController().signal,
           () => undefined,
-          undefined as never,
         )) as {
         content: Array<{ type: string; text: string }>;
         details?: { truncation?: unknown };
@@ -659,19 +498,6 @@ describe("trusted remote tools extension governance", () => {
   });
 
   it("rejects non-contiguous Bash output before exposing it to Pi", async () => {
-    const registered: ToolDefinition[] = [];
-    const handlers = new Map<string, (...args: never[]) => unknown>();
-    const pi = {
-      registerTool(tool: ToolDefinition) {
-        registered.push(tool);
-      },
-      on(name: string, handler: (...args: never[]) => unknown) {
-        handlers.set(name, handler);
-      },
-      getActiveTools() {
-        return [...ACTIVE_TOOLS];
-      },
-    } as unknown as ExtensionAPI;
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       const request = publishedRequest(init) as {
         activationId: string;
@@ -694,14 +520,12 @@ describe("trusted remote tools extension governance", () => {
         { status: 200, headers: { "content-type": "application/json" } },
       );
     });
-    installInlineExtension(
-      createTrustedRemoteToolsExtension({
-        ...BASE_CONFIGURATION,
-        remainingToolCalls: 1,
-      }),
-      pi,
-    );
-    await captureContext(handlers);
+    const runtime = createTrustedRemoteAgentTools({
+      ...BASE_CONFIGURATION,
+      remainingToolCalls: 1,
+    });
+    const registered = runtime.tools;
+    await runtime.transformContext([]);
 
     await expect(
       registered
@@ -711,29 +535,16 @@ describe("trusted remote tools extension governance", () => {
           { command: "compile", timeout: 10 },
           new AbortController().signal,
           () => undefined,
-          undefined as never,
         ),
     ).rejects.toThrow("tool_output_sequence_invalid");
   });
 
   it("binds edit writes to the file revision that Pi actually read", async () => {
     const callIds: string[] = [];
-    const registered: ToolDefinition[] = [];
-    const handlers = new Map<string, (...args: never[]) => unknown>();
+
     const original = Buffer.from("before\n", "utf8");
     const originalSha256 = createHash("sha256").update(original).digest("hex");
     let written: string | undefined;
-    const pi = {
-      registerTool(tool: ToolDefinition) {
-        registered.push(tool);
-      },
-      on(name: string, handler: (...args: never[]) => unknown) {
-        handlers.set(name, handler);
-      },
-      getActiveTools() {
-        return [...ACTIVE_TOOLS];
-      },
-    } as unknown as ExtensionAPI;
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       const request = publishedRequest(init) as {
         activationId: string;
@@ -777,14 +588,12 @@ describe("trusted remote tools extension governance", () => {
         headers: { "content-type": "application/json" },
       });
     });
-    installInlineExtension(
-      createTrustedRemoteToolsExtension({
-        ...BASE_CONFIGURATION,
-        remainingToolCalls: 1,
-      }),
-      pi,
-    );
-    await captureContext(handlers);
+    const runtime = createTrustedRemoteAgentTools({
+      ...BASE_CONFIGURATION,
+      remainingToolCalls: 1,
+    });
+    const registered = runtime.tools;
+    await runtime.transformContext([]);
 
     await expect(
       registered
@@ -794,7 +603,6 @@ describe("trusted remote tools extension governance", () => {
           { path: "example.txt", edits: [{ oldText: "before", newText: "after" }] },
           new AbortController().signal,
           () => undefined,
-          undefined as never,
         ),
     ).resolves.toMatchObject({
       content: [{ type: "text", text: "Successfully replaced 1 block(s) in example.txt." }],

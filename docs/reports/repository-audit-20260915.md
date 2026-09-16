@@ -3,6 +3,17 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+The latest Tool-adapter slice reproduces a Hosted Search ordering defect:
+two trailing searches sharing a preceding anchor replayed in reverse order.
+Append within that search group instead; anchored/trailing and idempotent replay
+regressions pass. The old remote-Tool Extension entry point had no production
+caller. Removed it, its emulated Extension API/handler registry and unreachable
+CLI Bash hook; kept the same Pi factories, policy/Step checks, commands, result
+reads and output handling. Ported tests to the actual Agent Tool factory and
+renamed the files to `trusted-remote-tools`. One duplicate registration-only test
+is removed. Supervisor tests pass (112); types pass. Deployment, paid coding and
+search/provider handoff acceptance for this slice are still pending.
+
 MEM-02 continuation: completed command/control/family bookkeeping is released
 by a minute-period Worker maintenance task only after PG proves terminal Run,
 projected seal and terminal control requests. One indexed, bounded lookup batch

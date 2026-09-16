@@ -163,7 +163,13 @@ function insertHostedItem(items: JsonRecord[], block: ProviderHostedToolCallCont
   }
   const previousIndex =
     block.previousItemId === undefined ? -1 : findInputItem(items, block.previousItemId);
-  if (previousIndex >= 0) items.splice(previousIndex + 1, 0, { ...block.nativeItem });
+  if (previousIndex >= 0) {
+    // Several trailing searches share the same preceding non-search item.
+    // Append after that group rather than reversing it at the same insertion point.
+    let insertion = previousIndex + 1;
+    while (items[insertion]?.type === "web_search_call") insertion++;
+    items.splice(insertion, 0, { ...block.nativeItem });
+  }
 }
 
 /** Replays native IDs only to the exact Provider/API/model that issued them. */

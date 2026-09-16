@@ -81,6 +81,41 @@ const model = {
 } as Model<"openai-responses">;
 
 describe("Provider Hosted transcript", () => {
+  it.each([false, true])("preserves adjacent search order with trailing=%s", (trailing) => {
+    const message = assistant();
+    if (trailing) message.content.splice(1);
+    const secondSearch = {
+      ...transcript.items[1]!,
+      outputIndex: 2,
+      id: "ws-2",
+      nativeItem: { ...transcript.items[1]!.nativeItem!, id: "ws-2" },
+    };
+    applyProviderHostedTranscript(message, {
+      ...transcript,
+      items: [
+        transcript.items[0]!,
+        transcript.items[1]!,
+        secondSearch,
+        ...(trailing ? [] : [{ ...transcript.items[2]!, outputIndex: 3 }]),
+      ],
+    });
+    const payload = {
+      input: [
+        { type: "reasoning", id: "rs-1" },
+        ...(trailing ? [] : [{ type: "message", id: "msg-1" }]),
+      ],
+    };
+    for (let replay = 0; replay < 2; replay++) {
+      replayProviderHostedTranscripts(payload, { messages: [message] }, model);
+      expect(payload.input.map((item) => item.id)).toEqual([
+        "rs-1",
+        "ws-1",
+        "ws-2",
+        ...(trailing ? [] : ["msg-1"]),
+      ]);
+    }
+  });
+
   it("persists native search order and citation annotations idempotently", () => {
     const message = assistant();
     applyProviderHostedTranscript(message, transcript);

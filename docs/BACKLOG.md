@@ -67,6 +67,9 @@ Volume architecture. Historical experiments remain in Git history.
       Startup failure now rejects queued Steer/child-input waiters instead of
       stranding them. Removed unused synchronous Step capture and old settlement
       extension code; tests exercise the actual production controllers.
+      Remote Tools now expose native Agent tools/hooks directly, without a fake
+      Extension API, handler registry or unused CLI Bash hook. Hosted Search
+      replay preserves the order of adjacent trailing search items.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;
