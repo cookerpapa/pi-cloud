@@ -26,7 +26,7 @@ describe("live acceptance timing boundaries", () => {
       ),
     ).toEqual({
       unavailable:
-        "Host wall clock changed during the Run; monotonic client durations remain valid",
+        "Host wall clock changed during the Run; validate the monotonic clock independently before using durations",
       clockStepMs: 3000,
     });
   });

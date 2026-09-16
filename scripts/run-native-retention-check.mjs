@@ -71,7 +71,6 @@ if (process.argv[2] !== "inside") {
     topic,
     partitions: 1,
     replicas: 3,
-    retentionMs: 1000,
     clientId: randomUUID(),
   });
   const gc = new KafkaSafeRetention({

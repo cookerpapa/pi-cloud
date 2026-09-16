@@ -2,10 +2,7 @@ import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
 import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 import { DirectExecutionLog } from "@pi-cloud/runtime-core/direct-execution-log";
-import {
-  KafkaAcceptedFactBus,
-  loadProducerCapacity,
-} from "@pi-cloud/runtime-core/kafka-accepted-fact";
+import { KafkaAcceptedFactBus } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { NativeSessionLogPublisher } from "@pi-cloud/runtime-core/native-session-log-publisher";
 import {
   AcceptedFactPublisherFailedError,
@@ -427,16 +424,11 @@ export class PiWorkerRuntime {
         brokers: this.#config.kafka.brokers,
         partitions: this.#config.kafka.partitions,
         replicas: this.#config.kafka.replicas,
-        retentionMs: this.#config.kafka.retentionMs,
         clientId: runWorkerIdentity,
-        capacity: loadProducerCapacity(process.env),
+        capacity: this.#config.producerCapacity,
         ...(this.#metrics ? { metrics: this.#metrics } : {}),
       });
-      executionLogs = new DirectExecutionLog(
-        this.#database!,
-        bus,
-        loadProducerCapacity(process.env),
-      );
+      executionLogs = new DirectExecutionLog(this.#database!, bus, this.#config.producerCapacity);
       this.#activeExecutionLogs = executionLogs;
       this.#ownsExecutionLogs = true;
       await bus.start();

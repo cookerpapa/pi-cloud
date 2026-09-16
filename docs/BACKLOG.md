@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Carry shared Kafka Producer capacity into typed Worker configuration and
+      both deployment modes; keep retention on the safe Projector reaper only.
+      Before/after config contracts and real R=3 overload/retention checks pass.
+
 - [x] Align platform Helm Service names, Kafka/Volume egress and bootstrap Secret
       permissions. Render contracts and owned K3s before/after probes pass; this
       is not certification of a full multi-node deployment.
@@ -247,7 +251,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 - [ ] Run the one-host installer on a clean machine.
 - [ ] Add deployment-specific Kafka TLS/SASL/ACL examples.
-- [ ] Validate backup/restore and retention changes with active Runs.
+- [ ] Validate deployment-owned, coordinated PG/Kafka/Cube backup and restore.
+      The retired one-host archive CLI is removed; PiCloud does not claim an
+      automatic whole-system restore path.
 - [ ] Replace placeholder Alertmanager delivery with the operator's on-call system.
 - [ ] Design GitHub user authorization before reintroducing App onboarding
       (ADR-0169); current tests cover already-bound Webhooks and ordinary

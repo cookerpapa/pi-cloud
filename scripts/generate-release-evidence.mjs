@@ -276,7 +276,7 @@ try {
     })),
     ...CUBE_PLATFORM_IMAGES.map((imageName) => ({
       imageName,
-      reference: `pi-cloud/${imageName}:local`,
+      reference: `pi-cloud/${imageName}:${revision}`,
       labelVersion: "cube-primary",
     })),
     {

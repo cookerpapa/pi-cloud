@@ -168,8 +168,8 @@ export async function startControlPlane(): Promise<void> {
       partitions: config.kafkaPartitions,
       replicas: config.kafkaReplicas,
       capacity: config.producerCapacity,
-      metrics: observability.metrics,
       retentionMs: config.acceptedFactRetentionMs,
+      metrics: observability.metrics,
     });
     // The completed Projector now owns/drains its command consumers.
     unattachedSubagents = undefined;

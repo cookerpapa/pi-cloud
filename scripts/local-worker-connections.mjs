@@ -83,6 +83,8 @@ export function localWorkerValues(environment, systemNamespace) {
           .map((target) => `${target.name}:9092`),
         partitions: Number(environment.PI_CLOUD_KAFKA_PARTITIONS ?? 32),
         replicas: 3,
+        producerPendingBytes: Number(environment.PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES ?? 67108864),
+        producerPendingFacts: Number(environment.PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS ?? 4096),
       },
     },
     services: {

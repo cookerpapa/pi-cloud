@@ -65,6 +65,15 @@ assert.equal(
   "the local Cubelet data image must retain its bounded production-check capacity",
 );
 const installer = readFileSync("scripts/install-cubesandbox-k3s.mjs", "utf8");
+const releaseEvidence = readFileSync("scripts/generate-release-evidence.mjs", "utf8");
+assert.ok(
+  /reference: `pi-cloud\/\$\{imageName\}:\$\{revision\}`/u.test(releaseEvidence),
+  "Release evidence must inspect immutable Cube platform images",
+);
+assert.ok(
+  !/reference: `pi-cloud\/\$\{imageName\}:local`/u.test(releaseEvidence),
+  "Retired mutable Cube image tags must not remain",
+);
 assert.match(installer, /ensureCubeletLoopbackCapacity\(\)/u);
 assert.match(installer, /xfs_growfs/u);
 assert.match(installer, /PI_CLOUD_KUBECTL_BIN/u);

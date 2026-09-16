@@ -1,6 +1,6 @@
 {
   "format": "pi-cloud.native-retention.v1",
-  "checkedAt": "2026-09-08T17:07:10.937Z",
+  "checkedAt": "2026-09-16T12:28:29.912Z",
   "accepted": true,
   "scope": "real R3 Kafka producer/admin deletion with socket-backed PGlite progress fixtures; no model calls",
   "noCheckpointRetainsAll": true,

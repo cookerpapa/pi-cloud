@@ -1,9 +1,9 @@
 {
   "format": "pi-cloud.consumer-isolation.v2",
-  "checkedAt": "2026-09-10T11:01:31.462Z",
+  "checkedAt": "2026-09-16T12:39:51.064Z",
   "passed": true,
   "heldPartitionRecords": 513,
-  "otherPartitionMs": 69.52527700000019,
+  "otherPartitionMs": 598.9449599999998,
   "allHeldRecordsRecovered": true,
   "recoveryRecordsRead": 2,
   "projectionFloorReplayedDespiteCommittedGroup": true,

@@ -4,6 +4,8 @@ global:
     brokers: [kafka-1:9092, kafka-2:9092, kafka-3:9092]
     partitions: 32
     replicas: 3
+    producerPendingBytes: 67108864
+    producerPendingFacts: 4096
 
 workerPool:
   name: primary

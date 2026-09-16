@@ -67,7 +67,6 @@ if (process.argv[2] !== "inside") {
     topic,
     partitions: 2,
     replicas: 3,
-    retentionMs: 3600000,
     clientId: randomUUID(),
   });
   const admin = new Admin({ bootstrapBrokers: brokers, clientId: randomUUID() });

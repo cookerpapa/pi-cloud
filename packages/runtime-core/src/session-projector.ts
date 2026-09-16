@@ -32,6 +32,7 @@ export class SessionProjector {
   #closing: Promise<void> | undefined;
   constructor(
     readonly options: KafkaAcceptedFactConfiguration & {
+      retentionMs: number;
       database: Kysely<Database>;
       advertisedBaseUrl: string;
       toolCommands: {

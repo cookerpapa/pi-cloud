@@ -58,7 +58,7 @@ export function runStageTiming(sample, requests) {
     if (Math.abs(clockStepMs) > 100)
       return {
         unavailable:
-          "Host wall clock changed during the Run; monotonic client durations remain valid",
+          "Host wall clock changed during the Run; validate the monotonic clock independently before using durations",
         clockStepMs,
       };
   }

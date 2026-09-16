@@ -65,8 +65,8 @@ latency/WAL, so token fragments never masquerade as canonical database state.
 
 Interactive latency reports use distinct boundaries:
 
-- `firstDurableActivityMs` is the first Kafka-acknowledged
-  `assistant.text.delta` or complete `tool.started` event for the Turn;
+- `firstDurableActivityMs` is the first Kafka-acknowledged text delta, Tool
+  preparation/start, or hosted-search start for the Turn;
 - `firstToolStartedMs` is the first durable Tool start and is `null` for a
   Tool-free Turn;
 - `firstAssistantTextMs` is literally the first Assistant text delta. A model

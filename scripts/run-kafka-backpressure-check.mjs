@@ -72,7 +72,6 @@ if (process.argv[2] !== "inside") {
     topic,
     partitions: 1,
     replicas: 3,
-    retentionMs: 3600000,
     producerLanes: 1,
     capacity,
   });

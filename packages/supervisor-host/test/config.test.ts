@@ -57,6 +57,26 @@ afterEach(async () => {
 });
 
 describe("Supervisor host production configuration", () => {
+  it("loads Producer limits from the supplied environment before runtime startup", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-cloud-host-config-"));
+    roots.push(root);
+    const environment = await validEnvironment(root);
+    await expect(
+      loadSupervisorHostConfig({
+        ...environment,
+        PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES: "1048576",
+        PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS: "16",
+      }),
+    ).resolves.toMatchObject({
+      producerCapacity: { maximumPendingBytes: 1048576, maximumPendingFacts: 16 },
+    });
+    await expect(
+      loadSupervisorHostConfig({
+        ...environment,
+        PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS: "0",
+      }),
+    ).rejects.toThrow("PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS");
+  });
   it("reads secrets only from private files and derives the WebSocket URL", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-cloud-host-config-"));
     roots.push(root);
@@ -256,7 +276,6 @@ describe("Supervisor host production configuration", () => {
           "database",
           "postgresql://picloud:secret@postgres:5432/picloud",
         ),
-        PI_CLOUD_SANDBOX_IMAGE: "pi-cloud/sandbox:0.1.0",
         PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
       }),
     ).rejects.toThrow("not a private bounded regular file");

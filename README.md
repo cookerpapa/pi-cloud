@@ -212,8 +212,6 @@ npm run production:ps
 npm run production:logs
 npm run production:config
 npm run production:up:observability
-npm run production:backup
-npm run production:restore
 npm run production:down
 ```
 

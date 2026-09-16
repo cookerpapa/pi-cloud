@@ -124,7 +124,6 @@ async function fixture(capacity = { maximumPendingBytes: 100000, maximumPendingF
     clientId: "test",
     partitions: 4,
     replicas: 3,
-    retentionMs: 7200000,
     producerLanes: 2,
     capacity,
     closeTimeoutMs: 100,

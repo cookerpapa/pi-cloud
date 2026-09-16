@@ -1,6 +1,10 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
+import {
+  loadProducerCapacity,
+  type ProducerCapacity,
+} from "@pi-cloud/runtime-core/kafka-accepted-fact";
 
 const MAX_SECRET_BYTES = 16 * 1_024;
 const MAX_REMOTE_TOOL_EXECUTION_MS = 5 * 60_000;
@@ -21,7 +25,8 @@ export type SupervisorHostConfig = {
   providerGatewayApiKey: string;
   databaseUrl: string;
   databaseNotificationUrl: string;
-  kafka: { brokers: readonly string[]; partitions: number; replicas: number; retentionMs: number };
+  kafka: { brokers: readonly string[]; partitions: number; replicas: number };
+  producerCapacity: ProducerCapacity;
   managementHost: string;
   managementPort: number;
   managementAdvertisedBaseUrl: string;
@@ -376,19 +381,13 @@ export async function loadSupervisorHostConfig(
     ),
     databaseUrl,
     databaseNotificationUrl,
+    producerCapacity: loadProducerCapacity(environment),
     kafka: {
       brokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
         .split(",")
         .map((s) => s.trim()),
       partitions: integerValue(environment, "PI_CLOUD_KAFKA_PARTITIONS", 32, 1, 1024),
       replicas: integerValue(environment, "PI_CLOUD_KAFKA_REPLICAS", 3, 1, 5),
-      retentionMs: integerValue(
-        environment,
-        "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS",
-        7200000,
-        3600000,
-        604800000,
-      ),
     },
     managementHost: bounded(
       environment.PI_CLOUD_SUPERVISOR_MANAGEMENT_HOST ?? "127.0.0.1",

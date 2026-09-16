@@ -69,6 +69,15 @@ assert.equal(
 );
 assert.equal(compose.services["supervisor-host-1"].extends.service, "supervisor-host");
 assert.equal(compose.services["supervisor-host-1"].user, undefined);
+for (const key of [
+  "PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES",
+  "PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS",
+]) {
+  assert.equal(
+    compose.services["supervisor-host"].environment[key],
+    compose.services["control-plane"].environment[key],
+  );
+}
 const usedNetworks = new Set(
   Object.values(compose.services).flatMap((service) =>
     Array.isArray(service.networks) ? service.networks : Object.keys(service.networks ?? {}),

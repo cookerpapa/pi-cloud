@@ -75,14 +75,17 @@ npm run production:ps
 npm run production:logs
 npm run production:config
 npm run production:down
-npm run production:backup
-npm run production:restore
 ```
 
-Offline backups contain PostgreSQL, the generated runtime configuration,
-Worker boot ledgers and the local persistent Workspace Volume directory. On distributed
-storage, use the storage backend's snapshot/backup mechanism in addition to the
-PostgreSQL backup.
+## Backup boundary
+
+PiCloud does not provide a whole-system backup/restore command. Deployment
+operators must coordinate PostgreSQL, Kafka and Cube/storage backups using their
+existing infrastructure tools, preserving credentials, ownership and file modes.
+PostgreSQL alone does not include an unprojected Kafka prefix or Cube VM state.
+Drain execution and verify projected seals before a planned consistent snapshot;
+exercise restoration on an isolated deployment before claiming recovery coverage.
+Cube's node-affine VM snapshots are not automatically replicated disaster recovery.
 
 ## Acceptance
 

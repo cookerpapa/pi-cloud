@@ -111,6 +111,8 @@ try {
   const values = localWorkerValues(
     {
       PI_CLOUD_KAFKA_PARTITIONS: "64",
+      PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES: "1048576",
+      PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS: "16",
       PI_CLOUD_SUPERVISOR_CAPACITY: "8",
       PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS: "6",
       PI_CLOUD_WORKER_MODEL_CONCURRENCY: "12",
@@ -130,6 +132,8 @@ try {
   );
   for (const [key, value] of Object.entries({
     PI_CLOUD_KAFKA_PARTITIONS: "64",
+    PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES: "1048576",
+    PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS: "16",
     PI_CLOUD_SUPERVISOR_CAPACITY: "8",
     PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS: "6",
     PI_CLOUD_WORKER_MODEL_CONCURRENCY: "12",
@@ -137,7 +141,7 @@ try {
     PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH: "3",
     PI_CLOUD_SUBAGENT_MAXIMUM_NODES: "16",
   }))
-    assert.equal(localEnvironment[key], value);
+    assert.equal(Number(localEnvironment[key]), Number(value), key);
   const bridges = composeBridgeResources(
     bridgeTargets.map((target) => ({ ...target, address: "192.0.2.10" })),
     "pi-cloud-system",

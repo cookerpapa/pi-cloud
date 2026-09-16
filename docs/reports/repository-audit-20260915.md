@@ -7,6 +7,39 @@ Application-source reading is now covered by the private hash/range ledger;
 tests, migrations, deployment/scripts and documents still have remaining reads.
 This is coverage of reading, not a claim that every combination is already tested.
 
+The owner approved removing the old whole-system backup/restore entry rather
+than building a new disaster-recovery system. Exact restore-code fixtures
+reproduce 0755→0600 permission loss and rejected valid Workspace symlinks; the
+scripts also require retired image tags/fixed optional Volumes and omit current
+Kafka/Cube authorities. Remove the four scripts, npm/CI entries and unsupported
+operating instructions. Deployment documentation now states the coordinated
+backup boundary. No backup archive or real user data was deleted; Git retains
+the old implementation. Earlier crypto-only passes are historical, not evidence
+that the current system can be restored as a whole.
+
+Further configuration tracing found that Worker runtime could read Producer limits
+from ambient process.env, but Compose/Helm omitted them and the typed startup
+configuration did not validate them. Three before-fix contracts reproduce the
+gap. Load the shared capacity parser once, pass the snapshot to the bus/native
+writer, and wire the same values into both deployment modes. Remove the unused
+Producer retention parameter while retaining the actual Projector reaper grace.
+Real R=3 overload/recovery offers 6,000 Facts: 4,037 acknowledged and consumed,
+1,963 rejected before publication, 4 MiB bound respected and no pending data
+after drain. Its elapsed time predates host-clock repair and is not accepted as
+performance evidence. Native retention probes preserve low watermarks 0/5/20/20
+through absent progress, an unsealed prefix, grace and database failure.
+
+Host-clock diagnosis now identifies conflicting systemd-timesyncd and chronyd
+clock_adjtime calls. The kernel tick was 9000–9220µs; an approved one-off 10000µs
+trial was promptly overwritten. With owner approval, temporarily stop Ubuntu's
+timesyncd (leave enablement unchanged) and retain WSL's PHC-backed chronyd.
+Privileged chronyc reset commands were rejected and made no change; the remaining
+daemon converged itself. The subsequent 140-sample/70-second comparison reports
+Linux/Windows monotonic ratio 0.999880 and UTC offset 0–17 ms, with tick 10000µs.
+Earlier timings remain excluded; final benchmarks must use fresh stable-clock
+samples. No boot configuration changed. Clock adjustment follows the native
+[adjtimex contract](https://man7.org/linux/man-pages/man2/adjtimex.2.html).
+
 At `921450f8`, complete local CI passes 989 tests, two independent live skips,
 26 targeted fault cases, four native Prometheus scenarios, and all deployment,
 build/type/format/backup/security gates. GitHub CI also passed that revision.

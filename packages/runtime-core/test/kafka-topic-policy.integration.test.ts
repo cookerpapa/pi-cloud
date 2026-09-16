@@ -48,7 +48,6 @@ it.skipIf(!brokers)(
           topic,
           partitions: 1,
           replicas: 3,
-          retentionMs: 3600000,
           producerLanes: 1,
           manageTopic: false,
         });

@@ -211,6 +211,11 @@ Kubernetes derives it from Pod IP and HTTP port. Browsers use the public endpoin
 not these URLs. Projector runs in Control Plane; the independent event-projector
 profile and per-token Fact channel settings are removed.
 
+Producer budgets are loaded once into each service's startup configuration; the
+local Kubernetes cutover carries the same `.env` limits into its Worker values.
+Retention grace belongs only to the Projector's safe reaper, not the Producer:
+changing it does not enable Kafka's automatic age/size deletion.
+
 The code-owned SSE v2 transport limits each frame to 128 KiB; JSON parts contain
 at most 16,384 UTF-16 code units so escaping also fits. This is not a 128 KiB
 conversation limit. A blocked socket write times out after 30 seconds and closes

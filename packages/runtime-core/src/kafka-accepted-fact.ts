@@ -27,7 +27,6 @@ export type KafkaAcceptedFactConfiguration = Readonly<{
   topic?: string;
   partitions: number;
   replicas: number;
-  retentionMs: number;
   producerLanes?: number;
   capacity?: ProducerCapacity;
   closeTimeoutMs?: number;
@@ -121,7 +120,6 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
     this.#topic = configuration.topic ?? ACCEPTED_FACT_TOPIC;
     this.#partitions = positiveInteger(configuration.partitions, "Kafka partitions");
     this.#replicas = positiveInteger(configuration.replicas, "Kafka replicas");
-    positiveInteger(configuration.retentionMs, "Kafka retentionMs");
     const capacity = configuration.capacity ?? DEFAULT_PRODUCER_CAPACITY;
     this.#capacity = {
       maximumPendingBytes: positiveInteger(capacity.maximumPendingBytes, "maximumPendingBytes"),

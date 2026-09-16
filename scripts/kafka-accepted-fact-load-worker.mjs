@@ -5,7 +5,7 @@ import { performance } from "node:perf_hooks";
 import { KafkaAcceptedFactBus } from "../packages/runtime-core/src/kafka-accepted-fact.ts";
 
 const brokers = ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"];
-const topic = `pi-cloud.accepted-fact-benchmark-${Date.now().toString(36)}`;
+const topic = `pi-cloud.accepted-fact-benchmark-${randomUUID()}`;
 const clientId = `pi-cloud-kafka-load-${randomUUID()}`;
 const durationMs = Number(process.env.PI_CLOUD_KAFKA_LOAD_DURATION_MS ?? 0);
 if (!Number.isSafeInteger(durationMs) || durationMs < 0 || durationMs > 180_000)
@@ -86,7 +86,6 @@ const bus = new KafkaAcceptedFactBus({
   topic,
   partitions: 32,
   replicas: 3,
-  retentionMs: 60 * 60_000,
 });
 const admin = new Admin({ clientId: `${clientId}-cleanup`, bootstrapBrokers: brokers });
 

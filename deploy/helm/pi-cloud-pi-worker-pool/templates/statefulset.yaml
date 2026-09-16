@@ -139,6 +139,10 @@ spec:
               value: {{ .Values.global.kafka.partitions | quote }}
             - name: PI_CLOUD_KAFKA_REPLICAS
               value: {{ .Values.global.kafka.replicas | quote }}
+            - name: PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES
+              value: {{ .Values.global.kafka.producerPendingBytes | quote }}
+            - name: PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS
+              value: {{ .Values.global.kafka.producerPendingFacts | quote }}
             - name: PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP
               value: {{ .Values.runtime.allowInsecureInternalHttp | quote }}
             - name: PI_CLOUD_CONTROL_PLANE_URL
