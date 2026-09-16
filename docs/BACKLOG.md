@@ -207,6 +207,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Operations
 
+- [x] Support custom Worker Secret key names without changing mounted file paths;
+      use `IfNotPresent` for the generic Worker chart while local image import
+      explicitly retains `Never`. Custom-key and full-chart render checks pass.
+
 - [ ] Reconcile Cube Volume node refcounts after host/guest loss: the approved
       reset found three references with no remaining instance or mount.
 - [ ] Resolve Cube template/artifact cleanup addresses from stable node identity;

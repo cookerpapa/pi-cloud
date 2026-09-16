@@ -34,6 +34,7 @@ than multiplying connections for model-waiting Runs.
 `services.providerGatewayUrl` points to a separately operated CLIProxyAPI (or an
 equivalent provider gateway); Workers receive only its client API key, never an
 upstream OAuth refresh token or model-provider API key.
+Secret key names are configurable; their file paths inside the Worker remain fixed.
 
 ## Install and scale
 
@@ -44,6 +45,10 @@ helm upgrade --install pi-workers \
   --set image.repository=registry.example/pi-cloud/supervisor-host \
   --set image.digest=sha256:...
 ```
+
+The chart pulls missing images by default. The local K3s helper explicitly uses
+`Never` after importing its local image; remote clusters should keep `IfNotPresent`
+or select `Always` and configure registry credentials when needed.
 
 Manual scaling changes `workerPool.replicas`. With KEDA installed, enable
 `autoscaling.enabled`; the PostgreSQL scaler counts distinct active/ready physical

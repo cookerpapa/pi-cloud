@@ -52,6 +52,45 @@ assert.equal(environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT, undefined);
 assert.equal(environment.PI_CLOUD_WORKER_MODEL_CONCURRENCY, "4");
 assert.equal(environment.PI_CLOUD_SESSION_MODEL_CONCURRENCY, "4");
 
+const customWorker = parseAllDocuments(
+  run([
+    "template",
+    "custom-workers",
+    chart,
+    "--set",
+    "database.urlKey=custom-database-url",
+    "--set",
+    "database.notificationUrlKey=custom-notification-url",
+    "--set",
+    "credentials.supervisorEnrollmentTokenKey=custom-enrollment",
+    "--set",
+    "credentials.supervisorManagementTokenKey=custom-management",
+    "--set",
+    "credentials.toolBrokerTokenKey=custom-broker",
+    "--set",
+    "credentials.providerGatewayApiKeyKey=custom-provider",
+    "--set",
+    "credentials.metricsTokenKey=custom-metrics",
+  ]),
+)
+  .map((document) => document.toJSON())
+  .find((resource) => resource?.kind === "StatefulSet");
+const customPod = customWorker.spec.template.spec;
+const secretPaths = new Set(
+  customPod.volumes
+    .find((volume) => volume.name === "secrets")
+    .secret.items.map((item) => item.path),
+);
+for (const mount of customPod.containers[0].volumeMounts.filter(
+  (mount) => mount.name === "secrets",
+)) {
+  assert(
+    secretPaths.has(mount.subPath),
+    `Secret mount ${mount.mountPath} refers to missing path ${mount.subPath}`,
+  );
+}
+assert.equal(worker.spec.template.spec.containers[0].imagePullPolicy, "IfNotPresent");
+
 const scaler = find("ScaledObject");
 assert(scaler);
 assert.equal(scaler.spec.triggers[0].type, "postgresql");

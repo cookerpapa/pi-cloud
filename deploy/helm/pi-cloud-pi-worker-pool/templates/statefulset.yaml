@@ -280,7 +280,7 @@ spec:
               readOnly: true
             - name: secrets
               mountPath: /run/pi-cloud-secrets/metrics-token
-              subPath: {{ .Values.credentials.metricsTokenKey }}
+              subPath: metrics-token
               readOnly: true
       volumes:
         - name: workspace

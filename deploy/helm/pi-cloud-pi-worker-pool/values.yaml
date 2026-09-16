@@ -35,7 +35,7 @@ image:
   repository: pi-cloud/supervisor-host
   tag: production
   digest: ""
-  pullPolicy: Never
+  pullPolicy: IfNotPresent
 
 services:
   controlPlaneUrl: http://control-plane.pi-cloud-system.svc.cluster.local:3000

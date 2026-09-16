@@ -84,7 +84,7 @@ export function runStageTiming(sample, requests) {
       ? { nonProviderTtftMs: round(sample.firstAssistantTextMs - providerRouteToFirstTextMs) }
       : {}),
     measurement:
-      "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; synchronized host clocks",
+      "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; requires synchronized host clocks",
   };
 }
 

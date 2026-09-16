@@ -25,8 +25,19 @@ immediately called `terminate`, sometimes exposing code 1006 instead of 1009.
 Do not terminate a socket already closing; the existing ws library owns its
 bounded handshake timeout. Both byte/frame overloads reproduce forced termination
 before repair. Thirteen Broker RPC tests/types and eight repetitions of four
-terminal cases pass after repair. Full CI repetition/rollout is pending; the
-preceding CI failed and is not reported as green.
+terminal cases pass after repair. Broker is deployed at `5839d508`; complete
+local CI on that revision passes 989 tests, two independent live skips, 26 fault
+cases and build/type/docs/Helm/install/backup/security gates. Two existing moderate
+Vitest dependency findings remain; the high/critical gate passes. Twenty-two host
+clock steps were observed, so new timing values remain excluded. The temporary
+PostgreSQL container was removed after confirming no test clients remained.
+
+Worker chart review reproduced a custom metrics Secret key mapping to a nonexistent
+subPath. Mount the fixed projected file path, like the other secrets, and cover all
+custom key names in Helm rendering. The standalone chart now pulls missing images;
+the local K3s helper already explicitly selects Never after image import. Worker,
+platform and distributed-values checks pass. This is render/contract evidence,
+not a fresh multi-node Kubernetes deployment claim.
 
 Further September 16 review reproduced terminal input delivered after its socket
 closed. Bound the existing serial queue (1 MiB / 128 frames), keep control-frame
