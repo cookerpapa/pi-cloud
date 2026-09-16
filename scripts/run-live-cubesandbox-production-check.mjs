@@ -327,7 +327,7 @@ async function runUsageEvidence(runId) {
             coalesce(sum((entry.payload #>> '{message,usage,input}')::bigint), 0) || '|' ||
             coalesce(sum((entry.payload #>> '{message,usage,output}')::bigint), 0) || '|' ||
             coalesce(sum((entry.payload #>> '{message,usage,cacheRead}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{message,usage,cacheWrite}')::bigint), 0) || '|0'
+            coalesce(sum((entry.payload #>> '{message,usage,cacheWrite}')::bigint), 0)
        from runs run
        join pi_session_entries entry
          on entry.tenant_id = run.tenant_id
@@ -338,19 +338,13 @@ async function runUsageEvidence(runId) {
         and entry.payload #>> '{message,role}' = 'assistant'
         and entry.payload #> '{message,usage}' is not null`,
   );
-  const [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costMicrousd] =
-    value.split("|").map(Number);
-  for (const number of [
-    requests,
-    inputTokens,
-    outputTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    costMicrousd,
-  ]) {
+  const [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens] = value
+    .split("|")
+    .map(Number);
+  for (const number of [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens]) {
     assert(Number.isSafeInteger(number) && number >= 0, "Run usage evidence is invalid");
   }
-  return { requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costMicrousd };
+  return { requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens };
 }
 
 function wait(delayMs, signal) {
