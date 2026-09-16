@@ -62,6 +62,17 @@ assert.doesNotMatch(productionCompose, /event-gateway|valkey|nats-/u);
 const compose = parse(productionCompose, {
   customTags: [{ tag: "!override", collection: "seq", resolve: (value) => value }],
 });
+for (const host of [
+  ".workers.pi-cloud.local",
+  "supervisor-host",
+  "pi-cloud-worker-1",
+  "pi-cloud-worker-2",
+]) {
+  assert(
+    compose.services["control-plane"].environment.NO_PROXY.split(",").includes(host),
+    `Private Worker management must bypass the provider proxy: ${host}`,
+  );
+}
 assert.equal(
   compose.services["supervisor-host"].user,
   "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}",

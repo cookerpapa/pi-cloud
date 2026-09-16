@@ -27,7 +27,7 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   NODE_USE_ENV_PROXY: "1"
   HTTP_PROXY: http://provider-egress-relay:3129
   HTTPS_PROXY: http://provider-egress-relay:3129
-  NO_PROXY: 127.0.0.1,localhost,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,control-plane,tool-broker,cli-proxy-api,kafka-1,kafka-2,kafka-3
+  NO_PROXY: 127.0.0.1,localhost,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,control-plane,tool-broker,cli-proxy-api,kafka-1,kafka-2,kafka-3,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2,.workers.pi-cloud.local
   PI_CLOUD_IMAGE_REVISION: ${PI_CLOUD_IMAGE_REVISION:-unknown}
   PI_CLOUD_PROJECTOR_ADVERTISED_URL: http://control-plane:3000
   PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE: /run/pi-cloud-secrets/tool-dispatch-token

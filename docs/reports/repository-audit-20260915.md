@@ -21,7 +21,12 @@ Resolve dependency addresses after CP recreation. Stopping the failed readiness
 wait exercised real rollback: remove the Helm pool and wait for executor Pods
 before restoring Compose. This also caught an invalid `compose create --no-deps`
 flag in the new stopped-Worker path; use `compose up --no-start --no-deps` instead.
-Final successful deployment acceptance remains pending.
+The next run reached two healthy, enrolled K8s Workers but CP management probes
+went through the provider proxy because local Worker hosts were missing from
+`NO_PROXY`. Add the private Compose/Ingress hosts to the CP environment and check
+them in the installer contract. This failed deployment rolled back successfully
+with zero K8s executors and one running/one stopped Compose Worker. Final
+successful deployment acceptance remains pending.
 
 The owner approved removing the old whole-system backup/restore entry rather
 than building a new disaster-recovery system. Exact restore-code fixtures
