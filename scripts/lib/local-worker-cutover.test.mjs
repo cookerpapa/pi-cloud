@@ -40,6 +40,21 @@ function fixture(failAt) {
 }
 
 describe("local Worker deployment rollback", () => {
+  it("resolves Compose addresses after recreating Control Plane", async () => {
+    const { dependencies } = fixture();
+    let address = "old-container-ip";
+    dependencies.switchControlPlaneToKubernetes = async () => {
+      address = "new-container-ip";
+    };
+    dependencies.bridgeComposeServices = async () => [{ address }];
+    let deployed;
+    dependencies.deployWorkerPool = async (_tag, targets) => {
+      deployed = targets;
+    };
+    await load("up", dependencies)();
+    expect(deployed).toEqual([{ address: "new-container-ip" }]);
+  });
+
   it("does not cut over if a Run arrived while building the image", async () => {
     const { calls, dependencies } = fixture();
     let checked = 0;
@@ -162,7 +177,7 @@ describe("local Worker deployment rollback", () => {
     expect(calls).toEqual([
       { args: ["up", "--detach", "--no-deps", "control-plane"], revision: "control-revision" },
       { args: ["up", "--detach", "--no-deps", "supervisor-host"], revision: undefined },
-      { args: ["create", "--no-deps", "supervisor-host-1"], revision: undefined },
+      { args: ["up", "--no-start", "--no-deps", "supervisor-host-1"], revision: undefined },
     ]);
   });
 });

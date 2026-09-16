@@ -734,7 +734,7 @@ async function restoreComposeWorkers(previous) {
     await productionCompose(
       worker.running
         ? ["up", "--detach", "--no-deps", worker.service]
-        : ["create", "--no-deps", worker.service],
+        : ["up", "--no-start", "--no-deps", worker.service],
     );
   }
 }
@@ -1055,7 +1055,6 @@ async function up() {
   }
 
   await ensureCluster();
-  const resolvedTargets = await bridgeComposeServices();
   const { tag } = await buildAndImportWorkerImage(revision);
   // Building/importing images may take minutes. Recheck the maintenance window
   // immediately before stopping executors, not only before starting the build.
@@ -1072,6 +1071,9 @@ async function up() {
     if (previous !== undefined) {
       await switchControlPlaneToKubernetes(previous);
     }
+    // Recreating Control Plane can allocate a different Docker IP. Resolve
+    // EndpointSlices and matching egress CIDRs only after that recreation.
+    const resolvedTargets = await bridgeComposeServices();
     await deployWorkerPool(tag, resolvedTargets, runtimeEnvironment);
     await checkDeployment(revision);
   } catch (error) {

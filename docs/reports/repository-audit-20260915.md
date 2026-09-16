@@ -14,7 +14,14 @@ before-fix tests reproduce them. Capture the prior service states before changin
 anything, await Helm removal and remaining Pod deletion, propagate shutdown
 errors, and restore only prior running capacity. Additional contracts reject
 Runs arriving during image builds and ready-but-old Worker images. Eight targeted
-tests pass; these are CLI coordination tests, not a fresh full k3d deployment.
+tests pass. The subsequent fresh k3d deployment exposed a stale bridge: CP
+recreation changed its management IP, but Worker EndpointSlice/egress rules still
+used the pre-recreation IP. The exact failure reproduces in a ninth regression.
+Resolve dependency addresses after CP recreation. Stopping the failed readiness
+wait exercised real rollback: remove the Helm pool and wait for executor Pods
+before restoring Compose. This also caught an invalid `compose create --no-deps`
+flag in the new stopped-Worker path; use `compose up --no-start --no-deps` instead.
+Final successful deployment acceptance remains pending.
 
 The owner approved removing the old whole-system backup/restore entry rather
 than building a new disaster-recovery system. Exact restore-code fixtures
