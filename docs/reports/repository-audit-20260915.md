@@ -48,6 +48,15 @@ so Helm regressions exercise it directly, including customized family/model/PG
 pool/Child limits and Kafka partition count. No production Worker cutover was
 performed here; full fresh k3d install/enrollment/paid acceptance remains pending.
 
+Native Prometheus rule tests reproduce a healthy replica hiding another replica's
+stale or never-successful sampler. Evaluate freshness per instance; missing-sample
+alerts now select each reachable Control Plane, while unreachable targets retain
+the existing target-down alert. Four deterministic rule scenarios pass using the
+same pinned Prometheus image as deployment, and now run in CI. Correct misleading
+dashboard labels: cached partial events are not PostgreSQL projection lag, and
+the Kafka-labeled local statistics sample is not a broker health probe. Temporary
+rule-test storage stays in container tmpfs and is removed with the container.
+
 Further actual-Chrome regressions reproduce and fix four UI lifecycle errors:
 New Chat could reset a pending input submission; a read-only Child opened a
 Workspace-rebind dialog; identity-service network/503 failure falsely rendered

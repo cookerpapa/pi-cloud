@@ -1,0 +1,93 @@
+rule_files:
+  - ../alerts/pi-cloud.yml
+evaluation_interval: 1m
+tests:
+  - name: fresh samples do not alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="pi-cloud-control-plane",instance="a"}'
+        values: 1+0x5
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="postgresql"}'
+        values: 0+60x5
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="kafka"}'
+        values: 0+60x5
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PiCloudOperationalSamplerStale
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PiCloudOperationalSamplerMissing
+        exp_alerts: []
+
+  - name: healthy replica cannot mask a stale sibling
+    interval: 1m
+    input_series:
+      - series: 'up{job="pi-cloud-control-plane",instance="a"}'
+        values: 1+0x5
+      - series: 'up{job="pi-cloud-control-plane",instance="b"}'
+        values: 1+0x5
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="postgresql"}'
+        values: 0+60x5
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="b",source="postgresql"}'
+        values: 0+0x5
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="kafka"}'
+        values: 0+60x5
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="b",source="kafka"}'
+        values: 0+60x5
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PiCloudOperationalSamplerStale
+        exp_alerts:
+          - exp_labels:
+              job: pi-cloud-control-plane
+              instance: b
+              source: postgresql
+              severity: critical
+            exp_annotations:
+              summary: PiCloud operational state sampling is stale
+              description: The postgresql operational sample has not succeeded for more than one minute.
+      - eval_time: 5m
+        alertname: PiCloudOperationalSamplerMissing
+        exp_alerts: []
+
+  - name: a reachable replica must publish both samplers
+    interval: 1m
+    input_series:
+      - series: 'up{job="pi-cloud-control-plane",instance="a"}'
+        values: 1+0x5
+      - series: 'up{job="pi-cloud-control-plane",instance="b"}'
+        values: 1+0x5
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="postgresql"}'
+        values: 0+60x5
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="kafka"}'
+        values: 0+60x5
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="b",source="kafka"}'
+        values: 0+60x5
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PiCloudOperationalSamplerMissing
+        exp_alerts:
+          - exp_labels: { job: pi-cloud-control-plane, instance: b, severity: critical }
+            exp_annotations:
+              summary: PiCloud operational state sampling has no successful sample
+              description: The Control Plane replica has not published both PostgreSQL and local Session Projector samples.
+      - eval_time: 5m
+        alertname: PiCloudOperationalSamplerStale
+        exp_alerts: []
+
+  - name: unreachable targets use the target-down alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="pi-cloud-control-plane",instance="a"}'
+        values: 0+0x5
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PiCloudOperationalSamplerMissing
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PiCloudMetricsTargetDown
+        exp_alerts:
+          - exp_labels: { job: pi-cloud-control-plane, instance: a, severity: critical }
+            exp_annotations:
+              summary: PiCloud metrics target is unavailable
+              description: Prometheus cannot scrape pi-cloud-control-plane at a.

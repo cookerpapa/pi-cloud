@@ -250,7 +250,7 @@
     },
     {
       "type": "stat",
-      "title": "Session projection pending",
+      "title": "Cached incomplete Session events",
       "id": 19,
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 47 },
       "targets": [
@@ -274,14 +274,14 @@
     },
     {
       "type": "timeseries",
-      "title": "Kafka Gateway live tails",
+      "title": "Session Projector live-tail memory",
       "id": 21,
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
       "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
       "targets": [
         {
           "expr": "max(pi_cloud_kafka_live_tail_bytes)",
-          "legendFormat": "{{stream}}",
+          "legendFormat": "largest replica",
           "refId": "A"
         }
       ]
@@ -318,7 +318,7 @@
         },
         {
           "expr": "max(pi_cloud_kafka_live_tail_events)",
-          "legendFormat": "Session mutations",
+          "legendFormat": "cached incomplete events",
           "refId": "C"
         }
       ]

@@ -42,15 +42,17 @@ user-visible Run:
   account quota and cooldown remain visible in CLIProxyAPI's native page;
 - Tool failures and Cube lifecycle/admission capacity;
 - Workspace Volume Gateway queue, latency, rejection and cleanup backlog;
-- Kafka consumer health and Gateway incomplete-tail sessions/events/bytes;
+- Session Projector incomplete-tail sessions/events/bytes;
 - direct Kafka Producer queue occupancy/rejections and Session-owner lease failures;
 - settled terminal events still waiting to reach Kafka.
 
-The Control Plane samples PostgreSQL and Kafka/Gateway state every ten seconds. These
-samples are global gauges, so dashboards and alerts use `max`, not `sum`, when
-several Control Plane replicas report the same authority state. A failed
-sample does not take the product down; the last-success timestamp becomes
-stale and triggers an alert instead.
+Each Control Plane samples PostgreSQL and its local Projector every ten seconds.
+PG queue/cleanup gauges describe shared state, so use `max`, not `sum`, across
+replicas. Live-tail gauges describe local memory; their `max` is the largest
+replica, not total backlog or Kafka consumer lag. The `source="kafka"` sampling
+timestamp means local Projector statistics were read, not that Kafka was probed.
+A failed sample leaves its last-success timestamp unchanged. Freshness and missing
+samples are checked per replica so a healthy sibling cannot hide a failure.
 
 Prometheus scrapes four application endpoint groups:
 
@@ -103,7 +105,7 @@ endpoint. There is no separate Projector metrics service or renewable output-str
 ## Alert policy
 
 Version-controlled Prometheus rules under `deploy/observability/alerts/`
-detect unavailable targets, stale Kafka/Gateway sampling,
+detect unavailable targets, stale or missing per-replica sampling,
 persistent Run/session/event backlogs, Cube/Volume saturation, storage cleanup
 backlog and elevated Run failures. Thresholds are conservative starting
 values for the one-host profile; change them only with measured workload data.
@@ -152,6 +154,7 @@ it is not a measurement of the provider's internal inference alone.
 ## Verification
 
 ```bash
+npm run observability:check
 npm run production:config:observability
 npm run production:up:observability
 curl -fsS http://127.0.0.1:9090/-/ready
@@ -161,5 +164,5 @@ curl -fsS http://127.0.0.1:16686/api/services
 ```
 
 In Prometheus, check **Status -> Targets** and **Alerts**. The normal idle
-baseline has all application targets up, bounded Gateway live-tail memory,
+baseline has all application targets up, bounded Projector live-tail memory,
 zero persistent projection/terminal/cleanup backlog, and no firing alert.

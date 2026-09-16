@@ -278,17 +278,17 @@ export class PiCloudMetrics {
     });
     this.kafkaLiveTailSessions = new Gauge({
       name: "pi_cloud_kafka_live_tail_sessions",
-      help: "Session tails currently cached by this Gateway replica",
+      help: "Session tails currently cached by this Projector replica",
       registers: [this.registry],
     });
     this.kafkaLiveTailEvents = new Gauge({
       name: "pi_cloud_kafka_live_tail_events",
-      help: "Incomplete accepted events cached by this Gateway replica",
+      help: "Incomplete accepted events cached by this Projector replica",
       registers: [this.registry],
     });
     this.kafkaLiveTailBytes = new Gauge({
       name: "pi_cloud_kafka_live_tail_bytes",
-      help: "Approximate bytes held by incomplete Gateway Session tails",
+      help: "Approximate bytes held by incomplete Projector Session tails",
       registers: [this.registry],
     });
     this.operationalSampleTimestamp = new Gauge({
@@ -317,7 +317,7 @@ export class PiCloudMetrics {
     });
     this.sandboxAdmissionLimit = new Gauge({
       name: "pi_cloud_sandbox_admission_limit",
-      help: "Maximum materialized Tool Sandboxes admitted by this Manager",
+      help: "Maximum materialized Tool Sandboxes admitted by this Tool Broker",
       labelNames: ["provider"],
       registers: [this.registry],
     });

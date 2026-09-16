@@ -11,7 +11,7 @@ groups:
           description: "Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}."
 
       - alert: PiCloudOperationalSamplerStale
-        expr: time() - max by (source) (pi_cloud_operational_sample_timestamp_seconds) > 60
+        expr: time() - pi_cloud_operational_sample_timestamp_seconds > 60
         for: 2m
         labels:
           severity: critical
@@ -21,14 +21,16 @@ groups:
 
       - alert: PiCloudOperationalSamplerMissing
         expr: |
-          absent(pi_cloud_operational_sample_timestamp_seconds{source="postgresql"})
-          or absent(pi_cloud_operational_sample_timestamp_seconds{source="kafka"})
+          (up{job="pi-cloud-control-plane"} == 1
+            unless on(job, instance) pi_cloud_operational_sample_timestamp_seconds{source="postgresql"})
+          or (up{job="pi-cloud-control-plane"} == 1
+            unless on(job, instance) pi_cloud_operational_sample_timestamp_seconds{source="kafka"})
         for: 2m
         labels:
           severity: critical
         annotations:
           summary: "PiCloud operational state sampling has no successful sample"
-          description: "The Control Plane has not published both PostgreSQL and Kafka/Gateway samples."
+          description: "The Control Plane replica has not published both PostgreSQL and local Session Projector samples."
 
   - name: pi-cloud-backlog
     rules:
@@ -56,8 +58,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Gateway incomplete Session tail memory is high"
-          description: "A Gateway replica has retained more than 256 MiB of incomplete Session tails."
+          summary: "Session Projector incomplete tail memory is high"
+          description: "A Session Projector replica has retained more than 256 MiB of incomplete Session tails."
 
       - alert: PiCloudTerminalEventBacklog
         expr: max(pi_cloud_terminal_event_outbox_pending) > 0

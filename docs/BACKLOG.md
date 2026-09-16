@@ -224,6 +224,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Operations
 
+- [x] Detect stale/missing operational sampling per Control Plane replica;
+      a healthy sibling must not mask it. Native Prometheus rule regressions
+      cover stale, missing, healthy and unreachable targets.
+
 - [x] Bridge Kafka (including advertised broker names) and the Provider Gateway
       into local Kubernetes Workers; preserve configured capacities through
       cutover. Helm and native K3s before/after connection checks pass. Complete
