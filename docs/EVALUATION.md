@@ -15,8 +15,8 @@ npm run browser:presentation:check
 ```
 
 The ordinary test suite covers queue claims, Session ordering, leases/fences,
-Pi SessionStorage, event ordering, cancellation, Tool ambiguity, Workspace
-settlement and tenant isolation without spending model tokens.
+Pi SessionStorage, event ordering, cancellation, Tool ambiguity, Volume lifecycle
+and tenant isolation without spending model tokens.
 
 The presentation check uses installed Chrome/Chromium and actual React effects,
 without accounts or model calls: progressive text under StrictMode, immediate

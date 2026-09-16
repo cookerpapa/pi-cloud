@@ -19,30 +19,25 @@ couples Run admission to optional compute state.
 
 ## Decision
 
-- Same-Session Runs remain FIFO and non-overlapping. RunAttempt leases and
-  fences remain unchanged.
+- Runs on one Lane remain FIFO and non-overlapping. Related Lanes share one
+  physical-Session owner lease under ADR-0167.
 - Different Sessions may run model/Agent Loops and Tool operations concurrently
   against the same elastic Workspace. They receive independent Tool bindings
   to one Workspace-owned Cube.
 - A human terminal no longer blocks Run claim. It owns one elastic Cube; an
   Agent that starts while the terminal is connected borrows that same physical
-  Cube under its own external lease, avoiding an unsupported second Volume
-  attachment.
-- A cloud development machine may have one active Agent authority and one
-  human terminal/SSH session at the same time inside the same Cube. Lifecycle
-  mutations such as pause and release still require both to settle.
-- The shared Workspace settlement pointer is last-observed metadata,
-  not a compare-and-swap writer lock. A concurrent settlement cannot fail an
-  otherwise successful Run merely because another Session settled first. Each
-  Session advances only its own settlement pointer; it never rewrites every
-  sibling Session's base revision.
+  Cube under its own external lease, preserving the default shared compute scope.
+- A cloud development machine may have several Agent bindings and a human
+  terminal/SSH session inside the same Cube. Pause and release require them to
+  settle. No per-Run Workspace settlement pointer remains (ADR-0168).
 - Remove per-tenant active-Run, unsettled-Turn and active-Sandbox ceilings.
   Project and Session limits bound long-lived product resources, while
   Worker/Cube/Sandbox-Domain capacity remains real infrastructure admission.
 - The Run queue does not claim tenant fairness without a measured starvation
   problem and an explicit policy.
 - A `shared` Subagent uses the same Workspace runtime and ordinary Linux
-  concurrency. `isolated` remains the explicit separate-Volume/Cube mode.
+  concurrency. `ephemeral` selects separate compute on the same Volume and an
+  explicit cwd; independent copies/Volumes are not a Subagent mode (ADR-0171).
 
 ## Consequences
 
@@ -56,5 +51,5 @@ Workspace's one physical runtime. PiCloud records
 independent Run/Attempt evidence and does not promise merge semantics or restore
 a lost update caused by terminal/external edits.
 
-An exclusive machine currently retains one Agent binding at a time; its
-physical Cube lifecycle remains independent from that temporary binding.
+An exclusive machine's physical lifecycle remains independent from its
+temporary Agent bindings.

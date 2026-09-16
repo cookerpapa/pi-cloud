@@ -13,11 +13,15 @@ flattens it into an upstream Chat Completions request. That translation removes
 Provider-hosted Tool declarations even when the upstream Provider implements
 Responses itself.
 
-Direct production-credential probes confirmed that DeepSeek V4 Flash executes
-native Web Search and returns `response.completed` without the Chat
+The original September 1 probes confirmed that DeepSeek V4 Flash executed
+native Web Search and returned `response.completed` without the Chat
 Completions `[DONE]` marker. Merely changing PiCloud's Pi adapter would therefore
 produce a plausible answer but would not execute the hosted Tool while the
 gateway continued translating protocols.
+
+Those probes are historical, not a current Flash capability promise. The V4.1
+Flash Responses route later stopped executing hosted search; the current catalog
+hides Flash and retains Pro without changing protocols or adding another Tool.
 
 ## Decision
 

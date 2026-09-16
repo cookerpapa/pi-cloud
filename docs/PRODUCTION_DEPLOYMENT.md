@@ -22,29 +22,20 @@ Open `http://127.0.0.1:8080`, register the designated administrator, then run:
 npm run production:administrator -- --username <registered-username>
 ```
 
-Sign in again and set the model provider/key in the administrator page.
+Sign in again. Configure provider credentials in the linked CLIProxyAPI management
+page; the PiCloud administrator page selects the platform model route, not its key.
 
-## Execution-seal protocol upgrade
+## Upgrade
 
-The current display upgrade is migration 135 plus SSE v2. Drain active Runs and
-project their seals, migrate, then deploy matching Control Plane/Worker/Web
-images and reload browser pages. It adds only display coverage metadata; the
-v7 topic, native semantic history and Cube Volumes remain intact. Snapshots and
-large complete events use bounded begin/part/end frames; no old decoder remains.
+Use a maintenance window: stop new submissions, drain Runs and project all seals,
+then deploy matching Control Plane, Worker, Broker and Web revisions. Apply the
+ordered database migrations and any required Cube plugin/template update from
+that revision's deployment instructions. Reload open browser pages. Do not mix
+incompatible publishers, change a live Kafka partition count or silently convert
+an unsupported Volume layout. Back up user data before a storage/protocol cutover.
 
-For installations predating direct Worker publication:
-
-Migration 134 requires no active Runs, no unpublished terminal Outbox rows and
-no seals waiting for canonical projection.
-Drain Workers, stop old Worker/Control Plane publishers, migrate, then start all
-new components. The default AcceptedFact topic changes to
-`pi-cloud.execution-log.v7`; a custom topic must likewise use a new generation.
-Do not mix old/new publishers or change a live topic's partition count. Existing
-PostgreSQL conversations and user-owned machines are preserved. Old Kafka data
-can age out under its existing retention policy. Rolling protocol upgrades are
-not supported by this cutover. The pinned Confluent consumer uses a native
-prebuilt addon: `dependencies:harden` and the image builds explicitly rebuild
-that package after `npm ci --ignore-scripts`.
+The pinned Confluent consumer uses a native addon: `dependencies:harden` and image
+builds rebuild it after `npm ci --ignore-scripts`.
 
 Workers append directly and Control Plane's Session Projector is the sole log
 consumer group. Tool Broker no longer needs Kafka connectivity. Kubernetes shares

@@ -91,7 +91,7 @@ networkPolicy:
   trustedNamespaceLabel:
     key: pi-cloud.io/trusted-plane
     value: "true"
-  trustedTcpPorts: [443, 3000, 3129, 4300, 4400, 4318, 5432, 8317, 9092]
+  trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432, 8317, 9092]
   externalEgressCidrs: []
 
 disruptionBudget:

@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 
 const requestedPort = Number(process.argv[2] ?? "0");
-const holdEventAcknowledgements = process.argv[3] === "hold-event-ack";
 if (!Number.isSafeInteger(requestedPort) || requestedPort < 0 || requestedPort > 65_535) {
   throw new Error("Control Channel fixture port is invalid");
 }
@@ -48,25 +47,6 @@ server.on("connection", (socket) => {
         }),
       );
       return;
-    }
-    if (message.type === "event.publish" && connectionId !== undefined) {
-      const event =
-        message.type === "event.publish" ? message.payload.event : message.payload.events.at(-1);
-      process.send?.({ type: "event_received", sequence: event.seq });
-      if (holdEventAcknowledgements) return;
-      socket.send(
-        JSON.stringify({
-          protocolVersion: 1,
-          messageId: randomUUID(),
-          sentAt: new Date().toISOString(),
-          type: "event.ack",
-          payload: {
-            sessionId: event.sessionId,
-            executionReference: message.payload.executionReference,
-            acknowledgedThroughSeq: event.seq,
-          },
-        }),
-      );
     }
   });
 });

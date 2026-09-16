@@ -7,6 +7,25 @@ Application-source reading is now covered by the private hash/range ledger;
 tests, migrations, deployment/scripts and documents still have remaining reads.
 This is coverage of reading, not a claim that every combination is already tested.
 
+At `921450f8`, complete local CI passes 989 tests, two independent live skips,
+26 targeted fault cases, four native Prometheus scenarios, and all deployment,
+build/type/format/backup/security gates. GitHub CI also passed that revision.
+The disposable real PostgreSQL database had zero remaining clients and was
+removed. Twenty-three host clock steps exclude the new durations from performance
+acceptance. No model tokens were spent by this deployment/monitoring slice.
+
+All currently indexed ADRs and deployment manifests have now been read. Remove
+superseded ADR-0109/0115/0149 from the maintained tree (Git remains their archive),
+and align remaining decisions with shared-Volume compute, the Session-family
+lease, Kafka-native append, asynchronous PG projection and no Workspace settlement.
+Correct the Tool flow, GitHub credential boundary and shutdown-budget docs.
+Remove the unused event.publish/event.ack process fixture and pending-commit
+metric fixture fields; preserve actual Control Channel reconnection tests and
+ensure their failed assertions still stop clients/processes. Full repository
+test/script/migration coverage and final paid combination gates remain open.
+After this cleanup, all eight focused Control Channel/sampler tests, affected
+types, Helm/preflight contracts, documentation and formatting checks pass.
+
 Platform deployment review reproduced incorrect Web upstream Service names,
 missing Kafka/Volume Gateway egress, ignored external SSH dependencies and an
 unreadable 0440 bootstrap Secret. Fix the existing chart, remove the retired

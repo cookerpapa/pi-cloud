@@ -53,8 +53,6 @@ Read the documents in this order:
    machine and application failures; retain exclusive VM recovery authority.
 1. [ADR-0150](0150-root-origin-streaming-preview.md) — root-origin application
    preview with scoped Cookies and streaming HTTP/WebSocket transport.
-1. [ADR-0149](0149-message-handoff-round-trips.md) — reduce redundant handoffs
-   while retaining semantic durability and effect admission.
 1. [ADR-0148](0148-two-phase-tool-effect-checkpoint.md) — two atomic
    post-sampling checkpoints distinguish complete model output, validated Tool
    intent and the later effect.
@@ -101,10 +99,6 @@ Read the documents in this order:
    Run Tool snapshots and Broker-side execution authorization.
 1. [ADR-0114](0114-conversation-subtree-delete-and-tail-prune.md) — recursive
    tree deletion and Pi-native conversation tail pruning.
-1. [ADR-0115](0115-user-owned-development-environments.md) — tenant-aware,
-   user-owned exclusive Cube development environments.
-1. [ADR-0109](0109-postgres-session-reference-checkpoints.md) — PostgreSQL Pi
-   SessionStorage as the sole conversation authority.
 1. [ADR-0105](0105-pi-session-backend-conformance.md) — compatibility with Pi's
    public Session backend contract.
 1. [ADR-0104](0104-human-session-tree-and-conversation-forks.md) — human tree

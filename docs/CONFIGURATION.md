@@ -353,7 +353,7 @@ model upstream connect 120 s <= Pi response-header wait 150 s <= Pi Turn 600 s
 model upstream stream idle 300 s <= Pi Turn 600 s
 Tool Broker request 360 s
 model capability TTL 900 s
-Worker termination grace 720 s
+Worker termination grace 1320 s
 Workspace Volume request 660 s < Volume gateway termination grace 720 s
 ```
 

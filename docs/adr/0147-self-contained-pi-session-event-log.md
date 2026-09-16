@@ -35,9 +35,10 @@ their Workspace runs, or which Tools they receive.
   `pi_session_labels` are transactional query projections. They may accelerate
   branch, open-operation, label and statistics reads, but they are not a
   competing conversation authority.
-- A logical append and its affected projections commit in one PostgreSQL
-  transaction. An acknowledged write therefore exposes neither a log-only nor
-  a projection-only state.
+- The Projector commits a native append and its query projections in one
+  PostgreSQL transaction. Active Workers acknowledge at Kafka, not at this
+  asynchronous PG transaction (ADR-0161); cold reads use the projected history
+  and handoff waits for ordered closure.
 - Human Forks keep independent Pi Sessions. Their canonical destination log
   contains complete copied Entry facts for the selected source branch; the
   existing copy-on-write Entry projection remains an implementation

@@ -68,9 +68,8 @@ child is still opened on its `main` lane by the existing Worker.
 
 All branches share one logical Workspace and its Workspace-owned Cube process
 world while that runtime is live; users are responsible for concurrent edits.
-The explicit `shared`
-Subagent mode remains a coordinated handoff rather than ordinary branch
-concurrency.
+Subagent compute and cwd choices follow ADR-0171; they do not add a file lock
+or an automatic merge protocol.
 
 Workspace files reflect the latest shared Workspace state, not historical file
 state at the fork point. The UI states this explicitly. Historical Workspace

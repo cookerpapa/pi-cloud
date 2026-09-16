@@ -33,7 +33,7 @@ afterAll(async () => {
 });
 
 describe("operational metrics sampler", () => {
-  it("publishes authoritative PostgreSQL backlog and Kafka Gateway gauges", async () => {
+  it("publishes PostgreSQL backlog and local Session Projector gauges", async () => {
     const metrics = new PiCloudMetrics("control-plane-test");
     const errors: unknown[] = [];
     const snapshot = {
@@ -44,9 +44,6 @@ describe("operational metrics sampler", () => {
         acceptedEvents: 410,
         duplicateEvents: 1,
         evictedEvents: 400,
-        pendingCommitSessions: 0,
-        pendingCommitBytes: 0,
-        pendingCommitReplays: 0,
       },
     };
     const sampler = new OperationalMetricsSampler({
@@ -61,6 +58,9 @@ describe("operational metrics sampler", () => {
     const output = await metrics.registry.metrics();
 
     expect(output).toContain('pi_cloud_queued_runs{service="control-plane-test"} 0');
+    expect(output).toContain('pi_cloud_kafka_live_tail_sessions{service="control-plane-test"} 2');
+    expect(output).toContain('pi_cloud_kafka_live_tail_events{service="control-plane-test"} 9');
+    expect(output).toContain('pi_cloud_kafka_live_tail_bytes{service="control-plane-test"} 8192');
     expect(output).toContain(
       'pi_cloud_terminal_event_outbox_pending{service="control-plane-test"} 0',
     );

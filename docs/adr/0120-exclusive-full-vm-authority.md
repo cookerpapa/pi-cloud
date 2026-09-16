@@ -61,9 +61,9 @@ authorization authority for Tool execution or platform access.
   after the VM has returned to machine authority under the replacement Broker.
 - Run completion, cancellation and failure revoke and detach only the temporary
   Agent Tool binding. A model transport failure is not evidence that the KVM was
-  reset. `tool_sandbox.stop` therefore destroys elastic runtimes but detaches
-  from a development environment; only an authenticated explicit machine
-  release destroys the complete user-owned Cube.
+  reset. Binding release detaches from a development environment; elastic
+  compute follows its shared-binding and warm-TTL lifecycle. Only an authenticated
+  explicit machine release destroys the complete user-owned Cube.
 - If adoption cannot be proven, PiCloud reports `recovery_required`; it never
   silently creates an empty replacement and claims the old root filesystem or
   processes survived.

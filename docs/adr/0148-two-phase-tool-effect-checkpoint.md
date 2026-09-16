@@ -22,8 +22,8 @@ first call could have started.
 ## Decision
 
 - A Pi Session mutation may carry reviewed public events caused by the same
-  semantic boundary. It remains one Authority-Gate decision and one
-  Session-keyed Kafka AcceptedFact.
+  semantic boundary. It remains one Session-keyed Kafka AcceptedFact under the
+  existing publication opening; there is no per-Fact authority gate (ADR-0163).
 - At `message_end`, one atomic `append_items` mutation carries the complete
   Assistant Entry and its usage Record. The same Fact carries
   `model.sampling.completed` for the live Gateway projection.

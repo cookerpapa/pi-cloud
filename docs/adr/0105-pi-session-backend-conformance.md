@@ -30,10 +30,10 @@ identifiers happen to be UUIDs; that was narrower than Pi's public contract.
 4. Store Pi Session, Entry, parent, Record and run identifiers as PostgreSQL
    `text`. Product UUIDs remain valid values, while the backend preserves Pi's
    opaque-string contract.
-5. Preserve PiCloud's stronger cloud invariant separately: every mutable
-   repository/storage operation may be bound to an `ExecutionAuthority`, and
-   the authority check occurs in the same PostgreSQL transaction as the
-   mutation.
+5. Preserve PiCloud's cloud invariant separately: cold administrative mutations
+   require quiescent Session authority in their PostgreSQL transaction. Active
+   Worker appends use Kafka acknowledgement and ordered projection under
+   ADR-0161/0163, not synchronous per-append PostgreSQL authority checks.
 6. Treat Pi conformance as the compatibility baseline, not as the full cloud
    safety suite. Tenant isolation, stale-fence rejection, bounded compaction
    reads and remote Tool effect tests remain PiCloud-owned contracts.

@@ -16,7 +16,7 @@ See [Cube Volume Plugin](https://github.com/TencentCloud/CubeSandbox/blob/v0.6.0
 1. Broker proves the Workspace is deleted and no runtime/terminal is live.
 2. Unprivileged gateway verifies the trusted envelope and atomically persists a
    generation-bound deletion marker outside the Guest mount. No user bytes or
-   identity metadata are removed here. Further prepare/read/write/fork fails.
+   identity metadata are removed here. Further preparation and file access fail.
 3. Cube DELETE invokes the existing POSIX plugin with its normal storage
    privileges. The hook requires the marker, checks the fixed volume path,
    refuses symlinks at the root, and removes only `workspace/`, not the envelope.

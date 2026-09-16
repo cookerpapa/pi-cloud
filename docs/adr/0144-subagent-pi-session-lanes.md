@@ -13,7 +13,7 @@ Child still performed work proportional to the inherited branch length and a
 remote Worker had to resolve a second Session-shaped reference layer.
 
 Pi's public SessionStorage models an immutable Entry DAG with named lane heads.
-Each Lane has its own in-memory Agent and Run authority. Active Lanes of one
+Each Lane has its own in-memory Agent and task identity. Active Lanes of one
 physical Session share a Worker-local native writer; a cold Session can move.
 
 ## Decision
@@ -21,7 +21,8 @@ physical Session share a Worker-local native writer; a cold Session can move.
 Every Session-shaped execution scope stores an explicit
 `(pi_session_id, pi_session_lane)` binding. Human conversations continue to own
 their own Pi Session and `main` lane. Every delegated Child retains an
-independent queue/event/lease scope and Run, but receives a unique lane in the
+independent task/event/cancellation scope and Run, but shares its family's lease
+and receives a unique lane in the
 root conversation's Pi Session rather than another physical Pi Session:
 
 ```text

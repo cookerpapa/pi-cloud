@@ -34,4 +34,4 @@ actual Volumes and machines. Verify empty/live browsing, multi-round coding,
 warm/cold compute, shared-Volume Subagents, large output truncation and
 cleanup. Measure request/settlement overhead separately from provider latency.
 
-This supersedes the settlement half of ADR-0135; live filesystem browsing stays.
+Live filesystem browsing remains independent of Run completion.

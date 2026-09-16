@@ -35,8 +35,9 @@ an important portability boundary:
 - The trusted Runner binds that capture to the existing Cloud Step sampling
   identity. Before the complete assistant message is committed, it inserts a
   PiCloud-owned `providerHostedToolCall` content block and citation metadata in
-  the same Pi message. PostgreSQL Pi SessionStorage remains the only
-  conversation authority; no hosted-Tool sidecar table is introduced.
+  the same Pi message. The native append is acknowledged through Kafka and
+  projected into PostgreSQL SessionStorage for cold recovery (ADR-0161);
+  no hosted-Tool sidecar table is introduced.
 - The Pi Agent Loop remains unmodified. It executes only content whose type is
   the ordinary Pi `toolCall`; a `providerHostedToolCall` can never reach Tool
   Broker.

@@ -27,17 +27,13 @@ The existing durable prompt/control mailbox is unchanged. A delivered Steer is
 not automatically treated as consumed or replayed. Pre-start retries have no
 Agent output: the backend commits `started` before invoking the Runner.
 
-Consumers that retain a volatile interrupted-prefix fold replay the bounded Kafka
-log from its retained beginning on assignment/restart. They skip durably sealed
-executions, deduplicate unsealed records, and verify the recorded first offset of
-an unsealed execution has not been lost to retention. Committed consumer offsets
-alone cannot restore this fold. Recovery beyond retention stops rather than
-silently discarding visible output. This adds recovery scan cost, not PG delta
-rows; incremental durable fold checkpoints require separate measured justification.
-
-ADR-0155 supersedes the retained-beginning scan with a durable partition recovery
-floor and positional seal classification. The seal and handoff invariants above
-remain in force; the old boolean-only live cutoff is not the maintained path.
+On assignment/restart, replay begins at the durable partition recovery floor
+required by canonical progress and unsealed prefixes, bounded by completed
+delivery progress (ADR-0163). Projector skips durably sealed executions,
+deduplicates unsealed records and detects a lost required prefix. Consumer
+offsets alone cannot reconstruct an interrupted-prefix fold. Recovery beyond
+retention stops rather than silently discarding visible output; no PostgreSQL
+token-delta rows or retained-beginning compatibility scanner are added.
 
 ## Alternatives and limits
 

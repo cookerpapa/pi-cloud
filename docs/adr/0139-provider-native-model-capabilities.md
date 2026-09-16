@@ -53,13 +53,15 @@ effective capabilities, rather than assuming wire compatibility:
   runtime reconstructs its Tool and modality set from its own capability.
 - The product UI does not display a synthetic model-switch or capability
   notice. Provider output remains unmodified.
-- Hosted Tool start/completion boundaries may appear as ephemeral Run progress.
-  They contain no query, result or Provider identifier and remain in the
-  bounded Kafka live tail. Completed native actions and assistant citations are
+- Hosted Tool start/completion boundaries appear as durable live progress with
+  portable action details under ADR-0143. They remain in the bounded Kafka live
+  tail. Completed native actions and assistant citations are
   instead part of the issuing Pi message under ADR-0141; PiCloud maintains no
   parallel Provider-activity sidecar.
-- For this revision, OpenAI Codex and the native DeepSeek Responses route expose
-  hosted Web Search. Provider image
+- The reviewed OpenAI Codex and DeepSeek Pro Responses routes expose hosted
+  Web Search. Flash is temporarily hidden from selection because its V4.1
+  Responses search stopped executing; no protocol fallback or replacement
+  search Tool is added. Provider image
   generation and user image attachments remain disabled until Pi's portable
   result/input contracts can be persisted and restored end to end.
 

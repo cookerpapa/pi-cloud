@@ -33,9 +33,9 @@ PiCloud removes:
 - platform post-Run commit and push behavior;
 - isolated-Subagent Patch extraction.
 
-The persistent Cube Volume remains the Workspace byte authority. Run settlement
-records only the provider Volume revision; source browsing lists and reads the
-live Volume without building a catalog. Root `.git` is preserved in the Volume
+The persistent Cube Volume remains the Workspace byte authority. Source browsing
+lists and reads the live Volume without a catalog or per-Run settlement record.
+Root `.git` is preserved in the Volume
 but omitted from the product browser.
 
 PiCloud never bootstraps a repository. A selected environment must pass a
@@ -54,5 +54,6 @@ Workspace changes or creates a commit.
   treat this as an explicit user-authorized risk.
 - The initial Issue Run produces only Workspace changes and test evidence;
   commit, push and provider delivery require a later explicit instruction.
-- Isolated Subagents return their semantic result and independent Workspace;
-  users or Agents coordinate Git branches instead of receiving a platform Diff.
+- Subagents return their semantic result; separate compute still mounts the
+  shared Volume. Users or Agents coordinate cwd/worktrees and Git merges instead
+  of receiving a platform Diff or independent Workspace copy (ADR-0171).

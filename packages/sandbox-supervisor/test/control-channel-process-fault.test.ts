@@ -14,19 +14,13 @@ const IDENTITY = {
   bootId: "11111111-1111-4111-8111-111111111111",
   sandboxId: "22222222-2222-4222-8222-222222222222",
 };
-async function startServer(
-  port = 0,
-): Promise<{ child: ChildProcess; port: number; eventReceived: Promise<number> }> {
+async function startServer(port = 0): Promise<{ child: ChildProcess; port: number }> {
   const child = spawn(process.execPath, [FIXTURE, String(port)], {
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
   if (child.stderr === null) {
     throw new Error("Control Channel fixture stderr pipe was unavailable");
   }
-  let resolveEvent!: (sequence: number) => void;
-  const eventReceived = new Promise<number>((resolvePromise) => {
-    resolveEvent = resolvePromise;
-  });
   let stderr = "";
   child.stderr.on("data", (chunk) => {
     stderr += chunk.toString("utf8");
@@ -34,16 +28,6 @@ async function startServer(
   const ready = await Promise.race([
     new Promise<{ port: number }>((resolvePromise) => {
       child.on("message", (message: unknown) => {
-        if (
-          typeof message === "object" &&
-          message !== null &&
-          "type" in message &&
-          message.type === "event_received" &&
-          "sequence" in message &&
-          typeof message.sequence === "number"
-        ) {
-          resolveEvent(message.sequence);
-        }
         if (
           typeof message === "object" &&
           message !== null &&
@@ -60,7 +44,7 @@ async function startServer(
       throw new Error(`Control Channel fixture exited before readiness: ${stderr}`);
     }),
   ]);
-  return { child, port: ready.port, eventReceived };
+  return { child, port: ready.port };
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
@@ -140,11 +124,15 @@ describe("Control Channel process fault", () => {
       await expect(client.stop()).resolves.toMatchObject({ reason: "requested" });
       expect(revocations).toBeGreaterThanOrEqual(1);
     } finally {
-      if (first.child.exitCode === null && first.child.signalCode === null)
-        first.child.kill("SIGKILL");
-      if (second !== undefined && second.exitCode === null && second.signalCode === null) {
-        second.kill("SIGKILL");
-        await once(second, "exit").catch(() => undefined);
+      try {
+        await client.stop();
+      } finally {
+        for (const child of [first.child, second]) {
+          if (child && child.exitCode === null && child.signalCode === null) {
+            child.kill("SIGKILL");
+            await once(child, "exit");
+          }
+        }
       }
     }
   }, 15_000);

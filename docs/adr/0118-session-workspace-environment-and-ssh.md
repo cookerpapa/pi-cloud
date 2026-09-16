@@ -32,7 +32,7 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   readable with `workspaceState=missing` and can be rebound to another live
   Workspace through an idempotent operation.
 - The Agent Harness treats the Workspace binding as execution World State,
-  separately from the content revision and the physical Cube identity. A
+  separately from user file edits and the physical Cube identity. A
   rebind appends one hidden, model-visible `workspace_changed` fact before the
   next provider request. It states that the previous Workspace is unavailable
   to the current Tool environment and that `/workspace` now represents another
@@ -48,7 +48,7 @@ contract for exposing an ordinary Sandbox's port 22 directly.
 - PiCloud never speculates that an old Workspace may exist at another path. A
   future multi-Workspace environment may expose such a path only when Tool
   Broker explicitly authorizes that mount and supplies a verified binding and
-  revision as World State.
+  availability as World State.
 - An elastic execution allocates Cube on first Tool use and may keep it warm for
   a bounded idle period. Reclamation loses processes, not Workspace bytes.
 - An exclusive execution environment is a user-owned full Cube machine with a
@@ -56,7 +56,7 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   mounted Volume is no longer the definition of its durability. An Agent Run
   and one human terminal may use the same Cube concurrently under independent
   external authorities. Several conversations may select different directories
-  beneath that Volume; one Agent activation at a time owns the machine.
+  inside that machine; authorized Agent bindings may execute concurrently.
 - Workspace creation/deletion and environment create/pause/resume/release live
   on a dedicated user resource page. The new-conversation dialog only selects
   elastic versus exclusive execution and progressively discloses the relevant

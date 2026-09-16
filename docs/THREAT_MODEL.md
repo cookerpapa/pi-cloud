@@ -55,7 +55,7 @@ head.
 | browser forges terminal identity | Control Plane derives tenant/Workspace/Session; browser frames carry only input/resize/control |
 | user enumerates another user's development environment | every list, lifecycle and Terminal lookup binds tenant plus authenticated owner user; no Cube ID is public |
 | terminal and Agent race on user files | explicitly user-managed POSIX concurrency; each external authority remains scoped and cross-tenant mounts stay impossible |
-| two Agents contend for one exclusive environment | durable `agent_activation_id` CAS permits one Agent authority; a human terminal is independent |
+| Agents intentionally share one exclusive environment | independently authorized Tool bindings share the owner's VM; files and processes use user-managed concurrency, while pause/release wait for active bindings and the terminal |
 | two Sessions intentionally share one elastic Workspace | independently fenced Tool bindings enter one unprivileged Cube; files, processes and ports use ordinary Linux semantics and are not isolated from each other |
 | exclusive owner has root inside its own VM | KVM is the tenant boundary; the guest contains no platform/model/database credentials and the external Tool Broker still validates every Run fence |
 | user invokes or tampers with envd inside their own VM | envd is credential-free tenant-local transport; Cube traffic/envd tokens, operation admission and every cross-resource authority remain outside the VM |
@@ -85,10 +85,10 @@ CubeAPI/envd/model credentials.
 Terminal output is intentionally not a durable conversation record; Workspace
 files and platform audit metadata remain authoritative.
 
-GitHub App installation tokens are repository-scoped and minted just in time.
-For unattended GitHub execution, a short-lived token is written to the selected
-Workspace Git Home rather than PostgreSQL or model context. The Agent can read
-and exfiltrate it. GitHub Webhooks are accepted only after
+GitHub App installation tokens are minted just in time for trusted provider API
+work, not copied into Agent Workspaces. New App onboarding is disabled pending
+GitHub user authorization; already-bound integrations retain signed intake.
+GitHub Webhooks are accepted only after
 constant-time HMAC-SHA256 verification; their delivery ID is persisted before
 an Issue can create model work.
 

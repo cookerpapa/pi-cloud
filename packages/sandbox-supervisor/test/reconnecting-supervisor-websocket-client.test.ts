@@ -227,7 +227,7 @@ describe("ReconnectingSupervisorWebSocketClient", () => {
     expect(revocations).toBe(1);
   });
 
-  it("carries only the opaque ExecutionReference on Worker heartbeats", async () => {
+  it("does not renew Session ownership through the Worker Control Channel heartbeat", async () => {
     const source: ReconnectingSupervisorControlRuntime = {
       ...runtime(),
       createHeartbeat(identity, acceptingAssignments = false) {

@@ -19,7 +19,8 @@ user-managed concurrency decision in ADR-0130.
 
 ## Decision
 
-An elastic Workspace owns at most one live physical Cube in one Sandbox Domain.
+An elastic Workspace's default compute scope owns at most one live physical Cube
+in one Sandbox Domain; temporary Child scopes follow ADR-0171.
 Runs do not own that Cube. Each Tool-using Run receives an independently fenced
 **Tool binding** that authorizes operations against the Workspace runtime:
 
@@ -46,15 +47,12 @@ for the same Workspace reuses it without Session handoff or provider rebind.
 Capacity eviction or failure may destroy it; the persistent Workspace Volume
 remains the file authority.
 
-Workspace settlement is observational and does not freeze the Cube. It records
-a lightweight Volume revision after a Run's own Tool operations have completed.
-Concurrent writes by another Session are allowed and may be included in that
-observation. Settlement is neither a file lock nor a snapshot.
-
-An isolated Subagent Workspace still receives a different Volume and therefore
-a different Cube. A shared Workspace uses the same Workspace runtime. Exclusive
-development machines retain their existing one-Cube resource lifecycle and
-temporary Agent bindings.
+There is no per-Run Workspace settlement or snapshot (ADR-0168). File durability
+belongs to the Volume independently of Agent completion. The default compute
+scope uses the shared Workspace runtime. ADR-0171 also permits temporary Subagent
+compute scopes mounting this same Volume with a selected cwd; it does not copy
+the Workspace. Exclusive development machines retain their one-Cube lifecycle
+and concurrent temporary Agent bindings.
 
 ## Consequences
 

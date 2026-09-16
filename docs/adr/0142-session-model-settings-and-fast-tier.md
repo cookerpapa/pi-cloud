@@ -39,7 +39,7 @@ cannot change tier in flight.
   into Pi `messages[]`, Compaction summaries or synthetic prompts, so switching
   to DeepSeek cannot create model-context incompatibility.
 - The Web selector is a cascading Provider → model → reasoning menu. GPT shows
-  a Fast switch beneath reasoning. One Apply action commits the complete
+  a Fast switch beneath reasoning. One settings update commits the complete
   settings for the next Turn.
 
 ## Consequences
