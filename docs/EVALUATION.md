@@ -143,6 +143,15 @@ uses real simultaneous model Runs across the shared Worker pool. Restart gates
 kill or replace one named process only after a visible stream boundary, then
 verify ordered completion/recovery from PostgreSQL and Kafka-backed snapshots.
 
+The Subagent, machine-recovery and infrastructure-fault gates default to visible
+DeepSeek Pro. Select an explicit GPT-only repetition with
+`PI_CLOUD_LIVE_SUBAGENT_PROVIDER=openai-codex`,
+`PI_CLOUD_LIVE_MACHINE_PROVIDER=openai-codex`, or
+`PI_CLOUD_LIVE_FAULT_PROVIDER=openai-codex`, respectively. These are test inputs,
+not production fallback settings. A GPT-only pass does not replace the mixed-
+provider/Compaction gate. Worker inventory follows the deployed Compose or local
+Kubernetes pool; process faults restart existing containers, not a new image.
+
 Current evidence:
 
 - [Control Plane load](reports/control-plane-load-latest.md)

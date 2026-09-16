@@ -21,9 +21,9 @@ deployment journals and superseded measurements remain in Git history.
   fault cases, build/types/configuration/security gates and zero observed clock
   steps. Two independent opt-in tests are skipped, not counted as passes; the
   Cube gate ran separately. Two moderate development-only Vitest advisories remain.
-- DeepSeek returned **HTTP 402 / Insufficient Balance**. The owner was notified.
-  Post-repair paid long-context/provider-combination acceptance is blocked, not
-  passed. GPT and non-model validation can continue.
+- DeepSeek returned **HTTP 402 / Insufficient Balance**; the owner has now
+  replenished it. Post-repair paid long-context/provider-combination acceptance
+  must be repeated; the failed attempt is not counted as passed.
 - PiCloud model, Docker and Cube proxy paths now use the owner's approved
   `127.0.0.1:12450`. Cube's remaining `10808` setting was changed through the
   existing settings service (revision 5); its hot reload restored HTTPS 200.
@@ -70,6 +70,7 @@ sampling request, never subtracted from an entire multi-Step coding Run.
 | Kafka broker SIGKILL, same runtime | One Attempt completes with unchanged prefix and canonical/live equality; broker healthy afterward. 48,993 ms including failure/recovery; API resources cleaned |
 | Worker SIGKILL, CP `c28ce385` / K8s Workers `ae5c5ff3` | Genuine exit 137, seal-before-successor, exact prefix recovery, cross-Worker recall and four concurrent Turns. Seven completed real Pro requests: 591 input / 19,712 cache / 1,204 output tokens; interrupted request excluded |
 | Shared-Volume children, `fd07a098` / Broker `b84ecb30` | [Dedicated evidence](subagent-compute-20260915.md): 25 parent Turns / 32 children across repetitions; Git worktree/local merge, nested compute, home Volume and independent same-port Preview |
+| Fresh GPT children, Workers `3abf8184` | 13 parent Turns and 17 total children, including two nested children: fresh/branch, lazy/shared/ephemeral/parallel/nested compute, coding/worktree merge, mailbox consumption, supervisor reply, cancellation and guest boundary pass. Native input/cache/output 143,883/436,992/5,208; parent/children share the physical Session and lease. API cleanup, Volume purge and fixture-credential revocation confirmed |
 | Session-family fairness/loss | One Worker, two family slots, one model permit: five tasks share two leases; unrelated family progresses while children wait. Worker loss closes family before replacement; recovery inspects files without replaying old append |
 | Volume initialization, `18e96210` | Native 20-way Create and pre/post-publication SIGKILL; 3×20 live first-use calls; paid warm/cold attach and shared-Workspace coding. No copy protocol or per-Run Workspace checkpoint |
 | Machine recovery, `642878b9` | Six real-model Runs verify defaults, same-Volume child compute, same-port Preview, SSH, pause/resume and Broker restart with root files/process preserved. No host-power-loss claim |
@@ -207,7 +208,7 @@ Generated JSON reports are checked for provenance, scope, parsing and accidental
 sensitive fields rather than claimed as hand-reviewed business source. Full reads
 do not certify all combinations below.
 
-1. Restore DeepSeek balance, then repeat the repaired long-context gate through
+1. With the replenished DeepSeek balance, repeat the repaired long-context gate through
    multiple Compactions, search, model/reasoning/Fast changes, cross-Worker restore
    and inherited/fresh children. Preserve failed-run evidence until this is done.
 2. Finish PERF-01 with the actual bounded-prepared database adapter: measure
