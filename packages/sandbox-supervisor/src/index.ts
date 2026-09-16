@@ -71,7 +71,6 @@ export { PiSamplingStepController, type PiSamplingStepCapture } from "./pi-sampl
 export {
   PI_SETTLEMENT_GATE_CUSTOM_TYPE,
   SETTLEMENT_GATE_COMMAND_ID,
-  createPiSettlementGateExtension,
   PiSettlementGateController,
   settlementGatePolicyFromCommand,
   type PiSettlementGatePolicy,

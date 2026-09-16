@@ -12,7 +12,26 @@ concurrent newer owners and pre-start bookkeeping. An isolated GC probe retains
 16 command objects before confirmation and zero afterward. The SQL matrix covers
 108 combinations of Run state, seal and control state, plus missing authority and
 1,001 lookup IDs. Migration 142 adds only a pending-control index, no data reset.
-Full fixed-revision checks and deployed paid acceptance are not yet complete.
+At `32e40930`, full local real-PG CI passes (967 tests, two independent live
+skips, 26 fault cases), as does [remote CI](https://github.com/cookerpapa/pi-cloud/actions/runs/35046644510).
+The Worker and index migration are deployed; CP remains `bcb400a3`. Five paid
+Runs pass: concurrent Steer/replay, two coding Turns with six verified Tools,
+and GPT high/Fast plus DeepSeek Pro high recall/configuration. A fresh Worker's
+retained Run/control/family counts reach zero before the Steer API replay; later
+coding and provider batches also return to zero. Usage totals 40,347 input /
+315,904 cache-read / 1,830 output tokens. DeepSeek chat first text is 1,530 ms,
+provider route 1,254 ms, internal 276 ms; this overlaps local CI, not an idle SLO.
+GPT's split timing is excluded due to a 3,375-ms host-clock step. Baseline fixtures
+are retained for the audit; no new account or Workspace was created.
+
+Further Harness review reproduced controls stranded by failed model/Session
+preparation: the Run had already failed while both Steer and child input remained
+pending. Finalize control waiters at the whole-Run boundary, including startup;
+late input is rejected immediately. Both failure regressions and all 111
+Supervisor tests/types pass. Removed the unused synchronous Step-capture branch
+and old Extension-API settlement implementation; their tests now exercise the
+actual asynchronous capture and production settlement controller, preserving
+the optional verification behavior. This subsequent slice still needs rollout.
 
 At `1209d458`, five deterministic multi-replica Steer races pass after
 fixing unchecked zero-row terminal updates and late transport replies. Before
@@ -379,7 +398,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | FILE-03 | Browser path validation could race a parent-directory replacement before open/readdir | Reproduced outside fixture content/names. Validate the opened Linux descriptor and retain it for listing; bound reads if files grow after stat. Volume regression suite passes |
 | PERF-02 | Git preflight held the Volume lock/PG lock connection during remote network wait | Reproduced blocked directory access; release after reading the credential, then perform the independent network probe |
 | LOCK-01 | Lost copy lock let an old copier remove a newer acknowledged target | Reproduced on owned temporary files. The owner chose shared-Volume compute instead of independent child copies (ADR-0171). Copy APIs/lifecycle are removed; real worktree, parallel/nested compute and home-Volume acceptance pass. No new atomic-copy protocol or Volume Plugin change is introduced |
-| MEM-02 | Supervisor retained completed Assignments and publisher contexts, plus command/control bookkeeping | Reproduced 64 completed synthetic Runs retaining all 64 publishers and ~65 MiB of owned buffers with zero active Sessions. Clear the publisher at completion/pre-start release: zero publishers and ~1 MiB remain; completed duplicate commands still reuse their outcome. Long-term command/control/epoch bookkeeping retention remains under review |
+| MEM-02 | Supervisor retained completed Assignments, publisher contexts and control/epoch bookkeeping | Publisher cleanup removes the original 64-context retention. `32e40930` additionally retires PG-confirmed completed command/control/family caches; real paid batches reach zero retained entries and same-key Steer replay still succeeds from PG. Uncertain controls deliberately remain retained; no TTL discards unresolved outcomes |
 | LIFE-06 | A synchronous Runner startup throw bypassed the common completion cleanup and stranded its slot | Reproduced active count remaining 1. Make the event-boundary method async so synchronous and asynchronous failures share finalization; regression passes |
 | LIFE-07 | Worker entrypoint acquired observability/DB before its cleanup scope; constructor failures leaked acquired resources and secondary errors were swallowed | Three regressions failed before. One ordered cleanup path covers partial acquisition, preserves primary/cleanup errors, and removes signal listeners; four lifecycle tests pass |
 | LIFE-08 | Runtime swallowed drain/teardown errors and could overwrite its first fatal cause with a later control-channel failure | Reproduced a failed drain reported as successful. Attempt every owned cleanup in order, retain the aggregate error and first terminal cause; six entrypoint/runtime regressions pass |

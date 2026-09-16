@@ -25,12 +25,12 @@ function capture(sequence: number) {
 }
 
 describe("PiSamplingStepController", () => {
-  it("reuses the frozen Step only for the scheduled provider retry", () => {
+  it("reuses the frozen Step only for the scheduled provider retry", async () => {
     const controller = new PiSamplingStepController();
-    const first = controller.capture(() => capture(1));
+    const first = await controller.captureAsync(async () => capture(1));
     controller.scheduleRetry(1);
-    const retry = controller.capture(() => capture(99));
-    const next = controller.capture(() => capture(2));
+    const retry = await controller.captureAsync(async () => capture(99));
+    const next = await controller.captureAsync(async () => capture(2));
 
     expect(first.samplingAttempt).toBe(1);
     expect(retry).toMatchObject({
@@ -43,11 +43,13 @@ describe("PiSamplingStepController", () => {
     });
   });
 
-  it("rejects retry and Step-order ambiguity", () => {
+  it("rejects retry and Step-order ambiguity", async () => {
     const controller = new PiSamplingStepController();
     expect(() => controller.scheduleRetry(1)).toThrow("without an active Cloud Step");
-    controller.capture(() => capture(2));
-    expect(() => controller.capture(() => capture(2))).toThrow("did not advance");
+    await controller.captureAsync(async () => capture(2));
+    await expect(controller.captureAsync(async () => capture(2))).rejects.toThrow(
+      "did not advance",
+    );
     controller.scheduleRetry(1);
     expect(() => controller.scheduleRetry(2)).toThrow("overlapping");
   });

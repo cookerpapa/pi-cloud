@@ -414,6 +414,7 @@ export class PiCloudTurnRunner {
   readonly #clock: () => Date;
   readonly #id: () => string;
   #activeRuntime: CloudAgentRuntime | undefined;
+  #runEnded = false;
   readonly #steerWaiters = new Set<{
     resolve(runtime: CloudAgentRuntime): void;
     reject(error: Error): void;
@@ -434,12 +435,7 @@ export class PiCloudTurnRunner {
   }
 
   async steer(text: string): Promise<void> {
-    const runtime =
-      this.#activeRuntime ??
-      (await new Promise<CloudAgentRuntime>((resolvePromise, rejectPromise) => {
-        const waiter = { resolve: resolvePromise, reject: rejectPromise };
-        this.#steerWaiters.add(waiter);
-      }));
+    const runtime = await this.#runtimeForControl();
     await runtime.steer(text);
   }
   async agentInput(
@@ -447,15 +443,47 @@ export class PiCloudTurnRunner {
     text: string,
     delivery: "notify" | "steer" | "follow_up",
   ): Promise<void> {
-    const runtime =
-      this.#activeRuntime ??
-      (await new Promise<CloudAgentRuntime>((resolve, reject) => {
-        this.#steerWaiters.add({ resolve, reject });
-      }));
+    const runtime = await this.#runtimeForControl();
     await runtime.agentInput(id, text, delivery);
   }
 
+  async #runtimeForControl(): Promise<CloudAgentRuntime> {
+    if (this.#runEnded)
+      throw new PiTurnError("steer_target_unavailable", "Pi Run has already ended", false);
+    return (
+      this.#activeRuntime ??
+      new Promise<CloudAgentRuntime>((resolve, reject) => {
+        this.#steerWaiters.add({ resolve, reject });
+      })
+    );
+  }
+
   async run(
+    command: ExecuteTurnCommandMessage,
+    publishEvent: PiEventPublisher,
+    signal?: AbortSignal,
+  ): Promise<PiTurnResult> {
+    this.#runEnded = false;
+    try {
+      return await this.#executeRun(command, publishEvent, signal);
+    } finally {
+      // Control requests may arrive before model/Session preparation finishes.
+      // Every exit must settle them, not only exits of an active Agent Loop.
+      this.#runEnded = true;
+      this.#activeRuntime = undefined;
+      for (const waiter of this.#steerWaiters)
+        waiter.reject(
+          new PiTurnError(
+            "steer_target_unavailable",
+            "Pi Run ended before control delivery",
+            false,
+          ),
+        );
+      this.#steerWaiters.clear();
+    }
+  }
+
+  async #executeRun(
     command: ExecuteTurnCommandMessage,
     publishEvent: PiEventPublisher,
     signal?: AbortSignal,
@@ -934,16 +962,6 @@ export class PiCloudTurnRunner {
           combined.removeEventListener("abort", abort);
           flushPendingText();
           await eventChain.catch(() => undefined);
-          this.#activeRuntime = undefined;
-          for (const waiter of this.#steerWaiters)
-            waiter.reject(
-              new PiTurnError(
-                "steer_target_unavailable",
-                "Pi Run ended before steer delivery",
-                false,
-              ),
-            );
-          this.#steerWaiters.clear();
         }
       } finally {
         await sessionHandle.authority.close();

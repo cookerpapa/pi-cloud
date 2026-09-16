@@ -1,6 +1,5 @@
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
-import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 
 export const SETTLEMENT_GATE_COMMAND_ID = "settlement-gate" as const;
 export const PI_SETTLEMENT_GATE_CUSTOM_TYPE = "pi-cloud.settlement_gate" as const;
@@ -14,20 +13,6 @@ export type PiSettlementGatePolicy = Readonly<{
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function lastAssistantStopReason(messages: readonly unknown[]): string | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (
-      isRecord(message) &&
-      message.role === "assistant" &&
-      typeof message.stopReason === "string"
-    ) {
-      return message.stopReason;
-    }
-  }
-  return undefined;
 }
 
 function normalizedCommand(value: string): string {
@@ -76,80 +61,7 @@ function validatePolicy(policy: PiSettlementGatePolicy): PiSettlementGatePolicy 
   return Object.freeze({ ...policy });
 }
 
-/**
- * Adds at most one Pi-native follow-up after a successful low-level run when
- * code may have changed and the project's explicit verification command was
- * not observed succeeding. The extension never executes a command itself.
- */
-export function createPiSettlementGateExtension(input: PiSettlementGatePolicy): InlineExtension {
-  const policy = validatePolicy(input);
-  return (pi) => {
-    let mutationObserved = false;
-    let verificationSucceeded = false;
-    let followUps = 0;
-    const verificationCalls = new Set<string>();
-
-    pi.on("tool_execution_start", (event) => {
-      if (event.toolName === "write" || event.toolName === "edit") {
-        mutationObserved = true;
-        return;
-      }
-      if (event.toolName !== "bash") return;
-      // Arbitrary shell can mutate the Workspace even when its text looks read-only.
-      mutationObserved = true;
-      if (
-        isRecord(event.args) &&
-        typeof event.args.command === "string" &&
-        isConfiguredVerification(event.args.command, policy)
-      ) {
-        verificationCalls.add(event.toolCallId);
-      }
-    });
-
-    pi.on("tool_execution_end", (event) => {
-      if (verificationCalls.delete(event.toolCallId) && !event.isError) {
-        verificationSucceeded = true;
-      }
-    });
-
-    pi.on("agent_end", (event) => {
-      const stopReason = lastAssistantStopReason(event.messages);
-      if (
-        !mutationObserved ||
-        verificationSucceeded ||
-        followUps >= policy.maximumFollowUps ||
-        stopReason === undefined ||
-        stopReason === "error" ||
-        stopReason === "aborted"
-      ) {
-        return;
-      }
-      followUps += 1;
-      const cwd = policy.cwd === "." ? "/workspace" : `/workspace/${policy.cwd}`;
-      pi.sendMessage(
-        {
-          customType: PI_SETTLEMENT_GATE_CUSTOM_TYPE,
-          content: [
-            {
-              type: "text",
-              text: [
-                "A project-defined verification step is still required before this Run settles.",
-                `Run the configured command from ${cwd}, inspect its result, and address any failure before the final response.`,
-                `Command: ${policy.command}`,
-                `Timeout: ${String(Math.ceil(policy.timeoutMs / 1_000))} seconds`,
-              ].join("\n"),
-            },
-          ],
-          display: false,
-          details: { schemaVersion: 1 },
-        },
-        { triggerTurn: true, deliverAs: "followUp" },
-      );
-    });
-  };
-}
-
-/** Thin-runtime equivalent of the extension settlement gate. */
+/** Produces at most one project verification reminder; never executes a Tool. */
 export class PiSettlementGateController {
   readonly #policy: PiSettlementGatePolicy;
   readonly #verificationCalls = new Set<string>();

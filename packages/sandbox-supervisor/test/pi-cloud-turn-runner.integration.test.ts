@@ -111,6 +111,64 @@ function deferred<T>() {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it.each(["model", "session"])(
+    "settles queued controls when %s preparation fails",
+    async (phase) => {
+      const preparing = Promise.withResolvers<void>();
+      const authority = new TestAuthority();
+      const session = new Session(
+        new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
+      );
+      const runner = new PiCloudTurnRunner({
+        resolveModelRuntime: async () => {
+          await preparing.promise;
+          if (phase === "model") throw new Error("model startup failed");
+          return {
+            provider: "pi-cloud-fake",
+            modelId: "pi-cloud-fake",
+            baseUrl: "http://unused.invalid",
+            api: "openai-completions",
+            apiKey: FAKE_MODEL_API_KEY,
+          };
+        },
+        openSession: async () => {
+          if (phase === "session") throw new Error("session startup failed");
+          return { session, lane: "main", authority };
+        },
+        sandboxContinuity: {
+          continuityId: "unused",
+          continuity: "cold_restore",
+          environmentSha256: "a".repeat(64),
+          workspaceBindingSha256: "b".repeat(64),
+          toolPolicySha256: "c".repeat(64),
+        },
+        createAgentTools: () => {
+          throw new Error("Tools cannot start during preparation failure");
+        },
+      });
+      const run = runner.run(command, () => {}).catch((error) => error);
+      const queued = [
+        runner.steer("new focus"),
+        runner.agentInput("child-1", "child input", "notify"),
+      ].map((p) => p.catch((error) => error));
+      preparing.resolve();
+      expect(await run).toMatchObject({ message: `${phase} startup failed` });
+      const settled = async (promises: Promise<unknown>[]) =>
+        Promise.race([
+          Promise.all(promises),
+          new Promise((resolve) => setTimeout(() => resolve("controls stranded"), 50)),
+        ]);
+      expect(await settled(queued)).toEqual([
+        expect.objectContaining({ code: "steer_target_unavailable" }),
+        expect.objectContaining({ code: "steer_target_unavailable" }),
+      ]);
+      expect(authority.closed).toBe(phase === "model");
+      expect(await settled([runner.steer("late focus").catch((error) => error)])).toEqual([
+        expect.objectContaining({ code: "steer_target_unavailable" }),
+      ]);
+    },
+  );
+
   it("reports cancellation before first sampling without inventing a Cloud Step", async () => {
     const fake = new FakeModelServer({ scenarioSequence: ["text"] });
     await fake.start();

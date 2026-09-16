@@ -61,8 +61,11 @@ Volume architecture. Historical experiments remain in Git history.
       SQL or high-cardinality labels, to separate connection/transaction waits
       from selection, ownership and lifecycle work before further optimization.
       Completed Worker bookkeeping now has PG-confirmed retirement, off the
-      Run/Step path. Local GC, failed-check and newer-owner races pass; deployment
-      and paid multi-round/replay verification remain pending for this slice.
+      Run/Step path. Local GC, failed-check/newer-owner races, full CI and deployed
+      paid multi-round/replay checks pass at `32e40930`; unknown controls are kept.
+      Startup failure now rejects queued Steer/child-input waiters instead of
+      stranding them. Removed unused synchronous Step capture and old settlement
+      extension code; tests exercise the actual production controllers.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;
