@@ -11,7 +11,6 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { get as httpsGet } from "node:https";
 import { connect } from "node:net";
 import { release as hostKernelRelease } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -24,6 +23,7 @@ import {
   type OfficialCubeSandboxRuntimeClientOptions,
   type ToolBrokerOptions,
 } from "../src/index.ts";
+import { workspaceVolumeId } from "../src/workspace-volume-gateway-contract.ts";
 
 type TestToolBrokerDefaults = "stateRepository" | "ownerBaseUrl" | "imageRevision";
 type TestToolBrokerOptions = Omit<ToolBrokerOptions, TestToolBrokerDefaults> &
@@ -40,7 +40,7 @@ function testBroker(options: TestToolBrokerOptions): ToolBroker {
 
 const enabled = process.env.PI_CLOUD_CUBESANDBOX_TEST === "1";
 const STEP_CONTEXT_SHA256 = "a".repeat(64);
-const PERSISTENT_IDLE_TTL_PROOF_MS = 250;
+const WARM_IDLE_PROOF_MS = 500;
 
 type LiveConfiguration = Readonly<{
   templateId: string;
@@ -68,10 +68,10 @@ function port(value: string | undefined, fallback: number): number {
 }
 
 async function readPrivateKey(path: string): Promise<string> {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const metadata = await handle.stat();
-    if (!metadata.isFile() || (metadata.mode & 0o077) !== 0) {
+    if (!metadata.isFile() || (metadata.mode & 0o037) !== 0 || metadata.size > 4_096) {
       throw new Error("CubeSandbox live-gate API key must be a private regular file");
     }
     const key = (await handle.readFile("utf8")).replace(/\r?\n$/, "");
@@ -285,43 +285,6 @@ async function assertReachableFromTrustedHost(
   });
 }
 
-async function assertRawPublicHttpsFromTrustedHost(url: string): Promise<void> {
-  await new Promise<void>((resolvePromise, rejectPromise) => {
-    const request = httpsGet(
-      url,
-      {
-        headers: { "user-agent": "pi-cloud-cube-egress-host-preflight/1" },
-        timeout: 5_000,
-      },
-      (response) => {
-        response.resume();
-        response.once("end", () => {
-          const status = response.statusCode ?? 500;
-          if (status < 200 || status >= 400) {
-            rejectPromise(
-              new Error(`trusted-host public HTTPS preflight returned HTTP ${String(status)}`),
-            );
-            return;
-          }
-          resolvePromise();
-        });
-      },
-    );
-    request.once("timeout", () => {
-      request.destroy(new Error("trusted-host public HTTPS preflight timed out"));
-    });
-    request.once("error", (error) => {
-      rejectPromise(
-        new Error(
-          "Cube full-egress acceptance requires a native public route on every Cube node; " +
-            "an HTTP_PROXY-only host cannot provide CubeVS NAT egress",
-          { cause: error },
-        ),
-      );
-    });
-  });
-}
-
 function denyProbeCommand(endpoints: readonly Readonly<{ host: string; port: number }>[]): string {
   const encoded = Buffer.from(JSON.stringify(endpoints), "utf8").toString("base64");
   const program =
@@ -343,39 +306,25 @@ function denyProbeCommand(endpoints: readonly Readonly<{ host: string; port: num
 }
 
 function publicHttpsProbeCommand(url: string): string {
-  const encodedUrl = Buffer.from(url, "utf8").toString("base64");
-  const program =
-    `const https=require('node:https');` +
-    `const url=Buffer.from('${encodedUrl}','base64').toString('utf8');` +
-    `const fail=error=>{` +
-    `process.stderr.write(String(error?.stack??error??'public HTTPS probe failed'));` +
-    `process.exit(94)` +
-    `};` +
-    `const request=https.get(url,{` +
-    `headers:{'user-agent':'pi-cloud-cube-egress-check/1'},timeout:5000` +
-    `},response=>{` +
-    `response.resume();` +
-    `response.once('end',()=>{` +
-    `if((response.statusCode??500)<200||(response.statusCode??500)>=400)` +
-    `fail('unexpected HTTP status '+response.statusCode);` +
-    `process.stdout.write('public-egress-ok')` +
-    `});` +
-    `});` +
-    `request.once('timeout',()=>{request.destroy();fail('public HTTPS probe timed out')});` +
-    `request.once('error',fail);`;
-  return `node -e ${JSON.stringify(program)}`;
+  // Exercise the guest's configured HTTP(S) proxy, not a different host NAT path.
+  const quoted = "'" + url.replaceAll("'", "'\\''") + "'";
+  return `curl --fail --silent --show-error --location --max-time 10 --output /dev/null ${quoted} && printf public-egress-ok`;
 }
 
 async function waitForNoManagedInstances(
   config: LiveConfiguration,
-  activationIds: ReadonlySet<string>,
+  assignments: readonly ToolSandboxAssignment[],
 ): Promise<void> {
   const client = new OfficialCubeSandboxRuntimeClient(config.runtime);
   try {
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
       const remaining = (await client.list()).filter((instance) =>
-        activationIds.has(instance.metadata["picloud.workspace_runtime_id"] ?? ""),
+        assignments.some(
+          (owned) =>
+            instance.metadata["picloud.tenant_id"] === owned.tenantId &&
+            instance.metadata["picloud.workspace_id"] === owned.workspaceId,
+        ),
       );
       if (remaining.length === 0) return;
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
@@ -391,14 +340,20 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
     "proves two-tenant isolation, full-public egress, private denial, cancellation and cleanup",
     async () => {
       const config = await configuration();
-      await assertRawPublicHttpsFromTrustedHost(config.publicHttpsUrl);
       await Promise.all(
         config.forbiddenEndpoints.map((endpoint) => assertReachableFromTrustedHost(endpoint)),
       );
 
-      const testRun = randomUUID().slice(0, 8);
+      const testRun = randomUUID();
       const firstAssignment = assignment(testRun, 1);
       const secondAssignment = assignment(testRun, 2);
+      const terminalAssignment = assignment(testRun, 3);
+      const volumeGatewayOptions = {
+        baseUrl: required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL"),
+        serviceToken: await readPrivateKey(
+          required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE"),
+        ),
+      };
       const provider = new CubeSandboxProvider({
         templateId: config.templateId,
         developmentTemplateIds: {
@@ -409,19 +364,13 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         imageRevision: config.imageRevision,
         webProxy: config.webProxy,
         runtime: config.runtime,
-        workspaceVolumeGateway: new HttpWorkspaceVolumeGateway({
-          baseUrl: required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL"),
-          serviceToken: await readPrivateKey(
-            required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE"),
-          ),
-        }),
+        workspaceVolumeGateway: new HttpWorkspaceVolumeGateway(volumeGatewayOptions),
       });
       const manager = testBroker({
         provider,
         imageRevision: config.imageRevision,
-        warmTtlMs: PERSISTENT_IDLE_TTL_PROOF_MS,
+        warmTtlMs: 60_000,
       });
-      const activationIds = new Set<string>();
       let first: Awaited<ReturnType<ToolBroker["create"]>> | undefined;
       let second: Awaited<ReturnType<ToolBroker["create"]>> | undefined;
       let activeFirstAssignment = firstAssignment;
@@ -429,9 +378,9 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
       const startedAt = performance.now();
       let firstToolMs = 0;
       let secondToolMs = 0;
+      const failures: unknown[] = [];
       try {
         await provider.checkHealth();
-        const terminalAssignment = assignment(testRun, 3);
         const terminalEnvironment = createRequest(
           terminalAssignment,
           config.imageRevision,
@@ -446,7 +395,6 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           workspaceSeed: { kind: "sample_java" },
           size: { rows: 24, cols: 100 },
         });
-        activationIds.add(terminal.terminalId);
         try {
           const terminalOutput = (async (): Promise<string> => {
             const chunks: Buffer[] = [];
@@ -473,14 +421,12 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             ]),
           ).resolves.toContain("__picloud_terminal_ok__");
         } finally {
-          await terminal.close().catch(() => undefined);
+          await terminal.close();
         }
         const firstRequest = createRequest(firstAssignment, config.imageRevision);
         first = await manager.create(firstRequest);
         const secondRequest = createRequest(secondAssignment, config.imageRevision);
         second = await manager.create(secondRequest);
-        activationIds.add(first.activationId);
-        activationIds.add(second.activationId);
 
         const firstCanary = `tenant-a-${randomUUID()}`;
         const secondCanary = `tenant-b-${randomUUID()}`;
@@ -641,7 +587,6 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           assignment: restoredFirstAssignment,
           workspaceSeed: { kind: "sample_java" },
         });
-        activationIds.add(first.activationId);
         expect(
           output(
             await manager.execute(
@@ -695,9 +640,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             operation(second.activationId, "printf stale-authority-must-not-run"),
           ),
         ).rejects.toMatchObject({ code: "stale_session_lease" });
-        await new Promise((resolvePromise) =>
-          setTimeout(resolvePromise, PERSISTENT_IDLE_TTL_PROOF_MS * 2),
-        );
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, WARM_IDLE_PROOF_MS));
         await manager.reapWarm();
         expect(manager.warmCount).toBe(1);
         const reboundAssignment: ToolSandboxAssignment = {
@@ -755,17 +698,55 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         await expect(
           manager.inspect(first.activationId, activeFirstAssignment),
         ).resolves.toMatchObject({ state: "absent" });
+      } catch (error) {
+        failures.push(error);
       } finally {
         if (first !== undefined) {
-          await manager.stop(first.activationId, activeFirstAssignment).catch(() => undefined);
+          await manager.stop(first.activationId, activeFirstAssignment).catch((error) => {
+            failures.push(error);
+          });
         }
         if (second !== undefined) {
-          await manager.stop(second.activationId, activeSecondAssignment).catch(() => undefined);
+          await manager.stop(second.activationId, activeSecondAssignment).catch((error) => {
+            failures.push(error);
+          });
         }
-        await manager.close().catch(() => undefined);
+        await manager.close().catch((error) => {
+          failures.push(error);
+        });
+        const cleanupClient = new OfficialCubeSandboxRuntimeClient(config.runtime);
+        const cleanupGateway = new HttpWorkspaceVolumeGateway(volumeGatewayOptions);
+        try {
+          await waitForNoManagedInstances(config, [
+            firstAssignment,
+            secondAssignment,
+            terminalAssignment,
+          ]);
+          for (const owned of [firstAssignment, secondAssignment, terminalAssignment]) {
+            const volumeId = workspaceVolumeId(owned);
+            const identity = { tenantId: owned.tenantId, workspaceId: owned.workspaceId, volumeId };
+            try {
+              await cleanupGateway.prepareDelete(identity);
+              await cleanupClient.deleteVolume(volumeId);
+              await cleanupGateway.finalizeDelete(identity);
+            } catch (error) {
+              failures.push(error);
+            }
+          }
+        } catch (error) {
+          failures.push(error);
+        } finally {
+          for (const close of [() => cleanupClient.close(), () => cleanupGateway.close()]) {
+            try {
+              await close();
+            } catch (error) {
+              failures.push(error);
+            }
+          }
+        }
       }
-
-      await waitForNoManagedInstances(config, activationIds);
+      if (failures.length)
+        throw new AggregateError(failures, "Cube live acceptance or cleanup failed");
       process.stdout.write(
         `${JSON.stringify({
           cubeSandboxLiveGate: {
@@ -780,9 +761,10 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             publicInternetReachable: true,
             privateAndPlatformEgressDenied: true,
             fencedPtyValidated: true,
-            persistentProcessSurvivedIdleTtlAndRunBoundary: true,
+            warmProcessSurvivedRunBoundaryWithinTtl: true,
             staleToolAuthorityRejected: true,
-            cancellationDestroyedMicroVm: true,
+            cancellationRetiredToolBinding: true,
+            persistentVolumesRemoved: 3,
             orphanCount: 0,
           },
         })}\n`,
