@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readPreviewDocument } from "./lib/preview-client.mjs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -395,7 +395,8 @@ if (
 }
 const browser = new BrowserCookieFetch();
 const api = new PiCloudApi(browser.fetch);
-const screenshotPath = resolve(tmpdir(), "pi-cloud-snake-preview-latest.png");
+const screenshotDirectory = await mkdtemp(resolve(tmpdir(), "pi-cloud-snake-preview-"));
+const screenshotPath = resolve(screenshotDirectory, "game.png");
 
 let session;
 let development;
@@ -403,9 +404,25 @@ let coding;
 let environmentReleased = reusedSessionId !== undefined;
 let conversationDeleted = reusedSessionId !== undefined;
 let screenshotDeleted = false;
+let acceptanceFailure;
 
-async function cleanup(strict) {
+async function cleanup() {
   const failures = [];
+  if (!conversationDeleted && session !== undefined) {
+    try {
+      const active = (turn) => ["queued", "running", "cancelling"].includes(turn.state);
+      for (const turn of (await api.getConversation(session.sessionId)).turns.filter(active))
+        if (turn.state !== "cancelling")
+          await api.cancelTurn(session.sessionId, turn.turnId, newIdempotencyKey("cancel"));
+      const deadline = performance.now() + 120_000;
+      while ((await api.getConversation(session.sessionId)).turns.some(active)) {
+        if (performance.now() >= deadline) throw new Error("Snake fixture cancellation timed out");
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+      }
+    } catch (error) {
+      failures.push(error);
+    }
+  }
   if (!environmentReleased && development !== undefined) {
     try {
       await api.developmentEnvironmentAction(
@@ -428,13 +445,13 @@ async function cleanup(strict) {
   }
   if (!screenshotDeleted) {
     try {
-      await rm(screenshotPath, { force: true });
+      await rm(screenshotDirectory, { recursive: true });
       screenshotDeleted = true;
     } catch (error) {
       failures.push(error);
     }
   }
-  if (strict && failures.length > 0) {
+  if (failures.length > 0) {
     throw new AggregateError(failures, "Snake acceptance cleanup failed");
   }
 }
@@ -509,7 +526,7 @@ try {
   assert(serializedConversation.includes('"toolName":"preview"'));
   assert(!serializedConversation.includes("http://localhost:4173/"));
   if (reusedSessionId === undefined) {
-    await cleanup(true);
+    await cleanup();
     progress("released all acceptance-only resources");
   }
   const previewUrl = new URL(preview.path);
@@ -549,6 +566,16 @@ try {
     "utf8",
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);
+} catch (error) {
+  acceptanceFailure = error;
+  throw error;
 } finally {
-  await cleanup(false);
+  try {
+    await cleanup();
+  } catch (error) {
+    throw new AggregateError(
+      acceptanceFailure === undefined ? [error] : [acceptanceFailure, error],
+      "Snake acceptance or cleanup failed",
+    );
+  }
 }

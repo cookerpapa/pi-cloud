@@ -3,9 +3,60 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
-Application-source reading is now covered by the private hash/range ledger;
-tests, migrations, deployment/scripts and documents still have remaining reads.
+Maintained application source, tests, migrations, deployment and script reading
+is covered by the private hash/range ledger; document/evidence cleanup continues.
 This is coverage of reading, not a claim that every combination is already tested.
+
+Fresh browser acceptance on Web/CP/Broker `b2cf34a3` and two Kubernetes Workers
+`7d65c22d` passes all 93 exercised controls, including real chat/Steer/cancellation,
+Terminal command execution, machine pause/resume/release and directory creation.
+The test now collects transport timing from the actual Kubernetes containers,
+including a previous container after restart, rather than looking only for
+Compose Workers. Eight timing-helper contracts pass. Chrome text paint is
+2,796.5 ms after click; the same sampling request takes 2,305.8 ms to first text
+through the provider route, leaving 490.7 ms for other work and rendering. This
+is one sample, not a percentile. API cleanup succeeds; fixture identity/history
+is retained only until final scoped audit cleanup.
+
+The following paid repeat passes on the same deployed images: two simultaneous
+Sessions each serve ports 3000/8000 independently, then one adds 5173 without
+disturbing any existing route. A new exclusive machine builds Snake with 16 Tool
+calls; Chrome observes write preparation, Start/movement (tick 0→5), Pause
+(stays 5) and Reset (0). First text is 2,373 ms and total coding is 124,116 ms.
+The machine, conversation, Workspace bytes and temporary screenshot are removed.
+
+Four fresh tenants × two Sessions × two rounds pass on the two Kubernetes Workers:
+16 real DeepSeek Pro requests, peak eight overlapping Runs, eight marker restores,
+eight cross-tenant API denials, zero observed marker leaks and no Tool activation.
+Input/cache-read/output totals are 15,115 / 17,536 / 2,336 tokens. First-text
+p50/p95 are 1,999/2,423 ms and queue wait 472/815 ms. Some internal intervals still
+exceed the provider interval, so PERF-01 remains open. Isolated PostgreSQL confirms
+planning, rather than row execution, dominates the two admission reads; a trial
+materialized parent-scope subquery shows no useful gain and is not retained.
+No production planner setting or admission invariant has been changed.
+The isolated diagnostic above used an unnamed-pg comparison client, not the
+current production adapter: the latter already caches bounded named SELECTs
+since `9ff24b0b`. Do not attribute the baseline's full planning cost to production;
+repeat with `createDatabase` after the concurrent CI workload finishes.
+
+Acceptance scripts no longer silently discard cleanup errors in the renewed
+Preview/Snake/load paths, cancel their own unfinished tasks before deletion,
+and retain created resource IDs even if setup partially fails. The live stream
+reopen check now fails on unexpected connections instead of only printing a count.
+
+Full local CI on this slice passes: 998 workspace tests (two explicit opt-in
+gates skipped), 22 acceptance-helper tests, 26 targeted fault cases, types/build,
+format/docs/install/Helm/runtime/observability/image-closure and the high-severity
+dependency gate. Two moderate development-only Vitest findings remain. The clock
+observer reports zero wall/monotonic jumps. Subsequent documentation edits require
+their own format/link recheck; neither opt-in gate is counted as a live pass.
+
+Removed eight superseded reports/plans for the PG-receipt Lane cache, second
+seal-commit notification, independent live consumers and paused pre-seal campaigns.
+Their original measurements remain in Git, not as current deployment guidance.
+The backlog now lists unfinished work instead of duplicating completed change
+journals. Web guidance now describes the actual model menu, Kafka/Projector
+completion and isolated-root Preview, removing old HTML rewriting claims.
 
 Pi's local Bash has no default timeout, but the Cloud adapter silently supplied
 10 seconds and clamped explicit requests to 100–300,000 ms, potentially reporting
@@ -857,8 +908,8 @@ the reusable baseline coding Sessions still await final scoped cleanup.
 
 Remaining work:
 
-- finish remaining test, deployment, migration, script and documentation reads;
-  application-source reading is covered, with changed-file diffs rechecked;
+- finish document/evidence cleanup; maintained source/test/deployment/script
+  reading is covered, with changed-file diffs rechecked;
 - finish PERF-01 investigation and repeat cache retirement in the final failure/
   child matrices; TOOL-04/DIAG-02 are deployed and validated;
 - complete further regression slices; directory template/browser rollout passed;

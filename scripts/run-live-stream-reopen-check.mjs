@@ -311,10 +311,13 @@ try {
   );
 }
 if (failure) throw failure;
+const unexpected = cases.filter(
+  (c) => c.ids.length !== c.expectedRequests || c.active.length !== 1,
+);
+assert.equal(unexpected.length, 0, "Reopen produced unexpected SSE connections; see diagnostics");
 console.log(
   JSON.stringify({
     cases: cases.length,
-    unexpected: cases.filter((c) => c.ids.length !== c.expectedRequests || c.active.length !== 1)
-      .length,
+    unexpected: unexpected.length,
   }),
 );

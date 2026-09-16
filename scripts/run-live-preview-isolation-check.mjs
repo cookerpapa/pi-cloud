@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { readPreviewDocument } from "./lib/preview-client.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { format } from "prettier";
+import { format, resolveConfig } from "prettier";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_PREVIEW_ISOLATION_CHECK !== "1") {
@@ -66,10 +66,7 @@ class BrowserCookieFetch {
       headers,
       signal: init.signal ?? AbortSignal.timeout(10 * 60_000),
     });
-    const values =
-      typeof response.headers.getSetCookie === "function"
-        ? response.headers.getSetCookie()
-        : [response.headers.get("set-cookie")].filter(Boolean);
+    const values = response.headers.getSetCookie();
     for (const value of values) {
       const match = /(?:^|[,;]\s*)(pi_cloud_session=[^;]*)/u.exec(value);
       if (match !== null) this.#cookie = match[1];
@@ -123,6 +120,8 @@ const browser = new BrowserCookieFetch();
 const api = new PiCloudApi(browser.fetch);
 const sessionIds = [];
 const workspaceIds = [];
+let report;
+const failures = [];
 
 try {
   await api.registerAccount(
@@ -130,19 +129,23 @@ try {
     "Preview Isolation Acceptance",
     password,
   );
-  const [projectA, projectB] = await Promise.all([
-    api.createProject(`Preview A ${suffix}`),
-    api.createProject(`Preview B ${suffix}`),
-  ]);
-  workspaceIds.push(projectA.workspaceId, projectB.workspaceId);
-  const [sessionA, sessionB] = await Promise.all([
-    api.createSession(projectA.projectId, projectA.workspaceId, `Preview A ${suffix}`, "elastic"),
-    api.createSession(projectB.projectId, projectB.workspaceId, `Preview B ${suffix}`, "elastic"),
-  ]);
-  sessionIds.push(sessionA.sessionId, sessionB.sessionId);
+  const sessions = [];
+  for (const name of ["A", "B"]) {
+    const project = await api.createProject(`Preview ${name} ${suffix}`);
+    workspaceIds.push(project.workspaceId);
+    const session = await api.createSession(
+      project.projectId,
+      project.workspaceId,
+      `Preview ${name} ${suffix}`,
+      "elastic",
+    );
+    sessionIds.push(session.sessionId);
+    sessions.push(session);
+  }
+  const [sessionA, sessionB] = sessions;
 
   progress("submitting two Sessions with identical guest ports");
-  const [acceptedA, acceptedB] = await Promise.all([
+  const submissions = await Promise.allSettled([
     api.acceptTurn(
       sessionA.sessionId,
       twoServicePrompt("SESSION-A"),
@@ -156,6 +159,8 @@ try {
       "off",
     ),
   ]);
+  for (const result of submissions) if (result.status === "rejected") throw result.reason;
+  const [acceptedA, acceptedB] = submissions.map((result) => result.value);
   const completions = await Promise.allSettled([
     waitForRun(api, acceptedA.runId),
     waitForRun(api, acceptedB.runId),
@@ -201,7 +206,7 @@ try {
   assert.match(bApiAfter, /SESSION-B-API-8000/u);
   progress("one Session retained three simultaneous services across Turns");
 
-  const report = {
+  report = {
     accepted: true,
     piCloudRevision: testedRevision,
     workingTreeDirty:
@@ -216,17 +221,39 @@ try {
     reusedCrossSessionPorts: [3_000, 8_000],
     crossSessionMarkerLeak: false,
   };
-  await writeFile(
-    resolve(repositoryRoot, "docs/reports/preview-isolation-acceptance-latest.json"),
-    await format(JSON.stringify(report), { parser: "json" }),
-    "utf8",
-  );
-  process.stdout.write(`${JSON.stringify(report)}\n`);
+} catch (error) {
+  failures.push(error);
 } finally {
   for (const sessionId of sessionIds) {
-    await api.deleteConversation(sessionId, newIdempotencyKey("delete")).catch(() => undefined);
+    try {
+      const active = (turn) => ["queued", "running", "cancelling"].includes(turn.state);
+      for (const turn of (await api.getConversation(sessionId)).turns.filter(active))
+        if (turn.state !== "cancelling")
+          await api.cancelTurn(sessionId, turn.turnId, newIdempotencyKey("cancel"));
+      const deadline = performance.now() + 120_000;
+      while ((await api.getConversation(sessionId)).turns.some(active)) {
+        if (performance.now() >= deadline) throw new Error("Fixture cancellation timed out");
+        await wait(200);
+      }
+      await api.deleteConversation(sessionId, newIdempotencyKey("delete"));
+    } catch (error) {
+      failures.push(error);
+    }
   }
   for (const workspaceId of workspaceIds) {
-    await api.deleteWorkspace(workspaceId, newIdempotencyKey("delete")).catch(() => undefined);
+    try {
+      await api.deleteWorkspace(workspaceId, newIdempotencyKey("delete"));
+    } catch (error) {
+      failures.push(error);
+    }
   }
 }
+if (failures.length) throw new AggregateError(failures, "Preview acceptance or cleanup failed");
+report.cleanupCompleted = true;
+const reportPath = resolve(repositoryRoot, "docs/reports/preview-isolation-acceptance-latest.json");
+await writeFile(
+  reportPath,
+  await format(JSON.stringify(report), { ...(await resolveConfig(reportPath)), parser: "json" }),
+  "utf8",
+);
+process.stdout.write(`${JSON.stringify(report)}\n`);

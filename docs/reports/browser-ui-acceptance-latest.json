@@ -1,15 +1,18 @@
 {
   "accepted": true,
-  "piCloudRevision": "d923dbb9e03113de705d2264e9300778864ce84d",
-  "harnessWorkingTreeDirty": true,
+  "piCloudRevision": "a18bd1b2ed66138ba2ace54a6d3c26a4aeb254e0",
+  "harnessWorkingTreeDirty": false,
   "runtimeRevisions": {
-    "pi-cloud-production-web-1": "d923dbb9e03113de705d2264e9300778864ce84d",
-    "pi-cloud-production-control-plane-1": "9f62b365a4b631e77ce4ac33d90a0a27a69df55a",
-    "pi-cloud-production-supervisor-host-1": "9f62b365a4b631e77ce4ac33d90a0a27a69df55a",
-    "pi-cloud-production-tool-broker-1": "9f62b365a4b631e77ce4ac33d90a0a27a69df55a"
+    "pi-cloud-production-web-1": "b2cf34a31c7af319f973a59e400b805a7ad58f99",
+    "pi-cloud-production-control-plane-1": "b2cf34a31c7af319f973a59e400b805a7ad58f99",
+    "pi-cloud-production-tool-broker-1": "b2cf34a31c7af319f973a59e400b805a7ad58f99"
   },
-  "checkedAt": "2026-09-15T06:50:25.157Z",
-  "account": "browser.acceptance.mu2b9jmj",
+  "workerRuntimeImages": {
+    "pi-cloud-pi-worker-local-v1-0": "pi-cloud/supervisor-host:kubernetes-7d65c22d212f",
+    "pi-cloud-pi-worker-local-v1-1": "pi-cloud/supervisor-host:kubernetes-7d65c22d212f"
+  },
+  "checkedAt": "2026-09-16T19:24:18.696Z",
+  "account": "browser.acceptance.mu4hmnqf",
   "clickedControls": [
     "auth.localOnly",
     "auth.registerTab",
@@ -107,19 +110,19 @@
   ],
   "clickedControlCount": 93,
   "latencyMs": {
-    "userSubmitToFirstAssistantText": 4596,
-    "userSubmitToCompleteReply": 4801
+    "userSubmitToFirstAssistantText": 2878,
+    "userSubmitToCompleteReply": 2983
   },
   "browserFirstText": {
-    "submittedWallAt": 1789454936077,
-    "userClickToFirstDomMs": 4593,
-    "userClickToFirstTextPaintMs": 4606.399999999907,
-    "domToFirstTextPaintMs": 13.399999999906868,
+    "submittedWallAt": 1789586559962,
+    "userClickToFirstDomMs": 2784.4000000059605,
+    "userClickToFirstTextPaintMs": 2796.5,
+    "domToFirstTextPaintMs": 12.099999994039536,
     "measurement": "Chrome Element Timing text-paint; one browser monotonic clock; headless rendering"
   },
   "firstModelTiming": {
-    "providerRouteToFirstTextMs": 4329.754,
-    "nonProviderClickToPaintMs": 276.64599999990696,
+    "providerRouteToFirstTextMs": 2305.817,
+    "nonProviderClickToPaintMs": 490.683,
     "measurement": "Subtract same-sampling provider interval from browser click-to-paint; no cross-process wall-clock subtraction"
   },
   "testMode": "full",

@@ -18,7 +18,7 @@ The reference qualities to preserve are:
 - a centered transcript column around 800 px wide;
 - restrained user-message cards and mostly unboxed assistant prose;
 - readable Markdown, syntax-highlighted code, images, and tables;
-- collapsible thinking and tool details so operational output does not dominate
+- collapsible Tool details so operational output does not dominate
   the answer;
 - timestamps and session/model metadata that remain visually secondary;
 - responsive sidebar overlay behavior on narrow screens.
@@ -39,8 +39,8 @@ processes. It talks only to the control-plane REST/SSE contract.
 The product page adds:
 
 - session state and reconnect status;
-- no model picker or credential form; platform model policy is an operator
-  concern;
+- a cascading Provider/model/reasoning picker and GPT Fast mode, while upstream
+  credentials remain in the separate operator provider console;
 - streamed assistant text and complete Tool lifecycle from `PiCloudEvent`;
 - a visible turn-cancel control and clear cancelling/failed states.
 
@@ -82,8 +82,9 @@ elastic Workspace. Workspace deletion and cloud-development-machine lifecycle
 actions live on a separate resource page, where associated conversations and
 active-Run deletion locks are visible. Deployment-connected GitLab projects
 appear as Issue tasks on that surface; the browser has no project-connection
-form or generic repository-import workflow. No API token, provider key, model
-profile, or model picker is shown to an ordinary user.
+form or generic repository-import workflow. No API token, provider key or internal
+model profile is shown to an ordinary user. The composer model picker changes
+future Turns only; active or queued Turns keep their accepted settings.
 
 The resource page does not create Workspaces. Its Workspace tab lists only
 elastic-conversation file resources, their latest Sandbox specification and
@@ -117,8 +118,9 @@ validated before they enter React state. No raw Pi object, credential reference,
 provider token, or API body is logged.
 
 The one-command demo uses the supported persistent production topology. The
-trusted Worker commits Pi Session state to PostgreSQL before completion is
-published. A follow-up can run on any eligible Worker and reuses the Workspace's
+trusted Worker appends Pi Session state to Kafka; Projector materializes it in
+PostgreSQL before the ordered terminal becomes visible. A follow-up can run on
+an eligible Worker after the physical Session owner ends, and reuses the Workspace's
 persistent Cube Volume and, within the bounded warm TTL, its Cube activation. The composer remains
 available during an active turn: another prompt is visibly queued as a separate
 follow-up, receives and displays its durable mailbox position, and never implies
@@ -128,7 +130,7 @@ credentials never enter browser-visible contracts.
 ## Implemented Workspace directory
 
 The responsive right side is a live directory view of the current
-`/workspace`, not an operations dashboard. It lists only the directory a user
+Workspace directory, not an operations dashboard. It lists only the directory a user
 expands and reads only the selected file body. Operational Runs, usage and environment
 diagnostics remain in telemetry/admin APIs, so a denied unrelated request
 cannot blank or repeatedly reload the directory.
@@ -136,9 +138,10 @@ cannot blank or repeatedly reload the directory.
 Workspace file preview is deliberately inert: at most 512 KiB of valid UTF-8 is rendered in an
 escaped `<pre>`, binary data is labelled, and repository HTML/scripts are never
 embedded. Application preview is a separate authenticated reverse proxy to
-arbitrary unprivileged HTTP ports in a live Cube. It injects a path base and a per-response CSP
-nonce so ordinary inline single-file apps work without granting arbitrary
-script origins. The same panel offers a brokered xterm session without exposing
+arbitrary unprivileged HTTP ports in a live Cube. Each application has an
+authenticated isolated origin and root-relative HTTP/SSE/WebSocket forwarding;
+there is no HTML/base-tag/JavaScript rewriting. The Preview Tool supplies verified
+links; arbitrary model-authored localhost links are not rewritten. The same panel offers a brokered xterm session without exposing
 Cube ports or credentials. Deleting a parent recursively archives its human
 and Subagent descendants. Tail pruning retains the selected final answer and
 moves Pi's active lane back to it; neither operation rolls back Workspace bytes.

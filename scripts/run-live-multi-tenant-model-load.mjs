@@ -6,7 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { format } from "prettier";
+import { format, resolveConfig } from "prettier";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
@@ -219,9 +219,11 @@ async function registerTenant(index, suffix) {
   const model = await api.getModelConfiguration();
   assert.equal(model.mode, "real", `${tenantSlug} did not inherit the platform real model`);
   const project = await api.createProject(`Multi-tenant model load ${suffix}`);
-  const sessions = await Promise.all(
-    Array.from({ length: sessionsPerTenant }, (_, sessionIndex) =>
-      api.createSession(
+  const fixture = { api, workspaceId: project.workspaceId, sessionIds: [] };
+  fixtures.push(fixture);
+  const creations = await Promise.allSettled(
+    Array.from({ length: sessionsPerTenant }, async (_, sessionIndex) => {
+      const session = await api.createSession(
         project.projectId,
         project.workspaceId,
         `Multi-tenant model load ${suffix} / ${sessionIndex + 1}`,
@@ -230,13 +232,17 @@ async function registerTenant(index, suffix) {
         "/workspace",
         {
           provider: "deepseek",
-          modelId: "deepseek-v4-flash",
+          modelId: "deepseek-v4-pro",
           thinkingLevel: "off",
           fastMode: false,
         },
-      ),
-    ),
+      );
+      fixture.sessionIds.push(session.sessionId);
+      return session;
+    }),
   );
+  for (const result of creations) if (result.status === "rejected") throw result.reason;
+  const sessions = creations.map((result) => result.value);
   await psql(
     `update sessions
         set tool_capabilities = '[]'::jsonb,
@@ -249,7 +255,7 @@ async function registerTenant(index, suffix) {
     tenantId: body.tenantId,
     token: body.apiToken,
     api,
-    model: { ...model, provider: "deepseek", modelId: "deepseek-v4-flash" },
+    model: { ...model, provider: "deepseek", modelId: "deepseek-v4-pro" },
     session,
     marker: `TENANT-${index + 1}-SESSION-${sessionIndex + 1}-${suffix.toUpperCase()}`,
   }));
@@ -452,11 +458,42 @@ const registeredWorkers = JSON.parse(
     where c.supervisor_id=h.supervisor_id and c.state='active' and c.expires_at>now())`),
 );
 assert(registeredWorkers?.length > 0, "No registered Workers available");
-const lanes = (
-  await Promise.all(
-    Array.from({ length: tenantCount }, (_, index) => registerTenant(index, suffix)),
-  )
-).flat();
+const lanes = [],
+  fixtures = [];
+let cleanupCompleted = false,
+  acceptanceFailure;
+
+async function cleanup() {
+  const errors = [];
+  for (const fixture of fixtures) {
+    for (const sessionId of fixture.sessionIds) {
+      try {
+        const active = (turn) => ["queued", "running", "cancelling"].includes(turn.state);
+        for (const turn of (await fixture.api.getConversation(sessionId)).turns.filter(active))
+          if (turn.state !== "cancelling")
+            await fixture.api.cancelTurn(sessionId, turn.turnId, newIdempotencyKey("cancel"));
+        const deadline = performance.now() + 120_000;
+        while ((await fixture.api.getConversation(sessionId)).turns.some(active)) {
+          if (performance.now() >= deadline) throw new Error("Load fixture cancellation timed out");
+          await wait(200);
+        }
+        await fixture.api.deleteConversation(sessionId, newIdempotencyKey("cleanup-conversation"));
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    try {
+      await fixture.api.deleteWorkspace(
+        fixture.workspaceId,
+        newIdempotencyKey("cleanup-workspace"),
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  cleanupCompleted = true;
+  if (errors.length) throw new AggregateError(errors, "Load fixture cleanup failed");
+}
 
 async function runWave(tasks) {
   const results = await Promise.allSettled(tasks);
@@ -470,6 +507,8 @@ async function runWave(tasks) {
 }
 
 try {
+  for (let index = 0; index < tenantCount; index++)
+    lanes.push(...(await registerTenant(index, suffix)));
   for (let index = 0; index < lanes.length; index += 1) {
     const current = lanes[index];
     const foreign = lanes.find((lane) => lane.tenantId !== current.tenantId);
@@ -627,11 +666,17 @@ try {
   assert(totalUsage.requests >= allResults.length);
   assert(totalUsage.inputTokens > 0 && totalUsage.outputTokens > 0);
 
+  await cleanup();
+  report.cleanupCompleted = true;
+
   const reportDirectory = resolve(repositoryRoot, "docs/reports");
   await mkdir(reportDirectory, { recursive: true });
   await writeFile(
     resolve(reportDirectory, "multi-tenant-model-load-latest.json"),
-    await format(JSON.stringify(report), { parser: "json" }),
+    await format(JSON.stringify(report), {
+      ...(await resolveConfig(resolve(reportDirectory, "multi-tenant-model-load-latest.json"))),
+      parser: "json",
+    }),
     "utf8",
   );
   await writeFile(
@@ -662,14 +707,18 @@ try {
     "utf8",
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);
+} catch (error) {
+  acceptanceFailure = error;
+  throw error;
 } finally {
-  for (const lane of lanes) {
-    await lane.api
-      .deleteConversation(lane.session.sessionId, newIdempotencyKey("cleanup-conversation"))
-      .catch(() => undefined);
+  if (!cleanupCompleted) {
+    try {
+      await cleanup();
+    } catch (error) {
+      throw new AggregateError(
+        [acceptanceFailure, error].filter(Boolean),
+        "Load acceptance or cleanup failed",
+      );
+    }
   }
-  for (const lane of new Map(lanes.map((lane) => [lane.session.workspaceId, lane])).values())
-    await lane.api
-      .deleteWorkspace(lane.session.workspaceId, newIdempotencyKey("cleanup-workspace"))
-      .catch(() => undefined);
 }

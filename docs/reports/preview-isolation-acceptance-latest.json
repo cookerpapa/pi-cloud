@@ -1,11 +1,12 @@
 {
   "accepted": true,
-  "piCloudRevision": "260e1fba3f954e5dd86d8793ee01b02665feb102",
+  "piCloudRevision": "a18bd1b2ed66138ba2ace54a6d3c26a4aeb254e0",
   "workingTreeDirty": true,
-  "checkedAt": "2026-09-10T14:41:39.713Z",
+  "checkedAt": "2026-09-16T19:27:13.986Z",
   "sessions": 2,
   "concurrentInitialRuns": 2,
   "sameSessionPorts": [3000, 8000, 5173],
   "reusedCrossSessionPorts": [3000, 8000],
-  "crossSessionMarkerLeak": false
+  "crossSessionMarkerLeak": false,
+  "cleanupCompleted": true
 }

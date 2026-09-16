@@ -289,8 +289,8 @@ Webhook; the Web UI only surfaces Issue tasks after they exist.
 | `PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE` | generated private file | AES-GCM key for project tokens and signing tokens |
 
 An Issue label or command only creates a pending request. An authorized PiCloud
-tenant user claims it and chooses elastic compute or a directory under
-`/home/user` in an owned cloud development machine. Elastic execution may
+tenant user claims it and chooses elastic compute or an existing absolute
+directory in an owned cloud development machine. Elastic execution may
 create a dedicated Workspace or reuse an existing one, and the user names the
 conversation. Before a private-repository Run starts, PiCloud checks the exact
 repository with `git ls-remote`. The user connects the GitLab Origin or
@@ -429,8 +429,8 @@ When GitHub integration is enabled, the App private key and Webhook secret are
 also deployment Secrets; installation access tokens are generated at runtime
 and must never be copied into configuration. GitLab project tokens stay
 encrypted in PostgreSQL for trusted Webhook, membership and provider API work.
-The separate user OAuth token is written only to the selected Workspace Git
-Home, is deliberately visible to its Agent and must use the least repository
+The separate user access token is written only to the selected environment's
+Git credential file, is deliberately visible to its Agent and must use the least repository
 scope the workflow needs.
 
 Kafka currently uses private-network plaintext connections. The chart does not
