@@ -112,6 +112,8 @@ Volume architecture. Historical experiments remain in Git history.
 - [x] Reconcile concurrent Steer delivery replies against the committed control
       row; never report a late failure over success or fabricate a delivery
       timestamp after losing the terminal update. Unknown replies remain unknown.
+- [x] Discard late registration replies for closed Worker sockets; do not evict
+      the replacement connection or resurrect entries after shutdown.
 - [x] ADR-0153.1–2: drain Fact publications before close; bounded transaction-free
       terminal Outbox publication, idempotent retries and consumer failure signals.
 - [x] ADR-0153.3: co-commit sampling start and Tool completion with native records.

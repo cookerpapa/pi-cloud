@@ -1,18 +1,21 @@
 # Network matrix
 
-| Source | Destination | Allowed | Purpose |
+Required runtime paths are listed below; an unused path is not proof of a
+firewall denial. Enforce deployment isolation with the configured networks/CNI.
+
+| Source | Destination | Runtime access / policy | Purpose |
 | --- | --- | --- | --- |
 | Browser | Web/Control Plane | yes | product API and SSE |
 | Control Plane | PostgreSQL | yes | product/Run authority |
-| Control Plane | Tool Broker | yes | authenticated Workspace terminal proxy |
+| Control Plane / Session Projector | Tool Broker | yes | ordered Tool/control delivery, lifecycle and authenticated Terminal/Preview proxy |
 | Pi Worker | PostgreSQL | yes | queue, Session and lifecycle state |
-| Pi Worker | Control Plane Gate | yes | accepted events, Session mutations and Tool commands |
+| Pi Worker | Control Plane | yes | boot registration, heartbeats and Steer control channel; not Agent output |
 | Pi Worker | Tool Broker | yes | binding/lifecycle APIs and read-only Tool-result waits |
-| Pi Worker | Kafka | no | only the Gate publishes Worker facts |
+| Pi Worker | Kafka | yes | direct accepted-fact, native Session mutation and Tool-command publication |
 | Pi Worker | provider proxy/model provider | yes | model requests |
 | Tool Broker | PostgreSQL | yes | Workspace runtime ownership and Tool authority state |
-| Tool Broker | Kafka | yes | consume commands/seals; never replay a vanished binding |
-| Control Plane | Kafka | yes | AcceptedFact publication and canonical/live consumption |
+| Tool Broker | Kafka | not used | Projector routes positioned commands/seals; Broker does not consume Kafka |
+| Control Plane / Session Projector | Kafka | yes | authority-requested seals and one consumer group for native history, live views and Tool routing |
 | Tool Broker | Cube API | yes | KVM lifecycle |
 | Volume gateway | PostgreSQL/RWX Workspace storage | yes | revision/Volume coordination |
 | Cube guest | egress proxy | optional | governed public HTTP/HTTPS |

@@ -6,7 +6,7 @@ import { parseSupervisorToControlMessage } from "@pi-cloud/protocol";
 import { AgentRunSupervisor, SupervisorWebSocketClient } from "@pi-cloud/sandbox-supervisor";
 import Fastify from "fastify";
 import { type Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import {
   AssignmentReconciler,
@@ -249,6 +249,51 @@ afterAll(async () => {
 });
 
 describe.sequential("authenticated supervisor WebSocket transport", () => {
+  it.each(["reconnect", "shutdown"] as const)(
+    "does not revive a closed socket after a delayed registration reply (%s)",
+    async (scenario) => {
+      const supervisorIdentity = identity();
+      await provision(supervisorIdentity);
+      const hosted = await startGateway({ identity: supervisorIdentity });
+      const first = client(hosted.url, TOKEN, supervisorIdentity);
+      const second = client(hosted.url, TOKEN, supervisorIdentity);
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const register = hosted.manager.register.bind(hosted.manager);
+      const spy = vi.spyOn(hosted.manager, "register").mockImplementationOnce(async (...args) => {
+        const registered = await register(...args);
+        entered.resolve();
+        await release.promise;
+        return registered;
+      });
+      const starting = first.start().catch((error: unknown) => error);
+      try {
+        await entered.promise;
+        await first.stop();
+        if (scenario === "shutdown") hosted.gateway.shutdown();
+        else await second.start();
+        release.resolve();
+        await spy.mock.results[0]!.value;
+        if (scenario === "shutdown") {
+          expect(hosted.gateway.activeConnectionCount).toBe(0);
+        } else {
+          await expect(
+            hosted.gateway.currentSessionLeaseCoordinator(supervisorIdentity.sandboxId),
+          ).resolves.toBeDefined();
+          expect(second.state).toBe("registered");
+          expect(hosted.gateway.activeConnectionCount).toBe(1);
+        }
+      } finally {
+        release.resolve();
+        await starting;
+        await first.stop();
+        await second.stop();
+        spy.mockRestore();
+        await hosted.server.close();
+      }
+    },
+  );
+
   it("rejects a bad bearer credential before registration without exposing it", async () => {
     const supervisorIdentity = identity();
     await provision(supervisorIdentity);

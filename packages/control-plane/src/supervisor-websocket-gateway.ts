@@ -383,6 +383,9 @@ export class SupervisorWebSocketGateway {
 
     if (message.type === "supervisor.register") {
       const acknowledgement = await this.#manager.register(message, context.authority);
+      // Registration can commit after this transport closed. Its late reply
+      // must not resurrect the socket or displace a replacement connection.
+      if (context.closed || context.socket.readyState !== context.socket.OPEN) return;
       if (
         context.registeredConnectionId !== undefined &&
         context.registeredConnectionId !== acknowledgement.payload.connectionId

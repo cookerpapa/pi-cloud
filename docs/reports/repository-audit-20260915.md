@@ -3,14 +3,33 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
-Latest continuation: five deterministic multi-replica Steer races pass after
+At `1209d458`, five deterministic multi-replica Steer races pass after
 fixing unchecked zero-row terminal updates and late transport replies. Before
 the fix, three cases reproduced false failure, false success and an invented
 delivery timestamp. PG remains the authority; normal delivery adds no SELECT,
 terminal retries do not contact the Worker, ambiguous nonterminal replies remain
-unknown, and database errors are no longer silently suppressed. The related
-runtime/control-channel tests and Control Plane types pass; rollout and full
-fixed-revision gates are still pending.
+unknown, and database errors are no longer silently suppressed. Full local CI
+passes with real PG: 959 tests, two separate environment skips and 26 fault
+cases; [remote CI is green](https://github.com/cookerpapa/pi-cloud/actions/runs/35044213651).
+The Control Plane rollout and paid DeepSeek Steer pass: two concurrent same-key
+requests share one result, the model follows the new instruction, and a replay
+after completion preserves the original delivery timestamp. Usage is 30,446
+input / 35,072 cache-read / 52 output tokens. This reuses the campaign baseline;
+its temporary sleep exits without modifying files.
+
+The next control-channel slice reproduces two additional failures using real
+WebSockets and the PG-backed registration manager. A delayed registration reply
+after disconnect could kick the replacement socket, or resurrect a closed entry
+after shutdown. Rechecking transport liveness after registration prevents both;
+15 related Steer/channel tests and Control Plane types pass. The network matrix
+also no longer documents the removed Fact Gate or a separate Broker Kafka consumer.
+
+The earlier `f312b3a8` CI browser failure was a fixture race, not evidence that
+the newer green CI repaired it. Opening the dialog before Workspace loading
+finishes correctly selects new-Workspace mode, but the test submitted only a
+title. Holding/releasing the list response reproduces the invalid form. Explicit
+Workspace selection fixes the harness without changing product behavior; the
+full Chrome presentation check passes with that delayed-response scenario.
 
 The phase-instrumented Workers (`f312b3a8`, CP `211767bd`) complete 16 further
 paid DeepSeek Runs across four tenants/eight Sessions, with eight simultaneous
@@ -22,6 +41,10 @@ lifecycle writes 8.7 and finish/commit 10.3 ms. These are sixteen-claim means,
 not per-stage p95; selection/ownership each include several SQL operations.
 The evidence does not support attributing the full delay to WAL commit. PERF-01
 remains open; detailed claim timings do not change admission or lease semantics.
+These four new load tenants and all their Run/Session/Workspace metadata were
+removed after purge checks and a FK-enforced rollback rehearsal. No active Runs
+remain; the temporary second Worker is stopped again. Older campaign fixtures
+remain until the unfinished audit's final cleanup.
 
 September 16 continuation: remote CI for `7b5b7587` is green. Isolated actual PG
 profiling with `pg_stat_statements.track_planning` confirms the two main claim

@@ -165,7 +165,10 @@ window.renderChat = (sessionState='idle', history=false) => {
   Object.assign(PiCloudApi.prototype, {
     getIdentity:async()=>({tenantId:"test-tenant",userId:"test-user",displayName:"Fixture",role:"owner",platformAdministrator:false}),
     listConversations:async()=>({conversations:[],delegatedSessions:[]}),
-    listWorkspaces:async()=>({workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false}),
+    listWorkspaces:async()=>{
+      if(window.holdWorkspaceList) await new Promise(resolve=>{window.releaseWorkspaceList=resolve;});
+      return {workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false};
+    },
     listDevelopmentEnvironments:async()=>({environments:[],profiles:DEVELOPMENT_ENVIRONMENT_PROFILES,truncated:false}),
     getModelCatalog:async()=>({models}),
     getConversationTree:async(_sessionId,view)=>window.deferTrees
@@ -340,6 +343,19 @@ try {
         Object.getOwnPropertyDescriptor(proto,'value').set.call(el,${JSON.stringify(value)});
         el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     };
+    const chooseFixtureWorkspace = async () => {
+      await page.waitFor(
+        "document.querySelector('.product-progressive-options select option[value=\"40000000-0000-4000-8000-000000000001\"]')",
+      );
+      await page.evaluate(`(()=>{
+        const select=document.querySelector('.product-progressive-options select');
+        select.value='40000000-0000-4000-8000-000000000001';
+        select.dispatchEvent(new Event('change',{bubbles:true}));
+      })()`);
+      await page.waitFor(
+        "document.querySelectorAll('.product-progressive-options input').length===1",
+      );
+    };
     await fill(".product-composer textarea", "initial prompt");
     await page.evaluate(
       'document.querySelector(".product-composer textarea").dispatchEvent(new KeyboardEvent("keydown", {key:"Enter", isComposing:true, bubbles:true}))',
@@ -355,6 +371,7 @@ try {
     await page.waitFor('document.querySelector(".product-execution-mode-choice input")');
     await page.evaluate('document.querySelector(".product-execution-mode-choice input").click()');
     await page.waitFor('document.querySelector(".product-progressive-options input")');
+    await chooseFixtureWorkspace();
     await fill(".product-progressive-options input", "Model contract");
     await page.evaluate('document.querySelector(".product-workspace-modal").requestSubmit()');
     await page.waitFor("window.turnBodies.length===1");
@@ -629,13 +646,22 @@ try {
       { mobileChat: true, adminScroll: true, directoryChoice: true },
     );
     await page.send("Emulation.clearDeviceMetricsOverride");
-    await page.evaluate("renderChat('idle',true)");
+    await page.evaluate("window.holdWorkspaceList=true;renderChat('idle',true)");
     await page.waitFor("document.querySelector('.product-new-chat')");
     await page.evaluate("document.querySelector('.product-new-chat').click()");
     await page.waitFor("document.querySelector('.product-execution-mode-choice input')");
     await page.evaluate("document.querySelector('.product-execution-mode-choice input').click()");
     await page.waitFor("document.querySelector('.product-progressive-options input')");
+    await page.waitFor("typeof window.releaseWorkspaceList==='function'");
+    await page.evaluate("window.holdWorkspaceList=false;window.releaseWorkspaceList()");
+    // Opening before the list arrives legitimately defaults to a new Workspace.
+    // Select the fixture explicitly instead of racing that initialization.
+    await chooseFixtureWorkspace();
     await fill(".product-progressive-options input", "Tree response race");
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-workspace-modal').checkValidity()"),
+      true,
+    );
     await page.evaluate("document.querySelector('.product-workspace-modal').requestSubmit()");
     await page.waitFor("document.querySelector('.product-prune-action')?.disabled===false");
     await page.evaluate(
