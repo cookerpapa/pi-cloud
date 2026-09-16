@@ -360,7 +360,9 @@ export class TurnSteeringService {
       .where("turn.tenant_id", "=", tenantId)
       .where("turn.session_id", "=", sessionId)
       .where("turn.id", "=", turnId)
-      .forUpdate(["turn", "session_row", "run", "attempt", "lease"])
+      // Steer changes no referenced keys. FOR UPDATE would deadlock with a
+      // concurrent Tool binding INSERT acquiring Run/Session KEY SHARE locks.
+      .forNoKeyUpdate(["turn", "session_row", "run", "attempt", "lease"])
       .executeTakeFirst();
     if (row === undefined) {
       throw new TurnSteeringError("not_found", "Active Turn was not found");

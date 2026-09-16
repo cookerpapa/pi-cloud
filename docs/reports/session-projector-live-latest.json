@@ -1,26 +1,26 @@
 {
   "accepted": true,
-  "checkedAt": "2026-09-09T05:24:25.913Z",
+  "checkedAt": "2026-09-16T23:25:35.374Z",
   "runs": [
     {
-      "elapsedMs": 10634,
-      "firstTextMs": 9623,
+      "elapsedMs": 11695,
+      "firstTextMs": 1024,
       "completedTools": 2
     },
     {
-      "elapsedMs": 9576,
-      "firstTextMs": 8562,
+      "elapsedMs": 11912,
+      "firstTextMs": 10635,
       "completedTools": 3
     }
   ],
-  "partition": 27,
+  "partition": 22,
   "remoteDeliveries": 13,
-  "remoteAdmissionMeanMs": 7.73148684615388,
+  "remoteAdmissionMeanMs": 4.364194615385854,
   "usage": {
     "requests": 7,
-    "input": 1733,
-    "output": 2058,
-    "cacheRead": 57600
+    "input": 2441,
+    "output": 2429,
+    "cacheRead": 32000
   },
   "resourcesReleased": true
 }
