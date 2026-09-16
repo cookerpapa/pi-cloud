@@ -1103,6 +1103,12 @@ async function down() {
   const previous = JSON.parse(await readFile(switchStatePath, "utf8"));
   if (previous.formatVersion !== 2)
     throw new Error("Worker switch state does not describe the current rollback contract");
+  // A deployment-mode change must not restore an old Tool image policy after
+  // the application has been upgraded while Kubernetes Workers were in use.
+  previous.controlPlaneImageRevision = await runningServiceEnvironmentValue(
+    "control-plane",
+    "PI_CLOUD_IMAGE_REVISION",
+  );
   if (await k3dClusterExists()) {
     const kubeconfig = await capture(k3d, ["kubeconfig", "get", clusterName]);
     await writePrivate(runtimeKubeconfigPath, `${kubeconfig}\n`);

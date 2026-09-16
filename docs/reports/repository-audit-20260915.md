@@ -50,6 +50,13 @@ went through the provider proxy because local Worker hosts were missing from
 them in the installer contract. This failed deployment rolled back successfully
 with zero K8s executors and one running/one stopped Compose Worker. Final
 successful deployment acceptance remains pending.
+The final `ae5c5ff3` cutover completed with two Ready/enrolled Workers and direct
+management reachability. A subsequent coding check was correctly rejected by the
+Broker because a CP-only hotfix rollout advertised a newer environment revision
+than the still-old Broker/template. This is a mixed-deployment rejection, not a
+passing coding test; repeat on matching application images/templates. The same
+review adds a downgrade regression: restoring Compose after an application
+upgrade must retain the current CP image policy, not the old cutover snapshot.
 
 The owner approved removing the old whole-system backup/restore entry rather
 than building a new disaster-recovery system. Exact restore-code fixtures

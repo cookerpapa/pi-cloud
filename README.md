@@ -177,7 +177,7 @@ The installer can supply Docker, K3s, Node.js, Helm and the pinned Cube runtime.
 It does not request model credentials or administrator passwords.
 
 1. Open `http://127.0.0.1:8080` and register an account.
-2. Promote the administrator, then restart Control Plane:
+2. Promote the administrator (the command restarts Control Plane):
 
    ```bash
    npm run production:administrator -- --username <registered-username>
@@ -188,8 +188,9 @@ It does not request model credentials or administrator passwords.
    and Cube networking; follow its link to the Provider Gateway on port `8318`
    for subscription/API credentials. Retrieve the management key with
    `npm run production:provider-gateway:key`.
-4. Create an elastic Workspace or a cloud development machine under **开发资源**,
-   then start a conversation. Pure chat does not activate Cube.
+4. Start a conversation and select or create an elastic Workspace. For a dedicated
+   environment, first request a cloud development machine under **开发资源**,
+   then select it when creating the conversation. Pure chat does not activate Cube.
 
 Optional Code Host credentials are written to the selected environment, not the
 conversation database. GitLab Issue intake is separate, deployment-controlled

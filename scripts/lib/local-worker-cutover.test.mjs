@@ -136,6 +136,7 @@ describe("local Worker deployment rollback", () => {
       ...dependencies,
       readFile: async () => JSON.stringify({ formatVersion: 2, composeWorkers: [] }),
       switchStatePath: "owned-switch-state",
+      runningServiceEnvironmentValue: async () => "current-image-revision",
       k3dClusterExists: async () => true,
       capture: async () => "kubeconfig",
       k3d: "k3d",
@@ -156,6 +157,24 @@ describe("local Worker deployment rollback", () => {
     });
     await expect(down()).rejects.toThrow("uninstall failed");
     expect(calls).not.toContain("restore");
+  });
+
+  it("downgrade preserves a Control Plane upgraded since the original cutover", async () => {
+    let restored;
+    await load("down", {
+      ensureK3d: async () => {},
+      activeRunCount: async () => 0,
+      readFile: async () => JSON.stringify({ formatVersion: 2, controlPlaneImageRevision: "old" }),
+      switchStatePath: "owned-switch-state",
+      runtimeKubeconfigPath: "owned-kubeconfig",
+      runningServiceEnvironmentValue: async () => "new",
+      k3dClusterExists: async () => false,
+      restoreComposeWorkers: async (state) => {
+        restored = state;
+      },
+      rm: async () => {},
+    })();
+    expect(restored.controlPlaneImageRevision).toBe("new");
   });
 
   it("never starts a previously stopped Worker", async () => {
