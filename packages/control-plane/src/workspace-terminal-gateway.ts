@@ -403,20 +403,19 @@ export class WorkspaceTerminalGateway {
       .where("session_row.id", "=", identity.sessionId)
       .where("session_row.archived_at", "is", null)
       .where("workspace.deleted_at", "is", null)
+      .where("workspace.workspace_kind", "=", "user")
       .where("domain.state", "=", "active")
       .executeTakeFirstOrThrow();
     // A newly-created Workspace starts with the deployment-owned environment
     // in `pending`, and ordinary Agent Runs are allowed to use that exact
     // version for first-use validation. The terminal follows the same
     // admission rule so it can be the first Workspace consumer. It must not
-    // promote the environment: durable validation evidence is intentionally
-    // tied to a fenced Run/Attempt and is committed by the normal Run path.
+    // pre-mark validation as successful: Broker records actual activation evidence.
     if (row.environmentState === "failed") {
       throw new Error("Workspace environment failed validation");
     }
-    // The persistent Cube Volume is the Workspace authority. This empty seed
-    // is used only when that volume has never been initialized; an attached
-    // volume ignores it.
+    // The Cube plugin owns initialization. An empty guest seed is a no-op and
+    // cannot clear existing files on a persistent Volume.
     const workspace = createWorkspaceSeed([]);
     return {
       domainId: row.domainId,

@@ -49,6 +49,8 @@ import {
 
 const DEFAULT_BODY_LIMIT = 5 * 1_024 * 1_024;
 const DEFAULT_TERMINAL_SEND_BUFFER_BYTES = 1 * 1_024 * 1_024;
+const MAXIMUM_TERMINAL_PENDING_INPUT_BYTES = 1 * 1_024 * 1_024;
+const MAXIMUM_TERMINAL_PENDING_INPUT_FRAMES = 128;
 export { TOOL_BROKER_TERMINAL_PATH };
 
 export type ToolBrokerServerOptions = {
@@ -960,6 +962,8 @@ export class ToolBrokerServer {
     let closed = false;
     let initialized = false;
     let processing = Promise.resolve();
+    let pendingInputBytes = 0;
+    let pendingInputFrames = 0;
     const send = async (frame: unknown): Promise<void> => {
       if (closed || socket.readyState !== socket.OPEN) return;
       const payload = JSON.stringify(frame);
@@ -1007,8 +1011,25 @@ export class ToolBrokerServer {
       await close();
     };
     socket.on("message", (data: RawData) => {
+      if (closed) return;
+      const bytes = Array.isArray(data)
+        ? data.reduce((total, chunk) => total + chunk.byteLength, 0)
+        : data.byteLength;
+      // Keep reading control frames so a disconnect can cancel a blocked input.
+      // Bound this serial queue instead of pausing the entire WebSocket transport.
+      if (
+        pendingInputBytes + bytes > MAXIMUM_TERMINAL_PENDING_INPUT_BYTES ||
+        pendingInputFrames >= MAXIMUM_TERMINAL_PENDING_INPUT_FRAMES
+      ) {
+        socket.close(1009, "terminal input buffer overloaded");
+        void close();
+        return;
+      }
+      pendingInputBytes += bytes;
+      pendingInputFrames += 1;
       processing = processing
         .then(async () => {
+          if (closed) return;
           const raw =
             data instanceof ArrayBuffer
               ? Buffer.from(data).toString("utf8")
@@ -1105,7 +1126,11 @@ export class ToolBrokerServer {
             await send({ workspaceTerminalProtocolVersion: 1, type: "workspace_terminal.pong" });
           }
         })
-        .catch((error: unknown) => fail(error));
+        .catch((error: unknown) => fail(error))
+        .finally(() => {
+          pendingInputBytes -= bytes;
+          pendingInputFrames -= 1;
+        });
     });
     socket.once("close", () => void close());
     socket.once("error", () => void close());

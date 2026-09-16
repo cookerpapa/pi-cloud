@@ -941,7 +941,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       await this.#assertCurrentOwner(transaction);
       const workspace = await transaction
         .selectFrom("workspaces")
-        .select(["sandbox_domain_id", "project_id"])
+        .select(["sandbox_domain_id", "project_id", "workspace_kind"])
         .where("tenant_id", "=", input.tenantId)
         .where("id", "=", input.workspaceId)
         .where("deleted_at", "is", null)
@@ -949,7 +949,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .executeTakeFirst();
       if (
         workspace?.sandbox_domain_id !== this.#sandboxDomainId ||
-        workspace.project_id !== input.projectId
+        workspace.project_id !== input.projectId ||
+        workspace.workspace_kind !== "user"
       ) {
         throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",

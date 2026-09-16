@@ -3,6 +3,39 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+Further September 16 review reproduced terminal input delivered after its socket
+closed. Bound the existing serial queue (1 MiB / 128 frames), keep control-frame
+reads live, and discard queued work after closure; already-issued effects are not
+retroactively undone. The machine-terminal Gateway also fell through to elastic
+routing for a same-tenant non-owner. Restrict elastic descriptors and Broker
+reservations to user Workspaces; keep the owner-only machine endpoint. Before
+regressions showed a third post-close input and an incorrectly successful elastic
+admission. Eighteen focused cases pass, including the real-PG reservation test;
+full local CI passes 981 tests, two independent live skips and 26 fault cases.
+Deployment/user-path repetition of this slice remains pending.
+
+All twelve stale Cube templates are now removed via native deletion after bounded
+operator correction of their stale replica/placement node addresses. Current
+four templates/artifacts remain. This fixes accumulated resources, not Cube's
+upstream preference for historical Pod IPs. The published Cube 0.7.1 introduces a
+separate template service/storage changes; it was researched, not silently adopted.
+
+Temporary clock tests compared Windows and WSL over approximately 70 seconds:
+Linux monotonic/Windows elapsed ratios were 0.9149 (`tsc`), 0.9120 (Hyper-V page),
+0.9161 (Hyper-V MSR) and 0.9139 (`acpi_pm`). Two ordinary observations of the active
+NTP server independently measured 65.780 s externally versus 60.287 s locally.
+Every trial was restored to `tsc`; no startup configuration or clock daemon was
+changed. Windows time service reports an unsynchronized Local CMOS source, but
+that is not a proven cause. Host-time remediation and reliable new latency claims
+remain open. No timeout was increased to conceal this issue.
+
+Tree review is ongoing: a retained audit Session with one failed and fourteen
+successful Turns reproduces a user-entry/Turn mismatch in navigation. The ordered
+message-count heuristic must be replaced by durable Turn binding. The tree also
+reads entries/heads/Turn status in separate snapshots. Child-view Fork/prune
+buttons exceed their current `main`-Lane implementation; that semantics decision
+is paused for the owner. No tree/state-model change has been made yet.
+
 ADR-0172 implementation now delegates Volume initialization to Cube's Controller
 plugin, with one immutable identity; Gateway verifies only. Removed the two-file
 initialization state and metadata-presence-driven guest setup. Guest seed

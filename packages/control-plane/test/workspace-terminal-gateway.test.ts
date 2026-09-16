@@ -34,6 +34,7 @@ const IDS = {
   terminal: "10000000-0000-4000-8000-000000000109",
   development: "10000000-0000-4000-8000-000000000110",
   broker: "10000000-0000-4000-8000-000000000111",
+  otherUser: "10000000-0000-4000-8000-000000000112",
 } as const;
 
 const closeTasks: Array<() => Promise<void>> = [];
@@ -338,6 +339,36 @@ describe("WorkspaceTerminalGateway", () => {
       tenantId: IDS.tenant,
       userId: IDS.user,
     });
+
+    await database
+      .insertInto("users")
+      .values({ id: IDS.otherUser, tenant_id: IDS.tenant, display_name: "Other machine owner" })
+      .execute();
+    await database
+      .updateTable("workspaces")
+      .set({ workspace_kind: "development_environment" })
+      .where("id", "=", IDS.workspace)
+      .execute();
+    await database
+      .updateTable("development_environments")
+      .set({ owner_user_id: IDS.otherUser })
+      .where("id", "=", IDS.development)
+      .execute();
+    const notOwner = new WebSocket(terminalUrl, { headers: { authorization: `Bearer ${TOKEN}` } });
+    closeTasks.push(async () => {
+      if (notOwner.readyState === WebSocket.OPEN) notOwner.close();
+    });
+    const nextNotOwnerFrame = queuedFrames(notOwner);
+    await new Promise<void>((resolve, reject) => {
+      notOwner.once("open", resolve);
+      notOwner.once("error", reject);
+    });
+    await expect(nextNotOwnerFrame()).resolves.toMatchObject({ type: "workspace_terminal.error" });
+    await database
+      .updateTable("development_environments")
+      .set({ owner_user_id: IDS.user })
+      .where("id", "=", IDS.development)
+      .execute();
 
     await database
       .updateTable("environment_versions")

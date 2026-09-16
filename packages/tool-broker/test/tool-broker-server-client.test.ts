@@ -336,141 +336,185 @@ describe("Tool Broker authenticated RPC", () => {
     ).resolves.toMatchObject({ authorized: true });
   });
 
-  it("bridges an authenticated WebSocket to one bounded human PTY session", async () => {
-    const terminalId = "10000000-0000-4000-8000-000000000080";
-    const sendInput = vi.fn(async () => undefined);
-    const resize = vi.fn(async () => undefined);
-    const closeTerminal = vi.fn(async () => undefined);
-    let finishOutput!: () => void;
-    const outputFinished = new Promise<void>((resolve) => {
-      finishOutput = resolve;
-    });
-    const terminalBackend: ToolBrokerBackend = {
-      ...backend(),
-      async openTerminal(input) {
-        expect(input).toMatchObject({
-          tenantId: "10000000-0000-4000-8000-000000000081",
-          workspaceId: "10000000-0000-4000-8000-000000000084",
-          size: { rows: 24, cols: 100 },
-        });
-        return {
-          terminalId,
-          pid: 73,
-          workspaceRoot: "/workspace",
-          output: {
-            async *[Symbol.asyncIterator]() {
-              yield Buffer.from("shell ready\r\n");
-              await outputFinished;
+  it.each(["graceful", "disconnect-with-queued-input", "overloaded-input"])(
+    "bridges one human PTY and retires input on %s",
+    async (ending) => {
+      const terminalId = "10000000-0000-4000-8000-000000000080";
+      const heldInput = Promise.withResolvers<void>();
+      const sendInput = vi.fn(async (data: Uint8Array) => {
+        if (Buffer.from(data).toString() === "blocked") await heldInput.promise;
+      });
+      const resize = vi.fn(async () => undefined);
+      const closeTerminal = vi.fn(async () => undefined);
+      let finishOutput!: () => void;
+      const outputFinished = new Promise<void>((resolve) => {
+        finishOutput = resolve;
+      });
+      const terminalBackend: ToolBrokerBackend = {
+        ...backend(),
+        async openTerminal(input) {
+          expect(input).toMatchObject({
+            tenantId: "10000000-0000-4000-8000-000000000081",
+            workspaceId: "10000000-0000-4000-8000-000000000084",
+            size: { rows: 24, cols: 100 },
+          });
+          return {
+            terminalId,
+            pid: 73,
+            workspaceRoot: "/workspace",
+            output: {
+              async *[Symbol.asyncIterator]() {
+                yield Buffer.from("shell ready\r\n");
+                await outputFinished;
+              },
             },
-          },
-          sendInput,
-          resize,
-          close: closeTerminal,
-        };
-      },
-    };
-    const server = new ToolBrokerServer({
-      commands,
-      host: "127.0.0.1",
-      port: 0,
-      serviceToken: SERVICE_TOKEN,
-      terminalToken: TERMINAL_TOKEN,
-      broker: terminalBackend,
-    });
-    servers.push(server);
-    const address = await server.listen();
-    const url = new URL(TOOL_BROKER_TERMINAL_PATH, address);
-    url.protocol = "ws:";
-    const socket = new WebSocket(url, {
-      headers: { authorization: `Bearer ${TERMINAL_TOKEN}` },
-    });
-    const frames: unknown[] = [];
-    const waiters: Array<(value: unknown) => void> = [];
-    socket.on("message", (data: RawData) => {
-      const frame = JSON.parse(data.toString("utf8")) as unknown;
-      const waiter = waiters.shift();
-      if (waiter === undefined) frames.push(frame);
-      else waiter(frame);
-    });
-    const nextFrame = (): Promise<unknown> => {
-      const frame = frames.shift();
-      return frame === undefined
-        ? new Promise<unknown>((resolve) => waiters.push(resolve))
-        : Promise.resolve(frame);
-    };
-    await new Promise<void>((resolve, reject) => {
-      socket.once("open", resolve);
-      socket.once("error", reject);
-    });
-    socket.send(
-      JSON.stringify({
-        workspaceTerminalProtocolVersion: 1,
-        type: "workspace_terminal.open",
-        requestId: "10000000-0000-4000-8000-000000000088",
-        tenantId: "10000000-0000-4000-8000-000000000081",
-        userId: "10000000-0000-4000-8000-000000000082",
-        projectId: "10000000-0000-4000-8000-000000000083",
-        workspaceId: "10000000-0000-4000-8000-000000000084",
-        sessionId: "10000000-0000-4000-8000-000000000085",
-        environment: {
-          environmentVersionId: "10000000-0000-4000-8000-000000000086",
-          versionNumber: 1,
-          profileKey: "pi-cloud-fullstack",
-          profileVersion: "1",
-          imageRevision: "development",
-          specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
-          recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
-          recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+            sendInput,
+            resize,
+            close: closeTerminal,
+          };
         },
-        workspaceSeed: { kind: "sample_java" },
-        rows: 24,
-        cols: 100,
-      }),
-    );
-    await expect(nextFrame()).resolves.toMatchObject({
-      type: "workspace_terminal.ready",
-      terminalId,
-      pid: 73,
-    });
-    await expect(nextFrame()).resolves.toEqual({
-      workspaceTerminalProtocolVersion: 1,
-      type: "workspace_terminal.output",
-      data: Buffer.from("shell ready\r\n").toString("base64"),
-    });
-    socket.send(
-      JSON.stringify({
+      };
+      const server = new ToolBrokerServer({
+        commands,
+        host: "127.0.0.1",
+        port: 0,
+        serviceToken: SERVICE_TOKEN,
+        terminalToken: TERMINAL_TOKEN,
+        broker: terminalBackend,
+      });
+      servers.push(server);
+      const address = await server.listen();
+      const url = new URL(TOOL_BROKER_TERMINAL_PATH, address);
+      url.protocol = "ws:";
+      const socket = new WebSocket(url, {
+        headers: { authorization: `Bearer ${TERMINAL_TOKEN}` },
+      });
+      const frames: unknown[] = [];
+      const waiters: Array<(value: unknown) => void> = [];
+      socket.on("message", (data: RawData) => {
+        const frame = JSON.parse(data.toString("utf8")) as unknown;
+        const waiter = waiters.shift();
+        if (waiter === undefined) frames.push(frame);
+        else waiter(frame);
+      });
+      const nextFrame = (): Promise<unknown> => {
+        const frame = frames.shift();
+        return frame === undefined
+          ? new Promise<unknown>((resolve) => waiters.push(resolve))
+          : Promise.resolve(frame);
+      };
+      await new Promise<void>((resolve, reject) => {
+        socket.once("open", resolve);
+        socket.once("error", reject);
+      });
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.open",
+          requestId: "10000000-0000-4000-8000-000000000088",
+          tenantId: "10000000-0000-4000-8000-000000000081",
+          userId: "10000000-0000-4000-8000-000000000082",
+          projectId: "10000000-0000-4000-8000-000000000083",
+          workspaceId: "10000000-0000-4000-8000-000000000084",
+          sessionId: "10000000-0000-4000-8000-000000000085",
+          environment: {
+            environmentVersionId: "10000000-0000-4000-8000-000000000086",
+            versionNumber: 1,
+            profileKey: "pi-cloud-fullstack",
+            profileVersion: "1",
+            imageRevision: "development",
+            specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+            recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+            recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+          },
+          workspaceSeed: { kind: "sample_java" },
+          rows: 24,
+          cols: 100,
+        }),
+      );
+      await expect(nextFrame()).resolves.toMatchObject({
+        type: "workspace_terminal.ready",
+        terminalId,
+        pid: 73,
+      });
+      await expect(nextFrame()).resolves.toEqual({
         workspaceTerminalProtocolVersion: 1,
-        type: "workspace_terminal.input",
-        data: Buffer.from("pwd\r").toString("base64"),
-      }),
-    );
-    socket.send(
-      JSON.stringify({
-        workspaceTerminalProtocolVersion: 1,
-        type: "workspace_terminal.resize",
-        rows: 40,
-        cols: 120,
-      }),
-    );
-    socket.send(
-      JSON.stringify({
-        workspaceTerminalProtocolVersion: 1,
-        type: "workspace_terminal.ping",
-      }),
-    );
-    await expect(nextFrame()).resolves.toMatchObject({ type: "workspace_terminal.pong" });
-    expect(sendInput).toHaveBeenCalledWith(Buffer.from("pwd\r"));
-    expect(resize).toHaveBeenCalledWith({ rows: 40, cols: 120 });
-    socket.send(
-      JSON.stringify({
-        workspaceTerminalProtocolVersion: 1,
-        type: "workspace_terminal.close",
-      }),
-    );
-    await new Promise<void>((resolve) => socket.once("close", () => resolve()));
-    finishOutput();
-    expect(closeTerminal).toHaveBeenCalledOnce();
-  });
+        type: "workspace_terminal.output",
+        data: Buffer.from("shell ready\r\n").toString("base64"),
+      });
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.input",
+          data: Buffer.from("pwd\r").toString("base64"),
+        }),
+      );
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.resize",
+          rows: 40,
+          cols: 120,
+        }),
+      );
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.ping",
+        }),
+      );
+      await expect(nextFrame()).resolves.toMatchObject({ type: "workspace_terminal.pong" });
+      expect(sendInput).toHaveBeenCalledWith(Buffer.from("pwd\r"));
+      expect(resize).toHaveBeenCalledWith({ rows: 40, cols: 120 });
+      if (ending !== "graceful") {
+        let closeCode: number | undefined;
+        socket.once("close", (code) => {
+          closeCode = code;
+        });
+        try {
+          socket.send(
+            JSON.stringify({
+              workspaceTerminalProtocolVersion: 1,
+              type: "workspace_terminal.input",
+              data: Buffer.from("blocked").toString("base64"),
+            }),
+          );
+          await vi.waitFor(() => expect(sendInput).toHaveBeenCalledWith(Buffer.from("blocked")));
+          const payload =
+            ending === "overloaded-input" ? "x".repeat(24 * 1024) : "must-not-reach-guest";
+          for (let index = 0; index < (ending === "overloaded-input" ? 64 : 1); index++)
+            socket.send(
+              JSON.stringify({
+                workspaceTerminalProtocolVersion: 1,
+                type: "workspace_terminal.input",
+                data: Buffer.from(payload).toString("base64"),
+              }),
+            );
+          if (ending === "disconnect-with-queued-input") socket.close();
+          await vi.waitFor(() => expect(closeCode).toBeDefined(), { timeout: 1000 });
+          await vi.waitFor(() => expect(closeTerminal).toHaveBeenCalledOnce());
+          if (ending === "overloaded-input") expect(closeCode).toBe(1009);
+          heldInput.resolve();
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          expect(sendInput).toHaveBeenCalledTimes(2);
+          return;
+        } finally {
+          heldInput.resolve();
+          finishOutput();
+          socket.terminate();
+        }
+      }
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.close",
+        }),
+      );
+      await new Promise<void>((resolve) => socket.once("close", () => resolve()));
+      finishOutput();
+      expect(closeTerminal).toHaveBeenCalledOnce();
+    },
+  );
 
   it("stays ready while at least one Tool Broker replica is healthy", async () => {
     const server = new ToolBrokerServer({

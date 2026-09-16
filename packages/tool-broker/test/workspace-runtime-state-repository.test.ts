@@ -66,6 +66,55 @@ async function fixtureDatabase() {
 }
 
 describe("PostgreSQL Tool Broker ownership", () => {
+  it("never admits a development-machine Volume through the elastic terminal path", async () => {
+    const database = await fixtureDatabase();
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
+      database,
+      sandboxDomainId: "sandbox-domain-0001",
+      instanceId: randomUUID(),
+      ownerBaseUrl: "http://machine-volume-scope.test:4300",
+    });
+    resources.push(async () => repository.close());
+    await repository.start();
+    const tenant = await createPrivateTenant(database, {
+      slug: "machine-volume-scope",
+      ownerDisplayName: "Owner",
+    });
+    const store = new ControlPlaneStore({
+      database,
+      tenantId: tenant.tenantId,
+      defaultModelProfileId: tenant.defaultModelProfileId,
+    });
+    const project = await store.createProject({
+      name: "Machine Volume",
+      source: { kind: "empty" },
+    });
+    const session = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "Machine",
+      "elastic",
+    );
+    await database
+      .updateTable("workspaces")
+      .set({ workspace_kind: "development_environment" })
+      .where("id", "=", project.workspaceId)
+      .execute();
+    await expect(
+      repository.reserveTerminal({
+        terminalId: randomUUID(),
+        tenantId: tenant.tenantId,
+        userId: tenant.ownerUserId,
+        projectId: project.projectId,
+        workspaceId: project.workspaceId,
+        sessionId: session.sessionId,
+      }),
+    ).rejects.toMatchObject({ code: "state_conflict" });
+    expect(
+      await database.selectFrom("workspace_terminal_sessions").select("terminal_id").execute(),
+    ).toEqual([]);
+  }, 30_000);
+
   it("retires only the terminal attached to the released runtime, not another tenant's terminal", async () => {
     const database = await fixtureDatabase();
     const repository = new PostgresWorkspaceRuntimeStateRepository({
