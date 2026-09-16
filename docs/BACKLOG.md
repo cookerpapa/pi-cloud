@@ -5,6 +5,11 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Bind navigation entries to their recorded Turn, read tree heads/history in
+      one snapshot, and preserve those bindings through human Fork/rebuild.
+      Seven real-PG regressions also cover missing-Workspace Fork responses.
+      Final deployed repetition remains part of the repository audit gate.
+
 - [x] ADR-0172: plugin-owned atomic Volume identity and non-overwriting guest
       seeding. Native concurrent/SIGKILL tests, matching rollout, paid warm/cold
       coding and three live twenty-request creation waves pass at `18e96210`.

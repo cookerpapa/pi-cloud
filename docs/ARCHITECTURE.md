@@ -41,6 +41,9 @@ Within Control Plane, `ConversationReader` owns tenant-scoped history/list reads
 Run admission and resource mutations stay in `ControlPlaneStore`. A conversation
 snapshot, inherited history and display coverage still share one repeatable-read
 transaction. This is an internal code boundary, not another service or database.
+Tree navigation also uses one repeatable-read snapshot and each native Entry's
+persisted Turn binding; it never pairs prompts and answers by message count.
+Human Fork copies preserve that binding in their self-contained log.
 
 ## Durable input and scheduling
 

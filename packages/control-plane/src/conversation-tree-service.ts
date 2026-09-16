@@ -33,6 +33,7 @@ type SessionRow = {
 
 type PiEntryRow = {
   id: string;
+  turnId: string | null;
   seq: string;
   parentId: string | null;
   type: string;
@@ -148,47 +149,33 @@ function mappedConversationEntries(
   branch: readonly PiEntryRow[],
   turns: readonly CompletedTurnRow[],
 ): MappedEntry[] {
-  const finals = branch.flatMap((entry, index) => {
-    if (entry.type !== "message") return [];
+  const completed = new Set(turns.map((turn) => turn.turnId));
+  const users = new Map<string, MappedEntry>();
+  const finals = new Map<string, MappedEntry>();
+  for (const [index, entry] of branch.entries()) {
+    if (entry.type !== "message" || entry.turnId === null || !completed.has(entry.turnId)) continue;
     const message = messageFromPayload(entry.payload);
-    return message !== null && isFinalAssistant(message) ? [{ entry, index, message }] : [];
-  });
-  const pairCount = Math.min(finals.length, turns.length);
-  const pairedFinals = finals.slice(finals.length - pairCount);
-  const pairedTurns = turns.slice(turns.length - pairCount);
+    if (message === null) continue;
+    const finalAssistant = isFinalAssistant(message);
+    if (message.role !== "user" && !finalAssistant) continue;
+    const mapped: MappedEntry = {
+      entryId: entry.id,
+      parentEntryId: entry.parentId,
+      turnId: entry.turnId,
+      role: finalAssistant ? "assistant" : "user",
+      text: messageText(message),
+      finalAssistant,
+      createdAt: isoFromMilliseconds(entry.timestampMs),
+      index,
+    };
+    if (finalAssistant) finals.set(entry.turnId, mapped);
+    else if (!users.has(entry.turnId)) users.set(entry.turnId, mapped);
+  }
   const result: MappedEntry[] = [];
-  let previousFinalIndex = -1;
-  for (let pairIndex = 0; pairIndex < pairCount; pairIndex += 1) {
-    const final = pairedFinals[pairIndex]!;
-    const turn = pairedTurns[pairIndex]!;
-    const user = branch.slice(previousFinalIndex + 1, final.index).find((entry) => {
-      if (entry.type !== "message") return false;
-      return messageFromPayload(entry.payload)?.role === "user";
-    });
-    if (user !== undefined) {
-      const userMessage = messageFromPayload(user.payload)!;
-      result.push({
-        entryId: user.id,
-        parentEntryId: user.parentId,
-        turnId: turn.turnId,
-        role: "user",
-        text: messageText(userMessage),
-        finalAssistant: false,
-        createdAt: isoFromMilliseconds(user.timestampMs),
-        index: branch.indexOf(user),
-      });
-    }
-    result.push({
-      entryId: final.entry.id,
-      parentEntryId: final.entry.parentId,
-      turnId: turn.turnId,
-      role: "assistant",
-      text: messageText(final.message),
-      finalAssistant: true,
-      createdAt: isoFromMilliseconds(final.entry.timestampMs),
-      index: final.index,
-    });
-    previousFinalIndex = final.index;
+  for (const final of [...finals.values()].sort((a, b) => a.index - b.index)) {
+    const user = users.get(final.turnId);
+    if (user !== undefined) result.push(user);
+    result.push(final);
   }
   return result;
 }
@@ -207,6 +194,7 @@ async function sessionEntries(
     await sql<{
       session_id: string;
       id: string;
+      turn_id: string | null;
       seq: string;
       parent_id: string | null;
       type: string;
@@ -241,6 +229,7 @@ async function sessionEntries(
       )
       select entry.session_id,
              entry.id,
+             source.turn_id,
              entry.seq,
              entry.parent_id,
              entry.type,
@@ -250,6 +239,10 @@ async function sessionEntries(
              entry.source_session_id,
              entry.source_entry_id
         from pi_session_visible_entries entry
+        join pi_session_entries source
+          on source.tenant_id = entry.tenant_id
+         and source.session_id = entry.source_session_id
+         and source.id = entry.source_entry_id
         join reachable
           on reachable.session_id = entry.session_id
          and reachable.id = entry.id
@@ -262,6 +255,7 @@ async function sessionEntries(
     const entries = groupedByPiSession.get(row.session_id) ?? [];
     entries.push({
       id: row.id,
+      turnId: row.turn_id,
       seq: row.seq,
       parentId: row.parent_id,
       type: row.type,
@@ -380,7 +374,19 @@ export class ConversationTreeService {
     currentSessionId: string,
     view: ConversationTreeView,
   ): Promise<ConversationTreeResource> {
-    const selected = await this.#database
+    return this.#database
+      .transaction()
+      .setIsolationLevel("repeatable read")
+      .execute((database) => this.#readTree(database, tenantId, currentSessionId, view));
+  }
+
+  async #readTree(
+    database: Transaction<Database>,
+    tenantId: string,
+    currentSessionId: string,
+    view: ConversationTreeView,
+  ): Promise<ConversationTreeResource> {
+    const selected = await database
       .selectFrom("sessions")
       .select(["id", "session_kind as sessionKind"])
       .where("tenant_id", "=", tenantId)
@@ -392,7 +398,7 @@ export class ConversationTreeService {
     }
     const selectedExecution =
       selected.sessionKind === "subagent"
-        ? await this.#database
+        ? await database
             .selectFrom("subagent_executions")
             .select([
               "id as executionId",
@@ -415,11 +421,12 @@ export class ConversationTreeService {
         "Delegated Session has no parent execution",
       );
     }
-    const lineage = await this.#lineage(tenantId, humanSessionId);
+    const lineage = await this.#lineage(database, tenantId, humanSessionId);
     const humanRootSessionId = lineage[0]!.id;
     const humanSessions =
-      view === "focus" ? lineage : await this.#family(tenantId, humanRootSessionId);
+      view === "focus" ? lineage : await this.#family(database, tenantId, humanRootSessionId);
     const delegated = await this.#delegatedFamily(
+      database,
       tenantId,
       view === "full"
         ? humanSessions.map((session) => session.id)
@@ -433,12 +440,16 @@ export class ConversationTreeService {
     const selectedDelegated =
       selected.sessionKind === "subagent"
         ? (delegatedBySession.get(selected.id) ??
-          (await this.#delegatedSummary(tenantId, selected.id)))
+          (await this.#delegatedSummary(database, tenantId, selected.id)))
         : undefined;
     const selectedDelegatedAncestorSessionIds =
       selectedExecution === undefined
         ? []
-        : await this.#delegatedAncestorSessionIds(tenantId, selectedExecution.executionId);
+        : await this.#delegatedAncestorSessionIds(
+            database,
+            tenantId,
+            selectedExecution.executionId,
+          );
     const sessionIds = [
       ...humanSessions.map((session) => session.id),
       ...delegated.map((summary) => summary.sessionId),
@@ -446,14 +457,14 @@ export class ConversationTreeService {
       ...(selectedDelegated === undefined ? [] : [selectedDelegated.sessionId]),
     ];
     const uniqueSessionIds = [...new Set(sessionIds)];
-    const bindings = await sessionBindings(this.#database, tenantId, uniqueSessionIds);
+    const bindings = await sessionBindings(database, tenantId, uniqueSessionIds);
     const bindingBySession = new Map(
       bindings.map((binding) => [binding.productSessionId, binding] as const),
     );
     const [entriesBySession, turnsBySession, leaves] = await Promise.all([
-      sessionEntries(this.#database, tenantId, bindings),
-      completedTurns(this.#database, tenantId, uniqueSessionIds),
-      laneLeaves(this.#database, tenantId, bindings),
+      sessionEntries(database, tenantId, bindings),
+      completedTurns(database, tenantId, uniqueSessionIds),
+      laneLeaves(database, tenantId, bindings),
     ]);
     let entryCount = 0;
     const humanBranches: ConversationTreeBranchResource[] = humanSessions.map((session, index) => {
@@ -572,9 +583,9 @@ export class ConversationTreeService {
         .flatMap((sessionId) => turnsBySession.get(sessionId) ?? [])
         .filter((turn) => turn.turnId !== selectedDelegated.parentTurnId);
       const inherited = mappedConversationEntries(inheritedBranch, inheritedTurns);
-      const mappedInheritedIds = new Set(inherited.map((entry) => entry.entryId));
-      const pendingParentUser = [...inheritedBranch].reverse().find((entry) => {
-        if (mappedInheritedIds.has(entry.id) || entry.type !== "message") return false;
+      const pendingParentUser = inheritedBranch.find((entry) => {
+        if (entry.turnId !== selectedDelegated.parentTurnId || entry.type !== "message")
+          return false;
         return messageFromPayload(entry.payload)?.role === "user";
       });
       if (pendingParentUser !== undefined) {
@@ -643,10 +654,11 @@ export class ConversationTreeService {
   }
 
   async #delegatedSummary(
+    database: Transaction<Database>,
     tenantId: string,
     childSessionId: string,
   ): Promise<DelegatedSessionSummaryResource> {
-    const execution = await this.#database
+    const execution = await database
       .selectFrom("subagent_executions")
       .select("parent_session_id as parentSessionId")
       .where("tenant_id", "=", tenantId)
@@ -658,7 +670,7 @@ export class ConversationTreeService {
         "Delegated Session has no parent execution",
       );
     }
-    const loaded = await loadDelegatedSessionSummaries(this.#database, {
+    const loaded = await loadDelegatedSessionSummaries(database, {
       tenantId,
       parentSessionIds: [execution.parentSessionId],
       maximum: MAX_TREE_DELEGATIONS,
@@ -674,10 +686,11 @@ export class ConversationTreeService {
   }
 
   async #delegatedFamily(
+    database: Transaction<Database>,
     tenantId: string,
     initialParentSessionIds: readonly string[],
   ): Promise<DelegatedSessionSummaryResource[]> {
-    const loaded = await loadDelegatedSessionTreeSummaries(this.#database, {
+    const loaded = await loadDelegatedSessionTreeSummaries(database, {
       tenantId,
       rootParentSessionIds: initialParentSessionIds,
       maximum: MAX_TREE_DELEGATIONS,
@@ -691,7 +704,11 @@ export class ConversationTreeService {
     return loaded.items;
   }
 
-  async #delegatedAncestorSessionIds(tenantId: string, executionId: string): Promise<string[]> {
+  async #delegatedAncestorSessionIds(
+    database: Transaction<Database>,
+    tenantId: string,
+    executionId: string,
+  ): Promise<string[]> {
     const ancestors = await sql<{ sessionId: string; depth: number }>`
       with recursive execution_ancestors as (
         select id, parent_execution_id, child_session_id, depth
@@ -707,7 +724,7 @@ export class ConversationTreeService {
       select child_session_id as "sessionId", depth
         from execution_ancestors
        order by depth asc
-    `.execute(this.#database);
+    `.execute(database);
     return ancestors.rows.map((row) => row.sessionId);
   }
 
@@ -1090,12 +1107,18 @@ export class ConversationTreeService {
               .onRef("child.tenant_id", "=", "operation.tenant_id")
               .onRef("child.id", "=", "operation.child_session_id"),
           )
+          .innerJoin("workspaces as workspace", (join) =>
+            join
+              .onRef("workspace.tenant_id", "=", "child.tenant_id")
+              .onRef("workspace.id", "=", "child.workspace_id"),
+          )
           .select([
             "operation.request_sha256 as requestSha256",
             "operation.source_turn_id as sourceTurnId",
             "operation.source_entry_id as sourceEntryId",
             "child.id",
             "child.title",
+            "workspace.deleted_at as workspaceDeletedAt",
             "child.project_id as projectId",
             "child.workspace_id as workspaceId",
             "child.execution_mode as executionMode",
@@ -1121,7 +1144,7 @@ export class ConversationTreeService {
               title: replay.title,
               projectId: replay.projectId,
               workspaceId: replay.workspaceId,
-              workspaceState: "attached",
+              workspaceState: replay.workspaceDeletedAt === null ? "attached" : "missing",
               state: "cold",
               executionMode: replay.executionMode,
               sandboxProfileKey: replay.sandboxProfileKey,
@@ -1155,6 +1178,14 @@ export class ConversationTreeService {
             "conversation_fork_entry_id",
             "archived_at",
           ])
+          .select((eb) =>
+            eb
+              .selectFrom("workspaces")
+              .select("deleted_at")
+              .whereRef("workspaces.tenant_id", "=", "sessions.tenant_id")
+              .whereRef("workspaces.id", "=", "sessions.workspace_id")
+              .as("workspaceDeletedAt"),
+          )
           .where("tenant_id", "=", tenantId)
           .where("id", "=", sourceSessionId)
           .forUpdate()
@@ -1318,7 +1349,7 @@ export class ConversationTreeService {
               kind: "entry",
               payload: {
                 lane: "main",
-                turnId: null,
+                turnId: entry.turnId,
                 entry: {
                   ...entry.payload,
                   seq: entry.sequence,
@@ -1418,7 +1449,7 @@ export class ConversationTreeService {
             title: child.title,
             projectId: source.project_id,
             workspaceId: source.workspace_id,
-            workspaceState: "attached",
+            workspaceState: source.workspaceDeletedAt === null ? "attached" : "missing",
             state: "cold",
             executionMode: source.execution_mode,
             sandboxProfileKey: source.sandbox_profile_key,
@@ -1448,7 +1479,11 @@ export class ConversationTreeService {
     }
   }
 
-  async #lineage(tenantId: string, sessionId: string): Promise<SessionRow[]> {
+  async #lineage(
+    database: Transaction<Database>,
+    tenantId: string,
+    sessionId: string,
+  ): Promise<SessionRow[]> {
     const result: SessionRow[] = [];
     const seen = new Set<string>();
     let cursor: string | null = sessionId;
@@ -1460,7 +1495,7 @@ export class ConversationTreeService {
         );
       }
       seen.add(cursor);
-      const row = await this.#database
+      const row = await database
         .selectFrom("sessions")
         .select([
           "id",
@@ -1483,7 +1518,11 @@ export class ConversationTreeService {
     return result.reverse();
   }
 
-  async #family(tenantId: string, rootSessionId: string): Promise<SessionRow[]> {
+  async #family(
+    database: Transaction<Database>,
+    tenantId: string,
+    rootSessionId: string,
+  ): Promise<SessionRow[]> {
     const family = await sql<{
       id: string;
       title: string;
@@ -1522,7 +1561,7 @@ export class ConversationTreeService {
         from family
        order by depth, created_at, id
        limit ${MAX_TREE_BRANCHES + 1}
-    `.execute(this.#database);
+    `.execute(database);
     if (family.rows.length > MAX_TREE_BRANCHES) {
       throw new ControlPlaneStoreError(
         "invalid_request",

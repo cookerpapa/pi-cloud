@@ -33,6 +33,7 @@ let tenantId: string;
 let parentSessionId: string;
 let parentRunId: string;
 let parentTurnId: string;
+let earlierTurnId: string;
 let parentAttemptId: string;
 let parentSandboxId: string;
 let application: Awaited<ReturnType<typeof createControlPlaneApplication>>;
@@ -273,17 +274,30 @@ beforeAll(async () => {
     "elastic",
   );
   parentSessionId = parentSession.sessionId;
+  const earlier = await store.acceptTurn(parentSessionId, "earlier-turn", {
+    prompt: "Earlier context",
+  });
+  earlierTurnId = earlier.turnId;
+  const repository = new PostgresPiSessionRepository({ database, tenantId, turnId: earlierTurnId });
+  const parentPi = await repository.openById(parentSessionId);
+  await parentPi.appendMessage({ role: "user", content: "Earlier context", timestamp: Date.now() });
+  await parentPi.appendMessage(assistant("Earlier answer"));
+  await database
+    .updateTable("turns")
+    .set({ state: "completed", settled_at: new Date(), stop_reason: "stop" })
+    .where("id", "=", earlier.turnId)
+    .execute();
+  await database
+    .updateTable("runs")
+    .set({ state: "completed", settled_at: new Date(), stop_reason: "stop" })
+    .where("id", "=", earlier.runId)
+    .execute();
   const accepted = await store.acceptTurn(parentSessionId, "parent-turn", {
     prompt: "Delegate repository inspection",
   });
   parentRunId = accepted.runId;
   parentAttemptId = crypto.randomUUID();
   parentSandboxId = crypto.randomUUID();
-
-  const repository = new PostgresPiSessionRepository({ database, tenantId });
-  const parentPi = await repository.openById(parentSessionId);
-  await parentPi.appendMessage({ role: "user", content: "Earlier context", timestamp: Date.now() });
-  await parentPi.appendMessage(assistant("Earlier answer"));
 
   await database
     .insertInto("sandboxes")
@@ -608,6 +622,11 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           dispatched.push(request.runId);
           await lifecycle.started();
           const native = await nativeLane(request.piSessionLane, request.turnId);
+          await native.view(request.piSessionLane).appendMessage({
+            role: "user",
+            content: "Inspect the repository",
+            timestamp: Date.now(),
+          });
           await native
             .view(request.piSessionLane)
             .appendMessage(assistant("Subagent result from PostgreSQL"));
@@ -653,8 +672,10 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           contextMode: "branch",
           sandboxMode: "shared",
           entries: [
-            { role: "user", text: "Earlier context" },
-            { role: "assistant", text: "Subagent result from PostgreSQL" },
+            { role: "user", text: "Earlier context", turnId: earlierTurnId },
+            { role: "assistant", text: "Earlier answer", turnId: earlierTurnId },
+            { role: "user", text: "Inspect the repository", turnId: child.turn_id },
+            { role: "assistant", text: "Subagent result from PostgreSQL", turnId: child.turn_id },
           ],
         },
       ],

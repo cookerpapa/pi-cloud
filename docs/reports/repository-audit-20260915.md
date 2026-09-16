@@ -42,13 +42,24 @@ remain open. No timeout was increased to conceal this issue.
 
 Tree review is ongoing: a retained audit Session with one failed and fourteen
 successful Turns reproduces a user-entry/Turn mismatch in navigation. The ordered
-message-count heuristic must be replaced by durable Turn binding. The tree also
-reads entries/heads/Turn status in separate snapshots. The owner chose read-only
+message-count heuristic is now removed in favor of the existing durable Turn
+binding. Tree entries/heads/Turn status use one repeatable-read snapshot, and
+human Fork logs retain inherited bindings for projection rebuild. Seven real-PG
+regressions reproduce the pre-fix failures and pass after repair: failed prompt
+misassociation, unsealed answer replacement, multiple answers within one Turn,
+Fork/rebuild binding loss, concurrent tree publication, and two missing-Workspace
+Fork response cases. Types and the existing registration/Fork/prune/Subagent tests
+pass. Full CI found one older Child-tree fixture incorrectly attributing an
+unbound earlier parent prompt to the Child Turn. Seed an actual completed parent
+Turn and a separate Child prompt, and require exact IDs for all four navigation
+entries. That eleven-case file and its types now pass. Full CI repetition and
+deployed paid checks remain pending; the failed first CI is not reported as green.
+The owner chose read-only
 child views rather than adding human Fork-from-Lane semantics. The actual Chrome
 test reproduces enabled child Fork/prune buttons before the fix; after the fix,
 inherited and fresh children disable both actions, attempted clicks issue no
-mutation, and returning to the parent restores ordinary actions. Tree association
-and snapshot fixes remain pending; no state-model change has been made.
+mutation, and returning to the parent restores ordinary actions. No state-model
+or human Fork-from-Lane semantics change has been made.
 The 135 Web tests, type check, build and documentation check pass for this UI
 slice. Its browser profile/Vite cache and the idle temporary PostgreSQL container
 were removed; no production database or user content was deleted.
