@@ -84,6 +84,12 @@ spec:
       ports:
         - { protocol: TCP, port: 4300 }
         - { protocol: TCP, port: 5432 }
+    {{- range $externalCidrs }}
+    - to: [{ ipBlock: { cidr: {{ . | quote }} } }]
+      ports:
+        - { protocol: TCP, port: 4300 }
+        - { protocol: TCP, port: 5432 }
+    {{- end }}
 {{- end }}
 {{- if .Values.sandboxPlaneEnabled }}
 ---

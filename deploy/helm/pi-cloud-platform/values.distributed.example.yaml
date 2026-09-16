@@ -126,7 +126,7 @@ pi-workers:
   networkPolicy:
     enabled: true
     trustedNamespaceLabel: { key: pi-cloud.io/trusted-plane, value: "true" }
-    trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432]
+    trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432, 9092]
     externalEgressCidrs:
       - 203.0.113.16/28
       - 198.51.100.32/28

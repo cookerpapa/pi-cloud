@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Align platform Helm Service names, Kafka/Volume egress and bootstrap Secret
+      permissions. Render contracts and owned K3s before/after probes pass; this
+      is not certification of a full multi-node deployment.
+
 - [x] Reject stale conversation-list refreshes after deletion, distinguish
       identity-service failure from logout, and preserve pending-input and
       read-only Child view boundaries. Real Chrome regression coverage passes.

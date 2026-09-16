@@ -144,7 +144,7 @@ networkPolicy:
   trustedNamespaceLabel:
     key: pi-cloud.io/trusted-plane
     value: "true"
-  trustedTcpPorts: [443, 3000, 3129, 4100, 4222, 4300, 4318, 5432, 9464, 9465, 9466]
+  trustedTcpPorts: [443, 3000, 3129, 4100, 4300, 4318, 4500, 5432, 9092, 9464, 9465, 9466]
   # Add explicit CIDRs for PostgreSQL/PgBouncer, provider proxy,
   # Cube API and OTLP endpoints. Never use 0.0.0.0/0 here.
   externalEgressCidrs: []
@@ -257,7 +257,7 @@ pi-workers:
   networkPolicy:
     enabled: true
     trustedNamespaceLabel: { key: pi-cloud.io/trusted-plane, value: "true" }
-    trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432, 8317]
+    trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432, 8317, 9092]
     externalEgressCidrs: []
   disruptionBudget: { minAvailable: 1 }
   placement: { nodeSelector: {}, tolerations: [] }

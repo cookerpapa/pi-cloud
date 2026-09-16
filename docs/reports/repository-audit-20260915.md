@@ -7,6 +7,18 @@ Application-source reading is now covered by the private hash/range ledger;
 tests, migrations, deployment/scripts and documents still have remaining reads.
 This is coverage of reading, not a claim that every combination is already tested.
 
+Platform deployment review reproduced incorrect Web upstream Service names,
+missing Kafka/Volume Gateway egress, ignored external SSH dependencies and an
+unreadable 0440 bootstrap Secret. Fix the existing chart, remove the retired
+JetStream port, and add cross-component render assertions. Eleven owned K3s
+before/after probes verify those interfaces, including a blocked negative-control
+port. Web emptyDir permissions were also tested and already work; no extra Web
+security-context change was added. An initial after-fixture omitted named target
+ports and was corrected before the passing repetition. Both temporary namespaces
+from each attempt were removed (the first cleanup wait timed out, then absence
+was confirmed). These probes test real CNI/Service/Secret behavior with synthetic
+endpoints, not Kafka throughput, paid models or full multi-node failover.
+
 Further actual-Chrome regressions reproduce and fix four UI lifecycle errors:
 New Chat could reset a pending input submission; a read-only Child opened a
 Workspace-rebind dialog; identity-service network/503 failure falsely rendered

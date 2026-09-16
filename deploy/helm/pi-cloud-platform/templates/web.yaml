@@ -37,8 +37,8 @@ spec:
           image: {{ include "pi-cloud-platform.image" .Values.images.web | quote }}
           imagePullPolicy: {{ .Values.images.web.pullPolicy }}
           env:
-            - { name: PI_CLOUD_CONTROL_PLANE_UPSTREAM, value: {{ printf "%s-control-plane:3000" $name | quote }} }
-            - { name: PI_CLOUD_PREVIEW_UPSTREAM, value: {{ printf "%s-control-plane:3001" $name | quote }} }
+            - { name: PI_CLOUD_CONTROL_PLANE_UPSTREAM, value: "control-plane:3000" }
+            - { name: PI_CLOUD_PREVIEW_UPSTREAM, value: "control-plane:3001" }
             - { name: PI_CLOUD_PUBLIC_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.publicOriginBaseUrl | quote }} }
             - { name: PI_CLOUD_ADMIN_ORIGIN_BASE_URL, value: {{ .Values.web.adminOriginBaseUrl | quote }} }
             - { name: PI_CLOUD_PROVIDER_MANAGEMENT_URL, value: {{ .Values.web.managementUrls.providerGateway | quote }} }
