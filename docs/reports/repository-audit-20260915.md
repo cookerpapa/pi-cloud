@@ -3,6 +3,17 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+MEM-02 continuation: completed command/control/family bookkeeping is released
+by a minute-period Worker maintenance task only after PG proves terminal Run,
+projected seal and terminal control requests. One indexed, bounded lookup batch
+replaces per-Run queries; this is not on the model/Step/event path. Local tests
+cover unavailable PG, unconfirmed outcomes, superseded-but-unjoined Runners,
+concurrent newer owners and pre-start bookkeeping. An isolated GC probe retains
+16 command objects before confirmation and zero afterward. The SQL matrix covers
+108 combinations of Run state, seal and control state, plus missing authority and
+1,001 lookup IDs. Migration 142 adds only a pending-control index, no data reset.
+Full fixed-revision checks and deployed paid acceptance are not yet complete.
+
 At `1209d458`, five deterministic multi-replica Steer races pass after
 fixing unchecked zero-row terminal updates and late transport replies. Before
 the fix, three cases reproduced false failure, false success and an invented

@@ -60,6 +60,9 @@ Volume architecture. Historical experiments remain in Git history.
       Successful claims now expose sequential stage timing, without additional
       SQL or high-cardinality labels, to separate connection/transaction waits
       from selection, ownership and lifecycle work before further optimization.
+      Completed Worker bookkeeping now has PG-confirmed retirement, off the
+      Run/Step path. Local GC, failed-check and newer-owner races pass; deployment
+      and paid multi-round/replay verification remain pending for this slice.
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

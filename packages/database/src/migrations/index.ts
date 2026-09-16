@@ -140,6 +140,7 @@ import * as executionPublications from "./134_execution_publications.ts";
 import * as messageDisplayCoverage from "./135_message_display_coverage.ts";
 import * as subagentControlLog from "./136_subagent_control_log.ts";
 import * as physicalSessionLeases from "./137_physical_session_leases.ts";
+import * as pendingControlLookup from "./142_pending_control_lookup.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -285,6 +286,7 @@ export const migrationProvider: MigrationProvider = {
       "139_remove_github_installation_entry": removeGithubInstallationEntry,
       "140_confirmed_agent_exit": confirmedAgentExit,
       "141_subagent_compute_scopes": subagentComputeScopes,
+      "142_pending_control_lookup": pendingControlLookup,
     };
   },
 };

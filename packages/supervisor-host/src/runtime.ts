@@ -50,6 +50,7 @@ import {
 } from "./postgres-pi-worker.ts";
 import { SupervisorProvisioningClient } from "./provisioning-client.ts";
 import { PostgresWorkspaceSeedResolver } from "./workspace-seed.ts";
+import { findRetiredRuns } from "./retired-runs.ts";
 
 export type PiWorkerRuntimeState =
   "idle" | "starting" | "ready" | "draining" | "stopped" | "failed";
@@ -169,6 +170,8 @@ export class PiWorkerRuntime {
   #state: PiWorkerRuntimeState = "idle";
   #identity: SupervisorHostBootIdentity | undefined;
   #runSupervisor: AgentRunSupervisor | undefined;
+  #assignmentReaper: NodeJS.Timeout | undefined;
+  #assignmentReaping: Promise<void> | undefined;
   #client: ReconnectingSupervisorWebSocketClient | undefined;
   #managementServer: SupervisorManagementServer | undefined;
   #modelGateway: TenantModelGateway | undefined;
@@ -653,6 +656,32 @@ export class PiWorkerRuntime {
     await runWorker.start();
     this.#assertStarting();
     this.#state = "ready";
+    this.#assignmentReaper = setInterval(() => {
+      if (this.#assignmentReaping) return;
+      this.#assignmentReaping = runSupervisor
+        .reapSettled((ids) => findRetiredRuns(this.#database, ids))
+        .then((retired) => {
+          if (retired)
+            operationalLog({
+              service: "pi-cloud-pi-worker",
+              level: "info",
+              event: "runtime.assignments-reaped",
+              attributes: { retired, ...runSupervisor.retainedState },
+            });
+        })
+        .catch(() =>
+          operationalLog({
+            service: "pi-cloud-pi-worker",
+            level: "error",
+            event: "runtime.assignment-reap-failed",
+            attributes: { code: "retirement_check_failed" },
+          }),
+        )
+        .finally(() => {
+          this.#assignmentReaping = undefined;
+        });
+    }, 60_000);
+    this.#assignmentReaper.unref();
     void client.waitUntilStopped().then((result) => this.#observeClientStop(result));
   }
 
@@ -662,6 +691,7 @@ export class PiWorkerRuntime {
       // already set draining, and prevent suspended startup from admitting work.
       this.#stopRequested = true;
       this.#state = "draining";
+      clearInterval(this.#assignmentReaper);
       this.#client?.setAcceptingAssignments(false);
       this.#runSupervisor?.revokeAllAssignments();
       await this.#runWorker?.stop();
@@ -680,6 +710,7 @@ export class PiWorkerRuntime {
   }
 
   async #close(): Promise<void> {
+    clearInterval(this.#assignmentReaper);
     if (this.#state !== "failed") this.#state = "draining";
     const errors: unknown[] = [];
     if (this.#starting && !this.#startupFinished) {
@@ -708,6 +739,7 @@ export class PiWorkerRuntime {
     // polling first and give the active Runs their bounded settlement window;
     // owner replacement still uses stopCurrentBoot(), which revokes immediately.
     for (const close of [
+      () => this.#assignmentReaping,
       () => this.#runWorker?.stop(),
       () => this.#runSupervisor?.waitUntilAssignmentsSettled(),
       () => this.#modelPermits?.close(),

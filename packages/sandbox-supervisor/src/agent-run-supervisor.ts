@@ -91,6 +91,8 @@ type Assignment = {
     ((message: EventPublishMessage) => Promise<EventAckMessage> | EventAckMessage) | undefined;
   abortController: AbortController;
   state: AssignmentState;
+  /** Supersession changes state before the old Runner has necessarily joined. */
+  settled: boolean;
   runPromise?: Promise<PiTurnResult>;
   lastProducedSeq: number;
   lastAcknowledgedSeq: number;
@@ -168,7 +170,7 @@ export class AgentRunSupervisor {
   readonly #steersByRequest = new Map<string, Steer>();
   readonly #highestEpochByFamily = new Map<
     string,
-    { epoch: number; leaseId: string; writerId: string }
+    { epoch: number; leaseId: string; writerId: string; lastRunId: string }
   >();
   constructor(options: AgentRunSupervisorOptions) {
     this.#maximumLanesPerFamily = positiveInteger(
@@ -191,6 +193,57 @@ export class AgentRunSupervisor {
         (a) => `${a.command.payload.tenantId}:${a.command.payload.piSession.id}`,
       ),
     ).size;
+  }
+
+  get retainedState() {
+    return {
+      runs: this.#byRun.size,
+      cancellations: this.#cancellationsByRequest.size,
+      steers: this.#steersByRequest.size,
+      families: this.#highestEpochByFamily.size,
+    };
+  }
+
+  /** Composition must prove terminal Runs, projected seals and terminal controls
+   * before dropping local duplicate outcomes. This is not a time-based expiry. */
+  async reapSettled(
+    retiredRuns: (runIds: readonly string[]) => Promise<ReadonlySet<string>>,
+  ): Promise<number> {
+    const completed = [...this.#byRun.values()].filter((assignment) => assignment.settled);
+    const owners = [...this.#highestEpochByFamily];
+    const candidates = [
+      ...new Set([
+        ...completed.map((assignment) => assignment.command.payload.runId),
+        ...owners.map(([, owner]) => owner.lastRunId),
+      ]),
+    ];
+    if (candidates.length === 0) return 0;
+    const retired = await retiredRuns(candidates);
+    const removed = new Set<Assignment>();
+    for (const assignment of completed) {
+      const id = assignment.command.payload.runId;
+      if (!retired.has(id) || this.#byRun.get(id) !== assignment) continue;
+      this.#byRun.delete(id);
+      removed.add(assignment);
+    }
+    for (const [key, control] of this.#cancellationsByRequest)
+      if (removed.has(control.assignment)) this.#cancellationsByRequest.delete(key);
+    for (const [key, control] of this.#steersByRequest)
+      if (removed.has(control.assignment)) this.#steersByRequest.delete(key);
+    const retainedFamilies = new Set(
+      [...this.#byRun.values()].map(
+        ({ command }) => `${command.payload.tenantId}:${command.payload.piSession.id}`,
+      ),
+    );
+    for (const [key, owner] of owners) {
+      if (
+        retired.has(owner.lastRunId) &&
+        !retainedFamilies.has(key) &&
+        this.#highestEpochByFamily.get(key) === owner
+      )
+        this.#highestEpochByFamily.delete(key);
+    }
+    return removed.size;
   }
 
   async waitUntilAssignmentsSettled(): Promise<void> {
@@ -420,6 +473,7 @@ export class AgentRunSupervisor {
       publishEvent,
       abortController: new AbortController(),
       state: "prepared",
+      settled: false,
       lastProducedSeq: command.payload.nextEventSeq - 1,
       lastAcknowledgedSeq: command.payload.nextEventSeq - 1,
     };
@@ -427,6 +481,7 @@ export class AgentRunSupervisor {
       epoch: generation,
       leaseId: reference.leaseId,
       writerId: command.payload.piSession.writerId,
+      lastRunId: command.payload.runId,
     });
     this.#currentBySession.set(command.payload.sessionId, assignment);
     this.#byRun.set(command.payload.runId, assignment);
@@ -702,6 +757,7 @@ export class AgentRunSupervisor {
       .finally(() => {
         // Keep duplicate outcome bookkeeping without retaining the publisher's runtime context.
         assignment.publishEvent = undefined;
+        assignment.settled = true;
         if (this.#currentBySession.get(assignment.command.payload.sessionId) === assignment) {
           this.#currentBySession.delete(assignment.command.payload.sessionId);
         }

@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(141);
+      expect(firstMigrationPass.rows).toHaveLength(142);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("141_subagent_compute_scopes");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("142_pending_control_lookup");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -157,7 +157,15 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("141_subagent_compute_scopes");
+      expect(applied.rows.at(-1)?.name).toBe("142_pending_control_lookup");
+      const pendingControls = await sql<{ indexdef: string }>`select indexdef from pg_indexes
+        where schemaname='public' and indexname='turn_control_requests_pending_run_idx'`.execute(
+        database,
+      );
+      expect(pendingControls.rows).toEqual([
+        expect.objectContaining({ indexdef: expect.stringContaining("target_run_id") }),
+      ]);
+      expect(pendingControls.rows[0]!.indexdef).toContain("acknowledged");
 
       const sessionLogConstraint = await sql<{ definition: string }>`
         select pg_get_constraintdef(oid) as definition

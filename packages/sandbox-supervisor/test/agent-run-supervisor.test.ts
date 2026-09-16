@@ -164,6 +164,147 @@ function rejectUnexpectedEvent(): never {
 }
 
 describe("AgentRunSupervisor", () => {
+  it("keeps a superseded Runner until its actual completion, even if PG is already closed", async () => {
+    const finish = Promise.withResolvers<void>();
+    const supervisor = new AgentRunSupervisor({
+      runner: {
+        async run() {
+          await finish.promise;
+          return { stopReason: "stop" };
+        },
+      },
+    });
+    const old = supervisor.prepare(command(), rejectUnexpectedEvent).run();
+    const fresh = supervisor.prepare(
+      command({ runId: IDS.command2, leaseId: IDS.lease2, generation: 2 }),
+      rejectUnexpectedEvent,
+    );
+    try {
+      expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(0);
+      expect(supervisor.retainedState).toMatchObject({ runs: 2, families: 1 });
+      finish.resolve();
+      await old;
+      expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(1);
+      expect(supervisor.retainedState).toMatchObject({ runs: 1, families: 1 });
+    } finally {
+      finish.resolve();
+      await old;
+      fresh.releaseBeforeStart();
+    }
+  });
+
+  it("retains duplicate outcomes until retirement is proven, then releases Run/control payloads", async () => {
+    const finish = Promise.withResolvers<void>();
+    let calls = 0;
+    const supervisor = new AgentRunSupervisor({
+      runner: {
+        async run() {
+          calls++;
+          await finish.promise;
+          return { stopReason: "stop" };
+        },
+        async steer() {},
+      },
+    });
+    const execute = command();
+    const prepared = supervisor.prepare(execute, rejectUnexpectedEvent);
+    const run = prepared.run();
+    const steering = supervisor.prepareSteer(steer(execute));
+    await steering.run();
+    supervisor.prepareCancellation(cancellation(execute));
+    expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(0);
+    finish.resolve();
+    await run;
+    const retained = { runs: 1, steers: 1, cancellations: 1, families: 1 };
+    expect(supervisor.retainedState).toEqual(retained);
+    expect(await supervisor.reapSettled(async () => new Set())).toBe(0);
+    await expect(
+      supervisor.reapSettled(async () => {
+        throw new Error("database unavailable");
+      }),
+    ).rejects.toThrow("database unavailable");
+    expect(supervisor.retainedState).toEqual(retained);
+    const duplicate = supervisor.prepare(execute, rejectUnexpectedEvent);
+    expect(duplicate.ack.payload.status).toBe("duplicate");
+    await duplicate.run();
+    expect(calls).toBe(1);
+    expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(1);
+    expect(supervisor.retainedState).toEqual({ runs: 0, steers: 0, cancellations: 0, families: 0 });
+    await prepared.run();
+    expect(calls).toBe(1);
+    expect(supervisor.prepareSteer(steer(execute)).ack.payload).toMatchObject({
+      status: "rejected",
+      code: "invalid_state",
+    });
+  });
+
+  it("does not retire a new family owner while an old retirement check is pending", async () => {
+    const finish = Promise.withResolvers<void>();
+    const old = command();
+    const fresh = command({ runId: IDS.command2, leaseId: IDS.lease2, generation: 2 });
+    const supervisor = new AgentRunSupervisor({
+      runner: {
+        async run(value) {
+          if (value.payload.runId === fresh.payload.runId) await finish.promise;
+          return { stopReason: "stop" };
+        },
+      },
+    });
+    await supervisor.prepare(old, rejectUnexpectedEvent).run();
+    const checked = Promise.withResolvers<ReadonlySet<string>>();
+    const reap = supervisor.reapSettled(() => checked.promise);
+    const active = supervisor.prepare(fresh, rejectUnexpectedEvent).run();
+    checked.resolve(new Set([old.payload.runId]));
+    expect(await reap).toBe(1);
+    expect(supervisor.retainedState).toMatchObject({ runs: 1, families: 1 });
+    const stale = command({
+      runId: IDS.command,
+      sessionId: "late-child",
+      piSessionId: "session-1",
+      lane: "late",
+    });
+    expect(supervisor.prepare(stale, rejectUnexpectedEvent).ack.payload).toMatchObject({
+      status: "rejected",
+      code: "stale_session_lease",
+    });
+    finish.resolve();
+    await active;
+    await supervisor.reapSettled(async (ids) => new Set(ids));
+    expect(supervisor.retainedState).toMatchObject({ runs: 0, families: 0 });
+  });
+
+  it("releases completed command objects and pre-start owner bookkeeping after authoritative retirement", () => {
+    const source = `
+      import {AgentRunSupervisor} from ${JSON.stringify(new URL("../src/agent-run-supervisor.ts", import.meta.url).href)};
+      import {setImmediate as tick} from 'node:timers/promises';
+      const refs=[];
+      const supervisor=new AgentRunSupervisor({runner:{run:async command=>{refs.push(new WeakRef(command));return {stopReason:'stop'};}}});
+      const template=${JSON.stringify(command())};
+      async function complete(i){
+        await supervisor.prepare({...template,payload:{...template.payload,runId:'40000000-0000-4000-8000-'+String(i).padStart(12,'0')}},()=>{}).run();
+      }
+      for(let i=0;i<16;i++)await complete(i);
+      for(let i=0;i<5;i++){await tick();global.gc();}
+      const before=refs.filter(ref=>ref.deref()!==undefined).length;
+      await supervisor.reapSettled(async ids=>new Set(ids));
+      for(let i=0;i<5;i++){await tick();global.gc();}
+      const after=refs.filter(ref=>ref.deref()!==undefined).length;
+      supervisor.prepare(template,()=>{}).releaseBeforeStart();
+      await supervisor.reapSettled(async ids=>new Set(ids));
+      console.log(JSON.stringify({before,after,retained:supervisor.retainedState}));
+    `;
+    const result = execFileSync(
+      process.execPath,
+      ["--expose-gc", "--import", "tsx", "--input-type=module", "-e", source],
+      { encoding: "utf8", timeout: 10_000 },
+    );
+    expect(JSON.parse(result)).toEqual({
+      before: 16,
+      after: 0,
+      retained: { runs: 0, steers: 0, cancellations: 0, families: 0 },
+    });
+  });
+
   it("releases a slot when the runner throws before returning a promise", async () => {
     const supervisor = new AgentRunSupervisor({
       runner: {

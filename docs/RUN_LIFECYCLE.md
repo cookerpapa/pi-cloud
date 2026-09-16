@@ -39,6 +39,14 @@ it does not renew a child task's startup deadline. Each task carries an
 reference is never placed in model context or Cube. Task states/deadlines are
 managed independently; lack of child output does not imply owner loss.
 
+Once a minute, the Worker releases completed in-memory Run/control outcomes
+only after PG confirms a terminal Run, projected seal and terminal control
+requests. Uncertain or still-running work is retained; failed lookups are logged
+and release nothing. Lookups are batched off the execution path. A concurrent
+new Lane/owner is not evicted by an older check. Local duplicate caches are not
+authority: Run admission and Steer replay still consult the durable rows before
+any new execution. This cleanup never deletes conversation history.
+
 ## Pi and Tools
 
 The Worker opens Pi's native Session state and appends the accepted user
