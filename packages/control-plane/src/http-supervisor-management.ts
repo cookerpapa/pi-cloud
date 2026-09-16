@@ -192,7 +192,9 @@ export class HttpSupervisorManagementClient {
       throw new HttpSupervisorManagementError(
         "supervisor_management_invalid_response",
         "Supervisor management returned an invalid response",
-        false,
+        // Ingresses return plain text/HTML while the Worker has no Ready
+        // endpoint. That is temporary unavailability, not a protocol violation.
+        response.status >= 500,
       );
     }
     if (!response.ok) {

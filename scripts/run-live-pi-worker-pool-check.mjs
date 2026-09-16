@@ -350,6 +350,14 @@ async function stopWorker(supervisorId) {
 }
 
 async function killWorker(supervisorId) {
+  assert.equal(
+    Number(
+      await psql(`select count(*) from runs where tenant_id <> ${sqlLiteral(registration.tenantId)}
+    and state not in ('completed','failed','cancelled','timed_out','superseded')`),
+    ),
+    0,
+    "Refusing Worker fault injection while another tenant has unfinished work",
+  );
   if (workerDeployment === "compose") {
     const service = composeService(supervisorId);
     await capture(process.execPath, [
@@ -361,7 +369,50 @@ async function killWorker(supervisorId) {
     ]);
     return { mode: "compose", service };
   }
-  return stopWorker(supervisorId);
+  const kubectlArgs = ["--kubeconfig", kubernetesKubeconfig, "--namespace", kubernetesNamespace];
+  const readState = async () => {
+    const pod = JSON.parse(
+      await capture("kubectl", [...kubectlArgs, "get", "pod", supervisorId, "--output", "json"]),
+    );
+    return pod.status.containerStatuses.find((container) => container.name === "pi-worker");
+  };
+  const before = await readState();
+  // Kill the actual Node Agent Runner, not PID 1 (the tsx launcher). Kubernetes
+  // restarts this container automatically; scaling it down would test SIGTERM.
+  const killScript = `const fs=require('node:fs');const pids=fs.readdirSync('/proc').filter(p=>/^[0-9]+$/.test(p)&&p!=='1').filter(p=>{try{return fs.readFileSync('/proc/'+p+'/cmdline','utf8').split('\\0').includes('/app/packages/supervisor-host/src/main.ts')}catch(e){if(e.code==='ENOENT')return false;throw e}});if(pids.length!==1)throw Error('Expected one Agent Runner');process.kill(Number(pids[0]),'SIGKILL')`;
+  let injectionError;
+  try {
+    await capture("kubectl", [
+      ...kubectlArgs,
+      "exec",
+      supervisorId,
+      "--",
+      "node",
+      "-e",
+      killScript,
+    ]);
+  } catch (error) {
+    // The exec channel can close with the container. Require independent
+    // kubelet termination evidence before accepting this as a successful kill.
+    injectionError = error;
+  }
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const state = await readState();
+    const terminated = state.lastState?.terminated;
+    if (state.restartCount > before.restartCount && terminated && terminated.exitCode !== 0) {
+      return {
+        mode: "kubernetes-crash",
+        supervisorId,
+        exitCode: terminated.exitCode,
+        restartCount: state.restartCount,
+      };
+    }
+    await wait(250);
+  }
+  throw new Error("Kubelet did not confirm an abnormal Worker process exit", {
+    cause: injectionError,
+  });
 }
 
 async function crashStreamingTurn(sessionId) {
@@ -482,7 +533,7 @@ async function restoreWorker(stoppedWorker) {
       "start",
       stoppedWorker.service,
     ]);
-  } else {
+  } else if (stoppedWorker.mode === "kubernetes") {
     await capture("kubectl", [
       "--kubeconfig",
       kubernetesKubeconfig,
@@ -520,6 +571,12 @@ api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 authorizationToken = registration.apiToken;
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must have a real model configured");
+const acceptanceModel = {
+  provider: "deepseek",
+  modelId: "deepseek-v4-pro",
+  thinkingLevel: "off",
+  fastMode: false,
+};
 
 let stoppedWorker;
 const createdSessionIds = [];
@@ -539,6 +596,7 @@ try {
     );
     createdWorkspaceIds.push(project.workspaceId);
     createdSessionIds.push(session.sessionId);
+    await api.updateSessionModel(session.sessionId, acceptanceModel);
     const turn = await runTurn(
       session.sessionId,
       `Remember this marker for my next message: ${marker}. Do not call tools. Reply exactly ACK.`,
@@ -581,9 +639,14 @@ try {
   );
   createdWorkspaceIds.push(crashProject.workspaceId);
   createdSessionIds.push(crashSession.sessionId);
+  await api.updateSessionModel(crashSession.sessionId, acceptanceModel);
   const crashed = await crashStreamingTurn(crashSession.sessionId);
-  const crashSurvivors = await waitForWorkers(1);
-  assert(!crashSurvivors.includes(crashed.killed.evidence.supervisorId));
+  if (workerDeployment === "compose") {
+    const crashSurvivors = await waitForWorkers(1);
+    assert(!crashSurvivors.includes(crashed.killed.evidence.supervisorId));
+  } else {
+    await waitForWorkers(2);
+  }
   const recovered = await runTurn(
     crashSession.sessionId,
     "The previous Run was interrupted. Do not call tools. Reply exactly RECOVERY-BARRIER-OK.",
@@ -635,6 +698,7 @@ try {
       );
       createdWorkspaceIds.push(concurrentProject.workspaceId);
       createdSessionIds.push(concurrentSession.sessionId);
+      await api.updateSessionModel(concurrentSession.sessionId, acceptanceModel);
       const turn = await runTurn(
         concurrentSession.sessionId,
         [
@@ -675,7 +739,7 @@ try {
   const report = {
     accepted: true,
     checkedAt: new Date().toISOString(),
-    model: { provider: model.provider, modelId: model.modelId },
+    model: acceptanceModel,
     workerDeployment,
     workers: initialWorkers,
     failover: {
@@ -689,6 +753,7 @@ try {
       candidateRuns: candidates.length,
     },
     activeCrashRecovery: {
+      injection: crashed.killed.stopped,
       killedWorker: crashed.killed.evidence.supervisorId,
       terminalState: crashed.run.state,
       firstVisibleSequence: crashed.firstVisibleSequence,

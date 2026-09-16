@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Keep non-JSON HTTP 5xx from Worker ingress retryable, so temporary Pod
+      unavailability does not permanently block retirement. Malformed HTTP 200
+      remains a protocol error; gateway/Worker regression tests pass.
+
 - [x] Carry shared Kafka Producer capacity into typed Worker configuration and
       both deployment modes; keep retention on the safe Projector reaper only.
       Before/after config contracts and real R=3 overload/retention checks pass.

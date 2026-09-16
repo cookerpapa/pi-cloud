@@ -7,6 +7,15 @@ Application-source reading is now covered by the private hash/range ledger;
 tests, migrations, deployment/scripts and documents still have remaining reads.
 This is coverage of reading, not a claim that every combination is already tested.
 
+Real paid k3d acceptance reached cross-Worker continuation, then a forced Runner
+SIGKILL (kubelet exit 137) exposed a retirement bug: an invalid management response
+permanently blocked the old owner, leaving the Run running past lease expiry.
+The HTTP client classified non-JSON ingress 502/503/504 bodies as non-retryable
+protocol errors. Three before-fix regressions fail; retain retryability for HTTP
+5xx while still rejecting malformed successful responses. Nine targeted client/
+server tests pass. The failed paid fixture is not counted as a pass; repair its
+scoped cleanup and rerun the independent fault case after deployment.
+
 Local Worker cutover had three rollback holes: a failure inside the CP switch
 lost the caller's rollback state, a failed pool was not removed before Compose
 restart, and previously stopped Workers were unconditionally started. Five
