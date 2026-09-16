@@ -36,7 +36,8 @@ Volume architecture. Historical experiments remain in Git history.
       (ADR-0171); shared-Volume compute cutover and live acceptance now pass.
       Cancelled guest uploads now retire their temporary input before dispatch,
       with real Cube adapter proof; readiness errors retain their cause. Remaining
-      Worker bookkeeping retention and final combination gates are still open.
+      Worker bookkeeping retirement now passes (below); final combination gates
+      are still open.
       Delayed cancellation no longer blocks unrelated family admission in local
       regressions; shutdown still joins it. Query profiling identified substantial
       claim-planning time; no unvalidated planner/driver change has been deployed.

@@ -31,7 +31,11 @@ late input is rejected immediately. Both failure regressions and all 111
 Supervisor tests/types pass. Removed the unused synchronous Step-capture branch
 and old Extension-API settlement implementation; their tests now exercise the
 actual asynchronous capture and production settlement controller, preserving
-the optional verification behavior. This subsequent slice still needs rollout.
+the optional verification behavior. Worker `0b66e469` is deployed and another
+paid DeepSeek Steer/replay-after-retirement passes (3,878 input / 70,912 cache-read /
+515 output tokens). The temporary actual-PG fixture is removed; older campaign
+fixtures remain for unfinished acceptance. Full audit and final combination gates
+remain open.
 
 At `1209d458`, five deterministic multi-replica Steer races pass after
 fixing unchecked zero-row terminal updates and late transport replies. Before
@@ -478,7 +482,8 @@ the reusable baseline coding Sessions still await final scoped cleanup.
 Remaining work:
 
 - finish all maintained source, test, deployment, migration and documentation reads;
-- finish MEM-02 and PERF-01 investigation; TOOL-04/DIAG-02 are deployed and validated;
+- finish PERF-01 investigation and repeat cache retirement in the final failure/
+  child matrices; TOOL-04/DIAG-02 are deployed and validated;
 - complete further regression slices; directory template/browser rollout passed;
 - repeat the combined child/Compaction/search/provider/Worker and failure matrices
   on the final revision, including multi-replica control and UI races;
