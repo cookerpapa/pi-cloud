@@ -649,7 +649,9 @@ export class RunExecutor {
           )
           .select("candidate.id")
           .where("candidate.available_at", "<=", now)
-          .where("candidate.state", "in", ["queued", "claimed"])
+          // These code-owned states are also the partial ready-index predicate.
+          // Parameters prevent a generic prepared plan from proving that match.
+          .where(sql<boolean>`candidate.state in ('queued', 'claimed')`)
           .where("candidate_session.state", "in", ["cold", "idle"])
           .where(
             sql<boolean>`not exists (

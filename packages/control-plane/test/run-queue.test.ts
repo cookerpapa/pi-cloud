@@ -86,8 +86,19 @@ describe.sequential("Run queue authority", () => {
       prompt: "metric fixture",
     });
     const metrics = new PiCloudMetrics("claim-test");
+    const candidates: string[] = [];
+    const measured = database.withPlugin({
+      transformQuery({ node, queryId }) {
+        const query = database.getExecutor().compileQuery(node, queryId);
+        if (query.sql.startsWith('select "candidate"')) candidates.push(query.sql);
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    });
     const executor = new RunExecutor({
-      database,
+      database: measured,
       metrics,
       claimOwnerId: "claim-timing-worker",
       backend: {
@@ -102,6 +113,10 @@ describe.sequential("Run queue authority", () => {
       runId: accepted.runId,
     });
     await expect(executor.dispatchRun(accepted.runId)).resolves.toEqual({ status: "idle" });
+    // A generic prepared plan must be able to prove the ready-index predicate;
+    // lifecycle constants are code, whereas user/Worker identities remain parameters.
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toContain("candidate.state in ('queued', 'claimed')");
     const stages = await metrics.runClaimStageDuration.get();
     const counts = stages.values.filter((v) => v.metricName?.endsWith("_count"));
     expect(counts.map((v) => v.labels.stage).sort()).toEqual([

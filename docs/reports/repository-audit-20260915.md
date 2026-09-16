@@ -39,6 +39,20 @@ current production adapter: the latter already caches bounded named SELECTs
 since `9ff24b0b`. Do not attribute the baseline's full planning cost to production;
 repeat with `createDatabase` after the concurrent CI workload finishes.
 
+That repeat identifies a narrower cause: the ready-queue predicate used parameters
+for the fixed `queued`/`claimed` states. A generic prepared plan cannot prove the
+partial ready-index predicate from those parameters. Keep the exact states as SQL
+literals; identities and inputs remain bound parameters. This is the documented
+[PostgreSQL partial-index rule](https://www.postgresql.org/docs/current/indexes-partial.html),
+not a new scheduling policy or another query. On the owned 2-CPU PG fixture using
+the real `createDatabase` adapter, a warmed 48-claim wave previously replanned the
+candidate query 48 times; after the change it replans zero times. Root-only claim
+p50/p95 at 16 offered tasks/four connections changes from 141/185 to 109/114 ms;
+these are sequential diagnostic trials, not an end-to-end or multi-node claim.
+The compiled-query regression fails against the prior predicate; 12 queue/family
+tests and all nine real-PG authority clock/lock cases then pass. Paid rollout and
+mixed runtime performance repetition remain required.
+
 Acceptance scripts no longer silently discard cleanup errors in the renewed
 Preview/Snake/load paths, cancel their own unfinished tasks before deletion,
 and retain created resource IDs even if setup partially fails. The live stream
