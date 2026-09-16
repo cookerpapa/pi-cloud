@@ -1,22 +1,29 @@
 {
-  "checkedAt": "2026-09-10T15:09:28.692Z",
+  "checkedAt": "2026-09-16T22:46:57.497Z",
   "runs": [
     {
-      "runId": "c9a56db5-2acb-49b7-8ac7-0650544d6cd0",
-      "elapsedMs": 11493
+      "runId": "b706c1cf-0109-4fbe-8fa3-ac6c59ae4abb",
+      "elapsedMs": 24539
     },
     {
-      "runId": "59da27b3-492d-47be-887d-cc7fc5fac3c8",
-      "elapsedMs": 1404
+      "runId": "95566506-992b-4700-90bd-3deb93d15b2f",
+      "elapsedMs": 2597
     },
     {
-      "runId": "adb95598-1497-435d-b567-6c78548313c8",
-      "elapsedMs": 12241
+      "runId": "22fe1ce5-2846-4a88-80e0-0899736deb3e",
+      "elapsedMs": 20088
     }
   ],
   "accepted": true,
   "hostPowerLossTested": false,
-  "environmentId": "40ee835e-265f-425d-9dfc-f0c49d0469db",
+  "model": {
+    "provider": "openai-codex",
+    "modelId": "gpt-5.6-luna",
+    "thinkingLevel": "low",
+    "fastMode": false
+  },
+  "testRevision": "1ca740233f7ecf55bc2d716a4e8bee1f9541f36a",
+  "environmentId": "95ccc96c-2fc6-4947-a3a6-d73538ad5cf2",
   "stoppedApplicationDidNotStopMachine": true,
   "applicationRestarted": true,
   "browserReadOutsideHome": true,
@@ -24,9 +31,9 @@
   "brokerRestartPreservedRootFilesProcessAndPreview": true,
   "resetMarkers": 0,
   "usage": {
-    "input": 10844,
-    "output": 3409,
-    "cacheRead": 119424
+    "input": 20825,
+    "output": 1474,
+    "cacheRead": 50432
   },
   "rootOwnedDeletionFixture": true,
   "resourcesReleased": true,
