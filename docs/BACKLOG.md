@@ -216,6 +216,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Provider capabilities
 
+- [x] Temporarily hide DeepSeek Flash from conversation/admin model selection:
+      V4.1 Flash ignores native search on the current Responses route. Keep Pro,
+      existing selections and history; do not switch protocols or add a search tool.
+
 - [x] Reject undeclared Bash arguments through Pi's native schema validator
       before execution intent; distinguish Tool preparation/waiting from
       execution and replace rejected preparation rows without duplicate UI.

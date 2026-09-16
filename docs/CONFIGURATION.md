@@ -30,6 +30,12 @@ and capability tests, not just a catalog entry.
 Every accepted Turn freezes its own provider/model snapshot; changing the
 platform default or Session default never changes historical or in-flight Runs.
 
+DeepSeek Flash is temporarily hidden from conversation/admin selection because
+its V4.1 Responses route no longer executes hosted search. DeepSeek Pro remains
+listed. This is catalog visibility, not a protocol switch or model deletion:
+existing Flash selections/history stay intact and can be changed explicitly.
+No standalone search tool is added.
+
 Use:
 
 ```bash

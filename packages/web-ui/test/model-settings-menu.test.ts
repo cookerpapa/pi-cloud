@@ -6,6 +6,25 @@ import {
 } from "../src/ModelSettingsMenu.tsx";
 
 describe("model settings menu", () => {
+  it("retains an existing Flash selection until the user explicitly changes it", () => {
+    expect(
+      settingsFromSessionModel({
+        sessionId: "10000000-0000-4000-8000-000000000001",
+        modelProfileId: "20000000-0000-4000-8000-000000000001",
+        provider: "deepseek",
+        modelId: "deepseek-v4-flash",
+        displayName: "DeepSeek V4 Flash",
+        thinkingLevel: "high",
+        fastMode: false,
+      }),
+    ).toEqual({
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash",
+      thinkingLevel: "high",
+      fastMode: false,
+    });
+  });
+
   it("uses catalog defaults and keeps Fast scoped to GPT", () => {
     expect(
       defaultModelSettings({

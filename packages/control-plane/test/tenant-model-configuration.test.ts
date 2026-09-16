@@ -5,6 +5,7 @@ import { createDatabase, runMigrations, type Database } from "@pi-cloud/database
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  ControlPlaneStore,
   TenantModelConfigurationError,
   TenantModelConfigurationService,
   PublicTenantRegistrationService,
@@ -50,6 +51,30 @@ function ownerIdentity(
 }
 
 describe.sequential("tenant model configuration", () => {
+  it("hides Flash from selection without rewriting the stored route", async () => {
+    const tenant = await createPrivateTenant(database, {
+      slug: "hidden-model-route",
+      ownerDisplayName: "Hidden Model Route",
+      initialModel: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+    });
+    const store = new ControlPlaneStore({
+      database,
+      tenantId: tenant.tenantId,
+      defaultModelProfileId: tenant.defaultModelProfileId,
+    });
+    const { models } = await store.modelCatalog();
+    expect(
+      models.filter((model) => model.provider === "deepseek").map((model) => model.modelId),
+    ).toEqual(["deepseek-v4-pro"]);
+    expect(models.filter((model) => model.default)).toHaveLength(1);
+    await expect(
+      new TenantModelConfigurationService({ database }).get(ownerIdentity(tenant)),
+    ).resolves.toMatchObject({
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash",
+    });
+  });
+
   it("persists only a non-secret Provider Gateway route and supports native provider protocols", async () => {
     const tenant = await createPrivateTenant(database, {
       slug: "model-route-tenant",

@@ -117,6 +117,9 @@ describe("product chat experience", () => {
     );
     expect(markup).toContain("PiCloud 管理后台");
     expect(markup).toContain("Pi Worker 模型");
+    expect(markup).toContain("DeepSeek V4 Pro");
+    expect(markup).not.toContain("deepseek-v4-flash");
+    expect(markup).not.toContain("DeepSeek V4 Flash");
     expect(markup).toContain("CubeSandbox 公网代理");
     expect(markup).not.toContain("最近对话");
     expect(markup).toContain('href="https://models.example.test/management.html"');

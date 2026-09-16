@@ -36,6 +36,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
   parseCloudToolCapabilitySnapshot,
+  reviewedModel,
   validMachineDirectory,
 } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
@@ -601,11 +602,14 @@ export class ControlPlaneStore {
         "Tenant model catalog is unavailable",
       );
     }
-    const hasConfiguredDefault = SUPPORTED_MODEL_CATALOG.some(
+    const visibleModels = SUPPORTED_MODEL_CATALOG.filter(
+      (model) => reviewedModel(model.provider, model.modelId)?.visible,
+    );
+    const hasConfiguredDefault = visibleModels.some(
       (model) => model.provider === policy.provider && model.modelId === policy.modelId,
     );
     return {
-      models: SUPPORTED_MODEL_CATALOG.map((model, index) => ({
+      models: visibleModels.map((model, index) => ({
         ...model,
         default:
           (model.provider === policy.provider && model.modelId === policy.modelId) ||

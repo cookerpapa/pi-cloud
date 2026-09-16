@@ -1,5 +1,6 @@
 /** Reviewed routes only. Transport adapters remain provider-specific. */
 const GPT = {
+  visible: true,
   provider: "openai-codex",
   api: "openai-codex-responses",
   thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
@@ -11,6 +12,7 @@ const GPT = {
   hostedTools: ["web_search"],
 } as const;
 const DEEPSEEK = {
+  visible: true,
   provider: "deepseek",
   api: "openai-responses",
   thinkingLevels: ["off", "low", "medium", "high", "max"],
@@ -36,6 +38,9 @@ export const REVIEWED_MODELS = [
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
     defaultThinkingLevel: "off",
+    // Flash now resolves to V4.1, whose Responses route no longer executes search.
+    // Keep existing selections readable; omit this route from selection menus.
+    visible: false,
   },
   {
     ...DEEPSEEK,

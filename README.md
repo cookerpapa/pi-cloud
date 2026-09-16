@@ -10,7 +10,7 @@ the guest environment.
 - Chinese/English Web UI, native multi-round conversations, Compaction, Fork,
   tree navigation, Steer and cursor-free streaming recovery;
 - per-conversation Provider/model/reasoning settings and GPT Fast mode, frozen
-  for each accepted Turn; native Web Search on verified GPT/DeepSeek routes;
+  for each accepted Turn; native Web Search on GPT and DeepSeek Pro;
 - recursive Subagents with bounded depth and concurrency: inherited or empty
   Lanes share a physical Pi Session and Volume, with shared or temporary compute;
 - elastic Workspaces and named, user-owned development machines;

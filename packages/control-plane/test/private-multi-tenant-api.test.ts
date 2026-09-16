@@ -251,6 +251,9 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       headers: authorization(memberAToken),
     });
     expect(catalog.statusCode).toBe(200);
+    expect(catalog.json().models.map((model: { modelId: string }) => model.modelId)).not.toContain(
+      "deepseek-v4-flash",
+    );
     expect(catalog.json()).toMatchObject({
       models: expect.arrayContaining([
         expect.objectContaining({

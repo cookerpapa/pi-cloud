@@ -12,12 +12,12 @@ import { useI18n } from "./i18n.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
 import type { WebConfiguration } from "./web-configuration.ts";
 
-const MODEL_OPTIONS: readonly (ProviderModelSelection & { label: string })[] = REVIEWED_MODELS.map(
-  (model) =>
+const MODEL_OPTIONS: readonly (ProviderModelSelection & { label: string })[] =
+  REVIEWED_MODELS.filter((model) => model.visible).map((model) =>
     model.provider === "deepseek"
       ? { provider: model.provider, modelId: model.modelId, label: model.displayName }
       : { provider: model.provider, modelId: model.modelId, label: model.displayName },
-);
+  );
 
 function selectionKey(selection: ProviderModelSelection): string {
   return `${selection.provider}:${selection.modelId}`;
@@ -183,6 +183,13 @@ export function AdminPage({
                 }}
                 value={selectionKey(selectedModel)}
               >
+                {!MODEL_OPTIONS.some(
+                  (option) => selectionKey(option) === selectionKey(selectedModel),
+                ) && (
+                  <option disabled hidden value={selectionKey(selectedModel)}>
+                    {selectedModel.modelId}
+                  </option>
+                )}
                 {MODEL_OPTIONS.map((option) => (
                   <option key={selectionKey(option)} value={selectionKey(option)}>
                     {option.label}
