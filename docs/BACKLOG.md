@@ -232,6 +232,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Operations
 
+- [x] Keep the local Volume reader on Cube's UID 1000 while granting only its
+      three required Secrets through the operator group. Non-1000 operator
+      filesystem probes and shared permission/installer contracts pass.
+
 - [x] Preserve local Worker running/stopped state through cutover rollback and
       confirm Kubernetes executor shutdown before restoring Compose. Partial
       switch/uninstall failure contracts pass; readiness rejects stale images.

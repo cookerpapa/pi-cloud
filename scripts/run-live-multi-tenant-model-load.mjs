@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
-import { constants } from "node:fs";
-import { mkdir, open, writeFile } from "node:fs/promises";
+import { readPrivateRuntimeFile as readPrivate } from "./lib/runtime-file-policy.mjs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -39,24 +39,6 @@ const runtimeDirectory = resolve(
   repositoryRoot,
   process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
 );
-
-async function readPrivate(path, maximumBytes, label) {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const metadata = await handle.stat();
-    if (
-      !metadata.isFile() ||
-      (metadata.mode & 0o077) !== 0 ||
-      metadata.size < 1 ||
-      metadata.size > maximumBytes
-    ) {
-      throw new Error(`${label} is not a private bounded file`);
-    }
-    return await handle.readFile("utf8");
-  } finally {
-    await handle.close();
-  }
-}
 
 const environment = Object.fromEntries(
   (await readPrivate(resolve(runtimeDirectory, ".env"), 64 * 1_024, "Production environment"))

@@ -6,6 +6,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { validateProviderRelayProxy } from "./production-runtime-policy.mjs";
+import {
+  readPrivateRuntimeFile,
+  runtimeSecretMode,
+  unsafeRuntimeFileMode,
+  VOLUME_READER_SECRETS,
+} from "./lib/runtime-file-policy.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const defaultRuntimeDirectory = resolve(repositoryRoot, "deploy/production/runtime");
@@ -45,19 +51,20 @@ function parseRuntimeDirectory(argv) {
 }
 
 async function writePrivateFile(path, contents) {
-  const handle = await open(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+  const mode = runtimeSecretMode(path);
+  const handle = await open(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, mode);
   try {
     await handle.writeFile(contents, "utf8");
     await handle.sync();
   } finally {
     await handle.close();
   }
-  await chmod(path, 0o600);
+  await chmod(path, mode);
 }
 
 async function assertPrivateRegularFile(path) {
   const metadata = await lstat(path);
-  if (!metadata.isFile() || metadata.isSymbolicLink() || (metadata.mode & 0o077) !== 0) {
+  if (!metadata.isFile() || metadata.isSymbolicLink() || unsafeRuntimeFileMode(metadata, path)) {
     throw new Error(`Production runtime file is not private and regular: ${path}`);
   }
 }
@@ -70,21 +77,7 @@ async function assertPrivateDirectory(path) {
 }
 
 async function readPrivateFile(path) {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const metadata = await handle.stat();
-    if (
-      !metadata.isFile() ||
-      (metadata.mode & 0o077) !== 0 ||
-      metadata.size < 1 ||
-      metadata.size > maxRuntimeFileBytes
-    ) {
-      throw new Error(`Production runtime file is not private and bounded: ${path}`);
-    }
-    return await handle.readFile("utf8");
-  } finally {
-    await handle.close();
-  }
+  return readPrivateRuntimeFile(path, maxRuntimeFileBytes, "Production runtime file");
 }
 
 async function ensureSourceControlCredentialMasterKey(runtimeDirectory) {
@@ -197,17 +190,21 @@ async function ensureSshHostKey(runtimeDirectory) {
   return true;
 }
 
-async function ensureWorkspaceVolumeGatewayState(runtimeDirectory) {
+async function ensureWorkspaceStorage(runtimeDirectory) {
   const application = applicationIdentity();
-  for (const relativePath of [
-    "state/cube-shared",
-    "state/cube-shared/volume",
-    "state/workspace-volume-gateway",
-  ]) {
+  for (const relativePath of ["state/cube-shared", "state/cube-shared/volume"]) {
     const path = resolve(runtimeDirectory, relativePath);
     await mkdir(path, { recursive: true, mode: 0o700 });
-    await chmod(path, 0o700);
+    await chmod(path, relativePath === "state/cube-shared/volume" ? 0o750 : 0o700);
     if (application.changeOwnership) await chown(path, application.uid, application.gid);
+  }
+}
+
+async function ensureVolumeReaderSecrets(runtimeDirectory) {
+  for (const name of VOLUME_READER_SECRETS) {
+    const path = resolve(runtimeDirectory, "secrets", name);
+    await assertPrivateRegularFile(path);
+    await chmod(path, runtimeSecretMode(path));
   }
 }
 
@@ -542,12 +539,13 @@ if (await validateExisting(runtimeDirectory)) {
   const workspaceServiceTokenCreated = await ensureWorkspaceServiceToken(runtimeDirectory);
   const workspaceTerminalTokenCreated = await ensureWorkspaceTerminalToken(runtimeDirectory);
   const sshHostKeyCreated = await ensureSshHostKey(runtimeDirectory);
-  await ensureWorkspaceVolumeGatewayState(runtimeDirectory);
+  await ensureWorkspaceStorage(runtimeDirectory);
   const workspaceVolumeGatewaySecretsCreated =
     await ensureWorkspaceVolumeGatewaySecrets(runtimeDirectory);
   const cubeEgressConfigTokenCreated = await ensureCubeEgressConfigToken(runtimeDirectory);
   const observabilitySecretsCreated = await ensureObservabilitySecrets(runtimeDirectory);
   const cliProxyRuntimeCreated = await ensureCliProxyRuntime(runtimeDirectory);
+  await ensureVolumeReaderSecrets(runtimeDirectory);
   process.stdout.write(
     `${JSON.stringify({
       initialized: true,
@@ -578,7 +576,7 @@ if (existingEntries.length > 0) {
 const secretsDirectory = resolve(runtimeDirectory, "secrets");
 await mkdir(secretsDirectory, { mode: 0o700 });
 await chmod(secretsDirectory, 0o700);
-await ensureWorkspaceVolumeGatewayState(runtimeDirectory);
+await ensureWorkspaceStorage(runtimeDirectory);
 await ensureCliProxyRuntime(runtimeDirectory);
 
 const postgresPassword = randomSecret();

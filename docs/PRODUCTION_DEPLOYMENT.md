@@ -105,5 +105,12 @@ until Pi compacts its native Session, verifies early-context recall and
 post-compaction Tool use, and then stops the owning Worker to prove the cold
 Session can be acquired and recovered by another Worker.
 
-The generated runtime directory contains credentials and must remain mode 0700;
-individual secrets must remain private regular files. Do not commit it.
+## Filesystem permissions
+
+The generated runtime directory remains mode 0700. Most Secrets are 0600;
+`database-url`, `workspace-volume-gateway-token` and `metrics-token` are 0640
+for the trusted Volume reader. That service runs as Cube's fixed UID 1000 with
+the operator's primary GID; the Volume parent is 0750. Guest files and immutable
+Volume identities keep their existing ownership and private modes. These mappings
+are initialized and checked by the deployment scripts, not arbitrary permission
+relaxations. Do not commit runtime credentials.

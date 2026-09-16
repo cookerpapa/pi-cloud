@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
+import { VOLUME_READER_UID } from "./lib/runtime-file-policy.mjs";
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -80,6 +81,11 @@ assert.equal(
 );
 assert.equal(compose.services["supervisor-host-1"].extends.service, "supervisor-host");
 assert.equal(compose.services["supervisor-host-1"].user, undefined);
+assert.equal(
+  compose.services["workspace-volume-gateway"].user,
+  `${VOLUME_READER_UID}:\${PI_CLOUD_APPLICATION_GID:-1000}`,
+  "The Volume reader must match Cube's filesystem UID, not the host operator UID",
+);
 for (const key of [
   "PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES",
   "PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS",

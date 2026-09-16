@@ -7,6 +7,18 @@ Application-source reading is now covered by the private hash/range ledger;
 tests, migrations, deployment/scripts and documents still have remaining reads.
 This is coverage of reading, not a claim that every combination is already tested.
 
+Portability testing reproduces a UID mismatch: Cube creates private Volume data
+as UID 1000, while Compose ran its trusted reader as the host operator UID. The
+owned filesystem fixture succeeds at UID 1000 and fails with EACCES at UID 12001.
+Keep the reader at UID 1000 with the operator GID, its three mounted Secrets at
+0640 and the Volume parent at 0750; preserve guest/identity ownership and modes.
+The UID-1000/GID-12001 repeat reads both the Volume and its group-authorized
+fixture Secret, without root/capabilities; all fixture directories are removed.
+Share the bounded private-file reader across initialization and seven acceptance
+scripts, remove the unused Gateway state directory requirement, and retain strict
+checks for world/group-writable files and symlinks. Normal initialization and
+Compose rendering pass; final deployment/product gates still apply.
+
 Real paid k3d acceptance reached cross-Worker continuation, then a forced Runner
 SIGKILL (kubelet exit 137) exposed a retirement bug: an invalid management response
 permanently blocked the old owner, leaving the Run running past lease expiry.

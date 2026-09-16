@@ -522,7 +522,7 @@ async function installPosixVolumePlugin() {
   const pluginSha256 = createHash("sha256")
     .update(await readFile(posixVolumePluginSource))
     .digest("hex");
-  await chmod(posixVolumeRoot, 0o700);
+  await chmod(posixVolumeRoot, 0o750);
   const pod = await captureKubectl([
     "-n",
     "cube-system",

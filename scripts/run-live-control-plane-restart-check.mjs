@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
-import { constants } from "node:fs";
-import { mkdir, open, writeFile } from "node:fs/promises";
+import { readPrivateRuntimeFile as readPrivate } from "./lib/runtime-file-policy.mjs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -27,19 +27,6 @@ const writeReport =
   (faultMode === "kafka-broker"
     ? process.env.PI_CLOUD_LIVE_KAFKA_BROKER_RESTART_REPORT
     : process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_REPORT) !== "0";
-
-async function readPrivate(path, maximumBytes, label) {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const metadata = await handle.stat();
-    if (!metadata.isFile() || (metadata.mode & 0o077) !== 0 || metadata.size > maximumBytes) {
-      throw new Error(`${label} is not a private bounded file`);
-    }
-    return await handle.readFile("utf8");
-  } finally {
-    await handle.close();
-  }
-}
 
 const runtimeDirectory = resolve(
   repositoryRoot,

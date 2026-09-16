@@ -808,10 +808,10 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
-    user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
+    user: "1000:${PI_CLOUD_APPLICATION_GID:-1000}"
     <<: *application-security
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777,uid=${PI_CLOUD_APPLICATION_UID:-1000},gid=${PI_CLOUD_APPLICATION_GID:-1000}
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777,uid=1000,gid=${PI_CLOUD_APPLICATION_GID:-1000}
     pids_limit: 128
     mem_limit: 512m
     cpus: 1.5

@@ -81,6 +81,11 @@ host.
 `deploy/production/runtime/.env` with mode `0600`. Edit that file, validate it,
 then recreate affected services with `npm run production:up`.
 
+Application UID/GID are derived from private Secret ownership, not independent
+identity switches. The Volume reader stays on Cube's UID 1000; see the
+[filesystem permission contract](PRODUCTION_DEPLOYMENT.md#filesystem-permissions) before
+changing service identities or mount permissions.
+
 ### Product and identity
 
 | Variable | Default | Meaning |

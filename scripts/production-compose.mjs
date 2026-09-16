@@ -5,6 +5,7 @@ import { isIP } from "node:net";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
+import { unsafeRuntimeFileMode } from "./lib/runtime-file-policy.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const composeFile = resolve(repositoryRoot, "deploy/production/compose.yaml");
@@ -99,10 +100,10 @@ if (
   applicationOwner === undefined ||
   applicationOwner.uid === 0 ||
   applicationSecrets.some(
-    (metadata) =>
+    (metadata, index) =>
       !metadata.isFile() ||
       metadata.isSymbolicLink() ||
-      (metadata.mode & 0o077) !== 0 ||
+      unsafeRuntimeFileMode(metadata, applicationSecretNames[index]) ||
       metadata.uid !== applicationOwner.uid ||
       metadata.gid !== applicationOwner.gid,
   )
@@ -110,7 +111,6 @@ if (
   throw new Error("Production application secrets must share one private non-root owner");
 }
 for (const [relativePath, label] of [
-  ["state/workspace-volume-gateway", "Workspace Volume Gateway"],
   ["state/cube-shared", "Cube shared Workspace"],
   ["state/cube-shared/volume", "Cube shared Workspace volume"],
   ["state/cli-proxy", "CLIProxy"],
@@ -121,7 +121,7 @@ for (const [relativePath, label] of [
   if (
     !state.isDirectory() ||
     state.isSymbolicLink() ||
-    (state.mode & 0o077) !== 0 ||
+    (state.mode & (relativePath === "state/cube-shared/volume" ? 0o027 : 0o077)) !== 0 ||
     state.uid !== applicationOwner.uid ||
     state.gid !== applicationOwner.gid
   ) {
