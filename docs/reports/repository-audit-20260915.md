@@ -13,8 +13,10 @@ the requested rather than effective timeout. Six before-fix adapter cases expose
 the mismatch. Keep the existing cloud ceiling, default to 300 seconds, declare
 the 0.1–300-second range in the Tool schema/description and reject invalid values
 before publication. Share the limits with the wire schema, provider trait and
-Worker transport budget. The 27 adapter tests and runner typecheck pass; repeat
-the greater-than-ten-second real Bash case after Worker rollout.
+Worker transport budget. The 27 adapter tests and runner typecheck pass. After
+rolling Kubernetes Workers to `7d65c22d`, real DeepSeek calls Bash with `sleep 12`
+and no timeout argument; the operation succeeds in 15,038 ms including cold
+activation. The exact arguments/result are checked and its Workspace is purged.
 
 Installer revision discovery incorrectly read `.git/HEAD` and loose branch
 files directly. An owned repository after `pack-refs` reproduces ENOENT; linked

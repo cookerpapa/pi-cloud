@@ -1,6 +1,69 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 const exec = promisify(execFile);
+
+/** One-host deployment inventory for acceptance evidence, not runtime routing. */
+export async function localWorkerTargets(options = {}) {
+  const execute = options.execute ?? exec;
+  const directory =
+    options.runtimeDirectory ??
+    resolve(
+      fileURLToPath(new URL("../..", import.meta.url)),
+      process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
+    );
+  const deployment =
+    options.deployment ??
+    (await readFile(resolve(directory, ".env"), "utf8")).match(
+      /^PI_CLOUD_PI_WORKER_DEPLOYMENT=(.+)$/m,
+    )?.[1] ??
+    "compose";
+  if (deployment === "kubernetes") {
+    const prefix = [
+      "--kubeconfig",
+      resolve(directory, "kubernetes/pi-worker-local.kubeconfig"),
+      "--namespace",
+      "pi-cloud-workers",
+    ];
+    const { stdout } = await execute("kubectl", [
+      ...prefix,
+      "get",
+      "pods",
+      "--selector",
+      "app.kubernetes.io/component=trusted-pi-worker",
+      "--output",
+      "json",
+    ]);
+    return JSON.parse(stdout).items.map((pod) => ({
+      name: pod.metadata.name,
+      image: pod.spec.containers.find((c) => c.name === "pi-worker").image,
+      binary: "kubectl",
+      logArgs: [...prefix, "logs", "--container", "pi-worker", pod.metadata.name],
+      previous:
+        (pod.status.containerStatuses?.find((c) => c.name === "pi-worker")?.restartCount ?? 0) > 0,
+    }));
+  }
+  if (deployment !== "compose")
+    throw new Error("Unsupported Worker deployment for acceptance logs");
+  const { stdout } = await execute("docker", [
+    "ps",
+    "--all",
+    "--filter",
+    "label=com.docker.compose.project=pi-cloud-production",
+    "--format",
+    "{{.Names}} {{.Image}}",
+  ]);
+  return stdout
+    .trim()
+    .split("\n")
+    .filter((line) => /^pi-cloud-production-supervisor-host(?:-\d+)?-\d+ /.test(line))
+    .map((line) => {
+      const [name, image] = line.split(" ");
+      return { name, image, binary: "docker", logArgs: ["logs", name], previous: false };
+    });
+}
 
 /** Public durable activity, not optimistic UI or streamed Tool argument JSON. */
 export function isDurableAgentActivity(event) {
@@ -13,31 +76,30 @@ export function isDurableAgentActivity(event) {
 }
 
 /** One-host acceptance helper. Only copy content-free transport records for the test Runs. */
-export async function readWorkerModelTimings(runIds, sinceMs) {
-  const { stdout } = await exec("docker", [
-    "ps",
-    "--all",
-    "--filter",
-    "label=com.docker.compose.project=pi-cloud-production",
-    "--format",
-    "{{.Names}}",
-  ]);
+export async function readWorkerModelTimings(runIds, sinceMs, options = {}) {
+  const execute = options.execute ?? exec;
+  const targets = await localWorkerTargets(options);
   const ids = new Set(runIds);
   const records = [];
-  for (const container of stdout
-    .trim()
-    .split("\n")
-    .filter((name) => /^pi-cloud-production-supervisor-host(?:-\d+)?-\d+$/.test(name))) {
-    const output = await exec(
-      "docker",
-      ["logs", "--since", new Date(sinceMs - 1000).toISOString(), container],
-      { maxBuffer: 16 * 1024 * 1024 },
-    );
-    for (const line of (output.stdout + "\n" + output.stderr).split("\n")) {
-      if (!line.startsWith('{"timestamp"') || !line.includes('"model.transport.timing"')) continue;
-      const record = JSON.parse(line);
-      if (record.event === "model.transport.timing" && ids.has(record.attributes.runId))
-        records.push(record.attributes);
+  for (const target of targets) {
+    for (const previous of target.previous ? [false, true] : [false]) {
+      const output = await execute(
+        target.binary,
+        [
+          ...target.logArgs,
+          target.binary === "kubectl" ? "--since-time" : "--since",
+          new Date(sinceMs - 1000).toISOString(),
+          ...(previous ? ["--previous"] : []),
+        ],
+        { maxBuffer: 16 * 1024 * 1024 },
+      );
+      for (const line of (output.stdout + "\n" + output.stderr).split("\n")) {
+        if (!line.startsWith('{"timestamp"') || !line.includes('"model.transport.timing"'))
+          continue;
+        const record = JSON.parse(line);
+        if (record.event === "model.transport.timing" && ids.has(record.attributes.runId))
+          records.push(record.attributes);
+      }
     }
   }
   return records.sort((a, b) => a.receivedAtMs - b.receivedAtMs);

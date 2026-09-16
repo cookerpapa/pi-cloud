@@ -10,7 +10,7 @@ import {
   installFirstAssistantTextTiming,
   firstAssistantTextTiming,
 } from "./lib/browser-text-timing.mjs";
-import { readWorkerModelTimings } from "./lib/live-run-timing.mjs";
+import { localWorkerTargets, readWorkerModelTimings } from "./lib/live-run-timing.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -64,10 +64,7 @@ class BrowserCookieFetch {
       headers,
       signal: init.signal ?? AbortSignal.timeout(300_000),
     });
-    const values =
-      typeof response.headers.getSetCookie === "function"
-        ? response.headers.getSetCookie()
-        : [response.headers.get("set-cookie")].filter(Boolean);
+    const values = response.headers.getSetCookie();
     for (const value of values) {
       const match = /(?:^|[,;]\s*)(pi_cloud_session=[^;]*)/.exec(value);
       if (match !== null) this.#cookie = match[1];
@@ -891,6 +888,16 @@ async function releaseFixture(operation, label) {
 }
 try {
   for (const conversation of (await api.listConversations()).conversations) {
+    const isActive = (turn) => ["queued", "running", "cancelling"].includes(turn.state);
+    for (const turn of (await api.getConversation(conversation.sessionId)).turns.filter(isActive)) {
+      if (turn.state !== "cancelling")
+        await api.cancelTurn(conversation.sessionId, turn.turnId, newIdempotencyKey("cancel"));
+    }
+    await waitFor(
+      async () => !(await api.getConversation(conversation.sessionId)).turns.some(isActive),
+      "active fixture cancellation",
+      120_000,
+    );
     const key = newIdempotencyKey("delete");
     await releaseFixture(
       () => api.deleteConversation(conversation.sessionId, key),
@@ -952,7 +959,6 @@ const report = {
           "inspect",
           "pi-cloud-production-web-1",
           "pi-cloud-production-control-plane-1",
-          "pi-cloud-production-supervisor-host-1",
           "pi-cloud-production-tool-broker-1",
         ],
         { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 },
@@ -961,6 +967,9 @@ const report = {
       container.Name.slice(1),
       container.Config.Labels["org.opencontainers.image.revision"],
     ]),
+  ),
+  workerRuntimeImages: Object.fromEntries(
+    (await localWorkerTargets()).map((worker) => [worker.name, worker.image]),
   ),
   checkedAt: new Date().toISOString(),
   account: username,

@@ -1,5 +1,95 @@
 import { describe, expect, it } from "vitest";
-import { isDurableAgentActivity, maximumRunOverlap, runStageTiming } from "./live-run-timing.mjs";
+import {
+  isDurableAgentActivity,
+  localWorkerTargets,
+  maximumRunOverlap,
+  readWorkerModelTimings,
+  runStageTiming,
+} from "./live-run-timing.mjs";
+
+describe("deployed Worker timing inventory", () => {
+  const line = (runId, receivedAtMs) =>
+    JSON.stringify({
+      timestamp: "2026-09-17T00:00:00Z",
+      event: "model.transport.timing",
+      attributes: { runId, receivedAtMs },
+    });
+  it("reads only actual Compose Workers and filters other Run records", async () => {
+    const calls = [];
+    const records = await readWorkerModelTimings(["mine"], 2000, {
+      deployment: "compose",
+      execute: async (binary, args) => {
+        calls.push([binary, args]);
+        if (args[0] === "ps")
+          return {
+            stdout:
+              "pi-cloud-production-supervisor-host-1 worker:one\n" +
+              "pi-cloud-production-control-plane-1 cp:one\n" +
+              "pi-cloud-production-supervisor-host-2-1 worker:two\n",
+          };
+        return {
+          stdout: line("other", 1) + "\n" + line("mine", args[1].includes("-2-1") ? 2 : 3),
+          stderr: "diagnostic only",
+        };
+      },
+    });
+    expect(records).toEqual([
+      { runId: "mine", receivedAtMs: 2 },
+      { runId: "mine", receivedAtMs: 3 },
+    ]);
+    expect(calls).toHaveLength(3);
+    expect(calls.every(([binary]) => binary === "docker")).toBe(true);
+    expect(calls[1][1].slice(-2)).toEqual(["--since", "1970-01-01T00:00:01.000Z"]);
+  });
+  it("reads current and terminated Kubernetes containers without guessing a Compose name", async () => {
+    const calls = [];
+    const records = await readWorkerModelTimings(["mine"], 2000, {
+      deployment: "kubernetes",
+      runtimeDirectory: "/fixture",
+      execute: async (binary, args) => {
+        calls.push([binary, args]);
+        if (args.includes("get"))
+          return {
+            stdout: JSON.stringify({
+              items: [
+                {
+                  metadata: { name: "worker-v1-0" },
+                  spec: { containers: [{ name: "pi-worker", image: "worker:git-sha" }] },
+                  status: { containerStatuses: [{ name: "pi-worker", restartCount: 1 }] },
+                },
+              ],
+            }),
+          };
+        return {
+          stdout: line("mine", args.includes("--previous") ? 1 : 2),
+          stderr: "",
+        };
+      },
+    });
+    expect(records.map((record) => record.receivedAtMs)).toEqual([1, 2]);
+    expect(calls).toHaveLength(3);
+    expect(calls.every(([binary]) => binary === "kubectl")).toBe(true);
+    expect(calls[1][1]).toContain("--since-time");
+    expect(calls[2][1]).toContain("--previous");
+    expect(calls[0][1].slice(0, 4)).toEqual([
+      "--kubeconfig",
+      "/fixture/kubernetes/pi-worker-local.kubeconfig",
+      "--namespace",
+      "pi-cloud-workers",
+    ]);
+  });
+  it("propagates inventory failure instead of producing empty timing evidence", async () => {
+    await expect(
+      localWorkerTargets({
+        deployment: "kubernetes",
+        execute: async () => {
+          throw new Error("cluster unreachable");
+        },
+      }),
+    ).rejects.toThrow("cluster unreachable");
+    await expect(localWorkerTargets({ deployment: "unsupported" })).rejects.toThrow("Unsupported");
+  });
+});
 
 describe("live acceptance timing boundaries", () => {
   it("uses the current public Tool preparation and hosted-search event names", () => {
