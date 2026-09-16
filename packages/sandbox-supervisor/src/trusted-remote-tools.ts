@@ -37,7 +37,6 @@ import {
   type WorkflowExecutor,
 } from "./workflow-transport.ts";
 
-const MAX_PROJECT_INSTRUCTIONS_BYTES = 16 * 1_024;
 const HIDDEN_GIT_CREDENTIAL_FILE = ".git-credentials";
 const UNAVAILABLE_TOOL_CODES = new Set([
   "cubesandbox_tool_result_unknown",
@@ -142,7 +141,6 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   remainingToolCalls: number;
   maximumToolOutputBytes: number;
   workingDirectory: string;
-  projectInstructions?: string;
   traceparent?: string;
   tracestate?: string;
 };
@@ -195,7 +193,6 @@ function validateRuntimeConfiguration(
   const remainingToolCalls = candidate.remainingToolCalls;
   const maximumToolOutputBytes = candidate.maximumToolOutputBytes;
   const workingDirectory = candidate.workingDirectory;
-  const projectInstructions = candidate.projectInstructions;
   const traceparent = candidate.traceparent;
   const tracestate = candidate.tracestate;
   const allowedTools = parseCloudToolCapabilitySnapshot(
@@ -221,14 +218,6 @@ function validateRuntimeConfiguration(
     /[\u0000-\u001f\u007f]/.test(workingDirectory)
   ) {
     throw new Error("Trusted Tool Sandbox identity is invalid");
-  }
-  if (
-    projectInstructions !== undefined &&
-    (Buffer.byteLength(projectInstructions, "utf8") > MAX_PROJECT_INSTRUCTIONS_BYTES ||
-      projectInstructions.includes("\0") ||
-      projectInstructions.trim().length === 0)
-  ) {
-    throw new Error("Trusted project instructions are invalid");
   }
   if (
     traceparent !== undefined &&
@@ -259,7 +248,6 @@ function validateRuntimeConfiguration(
     remainingToolCalls,
     maximumToolOutputBytes,
     workingDirectory,
-    ...(projectInstructions === undefined ? {} : { projectInstructions }),
     ...(traceparent === undefined ? {} : { traceparent }),
     ...(tracestate === undefined ? {} : { tracestate }),
   };
@@ -743,10 +731,7 @@ export function createTrustedRemoteAgentTools(
       "GitLab/GitHub authentication is already configured through Git's credential helper when the user connects a Code Host.",
       "Always use credential-free HTTPS clone and remote URLs. Never read .git-credentials or embed a token in a command, URL, output, file, or Git remote.",
     ].join("\n");
-    if (runtime.projectInstructions === undefined) {
-      return `${basePrompt}\n\n${platformContext}`;
-    }
-    return `${basePrompt}\n\n${platformContext}\n\n## Project instructions (repository-controlled)\n${runtime.projectInstructions}`;
+    return `${basePrompt}\n\n${platformContext}`;
   };
 
   const transformHeaders = async (headers: ProviderHeaders = {}): Promise<ProviderHeaders> => {

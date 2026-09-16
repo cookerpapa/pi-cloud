@@ -268,7 +268,6 @@ try {
     toolRoot: "/workspace",
     environment: environment(evidence.imageRevision),
     workspaceSeed: { kind: "sample_java" },
-    workspaceAttach: { recipeCommands: [] },
   };
   const runTool = async (request) => {
     const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;

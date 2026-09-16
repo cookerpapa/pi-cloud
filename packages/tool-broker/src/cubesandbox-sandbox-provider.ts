@@ -845,7 +845,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       toolRoot,
       environment: activation.handle.environment,
       workspaceSeed: { kind: "sample_java" },
-      workspaceAttach: { recipeCommands: activation.toolchain.recipeCommands },
       webProxy: this.#webProxy,
     };
   }
@@ -896,7 +895,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     );
     const volumeId = workspaceVolumeId(spec.assignment);
     await this.#client.ensureVolume(volumeId, "picloud-posix");
-    const prepared = await this.#workspaceVolumeGateway.prepare({
+    await this.#workspaceVolumeGateway.verify({
       tenantId: spec.assignment.tenantId,
       workspaceId: spec.assignment.workspaceId,
       sessionId: spec.assignment.sessionId,
@@ -972,7 +971,6 @@ export class CubeSandboxProvider implements SandboxProvider {
               toolRoot,
               environment: spec.environment,
               workspaceSeed: spec.workspaceSeed,
-              ...(prepared.attached ? { workspaceAttach: { recipeCommands: [] } } : {}),
               webProxy: this.#webProxy,
             },
           },
@@ -1864,7 +1862,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
     const volumeId = workspaceVolumeId(request);
     await this.#client.ensureVolume(volumeId, "picloud-posix");
-    await this.#workspaceVolumeGateway.prepare({
+    await this.#workspaceVolumeGateway.verify({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
       sessionId: request.requestId,
@@ -1904,7 +1902,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
     const volumeId = workspaceVolumeId(request);
     await this.#client.ensureVolume(volumeId, "picloud-posix");
-    await this.#workspaceVolumeGateway.prepare({
+    await this.#workspaceVolumeGateway.verify({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
       sessionId: request.requestId,
@@ -1945,7 +1943,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
     const volumeId = workspaceVolumeId(request);
     await this.#client.ensureVolume(volumeId, "picloud-posix");
-    await this.#workspaceVolumeGateway.prepare({
+    await this.#workspaceVolumeGateway.verify({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
       sessionId: request.requestId,
@@ -1981,7 +1979,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
     const volumeId = workspaceVolumeId(request);
     await this.#client.ensureVolume(volumeId, "picloud-posix");
-    await this.#workspaceVolumeGateway.prepare({
+    await this.#workspaceVolumeGateway.verify({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
       sessionId: request.requestId,

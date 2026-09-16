@@ -4,6 +4,7 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createPluginVolumeFixture } from "./fixtures/plugin-volume.ts";
 import { describe, expect, it, vi } from "vitest";
 import {
   PersistentVolumeWorkspaceVolumeGateway,
@@ -70,7 +71,8 @@ describe("WorkspaceVolumeDeletionReaper", () => {
 
       const volumeId = workspaceVolumeId({ tenantId: IDS.tenant, workspaceId: IDS.workspace });
       const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
-      await gateway.prepare({
+      await createPluginVolumeFixture(workspaceRoot, { volumeId });
+      await gateway.verify({
         tenantId: IDS.tenant,
         workspaceId: IDS.workspace,
         sessionId: "session-delete",

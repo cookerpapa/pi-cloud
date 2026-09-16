@@ -22,6 +22,17 @@ execFileSync("bash", [
   "-n",
   fileURLToPath(new URL("../deploy/cubesandbox/cube-volume-picloud-posix.sh", import.meta.url)),
 ]);
+// Check the actual Controller image before installing a hook that depends on
+// these POSIX publication tools. A local Broker-image test is not this proof.
+run([
+  "exec",
+  "deployment/cube-master",
+  "--",
+  "bash",
+  "-eu",
+  "-c",
+  "command -v flock sync ln mktemp find od stat realpath; flock --version; sync --version; ln --version",
+]);
 run([
   "patch",
   "configmap",

@@ -83,7 +83,7 @@ export {
   type WorkspaceVolumeGatewayReadFileInput,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayLock,
-  type WorkspaceVolumeGatewayPrepareInput,
+  type WorkspaceVolumeGatewayVerifyInput,
   type WorkspaceVolumeGatewayVolumeIdentity,
   type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway.ts";

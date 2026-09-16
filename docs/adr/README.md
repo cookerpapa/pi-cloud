@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0172](0172-plugin-owned-volume-initialization.md) — one plugin-owned
+   identity publication, read-only Gateway verification and non-destructive seeds.
+
 1. [ADR-0171](0171-shared-volume-subagent-compute.md) — explicit child cwd and
    temporary compute scopes on a shared Volume; user-managed Git worktrees.
 

@@ -1,6 +1,6 @@
 import { MAX_WORKSPACE_BLOB_BYTES, type WorkspaceBlob } from "@pi-cloud/protocol";
-import { createHash } from "node:crypto";
-import { chmod, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, mkdir, open, rm } from "node:fs/promises";
 import { dirname, posix, resolve } from "node:path";
 import { TextDecoder } from "node:util";
 import { WorkspaceRuntimeError } from "./workspace-error.ts";
@@ -182,20 +182,39 @@ export function createWorkspaceSeed(
   return encoded;
 }
 
-export async function restoreWorkspaceSeed(
+export async function initializeWorkspaceSeed(
   workspaceDirectory: string,
   seed: Uint8Array,
 ): Promise<void> {
-  const restored = parseWorkspaceSeed(seed);
-  for (const entry of await readdir(workspaceDirectory)) {
-    if (entry === ".git-credentials") continue;
-    await rm(resolve(workspaceDirectory, entry), { recursive: true, force: true });
-  }
-  for (const file of restored) {
+  const files = parseWorkspaceSeed(seed);
+  for (const file of files) {
     const target = resolve(workspaceDirectory, file.path);
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, file.content, { mode: file.executable ? 0o755 : 0o644 });
-    await chmod(target, file.executable ? 0o755 : 0o644);
+    const temporary = `${target}.seed-${randomUUID()}.tmp`;
+    try {
+      const handle = await open(temporary, "wx", file.executable ? 0o755 : 0o644);
+      try {
+        await handle.writeFile(file.content);
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      try {
+        // Seeds fill missing files. A concurrent user/initializer owns any
+        // existing destination; never truncate it or change its permissions.
+        await link(temporary, target);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+    } finally {
+      await rm(temporary, { force: true });
+    }
+    const parent = await open(dirname(target), "r");
+    try {
+      await parent.sync();
+    } finally {
+      await parent.close();
+    }
   }
 }
 

@@ -12,7 +12,7 @@ import {
   WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH,
   WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH,
   WORKSPACE_VOLUME_GATEWAY_FINALIZE_DELETE_PATH,
-  WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH,
+  WORKSPACE_VOLUME_GATEWAY_VERIFY_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_DISCONNECT_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_LIST_PATH,
@@ -23,7 +23,7 @@ import {
   type WorkspaceVolumeGateway,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayPathInput,
-  type WorkspaceVolumeGatewayPrepareInput,
+  type WorkspaceVolumeGatewayVerifyInput,
   type WorkspaceVolumeGatewayReadFileInput,
   type WorkspaceVolumeDirectoryEntry,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
@@ -46,7 +46,7 @@ export type WorkspaceVolumeGatewayServerOptions = Readonly<{
 }>;
 
 type WorkspaceVolumeGatewayOperation =
-  | "prepare"
+  | "verify"
   | "list_directory"
   | "read_file"
   | "prepare_delete"
@@ -153,10 +153,10 @@ export class WorkspaceVolumeGatewayServer {
         return reply.code(401).send({ error: { code: "unauthorized", retryable: false } });
       }
     });
-    this.#server.post(WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH, async (request, reply) => {
+    this.#server.post(WORKSPACE_VOLUME_GATEWAY_VERIFY_PATH, async (request, reply) => {
       try {
-        return await this.#run("prepare", () =>
-          this.#gateway.prepare(request.body as WorkspaceVolumeGatewayPrepareInput),
+        return await this.#run("verify", () =>
+          this.#gateway.verify(request.body as WorkspaceVolumeGatewayVerifyInput),
         );
       } catch (error: unknown) {
         return this.#failure(reply, error);
@@ -462,10 +462,16 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     }
   }
 
-  prepare(input: WorkspaceVolumeGatewayPrepareInput): Promise<{ attached: boolean }> {
-    return this.#request(WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH, input) as Promise<{
-      attached: boolean;
-    }>;
+  async verify(input: WorkspaceVolumeGatewayVerifyInput): Promise<{ verified: true }> {
+    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_VERIFY_PATH, input);
+    if (!isRecord(response) || response.verified !== true) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_gateway_response_invalid",
+        "Workspace Volume Gateway verification response was invalid",
+        false,
+      );
+    }
+    return { verified: true };
   }
 
   async listDirectory(input: WorkspaceVolumeGatewayPathInput): Promise<{

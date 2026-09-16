@@ -9,7 +9,6 @@ import {
 } from "./protocol-primitives.ts";
 import {
   EnvironmentRuntimeSnapshotSchema,
-  EnvironmentRecipeCommandResultSchema,
   EnvironmentToolchainReportSchema,
 } from "./environment.ts";
 import { CloudToolCapabilitySnapshotSchema, CloudToolNameSchema } from "./tool-capabilities.ts";
@@ -70,13 +69,6 @@ export const ToolWebProxyBootstrapSchema = Type.Object(
         uniqueItems: true,
       }),
     ),
-  },
-  { additionalProperties: false },
-);
-
-const ToolWorkerWorkspaceAttachSchema = Type.Object(
-  {
-    recipeCommands: Type.Array(EnvironmentRecipeCommandResultSchema, { maxItems: 20 }),
   },
   { additionalProperties: false },
 );
@@ -488,7 +480,6 @@ export const ToolWorkerInputSchema = Type.Union([
       environment: EnvironmentRuntimeSnapshotSchema,
       workspaceSeed: AgentWorkspaceSeedSchema,
       webProxy: Type.Optional(ToolWebProxyBootstrapSchema),
-      workspaceAttach: Type.Optional(ToolWorkerWorkspaceAttachSchema),
     },
     { additionalProperties: false },
   ),

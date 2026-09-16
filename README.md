@@ -142,6 +142,9 @@ are node-affine. Deleting a resource preserves its
 conversations but requires rebinding before further work. Browsing reads current
 files; it does not invoke the Agent or replay its log. Raw Tool output is bounded,
 not archived. Cube's MySQL/Redis manage Cube, not PiCloud Runs.
+The Cube Volume Plugin initializes storage; the Volume Gateway only verifies its
+immutable identity and serves current files. No second Workspace initialization
+or per-Run storage head lives in the Gateway.
 
 | Concern | Source of truth / disposable state |
 | --- | --- |

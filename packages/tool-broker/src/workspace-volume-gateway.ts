@@ -8,7 +8,7 @@ export {
   type WorkspaceVolumeGatewayReadFileInput,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayLock,
-  type WorkspaceVolumeGatewayPrepareInput,
+  type WorkspaceVolumeGatewayVerifyInput,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
   type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
   type WorkspaceVolumeGatewayVolumeIdentity,

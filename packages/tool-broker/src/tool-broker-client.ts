@@ -640,7 +640,7 @@ export class ReplicatedToolBrokerClient {
   async release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition: { kind: "keep_warm" } | { kind: "destroy" },
+    disposition: { kind: "detach" } | { kind: "keep_warm" } | { kind: "destroy" },
   ): Promise<ToolSandboxReleaseResponse> {
     try {
       return await this.#ownedClient(activationId).release(activationId, assignment, disposition);

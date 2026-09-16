@@ -13,11 +13,10 @@ export const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{32,4096}$/;
 export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-export const VOLUME_GENERATION_PATTERN = /^[0-9a-f]{64}$/;
 export const VOLUME_METADATA_DIRECTORY = ".pi-cloud-runtime";
 export const VOLUME_WORKSPACE_DIRECTORY = "workspace";
 export const WORKSPACE_GIT_CREDENTIALS_FILE = ".git-credentials";
-export const VOLUME_GENERATION_FILE = "generation";
+export const VOLUME_IDENTITY_FILE = "identity";
 export const VOLUME_DELETE_FILE = "delete-authorized";
 export function volumeDeleteMarker(volumeId: string, generation: string): string {
   return `pi-cloud-volume-delete-v1\n${volumeId}\n${generation}\n`;
@@ -25,7 +24,7 @@ export function volumeDeleteMarker(volumeId: string, generation: string): string
 export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
 export const MAXIMUM_RESPONSE_BYTES = 8 * 1_024 * 1_024;
 
-export const WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH = "/v1/workspaces/prepare";
+export const WORKSPACE_VOLUME_GATEWAY_VERIFY_PATH = "/v1/workspaces/verify";
 export const WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH = "/v1/workspaces/list-directory";
 export const WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH = "/v1/workspaces/read-file";
 export const WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH = "/v1/workspaces/prepare-delete";
@@ -50,7 +49,7 @@ export type WorkspaceVolumeGatewayIdentity = WorkspaceVolumeGatewayVolumeIdentit
     sessionId: string;
   }>;
 
-export type WorkspaceVolumeGatewayPrepareInput = WorkspaceVolumeGatewayIdentity;
+export type WorkspaceVolumeGatewayVerifyInput = WorkspaceVolumeGatewayIdentity;
 
 export type WorkspaceVolumeGatewayPathInput = WorkspaceVolumeGatewayIdentity &
   Readonly<{
@@ -99,7 +98,7 @@ export type WorkspaceVolumeGatewaySourceCredentialDisconnectInput = WorkspaceVol
 
 export interface WorkspaceVolumeGateway {
   checkHealth(): Promise<void>;
-  prepare(input: WorkspaceVolumeGatewayPrepareInput): Promise<{ attached: boolean }>;
+  verify(input: WorkspaceVolumeGatewayVerifyInput): Promise<{ verified: true }>;
   listDirectory(
     input: WorkspaceVolumeGatewayPathInput,
   ): Promise<{ entries: readonly WorkspaceVolumeDirectoryEntry[]; truncated: boolean }>;
@@ -128,7 +127,6 @@ export interface WorkspaceVolumeGateway {
 
 export interface WorkspaceVolumeGatewayLock {
   withLock<T>(volumeId: string, run: () => Promise<T>): Promise<T>;
-  withLocks?<T>(volumeIds: readonly string[], run: () => Promise<T>): Promise<T>;
 }
 
 export type PersistentVolumeWorkspaceVolumeGatewayOptions = Readonly<{
@@ -150,12 +148,9 @@ export type WorkspaceVolumeGitRunner = (
   },
 ) => Promise<{ stdout: string; exitCode: number }>;
 
-export type VolumeState = Readonly<{
-  schemaVersion: 2;
-  tenantId: string;
-  workspaceId: string;
+export type VolumeIdentity = Readonly<{
   volumeId: string;
-  volumeGeneration: string;
+  generation: string;
 }>;
 
 export class WorkspaceVolumeGatewayError extends Error {

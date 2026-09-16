@@ -6,7 +6,7 @@ export {
   createWorkspaceSeed,
   decodeWorkspaceBlob,
   encodeWorkspaceBlob,
-  restoreWorkspaceSeed,
+  initializeWorkspaceSeed,
   parseWorkspaceSeed,
   validateWorkspacePayload,
   type WorkspaceSeedFileContent,

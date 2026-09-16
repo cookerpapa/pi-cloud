@@ -289,6 +289,13 @@ raw Tool output is not archived; the native result contains bounded output and
 truncation guidance. Subagents can create additional temporary compute scopes
 mounting the same Volume; stopping a scope never deletes shared files.
 
+Cube's Controller Volume Plugin initializes storage and atomically publishes one
+immutable Volume identity. The trusted Volume Gateway verifies that identity; it
+never repairs or initializes storage during a read. Guest seed initialization
+only supplies missing files and cannot clear existing user data. A separate
+generation-bound deletion grant still expresses PG-authorized release, not mount
+refcount. See [ADR-0172](adr/0172-plugin-owned-volume-initialization.md).
+
 A user-owned development machine is allocated independently, with a selected
 CPU/memory/disk template. It retains node-affine full-VM state and has its own home
 Volume. Sessions select directories in it. Pause/resume uses Cube state; host

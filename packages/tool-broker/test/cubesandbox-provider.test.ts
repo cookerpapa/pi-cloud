@@ -100,10 +100,9 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
   const volumes = new Set<string>();
   return {
     checkHealth: vi.fn(async () => undefined),
-    prepare: vi.fn(async ({ volumeId }) => {
-      const attached = volumes.has(volumeId);
+    verify: vi.fn(async ({ volumeId }) => {
       volumes.add(volumeId);
-      return { attached };
+      return { verified: true as const };
     }),
     listDirectory: vi.fn(async () => ({
       entries: [
@@ -303,7 +302,6 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       const initialization = (request.initialization ?? {}) as {
         activationId: string;
         environment: typeof environment;
-        workspaceAttach?: { recipeCommands: typeof toolchain.recipeCommands };
       };
       if (request.mode === "initialize") {
         return this.#result({
@@ -317,7 +315,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
             imageRevision: initialization.environment.imageRevision,
             specSha256: initialization.environment.specSha256,
             recipeSha256: initialization.environment.recipeSha256,
-            recipeCommands: initialization.workspaceAttach?.recipeCommands ?? [],
+            recipeCommands: [],
           },
         });
       }
@@ -914,7 +912,7 @@ describe("CubeSandbox Provider contract", () => {
       ),
     ).toBe(true);
     await expect(provider.inspect(restored)).resolves.toMatchObject({ state: "running" });
-    expect(workspaceVolumeGateway.prepare).toHaveBeenLastCalledWith(
+    expect(workspaceVolumeGateway.verify).toHaveBeenLastCalledWith(
       expect.objectContaining({
         tenantId: assignment.tenantId,
         workspaceId: assignment.workspaceId,
@@ -1013,7 +1011,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: upgradedProvider.defaultPolicy,
     });
-    expect(upgradedVolumeGateway.prepare).toHaveBeenCalledWith(
+    expect(upgradedVolumeGateway.verify).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: assignment.tenantId,
         workspaceId: assignment.workspaceId,

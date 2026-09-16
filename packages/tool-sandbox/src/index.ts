@@ -1,6 +1,6 @@
 export {
   ToolWorkerError,
-  prepareToolWorkspace,
+  seedToolWorkspace,
   resolveToolWorkspacePath,
   safeToolEnvironment,
 } from "./tool-worker.ts";

@@ -16,13 +16,16 @@ import {
   type ToolSandboxOperationResponse,
   type ToolWebProxyBootstrap,
 } from "@pi-cloud/protocol";
-import { decodeWorkspaceBlob, restoreWorkspaceSeed } from "@pi-cloud/workspace-runtime";
+import {
+  createWorkspaceSeed,
+  decodeWorkspaceBlob,
+  initializeWorkspaceSeed,
+} from "@pi-cloud/workspace-runtime";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
   access,
-  cp,
   lstat,
   mkdir,
   open,
@@ -1020,22 +1023,26 @@ export function toolOperationFailure(
   };
 }
 
-export async function prepareToolWorkspace(
+export async function seedToolWorkspace(
   workspaceSeed: Parameters<typeof decodeWorkspaceBlob>[0] | undefined,
 ): Promise<void> {
-  const existing = await readdir(TOOL_WORKSPACE_DIRECTORY);
-  if (existing.length !== 0) {
-    throw new ToolWorkerError("workspace_not_empty", "Tool workspace was not empty");
-  }
   if (workspaceSeed === undefined) {
-    for (const entry of await readdir(SAMPLE_JAVA_FIXTURE)) {
-      await cp(join(SAMPLE_JAVA_FIXTURE, entry), join(TOOL_WORKSPACE_DIRECTORY, entry), {
-        recursive: true,
-        preserveTimestamps: true,
+    const files: { path: string; executable: boolean; content: Uint8Array }[] = [];
+    for (const entry of await readdir(SAMPLE_JAVA_FIXTURE, {
+      recursive: true,
+      withFileTypes: true,
+    })) {
+      if (!entry.isFile()) continue;
+      const source = join(entry.parentPath, entry.name);
+      files.push({
+        path: relative(SAMPLE_JAVA_FIXTURE, source),
+        content: await readFile(source),
+        executable: ((await lstat(source)).mode & 0o111) !== 0,
       });
     }
+    await initializeWorkspaceSeed(TOOL_WORKSPACE_DIRECTORY, createWorkspaceSeed(files));
   } else {
-    await restoreWorkspaceSeed(TOOL_WORKSPACE_DIRECTORY, decodeWorkspaceBlob(workspaceSeed));
+    await initializeWorkspaceSeed(TOOL_WORKSPACE_DIRECTORY, decodeWorkspaceBlob(workspaceSeed));
   }
 }
 
@@ -1045,21 +1052,14 @@ export async function initializeToolExecution(
   await selectToolRoot(message.toolRoot);
   safeToolEnvironment(message.webProxy);
   const environment = await validateToolEnvironment(message.environment);
-  if (message.workspaceAttach === undefined) {
-    const seed = message.workspaceSeed.kind === "bundle" ? message.workspaceSeed.bundle : undefined;
-    await prepareToolWorkspace(seed);
-    const recipeWebProxy = dependencyRecipeWebProxy(message.environment, message.webProxy);
-    environment.recipeCommands = await executeEnvironmentRecipe(
-      message.environment,
-      TOOL_WORKSPACE_DIRECTORY,
-      {
-        ...(recipeWebProxy === undefined ? {} : { webProxy: recipeWebProxy }),
-      },
-    );
-  } else {
-    await validateAttachedInitialization();
-    environment.recipeCommands = [...message.workspaceAttach.recipeCommands];
-  }
+  const seed = message.workspaceSeed.kind === "bundle" ? message.workspaceSeed.bundle : undefined;
+  await seedToolWorkspace(seed);
+  const recipeWebProxy = dependencyRecipeWebProxy(message.environment, message.webProxy);
+  environment.recipeCommands = await executeEnvironmentRecipe(
+    message.environment,
+    TOOL_WORKSPACE_DIRECTORY,
+    { ...(recipeWebProxy === undefined ? {} : { webProxy: recipeWebProxy }) },
+  );
   return environment;
 }
 

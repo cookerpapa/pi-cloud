@@ -4,7 +4,6 @@ import { constants } from "node:fs";
 import {
   chmod,
   lstat,
-  mkdir,
   open,
   readFile,
   readdir,
@@ -16,26 +15,24 @@ import {
 import { dirname, join, resolve, sep } from "node:path";
 import { isIPv4 } from "node:net";
 import {
-  VOLUME_GENERATION_FILE,
-  VOLUME_GENERATION_PATTERN,
+  VOLUME_IDENTITY_FILE,
   VOLUME_METADATA_DIRECTORY,
   VOLUME_DELETE_FILE,
   volumeDeleteMarker,
   VOLUME_WORKSPACE_DIRECTORY,
   WORKSPACE_GIT_CREDENTIALS_FILE,
   WorkspaceVolumeGatewayError,
-  isRecord,
   safeRelativeFile,
   validatedAbsoluteDirectory,
   validatedIdentity,
   validatedVolumeIdentity,
   type PersistentVolumeWorkspaceVolumeGatewayOptions,
-  type VolumeState,
+  type VolumeIdentity,
   type WorkspaceVolumeGateway,
   type WorkspaceVolumeGatewayLock,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayPathInput,
-  type WorkspaceVolumeGatewayPrepareInput,
+  type WorkspaceVolumeGatewayVerifyInput,
   type WorkspaceVolumeGatewayReadFileInput,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
   type WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
@@ -302,7 +299,6 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
   }
 
   async checkHealth(): Promise<void> {
-    await mkdir(this.#workspaceRoot, { recursive: true, mode: 0o700 });
     const metadata = await lstat(this.#workspaceRoot);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw new WorkspaceVolumeGatewayError(
@@ -313,68 +309,11 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     }
   }
 
-  async prepare(input: WorkspaceVolumeGatewayPrepareInput): Promise<{ attached: boolean }> {
+  async verify(input: WorkspaceVolumeGatewayVerifyInput): Promise<{ verified: true }> {
     const identity = validatedIdentity(input);
     return this.#withVolumeLock(identity.volumeId, async () => {
-      await this.checkHealth();
-      const directory = await this.#ensureVolumeDirectory(identity.volumeId);
-      await this.#assertNotDeleting(directory);
-      const state = await this.#readState(directory);
-      const generation = await this.#readVolumeGeneration(directory);
-      const workspaceValid = await this.#hasValidWorkspaceDirectory(directory);
-      const entries = await readdir(directory);
-      const pristinePluginWorkspace =
-        state === undefined &&
-        generation === undefined &&
-        workspaceValid &&
-        entries.length === 1 &&
-        entries[0] === VOLUME_WORKSPACE_DIRECTORY &&
-        (await readdir(join(directory, VOLUME_WORKSPACE_DIRECTORY))).length === 0;
-      if (
-        !pristinePluginWorkspace &&
-        (state !== undefined || generation !== undefined || workspaceValid)
-      ) {
-        if (
-          state === undefined ||
-          generation === undefined ||
-          !workspaceValid ||
-          state.tenantId !== identity.tenantId ||
-          state.workspaceId !== identity.workspaceId ||
-          state.volumeId !== identity.volumeId ||
-          state.volumeGeneration !== generation
-        ) {
-          throw new WorkspaceVolumeGatewayError(
-            "workspace_volume_binding_invalid",
-            "Persistent Workspace Volume identity was invalid",
-            false,
-          );
-        }
-        return { attached: true };
-      }
-      if (!pristinePluginWorkspace && entries.length !== 0) {
-        throw new WorkspaceVolumeGatewayError(
-          "workspace_volume_contents_invalid",
-          "Uninitialized Workspace Volume was not empty",
-          false,
-        );
-      }
-      const workspaceDirectory = join(directory, VOLUME_WORKSPACE_DIRECTORY);
-      if (!workspaceValid) await mkdir(workspaceDirectory, { mode: 0o700 });
-      const metadataDirectory = join(directory, VOLUME_METADATA_DIRECTORY);
-      await mkdir(metadataDirectory, { mode: 0o700 });
-      const volumeGeneration = randomBytes(32).toString("hex");
-      await writeFile(join(metadataDirectory, VOLUME_GENERATION_FILE), `${volumeGeneration}\n`, {
-        mode: 0o400,
-        flag: "wx",
-      });
-      await this.#writeState(directory, {
-        schemaVersion: 2,
-        tenantId: identity.tenantId,
-        workspaceId: identity.workspaceId,
-        volumeId: identity.volumeId,
-        volumeGeneration,
-      });
-      return { attached: false };
+      await this.#validatedVolume(identity);
+      return { verified: true };
     });
   }
 
@@ -623,17 +562,11 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       throw error;
     });
     if (metadata === undefined) return undefined;
-    const state = await this.#readState(directory);
-    const generation = await this.#readVolumeGeneration(directory);
+    const stored = await this.#readVolumeIdentity(directory);
     if (
       !metadata.isDirectory() ||
       metadata.isSymbolicLink() ||
-      state === undefined ||
-      generation === undefined ||
-      state.tenantId !== identity.tenantId ||
-      state.workspaceId !== identity.workspaceId ||
-      state.volumeId !== identity.volumeId ||
-      state.volumeGeneration !== generation
+      stored.volumeId !== identity.volumeId
     ) {
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_binding_invalid",
@@ -641,7 +574,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         false,
       );
     }
-    return { directory, marker: volumeDeleteMarker(identity.volumeId, generation) };
+    return { directory, marker: volumeDeleteMarker(identity.volumeId, stored.generation) };
   }
 
   async prepareDelete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ prepared: boolean }> {
@@ -738,19 +671,12 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
   async close(): Promise<void> {}
 
   async #validatedVolume(identity: ReturnType<typeof validatedIdentity>): Promise<string> {
-    // A read/settlement arriving after finalization must not recreate an empty
-    // envelope and strand the deletion retry without its identity metadata.
+    // Only the Cube plugin creates a Volume. Reads never recreate a deleted path.
     const directory = this.#volumeDirectory(identity.volumeId);
     await this.#assertNotDeleting(directory);
-    const state = await this.#readState(directory);
-    const generation = await this.#readVolumeGeneration(directory);
+    const stored = await this.#readVolumeIdentity(directory);
     if (
-      state === undefined ||
-      generation === undefined ||
-      state.tenantId !== identity.tenantId ||
-      state.workspaceId !== identity.workspaceId ||
-      state.volumeId !== identity.volumeId ||
-      state.volumeGeneration !== generation ||
+      stored.volumeId !== identity.volumeId ||
       !(await this.#hasValidWorkspaceDirectory(directory))
     ) {
       throw new WorkspaceVolumeGatewayError(
@@ -759,21 +685,6 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         false,
       );
     }
-    return directory;
-  }
-
-  async #ensureVolumeDirectory(volumeId: string): Promise<string> {
-    const directory = this.#volumeDirectory(volumeId);
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    const metadata = await lstat(directory);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
-      throw new WorkspaceVolumeGatewayError(
-        "workspace_volume_path_invalid",
-        "Workspace Volume path was invalid",
-        false,
-      );
-    }
-    await chmod(directory, 0o700);
     return directory;
   }
 
@@ -798,57 +709,42 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     }
   }
 
-  async #readVolumeGeneration(directory: string): Promise<string | undefined> {
+  async #readVolumeIdentity(directory: string): Promise<VolumeIdentity> {
+    let file: Awaited<ReturnType<typeof open>> | undefined;
     try {
-      const value = (
-        await readFile(join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_GENERATION_FILE), "utf8")
-      ).trim();
-      return VOLUME_GENERATION_PATTERN.test(value) ? value : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  #statePath(directory: string): string {
-    return join(directory, VOLUME_METADATA_DIRECTORY, "volume-state.json");
-  }
-
-  async #writeState(directory: string, state: VolumeState): Promise<void> {
-    const target = this.#statePath(directory);
-    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-    const temporary = `${target}.tmp-${process.pid}-${Date.now()}`;
-    try {
-      await writeFile(temporary, `${JSON.stringify(state)}\n`, { mode: 0o600, flag: "wx" });
-      await rename(temporary, target);
+      for (const path of [directory, join(directory, VOLUME_METADATA_DIRECTORY)]) {
+        const metadata = await lstat(path);
+        if (!metadata.isDirectory() || metadata.isSymbolicLink())
+          throw new WorkspaceVolumeGatewayError(
+            "workspace_volume_path_invalid",
+            "Workspace Volume path was invalid",
+            false,
+          );
+      }
+      file = await open(
+        join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_IDENTITY_FILE),
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+      const metadata = await file.stat();
+      const contents = metadata.isFile() ? (await readAtMost(file, 257)).toString("utf8") : "";
+      const match = /^pi-cloud-volume-v1\n(pcw-[0-9a-f]{48})\n([0-9a-f]{64})\n?$/.exec(contents);
+      if (!match)
+        throw new WorkspaceVolumeGatewayError(
+          "workspace_volume_binding_invalid",
+          "Plugin-created Workspace Volume identity was invalid",
+          false,
+        );
+      return { volumeId: match[1]!, generation: match[2]! };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw new WorkspaceVolumeGatewayError(
+          "workspace_volume_identity_unavailable",
+          "Workspace Volume has no identity published by its Cube plugin",
+          false,
+        );
+      throw error;
     } finally {
-      await rm(temporary, { force: true }).catch(() => undefined);
-    }
-  }
-
-  async #readState(directory: string): Promise<VolumeState | undefined> {
-    try {
-      const value = JSON.parse(await readFile(this.#statePath(directory), "utf8")) as unknown;
-      if (
-        !isRecord(value) ||
-        value.schemaVersion !== 2 ||
-        typeof value.tenantId !== "string" ||
-        typeof value.workspaceId !== "string" ||
-        typeof value.volumeId !== "string" ||
-        typeof value.volumeGeneration !== "string" ||
-        !VOLUME_GENERATION_PATTERN.test(value.volumeGeneration)
-      )
-        return undefined;
-      const expectedKeys = [
-        "schemaVersion",
-        "tenantId",
-        "workspaceId",
-        "volumeId",
-        "volumeGeneration",
-      ];
-      if (Object.keys(value).sort().join("\0") !== expectedKeys.sort().join("\0")) return undefined;
-      return value as unknown as VolumeState;
-    } catch {
-      return undefined;
+      await file?.close();
     }
   }
 

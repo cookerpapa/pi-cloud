@@ -3,6 +3,32 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+ADR-0172 implementation now delegates Volume initialization to Cube's Controller
+plugin, with one immutable identity; Gateway verifies only. Removed the two-file
+initialization state and metadata-presence-driven guest setup. Guest seed
+publication fills missing files without deleting/replacing user bytes. Native
+plugin tests pass for 20 concurrent Creates, SIGKILL before/after publication,
+unchanged Attach/Detach and generation-bound deletion faults. An actual-PG
+regression also prevents retiring another tenant's terminal; model-lookup cleanup
+and encoded machine-capsule bounds have targeted regressions. Full local CI now
+passes: 978 tests, two independent live skips, 26 fault cases and all build/type/
+deployment/security gates. Actual Chrome presentation checks also pass. The first
+run had one Vitest timeout (1,551 ms reported against a 5,000 ms limit); its full
+15-case file passes separately. An isolated clock-step probe reproduces Vitest 3's
+wall-clock completion guard rejecting a 56-ms test. The full rerun observed 20
+host clock steps of +2,859 to +3,565 ms; timesyncd reports a 32-second poll and
+about +2.86-second correction. Original-failure causation was not directly
+instrumented. No timeout/vendor patch or host-clock change was made. This run is
+functional evidence, not a trustworthy latency benchmark; clock remediation is
+an operator prerequisite for new performance acceptance. Two existing moderate
+Vitest dependency findings remain; the high/critical gate passes.
+Old baseline test Volumes were retired through the ordinary deletion API and
+confirmed physically purged. No unpurged Workspace or unreleased machine remains;
+accounts/history are retained. Broker/Gateway are intentionally stopped pending
+the operator's privileged Controller-plugin update and a matching guest/service
+rollout. This slice is not yet deployed or paid-live accepted; the whole audit
+and resume update remain incomplete.
+
 September 16 continuation: a held retirement query reproduced Worker shutdown
 waiting before queue admission stopped. Join that background read only before
 destroying its pool, after stopping admission and draining Runs. The regression
@@ -348,6 +374,11 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 
 | ID | Observation | Status / next proof |
 | --- | --- | --- |
+| STOR-01 | Interrupted Gateway initialization could leave only one of two identity files and permanently reject the Volume | Owner-approved ADR-0172 moves creation to Cube's plugin, publishes one immutable file, and leaves Gateway verification-only. Native 20-way creation, pre/post-publication SIGKILL and deletion grants pass; rollout is pending |
+| STOR-02 | An initializer that observed an empty directory could later clear another Session's newly written files | Remove destructive seed restore and the metadata-presence setup shortcut. Atomic no-overwrite file publication preserves user bytes/permissions in 20 concurrent initializations and the actual guest seeding code |
+| TERM-01 | Releasing one runtime marked every active terminal on the Broker UNKNOWN, including another tenant's | Scope the update to Domain, Broker, Workspace and exact runtime. Real-PG two-tenant regression passes |
+| MODEL-02 | Missing/throwing model lookup escaped Session-authority cleanup after successful preparation | Move lookup inside the existing cleanup scope; both regressions require Session close and model release |
+| VM-01 | Accepted capsule plaintext could encode above the PG/read-side 128 KiB limit | Derive the input bound from the existing encoded limit; exact-bound round trip, oversized input and authentication rejection pass |
 | CP-01 | `main` provides an HTTP Steer backend factory, but runtime composition dropped it; the service used the local WebSocket path instead | Fixed by forwarding application options intact; API regression returned 503 before and 200 after, with no local Worker socket. Live multi-replica retest pending |
 | CP-02 | Admission metrics were dropped by runtime and module composition before reaching the store factory | Fixed wiring; API acceptance and resource-create histograms now observe samples. Same regression failed before, passes after |
 | AUTH-01 | Both authenticators awaited a usage UPDATE on every valid request, even within the five-minute refresh interval | Reproduced redundant SQL calls; use `last_used_at` from the authority read to skip fresh updates, preserving conditional concurrent refresh and uncached revocation checks. 12 auth/gateway tests and type check pass |

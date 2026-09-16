@@ -15,14 +15,16 @@ Kubernetes `RuntimeClass`.
 Browser
    │
 Control Plane
-   │ durable Run
+   │ PostgreSQL ready Run / Session ownership
 Trusted Pi Worker pool
-   │ narrow Tool RPC
+   │ Kafka append
+Session Projector (inside Control Plane)
+   │ ordered Tool command / seal
 Tool Broker
    │ fixed-target CubeAPI/CubeProxy relays
 CubeMaster / Cubelet
    │
-per-RunAttempt KVM Tool microVM
+Workspace compute / user-owned development machine
 ```
 
 Pi, model authentication and conversation state remain in the trusted Worker
@@ -189,7 +191,7 @@ The gate creates real microVMs for isolated tenants and proves:
 - a stable public HTTPS endpoint is reachable;
 - CubeAPI, platform endpoints, private/link-local networks and metadata are denied;
 - path, symlink, output, timeout and process limits;
-- content-hashed Workspace capture;
+- persistent Volume file access without a per-Run archive;
 - cancellation destroys the executing guest;
 - zero remaining PiCloud activation in Cube inventory.
 
@@ -240,17 +242,19 @@ deterministic Workspace-bound physical Volume is a trusted envelope:
 ```text
 picloud-posix-<volume-id>/
 ├── .pi-cloud-runtime/
-│   └── generation
+│   └── identity (Volume ID + storage incarnation)
 └── workspace/
     ├── .git-credentials (hidden origin-scoped Code Host tokens)
     └── .git/ (optional user-managed state created by Agent)
 ```
 
-Cube mounts only `workspace/` at `/workspace`. The trusted Workspace Volume
-Gateway validates that persistent Volume in place and excludes
-`.git-credentials` from source indexes. PostgreSQL
-Fence/CAS publishes only the current Attempt's revision metadata as the
-Workspace head. The guest cannot list or mutate the sibling generation marker.
+Cube's Controller Create hook publishes one immutable identity file before
+returning success. Repeated creation reuses it without overwriting user files.
+Cube mounts only `workspace/` at `/workspace` (or `/home/user` for a development
+machine). The trusted Volume Gateway verifies the plugin-published identity and
+reads current files, hiding `.git-credentials` from browser listings. It does not
+initialize storage or publish a second Workspace head. The guest cannot access
+the sibling identity metadata. See [ADR-0172](../../docs/adr/0172-plugin-owned-volume-initialization.md).
 
 The bundled single-node profile maps
 `runtime/state/cube-shared/volume` at `/data/cube-shared/volume`. A multi-node
@@ -258,9 +262,9 @@ operator must replace that local path with the same POSIX shared filesystem on
 CubeMaster, every Cubelet and the Volume Gateway. That filesystem must provide
 the replication and backup policy required by the deployment's recovery claim.
 
-Conversation state and lightweight Workspace settlement metadata commit through
-PostgreSQL. The Volume gateway records a settlement revision without indexing,
-archiving or pausing the file tree. Elastic failures retire their disposable VM;
+PostgreSQL owns conversation state, resource ownership and deletion intent;
+the Volume owns file bytes. There is no per-Run file index, archive or settlement
+revision. Elastic failures retire their disposable VM;
 owned development machines survive Tool/Run failures and Broker replacement.
 
 Explicit release first persists a generation-bound deletion marker beside the
@@ -270,18 +274,22 @@ The unprivileged gateway then atomically retires/removes its own envelope before
 PostgreSQL records the purge. Neither a permission error nor a process crash
 discards deletion authority halfway through cleanup.
 
-For an existing installation, update the Controller hook **before** upgrading
-the Broker/Volume gateway:
+This storage-format change is not a rolling upgrade. Stop new resource creation,
+drain execution, and explicitly retire identified old-layout test Volumes before
+updating the Controller hook. Do not delete real user data or mix old/new storage
+contracts. Then deploy matching Broker, Volume Gateway and guest template code:
 
 ```bash
 sudo "$(command -v node)" scripts/update-cube-volume-plugin.mjs
 ```
 
-This rolls only CubeMaster, not Cubelets or user VMs. Fresh installations include
-the hook automatically. Custom/shared storage must grant the Cube Controller
+The script rolls only CubeMaster, not Cubelets or user VMs; guest code is baked
+into the Tool template and requires a new template build. Fresh installations
+include the hook automatically. Custom/shared storage must grant the Cube Controller
 the storage permissions needed to unlink files of all Guest UIDs; do not run the
 general-purpose Volume gateway as root. The contract can be tested against an
-isolated temporary mount with `node --import tsx scripts/run-volume-deletion-contract-check.mjs`.
+isolated temporary mount with `node scripts/run-volume-initialization-contract-check.mjs`
+and `node --import tsx scripts/run-volume-deletion-contract-check.mjs`.
 
 Operational inspection and teardown remain available even if the source
 revision has advanced beyond the last registered template:

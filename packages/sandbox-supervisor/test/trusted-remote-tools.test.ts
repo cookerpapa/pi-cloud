@@ -123,10 +123,7 @@ describe("trusted remote Agent tools", () => {
   });
 
   it("exposes governed Tools and model hooks to the SessionStorage Harness", async () => {
-    const runtime = createTrustedRemoteAgentTools({
-      ...BASE_CONFIGURATION,
-      projectInstructions: "Keep the durable Harness boundary explicit.",
-    });
+    const runtime = createTrustedRemoteAgentTools(BASE_CONFIGURATION);
     expect(runtime.tools.map((tool) => tool.name).sort()).toEqual([
       "bash",
       "edit",
@@ -138,7 +135,7 @@ describe("trusted remote Agent tools", () => {
       "nohup command </dev/null >server.log 2>&1 &",
     );
     await expect(runtime.systemPrompt("Base prompt")).resolves.toContain(
-      "Keep the durable Harness boundary explicit.",
+      "Current working directory: /workspace",
     );
     await expect(runtime.transformContext([])).resolves.toEqual([]);
     const headers = { "x-test": "yes" };
@@ -404,13 +401,11 @@ describe("trusted remote Agent tools", () => {
       const runtime = createTrustedRemoteAgentTools({
         ...BASE_CONFIGURATION,
         remainingToolCalls: 1,
-
-        projectInstructions: "Prefer deterministic tests.",
       });
       const registered = runtime.tools;
       const prompt = await runtime.systemPrompt("Current working directory: /trusted");
       expect(prompt).toContain("Current working directory: /workspace");
-      expect(prompt).toContain("Prefer deterministic tests.");
+      expect(prompt).not.toContain("/trusted");
       await runtime.transformContext([]);
       const providerHeaders = await runtime.transformHeaders();
       expect(providerHeaders.traceparent).toBe(BASE_CONFIGURATION.traceparent);

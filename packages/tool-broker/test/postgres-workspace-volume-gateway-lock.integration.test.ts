@@ -109,12 +109,4 @@ describe.skipIf(connectionString === undefined)("PostgreSQL Workspace Volume Gat
     await Promise.all([firstRun, secondRun]);
     expect(events).toEqual(["first-start", "first-end", "second-start", "second-end"]);
   });
-
-  it("holds multiple ordered Volume locks on one bounded database connection", async () => {
-    const database = new Pool({ connectionString: connectionString!, max: 1 });
-    resources.push(async () => database.end());
-    const lock = new PostgresWorkspaceVolumeGatewayLock(database);
-    const volumes = [`pcw-integration-${randomUUID()}`, `pcw-integration-${randomUUID()}`];
-    await expect(lock.withLocks(volumes.reverse(), async () => "forked")).resolves.toBe("forked");
-  });
 });

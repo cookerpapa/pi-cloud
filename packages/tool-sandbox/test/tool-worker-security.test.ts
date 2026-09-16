@@ -30,6 +30,7 @@ import {
   readWorkspaceFileRange,
   resolveToolWorkspacePath,
   safeToolEnvironment,
+  seedToolWorkspace,
   ToolWorkerError,
   validateAttachedWorkspaceRoot,
   waitForShellProcess,
@@ -243,7 +244,6 @@ describe("credential-free Tool Sandbox worker", () => {
       activationId: "10000000-0000-4000-8000-000000000001",
       toolRoot: workspace,
       environment: recipeEnvironment(DEFAULT_PROJECT_ENVIRONMENT_RECIPE),
-      workspaceAttach: { recipeCommands: [] },
     };
     try {
       await expect(
@@ -258,6 +258,36 @@ describe("credential-free Tool Sandbox worker", () => {
       await expect(
         attachToolExecution({ ...base, workspaceSeed: { kind: "sample_java" } }),
       ).resolves.toBeUndefined();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("seeds a persistent directory without clearing files written by another Session", async () => {
+    const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-seed-safe-"));
+    try {
+      await attachToolExecution({
+        toolWorkerProtocolVersion: 1,
+        type: "worker.initialize",
+        activationId: "10000000-0000-4000-8000-000000000001",
+        toolRoot: workspace,
+        environment: recipeEnvironment(DEFAULT_PROJECT_ENVIRONMENT_RECIPE),
+        workspaceSeed: { kind: "bundle", bundle: encodeWorkspaceBlob(createWorkspaceSeed([])) },
+      });
+      await writeFile(resolve(workspace, "keep.txt"), "another Session owns this");
+      await seedToolWorkspace(encodeWorkspaceBlob(createWorkspaceSeed([])));
+      await seedToolWorkspace(
+        encodeWorkspaceBlob(
+          createWorkspaceSeed([
+            { path: "keep.txt", content: Buffer.from("must not overwrite"), executable: false },
+            { path: "new.txt", content: Buffer.from("new file"), executable: false },
+          ]),
+        ),
+      );
+      expect(await readFile(resolve(workspace, "keep.txt"), "utf8")).toBe(
+        "another Session owns this",
+      );
+      expect(await readFile(resolve(workspace, "new.txt"), "utf8")).toBe("new file");
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

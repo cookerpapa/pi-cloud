@@ -128,6 +128,18 @@ jobs:
       - name: Prepare evidence directory
         run: mkdir -p evidence
 
+      - name: Set up Node.js for Volume contract tests
+        if: matrix.image == 'tool-broker'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+
+      - name: Verify native Volume initialization and process-loss recovery
+        if: matrix.image == 'tool-broker'
+        run: node scripts/run-volume-initialization-contract-check.mjs | tee evidence/volume-initialization.json
+        env:
+          PI_CLOUD_TEST_IMAGE: pi-cloud/tool-broker:ci
+
       - name: Generate image SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:

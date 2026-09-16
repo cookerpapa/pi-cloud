@@ -1,4 +1,4 @@
-import { createWorkspaceSeed, restoreWorkspaceSeed } from "@pi-cloud/workspace-runtime";
+import { createWorkspaceSeed, initializeWorkspaceSeed } from "@pi-cloud/workspace-runtime";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -37,14 +37,14 @@ describe("bounded Workspace seed bundle", () => {
     ]);
 
     const target = await temporaryDirectory("pi-cloud-workspace-target-");
-    await writeFile(resolve(target, "stale.txt"), "remove me");
-    await restoreWorkspaceSeed(target, snapshot);
+    await writeFile(resolve(target, "stale.txt"), "keep me");
+    await initializeWorkspaceSeed(target, snapshot);
 
     await expect(readFile(resolve(target, ".git/HEAD"), "utf8")).resolves.toBe(
       "ref: refs/heads/main\n",
     );
     await expect(readFile(resolve(target, "src/App.java"), "utf8")).resolves.toBe("class App {}\n");
-    await expect(readFile(resolve(target, "stale.txt"), "utf8")).rejects.toThrow();
+    await expect(readFile(resolve(target, "stale.txt"), "utf8")).resolves.toBe("keep me");
     expect((await stat(resolve(target, "test.sh"))).mode & 0o111).not.toBe(0);
   });
 
@@ -65,7 +65,7 @@ describe("bounded Workspace seed bundle", () => {
     );
     const target = await temporaryDirectory("pi-cloud-workspace-reject-");
     await writeFile(resolve(target, "keep.txt"), "still here");
-    await expect(restoreWorkspaceSeed(target, malicious)).rejects.toThrow(/entry|path/i);
+    await expect(initializeWorkspaceSeed(target, malicious)).rejects.toThrow(/entry|path/i);
     await expect(readFile(resolve(target, "keep.txt"), "utf8")).resolves.toBe("still here");
   });
 });

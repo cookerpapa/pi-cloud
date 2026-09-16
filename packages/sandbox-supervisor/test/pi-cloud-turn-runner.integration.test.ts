@@ -111,6 +111,60 @@ function deferred<T>() {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it.each(["missing", "throws"])(
+    "releases Session authority when model lookup %s",
+    async (failure) => {
+      const config: PiModelRuntimeConfig = {
+        provider: "pi-cloud-fake",
+        modelId: "pi-cloud-fake",
+        baseUrl: "http://unused.invalid",
+        api: "openai-completions",
+        apiKey: FAKE_MODEL_API_KEY,
+      };
+      const pool = new PiModelRuntimePool(0);
+      const lease = await pool.acquire(config);
+      const release = vi.fn(lease.release);
+      const lookup = vi.spyOn(lease.runtime, "getModel").mockImplementation(() => {
+        if (failure === "throws") throw new Error("model lookup failed");
+        return undefined;
+      });
+      const acquire = vi
+        .spyOn(pool, "acquire")
+        .mockResolvedValue({ runtime: lease.runtime, release });
+      const authority = new TestAuthority();
+      const session = new Session(
+        new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
+      );
+      const runner = new PiCloudTurnRunner({
+        resolveModelRuntime: () => config,
+        modelRuntimePool: pool,
+        openSession: async () => ({ session, lane: "main", authority }),
+        sandboxContinuity: {
+          continuityId: "unused",
+          continuity: "cold_restore",
+          environmentSha256: "a".repeat(64),
+          workspaceBindingSha256: "b".repeat(64),
+          toolPolicySha256: "c".repeat(64),
+        },
+        createAgentTools: () => {
+          throw new Error("Model lookup must precede Tools");
+        },
+      });
+      try {
+        await expect(runner.run(command, () => {})).rejects.toThrow(
+          failure === "missing" ? "Configured model is unavailable" : "model lookup failed",
+        );
+        expect(release).toHaveBeenCalledTimes(1);
+        expect(authority.closed).toBe(true);
+      } finally {
+        acquire.mockRestore();
+        lookup.mockRestore();
+        lease.release();
+        await authority.close();
+      }
+    },
+  );
+
   it.each(["model", "session"])(
     "settles queued controls when %s preparation fails",
     async (phase) => {

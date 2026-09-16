@@ -14,7 +14,7 @@ import {
   type ToolSandboxCreateRequest,
   type ToolSandboxCreateResponse,
 } from "@pi-cloud/protocol";
-import { encodeWorkspaceBlob, parseWorkspaceSeed } from "@pi-cloud/workspace-runtime";
+import { encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { SupervisorTurnRunner } from "./agent-run-supervisor.ts";
@@ -48,25 +48,6 @@ import {
   createCloudStepContext,
   createCloudTurnContext,
 } from "./cloud-context.ts";
-
-const MAX_PROJECT_INSTRUCTIONS_BYTES = 16 * 1_024;
-
-export function projectInstructionsFromWorkspaceSeed(
-  seed: Uint8Array | undefined,
-): string | undefined {
-  if (seed === undefined) return undefined;
-  const file = parseWorkspaceSeed(seed).find((entry) => entry.path === "AGENTS.md");
-  if (file === undefined) return undefined;
-  const bounded = file.content.subarray(0, MAX_PROJECT_INSTRUCTIONS_BYTES);
-  let content: string;
-  try {
-    content = new TextDecoder("utf-8", { fatal: true }).decode(bounded);
-  } catch {
-    return undefined;
-  }
-  if (content.includes("\0") || content.trim().length === 0) return undefined;
-  return `${content}${file.content.byteLength > bounded.byteLength ? "\n[AGENTS.md truncated by PiCloud]" : ""}`;
-}
 
 export interface ToolBrokerBoundary {
   refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
@@ -325,7 +306,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         );
       }
     }
-    const projectInstructions = projectInstructionsFromWorkspaceSeed(workspaceSeed);
     const cloudTurn = createCloudTurnContext(command);
     const toolFree = cloudTurn.context.tools.names.length === 0;
 
@@ -716,7 +696,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             remainingToolCalls: command.payload.budgets?.remainingToolCalls ?? 128,
             maximumToolOutputBytes: command.payload.budgets?.maximumToolOutputBytes ?? 65_536,
             workingDirectory: command.payload.workingDirectory,
-            ...(projectInstructions === undefined ? {} : { projectInstructions }),
             ...(downstreamTrace === undefined
               ? {}
               : {
@@ -737,7 +716,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                   hasDelegationTool
                     ? [
                         "You may delegate substantial independent work through the subagent Tool. " +
-                          "Use stable workflow keys, keep one shared Workspace writer, and inspect every returned result. " +
+                          "Use stable workflow keys and inspect every returned result. " +
                           "When a Child pauses for input, answer it through subagent_supervisor.",
                       ]
                     : [],

@@ -1,3 +1,4 @@
+import { createPluginVolumeFixture } from "./fixtures/plugin-volume.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import {
@@ -63,6 +64,40 @@ function identity(sessionId: string) {
 }
 
 describe("PersistentVolumeWorkspaceVolumeGateway", () => {
+  it("rejects another Volume's identity even at the requested storage path", async () => {
+    const workspaceRoot = await root();
+    const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const input = identity("swapped-volume");
+    const other = { ...input, workspaceId: "other-workspace" };
+    other.volumeId = workspaceVolumeId(other);
+    await createPluginVolumeFixture(workspaceRoot, other);
+    await rename(
+      join(workspaceRoot, `picloud-posix-${other.volumeId}`),
+      join(workspaceRoot, `picloud-posix-${input.volumeId}`),
+    );
+    await expect(gateway.verify(input)).rejects.toMatchObject({
+      code: "workspace_volume_binding_invalid",
+    });
+  });
+
+  it("never creates or repairs storage while verifying an unpublished plugin identity", async () => {
+    const workspaceRoot = await root();
+    const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const input = identity("verification-only");
+    await expect(gateway.verify(input)).rejects.toMatchObject({
+      code: "workspace_volume_identity_unavailable",
+    });
+    expect(await readdir(workspaceRoot)).toEqual([]);
+    const workspace = join(workspaceRoot, `picloud-posix-${input.volumeId}`, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, "keep.txt"), "existing data");
+    await expect(gateway.verify(input)).rejects.toMatchObject({
+      code: "workspace_volume_identity_unavailable",
+    });
+    expect(await readdir(join(workspace, ".."))).toEqual(["workspace"]);
+    expect(await readFile(join(workspace, "keep.txt"), "utf8")).toBe("existing data");
+  });
+
   it("does not hold the Volume lock while waiting for a remote credential probe", async () => {
     const workspaceRoot = await root();
     let entered!: () => void, release!: () => void;
@@ -81,7 +116,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       },
     });
     const scope = identity("nonblocking-credential-probe");
-    await mover.prepare(scope);
+    await createPluginVolumeFixture(workspaceRoot, scope);
+    await mover.verify(scope);
     await mover.authorizeSourceCredential({
       ...scope,
       requestId: randomUUID(),
@@ -118,7 +154,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const scope = identity("growing-file");
-    await mover.prepare(scope);
+    await createPluginVolumeFixture(workspaceRoot, scope);
+    await mover.verify(scope);
     const target = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace", "code.txt");
     await writeFile(target, "small");
     const original = fileSystem.open;
@@ -149,7 +186,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       outside = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const scope = identity("file-parent-race");
-    await mover.prepare(scope);
+    await createPluginVolumeFixture(workspaceRoot, scope);
+    await mover.verify(scope);
     const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
     const directory = join(workspace, "src"),
       target = join(directory, "code.txt");
@@ -182,7 +220,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       outside = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const scope = identity("directory-parent-race");
-    await mover.prepare(scope);
+    await createPluginVolumeFixture(workspaceRoot, scope);
+    await mover.verify(scope);
     const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
     const directory = join(workspace, "src");
     await mkdir(directory);
@@ -229,7 +268,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const scope = identity("untrusted-git-config");
     try {
-      await mover.prepare(scope);
+      await createPluginVolumeFixture(workspaceRoot, scope);
+      await mover.verify(scope);
       const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
       await exec("/usr/bin/git", ["init"], { cwd: workspace });
       await exec("/usr/bin/git", ["config", "core.sshCommand", helper], { cwd: workspace });
@@ -269,7 +309,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       outside = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const scope = identity("credential-symlink");
-    await mover.prepare(scope);
+    await createPluginVolumeFixture(workspaceRoot, scope);
+    await mover.verify(scope);
     const credential = join(outside, "fixture-credentials");
     await writeFile(credential, "https://oauth2:owned-test-token@gitlab.invalid/\n");
     const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
@@ -288,7 +329,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const scope = identity("directory-race");
-    await mover.prepare(scope);
+    await createPluginVolumeFixture(workspaceRoot, scope);
+    await mover.verify(scope);
     const directory = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
     const vanished = join(directory, "vanished.tmp");
     await writeFile(vanished, "gone");
@@ -332,7 +374,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       outside = await root();
     const scope = identity("subagent-directory");
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
-    await mover.prepare(scope);
+    await createPluginVolumeFixture(workspaceRoot, scope);
+    await mover.verify(scope);
     const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
     const path = Array.from({ length: 6 }, (_, i) => `task-${i}-${"x".repeat(90)}`).join("/");
     await mkdir(join(workspace, path), { recursive: true });
@@ -370,7 +413,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const first = identity("session-a");
 
-    await expect(mover.prepare(first)).resolves.toEqual({ attached: false });
+    await createPluginVolumeFixture(workspaceRoot, first);
+    await expect(mover.verify(first)).resolves.toEqual({ verified: true });
     const volumeRoot = join(workspaceRoot, `picloud-posix-${first.volumeId}`);
     const workspace = join(volumeRoot, "workspace");
     await mkdir(join(workspace, "src"), { recursive: true });
@@ -379,7 +423,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
     const replacement = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const second = identity("session-b");
-    await expect(replacement.prepare(second)).resolves.toEqual({ attached: true });
+    await expect(replacement.verify(second)).resolves.toEqual({ verified: true });
     const expectedSha256 = createHash("sha256").update("two\n").digest("hex");
     await expect(replacement.listDirectory({ ...second, rootPath: "", path: "" })).resolves.toEqual(
       {
@@ -403,15 +447,16 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await expect(readFile(join(workspace, "src", "answer.txt"), "utf8")).resolves.toBe("two\n");
   });
 
-  it("binds the empty workspace directory created by the Cube Volume Plugin", async () => {
+  it("verifies the identity and directory created by the Cube Volume Plugin", async () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const first = identity("session-plugin-created");
     const volumeRoot = join(workspaceRoot, `picloud-posix-${first.volumeId}`);
     await mkdir(join(volumeRoot, "workspace"), { recursive: true, mode: 0o700 });
 
-    await expect(mover.prepare(first)).resolves.toEqual({ attached: false });
-    await expect(mover.prepare(first)).resolves.toEqual({ attached: true });
+    await createPluginVolumeFixture(workspaceRoot, first);
+    await expect(mover.verify(first)).resolves.toEqual({ verified: true });
+    await expect(mover.verify(first)).resolves.toEqual({ verified: true });
   });
 
   it("hides platform and Git metadata and rejects a symlink escape", async () => {
@@ -419,7 +464,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const outside = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const first = identity("session-browser-boundary");
-    await mover.prepare(first);
+    await createPluginVolumeFixture(workspaceRoot, first);
+    await mover.verify(first);
     const workspace = join(workspaceRoot, `picloud-posix-${first.volumeId}`, "workspace");
     await Promise.all([
       mkdir(join(workspace, ".git")),
@@ -453,8 +499,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await mkdir(workspace, { recursive: true, mode: 0o700 });
     await writeFile(join(workspace, "untrusted.txt"), "not pristine\n");
 
-    await expect(mover.prepare(first)).rejects.toMatchObject({
-      code: "workspace_volume_binding_invalid",
+    await expect(mover.verify(first)).rejects.toMatchObject({
+      code: "workspace_volume_identity_unavailable",
     });
   });
 
@@ -462,8 +508,9 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const first = identity("session-a");
-    await mover.prepare(first);
-    await expect(mover.prepare({ ...first, tenantId: "tenant-other" })).rejects.toMatchObject({
+    await createPluginVolumeFixture(workspaceRoot, first);
+    await mover.verify(first);
+    await expect(mover.verify({ ...first, tenantId: "tenant-other" })).rejects.toMatchObject({
       code: "workspace_data_binding_invalid",
     });
   });
@@ -472,12 +519,13 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const first = identity("session-delete");
-    await mover.prepare(first);
+    await createPluginVolumeFixture(workspaceRoot, first);
+    await mover.verify(first);
     const volumeRoot = join(workspaceRoot, `picloud-posix-${first.volumeId}`);
     await writeFile(join(volumeRoot, "workspace", "private.txt"), "delete me\n");
 
     await expect(mover.prepareDelete(first)).resolves.toEqual({ prepared: true });
-    await expect(mover.prepare(first)).rejects.toMatchObject({ code: "workspace_volume_deleting" });
+    await expect(mover.verify(first)).rejects.toMatchObject({ code: "workspace_volume_deleting" });
     await expect(mover.finalizeDelete(first)).rejects.toMatchObject({
       code: "workspace_volume_delete_pending",
     });
@@ -498,7 +546,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const input = identity("retired-metadata");
     const directory = join(workspaceRoot, `picloud-posix-${input.volumeId}`);
-    await mover.prepare(input);
+    await createPluginVolumeFixture(workspaceRoot, input);
+    await mover.verify(input);
     await mover.prepareDelete(input);
     await rm(join(directory, "workspace"), { recursive: true });
     await rename(directory, `${directory}.deleted`);
@@ -547,7 +596,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       },
     });
     const bound = identity("source-control-request");
-    await mover.prepare(bound);
+    await createPluginVolumeFixture(workspaceRoot, bound);
+    await mover.verify(bound);
     await expect(
       mover.preflightSourceCredential!({
         ...bound,
@@ -639,8 +689,8 @@ describe("HttpWorkspaceVolumeGateway", () => {
     }));
     const gateway: WorkspaceVolumeGateway = {
       async checkHealth() {},
-      async prepare() {
-        return { attached: true };
+      async verify() {
+        return { verified: true };
       },
       async listDirectory() {
         return { entries, truncated: false };

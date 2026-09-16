@@ -34,6 +34,8 @@ const docker = (script) =>
       "--read-only",
       "--cap-drop=ALL",
       "--cap-add=DAC_OVERRIDE",
+      "--cap-add=CHOWN",
+      "--cap-add=FOWNER",
       "--user",
       "0:0",
       "--mount",
@@ -55,7 +57,8 @@ const destroy = `/bin/bash /plugin --op destroy --volume-id ${input.volumeId}`;
 const pluginRejected = (error) =>
   error.code === 1 && error.stdout?.includes("POSIX volume operation failed");
 try {
-  await gateway.prepare(input);
+  await docker(`/bin/bash /plugin --op create --volume-id ${input.volumeId}`);
+  await gateway.verify(input);
   await writeFile(join(storage, "canary"), "DO_NOT_DELETE");
   await docker(
     `mkdir -p '${remote}/workspace/root-owned'; printf protected > '${remote}/workspace/root-owned/secret'; ln -s /data/cube-shared/volume/canary '${remote}/workspace/root-owned/outside'; chmod 000 '${remote}/workspace/root-owned/secret' '${remote}/workspace/root-owned'; printf first > '${remote}/workspace/first'`,
@@ -63,10 +66,16 @@ try {
   await assert.rejects(docker(destroy), pluginRejected);
   await gateway.prepareDelete(input);
   const authorizedMarker = await readFile(marker, "utf8");
-  await assert.rejects(gateway.prepare(input), { code: "workspace_volume_deleting" });
+  await assert.rejects(gateway.verify(input), { code: "workspace_volume_deleting" });
   await assert.rejects(gateway.finalizeDelete(input), { code: "workspace_volume_delete_pending" });
   await chmod(marker, 0o600);
   await writeFile(marker, authorizedMarker.replace(input.volumeId, "pcw-" + "f".repeat(48)));
+  await assert.rejects(docker(destroy), pluginRejected);
+  await gateway.prepareDelete(input);
+  const generation = authorizedMarker.trimEnd().split("\n").at(-1);
+  const wrongGeneration = `${generation[0] === "0" ? "1" : "0"}${generation.slice(1)}`;
+  await chmod(marker, 0o600);
+  await writeFile(marker, authorizedMarker.replace(generation, wrongGeneration));
   await assert.rejects(docker(destroy), pluginRejected);
   await gateway.prepareDelete(input);
   await writeFile(
@@ -86,7 +95,7 @@ try {
   await gateway.finalizeDelete(input);
   await assert.rejects(lstat(local), { code: "ENOENT" });
   console.log(
-    "volume_deletion_contract_passed root_000_files missing_marker wrong_generation partial_failure lost_ack symlink_canary finalization",
+    "volume_deletion_contract_passed root_000_files missing_marker wrong_volume wrong_generation partial_failure lost_ack symlink_canary finalization",
   );
 } finally {
   // This explicit path belongs solely to this invocation's disposable fixture.

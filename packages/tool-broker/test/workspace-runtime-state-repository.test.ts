@@ -14,6 +14,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostgresWorkspaceRuntimeStateRepository } from "../src/index.ts";
 import { CubePersistentCapsuleCodec } from "../src/cube-persistent-capsule.ts";
 import { PostgresToolCommandRoutes } from "../src/tool-command-routes.ts";
+import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
+import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 
 const resources: Array<() => Promise<void>> = [];
 
@@ -64,6 +66,83 @@ async function fixtureDatabase() {
 }
 
 describe("PostgreSQL Tool Broker ownership", () => {
+  it("retires only the terminal attached to the released runtime, not another tenant's terminal", async () => {
+    const database = await fixtureDatabase();
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
+      database,
+      sandboxDomainId: "sandbox-domain-0001",
+      instanceId: randomUUID(),
+      ownerBaseUrl: "http://terminal-scope.test:4300",
+    });
+    resources.push(async () => repository.close());
+    await repository.start();
+    const terminals: Array<{
+      terminalId: string;
+      runtimeId: string;
+      workspaceId: string;
+      sessionId: string;
+    }> = [];
+    for (const label of ["target", "other-tenant"]) {
+      const tenant = await createPrivateTenant(database, {
+        slug: `terminal-${label}`,
+        ownerDisplayName: label,
+      });
+      const store = new ControlPlaneStore({
+        database,
+        tenantId: tenant.tenantId,
+        defaultModelProfileId: tenant.defaultModelProfileId,
+      });
+      const project = await store.createProject({ name: label, source: { kind: "empty" } });
+      const session = await store.createSession(
+        project.projectId,
+        project.workspaceId,
+        label,
+        "elastic",
+      );
+      const terminalId = randomUUID();
+      const reservation = await repository.reserveTerminal({
+        terminalId,
+        tenantId: tenant.tenantId,
+        userId: tenant.ownerUserId,
+        projectId: project.projectId,
+        workspaceId: project.workspaceId,
+        sessionId: session.sessionId,
+      });
+      expect(reservation.status).toBe("reserved");
+      const runtimeId = `runtime-${label}`;
+      await database
+        .updateTable("workspace_terminal_sessions")
+        .set({ state: "active", runtime_id: runtimeId, runtime_name: runtimeId })
+        .where("terminal_id", "=", terminalId)
+        .execute();
+      terminals.push({
+        terminalId,
+        runtimeId,
+        workspaceId: project.workspaceId,
+        sessionId: session.sessionId,
+      });
+    }
+    const target = terminals[0]!;
+    await repository.releaseRuntimeAssignment({
+      containerId: target.runtimeId,
+      containerName: target.runtimeId,
+      supervisorId: "retired-worker",
+      bootId: randomUUID(),
+      sandboxId: randomUUID(),
+      runId: randomUUID(),
+      workspaceId: target.workspaceId,
+      sessionId: target.sessionId,
+      turnId: randomUUID(),
+      executionReference: createExecutionReference(randomUUID(), randomUUID(), 1),
+    });
+    const rows = await database
+      .selectFrom("workspace_terminal_sessions")
+      .select(["terminal_id", "state"])
+      .execute();
+    expect(rows.find((row) => row.terminal_id === target.terminalId)?.state).toBe("unknown");
+    expect(rows.find((row) => row.terminal_id === terminals[1]!.terminalId)?.state).toBe("active");
+  }, 30_000);
+
   it("resolves a Workspace through its Sandbox Domain without ambiguous columns", async () => {
     const database = await fixtureDatabase();
 

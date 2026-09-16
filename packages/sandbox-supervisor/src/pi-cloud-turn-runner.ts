@@ -530,11 +530,10 @@ export class PiCloudTurnRunner {
     const sessionHandle = sessionPrepared.value;
     try {
       const modelRuntime = modelRuntimeLease.runtime;
-      const model = modelRuntime.getModel(config.provider, config.modelId);
-      if (model === undefined)
-        throw new PiTurnError("invalid_model_runtime", "Configured model is unavailable", false);
-
       try {
+        const model = modelRuntime.getModel(config.provider, config.modelId);
+        if (model === undefined)
+          throw new PiTurnError("invalid_model_runtime", "Configured model is unavailable", false);
         const eventFactory = createPiCloudEventFactory(
           {
             sessionId: command.payload.sessionId,

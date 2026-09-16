@@ -2,6 +2,11 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 const CAPSULE_PREFIX = "pcvm1_";
 const AAD = Buffer.from("pi-cloud:cube-persistent-machine:v1", "utf8");
+const MAX_CAPSULE_BYTES = 128 * 1_024;
+// PostgreSQL bounds the encoded value, including nonce/tag Base64url and separators.
+const MAX_STATE_BYTES = Math.floor(
+  ((MAX_CAPSULE_BYTES - CAPSULE_PREFIX.length - 16 - 22 - 2) * 3) / 4,
+);
 
 function base64Url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
@@ -22,7 +27,7 @@ export class CubePersistentCapsuleCodec {
 
   seal(value: unknown): string {
     const plaintext = Buffer.from(JSON.stringify(value), "utf8");
-    if (plaintext.byteLength < 2 || plaintext.byteLength > 96 * 1_024) {
+    if (plaintext.byteLength < 2 || plaintext.byteLength > MAX_STATE_BYTES) {
       throw new Error("Persistent machine state exceeded its byte boundary");
     }
     const nonce = randomBytes(12);
@@ -34,7 +39,7 @@ export class CubePersistentCapsuleCodec {
 
   open(value: string): unknown {
     const match = /^pcvm1_([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/.exec(value);
-    if (match === null || value.length > 131_072) {
+    if (match === null || value.length > MAX_CAPSULE_BYTES) {
       throw new Error("Persistent machine capsule was invalid");
     }
     const nonce = decode(match[1]!);

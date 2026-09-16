@@ -2088,7 +2088,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           lease_expires_at: now,
           updated_at: now,
         })
+        .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("owner_instance_id", "=", this.#instanceId)
+        .where("workspace_id", "=", assignment.workspaceId)
+        .where("runtime_id", "=", assignment.containerId)
         .where("state", "in", ["reserved", "materializing", "active", "cleaning"])
         .execute();
     });

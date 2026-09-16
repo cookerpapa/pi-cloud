@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [ ] ADR-0172: plugin-owned atomic Volume identity and non-overwriting guest
+      seeding. Native concurrent/SIGKILL tests pass locally; matching Controller,
+      Gateway and guest-template rollout plus live acceptance remain required.
+
 - [x] ADR-0170: use locked PostgreSQL decision time for execution leases,
       conservative monotonic observations and non-overlapping Broker renewal.
       Real lock-wait/skew regressions and paid multi-round/family recovery pass.
