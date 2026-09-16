@@ -3,6 +3,22 @@
 Base: `1d7d7f8f`. Status: **in progress; not a full-review completion claim**.
 Prior reports are historical evidence, not a substitute for this campaign.
 
+September 16 continuation: a held retirement query reproduced Worker shutdown
+waiting before queue admission stopped. Join that background read only before
+destroying its pool, after stopping admission and draining Runs. The regression
+also requires shutdown to wait for that query before returning. Full local CI
+on `611df027` plus this repair passes: 972 tests, two independent live skips,
+26 fault cases, build/types/docs/install/Helm/security gates. The existing moderate
+Vitest findings remain; no high/critical dependency finding is ignored.
+
+DeepSeek capability diagnosis corrected an overly broad initial conclusion:
+Flash's current Responses route ignores even forced native search; Pro Responses
+and Flash Anthropic return real search events/results. Direct and gateway probes
+agree. The owner chose to hide Flash rather than change protocols or add a search
+tool. `611df027` is deployed to CP/Web; 219 related tests and actual Chrome
+catalog/selection/reload checks pass. Stored Flash selections are not rewritten.
+Worker remains `4dc24f4e`; the drain repair has not yet been deployed.
+
 The latest Tool-adapter slice reproduces a Hosted Search ordering defect:
 two trailing searches sharing a preceding anchor replayed in reverse order.
 Append within that search group instead; anchored/trailing and idempotent replay
@@ -11,8 +27,11 @@ caller. Removed it, its emulated Extension API/handler registry and unreachable
 CLI Bash hook; kept the same Pi factories, policy/Step checks, commands, result
 reads and output handling. Ported tests to the actual Agent Tool factory and
 renamed the files to `trusted-remote-tools`. One duplicate registration-only test
-is removed. Supervisor tests pass (112); types pass. Deployment, paid coding and
-search/provider handoff acceptance for this slice are still pending.
+is removed. Supervisor tests pass (112); types pass. Worker `4dc24f4e` completed
+two paid coding Turns (seven Tools), plus GPT native search and GPT/DeepSeek
+context-recall handoff. The Flash search acceptance failed because that native
+Responses capability is no longer served; it is not reported as a passing test.
+The final combined audit matrix remains pending.
 
 MEM-02 continuation: completed command/control/family bookkeeping is released
 by a minute-period Worker maintenance task only after PG proves terminal Run,

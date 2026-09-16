@@ -739,7 +739,6 @@ export class PiWorkerRuntime {
     // polling first and give the active Runs their bounded settlement window;
     // owner replacement still uses stopCurrentBoot(), which revokes immediately.
     for (const close of [
-      () => this.#assignmentReaping,
       () => this.#runWorker?.stop(),
       () => this.#runSupervisor?.waitUntilAssignmentsSettled(),
       () => this.#modelPermits?.close(),
@@ -751,6 +750,8 @@ export class PiWorkerRuntime {
       () =>
         this.#ownsSessionMutationProducer ? this.#sessionMutationProducer?.close() : undefined,
       () => (this.#ownsExecutionLogs ? this.#activeExecutionLogs?.close?.() : undefined),
+      // A retirement read must finish before its pool closes, not before queue admission stops.
+      () => this.#assignmentReaping,
       () => (this.#ownsDatabase ? this.#database.destroy() : undefined),
     ]) {
       try {

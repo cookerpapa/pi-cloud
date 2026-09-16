@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
-import type { AgentTurnScenarioContext } from "@pi-cloud/sandbox-supervisor";
+import { AgentRunSupervisor, type AgentTurnScenarioContext } from "@pi-cloud/sandbox-supervisor";
 import { AcceptedFactPublisherFailedError } from "@pi-cloud/runtime-core/accepted-fact";
 import {
   PostgresSupervisorCredentialAuthorizer,
@@ -258,7 +258,12 @@ describe("PiWorkerRuntime", () => {
     ).toThrow("Pi SDK Worker database pool must be between 2 and 64 connections");
     let first: PiWorkerRuntime | undefined;
     let second: PiWorkerRuntime | undefined;
+    const reaping = Promise.withResolvers<number>();
+    const reapSpy = vi
+      .spyOn(AgentRunSupervisor.prototype, "reapSettled")
+      .mockReturnValueOnce(reaping.promise);
     try {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
       first = new PiWorkerRuntime({
         config: baseConfig,
         database,
@@ -288,11 +293,18 @@ describe("PiWorkerRuntime", () => {
       expect(first.state).toBe("ready");
       const firstIdentity = first.identity!;
       expect(gateway.activeConnectionCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(reapSpy).toHaveBeenCalledTimes(1);
       drainGate = new Promise<void>((resolve) => {
         releaseDrain = resolve;
       });
-      const closing = first.close();
-      await vi.waitFor(() => expect(stopCalls).toBeGreaterThan(0));
+      let closed = false;
+      const closing = first.close().then(() => {
+        closed = true;
+      });
+      expect(stopCalls, "Cache retirement must not delay stopping queue admission").toBeGreaterThan(
+        0,
+      );
       let stopProofReturned = false;
       const proof = fetch(`${managementAddresses[0]}${SUPERVISOR_MANAGEMENT_PATH}`, {
         method: "POST",
@@ -317,7 +329,13 @@ describe("PiWorkerRuntime", () => {
       releaseDrain!();
       drainGate = undefined;
       expect(await proof).toMatchObject({ type: "owner.stopped", identity: firstIdentity });
+      expect(closed, "Close must still join the retirement read before disposing its pool").toBe(
+        false,
+      );
+      reaping.resolve(0);
       await closing;
+      vi.useRealTimers();
+      reapSpy.mockRestore();
       expect(prematureProof, "Draining is not confirmation that the execution stopped").toBe(false);
       expect(first.state).toBe("stopped");
 
@@ -524,13 +542,18 @@ describe("PiWorkerRuntime", () => {
         }
       }
     } finally {
+      reaping.resolve(0);
       releaseDrain?.();
       listenSpy.mockRestore();
       await second?.close().catch(() => undefined);
       await first?.close().catch(() => undefined);
+      vi.useRealTimers();
+      reapSpy.mockRestore();
       gateway.shutdown();
       await server.close();
       await rm(root, { recursive: true, force: true });
     }
-  }, 10_000);
+    // Two boots plus dependency-failure and teardown gates; each injected wait
+    // remains individually bounded rather than retrying a slow test wholesale.
+  }, 30_000);
 });
