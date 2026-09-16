@@ -937,10 +937,7 @@ ExecStartPost=${k3sServiceRouteHelperPath}
 }
 
 async function repositoryHead(path) {
-  const head = (await readFile(join(path, ".git/HEAD"), "utf8")).trim();
-  const value = head.startsWith("ref: ")
-    ? (await readFile(join(path, ".git", head.slice("ref: ".length)), "utf8")).trim()
-    : head;
+  const value = await capture("git", ["-C", path, "rev-parse", "--verify", "HEAD"]);
   if (!/^[a-f0-9]{40}$/.test(value)) {
     throw new Error(`Repository HEAD is invalid: ${path}`);
   }

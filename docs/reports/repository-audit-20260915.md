@@ -7,6 +7,12 @@ Application-source reading is now covered by the private hash/range ledger;
 tests, migrations, deployment/scripts and documents still have remaining reads.
 This is coverage of reading, not a claim that every combination is already tested.
 
+Installer revision discovery incorrectly read `.git/HEAD` and loose branch
+files directly. An owned repository after `pack-refs` reproduces ENOENT; linked
+worktrees also use a `.git` file instead of a directory. Use `git rev-parse` and
+validate its result. The real Git fixture covers both layouts and is removed
+after each test; no application storage/protocol changes are involved.
+
 Portability testing reproduces a UID mismatch: Cube creates private Volume data
 as UID 1000, while Compose ran its trusted reader as the host operator UID. The
 owned filesystem fixture succeeds at UID 1000 and fails with EACCES at UID 12001.

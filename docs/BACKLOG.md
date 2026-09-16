@@ -232,6 +232,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Operations
 
+- [x] Resolve installer source revisions through Git rather than assuming loose
+      refs or a `.git` directory. Packed-ref and linked-worktree fixtures pass.
+
 - [x] Keep the local Volume reader on Cube's UID 1000 while granting only its
       three required Secrets through the operator group. Non-1000 operator
       filesystem probes and shared permission/installer contracts pass.
