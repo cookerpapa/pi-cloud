@@ -1,12 +1,12 @@
 # CubeSandbox KVM acceptance
 
 - Tested: 2026-09-17, single-host WSL/KVM
-- Test source: `5163fa02`; guest template: `985a8508`
+- Test source: `ebd7c39a`; guest template: `6e92e850`
 - Upstream: TencentCloud/CubeSandbox v0.6.0
 - Profile: single-node local KVM validation
 - Tenant microVMs: 2
-- First / second Tool latency: 2,017 ms / 1,824 ms
-- Total gate time: 17,011 ms
+- First / second tenant's cold Tool latency: 1,972 ms / 4,730 ms
+- Main gate time: 19,840 ms
 - Guest kernel distinct from host: true
 - Forbidden platform endpoints denied: 3
 - Public Internet reachable through the configured policy: true
@@ -14,7 +14,8 @@
 - Background process survived a Run boundary within warm TTL: true
 - Revoked Tool authority rejected: true
 - Dispatched cancellation retained UNKNOWN; explicit stop retired its binding
-- Remaining **test-owned** microVMs: 0; three test Volumes deleted
+- Remaining **test-owned** microVMs: 0; three main-gate Volumes deleted
+- Additional real-VM deletion-failure case: 2,862 ms, one additional Volume removed
 
 The gate created real Cubelet/CubeShim KVM guests for two independent tenant
 assignments, wrote different canaries to the same Workspace path, verified each
@@ -34,6 +35,12 @@ VM absence before the three native Volumes and their directories were removed.
 Earlier repetitions failed on the stale proxy and obsolete test expectations;
 only the complete final repetition above is counted as passed. No model tokens
 were consumed by this direct Provider gate.
+
+The additional case rejects one owned VM's DELETE request, verifies close fails
+without reporting released, and confirms the VM still exists through a fresh
+native client. It then deletes that VM and Volume. This is controlled transport
+failure around a real Cube, not a PG outage: the isolated ownership fixture is
+in-memory.
 
 This report proves the local KVM integration and isolation path. It does not
 claim multi-node availability, node-loss recovery, rolling upgrades, production

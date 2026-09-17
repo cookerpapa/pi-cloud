@@ -5,27 +5,16 @@ architecture belongs here. Implemented contracts live in the
 [architecture](ARCHITECTURE.md), [current ADRs](adr/README.md) and versioned
 acceptance evidence. Superseded plans and completed-task journals remain in Git.
 
-## Current repository audit
-
-- [ ] Finish the [September 15 audit](reports/repository-audit-20260915.md):
-      maintained code/document coverage, paid combination tests, browser paths,
-      failure/load checks, scoped cleanup, then resume v11 update. Reading coverage
-      does not imply every runtime combination has passed.
-- [x] Resolve measured eight-Run admission latency: prepared SELECTs and the
-      ready predicate remove excess planning; CPU-only 1.5→4→1.5→4 trials identify
-      database throttling. Both 4-CPU cohorts keep internal time below provider
-      time for all requests; larger capacity remains a separate validation.
-- [x] Align the opt-in Cube gate with proxy egress, elastic TTL and native Volume
-      lifecycle. Real KVM, cancellation UNKNOWN and controlled deletion failure
-      pass; cleanup errors fail the gate rather than becoming accepted evidence.
-- [ ] Complete fresh Compaction/provider/Worker/Subagent combinations and
-      process failures on the final revision, including owner-routed SSE.
-- [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
-      distinct from intentional stale-snapshot replacement. The focused browser
-      check now fails unexpected connection counts instead of only logging them.
+The [September 15–17 audit](reports/repository-audit-20260915.md) is complete:
+maintained-file review, paid combination tests, process faults, browser paths,
+latency analysis, isolated load gates and scoped cleanup. Its bounded measurements
+do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
+      distinct from intentional stale-snapshot replacement. The final 200 browser
+      checks have no unexpected openings; that does not identify the old root cause.
 - [ ] Prove a Cube-native scoped launch-generation contract before claiming
       physical execution fencing. [Research](reports/cube-execution-generation-study.md)
       is complete; ordinary shell effects remain potentially UNKNOWN.

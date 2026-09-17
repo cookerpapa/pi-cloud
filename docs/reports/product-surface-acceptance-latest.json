@@ -1,52 +1,43 @@
 {
   "accepted": true,
-  "piCloudRevision": "c5455d5b07882ad8e98dfc05559ca1a743d7f6e3",
-  "checkedAt": "2026-09-16T08:32:03.969Z",
+  "cleanupCompleted": true,
+  "piCloudRevision": "c96ccc58537b50c8d58caad2bb1ec4d96b386dd9",
+  "checkedAt": "2026-09-17T01:20:08.504Z",
   "browserCookieAuth": true,
-  "timingValidity": {
-    "accepted": false,
-    "reason": "WSL monotonic time runs slower than independent Windows/NTP observations and wall time steps periodically. The following latencyMs values are raw diagnostics, excluded from performance acceptance. Functional assertions remain valid."
-  },
   "latencyMs": {
     "pureChat": {
-      "accepted": 51,
-      "firstDurableActivity": 4378,
+      "accepted": 24,
+      "firstDurableActivity": 3894,
       "firstToolStarted": null,
-      "firstAssistantText": 4378,
-      "settled": 4884,
+      "firstAssistantText": 3894,
+      "settled": 4358,
       "stages": {
-        "firstModelDispatchMs": 492.201,
-        "providerRouteToFirstTextMs": 3870.858,
-        "parsedTextToPiEventMs": 0.941,
-        "piEventToClientTextMs": 13.721,
+        "firstModelDispatchMs": 301.899,
+        "providerRouteToFirstTextMs": 3579.592,
+        "parsedTextToPiEventMs": 0.509,
+        "piEventToClientTextMs": 12.423,
         "firstTextFollowsEarlierSampling": false,
-        "nonProviderTtftMs": 506.863,
-        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; host clock validation failed"
+        "nonProviderTtftMs": 314.831,
+        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; requires synchronized host clocks"
       }
     },
     "coding": {
-      "accepted": 28,
-      "firstDurableActivity": 3058,
-      "firstToolStarted": 4540,
-      "firstAssistantText": 11811,
-      "settled": 12454,
+      "accepted": 16,
+      "firstDurableActivity": 2367,
+      "firstToolStarted": 4231,
+      "firstAssistantText": 12428,
+      "settled": 13261,
       "stages": {
-        "firstModelDispatchMs": 230.421,
-        "providerRouteToFirstTextMs": 1783.951,
-        "parsedTextToPiEventMs": -0.309,
-        "piEventToClientTextMs": 11.711,
+        "firstModelDispatchMs": 142.355,
+        "providerRouteToFirstTextMs": 2255.989,
+        "parsedTextToPiEventMs": 0.682,
+        "piEventToClientTextMs": 10.575,
         "firstTextFollowsEarlierSampling": true,
-        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; host clock validation failed"
+        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; requires synchronized host clocks"
       }
     }
   },
   "treeForkPrune": true,
-  "nativeAssistantUsage": {
-    "input": 46794,
-    "cacheRead": 140288,
-    "output": 729,
-    "scope": "Twelve fixture Runs: eleven completed and one deliberately cancelled; excludes unrecorded provider usage."
-  },
   "workspaceBrowserEntries": 1,
   "boundedToolOutputWithoutArchive": true,
   "terminal": true,

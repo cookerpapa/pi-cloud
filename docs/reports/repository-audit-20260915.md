@@ -1,8 +1,7 @@
 # Repository audit and system validation — 2026-09-15
 
-Base: `1d7d7f8f`. **In progress; resume v11 is not yet updated.**
-This is the current work record, not a full-audit completion claim. Repeated
-deployment journals and superseded measurements remain in Git history.
+Base: `1d7d7f8f`. **Completed September 17.**
+Repeated deployment journals and superseded measurements remain in Git history.
 
 ## Current state
 
@@ -22,6 +21,8 @@ deployment journals and superseded measurements remain in Git history.
   not counted as passes; their real infrastructure gates run separately.
   Browser presentation and the ten-Dockerfile build-context gate also pass.
   Two moderate development-only Vitest advisories remain.
+- Remote CI passes `c96ccc58`, including the additional startup and product
+  cleanup checks. The generated evidence updates do not change runtime source.
 - After the owner replenished DeepSeek, the post-repair long-context/provider/
   child combination passes. The preceding balance failure remains a failed
   attempt, not part of that passing repetition.
@@ -41,7 +42,7 @@ deployment journals and superseded measurements remain in Git history.
 | MODEL-03 | CLIProxyAPI generic compatibility metadata mapped Pi's `reasoning.effort=none` to low and lacked max | Declare reviewed native levels from the shared catalog, without protocol/credential changes. Configuration regression and real Pro off=0 reasoning tokens / max=49 pass |
 | MODEL-04 | A thinking-only output-limited answer looked like an empty successful reply | Show an output-limit notice, not invented text or automatic Tool replay. Rendering and real Chrome checks pass |
 | MODEL-05 | After Compaction, Pi AI's structural estimator treated PiCloud's hosted-search block as a function call and read missing `name.length` | Actual failed context reproduces the stack. Existing model adapter passes only native blocks to Pi Models; the payload hook still replays original same-model search items. Stored history is unchanged. Two before-fail/after-pass HTTP cases, 21 Runner/search tests and types pass; rollout and complete paid long repetition pass, including post-search parent and child Compaction |
-| MODEL-06 | Provider 402 appeared as generic retryable model failure | Safe non-retryable balance diagnostic; reproduced before and 23 adapter tests pass afterward. Deployment/real UI repeat pending |
+| MODEL-06 | Provider 402 appeared as generic retryable model failure | Safe non-retryable balance diagnostic; original paid failure and 23 adapter tests establish the boundary. Deployed healthy calls and browser tests pass after recharge; no second real balance exhaustion was induced |
 | PRIV-01 | A raw provider/runtime error was interpolated into the model-visible abort marker | Both direct/native append fixtures reproduce a synthetic diagnostic token and internal Attempt text reaching the next model context. Use one fixed minimal interruption fact; keep detailed diagnostics in operation records. All 44 Harness cases and types pass. Matched rollout and paid K8s SIGKILL repetition confirm the exact visible prefix and minimal interruption fact survive recovery. No actual credential disclosure was established |
 | DB-02 | A real dual-API Steer collided with cold Tool binding registration and returned two HTTP 500s | PG records two deadlocks: Steer's `FOR UPDATE` blocks the binding INSERT's Run/Session foreign-key `KEY SHARE` locks. No referenced key changes during Steer. Use `FOR NO KEY UPDATE`, preserving state exclusion without blocking FK references. A current-schema real-PG regression fails before and passes after; five existing reply races/types pass. Matched rollout and paid dual-API/Projector-loss repetition pass without extra retry/query/authority layers. This follows [PG row-lock compatibility](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS) |
 | LIFE-15 | Provider shutdown ignored VM-deletion failures and later transport errors overwrote them | Aggregate failures; Broker cannot mark released without confirmed cleanup. Four regressions and 79 Provider/Broker/RPC tests pass. Real owned Cube plus controlled DELETE rejection confirms the VM survives and cleanup is not reported successful; fresh-client cleanup removes it and its Volume. The ownership fixture in this isolated gate is in-memory, not a real PG outage |
@@ -71,7 +72,7 @@ sampling request, never subtracted from an entire multi-Step coding Run.
 | Preview isolation | Two simultaneous Sessions each serve 3000/8000; one adds 5173 without disturbing four existing routes. Five routes have correct isolated content |
 | Repaired long combination, Workers `3abf8184`, test `e228f00c` | 13 algorithm Turns, two coding Compactions (113,161→21,120; 111,682→22,615), then recall/coding/cross-Worker/GPT medium-Fast search/Pro high-noFast search/branch+fresh children all pass. Four Compactions total including later parent/child. Independent Web Terminal runs 370 tests, exit 0. Native assistant usage: 257 requests, 538,030 input / 16,135,296 cache / 183,727 output tokens, excluding Compaction/retry usage. API/Volume cleanup and credential revocation confirmed |
 | Multi-tenant, Workers `7fa41328` | Four tenants × two Sessions × two rounds: 16/16 complete, peak eight overlapping Runs, eight marker restores and foreign-tenant denials, no leaks or unexpected Tools; both Workers handle eight Runs. First text p50/p95 1,842/2,326 ms; queue 450/1,020 ms. Usage input/cache/output 1,906/30,720/2,389 |
-| Direct Cube gate, test `5163fa02`, template `985a8508` | Real KVM/PTY, two-tenant canaries, persistent Volume reattach, warm PID/service across a Run boundary within TTL, stale authority rejection, confirmed-start cancellation UNKNOWN. 17,011 ms total; all test VMs absent and three Volumes deleted |
+| Direct Cube gate, test `ebd7c39a`, template `6e92e850` | Real KVM/PTY, two-tenant canaries, Volume reattach, warm PID/service across a Run boundary within TTL, stale authority rejection and confirmed-start cancellation UNKNOWN. Main gate 19,840 ms, plus real VM DELETE-failure case 2,862 ms; all test VMs absent and four Volumes deleted |
 | CP SIGKILL, GPT Luna / K8s Workers `0a54573e` | Worker boots unchanged; 48 records appended after CP stopped, one Attempt completes; exact visible prefix and live/canonical equality preserved. 42,867 ms including outage; API resources cleaned |
 | Kafka broker SIGKILL, same runtime | One Attempt completes with unchanged prefix and canonical/live equality; broker healthy afterward. 48,993 ms including failure/recovery; API resources cleaned |
 | Two API/Projector replicas, `6e92e850` | Concurrent same-key Steer returns the same identity/time and creates one consumed native input. Kill the actual partition-owner replica: two snapshots, same Worker processes, one Attempt, exactly one file append and matching live/canonical result. Temporary replica removed; test Session/Workspace and credentials cleaned |
@@ -171,14 +172,14 @@ Worker/provider/Compaction and fresh/branch child combinations.
 | DIAG-02 | Cube readiness timeout and guest initialization rejection discarded the useful inner failure | Regressions reproduce both lost causes. Retain readiness and structured initialization causes without changing public error codes or enabling creation retries. Wrong initialization input in the first live fixture was rejected and cleaned; the corrected fixture passes |
 | TEST-04 | Development-machine acceptance inherited the bootstrap tenant's fake model for its first two coding Turns | Live DB inspection identified both deterministic Turns; excluded from paid coding. Explicit DeepSeek selection and GPT Subagent rerun passes all six real-model Runs, with provider/usage verified in native PG entries |
 | TEST-05 | Bash/background test used a 750 ms wall-clock bound against a one-second child sleep | Full real-PG regression under image-build load observed 790 ms and failed this test only. Replace timing inference with a gated child: Tool must settle before the test releases the background process; confirm it then continues. All 14 Tool tests and the fixed-revision full rerun pass |
-| DEV-02 | Machine lifecycle descriptor requires an active Domain and non-failed environment profile, including release | Reproduced both rejected releases via the actual Broker HTTP fixture. Separate owner-scoped existing-machine routing from new provisioning descriptor; directory operations and release no longer depend on allocation policy. Cross-user checks remain. Local regression slice passes; deployed Cube repetition pending |
+| DEV-02 | Machine lifecycle descriptor requires an active Domain and non-failed environment profile, including release | Reproduced both rejected releases via the Broker HTTP fixture. Separate owner-scoped existing-machine routing from provisioning descriptors. Cross-user checks remain. Negative allocation-policy cases pass in that fixture; deployed machine/Broker-restart/release and the 93-control browser repetition separately pass |
 | DEV-03 | Broker concurrent duplicate machine provisioning created two provider runtimes; simultaneous first task bindings chose the same binding ID | Both reproduced. Reuse existing per-Workspace provisioning critical section for machine provisioning/binding creation, not Tool execution. Concurrent parent/child bindings now stay distinct and reuse one runtime |
 | DEV-04 | Machine handle entered the ready map before durable state publication; failure destroyed the VM but retained that handle | Reproduced phantom active count. Publish PG state before installing the ready handle; clean failure no longer advertises a destroyed runtime |
 | TOOL-01 | A reused persistent-machine binding could return a cached response belonging to an earlier Attempt | Reproduced by delaying old-body retirement while rebinding. Match the reader Attempt as well as binding ID; no PG round trip added |
 | CLEAN-01 | Binding-local `materializing` was never written; old terminal-capacity transfer path had no reachable caller | Removed the field/branches/transfer method and its dead-feature test. Physical runtime materialization and concurrent Tool execution remain |
 | CLEAN-02 | Native Lane exposed its private reader despite having no caller; one Fork test name incorrectly implied no payload copy anywhere | Removed unused getter; clarified shared query projection versus self-contained Fork log. No persistence semantics changed |
 | CLEAN-11 | The Bash test-command classifier had no runtime caller, only its own tests and exports | Remove 188 lines of classifier, its three self-only tests and both exports. Actual Bash execution, outputs and user-invoked tests are unchanged. Current Subagent ADR wording also drops the retired Workspace-copy path and uses the shared family lease |
-| CLEAN-03 | UI still polled Run state as a second pre-stream completion fallback | Removed UI poll/action. Live Snake exposed that removing the API client's `getRun` also broke diagnostic/acceptance callers outside the Web package; restored that required read-only method and added an API contract test, without reintroducing UI polling. Full live matrix remains pending |
+| CLEAN-03 | UI still polled Run state as a second pre-stream completion fallback | Removed UI poll/action. Live Snake exposed that removing the API client's `getRun` also broke diagnostic/acceptance callers outside the Web package; retained that required read-only method and added an API contract test without restoring UI polling. The real browser, Snake, refresh and clean-state product repetitions pass |
 | TEST-01 | Chrome helper selected a random fixed port, risking another browser under concurrent tests; debugger disconnect could strand pending RPCs | Use Chrome's allocated port from its own private profile, reject pending calls on disconnect, and report cleanup failures. Browser presentation/composer regression passes; two actual concurrent Chrome processes pass 26 target-isolation checks and both private profiles are removed |
 | TEST-06 | Chrome helper accepted new RPCs after its disconnect handler had already cleared pending calls | Actual owned target-close test hung until its five-second failure guard. Reject calls on a non-open socket and remove/reject failed sends. Both in-flight and post-disconnect calls now reject; the complete existing Chrome presentation suite also passes |
 | DEPLOY-03 | `.dockerignore` re-included entire parent directories, including runtime files and local dependency/build caches | Scratch Docker export with harmless canaries reproduced 11 excluded paths entering the context. Replace broad directory exceptions with build-input patterns and nested local-file exclusions. All 463 COPY inputs remain available, all 14 excluded paths are absent. No evidence of actual credential disclosure; follows [Docker build-context semantics](https://docs.docker.com/build/concepts/context/#dockerignore-files) |
@@ -204,54 +205,79 @@ Worker/provider/Compaction and fresh/branch child combinations.
 | LIFE-13 | Projector teardown stopped after the first failed drain, leaving its other owned resources open | Simulated relay/consumer failures reproduced skipped closures. Share one shutdown promise, attempt every owned close in dependency order and report all errors. Seven Projector handoff cases pass, including concurrent close; runtime types pass. No execution/order semantics changed |
 | LIFE-14 | Worker claim loop awaited cancellation settlement, blocking unrelated ready families with free slots | Controlled delayed-cancellation regression reproduces starvation. Track one in-flight cancellation per target Run, keep admission progressing, and join cancellation settlement during drain. Success/failure and duplicate-target cases pass with queue-wake/reconnect/family-drain regressions (12 cases). PG cancellation authority/retry cadence are unchanged; deployed paid product surface and full regression pass |
 | DB-01 / CI-03 | Shared PG pool had no idle-error listener; CI forced database deletion could terminate a still-closing idle client | Independent child-process test reproduces an idle backend termination killing the process. Add the pg Pool error listener with code-only diagnostics; pg evicts the broken client. Real PG test proves a later explicit query reconnects while an interrupted active query still rejects with 57P01, without replay. Authority teardown waits for zero connections and drops normally instead of FORCE. Targeted tests, full CI and paid same-Worker stream fault pass; follows [pg's documented idle-error contract](https://node-postgres.com/apis/pool#events) |
-| TEST-03 | Browser acceptance waited for text until timeout after an already-visible failed Run | Actual proxy failure reproduced the misleading 180-second wait. First-text wait now also detects the existing terminal error element and reports it immediately. Real repetition pending |
+| TEST-03 | Browser acceptance waited for text until timeout after an already-visible failed Run | Actual proxy failure reproduced the misleading 180-second wait. First-text wait now detects the existing terminal error element. Subsequent browser repetitions complete; no second upstream outage was induced solely to validate this test-harness guard |
 | ENV-01 | Deployed model relay retained localhost:10808 from an earlier shell, while the current proxy is localhost:12450 | Old port returned ECONNREFUSED before model execution. Owner selected 12450 permanently. Persist the explicit relay proxy in private .env; runtime Compose no longer selects it from generic shell HTTPS_PROXY. Installer/config tests and an opposing-shell-proxy render pass. Paid browser repetition and both model smoke calls pass through the selected proxy; provider credentials unchanged |
 | CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace types and remote CI at 9f62b365 pass |
 | TIME-01 | Lease/claim timestamps were captured before potentially blocked SQL updates | Real PG reproduced a lock-delayed renewal reviving an expired lease. ADR-0170 is deployed at 9f62b365: issuance, renewal, validation and retirement use PG decision time; local deadlines are monotonic hints. Nine real-PG boundaries, local checks, CI and paid multi-round/Subagent/Worker-loss acceptance pass. Wider audit remains open; no post-seal corruption or tenant leak was demonstrated |
 | PERF-01 | Concurrent Sessions spent substantial time before provider dispatch | Prepared SELECTs and the ready-index predicate fix planning; repeated CPU-only trials expose the old hard-coded 1.5-CPU database ceiling. Make the ceiling configurable, default 4, without changing scheduling or recovery semantics. Two 4-CPU cohorts meet the requested internal/provider split at eight active Runs; larger workloads still need their own capacity evidence |
 
-## Coverage and remaining work
+## Final validation and coverage
 
-All maintained application/test/deployment/migration/script code has been read,
-with changed-file diffs tracked under `.cache/audit-20260915-state.json`.
-Generated JSON reports are checked for provenance, scope, parsing and accidental
-sensitive fields rather than claimed as hand-reviewed business source. Full reads
-do not certify all combinations below.
+At `c96ccc58`, the read/diff ledger covers 900 maintained code, test, migration,
+deployment, script and Markdown files. Thirty-five generated JSON reports/lockfiles
+are checked separately for parsing, provenance, scope and accidental sensitive
+fields, not claimed as hand-reviewed business code. No maintained source diff
+remains unread. Runtime application source is unchanged after the matched
+`6e92e850` deployment; later changes improve tests, evidence and the applied
+PostgreSQL CPU setting.
 
-1. Finish the current browser repetition; the repaired hosted-search long
-   combination and minimal-marker Worker-loss gate have passed. Keep separately
-   measured workloads/revisions distinct.
-2. Finish measured API/live-view load gates using the explicit resource
-   profile. Do not extrapolate the eight-active-Run CPU result to enterprise
-   capacity or introduce another scheduler/planner setting.
-3. Repeat final child/fairness/error matrices, owner-routed multi-replica SSE,
-   Broker cleanup failure/restart, multi-service and all core browser paths.
-4. Finish full CI/build/security/fault gates, browser effects, current bounded
-   publication/projection/load tests and final clean-state product acceptance.
-5. Recheck docs/configuration against actual deployment; finish safe cleanup,
-   then update resume **v11**, preserving unrelated resume changes.
+The final fresh-data product pass on `c96ccc58` succeeds after clearing prior
+fixtures: cookie authentication, chat, coding, Fork/prune, bounded Tool output
+without archives, Terminal/Agent concurrency, shared-Workspace concurrent
+Sessions, Steer, cancellation/recovery, foreign-tenant denial and Workspace
+deletion/rebinding with a model-visible change fact. Pure-chat first text is
+3,894 ms: same-request provider route 3,580 ms, other time 315 ms. The coding
+answer's first text follows earlier Tool sampling and is not misreported as
+single-request TTFT.
+
+The final 10/50/100 concurrent cold-Session HTTP gate completes 320 requests with
+zero errors; at 100, creation/read p95 is 757/207 ms. This is not 100 concurrent
+Agent Loops. Streaming reopen repetitions cover 90 active/input-race cases and
+110 settled/refresh cases with no unexpected connection counts; intentional
+stale-snapshot replacement remains distinct from the unexplained older incident.
+
+The whole CI, focused added startup regression, browser presentation,
+build-context checks and separate real Kafka/Cube gates pass. The final product
+gate now writes accepted evidence only after resource purge and cookie logout;
+it no longer swallows cleanup failures.
 
 ## Resource ownership and cleanup
 
-Baseline: **35 users / 33 tenants**, no Sessions, Workspaces, machines or active
-Runs. Exact created resources and prior service states are tracked privately in
-`.cache/audit-20260915-resources.json`. Do not erase original identities,
-credentials or formal logs.
+Final sweeps remove 94 remaining fixture tenants and six additional fixture
+projects under the bootstrap tenant, after FK/check-enforced rollback rehearsals.
+Original **35 users / 33 tenants**, credentials and configuration remain.
+Session, native Session, Run, Workspace, machine and project counts return to zero.
+Before deleting metadata, all 32 Kafka partitions reach matching PG projection
+and completed delivery positions with no unsealed output; only the verified
+test prefix is reclaimed. The pre-audit retired v7 topic and formal service logs
+are untouched. No topic/consumer position reset or disabled database constraint
+is used.
 
-Current resource check confirms zero nonterminal Runs, unpurged Workspaces and
-unreleased machines. One residual Workspace from the earlier failed K8s gate
-was retired through normal APIs; physical purge and temporary-credential
-revocation were confirmed. This does **not** mean final cleanup is complete:
-audit identities/archived history remain (latest inventory 93 users/91 tenants).
+Native Cube reports zero VMs; 136 previously purged Workspace Volume identities
+return 404, and the final product fixture also waits for physical purge. The
+isolated PostgreSQL container and its anonymous Volume, both temporary Projector
+replicas, owned k3d cluster/Volume and eleven test Worker images are removed.
+One Compose Worker runs at the original four-slot/four-model-permit setting;
+the second remains stopped. The matching production images/templates and approved
+12450 proxy remain. The owner-approved single-time-authority setting is retained.
+Private test logs, diagnostic files and the CLIProxyAPI Go probe are removed
+after summarizing evidence; this is disposable test data, not recoverable user history.
 
-Final cleanup must remove only confirmed owned database graphs, topics/groups,
-temporary processes/files, the isolated PG container and accepted test resources.
-Restore the recorded Compose Worker baseline and remove owned k3d test resources;
-current runtime images/templates and the approved 12450 proxy configuration stay.
-Handle the temporary clock trial explicitly without silently changing boot policy.
-The ignored CLIProxyAPI Go diagnostic also belongs to this campaign.
+## Remaining boundaries
 
-No physical multi-node failover, arbitrary shell exactly-once, Cube-native effect
-generation fence or host-power-loss recovery is certified. These are stated
-boundaries, not features silently added during the audit. Any core semantic or
-architecture change still requires owner discussion.
+No physical multi-node HA, Cube-native atomic effect generation fence, arbitrary
+shell exactly-once or host-power-loss process recovery is certified. Two
+development-only moderate Vitest advisories remain; the high-severity gate passes.
+The historical rare double SSE opening was not reproduced in the final 200
+checks, so it is not declared fixed. No additional core architecture change is
+needed by the reproduced findings beyond the owner's recorded ADR approvals.
+
+## Resume handoff
+
+Updated the owner's resume from **v11**, saved as **v12** in Markdown, HTML and a
+visually checked one-page PDF. Only the PiCloud project and its spelling are
+changed; employment history, v11 and the pre-existing v9 edits remain untouched.
+The resume emphasizes Session-family scheduling, native context recovery,
+Kafka-driven projection, minimal Harness facts and the measured non-provider
+latency. Its source comment records the eight-Session workload behind 712 ms p95;
+it makes no enterprise-scale throughput or exactly-once claim.

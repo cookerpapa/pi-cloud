@@ -1,15 +1,15 @@
 {
   "accepted": true,
-  "recordedAt": "2026-09-16T22:13:54Z",
-  "testRevision": "5163fa023eed740c27ed9aab6d82f672859b573c",
-  "guestTemplateRevision": "985a8508c0d655a1f2181ba6dc69c9a2e5db6882",
+  "recordedAt": "2026-09-17",
+  "testRevision": "ebd7c39ae68db0df8d0b31bb189f3259c8f3c9da",
+  "guestTemplateRevision": "6e92e850b116e62269157a5f26bdb0630ee777f5",
   "upstream": "TencentCloud/CubeSandbox@v0.6.0",
   "profile": "single-node-local-kvm",
   "isolationValidated": true,
   "tenantCount": 2,
-  "firstToolMs": 2017,
-  "secondToolMs": 1824,
-  "totalMs": 17011,
+  "firstToolMs": 1972,
+  "secondToolMs": 4730,
+  "totalMs": 19840,
   "guestKernelDistinctFromHost": true,
   "forbiddenEndpointCount": 3,
   "publicInternetReachable": true,
@@ -19,5 +19,13 @@
   "explicitStopRetiredCancelledToolBinding": true,
   "dispatchedCancellationRemainsUnknown": true,
   "persistentVolumesRemoved": 3,
-  "orphanCount": 0
+  "orphanCount": 0,
+  "deletionFailure": {
+    "closeRejected": true,
+    "nativeSurvivorConfirmed": true,
+    "releasedNotReported": true,
+    "cleanupConfirmed": true,
+    "additionalVolumeRemoved": 1,
+    "scope": "real Cube; controlled DELETE failure; in-memory ownership fixture"
+  }
 }
