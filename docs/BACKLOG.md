@@ -11,12 +11,13 @@ acceptance evidence. Superseded plans and completed-task journals remain in Git.
       maintained code/document coverage, paid combination tests, browser paths,
       failure/load checks, scoped cleanup, then resume v11 update. Reading coverage
       does not imply every runtime combination has passed.
-- [ ] Resolve PERF-01 using the current prepared-SELECT database adapter:
-      separate cold planning, pool/queue wait, context preparation and provider
-      time; verify any optimization against mixed root/child admission.
-- [ ] Align the older opt-in Cube gate with proxy egress, elastic TTL and
-      native Volume creation/deletion. Preserve isolation assertions and fail on
-      cleanup errors; do not treat a skipped gate as evidence.
+- [x] Resolve measured eight-Run admission latency: prepared SELECTs and the
+      ready predicate remove excess planning; CPU-only 1.5→4→1.5→4 trials identify
+      database throttling. Both 4-CPU cohorts keep internal time below provider
+      time for all requests; larger capacity remains a separate validation.
+- [x] Align the opt-in Cube gate with proxy egress, elastic TTL and native Volume
+      lifecycle. Real KVM, cancellation UNKNOWN and controlled deletion failure
+      pass; cleanup errors fail the gate rather than becoming accepted evidence.
 - [ ] Complete fresh Compaction/provider/Worker/Subagent combinations and
       process failures on the final revision, including owner-routed SSE.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)

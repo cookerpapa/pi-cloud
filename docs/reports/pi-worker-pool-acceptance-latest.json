@@ -1,9 +1,17 @@
 {
   "accepted": true,
-  "testRevision": "c28ce3854b8259a19fb3b5f057a098c7ae0af5c2",
-  "controlPlaneRevision": "c28ce3854b8259a19fb3b5f057a098c7ae0af5c2",
-  "workerRevision": "ae5c5ff3017b1fd04ece2ae788cb4bf3b9baa0a8",
-  "checkedAt": "2026-09-16T13:41:56.371Z",
+  "testRevision": "9a3742d3005b15c529c87a543bcf0b6cddf81c71",
+  "workerImages": [
+    {
+      "name": "pi-cloud-pi-worker-local-v1-0",
+      "image": "pi-cloud/supervisor-host:kubernetes-6e92e850b116"
+    },
+    {
+      "name": "pi-cloud-pi-worker-local-v1-1",
+      "image": "pi-cloud/supervisor-host:kubernetes-6e92e850b116"
+    }
+  ],
+  "checkedAt": "2026-09-17T00:18:57.445Z",
   "model": {
     "provider": "deepseek",
     "modelId": "deepseek-v4-pro",
@@ -18,43 +26,45 @@
     "differentWorker": true,
     "postgresSessionRestored": true,
     "markerRecovered": true,
-    "firstSettledMs": 2675,
-    "followUpSettledMs": 1945,
-    "candidateRuns": 1
+    "firstSettledMs": 1527,
+    "followUpSettledMs": 1272,
+    "candidateRuns": 2
   },
   "activeCrashRecovery": {
     "injection": {
       "mode": "kubernetes-crash",
       "supervisorId": "pi-cloud-pi-worker-local-v1-0",
       "exitCode": 137,
-      "restartCount": 2
+      "restartCount": 1
     },
     "killedWorker": "pi-cloud-pi-worker-local-v1-0",
     "terminalState": "failed",
     "firstVisibleSequence": 3,
-    "terminalSequence": 30,
+    "terminalSequence": 32,
     "acceptedPrefixProjected": true,
     "exactVisiblePrefixPreservedInContext": true,
+    "minimalInterruptionFact": true,
     "sealedPredecessors": 1,
-    "replacementRunId": "ff81ced2-f1b9-4a43-9921-02edd06b43ea"
+    "replacementRunId": "1107061f-c2ba-40b6-af66-1facab5f8a84"
   },
   "concurrency": {
     "runs": 4,
     "workerIds": [
-      "pi-cloud-pi-worker-local-v1-1",
       "pi-cloud-pi-worker-local-v1-0",
       "pi-cloud-pi-worker-local-v1-1",
-      "pi-cloud-pi-worker-local-v1-1"
+      "pi-cloud-pi-worker-local-v1-1",
+      "pi-cloud-pi-worker-local-v1-0"
     ],
     "distinctWorkers": 2,
     "observedWorkerIds": ["pi-cloud-pi-worker-local-v1-0", "pi-cloud-pi-worker-local-v1-1"],
-    "settledMs": [7570, 8218, 8356, 8553]
+    "settledMs": [4312, 4095, 4123, 5266]
   },
   "totalUsage": {
-    "requests": 7,
-    "inputTokens": 591,
-    "outputTokens": 1204,
-    "cacheReadTokens": 19712,
+    "requests": 8,
+    "inputTokens": 1031,
+    "outputTokens": 1191,
+    "cacheReadTokens": 22528,
     "cacheWriteTokens": 0
-  }
+  },
+  "cleanupCompleted": true
 }

@@ -1,18 +1,18 @@
 {
   "accepted": true,
-  "piCloudRevision": "a18bd1b2ed66138ba2ace54a6d3c26a4aeb254e0",
-  "harnessWorkingTreeDirty": false,
+  "piCloudRevision": "9a3742d3005b15c529c87a543bcf0b6cddf81c71",
+  "harnessWorkingTreeDirty": true,
   "runtimeRevisions": {
-    "pi-cloud-production-web-1": "b2cf34a31c7af319f973a59e400b805a7ad58f99",
-    "pi-cloud-production-control-plane-1": "b2cf34a31c7af319f973a59e400b805a7ad58f99",
-    "pi-cloud-production-tool-broker-1": "b2cf34a31c7af319f973a59e400b805a7ad58f99"
+    "pi-cloud-production-web-1": "6e92e850b116e62269157a5f26bdb0630ee777f5",
+    "pi-cloud-production-control-plane-1": "6e92e850b116e62269157a5f26bdb0630ee777f5",
+    "pi-cloud-production-tool-broker-1": "6e92e850b116e62269157a5f26bdb0630ee777f5"
   },
   "workerRuntimeImages": {
-    "pi-cloud-pi-worker-local-v1-0": "pi-cloud/supervisor-host:kubernetes-7d65c22d212f",
-    "pi-cloud-pi-worker-local-v1-1": "pi-cloud/supervisor-host:kubernetes-7d65c22d212f"
+    "pi-cloud-pi-worker-local-v1-0": "pi-cloud/supervisor-host:kubernetes-6e92e850b116",
+    "pi-cloud-pi-worker-local-v1-1": "pi-cloud/supervisor-host:kubernetes-6e92e850b116"
   },
-  "checkedAt": "2026-09-16T19:24:18.696Z",
-  "account": "browser.acceptance.mu4hmnqf",
+  "checkedAt": "2026-09-17T00:24:31.270Z",
+  "account": "browser.acceptance.mu4scui3",
   "clickedControls": [
     "auth.localOnly",
     "auth.registerTab",
@@ -110,19 +110,19 @@
   ],
   "clickedControlCount": 93,
   "latencyMs": {
-    "userSubmitToFirstAssistantText": 2878,
-    "userSubmitToCompleteReply": 2983
+    "userSubmitToFirstAssistantText": 6156,
+    "userSubmitToCompleteReply": 6261
   },
   "browserFirstText": {
-    "submittedWallAt": 1789586559962,
-    "userClickToFirstDomMs": 2784.4000000059605,
-    "userClickToFirstTextPaintMs": 2796.5,
-    "domToFirstTextPaintMs": 12.099999994039536,
+    "submittedWallAt": 1789604576840,
+    "userClickToFirstDomMs": 6119.5999999940395,
+    "userClickToFirstTextPaintMs": 6132.20000000298,
+    "domToFirstTextPaintMs": 12.600000008940697,
     "measurement": "Chrome Element Timing text-paint; one browser monotonic clock; headless rendering"
   },
   "firstModelTiming": {
-    "providerRouteToFirstTextMs": 2305.817,
-    "nonProviderClickToPaintMs": 490.683,
+    "providerRouteToFirstTextMs": 5839.389,
+    "nonProviderClickToPaintMs": 292.8110000029801,
     "measurement": "Subtract same-sampling provider interval from browser click-to-paint; no cross-process wall-clock subtraction"
   },
   "testMode": "full",
