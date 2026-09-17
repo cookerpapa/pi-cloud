@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] Bounded warm PG connections, single candidate selection, claimed metadata
+      reuse and fewer lifecycle-write round trips; [GPT acceptance](reports/startup-optimization-20260917.md).
+
 - [x] ADR-0171: shared-Volume temporary compute and explicit cwd; real Git
       worktree coding/local merge, nested compute and same-port home-Volume previews.
       [Acceptance](reports/subagent-compute-20260915.md).

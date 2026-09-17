@@ -12,9 +12,9 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Reduce measured startup preparation cost without changing authority or
-      lifecycle semantics: validate claim-query planning/pool reuse, then remaining
-      serial transitions. [GPT diagnosis](reports/startup-latency-gpt-20260917.md).
+- [ ] Further isolate cold/occasional startup tails (lease acquisition and commit),
+      after the [validated startup optimizations](reports/startup-optimization-20260917.md).
+      Warm improvements do not establish a universal latency bound.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.
