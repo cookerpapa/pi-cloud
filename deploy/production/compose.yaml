@@ -178,7 +178,7 @@ services:
     shm_size: 128m
     pids_limit: 256
     mem_limit: 768m
-    cpus: 1.5
+    cpus: ${PI_CLOUD_POSTGRES_CPUS:-4}
     stop_grace_period: 30s
     security_opt:
       - no-new-privileges:true

@@ -596,6 +596,15 @@ try {
     Math.min(...allResults.map((result) => result.submittedWallAt)),
   );
   const report = {
+    databaseCpuLimitCores:
+      Number(
+        await capture("docker", [
+          "inspect",
+          "--format",
+          "{{.HostConfig.NanoCpus}}",
+          "pi-cloud-production-postgres-1",
+        ]),
+      ) / 1e9,
     accepted: true,
     piCloudRevision: testedRevision,
     checkedAt: new Date().toISOString(),

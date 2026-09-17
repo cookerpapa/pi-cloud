@@ -13,9 +13,9 @@ deployment journals and superseded measurements remain in Git history.
 - PostgreSQL remains the sole Run/Session ownership authority; Workers append
   directly to Kafka; one Session Projector drives PG history, live views and
   owner-routed effects. No new scheduler, cache, storage authority or Tool replay.
-- Both local Kubernetes Workers run `3abf8184`, including the hosted-search
-  context repair. Control Plane/Broker/Web/Volume Gateway and guest templates
-  remain matched `985a8508`. Balance-error diagnostics in `f9ce3abf` are now deployed.
+- Control Plane/Broker/Web/Volume Gateway, both Kubernetes Workers and guest
+  templates now run matched `6e92e850`, including hosted-search recovery,
+  minimal interruption facts, balance diagnostics and the Steer lock repair.
 - Remote CI is green at `f9ce3abf`. The fresh local full CI on that source also
   passes with real PostgreSQL: 1,010 workspace tests, 30 helper tests, 26 targeted
   fault cases, build/types/configuration/security gates and zero observed clock
@@ -41,7 +41,7 @@ deployment journals and superseded measurements remain in Git history.
 | MODEL-05 | After Compaction, Pi AI's structural estimator treated PiCloud's hosted-search block as a function call and read missing `name.length` | Actual failed context reproduces the stack. Existing model adapter passes only native blocks to Pi Models; the payload hook still replays original same-model search items. Stored history is unchanged. Two before-fail/after-pass HTTP cases, 21 Runner/search tests and types pass; rollout and complete paid long repetition pass, including post-search parent and child Compaction |
 | MODEL-06 | Provider 402 appeared as generic retryable model failure | Safe non-retryable balance diagnostic; reproduced before and 23 adapter tests pass afterward. Deployment/real UI repeat pending |
 | PRIV-01 | A raw provider/runtime error was interpolated into the model-visible abort marker | Both direct/native append fixtures reproduce a synthetic diagnostic token and internal Attempt text reaching the next model context. Use one fixed minimal interruption fact; keep detailed diagnostics in operation records. All 44 Harness cases and types pass; rollout/real interruption repetition pending. No actual credential disclosure was established |
-| DB-02 | A real dual-API Steer collided with cold Tool binding registration and returned two HTTP 500s | PG records two deadlocks: Steer's `FOR UPDATE` blocks the binding INSERT's Run/Session foreign-key `KEY SHARE` locks. No referenced key changes during Steer. Use `FOR NO KEY UPDATE`, preserving state exclusion without blocking FK references. A current-schema real-PG lock regression fails before and passes after; five existing reply races and types pass. No retry/query/authority layer added; rollout and paid repetition pending |
+| DB-02 | A real dual-API Steer collided with cold Tool binding registration and returned two HTTP 500s | PG records two deadlocks: Steer's `FOR UPDATE` blocks the binding INSERT's Run/Session foreign-key `KEY SHARE` locks. No referenced key changes during Steer. Use `FOR NO KEY UPDATE`, preserving state exclusion without blocking FK references. A current-schema real-PG regression fails before and passes after; five existing reply races/types pass. Matched rollout and paid dual-API/Projector-loss repetition pass without extra retry/query/authority layers. This follows [PG row-lock compatibility](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS) |
 | LIFE-15 | Provider shutdown ignored VM-deletion failures and later transport errors overwrote them | Aggregate failures; Broker cannot mark released without confirmed cleanup. Four regressions and 79 Provider/Broker/RPC tests pass. Real owned Cube plus controlled DELETE rejection confirms the VM survives and cleanup is not reported successful; fresh-client cleanup removes it and its Volume. The ownership fixture in this isolated gate is in-memory, not a real PG outage |
 | LIFE-16 | Broker partial startup leaked acquired resources; failed teardown skipped later closures | Ordered once-only cleanup retains primary/secondary errors and always closes the listener. Four startup/lifecycle and 13 HTTP cases pass; deployed at `985a8508` |
 | TEST-07 | Older live gates assumed Compose-only Workers, Flash availability and destructive cancellation | Actual process inventory supports K8s container replacement, live scripts use visible Pro, faults restart existing containers. Cube gate confirms started effects remain UNKNOWN and checks native VM/Volume cleanup. Thirty helper contracts pass |
@@ -71,6 +71,7 @@ sampling request, never subtracted from an entire multi-Step coding Run.
 | Direct Cube gate, test `5163fa02`, template `985a8508` | Real KVM/PTY, two-tenant canaries, persistent Volume reattach, warm PID/service across a Run boundary within TTL, stale authority rejection, confirmed-start cancellation UNKNOWN. 17,011 ms total; all test VMs absent and three Volumes deleted |
 | CP SIGKILL, GPT Luna / K8s Workers `0a54573e` | Worker boots unchanged; 48 records appended after CP stopped, one Attempt completes; exact visible prefix and live/canonical equality preserved. 42,867 ms including outage; API resources cleaned |
 | Kafka broker SIGKILL, same runtime | One Attempt completes with unchanged prefix and canonical/live equality; broker healthy afterward. 48,993 ms including failure/recovery; API resources cleaned |
+| Two API/Projector replicas, `6e92e850` | Concurrent same-key Steer returns the same identity/time and creates one consumed native input. Kill the actual partition-owner replica: two snapshots, same Worker processes, one Attempt, exactly one file append and matching live/canonical result. Temporary replica removed; test Session/Workspace and credentials cleaned |
 | Worker SIGKILL, CP `c28ce385` / K8s Workers `ae5c5ff3` | Genuine exit 137, seal-before-successor, exact prefix recovery, cross-Worker recall and four concurrent Turns. Seven completed real Pro requests: 591 input / 19,712 cache / 1,204 output tokens; interrupted request excluded |
 | Shared-Volume children, `fd07a098` / Broker `b84ecb30` | [Dedicated evidence](subagent-compute-20260915.md): 25 parent Turns / 32 children across repetitions; Git worktree/local merge, nested compute, home Volume and independent same-port Preview |
 | Fresh GPT children, Workers `3abf8184` | 13 parent Turns and 17 total children, including two nested children: fresh/branch, lazy/shared/ephemeral/parallel/nested compute, coding/worktree merge, mailbox consumption, supervisor reply, cancellation and guest boundary pass. Native input/cache/output 143,883/436,992/5,208; parent/children share the physical Session and lease. API cleanup, Volume purge and fixture-credential revocation confirmed |
@@ -80,7 +81,8 @@ sampling request, never subtracted from an entire multi-Step coding Run.
 | Fresh machine recovery, test `1ca74023`, Worker `3abf8184` / Broker `985a8508` | Three GPT Runs pass: two coding rounds and Tool-free chat with Broker stopped. Broker restart preserves the same VM, `/etc` and `/opt` files, process and Preview; stopped application returns application-port failure without resetting the VM. Zero reset markers. Native input/cache/output 20,825/50,432/1,474; machine released and root-owned fixture Volume physically purged |
 | Kafka-only transport | RF3, 1,024 synthetic Sessions: 747,520 records / 10.011 s = 74,668 records/s, ACK p50/p95/p99 12.17/22.39/28.09 ms. Excludes PG, Projector, model, Cube and browser; topic removed |
 | Isolated PG admission A/B | Fresh 2-CPU/768-MiB PG, four connections, 48-Run waves, no model/Kafka/Cube. At 16 offered calls, prepared SELECT claim p50/p95 260.3/397.9→110.3/161.0 ms; sequential paired sample, not deployment SLO |
-| Additional index fix | Real adapter's warmed ready predicate plans 48→0 after fixed states become literals. Later eight-overlap paid sample still has six internally dominant Turns: PERF-01 remains open |
+| Additional index fix | Real adapter's warmed ready predicate plans 48→0 after fixed states become literals. Query planning improved, but the old 1.5-CPU database ceiling still delayed bursts; the following resource trial isolates that limitation |
+| PG CPU quota trial, unchanged `6e92e850` application code | Four sequential 16-Run/eight-overlap cohorts at 1.5→4→1.5→4 CPU all pass. Non-provider TTFT p50/p95: 866/1,531→433/794→717/1,149→451/712 ms. Restoring 1.5 CPU adds 17 throttled periods / 6.76 cumulative throttled seconds; both 4-CPU cohorts have 0/16 internally dominant requests. Not randomized A/B or a generic PG throughput claim. The explicit one-host CPU setting now defaults to 4; compact hosts can lower it deliberately |
 | Retirement | After the new paid CP/Kafka faults, Worker retained Run/control/family counts return to zero. Uncertain controls are not evicted on a timer |
 
 Per-scenario machine-readable reports record model usage, IDs and scope. Old
@@ -202,7 +204,7 @@ Worker/provider/Compaction and fresh/branch child combinations.
 | ENV-01 | Deployed model relay retained localhost:10808 from an earlier shell, while the current proxy is localhost:12450 | Old port returned ECONNREFUSED before model execution. Owner selected 12450 permanently. Persist the explicit relay proxy in private .env; runtime Compose no longer selects it from generic shell HTTPS_PROXY. Installer/config tests and an opposing-shell-proxy render pass. Paid browser repetition and both model smoke calls pass through the selected proxy; provider credentials unchanged |
 | CI-02 | New readiness barriers use ES2024 Promise.withResolvers while the shared TypeScript target remained ES2022 | CI caught the mismatch; earlier local checks had only started, not completed, so the initial pass wording above was corrected. Align the compiler target with supported Node 22.19+; browser keeps its explicit ES2022 library contract. All workspace types and remote CI at 9f62b365 pass |
 | TIME-01 | Lease/claim timestamps were captured before potentially blocked SQL updates | Real PG reproduced a lock-delayed renewal reviving an expired lease. ADR-0170 is deployed at 9f62b365: issuance, renewal, validation and retirement use PG decision time; local deadlines are monotonic hints. Nine real-PG boundaries, local checks, CI and paid multi-round/Subagent/Worker-loss acceptance pass. Wider audit remains open; no post-seal corruption or tenant leak was demonstrated |
-| PERF-01 | Concurrent Sessions still spend substantial time before provider dispatch | Bounded prepared SELECTs and the literal ready-index predicate reduce measured planning cost without changing admission. Latest eight-overlap/16-Run Pro sample at `7fa41328`: non-provider p50/p95 826/1,446 ms; six samples remain internally dominant. Continue stage/queue profiling; do not claim an end-to-end SLO |
+| PERF-01 | Concurrent Sessions spent substantial time before provider dispatch | Prepared SELECTs and the ready-index predicate fix planning; repeated CPU-only trials expose the old hard-coded 1.5-CPU database ceiling. Make the ceiling configurable, default 4, without changing scheduling or recovery semantics. Two 4-CPU cohorts meet the requested internal/provider split at eight active Runs; larger workloads still need their own capacity evidence |
 
 ## Coverage and remaining work
 
@@ -215,9 +217,9 @@ do not certify all combinations below.
 1. Roll out PRIV-01's minimal interruption marker, then repeat its relevant
    recovery/Compaction boundaries. The repaired hosted-search long combination
    has passed; keep that measured workload separate from later changes.
-2. Finish PERF-01 with the actual bounded-prepared database adapter: measure
-   claim/context/pool/queue stages separately; do not change scheduling semantics
-   or a PostgreSQL planner setting without evidence and required discussion.
+2. Finish measured publication/projection/load gates using the explicit resource
+   profile. Do not extrapolate the eight-active-Run CPU result to enterprise
+   capacity or introduce another scheduler/planner setting.
 3. Repeat final child/fairness/error matrices, owner-routed multi-replica SSE,
    Broker cleanup failure/restart, multi-service and all core browser paths.
 4. Finish full CI/build/security/fault gates, browser effects, current bounded

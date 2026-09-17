@@ -143,6 +143,7 @@ Do not commit proxy credentials or expose a local proxy publicly.
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
+| `PI_CLOUD_POSTGRES_CPUS` | `4` | one-host PostgreSQL CPU ceiling, not a reservation; lower it on compact hosts only after checking claim/restore latency and cgroup throttling; external PostgreSQL resources are configured by its operator |
 | `PI_CLOUD_SUPERVISOR_CAPACITY` | `4` | active physical Session families per Worker; all delegated Lanes share their family's slot |
 | `PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS` | `4` | bounded PostgreSQL pool per Compose Worker; tune independently from slots |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH` | `4` | recursive Agent-tree depth |

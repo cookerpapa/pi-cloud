@@ -63,6 +63,7 @@ assert.doesNotMatch(productionCompose, /event-gateway|valkey|nats-/u);
 const compose = parse(productionCompose, {
   customTags: [{ tag: "!override", collection: "seq", resolve: (value) => value }],
 });
+assert.equal(compose.services.postgres.cpus, "${PI_CLOUD_POSTGRES_CPUS:-4}");
 for (const host of [
   ".workers.pi-cloud.local",
   "supervisor-host",
