@@ -12,9 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Profile Worker event-loop pauses and intermittent WAL/lock propagation using
-      the retained lease subphase metrics. [Tail investigation](reports/startup-tail-investigation-20260917.md)
-      distinguishes those paths; the original 176/237ms samples remain unattributed.
+- [ ] Discuss atomic Worker execution admission (claim + lease + publication).
+      [Profiling and local fixes](reports/worker-startup-profile-20260918.md) removed
+      synchronous cgroup probing, but paired startup latency is not lower. Do not
+      merge durable boundaries without approval. Historical WAL tails remain unproven.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.
