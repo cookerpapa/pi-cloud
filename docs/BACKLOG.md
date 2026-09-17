@@ -12,9 +12,9 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Further isolate cold/occasional startup tails (lease acquisition and commit),
-      after the [validated startup optimizations](reports/startup-optimization-20260917.md).
-      Warm improvements do not establish a universal latency bound.
+- [ ] Profile Worker event-loop pauses and intermittent WAL/lock propagation using
+      the retained lease subphase metrics. [Tail investigation](reports/startup-tail-investigation-20260917.md)
+      distinguishes those paths; the original 176/237ms samples remain unattributed.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.
