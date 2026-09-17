@@ -199,6 +199,10 @@ At 85% of the Node heap limit or reported constrained-memory RSS limit, the Work
 stops admitting new families but can finish existing families. This is a soft
 admission watermark, not an OOM guarantee. Size memory for contexts, serialization
 and output, not just model inference or the number of HTTP submissions.
+The OS memory limit is sampled once a second on one internal thread per Worker;
+heap usage and RSS remain fresh main-thread reads. Missing, failed or older-than-2.5s
+limit samples stop new-family admission. This prevents synchronous cgroup discovery
+from blocking Agent/SQL callbacks; it adds no Agent slot or distributed authority.
 `PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT` is removed and rejected rather than silently
 interpreted as a new limit. Several Worker processes may share a host.
 

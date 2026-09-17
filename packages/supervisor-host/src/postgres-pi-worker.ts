@@ -8,7 +8,7 @@ import {
   type RunClaimAdmission,
   type RunClaimReference,
 } from "@pi-cloud/runtime-core/run-executor";
-import { getHeapStatistics } from "node:v8";
+import { WorkerMemoryMonitor } from "./worker-memory-monitor.ts";
 import type { Kysely } from "kysely";
 import { Client } from "pg";
 
@@ -32,16 +32,6 @@ export function familyAdmission(
       .filter(([, count]) => count >= maximumLanesPerFamily)
       .map(([key]) => key),
   };
-}
-
-export function workerMemoryHeadroom(): boolean {
-  const heap = getHeapStatistics();
-  const memory = process.memoryUsage();
-  const constrained = process.constrainedMemory();
-  return (
-    memory.heapUsed < heap.heap_size_limit * 0.85 &&
-    (constrained === 0 || memory.rss < constrained * 0.85)
-  );
 }
 
 type CancellationReference = {
@@ -137,6 +127,7 @@ export class PostgresPiWorker {
   readonly #maximumActiveFamilies: number;
   readonly #maximumLanesPerFamily: number;
   readonly #memoryHeadroom: () => boolean;
+  readonly #memoryMonitor: WorkerMemoryMonitor | undefined;
   readonly #onCapacity: NonNullable<PostgresPiWorkerOptions["onCapacity"]>;
   readonly #pollIntervalMs: number;
   readonly #runExecutor: RunExecutor;
@@ -174,7 +165,10 @@ export class PostgresPiWorker {
       options.maximumLanesPerFamily,
       "maximumLanesPerFamily",
     );
-    this.#memoryHeadroom = options.memoryHeadroom ?? workerMemoryHeadroom;
+    this.#memoryMonitor = options.memoryHeadroom
+      ? undefined
+      : new WorkerMemoryMonitor((error) => this.#observeFailure("claim", error));
+    this.#memoryHeadroom = options.memoryHeadroom ?? (() => this.#memoryMonitor!.hasHeadroom());
     this.#onCapacity = options.onCapacity ?? (() => {});
     this.#pollIntervalMs = positiveInteger(
       options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
@@ -196,6 +190,7 @@ export class PostgresPiWorker {
     this.#state = "starting";
     this.#controller = new AbortController();
     try {
+      await this.#memoryMonitor?.start();
       this.#listenerOpening = this.#startListener();
       await this.#listenerOpening;
       this.#listenerOpening = undefined;
@@ -208,6 +203,7 @@ export class PostgresPiWorker {
       this.#listenerOpening = undefined;
       this.#state = "stopped";
       await this.#listener?.end().catch(() => undefined);
+      await this.#memoryMonitor?.close();
       throw error;
     }
   }
@@ -217,7 +213,10 @@ export class PostgresPiWorker {
       this.#state = "stopped";
       return;
     }
-    if (this.#state === "stopped") return;
+    if (this.#state === "stopped") {
+      await this.#memoryMonitor?.close();
+      return;
+    }
     this.#state = "stopping";
     this.#queueWake.notify();
     await this.#loop;
@@ -225,6 +224,7 @@ export class PostgresPiWorker {
     await this.#listenerOpening?.catch(() => undefined);
     await Promise.allSettled([...this.#activeRuns.values()].map((entry) => entry.execution));
     await this.#listener?.end().catch(() => undefined);
+    await this.#memoryMonitor?.close();
     this.#state = "stopped";
   }
 

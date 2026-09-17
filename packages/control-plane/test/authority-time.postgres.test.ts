@@ -158,6 +158,75 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     );
     await f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference });
   });
+  it("rolls back epoch, capacity and Session touch when the combined binding is rejected", async () => {
+    const f = await fixture(0, async (request) => {
+      const owner = await db
+        .selectFrom("run_attempts")
+        .select("claim_owner_id")
+        .where("id", "=", request.attemptId)
+        .executeTakeFirstOrThrow();
+      const read = async () => ({
+        physical: await db
+          .selectFrom("pi_sessions")
+          .select("lease_epoch")
+          .where("tenant_id", "=", request.tenantId)
+          .where("id", "=", request.piSessionId)
+          .executeTakeFirstOrThrow(),
+        session: await db
+          .selectFrom("sessions")
+          .select("row_version")
+          .where("id", "=", request.sessionId)
+          .executeTakeFirstOrThrow(),
+        worker: await db
+          .selectFrom("sandboxes")
+          .select(["state", "active_sessions"])
+          .where("id", "=", owner.claim_owner_id)
+          .executeTakeFirstOrThrow(),
+      });
+      const before = await read(),
+        queries: string[] = [];
+      const measured = db.withPlugin({
+        transformQuery({ node, queryId }) {
+          queries.push(db.getExecutor().compileQuery(node, queryId).sql);
+          return node;
+        },
+        async transformResult({ result }) {
+          return result;
+        },
+      });
+      await sql`create function reject_test_binding() returns trigger language plpgsql as 'begin return null; end'`.execute(
+        db,
+      );
+      await sql`create trigger reject_test_binding before update of lease_id on run_attempts for each row when (old.lease_id is null and new.lease_id is not null) execute function reject_test_binding()`.execute(
+        db,
+      );
+      try {
+        const coordinator = new SessionLeaseCoordinator({
+          database: measured,
+          sandboxId: owner.claim_owner_id,
+        });
+        await expect(coordinator.acquire(request)).rejects.toMatchObject({
+          code: "session_lease_invariant",
+        });
+        expect(await read()).toEqual(before);
+        expect(
+          await db
+            .selectFrom("session_leases")
+            .selectAll()
+            .where("tenant_id", "=", request.tenantId)
+            .execute(),
+        ).toEqual([]);
+        expect(
+          queries.filter((q) => q.startsWith("select ") && q.includes('from "pi_sessions"')),
+        ).toHaveLength(1);
+        expect(queries.filter((q) => q.startsWith('with "touched_session"'))).toHaveLength(1);
+      } finally {
+        await sql`drop trigger reject_test_binding on run_attempts`.execute(db);
+        await sql`drop function reject_test_binding()`.execute(db);
+      }
+    });
+    expect(f.lease.fencing_token).toBe("1");
+  });
   it.each(["renew", "grant", "publication"])(
     "rejects %s if authority expires during lock wait",
     async (operation) => {

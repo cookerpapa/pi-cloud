@@ -46,15 +46,16 @@ export async function lockPiSessionWorkerOwnership(
   tx: Transaction<Database>,
   tenantId: string,
   piSessionId: string,
-): Promise<void> {
+): Promise<{ leaseEpoch: string }> {
   const row = await tx
     .selectFrom("pi_sessions")
-    .select("id")
+    .select(["id", "lease_epoch"])
     .where("tenant_id", "=", tenantId)
     .where("id", "=", piSessionId)
     .forUpdate()
     .executeTakeFirst();
   if (!row) throw new PiSessionWorkerOwnershipError("Physical Pi Session was not found");
+  return { leaseEpoch: row.lease_epoch };
 }
 export async function conflictingPiSessionWorker(
   tx: Transaction<Database>,

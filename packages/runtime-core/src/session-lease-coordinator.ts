@@ -351,7 +351,11 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           true,
         );
       mark("lease_session_lock");
-      await lockPiSessionWorkerOwnership(tx, request.tenantId, request.piSessionId);
+      const physical = await lockPiSessionWorkerOwnership(
+        tx,
+        request.tenantId,
+        request.piSessionId,
+      );
       mark("lease_family_lock");
       const attempt = await tx
         .selectFrom("run_attempts as a")
@@ -449,13 +453,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
             "Worker Session capacity is full",
             true,
           );
-        const physical = await tx
-          .selectFrom("pi_sessions")
-          .select("lease_epoch")
-          .where("tenant_id", "=", request.tenantId)
-          .where("id", "=", request.piSessionId)
-          .executeTakeFirstOrThrow();
-        const epoch = Number(physical.lease_epoch) + 1;
+        const epoch = Number(physical.leaseEpoch) + 1;
         if (!Number.isSafeInteger(epoch)) throw new Error("Session execution epoch exhausted");
         await tx
           .updateTable("pi_sessions")
@@ -479,12 +477,12 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           .returningAll()
           .executeTakeFirstOrThrow();
       }
-      await tx
+      const touchSession = tx
         .updateTable("sessions")
         .set({ row_version: sql<string>`row_version+1`, updated_at: now })
         .where("id", "=", request.sessionId)
-        .execute();
-      await tx
+        .returning("id");
+      const reserveCapacity = tx
         .updateTable("sandboxes")
         .set({
           state: "leased",
@@ -492,8 +490,8 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           updated_at: now,
         })
         .where("id", "=", worker.id)
-        .execute();
-      const bound = await tx
+        .returning("id");
+      const bindAttempt = tx
         .updateTable("run_attempts")
         .set({
           sandbox_id: worker.id,
@@ -515,8 +513,22 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         .where(
           sql<boolean>`exists(select 1 from session_leases where lease_id=${lease.lease_id}::uuid and valid_until>clock_timestamp())`,
         )
-        .executeTakeFirst();
-      expectOne(bound.numUpdatedRows, "binding a task to its Session lease");
+        .returning("id");
+      // All target rows are already locked. Keep decision-time expiry checks
+      // on the binding write, but commit these writes in one server round trip.
+      const changed = await tx
+        .with("touched_session", () => touchSession)
+        .with("reserved_capacity", () => reserveCapacity)
+        .with("bound_attempt", () => bindAttempt)
+        .selectNoFrom([
+          sql<number>`(select count(*)::int from touched_session)`.as("sessions"),
+          sql<number>`(select count(*)::int from reserved_capacity)`.as("workers"),
+          sql<number>`(select count(*)::int from bound_attempt)`.as("attempts"),
+        ])
+        .executeTakeFirstOrThrow();
+      expectOne(BigInt(changed.sessions), "updating the bound Session");
+      expectOne(BigInt(changed.workers), "reserving Worker family capacity");
+      expectOne(BigInt(changed.attempts), "binding a task to its Session lease");
       mark("lease_write");
       return {
         executionReference: createExecutionReference(
