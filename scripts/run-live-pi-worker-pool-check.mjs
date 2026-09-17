@@ -10,6 +10,7 @@ import { format, resolveConfig } from "prettier";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
+import { localWorkerTargets } from "./lib/live-run-timing.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 if (process.env.PI_CLOUD_LIVE_WORKER_POOL_CHECK !== "1") {
@@ -544,6 +545,8 @@ function sumUsage(results) {
 }
 
 const initialWorkers = await waitForWorkers(2);
+const workerImages = (await localWorkerTargets()).map(({ name, image }) => ({ name, image }));
+const testRevision = await capture("git", ["rev-parse", "HEAD"]);
 const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const registration = await new PiCloudApi(fetchFromProduction).registerTenant(
   `worker-pool-${suffix}`.replaceAll(/[^a-z0-9-]/gu, "-").slice(0, 63),
@@ -563,6 +566,52 @@ const acceptanceModel = {
 let stoppedWorker;
 const createdSessionIds = [];
 const createdWorkspaceIds = [];
+let cleanupAttempted = false;
+let primaryFailure;
+async function cleanup() {
+  cleanupAttempted = true;
+  const errors = [];
+  if (stoppedWorker !== undefined) {
+    try {
+      await restoreWorker(stoppedWorker);
+      stoppedWorker = undefined;
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  for (const sessionId of createdSessionIds) {
+    try {
+      const active = (turn) => ["queued", "running", "cancelling"].includes(turn.state);
+      for (const turn of (await api.getConversation(sessionId)).turns.filter(active))
+        if (turn.state !== "cancelling")
+          await api.cancelTurn(sessionId, turn.turnId, newIdempotencyKey("cancel"));
+      const deadline = performance.now() + 120000;
+      while ((await api.getConversation(sessionId)).turns.some(active)) {
+        if (performance.now() > deadline) throw new Error("Worker fixture did not retire");
+        await wait(200);
+      }
+      await api.deleteConversation(sessionId, newIdempotencyKey("delete"));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  for (const workspaceId of createdWorkspaceIds) {
+    try {
+      await api.deleteWorkspace(workspaceId, newIdempotencyKey("delete"));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  const credentialId = registration.apiToken.slice(4, registration.apiToken.indexOf("."));
+  try {
+    await psql(`update tenant_api_credentials set revoked_at=clock_timestamp()
+    where tenant_id=${sqlLiteral(registration.tenantId)} and credential_id=${sqlLiteral(credentialId)}`);
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length)
+    throw new AggregateError(errors, "Worker pool acceptance cleanup failed", { cause: errors[0] });
+}
 
 try {
   const candidates = [];
@@ -571,12 +620,12 @@ try {
   for (let index = 0; index < maximumCandidates && selected === undefined; index += 1) {
     const marker = `PI-POOL-${suffix.toUpperCase()}-${String(index + 1)}`;
     const project = await api.createProject(`Pi Worker pool acceptance ${suffix}-${index + 1}`);
+    createdWorkspaceIds.push(project.workspaceId);
     const session = await api.createSession(
       project.projectId,
       project.workspaceId,
       `Pi Worker pool acceptance ${suffix}-${index + 1}`,
     );
-    createdWorkspaceIds.push(project.workspaceId);
     createdSessionIds.push(session.sessionId);
     await api.updateSessionModel(session.sessionId, acceptanceModel);
     const turn = await runTurn(
@@ -614,12 +663,12 @@ try {
   stoppedWorker = undefined;
 
   const crashProject = await api.createProject(`Pi Worker crash ${suffix}`);
+  createdWorkspaceIds.push(crashProject.workspaceId);
   const crashSession = await api.createSession(
     crashProject.projectId,
     crashProject.workspaceId,
     `Pi Worker crash ${suffix}`,
   );
-  createdWorkspaceIds.push(crashProject.workspaceId);
   createdSessionIds.push(crashSession.sessionId);
   await api.updateSessionModel(crashSession.sessionId, acceptanceModel);
   const crashed = await crashStreamingTurn(crashSession.sessionId);
@@ -667,18 +716,25 @@ try {
     recoveredPrefixes.includes(crashed.visibleText),
     "Pi context did not retain the exact already-visible interrupted prefix",
   );
+  const interruptionText =
+    await psql(`select coalesce(string_agg(payload #>> '{data,content}', E'\\n'), '')
+    from pi_session_entries where session_id=(select pi_session_id from sessions where id=${sqlLiteral(crashSession.sessionId)})
+      and custom_type='pi-cloud.run_interrupted'`);
+  assert(interruptionText.includes("<turn_aborted>"), "Recovery omitted its interruption fact");
+  assert(!interruptionText.includes("Reason:"), "Recovery exposed raw failure diagnostics");
+  assert(!interruptionText.includes(crashed.runId), "Recovery exposed internal Run identity");
   await restoreWorker(stoppedWorker);
   stoppedWorker = undefined;
 
   const concurrentResults = await Promise.allSettled(
     Array.from({ length: 4 }, async (_, index) => {
       const concurrentProject = await api.createProject(`Pi pool lane ${index + 1} ${suffix}`);
+      createdWorkspaceIds.push(concurrentProject.workspaceId);
       const concurrentSession = await api.createSession(
         concurrentProject.projectId,
         concurrentProject.workspaceId,
         `Pi pool lane ${index + 1} ${suffix}`,
       );
-      createdWorkspaceIds.push(concurrentProject.workspaceId);
       createdSessionIds.push(concurrentSession.sessionId);
       await api.updateSessionModel(concurrentSession.sessionId, acceptanceModel);
       const turn = await runTurn(
@@ -720,6 +776,8 @@ try {
   const totalUsage = sumUsage(allTurns);
   const report = {
     accepted: true,
+    testRevision,
+    workerImages,
     checkedAt: new Date().toISOString(),
     model: acceptanceModel,
     workerDeployment,
@@ -742,6 +800,7 @@ try {
       terminalSequence: crashed.terminal.seq,
       acceptedPrefixProjected: interruptedPrefixCount >= 1,
       exactVisiblePrefixPreservedInContext: true,
+      minimalInterruptionFact: true,
       sealedPredecessors,
       replacementRunId: recovered.runId,
     },
@@ -755,6 +814,8 @@ try {
     totalUsage,
   };
   assert(totalUsage.requests >= 6 && totalUsage.inputTokens > 0 && totalUsage.outputTokens > 0);
+  await cleanup();
+  report.cleanupCompleted = true;
 
   const reportDirectory = resolve(repositoryRoot, "docs/reports");
   await mkdir(reportDirectory, { recursive: true });
@@ -791,14 +852,19 @@ try {
     "utf8",
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);
+} catch (error) {
+  primaryFailure = error;
+  throw error;
 } finally {
-  if (stoppedWorker !== undefined) {
-    await restoreWorker(stoppedWorker).catch(() => undefined);
-  }
-  for (const sessionId of createdSessionIds) {
-    await api.deleteConversation(sessionId, newIdempotencyKey("delete")).catch(() => undefined);
-  }
-  for (const workspaceId of createdWorkspaceIds) {
-    await api.deleteWorkspace(workspaceId, newIdempotencyKey("delete")).catch(() => undefined);
+  if (!cleanupAttempted) {
+    try {
+      await cleanup();
+    } catch (error) {
+      throw new AggregateError(
+        [primaryFailure, error].filter(Boolean),
+        "Worker acceptance or cleanup failed",
+        { cause: primaryFailure ?? error },
+      );
+    }
   }
 }
