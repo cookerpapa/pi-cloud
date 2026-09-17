@@ -384,15 +384,67 @@ const browser = new BrowserCookieFetch();
 const api = new PiCloudApi(browser.fetch);
 const createdSessionIds = new Set();
 const createdWorkspaceIds = new Set();
+const authenticatedApis = new Set();
+let cleanupStarted = false;
+let primaryFailure;
+
+async function cleanup() {
+  cleanupStarted = true;
+  const errors = [];
+  try {
+    const visible = (await api.listConversations()).conversations;
+    for (const session of visible.filter((item) => createdSessionIds.has(item.sessionId))) {
+      try {
+        const active = (turn) => ["queued", "running", "cancelling"].includes(turn.state);
+        for (const turn of (await api.getConversation(session.sessionId)).turns.filter(active))
+          if (turn.state !== "cancelling")
+            await api.cancelTurn(session.sessionId, turn.turnId, newIdempotencyKey("cancel"));
+        const deadline = performance.now() + 120_000;
+        while ((await api.getConversation(session.sessionId)).turns.some(active)) {
+          if (performance.now() >= deadline) throw new Error("Product fixture did not retire");
+          await wait(200);
+        }
+        await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    const visibleWorkspaces = new Set(
+      (await api.listWorkspaces()).workspaces.map((workspace) => workspace.workspaceId),
+    );
+    for (const workspaceId of createdWorkspaceIds) {
+      try {
+        if (visibleWorkspaces.has(workspaceId))
+          await api.deleteWorkspace(workspaceId, newIdempotencyKey("delete"));
+        await waitForWorkspacePurge(workspaceId);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+  } catch (error) {
+    errors.push(error);
+  }
+  for (const authenticatedApi of authenticatedApis) {
+    try {
+      await authenticatedApi.logout();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, "Product acceptance cleanup failed");
+}
 
 try {
   progress("registering and authenticating through browser cookie APIs");
   const registration = await api.registerAccount(username, "Product Surface User", password);
+  authenticatedApis.add(api);
   assert.equal(registration.identity.platformAdministrator, false);
   assert.equal((await api.getIdentity()).userId, registration.identity.userId);
   await api.logout();
+  authenticatedApis.delete(api);
   await expectApiStatus(api.getIdentity(), 401);
   const login = await api.loginAccount(username, password);
+  authenticatedApis.add(api);
   assert.equal(login.identity.userId, registration.identity.userId);
   await expectApiStatus(api.getCubeProxyConfiguration(), 403);
 
@@ -677,6 +729,7 @@ try {
     "Foreign Surface User",
     `${password} foreign`,
   );
+  authenticatedApis.add(foreignApi);
   await expectApiStatus(foreignApi.getConversation(session.sessionId), 404);
   assert(
     !(await foreignApi.listWorkspaces()).workspaces.some(
@@ -726,9 +779,11 @@ try {
     ),
   );
   progress("conversation preservation, Workspace rebind, and deletion passed");
+  await cleanup();
 
   const report = {
     accepted: true,
+    cleanupCompleted: true,
     piCloudRevision: testedRevision,
     checkedAt: new Date().toISOString(),
     browserCookieAuth: true,
@@ -770,12 +825,18 @@ try {
     "utf8",
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);
+} catch (error) {
+  primaryFailure = error;
+  throw error;
 } finally {
-  for (const sessionId of createdSessionIds) {
-    await api.deleteConversation(sessionId, newIdempotencyKey("delete")).catch(() => undefined);
-  }
-  for (const workspaceId of createdWorkspaceIds) {
-    await api.deleteWorkspace(workspaceId, newIdempotencyKey("delete")).catch(() => undefined);
-    await waitForWorkspacePurge(workspaceId).catch(() => undefined);
+  if (!cleanupStarted && authenticatedApis.size) {
+    try {
+      await cleanup();
+    } catch (error) {
+      throw new AggregateError(
+        [primaryFailure, error].filter(Boolean),
+        "Product acceptance or cleanup failed",
+      );
+    }
   }
 }
