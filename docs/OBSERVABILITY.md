@@ -68,6 +68,15 @@ Prometheus scrapes four application endpoint groups:
 `pi_cloud_model_permits_active` and `_waiting`, plus
 `pi_cloud_model_permit_wait_seconds`, distinguish provider work from local model
 admission. A task waiting for a child/Tool holds no model permit.
+
+`pi_cloud_run_preparation_seconds` includes `lease_*` subphases of a successful
+`execution_lease`: begin, Session/family locks, Attempt/owner reads, Worker lock,
+connection validation, lease read/write and commit. Do not add these to their
+outer duration. `lease_begin` includes connection acquisition and BEGIN;
+`lease_commit` includes COMMIT and client handoff, not only disk fsync. Correlate
+outliers with PostgreSQL wait events before attributing them to storage or locks.
+Failed/rolled-back acquisitions do not increment successful phase observations;
+labels contain neither tenant identity nor SQL/parameters.
 `pi_cloud_queued_runs` is sampled from the
 shared PostgreSQL Run queue rather than inferred from a local Worker.
 

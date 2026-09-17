@@ -8,6 +8,7 @@ import { parseExecutionReference } from "@pi-cloud/protocol";
 import { it, expect } from "vitest";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
+import { PiCloudMetrics } from "@pi-cloud/observability";
 
 async function fixture(capacity = 1, leaseMs = 60000) {
   const pg = await PGlite.create(),
@@ -69,8 +70,10 @@ async function fixture(capacity = 1, leaseMs = 60000) {
       active_sessions: 0,
     })
     .execute();
+  const metrics = new PiCloudMetrics("lease-timing-test");
   const coordinator = new SessionLeaseCoordinator({
     database: db,
+    metrics,
     sandboxId: workerId,
     leaseDurationMs: leaseMs,
   });
@@ -158,6 +161,7 @@ async function fixture(capacity = 1, leaseMs = 60000) {
     foreign,
     workerId,
     coordinator,
+    metrics,
     executor,
     start,
     renew,
@@ -207,6 +211,25 @@ it("shares one owner lease, renews once, and releases capacity only after the fi
       status: "retry_scheduled",
       failureCode: "capacity",
     });
+    const measured = await f.metrics.runPreparationDuration.get();
+    const counts = measured.values.filter((v) => v.metricName?.endsWith("_count"));
+    expect(counts.map((v) => v.labels.stage).sort()).toEqual([
+      "lease_attempt_owner",
+      "lease_begin",
+      "lease_commit",
+      "lease_connection",
+      "lease_family_lock",
+      "lease_read",
+      "lease_session_lock",
+      "lease_worker_lock",
+      "lease_write",
+    ]);
+    expect(counts.every((v) => v.value === 2 && v.labels.outcome === "completed")).toBe(true);
+    expect(
+      counts.every((v) =>
+        Object.keys(v.labels).every((k) => ["stage", "outcome", "service"].includes(k)),
+      ),
+    ).toBe(true);
     main.release();
     expect(await main.done).toMatchObject({ status: "completed" });
     expect(await f.db.selectFrom("session_leases").selectAll().execute()).toHaveLength(1);

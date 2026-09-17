@@ -1,6 +1,7 @@
 import { databaseTime, type Database } from "@pi-cloud/database";
 import { releaseExecutionScope, releaseIdleSessionLease } from "./worker-family-capacity.ts";
 import { transitionSandbox } from "@pi-cloud/domain";
+import type { PiCloudMetrics } from "@pi-cloud/observability";
 import {
   parseControlToSupervisorMessage,
   createExecutionReference,
@@ -29,6 +30,7 @@ export type SessionLeaseCoordinatorOptions = {
   leaseDurationMs?: number;
   heartbeatConnectionId?: string;
   connectionGuard?: SupervisorConnectionGuard;
+  metrics?: PiCloudMetrics;
 };
 
 export type SupervisorConnectionGuard = {
@@ -112,9 +114,11 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   readonly #leaseDurationMs: number;
   readonly #heartbeatConnectionId: string;
   readonly #connectionGuard: SupervisorConnectionGuard | undefined;
+  readonly #metrics: PiCloudMetrics | undefined;
 
   constructor(options: SessionLeaseCoordinatorOptions) {
     this.#database = options.database;
+    this.#metrics = options.metrics;
     this.#sandboxId = options.sandboxId;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
@@ -313,7 +317,15 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   }
 
   async acquire(request: TurnExecutionRequest): Promise<TurnExecutionReference> {
-    return this.#database.transaction().execute(async (tx) => {
+    let previous = performance.now();
+    const stages: Array<[string, number]> = [];
+    const mark = (stage: string) => {
+      const now = performance.now();
+      stages.push([stage, (now - previous) / 1_000]);
+      previous = now;
+    };
+    const granted = await this.#database.transaction().execute(async (tx) => {
+      mark("lease_begin");
       const session = await tx
         .selectFrom("sessions")
         .selectAll()
@@ -338,7 +350,9 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           "Session is not ready for execution",
           true,
         );
+      mark("lease_session_lock");
       await lockPiSessionWorkerOwnership(tx, request.tenantId, request.piSessionId);
+      mark("lease_family_lock");
       const attempt = await tx
         .selectFrom("run_attempts as a")
         .innerJoin("runs as r", "r.current_attempt_id", "a.id")
@@ -381,6 +395,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           "Session belongs to another Worker",
           true,
         );
+      mark("lease_attempt_owner");
       const worker = await tx
         .selectFrom("sandboxes")
         .selectAll()
@@ -393,11 +408,13 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           "Worker is unavailable",
           true,
         );
+      mark("lease_worker_lock");
       await this.#currentRegisteredConnection(
         tx,
         { supervisorId: worker.supervisor_id, bootId: worker.boot_id },
         true,
       );
+      mark("lease_connection");
       let lease = await tx
         .selectFrom("session_leases")
         .selectAll()
@@ -424,6 +441,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           true,
         );
       const newFamily = !lease;
+      mark("lease_read");
       if (!lease) {
         if (worker.active_sessions >= worker.max_concurrent_sessions)
           throw new SessionLeaseCoordinatorError(
@@ -499,6 +517,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         )
         .executeTakeFirst();
       expectOne(bound.numUpdatedRows, "binding a task to its Session lease");
+      mark("lease_write");
       return {
         executionReference: createExecutionReference(
           lease.lease_id,
@@ -507,6 +526,13 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         ),
       };
     });
+    mark("lease_commit");
+    // Successful phases partition the outer execution_lease duration. Begin
+    // includes pool acquisition/BEGIN; commit includes client handoff, not only fsync.
+    // Observe after commit so a rolled-back grant cannot look successfully acquired.
+    for (const [stage, seconds] of stages)
+      this.#metrics?.runPreparationDuration.observe({ stage, outcome: "completed" }, seconds);
+    return granted;
   }
 
   async assertCurrent(
