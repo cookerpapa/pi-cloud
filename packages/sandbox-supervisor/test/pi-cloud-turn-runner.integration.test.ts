@@ -70,6 +70,8 @@ const command: ExecuteTurnCommandMessage = {
     },
     input: { kind: "prompt", text: "请返回确定性的测试响应。" },
     executionMode: "elastic",
+    sessionKind: "conversation",
+    workspaceSeedKind: "empty",
     sandboxProfileKey: "standard",
     workingDirectory: "/workspace",
     toolCapabilities: ["read", "write", "edit", "bash"],

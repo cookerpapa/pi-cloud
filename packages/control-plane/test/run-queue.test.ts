@@ -18,6 +18,7 @@ import { ExecutionStreamProjector } from "../../runtime-core/src/execution-strea
 import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fact.ts";
 import { confirmAgentExit } from "../../runtime-core/src/quarantined-session-recovery.ts";
 import { PiCloudMetrics } from "@pi-cloud/observability";
+import { transitionCurrentRunAttempt } from "@pi-cloud/runtime-core/run-attempt-state";
 
 let pglite: PGlite;
 let socket: PGLiteSocketServer;
@@ -90,7 +91,7 @@ describe.sequential("Run queue authority", () => {
     const measured = database.withPlugin({
       transformQuery({ node, queryId }) {
         const query = database.getExecutor().compileQuery(node, queryId);
-        if (query.sql.startsWith('select "candidate"')) candidates.push(query.sql);
+        if (query.sql.startsWith('with "claim_candidate"')) candidates.push(query.sql);
         return node;
       },
       async transformResult({ result }) {
@@ -103,6 +104,10 @@ describe.sequential("Run queue authority", () => {
       claimOwnerId: "claim-timing-worker",
       backend: {
         execute: async (_request, lifecycle) => {
+          expect(_request).toMatchObject({
+            sessionKind: "conversation",
+            workspaceSeedKind: "empty",
+          });
           await lifecycle.started();
           return { stopReason: "stop" };
         },
@@ -115,17 +120,20 @@ describe.sequential("Run queue authority", () => {
     await expect(executor.dispatchRun(accepted.runId)).resolves.toEqual({ status: "idle" });
     // A generic prepared plan must be able to prove the ready-index predicate;
     // lifecycle constants are code, whereas user/Worker identities remain parameters.
-    expect(candidates).toHaveLength(1);
+    expect(candidates).toHaveLength(2);
     expect(candidates[0]).toContain("candidate.state in ('queued', 'claimed')");
+    expect(candidates.every((query) => query.includes('"claim_candidate" as materialized'))).toBe(
+      true,
+    );
+    expect(candidates[0]!.match(/from runs as earlier_run/g)).toHaveLength(1);
     const stages = await metrics.runClaimStageDuration.get();
     const counts = stages.values.filter((v) => v.metricName?.endsWith("_count"));
     expect(counts.map((v) => v.labels.stage).sort()).toEqual([
+      "candidate_context",
       "configuration",
-      "context",
       "finish",
       "lifecycle_write",
       "ownership",
-      "selection",
       "transaction_begin",
     ]);
     expect(counts.every((v) => v.value === 1)).toBe(true);
@@ -142,6 +150,70 @@ describe.sequential("Run queue authority", () => {
     )!.value;
     expect(sum).toBeGreaterThan(0);
     expect(sum).toBeLessThanOrEqual(whole);
+  });
+
+  it("rolls back both lifecycle writes if the transition record cannot be inserted", async () => {
+    const project = await store.createProject({
+      name: "transition rollback",
+      source: { kind: "empty" },
+    });
+    const session = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "rollback",
+      "elastic",
+    );
+    const accepted = await store.acceptTurn(session.sessionId, "transition-rollback", {
+      prompt: "test",
+    });
+    const executor = new RunExecutor({
+      database,
+      claimOwnerId: "rollback-worker",
+      backend: {
+        async execute(request, lifecycle) {
+          const before = await database
+            .selectFrom("runs")
+            .select(["state", "row_version"])
+            .where("id", "=", request.runId)
+            .executeTakeFirstOrThrow();
+          const prior = await database
+            .selectFrom("run_attempt_transitions")
+            .select("id")
+            .where("attempt_id", "=", request.attemptId)
+            .executeTakeFirstOrThrow();
+          await expect(
+            database.transaction().execute((tx) =>
+              transitionCurrentRunAttempt(tx, request, {
+                runState: "provisioning",
+                attemptState: "provisioning",
+                reason: "rollback-test",
+                now: new Date(),
+                transitionId: prior.id,
+              }),
+            ),
+          ).rejects.toThrow(/duplicate key/);
+          expect(
+            await database
+              .selectFrom("runs")
+              .select(["state", "row_version"])
+              .where("id", "=", request.runId)
+              .executeTakeFirstOrThrow(),
+          ).toEqual(before);
+          expect(
+            await database
+              .selectFrom("run_attempts")
+              .select(["state", "provisioning_at"])
+              .where("id", "=", request.attemptId)
+              .executeTakeFirstOrThrow(),
+          ).toEqual({ state: "claimed", provisioning_at: null });
+          await lifecycle.started();
+          return { stopReason: "stop" };
+        },
+      },
+    });
+    await expect(executor.dispatchRun(accepted.runId)).resolves.toMatchObject({
+      status: "completed",
+    });
   });
 
   it.each(["exit-first", "seal-first", "no-exit-proof"])(

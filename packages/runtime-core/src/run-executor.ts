@@ -57,6 +57,8 @@ export type TurnExecutionRequest = {
     prompt: string;
   };
   executionMode: import("@pi-cloud/protocol").ExecutionMode;
+  sessionKind: import("@pi-cloud/database").SessionKind;
+  workspaceSeedKind: import("@pi-cloud/database").WorkspaceSeedKind;
   computeSessionId?: string;
   sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
   workingDirectory: string;
@@ -628,52 +630,51 @@ export class RunExecutor {
     const result = await this.#database.transaction().execute(async (transaction) => {
       mark("transaction_begin");
       let now = await databaseTime(transaction);
-      let selectedRunId = runId;
-      if (selectedRunId === undefined) {
-        const candidate = await transaction
-          .selectFrom("runs as candidate")
-          .innerJoin(
-            "agent_revisions as candidate_agent",
-            "candidate_agent.id",
-            "candidate.agent_revision_id",
-          )
-          .innerJoin("sessions as candidate_session", (join) =>
-            join
-              .onRef("candidate_session.tenant_id", "=", "candidate.tenant_id")
-              .onRef("candidate_session.id", "=", "candidate.session_id"),
-          )
-          .innerJoin(
-            "tenant_runtime_policies as candidate_policy",
-            "candidate_policy.tenant_id",
-            "candidate.tenant_id",
-          )
-          .select("candidate.id")
-          .where("candidate.available_at", "<=", now)
-          // These code-owned states are also the partial ready-index predicate.
-          // Parameters prevent a generic prepared plan from proving that match.
-          .where(sql<boolean>`candidate.state in ('queued', 'claimed')`)
-          .where("candidate_session.state", "in", ["cold", "idle"])
-          .where(
-            sql<boolean>`not exists (
+      const candidate = transaction
+        .selectFrom("runs as candidate")
+        .innerJoin(
+          "agent_revisions as candidate_agent",
+          "candidate_agent.id",
+          "candidate.agent_revision_id",
+        )
+        .innerJoin("sessions as candidate_session", (join) =>
+          join
+            .onRef("candidate_session.tenant_id", "=", "candidate.tenant_id")
+            .onRef("candidate_session.id", "=", "candidate.session_id"),
+        )
+        .innerJoin(
+          "tenant_runtime_policies as candidate_policy",
+          "candidate_policy.tenant_id",
+          "candidate.tenant_id",
+        )
+        .selectAll("candidate")
+        .$if(runId !== undefined, (q) => q.where("candidate.id", "=", runId!))
+        .where("candidate.available_at", "<=", now)
+        // These code-owned states are also the partial ready-index predicate.
+        // Parameters prevent a generic prepared plan from proving that match.
+        .where(sql<boolean>`candidate.state in ('queued', 'claimed')`)
+        .where("candidate_session.state", "in", ["cold", "idle"])
+        .where(
+          sql<boolean>`not exists (
             select 1 from run_attempts pending join runs prior on prior.id = pending.run_id
             where prior.tenant_id = candidate.tenant_id and prior.session_id = candidate.session_id
               and pending.output_seal_id is not null and pending.output_sealed_at is null
           )`,
-          )
-          .where(this.#familyAdmission("candidate_session", admission))
-          .where(this.#taskOwnerAvailable("candidate"))
-          .where("candidate_policy.enabled", "=", true)
-          .where("candidate_agent.runtime_kind", "=", this.#agentRuntimeKind)
-          .where(
-            piSessionWorkerAvailable(
-              sql.ref("candidate_session.tenant_id"),
-              sql.ref("candidate_session.pi_session_id"),
-              this.#claimOwnerId,
-              sql.ref("candidate.id"),
-            ),
-          )
-          .where(
-            sql<boolean>`not exists (
+        )
+        .where(this.#familyAdmission("candidate_session", admission))
+        .where(this.#taskOwnerAvailable("candidate"))
+        .where("candidate_policy.enabled", "=", true)
+        .where("candidate_agent.runtime_kind", "=", this.#agentRuntimeKind)
+        .where(
+          piSessionWorkerAvailable(
+            sql.ref("candidate_session.tenant_id"),
+            sql.ref("candidate_session.pi_session_id"),
+            this.#claimOwnerId,
+            sql.ref("candidate.id"),
+          ),
+        )
+        .where(
+          sql<boolean>`not exists (
               select 1
               from runs as active_run
               where active_run.tenant_id = ${sql.ref("candidate.tenant_id")}
@@ -683,9 +684,9 @@ export class RunExecutor {
                   'claimed', 'provisioning', 'restoring', 'running', 'settling', 'cancel_requested'
                 )
             )`,
-          )
-          .where(
-            sql<boolean>`not exists (
+        )
+        .where(
+          sql<boolean>`not exists (
               select 1
               from runs as earlier_run
               where earlier_run.tenant_id = ${sql.ref("candidate.tenant_id")}
@@ -693,20 +694,21 @@ export class RunExecutor {
                 and earlier_run.state not in ('completed', 'failed', 'cancelled', 'timed_out', 'superseded')
                 and earlier_run.mailbox_position < ${sql.ref("candidate.mailbox_position")}
             )`,
-          )
-          .orderBy("candidate.available_at", "asc")
-          .orderBy("candidate.queued_at", "asc")
-          .orderBy("candidate.id", "asc")
-          .limit(1)
-          .forUpdate("candidate")
-          .skipLocked()
-          .executeTakeFirst();
-        if (candidate === undefined) return undefined;
-        selectedRunId = candidate.id;
-      }
-      mark("selection");
+        )
+        .orderBy("candidate.available_at", "asc")
+        .orderBy("candidate.queued_at", "asc")
+        .orderBy("candidate.id", "asc")
+        .limit(1)
+        .forUpdate("candidate")
+        .skipLocked();
+      // Materialize the locked candidate once. The outer query only loads its
+      // context; it does not plan/evaluate a second copy of queue eligibility.
       const context = await transaction
-        .selectFrom("runs as run")
+        .with(
+          (cte) => cte("claim_candidate").materialized(),
+          () => candidate,
+        )
+        .selectFrom("claim_candidate as run")
         .innerJoin("turns as turn", (join) =>
           join
             .onRef("turn.tenant_id", "=", "run.tenant_id")
@@ -746,6 +748,7 @@ export class RunExecutor {
           "session_row.pi_session_lane as piSessionLane",
           "session_row.state as sessionState",
           "session_row.session_kind as sessionKind",
+          "workspace_row.seed_kind as workspaceSeedKind",
           "session_row.execution_mode as executionMode",
           "session_row.project_id as projectId",
           "session_row.workspace_id as workspaceId",
@@ -764,60 +767,14 @@ export class RunExecutor {
           "run.row_version as runVersion",
         ])
         .where("workspace_row.deleted_at", "is", null)
+        .whereRef("session_row.workspace_id", "=", "run.workspace_id")
+        .whereRef("session_row.project_id", "=", "run.project_id")
+        .whereRef("workspace_row.project_id", "=", "run.project_id")
         .whereRef("session_row.agent_revision_id", "=", "run.agent_revision_id")
-        .where("run.available_at", "<=", now)
-        .where("run.id", "=", selectedRunId)
-        .where(this.#familyAdmission("session_row", admission))
-        .where(this.#taskOwnerAvailable("run"))
-        .where("run.state", "in", ["queued", "claimed"])
-        .where(
-          sql<boolean>`not exists (
-          select 1 from run_attempts pending join runs prior on prior.id = pending.run_id
-          where prior.tenant_id = run.tenant_id and prior.session_id = run.session_id
-            and pending.output_seal_id is not null and pending.output_sealed_at is null
-        )`,
-        )
         .where("turn.state", "=", "queued")
-        .where(
-          piSessionWorkerAvailable(
-            sql.ref("session_row.tenant_id"),
-            sql.ref("session_row.pi_session_id"),
-            this.#claimOwnerId,
-            sql.ref("run.id"),
-          ),
-        )
-        .where(
-          sql<boolean>`not exists (
-            select 1
-            from runs as active_run
-            where active_run.tenant_id = ${sql.ref("run.tenant_id")}
-              and active_run.session_id = ${sql.ref("run.session_id")}
-              and active_run.id <> ${sql.ref("run.id")}
-              and active_run.state in (
-                'claimed', 'provisioning', 'restoring', 'running', 'settling', 'cancel_requested'
-              )
-          )`,
-        )
-        .where(
-          sql<boolean>`not exists (
-            select 1
-            from runs as earlier_run
-            where earlier_run.tenant_id = ${sql.ref("run.tenant_id")}
-              and earlier_run.session_id = ${sql.ref("run.session_id")}
-              and earlier_run.state not in ('completed', 'failed', 'cancelled', 'timed_out', 'superseded')
-              and earlier_run.mailbox_position < ${sql.ref("run.mailbox_position")}
-          )`,
-        )
-        .where("session_row.state", "in", ["cold", "idle"])
-        .orderBy("run.available_at", "asc")
-        .orderBy("run.queued_at", "asc")
-        .orderBy("run.id", "asc")
-        .limit(1)
-        .forUpdate("run")
-        .skipLocked()
         .executeTakeFirst();
 
-      mark("context");
+      mark("candidate_context");
       if (!context) return undefined;
 
       // Fixed-ID configuration lookup stays in the claim transaction. Keeping
@@ -1025,6 +982,8 @@ export class RunExecutor {
           nextEventSeq: row.nextEventSeq,
           input: { kind: "prompt" as const, prompt: row.inputText },
           executionMode: row.executionMode,
+          sessionKind: row.sessionKind,
+          workspaceSeedKind: row.workspaceSeedKind,
           ...(row.computeSessionId === null ? {} : { computeSessionId: row.computeSessionId }),
           sandboxProfileKey: row.sandboxProfileKey,
           workingDirectory: row.workingDirectory,

@@ -84,14 +84,8 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
         sessionId: scope.sessionId,
       }),
     );
-    const session = await this.options.database
-      .selectFrom("sessions")
-      .select("session_kind")
-      .where("tenant_id", "=", scope.tenantId)
-      .where("id", "=", scope.sessionId)
-      .executeTakeFirstOrThrow();
     const tree =
-      session.session_kind === "subagent"
+      scope.sessionKind === "subagent"
         ? await this.#jobs.treeContext(scope.tenantId, scope.runId)
         : undefined;
     const contact = tree

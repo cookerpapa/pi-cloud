@@ -142,7 +142,7 @@ export async function transitionCurrentRunAttempt(
     throw new TypeError("Run failure metadata does not match its target state");
   }
 
-  const attemptUpdate = await transaction
+  const attemptUpdate = transaction
     .updateTable("run_attempts")
     .set({
       state: attemptState,
@@ -159,10 +159,9 @@ export async function transitionCurrentRunAttempt(
     .where("run_id", "=", identity.runId)
     .where("id", "=", identity.attemptId)
     .where("state", "=", row.attemptState)
-    .executeTakeFirst();
-  expectOne(attemptUpdate.numUpdatedRows, "Updating a run attempt");
+    .returning("id");
 
-  const runUpdate = await transaction
+  const runUpdate = transaction
     .updateTable("runs")
     .set({
       state: runState,
@@ -186,22 +185,54 @@ export async function transitionCurrentRunAttempt(
     .where("current_attempt_id", "=", identity.attemptId)
     .where("state", "=", row.runState)
     .where("row_version", "=", row.runVersion)
-    .executeTakeFirst();
-  expectOne(runUpdate.numUpdatedRows, "Updating a run");
+    .returning("id");
 
-  if (row.attemptState !== attemptState) {
-    await transaction
-      .insertInto("run_attempt_transitions")
-      .values({
-        id: input.transitionId ?? randomUUID(),
-        tenant_id: identity.tenantId,
-        run_id: identity.runId,
-        attempt_id: identity.attemptId,
-        from_state: row.attemptState,
-        to_state: attemptState,
-        reason,
-        occurred_at: now,
-      })
-      .executeTakeFirstOrThrow();
-  }
+  // The locked transition remains one transaction, but its three writes share
+  // one server round trip. Count checks still roll back the entire transition.
+  const changed = await transaction
+    .with("updated_attempt", () => attemptUpdate)
+    .with("updated_run", () => runUpdate)
+    .with("recorded_transition", (db) =>
+      db
+        .insertInto("run_attempt_transitions")
+        .columns([
+          "id",
+          "tenant_id",
+          "run_id",
+          "attempt_id",
+          "from_state",
+          "to_state",
+          "reason",
+          "occurred_at",
+        ])
+        .expression(
+          db
+            .selectFrom("updated_attempt")
+            .select([
+              sql<string>`${input.transitionId ?? randomUUID()}::uuid`.as("id"),
+              sql<string>`${identity.tenantId}::uuid`.as("tenant_id"),
+              sql<string>`${identity.runId}::uuid`.as("run_id"),
+              "updated_attempt.id as attempt_id",
+              sql`${row.attemptState}::text`.as("from_state"),
+              sql`${attemptState}::text`.as("to_state"),
+              sql<string>`${reason}::text`.as("reason"),
+              sql<Date>`${now}::timestamptz`.as("occurred_at"),
+            ])
+            .where(sql<boolean>`${row.attemptState} <> ${attemptState}`),
+        )
+        .returning("id"),
+    )
+    .selectNoFrom([
+      sql<number>`(select count(*)::int from updated_attempt)`.as("attempts"),
+      sql<number>`(select count(*)::int from updated_run)`.as("runs"),
+      sql<number>`(select count(*)::int from recorded_transition)`.as("transitions"),
+    ])
+    .executeTakeFirstOrThrow();
+  expectOne(BigInt(changed.attempts), "Updating a run attempt");
+  expectOne(BigInt(changed.runs), "Updating a run");
+  if (changed.transitions !== Number(row.attemptState !== attemptState))
+    throw new RunAttemptLifecycleError(
+      "run_attempt_stale",
+      "Run transition record was not committed",
+    );
 }

@@ -173,8 +173,12 @@ observe pool wait time under the configured model/Lane concurrency, and use a
 connection proxy before multiplying connections across many replicas. Broker
 heartbeat must leave more than one missed interval before lease expiry.
 
-The shared database adapter retains at most 128 named, parameterized SELECT
-statements per physical connection. PostgreSQL may reuse their plans; query
+The shared database adapter retains at most 128 named, parameterized SELECT/WITH
+statements per physical connection and keeps up to two already-created connections
+warm within each pool's existing maximum. Excess connections still retire after
+10 seconds idle; connections are never preallocated per Run or Session. This
+avoids losing prepared plans on every user/model pause. It retains
+no result cache: PostgreSQL may reuse plans, while query
 results and parameter values are never cached. Other statements use the same
 `pg` client normally. This adds neither a query retry nor a database round trip.
 The bound lives in `packages/database/src/client.ts`; schema-changing deployment

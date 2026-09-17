@@ -40,11 +40,7 @@ export {
   type TenantModelGatewayOptions,
 } from "./model-gateway.ts";
 export { ResponsesHostedActivityObserver } from "./responses-hosted-activity.ts";
-export {
-  PostgresWorkspaceSeedResolver,
-  WorkspaceSeedError,
-  type PostgresWorkspaceSeedResolverOptions,
-} from "./workspace-seed.ts";
+export { resolveWorkspaceSeed } from "./workspace-seed.ts";
 export {
   PostgresPiWorker,
   type PostgresPiWorkerOptions,

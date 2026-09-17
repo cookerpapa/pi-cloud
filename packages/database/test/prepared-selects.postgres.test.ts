@@ -5,6 +5,33 @@ import { createDatabase } from "../src/client.ts";
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
 it.skipIf(!endpoint)(
+  "retains a bounded warm connection and its plans across an idle gap",
+  async () => {
+    const database = createDatabase({ connectionString: endpoint!, maxConnections: 1 });
+    try {
+      const probe = () =>
+        sql<{ pid: number; n: number }>`select pg_backend_pid() as pid, ${7}::int as n`.execute(
+          database,
+        );
+      const before = await probe();
+      const plans = () =>
+        sql<{
+          n: string;
+        }>`select count(*)::text as n from pg_prepared_statements where name like 'pc_%'`.execute(
+          database,
+        );
+      const preparedBefore = await plans();
+      await new Promise((resolve) => setTimeout(resolve, 11_000));
+      expect((await probe()).rows).toEqual(before.rows);
+      expect((await plans()).rows).toEqual(preparedBefore.rows);
+    } finally {
+      await database.destroy();
+    }
+  },
+  20_000,
+);
+
+it.skipIf(!endpoint)(
   "reuses bounded SELECT plans without changing bindings or transactions",
   async () => {
     const database = createDatabase({ connectionString: endpoint!, maxConnections: 1 });
@@ -35,6 +62,22 @@ it.skipIf(!endpoint)(
           Number(before.rows.find((row) => row.statement === statement)!.generic_plans),
         ).toBeGreaterThan(0);
 
+        const cte = "with candidate as materialized (select $1::int as n) select n from candidate";
+        for (let i = 0; i < 8; i++) {
+          expect((await connection.executeQuery(CompiledQuery.raw(cte, [i]))).rows).toEqual([
+            { n: i },
+          ]);
+        }
+        expect(
+          (
+            await sql<{
+              generic_plans: string;
+            }>`select generic_plans from pg_prepared_statements where statement = ${cte}`.execute(
+              connection,
+            )
+          ).rows.some((r) => Number(r.generic_plans) > 0),
+        ).toBe(true);
+
         for (let i = 0; i < 160; i++) {
           const result = await connection.executeQuery<{ n: number }>(
             CompiledQuery.raw(`select $1::int as n /* shape ${i} */`, [i]),
@@ -54,7 +97,9 @@ it.skipIf(!endpoint)(
       const failure = new Error("rollback fixture");
       await expect(
         database.transaction().execute(async (tx) => {
-          await sql`insert into prepared_rollback values (${1})`.execute(tx);
+          await sql`with inserted as (insert into prepared_rollback values (${1}) returning n) select n from inserted`.execute(
+            tx,
+          );
           await sql`select n from prepared_rollback where n = ${1}`.execute(tx);
           throw failure;
         }),

@@ -182,6 +182,8 @@ describe("supervisor/control-plane wire protocol", () => {
         },
         input: { kind: "prompt", text: "Fix the failing test" },
         executionMode: "elastic",
+        sessionKind: "conversation",
+        workspaceSeedKind: "empty",
         sandboxProfileKey: "standard",
         workingDirectory: "/workspace",
         toolCapabilities: ["read", "write", "edit", "bash"],

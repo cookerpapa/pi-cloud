@@ -341,6 +341,11 @@ export class RunCancellationExecutor {
             .onRef("run.turn_id", "=", "cancellation.turn_id")
             .onRef("run.id", "=", "cancellation.target_run_id"),
         )
+        .innerJoin("workspaces as workspace", (join) =>
+          join
+            .onRef("workspace.tenant_id", "=", "run.tenant_id")
+            .onRef("workspace.id", "=", "run.workspace_id"),
+        )
         .innerJoin(
           "agent_revisions as agent_revision",
           "agent_revision.id",
@@ -392,6 +397,8 @@ export class RunCancellationExecutor {
           "session_row.project_id as projectId",
           "session_row.workspace_id as workspaceId",
           "session_row.execution_mode as executionMode",
+          "session_row.session_kind as sessionKind",
+          "workspace.seed_kind as workspaceSeedKind",
           "session_row.next_event_seq as nextEventSeq",
           "run.id as runId",
           "run.sandbox_profile_key as sandboxProfileKey",
@@ -491,6 +498,8 @@ export class RunCancellationExecutor {
             nextEventSeq: row.nextEventSeq,
             input: { kind: "prompt", prompt: row.inputText },
             executionMode: row.executionMode,
+            sessionKind: row.sessionKind,
+            workspaceSeedKind: row.workspaceSeedKind,
             sandboxProfileKey: row.sandboxProfileKey,
             workingDirectory: row.workingDirectory,
             toolCapabilities: parseCloudToolCapabilitySnapshot(row.toolCapabilitySnapshot),

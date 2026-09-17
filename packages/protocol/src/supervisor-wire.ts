@@ -175,6 +175,8 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
         nextEventSeq: PositiveSafeIntegerSchema,
         agent: AgentRevisionSnapshotSchema,
         input: PromptInputSchema,
+        sessionKind: Type.Union([Type.Literal("conversation"), Type.Literal("subagent")]),
+        workspaceSeedKind: Type.Union([Type.Literal("empty"), Type.Literal("sample_java")]),
         executionMode: ExecutionModeSchema,
         computeSessionId: Type.Optional(UuidSchema),
         sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,

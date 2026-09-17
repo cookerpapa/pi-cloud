@@ -57,6 +57,9 @@ and idempotency key. Follow-up remains a queued input; Steer first lives in
 Workers claim `runs` with `FOR UPDATE SKIP LOCKED`. Claim enforces same-Lane
 mailbox order, cancellation and predecessor seal completion. It briefly locks
 the physical `pi_sessions` row to keep all active Lanes on one Worker boot.
+One materialized candidate supplies the startup context without a second queue
+scan. Immutable Session kind and Workspace seed kind travel in the internal
+execute command; downstream preparation does not re-query them.
 Cold Sessions have no Worker affinity or permanent process. Successful claims
 wake the next free slot; LISTEN/NOTIFY reduces idle latency and periodic polling
 covers missed wakeups. There is no Temporal or competing dispatcher.

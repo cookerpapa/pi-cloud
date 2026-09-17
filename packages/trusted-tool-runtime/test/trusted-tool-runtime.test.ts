@@ -6,26 +6,16 @@ import { PostgresTrustedToolRuntime } from "../src/index.ts";
 import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 
 function rootSessionDatabase(): Kysely<Database> {
-  const query = {
-    select() {
-      return this;
-    },
-    where() {
-      return this;
-    },
-    async executeTakeFirstOrThrow() {
-      return { session_kind: "user" };
-    },
-  };
   return {
     selectFrom() {
-      return query;
+      throw new Error("Root tool setup must reuse claimed metadata without querying PG");
     },
   } as unknown as Kysely<Database>;
 }
 
 const command = {
   payload: {
+    sessionKind: "conversation",
     tenantId: "tenant-1",
     sessionId: "session-1",
     runId: "run-1",

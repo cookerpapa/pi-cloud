@@ -46,6 +46,8 @@ const command: ExecuteTurnCommandMessage = {
     },
     input: { kind: "prompt", text: "test" },
     executionMode: "elastic",
+    sessionKind: "conversation",
+    workspaceSeedKind: "empty",
     sandboxProfileKey: "standard",
     workingDirectory: "/workspace",
     toolCapabilities: ["read", "write", "edit", "bash"],

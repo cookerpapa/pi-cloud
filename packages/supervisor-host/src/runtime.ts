@@ -46,7 +46,7 @@ import {
   type PostgresPiWorkerState,
 } from "./postgres-pi-worker.ts";
 import { SupervisorProvisioningClient } from "./provisioning-client.ts";
-import { PostgresWorkspaceSeedResolver } from "./workspace-seed.ts";
+import { resolveWorkspaceSeed } from "./workspace-seed.ts";
 import { findRetiredRuns } from "./retired-runs.ts";
 
 export type PiWorkerRuntimeState =
@@ -394,9 +394,6 @@ export class PiWorkerRuntime {
     await this.#provisioningClient.provision(request);
     this.#assertStarting();
 
-    const workspaceSeedResolver = new PostgresWorkspaceSeedResolver({
-      database: this.#database,
-    });
     const modelGateway = new TenantModelGateway({
       host: this.#config.modelGatewayHost,
       port: this.#config.modelGatewayPort,
@@ -554,7 +551,7 @@ export class PiWorkerRuntime {
       }),
       scenario: resolveProductionSandboxScenario,
       modelRuntimeLeaseResolver: (command) => modelGateway.issue(command),
-      workspaceSeedResolver: (command, signal) => workspaceSeedResolver.resolve(command, signal),
+      workspaceSeedResolver: resolveWorkspaceSeed,
       turnTimeoutMs: this.#config.piTurnTimeoutMs,
       ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
     });

@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0173](0173-startup-context-reuse.md) — single candidate selection, claimed
+   metadata reuse and fewer state-transition round trips with unchanged boundaries.
+
 1. [ADR-0172](0172-plugin-owned-volume-initialization.md) — one plugin-owned
    identity publication, read-only Gateway verification and non-destructive seeds.
 

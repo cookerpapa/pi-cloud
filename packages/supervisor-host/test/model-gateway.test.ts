@@ -69,6 +69,8 @@ function command(
       },
       input: { kind: "prompt", text: "hello" },
       executionMode: "elastic",
+      sessionKind: "conversation",
+      workspaceSeedKind: "empty",
       sandboxProfileKey: "standard",
       workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],

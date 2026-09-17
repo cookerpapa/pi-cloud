@@ -6,9 +6,10 @@ import type { Database } from "./database-types.ts";
 export type CreateDatabaseOptions = {
   connectionString: string;
   maxConnections?: number;
+  minConnections?: number;
 };
 
-const MAX_PREPARED_SELECTS_PER_CONNECTION = 128;
+const MAX_PREPARED_STATEMENTS_PER_CONNECTION = 128;
 
 export function createDatabase(options: CreateDatabaseOptions): Kysely<Database> {
   if (options.connectionString.trim().length === 0) {
@@ -18,7 +19,21 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
   if (!Number.isSafeInteger(maxConnections) || maxConnections < 1) {
     throw new Error("maxConnections must be a positive safe integer");
   }
-  const pool = new Pool({ connectionString: options.connectionString, max: maxConnections });
+  const minConnections = options.minConnections ?? Math.min(2, maxConnections);
+  if (
+    !Number.isSafeInteger(minConnections) ||
+    minConnections < 0 ||
+    minConnections > maxConnections
+  ) {
+    throw new Error("minConnections must be an integer between zero and maxConnections");
+  }
+  // Keep a small warm floor across user/model pauses so named plans survive.
+  // pg still creates clients lazily and retires excess idle/broken connections.
+  const pool = new Pool({
+    connectionString: options.connectionString,
+    max: maxConnections,
+    min: minConnections,
+  });
   // pg removes a broken idle client itself. Observe that background event
   // without crashing unrelated Runs or retrying an in-flight SQL operation.
   pool.on("error", (error) => {
@@ -45,7 +60,7 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
           let connection = connections.get(client);
           if (!connection) {
             // pg owns parsing, binding, reconnects and errors. Only give stable
-            // parameterized SELECTs a name so PostgreSQL can reuse their plans.
+            // parameterized SELECT/WITH statements a name so PG can reuse plans.
             // Bound server-side plans too; other SQL keeps pg's unnamed behavior.
             const statements = new Map<string, string>();
             // Names remain client-local even behind a multiplexing test backend.
@@ -56,9 +71,13 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
               },
               release: () => client.release(),
               query: ((text: unknown, parameters?: readonly unknown[]) => {
-                if (typeof text === "string" && /^\s*select\s/i.test(text) && parameters?.length) {
+                if (
+                  typeof text === "string" &&
+                  /^\s*(select|with)\s/i.test(text) &&
+                  parameters?.length
+                ) {
                   let name = statements.get(text);
-                  if (!name && statements.size < MAX_PREPARED_SELECTS_PER_CONNECTION) {
+                  if (!name && statements.size < MAX_PREPARED_STATEMENTS_PER_CONNECTION) {
                     name = `${namespace}${statements.size}`;
                     statements.set(text, name);
                   }

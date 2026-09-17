@@ -307,6 +307,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           agent: request.agent,
           input: { kind: "prompt", text: request.input.prompt },
           executionMode: request.executionMode,
+          sessionKind: request.sessionKind,
+          workspaceSeedKind: request.workspaceSeedKind,
           ...(request.computeSessionId === undefined
             ? {}
             : { computeSessionId: request.computeSessionId }),

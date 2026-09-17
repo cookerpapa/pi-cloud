@@ -446,9 +446,18 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         await fakeModel.start();
       }
       if (this.#runAttemptPhaseObserver !== undefined) {
+        const phaseStartedAt = performance.now();
         try {
           await this.#runAttemptPhaseObserver.transition(command, "running");
+          this.#metrics?.runPreparationDuration.observe(
+            { stage: "durable_running", outcome: "completed" },
+            (performance.now() - phaseStartedAt) / 1_000,
+          );
         } catch (error: unknown) {
+          this.#metrics?.runPreparationDuration.observe(
+            { stage: "durable_running", outcome: "failed" },
+            (performance.now() - phaseStartedAt) / 1_000,
+          );
           throw safePiError(
             error,
             "run_phase_persist_failed",
