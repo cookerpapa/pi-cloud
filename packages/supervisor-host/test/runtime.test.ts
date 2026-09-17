@@ -3,6 +3,7 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { AgentRunSupervisor, type AgentTurnScenarioContext } from "@pi-cloud/sandbox-supervisor";
 import { AcceptedFactPublisherFailedError } from "@pi-cloud/runtime-core/accepted-fact";
+import { KafkaAcceptedFactBus } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -473,6 +474,41 @@ describe("PiWorkerRuntime", () => {
         started.mockRestore();
         health.mockRestore();
         for (const gateway of gateways) await gateway.close();
+      }
+      const publisherStartupFailure = new Error("Kafka startup failed after acquisition");
+      const startingPublisher = vi
+        .spyOn(KafkaAcceptedFactBus.prototype, "start")
+        .mockRejectedValueOnce(publisherStartupFailure);
+      const closingPublisher = vi.spyOn(KafkaAcceptedFactBus.prototype, "close");
+      const closingModelGateway = vi.spyOn(TenantModelGateway.prototype, "close");
+      const failedPublisher = new PiWorkerRuntime({
+        config: {
+          ...baseConfig,
+          supervisorId: `${SUPERVISOR_ID}-publisher-startup`,
+          bootStateDirectory: join(root, "publisher-startup"),
+        },
+        database,
+        toolBroker: runtimeToolBroker,
+        runWorkerFactory,
+        provisioningClient: {
+          async provision() {
+            return { accepted: true } as never;
+          },
+        },
+      });
+      try {
+        await expect(failedPublisher.start()).rejects.toMatchObject({
+          code: "pi_worker_start_failed",
+          cause: publisherStartupFailure,
+        });
+        await failedPublisher.close();
+        expect(closingPublisher).toHaveBeenCalledTimes(1);
+        expect(closingModelGateway).toHaveBeenCalledTimes(1);
+      } finally {
+        await failedPublisher.close();
+        startingPublisher.mockRestore();
+        closingPublisher.mockRestore();
+        closingModelGateway.mockRestore();
       }
       for (const outcome of ["resolve", "reject"]) {
         let entered!: () => void, release!: () => void;

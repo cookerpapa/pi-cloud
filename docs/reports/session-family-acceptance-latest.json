@@ -1,9 +1,9 @@
 {
   "accepted": true,
-  "checkedAt": "2026-09-15T05:09:51.232Z",
+  "checkedAt": "2026-09-17T00:49:51.070Z",
   "model": {
     "provider": "deepseek",
-    "modelId": "deepseek-v4-flash",
+    "modelId": "deepseek-v4-pro",
     "thinkingLevel": "low",
     "fastMode": false
   },
@@ -29,99 +29,108 @@
   "timings": [
     {
       "label": "parallel-coding",
-      "submittedWallAt": 1789448991935,
-      "admissionMs": 21.49371999999994,
-      "firstVisibleMs": 1399.530538,
-      "completedMs": 62729.136522,
-      "firstAssistantTextMs": 62616.362779,
-      "firstAssistantTextEmittedAtMs": 1789449056955,
-      "firstAssistantTextReceivedAtMs": 1789449056964,
+      "submittedWallAt": 1789606191986,
+      "admissionMs": 28.393776000000344,
+      "firstVisibleMs": 22775.294182999998,
+      "completedMs": 102234.972734,
+      "firstAssistantTextMs": 22775.298732,
+      "firstAssistantTextEmittedAtMs": 1789606214746,
+      "firstAssistantTextReceivedAtMs": 1789606214762,
       "stages": {
-        "unavailable": "Host wall clock changed during the Run; monotonic client durations remain valid",
-        "clockStepMs": 2412.637220999997
+        "firstModelDispatchMs": 508.491,
+        "providerRouteToFirstTextMs": 22250.708,
+        "parsedTextToPiEventMs": 0.801,
+        "piEventToClientTextMs": 15.299,
+        "firstTextFollowsEarlierSampling": false,
+        "nonProviderTtftMs": 524.591,
+        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; requires synchronized host clocks"
       }
     },
     {
       "label": "independent-family",
-      "submittedWallAt": 1789448999635,
-      "admissionMs": 17.681525999998485,
-      "firstVisibleMs": 5873.276630999999,
-      "completedMs": 13357.619302999998,
-      "firstAssistantTextMs": 13190.742434999998,
-      "firstAssistantTextEmittedAtMs": 1789449012817,
-      "firstAssistantTextReceivedAtMs": 1789449012826,
+      "submittedWallAt": 1789606226161,
+      "admissionMs": 50.771394000003056,
+      "firstVisibleMs": 7568.856273000005,
+      "completedMs": 20212.599401,
+      "firstAssistantTextMs": 20040.198336,
+      "firstAssistantTextEmittedAtMs": 1789606246189,
+      "firstAssistantTextReceivedAtMs": 1789606246201,
       "stages": {
-        "firstModelDispatchMs": 4927.188,
-        "providerRouteToFirstTextMs": 410.441,
-        "parsedTextToPiEventMs": 0.323,
-        "piEventToClientTextMs": 8.742,
+        "firstModelDispatchMs": 6396.249,
+        "providerRouteToFirstTextMs": 903.281,
+        "parsedTextToPiEventMs": 0.415,
+        "piEventToClientTextMs": 12.198,
         "firstTextFollowsEarlierSampling": true,
-        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; synchronized host clocks"
+        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; requires synchronized host clocks"
       }
     },
     {
       "label": "capacity-queue",
-      "submittedWallAt": 1789448999774,
-      "admissionMs": 15.77279499999895,
-      "firstVisibleMs": 13876.670128,
-      "completedMs": 14001.023673999998,
-      "firstAssistantTextMs": 13876.675206999998,
-      "firstAssistantTextEmittedAtMs": 1789449013641,
-      "firstAssistantTextReceivedAtMs": 1789449013651,
+      "submittedWallAt": 1789606226473,
+      "admissionMs": 25.276001000005635,
+      "firstVisibleMs": 21841.850065000006,
+      "completedMs": 21933.793864,
+      "firstAssistantTextMs": 21841.85233,
+      "firstAssistantTextEmittedAtMs": 1789606248304,
+      "firstAssistantTextReceivedAtMs": 1789606248315,
       "stages": {
-        "firstModelDispatchMs": 13299.317,
-        "providerRouteToFirstTextMs": 568.14,
-        "parsedTextToPiEventMs": -0.457,
-        "piEventToClientTextMs": 9.675,
+        "firstModelDispatchMs": 20972.284,
+        "providerRouteToFirstTextMs": 857.55,
+        "parsedTextToPiEventMs": 1.166,
+        "piEventToClientTextMs": 10.852,
         "firstTextFollowsEarlierSampling": false,
-        "nonProviderTtftMs": 13308.535,
-        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; synchronized host clocks"
+        "nonProviderTtftMs": 20984.302,
+        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; requires synchronized host clocks"
       }
     },
     {
       "label": "multi-round-branch",
-      "submittedWallAt": 1789449057897,
-      "admissionMs": 21.94330899999477,
-      "firstVisibleMs": 1153.8418189999938,
-      "completedMs": 9140.971481,
-      "firstAssistantTextMs": 9035.771536,
-      "firstAssistantTextEmittedAtMs": 1789449068143,
-      "firstAssistantTextReceivedAtMs": 1789449068151,
+      "submittedWallAt": 1789606295427,
+      "admissionMs": 20.89283599999908,
+      "firstVisibleMs": 1572.3454860000056,
+      "completedMs": 15365.744646000006,
+      "firstAssistantTextMs": 15187.618456000011,
+      "firstAssistantTextEmittedAtMs": 1789606310588,
+      "firstAssistantTextReceivedAtMs": 1789606310615,
       "stages": {
-        "unavailable": "Host wall clock changed during the Run; monotonic client durations remain valid",
-        "clockStepMs": 1218.2284639999998
+        "firstModelDispatchMs": 236.57,
+        "providerRouteToFirstTextMs": 887.977,
+        "parsedTextToPiEventMs": 1.42,
+        "piEventToClientTextMs": 26.618,
+        "firstTextFollowsEarlierSampling": true,
+        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; requires synchronized host clocks"
       }
     },
     {
       "label": "worker-loss",
-      "submittedWallAt": 1789449068697,
-      "admissionMs": 17.44272700000147,
-      "firstVisibleMs": 1403.7072599999956,
-      "completedMs": 30477.902151999995
+      "submittedWallAt": 1789606311541,
+      "admissionMs": 23.161871000003885,
+      "firstVisibleMs": 1304.5055199999915,
+      "completedMs": 34479.944528999986
     },
     {
       "label": "replacement-worker",
-      "submittedWallAt": 1789449109668,
-      "admissionMs": 39.782104999991134,
-      "firstVisibleMs": 902.1120519999968,
-      "completedMs": 6253.640604,
-      "firstAssistantTextMs": 6081.911647999994,
-      "firstAssistantTextEmittedAtMs": 1789449115743,
-      "firstAssistantTextReceivedAtMs": 1789449115750,
+      "submittedWallAt": 1789606356528,
+      "admissionMs": 192.2227600000042,
+      "firstVisibleMs": 2730.7538059999933,
+      "completedMs": 7888.104407999985,
+      "firstAssistantTextMs": 7746.588590999978,
+      "firstAssistantTextEmittedAtMs": 1789606364259,
+      "firstAssistantTextReceivedAtMs": 1789606364274,
       "stages": {
-        "firstModelDispatchMs": 302.495,
-        "providerRouteToFirstTextMs": 860.202,
-        "parsedTextToPiEventMs": 0.428,
-        "piEventToClientTextMs": 6.912,
+        "firstModelDispatchMs": 866.838,
+        "providerRouteToFirstTextMs": 827.768,
+        "parsedTextToPiEventMs": 0.926,
+        "piEventToClientTextMs": 15.589,
         "firstTextFollowsEarlierSampling": true,
-        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; synchronized host clocks"
+        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; requires synchronized host clocks"
       }
     }
   ],
   "usage": {
-    "input": 14071,
-    "cacheRead": 107264,
-    "output": 6757
+    "input": 20502,
+    "cacheRead": 161024,
+    "output": 7965
   },
-  "fixtureTenantId": "854fb185-3a48-492f-a4e9-9c2edcc71f45"
+  "fixtureTenantId": "a592ea5a-fa95-48a4-8b0a-824c6b5e680b"
 }
