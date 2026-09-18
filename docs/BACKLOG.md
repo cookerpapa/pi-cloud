@@ -12,8 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Validate approved atomic Worker execution admission (ADR-0174): compare
-      startup latency and crash boundaries. Historical WAL tails remain unproven.
+- [ ] Trace remaining startup COMMIT/client-handoff tails. Atomic admission is
+      [implemented and measured](reports/atomic-admission-20260918.md): its segment
+      is faster, but pooled single-Session startup is nearly unchanged and one
+      new sample reached 327.5ms. Do not attribute that tail to WAL without a wait trace.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.

@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] Atomic Worker claim/lease/publication admission, exact COMMIT confirmation
+      and output-free pre-start retry; [real-PG faults and GPT comparison](reports/atomic-admission-20260918.md).
+
 - [x] Bounded warm PG connections, single candidate selection, claimed metadata
       reuse and fewer lifecycle-write round trips; [GPT acceptance](reports/startup-optimization-20260917.md).
 

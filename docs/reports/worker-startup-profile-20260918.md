@@ -1,5 +1,8 @@
 # Worker startup profiling and local fixes — September 18, 2026
 
+Subsequent approved work: [atomic admission and its measured limits](atomic-admission-20260918.md).
+The pending decision below describes this report's earlier revision.
+
 Source baseline `33d381c6`, implemented/deployed `86d8a057`. One Compose Worker,
 four family/model slots; unchanged PG/Kafka/Cube topology and durability settings.
 **The measured blocking call is fixed, but paired tests do not demonstrate lower
