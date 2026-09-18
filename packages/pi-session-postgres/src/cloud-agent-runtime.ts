@@ -35,7 +35,7 @@ import type {
   Usage,
   UserMessage,
 } from "@earendil-works/pi-ai";
-import { isRetryableAssistantError } from "@earendil-works/pi-ai";
+import { isContextOverflow, isRetryableAssistantError } from "@earendil-works/pi-ai";
 import { isIncompleteModelStreamError } from "./model-stream-error.ts";
 import type { PiSessionMutationOperation, PiSessionAppendOperation } from "./session-mutation.ts";
 
@@ -58,11 +58,12 @@ export type CloudAgentRuntimeEvent =
       errorMessage: string;
     }
   | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
-  | { type: "compaction_start"; reason: "threshold" }
+  | { type: "compaction_start"; reason: "threshold" | "overflow" }
   | {
       type: "compaction_end";
-      reason: "threshold";
+      reason: "threshold" | "overflow";
       success: boolean;
+      aborted: boolean;
       errorMessage?: string;
       result?: Readonly<{
         summary: string;
@@ -418,6 +419,8 @@ export class CloudAgentRuntime {
         }
       };
 
+      let overflowRecoveryAttempted = false;
+      let pendingOverflowCompaction = false;
       const agent = new Agent({
         streamFn,
         initialState: {
@@ -432,7 +435,9 @@ export class CloudAgentRuntime {
           signal?.throwIfAborted();
           const path = initialPath ?? (await this.#loadBranch());
           initialPath = undefined;
-          const current = await this.#compactIfNeeded(operationId, path, signal);
+          const reason = pendingOverflowCompaction ? "overflow" : "threshold";
+          pendingOverflowCompaction = false;
+          const current = await this.#compactIfNeeded(operationId, path, signal, reason);
           return this.#options.transformContext
             ? this.#options.transformContext(current, signal)
             : current;
@@ -513,6 +518,12 @@ export class CloudAgentRuntime {
             deferredAssistantEntryId = durableMessage ? undefined : entryId;
             finalMessage = message;
             toolIndex = 0;
+            if (
+              message.stopReason !== "error" &&
+              message.stopReason !== "aborted" &&
+              message.stopReason !== "length"
+            )
+              overflowRecoveryAttempted = false;
           }
         }
         if (
@@ -551,14 +562,26 @@ export class CloudAgentRuntime {
         const retry = this.#options.retry;
         for (;;) {
           await agent.continue();
+          const message = finalMessage;
+          const overflow = message?.stopReason === "error" && isContextOverflow(message);
+          const recoverOverflow =
+            overflow &&
+            this.#compaction.enabled &&
+            !overflowRecoveryAttempted &&
+            !this.#abortRequested &&
+            !authority.signal.aborted &&
+            message?.provider === this.#options.model.provider &&
+            message.model === this.#options.model.id;
           if (
-            finalMessage?.stopReason !== "error" ||
-            retry?.enabled !== true ||
-            retryAttempt >= retry.maxRetries ||
-            !(
-              isRetryableAssistantError(finalMessage) ||
-              isIncompleteModelStreamError(finalMessage.errorMessage ?? "")
-            )
+            message?.stopReason !== "error" ||
+            (!recoverOverflow &&
+              (overflow ||
+                retry?.enabled !== true ||
+                retryAttempt >= retry.maxRetries ||
+                !(
+                  isRetryableAssistantError(message) ||
+                  isIncompleteModelStreamError(message.errorMessage ?? "")
+                )))
           ) {
             if (retryAttempt > 0) {
               await this.#options.onEvent?.({
@@ -573,33 +596,49 @@ export class CloudAgentRuntime {
             break;
           }
 
-          retryAttempt += 1;
           // Keep already-visible text without admitting incomplete Tool arguments.
           // Pi excludes failed Assistant messages from provider input; the existing
           // prefix projector gives subsequent sampling/restoration this text as a fact.
-          if (hasVisibleAssistantPrefix(finalMessage)) {
+          if (hasVisibleAssistantPrefix(message)) {
             await tree.appendCustomEntry(INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE, {
-              text: finalMessage.content
+              text: message.content
                 .filter((part) => part.type === "text")
                 .map((part) => part.text)
                 .join(""),
             });
           }
-          const delayMs = retry.baseDelayMs * 2 ** (retryAttempt - 1);
-          await this.#options.onEvent?.({
-            type: "auto_retry_start",
-            attempt: retryAttempt,
-            maxAttempts: retry.maxRetries,
-            delayMs,
-            errorMessage: finalMessage.errorMessage ?? "Transient model request failed",
-          });
+          let delayMs = 0;
+          if (recoverOverflow) {
+            // Compaction changes context: capture fresh maintenance/agent Steps,
+            // never schedule a transport retry against the old frozen Step.
+            overflowRecoveryAttempted = true;
+            pendingOverflowCompaction = true;
+            if (retryAttempt > 0) {
+              await this.#options.onEvent?.({
+                type: "auto_retry_end",
+                success: false,
+                attempt: retryAttempt,
+              });
+              retryAttempt = 0;
+            }
+          } else {
+            retryAttempt += 1;
+            delayMs = retry!.baseDelayMs * 2 ** (retryAttempt - 1);
+            await this.#options.onEvent?.({
+              type: "auto_retry_start",
+              attempt: retryAttempt,
+              maxAttempts: retry!.maxRetries,
+              delayMs,
+              errorMessage: message.errorMessage ?? "Transient model request failed",
+            });
+          }
           const failed = agent.state.messages.at(-1);
           if (failed?.role !== "assistant" || failed.stopReason !== "error") {
             throw new Error("Pi retry boundary did not end with a failed assistant message");
           }
           agent.state.messages = agent.state.messages.slice(0, -1);
           finalMessage = undefined;
-          await abortableDelay(delayMs, authority.signal);
+          if (!recoverOverflow) await abortableDelay(delayMs, authority.signal);
         }
       } finally {
         unsubscribe();
@@ -774,18 +813,44 @@ export class CloudAgentRuntime {
     operationId: string,
     path: Entry[],
     signal?: AbortSignal,
+    reason: "threshold" | "overflow" = "threshold",
   ): Promise<AgentMessage[]> {
     const context = this.#context(path);
     if (!this.#compaction.enabled) return context;
     const tokens = estimateContextTokens(context).tokens;
-    if (!shouldCompact(tokens, this.#options.model.contextWindow, this.#compaction)) return context;
-    const preparation = prepareCompaction(path, this.#compaction);
+    if (
+      reason === "threshold" &&
+      !shouldCompact(tokens, this.#options.model.contextWindow, this.#compaction)
+    )
+      return context;
+    // Pi's compactor consumes messages, not our custom-entry projectors. Materialize
+    // visible interrupted prefixes in-place so they are summarized or retained,
+    // rather than silently disappearing at this boundary.
+    const compactablePath = path.map((entry): Entry => {
+      const prefix =
+        entry.type === "custom" ? interruptedAssistantPrefixProjector(entry)?.[0] : undefined;
+      return prefix === undefined
+        ? entry
+        : {
+            id: entry.id,
+            parentId: entry.parentId,
+            seq: entry.seq,
+            timestamp: entry.timestamp,
+            type: "message",
+            message: prefix,
+          };
+    });
+    const preparation = prepareCompaction(compactablePath, this.#compaction);
     if (!preparation.ok) throw preparation.error;
-    if (preparation.value === undefined) return context;
+    if (preparation.value === undefined) {
+      if (reason === "overflow")
+        throw new Error("Input exceeds the context window and no compactable history is available");
+      return context;
+    }
 
     await this.#options.prepareContextMaintenance?.(context, signal);
 
-    await this.#options.onEvent?.({ type: "compaction_start", reason: "threshold" });
+    await this.#options.onEvent?.({ type: "compaction_start", reason });
     const entryId = this.#id();
     const attempts = await this.#options.session.findRecords({
       lane: this.#options.lane,
@@ -801,30 +866,41 @@ export class CloudAgentRuntime {
       step: "compaction",
       attempt,
       resultEntryId: entryId,
-      compactionReason: "threshold",
+      compactionReason: reason,
     });
     const compactionModels = this.#modelsWithHeaders();
     const compactable = preserveCompactionFacts(preparation.value, context, [
       INTERRUPTION_CUSTOM_TYPE,
       ...(this.#options.compactionRetainedCustomTypes ?? []),
     ]);
+    const compactionSignal = combinedSignal(signal, this.#options.authority.signal);
     const result = await compact(
       compactable,
       compactionModels,
       this.#options.model,
       undefined,
-      combinedSignal(signal, this.#options.authority.signal),
+      compactionSignal,
       this.#options.thinkingLevel ?? "off",
       this.#options.retry,
     );
     if (!result.ok) {
       await this.#options.onEvent?.({
         type: "compaction_end",
-        reason: "threshold",
+        reason,
         success: false,
+        aborted: compactionSignal.aborted,
         errorMessage: result.error.message,
       });
       throw result.error;
+    }
+    if (compactionSignal.aborted) {
+      await this.#options.onEvent?.({
+        type: "compaction_end",
+        reason,
+        success: false,
+        aborted: true,
+      });
+      compactionSignal.throwIfAborted();
     }
     await this.#appendItems([
       {
@@ -871,8 +947,9 @@ export class CloudAgentRuntime {
     );
     await this.#options.onEvent?.({
       type: "compaction_end",
-      reason: "threshold",
+      reason,
       success: true,
+      aborted: false,
       result: {
         summary: result.value.summary,
         tokensBefore: result.value.tokensBefore,

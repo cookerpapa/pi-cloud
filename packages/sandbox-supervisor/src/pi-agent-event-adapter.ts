@@ -7,6 +7,7 @@ import type {
 import { createHash } from "node:crypto";
 import { toolResultIsUnknown } from "@pi-cloud/protocol";
 import { isIncompleteModelStreamError } from "@pi-cloud/pi-session-postgres";
+import { isContextOverflow, type AssistantMessage } from "@earendil-works/pi-ai";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -138,6 +139,16 @@ function safeAssistantFailure(
     message = "Model provider usage limit was reached";
   } else if (normalized.includes("rate limit") || normalized.includes("rate_limit")) {
     message = "Model provider rate limit was reached";
+  }
+  // For error messages Pi's classifier reads only stopReason/errorMessage. Never
+  // forward the upstream body, which may contain private request details.
+  if (message === undefined && isContextOverflow(value as unknown as AssistantMessage)) {
+    return {
+      code: "model_context_limit_exceeded",
+      message:
+        "Model context limit was exceeded; reduce the input or switch to a larger-context model",
+      retryable: false,
+    };
   }
   return message === undefined ? undefined : { code: "model_error", message, retryable: true };
 }

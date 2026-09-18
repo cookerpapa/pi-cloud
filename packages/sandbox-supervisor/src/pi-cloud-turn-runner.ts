@@ -990,8 +990,8 @@ export class PiCloudTurnRunner {
       return {
         type: "compaction_end",
         reason: event.reason,
-        aborted: !event.success,
-        willRetry: false,
+        aborted: event.aborted,
+        willRetry: event.success && event.reason === "overflow",
         ...(event.result === undefined ? {} : { result: event.result }),
       };
     }

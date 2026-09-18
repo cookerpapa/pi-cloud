@@ -238,6 +238,14 @@ and executor admission. Invalid arguments never create execution intent. Native
 Compaction retains relevant interruption/World State facts and refuses truncated
 or empty summaries. Model retries do not replay completed Tools.
 
+An explicit current-model context-overflow error forces one native Compaction
+and sampling continuation even below the estimated threshold (ADR-0176).
+The summary is acknowledged before a fresh model Step; completed Tools and the
+accepted input are not replayed. Another overflow without successful sampling,
+failed/canceled summary or lost authority stops recovery. This is separate from
+transport retries against an unchanged frozen Step. Window/threshold settings
+remain unchanged, and irreducible context errors remain visible to the user.
+
 The Harness compares credential-free World State at clean sampling boundaries.
 Renewing a lease against the same Cube is not a reset. Recreated compute around
 the same Volume emits `sandbox_reset`; replacing the Workspace emits

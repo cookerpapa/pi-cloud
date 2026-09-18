@@ -25,6 +25,24 @@ function createAdapter() {
 }
 
 describe("PiAgentEventAdapter", () => {
+  it.each([
+    "Codex error: Your input exceeds the context window of this model. private=must-not-pass",
+    "prompt is too long: 936000 tokens > 900000 maximum; private=must-not-pass",
+  ])("reports an explicit context limit without leaking provider details: %s", (errorMessage) => {
+    const adapter = createAdapter();
+    adapter.adapt({ type: "agent_start" });
+    adapter.adapt({
+      type: "message_end",
+      message: { role: "assistant", stopReason: "error", errorMessage },
+    });
+    const result = adapter.adapt({ type: "agent_settled" });
+    expect(result).toMatchObject({
+      kind: "settled",
+      result: { status: "failed", code: "model_context_limit_exceeded", retryable: false },
+    });
+    expect(JSON.stringify(result)).not.toContain("must-not-pass");
+  });
+
   it("reports an exhausted provider balance without exposing the upstream body or retrying", () => {
     const adapter = createAdapter();
     adapter.adapt({ type: "agent_start" });

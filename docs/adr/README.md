@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0176](0176-bounded-context-overflow-recovery.md) — Pi-native bounded
+   overflow compaction and sampling continuation without Tool replay.
+
 1. [ADR-0175](0175-bounded-parallel-claims.md) — approved two-way claim trial,
    conservative pending capacity and unchanged PG authority.
 

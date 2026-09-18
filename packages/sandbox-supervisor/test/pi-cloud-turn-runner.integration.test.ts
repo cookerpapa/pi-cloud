@@ -115,6 +115,161 @@ function deferred<T>() {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it("recovers an HTTP-200 SSE overflow with fresh maintenance/agent Steps and one terminal", async () => {
+    const requests: unknown[] = [],
+      events: PiCloudEvent[] = [],
+      purposes: string[] = [];
+    let sequence = 0;
+    const server = createServer(async (request, response) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      const send = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`);
+      if (requests.length === 1)
+        send({
+          type: "error",
+          code: "context_too_large",
+          message: "Your input exceeds the context window of this model",
+        });
+      else {
+        const text = requests.length === 2 ? "Earlier work summarized" : "recovered answer";
+        const item = {
+          type: "message",
+          id: `message-${requests.length}`,
+          role: "assistant",
+          status: "completed",
+          content: [{ type: "output_text", text, annotations: [] }],
+        };
+        send({
+          type: "response.created",
+          response: { id: `response-${requests.length}`, status: "in_progress", output: [] },
+        });
+        send({
+          type: "response.output_item.added",
+          output_index: 0,
+          item: { ...item, status: "in_progress", content: [] },
+        });
+        send({
+          type: "response.content_part.added",
+          output_index: 0,
+          content_index: 0,
+          part: { type: "output_text", text: "", annotations: [] },
+        });
+        send({
+          type: "response.output_text.delta",
+          output_index: 0,
+          content_index: 0,
+          delta: text,
+        });
+        send({ type: "response.output_text.done", output_index: 0, content_index: 0, text });
+        send({ type: "response.output_item.done", output_index: 0, item });
+        send({
+          type: "response.completed",
+          response: {
+            id: `response-${requests.length}`,
+            status: "completed",
+            output: [item],
+            usage: { input_tokens: 100, output_tokens: 5, total_tokens: 105 },
+          },
+        });
+      }
+      response.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Listener missing");
+      const session = new Session(
+        new InMemorySessionStorage({ id: "overflow-http", createdAt: 1 }),
+      );
+      await session.appendMessage({
+        role: "user",
+        content: "earlier-history ".repeat(400),
+        timestamp: 1,
+      });
+      const turn = createCloudTurnContext(command);
+      const runner = new PiCloudTurnRunner({
+        resolveModelRuntime: () => ({
+          provider: command.payload.model.provider,
+          modelId: command.payload.model.modelId,
+          api: "openai-responses",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: FAKE_MODEL_API_KEY,
+          contextWindow: 1_000_000,
+          autoCompactTokenLimit: 900_000,
+          maxTokens: 65536,
+        }),
+        openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
+        sandboxContinuity: {
+          continuityId: "unused",
+          continuity: "cold_restore",
+          environmentSha256: turn.environmentSha256,
+          workspaceBindingSha256: turn.workspaceBindingSha256,
+          toolPolicySha256: turn.toolPolicySha256,
+        },
+        createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
+          tools: [],
+          systemPrompt: async (base) => base,
+          executeWorkflow: async () => {
+            throw new Error("No tools");
+          },
+          transformHeaders: async (headers = {}) => headers,
+          async transformContext(messages, purpose = "agent") {
+            purposes.push(purpose);
+            await captureSamplingStep(
+              async () => {
+                const world = await stepWorldState.capture();
+                return {
+                  step: createCloudStepContext({
+                    sequence: ++sequence,
+                    turnContextSha256: turn.sha256,
+                    attemptContextSha256: "b".repeat(64),
+                    allowedTools: [],
+                    activeTools: [],
+                    worldState: world.worldState,
+                  }),
+                  modelMessages: world.modelMessages,
+                };
+              },
+              { publishEvent: purpose === "agent" },
+            );
+            return messages;
+          },
+        }),
+      });
+      const input = {
+        ...command,
+        payload: { ...command.payload, budgets: { compactionKeepRecentTokens: 32 } },
+      } as ExecuteTurnCommandMessage;
+      await expect(
+        runner.run(input, (message) => {
+          events.push(message.payload.event);
+        }),
+      ).resolves.toMatchObject({ stopReason: "stop" });
+      expect(requests).toHaveLength(3);
+      expect(purposes).toEqual(["agent", "context_maintenance", "agent"]);
+      expect(
+        events.filter((e) => e.type === "model.sampling.started").map((e) => e.payload),
+      ).toMatchObject([
+        { stepSequence: 1, samplingAttempt: 1 },
+        { stepSequence: 3, samplingAttempt: 1 },
+      ]);
+      expect(
+        events.filter((e) => e.type === "context.compaction.completed").map((e) => e.payload),
+      ).toMatchObject([{ reason: "overflow", status: "completed", willRetry: true }]);
+      expect(events.filter((e) => e.type === "model.sampling.retry.scheduled")).toHaveLength(0);
+      expect(events.filter((e) => e.type === "turn.started")).toHaveLength(1);
+      expect(events.filter((e) => e.type === "turn.failed")).toHaveLength(0);
+      expect(await session.findEntries({ type: "compaction" })).toHaveLength(1);
+      expect(JSON.stringify(requests[2])).toContain("Earlier work summarized");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
   it.each(["deepseek", "foreign-provider"])(
     "samples a compacted native search tail without exposing extension blocks to Pi Models: %s",
     async (sourceProvider) => {

@@ -1359,6 +1359,317 @@ describe.sequential("CloudAgentRuntime", () => {
   );
 
   it.each([false, true])(
+    "compacts explicit overflow below threshold without replaying input or Tools (native append=%s)",
+    async (cached) => {
+      const storage = await createStorage();
+      const session = storage.asSession();
+      await session.appendMessage({
+        role: "user",
+        content: "old-context ".repeat(400),
+        timestamp: 1,
+      });
+      await session.appendMessage(assistant("old response"));
+      await session.createLane("unrelated", null);
+      await session
+        .view("unrelated")
+        .appendMessage({ role: "user", content: "other-lane-private", timestamp: 1 });
+      const sibling = await session.view("unrelated").getLeafId();
+      const contexts: Context[] = [],
+        events: CloudAgentRuntimeEvent[] = [],
+        effects: string[] = [];
+      let request = 0,
+        summaries = 0;
+      const responses: AssistantMessage[] = [
+        {
+          ...assistant(""),
+          content: [{ type: "toolCall", id: "once", name: "mutate", arguments: {} }],
+          stopReason: "toolUse",
+        },
+        {
+          ...assistantError("Your input exceeds the context window of this model"),
+          content: [{ type: "text", text: "visible-prefix" }],
+        },
+        assistant("recovered"),
+      ];
+      const admission = modelAdmissionProbe();
+      const runtime = new CloudAgentRuntime({
+        lane: "main",
+        ...(cached ? await withNativeSession(storage) : { session }),
+        authority: new TestAuthority(),
+        model: { ...getModel("openai", "gpt-4o-mini"), contextWindow: 1_000_000 },
+        systemPrompt: "test",
+        acquireModelPermit: admission.acquire,
+        tools: [
+          {
+            name: "mutate",
+            label: "Mutate",
+            description: "test",
+            parameters: { type: "object", properties: {} } as never,
+            async execute(id) {
+              effects.push(id);
+              return { content: [{ type: "text", text: "done-once" }], details: {} };
+            },
+          },
+        ],
+        models: {
+          streamSimple(_model: unknown, context: Context) {
+            contexts.push({ ...context, messages: structuredClone(context.messages) });
+            const message = responses[request++]!;
+            const stream = new MockAssistantStream();
+            queueMicrotask(() =>
+              stream.push(
+                message.stopReason === "error"
+                  ? { type: "error", reason: "error", error: message }
+                  : { type: "done", reason: message.stopReason as "stop" | "toolUse", message },
+              ),
+            );
+            return stream;
+          },
+          async completeSimple(_model: unknown, context: Context) {
+            expect(admission.state.active).toBe(1);
+            expect(JSON.stringify(context)).not.toContain("other-lane-private");
+            summaries++;
+            return assistant("old context summarized");
+          },
+        } as unknown as Models,
+        compaction: { enabled: true, reserveTokens: 100_000, keepRecentTokens: 100 },
+        onEvent(event) {
+          events.push(event);
+        },
+      });
+      const result = await runtime.run("perform-once");
+      expect(result, result.error?.message).toMatchObject({ kind: "completed" });
+      expect(request).toBe(3);
+      expect(summaries).toBe(1);
+      expect(effects).toEqual(["once"]);
+      expect(admission.state).toEqual({ active: 0, acquired: 4, released: 4 });
+      expect(events.filter((e) => e.type === "compaction_start")).toEqual([
+        { type: "compaction_start", reason: "overflow" },
+      ]);
+      expect(events.filter((e) => e.type === "auto_retry_start")).toHaveLength(0);
+      expect(JSON.stringify(contexts[2]?.messages)).toContain("done-once");
+      expect(JSON.stringify(contexts[2]?.messages)).toContain("visible-prefix");
+      expect(JSON.stringify(contexts[2]?.messages)).not.toContain("exceeds the context window");
+      expect(await storage.findRecords({ type: "tool_started" })).toHaveLength(1);
+      expect(await storage.findRecords({ type: "operation_started" })).toHaveLength(1);
+      expect(await storage.findEntries({ type: "compaction" })).toHaveLength(1);
+      const inputs = (await storage.findEntries({ type: "message" })).filter(
+        (e) =>
+          e.type === "message" &&
+          e.message.role === "user" &&
+          JSON.stringify(e.message.content).includes("perform-once"),
+      );
+      expect(inputs).toHaveLength(1);
+      expect(await session.view("unrelated").getLeafId()).toBe(sibling);
+      const restored: Context[] = [];
+      const next = new CloudAgentRuntime({
+        session,
+        lane: "main",
+        authority: new TestAuthority(),
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        streamFn: scriptedStream(["next"], restored),
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      });
+      expect(await next.run("continue")).toMatchObject({ kind: "completed" });
+      expect(JSON.stringify(restored[0]?.messages)).toContain("done-once");
+      expect(JSON.stringify(restored[0]?.messages)).toContain("visible-prefix");
+    },
+  );
+
+  it.each(["repeated overflow", "disabled", "different model", "invalid request", "quota"])(
+    "bounds overflow recovery without treating every failure as compactable: %s",
+    async (scenario) => {
+      const storage = await createStorage(),
+        session = storage.asSession();
+      await session.appendMessage({ role: "user", content: "history ".repeat(500), timestamp: 1 });
+      let requests = 0,
+        summaries = 0;
+      const runtime = new CloudAgentRuntime({
+        session,
+        lane: "main",
+        authority: new TestAuthority(),
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        models: {
+          streamSimple() {
+            requests++;
+            const stream = new MockAssistantStream();
+            const error = assistantError(
+              scenario === "invalid request"
+                ? "invalid_request_error"
+                : scenario === "quota"
+                  ? "rate limit: too many tokens, please wait"
+                  : "Your input exceeds the context window of this model",
+            );
+            if (scenario === "different model") error.model = "another-model";
+            queueMicrotask(() => stream.push({ type: "error", reason: "error", error }));
+            return stream;
+          },
+          async completeSimple() {
+            summaries++;
+            return assistant("summary");
+          },
+        } as unknown as Models,
+        compaction: { enabled: scenario !== "disabled", reserveTokens: 100, keepRecentTokens: 32 },
+      });
+      expect(await runtime.run("continue")).toMatchObject({ kind: "failed" });
+      expect(summaries).toBe(scenario === "repeated overflow" ? 1 : 0);
+      expect(requests).toBe(scenario === "repeated overflow" ? 2 : 1);
+      expect(await storage.findRecords({ type: "tool_started" })).toHaveLength(0);
+    },
+  );
+
+  it.each(["summary fails", "cancel", "authority lost", "append rejected"])(
+    "preserves history and stops overflow recovery when %s",
+    async (scenario) => {
+      const storage = await createStorage(),
+        session = storage.asSession();
+      await session.appendMessage({
+        role: "user",
+        content: "irreplaceable-history ".repeat(250),
+        timestamp: 1,
+      });
+      const native = await withNativeSession(storage),
+        authority = new TestAuthority();
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      let requests = 0;
+      const runtime = new CloudAgentRuntime({
+        ...native,
+        lane: "main",
+        authority,
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        commitCheckpoint: async (operation) => {
+          if (
+            scenario === "append rejected" &&
+            operation.kind === "append_items" &&
+            operation.items.some(
+              (item) => item.kind === "append_entry" && item.entry.type === "compaction",
+            )
+          ) {
+            entered.resolve();
+            await release.promise;
+            throw new Error("compaction append was not acknowledged");
+          }
+          await native.commitCheckpoint(operation);
+        },
+        models: {
+          streamSimple() {
+            requests++;
+            const stream = new MockAssistantStream();
+            queueMicrotask(() =>
+              stream.push({
+                type: "error",
+                reason: "error",
+                error: assistantError("Your input exceeds the context window of this model"),
+              }),
+            );
+            return stream;
+          },
+          async completeSimple() {
+            if (scenario !== "append rejected") {
+              entered.resolve();
+              await release.promise;
+            }
+            return scenario === "summary fails"
+              ? assistantError("Your input exceeds the context window of this model")
+              : assistant("summary");
+          },
+        } as unknown as Models,
+        compaction: { enabled: true, reserveTokens: 100, keepRecentTokens: 32 },
+      });
+      const running = runtime.run("continue");
+      const settled = Promise.allSettled([running]);
+      await entered.promise;
+      expect(requests).toBe(1);
+      expect(await storage.findEntries({ type: "compaction" })).toHaveLength(0);
+      if (scenario === "cancel") runtime.abort();
+      if (scenario === "authority lost") authority.revoke();
+      release.resolve();
+      const [outcome] = await settled;
+      if (scenario === "authority lost") expect(outcome).toMatchObject({ status: "rejected" });
+      else
+        expect(outcome).toMatchObject({
+          status: "fulfilled",
+          value: { kind: scenario === "cancel" ? "aborted" : "failed" },
+        });
+      expect(requests).toBe(1);
+      expect(await storage.findEntries({ type: "compaction" })).toHaveLength(0);
+      expect(JSON.stringify(await session.view("main").findEntriesOnBranch())).toContain(
+        "irreplaceable-history",
+      );
+    },
+  );
+
+  it("resets the overflow bound only after a successful sampling boundary", async () => {
+    const storage = await createStorage(),
+      session = storage.asSession();
+    await session.appendMessage({
+      role: "user",
+      content: "prior-history ".repeat(400),
+      timestamp: 1,
+    });
+    let requests = 0,
+      effects = 0;
+    const error = assistantError("Your input exceeds the context window of this model");
+    const responses: AssistantMessage[] = [
+      error,
+      {
+        ...assistant(""),
+        content: [{ type: "toolCall", id: "one-effect", name: "mutate", arguments: {} }],
+        stopReason: "toolUse",
+      },
+      error,
+      assistant("done"),
+    ];
+    const runtime = new CloudAgentRuntime({
+      session,
+      lane: "main",
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      tools: [
+        {
+          name: "mutate",
+          label: "Mutate",
+          description: "test",
+          parameters: { type: "object", properties: {} } as never,
+          async execute() {
+            effects++;
+            return { content: [{ type: "text", text: "done-once" }], details: {} };
+          },
+        },
+      ],
+      models: {
+        streamSimple() {
+          const message = responses[requests++]!,
+            stream = new MockAssistantStream();
+          queueMicrotask(() =>
+            stream.push(
+              message.stopReason === "error"
+                ? { type: "error", reason: "error", error: message }
+                : { type: "done", reason: message.stopReason as "stop" | "toolUse", message },
+            ),
+          );
+          return stream;
+        },
+        async completeSimple() {
+          return assistant("summary");
+        },
+      } as unknown as Models,
+      compaction: { enabled: true, reserveTokens: 100, keepRecentTokens: 32 },
+    });
+    expect(await runtime.run("two distinct sampling overflows")).toMatchObject({
+      kind: "completed",
+    });
+    expect(requests).toBe(4);
+    expect(effects).toBe(1);
+    expect(await storage.findEntries({ type: "compaction" })).toHaveLength(2);
+  });
+
+  it.each([false, true])(
     "writes a native compaction entry before sampling (native append=%s)",
     async (cached) => {
       const storage = await createStorage();
