@@ -26,7 +26,6 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
 import { transitionCurrentRunAttempt } from "./run-attempt-state.ts";
 import {
-  conflictingPiSessionWorker,
   lockPiSessionWorkerOwnership,
   piSessionWorkerAvailable,
   selectNativeSessionWriter,
@@ -856,12 +855,6 @@ export class RunExecutor {
 
       await lockPiSessionWorkerOwnership(transaction, row.tenantId, row.piSessionId);
       now = await databaseTime(transaction);
-      const conflictingWorker = await conflictingPiSessionWorker(transaction, {
-        tenantId: row.tenantId,
-        piSessionId: row.piSessionId,
-        expectedWorkerId: this.#claimOwnerId,
-      });
-      if (conflictingWorker !== undefined) return undefined;
 
       if (row.inputKind !== "prompt" || row.inputText === null) {
         throw new RunExecutorInvariantError(
@@ -879,6 +872,8 @@ export class RunExecutor {
       const toolCapabilities = parseCloudToolCapabilitySnapshot(row.toolCapabilitySnapshot);
 
       const attemptId = this.#idGenerator();
+      // Writer selection checks the lease/peer owner and its lifetime under the
+      // same physical-Session lock; a separate conflict lookup repeats those reads.
       const piSessionWriterId = await selectNativeSessionWriter(transaction, {
         tenantId: row.tenantId,
         piSessionId: row.piSessionId,

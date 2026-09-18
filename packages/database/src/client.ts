@@ -1,6 +1,7 @@
 import { Kysely, PostgresDialect, type PostgresPoolClient } from "kysely";
 import { Client, Pool, type PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import type { Database } from "./database-types.ts";
 
 export type CreateDatabaseOptions = {
@@ -10,6 +11,7 @@ export type CreateDatabaseOptions = {
 };
 
 const MAX_PREPARED_STATEMENTS_PER_CONNECTION = 128;
+const SLOW_COMMIT_MS = 100;
 
 export function createDatabase(options: CreateDatabaseOptions): Kysely<Database> {
   if (options.connectionString.trim().length === 0) {
@@ -85,6 +87,35 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
               },
               query: ((text: unknown, parameters?: readonly unknown[]) => {
                 if (failure) return Promise.reject(failure);
+                if (text === "commit") {
+                  const started = performance.now();
+                  const loop = performance.eventLoopUtilization();
+                  return client.query(text).then((result) => {
+                    const durationMs = performance.now() - started;
+                    if (durationMs >= SLOW_COMMIT_MS) {
+                      const elapsed = performance.eventLoopUtilization(loop);
+                      // A slow client COMMIT includes socket/callback delivery.
+                      // Report facts, not "disk latency"; never include SQL or values.
+                      try {
+                        console.warn(
+                          JSON.stringify({
+                            timestamp: new Date().toISOString(),
+                            level: "warn",
+                            service: "pi-cloud-database",
+                            event: "database.slow_commit",
+                            backendPid: (client as PoolClient & { processID: number }).processID,
+                            durationMs,
+                            eventLoopActiveMs: elapsed.active,
+                            eventLoopIdleMs: elapsed.idle,
+                          }),
+                        );
+                      } catch {
+                        // A diagnostic sink must not turn a committed transaction into failure.
+                      }
+                    }
+                    return result;
+                  });
+                }
                 if (
                   typeof text === "string" &&
                   /^\s*(select|with)\s/i.test(text) &&

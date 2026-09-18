@@ -86,6 +86,13 @@ Idle scans and rolled-back claims remain in `pi_cloud_run_claim_seconds` and do
 not enter these successful-claim stage samples. Compare stage sums over the
 same measurement interval before changing admission rules or pool sizes.
 
+`database.slow_commit` reports acknowledged COMMIT calls taking at least 100ms,
+with backend PID, client elapsed time and event-loop active/idle time. It adds no
+SQL, parameter logging or new persistence barrier. A client duration is not a
+disk measurement: correlate its timestamp with PG wait events and process GC/CPU
+evidence. Idle time can include server or network wait; active time is not proof
+of GC. Rejected/uncertain commits remain execution errors, not success diagnostics.
+
 Transport capacity signals are process-local and should be summed across replicas:
 
 - `pi_cloud_kafka_producer_pending_bytes` / `_pending_facts`: queued and submitted

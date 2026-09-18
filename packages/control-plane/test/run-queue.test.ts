@@ -88,10 +88,13 @@ describe.sequential("Run queue authority", () => {
     });
     const metrics = new PiCloudMetrics("claim-test");
     const candidates: string[] = [];
+    const ownerReads: string[] = [];
     const measured = database.withPlugin({
       transformQuery({ node, queryId }) {
         const query = database.getExecutor().compileQuery(node, queryId);
         if (query.sql.startsWith('with "claim_candidate"')) candidates.push(query.sql);
+        if (query.sql.startsWith("select ") && query.sql.includes('from "session_leases" as "l"'))
+          ownerReads.push(query.sql);
         return node;
       },
       async transformResult({ result }) {
@@ -126,6 +129,8 @@ describe.sequential("Run queue authority", () => {
       true,
     );
     expect(candidates[0]!.match(/from runs as earlier_run/g)).toHaveLength(1);
+    expect(ownerReads).toHaveLength(1);
+    expect(ownerReads[0]).toContain('"w"."native_writer_sealed_at"');
     const stages = await metrics.runClaimStageDuration.get();
     const counts = stages.values.filter((v) => v.metricName?.endsWith("_count"));
     expect(counts.map((v) => v.labels.stage).sort()).toEqual([
