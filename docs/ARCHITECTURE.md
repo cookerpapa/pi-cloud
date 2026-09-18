@@ -60,6 +60,10 @@ the physical `pi_sessions` row to keep all active Lanes on one Worker boot.
 One materialized candidate supplies the startup context without a second queue
 scan. Immutable Session kind and Workspace seed kind travel in the internal
 execute command; downstream preparation does not re-query them.
+Claim, Session lease binding and publication registration commit together;
+failed admission reserves neither an Attempt nor capacity. The durable started
+transition precedes Kafka opening, keeping pre-start requeue output-free. An
+uncertain admission COMMIT can resume only its exact confirmed record (ADR-0174).
 Cold Sessions have no Worker affinity or permanent process. Successful claims
 wake the next free slot; LISTEN/NOTIFY reduces idle latency and periodic polling
 covers missed wakeups. There is no Temporal or competing dispatcher.
@@ -93,7 +97,7 @@ operator responsibility.
 
 ## Direct execution log
 
-At Run opening the PG authority freezes publication scope against the exact
+During atomic execution admission the PG authority freezes publication scope against the exact
 Lease, Attempt, native writer and Lane. The trusted Worker appends an opening
 record, then semantic records, display events and concrete Tool commands directly
 to private Kafka. An Attempt opens once; there are no signing keys or per-record

@@ -69,20 +69,18 @@ Prometheus scrapes four application endpoint groups:
 `pi_cloud_model_permit_wait_seconds`, distinguish provider work from local model
 admission. A task waiting for a child/Tool holds no model permit.
 
-`pi_cloud_run_preparation_seconds` includes `lease_*` subphases of a successful
-`execution_lease`: begin, Session/family locks, Attempt/owner reads, Worker lock,
-connection validation, lease read/write and commit. Do not add these to their
-outer duration. `lease_begin` includes connection acquisition and BEGIN;
-`lease_commit` includes COMMIT and client handoff, not only disk fsync. Correlate
-outliers with PostgreSQL wait events before attributing them to storage or locks.
-Failed/rolled-back acquisitions do not increment successful phase observations;
-labels contain neither tenant identity nor SQL/parameters.
+`pi_cloud_run_preparation_seconds` measures post-admission preparation, durable
+started and Kafka log opening. Lease subphases now belong to the single claim
+transaction below; there is no production `execution_lease`/`lease_commit`
+boundary. Correlate outliers with PostgreSQL wait events before attributing them
+to storage or locks. Labels contain neither tenant identity nor SQL/parameters.
 `pi_cloud_queued_runs` is sampled from the
 shared PostgreSQL Run queue rather than inferred from a local Worker.
 
 `pi_cloud_run_claim_stage_seconds` splits successful claims into transaction
 acquisition/BEGIN, candidate selection, context/configuration reads, locked
-ownership selection, lifecycle writes and final mapping/COMMIT. Its only label
+ownership selection, lifecycle writes, `lease_*` checks/binding,
+`publication_registered` and final mapping/COMMIT. Its only label
 is the code-owned stage; it records no query parameters, tenant or Session IDs.
 Idle scans and rolled-back claims remain in `pi_cloud_run_claim_seconds` and do
 not enter these successful-claim stage samples. Compare stage sums over the

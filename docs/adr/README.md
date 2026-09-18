@@ -10,8 +10,12 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0174](0174-atomic-worker-admission.md) — one claim/lease/publication
+   transaction; Kafka opening only after durable execution start.
+
 1. [ADR-0173](0173-startup-context-reuse.md) — single candidate selection, claimed
-   metadata reuse and fewer state-transition round trips with unchanged boundaries.
+   metadata reuse and fewer state-transition round trips; admission boundaries
+   now follow ADR-0174.
 
 1. [ADR-0172](0172-plugin-owned-volume-initialization.md) — one plugin-owned
    identity publication, read-only Gateway verification and non-destructive seeds.

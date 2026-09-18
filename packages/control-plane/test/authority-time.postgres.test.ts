@@ -4,7 +4,7 @@ import { sql, type Kysely } from "kysely";
 import { beforeAll, afterAll, afterEach, describe, it, expect, vi } from "vitest";
 import { RunExecutor, type TurnExecutionRequest } from "@pi-cloud/runtime-core/run-executor";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
-import { openExecutionPublication } from "../../runtime-core/src/execution-publication.ts";
+import { registerExecutionPublication } from "../../runtime-core/src/execution-publication.ts";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
 import { PostgresWorkspaceRuntimeStateRepository } from "@pi-cloud/tool-broker";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
@@ -264,17 +264,19 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
             ? f.coordinator.renewFromHeartbeat(f.heartbeat)
             : operation === "grant"
               ? f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference })
-              : openExecutionPublication(db, {
-                  executionReference: f.reference,
-                  sessionId: f.request.sessionId,
-                  turnId: f.request.turnId,
-                  nextEventSeq: Number(f.request.nextEventSeq),
-                  piSession: {
-                    id: f.request.piSessionId,
-                    lane: f.request.piSessionLane,
-                    writerId: f.request.piSessionWriterId,
-                  },
-                }),
+              : db.transaction().execute((tx) =>
+                  registerExecutionPublication(tx, {
+                    executionReference: f.reference,
+                    sessionId: f.request.sessionId,
+                    turnId: f.request.turnId,
+                    nextEventSeq: Number(f.request.nextEventSeq),
+                    piSession: {
+                      id: f.request.piSessionId,
+                      lane: f.request.piSessionLane,
+                      writerId: f.request.piSessionWriterId,
+                    },
+                  }),
+                ),
         ]);
         await vi.waitFor(async () => {
           const result = await sql<{

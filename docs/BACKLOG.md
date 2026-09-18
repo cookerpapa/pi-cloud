@@ -12,10 +12,8 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Discuss atomic Worker execution admission (claim + lease + publication).
-      [Profiling and local fixes](reports/worker-startup-profile-20260918.md) removed
-      synchronous cgroup probing, but paired startup latency is not lower. Do not
-      merge durable boundaries without approval. Historical WAL tails remain unproven.
+- [ ] Validate approved atomic Worker execution admission (ADR-0174): compare
+      startup latency and crash boundaries. Historical WAL tails remain unproven.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.

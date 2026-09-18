@@ -48,7 +48,10 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
       }),
     );
   });
-  const connections = new WeakMap<PoolClient, PostgresPoolClient>();
+  const connections = new WeakMap<
+    PoolClient,
+    { connection: PostgresPoolClient; onError(error: Error): void }
+  >();
   return new Kysely<Database>({
     dialect: new PostgresDialect({
       pool: {
@@ -57,20 +60,31 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
         end: () => pool.end(),
         async connect() {
           const client = await pool.connect();
-          let connection = connections.get(client);
-          if (!connection) {
+          let entry = connections.get(client);
+          if (!entry) {
             // pg owns parsing, binding, reconnects and errors. Only give stable
             // parameterized SELECT/WITH statements a name so PG can reuse plans.
             // Bound server-side plans too; other SQL keeps pg's unnamed behavior.
             const statements = new Map<string, string>();
             // Names remain client-local even behind a multiplexing test backend.
             const namespace = `pc_${randomUUID().replaceAll("-", "")}_`;
-            connection = {
+            let failure: Error | undefined;
+            // pg's pool only listens while a client is idle. A checked-out
+            // client can disconnect between SQL statements, including COMMIT.
+            // Fail that transaction and evict the socket, never retry its SQL.
+            const onError = (error: Error) => {
+              failure ??= error;
+            };
+            const connection: PostgresPoolClient = {
               get processID() {
                 return (client as PoolClient & { processID: number }).processID;
               },
-              release: () => client.release(),
+              release: () => {
+                client.removeListener("error", onError);
+                client.release(failure);
+              },
               query: ((text: unknown, parameters?: readonly unknown[]) => {
+                if (failure) return Promise.reject(failure);
                 if (
                   typeof text === "string" &&
                   /^\s*(select|with)\s/i.test(text) &&
@@ -86,9 +100,11 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
                 return Reflect.apply(client.query, client, [text, parameters]);
               }) as PostgresPoolClient["query"],
             };
-            connections.set(client, connection);
+            entry = { connection, onError };
+            connections.set(client, entry);
           }
-          return connection;
+          client.on("error", entry.onError);
+          return entry.connection;
         },
       },
     }),

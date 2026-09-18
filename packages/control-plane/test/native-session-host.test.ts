@@ -13,7 +13,10 @@ import { RunExecutor, TurnExecutionBackendError } from "../../runtime-core/src/r
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { transitionCurrentRunAttempt } from "../../runtime-core/src/run-attempt-state.ts";
 import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
-import { ExecutionPublicationBoundary } from "../../runtime-core/src/execution-publication.ts";
+import {
+  ExecutionPublicationBoundary,
+  registerExecutionPublication,
+} from "../../runtime-core/src/execution-publication.ts";
 import { NativeSessionLogPublisher } from "../../runtime-core/src/native-session-log-publisher.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import type { AcceptedFact, AcceptedFactWriter } from "../../runtime-core/src/accepted-fact.ts";
@@ -100,7 +103,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                 turnId: request.turnId,
                 runId: request.runId,
               };
-              const channel = await service.open({
+              const opening = {
                 executionReference: grant.executionReference,
                 sessionId: request.sessionId,
                 turnId: request.turnId,
@@ -110,7 +113,11 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                   lane: request.piSessionLane,
                   writerId: request.piSessionWriterId,
                 },
-              });
+              };
+              const publication = await db
+                .transaction()
+                .execute((tx) => registerExecutionPublication(tx, opening));
+              const channel = await service.open({ ...opening, publication });
               channels.set(grant.executionReference, channel);
               const readCancellation = new AbortController();
               const session = await host.open({

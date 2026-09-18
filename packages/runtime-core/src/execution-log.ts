@@ -1,5 +1,5 @@
 import type { EventAckMessage } from "@pi-cloud/protocol";
-import type { AcceptedFactWriter } from "./accepted-fact.ts";
+import type { AcceptedFactWriter, ExecutionPublication } from "./accepted-fact.ts";
 
 export type ExecutionLogOpenRequest = Readonly<{
   executionReference: string;
@@ -7,6 +7,7 @@ export type ExecutionLogOpenRequest = Readonly<{
   piSession: Readonly<{ id: string; lane: string; writerId: string }>;
   turnId: string;
   nextEventSeq: number;
+  publication: ExecutionPublication;
 }>;
 
 export interface ExecutionLogWriter extends AcceptedFactWriter {

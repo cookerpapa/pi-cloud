@@ -32,8 +32,9 @@ proceed without reserving a second family slot.
 - all active Lanes of the physical Pi Session have this Worker as owner;
 - every requested predecessor execution seal for this product Session is projected.
 
-It creates a RunAttempt with a startup claim deadline, then binds it to the
-physical Session's owner lease. The Worker renews that owner once per heartbeat;
+It creates a RunAttempt with a startup claim deadline, binds it to the physical
+Session's owner lease and registers publication scope in one transaction. The
+startup deadline cannot steal a lease-bound claim. The Worker renews that owner once per heartbeat;
 it does not renew a child task's startup deadline. Each task carries an
 `ExecutionReference`: the shared lease/epoch plus its own Attempt identity. The
 reference is never placed in model context or the guest Tool runtime. Cube's
@@ -90,8 +91,8 @@ result is `UNKNOWN`.
 
 ## Events and terminal commit
 
-At opening, PG binds an immutable publication scope to the current
-Session lease and task identity. The Worker appends the opening and subsequent records
+Admission binds an immutable publication scope to the current
+Session lease and task identity. After durable `started`, the Worker appends the opening and subsequent records
 directly to Kafka. There is no Fact WebSocket or second renewable channel lease.
 One Projector group checks recorded scope and same-partition seals, applies native
 PG state, updates the live view and routes Tool commands to their owners.
@@ -123,6 +124,9 @@ task of an expired physical Session, while leaving unrelated Sessions on that
 Worker alone. The shared lease is removed only after its task scopes drain.
 Already admitted shell effects
 remain UNKNOWN. SQL-only lifecycle retries cannot re-execute the Agent Loop.
+Before durable `started`, no Kafka opening or Agent execution is allowed;
+failed preparation may safely requeue and release capacity in one transaction.
+After `started`, even a lost Kafka opening ACK requires a seal, not a blind retry.
 An execution seal in the same Kafka partition closes a retired Attempt. A delayed
 Worker producer can still append its old record, but if it arrives after the seal both
 canonical and live consumers discard it. Earlier accepted data is projected

@@ -28,7 +28,11 @@ import {
   type TurnExecutionLifecycle,
   type TurnExecutionRequest,
   type TurnExecutionResult,
+  type TurnExecutionAdmission,
 } from "./run-executor.ts";
+import type { Database } from "@pi-cloud/database";
+import type { Transaction } from "kysely";
+import { registerExecutionPublication } from "./execution-publication.ts";
 import type { ExecutionLogWriter, ExecutionLogFactory } from "./execution-log.ts";
 import {
   SessionLeaseCoordinator,
@@ -256,33 +260,38 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     this.#metrics = options.metrics;
   }
 
+  async admit(
+    transaction: Transaction<Database>,
+    request: TurnExecutionRequest,
+    mark: (stage: string) => void,
+  ): Promise<TurnExecutionAdmission> {
+    const reference = await this.#leaseCoordinator.acquireInTransaction(transaction, request, mark);
+    const publication = await registerExecutionPublication(transaction, {
+      ...reference,
+      sessionId: request.sessionId,
+      turnId: request.turnId,
+      piSession: {
+        id: request.piSessionId,
+        lane: request.piSessionLane,
+        writerId: request.piSessionWriterId,
+      },
+      nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
+    });
+    return { ...reference, publication };
+  }
+
   async execute(
     request: TurnExecutionRequest,
     lifecycle: TurnExecutionLifecycle,
+    admission?: TurnExecutionAdmission,
   ): Promise<TurnExecutionResult> {
-    let acknowledgement: { executionReference: string } | undefined;
+    if (!admission) throw new Error("Agent execution requires committed admission");
+    const acknowledgement = admission;
     let executionLog: ExecutionLogWriter | undefined;
     let prepared: ReturnType<AgentRunSupervisor["prepare"]> | undefined;
     let tracked: TrackedExecution | undefined;
-    let durableStarted = false;
 
     try {
-      acknowledgement = await this.#measurePreparation("execution_lease", () =>
-        this.#leaseCoordinator.acquire(request),
-      );
-      executionLog = await this.#measurePreparation("log_open", () =>
-        this.#executionLogs.open({
-          executionReference: acknowledgement!.executionReference,
-          sessionId: request.sessionId,
-          piSession: {
-            id: request.piSessionId,
-            lane: request.piSessionLane,
-            writerId: request.piSessionWriterId,
-          },
-          turnId: request.turnId,
-          nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
-        }),
-      );
       const parsed = parseControlToSupervisorMessage({
         protocolVersion: 1,
         messageId: this.#idGenerator(),
@@ -376,7 +385,19 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       }
 
       await this.#measurePreparation("durable_started", () => lifecycle.started(acknowledgement));
-      durableStarted = true;
+      executionLog = await this.#measurePreparation("log_open", () =>
+        this.#executionLogs.open({
+          ...admission,
+          sessionId: request.sessionId,
+          piSession: {
+            id: request.piSessionId,
+            lane: request.piSessionLane,
+            writerId: request.piSessionWriterId,
+          },
+          turnId: request.turnId,
+          nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
+        }),
+      );
       const execution = prepared.run();
       tracked = this.#registerExecution(request.sessionId, prepared, execution, executionLog);
       try {
@@ -398,19 +419,6 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         }
       }
     } catch (error: unknown) {
-      if (!durableStarted) {
-        prepared?.releaseBeforeStart();
-        if (executionLog !== undefined) {
-          await executionLog.close().catch(() => undefined);
-          executionLog = undefined;
-        }
-        if (acknowledgement !== undefined) {
-          await this.#leaseCoordinator.releaseAcquired(request, acknowledgement).catch(() => {
-            // Preserve the original delivery error. The durable grant expires and
-            // the next acquisition replaces it if cleanup also failed.
-          });
-        }
-      }
       const normalized = normalizeBackendError(error);
       normalized.lastEventSeq ??= prepared?.lastAcknowledgedEventSeq();
       if (normalized.code === "agent_runner_error") {
@@ -422,6 +430,10 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       }
       throw normalized;
     } finally {
+      if (!tracked) {
+        prepared?.releaseBeforeStart();
+        lifecycle.executionExited();
+      }
       if (executionLog !== undefined && tracked === undefined) await executionLog.close();
     }
   }

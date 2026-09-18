@@ -7,7 +7,7 @@ import { expect, it, vi } from "vitest";
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
 it.skipIf(!endpoint)(
-  "survives a lost idle connection without replaying an interrupted query",
+  "survives idle, checked-out-between-SQL and active connection loss without replay",
   async () => {
     const name = `pi_idle_pool_${randomUUID().replaceAll("-", "")}`;
     const admin = new Pool({ connectionString: endpoint, max: 1 });
@@ -19,9 +19,21 @@ it.skipIf(!endpoint)(
     import { sql } from 'kysely';
     const db = createDatabase({connectionString:process.env.POOL_TEST_URL,maxConnections:1});
     const send = value => process.send(value);
+    let releaseHeld;
     const probe = async phase => send({phase,...(await sql\`select pg_backend_pid() as pid, \${1}::int as value\`.execute(db)).rows[0]});
     process.on('message', async command => {
       if(command==='query') await probe('recovered');
+      else if(command==='held') {
+        try {
+          await db.transaction().execute(async tx => {
+            const held = new Promise(resolve=>{releaseHeld=resolve});
+            const row=(await sql\`select pg_backend_pid() as pid\`.execute(tx)).rows[0];
+            send({phase:'held',...row}); await held;
+            await sql\`select 1\`.execute(tx);
+          });
+          send({phase:'unexpected_success'});
+        } catch(error) { send({phase:'held_rejected'}); }
+      } else if(command==='release-held') releaseHeld();
       else if(command==='active') {
         try { await sql\`select pg_sleep(30)\`.execute(db);send({phase:'unexpected_success'}); }
         catch(error) { send({phase:'query_rejected',code:error.code}); }
@@ -89,6 +101,22 @@ it.skipIf(!endpoint)(
       );
       await terminate(recovered.pid!);
       expect((await message("query_rejected")).code).toBe("57P01");
+      expect(messages.some((m) => m.phase === "unexpected_success")).toBe(false);
+      child.send("held");
+      const held = await message("held");
+      await terminate(held.pid!);
+      await vi.waitFor(async () => {
+        expect(
+          (
+            await admin.query("select count(*)::int n from pg_stat_activity where pid=$1", [
+              held.pid,
+            ])
+          ).rows[0].n,
+        ).toBe(0);
+        expect(child.exitCode).toBeNull();
+      });
+      child.send("release-held");
+      await message("held_rejected");
       expect(messages.some((m) => m.phase === "unexpected_success")).toBe(false);
       child.send("quit");
       await vi.waitFor(() => expect(child.exitCode).toBe(0), { timeout: 5_000, interval: 20 });

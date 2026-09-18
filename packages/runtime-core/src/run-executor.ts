@@ -34,6 +34,8 @@ import {
 import { requestExecutionStreamSeal } from "./execution-stream-seal.ts";
 import { confirmAgentExit } from "./quarantined-session-recovery.ts";
 import { databaseTime, retryTransaction } from "@pi-cloud/database";
+import type { ExecutionPublication } from "./accepted-fact.ts";
+import { isDeepStrictEqual } from "node:util";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -82,6 +84,10 @@ export type TurnExecutionReference = {
   executionReference: string;
 };
 
+export type TurnExecutionAdmission = TurnExecutionReference & {
+  publication: ExecutionPublication;
+};
+
 export type RunClaimReference = Pick<TurnExecutionRequest, "runId" | "tenantId" | "piSessionId">;
 export type RunClaimAdmission = Readonly<{
   /** Undefined admits a new family; an empty array admits none. */
@@ -101,9 +107,16 @@ export type TurnExecutionResult = {
 };
 
 export interface TurnExecutionBackend {
+  /** SQL-only admission, when the backend requires distributed execution authority. */
+  admit?(
+    transaction: Transaction<Database>,
+    request: TurnExecutionRequest,
+    mark: (stage: string) => void,
+  ): Promise<TurnExecutionAdmission>;
   execute(
     request: TurnExecutionRequest,
     lifecycle: TurnExecutionLifecycle,
+    admission?: TurnExecutionAdmission,
   ): Promise<TurnExecutionResult>;
 }
 
@@ -242,6 +255,7 @@ type ClaimedTurn = {
   attempt: number;
   request: TurnExecutionRequest;
   queuedAt: Date;
+  admission?: TurnExecutionAdmission;
 };
 
 type LifecycleRows = {
@@ -439,7 +453,7 @@ export class RunExecutor {
         },
         run: async () => {
           let started = false;
-          let acknowledgement: TurnExecutionReference | undefined;
+          let acknowledgement: TurnExecutionReference | undefined = claim.admission;
           let startedPromise: Promise<void> | undefined;
           let startFailure: unknown;
           const lifecycle: TurnExecutionLifecycle = {
@@ -478,7 +492,11 @@ export class RunExecutor {
 
           let executionResult: TurnExecutionResult;
           try {
-            executionResult = await this.#backend.execute(claim.request, lifecycle);
+            executionResult = await this.#backend.execute(
+              claim.request,
+              lifecycle,
+              claim.admission,
+            );
             if (startedPromise) await startedPromise;
             if (!started) {
               throw new TurnExecutionBackendError(
@@ -627,7 +645,10 @@ export class RunExecutor {
       stages.push([stage, (now - previous) / 1_000]);
       previous = now;
     };
-    const result = await this.#database.transaction().execute(async (transaction) => {
+    let committedCandidate: ClaimedTurn | undefined;
+    const attemptAdmission = async (transaction: Transaction<Database>) => {
+      committedCandidate = undefined;
+      stages.length = 0;
       mark("transaction_begin");
       let now = await databaseTime(transaction);
       const candidate = transaction
@@ -653,6 +674,13 @@ export class RunExecutor {
         // These code-owned states are also the partial ready-index predicate.
         // Parameters prevent a generic prepared plan from proving that match.
         .where(sql<boolean>`candidate.state in ('queued', 'claimed')`)
+        // A bound Attempt belongs to its Session lease, not the shorter startup
+        // deadline. Only owner reconciliation can requeue it after an uncertain COMMIT.
+        .where(
+          sql<boolean>`not exists(select 1 from run_attempts owned
+          where owned.id=candidate.current_attempt_id and candidate.state='claimed'
+            and owned.lease_id is not null)`,
+        )
         .where("candidate_session.state", "in", ["cold", "idle"])
         .where(
           sql<boolean>`not exists (
@@ -955,7 +983,7 @@ export class RunExecutor {
       }
       mark("lifecycle_write");
 
-      return {
+      const claim: ClaimedTurn = {
         attempt: attemptNumber,
         queuedAt: new Date(row.runQueuedAt),
         request: {
@@ -1044,7 +1072,40 @@ export class RunExecutor {
           ),
         },
       };
-    });
+      if (this.#backend.admit) {
+        claim.admission = await this.#backend.admit(transaction, claim.request, mark);
+        mark("publication_registered");
+      }
+      committedCandidate = claim;
+      return claim;
+    };
+    let result: ClaimedTurn | undefined;
+    try {
+      result = await retryTransaction(this.#database, attemptAdmission);
+    } catch (error) {
+      // Only the exact admission whose COMMIT reply was lost may continue.
+      // Never retry a transport error as another claim/Attempt.
+      if (!committedCandidate?.admission) throw error;
+      const candidate = committedCandidate;
+      const recorded = await this.#database
+        .selectFrom("run_attempts as a")
+        .innerJoin("runs as r", "r.current_attempt_id", "a.id")
+        .select(["a.output_publication", "a.claim_owner_id"])
+        .where("a.id", "=", candidate.request.attemptId)
+        .where("r.id", "=", candidate.request.runId)
+        .where("a.tenant_id", "=", candidate.request.tenantId)
+        .where("a.state", "=", "claimed")
+        .where("r.state", "=", "claimed")
+        .executeTakeFirst();
+      if (
+        recorded?.claim_owner_id !== this.#claimOwnerId ||
+        !isDeepStrictEqual(recorded.output_publication, candidate.admission!.publication)
+      )
+        throw error;
+      // The started transaction still checks current lease, cancellation and
+      // expiry before any Kafka append or Agent execution.
+      result = candidate;
+    }
     mark("finish");
     // Idle scans and rolled-back claims do not contaminate successful admission
     // timings. No SQL, lock, parameter or durable transition is added here.
@@ -1319,7 +1380,13 @@ export class RunExecutor {
           .where("row_version", "=", rows.runVersion)
           .executeTakeFirst();
         expectOne(runUpdate.numUpdatedRows, "requeueing a run");
-
+        if (claim.admission && this.#executionAuthority)
+          await this.#executionAuthority.releaseCurrent(
+            transaction,
+            claim.request,
+            claim.admission,
+            now,
+          );
         return;
       }
 
@@ -1447,14 +1514,14 @@ export class RunExecutor {
           .where("state", "=", rows.sessionState)
           .executeTakeFirst();
         expectOne(sessionUpdate.numUpdatedRows, "settling a failed session");
-        if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
-          await this.#executionAuthority.releaseCurrent(
-            transaction,
-            claim.request,
-            acknowledgement,
-            now,
-          );
-        }
+      }
+      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
+        await this.#executionAuthority.releaseCurrent(
+          transaction,
+          claim.request,
+          acknowledgement,
+          now,
+        );
       }
       if (acknowledgement === undefined)
         await this.#executionAuthority?.releaseUnboundClaim?.(transaction, claim.request, now);

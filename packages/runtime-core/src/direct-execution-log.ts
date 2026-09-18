@@ -13,7 +13,6 @@ import type {
   ExecutionLogFactory,
   ExecutionLogOpenRequest,
 } from "./execution-log.ts";
-import { openExecutionPublication } from "./execution-publication.ts";
 import { prepareExecutionFact } from "./prepare-execution-fact.ts";
 import { DEFAULT_PRODUCER_CAPACITY, type ProducerCapacity } from "@pi-cloud/event-log";
 import { AcceptedFactCapacityError } from "./accepted-fact.ts";
@@ -37,7 +36,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
   async open(request: ExecutionLogOpenRequest): Promise<ExecutionLogWriter> {
     if (this.#writers.has(request.executionReference))
       throw new Error("Execution writer already open");
-    const permit = await openExecutionPublication(this.database, request);
+    const permit = request.publication;
     const { leaseId: _leaseId, piSessionLane: _lane, ...scope } = permit.scope;
     const opening: ExecutionOpenedFact = {
       kind: "execution_opened",
@@ -46,7 +45,9 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       publication: permit,
       occurredAt: new Date().toISOString(),
     };
-    await this.bus.append(opening);
+    const receipt = await this.bus.append(opening);
+    if (!receipt.durable || receipt.factId !== opening.factId)
+      throw new Error("Kafka acknowledgement did not match the opening record");
     let closing = false,
       failure: unknown,
       tail = Promise.resolve(),

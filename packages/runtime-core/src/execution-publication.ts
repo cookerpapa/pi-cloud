@@ -1,92 +1,90 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { retryTransaction, type Database } from "@pi-cloud/database";
+import type { Database } from "@pi-cloud/database";
 import { parseExecutionReference } from "@pi-cloud/protocol";
-import { sql, type Kysely } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
 import type { ExecutionPublication } from "./accepted-fact.ts";
 import type { ExecutionLogOpenRequest } from "./execution-log.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { recordFactProjection } from "./accepted-fact-recovery.ts";
 
 /** Authority is a one-time PG operation. There is no channel lease or token-time SELECT. */
-export async function openExecutionPublication(
-  database: Kysely<Database>,
-  request: ExecutionLogOpenRequest,
+export async function registerExecutionPublication(
+  tx: Transaction<Database>,
+  request: Omit<ExecutionLogOpenRequest, "publication">,
 ): Promise<ExecutionPublication> {
   const lease = parseExecutionReference(request.executionReference);
-  return retryTransaction(database, async (tx) => {
-    await tx
-      .selectFrom("run_attempts")
-      .select("id")
-      .where("id", "=", lease.attemptId)
-      .forNoKeyUpdate()
-      .execute();
-    await tx
-      .selectFrom("session_leases")
-      .select("lease_id")
-      .where("lease_id", "=", lease.leaseId)
-      .forKeyShare()
-      .execute();
-    const row = await tx
-      .selectFrom("run_attempts as a")
-      .innerJoin("active_execution_scopes as l", "l.attempt_id", "a.id")
-      .innerJoin("sessions as s", "s.id", "l.session_id")
-      .innerJoin("run_attempts as w", "w.id", "a.native_writer_id")
-      .select([
-        "a.output_publication",
-        "a.native_writer_id",
-        "w.native_writer_failed_at",
-        "w.native_writer_sealed_at",
-        "l.tenant_id",
-        "l.run_id",
-        "l.turn_id",
-        "l.session_id",
-        "l.lease_id",
-        "l.fencing_token",
-        "s.pi_session_id",
-        "s.pi_session_lane",
-      ])
-      .where("a.id", "=", lease.attemptId)
-      .where("l.lease_id", "=", lease.leaseId)
-      .where("l.fencing_token", "=", String(lease.fencingToken))
-      .where("l.valid_until", ">", sql<Date>`clock_timestamp()`)
-      .where("l.accepting_effects", "=", true)
-      .executeTakeFirst();
-    if (
-      !row ||
-      row.session_id !== request.sessionId ||
-      row.turn_id !== request.turnId ||
-      row.pi_session_id !== request.piSession.id ||
-      row.pi_session_lane !== request.piSession.lane ||
-      row.native_writer_id !== request.piSession.writerId ||
-      row.native_writer_failed_at !== null ||
-      row.native_writer_sealed_at !== null
-    )
-      throw new Error("Execution publication requires the current Session lease");
-    if (row.output_publication !== null)
-      throw new Error("An Attempt cannot reopen its publication identity");
-    const permit: ExecutionPublication = {
-      id: randomUUID(),
-      scope: {
-        tenantId: row.tenant_id,
-        sessionId: row.session_id,
-        turnId: row.turn_id,
-        runId: row.run_id,
-        attemptId: lease.attemptId,
-        leaseId: lease.leaseId,
-        fencingToken: lease.fencingToken,
-        piSessionId: row.pi_session_id,
-        piSessionLane: row.pi_session_lane,
-        writerId: row.native_writer_id,
-      },
-    };
-    await tx
-      .updateTable("run_attempts")
-      .set({ output_publication: permit, native_output_drained: false })
-      .where("id", "=", lease.attemptId)
-      .executeTakeFirstOrThrow();
-    return permit;
-  });
+  await tx
+    .selectFrom("run_attempts")
+    .select("id")
+    .where("id", "=", lease.attemptId)
+    .forNoKeyUpdate()
+    .execute();
+  await tx
+    .selectFrom("session_leases")
+    .select("lease_id")
+    .where("lease_id", "=", lease.leaseId)
+    .forKeyShare()
+    .execute();
+  const row = await tx
+    .selectFrom("run_attempts as a")
+    .innerJoin("active_execution_scopes as l", "l.attempt_id", "a.id")
+    .innerJoin("sessions as s", "s.id", "l.session_id")
+    .innerJoin("run_attempts as w", "w.id", "a.native_writer_id")
+    .select([
+      "a.output_publication",
+      "a.native_writer_id",
+      "w.native_writer_failed_at",
+      "w.native_writer_sealed_at",
+      "l.tenant_id",
+      "l.run_id",
+      "l.turn_id",
+      "l.session_id",
+      "l.lease_id",
+      "l.fencing_token",
+      "s.pi_session_id",
+      "s.pi_session_lane",
+    ])
+    .where("a.id", "=", lease.attemptId)
+    .where("l.lease_id", "=", lease.leaseId)
+    .where("l.fencing_token", "=", String(lease.fencingToken))
+    .where("l.valid_until", ">", sql<Date>`clock_timestamp()`)
+    .where("l.accepting_effects", "=", true)
+    .executeTakeFirst();
+  if (
+    !row ||
+    row.session_id !== request.sessionId ||
+    row.turn_id !== request.turnId ||
+    row.pi_session_id !== request.piSession.id ||
+    row.pi_session_lane !== request.piSession.lane ||
+    row.native_writer_id !== request.piSession.writerId ||
+    row.native_writer_failed_at !== null ||
+    row.native_writer_sealed_at !== null
+  )
+    throw new Error("Execution publication requires the current Session lease");
+  if (row.output_publication !== null)
+    throw new Error("An Attempt cannot reopen its publication identity");
+  const permit: ExecutionPublication = {
+    id: randomUUID(),
+    scope: {
+      tenantId: row.tenant_id,
+      sessionId: row.session_id,
+      turnId: row.turn_id,
+      runId: row.run_id,
+      attemptId: lease.attemptId,
+      leaseId: lease.leaseId,
+      fencingToken: lease.fencingToken,
+      piSessionId: row.pi_session_id,
+      piSessionLane: row.pi_session_lane,
+      writerId: row.native_writer_id,
+    },
+  };
+  await tx
+    .updateTable("run_attempts")
+    .set({ output_publication: permit, native_output_drained: false })
+    .where("id", "=", lease.attemptId)
+    .executeTakeFirstOrThrow();
+  return permit;
 }
 
 /** Check attribution and opening order for trusted producers, not cryptographic origin. */
