@@ -12,10 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Attribute the remaining pre-model startup interval per Run, separating
-      atomic claim, preparation commits, native Session recovery and initial
-      Kafka appends; remove only measured redundant work without weakening
-      admission, output ordering or Tool UNKNOWN semantics.
+- [ ] Explain concurrent startup variability and the remaining native-append/SDK
+      interval after the [per-Run SQL simplification](reports/startup-stage-optimization-20260918.md).
+      Publication registration fell from 11.6ms to 5–5.7ms, but the first
+      after-pass did not improve overall median or concurrent startup. Keep
+      admission, output ordering and Tool UNKNOWN semantics unchanged.
 
 - [ ] Isolate the remaining host-storage tail below the confirmed PG `WalSync`
       wait. The [approved NVMe A/B/A trial](reports/nvme-power-trial-20260918.md)
