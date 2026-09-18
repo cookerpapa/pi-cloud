@@ -1,5 +1,6 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { createSchemaCheck } from "#schema-check";
 import {
   OpaqueIdSchema,
   PositiveSafeIntegerSchema,
@@ -424,8 +425,10 @@ export class PiCloudProtocolError extends Error {
   }
 }
 
+const checkPiCloudEvent = createSchemaCheck(PiCloudEventSchema);
+
 export function parsePiCloudEvent(value: unknown): PiCloudEvent {
-  if (!Value.Check(PiCloudEventSchema, value)) {
+  if (!checkPiCloudEvent(value)) {
     const issue = [...Value.Errors(PiCloudEventSchema, value)][0];
     const location = issue?.instancePath.length ? issue.instancePath : "/";
     throw new PiCloudProtocolError(

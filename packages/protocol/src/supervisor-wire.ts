@@ -1,5 +1,6 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { createSchemaCheck } from "#schema-check";
 import { PiCloudEventSchema, TurnCancellationReasonSchema } from "./event-envelope.ts";
 import {
   NonNegativeSafeIntegerSchema,
@@ -568,8 +569,11 @@ function assertUniqueSessionIds(
   }
 }
 
+const checkSupervisorToControl = createSchemaCheck(SupervisorToControlMessageSchema);
+const checkControlToSupervisor = createSchemaCheck(ControlToSupervisorMessageSchema);
+
 export function parseSupervisorToControlMessage(value: unknown): SupervisorToControlMessage {
-  if (!Value.Check(SupervisorToControlMessageSchema, value)) {
+  if (!checkSupervisorToControl(value)) {
     const issue = [...Value.Errors(SupervisorToControlMessageSchema, value)][0];
     throw new PiCloudWireProtocolError(schemaErrorMessage("supervisor-to-control", issue));
   }
@@ -603,7 +607,7 @@ export function parseSupervisorToControlMessage(value: unknown): SupervisorToCon
 }
 
 export function parseControlToSupervisorMessage(value: unknown): ControlToSupervisorMessage {
-  if (!Value.Check(ControlToSupervisorMessageSchema, value)) {
+  if (!checkControlToSupervisor(value)) {
     const issue = [...Value.Errors(ControlToSupervisorMessageSchema, value)][0];
     throw new PiCloudWireProtocolError(schemaErrorMessage("control-to-supervisor", issue));
   }

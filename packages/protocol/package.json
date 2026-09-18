@@ -6,6 +6,12 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "imports": {
+    "#schema-check": {
+      "browser": "./src/schema-check.browser.ts",
+      "default": "./src/schema-check.ts"
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest --run"

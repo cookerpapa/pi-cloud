@@ -12,11 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Replace repeated interpreted hot-path schema checks with equivalent
-      precompiled validation after protocol/error and strict-CSP browser tests.
+- [ ] Finish deployed acceptance of precompiled hot-path validation. Protocol
+      equivalence/error checks and strict-CSP browser validation pass locally.
       The [isolated publication study](reports/hot-path-validation-study-20260918.md)
       measured 727→9,797 events/s at 64 synthetic publishers; this is not full
-      system capacity or a deployed change. Preserve validation and durability.
+      system capacity. Preserve validation and durability.
 
 - [ ] Discuss drain/completion durability before any further boundary merging.
       [Terminal wake and transaction-local SQL](reports/terminal-wake-acceptance-20260918.md)

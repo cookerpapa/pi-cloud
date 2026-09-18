@@ -139,6 +139,11 @@ pending bytes/records, respecting transport backpressure. Worker opening/drain
 are one-time authority operations; its ordinary append path only produces.
 Provider/guest credentials never enter these records.
 
+Hot event and Worker-envelope schemas compile once per server process. Browser
+bundles select the same schemas' non-code-generating checker through package
+conditions, preserving strict CSP. Validation rules and public errors are
+unchanged; this introduces no authority cache or additional durability boundary.
+
 ## Unified projection and recovery
 
 One `pi-cloud-session-projector-v1` consumer group assigns disjoint partitions.
