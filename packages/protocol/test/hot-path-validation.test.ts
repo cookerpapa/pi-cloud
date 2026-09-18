@@ -115,6 +115,12 @@ it.each(fixtures)(
         "",
         "bad",
         "中文😀".repeat(100),
+        "a".repeat(255),
+        "a".repeat(256),
+        "a".repeat(257),
+        "😀".repeat(128),
+        "😀".repeat(256),
+        "😀".repeat(257),
       ]) {
         const candidate = structuredClone(value);
         let parent = candidate;

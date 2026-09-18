@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] Precompiled server event validation with unchanged rules/errors and strict
+      browser CSP; [Kafka comparison and real Luna/Cube acceptance](reports/compiled-validation-acceptance-20260919.md).
+
 - [x] Commit-triggered seal relay wake-up and transaction-local settlement SQL;
       [matched real-Luna comparison and failure checks](reports/terminal-wake-acceptance-20260918.md).
 
