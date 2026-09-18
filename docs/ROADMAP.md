@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] Bounded Pi-native context-overflow recovery without replaying Tools or input;
+      [unchanged-threshold real Luna acceptance](reports/context-overflow-recovery-20260918.md).
+
 - [x] Bounded two-way Worker claims, conservative pending capacity and retained
       queue notifications; [matched GPT comparison and correctness](reports/parallel-claims-20260918.md).
 

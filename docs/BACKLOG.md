@@ -12,13 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Handle high-density unseen input at the native Compaction boundary and
-      preserve upstream context-limit diagnostics. The unchanged 1M/900k
-      [Luna single-Session study](reports/luna-session-flow-20260918.md) completed
-      three Compactions but exposed two `context_too_large` failures before the
-      character-based estimator triggered. Smaller test increments are not a
-      product fix; do not silently lower production limits or retry everything.
-
 - [ ] Attribute remaining cold-start and Node callback/CPU tails after
       [two-way admission](reports/parallel-claims-20260918.md). Four-concurrent
       startup median improved 213→194ms in the bounded comparison, but cold
