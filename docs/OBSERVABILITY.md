@@ -86,6 +86,15 @@ Idle scans and rolled-back claims remain in `pi_cloud_run_claim_seconds` and do
 not enter these successful-claim stage samples. Compare stage sums over the
 same measurement interval before changing admission rules or pool sizes.
 
+`run.claim.timing` records each successful admission's Run/Attempt identity,
+start time, monotonic duration and the existing claim subphases. Bounded
+`run.preparation.timing` records correlate started/running commits, log opening,
+Session/model preparation and initial World State with that Run. They contain no
+SQL, prompt or result data and add no persistence barrier. Start/end intervals
+must be aligned with `model.transport.timing`; overlapping Session/model spans
+and nested claim stages must not be summed as serial work. IDs remain log fields,
+not metric labels. Diagnostic sink failure cannot change execution outcomes.
+
 `database.slow_commit` reports acknowledged COMMIT calls taking at least 100ms,
 with backend PID, client elapsed time and event-loop active/idle time. It adds no
 SQL, parameter logging or new persistence barrier. A client duration is not a

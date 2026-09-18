@@ -12,6 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Attribute the remaining pre-model startup interval per Run, separating
+      atomic claim, preparation commits, native Session recovery and initial
+      Kafka appends; remove only measured redundant work without weakening
+      admission, output ordering or Tool UNKNOWN semantics.
+
 - [ ] Isolate the remaining host-storage tail below the confirmed PG `WalSync`
       wait. The [approved NVMe A/B/A trial](reports/nvme-power-trial-20260918.md)
       did not eliminate >100ms tails, and original host settings were restored.

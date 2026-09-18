@@ -2,6 +2,7 @@ import type { WorkflowExecutor } from "./workflow-transport.ts";
 import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server";
 import {
   activeTraceCarrier,
+  measureRunPreparation,
   operationalLog,
   withSpan,
   type PiCloudMetrics,
@@ -446,18 +447,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         await fakeModel.start();
       }
       if (this.#runAttemptPhaseObserver !== undefined) {
-        const phaseStartedAt = performance.now();
         try {
-          await this.#runAttemptPhaseObserver.transition(command, "running");
-          this.#metrics?.runPreparationDuration.observe(
-            { stage: "durable_running", outcome: "completed" },
-            (performance.now() - phaseStartedAt) / 1_000,
+          await measureRunPreparation(command.payload.runId, "durable_running", this.#metrics, () =>
+            this.#runAttemptPhaseObserver!.transition(command, "running"),
           );
         } catch (error: unknown) {
-          this.#metrics?.runPreparationDuration.observe(
-            { stage: "durable_running", outcome: "failed" },
-            (performance.now() - phaseStartedAt) / 1_000,
-          );
           throw safePiError(
             error,
             "run_phase_persist_failed",

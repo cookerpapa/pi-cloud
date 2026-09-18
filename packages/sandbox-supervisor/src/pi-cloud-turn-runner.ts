@@ -20,7 +20,7 @@ import {
 import type { AgentMessage, Session } from "@earendil-works/pi-agent-core";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
-import type { PiCloudMetrics } from "@pi-cloud/observability";
+import { measureRunPreparation, type PiCloudMetrics } from "@pi-cloud/observability";
 import { PiAgentEventAdapter } from "./pi-agent-event-adapter.ts";
 import {
   PI_WORLD_STATE_ENTRY_PROJECTORS,
@@ -499,19 +499,27 @@ export class PiCloudTurnRunner {
         false,
       );
     }
-    const modelPreparation = this.#measurePreparation("pi_model_runtime", async () => {
-      const config = validateRuntimeConfig(
-        command,
-        await this.#options.resolveModelRuntime(command.payload.model),
-      );
-      const lease =
-        this.#options.modelRuntimePool === undefined
-          ? { runtime: await createModelRuntime(config), release: () => undefined }
-          : await this.#options.modelRuntimePool.acquire(config);
-      return { config, lease };
-    });
-    const sessionPreparation = this.#measurePreparation("pi_session_open", () =>
-      this.#options.openSession(command, combined),
+    const modelPreparation = measureRunPreparation(
+      command.payload.runId,
+      "pi_model_runtime",
+      this.#options.metrics,
+      async () => {
+        const config = validateRuntimeConfig(
+          command,
+          await this.#options.resolveModelRuntime(command.payload.model),
+        );
+        const lease =
+          this.#options.modelRuntimePool === undefined
+            ? { runtime: await createModelRuntime(config), release: () => undefined }
+            : await this.#options.modelRuntimePool.acquire(config);
+        return { config, lease };
+      },
+    );
+    const sessionPreparation = measureRunPreparation(
+      command.payload.runId,
+      "pi_session_open",
+      this.#options.metrics,
+      () => this.#options.openSession(command, combined),
     );
     const [modelPrepared, sessionPrepared] = await Promise.allSettled([
       modelPreparation,
@@ -554,18 +562,21 @@ export class PiCloudTurnRunner {
             ? {}
             : { maximumToolOutputBytes: command.payload.budgets.maximumToolOutputBytes }),
         });
-        const worldStateStartedAt = performance.now();
-        const worldState = await PiSessionWorldStateController.create(
-          sessionHandle.session,
-          sessionHandle.lane,
-          this.#options.sandboxContinuity,
-        );
-        // Persist execution-world changes before the accepted user prompt is
-        // appended so later context preserves the causal boundary.
-        await worldState.capture();
-        this.#options.metrics?.runPreparationDuration.observe(
-          { stage: "pi_world_state", outcome: "completed" },
-          (performance.now() - worldStateStartedAt) / 1_000,
+        const worldState = await measureRunPreparation(
+          command.payload.runId,
+          "pi_world_state",
+          this.#options.metrics,
+          async () => {
+            const controller = await PiSessionWorldStateController.create(
+              sessionHandle.session,
+              sessionHandle.lane,
+              this.#options.sandboxContinuity,
+            );
+            // Persist execution-world changes before the accepted user prompt is
+            // appended so later context preserves the causal boundary.
+            await controller.capture();
+            return controller;
+          },
         );
         const samplingSteps = new PiSamplingStepController();
         let eventChain = Promise.resolve();
@@ -970,24 +981,6 @@ export class PiCloudTurnRunner {
       }
     } finally {
       modelRuntimeLease.release();
-    }
-  }
-
-  async #measurePreparation<T>(stage: string, operation: () => Promise<T>): Promise<T> {
-    const startedAt = performance.now();
-    try {
-      const result = await operation();
-      this.#options.metrics?.runPreparationDuration.observe(
-        { stage, outcome: "completed" },
-        (performance.now() - startedAt) / 1_000,
-      );
-      return result;
-    } catch (error: unknown) {
-      this.#options.metrics?.runPreparationDuration.observe(
-        { stage, outcome: "failed" },
-        (performance.now() - startedAt) / 1_000,
-      );
-      throw error;
     }
   }
 

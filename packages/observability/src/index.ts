@@ -1,6 +1,7 @@
 export { PiCloudMetrics } from "./metrics.ts";
 export { startMetricsEndpoint, type MetricsEndpoint } from "./metrics-server.ts";
 export { operationalLog, type OperationalLogLevel } from "./logger.ts";
+export { measureRunPreparation } from "./run-timing.ts";
 export { startServiceObservability, type ServiceObservability } from "./runtime.ts";
 export {
   activeTraceCarrier,

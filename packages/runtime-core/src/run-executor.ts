@@ -20,7 +20,7 @@ import type {
   TurnBudgetSnapshot,
 } from "@pi-cloud/protocol";
 import type { EnvironmentRuntimeSnapshot, TraceContext } from "@pi-cloud/protocol";
-import { virtualRunTraceCarrier, withSpan } from "@pi-cloud/observability";
+import { operationalLog, virtualRunTraceCarrier, withSpan } from "@pi-cloud/observability";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
@@ -637,7 +637,9 @@ export class RunExecutor {
     runId?: string,
     admission?: RunClaimAdmission,
   ): Promise<ClaimedTurn | undefined> {
-    let previous = performance.now();
+    const startedAtMs = Date.now();
+    const started = performance.now();
+    let previous = started;
     const stages: Array<[string, number]> = [];
     const mark = (stage: string) => {
       const now = performance.now();
@@ -1104,9 +1106,26 @@ export class RunExecutor {
     mark("finish");
     // Idle scans and rolled-back claims do not contaminate successful admission
     // timings. No SQL, lock, parameter or durable transition is added here.
-    if (result)
+    if (result) {
       for (const [stage, seconds] of stages)
         this.#metrics?.runClaimStageDuration.observe({ stage }, seconds);
+      try {
+        operationalLog({
+          service: "pi-cloud-worker",
+          level: "info",
+          event: "run.claim.timing",
+          attributes: {
+            runId: result.request.runId,
+            attemptId: result.request.attemptId,
+            startedAtMs,
+            durationMs: performance.now() - started,
+            stages: Object.fromEntries(stages.map(([stage, seconds]) => [stage, seconds * 1000])),
+          },
+        });
+      } catch {
+        // Admission is already committed; a logging failure cannot requeue it.
+      }
+    }
     return result;
   }
 

@@ -13,7 +13,7 @@ import {
   type CancelTurnCommandMessage,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
-import type { PiCloudMetrics } from "@pi-cloud/observability";
+import { measureRunPreparation, type PiCloudMetrics } from "@pi-cloud/observability";
 import {
   TurnCancellationBackendError,
   type TurnCancellationBackend,
@@ -384,8 +384,10 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         );
       }
 
-      await this.#measurePreparation("durable_started", () => lifecycle.started(acknowledgement));
-      executionLog = await this.#measurePreparation("log_open", () =>
+      await measureRunPreparation(request.runId, "durable_started", this.#metrics, () =>
+        lifecycle.started(acknowledgement),
+      );
+      executionLog = await measureRunPreparation(request.runId, "log_open", this.#metrics, () =>
         this.#executionLogs.open({
           ...admission,
           sessionId: request.sessionId,
@@ -435,24 +437,6 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         lifecycle.executionExited();
       }
       if (executionLog !== undefined && tracked === undefined) await executionLog.close();
-    }
-  }
-
-  async #measurePreparation<T>(stage: string, operation: () => Promise<T>): Promise<T> {
-    const startedAt = performance.now();
-    try {
-      const result = await operation();
-      this.#metrics?.runPreparationDuration.observe(
-        { stage, outcome: "completed" },
-        (performance.now() - startedAt) / 1_000,
-      );
-      return result;
-    } catch (error: unknown) {
-      this.#metrics?.runPreparationDuration.observe(
-        { stage, outcome: "failed" },
-        (performance.now() - startedAt) / 1_000,
-      );
-      throw error;
     }
   }
 
