@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0175](0175-bounded-parallel-claims.md) — approved two-way claim trial,
+   conservative pending capacity and unchanged PG authority.
+
 1. [ADR-0174](0174-atomic-worker-admission.md) — one claim/lease/publication
    transaction; Kafka opening only after durable execution start.
 

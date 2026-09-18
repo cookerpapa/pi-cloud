@@ -13,6 +13,7 @@ import type { Kysely } from "kysely";
 import { Client } from "pg";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
+const MAXIMUM_PENDING_CLAIMS = 2;
 
 export type ExecutionReference = { runId: string; tenantId: string; piSessionId: string };
 export const familyKey = (r: Pick<ExecutionReference, "tenantId" | "piSessionId">): string =>
@@ -23,13 +24,18 @@ export function familyAdmission(
   capacity: number,
   maximumLanesPerFamily: number,
   memoryHeadroom = true,
+  pendingClaims = 0,
 ): RunClaimAdmission {
   const counts = new Map<string, number>();
   for (const r of active) counts.set(familyKey(r), (counts.get(familyKey(r)) ?? 0) + 1);
   return {
-    ...(counts.size < capacity && memoryHeadroom ? {} : { allowedFamilyKeys: [...counts.keys()] }),
+    // An unknown claim can become a new family or another Lane in any current
+    // family. Reserve both possibilities until its committed identity arrives.
+    ...(counts.size + pendingClaims < capacity && memoryHeadroom
+      ? {}
+      : { allowedFamilyKeys: [...counts.keys()] }),
     blockedFamilyKeys: [...counts]
-      .filter(([, count]) => count >= maximumLanesPerFamily)
+      .filter(([, count]) => count + pendingClaims >= maximumLanesPerFamily)
       .map(([key]) => key),
   };
 }
@@ -141,7 +147,7 @@ export class PostgresPiWorker {
     Readonly<{ execution: Promise<void>; reference?: RunClaimReference }>
   >();
   readonly #activeCancellations = new Map<string, Promise<void>>();
-  #claiming = false;
+  #pendingClaims = 0;
   #state: PostgresPiWorkerState = "idle";
   #controller: AbortController | undefined;
   #listener: Client | undefined;
@@ -291,7 +297,7 @@ export class PostgresPiWorker {
       (this.#state !== "stopping" ||
         this.#activeRuns.size > 0 ||
         this.#activeCancellations.size > 0 ||
-        this.#claiming)
+        this.#pendingClaims > 0)
     ) {
       const observedGeneration = this.#queueWake.generation;
       this.#refreshListener();
@@ -315,31 +321,48 @@ export class PostgresPiWorker {
     this.#onCapacity({ families: new Set(active.map(familyKey)).size, lanes: active.length });
   }
   async #fillCapacity(): Promise<void> {
-    if (this.#claiming || !this.#canClaimRuns()) return;
+    if (this.#pendingClaims >= MAXIMUM_PENDING_CLAIMS || !this.#canClaimRuns()) return;
     if (!(await this.#admitRunClaims()) || !this.#canClaimRuns()) return;
-    const admission = familyAdmission(
-      this.#activeReferences(),
-      this.#maximumActiveFamilies,
-      this.#maximumLanesPerFamily,
-      this.#state === "running" && this.#memoryHeadroom(),
-    );
-    if (admission.allowedFamilyKeys?.length === 0) return;
-    this.#claiming = true;
+    while (this.#pendingClaims < MAXIMUM_PENDING_CLAIMS && this.#canClaimRuns()) {
+      const admission = familyAdmission(
+        this.#activeReferences(),
+        this.#maximumActiveFamilies,
+        this.#maximumLanesPerFamily,
+        this.#state === "running" && this.#memoryHeadroom(),
+        this.#pendingClaims,
+      );
+      if (admission.allowedFamilyKeys?.every((key) => admission.blockedFamilyKeys.includes(key)))
+        return;
+      this.#launchClaim(admission);
+    }
+  }
+
+  #launchClaim(admission: RunClaimAdmission): void {
+    this.#pendingClaims++;
     const slotId = globalThis.crypto.randomUUID();
     let claimed = false;
-    const execution = this.#runExecutor
-      .dispatchNext(admission, (reference) => {
-        claimed = true;
-        const active = this.#activeRuns.get(slotId);
-        if (active) this.#activeRuns.set(slotId, { ...active, reference });
-        this.#claiming = false;
-        this.#observeCapacity();
-        this.#queueWake.notify();
-      })
+    let pending = true;
+    const releasePending = () => {
+      if (!pending) return;
+      pending = false;
+      this.#pendingClaims--;
+    };
+    // Register the pending execution before the executor can notify a claim.
+    const execution = Promise.resolve()
+      .then(() =>
+        this.#runExecutor.dispatchNext(admission, (reference) => {
+          claimed = true;
+          releasePending();
+          const active = this.#activeRuns.get(slotId);
+          if (active) this.#activeRuns.set(slotId, { ...active, reference });
+          this.#observeCapacity();
+          this.#queueWake.notify();
+        }),
+      )
       .then(() => {})
       .catch((error) => this.#observeFailure("execute", error))
       .finally(() => {
-        if (!claimed) this.#claiming = false;
+        releasePending();
         this.#activeRuns.delete(slotId);
         this.#observeCapacity();
         if (claimed) this.#queueWake.notify();

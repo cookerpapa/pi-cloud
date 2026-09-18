@@ -27,6 +27,19 @@ describe("Session-family admission", () => {
     expect(familyAdmission([task("a", 2)], 1, 33).allowedFamilyKeys).toEqual(["tenant:a"]);
     expect(familyAdmission([], 1, 33).allowedFamilyKeys).toBeUndefined();
   });
+  it("reserves possible families and Lane occupancy for uncommitted claims", () => {
+    expect(familyAdmission([], 1, 33, true, 1).allowedFamilyKeys).toEqual([]);
+    const active = [task("a", 1)];
+    expect(familyAdmission(active, 2, 2, true, 1)).toEqual({
+      allowedFamilyKeys: ["tenant:a"],
+      blockedFamilyKeys: ["tenant:a"],
+    });
+    expect(familyAdmission(active, 2, 3, true, 1)).toEqual({
+      allowedFamilyKeys: ["tenant:a"],
+      blockedFamilyKeys: [],
+    });
+    expect(familyAdmission(active, 2, 3, true, 0).allowedFamilyKeys).toBeUndefined();
+  });
 });
 
 describe("PostgreSQL queue wake-up", () => {

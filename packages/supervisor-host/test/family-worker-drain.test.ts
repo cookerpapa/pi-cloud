@@ -94,7 +94,7 @@ it("drains owned families by admitting their children, without admitting another
     parent.release();
     await draining;
     expect(queue).toEqual([foreign]);
-    expect(peak).toBe(1);
+    expect(peak).toBeLessThanOrEqual(2);
   } finally {
     parent.release();
     child.release();
