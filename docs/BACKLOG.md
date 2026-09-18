@@ -15,8 +15,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 - [ ] Isolate the remaining host-storage tail below the confirmed PG `WalSync`
       wait. The [approved NVMe A/B/A trial](reports/nvme-power-trial-20260918.md)
       did not eliminate >100ms tails, and original host settings were restored.
-      Compare native-host and WSL same-drive I/O or collect storage traces;
-      no specific VHD/driver fault is yet established. Durability stays on.
+      [Native-host comparison](reports/native-storage-tail-20260918.md) also
+      reproduces the tail on the SSD hosting WSL, while a second SSD did not in
+      these samples. Distinguish competing I/O, device/driver and power behavior;
+      no specific fault is established. Lenovo hardware-mode testing awaits
+      actual Windows elevation after a canceled UAC launch. Durability stays on.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.
