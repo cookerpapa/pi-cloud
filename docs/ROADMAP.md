@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] Commit-triggered seal relay wake-up and transaction-local settlement SQL;
+      [matched real-Luna comparison and failure checks](reports/terminal-wake-acceptance-20260918.md).
+
 - [x] Bounded Pi-native context-overflow recovery without replaying Tools or input;
       [unchanged-threshold real Luna acceptance](reports/context-overflow-recovery-20260918.md).
 

@@ -12,11 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Evaluate commit-triggered terminal Outbox wake-up and transaction-local SQL
-      consolidation. [Critical-path research](reports/flow-critical-path-research-20260918.md)
-      measured about 22ms poll waiting and verified an isolated PG notification
-      comparison; real-Kafka E2E and failure gates remain before implementation
-      acceptance. Merging drain/completion durability needs owner discussion.
+- [ ] Discuss drain/completion durability before any further boundary merging.
+      [Terminal wake and transaction-local SQL](reports/terminal-wake-acceptance-20260918.md)
+      are implemented; shared-row/WAL tails remain. Do not remove the drained
+      output proof or weaken seals merely to reduce commit count.
 
 - [ ] Attribute remaining cold-start and Node callback/CPU tails after
       [two-way admission](reports/parallel-claims-20260918.md). Four-concurrent
