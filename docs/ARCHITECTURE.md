@@ -76,10 +76,12 @@ KEDA counts active/ready physical families, not descendant Run rows. Cube comput
 capacity scales independently. Draining rejects new families but finishes existing
 families, including their newly delegated children.
 
-Each Worker currently has one in-flight Run claim. Agent execution overlaps
-after admission, but a burst of new Runs waits for sequential claim transactions
-on that Worker. This is distinct from the per-Session ownership rule and from
-model-request concurrency; increasing it requires bounded pending admissions.
+Admission permits at most two in-flight Run claims
+per Worker (ADR-0175). Unknown claims conservatively reserve possible family and
+Lane capacity until commit or failure; PG remains the final authority. This
+does not raise model concurrency, change per-Session ownership or allow a
+successor to skip the predecessor's seal. New work arriving during an older
+empty scan is rechecked on completion; idle scans do not self-wake indefinitely.
 
 `session_leases` has one row per `(tenant_id, pi_session_id)`. Its ID and monotonic
 `pi_sessions.lease_epoch` identify an ownership period. Heartbeats renew each

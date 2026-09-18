@@ -1,6 +1,6 @@
 # ADR-0175: Bounded parallel Worker claims
 
-Status: approved for comparison, 2026-09-18; rollout depends on acceptance.
+Status: accepted, 2026-09-18, following the approved serial/two-way comparison.
 
 An operator-approved trial raises each Worker's pending Run claims from one to
 at most two. This overlaps preparation inside the existing PostgreSQL admission
@@ -18,6 +18,9 @@ on unclaimed completion/failure. Track executions before invoking the executor.
 Successful claims and completed tasks wake admission; empty/failed probes do not
 self-wake into a polling storm. Shutdown joins pending claims and active tasks;
 draining can admit owned children but no new families beyond already-issued work.
+Track queued-work signals separately from capacity wakes: a notification arriving
+during an older empty probe must be rechecked when that probe finishes, without
+letting two empty probes recursively wake one another.
 
 Validate bounds, one-slot capacity, Lane limits, failure/idle accounting,
 readiness, cancellation, drain, concurrent real-PG admission, lost COMMIT and

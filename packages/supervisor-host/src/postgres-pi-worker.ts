@@ -148,6 +148,7 @@ export class PostgresPiWorker {
   >();
   readonly #activeCancellations = new Map<string, Promise<void>>();
   #pendingClaims = 0;
+  #workGeneration = 0;
   #state: PostgresPiWorkerState = "idle";
   #controller: AbortController | undefined;
   #listener: Client | undefined;
@@ -238,8 +239,13 @@ export class PostgresPiWorker {
     bounded(runId, "Subagent runId", 256);
     if (!["running", "stopping"].includes(this.#state) || !this.#canClaimRuns()) return false;
     // A hint, not a second bypass around admission. All Lanes use the same probe.
-    this.#queueWake.notify();
+    this.#notifyWork();
     return true;
+  }
+
+  #notifyWork(): void {
+    this.#workGeneration++;
+    this.#queueWake.notify();
   }
 
   async #startListener(): Promise<void> {
@@ -252,7 +258,7 @@ export class PostgresPiWorker {
       keepAlive: true,
     });
     listener.on("notification", (message) => {
-      if (message.channel === "pi_cloud_run_queue") this.#queueWake.notify();
+      if (message.channel === "pi_cloud_run_queue") this.#notifyWork();
     });
     listener.on("error", (error) => {
       disconnected = true;
@@ -338,6 +344,7 @@ export class PostgresPiWorker {
   }
 
   #launchClaim(admission: RunClaimAdmission): void {
+    const observedWork = this.#workGeneration;
     this.#pendingClaims++;
     const slotId = globalThis.crypto.randomUUID();
     let claimed = false;
@@ -365,7 +372,10 @@ export class PostgresPiWorker {
         releasePending();
         this.#activeRuns.delete(slotId);
         this.#observeCapacity();
-        if (claimed) this.#queueWake.notify();
+        // A newer work signal may have arrived while all probes were pending.
+        // Recheck it after an empty result; capacity wakes do not advance this
+        // generation, so two empty probes cannot keep waking each other.
+        if (claimed || observedWork !== this.#workGeneration) this.#queueWake.notify();
       });
     this.#activeRuns.set(slotId, { execution });
   }

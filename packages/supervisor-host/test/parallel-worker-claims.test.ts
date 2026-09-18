@@ -9,10 +9,15 @@ import type {
 import type { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
 import { PostgresPiWorker } from "../src/postgres-pi-worker.ts";
 
+const notification = vi.hoisted(() => ({ send: () => {} }));
 vi.mock("pg", async () => {
   const { EventEmitter } = await import("node:events");
   return {
     Client: class extends EventEmitter {
+      constructor() {
+        super();
+        notification.send = () => this.emit("notification", { channel: "pi_cloud_run_queue" });
+      }
       async connect() {}
       async query() {}
       async end() {}
@@ -126,6 +131,26 @@ it("idle and failed claims release their reservations without a self-waking retr
   f.worker.scheduleOwnedSubagent("external-wake");
   await vi.waitFor(() => expect(f.tickets).toHaveLength(4));
 });
+
+it.each(["subagent", "postgres"])(
+  "rechecks newer %s work after older empty claims, without self-waking",
+  async (source) => {
+    const f = fixture();
+    await f.worker.start();
+    await vi.waitFor(() => expect(f.tickets).toHaveLength(2));
+    if (source === "subagent") f.worker.scheduleOwnedSubagent("new-work");
+    else notification.send();
+    await tick();
+    f.tickets[0]!.finish();
+    f.tickets[1]!.finish();
+    await vi.waitFor(() => expect(f.tickets).toHaveLength(4), { timeout: 200 });
+    f.tickets[2]!.finish();
+    f.tickets[3]!.finish();
+    await tick();
+    await tick();
+    expect(f.tickets).toHaveLength(4);
+  },
+);
 
 it("an execution failure after claim confirmation does not release another pending slot", async () => {
   const f = fixture();

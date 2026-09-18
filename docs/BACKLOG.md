@@ -19,8 +19,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       admission, output ordering and Tool UNKNOWN semantics unchanged.
       A follow-up traced the two native ACKs (~8.5ms combined) and confirmed
       one in-flight claim per Worker: one four-Run burst began claims at
-      19/50/92/139ms. Bounded two-way claim admission is proposed, not implemented,
-      pending owner approval. Some query tails also include delayed Node
+      19/50/92/139ms. The owner approved the bounded two-way claim trial in
+      ADR-0175; the serial/two-way/serial/two-way comparison supports retaining
+      two pending claims. Four-concurrent startup median was 213ms versus 194ms
+      pooled, with no universal latency/SLO claim.
+      Some query tails also include delayed Node
       callbacks after PG is already waiting for the client, not only WAL I/O.
 
 - [ ] Isolate the remaining host-storage tail below the confirmed PG `WalSync`
