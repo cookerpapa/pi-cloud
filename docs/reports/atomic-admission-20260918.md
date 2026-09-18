@@ -1,5 +1,7 @@
 # Atomic Worker admission — September 18, 2026
 
+Follow-up: [matched WAL-wait evidence and storage-only reproduction](startup-wal-tail-20260918.md).
+
 Baseline code: `167400e5` (runtime unchanged from `86d8a057`). Implemented and
 deployed: `ff51e21d`. One Compose Worker, four family/model slots, unchanged
 PostgreSQL/Kafka/Cube resources, model routes and durability settings.

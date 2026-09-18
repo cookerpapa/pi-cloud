@@ -12,10 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Trace remaining startup COMMIT/client-handoff tails. Atomic admission is
-      [implemented and measured](reports/atomic-admission-20260918.md): its segment
-      is faster, but pooled single-Session startup is nearly unchanged and one
-      new sample reached 327.5ms. Do not attribute that tail to WAL without a wait trace.
+- [ ] Complete the host-storage tail experiment after approval. New 157/191ms
+      commits have [matching PG WalSync traces](reports/startup-wal-tail-20260918.md),
+      and paced standalone PG reproduces >100ms tails. Test the suspected Windows
+      NVMe idle policy reversibly; its causation is not established. Durability stays on.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.
