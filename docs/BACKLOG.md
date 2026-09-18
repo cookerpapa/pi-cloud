@@ -17,6 +17,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       Publication registration fell from 11.6ms to 5–5.7ms, but the first
       after-pass did not improve overall median or concurrent startup. Keep
       admission, output ordering and Tool UNKNOWN semantics unchanged.
+      A follow-up traced the two native ACKs (~8.5ms combined) and confirmed
+      one in-flight claim per Worker: one four-Run burst began claims at
+      19/50/92/139ms. Bounded two-way claim admission is proposed, not implemented,
+      pending owner approval. Some query tails also include delayed Node
+      callbacks after PG is already waiting for the client, not only WAL I/O.
 
 - [ ] Isolate the remaining host-storage tail below the confirmed PG `WalSync`
       wait. The [approved NVMe A/B/A trial](reports/nvme-power-trial-20260918.md)

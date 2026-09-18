@@ -142,3 +142,67 @@ aggregation; shared Kafka/PG/formal logs keep their normal retention policy.
 Remaining work: explain concurrent startup variability and the residual native
 append/SDK interval with the same per-Run evidence. No architecture change is
 justified by this sample, and no bounded-latency guarantee is claimed.
+
+## Follow-up: native ACKs and serialized admission
+
+Repository `fe4fbd65`, unchanged application `5c9977fa`. Temporary, bounded Node
+Inspector probes measured native append completion, PG-client query categories
+and hashes (not SQL/values/results), GC and event-loop gaps. A separate PG client
+sampled wait/state/PID at a target ten-millisecond cadence. No debugger breakpoint,
+heap snapshot, power change or production code change was used. Instrumentation
+can add overhead; this is attribution evidence, not a clean speed comparison.
+
+Thirty-four GPT Turns completed: eighteen sequential, then four four-Session
+waves across two tenants. Sequential statistics exclude the first Turn. PG
+timestamps independently confirmed four overlapping Runs.
+
+| Metric | Sequential median | Four-concurrent median |
+| --- | ---: | ---: |
+| Submission → upstream model dispatch | 110.609ms | 206.366ms |
+| Submission → start of claim | 16ms | 84.5ms |
+| Claim transaction | 29.878ms | 37.264ms |
+| Post-World-State native ACKs, summed per Run | 8.476ms | 8.369ms |
+| Remaining preparation to Model Gateway receipt | 11.937ms | 11.844ms |
+
+The two pre-model native appends are operation-start + user input together,
+then the sampling-attempt record. They are not hidden PG projection waits.
+The remaining interval includes native in-memory validation/materialization and
+SDK/request preparation; it is a residual measurement, not exclusively CPU.
+
+One four-request wave, relative to its first submission:
+
+| Claim order | API response received | Claim started | Claim duration | Model dispatched |
+| --- | ---: | ---: | ---: | ---: |
+| First | ~21ms | 19ms | 27.800ms | ~119ms |
+| Second | ~27ms | 50ms | 37.514ms | ~162ms |
+| Third | ~23ms | 92ms | 43.678ms | ~204ms |
+| Fourth | ~30ms | 139ms | 36.422ms | ~242ms |
+
+The fourth request spent approximately **109ms after API acceptance before
+claim even began**. Current `PostgresPiWorker.#claiming` deliberately allows only
+one pending claim. Successful commit releases it and wakes the next probe, so
+this is admission serialization, not serialization of the running Agent Loops.
+All four measured waves had the same non-overlapping claim pattern. Reducing
+these waits calls for bounded concurrent admission (initially two), not dropping
+leases, bypassing PG or adding another scheduler. That changes Worker scheduling
+behavior and was proposed to the owner; it has **not** been implemented.
+
+The sample also distinguishes server I/O from delayed client completion. One
+prepared query took 86.361ms at the Worker, but PG was already `idle in
+transaction / ClientRead` at approximately +51, +63 and +76ms. That later portion
+was not PG still executing the query or syncing its WAL. A Worker event-loop
+gap of 58.663ms overlapped the interval; a nearby major GC lasted 7.736ms, which
+does not alone explain the entire gap. Whole-cohort cgroup counters increased
+by two Worker throttles and one Control Plane throttle (PG: zero), but were not
+sampled per window, so they do not prove the cause of that exact pause. The
+earlier independently matched `WalSync` stalls remain valid, separate evidence.
+
+All patched diagnostic methods were restored and the GC observer/timer removed.
+The Inspector listener was container-loopback only, then explicitly closed;
+a final connection returned `ECONNREFUSED`. No diagnostic source became part of
+the application. Two test tenants, four Sessions/Workspaces and their 34 Runs
+were API-deleted and scoped-purged after storage purge, seal/PG progress and
+execution-release checks. No Cube was activated. Original account/resource
+counts and the original Session were preserved. Temporary scripts, traces and
+test logs were removed; shared service logs were not truncated. Native usage:
+**35,730 input, 190,464 cache-read and 238 output tokens**.
