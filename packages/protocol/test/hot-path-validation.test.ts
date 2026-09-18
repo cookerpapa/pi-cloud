@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
 import {
@@ -11,6 +11,11 @@ import {
   parseSupervisorToControlMessage,
 } from "../src/index.ts";
 import { createSchemaCheck as browserCheck } from "../src/schema-check.browser.ts";
+
+vi.mock("typebox/value", async (original) => {
+  const module = await original<typeof import("typebox/value")>();
+  return { ...module, Value: { ...module.Value, Check: vi.fn(module.Value.Check) } };
+});
 
 const id = "11111111-1111-4111-8111-111111111111";
 const time = "2026-09-19T00:00:00.000Z";
@@ -60,6 +65,13 @@ const fixtures: Array<{
     errorPrefix: "Invalid control-to-supervisor message",
   },
 ];
+
+it("uses compiled server checks rather than interpreting each valid event", () => {
+  const interpreted = vi.mocked(Value.Check);
+  interpreted.mockClear();
+  for (const { value, parse } of fixtures) expect(parse(value)).toBe(value);
+  expect(interpreted).not.toHaveBeenCalled();
+});
 
 function paths(value: Record<string, unknown>, prefix: string[] = []): string[][] {
   return Object.entries(value).flatMap(([key, item]) => [
