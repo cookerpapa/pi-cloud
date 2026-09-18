@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { PostgresQueueWake, familyAdmission } from "../src/postgres-pi-worker.ts";
+import { PostgresQueueWake } from "@pi-cloud/database";
+import { familyAdmission } from "../src/postgres-pi-worker.ts";
 
 describe("Session-family admission", () => {
   const task = (piSessionId: string, n: number) => ({

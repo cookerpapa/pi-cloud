@@ -1,7 +1,9 @@
 import type { Database } from "@pi-cloud/database";
 import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC, type PiCloudEventBody } from "@pi-cloud/protocol";
-import type { Transaction } from "kysely";
+import { sql, type Transaction } from "kysely";
 import type { AcceptedExecutionSealFact } from "./accepted-fact.ts";
+
+export const TERMINAL_OUTBOX_NOTIFICATION_CHANNEL = "pi_cloud_terminal_outbox";
 
 export type RequestExecutionStreamSealInput = {
   tenantId: string;
@@ -75,7 +77,7 @@ export async function requestExecutionStreamSeal(
     .set({ output_seal_id: fact.factId })
     .where("id", "=", execution.id)
     .executeTakeFirstOrThrow();
-  await transaction
+  const queuedSeal = transaction
     .insertInto("outbox")
     .values({
       id: fact.factId,
@@ -90,5 +92,11 @@ export async function requestExecutionStreamSeal(
       published_at: null,
       last_error: null,
     })
+    .returning("id");
+  // Same statement and commit as the durable row; the hint contains no data.
+  await transaction
+    .with("queued_seal", () => queuedSeal)
+    .selectFrom("queued_seal")
+    .select(sql`pg_notify(${TERMINAL_OUTBOX_NOTIFICATION_CHANNEL}, '')`.as("notification"))
     .executeTakeFirstOrThrow();
 }

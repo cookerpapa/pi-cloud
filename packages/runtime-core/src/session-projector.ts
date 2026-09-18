@@ -34,6 +34,7 @@ export class SessionProjector {
     readonly options: KafkaAcceptedFactConfiguration & {
       retentionMs: number;
       database: Kysely<Database>;
+      notificationConnectionString: string;
       advertisedBaseUrl: string;
       toolCommands: {
         consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
@@ -94,6 +95,7 @@ export class SessionProjector {
     });
     this.#relay = new AcceptedFactTerminalOutboxRelay({
       database: options.database,
+      notificationConnectionString: options.notificationConnectionString,
       bus: this.#bus,
     });
     this.#retention = new KafkaSafeRetention({ ...options, topic, graceMs: options.retentionMs });

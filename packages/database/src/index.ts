@@ -1,6 +1,7 @@
 export { createDatabase, type CreateDatabaseOptions } from "./client.ts";
 export { retryTransaction } from "./retry-transaction.ts";
 export { databaseTime } from "./authority-time.ts";
+export { PostgresQueueWake, PostgresNotificationWake } from "./postgres-queue-wake.ts";
 
 export {
   type TurnControlRequestKind,

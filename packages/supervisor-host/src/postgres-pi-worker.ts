@@ -1,4 +1,4 @@
-import type { Database } from "@pi-cloud/database";
+import { PostgresQueueWake, type Database } from "@pi-cloud/database";
 import {
   type RunCancellationExecutionResult,
   RunCancellationExecutor,
@@ -43,42 +43,6 @@ export function familyAdmission(
 type CancellationReference = {
   targetRunId: string;
 };
-
-export class PostgresQueueWake {
-  #generation = 0;
-  #wake: (() => void) | undefined;
-
-  get generation(): number {
-    return this.#generation;
-  }
-
-  notify(): void {
-    this.#generation += 1;
-    this.#wake?.();
-  }
-
-  wait(observedGeneration: number, timeoutMs: number, signal: AbortSignal): Promise<void> {
-    if (signal.aborted || this.#generation !== observedGeneration) return Promise.resolve();
-    return new Promise<void>((resolvePromise) => {
-      let settled = false;
-      const timer = setTimeout(settle, timeoutMs);
-      timer.unref();
-      const onAbort = (): void => settle();
-      this.#wake = settle;
-      if (this.#generation !== observedGeneration) settle();
-      function settle(): void {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        signal.removeEventListener("abort", onAbort);
-        resolvePromise();
-      }
-      signal.addEventListener("abort", onAbort, { once: true });
-    }).finally(() => {
-      this.#wake = undefined;
-    });
-  }
-}
 
 export type PostgresPiWorkerOptions = {
   database: Kysely<Database>;

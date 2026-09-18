@@ -37,6 +37,13 @@ The old Fact Gateway, Fact WebSocket, secondary channel lease/progress store,
 independent projection service and execution-committed notification are removed.
 Historical migrations/reports describe their named revisions, not alternate modes.
 
+Seal insertion emits an empty commit-time PG notification. One session-affine
+LISTEN connection per Projector wakes the existing terminal Outbox claimant;
+50ms polling still covers missing hints and reconnects. Hints delivered during
+an empty scan are retained by generation, and cannot bypass publication backoff.
+No browser payload or authority moves through NOTIFY. Drain proof and completion
+remain separate durable boundaries (ADR-0177).
+
 Within Control Plane, `ConversationReader` owns tenant-scoped history/list reads;
 Run admission and resource mutations stay in `ControlPlaneStore`. A conversation
 snapshot, inherited history and display coverage still share one repeatable-read

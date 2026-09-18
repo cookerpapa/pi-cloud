@@ -1276,7 +1276,7 @@ export class RunExecutor {
         },
       );
 
-      const turnUpdate = await transaction
+      const turnUpdate = transaction
         .updateTable("turns")
         .set({
           state: transitionTurn(rows.turnState, "completed"),
@@ -1286,10 +1286,9 @@ export class RunExecutor {
         .where("tenant_id", "=", claim.request.tenantId)
         .where("id", "=", claim.request.turnId)
         .where("state", "=", rows.turnState)
-        .executeTakeFirst();
-      expectOne(turnUpdate.numUpdatedRows, "completing a turn");
+        .returning("id");
 
-      const sessionUpdate = await transaction
+      const sessionUpdate = transaction
         .updateTable("sessions")
         .set({
           state: transitionSession(rows.sessionState, "idle"),
@@ -1300,8 +1299,17 @@ export class RunExecutor {
         .where("tenant_id", "=", claim.request.tenantId)
         .where("id", "=", claim.request.sessionId)
         .where("state", "=", rows.sessionState)
-        .executeTakeFirst();
-      expectOne(sessionUpdate.numUpdatedRows, "settling a session");
+        .returning("id");
+      const updated = await transaction
+        .with("completed_turn", () => turnUpdate)
+        .with("settled_session", () => sessionUpdate)
+        .selectNoFrom([
+          sql<number>`(select count(*)::int from completed_turn)`.as("turns"),
+          sql<number>`(select count(*)::int from settled_session)`.as("sessions"),
+        ])
+        .executeTakeFirstOrThrow();
+      expectOne(BigInt(updated.turns), "completing a turn");
+      expectOne(BigInt(updated.sessions), "settling a session");
       await requestExecutionStreamSeal(transaction, {
         tenantId: claim.request.tenantId,
         sessionId: claim.request.sessionId,

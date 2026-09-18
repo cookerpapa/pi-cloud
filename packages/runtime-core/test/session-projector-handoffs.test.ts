@@ -75,6 +75,7 @@ beforeEach(() => {
   route = vi.fn(async () => {});
   projector = new SessionProjector({
     database: {} as Kysely<Database>,
+    notificationConnectionString: "postgresql://unused/test",
     brokers: ["unused"],
     clientId: "test",
     partitions: 2,

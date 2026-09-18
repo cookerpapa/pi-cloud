@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
+import {
+  createDatabase,
+  runMigrations,
+  PostgresNotificationWake,
+  type Database,
+} from "@pi-cloud/database";
+import { AcceptedFactTerminalOutboxRelay } from "../../runtime-core/src/accepted-fact-terminal-outbox-relay.ts";
+import { TERMINAL_OUTBOX_NOTIFICATION_CHANNEL } from "../../runtime-core/src/execution-stream-seal.ts";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
@@ -21,6 +28,7 @@ const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.skipIf(!endpoint)("atomic Worker admission", () => {
   const name = `pi_atomic_admit_${randomUUID().replaceAll("-", "")}`;
   let admin: Kysely<Database>, db: Kysely<Database>;
+  let notificationConnectionString: string;
   beforeAll(async () => {
     admin = createDatabase({ connectionString: endpoint!, maxConnections: 1 });
     await sql`create database ${sql.id(name)}`.execute(admin);
@@ -31,6 +39,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       "-c statement_timeout=5000 -c idle_in_transaction_session_timeout=10000",
     );
     db = createDatabase({ connectionString: url.toString(), maxConnections: 8 });
+    notificationConnectionString = url.toString();
     await runMigrations(db, "up");
   }, 60000);
   afterAll(async () => {
@@ -168,6 +177,199 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       facts,
     };
   }
+
+  it.each([false, true])(
+    "notifies seal work only after atomic completion commits (rollback=%s)",
+    async (rollback) => {
+      const f = await fixture(),
+        wake = new PostgresNotificationWake(
+          notificationConnectionString,
+          TERMINAL_OUTBOX_NOTIFICATION_CHANNEL,
+        );
+      wake.refresh();
+      await vi.waitFor(() => expect(wake.generation).toBeGreaterThan(0));
+      const before = wake.generation;
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const executor = new RunExecutor({
+        database: db,
+        backend: f.backend,
+        claimOwnerId: f.worker,
+        executionAuthority: {
+          assertCurrent: f.coordinator.assertCurrent.bind(f.coordinator),
+          async releaseCurrent(tx, request, reference, now) {
+            await f.coordinator.releaseCurrent(tx, request, reference, now);
+            entered.resolve();
+            await release.promise;
+            if (rollback) throw Error("injected settlement rollback");
+          },
+        },
+      });
+      const executing = executor.dispatchRun(f.accepted.runId);
+      const outcome = Promise.allSettled([executing]);
+      try {
+        await entered.promise;
+        expect(
+          await db
+            .selectFrom("outbox")
+            .select("id")
+            .where("tenant_id", "=", f.tenant.tenantId)
+            .execute(),
+        ).toHaveLength(0);
+        expect(wake.generation).toBe(before);
+        release.resolve();
+        const [result] = await outcome;
+        if (rollback) {
+          expect(result).toMatchObject({ status: "rejected" });
+          expect(
+            await db
+              .selectFrom("outbox")
+              .select("id")
+              .where("tenant_id", "=", f.tenant.tenantId)
+              .execute(),
+          ).toHaveLength(0);
+          expect((await f.state()).leases).toHaveLength(1);
+          expect((await f.state()).worker.active_sessions).toBe(1);
+          expect(
+            (
+              await db
+                .selectFrom("turns")
+                .select("state")
+                .where("id", "=", f.accepted.turnId)
+                .executeTakeFirstOrThrow()
+            ).state,
+          ).toBe("running");
+          expect(
+            (
+              await db
+                .selectFrom("sessions")
+                .select("state")
+                .where("id", "=", f.session.sessionId)
+                .executeTakeFirstOrThrow()
+            ).state,
+          ).toBe("running");
+          await new Promise((r) => setTimeout(r, 30));
+          expect(wake.generation).toBe(before);
+        } else {
+          expect(result).toMatchObject({ status: "fulfilled", value: { status: "completed" } });
+          await vi.waitFor(() => expect(wake.generation).toBe(before + 1));
+          expect((await f.state()).leases).toHaveLength(0);
+          await f.project();
+        }
+      } finally {
+        release.resolve();
+        await outcome;
+        await wake.close();
+      }
+    },
+  );
+
+  it("does not lose a terminal hint delivered during an older empty scan", async () => {
+    const f = await fixture(),
+      empty = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>(),
+      appended: string[] = [];
+    const executor = db.getExecutor(),
+      original = executor.executeQuery.bind(executor);
+    let held = false;
+    const notify = vi.spyOn(PostgresNotificationWake.prototype, "notify");
+    const relay = new AcceptedFactTerminalOutboxRelay({
+      database: db,
+      notificationConnectionString,
+      pollIntervalMs: 5000,
+      bus: {
+        checkHealth: async () => {},
+        append: async (fact) => {
+          appended.push(fact.factId);
+          return { factId: fact.factId, durable: true };
+        },
+      },
+    });
+    // Other fixtures may retain undispatched seals. Deliver them before holding
+    // an empty scan; only this fixture's subsequent hint is under test.
+    while (await relay.dispatchOne()) {}
+    const gate = vi.spyOn(executor, "executeQuery").mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (!held && args[0].sql.includes("update outbox as claimed") && result.rows.length === 0) {
+        held = true;
+        empty.resolve();
+        await release.promise;
+      }
+      return result;
+    });
+    try {
+      relay.start();
+      await empty.promise;
+      await vi.waitFor(() => expect(notify).toHaveBeenCalled());
+      const count = notify.mock.calls.length;
+      await f.executor().dispatchRun(f.accepted.runId);
+      await vi.waitFor(() => expect(notify.mock.calls.length).toBeGreaterThan(count));
+      release.resolve();
+      const seal = (
+        await db
+          .selectFrom("run_attempts")
+          .select("output_seal_id")
+          .where("run_id", "=", f.accepted.runId)
+          .executeTakeFirstOrThrow()
+      ).output_seal_id!;
+      await vi.waitFor(() => expect(appended).toContain(seal), { timeout: 1500 });
+    } finally {
+      release.resolve();
+      await relay.close();
+      gate.mockRestore();
+      notify.mockRestore();
+    }
+  });
+
+  it("keeps polling during listener loss and reconnects before shutdown", async () => {
+    const f = await fixture(),
+      appended: string[] = [];
+    const relay = new AcceptedFactTerminalOutboxRelay({
+      database: db,
+      notificationConnectionString,
+      pollIntervalMs: 20,
+      bus: {
+        checkHealth: async () => {},
+        append: async (fact) => {
+          appended.push(fact.factId);
+          return { factId: fact.factId, durable: true };
+        },
+      },
+    });
+    const listeners = () =>
+      sql<{
+        pid: number;
+      }>`select pid from pg_stat_activity where datname=${name} and application_name=${TERMINAL_OUTBOX_NOTIFICATION_CHANNEL}`.execute(
+        db,
+      );
+    try {
+      relay.start();
+      await vi.waitFor(async () => expect((await listeners()).rows).toHaveLength(1));
+      const pid = (await listeners()).rows[0]!.pid;
+      await sql`select pg_terminate_backend(${pid})`.execute(db);
+      await f.executor().dispatchRun(f.accepted.runId);
+      const seal = (
+        await db
+          .selectFrom("run_attempts")
+          .select("output_seal_id")
+          .where("run_id", "=", f.accepted.runId)
+          .executeTakeFirstOrThrow()
+      ).output_seal_id!;
+      await vi.waitFor(() => expect(appended).toContain(seal), { timeout: 800 });
+      await vi.waitFor(
+        async () => {
+          const rows = (await listeners()).rows;
+          expect(rows).toHaveLength(1);
+          expect(rows[0]!.pid).not.toBe(pid);
+        },
+        { timeout: 3000 },
+      );
+      expect(() => relay.checkHealth()).not.toThrow();
+    } finally {
+      await relay.close();
+    }
+    await vi.waitFor(async () => expect((await listeners()).rows).toHaveLength(0));
+  });
 
   it("commits claim, lease and publication together; Kafka and Runner run only afterwards", async () => {
     const f = await fixture();

@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0177](0177-terminal-wake-and-local-sql.md) — commit-time seal wake hints
+   and fewer SQL round trips without moving durable boundaries.
+
 1. [ADR-0176](0176-bounded-context-overflow-recovery.md) — Pi-native bounded
    overflow compaction and sampling continuation without Tool replay.
 

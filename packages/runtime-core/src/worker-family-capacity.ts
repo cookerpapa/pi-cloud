@@ -31,6 +31,7 @@ export async function releaseExecutionScope(
     .where("tenant_id", "=", input.tenantId)
     .where("lease_id", "=", input.leaseId)
     .where("fencing_token", "=", String(input.fencingToken))
+    .forKeyShare()
     .executeTakeFirst();
   if (!lease) throw new Error("Task release lost its Session lease");
   await tx
@@ -49,7 +50,9 @@ export async function releaseExecutionScope(
     .where("execution_released_at", "is", null)
     .executeTakeFirst();
   if (released.numUpdatedRows !== 1n) throw new Error("Task execution scope was already released");
-  await releaseIdleSessionLease(tx, lease.lease_id, input.now);
+  // The lease identity cannot be deleted/replaced under KEY SHARE. The physical
+  // Session lock above protects peer admission; reuse this identity, not expiry.
+  await releaseLockedIdleSessionLease(tx, lease, input.now);
 }
 
 /** Caller holds the physical Session lock; no distributed work is queued here. */
@@ -64,6 +67,20 @@ export async function releaseIdleSessionLease(
     .where("lease_id", "=", leaseId)
     .executeTakeFirst();
   if (!lease) return false;
+  return releaseLockedIdleSessionLease(tx, lease, now);
+}
+
+async function releaseLockedIdleSessionLease(
+  tx: Transaction<Database>,
+  lease: {
+    lease_id: string;
+    tenant_id: string;
+    pi_session_id: string;
+    writer_id: string;
+    sandbox_id: string;
+  },
+  now: Date,
+): Promise<boolean> {
   const peer = await tx
     .selectFrom("run_attempts as a")
     .innerJoin("runs as r", "r.current_attempt_id", "a.id")
@@ -97,7 +114,7 @@ export async function releaseIdleSessionLease(
     .where("id", "=", lease.sandbox_id)
     .forNoKeyUpdate()
     .executeTakeFirstOrThrow();
-  await tx.deleteFrom("session_leases").where("lease_id", "=", leaseId).execute();
+  await tx.deleteFrom("session_leases").where("lease_id", "=", lease.lease_id).execute();
   const remaining = await countWorkerLeaseFamilies(tx, lease.sandbox_id);
   await tx
     .updateTable("sandboxes")

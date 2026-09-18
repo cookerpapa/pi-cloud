@@ -10,6 +10,7 @@ it("claims bounded Session heads without holding a connection during delivery an
   const pg = await PGlite.create();
   const socket = new PGLiteSocketServer({ db: pg, host: "127.0.0.1", port: 0 });
   await socket.start();
+  const notificationConnectionString = `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`;
   const db = createDatabase({
     connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
     maxConnections: 1,
@@ -82,8 +83,16 @@ it("claims bounded Session heads without holding a connection during delivery an
         return { factId: fact.factId, durable: true as const };
       },
     };
-    const first = new AcceptedFactTerminalOutboxRelay({ database: db, bus });
-    const second = new AcceptedFactTerminalOutboxRelay({ database: db, bus });
+    const first = new AcceptedFactTerminalOutboxRelay({
+      database: db,
+      notificationConnectionString,
+      bus,
+    });
+    const second = new AcceptedFactTerminalOutboxRelay({
+      database: db,
+      notificationConnectionString,
+      bus,
+    });
     const held = first.dispatchOne();
     await vi.waitFor(() => expect(delivered).toEqual([a1]));
     await expect(second.dispatchOne()).resolves.toBe(true);
@@ -103,7 +112,11 @@ it("claims bounded Session heads without holding a connection during delivery an
         return { factId: fact.factId, durable: true as const };
       }),
     };
-    const retry = new AcceptedFactTerminalOutboxRelay({ database: db, bus: retryBus });
+    const retry = new AcceptedFactTerminalOutboxRelay({
+      database: db,
+      notificationConnectionString,
+      bus: retryBus,
+    });
     await expect(retry.dispatchOne()).rejects.toThrow("Terminal publication failed");
     await db
       .updateTable("outbox")
@@ -127,7 +140,11 @@ it("claims bounded Session heads without holding a connection during delivery an
       failStale = reject;
     });
     const staleBus = { checkHealth: async () => {}, append: vi.fn(async () => stalled) };
-    const staleRelay = new AcceptedFactTerminalOutboxRelay({ database: db, bus: staleBus });
+    const staleRelay = new AcceptedFactTerminalOutboxRelay({
+      database: db,
+      notificationConnectionString,
+      bus: staleBus,
+    });
     const staleDispatch = staleRelay.dispatchOne().catch((error) => error);
     await vi.waitFor(() => expect(staleBus.append).toHaveBeenCalledOnce());
     await db
@@ -169,6 +186,7 @@ it("recovers relay health after a transient PG error even when the Outbox is emp
   const append = vi.fn();
   const relay = new AcceptedFactTerminalOutboxRelay({
     database: db,
+    notificationConnectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
     bus: { checkHealth: async () => {}, append },
     pollIntervalMs: 10,
   });

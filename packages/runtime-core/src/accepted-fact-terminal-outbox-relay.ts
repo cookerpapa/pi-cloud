@@ -1,9 +1,10 @@
-import type { Database } from "@pi-cloud/database";
+import { PostgresNotificationWake, type Database } from "@pi-cloud/database";
 import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "@pi-cloud/protocol";
 import { setTimeout as delay } from "node:timers/promises";
 import { sql, type Kysely } from "kysely";
 import type { AcceptedFactBus } from "./accepted-fact.ts";
 import { parseKafkaAcceptedFact } from "./kafka-accepted-fact.ts";
+import { TERMINAL_OUTBOX_NOTIFICATION_CHANNEL } from "./execution-stream-seal.ts";
 
 type ClaimedTerminal = { id: string; payload: Record<string, unknown>; attempts: number };
 
@@ -13,12 +14,14 @@ export class AcceptedFactTerminalOutboxRelay {
   readonly #pollIntervalMs: number;
   readonly #claimLeaseMs: number;
   readonly #batchSize: number;
+  readonly #wake: PostgresNotificationWake;
   #abort: AbortController | undefined;
   #task: Promise<void> | undefined;
   #failure: unknown;
 
   constructor(options: {
     database: Kysely<Database>;
+    notificationConnectionString: string;
     bus: AcceptedFactBus;
     pollIntervalMs?: number;
     claimLeaseMs?: number;
@@ -26,6 +29,10 @@ export class AcceptedFactTerminalOutboxRelay {
   }) {
     this.#database = options.database;
     this.#bus = options.bus;
+    this.#wake = new PostgresNotificationWake(
+      options.notificationConnectionString,
+      TERMINAL_OUTBOX_NOTIFICATION_CHANNEL,
+    );
     this.#pollIntervalMs = options.pollIntervalMs ?? 50;
     this.#claimLeaseMs = options.claimLeaseMs ?? 30_000;
     this.#batchSize = options.batchSize ?? 16;
@@ -49,7 +56,11 @@ export class AcceptedFactTerminalOutboxRelay {
 
   async close(): Promise<void> {
     this.#abort?.abort();
-    await this.#task;
+    try {
+      await this.#task;
+    } finally {
+      await this.#wake.close();
+    }
     this.#task = undefined;
   }
 
@@ -132,7 +143,10 @@ export class AcceptedFactTerminalOutboxRelay {
 
   async #run(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
+      this.#wake.refresh();
+      const generation = this.#wake.generation;
       let waitMs = this.#pollIntervalMs;
+      let failed = false;
       try {
         const count = await this.#dispatch(this.#batchSize);
         this.#failure = undefined;
@@ -141,10 +155,13 @@ export class AcceptedFactTerminalOutboxRelay {
         }
       } catch (error: unknown) {
         this.#failure = error;
+        failed = true;
         waitMs = Math.max(waitMs, 100);
       }
       try {
-        await delay(waitMs, undefined, { signal, ref: false });
+        // Hints must not bypass the existing backoff after a failed claim/send.
+        if (failed) await delay(waitMs, undefined, { signal, ref: false });
+        else await this.#wake.wait(generation, waitMs, signal);
       } catch (error) {
         if (!signal.aborted) throw error;
       }

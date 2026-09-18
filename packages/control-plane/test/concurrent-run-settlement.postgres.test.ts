@@ -65,7 +65,7 @@ it.skipIf(!external)(
       const seals = new WeakSet<object>();
       const measured = db.withPlugin({
         transformQuery({ node, queryId }) {
-          if (db.getExecutor().compileQuery(node, queryId).sql.startsWith('insert into "outbox"'))
+          if (db.getExecutor().compileQuery(node, queryId).sql.includes('insert into "outbox"'))
             seals.add(queryId);
           return node;
         },
