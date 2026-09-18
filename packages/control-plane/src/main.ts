@@ -156,7 +156,7 @@ export async function startControlPlane(): Promise<void> {
     unattachedSubagents = subagents;
     agentEvents = new SessionProjector({
       database,
-      notificationConnectionString: config.databaseUrl,
+      notificationConnectionString: config.databaseNotificationUrl,
       brokers: config.kafkaBrokers,
       clientId: controlPlaneInstanceId,
       advertisedBaseUrl: config.projectorAdvertisedBaseUrl,

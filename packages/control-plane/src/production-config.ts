@@ -14,6 +14,7 @@ export type ProductionControlPlaneEnvironment = Readonly<Record<string, string |
 
 export type ProductionControlPlaneConfig = {
   databaseUrl: string;
+  databaseNotificationUrl: string;
   kafkaBrokers: readonly string[];
   kafkaPartitions: number;
   kafkaReplicas: number;
@@ -391,6 +392,11 @@ export async function loadProductionControlPlaneConfig(
     "PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID",
   );
   const databaseUrl = await loadProductionDatabaseUrl(environment);
+  const databaseNotificationUrl =
+    environment.DATABASE_NOTIFICATION_URL !== undefined ||
+    environment.DATABASE_NOTIFICATION_URL_FILE !== undefined
+      ? await secret(environment, "DATABASE_NOTIFICATION_URL", allowInlineSecrets)
+      : databaseUrl;
   const githubFields = [
     environment.PI_CLOUD_GITHUB_APP_ID,
     environment.PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE,
@@ -411,6 +417,7 @@ export async function loadProductionControlPlaneConfig(
   const gitlabEnabled = booleanValue(environment, "PI_CLOUD_GITLAB_ENABLED");
   return {
     databaseUrl,
+    databaseNotificationUrl,
     projectorAdvertisedBaseUrl: managementUrl(
       environment.PI_CLOUD_PROJECTOR_ADVERTISED_URL ??
         `http://${required(environment, "POD_IP").includes(":") ? `[${environment.POD_IP}]` : environment.POD_IP}:${environment.PORT ?? "3000"}`,

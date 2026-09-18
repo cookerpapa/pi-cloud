@@ -236,6 +236,7 @@ describe.sequential("production bootstrap and configuration", () => {
     const runtime = await loadProductionControlPlaneConfig(environment);
     expect(runtime).toMatchObject({
       databaseUrl: "postgresql://db.invalid/picloud",
+      databaseNotificationUrl: "postgresql://db.invalid/picloud",
       kafkaBrokers: ["kafka-1:9092", "kafka-2:9092"],
       kafkaReplicas: 1,
       supervisorIdPrefix: "pi-worker-",
@@ -262,6 +263,29 @@ describe.sequential("production bootstrap and configuration", () => {
     expect(runtime).not.toHaveProperty("tenantId");
     expect(runtime).not.toHaveProperty("defaultModelProfileId");
     expect(runtime).not.toHaveProperty("apiToken");
+    const direct = await secret(root, "direct-database", "postgresql://direct.invalid/picloud");
+    await chmod(direct, mode);
+    expect(
+      (
+        await loadProductionControlPlaneConfig({
+          ...environment,
+          DATABASE_NOTIFICATION_URL_FILE: direct,
+        })
+      ).databaseNotificationUrl,
+    ).toBe("postgresql://direct.invalid/picloud");
+    await expect(
+      loadProductionControlPlaneConfig({
+        ...environment,
+        DATABASE_NOTIFICATION_URL_FILE: join(root, "missing-direct"),
+      }),
+    ).rejects.toThrow();
+    await expect(
+      loadProductionControlPlaneConfig({
+        ...environment,
+        DATABASE_NOTIFICATION_URL_FILE: direct,
+        DATABASE_NOTIFICATION_URL: "postgresql://conflicting",
+      }),
+    ).rejects.toThrow("cannot both be configured");
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const githubPrivateKeyPath = join(root, "github-app-private-key.pem");
     await writeFile(githubPrivateKeyPath, privateKey.export({ type: "pkcs8", format: "pem" }), {

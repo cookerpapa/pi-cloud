@@ -54,10 +54,14 @@ assert.equal(
   false,
 );
 assert.equal(
+  environment.DATABASE_NOTIFICATION_URL_FILE,
+  "/run/pi-cloud-secrets/database-notification-url",
+);
+assert.equal(
   controlPlane.spec.template.spec.containers[0].volumeMounts.some(
     (mount) => mount.mountPath === "/run/pi-cloud-secrets/database-notification-url",
   ),
-  false,
+  true,
 );
 assert.match(environment.PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES, /\{supervisorId\}/);
 assert(find("StatefulSet", "pi-cloud-pi-worker-primary-v1"));
@@ -150,6 +154,14 @@ for (const [kind, name, key] of [
     key,
   );
 }
+assert.equal(
+  customDatabaseKeys
+    .find((r) => r.kind === "Deployment" && r.metadata.name === "pi-cloud-control-plane")
+    .spec.template.spec.containers[0].volumeMounts.find(
+      (m) => m.mountPath === "/run/pi-cloud-secrets/database-notification-url",
+    ).subPath,
+  "direct-database",
+);
 
 // Rendering syntactically valid YAML is insufficient: check the interfaces
 // between workloads, Services, network policies and projected Secret files.

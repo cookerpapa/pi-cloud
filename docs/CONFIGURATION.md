@@ -410,7 +410,11 @@ prepared-statement tracking enabled (`max_prepared_statements > 0`, PgBouncer
 See [PgBouncer's configuration contract](https://www.pgbouncer.org/config.html#max_prepared_statements).
 The separate
 notification URL must connect directly to PostgreSQL because `LISTEN` is
-session-scoped. The Volume Gateway also mounts this direct Secret key for its
+session-scoped. Control Plane and Worker both read `DATABASE_NOTIFICATION_URL_FILE`;
+when absent, they use `DATABASE_URL_FILE` (appropriate for direct-PG Compose).
+Helm mounts `external.database.notificationSecretKey` for the Control Plane's
+one terminal-relay listener per replica, outside its ordinary SQL pool. It does
+not allocate a listener per Session. The Volume Gateway also mounts this direct Secret key for its
 session-scoped advisory locks; transaction-pooling endpoints must not be used
 there. Its dedicated lock pool discards a connection if cleanup is uncertain.
 Workspace storage must support ReadWriteMany for replicated
