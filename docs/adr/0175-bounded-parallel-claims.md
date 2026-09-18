@@ -2,7 +2,7 @@
 
 Status: accepted, 2026-09-18, following the approved serial/two-way comparison.
 
-An operator-approved trial raises each Worker's pending Run claims from one to
+The accepted change raises each Worker's pending Run claims from one to
 at most two. This overlaps preparation inside the existing PostgreSQL admission
 path; it adds no scheduler, connection pool, lease or durable state.
 
@@ -27,6 +27,8 @@ readiness, cancellation, drain, concurrent real-PG admission, lost COMMIT and
 ordered closure. Compare serial/two-way/serial/two-way real GPT workloads with
 unchanged resources, provider configuration and durability. Retain only if the
 measured benefit justifies the change; do not preserve an alternate scheduler.
+The [completed acceptance](../reports/parallel-claims-20260918.md) supports retaining
+two-way admission; the comparison images are removed, not shipped as another mode.
 
 This reuses PostgreSQL's documented [queue-style SKIP LOCKED](https://www.postgresql.org/docs/17/sql-select.html)
 and [single-client transactions](https://node-postgres.com/features/transactions),

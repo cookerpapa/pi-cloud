@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] Bounded two-way Worker claims, conservative pending capacity and retained
+      queue notifications; [matched GPT comparison and correctness](reports/parallel-claims-20260918.md).
+
 - [x] Atomic Worker claim/lease/publication admission, exact COMMIT confirmation
       and output-free pre-start retry; [real-PG faults and GPT comparison](reports/atomic-admission-20260918.md).
 

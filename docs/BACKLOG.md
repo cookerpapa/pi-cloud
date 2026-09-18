@@ -12,19 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Explain concurrent startup variability and the remaining native-append/SDK
-      interval after the [per-Run SQL simplification](reports/startup-stage-optimization-20260918.md).
-      Publication registration fell from 11.6ms to 5–5.7ms, but the first
-      after-pass did not improve overall median or concurrent startup. Keep
-      admission, output ordering and Tool UNKNOWN semantics unchanged.
-      A follow-up traced the two native ACKs (~8.5ms combined) and confirmed
-      one in-flight claim per Worker: one four-Run burst began claims at
-      19/50/92/139ms. The owner approved the bounded two-way claim trial in
-      ADR-0175; the serial/two-way/serial/two-way comparison supports retaining
-      two pending claims. Four-concurrent startup median was 213ms versus 194ms
-      pooled, with no universal latency/SLO claim.
-      Some query tails also include delayed Node
-      callbacks after PG is already waiting for the client, not only WAL I/O.
+- [ ] Attribute remaining cold-start and Node callback/CPU tails after
+      [two-way admission](reports/parallel-claims-20260918.md). Four-concurrent
+      startup median improved 213→194ms in the bounded comparison, but cold
+      requests can still exceed 400ms. Some query spans include client-side
+      delay after PG is already idle; do not label all elapsed time as WAL I/O.
 
 - [ ] Isolate the remaining host-storage tail below the confirmed PG `WalSync`
       wait. The [approved NVMe A/B/A trial](reports/nvme-power-trial-20260918.md)
