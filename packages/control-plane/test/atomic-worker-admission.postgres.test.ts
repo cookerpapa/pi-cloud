@@ -191,8 +191,18 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       const before = wake.generation;
       const entered = Promise.withResolvers<void>(),
         release = Promise.withResolvers<void>();
+      const statements: string[] = [];
+      const measured = db.withPlugin({
+        transformQuery({ node, queryId }) {
+          statements.push(db.getExecutor().compileQuery(node, queryId).sql);
+          return node;
+        },
+        async transformResult({ result }) {
+          return result;
+        },
+      });
       const executor = new RunExecutor({
-        database: db,
+        database: measured,
         backend: f.backend,
         claimOwnerId: f.worker,
         executionAuthority: {
@@ -219,6 +229,15 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         expect(wake.generation).toBe(before);
         release.resolve();
         const [result] = await outcome;
+        const completion = statements.slice(
+          statements.findIndex((s) => s.startsWith('with "completed_turn"')),
+        );
+        expect(completion.filter((s) => s.startsWith('with "completed_turn"'))).toHaveLength(1);
+        expect(completion[0]).toContain('"settled_session"');
+        expect(
+          completion.filter((s) => s.startsWith('select * from "session_leases"')),
+        ).toHaveLength(1);
+        expect(completion.filter((s) => s.startsWith('with "queued_seal"'))).toHaveLength(1);
         if (rollback) {
           expect(result).toMatchObject({ status: "rejected" });
           expect(
