@@ -63,11 +63,12 @@ plan name does **not** establish the Lenovo Fn+Q hardware mode. Reading the
 hardware mode through the Lenovo WMI interface required elevation. The approved
 UAC launch returned “operation canceled by the user”; the elevated A/B/A trial
 never started, its state file and isolated database were absent, and the active
-Windows plan remained unchanged. No hardware-mode result is claimed.
+Windows plan remained unchanged. A later explicitly approved retry completed the
+separate [hardware-mode A/B/A trial](legion-performance-trial-20260918.md).
 
 All 1,260 write/flush operations completed; the actual probe files and their
 newly created empty directories were removed by the probe cleanup. Private
-measurement files and the unexecuted reversible mode-trial scripts remain in
-ignored `.cache/` pending the operator's decision on retrying UAC. They are not
-deployment defaults or supported application features. Original accounts,
+measurement files and temporary scripts were removed after the subsequent
+approved mode trial; their aggregate evidence remains in these reports. They
+are not deployment defaults or supported application features. Original accounts,
 conversations, model credentials and shared service logs were not modified.

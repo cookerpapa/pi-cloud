@@ -18,8 +18,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       [Native-host comparison](reports/native-storage-tail-20260918.md) also
       reproduces the tail on the SSD hosting WSL, while a second SSD did not in
       these samples. Distinguish competing I/O, device/driver and power behavior;
-      no specific fault is established. Lenovo hardware-mode testing awaits
-      actual Windows elevation after a canceled UAC launch. Durability stays on.
+      no specific fault is established. The [Lenovo standard-mode A/B/A trial](reports/legion-performance-trial-20260918.md)
+      reduced typical real-GPT startup from 119ms to 63ms, returning to 117ms
+      after restoration, but >100ms storage tails survived. Original mode/plan
+      are restored; no laptop-specific deployment default is justified. Durability stays on.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.
