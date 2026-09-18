@@ -27,25 +27,33 @@ export async function registerExecutionPublication(
     .forKeyShare()
     .execute();
   const row = await tx
-    .selectFrom("run_attempts as a")
-    .innerJoin("active_execution_scopes as l", "l.attempt_id", "a.id")
-    .innerJoin("sessions as s", "s.id", "l.session_id")
-    .innerJoin("run_attempts as w", "w.id", "a.native_writer_id")
+    .selectFrom("active_execution_scopes as l")
     .select([
-      "a.output_publication",
-      "a.native_writer_id",
-      "w.native_writer_failed_at",
-      "w.native_writer_sealed_at",
+      "l.writer_id as native_writer_id",
       "l.tenant_id",
       "l.run_id",
       "l.turn_id",
       "l.session_id",
       "l.lease_id",
       "l.fencing_token",
-      "s.pi_session_id",
-      "s.pi_session_lane",
+      "l.pi_session_id",
     ])
-    .where("a.id", "=", lease.attemptId)
+    // The authority view already joins the Attempt, Session and native writer.
+    // Two scalar PK reads fetch fields absent from that view without expanding
+    // its five-table join graph to eight tables on every registration.
+    .select((eb) => [
+      eb
+        .selectFrom("run_attempts as a")
+        .select("a.output_publication")
+        .whereRef("a.id", "=", "l.attempt_id")
+        .as("output_publication"),
+      eb
+        .selectFrom("sessions as s")
+        .select("s.pi_session_lane")
+        .whereRef("s.id", "=", "l.session_id")
+        .as("pi_session_lane"),
+    ])
+    .where("l.attempt_id", "=", lease.attemptId)
     .where("l.lease_id", "=", lease.leaseId)
     .where("l.fencing_token", "=", String(lease.fencingToken))
     .where("l.valid_until", ">", sql<Date>`clock_timestamp()`)
@@ -57,9 +65,7 @@ export async function registerExecutionPublication(
     row.turn_id !== request.turnId ||
     row.pi_session_id !== request.piSession.id ||
     row.pi_session_lane !== request.piSession.lane ||
-    row.native_writer_id !== request.piSession.writerId ||
-    row.native_writer_failed_at !== null ||
-    row.native_writer_sealed_at !== null
+    row.native_writer_id !== request.piSession.writerId
   )
     throw new Error("Execution publication requires the current Session lease");
   if (row.output_publication !== null)

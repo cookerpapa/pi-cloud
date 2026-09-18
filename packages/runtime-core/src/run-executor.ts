@@ -1172,7 +1172,7 @@ export class RunExecutor {
         );
       }
 
-      const turnUpdate = await transaction
+      const turnUpdate = transaction
         .updateTable("turns")
         .set({
           state: transitionTurn(rows.turnState, "running"),
@@ -1181,10 +1181,9 @@ export class RunExecutor {
         .where("tenant_id", "=", claim.request.tenantId)
         .where("id", "=", claim.request.turnId)
         .where("state", "=", rows.turnState)
-        .executeTakeFirst();
-      expectOne(turnUpdate.numUpdatedRows, "starting a turn");
+        .returning("id");
 
-      const sessionUpdate = await transaction
+      const sessionUpdate = transaction
         .updateTable("sessions")
         .set({
           state: nextSessionState,
@@ -1195,8 +1194,19 @@ export class RunExecutor {
         .where("tenant_id", "=", claim.request.tenantId)
         .where("id", "=", claim.request.sessionId)
         .where("state", "=", rows.sessionState)
-        .executeTakeFirst();
-      expectOne(sessionUpdate.numUpdatedRows, "starting a session");
+        .returning("id");
+      // Both rows were locked by #lockLifecycleRows. Their independent writes
+      // need one round trip, not one acknowledgement each.
+      const updated = await transaction
+        .with("started_turn", () => turnUpdate)
+        .with("started_session", () => sessionUpdate)
+        .selectNoFrom([
+          sql<number>`(select count(*)::int from started_turn)`.as("turns"),
+          sql<number>`(select count(*)::int from started_session)`.as("sessions"),
+        ])
+        .executeTakeFirstOrThrow();
+      expectOne(BigInt(updated.turns), "starting a turn");
+      expectOne(BigInt(updated.sessions), "starting a session");
     });
   }
 

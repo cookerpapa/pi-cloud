@@ -8,7 +8,10 @@ import { RunExecutor, type TurnExecutionBackend } from "../../runtime-core/src/r
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
-import { ExecutionPublicationBoundary } from "../../runtime-core/src/execution-publication.ts";
+import {
+  ExecutionPublicationBoundary,
+  registerExecutionPublication,
+} from "../../runtime-core/src/execution-publication.ts";
 import type { AcceptedFact } from "../../runtime-core/src/accepted-fact.ts";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
@@ -228,6 +231,52 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       });
     },
   );
+  it.each([
+    "failed_writer",
+    "sealed_writer",
+    "wrong_lane",
+    "wrong_session",
+    "wrong_turn",
+    "wrong_writer",
+    "wrong_physical_session",
+  ])("publication's narrowed query still rejects %s and rolls admission back", async (fault) => {
+    const f = await fixture();
+    const before = await f.state();
+    const backend: TurnExecutionBackend = {
+      admit: async (tx, request, mark) => {
+        const bound = await f.coordinator.acquireInTransaction(tx, request, mark);
+        if (fault === "failed_writer" || fault === "sealed_writer")
+          await tx
+            .updateTable("run_attempts")
+            .set(
+              fault === "failed_writer"
+                ? { native_writer_failed_at: new Date() }
+                : { native_writer_sealed_at: new Date() },
+            )
+            .where("id", "=", request.piSessionWriterId)
+            .execute();
+        const publication = await registerExecutionPublication(tx, {
+          ...bound,
+          sessionId: fault === "wrong_session" ? randomUUID() : request.sessionId,
+          turnId: fault === "wrong_turn" ? randomUUID() : request.turnId,
+          nextEventSeq: Number(request.nextEventSeq),
+          piSession: {
+            id: fault === "wrong_physical_session" ? randomUUID() : request.piSessionId,
+            lane: fault === "wrong_lane" ? "other" : request.piSessionLane,
+            writerId: fault === "wrong_writer" ? randomUUID() : request.piSessionWriterId,
+          },
+        });
+        return { ...bound, publication };
+      },
+      execute: f.backend.execute.bind(f.backend),
+    };
+    await expect(f.executor(backend).dispatchRun(f.accepted.runId)).rejects.toThrow(
+      "current Session lease",
+    );
+    expect(await f.state()).toEqual(before);
+    expect(f.append).not.toHaveBeenCalled();
+    expect(f.runner).not.toHaveBeenCalled();
+  });
   it("resolves a lost COMMIT reply by exact identity, never a second Attempt", async () => {
     const f = await fixture();
     const transaction = db.transaction.bind(db);
