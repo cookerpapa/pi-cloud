@@ -12,6 +12,12 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Evaluate commit-triggered terminal Outbox wake-up and transaction-local SQL
+      consolidation. [Critical-path research](reports/flow-critical-path-research-20260918.md)
+      measured about 22ms poll waiting and verified an isolated PG notification
+      comparison; real-Kafka E2E and failure gates remain before implementation
+      acceptance. Merging drain/completion durability needs owner discussion.
+
 - [ ] Attribute remaining cold-start and Node callback/CPU tails after
       [two-way admission](reports/parallel-claims-20260918.md). Four-concurrent
       startup median improved 213→194ms in the bounded comparison, but cold
