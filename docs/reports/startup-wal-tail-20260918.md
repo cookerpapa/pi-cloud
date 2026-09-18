@@ -1,5 +1,7 @@
 # Startup tail attribution — September 18, 2026
 
+Follow-up: [the approved NVMe power trial completed without eliminating tails](nvme-power-trial-20260918.md).
+
 Baseline: `83a7c4cd` / deployed runtime `ff51e21d`. Local changes and final runtime:
 `b57e6ffd`. PostgreSQL 17.6, one four-family Worker, unchanged PG/Kafka/Cube topology.
 
@@ -113,7 +115,7 @@ and the original live Session remain. Shared service logs/WAL/Kafka retain their
 normal retention; they were not truncated. No fsync, synchronous_commit, barrier,
 WAL sync method or host power setting was changed.
 
-## Next bounded experiment — needs host-level approval
+## Follow-up experiment — subsequently approved and tested
 
 Read-only inspection found the current Windows balanced storage policy uses
 200/2000ms NVMe idle timeouts and 15/100ms primary/secondary transition tolerances
@@ -124,6 +126,7 @@ Microsoft's performance-policy reference uses zero AC transition tolerances.
 
 Proposed trial: record the current scheme and values, temporarily set only the
 two AC NVMe transition tolerances to zero, repeat the paced/GPT comparison, then
-restore the exact original values. This affects host storage power use, so it
-is pending explicit approval. Do not bake workstation-specific power settings
+restore the exact original values. Host-level approval was subsequently granted;
+the linked A/B/A report records the outcome and
+verified restoration. Do not bake workstation-specific power settings
 into PiCloud defaults or disable write durability to hide the wait.

@@ -12,10 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Complete the host-storage tail experiment after approval. New 157/191ms
-      commits have [matching PG WalSync traces](reports/startup-wal-tail-20260918.md),
-      and paced standalone PG reproduces >100ms tails. Test the suspected Windows
-      NVMe idle policy reversibly; its causation is not established. Durability stays on.
+- [ ] Isolate the remaining host-storage tail below the confirmed PG `WalSync`
+      wait. The [approved NVMe A/B/A trial](reports/nvme-power-trial-20260918.md)
+      did not eliminate >100ms tails, and original host settings were restored.
+      Compare native-host and WSL same-drive I/O or collect storage traces;
+      no specific VHD/driver fault is yet established. Durability stays on.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.
