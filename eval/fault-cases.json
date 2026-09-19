@@ -3,6 +3,20 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "cancel-native-projection-locks",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "settles cancellation beside native projection without replaying stop (SQL abort=false)",
+      "invariant": "Cancellation lifecycle locks remain compatible with the native Record's Turn foreign key, so neither side deadlocks."
+    },
+    {
+      "id": "cancel-settlement-sql-abort",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "settles cancellation beside native projection without replaying stop (SQL abort=true)",
+      "invariant": "A certified cancellation-settlement SQL abort retries only that transaction, never the external stop or Agent Loop."
+    },
+    {
       "id": "ready-seal-atomicity",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",

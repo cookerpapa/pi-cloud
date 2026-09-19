@@ -12,11 +12,17 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
 import type { ExecuteTurnCommandMessage, EventPublishMessage } from "@pi-cloud/protocol";
 import { AgentRunExecutionBackend } from "../../runtime-core/src/agent-run-execution-backend.ts";
-import { RunExecutor, type TurnExecutionBackend } from "../../runtime-core/src/run-executor.ts";
+import {
+  RunExecutor,
+  type TurnExecutionBackend,
+  type TurnExecutionRequest,
+  type TurnExecutionAdmission,
+} from "../../runtime-core/src/run-executor.ts";
 import { RunCancellationExecutor } from "../../runtime-core/src/run-cancellation-executor.ts";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
+import { PostgresPiSessionAppendProjector } from "../../runtime-core/src/postgres-pi-session-append-projector.ts";
 import {
   ExecutionPublicationBoundary,
   registerExecutionPublication,
@@ -967,6 +973,179 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       .execute();
     expect(terminals).toEqual([{ type: "turn.cancelled" }]);
   });
+  it.each([false, true])(
+    "settles cancellation beside native projection without replaying stop (SQL abort=%s)",
+    async (injectAbort) => {
+      const f = await fixture();
+      const started = Promise.withResolvers<{
+        request: TurnExecutionRequest;
+        admission: TurnExecutionAdmission;
+      }>();
+      const finish = Promise.withResolvers<void>(),
+        nativeLocked = Promise.withResolvers<void>(),
+        releaseNative = Promise.withResolvers<void>();
+      const executing = f
+        .executor({
+          admit: f.backend.admit.bind(f.backend),
+          async execute(request, lifecycle, admission) {
+            started.resolve({ request, admission: admission! });
+            await finish.promise;
+            lifecycle.executionExited();
+            return { stopReason: "stop" };
+          },
+        })
+        .dispatchRun(f.accepted.runId);
+      const { request, admission } = await Promise.race([
+        started.promise,
+        executing.then((result) => {
+          throw new Error(`Run did not enter execution: ${JSON.stringify(result)}`);
+        }),
+      ]);
+      const { leaseId: _lease, piSessionLane: _lane, ...scope } = admission.publication.scope;
+      const fact: Extract<AcceptedFact, { kind: "pi_session_append" }> = {
+        kind: "pi_session_append",
+        factId: randomUUID(),
+        scope,
+        occurredAt: new Date().toISOString(),
+        events: [],
+        piSession: {
+          id: request.piSessionId,
+          lane: request.piSessionLane,
+          writerId: request.piSessionWriterId,
+        },
+        items: [
+          {
+            kind: "record",
+            turnId: request.turnId,
+            record: {
+              id: randomUUID(),
+              seq: 1,
+              timestamp: Date.now(),
+              lane: "main",
+              type: "operation_started",
+              sourceLeafId: null,
+              intent: { kind: "run", originalPrompt: [], initialMessages: [] },
+            },
+          },
+        ],
+      };
+      const selected = new WeakSet<object>();
+      const measured = db.withPlugin({
+        transformQuery({ node, queryId }) {
+          const q = db.getExecutor().compileQuery(node, queryId).sql;
+          if (q.startsWith("select ") && q.includes('from "pi_sessions"')) selected.add(queryId);
+          return node;
+        },
+        async transformResult({ result, queryId }) {
+          if (selected.has(queryId)) {
+            nativeLocked.resolve();
+            await releaseNative.promise;
+          }
+          return result;
+        },
+      });
+      let projection: Promise<void> | undefined,
+        effects = 0,
+        stopped = false,
+        settlementAttempts = 0;
+      const cancellationDb = db.withPlugin({
+        transformQuery({ node, queryId }) {
+          if (
+            stopped &&
+            db.getExecutor().compileQuery(node, queryId).sql.includes('"controlAttempts"')
+          )
+            settlementAttempts++;
+          return node;
+        },
+        async transformResult({ result }) {
+          return result;
+        },
+      });
+      if (injectAbort)
+        await sql`create sequence cancellation_abort_once;
+      create function abort_first_cancellation() returns trigger language plpgsql as $$
+      begin
+        if nextval('cancellation_abort_once')=1 then
+          raise exception 'certified cancellation rollback' using errcode='40001';
+        end if;
+        return new;
+      end $$;
+      create trigger abort_first_cancellation before insert on run_attempt_transitions
+        for each row when(new.to_state='cancelled') execute function abort_first_cancellation();`.execute(
+          db,
+        );
+      await f.store.acceptTurnCancellation(
+        f.session.sessionId,
+        f.accepted.turnId,
+        randomUUID(),
+        {},
+      );
+      const cancelled = new RunCancellationExecutor({
+        database: cancellationDb,
+        executionAuthority: f.coordinator,
+        backend: {
+          async cancel(r, lifecycle) {
+            effects++;
+            await lifecycle.started(admission);
+            await f.append(fact);
+            await db
+              .updateTable("run_attempts")
+              .set({ native_output_drained: true })
+              .where("id", "=", request.attemptId)
+              .execute();
+            projection = new PostgresPiSessionAppendProjector(measured).project(fact, {
+              topic: `test-${f.worker}`,
+              partition: 0,
+              offset: 0n,
+            });
+            void projection.catch((error) => nativeLocked.reject(error));
+            await nativeLocked.promise;
+            stopped = true;
+            return { reason: r.reason, forced: false };
+          },
+        },
+      }).dispatchTargetRun(f.accepted.runId);
+      void cancelled.then(
+        (result) =>
+          nativeLocked.reject(
+            new Error(`Cancellation ended before projection gate: ${result.status}`),
+          ),
+        (error) => nativeLocked.reject(error),
+      );
+      try {
+        await nativeLocked.promise;
+        await vi.waitFor(async () => {
+          const locks = await sql<{ n: number }>`select count(*)::int n from pg_stat_activity
+          where datname=${name} and wait_event_type='Lock'`.execute(db);
+          expect(locks.rows[0]!.n).toBeGreaterThan(0);
+        });
+        releaseNative.resolve();
+        await projection;
+        expect(await cancelled).toMatchObject({ status: "cancelled" });
+        expect(effects).toBe(1);
+        expect(settlementAttempts).toBe(injectAbort ? 2 : 1);
+        expect(
+          await db
+            .selectFrom("pi_session_records")
+            .select("id")
+            .where("tenant_id", "=", f.tenant.tenantId)
+            .execute(),
+        ).toHaveLength(1);
+        await f.project();
+        expect((await f.state()).run.state).toBe("cancelled");
+      } finally {
+        releaseNative.resolve();
+        finish.resolve();
+        await Promise.allSettled([executing, cancelled, ...(projection ? [projection] : [])]);
+        if (injectAbort)
+          await sql`drop trigger abort_first_cancellation on run_attempt_transitions;
+        drop function abort_first_cancellation(); drop sequence cancellation_abort_once;`.execute(
+            db,
+          );
+      }
+    },
+  );
+
   it("preparation rejection seals the admitted attempt instead of requeueing it", async () => {
     const f = await fixture();
     const prepare = f.supervisor.prepare.bind(f.supervisor);

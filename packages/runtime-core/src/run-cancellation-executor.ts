@@ -1,4 +1,4 @@
-import type { Database } from "@pi-cloud/database";
+import { retryTransaction, type Database } from "@pi-cloud/database";
 import {
   transitionTurnControlRequest,
   transitionSession,
@@ -424,7 +424,7 @@ export class RunCancellationExecutor {
         .orderBy("cancellation.created_at", "asc")
         .orderBy("cancellation.id", "asc")
         .limit(1)
-        .forUpdate(["cancellation", "turn", "session_row", "run", "run_attempt"])
+        .forNoKeyUpdate(["cancellation", "turn", "session_row", "run", "run_attempt"])
         .skipLocked()
         .executeTakeFirst();
       if (row === undefined) return undefined;
@@ -635,7 +635,9 @@ export class RunCancellationExecutor {
       payload: { reason: result.reason, forced: result.forced },
     } as const;
 
-    await this.#database.transaction().execute(async (transaction) => {
+    // The external stop already finished. Retry only certified SQL aborts of
+    // this settlement, never the model/Tool cancellation itself.
+    await retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
       if (
         rows.cancellationTurnControlRequestState !== "acknowledged" ||
@@ -923,6 +925,8 @@ export class RunCancellationExecutor {
     };
   }
 
+  // Identity keys do not change here. KEY SHARE from native Record foreign keys
+  // must remain compatible, while concurrent lifecycle writers stay excluded.
   async #lockLifecycleRows(
     transaction: Transaction<Database>,
     claim: ClaimedCancellation,
@@ -967,7 +971,7 @@ export class RunCancellationExecutor {
       .where("session_row.id", "=", claim.request.target.sessionId)
       .where("run.id", "=", claim.request.target.runId)
       .where("run_attempt.id", "=", claim.request.target.attemptId)
-      .forUpdate(["cancellation", "turn", "session_row", "run", "run_attempt"])
+      .forNoKeyUpdate(["cancellation", "turn", "session_row", "run", "run_attempt"])
       .executeTakeFirst();
     if (row === undefined) {
       throw new RunCancellationExecutorInvariantError(
