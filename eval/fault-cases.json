@@ -10,11 +10,18 @@
       "invariant": "A failed seal commit cannot release the next Lane task or decrement the family count; replay decrements once."
     },
     {
-      "id": "ready-input-seal-race",
+      "id": "ready-input-before-seal",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",
-      "test": "does not lose readiness when acceptance races closure",
+      "test": "does not lose readiness when acceptance races closure: input-first",
       "invariant": "Input acceptance and seal projection serialize on the Lane row and cannot leave a committed follow-up permanently waiting."
+    },
+    {
+      "id": "ready-seal-before-input",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "does not lose readiness when acceptance races closure: seal-first",
+      "invariant": "Input waiting behind a seal transaction observes the committed closure and becomes ready without another notification."
     },
     {
       "id": "ready-family-owner-handoff",
