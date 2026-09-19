@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] Atomic admitted/running state and first-record recovery without a standalone
+      opening; [real Luna/Cube comparison, shared-Lane and process-fault acceptance](reports/first-record-admission-20260919.md).
+
 - [x] Precompiled server event validation with unchanged rules/errors and strict
       browser CSP; [Kafka comparison and real Luna/Cube acceptance](reports/compiled-validation-acceptance-20260919.md).
 

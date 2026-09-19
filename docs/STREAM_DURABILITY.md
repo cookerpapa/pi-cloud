@@ -93,6 +93,7 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 
 | Failure point | Required outcome |
 | --- | --- |
+| Worker and control processes die before requesting a seal, storage survives | owner retirement requests the seal after expiry/fencing; replay its prefix and commit closure before a successor; do not resume the old Agent automatically |
 | first-record PG commit succeeds, reply lost | replay idempotently with the same first position; do not advance past uncommitted work |
 | semantic message PG commit | retire covered live spans, preserve borrowed reader references and uncovered suffix |
 | connection lost mid-snapshot | discard only the partial browser value; request a new snapshot without a cursor |
@@ -115,6 +116,12 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 | Cube dies | preserve Volume files, not lost processes/memory; Harness reports the reset |
 
 ## Retention and trust
+
+These recovery rules assume the required PG/Kafka/Volume bytes survive. Kafka
+`acks=all` acknowledges in-sync replication, not per-record physical-disk fsync.
+Replicas on one host do not provide independent power-loss protection. A process
+kill/restart test is not a whole-host power-cut or disaster-recovery test; seals
+cannot recreate missing bytes. See [Kafka's flush policy](https://kafka.apache.org/42/operations/hardware-and-os/#application-vs-os-flush-management).
 
 Automatic Kafka time/size deletion is disabled. A safe reaper uses canonical
 progress, the oldest unsealed start and an additional grace period. Missing PG

@@ -10,7 +10,7 @@ it("correlates a bounded stage without logging its result or labelling metrics b
   vi.spyOn(performance, "now").mockReturnValueOnce(10).mockReturnValueOnce(25);
   const metrics = new PiCloudMetrics("test");
   const result = { secret: "private-result" };
-  expect(await measureRunPreparation("run-a", "log_open", metrics, async () => result)).toBe(
+  expect(await measureRunPreparation("run-a", "writer_prepare", metrics, async () => result)).toBe(
     result,
   );
   expect(log).toHaveBeenCalledWith({
@@ -19,7 +19,7 @@ it("correlates a bounded stage without logging its result or labelling metrics b
     event: "run.preparation.timing",
     attributes: {
       runId: "run-a",
-      stage: "log_open",
+      stage: "writer_prepare",
       outcome: "completed",
       startedAtMs: 123456,
       durationMs: 15,
@@ -27,7 +27,7 @@ it("correlates a bounded stage without logging its result or labelling metrics b
   });
   expect(JSON.stringify(log.mock.calls)).not.toContain("private-result");
   const output = await metrics.registry.metrics();
-  expect(output).toContain('stage="log_open",outcome="completed"');
+  expect(output).toContain('stage="writer_prepare",outcome="completed"');
   expect(output).not.toContain("run-a");
 });
 
@@ -35,7 +35,7 @@ it("classifies a failed operation but does not export its private exception", as
   const log = vi.spyOn(logger, "operationalLog").mockImplementation(() => {});
   const failure = new Error("private-query-text");
   await expect(
-    measureRunPreparation("run-a", "durable_started", undefined, async () => {
+    measureRunPreparation("run-a", "writer_prepare", undefined, async () => {
       throw failure;
     }),
   ).rejects.toBe(failure);
@@ -47,12 +47,12 @@ it("a diagnostic sink cannot change a committed result or replace an operation f
   vi.spyOn(logger, "operationalLog").mockImplementation(() => {
     throw new Error("sink failed");
   });
-  await expect(measureRunPreparation("run-a", "log_open", undefined, async () => 42)).resolves.toBe(
-    42,
-  );
+  await expect(
+    measureRunPreparation("run-a", "writer_prepare", undefined, async () => 42),
+  ).resolves.toBe(42);
   const failure = new Error("operation failed");
   await expect(
-    measureRunPreparation("run-b", "log_open", undefined, async () => {
+    measureRunPreparation("run-b", "writer_prepare", undefined, async () => {
       throw failure;
     }),
   ).rejects.toBe(failure);
