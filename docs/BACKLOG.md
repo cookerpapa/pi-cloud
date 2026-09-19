@@ -12,6 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Reduce transaction-local admission duplication after the
+      [SQL profile](reports/admission-sql-profile-20260919.md): input acceptance
+      still has 10 SQL exchanges and Worker admission 31. Preserve locked-row
+      ordering and authority semantics; no global plan-cache override is justified.
+
 - [ ] Discuss drain/completion durability before any further boundary merging.
       [Terminal wake and transaction-local SQL](reports/terminal-wake-acceptance-20260918.md)
       are implemented; shared-row/WAL tails remain. Do not remove the drained
