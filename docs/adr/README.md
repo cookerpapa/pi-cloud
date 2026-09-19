@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0179](0179-ready-runs-and-single-admission.md) — durable Lane readiness,
+   bounded family closure state and one atomic execution admission.
+
 1. [ADR-0178](0178-admission-and-first-record.md) — admitted execution without
    separate startup commits or opening records; first-record recovery floor.
 

@@ -57,19 +57,11 @@ spec:
             UNION
             SELECT s.tenant_id, s.pi_session_id FROM runs r
               JOIN sessions s ON s.id=r.session_id
+              JOIN pi_sessions family ON family.tenant_id=s.tenant_id AND family.id=s.pi_session_id
               JOIN agent_revisions agent ON agent.id=r.agent_revision_id
-              WHERE r.state='queued' AND r.available_at<=now()
+              WHERE r.state='queued' AND r.ready_at IS NOT NULL AND r.available_at<=now()
                 AND s.session_kind='conversation' AND agent.runtime_kind='pi_sdk'
-                AND NOT EXISTS (SELECT 1 FROM sessions peer JOIN runs old ON old.session_id=peer.id
-                  JOIN run_attempts a ON a.run_id=old.id
-                  WHERE peer.tenant_id=s.tenant_id AND peer.pi_session_id=s.pi_session_id
-                    AND a.output_seal_id IS NOT NULL AND a.output_sealed_at IS NULL)
-            UNION
-            SELECT s.tenant_id, s.pi_session_id FROM runs r JOIN sessions s ON s.id=r.session_id
-              JOIN run_attempts a ON a.id=r.current_attempt_id
-              JOIN agent_revisions agent ON agent.id=r.agent_revision_id
-              WHERE r.state='claimed' AND a.lease_id IS NULL AND a.claim_expires_at>now()
-                AND agent.runtime_kind='pi_sdk'
+                AND family.unsealed_runs=0
           ) AS families
         targetQueryValue: {{ .Values.autoscaling.targetSessionsPerReplica | quote }}
         activationTargetQueryValue: "0"

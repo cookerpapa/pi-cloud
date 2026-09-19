@@ -259,6 +259,7 @@ if(args[0]!=='upgrade'){
         secrets: {
           "pi-cloud-platform-secrets": [
             "database-url",
+            "database-notification-url",
             "tool-dispatch-token",
             "supervisor-enrollment-token",
             "supervisor-management-token",

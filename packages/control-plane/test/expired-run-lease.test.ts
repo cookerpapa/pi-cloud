@@ -69,7 +69,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
       clock,
       executionAuthority: coordinator,
       backend: {
-        admit: (tx, request) => admitTestExecution(coordinator, tx, request),
+        admit: (tx, request, _mark, facts) => admitTestExecution(coordinator, tx, request, facts),
         async execute(request) {
           const wait = new Promise<void>((r) => released.set(request.runId, r));
           started.get(request.runId)!();

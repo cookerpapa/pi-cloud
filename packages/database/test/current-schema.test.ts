@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(143);
+      expect(firstMigrationPass.rows).toHaveLength(144);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("143_first_record_execution");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("144_ready_run_admission");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -106,7 +106,7 @@ describe("current PiCloud schema", () => {
          where table_schema = 'public'
          and table_name in (
            'workspaces', 'sessions', 'subagent_executions', 'turns', 'runs', 'run_attempts',
-           'tenant_runtime_policies'
+           'tenant_runtime_policies', 'pi_sessions'
          )
       `.execute(database);
       const keys = new Set(columns.rows.map((row) => `${row.table_name}.${row.column_name}`));
@@ -117,6 +117,8 @@ describe("current PiCloud schema", () => {
       expect(keys.has("runs.mailbox_position")).toBe(true);
       expect(keys.has("runs.request_sha256")).toBe(true);
       expect(keys.has("runs.available_at")).toBe(true);
+      expect(keys.has("runs.ready_at")).toBe(true);
+      expect(keys.has("pi_sessions.unsealed_runs")).toBe(true);
       expect(keys.has("run_attempts.agent_exited_at")).toBe(true);
       expect(keys.has("run_attempts.output_first_offset")).toBe(true);
       expect(keys.has("run_attempts.output_open_offset")).toBe(false);
@@ -159,7 +161,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("143_first_record_execution");
+      expect(applied.rows.at(-1)?.name).toBe("144_ready_run_admission");
       const pendingControls = await sql<{ indexdef: string }>`select indexdef from pg_indexes
         where schemaname='public' and indexname='turn_control_requests_pending_run_idx'`.execute(
         database,

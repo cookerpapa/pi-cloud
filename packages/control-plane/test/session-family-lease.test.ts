@@ -74,7 +74,6 @@ async function fixture(capacity = 1, leaseMs = 60000) {
   const metrics = new PiCloudMetrics("lease-timing-test");
   const coordinator = new SessionLeaseCoordinator({
     database: db,
-    metrics,
     sandboxId: workerId,
     leaseDurationMs: leaseMs,
   });
@@ -89,7 +88,7 @@ async function fixture(capacity = 1, leaseMs = 60000) {
     claimOwnerId: "family-worker",
     executionAuthority: coordinator,
     backend: {
-      admit: (tx, request) => admitTestExecution(coordinator, tx, request),
+      admit: (tx, request, _mark, facts) => admitTestExecution(coordinator, tx, request, facts),
       execute: async (request, _lifecycle, admission) => {
         const binding = admission!;
         const wait = new Promise<void>((release) =>

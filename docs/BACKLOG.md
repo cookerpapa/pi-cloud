@@ -12,10 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Reduce transaction-local admission duplication after the
-      [SQL profile](reports/admission-sql-profile-20260919.md): input acceptance
-      still has 10 SQL exchanges and Worker admission 31. Preserve locked-row
-      ordering and authority semantics; no global plan-cache override is justified.
+- [ ] Finish ADR-0179 rollout and paid acceptance: durable Lane readiness,
+      bounded family closure and consolidated admission. SQL-count regression
+      is 8 input + 16 claim exchanges, versus the [profile's](reports/admission-sql-profile-20260919.md)
+      10 + 31; real latency/recovery acceptance is still pending.
 
 - [ ] Discuss drain/completion durability before any further boundary merging.
       [Terminal wake and transaction-local SQL](reports/terminal-wake-acceptance-20260918.md)

@@ -212,6 +212,222 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     };
   }
 
+  it("readies only the Lane head and promotes its successor with the committed seal", async () => {
+    const f = await fixture();
+    const second = await f.store.acceptTurn(f.session.sessionId, randomUUID(), {
+      prompt: "second",
+    });
+    const third = await f.store.acceptTurn(f.session.sessionId, randomUUID(), { prompt: "third" });
+    const ready = async () =>
+      (
+        await db
+          .selectFrom("runs")
+          .select(["id", "ready_at"])
+          .where("session_id", "=", f.session.sessionId)
+          .orderBy("mailbox_position")
+          .execute()
+      )
+        .filter((r) => r.ready_at !== null)
+        .map((r) => r.id);
+    const count = async () =>
+      (
+        await db
+          .selectFrom("pi_sessions")
+          .select("unsealed_runs")
+          .where("tenant_id", "=", f.tenant.tenantId)
+          .where("id", "=", f.session.sessionId)
+          .executeTakeFirstOrThrow()
+      ).unsealed_runs;
+    expect(await ready()).toEqual([f.accepted.runId]);
+    expect(await count()).toBe("0");
+    expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({ status: "completed" });
+    expect(await ready()).toEqual([]);
+    expect(await count()).toBe("1");
+    expect(await f.executor().dispatchRun(second.runId)).toEqual({ status: "idle" });
+    await f.project();
+    expect(await count()).toBe("0");
+    expect(await ready()).toEqual([second.runId]);
+    expect(await f.executor().dispatchRun(third.runId)).toEqual({ status: "idle" });
+    expect(await f.executor().dispatchRun(second.runId)).toMatchObject({ status: "completed" });
+    expect(await ready()).toEqual([]);
+    expect(await count()).toBe("1");
+  });
+
+  it("bounds normal input and admission SQL without a second authority read", async () => {
+    const f = await fixture();
+    let capture = true;
+    const queries: string[] = [];
+    const statements = new WeakMap<object, string>();
+    const measured = db.withPlugin({
+      transformQuery({ node, queryId }) {
+        statements.set(queryId, db.getExecutor().compileQuery(node, queryId).sql);
+        return node;
+      },
+      async transformResult({ result, queryId }) {
+        // CTE builders also transform nodes; only completed top-level queries
+        // represent database exchanges.
+        if (capture) queries.push(statements.get(queryId)!);
+        return result;
+      },
+    });
+    const store = new ControlPlaneStore({ database: measured, ...f.tenant });
+    await store.acceptTurn(f.session.sessionId, randomUUID(), { prompt: "follow-up" });
+    // The driver adds BEGIN/COMMIT outside Kysely's query-plugin callbacks.
+    expect(queries).toHaveLength(6);
+    expect(queries.filter((q) => q.startsWith('with "accepted_turn"'))).toHaveLength(1);
+    queries.length = 0;
+    const backend: TurnExecutionBackend = {
+      admit: f.backend.admit.bind(f.backend),
+      async execute(request, lifecycle, admission) {
+        capture = false;
+        return f.backend.execute(request, lifecycle, admission);
+      },
+    };
+    expect(await f.executor(backend, measured).dispatchRun(f.accepted.runId)).toMatchObject({
+      status: "completed",
+    });
+    expect(queries).toHaveLength(14);
+    expect(queries.some((q) => q.includes("from runs as earlier_run"))).toBe(false);
+    expect(
+      queries.filter((q) => q.includes('from "pi_sessions"') && q.startsWith("select ")),
+    ).toHaveLength(1);
+    await f.project();
+  });
+
+  it.each(["input-first", "seal-first"])(
+    "does not lose readiness when acceptance races closure: %s",
+    async (order) => {
+      const f = await fixture();
+      await f.executor().dispatchRun(f.accepted.runId);
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const held = new WeakSet<object>();
+      let pause = true;
+      const measured = db.withPlugin({
+        transformQuery({ node, queryId }) {
+          const query = db.getExecutor().compileQuery(node, queryId).sql;
+          if (
+            pause &&
+            (order === "input-first"
+              ? query.startsWith('with "accepted_turn"')
+              : query.startsWith('update "sessions"') && query.includes('"next_event_seq"'))
+          ) {
+            pause = false;
+            held.add(queryId);
+          }
+          return node;
+        },
+        async transformResult({ result, queryId }) {
+          if (held.has(queryId)) {
+            entered.resolve();
+            await release.promise;
+          }
+          return result;
+        },
+      });
+      const projector = new ExecutionStreamProjector(order === "seal-first" ? measured : db);
+      for (const [i, fact] of f.facts.entries())
+        await projector.project({ fact, topic: "ready-race", partition: 0, offset: BigInt(i) });
+      const row = await db
+        .selectFrom("outbox")
+        .select("payload")
+        .where("tenant_id", "=", f.tenant.tenantId)
+        .executeTakeFirstOrThrow();
+      const seal = () =>
+        projector.project({
+          fact: row.payload as unknown as AcceptedFact,
+          topic: "ready-race",
+          partition: 0,
+          offset: BigInt(f.facts.length),
+        });
+      const store = new ControlPlaneStore({
+        database: order === "input-first" ? measured : db,
+        ...f.tenant,
+      });
+      const input = () =>
+        store.acceptTurn(f.session.sessionId, randomUUID(), { prompt: "racing follow-up" });
+      const first = order === "input-first" ? input() : seal();
+      await entered.promise;
+      const second = order === "input-first" ? seal() : input();
+      try {
+        await vi.waitFor(async () => {
+          const locks = await sql<{ n: number }>`select count(*)::int n from pg_stat_activity
+          where datname=${name} and wait_event_type='Lock'`.execute(db);
+          expect(locks.rows[0]!.n).toBeGreaterThan(0);
+        });
+      } finally {
+        release.resolve();
+      }
+      await Promise.all([first, second]);
+      const queued = await db
+        .selectFrom("runs")
+        .select(["id", "ready_at"])
+        .where("session_id", "=", f.session.sessionId)
+        .where("state", "=", "queued")
+        .execute();
+      expect(queued).toHaveLength(1);
+      expect(queued[0]!.ready_at).toBeInstanceOf(Date);
+      expect(await f.executor().dispatchRun(queued[0]!.id)).toMatchObject({ status: "completed" });
+    },
+  );
+
+  it("rolls readiness and family closure back together and ignores duplicate seals", async () => {
+    const f = await fixture();
+    const second = await f.store.acceptTurn(f.session.sessionId, randomUUID(), { prompt: "after" });
+    await f.executor().dispatchRun(f.accepted.runId);
+    let fail = true;
+    const measured = db.withPlugin({
+      transformQuery({ node, queryId }) {
+        if (
+          fail &&
+          db.getExecutor().compileQuery(node, queryId).sql.startsWith("update runs candidate")
+        )
+          throw new Error("readiness rollback");
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    });
+    const projector = new ExecutionStreamProjector(measured);
+    for (const [i, fact] of f.facts.entries())
+      await projector.project({ fact, topic: "ready-rollback", partition: 0, offset: BigInt(i) });
+    const row = await db
+      .selectFrom("outbox")
+      .select("payload")
+      .where("tenant_id", "=", f.tenant.tenantId)
+      .executeTakeFirstOrThrow();
+    const record = {
+      fact: row.payload as unknown as AcceptedFact,
+      topic: "ready-rollback",
+      partition: 0,
+      offset: BigInt(f.facts.length),
+    };
+    const snapshot = async () => ({
+      family: await db
+        .selectFrom("pi_sessions")
+        .select("unsealed_runs")
+        .where("tenant_id", "=", f.tenant.tenantId)
+        .where("id", "=", f.session.sessionId)
+        .executeTakeFirstOrThrow(),
+      next: await db
+        .selectFrom("runs")
+        .select("ready_at")
+        .where("id", "=", second.runId)
+        .executeTakeFirstOrThrow(),
+    });
+    const before = await snapshot();
+    await expect(projector.project(record)).rejects.toThrow("readiness rollback");
+    expect(await snapshot()).toEqual(before);
+    fail = false;
+    await projector.project(record);
+    const after = await snapshot();
+    expect(after.family.unsealed_runs).toBe("0");
+    expect(after.next.ready_at).toBeInstanceOf(Date);
+    await projector.project(record);
+    expect(await snapshot()).toEqual(after);
+  });
+
   it.each([false, true])(
     "notifies seal work only after atomic completion commits (rollback=%s)",
     async (rollback) => {
@@ -523,8 +739,8 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       release = Promise.withResolvers<void>();
     const pending = f
       .executor({
-        admit: async (tx, r, mark) => {
-          const a = await f.backend.admit(tx, r, mark);
+        admit: async (tx, r, mark, facts) => {
+          const a = await f.backend.admit(tx, r, mark, facts);
           observed.resolve();
           await release.promise;
           return a;
@@ -562,9 +778,9 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       const f = await fixture();
       const before = await f.state();
       const backend: TurnExecutionBackend = {
-        admit: async (tx, r, mark) => {
-          if (stage === "lease") await f.coordinator.acquireInTransaction(tx, r, mark);
-          else await f.backend.admit(tx, r, mark);
+        admit: async (tx, r, mark, facts) => {
+          if (stage === "lease") await f.coordinator.acquireInTransaction(tx, r, facts, mark);
+          else await f.backend.admit(tx, r, mark, facts);
           throw new Error(`injected ${stage} failure`);
         },
         execute: f.backend.execute.bind(f.backend),
@@ -591,8 +807,8 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const f = await fixture();
     const before = await f.state();
     const backend: TurnExecutionBackend = {
-      admit: async (tx, request, mark) => {
-        const bound = await f.coordinator.acquireInTransaction(tx, request, mark);
+      admit: async (tx, request, mark, facts) => {
+        const bound = await f.coordinator.acquireInTransaction(tx, request, facts, mark);
         if (fault === "failed_writer" || fault === "sealed_writer")
           await tx
             .updateTable("run_attempts")
@@ -605,6 +821,8 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
             .execute();
         const publication = await registerExecutionPublication(tx, {
           ...bound,
+          tenantId: request.tenantId,
+          runId: request.runId,
           sessionId: fault === "wrong_session" ? randomUUID() : request.sessionId,
           turnId: fault === "wrong_turn" ? randomUUID() : request.turnId,
           nextEventSeq: Number(request.nextEventSeq),
@@ -657,8 +875,8 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const f = await fixture();
     const before = await f.state();
     const backend: TurnExecutionBackend = {
-      admit: async (tx, request, mark) => {
-        const admitted = await f.backend.admit(tx, request, mark);
+      admit: async (tx, request, mark, facts) => {
+        const admitted = await f.backend.admit(tx, request, mark, facts);
         const pid = await sql<{ pid: number }>`select pg_backend_pid() pid`.execute(tx);
         await sql`select pg_terminate_backend(${pid.rows[0]!.pid})`.execute(db);
         return admitted;
@@ -677,8 +895,8 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const f = await fixture();
     let attempts = 0;
     const backend: TurnExecutionBackend = {
-      admit: async (tx, r, mark) => {
-        const a = await f.backend.admit(tx, r, mark);
+      admit: async (tx, r, mark, facts) => {
+        const a = await f.backend.admit(tx, r, mark, facts);
         if (attempts++ === 0)
           await sql`do $$ begin raise exception 'test serialization abort' using errcode='40001'; end $$`.execute(
             tx,

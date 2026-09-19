@@ -113,7 +113,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
       claimOwnerId: workerId,
       executionAuthority: coordinator,
       backend: {
-        admit: async (tx, r, mark) => {
+        admit: async (tx, r, mark, facts) => {
           if (r.runId === first.runId || r.runId === second.runId) {
             entered.add(r.runId);
             pids.add(
@@ -121,7 +121,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
             );
             await releaseAdmission.promise;
           }
-          return backend.admit(tx, r, mark);
+          return backend.admit(tx, r, mark, facts);
         },
         execute: backend.execute.bind(backend),
       },

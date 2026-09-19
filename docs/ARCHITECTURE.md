@@ -8,8 +8,8 @@ CubeSandbox KVM is the only untrusted execution backend.
 ## One message
 
 ```text
-Browser → Control Plane → PostgreSQL ready Run
-                            ↓ claim + shared Session lease
+Browser → Control Plane → PostgreSQL accepted Run
+                            ↓ Lane ready → atomic claim + shared Session lease
                          Pi Worker
                          ├─ native Session Host / concurrent Lanes
                          ├─ Model Gateway → CLIProxyAPI → Provider
@@ -61,9 +61,20 @@ the user, persists input/Turn/Run together and deduplicates admission by Session
 and idempotency key. Follow-up remains a queued input; Steer first lives in
 `turn_control_requests`. Neither becomes a native Pi user Entry until consumed.
 
-Workers claim `runs` with `FOR UPDATE SKIP LOCKED`. Claim enforces same-Lane
-mailbox order, cancellation and predecessor seal completion. It briefly locks
-the physical `pi_sessions` row to keep all active Lanes on one Worker boot.
+`queued` means accepted, not necessarily dispatchable. Input acceptance freezes
+the model/configuration and writes Turn, Run and mailbox advancement together;
+`ready_at` is set only for a Lane head whose predecessor has closed. Otherwise
+seal projection promotes it in the closure transaction. Both paths hold the
+product Session row lock, so racing input and closure cannot lose readiness.
+Child preparation readies its own Lane without waiting for its parent to finish.
+
+Workers claim only ready `runs` with `FOR UPDATE SKIP LOCKED`. Claim checks
+current placement/capacity and parent liveness, not predecessor history again.
+It locks the physical `pi_sessions` row to keep active Lanes on one Worker boot.
+Its `unsealed_runs` count permits cold ownership only after all older tasks have
+closed; a healthy current owner can continue ready sibling Lanes. An Attempt
+row trigger updates the count on insertion/first seal in the existing transactions.
+It adds no client round trip; rollback and duplicate seal delivery cannot drift it.
 One materialized candidate supplies the startup context without a second queue
 scan. Immutable Session kind and Workspace seed kind travel in the internal
 execute command; downstream preparation does not re-query them.
@@ -72,7 +83,9 @@ together; failed admission reserves neither an Attempt nor capacity. The Runner
 prepares and executes immediately after that commit, without separate started/
 running transactions or an opening append. An uncertain admission COMMIT can
 resume only its exact confirmed record; a post-admission failure requires a seal,
-not a pre-start requeue (ADR-0178).
+not a pre-start requeue (ADRs 0178–0179). Transaction-local locked facts flow into
+lease issuance and conditional publication/running writes instead of independent
+re-reads. The old unbound-claim owner fallback is removed.
 Cold Sessions have no Worker affinity or permanent process. Successful claims
 wake the next free slot; LISTEN/NOTIFY reduces idle latency and periodic polling
 covers missed wakeups. There is no Temporal or competing dispatcher.

@@ -1,7 +1,6 @@
 import { databaseTime, type Database } from "@pi-cloud/database";
 import { releaseExecutionScope } from "./worker-family-capacity.ts";
 import { transitionSandbox } from "@pi-cloud/domain";
-import type { PiCloudMetrics } from "@pi-cloud/observability";
 import {
   parseControlToSupervisorMessage,
   createExecutionReference,
@@ -9,16 +8,13 @@ import {
   parseSupervisorToControlMessage,
   type SupervisorHeartbeatAckMessage,
 } from "@pi-cloud/protocol";
-import { sql, type Kysely, type Transaction } from "kysely";
+import { sql, type Kysely, type Transaction, type Selectable } from "kysely";
 import type {
   TurnExecutionReference,
   TurnExecutionAuthority,
   TurnExecutionRequest,
+  ExecutionAdmissionFacts,
 } from "./run-executor.ts";
-import {
-  conflictingPiSessionWorker,
-  lockPiSessionWorkerOwnership,
-} from "./pi-session-worker-ownership.ts";
 
 const DEFAULT_LEASE_DURATION_MS = 60_000;
 
@@ -30,7 +26,6 @@ export type SessionLeaseCoordinatorOptions = {
   leaseDurationMs?: number;
   heartbeatConnectionId?: string;
   connectionGuard?: SupervisorConnectionGuard;
-  metrics?: PiCloudMetrics;
 };
 
 export type SupervisorConnectionGuard = {
@@ -114,11 +109,9 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   readonly #leaseDurationMs: number;
   readonly #heartbeatConnectionId: string;
   readonly #connectionGuard: SupervisorConnectionGuard | undefined;
-  readonly #metrics: PiCloudMetrics | undefined;
 
   constructor(options: SessionLeaseCoordinatorOptions) {
     this.#database = options.database;
-    this.#metrics = options.metrics;
     this.#sandboxId = options.sandboxId;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
@@ -316,28 +309,11 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     });
   }
 
-  async acquire(request: TurnExecutionRequest): Promise<TurnExecutionReference> {
-    let previous = performance.now();
-    const stages: Array<[string, number]> = [];
-    const mark = (stage: string) => {
-      const now = performance.now();
-      stages.push([stage, (now - previous) / 1_000]);
-      previous = now;
-    };
-    const granted = await this.#database.transaction().execute(async (tx) => {
-      mark("lease_begin");
-      return this.acquireInTransaction(tx, request, mark);
-    });
-    mark("lease_commit");
-    for (const [stage, seconds] of stages)
-      this.#metrics?.runPreparationDuration.observe({ stage, outcome: "completed" }, seconds);
-    return granted;
-  }
-
   /** SQL only; production admission supplies the claim transaction. */
   async acquireInTransaction(
     tx: Transaction<Database>,
     request: TurnExecutionRequest,
+    facts: ExecutionAdmissionFacts,
     mark: (stage: string) => void = () => {},
   ): Promise<TurnExecutionReference> {
     const session = await tx
@@ -365,51 +341,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         true,
       );
     mark("lease_session_lock");
-    const physical = await lockPiSessionWorkerOwnership(tx, request.tenantId, request.piSessionId);
-    mark("lease_family_lock");
-    const attempt = await tx
-      .selectFrom("run_attempts as a")
-      .innerJoin("runs as r", "r.current_attempt_id", "a.id")
-      .select([
-        "a.id",
-        "a.state",
-        "a.lease_id",
-        "a.claim_expires_at",
-        "a.claim_owner_id",
-        "a.native_writer_id",
-        "r.state as runState",
-      ])
-      .where("a.id", "=", request.attemptId)
-      .where("r.id", "=", request.runId)
-      .where("r.session_id", "=", request.sessionId)
-      .where("r.turn_id", "=", request.turnId)
-      .where("a.tenant_id", "=", request.tenantId)
-      .forUpdate(["a", "r"])
-      .executeTakeFirst();
-    if (
-      !attempt ||
-      attempt.state !== "claimed" ||
-      attempt.runState !== "claimed" ||
-      attempt.lease_id ||
-      attempt.native_writer_id !== request.piSessionWriterId
-    )
-      throw new SessionLeaseCoordinatorError(
-        "stale_attempt",
-        "Run claim is unavailable for execution",
-        false,
-      );
-    const conflict = await conflictingPiSessionWorker(tx, {
-      tenantId: request.tenantId,
-      piSessionId: request.piSessionId,
-      expectedWorkerId: attempt.claim_owner_id,
-    });
-    if (conflict)
-      throw new SessionLeaseCoordinatorError(
-        "pi_session_owner_conflict",
-        "Session belongs to another Worker",
-        true,
-      );
-    mark("lease_attempt_owner");
+    const physical = facts.physical;
     const worker = await tx
       .selectFrom("sandboxes")
       .selectAll()
@@ -433,7 +365,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       .forNoKeyUpdate()
       .executeTakeFirst();
     const now = await databaseTime(tx);
-    if (attempt.claim_expires_at <= now)
+    if (facts.claimExpiresAt <= now)
       throw new SessionLeaseCoordinatorError(
         "stale_attempt",
         "Run claim expired during acquisition",
@@ -451,33 +383,38 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         true,
       );
     const newFamily = !lease;
+    // The current transaction's newly inserted Attempt contributes one; every
+    // older execution must already be sealed before creating a new owner.
+    if (newFamily && physical.unsealedRuns !== "1")
+      throw new SessionLeaseCoordinatorError(
+        "session_lease_conflict",
+        "Previous Session executions have not finished closure",
+        true,
+      );
     mark("lease_read");
     if (!lease) {
       if (worker.active_sessions >= worker.max_concurrent_sessions)
         throw new SessionLeaseCoordinatorError("capacity", "Worker Session capacity is full", true);
       const epoch = Number(physical.leaseEpoch) + 1;
       if (!Number.isSafeInteger(epoch)) throw new Error("Session execution epoch exhausted");
-      await tx
-        .updateTable("pi_sessions")
-        .set({ lease_epoch: epoch })
-        .where("tenant_id", "=", request.tenantId)
-        .where("id", "=", request.piSessionId)
-        .execute();
-      lease = await tx
-        .insertInto("session_leases")
-        .values({
-          tenant_id: request.tenantId,
-          pi_session_id: request.piSessionId,
-          lease_id: this.#idGenerator(),
-          sandbox_id: worker.id,
-          writer_id: request.piSessionWriterId,
-          fencing_token: epoch,
-          valid_until: sql<Date>`clock_timestamp() + ${this.#leaseDurationMs} * interval '1 millisecond'`,
-          acquired_at: sql<Date>`clock_timestamp()`,
-          renewed_at: sql<Date>`clock_timestamp()`,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
+      const created = await sql<Selectable<Database["session_leases"]>>`with advanced_epoch as (
+        update pi_sessions set lease_epoch=${epoch}
+          where tenant_id=${request.tenantId}::uuid and id=${request.piSessionId}
+            and lease_epoch=${physical.leaseEpoch}::bigint returning id
+      ) insert into session_leases(tenant_id,pi_session_id,lease_id,sandbox_id,writer_id,
+          fencing_token,valid_until,acquired_at,renewed_at)
+        select ${request.tenantId}::uuid,id,${this.#idGenerator()}::uuid,${worker.id}::uuid,
+          ${request.piSessionWriterId}::uuid,${epoch},
+          clock_timestamp()+${this.#leaseDurationMs}*interval '1 millisecond',
+          clock_timestamp(),clock_timestamp() from advanced_epoch
+        returning *`.execute(tx);
+      lease = created.rows[0];
+      if (!lease)
+        throw new SessionLeaseCoordinatorError(
+          "session_lease_invariant",
+          "Locked Session epoch changed during admission",
+          false,
+        );
     }
     const touchSession = tx
       .updateTable("sessions")

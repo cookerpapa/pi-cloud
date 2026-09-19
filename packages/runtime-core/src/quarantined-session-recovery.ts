@@ -2,6 +2,7 @@ import type { Database } from "@pi-cloud/database";
 import { retryTransaction } from "@pi-cloud/database";
 import { transitionSession } from "@pi-cloud/domain";
 import { sql, type Kysely, type Transaction } from "kysely";
+import { advanceLaneReadiness } from "./run-readiness.ts";
 
 type Execution = { tenantId: string; sessionId: string; runId: string; attemptId: string };
 
@@ -48,9 +49,7 @@ export async function recoverQuarantinedSession(
     )
     .executeTakeFirst();
   if (recovered.numUpdatedRows > 0n) {
-    await sql`select pg_notify('pi_cloud_run_queue', id::text) from runs
-      where tenant_id=${execution.tenantId}::uuid and session_id=${execution.sessionId}::uuid
-        and state='queued'`.execute(tx);
+    await advanceLaneReadiness(tx, execution.tenantId, execution.sessionId);
   }
 }
 

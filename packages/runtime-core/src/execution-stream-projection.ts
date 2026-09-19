@@ -1,5 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import { recoverQuarantinedSession } from "./quarantined-session-recovery.ts";
+import { advanceLaneReadiness } from "./run-readiness.ts";
 import { parsePiCloudEvent, type PiCloudEvent } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { AcceptedExecutionSealFact, AcceptedFact } from "./accepted-fact.ts";
@@ -372,8 +373,7 @@ export class ExecutionStreamProjector {
         event.type !== "turn.cancelled"
       )
         throw new Error("Execution seal must carry a terminal event");
-      await sql`select pg_notify('pi_cloud_run_queue', id::text) from runs
-        where session_id = ${fact.scope.sessionId}::uuid and state = 'queued'`.execute(transaction);
+      await advanceLaneReadiness(transaction, fact.scope.tenantId, fact.scope.sessionId);
       return event;
     });
     return committed;

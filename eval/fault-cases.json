@@ -3,6 +3,27 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "ready-seal-atomicity",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "rolls readiness and family closure back together and ignores duplicate seals",
+      "invariant": "A failed seal commit cannot release the next Lane task or decrement the family count; replay decrements once."
+    },
+    {
+      "id": "ready-input-seal-race",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "does not lose readiness when acceptance races closure",
+      "invariant": "Input acceptance and seal projection serialize on the Lane row and cannot leave a committed follow-up permanently waiting."
+    },
+    {
+      "id": "ready-family-owner-handoff",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/run-queue.test.ts",
+      "test": "keeps every active Lane of one physical Pi Session on its owner Worker",
+      "invariant": "A ready main Lane cannot acquire a new owner until the old sibling's final seal commits."
+    },
+    {
       "id": "message-level-display-recovery",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/execution-stream-seal.test.ts",

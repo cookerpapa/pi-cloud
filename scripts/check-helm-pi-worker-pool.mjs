@@ -105,6 +105,9 @@ assert.equal(scaler.spec.triggers[0].type, "postgresql");
 assert.match(scaler.spec.triggers[0].metadata.query, /FROM runs/i);
 assert.match(scaler.spec.triggers[0].metadata.query, /pi_session_id/);
 assert.match(scaler.spec.triggers[0].metadata.query, /session_leases/);
+assert.match(scaler.spec.triggers[0].metadata.query, /r\.ready_at IS NOT NULL/);
+assert.match(scaler.spec.triggers[0].metadata.query, /family\.unsealed_runs=0/);
+assert.doesNotMatch(scaler.spec.triggers[0].metadata.query, /lease_id IS NULL|claim_expires_at/);
 assert(find("TriggerAuthentication"));
 const directory = mkdtempSync(resolve(tmpdir(), "pi-cloud-local-worker-contract-"));
 try {

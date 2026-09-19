@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { laneDependenciesReady } from "@pi-cloud/runtime-core/run-readiness";
 import type { Database } from "@pi-cloud/database";
 import {
   DomainModelValidationError,
@@ -1552,7 +1553,7 @@ export class ControlPlaneStore {
         );
       }
       const environment = await this.#activeEnvironmentForRun(transaction, session.project_id);
-      await transaction
+      const turnWrite = transaction
         .insertInto("turns")
         .values({
           id: turnId,
@@ -1573,9 +1574,9 @@ export class ControlPlaneStore {
           failure_message: null,
           failure_retryable: null,
         })
-        .executeTakeFirstOrThrow();
+        .returning("id");
 
-      const run = await transaction
+      const runWrite = transaction
         .insertInto("runs")
         .values({
           id: runId,
@@ -1588,7 +1589,7 @@ export class ControlPlaneStore {
           project_id: session.project_id,
           workspace_id: session.workspace_id,
           session_id: session.id,
-          turn_id: turnId,
+          turn_id: sql<string>`(select id from accepted_turn)`,
           agent_revision_id: session.agent_revision_id,
           mailbox_position: mailboxPosition,
           request_sha256: fingerprint,
@@ -1604,6 +1605,7 @@ export class ControlPlaneStore {
           ),
           idempotency_key: idempotencyKey,
           state: "queued",
+          ready_at: sql<Date | null>`case when ${laneDependenciesReady(this.#tenantId, session.id, sql`${mailboxPosition}::bigint`)} then clock_timestamp() else null end`,
           current_attempt_id: null,
           attempt_count: 0,
           stop_reason: null,
@@ -1613,10 +1615,9 @@ export class ControlPlaneStore {
           started_at: null,
           settled_at: null,
         })
-        .returning(["id", "created_at", "request_sha256"])
-        .executeTakeFirstOrThrow();
+        .returning(["id", "created_at", "request_sha256"]);
 
-      const sessionUpdate = await transaction
+      const sessionWrite = transaction
         .updateTable("sessions")
         .set({
           next_mailbox_position: sql<string>`${sql.ref("next_mailbox_position")} + 1`,
@@ -1626,8 +1627,16 @@ export class ControlPlaneStore {
         .where("tenant_id", "=", this.#tenantId)
         .where("id", "=", session.id)
         .where("next_mailbox_position", "=", String(mailboxPosition))
-        .executeTakeFirst();
-      if (sessionUpdate.numUpdatedRows !== 1n) {
+        .returning("id");
+      const run = await transaction
+        .with("accepted_turn", () => turnWrite)
+        .with("accepted_run", () => runWrite)
+        .with("advanced_session", () => sessionWrite)
+        .selectFrom("accepted_run")
+        .selectAll()
+        .select(sql<number>`(select count(*)::int from advanced_session)`.as("mailboxRows"))
+        .executeTakeFirstOrThrow();
+      if (run.mailboxRows !== 1) {
         throw new ControlPlaneStoreError(
           "control_plane_misconfigured",
           "Session mailbox position could not be advanced",

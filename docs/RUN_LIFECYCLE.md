@@ -3,9 +3,11 @@
 ## Admission
 
 `POST /v1/sessions/{id}/turns` authenticates tenant ownership and writes the
-user message, Turn and ready Run row in one PostgreSQL transaction. The Run's
+user message, Turn and accepted Run row in one PostgreSQL transaction. The Run's
 unique Session/idempotency key prevents a retry from creating another Run.
-Same-Session Runs remain serialized by mailbox position.
+Same-Lane Runs remain serialized by mailbox position. A queued Run is dispatchable
+only when `ready_at` is non-null. Acceptance readies the initial head; committed
+predecessor closure readies its successor under the same Session row lock.
 
 Queued Follow-up is a persisted input/Run, not yet a Pi user Entry or Kafka
 Session mutation. Steer is first stored in `turn_control_requests` and delivered
@@ -23,18 +25,25 @@ it briefly locks the physical `pi_sessions` row: a Session lease owned by anothe
 Worker makes this candidate ineligible, while another Lane on the same Worker may
 proceed without reserving a second family slot.
 
-`RunExecutor` transactionally rechecks:
+`RunExecutor` atomically assigns a ready Run. It checks:
 
 - the Run is still eligible;
-- this is the Session's next runnable message;
 - cancellation has not won;
-- no current Attempt already owns the Run.
+- no current Attempt already owns the Run;
 - all active Lanes of the physical Pi Session have this Worker as owner;
-- every requested predecessor execution seal for this product Session is projected.
+- a new owner sees zero `pi_sessions.unsealed_runs`;
+- a delegated task still belongs to its live parent execution.
+
+Lane order/previous seal dependencies were established by readiness, not scanned
+again during claim. First Attempt insertion increments the family count; first
+seal projection decrements it, inside the existing transactions. A current healthy
+owner can run another Lane before its siblings finish. KEDA counts active leases
+and ready cold families, not waiting follow-ups or unbound startup claims.
 
 It creates a RunAttempt with a startup claim deadline, binds it to the physical
 Session's owner lease, registers publication scope and marks the Turn/Session
-running in one transaction. There is no separate startup phase commit. The
+running in one transaction. Locked facts and inserted-row results are reused;
+there is no separate startup phase commit or independently committed unbound claim. The
 startup deadline cannot steal a lease-bound claim. The Worker renews that owner once per heartbeat;
 it does not renew a child task's startup deadline. Each task carries an
 `ExecutionReference`: the shared lease/epoch plus its own Attempt identity. The

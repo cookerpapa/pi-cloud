@@ -89,22 +89,8 @@ async function releaseLockedIdleSessionLease(
     .where("s.tenant_id", "=", lease.tenant_id)
     .where("s.pi_session_id", "=", lease.pi_session_id)
     .where("a.native_writer_id", "=", lease.writer_id)
-    .where((eb) =>
-      eb.or([
-        eb.and([eb("a.lease_id", "=", lease.lease_id), eb("a.execution_released_at", "is", null)]),
-        eb.and([
-          eb("a.lease_id", "is", null),
-          eb("a.state", "in", [
-            "claimed",
-            "provisioning",
-            "restoring",
-            "running",
-            "settling",
-            "cancel_requested",
-          ]),
-        ]),
-      ]),
-    )
+    .where("a.lease_id", "=", lease.lease_id)
+    .where("a.execution_released_at", "is", null)
     .limit(1)
     .executeTakeFirst();
   if (peer) return false;

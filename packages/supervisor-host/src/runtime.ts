@@ -578,7 +578,6 @@ export class PiWorkerRuntime {
     const leaseCoordinator = new SessionLeaseCoordinator({
       database: this.#database,
       sandboxId: identity.sandboxId,
-      ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
     });
     const runBackend = new AgentRunExecutionBackend({
       supervisor: runSupervisor,

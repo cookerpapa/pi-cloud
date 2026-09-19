@@ -19,6 +19,8 @@ import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fa
 import { confirmAgentExit } from "../../runtime-core/src/quarantined-session-recovery.ts";
 import { PiCloudMetrics } from "@pi-cloud/observability";
 import { transitionCurrentRunAttempt } from "@pi-cloud/runtime-core/run-attempt-state";
+import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
+import { admitTestExecution } from "./admit-test-execution.ts";
 
 let pglite: PGlite;
 let socket: PGLiteSocketServer;
@@ -130,7 +132,9 @@ describe.sequential("Run queue authority", () => {
     expect(candidates.every((query) => query.includes('"claim_candidate" as materialized'))).toBe(
       true,
     );
-    expect(candidates[0]!.match(/from runs as earlier_run/g)).toHaveLength(1);
+    expect(candidates[0]).toContain("candidate.ready_at is not null");
+    expect(candidates[0]).not.toContain("from runs as earlier_run");
+    expect(candidates[0]).not.toContain("from run_attempts pending");
     expect(ownerReads).toHaveLength(1);
     expect(startedWrites).toHaveLength(1);
     expect(startedWrites[0]).toContain('"started_session"');
@@ -740,16 +744,36 @@ describe.sequential("Run queue authority", () => {
       releaseParent = resolve;
     });
     const observed: string[] = [];
+    const workerId = crypto.randomUUID();
+    await database
+      .insertInto("sandboxes")
+      .values({
+        id: workerId,
+        supervisor_id: "pi-session-owner-worker",
+        boot_id: crypto.randomUUID(),
+        state: "ready",
+        max_concurrent_sessions: 2,
+        active_sessions: 0,
+      })
+      .execute();
+    const coordinator = new SessionLeaseCoordinator({ database, sandboxId: workerId });
     const owner = new RunExecutor({
       database,
       claimOwnerId: "pi-session-owner-worker",
+      executionAuthority: coordinator,
       backend: {
+        admit: (tx, request, _mark, facts) => admitTestExecution(coordinator, tx, request, facts),
         async execute(request) {
           observed.push(request.runId);
           if (request.runId === root.runId) {
             parentStarted();
             await release;
           }
+          await database
+            .updateTable("run_attempts")
+            .set({ native_output_drained: true })
+            .where("id", "=", request.attemptId)
+            .execute();
           return { stopReason: "stop" };
         },
       },
@@ -788,18 +812,6 @@ describe.sequential("Run queue authority", () => {
       partition: 0,
       offset: 0n,
     });
-    const childSeal = await database
-      .selectFrom("outbox")
-      .select("payload")
-      .where(sql<boolean>`payload #>> '{scope,runId}' = ${child.runId}`)
-      .executeTakeFirstOrThrow();
-    await new ExecutionStreamProjector(database).project({
-      fact: parseKafkaAcceptedFact(JSON.stringify(childSeal.payload)),
-      topic: "lane-seal-test",
-      partition: 0,
-      offset: 1n,
-    });
-
     const later = await store.acceptTurn(rootSession.sessionId, "lane-owner-later", {
       prompt: "later",
     });
@@ -813,6 +825,28 @@ describe.sequential("Run queue authority", () => {
           return { stopReason: "stop" };
         },
       },
+    });
+    // Main Lane is ready, but cold owner handoff still waits for the old child.
+    expect(
+      (
+        await database
+          .selectFrom("runs")
+          .select("ready_at")
+          .where("id", "=", later.runId)
+          .executeTakeFirstOrThrow()
+      ).ready_at,
+    ).toBeInstanceOf(Date);
+    await expect(replacement.dispatchRun(later.runId)).resolves.toEqual({ status: "idle" });
+    const childSeal = await database
+      .selectFrom("outbox")
+      .select("payload")
+      .where(sql<boolean>`payload #>> '{scope,runId}' = ${child.runId}`)
+      .executeTakeFirstOrThrow();
+    await new ExecutionStreamProjector(database).project({
+      fact: parseKafkaAcceptedFact(JSON.stringify(childSeal.payload)),
+      topic: "lane-seal-test",
+      partition: 0,
+      offset: 1n,
     });
     await expect(replacement.dispatchRun(later.runId)).resolves.toMatchObject({
       status: "completed",

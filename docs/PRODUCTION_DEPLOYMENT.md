@@ -44,6 +44,12 @@ its sealed outputs have been fully projected. Retire old isolated child Workspac
 before migration 141; it does not relabel or delete them. Migrations preserve PG
 semantic history, identities and configuration.
 
+Migration 144 adds durable Lane readiness and the physical family's unsealed-Run
+count. It also requires every accepted/queued Run to drain before migration,
+including all issued publications' seals. Stop old Workers before applying it and
+restart matching Worker/Control Plane code together. The Kafka v9 wire format and
+guest template are unchanged; do not delete user history or Volumes for this upgrade.
+
 The pinned Confluent consumer uses a native addon: `dependencies:harden` and image
 builds rebuild it after `npm ci --ignore-scripts`.
 

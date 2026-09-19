@@ -77,7 +77,7 @@ it.skipIf(!external)(
         claimOwnerId: "steer-worker",
         executionAuthority: authority,
         backend: {
-          admit: (tx, request) => admitTestExecution(authority, tx, request),
+          admit: (tx, request, _mark, facts) => admitTestExecution(authority, tx, request, facts),
           async execute() {
             running.resolve();
             await finishRun.promise;

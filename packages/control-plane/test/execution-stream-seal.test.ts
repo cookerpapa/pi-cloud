@@ -280,6 +280,21 @@ describe.sequential("Execution stream closure", () => {
         tail = parent.tail();
       const writerId = parent.seal.scope.writerId,
         piSessionId = parent.seal.scope.piSessionId;
+      // This synthetic projection fixture reparents an already admitted task.
+      // Production creates the Lane before admission; move its count with the
+      // fixture graph rather than teaching the projector to repair bad metadata.
+      await db
+        .updateTable("pi_sessions")
+        .set({ unsealed_runs: sql<string>`unsealed_runs - 1` })
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", child.seal.scope.piSessionId)
+        .execute();
+      await db
+        .updateTable("pi_sessions")
+        .set({ unsealed_runs: sql<string>`unsealed_runs + 1` })
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", piSessionId)
+        .execute();
       await db
         .updateTable("sessions")
         .set({ pi_session_id: piSessionId, pi_session_lane: "child" })

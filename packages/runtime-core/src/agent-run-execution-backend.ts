@@ -29,6 +29,7 @@ import {
   type TurnExecutionRequest,
   type TurnExecutionResult,
   type TurnExecutionAdmission,
+  type ExecutionAdmissionFacts,
 } from "./run-executor.ts";
 import type { Database } from "@pi-cloud/database";
 import type { Transaction } from "kysely";
@@ -264,10 +265,18 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
     mark: (stage: string) => void,
+    facts: ExecutionAdmissionFacts,
   ): Promise<TurnExecutionAdmission> {
-    const reference = await this.#leaseCoordinator.acquireInTransaction(transaction, request, mark);
+    const reference = await this.#leaseCoordinator.acquireInTransaction(
+      transaction,
+      request,
+      facts,
+      mark,
+    );
     const publication = await registerExecutionPublication(transaction, {
       ...reference,
+      tenantId: request.tenantId,
+      runId: request.runId,
       sessionId: request.sessionId,
       turnId: request.turnId,
       piSession: {

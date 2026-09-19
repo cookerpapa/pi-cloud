@@ -723,7 +723,10 @@ export class PostgresSubagentJobProvider {
         }
         await transaction
           .updateTable("runs")
-          .set({ available_at: new Date(Date.now() + LOCAL_CHILD_CLAIM_GRACE_MS) })
+          .set({
+            available_at: new Date(Date.now() + LOCAL_CHILD_CLAIM_GRACE_MS),
+            ready_at: sql<Date>`clock_timestamp()`,
+          })
           .where("tenant_id", "=", input.tenantId)
           .where("id", "=", execution.child_run_id)
           .where("state", "=", "queued")

@@ -763,6 +763,7 @@ export interface RunTable {
   available_at: Timestamp;
   trace_id: Generated<string>;
   state: RunState;
+  ready_at: GeneratedNullable<Date>;
   current_attempt_id: string | null;
   attempt_count: GeneratedInteger;
   stop_reason: string | null;
@@ -1099,6 +1100,7 @@ export interface PiSessionTable {
   name: string | null;
   active_writer_id: GeneratedNullable<string>;
   lease_epoch: GeneratedInt8;
+  unsealed_runs: GeneratedInt8;
 }
 
 export interface PiSessionLaneTable {

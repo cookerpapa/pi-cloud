@@ -27,6 +27,7 @@ import {
   lockPiSessionWorkerOwnership,
   piSessionWorkerAvailable,
   selectNativeSessionWriter,
+  type LockedPiSessionOwnership,
 } from "./pi-session-worker-ownership.ts";
 import { requestExecutionStreamSeal } from "./execution-stream-seal.ts";
 import { confirmAgentExit } from "./quarantined-session-recovery.ts";
@@ -107,6 +108,7 @@ export interface TurnExecutionBackend {
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
     mark: (stage: string) => void,
+    facts: ExecutionAdmissionFacts,
   ): Promise<TurnExecutionAdmission>;
   execute(
     request: TurnExecutionRequest,
@@ -114,6 +116,12 @@ export interface TurnExecutionBackend {
     admission?: TurnExecutionAdmission,
   ): Promise<TurnExecutionResult>;
 }
+
+/** Facts produced under this transaction's Run/family locks, never a cache. */
+export type ExecutionAdmissionFacts = Readonly<{
+  physical: LockedPiSessionOwnership;
+  claimExpiresAt: Date;
+}>;
 
 export interface TurnExecutionAuthority {
   assertCurrent(
@@ -582,7 +590,7 @@ export class RunExecutor {
       committedCandidate = undefined;
       stages.length = 0;
       mark("transaction_begin");
-      let now = await databaseTime(transaction);
+      const now = await databaseTime(transaction);
       const candidate = transaction
         .selectFrom("runs as candidate")
         .innerJoin(
@@ -605,15 +613,8 @@ export class RunExecutor {
         .where("candidate.available_at", "<=", now)
         // These code-owned states are also the partial ready-index predicate.
         // Parameters prevent a generic prepared plan from proving that match.
-        .where(sql<boolean>`candidate.state = 'queued'`)
+        .where(sql<boolean>`candidate.state = 'queued' and candidate.ready_at is not null`)
         .where("candidate_session.state", "in", ["cold", "idle"])
-        .where(
-          sql<boolean>`not exists (
-            select 1 from run_attempts pending join runs prior on prior.id = pending.run_id
-            where prior.tenant_id = candidate.tenant_id and prior.session_id = candidate.session_id
-              and pending.output_seal_id is not null and pending.output_sealed_at is null
-          )`,
-        )
         .where(this.#familyAdmission("candidate_session", admission))
         .where(this.#taskOwnerAvailable("candidate"))
         .where("candidate_policy.enabled", "=", true)
@@ -623,30 +624,7 @@ export class RunExecutor {
             sql.ref("candidate_session.tenant_id"),
             sql.ref("candidate_session.pi_session_id"),
             this.#claimOwnerId,
-            sql.ref("candidate.id"),
           ),
-        )
-        .where(
-          sql<boolean>`not exists (
-              select 1
-              from runs as active_run
-              where active_run.tenant_id = ${sql.ref("candidate.tenant_id")}
-                and active_run.session_id = ${sql.ref("candidate.session_id")}
-                and active_run.id <> ${sql.ref("candidate.id")}
-                and active_run.state in (
-                  'claimed', 'provisioning', 'restoring', 'running', 'settling', 'cancel_requested'
-                )
-            )`,
-        )
-        .where(
-          sql<boolean>`not exists (
-              select 1
-              from runs as earlier_run
-              where earlier_run.tenant_id = ${sql.ref("candidate.tenant_id")}
-                and earlier_run.session_id = ${sql.ref("candidate.session_id")}
-                and earlier_run.state not in ('completed', 'failed', 'cancelled', 'timed_out', 'superseded')
-                and earlier_run.mailbox_position < ${sql.ref("candidate.mailbox_position")}
-            )`,
         )
         .orderBy("candidate.available_at", "asc")
         .orderBy("candidate.queued_at", "asc")
@@ -779,8 +757,11 @@ export class RunExecutor {
       if (!configuration) return undefined;
       const row = { ...context, ...configuration };
 
-      await lockPiSessionWorkerOwnership(transaction, row.tenantId, row.piSessionId);
-      now = await databaseTime(transaction);
+      const physical = await lockPiSessionWorkerOwnership(
+        transaction,
+        row.tenantId,
+        row.piSessionId,
+      );
 
       if (row.inputKind !== "prompt" || row.inputText === null) {
         throw new RunExecutorInvariantError(
@@ -790,10 +771,8 @@ export class RunExecutor {
       safeMailboxPosition(row.mailboxPosition);
 
       const maximumToolCalls = safeNonNegativeInteger(row.maximumToolCalls, "tool-call budget");
-      // A post-ACK attempt is never blindly replayed. Pre-ACK retries cannot
-      // have executed a Tool, so every newly claimed execution starts with the
-      // full per-Run budget. The trusted Runner decrements it in memory while
-      // the Agent Loop is active.
+      // Each newly admitted Run starts with its frozen budget. Recovery does
+      // not replay an admitted Run; the Runner decrements this budget locally.
       const remainingToolCalls = maximumToolCalls;
       const toolCapabilities = parseCloudToolCapabilitySnapshot(row.toolCapabilitySnapshot);
 
@@ -803,9 +782,9 @@ export class RunExecutor {
       const piSessionWriterId = await selectNativeSessionWriter(transaction, {
         tenantId: row.tenantId,
         piSessionId: row.piSessionId,
-        runId: row.runId,
         workerId: this.#claimOwnerId,
         attemptId,
+        unsealedRuns: physical.unsealedRuns,
       });
       if (!piSessionWriterId) return undefined;
       mark("ownership");
@@ -832,6 +811,7 @@ export class RunExecutor {
         attemptCount: number;
         transitionCount: number;
         runCount: number;
+        claimExpiresAt: Date;
       }>`
         with decision as materialized (select clock_timestamp() as at), inserted_attempt as (
           insert into run_attempts (
@@ -842,7 +822,7 @@ export class RunExecutor {
             ${attemptNumber}, 'claimed', ${this.#claimOwnerId}, d.at + ${this.#claimLeaseMs} * interval '1 millisecond',
             ${Math.max(0, Number(row.nextEventSeq) - 1)}::bigint, d.at, d.at, d.at, ${piSessionWriterId}::uuid
           from decision d
-          returning id
+          returning id, claim_expires_at
         ), inserted_transition as (
           insert into run_attempt_transitions (
             id, tenant_id, run_id, attempt_id, from_state, to_state, reason, occurred_at
@@ -854,6 +834,7 @@ export class RunExecutor {
         ), updated_run as (
           update runs
              set state = 'claimed',
+                 ready_at = null,
                  available_at = (select at + ${this.#claimLeaseMs} * interval '1 millisecond' from decision),
                  current_attempt_id = ${attemptId}::uuid,
                  attempt_count = ${attemptNumber},
@@ -872,7 +853,8 @@ export class RunExecutor {
         )
         select (select count(*)::int from inserted_attempt) as "attemptCount",
                (select count(*)::int from inserted_transition) as "transitionCount",
-               (select count(*)::int from updated_run) as "runCount"
+               (select count(*)::int from updated_run) as "runCount",
+               (select claim_expires_at from inserted_attempt) as "claimExpiresAt"
       `.execute(transaction);
       const claimCounts = claimed.rows[0];
       if (
@@ -974,10 +956,13 @@ export class RunExecutor {
         },
       };
       if (this.#backend.admit) {
-        claim.admission = await this.#backend.admit(transaction, claim.request, mark);
+        claim.admission = await this.#backend.admit(transaction, claim.request, mark, {
+          physical: { ...physical, unsealedRuns: String(BigInt(physical.unsealedRuns) + 1n) },
+          claimExpiresAt: claimCounts.claimExpiresAt,
+        });
         mark("publication_registered");
       }
-      await this.#startAdmittedRun(transaction, claim);
+      await this.#startAdmittedRun(transaction, claim, String(BigInt(row.runVersion) + 1n));
       mark("admitted_running");
       committedCandidate = claim;
       return claim;
@@ -1035,75 +1020,60 @@ export class RunExecutor {
     return result;
   }
 
-  async #startAdmittedRun(transaction: Transaction<Database>, claim: ClaimedTurn): Promise<void> {
-    const now = safeDate(this.#clock);
-    const rows = await this.#lockLifecycleRows(transaction, claim);
-    if (rows.runState !== "claimed" || rows.turnState !== "queued") {
-      throw new RunExecutorInvariantError("Only a claimed Run with a queued Turn can start");
-    }
-    await transitionCurrentRunAttempt(
-      transaction,
-      {
-        tenantId: claim.request.tenantId,
-        runId: claim.request.runId,
-        attemptId: claim.request.attemptId,
-      },
-      {
-        runState: "running",
-        attemptState: "running",
-        reason: "execution_admitted",
-        now,
-        heartbeat: true,
-        transitionId: this.#idGenerator(),
-      },
-    );
-
-    let nextSessionState: SessionState;
-    if (rows.sessionState === "cold") {
-      const starting = transitionSession(rows.sessionState, "starting");
-      const idle = transitionSession(starting, "idle");
-      nextSessionState = transitionSession(idle, "running");
-    } else if (rows.sessionState === "idle") {
-      nextSessionState = transitionSession(rows.sessionState, "running");
-    } else {
-      throw new RunExecutorInvariantError(`Session cannot start a turn from ${rows.sessionState}`);
-    }
-
-    const turnUpdate = transaction
-      .updateTable("turns")
-      .set({
-        state: transitionTurn(rows.turnState, "running"),
-        started_at: now,
-      })
-      .where("tenant_id", "=", claim.request.tenantId)
-      .where("id", "=", claim.request.turnId)
-      .where("state", "=", rows.turnState)
-      .returning("id");
-
-    const sessionUpdate = transaction
-      .updateTable("sessions")
-      .set({
-        state: nextSessionState,
-        row_version: sql<string>`${sql.ref("row_version")} + 1`,
-        updated_at: now,
-        last_active_at: now,
-      })
-      .where("tenant_id", "=", claim.request.tenantId)
-      .where("id", "=", claim.request.sessionId)
-      .where("state", "=", rows.sessionState)
-      .returning("id");
-    // Both rows were locked by #lockLifecycleRows. Their independent writes
-    // need one round trip, not one acknowledgement each.
-    const updated = await transaction
-      .with("started_turn", () => turnUpdate)
-      .with("started_session", () => sessionUpdate)
-      .selectNoFrom([
-        sql<number>`(select count(*)::int from started_turn)`.as("turns"),
-        sql<number>`(select count(*)::int from started_session)`.as("sessions"),
-      ])
-      .executeTakeFirstOrThrow();
-    expectOne(BigInt(updated.turns), "starting a turn");
-    expectOne(BigInt(updated.sessions), "starting a session");
+  /** Admission owns these rows; finish with conditional writes, not re-reads. */
+  async #startAdmittedRun(
+    transaction: Transaction<Database>,
+    claim: ClaimedTurn,
+    runVersion: string,
+  ): Promise<void> {
+    const now = safeDate(this.#clock),
+      r = claim.request;
+    const result = await sql<{
+      turns: number;
+      sessions: number;
+      attempts: number;
+      runs: number;
+      transitions: number;
+      families: number;
+    }>`with "started_turn" as (
+      update turns set state='running',started_at=${now}
+        where tenant_id=${r.tenantId}::uuid and id=${r.turnId}::uuid and state='queued'
+        returning id
+    ), "started_session" as (
+      update sessions set state='running',row_version=row_version+1,
+        updated_at=${now},last_active_at=${now}
+        where tenant_id=${r.tenantId}::uuid and id=${r.sessionId}::uuid and state in ('cold','idle')
+        returning id
+    ), started_attempt as (
+      update run_attempts set state='running',running_at=${now},last_heartbeat_at=${now},updated_at=${now}
+        where tenant_id=${r.tenantId}::uuid and id=${r.attemptId}::uuid and run_id=${r.runId}::uuid
+          and state='claimed'
+        returning id
+    ), started_run as (
+      update runs set state='running',started_at=coalesce(started_at,${now}),
+        updated_at=${now},row_version=row_version+1
+        where tenant_id=${r.tenantId}::uuid and id=${r.runId}::uuid
+          and current_attempt_id=${r.attemptId}::uuid and state='claimed' and row_version=${runVersion}::bigint
+        returning id
+    ), recorded_transition as (
+      insert into run_attempt_transitions(id,tenant_id,run_id,attempt_id,from_state,to_state,reason,occurred_at)
+        select ${this.#idGenerator()}::uuid,${r.tenantId}::uuid,${r.runId}::uuid,id,
+          'claimed','running','execution_admitted',${now} from started_attempt
+        returning id
+    ), admitted_family as (
+      update pi_sessions set active_writer_id=${r.piSessionWriterId}::uuid
+        where tenant_id=${r.tenantId}::uuid and id=${r.piSessionId}
+        returning id
+    )
+    select (select count(*)::int from "started_turn") as turns,
+      (select count(*)::int from "started_session") as sessions,
+      (select count(*)::int from started_attempt) as attempts,
+      (select count(*)::int from started_run) as runs,
+      (select count(*)::int from recorded_transition) as transitions,
+      (select count(*)::int from admitted_family) as families`.execute(transaction);
+    const counts = result.rows[0];
+    if (!counts || Object.values(counts).some((count) => count !== 1))
+      throw new RunExecutorInvariantError("Execution admission did not start exactly one task");
   }
 
   async #complete(

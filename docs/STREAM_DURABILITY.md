@@ -17,7 +17,8 @@ read Kafka, and the public SSE proxy never builds a second tail.
 
 ```text
 V implies A and K and F and validity at that record's position
-next Run claim implies C(previous requested seals)
+next Run in the same Lane implies C(its predecessor)
+new physical Session owner implies every old admitted Run is sealed
 live terminal implies C
 post-seal old records cannot affect history, UI or new Tool dispatch
 Tool effect requires durable model output, validated intent and command
@@ -47,6 +48,11 @@ PG's canonical/unsealed-prefix floor and the group's completed delivery position
 This covers PG commit succeeding before Tool routing was acknowledged.
 Replayed native appends are idempotent; effect receivers retain operation IDs and
 applied log positions. A new executor boot cannot adopt old Tool bindings.
+
+First closure also advances Lane readiness in that PG transaction. The Attempt's
+first-seal trigger decrements its family's unsealed count; duplicate projection
+does neither twice. Input acceptance and readiness advancement serialize on the
+product Session row. Lost wake-up notifications cannot lose committed readiness.
 
 There is no opening marker. First native projection also commits the recovery
 floor; a first display/control-only record commits its floor before delivery.

@@ -67,10 +67,13 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       release = resolve;
     });
     const selected = new WeakSet<QueryId>();
+    // Run insertion now completes in the input/Run/mailbox statement, not an
+    // independently executed INSERT whose builder also has a query ID.
+    const prefix = table === "runs" ? 'with "accepted_turn"' : `insert into "${table}"`;
     const paused = database.withPlugin({
       transformQuery({ node, queryId }) {
         const query = database.getExecutor().compileQuery(node, queryId);
-        if (query.sql.startsWith(`insert into "${table}"`)) selected.add(queryId);
+        if (query.sql.startsWith(prefix)) selected.add(queryId);
         return node;
       },
       async transformResult({ result, queryId }) {

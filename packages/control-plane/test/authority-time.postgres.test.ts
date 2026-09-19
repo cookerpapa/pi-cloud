@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import { createDatabase, databaseTime, runMigrations, type Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
 import { beforeAll, afterAll, afterEach, describe, it, expect, vi } from "vitest";
-import { RunExecutor, type TurnExecutionRequest } from "@pi-cloud/runtime-core/run-executor";
+import {
+  RunExecutor,
+  type TurnExecutionRequest,
+  type ExecutionAdmissionFacts,
+} from "@pi-cloud/runtime-core/run-executor";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { registerExecutionPublication } from "../../runtime-core/src/execution-publication.ts";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
@@ -62,6 +66,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     beforeAcquire?: (
       request: TurnExecutionRequest,
       tx: import("kysely").Transaction<Database>,
+      facts: ExecutionAdmissionFacts,
     ) => Promise<void>,
   ) {
     const tenant = await createPrivateTenant(db, {
@@ -101,9 +106,9 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       claimOwnerId: workerId,
       executionAuthority: coordinator,
       backend: {
-        admit: async (tx, request) => {
-          await beforeAcquire?.(request, tx);
-          return admitTestExecution(coordinator, tx, request);
+        admit: async (tx, request, _mark, facts) => {
+          await beforeAcquire?.(request, tx, facts);
+          return admitTestExecution(coordinator, tx, request, facts);
         },
         execute: async (request, _lifecycle, admission) => {
           const binding = admission!;
@@ -165,7 +170,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     await f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference });
   });
   it("rolls back epoch, capacity and Session touch when the combined binding is rejected", async () => {
-    const f = await fixture(0, async (request, tx) => {
+    const f = await fixture(0, async (request, tx, facts) => {
       const owner = await tx
         .selectFrom("run_attempts")
         .select("claim_owner_id")
@@ -212,7 +217,9 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
           sandboxId: owner.claim_owner_id,
         });
         await sql`savepoint rejected_binding`.execute(tx);
-        await expect(coordinator.acquireInTransaction(measured, request)).rejects.toMatchObject({
+        await expect(
+          coordinator.acquireInTransaction(measured, request, facts),
+        ).rejects.toMatchObject({
           code: "session_lease_invariant",
         });
         await sql`rollback to savepoint rejected_binding`.execute(tx);
@@ -226,7 +233,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
         ).toEqual([]);
         expect(
           queries.filter((q) => q.startsWith("select ") && q.includes('from "pi_sessions"')),
-        ).toHaveLength(1);
+        ).toHaveLength(0);
         expect(queries.filter((q) => q.startsWith('with "touched_session"'))).toHaveLength(1);
       } finally {
         await sql`drop trigger reject_test_binding on run_attempts`.execute(tx);
@@ -272,8 +279,24 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
             ? f.coordinator.renewFromHeartbeat(f.heartbeat)
             : operation === "grant"
               ? f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference })
-              : db.transaction().execute((tx) =>
-                  registerExecutionPublication(tx, {
+              : db.transaction().execute(async (tx) => {
+                  // Production publication runs under the locks acquired by
+                  // atomic admission; model that precondition before its write.
+                  await tx
+                    .selectFrom("run_attempts")
+                    .select("id")
+                    .where("id", "=", f.request.attemptId)
+                    .forNoKeyUpdate()
+                    .execute();
+                  await tx
+                    .selectFrom("session_leases")
+                    .select("lease_id")
+                    .where("lease_id", "=", f.lease.lease_id)
+                    .forNoKeyUpdate()
+                    .execute();
+                  return registerExecutionPublication(tx, {
+                    tenantId: f.request.tenantId,
+                    runId: f.request.runId,
                     executionReference: f.reference,
                     sessionId: f.request.sessionId,
                     turnId: f.request.turnId,
@@ -283,8 +306,8 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
                       lane: f.request.piSessionLane,
                       writerId: f.request.piSessionWriterId,
                     },
-                  }),
-                ),
+                  });
+                }),
         ]);
         await vi.waitFor(async () => {
           const result = await sql<{

@@ -6,87 +6,48 @@ import type { ExecutionPublication } from "./accepted-fact.ts";
 import type { ExecutionLogOpenRequest } from "./execution-log.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 
-/** Authority is a one-time PG operation. There is no channel lease or token-time SELECT. */
+/** Called inside admission after locking the Attempt and Session lease. Scope
+ * comes from that transaction's request, not a second authority read. The final
+ * write still checks current database time and exact attribution. */
 export async function registerExecutionPublication(
   tx: Transaction<Database>,
-  request: Omit<ExecutionLogOpenRequest, "publication">,
+  request: Omit<ExecutionLogOpenRequest, "publication"> & { tenantId: string; runId: string },
 ): Promise<ExecutionPublication> {
   const lease = parseExecutionReference(request.executionReference);
-  await tx
-    .selectFrom("run_attempts")
-    .select("id")
-    .where("id", "=", lease.attemptId)
-    .forNoKeyUpdate()
-    .execute();
-  await tx
-    .selectFrom("session_leases")
-    .select("lease_id")
-    .where("lease_id", "=", lease.leaseId)
-    .forKeyShare()
-    .execute();
-  const row = await tx
-    .selectFrom("active_execution_scopes as l")
-    .select([
-      "l.writer_id as native_writer_id",
-      "l.tenant_id",
-      "l.run_id",
-      "l.turn_id",
-      "l.session_id",
-      "l.lease_id",
-      "l.fencing_token",
-      "l.pi_session_id",
-    ])
-    // The authority view already joins the Attempt, Session and native writer.
-    // Two scalar PK reads fetch fields absent from that view without expanding
-    // its five-table join graph to eight tables on every registration.
-    .select((eb) => [
-      eb
-        .selectFrom("run_attempts as a")
-        .select("a.output_publication")
-        .whereRef("a.id", "=", "l.attempt_id")
-        .as("output_publication"),
-      eb
-        .selectFrom("sessions as s")
-        .select("s.pi_session_lane")
-        .whereRef("s.id", "=", "l.session_id")
-        .as("pi_session_lane"),
-    ])
-    .where("l.attempt_id", "=", lease.attemptId)
-    .where("l.lease_id", "=", lease.leaseId)
-    .where("l.fencing_token", "=", String(lease.fencingToken))
-    .where("l.valid_until", ">", sql<Date>`clock_timestamp()`)
-    .where("l.accepting_effects", "=", true)
-    .executeTakeFirst();
-  if (
-    !row ||
-    row.session_id !== request.sessionId ||
-    row.turn_id !== request.turnId ||
-    row.pi_session_id !== request.piSession.id ||
-    row.pi_session_lane !== request.piSession.lane ||
-    row.native_writer_id !== request.piSession.writerId
-  )
-    throw new Error("Execution publication requires the current Session lease");
-  if (row.output_publication !== null)
-    throw new Error("An Attempt cannot reopen its publication identity");
   const permit: ExecutionPublication = {
     scope: {
-      tenantId: row.tenant_id,
-      sessionId: row.session_id,
-      turnId: row.turn_id,
-      runId: row.run_id,
+      tenantId: request.tenantId,
+      sessionId: request.sessionId,
+      turnId: request.turnId,
+      runId: request.runId,
       attemptId: lease.attemptId,
       leaseId: lease.leaseId,
       fencingToken: lease.fencingToken,
-      piSessionId: row.pi_session_id,
-      piSessionLane: row.pi_session_lane,
-      writerId: row.native_writer_id,
+      piSessionId: request.piSession.id,
+      piSessionLane: request.piSession.lane,
+      writerId: request.piSession.writerId,
     },
   };
-  await tx
+  const recorded = await tx
     .updateTable("run_attempts")
     .set({ output_publication: permit, native_output_drained: false })
     .where("id", "=", lease.attemptId)
-    .executeTakeFirstOrThrow();
+    .where("tenant_id", "=", request.tenantId)
+    .where("output_publication", "is", null)
+    .where(
+      sql<boolean>`exists(
+      select 1 from active_execution_scopes l join sessions s on s.id=l.session_id
+      where l.attempt_id=${lease.attemptId}::uuid and l.tenant_id=${request.tenantId}::uuid
+        and l.run_id=${request.runId}::uuid and l.session_id=${request.sessionId}::uuid
+        and l.turn_id=${request.turnId}::uuid and l.lease_id=${lease.leaseId}::uuid
+        and l.fencing_token=${lease.fencingToken} and l.writer_id=${request.piSession.writerId}::uuid
+        and l.pi_session_id=${request.piSession.id} and s.pi_session_lane=${request.piSession.lane}
+        and l.accepting_effects and l.valid_until>clock_timestamp()
+    )`,
+    )
+    .executeTakeFirst();
+  if (recorded.numUpdatedRows !== 1n)
+    throw new Error("Execution publication requires the current Session lease");
   return permit;
 }
 
