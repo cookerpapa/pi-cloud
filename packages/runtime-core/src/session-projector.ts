@@ -127,7 +127,9 @@ export class SessionProjector {
   }
   async start(): Promise<void> {
     await this.#bus.start();
-    this.#partitions = await this.#consumer.partitionCount();
+    // Producer startup already verified this against broker metadata. Asking
+    // another client's offset cache merely to count partitions races fresh Topics.
+    this.#partitions = this.options.partitions;
     await this.#consumer.start();
     this.#relay.start();
     this.#retention.start(this.#partitions);

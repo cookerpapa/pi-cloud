@@ -9,6 +9,7 @@ const f = vi.hoisted(() => ({
   project: vi.fn(),
   applies: vi.fn(),
   parse: vi.fn(),
+  start: vi.fn<(resource: string, partitions?: number) => void>(),
   close: vi.fn<(resource: string) => Promise<void>>(),
   decode: undefined as undefined | ((value: Buffer) => any),
   handler: undefined as undefined | ((record: any, current?: () => boolean) => Promise<void>),
@@ -19,6 +20,9 @@ vi.mock("@pi-cloud/event-log", () => ({
       f.handler = options.handler;
       f.decode = options.decode;
     }
+    async start() {
+      f.start("consumer");
+    }
     async close() {
       await f.close("consumer");
     }
@@ -27,6 +31,9 @@ vi.mock("@pi-cloud/event-log", () => ({
 vi.mock("../src/kafka-accepted-fact.ts", () => ({
   ACCEPTED_FACT_TOPIC: "test",
   KafkaAcceptedFactBus: class {
+    async start() {
+      f.start("producer");
+    }
     async close() {
       await f.close("producer");
     }
@@ -48,6 +55,9 @@ vi.mock("../src/execution-stream-projection.ts", async (original) => ({
 }));
 vi.mock("../src/accepted-fact-terminal-outbox-relay.ts", () => ({
   AcceptedFactTerminalOutboxRelay: class {
+    start() {
+      f.start("relay");
+    }
     async close() {
       await f.close("relay");
     }
@@ -55,6 +65,9 @@ vi.mock("../src/accepted-fact-terminal-outbox-relay.ts", () => ({
 }));
 vi.mock("../src/kafka-safe-retention.ts", () => ({
   KafkaSafeRetention: class {
+    start(partitions: number) {
+      f.start("retention", partitions);
+    }
     async close() {
       await f.close("retention");
     }
@@ -68,6 +81,7 @@ let shutdownAsserted = false;
 beforeEach(() => {
   shutdownAsserted = false;
   f.close.mockReset().mockResolvedValue(undefined);
+  f.start.mockReset();
   f.accept.mockReset().mockResolvedValue(true);
   f.project.mockReset().mockResolvedValue(undefined);
   f.applies.mockReset().mockResolvedValue(true);
@@ -122,6 +136,10 @@ function deferred<T>() {
 }
 
 describe("Unified Projector handoff boundaries (transport/PG simulated)", () => {
+  it("uses the producer-verified partition count without a second offset query at startup", async () => {
+    await projector.start();
+    expect(f.start.mock.calls).toEqual([["producer"], ["consumer"], ["relay"], ["retention", 2]]);
+  });
   it("closes every owner after a failed relay/consumer drain and shares concurrent shutdown", async () => {
     const relayFailure = new Error("Relay drain failed"),
       consumerFailure = new Error("Consumer close failed");

@@ -87,7 +87,8 @@ export class KafkaLogConsumer<T> {
           this.#closing ||
           Date.now() >= deadline ||
           (code !== CODES.ERRORS.ERR_UNKNOWN_TOPIC_OR_PART &&
-            code !== CODES.ERRORS.ERR_LEADER_NOT_AVAILABLE)
+            code !== CODES.ERRORS.ERR_LEADER_NOT_AVAILABLE &&
+            code !== CODES.ERRORS.ERR__NOENT)
         )
           throw error;
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -384,10 +385,6 @@ export class KafkaLogConsumer<T> {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error("Session partition replay is unavailable");
-  }
-
-  async partitionCount(): Promise<number> {
-    return (await this.#bounds()).length;
   }
 
   ownsPartition(partition: number): boolean {
