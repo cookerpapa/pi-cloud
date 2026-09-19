@@ -412,7 +412,7 @@ export class PiWorkerRuntime {
     this.#assertStarting();
     await modelGateway.checkProviderHealth();
     this.#assertStarting();
-    const runWorkerIdentity = `postgres:${identity.supervisorId}:${identity.bootId}`;
+    const runWorkerIdentity = identity.sandboxId;
     let executionLogs = this.#executionLogs;
     if (!executionLogs) {
       const bus = new KafkaAcceptedFactBus({

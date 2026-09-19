@@ -292,6 +292,7 @@ describe("PiWorkerRuntime", () => {
       await first.start();
       expect(first.state).toBe("ready");
       const firstIdentity = first.identity!;
+      expect(runWorkerOptions[0]?.identity).toBe(firstIdentity.sandboxId);
       expect(gateway.activeConnectionCount).toBe(1);
       await vi.advanceTimersByTimeAsync(60_000);
       expect(reapSpy).toHaveBeenCalledTimes(1);
@@ -367,6 +368,7 @@ describe("PiWorkerRuntime", () => {
       const secondIdentity = second.identity!;
       expect(secondIdentity.bootId).not.toBe(firstIdentity.bootId);
       expect(secondIdentity.sandboxId).not.toBe(firstIdentity.sandboxId);
+      expect(runWorkerOptions[1]?.identity).toBe(secondIdentity.sandboxId);
 
       const oldSandbox = await database
         .selectFrom("sandboxes")
