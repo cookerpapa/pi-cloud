@@ -15,7 +15,7 @@ describe("Task reference under a Session lease", () => {
     expect(token).toHaveLength(73);
     expect(parseExecutionReference(token)).toEqual({
       leaseId: LEASE_ID,
-      attemptId: ATTEMPT_ID,
+      runId: ATTEMPT_ID,
       fencingToken: 1,
     });
   });
@@ -50,7 +50,7 @@ describe("Task reference under a Session lease", () => {
     if (message.type !== "event.publish") throw new Error("Expected Agent event publication");
 
     expect(message.payload).toEqual({ executionReference, event: message.payload.event });
-    expect(message.payload).not.toHaveProperty("attemptId");
+    expect(message.payload).not.toHaveProperty("runId");
     expect(message.payload).not.toHaveProperty("leaseId");
     expect(message.payload).not.toHaveProperty("fencingToken");
   });

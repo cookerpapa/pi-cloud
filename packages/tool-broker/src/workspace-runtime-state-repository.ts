@@ -24,7 +24,7 @@ export type WorkspaceRuntimeReservation = {
   computeSessionId?: string;
   assignment: ToolSandboxAssignment;
   turnContextSha256: string;
-  attemptContextSha256: string;
+  executionContextSha256: string;
   environmentSha256: string;
 };
 
@@ -273,7 +273,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const executionId =
       currentActivation === undefined
         ? input.terminalId
-        : executionIdentity(currentActivation.assignment).attemptId;
+        : executionIdentity(currentActivation.assignment).runId;
     const executionReference = createExecutionReference(input.terminalId, executionId, generation);
     this.#terminals.set(input.terminalId, { ...input, fencingToken: generation });
     return {
@@ -472,7 +472,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       .values({
         binding_id: bindingId,
         tenant_id: assignment.tenantId,
-        attempt_id: executionIdentity(assignment).attemptId,
+        run_id: executionIdentity(assignment).runId,
         owner_instance_id: this.#instanceId,
       })
       .executeTakeFirstOrThrow();
@@ -716,11 +716,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         ])
         .where("lease_id", "=", execution.leaseId)
         .where("accepting_effects", "=", true)
-        .where("attempt_id", "=", execution.attemptId)
-        .where(
-          sql<boolean>`exists(select 1 from run_attempts a join run_attempts writer on writer.id=a.native_writer_id
-          where a.id=${execution.attemptId}::uuid and writer.native_writer_failed_at is null and writer.native_writer_sealed_at is null)`,
-        )
+        .where("run_id", "=", execution.runId)
         .where("fencing_token", "=", String(execution.fencingToken))
         .where("valid_until", ">", sql<Date>`clock_timestamp()`)
         .executeTakeFirst();
@@ -860,11 +856,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         run_id: input.assignment.runId,
         session_id: input.assignment.sessionId,
         turn_id: input.assignment.turnId,
-        attempt_id: execution.attemptId,
         lease_id: execution.leaseId,
         fencing_token: execution.fencingToken,
         turn_context_sha256: input.turnContextSha256,
-        attempt_context_sha256: input.attemptContextSha256,
+        execution_context_sha256: input.executionContextSha256,
         environment_sha256: input.environmentSha256,
         runtime_id: null,
         runtime_name: null,
@@ -907,11 +902,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             run_id: input.assignment.runId,
             session_id: input.assignment.sessionId,
             turn_id: input.assignment.turnId,
-            attempt_id: execution.attemptId,
             lease_id: execution.leaseId,
             fencing_token: execution.fencingToken,
             turn_context_sha256: input.turnContextSha256,
-            attempt_context_sha256: input.attemptContextSha256,
+            execution_context_sha256: input.executionContextSha256,
             environment_sha256: input.environmentSha256,
             runtime_id: null,
             runtime_name: null,
@@ -991,7 +985,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "run_id",
           "session_id",
           "turn_id",
-          "attempt_id",
+          "run_id",
           "lease_id",
           "fencing_token",
         ])
@@ -1082,7 +1076,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .executeTakeFirstOrThrow();
       const executionReference = createExecutionReference(
         input.terminalId,
-        activation?.attempt_id ?? input.terminalId,
+        activation?.run_id ?? input.terminalId,
         generation,
       );
       return {
@@ -1701,7 +1695,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
               project_id: assignment.projectId,
               environment_version_id: validated.id,
               run_id: null,
-              attempt_id: null,
               status: "validated",
               report: environmentValidation,
               failure_code: null,
@@ -1754,11 +1747,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         )
         .where("authority.lease_id", "=", execution.leaseId)
         .where("authority.accepting_effects", "=", true)
-        .where("authority.attempt_id", "=", execution.attemptId)
-        .where(
-          sql<boolean>`exists(select 1 from run_attempts a join run_attempts writer on writer.id=a.native_writer_id
-          where a.id=${execution.attemptId}::uuid and writer.native_writer_failed_at is null and writer.native_writer_sealed_at is null)`,
-        )
+        .where("authority.run_id", "=", execution.runId)
         .where("authority.fencing_token", "=", String(execution.fencingToken))
         .where("authority.session_id", "=", assignment.sessionId)
         .where("authority.run_id", "=", assignment.runId)
@@ -1787,7 +1776,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           tenant_id: assignment.tenantId,
           session_id: assignment.sessionId,
           run_id: assignment.runId,
-          attempt_id: execution.attemptId,
           lease_id: execution.leaseId,
           fencing_token: execution.fencingToken,
           owner_instance_id: this.#instanceId,
@@ -1850,7 +1838,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "run_id",
           "session_id",
           "turn_id",
-          "attempt_id",
+          "run_id",
           "lease_id",
           "fencing_token",
         ])
@@ -1888,7 +1876,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           turnId: row.turn_id,
           executionReference: createExecutionReference(
             row.lease_id,
-            row.attempt_id,
+            row.run_id,
             Number(row.fencing_token),
           ),
         },
@@ -1928,7 +1916,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "activation.run_id",
           "activation.session_id",
           "activation.turn_id",
-          "activation.attempt_id",
+          "activation.run_id",
           "activation.lease_id",
           "activation.fencing_token",
         ])
@@ -1990,7 +1978,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           turnId: row.turn_id,
           executionReference: createExecutionReference(
             row.lease_id,
-            row.attempt_id,
+            row.run_id,
             Number(row.fencing_token),
           ),
         },
@@ -2030,7 +2018,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         "workspace_id",
         "session_id",
         "turn_id",
-        "attempt_id",
+        "run_id",
         "lease_id",
         "fencing_token",
       ])
@@ -2055,7 +2043,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       turnId: row.turn_id,
       executionReference: createExecutionReference(
         row.lease_id,
-        row.attempt_id,
+        row.run_id,
         Number(row.fencing_token),
       ),
     }));

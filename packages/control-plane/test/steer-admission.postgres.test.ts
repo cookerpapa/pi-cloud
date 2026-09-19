@@ -64,7 +64,6 @@ it.skipIf(!external)(
           boot_id: randomUUID(),
           state: "ready",
           max_concurrent_sessions: 1,
-          active_sessions: 0,
         })
         .execute();
       const authority = new SessionLeaseCoordinator({
@@ -74,7 +73,7 @@ it.skipIf(!external)(
       });
       const executor = new RunExecutor({
         database,
-        claimOwnerId: "steer-worker",
+        workerId: sandboxId,
         executionAuthority: authority,
         backend: {
           admit: (tx, request, _mark, facts) => admitTestExecution(authority, tx, request, facts),

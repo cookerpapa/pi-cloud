@@ -355,48 +355,20 @@ describe("control-plane public API schemas", () => {
         turnId: "50000000-0000-4000-8000-000000000001",
         state: "running",
         environment: ENVIRONMENT_SNAPSHOT,
-        attemptCount: 1,
-        currentAttemptId: "50000000-0000-4000-8000-000000000011",
+        workerId: "50000000-0000-4000-8000-000000000012",
         queuedAt: createdAt,
         startedAt: createdAt,
         updatedAt: createdAt,
-        attempts: [
+        transitions: [
           {
-            attemptId: "50000000-0000-4000-8000-000000000011",
-            attemptNumber: 1,
-            state: "running",
-            projection: "canonical",
-            claimOwnerId: "control-plane-1",
-            claimExpiresAt: "2026-07-19T00:01:00.000Z",
-            sandboxId: "50000000-0000-4000-8000-000000000012",
-            claimedAt: createdAt,
-            provisioningAt: createdAt,
-            runningAt: createdAt,
-            lastHeartbeatAt: createdAt,
-            transitions: [
-              {
-                fromState: null,
-                toState: "claimed",
-                reason: "outbox_claim",
-                occurredAt: createdAt,
-              },
-              {
-                fromState: "claimed",
-                toState: "provisioning",
-                reason: "run_started",
-                occurredAt: createdAt,
-              },
-              {
-                fromState: "provisioning",
-                toState: "running",
-                reason: "pi_started",
-                occurredAt: createdAt,
-              },
-            ],
+            fromState: "queued",
+            toState: "running",
+            reason: "execution_admitted",
+            occurredAt: createdAt,
           },
         ],
       }),
-    ).toMatchObject({ state: "running", attempts: [{ attemptNumber: 1 }] });
+    ).toMatchObject({ state: "running", transitions: [{ toState: "running" }] });
   });
 
   it("rejects malformed public resources", () => {

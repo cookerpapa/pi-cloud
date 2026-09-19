@@ -7,11 +7,11 @@ Refines ADR-0163's publication authentication only.
 
 Workers, Projectors, PostgreSQL and Kafka belong to the same trusted private
 deployment. Cube guests and browsers have no Kafka or authority credentials.
-Remove per-Attempt Ed25519 keys, per-record signatures and Projector cryptographic
+Remove per-Run Ed25519 keys, per-record signatures and Projector cryptographic
 verification. Do not add a signature switch, replacement token or remote gate.
 
 Keep the one-time PG Lease/fence check at admission, frozen
-Session/Attempt/Lane scope, first-record recovery floor and positioned seals. Projector caches
+Session/Run/Lane scope, first-record recovery floor and positioned seals. Projector caches
 that scope and checks record attribution, not cryptographic origin. A seal still
 must match the authority's recorded Outbox request. Native projection and recovery
 positions commit together; Tool admission retains operation deduplication and

@@ -32,7 +32,6 @@ type StoredSteer = {
   sessionId: string;
   runId: string;
   turnId: string;
-  attemptId: string;
   idempotencyKey: string;
   text: string;
   requestHash: string;
@@ -188,7 +187,6 @@ export class TurnSteeringService {
         sessionId: stored.sessionId,
         runId: stored.runId,
         turnId: stored.turnId,
-        attemptId: stored.attemptId,
       },
     };
     try {
@@ -267,7 +265,6 @@ export class TurnSteeringService {
               projectId: target.projectId,
               workspaceId: target.workspaceId,
               runId: target.runId,
-              attemptId: target.attemptId,
               sandboxId: target.sandboxId,
               text,
             },
@@ -289,7 +286,6 @@ export class TurnSteeringService {
           sessionId,
           runId: target.runId,
           turnId,
-          attemptId: target.attemptId,
           idempotencyKey,
           text,
           requestHash,
@@ -323,7 +319,6 @@ export class TurnSteeringService {
     projectId: string;
     workspaceId: string;
     runId: string;
-    attemptId: string;
     sandboxId: string;
   }> {
     const row = await transaction
@@ -339,11 +334,6 @@ export class TurnSteeringService {
           .onRef("run.session_id", "=", "turn.session_id")
           .onRef("run.turn_id", "=", "turn.id"),
       )
-      .innerJoin("run_attempts as attempt", (join) =>
-        join
-          .onRef("attempt.run_id", "=", "run.id")
-          .onRef("attempt.id", "=", "run.current_attempt_id"),
-      )
       .innerJoin("active_execution_scopes as lease", "lease.session_id", "session_row.id")
       .select([
         "turn.state as turnState",
@@ -352,9 +342,7 @@ export class TurnSteeringService {
         "session_row.workspace_id as workspaceId",
         "run.id as runId",
         "run.state as runState",
-        "attempt.id as attemptId",
-        "attempt.state as attemptState",
-        "attempt.sandbox_id as attemptSandboxId",
+        "run.sandbox_id as executionSandboxId",
         "lease.sandbox_id as leaseSandboxId",
       ])
       .where("turn.tenant_id", "=", tenantId)
@@ -362,7 +350,7 @@ export class TurnSteeringService {
       .where("turn.id", "=", turnId)
       // Steer changes no referenced keys. FOR UPDATE would deadlock with a
       // concurrent Tool binding INSERT acquiring Run/Session KEY SHARE locks.
-      .forNoKeyUpdate(["turn", "session_row", "run", "attempt", "lease"])
+      .forNoKeyUpdate(["turn", "session_row", "run", "lease"])
       .executeTakeFirst();
     if (row === undefined) {
       throw new TurnSteeringError("not_found", "Active Turn was not found");
@@ -370,10 +358,9 @@ export class TurnSteeringService {
     if (
       row.turnState !== "running" ||
       row.sessionState !== "running" ||
-      !["provisioning", "restoring", "running"].includes(row.runState) ||
-      !["claimed", "provisioning", "restoring", "running"].includes(row.attemptState) ||
-      row.attemptSandboxId === null ||
-      row.attemptSandboxId !== row.leaseSandboxId
+      row.runState !== "running" ||
+      row.executionSandboxId === null ||
+      row.executionSandboxId !== row.leaseSandboxId
     ) {
       throw new TurnSteeringError(
         "conflict",
@@ -384,7 +371,6 @@ export class TurnSteeringService {
       projectId: row.projectId,
       workspaceId: row.workspaceId,
       runId: row.runId,
-      attemptId: row.attemptId,
       sandboxId: row.leaseSandboxId,
     };
   }
@@ -430,7 +416,6 @@ export class TurnSteeringService {
       sessionId,
       runId: controlRequest.target_run_id,
       turnId: controlRequest.turn_id,
-      attemptId: payloadString(controlRequest.payload, "attemptId"),
       idempotencyKey: controlRequest.idempotency_key,
       text,
       requestHash,

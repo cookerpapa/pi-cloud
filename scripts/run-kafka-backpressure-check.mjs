@@ -130,7 +130,6 @@ if (process.argv[2] !== "inside") {
       writerId: randomUUID(),
       runId: randomUUID(),
       turnId: randomUUID(),
-      attemptId: randomUUID(),
       fencingToken: 1,
     };
     const results = await Promise.all(

@@ -48,7 +48,6 @@ async function provision(value: SupervisorBootIdentity): Promise<void> {
       boot_id: value.bootId,
       state: "provisioning",
       max_concurrent_sessions: 1,
-      active_sessions: 0,
     })
     .executeTakeFirstOrThrow();
 }

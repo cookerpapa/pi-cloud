@@ -931,9 +931,6 @@ export const AcceptedTurnResourceSchema = Type.Object(
 
 export const RunStateSchema = Type.Union([
   Type.Literal("queued"),
-  Type.Literal("claimed"),
-  Type.Literal("provisioning"),
-  Type.Literal("restoring"),
   Type.Literal("running"),
   Type.Literal("settling"),
   Type.Literal("cancel_requested"),
@@ -941,21 +938,6 @@ export const RunStateSchema = Type.Union([
   Type.Literal("failed"),
   Type.Literal("cancelled"),
   Type.Literal("timed_out"),
-  Type.Literal("superseded"),
-]);
-
-export const RunAttemptStateSchema = Type.Union([
-  Type.Literal("claimed"),
-  Type.Literal("provisioning"),
-  Type.Literal("restoring"),
-  Type.Literal("running"),
-  Type.Literal("settling"),
-  Type.Literal("cancel_requested"),
-  Type.Literal("completed"),
-  Type.Literal("failed"),
-  Type.Literal("cancelled"),
-  Type.Literal("timed_out"),
-  Type.Literal("superseded"),
 ]);
 
 const RunFailureResourceSchema = Type.Object(
@@ -967,35 +949,12 @@ const RunFailureResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const RunAttemptTransitionResourceSchema = Type.Object(
+export const RunTransitionResourceSchema = Type.Object(
   {
-    fromState: Type.Union([RunAttemptStateSchema, Type.Null()]),
-    toState: RunAttemptStateSchema,
+    fromState: Type.Union([RunStateSchema, Type.Null()]),
+    toState: RunStateSchema,
     reason: Type.String({ minLength: 1, maxLength: 256 }),
     occurredAt: UtcTimestampSchema,
-  },
-  { additionalProperties: false },
-);
-
-export const RunAttemptResourceSchema = Type.Object(
-  {
-    attemptId: UuidSchema,
-    attemptNumber: PositiveSafeIntegerSchema,
-    state: RunAttemptStateSchema,
-    projection: Type.Union([Type.Literal("canonical"), Type.Literal("superseded")]),
-    supersededByAttemptId: Type.Optional(UuidSchema),
-    claimOwnerId: Type.String({ minLength: 1, maxLength: 256 }),
-    claimExpiresAt: UtcTimestampSchema,
-    sandboxId: Type.Optional(UuidSchema),
-    failure: Type.Optional(RunFailureResourceSchema),
-    claimedAt: UtcTimestampSchema,
-    provisioningAt: Type.Optional(UtcTimestampSchema),
-    restoringAt: Type.Optional(UtcTimestampSchema),
-    runningAt: Type.Optional(UtcTimestampSchema),
-    settlingAt: Type.Optional(UtcTimestampSchema),
-    lastHeartbeatAt: Type.Optional(UtcTimestampSchema),
-    settledAt: Type.Optional(UtcTimestampSchema),
-    transitions: Type.Array(RunAttemptTransitionResourceSchema, { maxItems: 128 }),
   },
   { additionalProperties: false },
 );
@@ -1010,15 +969,14 @@ export const RunResourceSchema = Type.Object(
     turnId: UuidSchema,
     environment: EnvironmentRuntimeSnapshotSchema,
     state: RunStateSchema,
-    attemptCount: NonNegativeSafeIntegerSchema,
-    currentAttemptId: Type.Optional(UuidSchema),
+    workerId: Type.Optional(UuidSchema),
     stopReason: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
     failure: Type.Optional(RunFailureResourceSchema),
     queuedAt: UtcTimestampSchema,
     startedAt: Type.Optional(UtcTimestampSchema),
     settledAt: Type.Optional(UtcTimestampSchema),
     updatedAt: UtcTimestampSchema,
-    attempts: Type.Array(RunAttemptResourceSchema, { maxItems: 32 }),
+    transitions: Type.Array(RunTransitionResourceSchema, { maxItems: 128 }),
   },
   { additionalProperties: false },
 );
@@ -1202,9 +1160,7 @@ export type ConversationPruneResource = Static<typeof ConversationPruneResourceS
 export type AcceptTurnRequest = Static<typeof AcceptTurnRequestSchema>;
 export type AcceptedTurnResource = Static<typeof AcceptedTurnResourceSchema>;
 export type RunState = Static<typeof RunStateSchema>;
-export type RunAttemptState = Static<typeof RunAttemptStateSchema>;
-export type RunAttemptTransitionResource = Static<typeof RunAttemptTransitionResourceSchema>;
-export type RunAttemptResource = Static<typeof RunAttemptResourceSchema>;
+export type RunTransitionResource = Static<typeof RunTransitionResourceSchema>;
 export type RunResource = Static<typeof RunResourceSchema>;
 export type WorkspaceDirectoryEntryResource = Static<typeof WorkspaceDirectoryEntryResourceSchema>;
 export type WorkspaceDirectoryResource = Static<typeof WorkspaceDirectoryResourceSchema>;

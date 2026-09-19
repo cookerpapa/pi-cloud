@@ -82,14 +82,14 @@ if (process.argv[2] !== "inside") {
   });
   let destroyed = false;
   try {
-    await sql`create table accepted_fact_projection_offsets(topic text,partition integer,next_offset bigint); create table run_attempts(output_first_topic text,output_first_partition integer,output_first_offset bigint,output_sealed_at timestamptz)`.execute(
+    await sql`create table accepted_fact_projection_offsets(topic text,partition integer,next_offset bigint); create table runs(output_first_topic text,output_first_partition integer,output_first_offset bigint,output_sealed_at timestamptz)`.execute(
       db,
     );
     await bus.start();
     gc.start(1);
     const sessionId = randomUUID(),
       turnId = randomUUID(),
-      attemptId = randomUUID();
+      runId = randomUUID();
     const append = async (seq) => {
       const id = randomUUID(),
         at = new Date().toISOString();
@@ -102,8 +102,7 @@ if (process.argv[2] !== "inside") {
           piSessionId: sessionId,
           runId: turnId,
           turnId,
-          attemptId,
-          writerId: attemptId,
+          writerId: runId,
           fencingToken: 1,
         },
         occurredAt: at,
@@ -131,10 +130,10 @@ if (process.argv[2] !== "inside") {
     await gc.sweep();
     assert.equal(await low(), 0n);
     await sql`insert into accepted_fact_projection_offsets values(${topic},0,20)`.execute(db);
-    await sql`insert into run_attempts values(${topic},0,5,null)`.execute(db);
+    await sql`insert into runs values(${topic},0,5,null)`.execute(db);
     await gc.sweep();
     assert.equal(await low(), 5n);
-    await sql`update run_attempts set output_sealed_at=now()`.execute(db);
+    await sql`update runs set output_sealed_at=now()`.execute(db);
     await append(21);
     await sql`update accepted_fact_projection_offsets set next_offset=21`.execute(db);
     await gc.sweep();

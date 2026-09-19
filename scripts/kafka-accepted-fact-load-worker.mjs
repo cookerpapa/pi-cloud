@@ -45,7 +45,6 @@ function sessionSeed() {
     sessionId: randomUUID(),
     runId: randomUUID(),
     turnId: randomUUID(),
-    attemptId: randomUUID(),
   };
 }
 
@@ -59,10 +58,9 @@ function fact(seed, sequence, payloadBytes) {
       tenantId: seed.tenantId,
       sessionId: seed.sessionId,
       piSessionId: seed.sessionId,
-      writerId: seed.attemptId,
+      writerId: seed.runId,
       runId: seed.runId,
       turnId: seed.turnId,
-      attemptId: seed.attemptId,
       fencingToken: 1,
     },
     event: {

@@ -3,7 +3,6 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
 import {
-  RunExecutor,
   TurnExecutionBackendError,
   type TurnExecutionRequest,
 } from "@pi-cloud/runtime-core/run-executor";
@@ -28,6 +27,7 @@ import type {
 import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
 import { KafkaSafeRetention } from "../../runtime-core/src/kafka-safe-retention.ts";
 import { vi } from "vitest";
+import { createTestWorker } from "./admit-test-execution.ts";
 
 let pg: PGlite,
   socket: PGLiteSocketServer,
@@ -60,7 +60,15 @@ afterAll(async () => {
   await pg?.close();
 });
 
-async function fixture() {
+type TestWorker = Awaited<ReturnType<typeof createTestWorker>>;
+async function fixture(
+  options: {
+    worker?: TestWorker;
+    physicalSessionId?: string;
+    drained?: boolean;
+    beforeFailure?: (live: { worker: TestWorker; piSessionId: string }) => Promise<void>;
+  } = {},
+) {
   const project = await store.createProject({
     name: `seal-${crypto.randomUUID()}`,
     source: { kind: "empty" },
@@ -79,16 +87,25 @@ async function fixture() {
   const first = await store.acceptTurn(session.sessionId, "first", {
     prompt: "keep this accepted input",
   });
+  if (options.physicalSessionId)
+    await db
+      .updateTable("sessions")
+      .set({ pi_session_id: options.physicalSessionId, pi_session_lane: "child" })
+      .where("id", "=", session.sessionId)
+      .execute();
+  const worker = options.worker ?? (await createTestWorker(db));
   let request!: TurnExecutionRequest;
-  const executor = new RunExecutor({
-    database: db,
-    claimOwnerId: "seal-worker",
-    backend: {
-      async execute(input) {
-        request = input;
-
-        throw new TurnExecutionBackendError("worker_lost", "Worker stopped", false);
-      },
+  const executor = worker.executor({
+    async execute(input) {
+      request = input;
+      await options.beforeFailure?.({ worker, piSessionId: input.piSessionId });
+      if (options.drained)
+        await db
+          .updateTable("runs")
+          .set({ native_output_drained: true })
+          .where("id", "=", input.runId)
+          .execute();
+      throw new TurnExecutionBackendError("worker_lost", "Worker stopped", false);
     },
   });
   await expect(executor.dispatchRun(first.runId)).resolves.toMatchObject({ status: "failed" });
@@ -114,7 +131,11 @@ async function fixture() {
       kind: "pi_session_append",
       factId: crypto.randomUUID(),
       scope: seal.scope,
-      piSession: { id: request.piSessionId, lane: "main", writerId: request.piSessionWriterId },
+      piSession: {
+        id: request.piSessionId,
+        lane: request.piSessionLane,
+        writerId: seal.scope.writerId,
+      },
       events: [],
       occurredAt: seal.occurredAt,
       items: [
@@ -274,37 +295,22 @@ describe.sequential("Execution stream closure", () => {
   it.each([false, true])(
     "keeps sibling prefixes and closes the shared writer only when uncertain=%s",
     async (closesWriter) => {
-      const parent = await fixture(),
-        child = await fixture(),
+      let child!: Awaited<ReturnType<typeof fixture>>;
+      const parent = await fixture({
+          drained: true,
+          beforeFailure: async (live) => {
+            child = await fixture({
+              worker: live.worker,
+              physicalSessionId: live.piSessionId,
+              drained: !closesWriter,
+            });
+          },
+        }),
         projector = new ExecutionStreamProjector(db),
         tail = parent.tail();
       const writerId = parent.seal.scope.writerId,
         piSessionId = parent.seal.scope.piSessionId;
-      // This synthetic projection fixture reparents an already admitted task.
-      // Production creates the Lane before admission; move its count with the
-      // fixture graph rather than teaching the projector to repair bad metadata.
-      await db
-        .updateTable("pi_sessions")
-        .set({ unsealed_runs: sql<string>`unsealed_runs - 1` })
-        .where("tenant_id", "=", tenantId)
-        .where("id", "=", child.seal.scope.piSessionId)
-        .execute();
-      await db
-        .updateTable("pi_sessions")
-        .set({ unsealed_runs: sql<string>`unsealed_runs + 1` })
-        .where("tenant_id", "=", tenantId)
-        .where("id", "=", piSessionId)
-        .execute();
-      await db
-        .updateTable("sessions")
-        .set({ pi_session_id: piSessionId, pi_session_lane: "child" })
-        .where("id", "=", child.session.sessionId)
-        .execute();
-      await db
-        .updateTable("run_attempts")
-        .set({ native_writer_anchor_id: writerId })
-        .where("id", "=", child.seal.scope.attemptId)
-        .execute();
+      expect(child.seal.scope.writerId).toBe(writerId);
       const childScope = { ...child.seal.scope, writerId, piSessionId };
       const root = parent.mutation("root");
       const rootEntry = root.items[0]!;
@@ -386,11 +392,11 @@ describe.sequential("Execution stream closure", () => {
         )?.interrupted_prefix,
       ).toBe("parent-prefix");
       const closed = await db
-        .selectFrom("run_attempts")
-        .select("native_writer_seal_offset")
-        .where("id", "=", writerId)
+        .selectFrom("session_leases")
+        .select("writer_seal_offset")
+        .where("lease_id", "=", writerId)
         .executeTakeFirstOrThrow();
-      expect(closed.native_writer_seal_offset).toBe(closesWriter ? "13" : null);
+      expect(closed.writer_seal_offset).toBe(closesWriter ? "13" : null);
       // Replaying after PG closure retains only the original valid live prefix.
       if (closesWriter) {
         const boundary = new ExecutionStreamBoundary(db);
@@ -474,9 +480,9 @@ describe.sequential("Execution stream closure", () => {
     await expect(failed.project(seal)).rejects.toThrow("terminal-insert failure");
     expect(
       await db
-        .selectFrom("run_attempts")
+        .selectFrom("runs")
         .select("output_sealed_at")
-        .where("id", "=", f.seal.scope.attemptId)
+        .where("id", "=", f.seal.scope.runId)
         .executeTakeFirst(),
     ).toEqual({ output_sealed_at: null });
     expect(
@@ -521,9 +527,9 @@ describe.sequential("Execution stream closure", () => {
     expect(await f.storage.getLog()).toHaveLength(0);
     expect(
       await db
-        .selectFrom("run_attempts")
+        .selectFrom("runs")
         .select("output_projected_offset")
-        .where("id", "=", fact.scope.attemptId)
+        .where("id", "=", fact.scope.runId)
         .executeTakeFirst(),
     ).toEqual({ output_projected_offset: null });
   });
@@ -785,9 +791,9 @@ describe.sequential("Execution stream closure", () => {
   it("does not expire an unprojected execution merely because wall time exceeds retention grace", async () => {
     const f = await fixture();
     await db
-      .updateTable("run_attempts")
-      .set({ claimed_at: new Date(Date.now() - 86400000) })
-      .where("id", "=", f.seal.scope.attemptId)
+      .updateTable("runs")
+      .set({ started_at: new Date(Date.now() - 86400000) })
+      .where("id", "=", f.seal.scope.runId)
       .execute();
     await expect(
       new ExecutionStreamProjector(db).project(f.record(f.seal, 80n)),
@@ -810,9 +816,9 @@ describe.sequential("Execution stream closure", () => {
     await projector.project(f.record(f.seal, 51n));
     expect(
       await db
-        .selectFrom("run_attempts")
+        .selectFrom("runs")
         .select("output_sealed_at")
-        .where("id", "=", fact.scope.attemptId)
+        .where("id", "=", fact.scope.runId)
         .executeTakeFirst(),
     ).toEqual({ output_sealed_at: null });
     await projector.project(f.record(fact, 52n));

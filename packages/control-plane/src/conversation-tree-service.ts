@@ -798,12 +798,11 @@ export class ConversationTreeService {
           .limit(1)
           .executeTakeFirst();
         const pendingSeal = await transaction
-          .selectFrom("run_attempts as attempt")
-          .innerJoin("runs as run", "run.id", "attempt.run_id")
-          .select("attempt.id")
+          .selectFrom("runs as run")
+          .select("run.id")
           .where("run.session_id", "=", sessionId)
-          .where("attempt.output_seal_id", "is not", null)
-          .where("attempt.output_sealed_at", "is", null)
+          .where("run.output_seal_id", "is not", null)
+          .where("run.output_sealed_at", "is", null)
           .limit(1)
           .executeTakeFirst();
         if (pendingSeal)

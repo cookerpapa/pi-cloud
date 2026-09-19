@@ -609,7 +609,7 @@ export class PiWorkerRuntime {
         database: this.#database,
         backend: runBackend,
         executionAuthority: leaseCoordinator,
-        claimOwnerId: runWorkerIdentity,
+        workerId: runWorkerIdentity,
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
       }),
       cancellationExecutor: new RunCancellationExecutor({

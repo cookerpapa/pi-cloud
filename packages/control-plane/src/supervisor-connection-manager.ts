@@ -469,7 +469,7 @@ export class SupervisorConnectionManager {
           );
         }
         if (
-          (current.state === "ready" || current.state === "leased") &&
+          current.state === "ready" &&
           currentActive === undefined &&
           currentConnections.length !== 0
         ) {
@@ -834,7 +834,8 @@ export class SupervisorConnectionManager {
       ])
       .select((eb) => eb.fn.min<Date>("lease.valid_until").as("oldest"))
       .where("lease.valid_until", "<=", validDate(this.#clock))
-      .where("worker.state", "in", ["ready", "leased"])
+      .where("worker.state", "=", "ready")
+      .where("lease.released_at", "is", null)
       .groupBy(["worker.id", "worker.supervisor_id", "worker.boot_id"])
       .orderBy("oldest")
       .limit(retirementLimit)
@@ -1068,6 +1069,7 @@ export class SupervisorConnectionManager {
       .selectFrom("session_leases")
       .select("lease_id")
       .where("sandbox_id", "=", sandboxId)
+      .where("released_at", "is", null)
       .where("valid_until", ">", sql<Date>`clock_timestamp()`)
       .where(
         "renewed_at",

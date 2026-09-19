@@ -11,8 +11,8 @@ Session row lock. Child preparation readies a new Lane without waiting for its
 parent to end. Notifications are hints, never execution permission.
 
 Readiness proves Lane dependencies, not permanent owner authority. The physical
-Session keeps an `unsealed_runs` count: an Attempt row trigger increments it on
-insertion and decrements it on first seal, in the existing transactions and
+Session keeps an `unsealed_runs` count: a Run row trigger increments it on
+owner binding and decrements it on first seal, in the existing transactions and
 without a second client round trip. An existing healthy
 owner can execute other ready Lanes; a new owner requires zero unsealed Runs.
 This replaces history scans at owner admission, not Lease/Fence or ordered seals.
@@ -21,10 +21,11 @@ failure, never a repair/fallback. Quarantined Sessions additionally require the
 existing positive Agent-exit evidence before readiness can advance.
 
 Worker admission selects a ready head and atomically establishes exact ownership,
-capacity, lease, publication scope and running state. Reuse only current rows
+lease, publication scope and running state. Capacity is Worker-local (ADR-0180).
+Reuse only current rows
 locked or created in that transaction. Keep post-lock database time and
 conditional final writes. Remove the old committed-but-unbound claim branches:
-production admission cannot commit an active Attempt without its owner lease.
+production admission cannot commit a running Run without its owner lease.
 One task's finish must not release or transfer sibling Lanes' owner.
 
 Keep the existing foreground-child contract: preparation and parent liveness are

@@ -49,7 +49,6 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
         boot_id: crypto.randomUUID(),
         state: "ready",
         max_concurrent_sessions: 8,
-        active_sessions: 0,
       })
       .execute();
     let now = Date.now();
@@ -65,7 +64,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
     const ready = (id: string) => new Promise<void>((r) => started.set(id, r));
     const executor = new RunExecutor({
       database: db,
-      claimOwnerId: "expiry-worker",
+      workerId,
       clock,
       executionAuthority: coordinator,
       backend: {
@@ -111,15 +110,16 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
     expect(
       await db
         .selectFrom("sandboxes")
-        .select(["state", "active_sessions"])
+        .select(["state"])
         .where("id", "=", workerId)
         .executeTakeFirst(),
-    ).toEqual({ state: "leased", active_sessions: 1 });
+    ).toEqual({ state: "ready" });
     expect(
       await db
         .selectFrom("session_leases")
         .select("pi_session_id")
         .where("sandbox_id", "=", workerId)
+        .where("released_at", "is", null)
         .execute(),
     ).toEqual([{ pi_session_id: b.sessionId }]);
     expect(await store.getRun(first.runId)).toMatchObject({ state: "settling" });

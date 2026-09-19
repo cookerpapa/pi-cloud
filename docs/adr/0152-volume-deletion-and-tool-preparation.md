@@ -47,7 +47,7 @@ Live testing also exposed a second-Turn Responses failure: a false reset fact
 inserted between a function call and its result made Pi's protocol converter
 synthesize a missing result, then send the actual result again. Elastic runtime
 continuity now uses the allocation identity both before and after materialization;
-the Runner takes the Broker's actual binding identity instead of its Attempt ID.
+the Runner takes the Broker's actual binding identity, not a task ID.
 World State changes observed during a Tool are published only at the next clean
 sampling/settlement boundary, after its result. Do not deduplicate arbitrary
 provider payloads or hide the underlying ordering defect.

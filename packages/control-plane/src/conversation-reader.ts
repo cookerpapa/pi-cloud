@@ -276,7 +276,6 @@ export class ConversationReader {
         .innerJoin("turns as turn", (join) =>
           join.onRef("turn.tenant_id", "=", "run.tenant_id").onRef("turn.id", "=", "run.turn_id"),
         )
-        .leftJoin("run_attempts as view_attempt", "view_attempt.id", "run.current_attempt_id")
         .select([
           "run.session_id as originSessionId",
           "run.id as runId",
@@ -284,7 +283,7 @@ export class ConversationReader {
           "turn.input_kind as inputKind",
           "turn.input_text as prompt",
           "turn.state as turnState",
-          sql<boolean>`(view_attempt.output_seal_id is not null and view_attempt.output_sealed_at is null)`.as(
+          sql<boolean>`(run.output_seal_id is not null and run.output_sealed_at is null)`.as(
             "waitingForSeal",
           ),
           "run.mailbox_position as mailboxPosition",

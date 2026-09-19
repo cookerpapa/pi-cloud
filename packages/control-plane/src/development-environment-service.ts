@@ -591,7 +591,7 @@ export class DevelopmentEnvironmentService {
           .select("id")
           .where("tenant_id", "=", identity.tenantId)
           .where("workspace_id", "=", environment.workspaceId)
-          .where("state", "not in", ["completed", "failed", "cancelled", "timed_out", "superseded"])
+          .where("state", "not in", ["completed", "failed", "cancelled", "timed_out"])
           .limit(1)
           .executeTakeFirst();
         if (

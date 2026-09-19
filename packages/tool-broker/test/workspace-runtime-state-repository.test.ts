@@ -327,7 +327,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
     resources.push(async () => repository.close());
     await repository.start();
 
-    const activationAttemptId = "20000000-0000-4000-8000-000000000008";
+    const parentRunId = "20000000-0000-4000-8000-000000000032";
     const activation = {
       activationId: "20000000-0000-4000-8000-000000000005",
       assignment: {
@@ -342,12 +342,12 @@ describe("PostgreSQL Tool Broker ownership", () => {
         turnId: forkTurnId,
         executionReference: createExecutionReference(
           "20000000-0000-4000-8000-000000000009",
-          activationAttemptId,
+          parentRunId,
           1,
         ),
       },
       turnContextSha256: "b".repeat(64),
-      attemptContextSha256: "c".repeat(64),
+      executionContextSha256: "c".repeat(64),
       environmentSha256: "d".repeat(64),
     } as const;
     await database
@@ -356,9 +356,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
         id: activation.assignment.sandboxId,
         supervisor_id: activation.assignment.supervisorId,
         boot_id: activation.assignment.bootId,
-        state: "leased",
+        state: "ready",
         max_concurrent_sessions: 1,
-        active_sessions: 1,
       })
       .executeTakeFirstOrThrow();
     await expect(
@@ -396,10 +395,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
 
     const delegatedSessionId = "20000000-0000-4000-8000-000000000017";
     const environmentId = "20000000-0000-4000-8000-000000000030";
-    const parentRunId = "20000000-0000-4000-8000-000000000032";
     const childTurnId = "20000000-0000-4000-8000-000000000033";
     const childRunId = "20000000-0000-4000-8000-000000000035";
-    const childAttemptId = "20000000-0000-4000-8000-000000000037";
     await database
       .insertInto("environment_versions")
       .values({
@@ -466,8 +463,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
           environment_version_id: environmentId,
           idempotency_key: "delegated-parent",
           state: "running" as const,
-          current_attempt_id: null,
-          attempt_count: 0,
           started_at: new Date(),
         },
         {
@@ -483,68 +478,29 @@ describe("PostgreSQL Tool Broker ownership", () => {
           environment_version_id: environmentId,
           idempotency_key: "delegated-child",
           state: "queued" as const,
-          current_attempt_id: null,
-          attempt_count: 0,
         },
       ])
-      .executeTakeFirstOrThrow();
-    await database
-      .insertInto("run_attempts")
-      .values([
-        {
-          id: activationAttemptId,
-          tenant_id: tenantId,
-          run_id: parentRunId,
-          attempt_number: 1,
-          state: "running" as const,
-          claim_owner_id: "supervisor-reservation",
-          claim_expires_at: new Date(Date.now() + 60_000),
-          running_at: new Date(),
-        },
-        {
-          id: childAttemptId,
-          tenant_id: tenantId,
-          run_id: childRunId,
-          attempt_number: 1,
-          state: "running" as const,
-          claim_owner_id: "supervisor-reservation",
-          claim_expires_at: new Date(Date.now() + 60_000),
-          running_at: new Date(),
-        },
-      ])
-      .executeTakeFirstOrThrow();
-    await database
-      .updateTable("runs")
-      .set({ current_attempt_id: activationAttemptId, attempt_count: 1 })
-      .where("id", "=", parentRunId)
       .executeTakeFirstOrThrow();
     await database
       .updateTable("runs")
       .set({
         state: "running",
-        current_attempt_id: childAttemptId,
-        attempt_count: 1,
         started_at: new Date(),
       })
       .where("id", "=", childRunId)
       .executeTakeFirstOrThrow();
     await database
-      .updateTable("run_attempts")
+      .updateTable("runs")
       .set({
         lease_id: "20000000-0000-4000-8000-000000000009",
         sandbox_id: activation.assignment.sandboxId,
         fencing_token: 1,
       })
-      .where("id", "in", [activationAttemptId, childAttemptId])
-      .execute();
-    await database
-      .updateTable("run_attempts")
-      .set({ native_writer_anchor_id: activationAttemptId })
-      .where("id", "=", childAttemptId)
+      .where("id", "in", [parentRunId, childRunId])
       .execute();
     await database
       .updateTable("pi_sessions")
-      .set({ lease_epoch: 1, active_writer_id: activationAttemptId })
+      .set({ lease_epoch: 1 })
       .where("id", "=", rootSessionId)
       .execute();
     await database
@@ -554,7 +510,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
         pi_session_id: rootSessionId,
         lease_id: "20000000-0000-4000-8000-000000000009",
         sandbox_id: activation.assignment.sandboxId,
-        writer_id: activationAttemptId,
         fencing_token: 1,
         valid_until: new Date(Date.now() + 60000),
       })
@@ -566,7 +521,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
         tenant_id: tenantId,
         parent_session_id: rootSessionId,
         parent_run_id: parentRunId,
-        parent_attempt_id: activationAttemptId,
         parent_tool_call_id: "subagent-shared",
         root_session_id: rootSessionId,
         root_run_id: parentRunId,
@@ -638,7 +592,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .where("environment_version_id", "=", environmentId)
       .execute();
     expect(reports).toHaveLength(1);
-    expect(reports[0]).toMatchObject({ report, run_id: null, attempt_id: null });
+    expect(reports[0]).toMatchObject({ report, run_id: null });
     const childActivation = {
       ...activation,
       assignment: {
@@ -648,30 +602,28 @@ describe("PostgreSQL Tool Broker ownership", () => {
         turnId: childTurnId,
         executionReference: createExecutionReference(
           "20000000-0000-4000-8000-000000000009",
-          childAttemptId,
+          childRunId,
           1,
         ),
       },
       turnContextSha256: "2".repeat(64),
-      attemptContextSha256: "3".repeat(64),
+      executionContextSha256: "3".repeat(64),
     } as const;
     await expect(repository.reserve(childActivation)).resolves.toEqual({ status: "reserved" });
-    // Persistent machines can reuse a physical binding ID in later Attempts.
-    // Routing must retain exact Attempt/boot identity, not overwrite by VM ID.
+    // A reused machine binding still routes by exact Run and owner boot.
     await repository.registerToolBinding(activation.activationId, activation.assignment);
     await repository.registerToolBinding(activation.activationId, childActivation.assignment);
     const routes = new PostgresToolCommandRoutes(database, "sandbox-domain-0001");
-    const routeScope = { tenantId, attemptId: activationAttemptId, writerId: activationAttemptId };
+    const routeScope = {
+      tenantId,
+      runId: parentRunId,
+      writerId: "20000000-0000-4000-8000-000000000009",
+    };
     const parentRoutes = await routes.find(routeScope, false);
     expect(parentRoutes).toHaveLength(1);
     expect(parentRoutes[0]!.bindingId).toBe(activation.activationId);
     expect(await routes.isAlive(parentRoutes[0]!.instanceId)).toBe(true);
     expect(await routes.find({ ...routeScope, tenantId: crypto.randomUUID() }, false)).toEqual([]);
-    await database
-      .updateTable("run_attempts")
-      .set({ native_writer_anchor_id: activationAttemptId })
-      .where("id", "=", childAttemptId)
-      .execute();
     expect(await routes.find(routeScope, true)).toHaveLength(2);
     await expect(
       database
@@ -784,7 +736,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       ),
     ).rejects.toMatchObject({ code: "ownership_lost" });
     await database
-      .updateTable("run_attempts")
+      .updateTable("runs")
       .set({
         state: "failed",
         failure_code: "test_terminal_run",
@@ -792,7 +744,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         failure_retryable: false,
         settled_at: new Date(),
       })
-      .where("id", "=", activationAttemptId)
+      .where("id", "=", parentRunId)
       .executeTakeFirstOrThrow();
     await database
       .updateTable("runs")

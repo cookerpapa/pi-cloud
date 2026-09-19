@@ -1,9 +1,8 @@
 import type { Database } from "@pi-cloud/database";
 import {
-  countWorkerLeaseFamilies,
   releaseExecutionScope,
   releaseIdleSessionLease,
-} from "@pi-cloud/runtime-core/worker-family-capacity";
+} from "@pi-cloud/runtime-core/session-lease-release";
 import { databaseTime, retryTransaction } from "@pi-cloud/database";
 import {
   transitionSandbox,
@@ -17,7 +16,7 @@ import type {
 } from "@pi-cloud/sandbox-supervisor/sandbox-assignment-inventory";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
-import { transitionCurrentRunAttempt } from "@pi-cloud/runtime-core/run-attempt-state";
+import { transitionCurrentRun } from "@pi-cloud/runtime-core/run-state";
 import { requestExecutionStreamSeal } from "@pi-cloud/runtime-core/execution-stream-seal";
 import { createExecutionReference, parseExecutionReference } from "@pi-cloud/protocol";
 
@@ -164,7 +163,6 @@ export class AssignmentReconciler {
     for (const target of targets) {
       const finalized = await retryTransaction(this.#database, async (tx) => {
         const outcome = await this.#finalizeLease(tx, target, true);
-        if (outcome !== "skipped") await this.#synchronizeCapacity(tx, validDate(this.#clock));
         return outcome;
       });
       if (finalized !== "skipped") result.settledAssignments++;
@@ -266,7 +264,7 @@ export class AssignmentReconciler {
       .select([
         "session_id",
         "lease_id",
-        "attempt_id",
+        "run_id",
         "fencing_token",
         "valid_until",
         "run_id",
@@ -280,7 +278,7 @@ export class AssignmentReconciler {
       sessionId: grant.session_id,
       executionReference: createExecutionReference(
         grant.lease_id,
-        grant.attempt_id,
+        grant.run_id,
         safeInteger(grant.fencing_token, "fencing token"),
       ),
       validUntil: new Date(grant.valid_until),
@@ -301,13 +299,12 @@ export class AssignmentReconciler {
       .selectFrom("turns as turn")
       .innerJoin("sessions as session", "session.id", "turn.session_id")
       .innerJoin("runs as run", "run.turn_id", "turn.id")
-      .innerJoin("run_attempts as attempt", "attempt.id", "run.current_attempt_id")
       .select(["run.id", "session.tenant_id", "session.pi_session_id"])
       .where("turn.id", "=", candidate.turnId)
       .where("session.id", "=", candidate.sessionId)
       .where("run.id", "=", candidate.runId)
-      .where("attempt.id", "=", execution.attemptId)
-      .forNoKeyUpdate(["turn", "session", "run", "attempt"])
+      .where("run.id", "=", execution.runId)
+      .forNoKeyUpdate(["turn", "session", "run"])
       .executeTakeFirst();
     if (!current) return "skipped";
     await transaction
@@ -331,14 +328,14 @@ export class AssignmentReconciler {
       .execute();
     const grant = await transaction
       .selectFrom("active_execution_scopes")
-      .select(["lease_id", "attempt_id", "sandbox_id", "fencing_token", "valid_until"])
+      .select(["lease_id", "run_id", "sandbox_id", "fencing_token", "valid_until"])
       .where("session_id", "=", candidate.sessionId)
       .where(sql<boolean>`(${!requireExpired} or valid_until <= clock_timestamp())`)
       .executeTakeFirst();
     if (
       grant === undefined ||
       grant.lease_id !== execution.leaseId ||
-      grant.attempt_id !== execution.attemptId ||
+      grant.run_id !== execution.runId ||
       grant.sandbox_id !== this.#sandboxId ||
       safeInteger(grant.fencing_token, "final fencing token") !== execution.fencingToken
     ) {
@@ -382,31 +379,13 @@ export class AssignmentReconciler {
 
     const run = await transaction
       .selectFrom("runs as run")
-      .innerJoin("run_attempts as attempt", (join) =>
-        join
-          .onRef("attempt.run_id", "=", "run.id")
-          .onRef("attempt.id", "=", "run.current_attempt_id"),
-      )
-      .select([
-        "run.id as runId",
-        "run.state as runState",
-        "run.row_version as runVersion",
-        "run.current_attempt_id as attemptId",
-        "attempt.state as attemptState",
-      ])
+      .select(["run.id as runId", "run.state as runState", "run.row_version as runVersion"])
       .where("run.tenant_id", "=", session.tenant_id)
       .where("run.session_id", "=", candidate.sessionId)
       .where("run.turn_id", "=", turn.id)
       .where("run.id", "=", candidate.runId)
-      .forUpdate(["run", "attempt"])
+      .forNoKeyUpdate("run")
       .executeTakeFirstOrThrow();
-    if (run.attemptId === null) {
-      throw new AssignmentReconcilerError(
-        "assignment_invariant",
-        "Active assignment had no current run attempt",
-        false,
-      );
-    }
 
     if (!ACTIVE_SESSION_STATES.has(session.state) || !ACTIVE_TURN_STATES.has(turn.state)) {
       throw new AssignmentReconcilerError(
@@ -415,16 +394,14 @@ export class AssignmentReconciler {
         false,
       );
     }
-    await transitionCurrentRunAttempt(
+    await transitionCurrentRun(
       transaction,
       {
         tenantId: session.tenant_id,
         runId: run.runId,
-        attemptId: run.attemptId,
       },
       {
         runState: "failed",
-        attemptState: "failed",
         reason: "assignment_lost_after_ack",
         now,
         failure: {
@@ -444,7 +421,6 @@ export class AssignmentReconciler {
       })
       .where("tenant_id", "=", session.tenant_id)
       .where("run_id", "=", run.runId)
-      .where("attempt_id", "=", run.attemptId)
       .where("state", "=", "reserved")
       .execute();
     await transaction
@@ -514,7 +490,7 @@ export class AssignmentReconciler {
       .executeTakeFirstOrThrow();
     await releaseExecutionScope(tx, {
       tenantId: row.tenant_id,
-      attemptId: ref.attemptId,
+      runId: ref.runId,
       leaseId: ref.leaseId,
       fencingToken: ref.fencingToken,
       now,
@@ -526,6 +502,7 @@ export class AssignmentReconciler {
       .selectFrom("session_leases")
       .selectAll()
       .where("sandbox_id", "=", this.#sandboxId)
+      .where("released_at", "is", null)
       .execute();
     for (const lease of leases)
       await retryTransaction(this.#database, async (tx) => {
@@ -582,7 +559,6 @@ export class AssignmentReconciler {
         .updateTable("sandboxes")
         .set({
           state: transitionSandbox(row.state, "terminated"),
-          active_sessions: 0,
           updated_at: now,
           terminated_at: now,
         })
@@ -591,28 +567,6 @@ export class AssignmentReconciler {
         .executeTakeFirstOrThrow();
     });
     return { ...result, sandboxState: "terminated" };
-  }
-
-  async #synchronizeCapacity(transaction: Transaction<Database>, now: Date): Promise<void> {
-    const sandbox = await transaction
-      .selectFrom("sandboxes")
-      .select(["state"])
-      .where("id", "=", this.#sandboxId)
-      .forNoKeyUpdate()
-      .executeTakeFirstOrThrow();
-    const activeSessions = await countWorkerLeaseFamilies(transaction, this.#sandboxId);
-    let nextState = sandbox.state;
-    if (sandbox.state === "ready" && activeSessions > 0) {
-      nextState = transitionSandbox(sandbox.state, "leased");
-    } else if (sandbox.state === "leased" && activeSessions === 0) {
-      nextState = transitionSandbox(sandbox.state, "ready");
-    }
-    await transaction
-      .updateTable("sandboxes")
-      .set({ state: nextState, active_sessions: activeSessions, updated_at: now })
-      .where("id", "=", this.#sandboxId)
-      .where("state", "=", sandbox.state)
-      .executeTakeFirstOrThrow();
   }
 
   async #beginRetirement(now: Date): Promise<void> {

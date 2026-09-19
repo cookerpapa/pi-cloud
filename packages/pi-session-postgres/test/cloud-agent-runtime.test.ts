@@ -216,7 +216,7 @@ async function withNativeSession(
     )
   ).flat();
   const native = await writer.open(
-    { lane, turnId: crypto.randomUUID(), attemptId: crypto.randomUUID() },
+    { lane, turnId: crypto.randomUUID(), runId: crypto.randomUUID() },
     {
       reader: storage,
       branch: head.leafId

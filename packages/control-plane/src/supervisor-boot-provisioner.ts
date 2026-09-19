@@ -334,7 +334,6 @@ export class SupervisorBootProvisioner {
           boot_id: request.bootId,
           state: "provisioning",
           max_concurrent_sessions: request.maxConcurrentSessions,
-          active_sessions: 0,
           created_at: now,
           updated_at: now,
           terminated_at: null,

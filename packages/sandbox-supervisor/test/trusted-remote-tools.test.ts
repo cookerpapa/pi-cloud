@@ -23,7 +23,7 @@ function createStepCapture() {
       schemaVersion: 2 as const,
       sequence,
       turnContextSha256: TURN_CONTEXT_SHA256,
-      attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
+      executionContextSha256: ATTEMPT_CONTEXT_SHA256,
       activeTools: [...activeTools].sort(),
       worldState: {
         sandbox: { status: "inactive" as const, continuitySha256: null },
@@ -61,7 +61,7 @@ const BASE_CONFIGURATION = {
   activationId: "10000000-0000-4000-8000-000000000001",
   executionReference: EXECUTION_LEASE,
   turnContextSha256: TURN_CONTEXT_SHA256,
-  attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
+  executionContextSha256: ATTEMPT_CONTEXT_SHA256,
   captureStepContext: createStepCapture(),
   remainingToolCalls: 0,
   maximumToolOutputBytes: 1_024,
@@ -376,7 +376,7 @@ describe("trusted remote Agent tools", () => {
     expect(requestBody).toMatchObject({
       toolName: "bash",
       turnContextSha256: TURN_CONTEXT_SHA256,
-      attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
+      executionContextSha256: ATTEMPT_CONTEXT_SHA256,
       stepContextSequence: 2,
       stepContextSha256: capturedSteps[1]!.step.sha256,
     });

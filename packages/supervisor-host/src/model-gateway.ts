@@ -3,7 +3,6 @@ import {
   MODEL_SAMPLING_ATTEMPT_HEADER,
   MODEL_STEP_SEQUENCE_HEADER,
   MODEL_STEP_SHA256_HEADER,
-  parseExecutionReference,
   parseModelSamplingIdentity,
   type AgentModelRuntime,
   type ExecuteTurnCommandMessage,
@@ -53,7 +52,6 @@ type ActiveCapabilityFields = {
   sessionId: string;
   turnId: string;
   runId: string;
-  attemptId: string;
   modelProfileId: string;
   serviceTier: "fast" | null;
   expiresAt: number;
@@ -458,7 +456,7 @@ export class TenantModelGateway {
             ? {}
             : {
                 "pi_cloud.run.id": active.runId,
-                "pi_cloud.attempt.id": active.attemptId,
+                "pi_cloud.attempt.id": active.runId,
                 ...(sampling === undefined
                   ? {}
                   : {
@@ -559,7 +557,6 @@ export class TenantModelGateway {
       sessionId: command.payload.sessionId,
       turnId: command.payload.turnId,
       runId: command.payload.runId,
-      attemptId: parseExecutionReference(command.payload.executionReference).attemptId,
       modelProfileId: command.payload.model.profileId,
       serviceTier: command.payload.model.serviceTier,
       expiresAt,
@@ -860,7 +857,6 @@ export class TenantModelGateway {
         event: "model.transport.timing",
         attributes: {
           runId: active.runId,
-          attemptId: active.attemptId,
           stepSequence: requestSamplingIdentity.stepSequence,
           samplingAttempt: requestSamplingIdentity.samplingAttempt,
           provider: active.provider,

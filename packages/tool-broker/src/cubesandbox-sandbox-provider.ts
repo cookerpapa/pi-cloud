@@ -140,7 +140,6 @@ const METADATA = Object.freeze({
   sessionId: "picloud.session_id",
   turnId: "picloud.turn_id",
   leaseId: "picloud.lease_id",
-  attemptId: "picloud.attempt_id",
   fencingToken: "picloud.fencing_token",
   bindingSha256: "picloud.binding_sha256",
   imageRevision: "picloud.image_revision",
@@ -164,7 +163,6 @@ type CubeAssignmentMetadata = Readonly<{
   sessionId: string;
   turnId: string;
   leaseId: string;
-  attemptId: string;
   fencingToken: number;
   bindingSha256: string;
   imageRevision: string;
@@ -407,7 +405,6 @@ function assignmentMetadata(
     sessionId: assignment.sessionId,
     turnId: assignment.turnId,
     leaseId: execution.leaseId,
-    attemptId: execution.attemptId,
     fencingToken: execution.fencingToken,
     bindingSha256,
     imageRevision,
@@ -427,7 +424,6 @@ function assignmentMetadata(
     [METADATA.sessionId]: assignment.sessionId,
     [METADATA.turnId]: assignment.turnId,
     [METADATA.leaseId]: execution.leaseId,
-    [METADATA.attemptId]: execution.attemptId,
     [METADATA.fencingToken]: String(execution.fencingToken),
     [METADATA.bindingSha256]: bindingSha256,
     [METADATA.imageRevision]: imageRevision,
@@ -512,7 +508,7 @@ function currentAssignmentMetadata(
         "sessionId",
         "turnId",
         "leaseId",
-        "attemptId",
+        "runId",
         "bindingSha256",
         "imageRevision",
       ] as const;
@@ -542,7 +538,7 @@ function currentAssignmentMetadata(
   const current = candidates.filter(
     (candidate) =>
       candidate.leaseId === values[METADATA.leaseId] &&
-      candidate.attemptId === values[METADATA.attemptId] &&
+      candidate.runId === values[METADATA.runId] &&
       candidate.fencingToken === topFencingToken,
   );
   if (current.length !== 1) {
@@ -568,7 +564,7 @@ function assignmentFromMetadata(
   }
   if (
     values[METADATA.leaseId] === undefined ||
-    values[METADATA.attemptId] === undefined ||
+    values[METADATA.runId] === undefined ||
     values[METADATA.fencingToken] === undefined
   ) {
     // Unmanaged or obsolete Cube metadata is never adopted as current authority.
@@ -595,7 +591,7 @@ function assignmentFromMetadata(
     turnId: current.turnId,
     executionReference: createExecutionReference(
       current.leaseId,
-      current.attemptId,
+      current.runId,
       current.fencingToken,
     ),
   };
@@ -1144,7 +1140,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         activationId: handle.activationId,
         operationId: input.operationId,
         turnContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
-        attemptContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
+        executionContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
         stepContextSequence: 1,
         stepContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
         toolName: "read",
@@ -1179,7 +1175,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         activationId: handle.activationId,
         operationId: input.operationId,
         turnContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
-        attemptContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
+        executionContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
         stepContextSequence: 1,
         stepContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
         toolName: "write",

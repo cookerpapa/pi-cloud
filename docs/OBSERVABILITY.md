@@ -86,7 +86,7 @@ Idle scans and rolled-back claims remain in `pi_cloud_run_claim_seconds` and do
 not enter these successful-claim stage samples. Compare stage sums over the
 same measurement interval before changing admission rules or pool sizes.
 
-`run.claim.timing` records each successful admission's Run/Attempt identity,
+`run.claim.timing` records each successful admission's Run identity,
 start time, monotonic duration and the existing claim subphases. Bounded
 `run.preparation.timing` records correlate started/running commits, log opening,
 Session/model preparation and initial World State with that Run. They contain no

@@ -10,6 +10,7 @@ import {
   parseCloudToolCapabilitySnapshot,
   parseExecutionReference,
   type CloudToolCapabilitySnapshot,
+  type RunState,
 } from "@pi-cloud/protocol";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { sql, type Kysely } from "kysely";
@@ -135,7 +136,7 @@ function requestSha256(input: StartCloudSubagentJobInput, tools: readonly string
         agentName: input.agentName,
         contextMode: input.contextMode,
         contextAnchor: input.contextAnchor,
-        parentExecutionId: parentExecution.attemptId,
+        parentExecutionId: parentExecution.runId,
         parentRunId: input.parentRunId,
         parentSessionId: input.parentSessionId,
         parentToolCallId: input.parentToolCallId,
@@ -173,7 +174,7 @@ function intersectTools(
   return requestedTools.filter((tool) => parentSet.has(tool));
 }
 
-function mapRunState(state: string): SubagentExecutionState {
+function mapRunState(state: RunState): SubagentExecutionState {
   switch (state) {
     case "completed":
       return "completed";
@@ -181,12 +182,12 @@ function mapRunState(state: string): SubagentExecutionState {
     case "timed_out":
       return "failed";
     case "cancelled":
-    case "superseded":
       return "cancelled";
     case "queued":
-    case "claimed":
       return "queued";
-    default:
+    case "running":
+    case "settling":
+    case "cancel_requested":
       return "running";
   }
 }
@@ -260,12 +261,6 @@ export class PostgresSubagentJobProvider {
     const pending = await this.#database.transaction().execute(async (transaction) => {
       const parent = await transaction
         .selectFrom("runs as parent_run")
-        .innerJoin("run_attempts as parent_attempt", (join) =>
-          join
-            .onRef("parent_attempt.tenant_id", "=", "parent_run.tenant_id")
-            .onRef("parent_attempt.run_id", "=", "parent_run.id")
-            .onRef("parent_attempt.id", "=", "parent_run.current_attempt_id"),
-        )
         .innerJoin("sessions as parent_session", (join) =>
           join
             .onRef("parent_session.tenant_id", "=", "parent_run.tenant_id")
@@ -284,16 +279,15 @@ export class PostgresSubagentJobProvider {
         .select([
           "parent_run.state as runState",
           "parent_run.turn_id as parentTurnId",
-          "parent_run.current_attempt_id as currentAttemptId",
+          "parent_run.id as runId",
           "parent_run.project_id as projectId",
           "parent_run.workspace_id as workspaceId",
           "parent_run.environment_version_id as environmentVersionId",
           "parent_run.agent_revision_id as agentRevisionId",
           "parent_run.tool_capability_snapshot as parentTools",
-          "parent_attempt.state as attemptState",
-          "parent_attempt.lease_id as executionReferenceId",
-          "parent_attempt.fencing_token as fencingToken",
-          "parent_attempt.output_sealed_at as outputSealedAt",
+          "parent_run.lease_id as executionReferenceId",
+          "parent_run.fencing_token as fencingToken",
+          "parent_run.output_sealed_at as outputSealedAt",
           "parent_session.id as sessionId",
           "parent_session.pi_session_id as piSessionId",
           "parent_session.desired_model_profile_id as modelProfileId",
@@ -316,7 +310,7 @@ export class PostgresSubagentJobProvider {
         .where("parent_run.tenant_id", "=", input.tenantId)
         .where("parent_run.id", "=", input.parentRunId)
         .where("parent_run.session_id", "=", input.parentSessionId)
-        .forUpdate(["parent_run", "parent_attempt", "parent_session"])
+        .forNoKeyUpdate(["parent_run", "parent_session"])
         .executeTakeFirst();
       if (parent === undefined) {
         throw new PostgresSubagentJobError("parent_not_found", "Parent Agent Run was not found");
@@ -365,10 +359,9 @@ export class PostgresSubagentJobProvider {
       }
 
       if (
-        parent.currentAttemptId !== parentGrant.attemptId ||
+        parent.runId !== parentGrant.runId ||
         parent.outputSealedAt !== null ||
         parent.runState !== "running" ||
-        parent.attemptState !== "running" ||
         parent.executionReferenceId !== parentGrant.leaseId ||
         Number(parent.fencingToken) !== parentGrant.fencingToken
       ) {
@@ -563,8 +556,6 @@ export class PostgresSubagentJobProvider {
           conversation_base_seq: 0,
           idempotency_key: idempotencyKey,
           state: "queued",
-          current_attempt_id: null,
-          attempt_count: 0,
           stop_reason: null,
           failure_code: null,
           failure_message: null,
@@ -587,7 +578,6 @@ export class PostgresSubagentJobProvider {
           tenant_id: input.tenantId,
           parent_session_id: input.parentSessionId,
           parent_run_id: input.parentRunId,
-          parent_attempt_id: parentGrant.attemptId,
           parent_tool_call_id: input.parentToolCallId,
           root_session_id: treeContext.rootSessionId,
           root_run_id: treeContext.rootRunId,
@@ -682,22 +672,15 @@ export class PostgresSubagentJobProvider {
       return await this.#database.transaction().execute(async (transaction) => {
         const authority = await transaction
           .selectFrom("runs as parent_run")
-          .innerJoin("run_attempts as parent_attempt", (join) =>
-            join
-              .onRef("parent_attempt.tenant_id", "=", "parent_run.tenant_id")
-              .onRef("parent_attempt.run_id", "=", "parent_run.id")
-              .onRef("parent_attempt.id", "=", "parent_run.current_attempt_id"),
-          )
           .select([
             "parent_run.state as runState",
-            "parent_run.current_attempt_id as attemptId",
-            "parent_attempt.state as attemptState",
-            "parent_attempt.lease_id as executionReferenceId",
-            "parent_attempt.fencing_token as fencingToken",
+            "parent_run.id as runId",
+            "parent_run.lease_id as executionReferenceId",
+            "parent_run.fencing_token as fencingToken",
           ])
           .where("parent_run.tenant_id", "=", input.tenantId)
           .where("parent_run.id", "=", input.parentRunId)
-          .forUpdate(["parent_run", "parent_attempt"])
+          .forNoKeyUpdate("parent_run")
           .executeTakeFirst();
         const execution = await transaction
           .selectFrom("subagent_executions")
@@ -711,8 +694,7 @@ export class PostgresSubagentJobProvider {
         }
         if (
           authority?.runState !== "running" ||
-          authority.attemptState !== "running" ||
-          authority.attemptId !== parentGrant.attemptId ||
+          authority.runId !== parentGrant.runId ||
           authority.executionReferenceId !== parentGrant.leaseId ||
           Number(authority.fencingToken) !== parentGrant.fencingToken
         ) {
@@ -831,8 +813,9 @@ export class PostgresSubagentJobProvider {
       )
       .select([
         "execution.id as executionId",
-        sql<boolean>`exists(select 1 from run_attempts a where a.id=child_run.current_attempt_id
-          and a.output_sealed_at is null)`.as("awaitingSeal"),
+        sql<boolean>`child_run.lease_id is not null and child_run.output_sealed_at is null`.as(
+          "awaitingSeal",
+        ),
         "execution.child_session_id as childSessionId",
         "execution.child_run_id as childRunId",
         "execution.sandbox_mode as sandboxMode",
@@ -1074,13 +1057,7 @@ export class PostgresSubagentJobProvider {
       )
       .select(["execution.tenant_id as tenantId", "execution.id"])
       .where("execution.state", "in", ["queued", "running"])
-      .where("child_run.state", "in", [
-        "completed",
-        "failed",
-        "cancelled",
-        "timed_out",
-        "superseded",
-      ])
+      .where("child_run.state", "in", ["completed", "failed", "cancelled", "timed_out"])
       .orderBy("child_run.settled_at", "asc")
       .limit(limit)
       .execute();

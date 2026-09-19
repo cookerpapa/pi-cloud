@@ -10,7 +10,7 @@ by its registered identity and durable log position, including lost commit
 replies (ADR-0178). No uncommitted recovery floor is published as success.
 
 The same PG transaction that projects a reconstructible native message or Tool
-intent advances display-event and native-log coverage positions on its Attempt. This is
+intent advances display-event and native-log coverage positions on its Run. This is
 projection metadata, not another transcript, Worker receipt or per-delta write.
 Conversation queries include complete native messages and Tool intents from an
 active Run; they do not invent a terminal or claim a proposed Tool has executed.

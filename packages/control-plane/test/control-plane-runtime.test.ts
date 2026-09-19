@@ -167,7 +167,6 @@ describe.sequential("remote control-plane runtime composition", () => {
             projectId: project.projectId,
             workspaceId: project.workspaceId,
             runId: turn.runId,
-            attemptId: randomUUID(),
             sandboxId: IDS.sandbox,
             text,
           },

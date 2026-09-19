@@ -10,7 +10,6 @@ function fixture() {
     sessionId: crypto.randomUUID(),
     turnId: crypto.randomUUID(),
     runId: crypto.randomUUID(),
-    attemptId: crypto.randomUUID(),
     writerId: crypto.randomUUID(),
     piSessionId: crypto.randomUUID(),
     fencingToken: 1,

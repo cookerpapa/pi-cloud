@@ -43,7 +43,7 @@ import type {
 } from "./agent-turn-runtime.ts";
 import { createTrustedRemoteAgentTools } from "./trusted-remote-tools.ts";
 import {
-  createCloudAttemptContext,
+  createCloudExecutionContext,
   createCloudStepContext,
   createCloudTurnContext,
 } from "./cloud-context.ts";
@@ -209,7 +209,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         attributes: {
           "pi_cloud.run.id": command.payload.runId,
           "pi_cloud.execution.id": parseExecutionReference(command.payload.executionReference)
-            .attemptId,
+            .runId,
           "pi_cloud.session.id": command.payload.sessionId,
         },
         run: () => this.#run(command, publishEvent, signal, slot.resolve),
@@ -334,7 +334,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     const scenario =
       typeof this.#scenario === "function" ? this.#scenario({ command }) : this.#scenario;
     const toolAssignment = assignment(command, this.#runtimeIdentity);
-    const cloudAttempt = createCloudAttemptContext({
+    const cloudExecution = createCloudExecutionContext({
       command,
       runtimeIdentity: this.#runtimeIdentity,
       turnContextSha256: cloudTurn.sha256,
@@ -345,7 +345,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       requestId: this.#idGenerator(),
       assignment: toolAssignment,
       turnContextSha256: cloudTurn.sha256,
-      attemptContextSha256: cloudAttempt.sha256,
+      executionContextSha256: cloudExecution.sha256,
       allowedTools: cloudTurn.context.tools.names,
       executionMode: command.payload.executionMode,
       ...(command.payload.computeSessionId === undefined
@@ -504,7 +504,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         sandboxContinuity: {
           continuityId:
             activation?.continuityId ??
-            parseExecutionReference(command.payload.executionReference).attemptId,
+            parseExecutionReference(command.payload.executionReference).runId,
           continuity: activation?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,
           workspaceBindingSha256: cloudTurn.workspaceBindingSha256,
@@ -559,7 +559,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                   const step = createCloudStepContext({
                     sequence: (stepSequence += 1),
                     turnContextSha256: cloudTurn.sha256,
-                    attemptContextSha256: cloudAttempt.sha256,
+                    executionContextSha256: cloudExecution.sha256,
                     allowedTools: cloudTurn.context.tools.names,
                     activeTools: [],
                     worldState: world.worldState,
@@ -653,7 +653,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             },
             executionReference: toolAssignment.executionReference,
             turnContextSha256: cloudTurn.sha256,
-            attemptContextSha256: cloudAttempt.sha256,
+            executionContextSha256: cloudExecution.sha256,
             allowedTools: cloudTurn.context.tools.names,
             captureStepContext: (activeTools, purpose = "agent") =>
               captureSamplingStep(
@@ -663,7 +663,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                   const step = createCloudStepContext({
                     sequence: (stepSequence += 1),
                     turnContextSha256: cloudTurn.sha256,
-                    attemptContextSha256: cloudAttempt.sha256,
+                    executionContextSha256: cloudExecution.sha256,
                     allowedTools: cloudTurn.context.tools.names,
                     activeTools,
                     worldState: captured.worldState,

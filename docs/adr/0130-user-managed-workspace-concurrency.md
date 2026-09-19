@@ -48,7 +48,7 @@ tenant an arbitrary active ceiling.
 A terminal and Agents sharing one Cube can race on files and process-visible
 resources. Different Sessions can reason and execute Tools concurrently in the
 Workspace's one physical runtime. PiCloud records
-independent Run/Attempt evidence and does not promise merge semantics or restore
+independent Run evidence and does not promise merge semantics or restore
 a lost update caused by terminal/external edits.
 
 An exclusive machine's physical lifecycle remains independent from its

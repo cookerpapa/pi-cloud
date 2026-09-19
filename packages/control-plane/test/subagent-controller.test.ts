@@ -4,6 +4,7 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import {
   createExecutionReference,
+  parseExecutionReference,
   type SubagentHostRequest,
   type SubagentControlResult,
   type SubagentControlRequest,
@@ -22,12 +23,7 @@ import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { SubagentController } from "../src/subagent-controller.ts";
 
 let pg: PGlite, socket: PGLiteSocketServer, db: Kysely<Database>;
-let tenantId: string,
-  sessionId: string,
-  runId: string,
-  turnId: string,
-  attemptId: string,
-  lease: string;
+let tenantId: string, sessionId: string, runId: string, turnId: string, lease: string;
 let writer: NativeSessionWriter, parent: NativeLaneSessionStorage;
 const hosts: SubagentController[] = [],
   results = new Map<string, SubagentControlResult>();
@@ -76,10 +72,9 @@ function command(
       sessionId,
       runId,
       turnId,
-      attemptId,
       fencingToken: 1,
       piSessionId: sessionId,
-      writerId: attemptId,
+      writerId: parseExecutionReference(lease).leaseId,
     },
     executionReference: lease,
     toolCallId: workflowId,
@@ -152,40 +147,40 @@ beforeAll(async () => {
     await db.selectFrom("runs").select("turn_id").where("id", "=", runId).executeTakeFirstOrThrow()
   ).turn_id;
   const sandboxId = crypto.randomUUID();
-  attemptId = crypto.randomUUID();
   const leaseId = crypto.randomUUID();
-  lease = createExecutionReference(leaseId, attemptId, 1);
+  lease = createExecutionReference(leaseId, runId, 1);
   await db
     .insertInto("sandboxes")
     .values({
       id: sandboxId,
       supervisor_id: "test-worker",
       boot_id: crypto.randomUUID(),
-      state: "leased",
+      state: "ready",
       max_concurrent_sessions: 8,
-      active_sessions: 1,
+
       terminated_at: null,
     })
     .execute();
   await db
-    .insertInto("run_attempts")
-    .values({
-      id: attemptId,
-      tenant_id: tenantId,
-      run_id: runId,
-      attempt_number: 1,
+    .updateTable("runs")
+    .set({
       state: "running",
-      claim_owner_id: "test-worker",
-      claim_expires_at: new Date(Date.now() + 600000),
       sandbox_id: sandboxId,
       lease_id: leaseId,
       fencing_token: 1,
     })
+    .where("id", "=", runId)
     .execute();
   await db
-    .updateTable("runs")
-    .set({ state: "running", current_attempt_id: attemptId, attempt_count: 1 })
-    .where("id", "=", runId)
+    .insertInto("session_leases")
+    .values({
+      tenant_id: tenantId,
+      pi_session_id: sessionId,
+      lease_id: leaseId,
+      sandbox_id: sandboxId,
+      fencing_token: 1,
+      valid_until: new Date(Date.now() + 600000),
+    })
     .execute();
   await db.updateTable("turns").set({ state: "running" }).where("id", "=", turnId).execute();
   const reader = new PostgresPiSessionStorage({ database: db, tenantId, sessionId });
@@ -197,7 +192,7 @@ beforeAll(async () => {
     .where("id", "=", sessionId)
     .executeTakeFirstOrThrow();
   writer = new NativeSessionWriter({
-    id: attemptId,
+    id: leaseId,
     metadata: await reader.getMetadata(),
     nextSequence: Number(seq.next_seq),
     lanes: await reader.getLanes(),
@@ -206,7 +201,7 @@ beforeAll(async () => {
     fail: async () => {},
   });
   parent = await writer.open(
-    { lane: "main", turnId, attemptId },
+    { lane: "main", turnId, runId },
     { branch: [], reader, openOperations: [] },
     {
       publish: (items) =>
@@ -338,83 +333,38 @@ describe("ordered Subagent admission and delivery", () => {
       .execute();
     expect(rows).toHaveLength(0);
   });
-  it("delivers active follow-up once, redelivers with the same input ID after an Attempt change, and refuses a finished task", async () => {
+  it("waits for admission, delivers follow-up once and refuses a finished task", async () => {
     const host = controller(),
       fact = start("mailbox");
     await consume(host, fact);
     const child = (await response(fact.factId)).result!;
     const original = await db
-      .selectFrom("run_attempts")
+      .selectFrom("runs")
       .selectAll()
-      .where("id", "=", attemptId)
+      .where("id", "=", runId)
       .executeTakeFirstOrThrow();
-    async function runningAttempt() {
-      const id = crypto.randomUUID();
-      await db
-        .insertInto("run_attempts")
-        .values({
-          id,
-          tenant_id: tenantId,
-          run_id: child.childRunId as string,
-          attempt_number: 1,
-          state: "running",
-          claim_owner_id: "test-worker",
-          claim_expires_at: new Date(Date.now() + 600000),
-          sandbox_id: original.sandbox_id,
-          lease_id: crypto.randomUUID(),
-          fencing_token: 2,
-        })
-        .execute();
-      await db
-        .updateTable("runs")
-        .set({ state: "running", current_attempt_id: id, attempt_count: 1 })
-        .where("id", "=", child.childRunId as string)
-        .execute();
-      return id;
-    }
-    const firstAttempt = await runningAttempt();
-    const bound = await db
-      .selectFrom("run_attempts")
-      .select(["lease_id", "sandbox_id", "fencing_token"])
-      .where("id", "=", firstAttempt)
-      .executeTakeFirstOrThrow();
-    await db
-      .updateTable("run_attempts")
-      .set({ lease_id: null, sandbox_id: null, fencing_token: null })
-      .where("id", "=", firstAttempt)
-      .execute();
     const send = command(
       { action: "send", target: "mailbox", message: "Follow up code", delivery: "follow_up" },
       fact.workflowId,
     );
-    await db
-      .updateTable("runs")
-      .set({ state: "restoring" })
-      .where("id", "=", child.childRunId as string)
-      .execute();
     await consume(host, send);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(results.has(send.factId)).toBe(false);
     await db
       .updateTable("runs")
-      .set({ state: "running" })
+      .set({
+        state: "running",
+        started_at: new Date(),
+        sandbox_id: original.sandbox_id,
+        lease_id: original.lease_id,
+        fencing_token: original.fencing_token,
+      })
       .where("id", "=", child.childRunId as string)
       .execute();
-    await db.updateTable("run_attempts").set(bound).where("id", "=", firstAttempt).execute();
     host.wake();
     expect((await response(send.factId)).result?.state).toBe("accepted");
     await consume(host, send);
     expect(inputs.filter((input) => input.requestId === send.factId)).toHaveLength(1);
-    await db
-      .updateTable("run_attempts")
-      .set({ attempt_number: 2 })
-      .where("id", "=", firstAttempt)
-      .execute();
-    await runningAttempt();
-    host.wake();
-    await vi.waitFor(() =>
-      expect(inputs.filter((input) => input.requestId === send.factId)).toHaveLength(2),
-    );
     expect(
       inputs
         .filter((input) => input.requestId === send.factId)
@@ -507,7 +457,6 @@ describe("ordered Subagent admission and delivery", () => {
           id: c.factId,
           tenant_id: tenantId,
           run_id: runId,
-          attempt_id: attemptId,
           partition: 0,
           command: c as unknown as Record<string, unknown>,
           delivered_at: null,

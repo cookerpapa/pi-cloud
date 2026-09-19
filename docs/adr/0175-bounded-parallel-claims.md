@@ -8,10 +8,10 @@ path; it adds no scheduler, connection pool, lease or durable state.
 
 Until a claim has committed and its physical Session is known, it conservatively
 reserves one possible new family and one possible Lane in each active family.
-Recompute admission before launching each probe. PG still makes the final atomic
-capacity/ownership decision, enforces same-Lane ordering and predecessor closure,
-and binds claim/lease/publication together (ADR-0174). A local reservation is a
-bounded scheduling hint, not a second authority. Database pool limits do not grow.
+Recompute admission before launching each probe. Local reservations own capacity;
+PG makes the atomic execution-ownership decision, enforces Lane readiness and
+binds Run/lease/publication together (ADR-0180). Local capacity cannot override
+another Session owner. Database pool limits do not grow.
 
 Release a pending reservation exactly once: on committed claim notification or
 on unclaimed completion/failure. Track executions before invoking the executor.

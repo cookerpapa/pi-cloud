@@ -181,7 +181,7 @@ function createRequest(
     toolRoot: "/workspace",
     assignment: assigned,
     turnContextSha256: STEP_CONTEXT_SHA256,
-    attemptContextSha256: STEP_CONTEXT_SHA256,
+    executionContextSha256: STEP_CONTEXT_SHA256,
     allowedTools: ["read", "write", "edit", "bash"],
     executionMode: "elastic",
     environment: {
@@ -209,7 +209,7 @@ function operation(
     activationId,
     operationId: randomUUID(),
     turnContextSha256: STEP_CONTEXT_SHA256,
-    attemptContextSha256: STEP_CONTEXT_SHA256,
+    executionContextSha256: STEP_CONTEXT_SHA256,
     stepContextSequence: 1,
     stepContextSha256: STEP_CONTEXT_SHA256,
     toolName: "bash",

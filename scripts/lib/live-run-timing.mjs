@@ -184,11 +184,12 @@ export function runStageTiming(sample, requests) {
   };
 }
 
-/** Claimed-to-settled overlap, not an inference from simultaneous POSTs. */
+/** Admitted-to-settled overlap, not an inference from simultaneous POSTs.
+ * acceptedToAdmissionMs includes queueing and the admission transaction. */
 export function maximumRunOverlap(evidence) {
   const boundaries = evidence
     .flatMap((row) => [
-      { at: row.queuedWallAt + row.queueWaitMs, delta: 1 },
+      { at: row.queuedWallAt + row.acceptedToAdmissionMs, delta: 1 },
       { at: row.queuedWallAt + row.serverElapsedMs, delta: -1 },
     ])
     .sort((a, b) => a.at - b.at || a.delta - b.delta);

@@ -3,7 +3,7 @@
 Status: accepted, 2026-09-19. Supersedes the separate started/running/opening
 boundaries in ADR-0174 and ADR-0163; other ownership and closure rules remain.
 
-The API still commits input independently. Worker admission commits the Attempt,
+The API still commits input independently. Worker admission commits Run binding,
 Session lease, publication scope and running Turn/Session state together. The
 Worker then prepares the local Runner and native context without another started
 or running transaction. Running means admitted, including context preparation;
@@ -11,7 +11,7 @@ it does not prove a provider request or Tool has begun.
 
 After admission, even a failure before local preparation requires ordered
 closure. Remove output-free pre-start requeue: uncertainty must not create a
-second Attempt or bypass a seal. An uncertain admission COMMIT can confirm only
+second execution or bypass a seal. An uncertain admission COMMIT can confirm only
 its exact current admission; otherwise owner reconciliation resolves it. Keep
 positive exit evidence, cancellation, family ownership and Tool UNKNOWN/no replay.
 

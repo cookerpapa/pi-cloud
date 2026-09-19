@@ -26,7 +26,7 @@ export class PostgresToolCommandRoutes implements ToolCommandRoutes {
     let query = this.database
       .selectFrom("tool_broker_binding_routes as route")
       .innerJoin("tool_broker_instances as owner", "owner.instance_id", "route.owner_instance_id")
-      .innerJoin("run_attempts as attempt", "attempt.id", "route.attempt_id")
+      .innerJoin("runs as run", "run.id", "route.run_id")
       .select([
         "route.binding_id as bindingId",
         "owner.instance_id as instanceId",
@@ -36,8 +36,8 @@ export class PostgresToolCommandRoutes implements ToolCommandRoutes {
     if (this.sandboxDomainId)
       query = query.where("owner.sandbox_domain_id", "=", this.sandboxDomainId);
     query = wholeWriter
-      ? query.where("attempt.native_writer_id", "=", scope.writerId)
-      : query.where("route.attempt_id", "=", scope.attemptId);
+      ? query.where("run.lease_id", "=", scope.writerId)
+      : query.where("route.run_id", "=", scope.runId);
     return query.execute();
   }
 

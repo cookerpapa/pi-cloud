@@ -21,7 +21,6 @@ function command(): AcceptedToolCommand {
       sessionId: crypto.randomUUID(),
       turnId: crypto.randomUUID(),
       runId: crypto.randomUUID(),
-      attemptId: crypto.randomUUID(),
       leaseId: crypto.randomUUID(),
       fencingToken: 1,
       piSessionId: crypto.randomUUID(),
@@ -33,7 +32,7 @@ function command(): AcceptedToolCommand {
       activationId: crypto.randomUUID(),
       operationId: crypto.randomUUID(),
       turnContextSha256: "a".repeat(64),
-      attemptContextSha256: "b".repeat(64),
+      executionContextSha256: "b".repeat(64),
       stepContextSequence: 1,
       stepContextSha256: "c".repeat(64),
       toolName: "bash",
@@ -46,11 +45,13 @@ function command(): AcceptedToolCommand {
   };
 }
 const lease = (c: AcceptedToolCommand) =>
-  createExecutionReference(c.scope.leaseId, c.scope.attemptId, c.scope.fencingToken);
-const record = <T extends { kind: string; scope: { attemptId: string } }>(
-  fact: T,
-  offset = 0n,
-) => ({ fact, topic: "test", partition: 0, offset });
+  createExecutionReference(c.scope.leaseId, c.scope.runId, c.scope.fencingToken);
+const record = <T extends { kind: string; scope: { runId: string } }>(fact: T, offset = 0n) => ({
+  fact,
+  topic: "test",
+  partition: 0,
+  offset,
+});
 const output = (c: AcceptedToolCommand): ToolSandboxOperationResponse => ({
   toolBrokerProtocolVersion: 1,
   type: "tool_sandbox.operation_result",
@@ -113,7 +114,7 @@ describe("Kafka-driven Tool command execution", () => {
       earlier.request.activationId,
       earlier.request.operationId,
     );
-    const later = { ...earlier, scope: { ...earlier.scope, attemptId: crypto.randomUUID() } };
+    const later = { ...earlier, scope: { ...earlier.scope, runId: crypto.randomUUID() } };
     // A persistent machine can lend its physical binding ID to the next Run;
     // the old retry body may still be present until its receipt/seal is routed.
     f.own(later);
@@ -214,7 +215,7 @@ describe("Kafka-driven Tool command execution", () => {
     expect(f.consumer.statistics().retainedResultBytes).toBeGreaterThan(0);
     // A UI event and another execution's same tool ID are not acknowledgements.
     await f.consumer.consume(record({ kind: "agent_event", scope: a.scope }));
-    for (const field of ["tenantId", "sessionId", "runId", "turnId", "attemptId"] as const) {
+    for (const field of ["tenantId", "sessionId", "runId", "turnId", "runId"] as const) {
       const other = { ...receipt(a), scope: { ...a.scope, [field]: crypto.randomUUID() } };
       await f.consumer.consume(record(other));
     }

@@ -23,7 +23,7 @@ import {
   type PiSessionMutationPublisher,
 } from "./session-mutation.ts";
 
-export type NativeLaneScope = Readonly<{ lane: string; turnId: string; attemptId: string }>;
+export type NativeLaneScope = Readonly<{ lane: string; turnId: string; runId: string }>;
 export type NativeLaneSeed = Readonly<{
   branch: readonly Entry[];
   openOperations: readonly { record: OperationStartedRecord; turnId: string | null }[];

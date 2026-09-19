@@ -49,10 +49,15 @@ This covers PG commit succeeding before Tool routing was acknowledged.
 Replayed native appends are idempotent; effect receivers retain operation IDs and
 applied log positions. A new executor boot cannot adopt old Tool bindings.
 
-First closure also advances Lane readiness in that PG transaction. The Attempt's
+First closure also advances Lane readiness in that PG transaction. The Run's
 first-seal trigger decrements its family's unsealed count; duplicate projection
 does neither twice. Input acceptance and readiness advancement serialize on the
 product Session row. Lost wake-up notifications cannot lose committed readiness.
+
+The native writer is the Session lease incarnation. Released lease rows retain
+writer-wide cutoff evidence; release does not erase that evidence or authorize
+renewal. Per-Run seals and the shared writer cutoff remain distinct: stopping one
+healthy Lane must not invalidate siblings, while uncertain shared writes must.
 
 There is no opening marker. First native projection also commits the recovery
 floor; a first display/control-only record commits its floor before delivery.

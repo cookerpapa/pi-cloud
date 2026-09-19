@@ -322,7 +322,7 @@ export class SourceControlIssueCoordinator {
       await this.#complete(job);
       return;
     }
-    if (["failed", "cancelled", "timed_out", "superseded"].includes(run.state)) {
+    if (["failed", "cancelled", "timed_out"].includes(run.state)) {
       await this.#fail(job, {
         code: run.failure_code ?? `run_${run.state}`,
         message: run.failure_message ?? `PiCloud Run ended in state ${run.state}`,

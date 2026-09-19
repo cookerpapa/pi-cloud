@@ -19,7 +19,7 @@ import type {
   TurnExecutionReference,
   TurnExecutionRequest,
 } from "./run-executor.ts";
-import { transitionCurrentRunAttempt } from "./run-attempt-state.ts";
+import { transitionCurrentRun } from "./run-state.ts";
 import { requestExecutionStreamSeal } from "./execution-stream-seal.ts";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
@@ -132,8 +132,6 @@ type CancellationLifecycleRows = {
   sessionState: SessionState;
   controlAttempts: number;
   runState: import("@pi-cloud/domain").RunState;
-  runAttemptState: import("@pi-cloud/domain").RunAttemptState;
-  currentAttemptId: string | null;
 };
 
 type CancellationFailure = {
@@ -356,11 +354,6 @@ export class RunCancellationExecutor {
           "agent_definition.id",
           "agent_revision.definition_id",
         )
-        .innerJoin("run_attempts as run_attempt", (join) =>
-          join
-            .onRef("run_attempt.run_id", "=", "run.id")
-            .onRef("run_attempt.id", "=", "run.current_attempt_id"),
-        )
         .innerJoin("environment_versions as environment", (join) =>
           join
             .onRef("environment.tenant_id", "=", "run.tenant_id")
@@ -404,9 +397,6 @@ export class RunCancellationExecutor {
           "run.sandbox_profile_key as sandboxProfileKey",
           "run.working_directory as workingDirectory",
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
-          "run_attempt.id as runAttemptId",
-          "run_attempt.native_writer_id as piSessionWriterId",
-          "run_attempt.attempt_number as runAttemptNumber",
           "environment.id as environmentVersionId",
           "environment.version_number as environmentVersionNumber",
           "environment.profile_key as environmentProfileKey",
@@ -424,7 +414,7 @@ export class RunCancellationExecutor {
         .orderBy("cancellation.created_at", "asc")
         .orderBy("cancellation.id", "asc")
         .limit(1)
-        .forNoKeyUpdate(["cancellation", "turn", "session_row", "run", "run_attempt"])
+        .forNoKeyUpdate(["cancellation", "turn", "session_row", "run"])
         .skipLocked()
         .executeTakeFirst();
       if (row === undefined) return undefined;
@@ -481,11 +471,8 @@ export class RunCancellationExecutor {
             sessionId: row.sessionId,
             piSessionId: row.piSessionId,
             piSessionLane: row.piSessionLane,
-            piSessionWriterId: row.piSessionWriterId,
             runId: row.runId,
             turnId: row.turnId,
-            attemptId: row.runAttemptId,
-            attemptNumber: row.runAttemptNumber,
             agent: {
               revisionId: row.agentRevisionId,
               definitionKey: row.agentDefinitionKey,
@@ -538,7 +525,7 @@ export class RunCancellationExecutor {
       const activePair = rows.turnState === "running" && rows.sessionState === "running";
       if (
         rows.cancellationTurnControlRequestState !== "dispatched" ||
-        !["provisioning", "restoring", "running", "settling"].includes(rows.runState) ||
+        !["running", "settling"].includes(rows.runState) ||
         !activePair
       ) {
         throw new TurnCancellationBackendError(
@@ -567,16 +554,14 @@ export class RunCancellationExecutor {
         claim.request.target,
         acknowledgement,
       );
-      await transitionCurrentRunAttempt(
+      await transitionCurrentRun(
         transaction,
         {
           tenantId: claim.request.target.tenantId,
           runId: claim.request.target.runId,
-          attemptId: claim.request.target.attemptId,
         },
         {
           runState: "cancel_requested",
-          attemptState: "cancel_requested",
           reason: `cancellation_${claim.request.reason}`,
           now,
           heartbeat: true,
@@ -657,20 +642,18 @@ export class RunCancellationExecutor {
       );
       if (result.lastEventSeq !== undefined) {
         const boundary = await transaction
-          .updateTable("run_attempts")
+          .updateTable("runs")
           .set({ last_event_seq: result.lastEventSeq, updated_at: now })
           .where("tenant_id", "=", claim.request.target.tenantId)
-          .where("run_id", "=", claim.request.target.runId)
-          .where("id", "=", claim.request.target.attemptId)
+          .where("id", "=", claim.request.target.runId)
           .where("last_event_seq", "<=", String(result.lastEventSeq))
           .executeTakeFirst();
         if (boundary.numUpdatedRows !== 1n) {
           const existing = await transaction
-            .selectFrom("run_attempts")
+            .selectFrom("runs")
             .select("last_event_seq")
             .where("tenant_id", "=", claim.request.target.tenantId)
-            .where("run_id", "=", claim.request.target.runId)
-            .where("id", "=", claim.request.target.attemptId)
+            .where("id", "=", claim.request.target.runId)
             .executeTakeFirst();
           if (existing === undefined || Number(existing.last_event_seq) < result.lastEventSeq) {
             throw new RunCancellationExecutorInvariantError(
@@ -679,16 +662,14 @@ export class RunCancellationExecutor {
           }
         }
       }
-      await transitionCurrentRunAttempt(
+      await transitionCurrentRun(
         transaction,
         {
           tenantId: claim.request.target.tenantId,
           runId: claim.request.target.runId,
-          attemptId: claim.request.target.attemptId,
         },
         {
           runState: "cancelled",
-          attemptState: "cancelled",
           reason: "cancellation_confirmed",
           now,
           stopReason: "cancelled",
@@ -827,16 +808,14 @@ export class RunCancellationExecutor {
             "A started cancellation must own the cancelling lifecycle",
           );
         }
-        await transitionCurrentRunAttempt(
+        await transitionCurrentRun(
           transaction,
           {
             tenantId: claim.request.target.tenantId,
             runId: claim.request.target.runId,
-            attemptId: claim.request.target.attemptId,
           },
           {
             runState: "failed",
-            attemptState: "failed",
             reason: "cancellation_failed",
             now,
             failure: {
@@ -951,27 +930,19 @@ export class RunCancellationExecutor {
           .onRef("run.turn_id", "=", "cancellation.turn_id")
           .onRef("run.id", "=", "cancellation.target_run_id"),
       )
-      .innerJoin("run_attempts as run_attempt", (join) =>
-        join
-          .onRef("run_attempt.run_id", "=", "run.id")
-          .onRef("run_attempt.id", "=", "run.current_attempt_id"),
-      )
       .select([
         "cancellation.state as cancellationTurnControlRequestState",
         "turn.state as turnState",
         "session_row.state as sessionState",
         "cancellation.attempts as controlAttempts",
         "run.state as runState",
-        "run.current_attempt_id as currentAttemptId",
-        "run_attempt.state as runAttemptState",
       ])
       .where("cancellation.tenant_id", "=", claim.request.target.tenantId)
       .where("cancellation.id", "=", claim.request.controlRequestId)
       .where("turn.id", "=", claim.request.target.turnId)
       .where("session_row.id", "=", claim.request.target.sessionId)
       .where("run.id", "=", claim.request.target.runId)
-      .where("run_attempt.id", "=", claim.request.target.attemptId)
-      .forNoKeyUpdate(["cancellation", "turn", "session_row", "run", "run_attempt"])
+      .forNoKeyUpdate(["cancellation", "turn", "session_row", "run"])
       .executeTakeFirst();
     if (row === undefined) {
       throw new RunCancellationExecutorInvariantError(
@@ -981,11 +952,6 @@ export class RunCancellationExecutor {
     if (row.controlAttempts !== claim.attempt) {
       throw new RunCancellationExecutorStaleClaimError(
         `Cancellation claim attempt ${claim.attempt} was superseded by attempt ${row.controlAttempts}`,
-      );
-    }
-    if (row.currentAttemptId !== claim.request.target.attemptId) {
-      throw new RunCancellationExecutorStaleClaimError(
-        "Cancellation target attempt was superseded",
       );
     }
     return row;

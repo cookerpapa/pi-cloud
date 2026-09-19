@@ -9,7 +9,7 @@ and independent canonical/live/Tool consumer topology, not Cube effect semantics
 
 Workers append directly to the existing Kafka transport. PostgreSQL remains the
 only Run/Lease authority. Execution admission binds one immutable publication
-scope to that exact Attempt, Lane and native writer. The first actual record
+scope to that exact Run, Lane and native writer. The first actual record
 anchors recovery under ADR-0178. A Projector caches scope and applies in-log seals; it never
 rechecks wall-clock Lease expiry per token. Only the exact control-plane-requested
 seal payload in PG is a valid control record. Kafka access is private and never

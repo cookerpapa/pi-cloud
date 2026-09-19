@@ -23,6 +23,7 @@ import {
   type ToolBrokerOptions,
 } from "../src/index.ts";
 import type { WorkspaceVolumeGateway } from "../src/workspace-volume-gateway.ts";
+import { CubePersistentCapsuleCodec } from "../src/cube-persistent-capsule.ts";
 
 const DEVELOPMENT_TEMPLATE_IDS = Object.freeze({
   starter: "tpl-starter00000000000000000",
@@ -396,7 +397,7 @@ function operation(activationId: string): ToolSandboxOperationRequest {
     activationId,
     operationId: "10000000-0000-4000-8000-000000000020",
     turnContextSha256: STEP_CONTEXT_SHA256,
-    attemptContextSha256: STEP_CONTEXT_SHA256,
+    executionContextSha256: STEP_CONTEXT_SHA256,
     stepContextSequence: 1,
     stepContextSha256: STEP_CONTEXT_SHA256,
     toolName: "bash",
@@ -434,7 +435,7 @@ describe("CubeSandbox Provider contract", () => {
       allowedTools: ["bash"],
       executionMode: "elastic",
       turnContextSha256: STEP_CONTEXT_SHA256,
-      attemptContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
     });
     await broker.execute(binding.executionReference, operation(binding.activationId));
     setState.mockClear();
@@ -695,6 +696,19 @@ describe("CubeSandbox Provider contract", () => {
     await provider.pause(handle);
     const persisted = await provider.persistentCapsule(handle);
     expect(persisted.capsule).not.toContain(handle.runtimeName);
+    // Physical adoption must not parse/re-authorize the retired creation Run.
+    // Current Tool effects still require a fresh Broker-validated execution.
+    const codec = new CubePersistentCapsuleCodec(persistentStateKey);
+    const saved = codec.open(persisted.capsule) as { handle: typeof handle };
+    const retiredBootstrap = "retired-bootstrap-label";
+    expect(() => parseExecutionReference(retiredBootstrap)).toThrow();
+    const physicalCapsule = codec.seal({
+      ...saved,
+      handle: {
+        ...saved.handle,
+        assignment: { ...saved.handle.assignment, executionReference: retiredBootstrap },
+      },
+    });
     await provider.detachPersistent(handle);
     const replacement = testCubeProvider({
       templateId: "pi-cloud-tool-v2",
@@ -711,7 +725,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
       persistentStateKey,
     });
-    const adopted = await replacement.adoptPersistentCapsule(persisted.capsule);
+    const adopted = await replacement.adoptPersistentCapsule(physicalCapsule);
     await expect(replacement.resume(adopted)).resolves.toMatchObject({
       activationId: ACTIVATION_ID,
       runtimeId: handle.runtimeId,
@@ -744,7 +758,7 @@ describe("CubeSandbox Provider contract", () => {
       toolRoot: "/workspace",
       assignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
-      attemptContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
       executionMode: "elastic",
       environment,
@@ -846,7 +860,7 @@ describe("CubeSandbox Provider contract", () => {
       toolRoot: "/workspace",
       assignment: idleAssignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
-      attemptContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
       executionMode: "elastic",
       environment,
@@ -886,14 +900,14 @@ describe("CubeSandbox Provider contract", () => {
       toolRoot: "/workspace",
       assignment: nextAssignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
-      attemptContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
       executionMode: "elastic",
       environment,
       workspaceSeed: { kind: "sample_java" },
     });
     expect(next.activationId).toBe(
-      parseExecutionReference(nextAssignment.executionReference).attemptId,
+      parseExecutionReference(nextAssignment.executionReference).runId,
     );
     expect(next.activationId).not.toBe(reserved.activationId);
     expect(next.continuity).toBe("warm_reuse");
@@ -1016,7 +1030,7 @@ describe("CubeSandbox Provider contract", () => {
         ...assignment,
         executionReference: createExecutionReference(
           "20000000-0000-4000-8000-000000000050",
-          parseExecutionReference(assignment.executionReference).attemptId,
+          parseExecutionReference(assignment.executionReference).runId,
           41,
         ),
       },
@@ -1069,7 +1083,7 @@ describe("CubeSandbox Provider contract", () => {
       ...assignment,
       executionReference: createExecutionReference(
         "20000000-0000-4000-8000-000000000061",
-        parseExecutionReference(assignment.executionReference).attemptId,
+        parseExecutionReference(assignment.executionReference).runId,
         parseExecutionReference(assignment.executionReference).fencingToken + 1,
       ),
     };

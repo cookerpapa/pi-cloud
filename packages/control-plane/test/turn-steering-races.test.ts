@@ -60,7 +60,7 @@ it.each(["late-error", "late-ambiguous", "late-success", "winner-failed", "still
             text,
             projectId: randomUUID(),
             workspaceId: randomUUID(),
-            attemptId: randomUUID(),
+            runId: randomUUID(),
             sandboxId: randomUUID(),
           },
           created_at: new Date("2026-09-16T00:00:00Z"),

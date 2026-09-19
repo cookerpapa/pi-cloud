@@ -38,7 +38,6 @@ export type AcceptedFactScope = Readonly<{
   sessionId: string;
   runId: string;
   turnId: string;
-  attemptId: string;
   fencingToken: number;
   piSessionId: string;
   writerId: string;

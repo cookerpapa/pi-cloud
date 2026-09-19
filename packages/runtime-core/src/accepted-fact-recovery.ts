@@ -32,7 +32,7 @@ export async function loadFactReplayOffsets(
     left join accepted_fact_projection_offsets checkpoint
       on checkpoint.topic=${topic} and checkpoint.partition=requested.partition
     left join lateral (
-      select min(output_first_offset) as first_offset from run_attempts
+      select min(output_first_offset) as first_offset from runs
       where output_first_topic=${topic} and output_first_partition=requested.partition
         and output_sealed_at is null
     ) pending on true`.execute(db);

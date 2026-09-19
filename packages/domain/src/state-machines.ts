@@ -1,4 +1,4 @@
-import { RunAttemptStateSchema, RunStateSchema, SessionStateSchema } from "@pi-cloud/protocol";
+import { RunStateSchema, SessionStateSchema } from "@pi-cloud/protocol";
 import { Type, type Static } from "typebox";
 
 export type SessionState = Static<typeof SessionStateSchema>;
@@ -15,7 +15,6 @@ export const TurnStateSchema = Type.Union([
 export const SandboxStateSchema = Type.Union([
   Type.Literal("provisioning"),
   Type.Literal("ready"),
-  Type.Literal("leased"),
   Type.Literal("draining"),
   Type.Literal("failed"),
   Type.Literal("terminated"),
@@ -29,16 +28,14 @@ export const TurnControlRequestStateSchema = Type.Union([
   Type.Literal("failed"),
 ]);
 
-export { RunAttemptStateSchema, RunStateSchema } from "@pi-cloud/protocol";
+export { RunStateSchema } from "@pi-cloud/protocol";
 
 export type TurnState = Static<typeof TurnStateSchema>;
 export type SandboxState = Static<typeof SandboxStateSchema>;
 export type TurnControlRequestState = Static<typeof TurnControlRequestStateSchema>;
 export type RunState = Static<typeof RunStateSchema>;
-export type RunAttemptState = Static<typeof RunAttemptStateSchema>;
 
-export type DomainEntityKind =
-  "session" | "turn" | "sandbox" | "control_request" | "run" | "run_attempt";
+export type DomainEntityKind = "session" | "turn" | "sandbox" | "control_request" | "run";
 
 type TransitionTable<State extends string> = Readonly<Record<State, readonly State[]>>;
 
@@ -64,8 +61,7 @@ const turnTransitions = {
 
 const sandboxTransitions = {
   provisioning: ["ready", "failed", "terminated"],
-  ready: ["leased", "draining", "failed"],
-  leased: ["ready", "draining", "failed"],
+  ready: ["draining", "failed"],
   draining: ["terminated", "failed"],
   failed: ["terminated"],
   terminated: [],
@@ -80,41 +76,15 @@ const controlRequestTransitions = {
 } as const satisfies TransitionTable<TurnControlRequestState>;
 
 const runTransitions = {
-  queued: ["claimed", "cancel_requested", "failed"],
-  claimed: ["running", "cancel_requested", "failed", "timed_out", "superseded"],
-  provisioning: [
-    "queued",
-    "restoring",
-    "running",
-    "cancel_requested",
-    "failed",
-    "timed_out",
-    "superseded",
-  ],
-  restoring: ["queued", "running", "cancel_requested", "failed", "timed_out", "superseded"],
-  running: ["settling", "cancel_requested", "completed", "failed", "timed_out", "superseded"],
-  settling: ["cancel_requested", "completed", "failed", "timed_out", "superseded"],
-  cancel_requested: ["cancelled", "failed", "timed_out", "superseded"],
+  queued: ["running", "cancel_requested", "failed"],
+  running: ["settling", "cancel_requested", "completed", "failed", "timed_out"],
+  settling: ["cancel_requested", "completed", "failed", "timed_out"],
+  cancel_requested: ["cancelled", "failed", "timed_out"],
   completed: [],
   failed: [],
   cancelled: [],
   timed_out: [],
-  superseded: [],
 } as const satisfies TransitionTable<RunState>;
-
-const runAttemptTransitions = {
-  claimed: ["running", "failed", "timed_out", "superseded"],
-  provisioning: ["restoring", "running", "cancel_requested", "failed", "timed_out", "superseded"],
-  restoring: ["running", "cancel_requested", "failed", "timed_out", "superseded"],
-  running: ["settling", "cancel_requested", "completed", "failed", "timed_out", "superseded"],
-  settling: ["cancel_requested", "completed", "failed", "timed_out", "superseded"],
-  cancel_requested: ["cancelled", "failed", "timed_out", "superseded"],
-  completed: [],
-  failed: [],
-  cancelled: [],
-  timed_out: [],
-  superseded: [],
-} as const satisfies TransitionTable<RunAttemptState>;
 
 export class DomainTransitionError extends Error {
   readonly entityKind: DomainEntityKind;
@@ -173,26 +143,8 @@ export function transitionRun(from: RunState, to: RunState): RunState {
   return transition("run", runTransitions, from, to);
 }
 
-export function transitionRunAttempt(from: RunAttemptState, to: RunAttemptState): RunAttemptState {
-  return transition("run_attempt", runAttemptTransitions, from, to);
-}
-
 export function isTerminalRunState(state: RunState): boolean {
   return (
-    state === "completed" ||
-    state === "failed" ||
-    state === "cancelled" ||
-    state === "timed_out" ||
-    state === "superseded"
-  );
-}
-
-export function isTerminalRunAttemptState(state: RunAttemptState): boolean {
-  return (
-    state === "completed" ||
-    state === "failed" ||
-    state === "cancelled" ||
-    state === "timed_out" ||
-    state === "superseded"
+    state === "completed" || state === "failed" || state === "cancelled" || state === "timed_out"
   );
 }

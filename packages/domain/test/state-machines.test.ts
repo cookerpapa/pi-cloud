@@ -3,7 +3,6 @@ import {
   DomainTransitionError,
   transitionTurnControlRequest,
   transitionRun,
-  transitionRunAttempt,
   transitionSandbox,
   transitionSession,
   transitionTurn,
@@ -20,18 +19,17 @@ function walkTurn(initial: TurnState, transitions: readonly TurnState[]): TurnSt
 }
 
 describe("domain state machines", () => {
-  it("enforces durable run and attempt phases", () => {
-    expect(transitionRun("queued", "claimed")).toBe("claimed");
-    expect(transitionRun("claimed", "running")).toBe("running");
+  it("admits one execution per Run and never requeues an interrupted Run", () => {
+    expect(transitionRun("queued", "running")).toBe("running");
     expect(transitionRun("running", "settling")).toBe("settling");
     expect(transitionRun("settling", "completed")).toBe("completed");
 
-    expect(transitionRunAttempt("claimed", "running")).toBe("running");
-    expect(transitionRunAttempt("running", "cancel_requested")).toBe("cancel_requested");
-    expect(transitionRunAttempt("cancel_requested", "cancelled")).toBe("cancelled");
+    expect(transitionRun("running", "cancel_requested")).toBe("cancel_requested");
+    expect(transitionRun("cancel_requested", "cancelled")).toBe("cancelled");
 
     expect(() => transitionRun("completed", "running")).toThrow(DomainTransitionError);
-    expect(() => transitionRunAttempt("superseded", "running")).toThrow(DomainTransitionError);
+    expect(() => transitionRun("failed", "queued")).toThrow(DomainTransitionError);
+    expect(() => transitionRun("cancelled", "running")).toThrow(DomainTransitionError);
   });
 
   it("walks a session through activation, cancellation, and eviction", () => {
@@ -81,17 +79,15 @@ describe("domain state machines", () => {
     );
   });
 
-  it("leases, drains, and permanently terminates a sandbox", () => {
+  it("readies, drains, and permanently terminates a Worker", () => {
     expect(transitionSandbox("provisioning", "ready")).toBe("ready");
-    expect(transitionSandbox("ready", "leased")).toBe("leased");
-    expect(transitionSandbox("leased", "ready")).toBe("ready");
     expect(transitionSandbox("ready", "draining")).toBe("draining");
     expect(transitionSandbox("draining", "terminated")).toBe("terminated");
     expect(() => transitionSandbox("terminated", "ready")).toThrow(DomainTransitionError);
   });
 
   it("allows failed sandbox cleanup without allowing reuse", () => {
-    expect(transitionSandbox("leased", "failed")).toBe("failed");
+    expect(transitionSandbox("ready", "failed")).toBe("failed");
     expect(transitionSandbox("failed", "terminated")).toBe("terminated");
     expect(() => transitionSandbox("failed", "ready")).toThrow(DomainTransitionError);
   });

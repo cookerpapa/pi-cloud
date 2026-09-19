@@ -34,21 +34,19 @@ that revision's deployment instructions. Reload open browser pages. Do not mix
 incompatible publishers, change a live Kafka partition count or silently convert
 an unsupported Volume layout. Back up user data before a storage/protocol cutover.
 
-The current pre-release uses the v9 Kafka protocol, without an old-wire decoder;
-this cutover is not a rolling upgrade. Migration 143 requires no active Runs,
-Session leases, unprojected seals or unpublished terminal Outbox rows. Let the
-old Projector finish these before stopping it, then migrate and replace the
-Worker/Control Plane together. It removes the unused opening-position column;
-first-record recovery now uses `output_first_*`. Retire the v8 topic only after
-its sealed outputs have been fully projected. Retire old isolated child Workspace copies
-before migration 141; it does not relabel or delete them. Migrations preserve PG
-semantic history, identities and configuration.
+The current pre-release uses Kafka v10 and `pcer2_` Run references, without an
+old-wire decoder; this is not a rolling upgrade. Migration 145 requires all
+accepted/queued Runs, current owners, publications and terminal Outbox rows to
+drain. Stop old publishers only after their seals have projected, then migrate
+and deploy matching execution services. Retire v9 only after confirming its
+projection is complete. Cube Volume bytes and guest Tool protocol are unchanged.
 
-Migration 144 adds durable Lane readiness and the physical family's unsealed-Run
-count. It also requires every accepted/queued Run to drain before migration,
-including all issued publications' seals. Stop old Workers before applying it and
-restart matching Worker/Control Plane code together. The Kafka v9 wire format and
-guest template are unchanged; do not delete user history or Volumes for this upgrade.
+Migration 145 moves single-execution metadata into Run and removes Attempt/PG
+slot bookkeeping. It preserves native history and closed Run evidence, and refuses
+multiple historical Attempts or superseded execution history instead of silently
+discarding them. Resolve such a refusal explicitly before retrying. Current
+Session lease rows retain released writer-cutoff evidence; operational queries
+must filter `released_at IS NULL` when they mean active ownership, not history.
 
 For a component-only replacement, after draining and applying its migrations,
 use Compose `up --no-deps` for the selected services when dependencies are already

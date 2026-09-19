@@ -85,7 +85,7 @@ function bounded(value: string, name: string, maximum: number): string {
 /**
  * A bounded, horizontally scalable PostgreSQL-backed Pi Worker.
  *
- * PostgreSQL owns the queue and the exact Run/Attempt lifecycle. LISTEN/NOTIFY
+ * PostgreSQL owns the queue and Run lifecycle. LISTEN/NOTIFY
  * only removes idle polling latency; every wake-up is followed by a fresh
  * authoritative query. RunExecutor remains the transactional claimant,
  * so duplicate notifications and competing Workers are harmless.
@@ -375,17 +375,12 @@ export class PostgresPiWorker {
           .onRef("run.tenant_id", "=", "cancellation.tenant_id")
           .onRef("run.id", "=", "cancellation.target_run_id"),
       )
-      .innerJoin("run_attempts as attempt", (join) =>
-        join
-          .onRef("attempt.run_id", "=", "run.id")
-          .onRef("attempt.id", "=", "run.current_attempt_id"),
-      )
       .select("run.id as targetRunId")
       .where("cancellation.available_at", "<=", new Date())
       .where("cancellation.kind", "=", "cancel")
       .where("cancellation.state", "in", ["pending", "dispatched"])
-      .where("attempt.claim_owner_id", "=", this.#identity)
-      .where("attempt.state", "in", ["provisioning", "restoring", "running", "settling"])
+      .where("run.sandbox_id", "=", this.#identity)
+      .where("run.state", "in", ["running", "settling"])
       .limit(this.#maximumActiveFamilies * this.#maximumLanesPerFamily)
       .execute();
   }

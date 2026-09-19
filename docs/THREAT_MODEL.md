@@ -62,7 +62,7 @@ head.
 | Broker replacement loses, pauses or swaps an exclusive VM | shutdown leaves physical state unchanged; encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |
 | directory picker exposes another runtime | tenant/user/environment authorization at Control Plane and Tool Broker; listing is read from the selected live Cube only |
 | stale Worker mutation | PG-issued publication scope, same-partition opening/seal cutoff and executor Lease/fence checks |
-| duplicate queue delivery | idempotent command plus transactional RunAttempt claim |
+| duplicate queue delivery | idempotent input plus transactional single-Run admission |
 | ambiguous shell result | `UNKNOWN`; no automatic replay |
 | SSRF/data exfiltration to internal network | private access denied except deployment-owned direct CIDRs; public HTTP uses governed egress proxy |
 | path/symlink escape | rooted/O_NOFOLLOW trusted Volume operations |

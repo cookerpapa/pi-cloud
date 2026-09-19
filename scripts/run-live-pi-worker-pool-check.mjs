@@ -260,8 +260,7 @@ async function runEvidence(runId) {
   const row = await psql(
     `select s.supervisor_id
        from runs r
-       join run_attempts a on a.id = r.current_attempt_id
-       join sandboxes s on s.id = a.sandbox_id
+       join sandboxes s on s.id = r.sandbox_id
       where r.id = ${sqlLiteral(runId)}`,
   );
   const supervisorId = row;
@@ -685,7 +684,7 @@ try {
   assert(recovered.text.includes("RECOVERY-BARRIER-OK"));
   const sealedPredecessors = Number(
     await psql(
-      `select count(*) from run_attempts old_attempt
+      `select count(*) from runs old_attempt
        join runs successor on successor.id = ${sqlLiteral(recovered.runId)}
        where old_attempt.run_id = ${sqlLiteral(crashed.runId)}
          and old_attempt.output_sealed_at <= successor.started_at`,

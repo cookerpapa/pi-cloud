@@ -19,8 +19,8 @@ it("does not turn interleaved closed execution replay into a metadata query per 
     async executeTakeFirst() {
       reads++;
       return {
-        native_writer_id: "writer",
-        claimed_at: new Date(),
+        lease_id: "writer",
+        started_at: new Date(),
         output_sealed_at: new Date(),
         output_seal_offset: "10",
       };
@@ -40,7 +40,6 @@ it("does not turn interleaved closed execution replay into a metadata query per 
       sessionId,
       turnId,
       runId: crypto.randomUUID(),
-      attemptId: ids[0]!,
       fencingToken: 1,
       piSessionId: sessionId,
       writerId: "writer",
@@ -58,11 +57,11 @@ it("does not turn interleaved closed execution replay into a metadata query per 
     },
   };
   for (let round = 0; round < 2; round++)
-    for (const attemptId of ids) {
+    for (const runId of ids) {
       expect(
         await boundary.isOpen(
           {
-            fact: { ...fact, scope: { ...fact.scope, attemptId } },
+            fact: { ...fact, scope: { ...fact.scope, runId } },
             topic: "cache",
             partition: 0,
             offset: 11n,

@@ -15,8 +15,7 @@ beforeAll(async () => {
     connectionString: `postgresql://postgres@${server.getServerConn()}/postgres?sslmode=disable`,
     maxConnections: 2,
   });
-  await sql`create table runs(id uuid primary key,state text,current_attempt_id uuid);
- create table run_attempts(id uuid primary key,output_sealed_at timestamptz);
+  await sql`create table runs(id uuid primary key,state text,output_sealed_at timestamptz);
  create table turn_control_requests(target_run_id uuid,state text);`.execute(db);
 });
 afterAll(async () => {
@@ -30,14 +29,12 @@ it("requires terminal Run, committed seal and terminal controls, not a local tim
     ids: string[] = [];
   for (const state of [
     "queued",
-    "claimed",
     "running",
     "settling",
     "completed",
     "failed",
     "cancelled",
     "timed_out",
-    "superseded",
   ]) {
     for (const sealed of [false, true]) {
       for (const control of [
@@ -48,18 +45,15 @@ it("requires terminal Run, committed seal and terminal controls, not a local tim
         "completed",
         "failed",
       ]) {
-        const id = randomUUID(),
-          attempt = randomUUID();
+        const id = randomUUID();
         ids.push(id);
-        await sql`insert into runs values(${id}::uuid,${state},${attempt}::uuid);
-    `.execute(db);
-        await sql`insert into run_attempts values(${attempt}::uuid,${sealed ? new Date() : null})`.execute(
+        await sql`insert into runs values(${id}::uuid,${state},${sealed ? new Date() : null})`.execute(
           db,
         );
         if (control)
           await sql`insert into turn_control_requests values(${id}::uuid,${control})`.execute(db);
         if (
-          ["completed", "failed", "cancelled", "timed_out", "superseded"].includes(state) &&
+          ["completed", "failed", "cancelled", "timed_out"].includes(state) &&
           sealed &&
           (control === null || control === "completed" || control === "failed")
         )

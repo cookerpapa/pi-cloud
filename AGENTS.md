@@ -40,6 +40,9 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Use idempotency keys, leases, and fencing tokens for distributed mutations.
 - One physical Pi Session owns one renewable execution lease/epoch and one Worker
   family slot. Child Lanes retain task identity/cancellation, not separate leases.
+  Capacity is Worker-local, including pending claims. Each admitted Run executes
+  once; another execution uses a new Run, never a second RunAttempt. The native
+  writer identity is the Session lease incarnation, not a task anchor.
   Model-request permits are local, fair and held only through provider completion;
   never reserve the same permit while waiting for a child or Tool.
 - Preserve per-Lane task ordering and one physical-Session writer without

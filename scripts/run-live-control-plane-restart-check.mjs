@@ -222,8 +222,13 @@ const deadline = setTimeout(
   10 * 60_000,
 );
 let replacement;
+let workerBeforeFault;
 function startReplacement() {
-  replacement = replaceControlPlane();
+  replacement = (async () => {
+    workerBeforeFault = (await api.getRun(accepted.runId)).workerId;
+    assert(workerBeforeFault, "Streaming Run has no owner");
+    await replaceControlPlane();
+  })();
   void replacement.catch((error) => controller.abort(error));
 }
 let firstTextSequence;
@@ -322,7 +327,12 @@ try {
   );
   assert(text.join("").includes(marker), "Replayed output omitted the expected marker");
   const run = await waitForCompletedRun(api, accepted.runId);
-  assert.equal(run.attempts.length, 1, "Control Plane replacement created another Run Attempt");
+  assert.equal(run.runId, accepted.runId);
+  assert.equal(
+    run.workerId,
+    workerBeforeFault,
+    "Infrastructure restart changed the live Run owner",
+  );
   const conversation = await api.getConversation(session.sessionId);
   const canonical = conversation.turns.find((turn) => turn.turnId === accepted.turnId)?.transcript;
   assert(canonical, "Completed Run has no canonical transcript");
@@ -351,7 +361,7 @@ try {
     firstTextSequence,
     terminalSequence,
     sseReconnects: reconnects,
-    attemptCount: run.attempts.length,
+    sameRunAndWorker: true,
     faultMode,
     recordsProducedWhileProjectorDown,
     visiblePrefixPreserved: true,
@@ -386,12 +396,12 @@ try {
         `- Provider/model: ${report.provider} / ${report.modelId}`,
         `- First visible / terminal sequence: ${String(report.firstTextSequence)} / ${String(report.terminalSequence)}`,
         `- SSE reconnects: ${String(report.sseReconnects)}`,
-        `- Run Attempts: ${String(report.attemptCount)}`,
+        `- Same Run and Worker retained: ${String(report.sameRunAndWorker)}`,
         `- Elapsed: ${String(report.elapsedMs)} ms`,
         "",
         faultMode === "kafka-broker"
-          ? "One Kafka broker received SIGKILL after the first acknowledged assistant delta. The remaining ISR preserved AcceptedFact durability, clients recovered, the broker rejoined, and the Run completed with one Attempt."
-          : "The Control Plane container received SIGKILL after the first Kafka-acknowledged assistant delta. The trusted Worker continued the fenced Run while Kafka retained the AcceptedFact stream and PostgreSQL retained canonical Pi state. The replacement Gateway rebuilt the Session snapshot, SSE reconnected, and the Run completed with one Attempt.",
+          ? "One Kafka broker received SIGKILL after the first acknowledged assistant delta. The remaining ISR preserved AcceptedFact durability, clients recovered, and the same Worker completed the Run."
+          : "The Control Plane received SIGKILL after the first Kafka-acknowledged assistant delta. The Worker continued its Run. The replacement Projector rebuilt the snapshot, SSE reconnected, and the same Run/Worker reached completion.",
         "",
       ].join("\n"),
     );

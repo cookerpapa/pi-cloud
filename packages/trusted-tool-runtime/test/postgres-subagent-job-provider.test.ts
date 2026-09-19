@@ -16,8 +16,13 @@ import {
   projectNativeSessionAppend,
 } from "@pi-cloud/pi-session-postgres";
 import { createExecutionReference, parseExecutionReference } from "@pi-cloud/protocol";
-import { ExecutionStreamProjector, type AcceptedFact } from "@pi-cloud/runtime-core";
+import {
+  ExecutionStreamProjector,
+  createExecutionPublication,
+  type AcceptedFact,
+} from "@pi-cloud/runtime-core";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
+import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -34,7 +39,6 @@ let parentSessionId: string;
 let parentRunId: string;
 let parentTurnId: string;
 let earlierTurnId: string;
-let parentAttemptId: string;
 let parentSandboxId: string;
 let application: Awaited<ReturnType<typeof createControlPlaneApplication>>;
 let apiToken: string;
@@ -42,6 +46,30 @@ let foreignApiToken: string;
 let nativeWriter: NativeSessionWriter;
 const nativeByLane = new Map<string, NativeLaneSessionStorage>(),
   nativeByLease = new Map<string, NativeLaneSessionStorage>();
+async function admitTestExecution(
+  coordinator: SessionLeaseCoordinator,
+  tx: Parameters<SessionLeaseCoordinator["acquireInTransaction"]>[0],
+  r: Parameters<SessionLeaseCoordinator["acquireInTransaction"]>[1],
+  facts: Parameters<SessionLeaseCoordinator["acquireInTransaction"]>[2],
+) {
+  const reference = await coordinator.acquireInTransaction(tx, r, facts);
+  return {
+    ...reference,
+    publication: createExecutionPublication({
+      ...reference,
+      tenantId: r.tenantId,
+      runId: r.runId,
+      sessionId: r.sessionId,
+      turnId: r.turnId,
+      nextEventSeq: Number(r.nextEventSeq),
+      piSession: {
+        id: r.piSessionId,
+        lane: r.piSessionLane,
+        writerId: parseExecutionReference(reference.executionReference).leaseId,
+      },
+    }),
+  };
+}
 async function nativeLane(lane: string, turnId: string, lease?: string) {
   let storage = nativeByLane.get(lane);
   if (!storage) {
@@ -51,7 +79,7 @@ async function nativeLane(lane: string, turnId: string, lease?: string) {
       {
         lane,
         turnId,
-        attemptId: lease ? parseExecutionReference(lease).attemptId : crypto.randomUUID(),
+        runId: lease ? parseExecutionReference(lease).runId : crypto.randomUUID(),
       },
       {
         reader,
@@ -121,7 +149,7 @@ const FENCE = 7;
 const PARENT_GRANT_ID = "90000000-0000-4000-8000-000000000001";
 
 function parentExecutionReference(): string {
-  return createExecutionReference(PARENT_GRANT_ID, parentAttemptId, FENCE);
+  return createExecutionReference(PARENT_GRANT_ID, parentRunId, FENCE);
 }
 
 function assistant(text: string): AssistantMessage {
@@ -145,7 +173,7 @@ function assistant(text: string): AssistantMessage {
 }
 
 async function activateChildRun(childSessionId: string, childRunId: string): Promise<string> {
-  const attemptId = crypto.randomUUID();
+  const runId = childRunId;
   const grantId = PARENT_GRANT_ID;
   const generation = FENCE;
   const run = await database
@@ -156,28 +184,12 @@ async function activateChildRun(childSessionId: string, childRunId: string): Pro
     .executeTakeFirstOrThrow();
   await database.transaction().execute(async (transaction) => {
     await transaction
-      .insertInto("run_attempts")
-      .values({
-        id: attemptId,
-        native_writer_anchor_id: parentAttemptId,
-        tenant_id: tenantId,
-        run_id: childRunId,
-        attempt_number: 1,
-        state: "running",
-        claim_owner_id: "test-worker",
-        claim_expires_at: new Date(Date.now() + 60_000),
-        sandbox_id: parentSandboxId,
-        lease_id: grantId,
-        fencing_token: generation,
-        running_at: new Date(),
-      })
-      .executeTakeFirstOrThrow();
-    await transaction
       .updateTable("runs")
       .set({
         state: "running",
-        current_attempt_id: attemptId,
-        attempt_count: 1,
+        sandbox_id: parentSandboxId,
+        lease_id: grantId,
+        fencing_token: generation,
         started_at: new Date(),
       })
       .where("tenant_id", "=", tenantId)
@@ -202,7 +214,7 @@ async function activateChildRun(childSessionId: string, childRunId: string): Pro
       .where("child_run_id", "=", childRunId)
       .executeTakeFirstOrThrow();
   });
-  const lease = createExecutionReference(grantId, attemptId, generation);
+  const lease = createExecutionReference(grantId, runId, generation);
   const binding = await database
     .selectFrom("sessions")
     .select("pi_session_lane")
@@ -296,7 +308,6 @@ beforeAll(async () => {
     prompt: "Delegate repository inspection",
   });
   parentRunId = accepted.runId;
-  parentAttemptId = crypto.randomUUID();
   parentSandboxId = crypto.randomUUID();
 
   await database
@@ -305,23 +316,17 @@ beforeAll(async () => {
       id: parentSandboxId,
       supervisor_id: "test-worker",
       boot_id: crypto.randomUUID(),
-      state: "leased",
+      state: "ready",
       max_concurrent_sessions: 1,
-      active_sessions: 1,
+
       terminated_at: null,
     })
     .executeTakeFirstOrThrow();
 
   await database
-    .insertInto("run_attempts")
-    .values({
-      id: parentAttemptId,
-      tenant_id: tenantId,
-      run_id: parentRunId,
-      attempt_number: 1,
+    .updateTable("runs")
+    .set({
       state: "running",
-      claim_owner_id: "test-worker",
-      claim_expires_at: new Date(Date.now() + 60_000),
       sandbox_id: parentSandboxId,
       lease_id: PARENT_GRANT_ID,
       fencing_token: FENCE,
@@ -329,13 +334,11 @@ beforeAll(async () => {
       failure_code: null,
       failure_message: null,
       failure_retryable: null,
-      provisioning_at: new Date(),
-      restoring_at: new Date(),
-      running_at: new Date(),
-      settling_at: null,
+      started_at: new Date(),
       last_heartbeat_at: new Date(),
       settled_at: null,
     })
+    .where("id", "=", parentRunId)
     .executeTakeFirstOrThrow();
   const run = await database
     .selectFrom("runs")
@@ -346,7 +349,7 @@ beforeAll(async () => {
   parentTurnId = run.turn_id;
   await database
     .updateTable("pi_sessions")
-    .set({ lease_epoch: FENCE, active_writer_id: parentAttemptId })
+    .set({ lease_epoch: FENCE })
     .where("tenant_id", "=", tenantId)
     .where("id", "=", parentSessionId)
     .execute();
@@ -357,7 +360,6 @@ beforeAll(async () => {
       pi_session_id: parentSessionId,
       lease_id: PARENT_GRANT_ID,
       sandbox_id: parentSandboxId,
-      writer_id: parentAttemptId,
       fencing_token: FENCE,
       valid_until: new Date(Date.now() + 60000),
     })
@@ -367,8 +369,6 @@ beforeAll(async () => {
       .updateTable("runs")
       .set({
         state: "running",
-        current_attempt_id: parentAttemptId,
-        attempt_count: 1,
         started_at: new Date(),
       })
       .where("id", "=", parentRunId)
@@ -391,7 +391,7 @@ beforeAll(async () => {
     .where("id", "=", parentSessionId)
     .executeTakeFirstOrThrow();
   nativeWriter = new NativeSessionWriter({
-    id: parentAttemptId,
+    id: PARENT_GRANT_ID,
     metadata: await reader.getMetadata(),
     nextSequence: Number(seq.next_seq),
     lanes: await reader.getLanes(),
@@ -506,14 +506,21 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     expect(queuedRun.availableAt.valueOf()).toBeGreaterThan(queuedRun.createdAt.valueOf());
     const dispatched: string[] = [];
     const dispatchedPiBindings: Array<{ id: string; lane: string }> = [];
+    const coordinator = new SessionLeaseCoordinator({ database, sandboxId: parentSandboxId });
     const dispatcher = new RunExecutor({
       database,
-      claimOwnerId: "test-worker",
+      workerId: parentSandboxId,
+      executionAuthority: coordinator,
       backend: {
+        admit: (tx, r, _mark, facts) => admitTestExecution(coordinator, tx, r, facts),
         async execute(request) {
           dispatched.push(request.runId);
           dispatchedPiBindings.push({ id: request.piSessionId, lane: request.piSessionLane });
-
+          await database
+            .updateTable("runs")
+            .set({ native_output_drained: true })
+            .where("id", "=", request.runId)
+            .execute();
           return { stopReason: "stop" };
         },
       },
@@ -614,10 +621,13 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     expect(child.agent_system_prompt).toContain("Execute only this delegated task.");
     expect(child.agent_system_prompt).toContain("PiCloud delegated execution boundary");
     const dispatched: string[] = [];
+    const coordinator = new SessionLeaseCoordinator({ database, sandboxId: parentSandboxId });
     const dispatcher = new RunExecutor({
       database,
-      claimOwnerId: "test-worker",
+      workerId: parentSandboxId,
+      executionAuthority: coordinator,
       backend: {
+        admit: (tx, r, _mark, facts) => admitTestExecution(coordinator, tx, r, facts),
         async execute(request) {
           dispatched.push(request.runId);
 
@@ -630,6 +640,11 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           await native
             .view(request.piSessionLane)
             .appendMessage(assistant("Subagent result from PostgreSQL"));
+          await database
+            .updateTable("runs")
+            .set({ native_output_drained: true })
+            .where("id", "=", request.runId)
+            .execute();
           return { stopReason: "stop" };
         },
       },
@@ -1315,11 +1330,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         tenantId,
         parentSessionId,
         parentRunId,
-        parentExecutionReference: createExecutionReference(
-          PARENT_GRANT_ID,
-          parentAttemptId,
-          FENCE + 1,
-        ),
+        parentExecutionReference: createExecutionReference(PARENT_GRANT_ID, parentRunId, FENCE + 1),
         parentToolCallId: "stale-tool",
         workflowRunId: "stale-workflow",
         stepIndex: 0,

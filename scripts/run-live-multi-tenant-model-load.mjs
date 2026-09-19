@@ -390,35 +390,23 @@ async function runTurn(lane, prompt, round) {
 async function runEvidence(runId) {
   const row = await psql(
     `select s.supervisor_id || '|' ||
-            round(extract(epoch from (a.claimed_at - r.queued_at)) * 1000)::text || '|' ||
-            a.attempt_number::text || '|' ||
-            a.state || '|' ||
+            round(extract(epoch from (r.started_at - r.queued_at)) * 1000)::text || '|' ||
+            r.state || '|' ||
             round(extract(epoch from (r.settled_at - r.queued_at)) * 1000)::text || '|' ||
-            round(extract(epoch from r.queued_at) * 1000)::text || '|' ||
-            round(extract(epoch from (r.started_at - a.claimed_at)) * 1000)::text
+            round(extract(epoch from r.queued_at) * 1000)::text
        from runs r
-       join run_attempts a on a.id = r.current_attempt_id
-       join sandboxes s on s.id = a.sandbox_id
+       join sandboxes s on s.id = r.sandbox_id
       where r.id = ${sqlLiteral(runId)}`,
   );
-  const [
-    supervisorId,
-    queueWaitMs,
-    attemptNumber,
-    attemptState,
-    serverElapsedMs,
-    queuedWallAt,
-    preparationMs,
-  ] = row.split("|");
+  const [supervisorId, acceptedToAdmissionMs, runState, serverElapsedMs, queuedWallAt] =
+    row.split("|");
   assert(supervisorId, `Run ${runId} has no Worker assignment`);
-  assert.equal(attemptState, "completed");
+  assert.equal(runState, "completed");
   return {
     supervisorId,
-    queueWaitMs: Number(queueWaitMs),
+    acceptedToAdmissionMs: Number(acceptedToAdmissionMs),
     serverElapsedMs: Number(serverElapsedMs),
     queuedWallAt: Number(queuedWallAt),
-    preparationMs: Number(preparationMs),
-    attemptNumber: Number(attemptNumber),
   };
 }
 
@@ -568,7 +556,7 @@ try {
   for (const result of allResults) {
     const lane = lanes.find((lane) => lane.tenantId === result.tenantId);
     const run = await waitForRun(lane.api, result.runId);
-    result.attemptCount = run.attempts.length;
+    assert.equal(run.runId, result.runId);
     result.usage = await readRunUsage(result.runId);
     assert(
       result.usage.requests > 0 && result.usage.inputTokens > 0 && result.usage.outputTokens > 0,
@@ -612,7 +600,7 @@ try {
     sessionsPerTenant,
     sessions: lanes.length,
     runs: allResults.length,
-    peakActiveRunAttempts: maximumRunOverlap(evidence),
+    peakActiveRuns: maximumRunOverlap(evidence),
     model: {
       provider: lanes[0].model.provider,
       modelId: lanes[0].model.modelId,
@@ -624,7 +612,6 @@ try {
       crossTenantApiDenials: lanes.length,
       crossTenantMarkerLeaks: 0,
       unexpectedToolEvents: 0,
-      maximumAttemptCount: Math.max(...allResults.map((result) => result.attemptCount)),
     },
     latencyMs: {
       acceptance: distribution(allResults.map((result) => result.acceptedMs)),
@@ -635,7 +622,7 @@ try {
         }),
       ),
       settled: distribution(allResults.map((result) => result.settledMs)),
-      queueWait: distribution(evidence.map((item) => item.queueWaitMs)),
+      acceptedToAdmission: distribution(evidence.map((item) => item.acceptedToAdmissionMs)),
     },
     timingEvidence: allResults.map((result, index) => ({
       runId: result.runId,
@@ -696,7 +683,7 @@ try {
       `- Checked at: ${report.checkedAt}`,
       `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
       `- Tenants / Sessions / Runs: ${report.tenants} / ${report.sessions} / ${report.runs}`,
-      `- Peak claimed-to-settled Run overlap: ${report.peakActiveRunAttempts}`,
+      `- Peak admitted-to-settled Run overlap: ${report.peakActiveRuns}`,
       `- Completed / failed: ${String(report.correctness.completedRuns)} / ${String(report.correctness.failedRuns)}`,
       `- Marker restores / cross-tenant leaks: ${String(report.correctness.markerRestores)} / ${String(report.correctness.crossTenantMarkerLeaks)}`,
       `- Worker assignments: ${Object.entries(report.workers.assignments)

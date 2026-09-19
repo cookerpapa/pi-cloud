@@ -3,6 +3,20 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "expired-owner-at-run-admission",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "rejects an expired owner at the final Run write without starting the Agent",
+      "invariant": "Final admission checks current PG time after locks; an expired lease cannot start the Agent or leave partial owner state."
+    },
+    {
+      "id": "worker-local-pending-capacity",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/parallel-worker-claims.postgres.test.ts",
+      "test": "overlaps distinct claims but preserves capacity, same-Session order and the seal barrier",
+      "invariant": "Local pending reservations bound overlapping claims without a PG slot counter; successors still wait for closure."
+    },
+    {
       "id": "cancel-native-projection-locks",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",

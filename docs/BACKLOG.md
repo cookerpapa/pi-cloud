@@ -12,6 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Implement ADR-0180: remove independent RunAttempt and PG slot accounting,
+      bind native writer to the Session lease, then verify schema/protocol cutover,
+      model/Cube execution, faults and latency. Keep Workspace deletion coordination.
+
 - [ ] Discuss drain/completion durability before any further boundary merging.
       [Terminal wake and transaction-local SQL](reports/terminal-wake-acceptance-20260918.md)
       are implemented; shared-row/WAL tails remain. The [ready-admission acceptance](reports/ready-admission-20260919.md)

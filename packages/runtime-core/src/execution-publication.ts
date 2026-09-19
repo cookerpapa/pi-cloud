@@ -1,18 +1,15 @@
 import { isDeepStrictEqual } from "node:util";
 import type { Database } from "@pi-cloud/database";
 import { parseExecutionReference } from "@pi-cloud/protocol";
-import { sql, type Kysely, type Transaction } from "kysely";
+import { type Kysely } from "kysely";
 import type { ExecutionPublication } from "./accepted-fact.ts";
 import type { ExecutionLogOpenRequest } from "./execution-log.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 
-/** Called inside admission after locking the Attempt and Session lease. Scope
- * comes from that transaction's request, not a second authority read. The final
- * write still checks current database time and exact attribution. */
-export async function registerExecutionPublication(
-  tx: Transaction<Database>,
+/** Admission stores this scope together with the single Run's owner/state. */
+export function createExecutionPublication(
   request: Omit<ExecutionLogOpenRequest, "publication"> & { tenantId: string; runId: string },
-): Promise<ExecutionPublication> {
+): ExecutionPublication {
   const lease = parseExecutionReference(request.executionReference);
   const permit: ExecutionPublication = {
     scope: {
@@ -20,34 +17,15 @@ export async function registerExecutionPublication(
       sessionId: request.sessionId,
       turnId: request.turnId,
       runId: request.runId,
-      attemptId: lease.attemptId,
       leaseId: lease.leaseId,
       fencingToken: lease.fencingToken,
       piSessionId: request.piSession.id,
       piSessionLane: request.piSession.lane,
-      writerId: request.piSession.writerId,
+      writerId: lease.leaseId,
     },
   };
-  const recorded = await tx
-    .updateTable("run_attempts")
-    .set({ output_publication: permit, native_output_drained: false })
-    .where("id", "=", lease.attemptId)
-    .where("tenant_id", "=", request.tenantId)
-    .where("output_publication", "is", null)
-    .where(
-      sql<boolean>`exists(
-      select 1 from active_execution_scopes l join sessions s on s.id=l.session_id
-      where l.attempt_id=${lease.attemptId}::uuid and l.tenant_id=${request.tenantId}::uuid
-        and l.run_id=${request.runId}::uuid and l.session_id=${request.sessionId}::uuid
-        and l.turn_id=${request.turnId}::uuid and l.lease_id=${lease.leaseId}::uuid
-        and l.fencing_token=${lease.fencingToken} and l.writer_id=${request.piSession.writerId}::uuid
-        and l.pi_session_id=${request.piSession.id} and s.pi_session_lane=${request.piSession.lane}
-        and l.accepting_effects and l.valid_until>clock_timestamp()
-    )`,
-    )
-    .executeTakeFirst();
-  if (recorded.numUpdatedRows !== 1n)
-    throw new Error("Execution publication requires the current Session lease");
+  if (lease.runId !== request.runId || lease.leaseId !== request.piSession.writerId)
+    throw new Error("Execution publication does not match its Run and Session owner");
   return permit;
 }
 
@@ -72,11 +50,11 @@ export class ExecutionPublicationBoundary {
         .executeTakeFirst();
       return !!requested && isDeepStrictEqual(requested.payload, fact);
     }
-    const id = fact.scope.attemptId;
+    const id = fact.scope.runId;
     let authority = this.#cache.get(id);
     if (!authority) {
       const row = await this.database
-        .selectFrom("run_attempts")
+        .selectFrom("runs")
         .select(["output_publication", "output_first_topic", "output_first_partition"])
         .where("id", "=", id)
         .where("tenant_id", "=", fact.scope.tenantId)
@@ -103,7 +81,7 @@ export class ExecutionPublicationBoundary {
       const lease = parseExecutionReference(fact.executionReference);
       return (
         lease.leaseId === leaseId &&
-        lease.attemptId === scope.attemptId &&
+        lease.runId === scope.runId &&
         lease.fencingToken === scope.fencingToken
       );
     }

@@ -20,8 +20,8 @@ the Fact path. A `delivered` response does not prove model consumption. See
 All Pi Workers claim directly from the same ready `runs` rows. PostgreSQL sends
 a notification to reduce idle latency, but a one-second poll is the recovery
 path. A narrow indexed query locks one candidate with `SKIP LOCKED`; only that
-Worker loads the immutable Run context and creates its Attempt. Before doing so
-it briefly locks the physical `pi_sessions` row: a Session lease owned by another
+Worker loads the immutable Run context. Before authorizing it, the Worker
+briefly locks the physical `pi_sessions` row: a Session lease owned by another
 Worker makes this candidate ineligible, while another Lane on the same Worker may
 proceed without reserving a second family slot.
 
@@ -29,24 +29,23 @@ proceed without reserving a second family slot.
 
 - the Run is still eligible;
 - cancellation has not won;
-- no current Attempt already owns the Run;
+- the Run has never been admitted before;
 - all active Lanes of the physical Pi Session have this Worker as owner;
 - a new owner sees zero `pi_sessions.unsealed_runs`;
 - a delegated task still belongs to its live parent execution.
 
 Lane order/previous seal dependencies were established by readiness, not scanned
-again during claim. First Attempt insertion increments the family count; first
+again during claim. First Run owner binding increments the family count; first
 seal projection decrements it, inside the existing transactions. A current healthy
 owner can run another Lane before its siblings finish. KEDA counts active leases
 and ready cold families, not waiting follow-ups or unbound startup claims.
 
-It creates a RunAttempt with a startup claim deadline, binds it to the physical
-Session's owner lease, registers publication scope and marks the Turn/Session
-running in one transaction. Locked facts and inserted-row results are reused;
-there is no separate startup phase commit or independently committed unbound claim. The
-startup deadline cannot steal a lease-bound claim. The Worker renews that owner once per heartbeat;
-it does not renew a child task's startup deadline. Each task carries an
-`ExecutionReference`: the shared lease/epoch plus its own Attempt identity. The
+It binds the Run to the physical Session's owner lease, records publication scope
+and marks Run/Turn/Session running in one transaction. Locked facts are reused;
+there is no Attempt, startup deadline or separate claimed phase. Worker-local
+pending reservations protect capacity; PG retains no occupancy counter. The
+Worker renews its Session owner once per heartbeat. Each task carries an
+`ExecutionReference`: the shared lease/epoch plus its Run identity. The
 reference is never placed in model context or the guest Tool runtime. Cube's
 trusted management metadata retains the creation identity for inventory and
 orphan reconciliation; it is not authority for later Tool calls. Task
@@ -140,7 +139,7 @@ Before admission commits, no output or Agent execution is allowed. After admissi
 even preparation failure or a lost first Kafka ACK requires a seal, not a blind
 retry or output-free pre-start requeue. Running includes context preparation,
 not proof that a model or Tool has actually started.
-An execution seal in the same Kafka partition closes a retired Attempt. A delayed
+An execution seal in the same Kafka partition closes a retired Run. A delayed
 Worker producer can still append its old record, but if it arrives after the seal both
 canonical and live consumers discard it. Earlier accepted data is projected
 before the successor is allowed to claim. A caught interruption writes Pi's minimal
@@ -164,7 +163,7 @@ Run table queue        at-least-once wakeup + transactional claim
 Pi Session mutation    Recorded publication scope + Kafka + idempotent PostgreSQL projection
 Tool start              no blind retry; UNKNOWN if ambiguous
 Workspace files         persistent Volume; independent of Run completion
-terminal Run commit     idempotent current-Attempt transaction
+terminal Run commit     idempotent Run transaction
 Cube create/delete      idempotent reconcile
 live AcceptedFact       Recorded publication scope + Kafka acks=all + Projector fact-id/sequence projection
 ```

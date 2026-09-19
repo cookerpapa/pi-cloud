@@ -64,17 +64,10 @@ export class PostgresNativeSessionHost {
       const writer = await pending;
       if (writer.activeLanes) continue;
       const active = await this.#database
-        .selectFrom("run_attempts")
+        .selectFrom("runs")
         .select("id")
-        .where("native_writer_id", "=", writer.id)
-        .where("state", "in", [
-          "claimed",
-          "provisioning",
-          "restoring",
-          "running",
-          "settling",
-          "cancel_requested",
-        ])
+        .where("lease_id", "=", writer.id)
+        .where("state", "in", ["running", "settling", "cancel_requested"])
         .limit(1)
         .executeTakeFirst();
       if (!active && !writer.activeLanes && this.#writers.get(key) === pending)
@@ -107,13 +100,19 @@ export class PostgresNativeSessionHost {
   async #loadWriter({ scope, writerId }: NativeSessionOpen) {
     const reader = this.#reader(scope);
     const session = await this.#database
-      .selectFrom("pi_sessions")
-      .select(["next_seq", "active_writer_id"])
-      .where("tenant_id", "=", scope.tenantId)
-      .where("id", "=", scope.piSessionId)
+      .selectFrom("pi_sessions as p")
+      .innerJoin("session_leases as l", (join) =>
+        join
+          .onRef("l.tenant_id", "=", "p.tenant_id")
+          .onRef("l.pi_session_id", "=", "p.id")
+          .on("l.lease_id", "=", writerId),
+      )
+      .select("p.next_seq")
+      .where("p.tenant_id", "=", scope.tenantId)
+      .where("p.id", "=", scope.piSessionId)
+      .where("l.released_at", "is", null)
+      .where("l.writer_failed_at", "is", null)
       .executeTakeFirstOrThrow();
-    if (session.active_writer_id !== writerId)
-      throw new Error("Native Session ownership changed before bootstrap");
     return new NativeSessionWriter({
       id: writerId,
       ...(this.#onViewRead ? { onViewRead: this.#onViewRead } : {}),
@@ -132,24 +131,30 @@ export class PostgresNativeSessionHost {
           signal?.throwIfAborted();
           if (this.#closed) throw new Error("Native Session host is closed");
           const current = await this.#database
-            .selectFrom("pi_sessions")
-            .select(["next_seq", "active_writer_id"])
-            .where("tenant_id", "=", scope.tenantId)
-            .where("id", "=", scope.piSessionId)
+            .selectFrom("pi_sessions as p")
+            .innerJoin("session_leases as l", (join) =>
+              join
+                .onRef("l.tenant_id", "=", "p.tenant_id")
+                .onRef("l.pi_session_id", "=", "p.id")
+                .on("l.lease_id", "=", writerId),
+            )
+            .select(["p.next_seq", "l.released_at", "l.writer_failed_at"])
+            .where("p.tenant_id", "=", scope.tenantId)
+            .where("p.id", "=", scope.piSessionId)
             .executeTakeFirstOrThrow();
           if (Number(current.next_seq) > through) return;
-          if (current.active_writer_id !== writerId)
+          if (current.released_at !== null || current.writer_failed_at !== null)
             throw new Error("Native Session ownership changed while reading history");
           await new Promise<void>((resolve) => setTimeout(resolve, 25));
         }
       },
       fail: async () => {
         await this.#database
-          .updateTable("run_attempts")
-          .set({ native_writer_failed_at: new Date() })
+          .updateTable("session_leases")
+          .set({ writer_failed_at: new Date() })
           .where("tenant_id", "=", scope.tenantId)
-          .where("id", "=", writerId)
-          .where("native_writer_failed_at", "is", null)
+          .where("lease_id", "=", writerId)
+          .where("writer_failed_at", "is", null)
           .execute();
       },
     });
@@ -236,7 +241,7 @@ export class PostgresNativeSessionHost {
         {
           lane: scope.piSessionLane,
           turnId: scope.turnId,
-          attemptId: parseExecutionReference(executionReference).attemptId,
+          runId: parseExecutionReference(executionReference).runId,
         },
         {
           branch,

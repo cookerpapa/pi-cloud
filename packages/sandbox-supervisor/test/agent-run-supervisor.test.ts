@@ -39,7 +39,6 @@ function command(
     sessionId?: string;
     piSessionId?: string;
     lane?: string;
-    attemptId?: string;
   } = {},
 ): ExecuteTurnCommandMessage {
   return {
@@ -63,7 +62,7 @@ function command(
       agentId: "root",
       executionReference: createExecutionReference(
         overrides.leaseId ?? IDS.lease,
-        overrides.attemptId ?? "50000000-0000-4000-8000-000000000001",
+        overrides.runId ?? "50000000-0000-4000-8000-000000000001",
         overrides.generation ?? 1,
       ),
       nextEventSeq: 1,
@@ -709,7 +708,6 @@ describe("AgentRunSupervisor", () => {
     const parentCommand = command(),
       childCommand = command({
         runId: IDS.command2,
-        attemptId: IDS.command2,
         sessionId: "child-scope",
         piSessionId: "session-1",
         lane: "child",

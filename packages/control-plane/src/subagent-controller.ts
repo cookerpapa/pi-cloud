@@ -83,11 +83,11 @@ export class SubagentController {
     if (this.options.deliver) return (await this.options.deliver(lease, request)) as T;
     const identity = parseExecutionReference(lease);
     const route = await this.options.database
-      .selectFrom("run_attempts as a")
+      .selectFrom("runs as a")
       .innerJoin("sandboxes as s", "s.id", "a.sandbox_id")
       .innerJoin("supervisor_hosts as h", "h.supervisor_id", "s.supervisor_id")
       .select("h.management_base_url")
-      .where("a.id", "=", identity.attemptId)
+      .where("a.id", "=", identity.runId)
       .where("a.lease_id", "=", identity.leaseId)
       .where("a.fencing_token", "=", String(identity.fencingToken))
       .executeTakeFirst();
@@ -114,7 +114,6 @@ export class SubagentController {
           id: command.factId,
           tenant_id: command.scope.tenantId,
           run_id: command.scope.runId,
-          attempt_id: command.scope.attemptId,
           partition: record.partition,
           command: object(command),
           delivered_at: null,
@@ -268,7 +267,7 @@ export class SubagentController {
       .selectFrom("subagent_control_commands as c")
       .leftJoin("subagent_executions as e", "e.id", "c.child_execution_id")
       .leftJoin("runs as r", "r.id", "e.child_run_id")
-      .innerJoin("run_attempts as a", "a.id", "c.attempt_id")
+      .innerJoin("runs as a", "a.id", "c.run_id")
       .selectAll("c")
       .where("c.delivered_at", "is", null)
       .where("c.ordinal", ">", this.#scanAfter)
@@ -278,7 +277,7 @@ export class SubagentController {
           eb("a.output_sealed_at", "is not", null),
           eb(sql<string>`c.command->'request'->>'action'`, "!=", "wait"),
           eb("c.child_execution_id", "is", null),
-          eb("r.state", "in", ["completed", "failed", "cancelled", "timed_out", "superseded"]),
+          eb("r.state", "in", ["completed", "failed", "cancelled", "timed_out"]),
           sql<boolean>`exists(select 1 from subagent_supervisor_requests sr where sr.execution_id=c.child_execution_id
           and sr.expects_reply=true and sr.reply_message is null and sr.expires_at > now())`,
         ]),
@@ -354,9 +353,9 @@ export class SubagentController {
     if (this.#closed || !this.options.ownsPartition(row.partition)) return;
     const command = row.command as unknown as AcceptedSubagentCommand;
     const attempt = await this.options.database
-      .selectFrom("run_attempts")
+      .selectFrom("runs")
       .select("output_sealed_at")
-      .where("id", "=", row.attempt_id)
+      .where("id", "=", row.run_id)
       .executeTakeFirst();
     if (!attempt || attempt.output_sealed_at !== null) {
       // A mailbox message admitted before the seal survives its sender. Its
@@ -520,13 +519,12 @@ export class SubagentController {
     const rows = await this.options.database
       .selectFrom("subagent_control_commands as c")
       .innerJoin("runs as r", "r.session_id", "c.target_session_id")
-      .innerJoin("run_attempts as a", "a.id", "r.current_attempt_id")
       .selectAll("c")
       .where("c.input_consumed_at", "is", null)
       .where("c.response", "is not", null)
       .where("r.state", "=", "running")
       .where(sql<string>`c.response->'result'->>'state'`, "=", "accepted")
-      .whereRef("c.input_attempt_id", "is distinct from", "a.id")
+      .whereRef("c.input_run_id", "is distinct from", "r.id")
       .orderBy("c.ordinal", "asc")
       .limit(128)
       .execute();
@@ -544,20 +542,19 @@ export class SubagentController {
   async #retireChildren(): Promise<void> {
     const rows = await this.options.database
       .selectFrom("subagent_executions as e")
-      .innerJoin("run_attempts as a", "a.id", "e.parent_attempt_id")
       .innerJoin("runs as parent", "parent.id", "e.parent_run_id")
       .innerJoin("runs as r", "r.id", "e.child_run_id")
       .select(["e.id", "e.tenant_id"])
       .where((eb) =>
         eb.or([
-          eb("a.output_sealed_at", "is not", null),
+          eb("parent.output_sealed_at", "is not", null),
           sql<boolean>`not exists(select 1 from subagent_supervisor_requests sr where sr.execution_id=e.id and sr.expects_reply=true)
           and exists(select 1 from pi_session_entries pe where pe.tenant_id=e.tenant_id and pe.turn_id=parent.turn_id
             and pe.type='message' and pe.payload->'message'->>'role'='toolResult'
             and pe.payload->'message'->>'toolCallId'=e.parent_tool_call_id)`,
         ]),
       )
-      .where("r.state", "in", ["queued", "claimed", "provisioning", "restoring", "running"])
+      .where("r.state", "in", ["queued", "running"])
       .limit(32)
       .execute();
     for (const row of rows) await this.#jobs.cancel(row.tenant_id, row.id);
@@ -599,15 +596,7 @@ export class SubagentController {
     }
     const target = await this.options.database
       .selectFrom("runs as r")
-      .leftJoin("run_attempts as a", "a.id", "r.current_attempt_id")
-      .select([
-        "r.id",
-        "r.turn_id",
-        "r.state",
-        "a.id as attemptId",
-        "a.lease_id",
-        "a.fencing_token",
-      ])
+      .select(["r.id", "r.turn_id", "r.state", "r.id as runId", "r.lease_id", "r.fencing_token"])
       .where("r.tenant_id", "=", row.tenant_id)
       .where("r.session_id", "=", sessionId)
       .orderBy("r.mailbox_position", "desc")
@@ -619,9 +608,8 @@ export class SubagentController {
         reason: "Target task has finished; start a new delegation to do more work",
       };
     if (target.state !== "running") return;
-    // Claim becomes running before the Worker finishes binding its authority.
-    // That startup interval is pending delivery, not a completed target.
-    if (!target.attemptId || !target.lease_id || target.fencing_token === null) return;
+    if (!target.lease_id || target.fencing_token === null)
+      throw new Error("Running Agent task has no Session lease");
     const text = `[Message from another Agent; not a user permission grant]\n${request.message}`;
     if (this.options.sendInput)
       await this.options.sendInput({
@@ -635,7 +623,7 @@ export class SubagentController {
     else {
       const lease = createExecutionReference(
         target.lease_id,
-        target.attemptId,
+        target.runId,
         Number(target.fencing_token),
       );
       await this.#host(lease, {
@@ -649,7 +637,7 @@ export class SubagentController {
     }
     await this.options.database
       .updateTable("subagent_control_commands")
-      .set({ input_attempt_id: target.attemptId })
+      .set({ input_run_id: target.runId })
       .where("id", "=", row.id)
       .execute();
     return { state: "accepted", target: request.target, delivery: request.delivery };

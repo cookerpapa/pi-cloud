@@ -99,7 +99,7 @@ const createRequest: ToolSandboxCreateRequest = {
   toolRoot: "/workspace",
   assignment,
   turnContextSha256: TURN_CONTEXT_SHA256,
-  attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
+  executionContextSha256: ATTEMPT_CONTEXT_SHA256,
   allowedTools: ["read", "write", "edit", "bash"],
   executionMode: "elastic",
   environment,
@@ -318,7 +318,7 @@ function operation(
     activationId: ACTIVATION_ID,
     operationId,
     turnContextSha256: TURN_CONTEXT_SHA256,
-    attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
+    executionContextSha256: ATTEMPT_CONTEXT_SHA256,
     stepContextSequence: 1,
     stepContextSha256: STEP_CONTEXT_SHA256,
     toolName: "bash",
@@ -596,7 +596,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(secondResolved).toBe(true);
     const second = await secondReservation;
     expect(second.activationId).toBe(
-      parseExecutionReference(siblingAssignment.executionReference).attemptId,
+      parseExecutionReference(siblingAssignment.executionReference).runId,
     );
     await manager.stop(ACTIVATION_ID, assignment);
     await manager.stop(second.activationId, siblingAssignment);
@@ -805,7 +805,7 @@ describe("provider-backed Tool Tool Broker", () => {
     ]);
     expect(parent.activationId).toBe(ACTIVATION_ID);
     expect(child.activationId).toBe(
-      parseExecutionReference(childAssignment.executionReference).attemptId,
+      parseExecutionReference(childAssignment.executionReference).runId,
     );
     expect(child.continuityId).toBe(parent.continuityId);
     expect(fixture.listDirectory).not.toHaveBeenCalled();
@@ -1336,7 +1336,7 @@ describe("provider-backed Tool Tool Broker", () => {
     await expect(
       manager.execute(assignment.executionReference, {
         ...operation("10000000-0000-4000-8000-000000000021"),
-        attemptContextSha256: "d".repeat(64),
+        executionContextSha256: "d".repeat(64),
       }),
     ).rejects.toMatchObject({ code: "attempt_context_mismatch" });
     expect(fixture.createSpec).toBeUndefined();
@@ -1942,7 +1942,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.stopped).toBe(false);
     expect(stateRepository.released).not.toContain(first.activationId);
     expect(second.activationId).toBe(
-      parseExecutionReference(nextAssignment.executionReference).attemptId,
+      parseExecutionReference(nextAssignment.executionReference).runId,
     );
     expect(second.continuity).toBe("warm_reuse");
     expect(fixture.createCount).toBe(1);
@@ -2101,7 +2101,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(secondResolved).toBe(true);
     const second = await secondPromise;
     expect(second.activationId).toBe(
-      parseExecutionReference(siblingAssignment.executionReference).attemptId,
+      parseExecutionReference(siblingAssignment.executionReference).runId,
     );
     await Promise.all([
       manager.execute(

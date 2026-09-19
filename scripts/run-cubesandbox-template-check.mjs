@@ -151,7 +151,7 @@ const operation = (body) => ({
   activationId,
   operationId: randomUUID(),
   turnContextSha256: contextSha256("turn"),
-  attemptContextSha256: contextSha256("attempt"),
+  executionContextSha256: contextSha256("attempt"),
   stepContextSequence: 1,
   stepContextSha256: contextSha256("step"),
   toolName:

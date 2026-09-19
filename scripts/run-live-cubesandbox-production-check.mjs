@@ -371,7 +371,7 @@ function currentCubeAssignment(metadata) {
         parsed.fencingToken > 0 &&
         typeof parsed.sessionId === "string" &&
         typeof parsed.workspaceRuntimeId === "string" &&
-        typeof parsed.attemptId === "string" &&
+        typeof parsed.runId === "string" &&
         typeof parsed.turnId === "string"
       ) {
         records.push(parsed);
@@ -384,7 +384,7 @@ function currentCubeAssignment(metadata) {
   const current = records.filter(
     (record) =>
       record.leaseId === metadata["picloud.lease_id"] &&
-      record.attemptId === metadata["picloud.attempt_id"] &&
+      record.runId === metadata["picloud.run_id"] &&
       record.fencingToken === fencingToken,
   );
   if (current.length !== 1) {
@@ -420,7 +420,7 @@ function observeCubeSession(sessionId) {
             observed.set(activationId, {
               activationId,
               sandboxId: instance.sandboxId,
-              attemptId: assignment.executionId,
+              runId: assignment.executionId,
               turnId: assignment.turnId,
               state: instance.state,
             });
@@ -475,11 +475,8 @@ async function destroyCubeSession(sessionId) {
 
 async function logicalSandboxIdForRun(runId) {
   const value = await psql(
-    `select ra.sandbox_id
+    `select r.sandbox_id
        from runs r
-       join run_attempts ra
-         on ra.run_id = r.id
-        and ra.id = r.current_attempt_id
       where r.id = ${sqlLiteral(runId)}`,
   );
   assert.match(value, /^[0-9a-f-]{36}$/i);
@@ -488,11 +485,10 @@ async function logicalSandboxIdForRun(runId) {
 
 async function logicalSandboxIdsForSession(sessionId) {
   const values = await psql(
-    `select distinct ra.sandbox_id
+    `select distinct r.sandbox_id
        from runs r
-       join run_attempts ra on ra.run_id = r.id
       where r.session_id = ${sqlLiteral(sessionId)}
-        and ra.sandbox_id is not null`,
+        and r.sandbox_id is not null`,
   );
   if (values.length === 0) return [];
   const sandboxIds = values.split(/\r?\n/);
@@ -630,8 +626,8 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
               'workspaceId', workspace_id,
               'sessionId', session_id,
               'turnId', turn_id,
-              'executionReference', 'pcer1_' || replace(lease_id::text, '-', '') ||
-                '_' || replace(attempt_id::text, '-', '') || '_' || fencing_token::text
+              'executionReference', 'pcer2_' || replace(lease_id::text, '-', '') ||
+                '_' || replace(run_id::text, '-', '') || '_' || fencing_token::text
             )::text
        from tool_broker_workspace_runtimes
       where workspace_id = (
@@ -897,14 +893,14 @@ async function runTurn(sessionId, prompt, expectTools) {
 async function runLatencyEvidence(runId) {
   const transitionEvidence = await psql(
     `with timeline as (
-       select min(transition.occurred_at) filter (where transition.to_state = 'claimed') as claimed_at,
+       select min(transition.occurred_at) filter (where transition.to_state = 'claimed') as started_at,
               min(transition.occurred_at) filter (where transition.to_state = 'provisioning') as acknowledged_at,
               min(transition.occurred_at) filter (where transition.to_state = 'running') as runner_at
-         from run_attempt_transitions transition
+         from run_transitions transition
         where transition.run_id = ${sqlLiteral(runId)}
      )
-     select round(extract(epoch from (timeline.claimed_at - run.queued_at)) * 1000)::text || '|' ||
-            round(extract(epoch from (timeline.acknowledged_at - timeline.claimed_at)) * 1000)::text || '|' ||
+     select round(extract(epoch from (timeline.started_at - run.queued_at)) * 1000)::text || '|' ||
+            round(extract(epoch from (timeline.acknowledged_at - timeline.started_at)) * 1000)::text || '|' ||
             round(extract(epoch from (timeline.runner_at - timeline.acknowledged_at)) * 1000)::text || '|' ||
             round(extract(epoch from (run.settled_at - timeline.runner_at)) * 1000)::text
        from runs run cross join timeline
@@ -1181,7 +1177,7 @@ try {
   assert(
     Number(
       await psql(
-        `select count(*) from run_attempts where tenant_id=${sqlLiteral(tenantId)} and output_first_topic=${sqlLiteral(ACCEPTED_FACT_TOPIC)} and output_first_offset is not null`,
+        `select count(*) from runs where tenant_id=${sqlLiteral(tenantId)} and output_first_topic=${sqlLiteral(ACCEPTED_FACT_TOPIC)} and output_first_offset is not null`,
       ),
     ) > 0,
     "The test never entered the current execution log",

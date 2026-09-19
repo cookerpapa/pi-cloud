@@ -8,6 +8,7 @@ import {
   PiCloudWireProtocolError,
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
+  parseExecutionReference,
   type EventAckMessage,
   type EventPublishMessage,
   type CancelTurnCommandMessage,
@@ -33,7 +34,7 @@ import {
 } from "./run-executor.ts";
 import type { Database } from "@pi-cloud/database";
 import type { Transaction } from "kysely";
-import { registerExecutionPublication } from "./execution-publication.ts";
+import { createExecutionPublication } from "./execution-publication.ts";
 import type { ExecutionLogWriter, ExecutionLogFactory } from "./execution-log.ts";
 import {
   SessionLeaseCoordinator,
@@ -273,7 +274,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       facts,
       mark,
     );
-    const publication = await registerExecutionPublication(transaction, {
+    const publication = createExecutionPublication({
       ...reference,
       tenantId: request.tenantId,
       runId: request.runId,
@@ -282,7 +283,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       piSession: {
         id: request.piSessionId,
         lane: request.piSessionLane,
-        writerId: request.piSessionWriterId,
+        writerId: parseExecutionReference(reference.executionReference).leaseId,
       },
       nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
     });
@@ -292,9 +293,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   async execute(
     request: TurnExecutionRequest,
     lifecycle: TurnExecutionLifecycle,
-    admission?: TurnExecutionAdmission,
+    admission: TurnExecutionAdmission,
   ): Promise<TurnExecutionResult> {
-    if (!admission) throw new Error("Agent execution requires committed admission");
     const acknowledgement = admission;
     let executionLog: ExecutionLogWriter | undefined;
     let prepared: ReturnType<AgentRunSupervisor["prepare"]> | undefined;
@@ -312,7 +312,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
             piSession: {
               id: request.piSessionId,
               lane: request.piSessionLane,
-              writerId: request.piSessionWriterId,
+              writerId: parseExecutionReference(admission.executionReference).leaseId,
             },
             turnId: request.turnId,
             nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
@@ -332,7 +332,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           piSession: {
             id: request.piSessionId,
             lane: request.piSessionLane,
-            writerId: request.piSessionWriterId,
+            writerId: parseExecutionReference(admission.executionReference).leaseId,
           },
           runId: request.runId,
           turnId: request.turnId,

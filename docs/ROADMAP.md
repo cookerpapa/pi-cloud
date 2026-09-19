@@ -3,7 +3,7 @@
 ## Completed foundation
 
 - multi-tenant Web Coding Agent using Pi SDK;
-- PostgreSQL Run/Attempt authority, same-Lane ordering, physical Pi Session
+- PostgreSQL Run authority, same-Lane ordering, physical Pi Session
   Worker ownership and shared Worker queue;
 - Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with one self-contained
   append-only semantic log per physical Session and native Compaction;
@@ -107,7 +107,7 @@
       in-flight immutable snapshots.
 - [x] Run full deterministic tests and real model/Cube multi-round acceptance.
 - [x] Validate Kafka broker and combined canonical/Gateway process loss during
-      an active Run without creating a second Attempt.
+      an active Run without replaying its Agent Loop.
 - [ ] Repeat the clean one-host installer on a fresh machine.
 - [ ] Validate autoscaling and persistent storage on at least three physical nodes.
 

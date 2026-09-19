@@ -35,7 +35,7 @@ import {
 const SERVICE_TOKEN = `service-${"s".repeat(48)}`;
 const WORKSPACE_SERVICE_TOKEN = `workspace-service-${"m".repeat(48)}`;
 const TERMINAL_TOKEN = `terminal-${"t".repeat(48)}`;
-const CAPABILITY = `pcer1_${"1".repeat(32)}_${"2".repeat(32)}_1`;
+const CAPABILITY = `pcer2_${"1".repeat(32)}_${"2".repeat(32)}_1`;
 const STEP_CONTEXT_SHA256 = "a".repeat(64);
 const ACTIVATION_ID = "10000000-0000-4000-8000-000000000010";
 const assignment: ToolSandboxAssignment = {
@@ -595,7 +595,7 @@ describe("Tool Broker authenticated RPC", () => {
         toolRoot: "/workspace",
         assignment: { ...assignment, workspaceId: `workspace-replica-${String(replica)}` },
         turnContextSha256: STEP_CONTEXT_SHA256,
-        attemptContextSha256: STEP_CONTEXT_SHA256,
+        executionContextSha256: STEP_CONTEXT_SHA256,
         allowedTools: ["read", "write", "edit", "bash"],
         executionMode: "elastic",
         environment: {
@@ -675,7 +675,7 @@ describe("Tool Broker authenticated RPC", () => {
       toolRoot: "/workspace",
       assignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
-      attemptContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
       executionMode: "elastic",
       environment: {
@@ -763,7 +763,7 @@ describe("Tool Broker authenticated RPC", () => {
       toolRoot: "/workspace",
       assignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
-      attemptContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
       executionMode: "elastic",
       environment: {
@@ -809,7 +809,7 @@ describe("Tool Broker authenticated RPC", () => {
       toolRoot: "/workspace",
       assignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
-      attemptContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
       executionMode: "elastic",
       environment: {
@@ -843,7 +843,7 @@ describe("Tool Broker authenticated RPC", () => {
       activationId: ACTIVATION_ID,
       operationId: "10000000-0000-4000-8000-000000000012",
       turnContextSha256: STEP_CONTEXT_SHA256,
-      attemptContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
       stepContextSequence: 1,
       stepContextSha256: STEP_CONTEXT_SHA256,
       toolName: "bash",

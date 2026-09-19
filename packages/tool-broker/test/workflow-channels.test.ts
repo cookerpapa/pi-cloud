@@ -36,7 +36,7 @@ async function start(script: string, timeoutMs = 2000) {
     activationId,
     operationId,
     turnContextSha256: "a".repeat(64),
-    attemptContextSha256: "b".repeat(64),
+    executionContextSha256: "b".repeat(64),
     stepContextSequence: 1,
     stepContextSha256: "c".repeat(64),
     toolName: "bash",

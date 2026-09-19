@@ -11,10 +11,10 @@ export function laneDependenciesReady(
       and s.id=${sessionId}::uuid and s.state in ('cold','idle') and s.archived_at is null)
     and not exists(select 1 from runs prior where prior.tenant_id=${tenantId}::uuid
       and prior.session_id=${sessionId}::uuid and prior.mailbox_position<${mailbox}
-      and prior.state not in ('completed','failed','cancelled','timed_out','superseded'))
-    and not exists(select 1 from runs prior join run_attempts a on a.run_id=prior.id
+      and prior.state not in ('completed','failed','cancelled','timed_out'))
+    and not exists(select 1 from runs prior
       where prior.tenant_id=${tenantId}::uuid and prior.session_id=${sessionId}::uuid
-        and a.output_seal_id is not null and a.output_sealed_at is null)`;
+        and prior.output_seal_id is not null and prior.output_sealed_at is null)`;
 }
 
 /** Caller holds the product Session row lock. Acceptance and closure therefore

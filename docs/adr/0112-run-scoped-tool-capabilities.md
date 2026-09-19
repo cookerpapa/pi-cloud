@@ -17,7 +17,7 @@ execution authorization boundary.
 
 - A Session owns the mutable grant for built-in cloud Tool names.
 - Turn admission copies that grant into an immutable Run capability snapshot.
-- Every Attempt carries the same Run snapshot to the Agent Host.
+- Each admitted Run carries its frozen snapshot to the Agent Host.
 - The Host registers only the granted Pi `AgentTool` proxies.
 - Every accepted Tool command includes the trusted Pi Tool name as well as the low-level
   operation kind.

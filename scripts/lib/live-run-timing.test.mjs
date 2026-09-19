@@ -206,9 +206,9 @@ describe("live acceptance timing boundaries", () => {
   it("measures Run overlap with end-before-start ties", () => {
     expect(
       maximumRunOverlap([
-        { queuedWallAt: 1000, queueWaitMs: 0, serverElapsedMs: 100 },
-        { queuedWallAt: 1000, queueWaitMs: 50, serverElapsedMs: 150 },
-        { queuedWallAt: 1000, queueWaitMs: 100, serverElapsedMs: 200 },
+        { queuedWallAt: 1000, acceptedToAdmissionMs: 0, serverElapsedMs: 100 },
+        { queuedWallAt: 1000, acceptedToAdmissionMs: 50, serverElapsedMs: 150 },
+        { queuedWallAt: 1000, acceptedToAdmissionMs: 100, serverElapsedMs: 200 },
       ]),
     ).toBe(2);
   });

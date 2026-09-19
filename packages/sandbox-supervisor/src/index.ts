@@ -50,19 +50,19 @@ export {
 } from "./subagent-tool.ts";
 
 export {
-  CLOUD_ATTEMPT_CONTEXT_SCHEMA_VERSION,
+  CLOUD_EXECUTION_CONTEXT_SCHEMA_VERSION,
   CLOUD_STEP_CONTEXT_SCHEMA_VERSION,
   CLOUD_TURN_CONTEXT_SCHEMA_VERSION,
   REMOTE_TOOL_REGISTRY_VERSION,
   TOOL_NETWORK_POLICY_VERSION,
-  createCloudAttemptContext,
+  createCloudExecutionContext,
   createCloudStepContext,
   createCloudTurnContext,
-  type CloudAttemptContext,
+  type CloudExecutionContext,
   type CloudStepContext,
   type CloudStepWorldState,
   type CloudTurnContext,
-  type FrozenCloudAttempt,
+  type FrozenCloudExecution,
   type FrozenCloudStep,
   type FrozenCloudTurn,
 } from "./cloud-context.ts";

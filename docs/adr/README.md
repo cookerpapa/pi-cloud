@@ -10,6 +10,10 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0180](0180-run-identity-and-session-ownership.md) — one Run execution
+   identity, lease-owned Session writer and Worker-local capacity; implementation
+   in progress, replacing the independent Attempt/PG slot bookkeeping.
+
 1. [ADR-0179](0179-ready-runs-and-single-admission.md) — durable Lane readiness,
    bounded family closure state and one atomic execution admission.
 
@@ -67,7 +71,7 @@ Read the documents in this order:
    transport and shared configuration; native commit placement follows ADR-0161.
 1. [ADR-0157](0157-kafka-driven-tool-commands.md) — Kafka-driven Agent Tool dispatch,
    read-only result waits; unified consumption follows ADR-0163.
-1. [ADR-0154](0154-ordered-execution-stream-seals.md) — ordered RunAttempt closure
+1. [ADR-0154](0154-ordered-execution-stream-seals.md) — ordered Run closure
    before handoff, shared canonical/live cutoff and interrupted-prefix recovery.
 1. [ADR-0152](0152-volume-deletion-and-tool-preparation.md) — native Volume
    deletion with retained authority and visible write/edit preparation.

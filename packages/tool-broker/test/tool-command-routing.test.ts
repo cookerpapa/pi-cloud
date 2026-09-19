@@ -26,7 +26,6 @@ function command(): AcceptedToolCommand {
       piSessionId: randomUUID(),
       turnId: randomUUID(),
       runId: randomUUID(),
-      attemptId: randomUUID(),
       writerId: randomUUID(),
       leaseId: randomUUID(),
       fencingToken: 1,
@@ -37,7 +36,7 @@ function command(): AcceptedToolCommand {
       activationId: randomUUID(),
       operationId: randomUUID(),
       turnContextSha256: "a".repeat(64),
-      attemptContextSha256: "b".repeat(64),
+      executionContextSha256: "b".repeat(64),
       stepContextSequence: 1,
       stepContextSha256: "c".repeat(64),
       toolName: "bash",
@@ -153,7 +152,7 @@ describe("sharded Tool routing", () => {
       instanceId = randomUUID(),
       token = "r".repeat(64),
       serviceToken = "s".repeat(64);
-    const executionReference = createExecutionReference(c.scope.leaseId, c.scope.attemptId, 1);
+    const executionReference = createExecutionReference(c.scope.leaseId, c.scope.runId, 1);
     const execute = vi.fn(async () => ({
       toolBrokerProtocolVersion: 1 as const,
       type: "tool_sandbox.operation_result" as const,

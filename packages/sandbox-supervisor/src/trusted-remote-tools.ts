@@ -87,7 +87,7 @@ type RemoteOperationInput<T = ToolSandboxOperationRequest> = T extends unknown
       | "activationId"
       | "operationId"
       | "turnContextSha256"
-      | "attemptContextSha256"
+      | "executionContextSha256"
       | "stepContextSequence"
       | "stepContextSha256"
       | "toolName"
@@ -115,7 +115,7 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
     | Readonly<{ operationResultUrl: string; activationId: string }>;
   executionReference: string;
   turnContextSha256: string;
-  attemptContextSha256: string;
+  executionContextSha256: string;
   allowedTools?: CloudToolCapabilitySnapshot;
   captureStepContext: (
     activeTools: readonly string[],
@@ -188,7 +188,7 @@ function validateRuntimeConfiguration(
     staticTarget ?? validateOperationTarget(await candidate.resolveOperationTarget!());
   const executionReference = candidate.executionReference;
   const turnContextSha256 = candidate.turnContextSha256;
-  const attemptContextSha256 = candidate.attemptContextSha256;
+  const executionContextSha256 = candidate.executionContextSha256;
   const remainingToolCalls = candidate.remainingToolCalls;
   const maximumToolOutputBytes = candidate.maximumToolOutputBytes;
   const workingDirectory = candidate.workingDirectory;
@@ -198,9 +198,9 @@ function validateRuntimeConfiguration(
     candidate.allowedTools ?? [...CLOUD_TOOL_NAMES],
   );
   if (
-    !/^pcer1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionReference) ||
+    !/^pcer2_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionReference) ||
     !/^[0-9a-f]{64}$/.test(turnContextSha256) ||
-    !/^[0-9a-f]{64}$/.test(attemptContextSha256) ||
+    !/^[0-9a-f]{64}$/.test(executionContextSha256) ||
     typeof candidate.captureStepContext !== "function" ||
     (candidate.onToolOperationStarted !== undefined &&
       typeof candidate.onToolOperationStarted !== "function") ||
@@ -235,7 +235,7 @@ function validateRuntimeConfiguration(
     resolveOperationTarget,
     executionReference,
     turnContextSha256,
-    attemptContextSha256,
+    executionContextSha256,
     allowedTools,
     captureStepContext: candidate.captureStepContext,
     ...(candidate.onToolOperationStarted === undefined
@@ -388,10 +388,10 @@ export function createTrustedRemoteAgentTools(
     );
     if (
       captured.step.context.turnContextSha256 !== runtime.turnContextSha256 ||
-      captured.step.context.attemptContextSha256 !== runtime.attemptContextSha256 ||
+      captured.step.context.executionContextSha256 !== runtime.executionContextSha256 ||
       !/^[0-9a-f]{64}$/.test(captured.step.sha256)
     ) {
-      throw new Error("Captured Cloud Step did not match the accepted Turn and Attempt contexts");
+      throw new Error("Captured Cloud Step did not match the accepted Turn and execution contexts");
     }
     currentStep = captured.step;
     currentSamplingAttempt = captured.samplingAttempt;
@@ -462,7 +462,7 @@ export function createTrustedRemoteAgentTools(
       activationId: target.activationId,
       operationId: randomUUID(),
       turnContextSha256: runtime.turnContextSha256,
-      attemptContextSha256: runtime.attemptContextSha256,
+      executionContextSha256: runtime.executionContextSha256,
       stepContextSequence: currentStep.context.sequence,
       stepContextSha256: currentStep.sha256,
       toolName,

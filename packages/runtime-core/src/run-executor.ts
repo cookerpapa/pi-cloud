@@ -1,6 +1,5 @@
 import type { Database } from "@pi-cloud/database";
 import {
-  isTerminalRunAttemptState,
   transitionSession,
   transitionTurn,
   type SessionState,
@@ -9,6 +8,7 @@ import {
 import {
   parseCloudToolCapabilitySnapshot,
   parseEnvironmentRuntimeSnapshot,
+  parseExecutionReference,
 } from "@pi-cloud/protocol";
 import type {
   AgentRevisionSnapshot,
@@ -22,20 +22,20 @@ import { operationalLog, virtualRunTraceCarrier, withSpan } from "@pi-cloud/obse
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
-import { transitionCurrentRunAttempt } from "./run-attempt-state.ts";
+import { transitionCurrentRun } from "./run-state.ts";
 import {
   lockPiSessionWorkerOwnership,
   piSessionWorkerAvailable,
-  selectNativeSessionWriter,
   type LockedPiSessionOwnership,
 } from "./pi-session-worker-ownership.ts";
 import { requestExecutionStreamSeal } from "./execution-stream-seal.ts";
 import { confirmAgentExit } from "./quarantined-session-recovery.ts";
-import { databaseTime, retryTransaction } from "@pi-cloud/database";
+import { retryTransaction } from "@pi-cloud/database";
 import type { ExecutionPublication } from "./accepted-fact.ts";
 import { isDeepStrictEqual } from "node:util";
+import { createExecutionPublication } from "./execution-publication.ts";
+import { SessionLeaseCoordinatorError } from "./session-lease-coordinator.ts";
 
-const DEFAULT_CLAIM_LEASE_MS = 30_000;
 export type TurnExecutionRequest = {
   tenantId: string;
   projectId: string;
@@ -43,11 +43,8 @@ export type TurnExecutionRequest = {
   sessionId: string;
   piSessionId: string;
   piSessionLane: string;
-  piSessionWriterId: string;
   runId: string;
   turnId: string;
-  attemptId: string;
-  attemptNumber: number;
   agent: AgentRevisionSnapshot;
   idempotencyKey: string;
   nextEventSeq: string;
@@ -104,7 +101,7 @@ export type TurnExecutionResult = {
 
 export interface TurnExecutionBackend {
   /** SQL-only admission, when the backend requires distributed execution authority. */
-  admit?(
+  admit(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
     mark: (stage: string) => void,
@@ -113,14 +110,13 @@ export interface TurnExecutionBackend {
   execute(
     request: TurnExecutionRequest,
     lifecycle: TurnExecutionLifecycle,
-    admission?: TurnExecutionAdmission,
+    admission: TurnExecutionAdmission,
   ): Promise<TurnExecutionResult>;
 }
 
 /** Facts produced under this transaction's Run/family locks, never a cache. */
 export type ExecutionAdmissionFacts = Readonly<{
   physical: LockedPiSessionOwnership;
-  claimExpiresAt: Date;
 }>;
 
 export interface TurnExecutionAuthority {
@@ -129,7 +125,7 @@ export interface TurnExecutionAuthority {
     request: TurnExecutionRequest,
     grant: TurnExecutionReference,
   ): Promise<void>;
-  assertCurrentOrExpired?(
+  assertCurrentOrExpired(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
     grant: TurnExecutionReference,
@@ -195,13 +191,6 @@ export class RunExecutorInvariantError extends Error {
   }
 }
 
-export class RunExecutorStaleClaimError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "RunExecutorStaleClaimError";
-  }
-}
-
 export type RunExecutionResult =
   | { status: "idle" }
   | {
@@ -209,21 +198,18 @@ export type RunExecutionResult =
       runId: string;
       sessionId: string;
       turnId: string;
-      attempt: number;
     }
   | {
       status: "completed";
       runId: string;
       sessionId: string;
       turnId: string;
-      attempt: number;
     }
   | {
       status: "failed";
       runId: string;
       sessionId: string;
       turnId: string;
-      attempt: number;
       phase: "after_admission";
       failureCode: string;
     };
@@ -232,19 +218,17 @@ export type RunExecutorOptions = {
   database: Kysely<Database>;
   backend: TurnExecutionBackend;
   clock?: () => Date;
-  claimLeaseMs?: number;
-  claimOwnerId?: string;
+  workerId: string;
   idGenerator?: () => string;
-  executionAuthority?: TurnExecutionAuthority;
+  executionAuthority: TurnExecutionAuthority;
   metrics?: PiCloudMetrics;
   agentRuntimeKind?: AgentRuntimeKind;
 };
 
 type ClaimedTurn = {
-  attempt: number;
   request: TurnExecutionRequest;
   queuedAt: Date;
-  admission?: TurnExecutionAdmission;
+  admission: TurnExecutionAdmission;
 };
 
 type LifecycleRows = {
@@ -253,9 +237,6 @@ type LifecycleRows = {
   runState: import("@pi-cloud/domain").RunState;
   runFailureCode: string | null;
   runVersion: string;
-  runAttemptCount: number;
-  currentAttemptId: string | null;
-  runAttemptState: import("@pi-cloud/domain").RunAttemptState;
 };
 
 type ExecutionFailure = {
@@ -265,13 +246,6 @@ type ExecutionFailure = {
   quarantineSession: boolean;
   lastEventSeq?: number;
 };
-
-function positiveInteger(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new TypeError(`${name} must be a positive safe integer`);
-  }
-  return value;
-}
 
 function safeMailboxPosition(value: string): number {
   const parsed = Number(value);
@@ -351,10 +325,9 @@ export class RunExecutor {
   readonly #database: Kysely<Database>;
   readonly #backend: TurnExecutionBackend;
   readonly #clock: () => Date;
-  readonly #claimLeaseMs: number;
-  readonly #claimOwnerId: string;
+  readonly #workerId: string;
   readonly #idGenerator: () => string;
-  readonly #executionAuthority: TurnExecutionAuthority | undefined;
+  readonly #executionAuthority: TurnExecutionAuthority;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #agentRuntimeKind: AgentRuntimeKind;
 
@@ -362,18 +335,7 @@ export class RunExecutor {
     this.#database = options.database;
     this.#backend = options.backend;
     this.#clock = options.clock ?? (() => new Date());
-    this.#claimLeaseMs = positiveInteger(
-      options.claimLeaseMs ?? DEFAULT_CLAIM_LEASE_MS,
-      "claimLeaseMs",
-    );
-    this.#claimOwnerId = options.claimOwnerId ?? "control-plane";
-    if (
-      this.#claimOwnerId.length < 1 ||
-      this.#claimOwnerId.length > 256 ||
-      /[\u0000-\u001f\u007f]/.test(this.#claimOwnerId)
-    ) {
-      throw new TypeError("claimOwnerId is invalid");
-    }
+    this.#workerId = options.workerId;
     this.#idGenerator = options.idGenerator ?? randomUUID;
     this.#executionAuthority = options.executionAuthority;
     this.#metrics = options.metrics;
@@ -435,7 +397,6 @@ export class RunExecutor {
         ...(claim.request.traceContext === undefined ? {} : { parent: claim.request.traceContext }),
         attributes: {
           "pi_cloud.run.id": claim.request.runId,
-          "pi_cloud.attempt.id": claim.request.attemptId,
           "pi_cloud.session.id": claim.request.sessionId,
         },
         run: async () => {
@@ -482,7 +443,6 @@ export class RunExecutor {
             runId: claim.request.runId,
             sessionId: claim.request.sessionId,
             turnId: claim.request.turnId,
-            attempt: claim.attempt,
           };
         },
       });
@@ -520,7 +480,6 @@ export class RunExecutor {
           runId: claim.request.runId,
           sessionId: claim.request.sessionId,
           turnId: claim.request.turnId,
-          attempt: claim.attempt,
         };
       }
       if (
@@ -533,7 +492,6 @@ export class RunExecutor {
           runId: claim.request.runId,
           sessionId: claim.request.sessionId,
           turnId: claim.request.turnId,
-          attempt: claim.attempt,
         };
       }
       if (
@@ -546,7 +504,6 @@ export class RunExecutor {
           runId: claim.request.runId,
           sessionId: claim.request.sessionId,
           turnId: claim.request.turnId,
-          attempt: claim.attempt,
           phase: "after_admission",
           failureCode: rows.runFailureCode ?? "cancellation_failed",
         };
@@ -567,7 +524,7 @@ export class RunExecutor {
     // Session ancestry. A departed parent's queued child cannot start a new owner.
     return sql<boolean>`not exists(select 1 from subagent_executions e
       where e.child_run_id=${sql.ref(`${runAlias}.id`)} and not exists(
-        select 1 from active_execution_scopes parent where parent.attempt_id=e.parent_attempt_id
+        select 1 from active_execution_scopes parent where parent.run_id=e.parent_run_id
           and parent.run_id=e.parent_run_id and parent.accepting_effects and parent.valid_until>clock_timestamp()
       ))`;
   }
@@ -586,11 +543,10 @@ export class RunExecutor {
       previous = now;
     };
     let committedCandidate: ClaimedTurn | undefined;
-    const attemptAdmission = async (transaction: Transaction<Database>) => {
+    const admitTransaction = async (transaction: Transaction<Database>) => {
       committedCandidate = undefined;
       stages.length = 0;
       mark("transaction_begin");
-      const now = await databaseTime(transaction);
       const candidate = transaction
         .selectFrom("runs as candidate")
         .innerJoin(
@@ -610,7 +566,7 @@ export class RunExecutor {
         )
         .selectAll("candidate")
         .$if(runId !== undefined, (q) => q.where("candidate.id", "=", runId!))
-        .where("candidate.available_at", "<=", now)
+        .where("candidate.available_at", "<=", sql<Date>`clock_timestamp()`)
         // These code-owned states are also the partial ready-index predicate.
         // Parameters prevent a generic prepared plan from proving that match.
         .where(sql<boolean>`candidate.state = 'queued' and candidate.ready_at is not null`)
@@ -623,7 +579,7 @@ export class RunExecutor {
           piSessionWorkerAvailable(
             sql.ref("candidate_session.tenant_id"),
             sql.ref("candidate_session.pi_session_id"),
-            this.#claimOwnerId,
+            this.#workerId,
           ),
         )
         .orderBy("candidate.available_at", "asc")
@@ -693,8 +649,6 @@ export class RunExecutor {
           "run.sandbox_profile_key as sandboxProfileKey",
           "run.queued_at as runQueuedAt",
           "run.state as runState",
-          "run.current_attempt_id as currentAttemptId",
-          "run.attempt_count as runAttemptCount",
           "run.row_version as runVersion",
         ])
         .where("workspace_row.deleted_at", "is", null)
@@ -776,222 +730,129 @@ export class RunExecutor {
       const remainingToolCalls = maximumToolCalls;
       const toolCapabilities = parseCloudToolCapabilitySnapshot(row.toolCapabilitySnapshot);
 
-      const attemptId = this.#idGenerator();
-      // Writer selection checks the lease/peer owner and its lifetime under the
-      // same physical-Session lock; a separate conflict lookup repeats those reads.
-      const piSessionWriterId = await selectNativeSessionWriter(transaction, {
-        tenantId: row.tenantId,
-        piSessionId: row.piSessionId,
-        workerId: this.#claimOwnerId,
-        attemptId,
-        unsealedRuns: physical.unsealedRuns,
-      });
-      if (!piSessionWriterId) return undefined;
       mark("ownership");
-      const attemptNumber = row.runAttemptCount + 1;
-      if (row.currentAttemptId !== null) {
-        const previous = await transaction
-          .selectFrom("run_attempts")
-          .select(["state"])
-          .where("tenant_id", "=", row.tenantId)
-          .where("run_id", "=", row.runId)
-          .where("id", "=", row.currentAttemptId)
-          .forUpdate()
-          .executeTakeFirst();
-        if (previous === undefined) {
-          throw new RunExecutorInvariantError("Current run attempt is missing");
-        }
-        if (!isTerminalRunAttemptState(previous.state)) {
-          throw new RunExecutorInvariantError("Queued Run retains an unfinished Attempt");
-        }
-      }
-
-      const transitionId = this.#idGenerator();
-      const claimed = await sql<{
-        attemptCount: number;
-        transitionCount: number;
-        runCount: number;
-        claimExpiresAt: Date;
-      }>`
-        with decision as materialized (select clock_timestamp() as at), inserted_attempt as (
-          insert into run_attempts (
-            id, tenant_id, run_id, attempt_number, state, claim_owner_id,
-            claim_expires_at, last_event_seq, claimed_at, created_at, updated_at, native_writer_anchor_id
-          ) select
-            ${attemptId}::uuid, ${row.tenantId}::uuid, ${row.runId}::uuid,
-            ${attemptNumber}, 'claimed', ${this.#claimOwnerId}, d.at + ${this.#claimLeaseMs} * interval '1 millisecond',
-            ${Math.max(0, Number(row.nextEventSeq) - 1)}::bigint, d.at, d.at, d.at, ${piSessionWriterId}::uuid
-          from decision d
-          returning id, claim_expires_at
-        ), inserted_transition as (
-          insert into run_attempt_transitions (
-            id, tenant_id, run_id, attempt_id, from_state, to_state, reason, occurred_at
-          )
-          select ${transitionId}::uuid, ${row.tenantId}::uuid, ${row.runId}::uuid,
-                 id, null, 'claimed', 'run_claimed', d.at
-            from inserted_attempt cross join decision d
-          returning id
-        ), updated_run as (
-          update runs
-             set state = 'claimed',
-                 ready_at = null,
-                 available_at = (select at + ${this.#claimLeaseMs} * interval '1 millisecond' from decision),
-                 current_attempt_id = ${attemptId}::uuid,
-                 attempt_count = ${attemptNumber},
-                 stop_reason = null,
-                 failure_code = null,
-                 failure_message = null,
-                 failure_retryable = null,
-                 settled_at = null,
-                 row_version = row_version + 1,
-                 updated_at = (select at from decision)
-           where tenant_id = ${row.tenantId}::uuid
-             and id = ${row.runId}::uuid
-             and row_version = ${row.runVersion}::bigint
-             and attempt_count = ${row.runAttemptCount}
-          returning id
-        )
-        select (select count(*)::int from inserted_attempt) as "attemptCount",
-               (select count(*)::int from inserted_transition) as "transitionCount",
-               (select count(*)::int from updated_run) as "runCount",
-               (select claim_expires_at from inserted_attempt) as "claimExpiresAt"
-      `.execute(transaction);
-      const claimCounts = claimed.rows[0];
-      if (
-        claimCounts?.attemptCount !== 1 ||
-        claimCounts.transitionCount !== 1 ||
-        claimCounts.runCount !== 1
-      ) {
-        throw new RunExecutorInvariantError("Run claim did not commit one atomic lifecycle");
-      }
-      mark("lifecycle_write");
-
-      const claim: ClaimedTurn = {
-        attempt: attemptNumber,
-        queuedAt: new Date(row.runQueuedAt),
-        request: {
-          tenantId: row.tenantId,
-          projectId: row.projectId,
-          workspaceId: row.workspaceId,
-          sessionId: row.sessionId,
-          piSessionId: row.piSessionId,
-          piSessionLane: row.piSessionLane,
-          piSessionWriterId,
-          runId: row.runId,
-          turnId: row.turnId,
-          attemptId,
-          attemptNumber,
-          agent: {
-            revisionId: row.agentRevisionId,
-            definitionKey: row.agentDefinitionKey,
-            runtimeKind: row.agentRuntimeKind,
-            runtimeVersion: row.agentRuntimeVersion,
-            harnessVersion: row.agentHarnessVersion,
-            sessionStorageKind: row.agentSessionStorageKind,
-          },
-          idempotencyKey: row.idempotencyKey,
-          nextEventSeq: row.nextEventSeq,
-          input: { kind: "prompt" as const, prompt: row.inputText },
-          executionMode: row.executionMode,
-          sessionKind: row.sessionKind,
-          workspaceSeedKind: row.workspaceSeedKind,
-          ...(row.computeSessionId === null ? {} : { computeSessionId: row.computeSessionId }),
-          sandboxProfileKey: row.sandboxProfileKey,
-          workingDirectory: row.workingDirectory,
-          toolCapabilities,
-          ...(row.agentSystemPrompt === null ? {} : { agentSystemPrompt: row.agentSystemPrompt }),
-          model: {
-            profileId: row.modelProfileId,
-            provider: row.provider,
-            modelId: row.modelId,
-            thinkingLevel: row.thinkingLevel,
-            serviceTier: row.serviceTier,
-            credentialBindingId: row.credentialBindingId,
-            credentialBindingVersion: row.credentialBindingVersion,
-          },
-          environment: parseEnvironmentRuntimeSnapshot({
-            environmentVersionId: row.environmentVersionId,
-            versionNumber: row.environmentVersionNumber,
-            profileKey: row.environmentProfileKey,
-            profileVersion: row.environmentProfileVersion,
-            imageRevision: row.environmentImageRevision,
-            specSha256: row.environmentSpecSha256,
-            recipe: row.environmentRecipe,
-            recipeSha256: row.environmentRecipeSha256,
-          }),
-          budgets: {
-            maximumModelRequests: safeNonNegativeInteger(
-              row.maximumModelRequests,
-              "model-request budget",
-            ),
-            maximumCostMicrousd: safeNonNegativeInteger(row.maximumCostMicrousd, "run cost budget"),
-            dailyTokenBudget: safeNonNegativeInteger(row.dailyTokenBudget, "daily token budget"),
-            monthlyCostMicrousdBudget: safeNonNegativeInteger(
-              row.monthlyCostMicrousdBudget,
-              "monthly cost budget",
-            ),
-            maximumToolCalls,
-            remainingToolCalls,
-            maximumToolOutputBytes: safeNonNegativeInteger(
-              row.maximumToolOutputBytes,
-              "tool output budget",
-            ),
-            maximumRunDurationMs: safeNonNegativeInteger(
-              row.maximumRunDurationMs,
-              "Run duration budget",
-            ),
-            compactionReserveTokens: safeNonNegativeInteger(
-              row.compactionReserveTokens,
-              "compaction reserve",
-            ),
-            compactionKeepRecentTokens: safeNonNegativeInteger(
-              row.compactionKeepRecentTokens,
-              "compaction recent context",
-            ),
-          },
-          traceContext: virtualRunTraceCarrier(
-            row.traceId,
-            attemptId.replaceAll("-", "").slice(0, 16),
+      const request: TurnExecutionRequest = {
+        tenantId: row.tenantId,
+        projectId: row.projectId,
+        workspaceId: row.workspaceId,
+        sessionId: row.sessionId,
+        piSessionId: row.piSessionId,
+        piSessionLane: row.piSessionLane,
+        runId: row.runId,
+        turnId: row.turnId,
+        agent: {
+          revisionId: row.agentRevisionId,
+          definitionKey: row.agentDefinitionKey,
+          runtimeKind: row.agentRuntimeKind,
+          runtimeVersion: row.agentRuntimeVersion,
+          harnessVersion: row.agentHarnessVersion,
+          sessionStorageKind: row.agentSessionStorageKind,
+        },
+        idempotencyKey: row.idempotencyKey,
+        nextEventSeq: row.nextEventSeq,
+        input: { kind: "prompt" as const, prompt: row.inputText },
+        executionMode: row.executionMode,
+        sessionKind: row.sessionKind,
+        workspaceSeedKind: row.workspaceSeedKind,
+        ...(row.computeSessionId === null ? {} : { computeSessionId: row.computeSessionId }),
+        sandboxProfileKey: row.sandboxProfileKey,
+        workingDirectory: row.workingDirectory,
+        toolCapabilities,
+        ...(row.agentSystemPrompt === null ? {} : { agentSystemPrompt: row.agentSystemPrompt }),
+        model: {
+          profileId: row.modelProfileId,
+          provider: row.provider,
+          modelId: row.modelId,
+          thinkingLevel: row.thinkingLevel,
+          serviceTier: row.serviceTier,
+          credentialBindingId: row.credentialBindingId,
+          credentialBindingVersion: row.credentialBindingVersion,
+        },
+        environment: parseEnvironmentRuntimeSnapshot({
+          environmentVersionId: row.environmentVersionId,
+          versionNumber: row.environmentVersionNumber,
+          profileKey: row.environmentProfileKey,
+          profileVersion: row.environmentProfileVersion,
+          imageRevision: row.environmentImageRevision,
+          specSha256: row.environmentSpecSha256,
+          recipe: row.environmentRecipe,
+          recipeSha256: row.environmentRecipeSha256,
+        }),
+        budgets: {
+          maximumModelRequests: safeNonNegativeInteger(
+            row.maximumModelRequests,
+            "model-request budget",
+          ),
+          maximumCostMicrousd: safeNonNegativeInteger(row.maximumCostMicrousd, "run cost budget"),
+          dailyTokenBudget: safeNonNegativeInteger(row.dailyTokenBudget, "daily token budget"),
+          monthlyCostMicrousdBudget: safeNonNegativeInteger(
+            row.monthlyCostMicrousdBudget,
+            "monthly cost budget",
+          ),
+          maximumToolCalls,
+          remainingToolCalls,
+          maximumToolOutputBytes: safeNonNegativeInteger(
+            row.maximumToolOutputBytes,
+            "tool output budget",
+          ),
+          maximumRunDurationMs: safeNonNegativeInteger(
+            row.maximumRunDurationMs,
+            "Run duration budget",
+          ),
+          compactionReserveTokens: safeNonNegativeInteger(
+            row.compactionReserveTokens,
+            "compaction reserve",
+          ),
+          compactionKeepRecentTokens: safeNonNegativeInteger(
+            row.compactionKeepRecentTokens,
+            "compaction recent context",
           ),
         },
+        traceContext: virtualRunTraceCarrier(
+          row.traceId,
+          row.runId.replaceAll("-", "").slice(0, 16),
+        ),
       };
-      if (this.#backend.admit) {
-        claim.admission = await this.#backend.admit(transaction, claim.request, mark, {
-          physical: { ...physical, unsealedRuns: String(BigInt(physical.unsealedRuns) + 1n) },
-          claimExpiresAt: claimCounts.claimExpiresAt,
-        });
-        mark("publication_registered");
-      }
-      await this.#startAdmittedRun(transaction, claim, String(BigInt(row.runVersion) + 1n));
+      const claim: ClaimedTurn = {
+        request,
+        queuedAt: new Date(row.runQueuedAt),
+        admission: await this.#backend.admit(transaction, request, mark, { physical }),
+      };
+      await this.#startAdmittedRun(transaction, claim, row.runVersion);
       mark("admitted_running");
       committedCandidate = claim;
       return claim;
     };
     let result: ClaimedTurn | undefined;
     try {
-      result = await retryTransaction(this.#database, attemptAdmission);
+      result = await retryTransaction(this.#database, admitTransaction);
     } catch (error) {
+      // Different cold Lanes may select candidates before the family lock elects
+      // an owner. A rolled-back ownership loss is ordinary queue contention.
+      if (
+        !committedCandidate &&
+        error instanceof SessionLeaseCoordinatorError &&
+        error.code === "session_lease_conflict"
+      )
+        return undefined;
       // Only the exact admission whose COMMIT reply was lost may continue.
-      // Never retry a transport error as another claim/Attempt.
+      // Never retry a transport error as another execution.
       if (!committedCandidate?.admission) throw error;
       const candidate = committedCandidate;
       const recorded = await this.#database
-        .selectFrom("run_attempts as a")
-        .innerJoin("runs as r", "r.current_attempt_id", "a.id")
-        .select(["a.output_publication", "a.claim_owner_id"])
-        .where("a.id", "=", candidate.request.attemptId)
-        .where("r.id", "=", candidate.request.runId)
+        .selectFrom("runs as a")
+        .select(["a.output_publication", "a.sandbox_id"])
+        .where("a.id", "=", candidate.request.runId)
         .where("a.tenant_id", "=", candidate.request.tenantId)
         .where("a.state", "=", "running")
-        .where("r.state", "=", "running")
         .executeTakeFirst();
       if (
-        recorded?.claim_owner_id !== this.#claimOwnerId ||
+        recorded?.sandbox_id !== this.#workerId ||
         !isDeepStrictEqual(recorded.output_publication, candidate.admission!.publication)
       )
         throw error;
       // The exact committed admission already contains running state. Do not
-      // create another Attempt when the COMMIT response was lost.
+      // admit another execution when the COMMIT response was lost.
       result = candidate;
     }
     mark("finish");
@@ -1007,7 +868,6 @@ export class RunExecutor {
           event: "run.claim.timing",
           attributes: {
             runId: result.request.runId,
-            attemptId: result.request.attemptId,
             startedAtMs,
             durationMs: performance.now() - started,
             stages: Object.fromEntries(stages.map(([stage, seconds]) => [stage, seconds * 1000])),
@@ -1028,13 +888,23 @@ export class RunExecutor {
   ): Promise<void> {
     const now = safeDate(this.#clock),
       r = claim.request;
+    const ref = parseExecutionReference(claim.admission.executionReference);
+    const expected = createExecutionPublication({
+      tenantId: r.tenantId,
+      runId: r.runId,
+      sessionId: r.sessionId,
+      turnId: r.turnId,
+      executionReference: claim.admission.executionReference,
+      nextEventSeq: Number(r.nextEventSeq),
+      piSession: { id: r.piSessionId, lane: r.piSessionLane, writerId: ref.leaseId },
+    });
+    if (!isDeepStrictEqual(claim.admission.publication, expected))
+      throw new RunExecutorInvariantError("Admission publication does not match its Run");
     const result = await sql<{
       turns: number;
       sessions: number;
-      attempts: number;
       runs: number;
       transitions: number;
-      families: number;
     }>`with "started_turn" as (
       update turns set state='running',started_at=${now}
         where tenant_id=${r.tenantId}::uuid and id=${r.turnId}::uuid and state='queued'
@@ -1044,33 +914,30 @@ export class RunExecutor {
         updated_at=${now},last_active_at=${now}
         where tenant_id=${r.tenantId}::uuid and id=${r.sessionId}::uuid and state in ('cold','idle')
         returning id
-    ), started_attempt as (
-      update run_attempts set state='running',running_at=${now},last_heartbeat_at=${now},updated_at=${now}
-        where tenant_id=${r.tenantId}::uuid and id=${r.attemptId}::uuid and run_id=${r.runId}::uuid
-          and state='claimed'
-        returning id
     ), started_run as (
-      update runs set state='running',started_at=coalesce(started_at,${now}),
-        updated_at=${now},row_version=row_version+1
+      update runs set state='running',ready_at=null,started_at=${now},
+        updated_at=${now},last_heartbeat_at=${now},row_version=row_version+1,
+        sandbox_id=${this.#workerId}::uuid,lease_id=${ref.leaseId}::uuid,
+        fencing_token=${ref.fencingToken},last_event_seq=${Math.max(0, Number(r.nextEventSeq) - 1)},
+        output_publication=${JSON.stringify(claim.admission.publication)}::jsonb,native_output_drained=false
         where tenant_id=${r.tenantId}::uuid and id=${r.runId}::uuid
-          and current_attempt_id=${r.attemptId}::uuid and state='claimed' and row_version=${runVersion}::bigint
+          and state='queued' and ready_at is not null and lease_id is null and row_version=${runVersion}::bigint
+          and exists(select 1 from session_leases l where l.lease_id=${ref.leaseId}::uuid
+            and l.tenant_id=${r.tenantId}::uuid and l.pi_session_id=${r.piSessionId}
+            and l.sandbox_id=${this.#workerId}::uuid and l.fencing_token=${ref.fencingToken}
+            and l.released_at is null and l.valid_until>clock_timestamp()
+            and l.writer_failed_at is null and l.writer_sealed_at is null)
         returning id
     ), recorded_transition as (
-      insert into run_attempt_transitions(id,tenant_id,run_id,attempt_id,from_state,to_state,reason,occurred_at)
-        select ${this.#idGenerator()}::uuid,${r.tenantId}::uuid,${r.runId}::uuid,id,
-          'claimed','running','execution_admitted',${now} from started_attempt
-        returning id
-    ), admitted_family as (
-      update pi_sessions set active_writer_id=${r.piSessionWriterId}::uuid
-        where tenant_id=${r.tenantId}::uuid and id=${r.piSessionId}
+      insert into run_transitions(id,tenant_id,run_id,from_state,to_state,reason,occurred_at)
+        select ${this.#idGenerator()}::uuid,${r.tenantId}::uuid,id,
+          'queued','running','execution_admitted',${now} from started_run
         returning id
     )
     select (select count(*)::int from "started_turn") as turns,
       (select count(*)::int from "started_session") as sessions,
-      (select count(*)::int from started_attempt) as attempts,
       (select count(*)::int from started_run) as runs,
-      (select count(*)::int from recorded_transition) as transitions,
-      (select count(*)::int from admitted_family) as families`.execute(transaction);
+      (select count(*)::int from recorded_transition) as transitions`.execute(transaction);
     const counts = result.rows[0];
     if (!counts || Object.values(counts).some((count) => count !== 1))
       throw new RunExecutorInvariantError("Execution admission did not start exactly one task");
@@ -1079,7 +946,7 @@ export class RunExecutor {
   async #complete(
     claim: ClaimedTurn,
     result: TurnExecutionResult,
-    acknowledgement: TurnExecutionReference | undefined,
+    acknowledgement: TurnExecutionReference,
   ): Promise<"completed" | "cancelled" | "cancellation_pending"> {
     const now = safeDate(this.#clock);
     const terminalEventId = this.#idGenerator();
@@ -1104,9 +971,7 @@ export class RunExecutor {
         throw new RunExecutorInvariantError("Only a running Run can complete");
       }
 
-      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
-        await this.#executionAuthority.assertCurrent(transaction, claim.request, acknowledgement);
-      }
+      await this.#executionAuthority.assertCurrent(transaction, claim.request, acknowledgement);
       await this.#storeEventBoundary(
         transaction,
         claim,
@@ -1114,16 +979,14 @@ export class RunExecutor {
         now,
       );
 
-      await transitionCurrentRunAttempt(
+      await transitionCurrentRun(
         transaction,
         {
           tenantId: claim.request.tenantId,
           runId: claim.request.runId,
-          attemptId: claim.request.attemptId,
         },
         {
           runState: "completed",
-          attemptState: "completed",
           reason: "execution_completed",
           now,
           stopReason: result.stopReason,
@@ -1175,14 +1038,12 @@ export class RunExecutor {
         now,
         eventId: terminalEventId,
       });
-      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
-        await this.#executionAuthority.releaseCurrent(
-          transaction,
-          claim.request,
-          acknowledgement,
-          now,
-        );
-      }
+      await this.#executionAuthority.releaseCurrent(
+        transaction,
+        claim.request,
+        acknowledgement,
+        now,
+      );
       return "completed";
     });
   }
@@ -1190,7 +1051,7 @@ export class RunExecutor {
   async #recordFailure(
     claim: ClaimedTurn,
     failure: ExecutionFailure,
-    acknowledgement: TurnExecutionReference | undefined,
+    acknowledgement: TurnExecutionReference,
   ): Promise<RunExecutionResult> {
     const now = safeDate(this.#clock);
     const terminalEventId = this.#idGenerator();
@@ -1212,17 +1073,11 @@ export class RunExecutor {
         );
       }
 
-      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
-        if (this.#executionAuthority.assertCurrentOrExpired !== undefined) {
-          await this.#executionAuthority.assertCurrentOrExpired(
-            transaction,
-            claim.request,
-            acknowledgement,
-          );
-        } else {
-          await this.#executionAuthority.assertCurrent(transaction, claim.request, acknowledgement);
-        }
-      }
+      await this.#executionAuthority.assertCurrentOrExpired(
+        transaction,
+        claim.request,
+        acknowledgement,
+      );
       await this.#storeEventBoundary(
         transaction,
         claim,
@@ -1239,14 +1094,13 @@ export class RunExecutor {
             project_id: claim.request.projectId,
             environment_version_id: claim.request.environment.environmentVersionId,
             run_id: claim.request.runId,
-            attempt_id: claim.request.attemptId,
             status: "failed",
             report: null,
             failure_code: failure.code,
             validated_at: now,
           })
           .onConflict((conflict) =>
-            conflict.columns(["environment_version_id", "run_id", "attempt_id"]).doNothing(),
+            conflict.columns(["environment_version_id", "run_id", "run_id"]).doNothing(),
           )
           .executeTakeFirst();
         await transaction
@@ -1263,16 +1117,14 @@ export class RunExecutor {
           .where("recipe_sha256", "=", claim.request.environment.recipeSha256)
           .executeTakeFirstOrThrow();
       }
-      await transitionCurrentRunAttempt(
+      await transitionCurrentRun(
         transaction,
         {
           tenantId: claim.request.tenantId,
           runId: claim.request.runId,
-          attemptId: claim.request.attemptId,
         },
         {
           runState: timedOut ? "timed_out" : "failed",
-          attemptState: timedOut ? "timed_out" : "failed",
           reason: timedOut ? "execution_timed_out" : "execution_failed",
           now,
           failure: {
@@ -1330,14 +1182,12 @@ export class RunExecutor {
           .executeTakeFirst();
         expectOne(sessionUpdate.numUpdatedRows, "settling a failed session");
       }
-      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
-        await this.#executionAuthority.releaseCurrent(
-          transaction,
-          claim.request,
-          acknowledgement,
-          now,
-        );
-      }
+      await this.#executionAuthority.releaseCurrent(
+        transaction,
+        claim.request,
+        acknowledgement,
+        now,
+      );
     });
 
     return {
@@ -1345,7 +1195,6 @@ export class RunExecutor {
       runId: claim.request.runId,
       sessionId: claim.request.sessionId,
       turnId: claim.request.turnId,
-      attempt: claim.attempt,
       phase: "after_admission",
       failureCode: failure.code,
     };
@@ -1362,20 +1211,18 @@ export class RunExecutor {
       throw new RunExecutorInvariantError("Run event boundary is invalid");
     }
     const updated = await transaction
-      .updateTable("run_attempts")
+      .updateTable("runs")
       .set({ last_event_seq: sequence, updated_at: now })
       .where("tenant_id", "=", claim.request.tenantId)
-      .where("run_id", "=", claim.request.runId)
-      .where("id", "=", claim.request.attemptId)
+      .where("id", "=", claim.request.runId)
       .where("last_event_seq", "<=", String(sequence))
       .executeTakeFirst();
     if (updated.numUpdatedRows === 1n) return;
     const existing = await transaction
-      .selectFrom("run_attempts")
+      .selectFrom("runs")
       .select("last_event_seq")
       .where("tenant_id", "=", claim.request.tenantId)
-      .where("run_id", "=", claim.request.runId)
-      .where("id", "=", claim.request.attemptId)
+      .where("id", "=", claim.request.runId)
       .executeTakeFirst();
     if (existing === undefined || Number(existing.last_event_seq) < sequence) {
       throw new RunExecutorInvariantError("Run event boundary could not be advanced or confirmed");
@@ -1399,56 +1246,22 @@ export class RunExecutor {
           .onRef("session_row.tenant_id", "=", "run.tenant_id")
           .onRef("session_row.id", "=", "run.session_id"),
       )
-      .innerJoin("run_attempts as run_attempt", (join) =>
-        join
-          .onRef("run_attempt.run_id", "=", "run.id")
-          .onRef("run_attempt.id", "=", "run.current_attempt_id"),
-      )
       .select([
         "turn.state as turnState",
         "session_row.state as sessionState",
         "run.state as runState",
         "run.failure_code as runFailureCode",
         "run.row_version as runVersion",
-        "run.attempt_count as runAttemptCount",
-        "run.current_attempt_id as currentAttemptId",
-        "run_attempt.state as runAttemptState",
       ])
       .where("run.tenant_id", "=", claim.request.tenantId)
       .where("turn.id", "=", claim.request.turnId)
       .where("session_row.id", "=", claim.request.sessionId)
       .where("run.id", "=", claim.request.runId)
-      .where("run_attempt.id", "=", claim.request.attemptId)
-      .forNoKeyUpdate(["turn", "session_row", "run", "run_attempt"])
+      .forNoKeyUpdate(["turn", "session_row", "run"])
       .executeTakeFirst();
 
     if (!row) {
-      const authority = await transaction
-        .selectFrom("runs")
-        .select(["attempt_count as attemptCount", "current_attempt_id as attemptId"])
-        .where("id", "=", claim.request.runId)
-        .where("tenant_id", "=", claim.request.tenantId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (
-        authority !== undefined &&
-        (authority.attemptCount !== claim.attempt ||
-          authority.attemptId !== claim.request.attemptId)
-      ) {
-        throw new RunExecutorStaleClaimError("Run attempt was superseded");
-      }
       throw new RunExecutorInvariantError("Claimed Run lifecycle rows are missing");
-    }
-    if (Number(row.runVersion) < 1 || claim.attempt < 1) {
-      throw new RunExecutorInvariantError("Claimed Run version is invalid");
-    }
-    if (row.runAttemptCount !== claim.attempt) {
-      throw new RunExecutorStaleClaimError(
-        `Run claim attempt ${claim.attempt} was superseded by attempt ${row.runAttemptCount}`,
-      );
-    }
-    if (row.currentAttemptId !== claim.request.attemptId) {
-      throw new RunExecutorStaleClaimError("Run attempt was superseded");
     }
     return row;
   }

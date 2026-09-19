@@ -29,8 +29,8 @@ a quiescent physical Session under the same PG lock used by Run claim.
 All facts for a physical Pi Session use one Kafka partition key, including its
 Lane UI events, Tool commands and seals. Transport and unified projection follow
 [ADR-0163](0163-direct-log-and-unified-projector.md). A native writer
-incarnation is identified by the first RunAttempt ID of that active ownership
-period; this is log identity, not another lease/credential. Members share one
+incarnation is identified by its Session lease ID (ADR-0180), not a first task.
+Members share one
 physical-Session owner lease and carry separate task references for admission,
 as specified by [ADR-0167](0167-session-family-capacity.md).
 
@@ -57,10 +57,9 @@ duplicate/lost ACK, Compaction, frontend snapshots and paid Cube coding.
 Drain and fully project the old topic before deployment; existing PG semantic
 history remains usable, with no dual runtime or old-protocol fallback.
 
-The process-fault gate exposed a lock-order inversion during stream close and
-Run settlement. Stream certificates lock Attempt before Lease; heartbeats lock
-member Attempts before their writer anchor, then leases, and update Worker
-capacity last. Lifecycle locks use NO KEY UPDATE because identities never change.
+Run settlement and projection lock the Run before its shared owner evidence;
+heartbeats lock the Session lease, without touching task or Worker-capacity rows.
+Lifecycle locks use NO KEY UPDATE because referenced identities never change.
 SQL-only lifecycle transactions retry PostgreSQL-certified rollbacks (40P01,
 40001), never transport/COMMIT uncertainty, model calls or Tool effects. This
 follows PostgreSQL's [lock ordering](https://www.postgresql.org/docs/17/explicit-locking.html)

@@ -64,28 +64,27 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
       "Native host",
       "elastic",
     );
-    const sandboxId = crypto.randomUUID();
-    await db
-      .insertInto("sandboxes")
-      .values({
-        id: sandboxId,
-        supervisor_id: "native-host",
-        boot_id: crypto.randomUUID(),
-        state: "ready",
-        max_concurrent_sessions: 8,
-        active_sessions: 0,
-      })
-      .execute();
-    const coordinator = new SessionLeaseCoordinator({ database: db, sandboxId });
     let childId: string | undefined,
       childExecutionId: string | undefined,
       phase = 1;
     let parentWriterId: string | undefined;
     const failures: unknown[] = [];
-    const makeExecutor = (owner: string) =>
-      new RunExecutor({
+    const makeExecutor = async (owner: string) => {
+      const sandboxId = crypto.randomUUID();
+      await db
+        .insertInto("sandboxes")
+        .values({
+          id: sandboxId,
+          supervisor_id: owner,
+          boot_id: crypto.randomUUID(),
+          state: "ready",
+          max_concurrent_sessions: 8,
+        })
+        .execute();
+      const coordinator = new SessionLeaseCoordinator({ database: db, sandboxId });
+      return new RunExecutor({
         database: db,
-        claimOwnerId: owner,
+        workerId: sandboxId,
         executionAuthority: coordinator,
         backend: {
           admit: (tx, request, _mark, facts) => admitTestExecution(coordinator, tx, request, facts),
@@ -108,7 +107,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                 piSession: {
                   id: request.piSessionId,
                   lane: request.piSessionLane,
-                  writerId: request.piSessionWriterId,
+                  writerId: grant.publication.scope.writerId,
                 },
               };
               const publication = admission!.publication;
@@ -117,12 +116,12 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
               const readCancellation = new AbortController();
               const session = await host.open({
                 scope,
-                writerId: request.piSessionWriterId,
+                writerId: grant.publication.scope.writerId,
                 executionReference: grant.executionReference,
                 readSignal: readCancellation.signal,
                 publisher: publisher.scoped({
                   ...scope,
-                  writerId: request.piSessionWriterId,
+                  writerId: grant.publication.scope.writerId,
                   executionReference: grant.executionReference,
                 }),
               });
@@ -178,7 +177,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                   return { stopReason: "stop" };
                 }
                 if (request.piSessionLane === "main" && phase === 2) {
-                  expect(request.piSessionWriterId).not.toBe(parentWriterId);
+                  expect(grant.publication.scope.writerId).not.toBe(parentWriterId);
                   const path = await session.session
                     .view("main")
                     .findEntriesOnBranch({ stopAtType: "compaction", order: "newestFirst" });
@@ -229,7 +228,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                   );
                 }
                 if (request.piSessionLane === "main" && phase === 1) {
-                  parentWriterId = request.piSessionWriterId;
+                  parentWriterId = grant.publication.scope.writerId;
                   const jobs = new PostgresSubagentJobProvider({ database: db, nativeLanes: host });
                   const child = await jobs.start({
                     tenantId: request.tenantId,
@@ -271,7 +270,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                     session.lane,
                   );
                 } else if (request.piSessionLane !== "main") {
-                  expect(request.piSessionWriterId).toBe(parentWriterId);
+                  expect(grant.publication.scope.writerId).toBe(parentWriterId);
                   // Projection is deliberately stopped. Cancel only this task's
                   // cold read, then complete its native writes and the parent.
                   let readOutcome: unknown = "pending";
@@ -332,7 +331,8 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
           },
         },
       });
-    let executor = makeExecutor("worker-one");
+    };
+    let executor = await makeExecutor("worker-one");
     const first = await store.acceptTurn(conversation.sessionId, "first", {
       prompt: "parent task",
     });
@@ -413,7 +413,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
     host.close();
     host = new PostgresNativeSessionHost({ database: db });
     phase = 2;
-    executor = makeExecutor("worker-two");
+    executor = await makeExecutor("worker-two");
     const next = await store.acceptTurn(conversation.sessionId, "second", { prompt: "continue" });
     expect(await executor.dispatchRun(next.runId)).toMatchObject({ status: "completed" });
     await projectReady();
@@ -435,7 +435,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
     host.close();
     host = new PostgresNativeSessionHost({ database: db });
     phase = 4;
-    executor = makeExecutor("worker-three");
+    executor = await makeExecutor("worker-three");
     const recover = await store.acceptTurn(conversation.sessionId, "recover", {
       prompt: "continue after interruption",
     });

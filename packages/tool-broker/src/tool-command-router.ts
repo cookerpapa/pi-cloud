@@ -55,7 +55,7 @@ export class ToolCommandRouter {
     this.#metrics?.toolLogConsumed.inc({ kind: fact?.kind ?? "ignored" });
     if (!fact) return;
     const seal = fact.kind === "execution_seal";
-    const key = `${fact.scope.tenantId}:${fact.scope.attemptId}`;
+    const key = `${fact.scope.tenantId}:${fact.scope.runId}`;
     let routes = seal ? undefined : this.#cache.get(key);
     // A second binding may have been created since a prior result. Never cache
     // absence, and refresh when the command names a previously unseen binding.

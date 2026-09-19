@@ -68,29 +68,31 @@ seal projection promotes it in the closure transaction. Both paths hold the
 product Session row lock, so racing input and closure cannot lose readiness.
 Child preparation readies its own Lane without waiting for its parent to finish.
 
-Workers claim only ready `runs` with `FOR UPDATE SKIP LOCKED`. Claim checks
-current placement/capacity and parent liveness, not predecessor history again.
+Workers claim only ready `runs` with `FOR UPDATE SKIP LOCKED`. Local pending/active
+family reservations decide capacity; PG checks ownership and parent liveness,
+not predecessor history again.
 It locks the physical `pi_sessions` row to keep active Lanes on one Worker boot.
 Its `unsealed_runs` count permits cold ownership only after all older tasks have
-closed; a healthy current owner can continue ready sibling Lanes. An Attempt
-row trigger updates the count on insertion/first seal in the existing transactions.
+closed; a healthy current owner can continue ready sibling Lanes. A Run
+row trigger updates the count on owner binding/first seal in the existing transactions.
 It adds no client round trip; rollback and duplicate seal delivery cannot drift it.
 One materialized candidate supplies the startup context without a second queue
 scan. Immutable Session kind and Workspace seed kind travel in the internal
 execute command; downstream preparation does not re-query them.
-Claim, Session lease binding, publication registration and running state commit
-together; failed admission reserves neither an Attempt nor capacity. The Runner
+Session lease binding, publication scope and running state commit together in
+one Run update; rejected admission leaves input queued without another execution
+identity. The Runner
 prepares and executes immediately after that commit, without separate started/
 running transactions or an opening append. An uncertain admission COMMIT can
 resume only its exact confirmed record; a post-admission failure requires a seal,
-not a pre-start requeue (ADRs 0178–0179). Transaction-local locked facts flow into
-lease issuance and conditional publication/running writes instead of independent
-re-reads. The old unbound-claim owner fallback is removed.
+not a pre-start requeue (ADR-0180). Transaction-local locked facts flow into
+lease issuance and one conditional running write, which checks database time
+after all locks. There is no persisted claimed stage, RunAttempt or startup lease.
 Cold Sessions have no Worker affinity or permanent process. Successful claims
 wake the next free slot; LISTEN/NOTIFY reduces idle latency and periodic polling
 covers missed wakeups. There is no Temporal or competing dispatcher.
 
-An active physical Session occupies one Worker slot and has one native writer
+An active physical Session occupies one local Worker slot and has one native writer
 and one owner lease, while main and Child Agent Loops run concurrently. Model
 requests share a separate, abortable, round-robin budget keyed by physical Session;
 Tools/child waits hold no model permit. Tree depth and total nodes remain bounded.
@@ -105,12 +107,13 @@ does not raise model concurrency, change per-Session ownership or allow a
 successor to skip the predecessor's seal. New work arriving during an older
 empty scan is rechecked on completion; idle scans do not self-wake indefinitely.
 
-`session_leases` has one row per `(tenant_id, pi_session_id)`. Its ID and monotonic
-`pi_sessions.lease_epoch` identify an ownership period. Heartbeats renew each
-family once; quiet tasks do not lose separate leases. Each RunAttempt carries a
-task `ExecutionReference` (shared lease/epoch plus Attempt ID), not another lease.
-The read-only `active_execution_scopes` view combines task state with owner authority
-for executor checks. Task cancellation closes that task; lost ownership retires
+`session_leases` has one current owner per `(tenant_id, pi_session_id)` and retains
+released incarnations as closure evidence. Its ID is also the native writer ID;
+`pi_sessions.lease_epoch` is the monotonic Fence. Heartbeats renew each family
+once; released or expired owners cannot revive. Each Run carries an
+`ExecutionReference` (Run ID plus Session lease/epoch), not another lease.
+The read-only `active_execution_scopes` view combines Run state with current owner
+authority for executor checks. Task cancellation closes that task; lost ownership retires
 the family, and a successor waits for all affected ordered closures to project.
 Workspace access across different Sessions is deliberately ordinary user-managed
 Linux concurrency, not a scheduling lock or tenant concurrency quota.
@@ -127,7 +130,7 @@ operator responsibility.
 ## Direct execution log
 
 During atomic execution admission the PG authority freezes publication scope against the exact
-Lease, Attempt, native writer and Lane. The trusted Worker appends semantic
+Run, Session lease and Lane. The trusted Worker appends semantic
 records, display events and concrete Tool commands directly to private Kafka.
 There is no standalone opening record, signing key or per-record signature.
 
@@ -147,7 +150,7 @@ still stops on lease loss to avoid wasted work. A normally drained Run closes
 only its execution; uncertain native publication also closes its shared writer
 incarnation. Unrelated Sessions and later writer incarnations stay independent.
 
-The code-owned topic is `pi-cloud.execution-log.v9`. Physical Pi Session ID is
+The code-owned topic is `pi-cloud.execution-log.v10`. Physical Pi Session ID is
 the immutable partition key, shared by all Lanes and control boundaries. Do not
 change its partition count in place. Producers use RF3/acks-all and bounded
 pending bytes/records, respecting transport backpressure. Worker admission/drain
@@ -173,7 +176,7 @@ updates projection progress in the same transaction. A crash before commit
 replays the record; a crash after commit can redeliver it without changing its
 meaning. Native sequence conflicts stop recovery rather than being skipped.
 Native message/Tool-intent projection co-commits display event/native positions
-on the Attempt. Active conversation reads stop at that semantic boundary. A
+on the Run. Active conversation reads stop at that semantic boundary. A
 proposed Tool is not rendered as running until its native execution intent exists.
 Only text covered by the native content is evicted; mismatched/incomplete text
 remains pending for interruption recovery. These metadata updates are not a
@@ -190,7 +193,7 @@ token fragments create no PG rows. Rebalance invalidates old subscriptions and
 rebuilds the assigned prefix before its Projector serves snapshots.
 
 At a seal, one PG transaction stores the exact public terminal, interrupted
-visible prefix, Attempt closure and recovery progress. The Projector then updates
+visible prefix, Run closure and recovery progress. The Projector then updates
 the local live view directly. There is no second Kafka commit notice or buffer
 waiting for such a notice. A successor is released by the PG closure, not by a
 browser ACK. Incomplete Tools remain UNKNOWN; no successful result is invented.
@@ -290,7 +293,7 @@ Workspace bytes. Deleting a parent includes its descendant transcript views.
 ## Tools and Cube
 
 Tool Broker is now an execution/lifecycle service, not a Kafka consumer. Its
-immutable PG Attempt/binding routes point to one Broker boot. Projector forwards
+immutable PG Run/binding routes point to one Broker boot. Projector forwards
 only commands and small result-retirement/seal notifications through an internal
 credential unavailable to the Worker. The receiver folds positions synchronously
 and acknowledges admission, not guest completion. Replayed/delayed lower offsets

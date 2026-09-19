@@ -43,7 +43,7 @@ async function fixture(
     fail,
   });
   const main = await writer.open(
-    { lane: "main", turnId: "turn-1", attemptId: "attempt-1" },
+    { lane: "main", turnId: "turn-1", runId: "attempt-1" },
     { branch, openOperations: [], reader },
     publisher,
   );
@@ -89,12 +89,12 @@ describe("Kafka-acknowledged native Session writer", () => {
       const publisher = { publish: async () => {} };
       const reader = new InMemorySessionStorage(metadata);
       const parent = await writer.open(
-        { lane: "main", turnId: "parent", attemptId: "parent" },
+        { lane: "main", turnId: "parent", runId: "parent" },
         { branch: [], openOperations: [], reader },
         publisher,
       );
       const child = await writer.open(
-        { lane: "child", turnId: "child", attemptId: "child" },
+        { lane: "child", turnId: "child", runId: "child" },
         { branch: [], openOperations: [], reader, readSignal: taskAbort.signal },
         publisher,
       );
@@ -336,12 +336,12 @@ describe("Kafka-acknowledged native Session writer", () => {
     await f.main.createLane("inherited", before.id);
     await f.main.createLane("empty", null);
     const inherited = await f.writer.open(
-      { lane: "inherited", turnId: "child-turn", attemptId: "child-attempt" },
+      { lane: "inherited", turnId: "child-turn", runId: "child-attempt" },
       { branch: [], openOperations: [], reader: f.reader },
       f.publisher,
     );
     const empty = await f.writer.open(
-      { lane: "empty", turnId: "fresh-turn", attemptId: "fresh-attempt" },
+      { lane: "empty", turnId: "fresh-turn", runId: "fresh-attempt" },
       { branch: [], openOperations: [], reader: f.reader },
       f.publisher,
     );
@@ -400,7 +400,7 @@ describe("Kafka-acknowledged native Session writer", () => {
     const f = await fixture();
     await f.main.createLane("child", null);
     const child = await f.writer.open(
-      { lane: "child", turnId: "child", attemptId: "child" },
+      { lane: "child", turnId: "child", runId: "child" },
       { branch: [], openOperations: [], reader: f.reader },
       f.publisher,
     );

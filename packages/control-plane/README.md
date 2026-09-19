@@ -7,7 +7,7 @@ PiCloud.
 
 - accounts, browser sessions, tenant roles and platform administrator identity;
 - Projects, named Workspaces and named conversations;
-- Run/Attempt admission, idempotency and Session ordering;
+- single-Run admission, idempotency and Session ownership/ordering;
 - leases, fencing tokens, heartbeats and terminal commit;
 - canonical Pi Session persistence and replacement-snapshot SSE reconnects;
 - Workspace/machine lifecycle and live directory/file browsing;

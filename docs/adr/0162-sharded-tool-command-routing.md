@@ -7,7 +7,7 @@ benchmarks remain in Git history, not current deployment guidance.
 
 Projector routes already-admitted Tool commands, native-result acknowledgements
 and seals to the exact binding owner. PostgreSQL stores immutable
-Attempt/binding-to-Broker-boot routes before handing a binding to the Worker.
+Run/binding-to-Broker-boot routes before handing a binding to the Worker.
 Positive lookups are cached; whole-writer closure resolves all affected owners.
 This is routing metadata, not another lease or partition authority.
 

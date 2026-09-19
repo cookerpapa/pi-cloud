@@ -49,7 +49,6 @@ it("claims bounded Session heads without holding a connection during delivery an
               sessionId,
               runId: crypto.randomUUID(),
               turnId,
-              attemptId: crypto.randomUUID(),
               fencingToken: 1,
             },
             occurredAt: time.toISOString(),

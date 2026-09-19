@@ -14,16 +14,16 @@ all its active Run executions drain; children do not compete for another root
 slot. Remove the fixed parent/child split and the per-Root concurrent-child
 admission rejection. Keep bounded tree depth and total descendants.
 
-PostgreSQL remains the only durable scheduler. A Worker has one in-flight claim
-probe, supplies its admitted family set/new-family allowance, and records the
-claimed family before probing again. Its admission filter is also enforced on
-fixed-ID claims. PG lease accounting and local Supervisor admission count
-distinct physical Sessions. There is one durable owner lease per physical
+PostgreSQL remains the only durable scheduler. A Worker has at most two in-flight
+claims (ADR-0175), supplies its admitted family set/new-family allowance, and
+reserves pending capacity locally. Its admission filter also applies to fixed-ID
+claims. ADR-0180 removes the duplicate PG occupancy counter; local admission counts
+distinct physical Sessions. There is one current owner lease per physical
 Session and one monotonic Session epoch; heartbeats renew that row once, not
-one lease/deadline per child. A RunAttempt is a task identity, not an owner.
+one lease/deadline per child. A Run is a task identity, not an owner.
 
-The task execution reference carries the shared lease ID/epoch plus its Attempt
-ID. It has no separate expiry or renewal. `run_attempts` retain task lifecycle
+The task execution reference carries the shared lease ID/epoch plus its Run
+ID. It has no separate expiry or renewal. `runs` retain task lifecycle
 and release markers; a read-only `active_execution_scopes` projection joins those
 records with the Session lease for executor authorization. No duplicate mutable
 per-task lease table, compatibility decoder or new authority service remains.
@@ -56,12 +56,8 @@ This changes capacity, not recovery semantics. Lost Workers still require ordere
 closure/projection before cold restore. Neither JavaScript workflow stacks nor
 in-flight model connections are resumed from the append-only log.
 
-The pre-release wire contract now uses `ExecutionReference`/`pcer1_` for task
-attribution and family-only heartbeat records. New facts use the v8 Kafka topic.
-Migration 137 requires drained leases/Runs/Outbox and released old full-VM
-capsules; stop old execution services and deploy matching images. It preserves
-PG semantic history and user/configuration data, with no legacy wire/capsule
-decoder. A retired topic can be removed only after confirmed projection.
+Current wire/schema cutover follows ADR-0180 and the deployment guide. Do not
+restore per-task leases or a PG occupancy counter from historical acceptance data.
 
 ## Adopt before build
 

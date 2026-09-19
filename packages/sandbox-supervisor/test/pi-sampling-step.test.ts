@@ -8,7 +8,7 @@ function capture(sequence: number) {
         schemaVersion: 2 as const,
         sequence,
         turnContextSha256: "a".repeat(64),
-        attemptContextSha256: "b".repeat(64),
+        executionContextSha256: "b".repeat(64),
         activeTools: ["bash", "edit", "read", "write"],
         worldState: {
           sandbox: { status: "inactive" as const, continuitySha256: null },

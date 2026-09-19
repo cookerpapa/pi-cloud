@@ -270,7 +270,7 @@ async function usageForRun(runId) {
 async function runEvidence(runId) {
   const row = await psql(
     `select sandbox.supervisor_id || '|' ||
-            coalesce(attempt.sandbox_id::text, '') || '|' ||
+            coalesce(run.sandbox_id::text, '') || '|' ||
             coalesce(activation.workspace_runtime_id::text, '') || '|' ||
             coalesce(activation.runtime_id, '') || '|' ||
             coalesce(pi.total_bytes, 0) || '|' ||
@@ -279,8 +279,7 @@ async function runEvidence(runId) {
             coalesce(pi.active_entries, 0)
        from runs run
        join sessions product_session on product_session.id = run.session_id
-       join run_attempts attempt on attempt.id = run.current_attempt_id
-       join sandboxes sandbox on sandbox.id = attempt.sandbox_id
+       join sandboxes sandbox on sandbox.id = run.sandbox_id
        left join tool_broker_workspace_runtimes activation
         on activation.tenant_id = run.tenant_id
         and activation.workspace_id = run.workspace_id

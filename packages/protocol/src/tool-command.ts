@@ -17,7 +17,6 @@ export type AcceptedToolCommand = Readonly<{
     sessionId: string;
     turnId: string;
     runId: string;
-    attemptId: string;
     fencingToken: number;
     leaseId: string;
     piSessionId: string;

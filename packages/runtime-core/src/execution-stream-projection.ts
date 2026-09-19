@@ -56,7 +56,7 @@ export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
 }
 
 /** Durable closure is checked once per execution, not once per token. Closed
- * tombstones can be evicted: their authority is the RunAttempt row, not RAM. */
+ * tombstones can be evicted: their authority is the Run row, not RAM. */
 export class ExecutionStreamBoundary {
   readonly #database: Kysely<Database>;
   readonly #open = new Set<string>();
@@ -83,11 +83,11 @@ export class ExecutionStreamBoundary {
     }
   }
 
-  close(attemptId: string, offset: bigint): void {
-    this.#open.delete(attemptId);
-    const previous = this.#closed.get(attemptId);
-    this.#closed.delete(attemptId);
-    this.#closed.set(attemptId, previous === undefined || offset < previous ? offset : previous);
+  close(runId: string, offset: bigint): void {
+    this.#open.delete(runId);
+    const previous = this.#closed.get(runId);
+    this.#closed.delete(runId);
+    this.#closed.set(runId, previous === undefined || offset < previous ? offset : previous);
     if (this.#closed.size > 65_536) {
       const oldest = this.#closed.keys().next().value!;
       this.#closed.delete(oldest);
@@ -98,56 +98,54 @@ export class ExecutionStreamBoundary {
     const { scope } = record.fact;
     const writerCutoff = this.#writers.get(scope.writerId);
     if (writerCutoff !== undefined && record.offset >= writerCutoff) return false;
-    const cutoff = this.#closed.get(scope.attemptId);
+    const cutoff = this.#closed.get(scope.runId);
     if (cutoff !== undefined) {
-      this.#closed.delete(scope.attemptId);
-      this.#closed.set(scope.attemptId, cutoff);
+      this.#closed.delete(scope.runId);
+      this.#closed.set(scope.runId, cutoff);
       return !canonical && record.offset < cutoff;
     }
-    if (this.#open.has(scope.attemptId)) return true;
-    const attempt = await this.#database
-      .selectFrom("run_attempts as attempt")
-      .innerJoin("runs as run", "run.id", "attempt.run_id")
-      .innerJoin("run_attempts as writer", "writer.id", "attempt.native_writer_id")
+    if (this.#open.has(scope.runId)) return true;
+    const run = await this.#database
+      .selectFrom("runs as run")
+      .innerJoin("session_leases as writer", "writer.lease_id", "run.lease_id")
       .select([
-        "attempt.claimed_at",
-        "attempt.output_sealed_at",
-        "attempt.output_seal_offset",
-        "attempt.output_first_topic",
-        "attempt.output_first_partition",
-        "attempt.output_first_offset",
-        "attempt.native_writer_id",
-        "writer.native_writer_seal_offset",
+        "run.started_at",
+        "run.output_sealed_at",
+        "run.output_seal_offset",
+        "run.output_first_topic",
+        "run.output_first_partition",
+        "run.output_first_offset",
+        "run.lease_id",
+        "writer.writer_seal_offset",
       ])
-      .where("attempt.id", "=", scope.attemptId)
-      .where("attempt.tenant_id", "=", scope.tenantId)
       .where("run.id", "=", scope.runId)
+      .where("run.tenant_id", "=", scope.tenantId)
       .where("run.session_id", "=", scope.sessionId)
       .where("run.turn_id", "=", scope.turnId)
       .executeTakeFirst();
-    if (attempt && attempt.native_writer_id !== scope.writerId)
+    if (run && run.lease_id !== scope.writerId)
       throw new Error("Execution native writer identity changed");
-    if (attempt?.native_writer_seal_offset != null) {
-      const offset = BigInt(attempt.native_writer_seal_offset);
+    if (run?.writer_seal_offset != null) {
+      const offset = BigInt(run.writer_seal_offset);
       this.closeWriter(scope.writerId, offset);
       if (record.offset >= offset) return false;
     }
-    if (!attempt || attempt.output_sealed_at !== null) {
-      const cutoff = attempt?.output_seal_offset == null ? -1n : BigInt(attempt.output_seal_offset);
-      this.close(scope.attemptId, cutoff);
+    if (!run || run.output_sealed_at !== null) {
+      const cutoff = run?.output_seal_offset == null ? -1n : BigInt(run.output_seal_offset);
+      this.close(scope.runId, cutoff);
       return !canonical && record.offset < cutoff;
     }
     if (canonical) {
-      if (attempt.output_first_offset !== null) {
+      if (run.output_first_offset !== null) {
         if (
-          attempt.output_first_topic !== record.topic ||
-          attempt.output_first_partition !== record.partition ||
-          BigInt(attempt.output_first_offset) !== record.offset
+          run.output_first_topic !== record.topic ||
+          run.output_first_partition !== record.partition ||
+          BigInt(run.output_first_offset) !== record.offset
         )
           throw new Error("Unsealed execution prefix is missing or changed Kafka partition");
       }
     }
-    this.#open.add(scope.attemptId);
+    this.#open.add(scope.runId);
     return true;
   }
 }
@@ -178,16 +176,16 @@ export class ExecutionStreamProjector {
     const { fact } = record;
     if (!(await this.#boundary.isOpen(record, true))) {
       if (fact.kind === "execution_seal") {
-        const prefix = this.#prefixes.get(fact.scope.attemptId);
+        const prefix = this.#prefixes.get(fact.scope.runId);
         const terminal = await this.#seal(fact, record, prefix);
-        this.#boundary.close(fact.scope.attemptId, record.offset);
+        this.#boundary.close(fact.scope.runId, record.offset);
         if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
-        this.#prefixes.delete(fact.scope.attemptId);
+        this.#prefixes.delete(fact.scope.runId);
         return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
       }
       return;
     }
-    const existingPrefix = this.#prefixes.get(fact.scope.attemptId);
+    const existingPrefix = this.#prefixes.get(fact.scope.runId);
     const prefix = existingPrefix ?? new CompactEventTail();
     for (const event of factEvents(fact)) {
       prefix.accept(event);
@@ -195,16 +193,16 @@ export class ExecutionStreamProjector {
     if (fact.kind === "pi_session_append") {
       const through = displayCoverage(fact, prefix);
       await this.#mutations.project(fact, record, through);
-      this.#prefixes.set(fact.scope.attemptId, prefix);
+      this.#prefixes.set(fact.scope.runId, prefix);
       if (through !== undefined) {
         prefix.cover(through);
         return { canonicalThroughSequence: through };
       }
     } else if (fact.kind === "execution_seal") {
       const terminal = await this.#seal(fact, record, prefix);
-      this.#boundary.close(fact.scope.attemptId, record.offset);
+      this.#boundary.close(fact.scope.runId, record.offset);
       if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
-      this.#prefixes.delete(fact.scope.attemptId);
+      this.#prefixes.delete(fact.scope.runId);
       return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
     } else {
       if (!existingPrefix) {
@@ -212,18 +210,18 @@ export class ExecutionStreamProjector {
         // transaction. A display/control-only prefix must also survive recovery
         // before it can become visible or reach an external-effect executor.
         await this.#database
-          .updateTable("run_attempts")
+          .updateTable("runs")
           .set({
             output_first_topic: record.topic,
             output_first_partition: record.partition,
             output_first_offset: record.offset.toString(),
           })
           .where("tenant_id", "=", fact.scope.tenantId)
-          .where("id", "=", fact.scope.attemptId)
+          .where("id", "=", fact.scope.runId)
           .where("output_first_offset", "is", null)
           .execute();
       }
-      this.#prefixes.set(fact.scope.attemptId, prefix);
+      this.#prefixes.set(fact.scope.runId, prefix);
     }
   }
 
@@ -233,8 +231,8 @@ export class ExecutionStreamProjector {
     prefix: CompactEventTail | undefined,
   ): Promise<PiCloudEvent | undefined> {
     const committed = await this.#database.transaction().execute(async (transaction) => {
-      const attempt = await transaction
-        .selectFrom("run_attempts")
+      const run = await transaction
+        .selectFrom("runs")
         .select([
           "output_seal_id",
           "output_sealed_at",
@@ -244,26 +242,26 @@ export class ExecutionStreamProjector {
           "output_first_partition",
           "output_first_offset",
         ])
-        .where("id", "=", fact.scope.attemptId)
+        .where("id", "=", fact.scope.runId)
         .forNoKeyUpdate()
         .executeTakeFirst();
-      if (!attempt) return;
-      // Terminal admission and native projection lock their own Attempt before
-      // the common writer anchor. Never take a sibling Attempt after that anchor.
+      if (!run) return;
+      // Terminal admission and native projection lock their own Run before the
+      // shared lease. Never take a sibling Run after that lease.
       const writer = await transaction
-        .selectFrom("run_attempts")
-        .select("native_writer_seal_offset")
+        .selectFrom("session_leases")
+        .select("writer_seal_offset")
         .where("tenant_id", "=", fact.scope.tenantId)
-        .where("id", "=", fact.scope.writerId)
+        .where("lease_id", "=", fact.scope.writerId)
         .forNoKeyUpdate()
         .executeTakeFirst();
       if (!writer) return;
       if (
-        attempt.output_seal_id !== fact.factId ||
-        Number(attempt.fencing_token ?? 0) !== fact.scope.fencingToken
+        run.output_seal_id !== fact.factId ||
+        Number(run.fencing_token ?? 0) !== fact.scope.fencingToken
       )
-        throw new Error("Execution seal does not match its requested RunAttempt");
-      if (attempt.output_sealed_at !== null) {
+        throw new Error("Execution seal does not match its requested Run");
+      if (run.output_sealed_at !== null) {
         const terminal = await transaction
           .selectFrom("session_terminal_events")
           .selectAll()
@@ -290,19 +288,19 @@ export class ExecutionStreamProjector {
         return event;
       }
       if (
-        attempt.output_first_offset !== null &&
-        !this.#prefixes.has(fact.scope.attemptId) &&
-        BigInt(attempt.output_first_offset) !== position.offset
+        run.output_first_offset !== null &&
+        !this.#prefixes.has(fact.scope.runId) &&
+        BigInt(run.output_first_offset) !== position.offset
       )
         throw new Error("Unsealed execution prefix is missing before writer closure");
-      if (fact.closesWriter && writer.native_writer_seal_offset === null)
+      if (fact.closesWriter && writer.writer_seal_offset === null)
         await transaction
-          .updateTable("run_attempts")
+          .updateTable("session_leases")
           .set({
-            native_writer_sealed_at: new Date(),
-            native_writer_seal_offset: position.offset.toString(),
+            writer_sealed_at: new Date(),
+            writer_seal_offset: position.offset.toString(),
           })
-          .where("id", "=", fact.scope.writerId)
+          .where("lease_id", "=", fact.scope.writerId)
           .execute();
       const event = parsePiCloudEvent({
         schemaVersion: 1,
@@ -354,16 +352,16 @@ export class ExecutionStreamProjector {
         .where("id", "=", fact.scope.sessionId)
         .execute();
       await transaction
-        .updateTable("run_attempts")
+        .updateTable("runs")
         .set({
           output_sealed_at: now,
           output_seal_offset: position.offset.toString(),
-          output_first_topic: attempt.output_first_topic ?? position.topic,
-          output_first_partition: attempt.output_first_partition ?? position.partition,
-          output_first_offset: attempt.output_first_offset ?? position.offset.toString(),
+          output_first_topic: run.output_first_topic ?? position.topic,
+          output_first_partition: run.output_first_partition ?? position.partition,
+          output_first_offset: run.output_first_offset ?? position.offset.toString(),
           last_event_seq: event.seq,
         })
-        .where("id", "=", fact.scope.attemptId)
+        .where("id", "=", fact.scope.runId)
         .execute();
       await recordFactProjection(transaction, position);
       if (event.type === "turn.failed") await recoverQuarantinedSession(transaction, fact.scope);

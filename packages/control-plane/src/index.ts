@@ -142,7 +142,6 @@ export {
 export {
   RunExecutor,
   RunExecutorInvariantError,
-  RunExecutorStaleClaimError,
   TurnExecutionBackendError,
   TurnExecutionCancelledError,
   type RunExecutionResult,

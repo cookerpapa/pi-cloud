@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  createCloudAttemptContext,
+  createCloudExecutionContext,
   createCloudStepContext,
   createCloudTurnContext,
   PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
@@ -224,7 +224,7 @@ describe("PiCloudTurnRunner integration", () => {
                   step: createCloudStepContext({
                     sequence: ++sequence,
                     turnContextSha256: turn.sha256,
-                    attemptContextSha256: "b".repeat(64),
+                    executionContextSha256: "b".repeat(64),
                     allowedTools: [],
                     activeTools: [],
                     worldState: world.worldState,
@@ -389,7 +389,7 @@ describe("PiCloudTurnRunner integration", () => {
                   step: createCloudStepContext({
                     sequence: 1,
                     turnContextSha256: turn.sha256,
-                    attemptContextSha256: "b".repeat(64),
+                    executionContextSha256: "b".repeat(64),
                     allowedTools: [],
                     activeTools: [],
                     worldState: captured.worldState,
@@ -1031,7 +1031,7 @@ describe("PiCloudTurnRunner integration", () => {
       const checkpointOperations: PiSessionMutationOperation[] = [];
       const checkpointEvents: PiCloudEvent[] = [];
       const turn = createCloudTurnContext(command);
-      const attempt = createCloudAttemptContext({
+      const attempt = createCloudExecutionContext({
         command,
         runtimeIdentity: {
           supervisorId: "supervisor-cloud-test",
@@ -1120,7 +1120,7 @@ describe("PiCloudTurnRunner integration", () => {
                   step: createCloudStepContext({
                     sequence: (stepSequence += 1),
                     turnContextSha256: turn.sha256,
-                    attemptContextSha256: attempt.sha256,
+                    executionContextSha256: attempt.sha256,
                     allowedTools: command.payload.toolCapabilities,
                     activeTools: ["read", "write", "edit", "bash"],
                     worldState: captured.worldState,

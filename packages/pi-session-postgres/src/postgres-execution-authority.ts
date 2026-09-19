@@ -65,20 +65,20 @@ export class PostgresSessionExecutionAuthority implements ActiveExecutionAuthori
     const requestedAt = this.#monotonicNow();
     const row = await authority
       .selectFrom("session_leases")
-      .innerJoin("run_attempts as writer", "writer.id", "session_leases.writer_id")
       .select(
         sql<string>`extract(epoch from (session_leases.valid_until-clock_timestamp())) * 1000`.as(
           "remaining_ms",
         ),
       )
       .where("session_leases.lease_id", "=", this.#identity.leaseId)
-      .where("session_leases.writer_id", "=", this.#identity.writerId)
+      .where("session_leases.lease_id", "=", this.#identity.writerId)
       .where("session_leases.fencing_token", "=", String(this.#identity.fencingToken))
       .where("session_leases.tenant_id", "=", this.#tenantId)
       .where("session_leases.pi_session_id", "=", this.#identity.piSessionId)
       .where("valid_until", ">", sql<Date>`clock_timestamp()`)
-      .where("writer.native_writer_failed_at", "is", null)
-      .where("writer.native_writer_sealed_at", "is", null)
+      .where("released_at", "is", null)
+      .where("writer_failed_at", "is", null)
+      .where("writer_sealed_at", "is", null)
       .executeTakeFirst();
     const deadline = row === undefined ? undefined : requestedAt + Number(row.remaining_ms);
     if (deadline === undefined || deadline <= this.#monotonicNow()) {

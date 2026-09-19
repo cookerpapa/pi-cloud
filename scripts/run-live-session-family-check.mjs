@@ -221,8 +221,8 @@ const succeeded = async (promise) => {
   return result;
 };
 async function owner(runId) {
-  return sql(`select h.supervisor_id from runs r join run_attempts a on a.id=r.current_attempt_id
-  join sandboxes h on h.id=a.sandbox_id where r.id=${quote(runId)}`);
+  return sql(`select h.supervisor_id from runs r
+  join sandboxes h on h.id=r.sandbox_id where r.id=${quote(runId)}`);
 }
 
 try {
@@ -258,7 +258,7 @@ try {
   );
   const ownerId = await owner(first.accepted.runId);
   const familyLease = await sql(
-    `select lease_id::text from session_leases where tenant_id=${quote(tenantId)} and pi_session_id=${quote(a.sessionId)}`,
+    `select lease_id::text from session_leases where tenant_id=${quote(tenantId)} and pi_session_id=${quote(a.sessionId)} and released_at is null`,
   );
   assert(familyLease);
   const second = await start(
@@ -278,10 +278,10 @@ try {
     "Third family bypassed a two-family limit",
   );
   const occupancy = JSON.parse(
-    await sql(`select json_build_object('leases',(select count(*) from session_leases),
-    'activeTasks',(select count(*) from active_execution_scopes),
-    'aLeaseIds',(select count(distinct a.lease_id) from run_attempts a join runs r on r.id=a.run_id join sessions s on s.id=r.session_id
-      where s.pi_session_id=${quote(a.sessionId)} and a.lease_id is not null))`),
+    await sql(`select json_build_object('leases',(select count(*) from session_leases where released_at is null and tenant_id=${quote(tenantId)}),
+    'activeTasks',(select count(*) from active_execution_scopes where tenant_id=${quote(tenantId)}),
+    'aLeaseIds',(select count(distinct r.lease_id) from runs r join sessions s on s.id=r.session_id
+      where s.pi_session_id=${quote(a.sessionId)} and r.lease_id is not null and r.execution_released_at is null))`),
   );
   assert.equal(occupancy.leases, 2);
   assert(occupancy.activeTasks > 2);
@@ -324,7 +324,7 @@ try {
   const nextResult = await succeeded(next.finished);
   assert.match(nextResult.text, /FAMILY-RESTORE-OK/);
   const nextLease = await sql(
-    `select a.lease_id::text from run_attempts a join runs r on r.current_attempt_id=a.id where r.id=${quote(next.accepted.runId)}`,
+    `select lease_id::text from runs where id=${quote(next.accepted.runId)}`,
   );
   assert.notEqual(nextLease, familyLease);
   report.scenarios.multiRound = { newOwnerPeriod: true, workspaceTestsRepeated: true };
@@ -354,7 +354,7 @@ try {
     assert.equal(failed.terminal.type, "turn.failed");
     await until(
       async () =>
-        (await sql(`select count(*) from run_attempts a join runs r on r.id=a.run_id join sessions s on s.id=r.session_id
+        (await sql(`select count(*) from runs a join runs r on r.id=a.run_id join sessions s on s.id=r.session_id
       where s.pi_session_id=${quote(a.sessionId)} and a.output_seal_id is not null and a.output_sealed_at is null`)) ===
         "0",
       "family closure projection",

@@ -1252,17 +1252,9 @@ export class ControlPlaneStore {
       .executeTakeFirst();
     if (run === undefined) throw new ControlPlaneStoreError("not_found", "Run was not found");
 
-    const attempts = await this.#database
-      .selectFrom("run_attempts")
-      .selectAll()
-      .where("tenant_id", "=", this.#tenantId)
-      .where("run_id", "=", run.id)
-      .orderBy("attempt_number", "asc")
-      .limit(32)
-      .execute();
     const transitions = await this.#database
-      .selectFrom("run_attempt_transitions")
-      .select(["id", "attempt_id", "from_state", "to_state", "reason", "occurred_at"])
+      .selectFrom("run_transitions")
+      .select(["id", "run_id", "from_state", "to_state", "reason", "occurred_at"])
       .where("tenant_id", "=", this.#tenantId)
       .where("run_id", "=", run.id)
       .orderBy("occurred_at", "asc")
@@ -1270,19 +1262,6 @@ export class ControlPlaneStore {
       .execute();
     const optionalTimestamp = (value: Date | string | null): string | undefined =>
       value === null ? undefined : isoTimestamp(value);
-    const transitionRank: Record<string, number> = {
-      claimed: 1,
-      provisioning: 2,
-      restoring: 3,
-      running: 4,
-      settling: 5,
-      cancel_requested: 6,
-      completed: 7,
-      failed: 7,
-      cancelled: 7,
-      timed_out: 7,
-      superseded: 7,
-    };
     const failure = (
       code: string | null,
       message: string | null,
@@ -1298,11 +1277,7 @@ export class ControlPlaneStore {
       return { code, ...(message === null ? {} : { message }), retryable };
     };
 
-    const currentAttempt = attempts.find((a) => a.id === run.current_attempt_id);
-    const awaitingSeal =
-      currentAttempt?.output_seal_id !== null &&
-      currentAttempt?.output_seal_id !== undefined &&
-      currentAttempt.output_sealed_at === null;
+    const awaitingSeal = run.output_seal_id !== null && run.output_sealed_at === null;
     return {
       runId: run.id,
       projectId: run.project_id,
@@ -1315,8 +1290,7 @@ export class ControlPlaneStore {
           ? "settling"
           : run.state,
       traceId: run.trace_id,
-      attemptCount: nonNegativeSafeInteger(run.attempt_count, "Run attempt count"),
-      ...(run.current_attempt_id === null ? {} : { currentAttemptId: run.current_attempt_id }),
+      ...(run.sandbox_id === null ? {} : { workerId: run.sandbox_id }),
       ...(run.stop_reason === null ? {} : { stopReason: run.stop_reason }),
       ...(failure(run.failure_code, run.failure_message, run.failure_retryable) === undefined
         ? {}
@@ -1329,60 +1303,12 @@ export class ControlPlaneStore {
         ? {}
         : { settledAt: optionalTimestamp(run.settled_at)! }),
       updatedAt: isoTimestamp(run.updated_at),
-      attempts: attempts.map((attempt, index) => {
-        const attemptFailure = failure(
-          attempt.failure_code,
-          attempt.failure_message,
-          attempt.failure_retryable,
-        );
-        return {
-          attemptId: attempt.id,
-          attemptNumber: positiveSafeInteger(String(attempt.attempt_number), "Run attempt number"),
-          state: attempt.state,
-          projection: attempt.id === run.current_attempt_id ? "canonical" : "superseded",
-          ...(attempt.id === run.current_attempt_id || attempts[index + 1] === undefined
-            ? {}
-            : { supersededByAttemptId: attempts[index + 1]!.id }),
-          claimOwnerId: attempt.claim_owner_id,
-          claimExpiresAt: isoTimestamp(attempt.claim_expires_at),
-          ...(attempt.sandbox_id === null ? {} : { sandboxId: attempt.sandbox_id }),
-          ...(attemptFailure === undefined ? {} : { failure: attemptFailure }),
-          claimedAt: isoTimestamp(attempt.claimed_at),
-          ...(optionalTimestamp(attempt.provisioning_at) === undefined
-            ? {}
-            : { provisioningAt: optionalTimestamp(attempt.provisioning_at)! }),
-          ...(optionalTimestamp(attempt.restoring_at) === undefined
-            ? {}
-            : { restoringAt: optionalTimestamp(attempt.restoring_at)! }),
-          ...(optionalTimestamp(attempt.running_at) === undefined
-            ? {}
-            : { runningAt: optionalTimestamp(attempt.running_at)! }),
-          ...(optionalTimestamp(attempt.settling_at) === undefined
-            ? {}
-            : { settlingAt: optionalTimestamp(attempt.settling_at)! }),
-          ...(optionalTimestamp(attempt.last_heartbeat_at) === undefined
-            ? {}
-            : { lastHeartbeatAt: optionalTimestamp(attempt.last_heartbeat_at)! }),
-          ...(optionalTimestamp(attempt.settled_at) === undefined
-            ? {}
-            : { settledAt: optionalTimestamp(attempt.settled_at)! }),
-          transitions: transitions
-            .filter((transition) => transition.attempt_id === attempt.id)
-            .sort((left, right) => {
-              const rank = transitionRank[left.to_state]! - transitionRank[right.to_state]!;
-              if (rank !== 0) return rank;
-              const time =
-                new Date(left.occurred_at).valueOf() - new Date(right.occurred_at).valueOf();
-              return time !== 0 ? time : left.id.localeCompare(right.id);
-            })
-            .map((transition) => ({
-              fromState: transition.from_state,
-              toState: transition.to_state,
-              reason: transition.reason,
-              occurredAt: isoTimestamp(transition.occurred_at),
-            })),
-        };
-      }),
+      transitions: transitions.map((transition) => ({
+        fromState: transition.from_state,
+        toState: transition.to_state,
+        reason: transition.reason,
+        occurredAt: isoTimestamp(transition.occurred_at),
+      })),
     };
   }
 
@@ -1606,8 +1532,6 @@ export class ControlPlaneStore {
           idempotency_key: idempotencyKey,
           state: "queued",
           ready_at: sql<Date | null>`case when ${laneDependenciesReady(this.#tenantId, session.id, sql`${mailboxPosition}::bigint`)} then clock_timestamp() else null end`,
-          current_attempt_id: null,
-          attempt_count: 0,
           stop_reason: null,
           failure_code: null,
           failure_message: null,
@@ -1744,10 +1668,7 @@ export class ControlPlaneStore {
         .where("turn_id", "=", turnId)
         .forUpdate()
         .executeTakeFirst();
-      if (
-        target === undefined ||
-        !["provisioning", "restoring", "running", "settling"].includes(target.state)
-      ) {
+      if (target === undefined || !["running", "settling"].includes(target.state)) {
         throw new ControlPlaneStoreError(
           "conflict",
           "Turn does not have one running Run to cancel",

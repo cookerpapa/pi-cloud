@@ -12,7 +12,7 @@ Pi Tool call
   -> trusted Tool adapter
   -> Session-keyed Kafka command
   -> Session Projector -> owning executor
-  -> Tool Broker (Run/Attempt/lease/fence/Step validation)
+  -> Tool Broker (Run/lease/fence/Step validation)
   -> Cube API
   -> CubeProxy -> cube-agent/vsock/envd
   -> credential-free one-shot Tool Worker
@@ -26,7 +26,7 @@ a supported production runtime menu.
 
 ## Identity and authority
 
-The Tool Broker derives tenant, Workspace, Session, Run, Attempt, fence, Tool
+The Tool Broker derives tenant, Workspace, Session, Run, Run, fence, Tool
 binding and Cloud Step identity from trusted state. The browser, model and
 Tool arguments cannot choose a Sandbox ID, image, mount, resource limit or
 network policy.
@@ -35,7 +35,7 @@ Each operation has an immutable operation ID. Duplicate delivery returns the
 same in-process result while it is known; conflicting reuse fails closed. A
 transport break after dispatch is `UNKNOWN` and is never reattached or replayed,
 because envd is deliberately not a durable PiCloud operation ledger. A stale
-Attempt cannot start another authorized Tool. Previously admitted guest work may
+Run cannot start another authorized Tool. Previously admitted guest work may
 continue with an unknown result; fencing does not undo its file/process effects.
 
 The Worker never receives Cube management credentials. Cube receives no model,

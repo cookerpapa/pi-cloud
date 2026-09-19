@@ -46,7 +46,7 @@ PG-issued publication scope -> Worker direct append -> Kafka keyed by physical S
 There are no execution Cells, private Worker queues or persistent cold-Session
 affinity records. A Workspace binds to a Sandbox Domain for Cube/storage
 locality. Any Pi Worker may acquire a cold physical Pi Session, but every
-unexpired Attempt on that Session's main and delegated Lanes must use the same
+active Run on that Session's main and delegated Lanes must use the same
 Worker boot identity under one physical-Session lease. Child tasks do not acquire
 independent leases; cold ownership is acquired under a brief `pi_sessions` row lock.
 

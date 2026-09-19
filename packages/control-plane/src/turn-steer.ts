@@ -5,7 +5,6 @@ export type TurnSteerTarget = {
   sessionId: string;
   runId: string;
   turnId: string;
-  attemptId: string;
 };
 
 export type TurnSteerRequest = {

@@ -75,7 +75,6 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
         boot_id: randomUUID(),
         state: "ready",
         max_concurrent_sessions: 2,
-        active_sessions: 0,
       })
       .execute();
     const coordinator = new SessionLeaseCoordinator({ database: db, sandboxId: workerId });
@@ -110,7 +109,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
     });
     const executor = new RunExecutor({
       database: db,
-      claimOwnerId: workerId,
+      workerId: workerId,
       executionAuthority: coordinator,
       backend: {
         admit: async (tx, r, mark, facts) => {
@@ -127,6 +126,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
       },
     });
     const failures: unknown[] = [];
+    let localFamilies = 0;
     const worker = new PostgresPiWorker({
       database: db,
       notificationConnectionString: url.toString(),
@@ -134,21 +134,15 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
       maximumActiveFamilies: 2,
       maximumLanesPerFamily: 4,
       memoryHeadroom: () => true,
+      onCapacity: (sample) => {
+        localFamilies = sample.families;
+      },
       pollIntervalMs: 25,
       runExecutor: executor,
       cancellationExecutor: {} as RunCancellationExecutor,
       onFailure: (_op, error) => failures.push(error),
     });
-    const capacity = async () =>
-      Number(
-        (
-          await db
-            .selectFrom("sandboxes")
-            .select("active_sessions")
-            .where("id", "=", workerId)
-            .executeTakeFirstOrThrow()
-        ).active_sessions,
-      );
+    const capacity = () => localFamilies;
     let offset = 0n;
     const projected = new Set<string>(),
       boundary = new ExecutionPublicationBoundary(db),
@@ -179,10 +173,10 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
       expect(
         await db
           .selectFrom("runs")
-          .select(["state", "attempt_count"])
+          .select(["state", "lease_id"])
           .where("id", "=", third.runId)
           .executeTakeFirstOrThrow(),
-      ).toEqual({ state: "queued", attempt_count: 0 });
+      ).toEqual({ state: "queued", lease_id: null });
       gates.get(first.runId)!.resolve();
       await vi.waitFor(() => expect(started).toContain(third.runId));
       expect(await capacity()).toBe(2);
@@ -194,10 +188,10 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
       expect(
         await db
           .selectFrom("runs")
-          .select(["state", "attempt_count"])
+          .select(["state", "lease_id"])
           .where("id", "=", follow.runId)
           .executeTakeFirstOrThrow(),
-      ).toEqual({ state: "queued", attempt_count: 0 });
+      ).toEqual({ state: "queued", lease_id: null });
       await project();
       await vi.waitFor(() => expect(started).toContain(follow.runId));
       expect(await capacity()).toBe(2);

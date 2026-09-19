@@ -106,7 +106,6 @@ function fact(sessionId = "a", name = "test"): AcceptedFact {
       sessionId,
       turnId: "turn",
       runId: "run",
-      attemptId: "attempt",
       fencingToken: 1,
       piSessionId: sessionId,
       writerId: "attempt",

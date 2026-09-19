@@ -60,7 +60,6 @@ it.skipIf(!external)(
           boot_id: randomUUID(),
           state: "ready",
           max_concurrent_sessions: 16,
-          active_sessions: 0,
         })
         .execute();
       const seals = new WeakSet<object>();
@@ -86,7 +85,7 @@ it.skipIf(!external)(
       let executions = 0;
       const executor = new RunExecutor({
         database: measured,
-        claimOwnerId: "settlement-worker",
+        workerId: sandboxId,
         executionAuthority: coordinator,
         backend: {
           admit: (tx, request, _mark, facts) => admitTestExecution(coordinator, tx, request, facts),
@@ -111,11 +110,17 @@ it.skipIf(!external)(
       expect(
         await db
           .selectFrom("sandboxes")
-          .select(["state", "active_sessions"])
+          .select(["state"])
           .where("id", "=", sandboxId)
           .executeTakeFirst(),
-      ).toEqual({ state: "ready", active_sessions: 0 });
-      expect(await db.selectFrom("session_leases").select("lease_id").execute()).toEqual([]);
+      ).toEqual({ state: "ready" });
+      expect(
+        await db
+          .selectFrom("session_leases")
+          .select("lease_id")
+          .where("released_at", "is", null)
+          .execute(),
+      ).toEqual([]);
       expect(await db.selectFrom("outbox").select("id").execute()).toHaveLength(2);
     } finally {
       clearTimeout(timer);

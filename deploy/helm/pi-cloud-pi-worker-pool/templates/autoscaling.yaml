@@ -53,7 +53,7 @@ spec:
       metadata:
         query: >-
           SELECT COUNT(*)::double precision FROM (
-            SELECT tenant_id, pi_session_id FROM session_leases WHERE valid_until > now()
+            SELECT tenant_id, pi_session_id FROM session_leases WHERE released_at IS NULL AND valid_until > now()
             UNION
             SELECT s.tenant_id, s.pi_session_id FROM runs r
               JOIN sessions s ON s.id=r.session_id

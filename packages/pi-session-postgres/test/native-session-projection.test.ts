@@ -50,7 +50,7 @@ async function fixture() {
     fail: async () => {},
   });
   const main = await writer.open(
-    { lane: "main", turnId: "test", attemptId: "test" },
+    { lane: "main", turnId: "test", runId: "test" },
     { branch: [], openOperations: [], reader: storage },
     publisher,
   );
@@ -70,7 +70,7 @@ it("projects exact writer stamps, mixed records and inherited/empty Lanes after 
   await f.main.createLane("branch", root.id);
   await f.main.createLane("fresh", null);
   const child = await f.writer.open(
-    { lane: "branch", turnId: "child", attemptId: "child" },
+    { lane: "branch", turnId: "child", runId: "child" },
     { branch: [], openOperations: [], reader: f.storage },
     f.publisher,
   );

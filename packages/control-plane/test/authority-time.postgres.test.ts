@@ -9,7 +9,6 @@ import {
   type ExecutionAdmissionFacts,
 } from "@pi-cloud/runtime-core/run-executor";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
-import { registerExecutionPublication } from "../../runtime-core/src/execution-publication.ts";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
 import { PostgresWorkspaceRuntimeStateRepository } from "@pi-cloud/tool-broker";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
@@ -90,7 +89,6 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
         boot_id: randomUUID(),
         state: "ready",
         max_concurrent_sessions: 1,
-        active_sessions: 0,
       })
       .execute();
     const coordinator = new SessionLeaseCoordinator({
@@ -103,7 +101,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     const finish = Promise.withResolvers<void>();
     const executor = new RunExecutor({
       database: db,
-      claimOwnerId: workerId,
+      workerId: workerId,
       executionAuthority: coordinator,
       backend: {
         admit: async (tx, request, _mark, facts) => {
@@ -149,7 +147,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
             tenantId: tenant.tenantId,
             piSessionId: session.sessionId,
             leaseId: lease.lease_id,
-            writerId: lease.writer_id,
+            writerId: lease.lease_id,
             fencingToken: Number(lease.fencing_token),
           },
         ],
@@ -169,80 +167,41 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     );
     await f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference });
   });
-  it("rolls back epoch, capacity and Session touch when the combined binding is rejected", async () => {
-    const f = await fixture(0, async (request, tx, facts) => {
-      const owner = await tx
-        .selectFrom("run_attempts")
-        .select("claim_owner_id")
-        .where("id", "=", request.attemptId)
-        .executeTakeFirstOrThrow();
-      const read = async () => ({
-        physical: await tx
-          .selectFrom("pi_sessions")
-          .select("lease_epoch")
-          .where("tenant_id", "=", request.tenantId)
-          .where("id", "=", request.piSessionId)
-          .executeTakeFirstOrThrow(),
-        session: await tx
-          .selectFrom("sessions")
-          .select("row_version")
-          .where("id", "=", request.sessionId)
-          .executeTakeFirstOrThrow(),
-        worker: await tx
-          .selectFrom("sandboxes")
-          .select(["state", "active_sessions"])
-          .where("id", "=", owner.claim_owner_id)
-          .executeTakeFirstOrThrow(),
-      });
-      const before = await read(),
-        queries: string[] = [];
-      const measured = tx.withPlugin({
-        transformQuery({ node, queryId }) {
-          queries.push(tx.getExecutor().compileQuery(node, queryId).sql);
-          return node;
-        },
-        async transformResult({ result }) {
-          return result;
-        },
-      });
+  it("rolls back the owner epoch and Run when its final binding is rejected", async () => {
+    let target!: TurnExecutionRequest;
+    const pending = fixture(0, async (request, tx) => {
+      target = request;
       await sql`create function reject_test_binding() returns trigger language plpgsql as 'begin return null; end'`.execute(
         tx,
       );
-      await sql`create trigger reject_test_binding before update of lease_id on run_attempts for each row when (old.lease_id is null and new.lease_id is not null) execute function reject_test_binding()`.execute(
+      await sql`create trigger reject_test_binding before update of lease_id on runs for each row when (old.lease_id is null and new.lease_id is not null) execute function reject_test_binding()`.execute(
         tx,
       );
-      try {
-        const coordinator = new SessionLeaseCoordinator({
-          database: measured,
-          sandboxId: owner.claim_owner_id,
-        });
-        await sql`savepoint rejected_binding`.execute(tx);
-        await expect(
-          coordinator.acquireInTransaction(measured, request, facts),
-        ).rejects.toMatchObject({
-          code: "session_lease_invariant",
-        });
-        await sql`rollback to savepoint rejected_binding`.execute(tx);
-        expect(await read()).toEqual(before);
-        expect(
-          await tx
-            .selectFrom("session_leases")
-            .selectAll()
-            .where("tenant_id", "=", request.tenantId)
-            .execute(),
-        ).toEqual([]);
-        expect(
-          queries.filter((q) => q.startsWith("select ") && q.includes('from "pi_sessions"')),
-        ).toHaveLength(0);
-        expect(queries.filter((q) => q.startsWith('with "touched_session"'))).toHaveLength(1);
-      } finally {
-        await sql`drop trigger reject_test_binding on run_attempts`.execute(tx);
-        await sql`drop function reject_test_binding()`.execute(tx);
-      }
     });
-    expect(f.lease.fencing_token).toBe("1");
+    await expect(pending).rejects.toThrow("Execution admission did not start exactly one task");
+    expect(
+      await db
+        .selectFrom("runs")
+        .select(["state", "lease_id"])
+        .where("id", "=", target.runId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ state: "queued", lease_id: null });
+    expect(
+      await db
+        .selectFrom("session_leases")
+        .selectAll()
+        .where("pi_session_id", "=", target.piSessionId)
+        .execute(),
+    ).toEqual([]);
+    expect(
+      await db
+        .selectFrom("pi_sessions")
+        .select(["lease_epoch", "unsealed_runs"])
+        .where("id", "=", target.piSessionId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ lease_epoch: "0", unsealed_runs: "0" });
   });
-  it.each(["renew", "grant", "publication"])(
+  it.each(["renew", "grant"])(
     "rejects %s if authority expires during lock wait",
     async (operation) => {
       const f = await fixture();
@@ -254,20 +213,12 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       const locked = Promise.withResolvers<void>(),
         release = Promise.withResolvers<void>();
       const blocker = db.transaction().execute(async (tx) => {
-        if (operation === "publication")
-          await tx
-            .selectFrom("run_attempts")
-            .select("id")
-            .where("id", "=", f.request.attemptId)
-            .forUpdate()
-            .execute();
-        else
-          await tx
-            .selectFrom("session_leases")
-            .select("lease_id")
-            .where("lease_id", "=", f.lease.lease_id)
-            .forUpdate()
-            .execute();
+        await tx
+          .selectFrom("session_leases")
+          .select("lease_id")
+          .where("lease_id", "=", f.lease.lease_id)
+          .forUpdate()
+          .execute();
         locked.resolve();
         await release.promise;
       });
@@ -277,37 +228,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
         pending = Promise.allSettled([
           operation === "renew"
             ? f.coordinator.renewFromHeartbeat(f.heartbeat)
-            : operation === "grant"
-              ? f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference })
-              : db.transaction().execute(async (tx) => {
-                  // Production publication runs under the locks acquired by
-                  // atomic admission; model that precondition before its write.
-                  await tx
-                    .selectFrom("run_attempts")
-                    .select("id")
-                    .where("id", "=", f.request.attemptId)
-                    .forNoKeyUpdate()
-                    .execute();
-                  await tx
-                    .selectFrom("session_leases")
-                    .select("lease_id")
-                    .where("lease_id", "=", f.lease.lease_id)
-                    .forNoKeyUpdate()
-                    .execute();
-                  return registerExecutionPublication(tx, {
-                    tenantId: f.request.tenantId,
-                    runId: f.request.runId,
-                    executionReference: f.reference,
-                    sessionId: f.request.sessionId,
-                    turnId: f.request.turnId,
-                    nextEventSeq: Number(f.request.nextEventSeq),
-                    piSession: {
-                      id: f.request.piSessionId,
-                      lane: f.request.piSessionLane,
-                      writerId: f.request.piSessionWriterId,
-                    },
-                  });
-                }),
+            : f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference }),
         ]);
         await vi.waitFor(async () => {
           const result = await sql<{
@@ -435,15 +356,10 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     expect(await retirement).toMatchObject({ settledAssignments: 0 });
     await f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference });
   });
-  it("rejects issuance when the startup claim expires behind a Session lock", async () => {
+  it("issues a fresh owner after a Session lock wait without a task startup timeout", async () => {
     const entered = Promise.withResolvers<TurnExecutionRequest>(),
       proceed = Promise.withResolvers<void>();
-    const pending = fixture(0, async (request, tx) => {
-      await tx
-        .updateTable("run_attempts")
-        .set({ claim_expires_at: sql<Date>`clock_timestamp() + interval '1 second'` })
-        .where("id", "=", request.attemptId)
-        .execute();
+    const pending = fixture(0, async (request) => {
       entered.resolve(request);
       await proceed.promise;
     });
@@ -487,14 +403,14 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       release.resolve();
       await blocker;
     }
-    expect(await outcome).toBe("rejected");
+    expect(await outcome).toBe("issued");
     expect(
       await db
         .selectFrom("session_leases")
         .select("lease_id")
         .where("pi_session_id", "=", request.piSessionId)
         .execute(),
-    ).toEqual([]);
+    ).toHaveLength(1);
   });
   it("does not revive a Broker owner after a delayed heartbeat", async () => {
     const instanceId = randomUUID();

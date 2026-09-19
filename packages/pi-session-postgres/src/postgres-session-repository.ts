@@ -189,6 +189,24 @@ export class PostgresPiSessionRepository implements SessionRepo<
     this.#requireTenant(metadata);
     await this.#database.transaction().execute(async (transaction) => {
       await this.#authority?.assertCurrent(transaction);
+      const session = await transaction
+        .selectFrom("pi_sessions")
+        .select("unsealed_runs")
+        .where("tenant_id", "=", this.#tenantId)
+        .where("id", "=", metadata.id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!session) return;
+      if (session.unsealed_runs !== "0")
+        throw new SessionError("storage", "Native Session must settle before deletion");
+      // Retired writer evidence shares the native history's lifetime. The FK
+      // still prevents deletion while a current owner exists.
+      await transaction
+        .deleteFrom("session_leases")
+        .where("tenant_id", "=", this.#tenantId)
+        .where("pi_session_id", "=", metadata.id)
+        .where("released_at", "is not", null)
+        .execute();
       await transaction
         .deleteFrom("pi_sessions")
         .where("tenant_id", "=", this.#tenantId)

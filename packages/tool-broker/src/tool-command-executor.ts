@@ -19,14 +19,14 @@ import { DEFAULT_TOOL_TRANSPORT_CAPACITY } from "./tool-transport-capacity.ts";
 
 export type ToolLogFact = {
   kind: string;
-  scope: Pick<AcceptedToolCommand["scope"], "attemptId" | "writerId"> &
+  scope: Pick<AcceptedToolCommand["scope"], "runId" | "writerId"> &
     Partial<AcceptedToolCommand["scope"]>;
   closesWriter?: boolean;
   events?: readonly { type: string; payload: { toolCallId?: string; [key: string]: unknown } }[];
 };
 type Outcome = {
   activationId: string;
-  attemptId: string;
+  runId: string;
   writerId: string;
   hash: string;
   result?: Promise<ToolSandboxOperationResponse>;
@@ -41,7 +41,7 @@ function callKey(scope: ToolLogFact["scope"], toolCallId: string): string {
     scope.sessionId,
     scope.turnId,
     scope.runId,
-    scope.attemptId,
+    scope.runId,
     scope.fencingToken,
     toolCallId,
   ]);
@@ -61,7 +61,7 @@ export class ToolCommandExecutor {
     string,
     {
       activationId: string;
-      attemptId: string;
+      runId: string;
       writerId: string;
       operations: Set<string>;
       closed: boolean;
@@ -123,19 +123,19 @@ export class ToolCommandExecutor {
 
   consume(record: ToolLogRecord<ToolLogFact>): void {
     const fact = record.fact;
-    this.#attemptWriters.set(fact.scope.attemptId, fact.scope.writerId);
+    this.#attemptWriters.set(fact.scope.runId, fact.scope.writerId);
     if (this.#attemptWriters.size > 65_536)
       this.#attemptWriters.delete(this.#attemptWriters.keys().next().value!);
     this.#consumed++;
     if (fact.kind === "execution_seal") {
-      this.#sealed.add(fact.scope.attemptId);
+      this.#sealed.add(fact.scope.runId);
       if (fact.closesWriter) this.#sealedWriters.add(fact.scope.writerId);
       if (this.#sealedWriters.size > 65_536)
         this.#sealedWriters.delete(this.#sealedWriters.values().next().value!);
       if (this.#sealed.size > 65_536) this.#sealed.delete(this.#sealed.values().next().value!);
       for (const [id, outcome] of this.#results)
         if (
-          outcome.attemptId === fact.scope.attemptId ||
+          outcome.runId === fact.scope.runId ||
           (fact.closesWriter && outcome.writerId === fact.scope.writerId)
         ) {
           this.#release(id, "seal");
@@ -143,7 +143,7 @@ export class ToolCommandExecutor {
         }
       for (const [key, call] of this.#calls)
         if (
-          call.attemptId === fact.scope.attemptId ||
+          call.runId === fact.scope.runId ||
           (fact.closesWriter && call.writerId === fact.scope.writerId)
         )
           this.#calls.delete(key);
@@ -178,7 +178,7 @@ export class ToolCommandExecutor {
     }
     const call = this.#calls.get(key) ?? {
       activationId: request.activationId,
-      attemptId: command.scope.attemptId,
+      runId: command.scope.runId,
       writerId: command.scope.writerId,
       operations: new Set<string>(),
       closed: false,
@@ -187,7 +187,7 @@ export class ToolCommandExecutor {
     call.operations.add(request.operationId);
     const outcome: Outcome = {
       activationId: request.activationId,
-      attemptId: command.scope.attemptId,
+      runId: command.scope.runId,
       writerId: command.scope.writerId,
       hash,
       retired: false,
@@ -205,7 +205,7 @@ export class ToolCommandExecutor {
         "pi_cloud.tool.operation_id": request.operationId,
       },
       run: async () => {
-        if (this.#closed || this.#isSealed(command.scope.attemptId) || call.closed)
+        if (this.#closed || this.#isSealed(command.scope.runId) || call.closed)
           throw new ToolBrokerError(
             "tool_command_sealed",
             "Tool command belongs to a closed execution",
@@ -225,7 +225,7 @@ export class ToolCommandExecutor {
           const result = await this.#broker.execute(
             createExecutionReference(
               command.scope.leaseId,
-              command.scope.attemptId,
+              command.scope.runId,
               command.scope.fencingToken,
             ),
             request,
@@ -304,18 +304,18 @@ export class ToolCommandExecutor {
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
     this.#broker.assertToolResultReader(activationId, executionReference);
-    const { attemptId } = parseExecutionReference(executionReference);
+    const { runId } = parseExecutionReference(executionReference);
     signal?.throwIfAborted();
     const read = (): Outcome | undefined => {
       this.#broker.assertToolResultReader(activationId, executionReference);
-      if (this.#isSealed(attemptId))
+      if (this.#isSealed(runId))
         throw new ToolBrokerError(
           "tool_command_sealed",
           "Tool command belongs to a closed execution",
           false,
         );
       const outcome = this.#results.get(operationId);
-      if (outcome && (outcome.activationId !== activationId || outcome.attemptId !== attemptId))
+      if (outcome && (outcome.activationId !== activationId || outcome.runId !== runId))
         throw new ToolBrokerError(
           "tool_command_identity_mismatch",
           "Tool result belongs to another execution",
@@ -377,11 +377,9 @@ export class ToolCommandExecutor {
       else wake();
     });
   }
-  #isSealed(attemptId: string) {
-    const writerId = this.#attemptWriters.get(attemptId);
-    return (
-      this.#sealed.has(attemptId) || (writerId !== undefined && this.#sealedWriters.has(writerId))
-    );
+  #isSealed(runId: string) {
+    const writerId = this.#attemptWriters.get(runId);
+    return this.#sealed.has(runId) || (writerId !== undefined && this.#sealedWriters.has(writerId));
   }
 
   statistics() {

@@ -14,30 +14,29 @@ export class PostgresPiSessionAppendProjector {
   ): Promise<void> {
     await this.database.transaction().execute(async (tx) => {
       // Coordinate with seals, not a lease which may expire after Kafka ACK.
-      const attempt = await tx
-        .selectFrom("run_attempts")
+      const run = await tx
+        .selectFrom("runs")
         .select(["output_sealed_at", "output_projected_offset"])
         .where("tenant_id", "=", fact.scope.tenantId)
-        .where("id", "=", fact.scope.attemptId)
+        .where("id", "=", fact.scope.runId)
         .forNoKeyUpdate()
         .executeTakeFirst();
-      if (!attempt || attempt.output_sealed_at !== null) return;
+      if (!run || run.output_sealed_at !== null) return;
       const writer = await tx
-        .selectFrom("run_attempts")
-        .select("native_writer_seal_offset")
+        .selectFrom("session_leases")
+        .select("writer_seal_offset")
         .where("tenant_id", "=", fact.scope.tenantId)
-        .where("id", "=", fact.scope.writerId)
+        .where("lease_id", "=", fact.scope.writerId)
         .forNoKeyUpdate()
         .executeTakeFirst();
       if (
         !writer ||
-        (writer.native_writer_seal_offset !== null &&
-          position.offset >= BigInt(writer.native_writer_seal_offset))
+        (writer.writer_seal_offset !== null && position.offset >= BigInt(writer.writer_seal_offset))
       )
         return;
       if (
-        attempt.output_projected_offset !== null &&
-        BigInt(attempt.output_projected_offset) >= position.offset
+        run.output_projected_offset !== null &&
+        BigInt(run.output_projected_offset) >= position.offset
       )
         return;
       await projectNativeSessionAppend(tx, {
@@ -47,7 +46,7 @@ export class PostgresPiSessionAppendProjector {
         items: fact.items,
       });
       await tx
-        .updateTable("run_attempts")
+        .updateTable("runs")
         .set({
           output_first_topic: sql<string>`coalesce(output_first_topic, ${position.topic})`,
           output_first_partition: sql<number>`coalesce(output_first_partition, ${position.partition})`,
@@ -61,7 +60,7 @@ export class PostgresPiSessionAppendProjector {
               }),
         })
         .where("tenant_id", "=", fact.scope.tenantId)
-        .where("id", "=", fact.scope.attemptId)
+        .where("id", "=", fact.scope.runId)
         .execute();
       await recordFactProjection(tx, position);
     });

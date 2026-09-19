@@ -1,12 +1,12 @@
 import { Type, type Static } from "typebox";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const TOKEN_PATTERN = /^pcer1_([0-9a-f]{32})_([0-9a-f]{32})_([1-9][0-9]{0,15})$/u;
+const TOKEN_PATTERN = /^pcer2_([0-9a-f]{32})_([0-9a-f]{32})_([1-9][0-9]{0,15})$/u;
 
 export const ExecutionReferenceSchema = Type.String({
   minLength: 73,
   maxLength: 88,
-  pattern: "^pcer1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$",
+  pattern: "^pcer2_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$",
 });
 
 export type ExecutionReference = Static<typeof ExecutionReferenceSchema>;
@@ -14,7 +14,7 @@ export type ExecutionReference = Static<typeof ExecutionReferenceSchema>;
 /** Task attribution under a shared Session lease; this is not a separate lease. */
 export type ExecutionReferenceIdentity = Readonly<{
   leaseId: string;
-  attemptId: string;
+  runId: string;
   fencingToken: number;
 }>;
 
@@ -33,13 +33,13 @@ function expandedUuid(value: string): string {
 
 export function createExecutionReference(
   leaseId: string,
-  attemptId: string,
+  runId: string,
   fencingToken: number,
 ): ExecutionReference {
   if (!Number.isSafeInteger(fencingToken) || fencingToken < 1) {
     throw new TypeError("ExecutionReference fencing token must be a positive safe integer");
   }
-  return `pcer1_${compactUuid(leaseId, "ExecutionReference ID")}_${compactUuid(attemptId, "Run attempt ID")}_${String(fencingToken)}`;
+  return `pcer2_${compactUuid(leaseId, "Session lease ID")}_${compactUuid(runId, "Run ID")}_${String(fencingToken)}`;
 }
 
 export function parseExecutionReference(value: unknown): ExecutionReferenceIdentity {
@@ -52,7 +52,7 @@ export function parseExecutionReference(value: unknown): ExecutionReferenceIdent
   }
   return {
     leaseId: expandedUuid(match[1]!),
-    attemptId: expandedUuid(match[2]!),
+    runId: expandedUuid(match[2]!),
     fencingToken,
   };
 }

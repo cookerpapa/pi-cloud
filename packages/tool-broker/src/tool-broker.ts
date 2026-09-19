@@ -90,7 +90,7 @@ type ManagedToolBinding = {
   activationId: string;
   assignment: ToolSandboxAssignment;
   turnContextSha256: string;
-  attemptContextSha256: string;
+  executionContextSha256: string;
   currentStep?: Readonly<{ sequence: number; sha256: string }>;
   allowedTools: ReadonlySet<CloudToolName>;
   spec: Parameters<SandboxProvider["create"]>[0];
@@ -1338,7 +1338,7 @@ export class ToolBroker {
 
     const activationId = validActivationId(
       runtime.initialBindingIssued
-        ? parseExecutionReference(request.assignment.executionReference).attemptId
+        ? parseExecutionReference(request.assignment.executionReference).runId
         : runtime.physicalActivationId,
     );
     if (this.#toolBindings.has(activationId) || runtime.bindingIds.has(activationId)) {
@@ -1356,7 +1356,7 @@ export class ToolBroker {
         : { computeSessionId: request.computeSessionId }),
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
-      attemptContextSha256: request.attemptContextSha256,
+      executionContextSha256: request.executionContextSha256,
       environmentSha256: createHash("sha256")
         .update(
           JSON.stringify({
@@ -1400,7 +1400,7 @@ export class ToolBroker {
       activationId,
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
-      attemptContextSha256: request.attemptContextSha256,
+      executionContextSha256: request.executionContextSha256,
       allowedTools: new Set(allowedTools),
       spec: { ...runtime.spec, assignment: request.assignment, toolRoot: request.toolRoot },
       reservation: reservationInput,
@@ -1464,7 +1464,7 @@ export class ToolBroker {
     const activationId = validActivationId(
       environment.bindingIds.size === 0
         ? physicalActivationId
-        : parseExecutionReference(request.assignment.executionReference).attemptId,
+        : parseExecutionReference(request.assignment.executionReference).runId,
     );
     if (this.#toolBindings.has(activationId) || environment.bindingIds.has(activationId)) {
       throw new ToolBrokerError(
@@ -1477,7 +1477,7 @@ export class ToolBroker {
       activationId: physicalActivationId,
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
-      attemptContextSha256: request.attemptContextSha256,
+      executionContextSha256: request.executionContextSha256,
       environmentSha256: createHash("sha256")
         .update(
           JSON.stringify({
@@ -1508,7 +1508,7 @@ export class ToolBroker {
       activationId,
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
-      attemptContextSha256: request.attemptContextSha256,
+      executionContextSha256: request.executionContextSha256,
       allowedTools: new Set(parseCloudToolCapabilitySnapshot(request.allowedTools)),
       spec: {
         activationId: physicalActivationId,
@@ -1568,10 +1568,10 @@ export class ToolBroker {
         false,
       );
     }
-    if (request.attemptContextSha256 !== activation.attemptContextSha256) {
+    if (request.executionContextSha256 !== activation.executionContextSha256) {
       throw new ToolBrokerError(
         "attempt_context_mismatch",
-        "Tool operation did not match the current Cloud Attempt context",
+        "Tool operation did not match the current Cloud execution context",
         false,
       );
     }

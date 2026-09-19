@@ -3,7 +3,6 @@ import type {
   SessionStorageKind,
   TurnControlRequestState as DomainTurnControlRequestState,
   ModelThinkingLevel,
-  RunAttemptState,
   RunState,
   SandboxState,
   SessionState,
@@ -275,11 +274,10 @@ export interface ToolBrokerWorkspaceRuntimeTable {
   run_id: string;
   session_id: string;
   turn_id: string;
-  attempt_id: string;
   lease_id: string;
   fencing_token: Int8;
   turn_context_sha256: string;
-  attempt_context_sha256: string;
+  execution_context_sha256: string;
   environment_sha256: string;
   runtime_id: string | null;
   runtime_name: string | null;
@@ -296,7 +294,6 @@ export interface ToolBrokerOperationTable {
   tenant_id: string;
   session_id: string;
   run_id: string;
-  attempt_id: string;
   lease_id: string;
   fencing_token: Int8;
   owner_instance_id: string;
@@ -310,7 +307,7 @@ export interface ToolBrokerOperationTable {
 export interface ToolBrokerBindingRouteTable {
   binding_id: string;
   tenant_id: string;
-  attempt_id: string;
+  run_id: string;
   owner_instance_id: string;
 }
 
@@ -541,7 +538,6 @@ export interface EnvironmentValidationTable {
   project_id: string;
   environment_version_id: string;
   run_id: string | null;
-  attempt_id: string | null;
   status: EnvironmentValidationStatus;
   report: JsonObject | null;
   failure_code: string | null;
@@ -638,7 +634,6 @@ export interface SubagentExecutionTable {
   tenant_id: string;
   parent_session_id: string;
   parent_run_id: string;
-  parent_attempt_id: string;
   parent_tool_call_id: string;
   root_session_id: string;
   root_run_id: string;
@@ -667,13 +662,12 @@ export interface SubagentControlCommandTable {
   ordinal: GeneratedInt8;
   tenant_id: string;
   run_id: string;
-  attempt_id: string;
   partition: number;
   command: Record<string, unknown>;
   child_execution_id: GeneratedNullable<string>;
   supervisor_request_id: GeneratedNullable<string>;
   target_session_id: GeneratedNullable<string>;
-  input_attempt_id: GeneratedNullable<string>;
+  input_run_id: GeneratedNullable<string>;
   input_consumed_at: NullableTimestamp;
   response: GeneratedNullable<Record<string, unknown>>;
   delivered_at: NullableTimestamp;
@@ -764,8 +758,6 @@ export interface RunTable {
   trace_id: Generated<string>;
   state: RunState;
   ready_at: GeneratedNullable<Date>;
-  current_attempt_id: string | null;
-  attempt_count: GeneratedInteger;
   stop_reason: string | null;
   failure_code: string | null;
   failure_message: string | null;
@@ -776,30 +768,11 @@ export interface RunTable {
   settled_at: NullableTimestamp;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
-}
-
-export interface RunAttemptTable {
-  id: string;
-  tenant_id: string;
-  run_id: string;
-  attempt_number: number;
-  state: RunAttemptState;
-  claim_owner_id: string;
-  /** Startup claim deadline only. Bound tasks use their shared Session lease. */
-  claim_expires_at: Timestamp;
-  sandbox_id: string | null;
-  lease_id: string | null;
+  sandbox_id: GeneratedNullable<string>;
+  lease_id: GeneratedNullable<string>;
   fencing_token: NullableInt8;
   execution_released_at: GeneratedNullable<Date>;
   agent_exited_at: GeneratedNullable<Date>;
-  failure_code: string | null;
-  failure_message: string | null;
-  failure_retryable: boolean | null;
-  claimed_at: GeneratedTimestamp;
-  provisioning_at: NullableTimestamp;
-  restoring_at: NullableTimestamp;
-  running_at: NullableTimestamp;
-  settling_at: NullableTimestamp;
   last_heartbeat_at: NullableTimestamp;
   last_event_seq: GeneratedInt8;
   output_seal_id: GeneratedNullable<string>;
@@ -811,25 +784,16 @@ export interface RunAttemptTable {
   output_projected_offset: NullableInt8;
   output_display_seq: GeneratedInt8;
   output_display_native_seq: GeneratedInt8;
-  native_writer_anchor_id: GeneratedNullable<string>;
   output_publication: GeneratedNullable<Record<string, unknown>>;
-  native_writer_id: Generated<string>;
   native_output_drained: Generated<boolean>;
-  native_writer_failed_at: NullableTimestamp;
-  native_writer_sealed_at: NullableTimestamp;
-  native_writer_seal_offset: NullableInt8;
-  settled_at: NullableTimestamp;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
 }
 
-export interface RunAttemptTransitionTable {
+export interface RunTransitionTable {
   id: string;
   tenant_id: string;
   run_id: string;
-  attempt_id: string;
-  from_state: RunAttemptState | null;
-  to_state: RunAttemptState;
+  from_state: RunState | null;
+  to_state: RunState;
   reason: string;
   occurred_at: GeneratedTimestamp;
 }
@@ -840,7 +804,6 @@ export interface SandboxTable {
   boot_id: string;
   state: SandboxState;
   max_concurrent_sessions: number;
-  active_sessions: GeneratedInteger;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
   terminated_at: NullableTimestamp;
@@ -856,7 +819,6 @@ export interface ActiveExecutionScopeTable {
   workspace_id: string;
   run_id: string;
   turn_id: string;
-  attempt_id: string;
   last_event_seq: GeneratedInt8;
   valid_until: Timestamp;
   acquired_at: GeneratedTimestamp;
@@ -871,11 +833,14 @@ export interface SessionLeaseTable {
   pi_session_id: string;
   lease_id: string;
   sandbox_id: string;
-  writer_id: string;
   fencing_token: Int8;
   valid_until: Timestamp;
   acquired_at: GeneratedTimestamp;
   renewed_at: GeneratedTimestamp;
+  released_at: NullableTimestamp;
+  writer_failed_at: NullableTimestamp;
+  writer_sealed_at: NullableTimestamp;
+  writer_seal_offset: NullableInt8;
 }
 
 export interface SupervisorConnectionTable {
@@ -1015,7 +980,6 @@ export interface UsageLedgerTable {
   cache_write_tokens: Int8;
   cost_amount: ColumnType<string, number | string, number | string>;
   run_id: GeneratedNullable<string>;
-  attempt_id: GeneratedNullable<string>;
   model_request_id: GeneratedNullable<string>;
   model_profile_id: GeneratedNullable<string>;
   cost_microusd: NullableInt8;
@@ -1040,7 +1004,6 @@ export interface ModelRequestTable {
   session_id: string;
   turn_id: string;
   run_id: string;
-  attempt_id: string;
   model_profile_id: string;
   request_sequence: number;
   step_context_sequence: number | null;
@@ -1098,7 +1061,6 @@ export interface PiSessionTable {
   parent_session_id: string | null;
   next_seq: GeneratedInt8;
   name: string | null;
-  active_writer_id: GeneratedNullable<string>;
   lease_epoch: GeneratedInt8;
   unsealed_runs: GeneratedInt8;
 }
@@ -1216,8 +1178,7 @@ export interface Database {
   conversation_prune_operations: ConversationPruneOperationTable;
   turns: TurnTable;
   runs: RunTable;
-  run_attempts: RunAttemptTable;
-  run_attempt_transitions: RunAttemptTransitionTable;
+  run_transitions: RunTransitionTable;
   sandboxes: SandboxTable;
   supervisor_connections: SupervisorConnectionTable;
   supervisor_boot_credentials: SupervisorBootCredentialTable;

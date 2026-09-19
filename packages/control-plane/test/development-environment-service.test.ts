@@ -497,7 +497,7 @@ describe("user-owned development environments", () => {
           ),
         },
         turnContextSha256: "b".repeat(64),
-        attemptContextSha256: "c".repeat(64),
+        executionContextSha256: "c".repeat(64),
         environmentSha256: "d".repeat(64),
       }),
     ).resolves.toEqual({ status: "busy" });

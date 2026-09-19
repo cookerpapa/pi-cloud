@@ -396,8 +396,7 @@ export async function readCanonicalPiTurnTranscripts(
       .execute(),
     database
       .selectFrom("runs as run")
-      .innerJoin("run_attempts as attempt", "attempt.id", "run.current_attempt_id")
-      .select(["run.turn_id", "attempt.output_display_seq", "attempt.output_display_native_seq"])
+      .select(["run.turn_id", "run.output_display_seq", "run.output_display_native_seq"])
       .where("run.tenant_id", "=", input.tenantId)
       .where("run.turn_id", "in", turnIds)
       .execute(),

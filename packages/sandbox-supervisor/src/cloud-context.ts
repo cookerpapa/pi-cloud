@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import type { SandboxRuntimeIdentity } from "./sandbox-assignment-inventory.ts";
 
 export const CLOUD_TURN_CONTEXT_SCHEMA_VERSION = 2 as const;
-export const CLOUD_ATTEMPT_CONTEXT_SCHEMA_VERSION = 1 as const;
+export const CLOUD_EXECUTION_CONTEXT_SCHEMA_VERSION = 1 as const;
 export const CLOUD_STEP_CONTEXT_SCHEMA_VERSION = 2 as const;
 export const REMOTE_TOOL_REGISTRY_VERSION = "pi-remote-tools.v2" as const;
 export const TOOL_NETWORK_POLICY_VERSION = "cube-proxy-public-egress.v1" as const;
@@ -64,9 +64,9 @@ export type FrozenCloudTurn = Readonly<{
   workspaceBindingSha256: string;
 }>;
 
-/** Physical ownership of one Turn execution, rotated on Worker takeover. */
-export type CloudAttemptContext = Readonly<{
-  schemaVersion: typeof CLOUD_ATTEMPT_CONTEXT_SCHEMA_VERSION;
+/** Worker ownership frozen for one admitted Run. */
+export type CloudExecutionContext = Readonly<{
+  schemaVersion: typeof CLOUD_EXECUTION_CONTEXT_SCHEMA_VERSION;
   turnContextSha256: string;
   identity: Readonly<{
     runId: string;
@@ -78,8 +78,8 @@ export type CloudAttemptContext = Readonly<{
   }>;
 }>;
 
-export type FrozenCloudAttempt = Readonly<{
-  context: CloudAttemptContext;
+export type FrozenCloudExecution = Readonly<{
+  context: CloudExecutionContext;
   sha256: string;
 }>;
 
@@ -97,7 +97,7 @@ export type CloudStepContext = Readonly<{
   schemaVersion: typeof CLOUD_STEP_CONTEXT_SCHEMA_VERSION;
   sequence: number;
   turnContextSha256: string;
-  attemptContextSha256: string;
+  executionContextSha256: string;
   activeTools: readonly string[];
   worldState: CloudStepWorldState;
 }>;
@@ -188,14 +188,14 @@ export function createCloudTurnContext(command: ExecuteTurnCommandMessage): Froz
 }
 
 /** Captures the current Worker and opaque execution authority beneath one Turn. */
-export function createCloudAttemptContext(input: {
+export function createCloudExecutionContext(input: {
   command: ExecuteTurnCommandMessage;
   runtimeIdentity: SandboxRuntimeIdentity;
   turnContextSha256: string;
-}): FrozenCloudAttempt {
+}): FrozenCloudExecution {
   const { payload } = input.command;
-  const context = freezeContext<CloudAttemptContext>({
-    schemaVersion: CLOUD_ATTEMPT_CONTEXT_SCHEMA_VERSION,
+  const context = freezeContext<CloudExecutionContext>({
+    schemaVersion: CLOUD_EXECUTION_CONTEXT_SCHEMA_VERSION,
     turnContextSha256: validSha256(input.turnContextSha256, "Cloud Turn context"),
     identity: {
       runId: payload.runId,
@@ -213,7 +213,7 @@ export function createCloudAttemptContext(input: {
 export function createCloudStepContext(input: {
   sequence: number;
   turnContextSha256: string;
-  attemptContextSha256: string;
+  executionContextSha256: string;
   allowedTools: readonly string[];
   activeTools: readonly string[];
   worldState: CloudStepWorldState;
@@ -230,7 +230,7 @@ export function createCloudStepContext(input: {
     schemaVersion: CLOUD_STEP_CONTEXT_SCHEMA_VERSION,
     sequence: input.sequence,
     turnContextSha256: validSha256(input.turnContextSha256, "Cloud Turn context"),
-    attemptContextSha256: validSha256(input.attemptContextSha256, "Cloud Attempt context"),
+    executionContextSha256: validSha256(input.executionContextSha256, "Cloud execution context"),
     activeTools,
     worldState: {
       sandbox: { ...input.worldState.sandbox },

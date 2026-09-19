@@ -1,5 +1,5 @@
 import { databaseTime, type Database } from "@pi-cloud/database";
-import { releaseExecutionScope } from "./worker-family-capacity.ts";
+import { releaseExecutionScope } from "./session-lease-release.ts";
 import { transitionSandbox } from "@pi-cloud/domain";
 import {
   parseControlToSupervisorMessage,
@@ -79,16 +79,6 @@ function safeInteger(value: string | number | bigint, name: string): number {
   return parsed;
 }
 
-function expectOne(updatedRows: bigint, description: string): void {
-  if (updatedRows !== 1n) {
-    throw new SessionLeaseCoordinatorError(
-      "session_lease_invariant",
-      `${description} changed ${updatedRows} rows`,
-      false,
-    );
-  }
-}
-
 function requireUuid(value: string, name: string): string {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
     throw new TypeError(`${name} must be a UUID`);
@@ -98,7 +88,7 @@ function requireUuid(value: string, name: string): string {
 
 type CurrentAssignmentRequest = Pick<
   TurnExecutionRequest,
-  "tenantId" | "projectId" | "workspaceId" | "sessionId" | "runId" | "turnId" | "attemptId"
+  "tenantId" | "projectId" | "workspaceId" | "sessionId" | "runId" | "turnId" | "runId"
 >;
 
 export class SessionLeaseCoordinator implements TurnExecutionAuthority {
@@ -191,7 +181,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         worker.supervisor_id !== heartbeat.payload.supervisorId ||
         worker.boot_id !== heartbeat.payload.bootId ||
         worker.max_concurrent_sessions !== heartbeat.payload.maxConcurrentSessions ||
-        !["ready", "leased"].includes(worker.state)
+        worker.state !== "ready"
       )
         throw new SessionLeaseCoordinatorError(
           "stale_supervisor",
@@ -210,6 +200,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           .selectFrom("session_leases")
           .select("lease_id")
           .where("sandbox_id", "=", this.#sandboxId)
+          .where("released_at", "is", null)
           .where(
             "lease_id",
             "in",
@@ -253,12 +244,12 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
             as x("tenantId" uuid,"piSessionId" text,"leaseId" uuid,"writerId" uuid,"fencingToken" bigint)
         )
         update session_leases l set valid_until=d.at + ${this.#leaseDurationMs} * interval '1 millisecond', renewed_at=d.at
-          from reported p,run_attempts w,decision d,sandboxes owner
+          from reported p,decision d,sandboxes owner
          where l.lease_id=p."leaseId" and l.tenant_id=p."tenantId" and l.pi_session_id=p."piSessionId"
-           and l.writer_id=p."writerId" and l.fencing_token=p."fencingToken" and l.sandbox_id=${this.#sandboxId}::uuid
-           and l.valid_until>d.at and w.id=l.writer_id
-           and owner.id=l.sandbox_id and owner.state in ('ready','leased')
-           and w.native_writer_failed_at is null and w.native_writer_sealed_at is null
+           and l.lease_id=p."writerId" and l.fencing_token=p."fencingToken" and l.sandbox_id=${this.#sandboxId}::uuid
+           and l.valid_until>d.at and l.released_at is null
+           and owner.id=l.sandbox_id and owner.state='ready'
+           and l.writer_failed_at is null and l.writer_sealed_at is null
         returning l.lease_id,l.fencing_token,l.valid_until,l.renewed_at
       `.execute(tx)
             ).rows;
@@ -346,9 +337,9 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       .selectFrom("sandboxes")
       .selectAll()
       .where("id", "=", this.#sandboxId)
-      .forNoKeyUpdate()
+      .forShare()
       .executeTakeFirst();
-    if (!worker || !["ready", "leased"].includes(worker.state))
+    if (!worker || worker.state !== "ready")
       throw new SessionLeaseCoordinatorError("sandbox_unavailable", "Worker is unavailable", true);
     mark("lease_worker_lock");
     await this.#currentRegisteredConnection(
@@ -362,20 +353,14 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       .selectAll()
       .where("tenant_id", "=", request.tenantId)
       .where("pi_session_id", "=", request.piSessionId)
+      .where("released_at", "is", null)
       .forNoKeyUpdate()
       .executeTakeFirst();
-    const now = await databaseTime(tx);
-    if (facts.claimExpiresAt <= now)
-      throw new SessionLeaseCoordinatorError(
-        "stale_attempt",
-        "Run claim expired during acquisition",
-        false,
-      );
     if (
       lease &&
       (lease.sandbox_id !== worker.id ||
-        lease.writer_id !== request.piSessionWriterId ||
-        lease.valid_until <= now)
+        lease.writer_failed_at !== null ||
+        lease.writer_sealed_at !== null)
     )
       throw new SessionLeaseCoordinatorError(
         "session_lease_conflict",
@@ -383,28 +368,27 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         true,
       );
     const newFamily = !lease;
-    // The current transaction's newly inserted Attempt contributes one; every
-    // older execution must already be sealed before creating a new owner.
-    if (newFamily && physical.unsealedRuns !== "1")
+    // No new owner may start until all previous Runs have committed their seals.
+    if (newFamily && physical.unsealedRuns !== "0")
       throw new SessionLeaseCoordinatorError(
         "session_lease_conflict",
         "Previous Session executions have not finished closure",
         true,
       );
+    // Run's final conditional UPDATE checks clock_timestamp() after every lock;
+    // an earlier SELECT timestamp would not authorize a later execution anyway.
     mark("lease_read");
     if (!lease) {
-      if (worker.active_sessions >= worker.max_concurrent_sessions)
-        throw new SessionLeaseCoordinatorError("capacity", "Worker Session capacity is full", true);
       const epoch = Number(physical.leaseEpoch) + 1;
       if (!Number.isSafeInteger(epoch)) throw new Error("Session execution epoch exhausted");
       const created = await sql<Selectable<Database["session_leases"]>>`with advanced_epoch as (
         update pi_sessions set lease_epoch=${epoch}
           where tenant_id=${request.tenantId}::uuid and id=${request.piSessionId}
             and lease_epoch=${physical.leaseEpoch}::bigint returning id
-      ) insert into session_leases(tenant_id,pi_session_id,lease_id,sandbox_id,writer_id,
+      ) insert into session_leases(tenant_id,pi_session_id,lease_id,sandbox_id,
           fencing_token,valid_until,acquired_at,renewed_at)
         select ${request.tenantId}::uuid,id,${this.#idGenerator()}::uuid,${worker.id}::uuid,
-          ${request.piSessionWriterId}::uuid,${epoch},
+          ${epoch},
           clock_timestamp()+${this.#leaseDurationMs}*interval '1 millisecond',
           clock_timestamp(),clock_timestamp() from advanced_epoch
         returning *`.execute(tx);
@@ -416,63 +400,11 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           false,
         );
     }
-    const touchSession = tx
-      .updateTable("sessions")
-      .set({ row_version: sql<string>`row_version+1`, updated_at: now })
-      .where("id", "=", request.sessionId)
-      .returning("id");
-    const reserveCapacity = tx
-      .updateTable("sandboxes")
-      .set({
-        state: "leased",
-        active_sessions: worker.active_sessions + (newFamily ? 1 : 0),
-        updated_at: now,
-      })
-      .where("id", "=", worker.id)
-      .returning("id");
-    const bindAttempt = tx
-      .updateTable("run_attempts")
-      .set({
-        sandbox_id: worker.id,
-        lease_id: lease.lease_id,
-        fencing_token: lease.fencing_token,
-        execution_released_at: null,
-        updated_at: now,
-      })
-      .where("id", "=", request.attemptId)
-      .where("state", "=", "claimed")
-      .where("lease_id", "is", null)
-      .where("claim_expires_at", ">", sql<Date>`clock_timestamp()`)
-      .where(
-        sql<boolean>`(${this.#connectionGuard === undefined} or exists(
-          select 1 from supervisor_connections where connection_id=${this.#heartbeatConnectionId}::uuid
-            and state='active' and accepting_assignments and expires_at>clock_timestamp()
-        ))`,
-      )
-      .where(
-        sql<boolean>`exists(select 1 from session_leases where lease_id=${lease.lease_id}::uuid and valid_until>clock_timestamp())`,
-      )
-      .returning("id");
-    // All target rows are already locked. Keep decision-time expiry checks
-    // on the binding write, but commit these writes in one server round trip.
-    const changed = await tx
-      .with("touched_session", () => touchSession)
-      .with("reserved_capacity", () => reserveCapacity)
-      .with("bound_attempt", () => bindAttempt)
-      .selectNoFrom([
-        sql<number>`(select count(*)::int from touched_session)`.as("sessions"),
-        sql<number>`(select count(*)::int from reserved_capacity)`.as("workers"),
-        sql<number>`(select count(*)::int from bound_attempt)`.as("attempts"),
-      ])
-      .executeTakeFirstOrThrow();
-    expectOne(BigInt(changed.sessions), "updating the bound Session");
-    expectOne(BigInt(changed.workers), "reserving Worker family capacity");
-    expectOne(BigInt(changed.attempts), "binding a task to its Session lease");
     mark("lease_write");
     return {
       executionReference: createExecutionReference(
         lease.lease_id,
-        request.attemptId,
+        request.runId,
         Number(lease.fencing_token),
       ),
     };
@@ -549,7 +481,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         grant.workspace_id !== request.workspaceId ||
         grant.run_id !== request.runId ||
         grant.turn_id !== request.turnId ||
-        grant.attempt_id !== request.attemptId
+        grant.run_id !== request.runId
       ) {
         throw new SessionLeaseCoordinatorError(
           "stale_session_lease",
@@ -558,7 +490,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         );
       }
       return {
-        executionReference: createExecutionReference(grant.lease_id, grant.attempt_id, generation),
+        executionReference: createExecutionReference(grant.lease_id, grant.run_id, generation),
       };
     });
   }
@@ -573,7 +505,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     const identity = parseExecutionReference(acknowledgement.executionReference);
     await releaseExecutionScope(transaction, {
       tenantId: request.tenantId,
-      attemptId: identity.attemptId,
+      runId: identity.runId,
       leaseId: identity.leaseId,
       fencingToken: identity.fencingToken,
       now,
@@ -587,7 +519,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     requireUnexpired: boolean,
   ) {
     const identity = parseExecutionReference(acknowledgement.executionReference);
-    if (identity.attemptId !== request.attemptId) {
+    if (identity.runId !== request.runId) {
       throw new SessionLeaseCoordinatorError(
         "stale_session_lease",
         "ExecutionReference belongs to another Run execution",
@@ -615,7 +547,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       grant.workspace_id !== request.workspaceId ||
       grant.run_id !== request.runId ||
       grant.turn_id !== request.turnId ||
-      grant.attempt_id !== request.attemptId ||
+      grant.run_id !== request.runId ||
       grant.sandbox_id !== this.#sandboxId
     ) {
       throw new SessionLeaseCoordinatorError(

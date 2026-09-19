@@ -6,7 +6,7 @@ import {
 } from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
 import {
-  createCloudAttemptContext,
+  createCloudExecutionContext,
   createCloudStepContext,
   createCloudTurnContext,
 } from "../src/index.ts";
@@ -109,12 +109,12 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
       },
     };
     const retriedTurn = createCloudTurnContext(retryCommand);
-    const firstAttempt = createCloudAttemptContext({
+    const firstAttempt = createCloudExecutionContext({
       command,
       runtimeIdentity,
       turnContextSha256: first.sha256,
     });
-    const retryAttempt = createCloudAttemptContext({
+    const retryAttempt = createCloudExecutionContext({
       command: retryCommand,
       runtimeIdentity: {
         supervisorId: "supervisor-step-2",
@@ -140,7 +140,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
 
   it("captures a distinct immutable Step for every provider request", () => {
     const turn = createCloudTurnContext(command);
-    const attempt = createCloudAttemptContext({
+    const attempt = createCloudExecutionContext({
       command,
       runtimeIdentity,
       turnContextSha256: turn.sha256,
@@ -155,7 +155,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
     const first = createCloudStepContext({
       sequence: 1,
       turnContextSha256: turn.sha256,
-      attemptContextSha256: attempt.sha256,
+      executionContextSha256: attempt.sha256,
       allowedTools: command.payload.toolCapabilities,
       activeTools: ["read", "write", "edit", "bash"],
       worldState,
@@ -163,7 +163,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
     const second = createCloudStepContext({
       sequence: 2,
       turnContextSha256: turn.sha256,
-      attemptContextSha256: attempt.sha256,
+      executionContextSha256: attempt.sha256,
       allowedTools: command.payload.toolCapabilities,
       activeTools: ["read", "write", "edit", "bash"],
       worldState,
@@ -171,14 +171,14 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
 
     expect(first.sha256).not.toBe(second.sha256);
     expect(first.context.turnContextSha256).toBe(turn.sha256);
-    expect(first.context.attemptContextSha256).toBe(attempt.sha256);
+    expect(first.context.executionContextSha256).toBe(attempt.sha256);
     expect(first.context.activeTools).toEqual(["read", "write", "edit", "bash"]);
     expect(Object.isFrozen(first.context.worldState)).toBe(true);
     expect(() =>
       createCloudStepContext({
         sequence: 3,
         turnContextSha256: turn.sha256,
-        attemptContextSha256: attempt.sha256,
+        executionContextSha256: attempt.sha256,
         allowedTools: ["read"],
         activeTools: ["read", "bash"],
         worldState,

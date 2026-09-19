@@ -10,7 +10,7 @@ context. Expiring the lease or killing the Worker does not retract that request.
 
 Use the direct publication and Projector contract in ADR-0163. The Run terminal transaction requests
 an immutable `execution_seal` through the existing terminal Outbox. It identifies
-the exact RunAttempt. Data and seals use the same Session key and a fixed Kafka
+the exact Run. Data and seals use the same Session key and a fixed Kafka
 partition count. The first seal in partition order closes that execution stream.
 Later records from that execution cannot change Pi SessionStorage or live output.
 
@@ -22,7 +22,7 @@ for this projection. The same Projector updates its live view and
 publishes the terminal only after the canonical transaction has committed.
 
 An ACK-lost seal may be appended again; the execution's first committed seal wins.
-Closure metadata belongs to the durable RunAttempt and survives Kafka retention.
+Closure metadata belongs to the durable Run and survives Kafka retention.
 The existing durable prompt/control mailbox is unchanged. A delivered Steer is
 not automatically treated as consumed or replayed. Pre-start retries have no
 Agent output: the backend commits `started` before invoking the Runner.

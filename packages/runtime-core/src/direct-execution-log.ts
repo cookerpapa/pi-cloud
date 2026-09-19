@@ -115,9 +115,9 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         this.#writers.delete(request.executionReference);
         if (failure) throw failure;
         await this.database
-          .updateTable("run_attempts")
+          .updateTable("runs")
           .set({ native_output_drained: true, last_event_seq: acknowledgedThroughSeq })
-          .where("id", "=", permit.scope.attemptId)
+          .where("id", "=", permit.scope.runId)
           .where("output_sealed_at", "is", null)
           .execute();
       },

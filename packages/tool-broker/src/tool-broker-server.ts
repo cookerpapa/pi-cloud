@@ -848,7 +848,7 @@ export class ToolBrokerServer {
       const executionReference = bearer(request.headers.authorization);
       if (
         executionReference === undefined ||
-        !/^pcer1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionReference)
+        !/^pcer2_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionReference)
       ) {
         await reply.code(401).send({
           error: {
