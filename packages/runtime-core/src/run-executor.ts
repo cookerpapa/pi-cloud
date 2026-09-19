@@ -525,7 +525,7 @@ export class RunExecutor {
     return sql<boolean>`not exists(select 1 from subagent_executions e
       where e.child_run_id=${sql.ref(`${runAlias}.id`)} and not exists(
         select 1 from active_execution_scopes parent where parent.run_id=e.parent_run_id
-          and parent.run_id=e.parent_run_id and parent.accepting_effects and parent.valid_until>clock_timestamp()
+          and parent.accepting_effects and parent.valid_until>clock_timestamp()
       ))`;
   }
 
@@ -1100,7 +1100,7 @@ export class RunExecutor {
             validated_at: now,
           })
           .onConflict((conflict) =>
-            conflict.columns(["environment_version_id", "run_id", "run_id"]).doNothing(),
+            conflict.columns(["environment_version_id", "run_id"]).doNothing(),
           )
           .executeTakeFirst();
         await transaction

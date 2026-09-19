@@ -508,7 +508,6 @@ function currentAssignmentMetadata(
         "sessionId",
         "turnId",
         "leaseId",
-        "runId",
         "bindingSha256",
         "imageRevision",
       ] as const;

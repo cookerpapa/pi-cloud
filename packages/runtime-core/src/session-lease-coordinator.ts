@@ -88,7 +88,7 @@ function requireUuid(value: string, name: string): string {
 
 type CurrentAssignmentRequest = Pick<
   TurnExecutionRequest,
-  "tenantId" | "projectId" | "workspaceId" | "sessionId" | "runId" | "turnId" | "runId"
+  "tenantId" | "projectId" | "workspaceId" | "sessionId" | "runId" | "turnId"
 >;
 
 export class SessionLeaseCoordinator implements TurnExecutionAuthority {

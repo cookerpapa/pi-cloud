@@ -39,7 +39,11 @@ old-wire decoder; this is not a rolling upgrade. Migration 145 requires all
 accepted/queued Runs, current owners, publications and terminal Outbox rows to
 drain. Stop old publishers only after their seals have projected, then migrate
 and deploy matching execution services. Retire v9 only after confirming its
-projection is complete. Cube Volume bytes and guest Tool protocol are unchanged.
+projection is complete. Cube Volume bytes are unchanged, but the guest Tool
+envelope now uses `executionContextSha256`: rebuild/register the Cube template
+and run its real operation contract check before admitting new Tools. An old
+guest image is not compatible; an existing development machine must be explicitly
+retired/reprovisioned rather than silently rewritten.
 
 Migration 145 moves single-execution metadata into Run and removes Attempt/PG
 slot bookkeeping. It preserves native history and closed Run evidence, and refuses
@@ -47,6 +51,7 @@ multiple historical Attempts or superseded execution history instead of silently
 discarding them. Resolve such a refusal explicitly before retrying. Current
 Session lease rows retain released writer-cutoff evidence; operational queries
 must filter `released_at IS NULL` when they mean active ownership, not history.
+Migration 146 rekeys environment-validation uniqueness to the single Run identity.
 
 For a component-only replacement, after draining and applying its migrations,
 use Compose `up --no-deps` for the selected services when dependencies are already

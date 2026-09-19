@@ -215,7 +215,7 @@ describe("Kafka-driven Tool command execution", () => {
     expect(f.consumer.statistics().retainedResultBytes).toBeGreaterThan(0);
     // A UI event and another execution's same tool ID are not acknowledgements.
     await f.consumer.consume(record({ kind: "agent_event", scope: a.scope }));
-    for (const field of ["tenantId", "sessionId", "runId", "turnId", "runId"] as const) {
+    for (const field of ["tenantId", "sessionId", "runId", "turnId"] as const) {
       const other = { ...receipt(a), scope: { ...a.scope, [field]: crypto.randomUUID() } };
       await f.consumer.consume(record(other));
     }

@@ -171,6 +171,34 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     expect(await executor.dispatchRun(accepted.runId)).toMatchObject({ status: "completed" });
   });
 
+  it("settles an environment failure against the single Run identity", async () => {
+    const s = await conversation("environment-failure");
+    const accepted = await store.acceptTurn(s.sessionId, "first", { prompt: "test" });
+    const worker = await createTestWorker(database);
+    const executor = worker.executor({
+      async execute(_request, lifecycle) {
+        lifecycle.executionExited();
+        throw new TurnExecutionBackendError("environment_preflight_failed", "Probe failed", false);
+      },
+    });
+    expect(await executor.dispatchRun(accepted.runId)).toMatchObject({
+      status: "failed",
+      failureCode: "environment_preflight_failed",
+    });
+    const evidence = await database
+      .selectFrom("environment_validations")
+      .selectAll()
+      .where("run_id", "=", accepted.runId)
+      .execute();
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      status: "failed",
+      failure_code: "environment_preflight_failed",
+    });
+    await seal(accepted.runId);
+    expect((await store.getRun(accepted.runId)).state).toBe("failed");
+  });
+
   it.each(["exit-first", "seal-first", "no-exit-proof"])(
     "recovers cancellation failure only after exit and seal (%s)",
     async (order) => {

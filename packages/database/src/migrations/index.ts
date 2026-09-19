@@ -144,6 +144,7 @@ import * as pendingControlLookup from "./142_pending_control_lookup.ts";
 import * as firstRecordExecution from "./143_first_record_execution.ts";
 import * as readyRunAdmission from "./144_ready_run_admission.ts";
 import * as runExecutionIdentity from "./145_run_execution_identity.ts";
+import * as environmentValidationRunIdentity from "./146_environment_validation_run_identity.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -293,6 +294,7 @@ export const migrationProvider: MigrationProvider = {
       "143_first_record_execution": firstRecordExecution,
       "144_ready_run_admission": readyRunAdmission,
       "145_run_execution_identity": runExecutionIdentity,
+      "146_environment_validation_run_identity": environmentValidationRunIdentity,
     };
   },
 };

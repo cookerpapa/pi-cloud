@@ -985,7 +985,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "run_id",
           "session_id",
           "turn_id",
-          "run_id",
           "lease_id",
           "fencing_token",
         ])
@@ -1838,7 +1837,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "run_id",
           "session_id",
           "turn_id",
-          "run_id",
           "lease_id",
           "fencing_token",
         ])
@@ -1916,7 +1914,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "activation.run_id",
           "activation.session_id",
           "activation.turn_id",
-          "activation.run_id",
           "activation.lease_id",
           "activation.fencing_token",
         ])
@@ -2018,7 +2015,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         "workspace_id",
         "session_id",
         "turn_id",
-        "run_id",
         "lease_id",
         "fencing_token",
       ])

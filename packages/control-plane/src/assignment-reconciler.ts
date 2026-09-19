@@ -267,7 +267,6 @@ export class AssignmentReconciler {
         "run_id",
         "fencing_token",
         "valid_until",
-        "run_id",
         "turn_id",
       ])
       .where("sandbox_id", "=", this.#sandboxId)
