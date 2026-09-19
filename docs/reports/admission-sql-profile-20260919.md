@@ -1,5 +1,8 @@
 # Admission SQL profile — September 19, 2026
 
+Historical baseline. Its identified duplication is addressed by
+[ready-Run admission](ready-admission-20260919.md); current counts are 8 + 16.
+
 Diagnosis only: production code, configuration and user data were unchanged.
 Source `6a887ef2`, deployed runtime/image `4c7ff326` (later changes are tests/docs).
 

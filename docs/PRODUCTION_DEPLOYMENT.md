@@ -50,6 +50,13 @@ including all issued publications' seals. Stop old Workers before applying it an
 restart matching Worker/Control Plane code together. The Kafka v9 wire format and
 guest template are unchanged; do not delete user history or Volumes for this upgrade.
 
+For a component-only replacement, after draining and applying its migrations,
+use Compose `up --no-deps` for the selected services when dependencies are already
+healthy. An ordinary `up` may recreate changed dependencies too. If PostgreSQL
+is unavailable beyond Broker's ownership lease, restart Broker and verify
+`/health/ready` before resuming Tools; an expired Broker must not revive its old
+authority. A live process alone is not execution readiness.
+
 The pinned Confluent consumer uses a native addon: `dependencies:harden` and image
 builds rebuild it after `npm ci --ignore-scripts`.
 

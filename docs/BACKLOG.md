@@ -12,14 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Finish ADR-0179 rollout and paid acceptance: durable Lane readiness,
-      bounded family closure and consolidated admission. SQL-count regression
-      is 8 input + 16 claim exchanges, versus the [profile's](reports/admission-sql-profile-20260919.md)
-      10 + 31; real latency/recovery acceptance is still pending.
-
 - [ ] Discuss drain/completion durability before any further boundary merging.
       [Terminal wake and transaction-local SQL](reports/terminal-wake-acceptance-20260918.md)
-      are implemented; shared-row/WAL tails remain. Do not remove the drained
+      are implemented; shared-row/WAL tails remain. The [ready-admission acceptance](reports/ready-admission-20260919.md)
+      still saw a 353ms terminal tail, concentrated between settlement and seal
+      publication; its exact wait was not sampled. Do not remove the drained
       output proof or weaken seals merely to reduce commit count.
 
 - [ ] Attribute remaining cold-start and Node callback/CPU tails after

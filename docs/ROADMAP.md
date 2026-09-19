@@ -39,6 +39,10 @@
 
 ## Current release gate
 
+- [x] Durable Lane readiness and bounded family closure; consolidate admission
+      from 41 to 24 SQL exchanges, preserving atomic authority and ordered seals.
+      [Real Luna/Cube, child-Lane, cancellation and process-fault acceptance](reports/ready-admission-20260919.md).
+
 - [x] Atomic admitted/running state and first-record recovery without a standalone
       opening; [real Luna/Cube comparison, shared-Lane and process-fault acceptance](reports/first-record-admission-20260919.md).
 
