@@ -11,8 +11,8 @@ revision-bound reports, not as alternate production backends.
 Read the documents in this order:
 
 1. [ADR-0180](0180-run-identity-and-session-ownership.md) — one Run execution
-   identity, lease-owned Session writer and Worker-local capacity; implementation
-   in progress, replacing the independent Attempt/PG slot bookkeeping.
+   identity, lease-owned Session writer and Worker-local capacity, replacing
+   independent Attempt/PG slot bookkeeping.
 
 1. [ADR-0179](0179-ready-runs-and-single-admission.md) — durable Lane readiness,
    bounded family closure state and one atomic execution admission.

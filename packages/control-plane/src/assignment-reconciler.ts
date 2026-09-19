@@ -261,14 +261,7 @@ export class AssignmentReconciler {
   async #loadDurableAssignments(expiredOnly = false): Promise<DurableAssignment[]> {
     const grants = await this.#database
       .selectFrom("active_execution_scopes")
-      .select([
-        "session_id",
-        "lease_id",
-        "run_id",
-        "fencing_token",
-        "valid_until",
-        "turn_id",
-      ])
+      .select(["session_id", "lease_id", "run_id", "fencing_token", "valid_until", "turn_id"])
       .where("sandbox_id", "=", this.#sandboxId)
       .where(sql<boolean>`(${!expiredOnly} or valid_until <= clock_timestamp())`)
       .orderBy("valid_until", "asc")

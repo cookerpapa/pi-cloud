@@ -39,6 +39,10 @@
 
 ## Current release gate
 
+- [x] One Run execution identity, Session-lease native writer and Worker-local
+      capacity; ordinary input/admission SQL reduced from 24 to 18 exchanges.
+      [Migration, real Luna/Cube, child-Lane and process-fault acceptance](reports/run-identity-acceptance-20260919.md).
+
 - [x] Durable Lane readiness and bounded family closure; consolidate admission
       from 41 to 24 SQL exchanges, preserving atomic authority and ordered seals.
       [Real Luna/Cube, child-Lane, cancellation and process-fault acceptance](reports/ready-admission-20260919.md).

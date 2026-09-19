@@ -12,9 +12,12 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Implement ADR-0180: remove independent RunAttempt and PG slot accounting,
-      bind native writer to the Session lease, then verify schema/protocol cutover,
-      model/Cube execution, faults and latency. Keep Workspace deletion coordination.
+- [ ] Investigate Cube's stale master Volume reference after full-VM retirement.
+      The [Run identity acceptance](reports/run-identity-acceptance-20260919.md)
+      confirmed an empty Cube/node inventory with master refcount still one on
+      an old resource. The authorized one-off cleanup is not an automatic fix;
+      preserve deletion guards and discuss upstream reconciliation before changing
+      the storage contract.
 
 - [ ] Discuss drain/completion durability before any further boundary merging.
       [Terminal wake and transaction-local SQL](reports/terminal-wake-acceptance-20260918.md)
