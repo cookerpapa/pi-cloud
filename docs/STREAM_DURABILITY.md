@@ -6,8 +6,9 @@ read Kafka, and the public SSE proxy never builds a second tail.
 
 ## Boundaries
 
-- `O`: a PG-issued publication identity has an ordered opening in Kafka;
-- `K`: Kafka acknowledged a record with `acks=all`;
+- `A`: PG committed execution admission and publication identity;
+- `K`: Kafka durably accepted a record under the configured replication policy;
+- `F`: the execution's first-record recovery floor is committed in PG;
 - `V`: a browser observed valid output through Projector SSE;
 - `P`: complete native state and its PG projection position committed together;
 - `T`: authority requested an immutable execution seal in the PG Outbox;
@@ -15,7 +16,7 @@ read Kafka, and the public SSE proxy never builds a second tail.
 - `S`: a replacement snapshot contains canonical history plus materialized tail.
 
 ```text
-V implies O and K and validity at that record's position
+V implies A and K and F and validity at that record's position
 next Run claim implies C(previous requested seals)
 live terminal implies C
 post-seal old records cannot affect history, UI or new Tool dispatch
@@ -27,7 +28,7 @@ S requires no browser-provided cursor
 Kafka ACK is persistence, not automatic acceptance. An old Worker may still
 append a record after its seal; Projector rejects its application.
 Publication scope is recorded once under the current ExecutionReference. Cached
-scope/opening checks replace remote per-record authority admission, not the sole PG
+scope/closure checks replace remote per-record authority admission, not the sole PG
 authority. Only the exact PG-requested seal is valid. Normal closure affects one
 Run/Lane; uncertain shared native-writer failure also fences its sibling Lanes.
 
@@ -35,7 +36,7 @@ Run/Lane; uncertain shared native-writer failure also fences its sibling Lanes.
 
 Physical Pi Session ID keys data and boundaries to one immutable Kafka partition.
 Projector replicas share one consumer group. The per-partition handler checks
-scope and opening order, applies canonical state, updates the live view and delivers relevant
+scope and closure, applies canonical state, updates the live view and delivers relevant
 commands/control notices to exact owner boots. It never waits for a guest Bash
 to finish. Different partitions run concurrently.
 
@@ -46,6 +47,11 @@ PG's canonical/unsealed-prefix floor and the group's completed delivery position
 This covers PG commit succeeding before Tool routing was acknowledged.
 Replayed native appends are idempotent; effect receivers retain operation IDs and
 applied log positions. A new executor boot cannot adopt old Tool bindings.
+
+There is no opening marker. First native projection also commits the recovery
+floor; a first display/control-only record commits its floor before delivery.
+Rollback or a lost PG reply retries that first record without changing its floor.
+A seal may be the only record of an admitted execution that produced no output.
 
 Active text fragments stay in Kafka/rebuildable memory, not PG token rows. A later
 complete message in another Session cannot move recovery beyond an older unsealed
@@ -87,10 +93,11 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 
 | Failure point | Required outcome |
 | --- | --- |
-| opening PG commit succeeds, reply lost | reload/adopt the first committed opening; never cache an unconfirmed negative state |
+| first-record PG commit succeeds, reply lost | replay idempotently with the same first position; do not advance past uncommitted work |
 | semantic message PG commit | retire covered live spans, preserve borrowed reader references and uncovered suffix |
 | connection lost mid-snapshot | discard only the partial browser value; request a new snapshot without a cursor |
-| before Kafka ACK | not shown; an uncertain native append fails its writer rather than inventing success |
+| record not durably accepted by Kafka | not shown; an uncertain native append fails its writer rather than inventing success |
+| Kafka accepted the record but the publisher lost its ACK | it may project before the seal; do not infer it was absent or replay the Agent |
 | after ACK, before Projector | replay accepted positions; a matching execution identity does not bypass its seal |
 | visible partial output, before complete message | rebuild from Kafka; closure saves interrupted text |
 | model message before validated intent | no effect admitted for that Tool |

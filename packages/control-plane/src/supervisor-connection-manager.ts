@@ -843,7 +843,7 @@ export class SupervisorConnectionManager {
     for (const worker of expired) {
       const result =
         await this.#assignmentRetirerFactory(worker).retireExpiredAssignments(retirementLimit);
-      expiredAssignments += result.settledAssignments + result.requeuedAssignments;
+      expiredAssignments += result.settledAssignments;
     }
     return { connections, retirements, expiredAssignments };
   }

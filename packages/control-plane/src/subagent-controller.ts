@@ -211,8 +211,7 @@ export class SubagentController {
       }
     }
     if (record.fact.kind === "execution_seal") this.#reapRequested = true;
-    if (["subagent_command", "execution_seal", "execution_opened"].includes(record.fact.kind))
-      this.wake();
+    if (["subagent_command", "execution_seal"].includes(record.fact.kind)) this.wake();
   }
 
   #startInput(command: AcceptedSubagentCommand, row: CommandRow): StartCloudSubagentJobInput {

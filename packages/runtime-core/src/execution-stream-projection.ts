@@ -144,17 +144,6 @@ export class ExecutionStreamBoundary {
           BigInt(attempt.output_first_offset) !== record.offset
         )
           throw new Error("Unsealed execution prefix is missing or changed Kafka partition");
-      } else {
-        await this.#database
-          .updateTable("run_attempts")
-          .set({
-            output_first_topic: record.topic,
-            output_first_partition: record.partition,
-            output_first_offset: record.offset.toString(),
-          })
-          .where("id", "=", scope.attemptId)
-          .where("output_first_offset", "is", null)
-          .execute();
       }
     }
     this.#open.add(scope.attemptId);
@@ -197,14 +186,15 @@ export class ExecutionStreamProjector {
       }
       return;
     }
-    const prefix = this.#prefixes.get(fact.scope.attemptId) ?? new CompactEventTail();
-    this.#prefixes.set(fact.scope.attemptId, prefix);
+    const existingPrefix = this.#prefixes.get(fact.scope.attemptId);
+    const prefix = existingPrefix ?? new CompactEventTail();
     for (const event of factEvents(fact)) {
       prefix.accept(event);
     }
     if (fact.kind === "pi_session_append") {
       const through = displayCoverage(fact, prefix);
       await this.#mutations.project(fact, record, through);
+      this.#prefixes.set(fact.scope.attemptId, prefix);
       if (through !== undefined) {
         prefix.cover(through);
         return { canonicalThroughSequence: through };
@@ -215,6 +205,24 @@ export class ExecutionStreamProjector {
       if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
       this.#prefixes.delete(fact.scope.attemptId);
       return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
+    } else {
+      if (!existingPrefix) {
+        // Normally the first record is a native append and anchors in that
+        // transaction. A display/control-only prefix must also survive recovery
+        // before it can become visible or reach an external-effect executor.
+        await this.#database
+          .updateTable("run_attempts")
+          .set({
+            output_first_topic: record.topic,
+            output_first_partition: record.partition,
+            output_first_offset: record.offset.toString(),
+          })
+          .where("tenant_id", "=", fact.scope.tenantId)
+          .where("id", "=", fact.scope.attemptId)
+          .where("output_first_offset", "is", null)
+          .execute();
+      }
+      this.#prefixes.set(fact.scope.attemptId, prefix);
     }
   }
 

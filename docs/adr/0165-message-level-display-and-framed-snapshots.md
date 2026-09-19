@@ -5,9 +5,9 @@ Status: implemented and [verified](../reports/review-repair-acceptance-20260909.
 ## Decision
 
 Keep Worker → private Kafka → one Session Projector. PG retains native semantic
-history; token fragments never become PG rows. An execution opening is idempotent
-by its registered identity and first durable log position, including lost commit
-replies. Unconfirmed negative opening state is never cached.
+history; token fragments never become PG rows. First-record projection is idempotent
+by its registered identity and durable log position, including lost commit
+replies (ADR-0178). No uncommitted recovery floor is published as success.
 
 The same PG transaction that projects a reconstructible native message or Tool
 intent advances display-event and native-log coverage positions on its Attempt. This is

@@ -6,7 +6,6 @@ import type {
   ActiveExecutionLogResolver,
   AcceptedFactBus,
   CandidateFact,
-  ExecutionOpenedFact,
 } from "./accepted-fact.ts";
 import type {
   ExecutionLogWriter,
@@ -37,17 +36,8 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     if (this.#writers.has(request.executionReference))
       throw new Error("Execution writer already open");
     const permit = request.publication;
-    const { leaseId: _leaseId, piSessionLane: _lane, ...scope } = permit.scope;
-    const opening: ExecutionOpenedFact = {
-      kind: "execution_opened",
-      factId: permit.id,
-      scope,
-      publication: permit,
-      occurredAt: new Date().toISOString(),
-    };
-    const receipt = await this.bus.append(opening);
-    if (!receipt.durable || receipt.factId !== opening.factId)
-      throw new Error("Kafka acknowledgement did not match the opening record");
+    // Local writer construction only. The first real append establishes the
+    // Projector's recovery floor; there is no standalone opening handshake.
     let closing = false,
       failure: unknown,
       tail = Promise.resolve(),

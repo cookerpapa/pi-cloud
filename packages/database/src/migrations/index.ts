@@ -141,6 +141,7 @@ import * as messageDisplayCoverage from "./135_message_display_coverage.ts";
 import * as subagentControlLog from "./136_subagent_control_log.ts";
 import * as physicalSessionLeases from "./137_physical_session_leases.ts";
 import * as pendingControlLookup from "./142_pending_control_lookup.ts";
+import * as firstRecordExecution from "./143_first_record_execution.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -287,6 +288,7 @@ export const migrationProvider: MigrationProvider = {
       "140_confirmed_agent_exit": confirmedAgentExit,
       "141_subagent_compute_scopes": subagentComputeScopes,
       "142_pending_control_lookup": pendingControlLookup,
+      "143_first_record_execution": firstRecordExecution,
     };
   },
 };

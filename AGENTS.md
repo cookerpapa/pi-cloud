@@ -51,7 +51,7 @@ protocol, record the decision under `docs/adr/` before implementation.
   a second active writer. Cold administrative mutations require Session quiescence.
   Bootstrap only the latest Compaction and active suffix, never lifetime JSONL.
 - Workers append directly to Kafka under a PG-issued publication identity. One
-  Session Projector consumer group checks recorded scope/openings/seals and drives native
+  Session Projector consumer group checks recorded scope/first positions/seals and drives native
   history, live views and Tool routing. Do not restore a Fact Gateway, another
   channel lease, separate live/Tool consumers or a commit-notification round trip.
   Tool executors remain independently authorized external-effect endpoints;

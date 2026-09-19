@@ -78,7 +78,6 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
   if (
-    parsed.kind === "execution_opened" ||
     parsed.kind === "execution_seal" ||
     parsed.kind === "tool_command" ||
     parsed.kind === "subagent_command"

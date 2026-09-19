@@ -20,8 +20,8 @@ with exact changed-row checks. Reuse lease identity during scope release only
 under the same transaction's identity and physical-Session locks. Do not reuse
 expiry decisions across transactions or skip peer-Lane/capacity reconciliation.
 
-Input acceptance, execution admission, started/running, drained-output proof,
-completion and seal projection keep their existing durability boundaries.
+Drained-output proof, completion and seal projection retain separate durability
+boundaries. Startup consolidation is specified separately in ADR-0178.
 No network operation enters a PG transaction. Drain/completion merging remains
 unapproved. Preserve cancellation, UNKNOWN, ordered closure and lost-ACK handling.
 

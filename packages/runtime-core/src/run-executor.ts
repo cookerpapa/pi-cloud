@@ -1,8 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import {
   isTerminalRunAttemptState,
-  transitionRun,
-  transitionRunAttempt,
   transitionSession,
   transitionTurn,
   type SessionState,
@@ -37,7 +35,6 @@ import type { ExecutionPublication } from "./accepted-fact.ts";
 import { isDeepStrictEqual } from "node:util";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
-const DEFAULT_MAX_ATTEMPTS = 3;
 export type TurnExecutionRequest = {
   tenantId: string;
   projectId: string;
@@ -95,7 +92,6 @@ export type RunClaimAdmission = Readonly<{
 }>;
 
 export type TurnExecutionLifecycle = {
-  started(grant?: TurnExecutionReference): Promise<void>;
   /** Positive local Agent Loop exit, independent of guest Tool cleanup. */
   executionExited(): void;
 };
@@ -120,11 +116,6 @@ export interface TurnExecutionBackend {
 }
 
 export interface TurnExecutionAuthority {
-  releaseUnboundClaim?(
-    transaction: Transaction<Database>,
-    request: TurnExecutionRequest,
-    now: Date,
-  ): Promise<void>;
   assertCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
@@ -220,20 +211,12 @@ export type RunExecutionResult =
       attempt: number;
     }
   | {
-      status: "retry_scheduled";
-      runId: string;
-      sessionId: string;
-      turnId: string;
-      attempt: number;
-      failureCode: string;
-    }
-  | {
       status: "failed";
       runId: string;
       sessionId: string;
       turnId: string;
       attempt: number;
-      phase: "before_start" | "after_start";
+      phase: "after_admission";
       failureCode: string;
     };
 
@@ -242,7 +225,6 @@ export type RunExecutorOptions = {
   backend: TurnExecutionBackend;
   clock?: () => Date;
   claimLeaseMs?: number;
-  maxAttempts?: number;
   claimOwnerId?: string;
   idGenerator?: () => string;
   executionAuthority?: TurnExecutionAuthority;
@@ -362,7 +344,6 @@ export class RunExecutor {
   readonly #backend: TurnExecutionBackend;
   readonly #clock: () => Date;
   readonly #claimLeaseMs: number;
-  readonly #maxAttempts: number;
   readonly #claimOwnerId: string;
   readonly #idGenerator: () => string;
   readonly #executionAuthority: TurnExecutionAuthority | undefined;
@@ -377,7 +358,6 @@ export class RunExecutor {
       options.claimLeaseMs ?? DEFAULT_CLAIM_LEASE_MS,
       "claimLeaseMs",
     );
-    this.#maxAttempts = positiveInteger(options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS, "maxAttempts");
     this.#claimOwnerId = options.claimOwnerId ?? "control-plane";
     if (
       this.#claimOwnerId.length < 1 ||
@@ -451,41 +431,10 @@ export class RunExecutor {
           "pi_cloud.session.id": claim.request.sessionId,
         },
         run: async () => {
-          let started = false;
-          let acknowledgement: TurnExecutionReference | undefined = claim.admission;
-          let startedPromise: Promise<void> | undefined;
-          let startFailure: unknown;
+          const acknowledgement = claim.admission;
           const lifecycle: TurnExecutionLifecycle = {
             executionExited: () => {
               agentExited = true;
-            },
-            started: (candidate) => {
-              if (this.#executionAuthority !== undefined && candidate === undefined) {
-                return Promise.reject(
-                  new RunExecutorInvariantError(
-                    "A fenced execution acknowledgement is required by the configured lease manager",
-                  ),
-                );
-              }
-              if (
-                startedPromise !== undefined &&
-                candidate?.executionReference !== acknowledgement?.executionReference
-              ) {
-                return Promise.reject(
-                  new RunExecutorInvariantError("Execution acknowledgement changed after start"),
-                );
-              }
-              acknowledgement = candidate;
-              startedPromise ??= this.#markStarted(claim, candidate).then(
-                () => {
-                  started = true;
-                },
-                (error: unknown) => {
-                  startFailure = error;
-                  throw error;
-                },
-              );
-              return startedPromise;
             },
           };
 
@@ -496,14 +445,6 @@ export class RunExecutor {
               lifecycle,
               claim.admission,
             );
-            if (startedPromise) await startedPromise;
-            if (!started) {
-              throw new TurnExecutionBackendError(
-                "backend_protocol_violation",
-                "Execution backend returned before acknowledging the Run",
-                false,
-              );
-            }
             if (
               typeof executionResult.stopReason !== "string" ||
               executionResult.stopReason.trim().length === 0 ||
@@ -516,30 +457,20 @@ export class RunExecutor {
               );
             }
           } catch (error) {
-            if (startedPromise && !started && startFailure === undefined) {
-              try {
-                await startedPromise;
-              } catch {
-                // The persistence error is rethrown below instead of being recorded as an agent failure.
-              }
+            const externallySettled = await this.#observeCancellation(claim);
+            if (externallySettled !== undefined) return externallySettled;
+            if (error instanceof TurnExecutionCancelledError && error.reason === "user_request") {
+              throw new RunExecutorInvariantError(
+                "Cancellation confirmation arrived before its durable lifecycle",
+              );
             }
-            if (startFailure !== undefined) throw startFailure;
-            if (started) {
-              const externallySettled = await this.#observeCancellation(claim);
-              if (externallySettled !== undefined) return externallySettled;
-              if (error instanceof TurnExecutionCancelledError && error.reason === "user_request") {
-                throw new RunExecutorInvariantError(
-                  "Cancellation confirmation arrived before its durable lifecycle",
-                );
-              }
-            }
-            return this.#recordFailure(claim, started, normalizeFailure(error), acknowledgement);
+            return this.#recordFailure(claim, normalizeFailure(error), acknowledgement);
           }
 
-          await this.#complete(claim, executionResult, acknowledgement);
-          completed = true;
+          const status = await this.#complete(claim, executionResult, acknowledgement);
+          completed = status === "completed";
           return {
-            status: "completed",
+            status,
             runId: claim.request.runId,
             sessionId: claim.request.sessionId,
             turnId: claim.request.turnId,
@@ -608,7 +539,7 @@ export class RunExecutor {
           sessionId: claim.request.sessionId,
           turnId: claim.request.turnId,
           attempt: claim.attempt,
-          phase: "after_start",
+          phase: "after_admission",
           failureCode: rows.runFailureCode ?? "cancellation_failed",
         };
       }
@@ -674,14 +605,7 @@ export class RunExecutor {
         .where("candidate.available_at", "<=", now)
         // These code-owned states are also the partial ready-index predicate.
         // Parameters prevent a generic prepared plan from proving that match.
-        .where(sql<boolean>`candidate.state in ('queued', 'claimed')`)
-        // A bound Attempt belongs to its Session lease, not the shorter startup
-        // deadline. Only owner reconciliation can requeue it after an uncertain COMMIT.
-        .where(
-          sql<boolean>`not exists(select 1 from run_attempts owned
-          where owned.id=candidate.current_attempt_id and candidate.state='claimed'
-            and owned.lease_id is not null)`,
-        )
+        .where(sql<boolean>`candidate.state = 'queued'`)
         .where("candidate_session.state", "in", ["cold", "idle"])
         .where(
           sql<boolean>`not exists (
@@ -899,30 +823,10 @@ export class RunExecutor {
           throw new RunExecutorInvariantError("Current run attempt is missing");
         }
         if (!isTerminalRunAttemptState(previous.state)) {
-          const superseded = await transaction
-            .updateTable("run_attempts")
-            .set({ state: "superseded", settled_at: now, updated_at: now })
-            .where("tenant_id", "=", row.tenantId)
-            .where("run_id", "=", row.runId)
-            .where("id", "=", row.currentAttemptId)
-            .where("state", "=", previous.state)
-            .executeTakeFirst();
-          expectOne(superseded.numUpdatedRows, "superseding a stale run attempt");
-          await transaction
-            .insertInto("run_attempt_transitions")
-            .values({
-              id: this.#idGenerator(),
-              tenant_id: row.tenantId,
-              run_id: row.runId,
-              attempt_id: row.currentAttemptId,
-              from_state: previous.state,
-              to_state: "superseded",
-              reason: "run_claim_expired",
-              occurred_at: now,
-            })
-            .executeTakeFirstOrThrow();
+          throw new RunExecutorInvariantError("Queued Run retains an unfinished Attempt");
         }
       }
+
       const transitionId = this.#idGenerator();
       const claimed = await sql<{
         attemptCount: number;
@@ -1073,6 +977,8 @@ export class RunExecutor {
         claim.admission = await this.#backend.admit(transaction, claim.request, mark);
         mark("publication_registered");
       }
+      await this.#startAdmittedRun(transaction, claim);
+      mark("admitted_running");
       committedCandidate = claim;
       return claim;
     };
@@ -1091,16 +997,16 @@ export class RunExecutor {
         .where("a.id", "=", candidate.request.attemptId)
         .where("r.id", "=", candidate.request.runId)
         .where("a.tenant_id", "=", candidate.request.tenantId)
-        .where("a.state", "=", "claimed")
-        .where("r.state", "=", "claimed")
+        .where("a.state", "=", "running")
+        .where("r.state", "=", "running")
         .executeTakeFirst();
       if (
         recorded?.claim_owner_id !== this.#claimOwnerId ||
         !isDeepStrictEqual(recorded.output_publication, candidate.admission!.publication)
       )
         throw error;
-      // The started transaction still checks current lease, cancellation and
-      // expiry before any Kafka append or Agent execution.
+      // The exact committed admission already contains running state. Do not
+      // create another Attempt when the COMMIT response was lost.
       result = candidate;
     }
     mark("finish");
@@ -1129,92 +1035,82 @@ export class RunExecutor {
     return result;
   }
 
-  async #markStarted(
-    claim: ClaimedTurn,
-    acknowledgement: TurnExecutionReference | undefined,
-  ): Promise<void> {
+  async #startAdmittedRun(transaction: Transaction<Database>, claim: ClaimedTurn): Promise<void> {
     const now = safeDate(this.#clock);
-    await retryTransaction(this.#database, async (transaction) => {
-      const rows = await this.#lockLifecycleRows(transaction, claim);
-      if (rows.runState !== "claimed" || rows.turnState !== "queued") {
-        throw new RunExecutorInvariantError("Only a claimed Run with a queued Turn can start");
-      }
-      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
-        await this.#executionAuthority.assertCurrent(transaction, claim.request, acknowledgement);
-      }
-      await transitionCurrentRunAttempt(
-        transaction,
-        {
-          tenantId: claim.request.tenantId,
-          runId: claim.request.runId,
-          attemptId: claim.request.attemptId,
-        },
-        {
-          runState: "provisioning",
-          attemptState: "provisioning",
-          reason: "run_started",
-          now,
-          heartbeat: true,
-          transitionId: this.#idGenerator(),
-        },
-      );
+    const rows = await this.#lockLifecycleRows(transaction, claim);
+    if (rows.runState !== "claimed" || rows.turnState !== "queued") {
+      throw new RunExecutorInvariantError("Only a claimed Run with a queued Turn can start");
+    }
+    await transitionCurrentRunAttempt(
+      transaction,
+      {
+        tenantId: claim.request.tenantId,
+        runId: claim.request.runId,
+        attemptId: claim.request.attemptId,
+      },
+      {
+        runState: "running",
+        attemptState: "running",
+        reason: "execution_admitted",
+        now,
+        heartbeat: true,
+        transitionId: this.#idGenerator(),
+      },
+    );
 
-      let nextSessionState: SessionState;
-      if (rows.sessionState === "cold") {
-        const starting = transitionSession(rows.sessionState, "starting");
-        const idle = transitionSession(starting, "idle");
-        nextSessionState = transitionSession(idle, "running");
-      } else if (rows.sessionState === "idle") {
-        nextSessionState = transitionSession(rows.sessionState, "running");
-      } else {
-        throw new RunExecutorInvariantError(
-          `Session cannot start a turn from ${rows.sessionState}`,
-        );
-      }
+    let nextSessionState: SessionState;
+    if (rows.sessionState === "cold") {
+      const starting = transitionSession(rows.sessionState, "starting");
+      const idle = transitionSession(starting, "idle");
+      nextSessionState = transitionSession(idle, "running");
+    } else if (rows.sessionState === "idle") {
+      nextSessionState = transitionSession(rows.sessionState, "running");
+    } else {
+      throw new RunExecutorInvariantError(`Session cannot start a turn from ${rows.sessionState}`);
+    }
 
-      const turnUpdate = transaction
-        .updateTable("turns")
-        .set({
-          state: transitionTurn(rows.turnState, "running"),
-          started_at: now,
-        })
-        .where("tenant_id", "=", claim.request.tenantId)
-        .where("id", "=", claim.request.turnId)
-        .where("state", "=", rows.turnState)
-        .returning("id");
+    const turnUpdate = transaction
+      .updateTable("turns")
+      .set({
+        state: transitionTurn(rows.turnState, "running"),
+        started_at: now,
+      })
+      .where("tenant_id", "=", claim.request.tenantId)
+      .where("id", "=", claim.request.turnId)
+      .where("state", "=", rows.turnState)
+      .returning("id");
 
-      const sessionUpdate = transaction
-        .updateTable("sessions")
-        .set({
-          state: nextSessionState,
-          row_version: sql<string>`${sql.ref("row_version")} + 1`,
-          updated_at: now,
-          last_active_at: now,
-        })
-        .where("tenant_id", "=", claim.request.tenantId)
-        .where("id", "=", claim.request.sessionId)
-        .where("state", "=", rows.sessionState)
-        .returning("id");
-      // Both rows were locked by #lockLifecycleRows. Their independent writes
-      // need one round trip, not one acknowledgement each.
-      const updated = await transaction
-        .with("started_turn", () => turnUpdate)
-        .with("started_session", () => sessionUpdate)
-        .selectNoFrom([
-          sql<number>`(select count(*)::int from started_turn)`.as("turns"),
-          sql<number>`(select count(*)::int from started_session)`.as("sessions"),
-        ])
-        .executeTakeFirstOrThrow();
-      expectOne(BigInt(updated.turns), "starting a turn");
-      expectOne(BigInt(updated.sessions), "starting a session");
-    });
+    const sessionUpdate = transaction
+      .updateTable("sessions")
+      .set({
+        state: nextSessionState,
+        row_version: sql<string>`${sql.ref("row_version")} + 1`,
+        updated_at: now,
+        last_active_at: now,
+      })
+      .where("tenant_id", "=", claim.request.tenantId)
+      .where("id", "=", claim.request.sessionId)
+      .where("state", "=", rows.sessionState)
+      .returning("id");
+    // Both rows were locked by #lockLifecycleRows. Their independent writes
+    // need one round trip, not one acknowledgement each.
+    const updated = await transaction
+      .with("started_turn", () => turnUpdate)
+      .with("started_session", () => sessionUpdate)
+      .selectNoFrom([
+        sql<number>`(select count(*)::int from started_turn)`.as("turns"),
+        sql<number>`(select count(*)::int from started_session)`.as("sessions"),
+      ])
+      .executeTakeFirstOrThrow();
+    expectOne(BigInt(updated.turns), "starting a turn");
+    expectOne(BigInt(updated.sessions), "starting a session");
   }
 
   async #complete(
     claim: ClaimedTurn,
     result: TurnExecutionResult,
     acknowledgement: TurnExecutionReference | undefined,
-  ): Promise<void> {
+  ): Promise<"completed" | "cancelled" | "cancellation_pending"> {
     const now = safeDate(this.#clock);
     const terminalEventId = this.#idGenerator();
     const terminalBody = {
@@ -1223,10 +1119,15 @@ export class RunExecutor {
         stopReason: result.stopReason,
       },
     } as const;
-    await retryTransaction(this.#database, async (transaction) => {
+    return retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
+      // Cancellation may win after admission but before the local Runner exists.
+      // Its control request owns settlement; don't overwrite it with success.
+      if (rows.runState === "cancel_requested" && rows.turnState === "cancelling")
+        return "cancellation_pending";
+      if (rows.runState === "cancelled" && rows.turnState === "cancelled") return "cancelled";
       if (
-        !["provisioning", "restoring", "running", "settling"].includes(rows.runState) ||
+        rows.runState !== "running" ||
         rows.turnState !== "running" ||
         rows.sessionState !== "running"
       ) {
@@ -1242,23 +1143,7 @@ export class RunExecutor {
         result.lastEventSeq ?? Number(claim.request.nextEventSeq) - 1,
         now,
       );
-      if (rows.runAttemptState === "provisioning" || rows.runAttemptState === "restoring") {
-        await transitionCurrentRunAttempt(
-          transaction,
-          {
-            tenantId: claim.request.tenantId,
-            runId: claim.request.runId,
-            attemptId: claim.request.attemptId,
-          },
-          {
-            runState: "running",
-            attemptState: "running",
-            reason: "backend_settled_without_phase_signal",
-            now,
-            transitionId: this.#idGenerator(),
-          },
-        );
-      }
+
       await transitionCurrentRunAttempt(
         transaction,
         {
@@ -1328,17 +1213,16 @@ export class RunExecutor {
           now,
         );
       }
+      return "completed";
     });
   }
 
   async #recordFailure(
     claim: ClaimedTurn,
-    started: boolean,
     failure: ExecutionFailure,
     acknowledgement: TurnExecutionReference | undefined,
   ): Promise<RunExecutionResult> {
     const now = safeDate(this.#clock);
-    const shouldRetry = !started && failure.retryable && claim.attempt < this.#maxAttempts;
     const terminalEventId = this.#idGenerator();
     const terminalBody = {
       type: "turn.failed",
@@ -1352,84 +1236,13 @@ export class RunExecutor {
     await retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
 
-      if (shouldRetry) {
-        if (
-          rows.runState !== "claimed" ||
-          rows.turnState !== "queued" ||
-          !["cold", "idle"].includes(rows.sessionState)
-        ) {
-          throw new RunExecutorInvariantError(
-            "Only an unstarted Run can return to the Session mailbox",
-          );
-        }
-        const attemptState = transitionRunAttempt(rows.runAttemptState, "failed");
-        const attemptUpdate = await transaction
-          .updateTable("run_attempts")
-          .set({
-            state: attemptState,
-            failure_code: failure.code,
-            failure_message: failure.safeMessage,
-            failure_retryable: failure.retryable,
-            settled_at: now,
-            updated_at: now,
-          })
-          .where("tenant_id", "=", claim.request.tenantId)
-          .where("run_id", "=", claim.request.runId)
-          .where("id", "=", claim.request.attemptId)
-          .where("state", "=", rows.runAttemptState)
-          .executeTakeFirst();
-        expectOne(attemptUpdate.numUpdatedRows, "failing a retryable run attempt");
-        await transaction
-          .insertInto("run_attempt_transitions")
-          .values({
-            id: this.#idGenerator(),
-            tenant_id: claim.request.tenantId,
-            run_id: claim.request.runId,
-            attempt_id: claim.request.attemptId,
-            from_state: rows.runAttemptState,
-            to_state: attemptState,
-            reason: "execution_retry_scheduled",
-            occurred_at: now,
-          })
-          .executeTakeFirstOrThrow();
-        const runUpdate = await transaction
-          .updateTable("runs")
-          .set({
-            state: transitionRun(rows.runState, "queued"),
-            available_at: now,
-            stop_reason: null,
-            failure_code: null,
-            failure_message: null,
-            failure_retryable: null,
-            settled_at: null,
-            row_version: sql<string>`${sql.ref("row_version")} + 1`,
-            updated_at: now,
-          })
-          .where("tenant_id", "=", claim.request.tenantId)
-          .where("id", "=", claim.request.runId)
-          .where("current_attempt_id", "=", claim.request.attemptId)
-          .where("state", "=", rows.runState)
-          .where("row_version", "=", rows.runVersion)
-          .executeTakeFirst();
-        expectOne(runUpdate.numUpdatedRows, "requeueing a run");
-        if (claim.admission && this.#executionAuthority)
-          await this.#executionAuthority.releaseCurrent(
-            transaction,
-            claim.request,
-            claim.admission,
-            now,
-          );
-        return;
-      }
-
-      const expectedTurnState = started ? "running" : "queued";
-      if (rows.turnState !== expectedTurnState) {
+      if (rows.turnState !== "running") {
         throw new RunExecutorInvariantError(
           "Turn lifecycle does not match the reported execution phase",
         );
       }
 
-      if (started && this.#executionAuthority !== undefined && acknowledgement !== undefined) {
+      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
         if (this.#executionAuthority.assertCurrentOrExpired !== undefined) {
           await this.#executionAuthority.assertCurrentOrExpired(
             transaction,
@@ -1526,7 +1339,7 @@ export class RunExecutor {
         eventId: terminalEventId,
       });
 
-      if (started) {
+      {
         if (rows.sessionState !== "running") {
           throw new RunExecutorInvariantError("A started execution must own a running session");
         }
@@ -1555,27 +1368,15 @@ export class RunExecutor {
           now,
         );
       }
-      if (acknowledgement === undefined)
-        await this.#executionAuthority?.releaseUnboundClaim?.(transaction, claim.request, now);
     });
 
-    if (shouldRetry) {
-      return {
-        status: "retry_scheduled",
-        runId: claim.request.runId,
-        sessionId: claim.request.sessionId,
-        turnId: claim.request.turnId,
-        attempt: claim.attempt,
-        failureCode: failure.code,
-      };
-    }
     return {
       status: "failed",
       runId: claim.request.runId,
       sessionId: claim.request.sessionId,
       turnId: claim.request.turnId,
       attempt: claim.attempt,
-      phase: started ? "after_start" : "before_start",
+      phase: "after_admission",
       failureCode: failure.code,
     };
   }

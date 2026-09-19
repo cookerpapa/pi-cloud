@@ -1,3 +1,4 @@
+import { admitTestExecution } from "./admit-test-execution.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -88,14 +89,20 @@ async function fixture(capacity = 1, leaseMs = 60000) {
     claimOwnerId: "family-worker",
     executionAuthority: coordinator,
     backend: {
-      execute: async (request, lifecycle) => {
-        const binding = await coordinator.acquire(request);
-        await lifecycle.started(binding);
+      admit: (tx, request) => admitTestExecution(coordinator, tx, request),
+      execute: async (request, _lifecycle, admission) => {
+        const binding = admission!;
         const wait = new Promise<void>((release) =>
           tasks.set(request.runId, { request, reference: binding.executionReference, release }),
         );
         ready.get(request.runId)?.();
         await wait;
+        // The fake Runner emitted nothing, but must still prove its output drained.
+        await db
+          .updateTable("run_attempts")
+          .set({ native_output_drained: true })
+          .where("id", "=", request.attemptId)
+          .execute();
         return { stopReason: "stop" };
       },
     },
@@ -207,29 +214,18 @@ it("shares one owner lease, renews once, and releases capacity only after the fi
     ).toEqual(past);
     await f.coordinator.assertCurrentGrant(child.request, { executionReference: child.reference });
     const foreign = await f.store.acceptTurn(f.foreign.sessionId, "blocked", { prompt: "blocked" });
-    expect(await f.executor.dispatchRun(foreign.runId)).toMatchObject({
-      status: "retry_scheduled",
-      failureCode: "capacity",
-    });
+    await expect(f.executor.dispatchRun(foreign.runId)).rejects.toMatchObject({ code: "capacity" });
+    expect(
+      await f.db
+        .selectFrom("runs")
+        .select(["state", "attempt_count"])
+        .where("id", "=", foreign.runId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ state: "queued", attempt_count: 0 });
     const measured = await f.metrics.runPreparationDuration.get();
     const counts = measured.values.filter((v) => v.metricName?.endsWith("_count"));
-    expect(counts.map((v) => v.labels.stage).sort()).toEqual([
-      "lease_attempt_owner",
-      "lease_begin",
-      "lease_commit",
-      "lease_connection",
-      "lease_family_lock",
-      "lease_read",
-      "lease_session_lock",
-      "lease_worker_lock",
-      "lease_write",
-    ]);
-    expect(counts.every((v) => v.value === 2 && v.labels.outcome === "completed")).toBe(true);
-    expect(
-      counts.every((v) =>
-        Object.keys(v.labels).every((k) => ["stage", "outcome", "service"].includes(k)),
-      ),
-    ).toBe(true);
+    // No standalone lease-acquire transaction remains outside atomic admission.
+    expect(counts).toEqual([]);
     main.release();
     expect(await main.done).toMatchObject({ status: "completed" });
     expect(await f.db.selectFrom("session_leases").selectAll().execute()).toHaveLength(1);

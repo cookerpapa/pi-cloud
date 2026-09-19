@@ -262,10 +262,6 @@ export {
   type ControlPlaneStoreOptions,
 } from "./control-plane-store.ts";
 export {
-  PostgresRunAttemptPhaseObserver,
-  type PostgresRunAttemptPhaseObserverOptions,
-} from "@pi-cloud/runtime-core/run-attempt-runtime";
-export {
   ConversationArchiveError,
   ConversationArchiveService,
   type ConversationArchiveErrorCode,

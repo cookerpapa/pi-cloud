@@ -292,6 +292,23 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     let tracked: TrackedExecution | undefined;
 
     try {
+      executionLog = await measureRunPreparation(
+        request.runId,
+        "writer_prepare",
+        this.#metrics,
+        () =>
+          this.#executionLogs.open({
+            ...admission,
+            sessionId: request.sessionId,
+            piSession: {
+              id: request.piSessionId,
+              lane: request.piSessionLane,
+              writerId: request.piSessionWriterId,
+            },
+            turnId: request.turnId,
+            nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
+          }),
+      );
       const parsed = parseControlToSupervisorMessage({
         protocolVersion: 1,
         messageId: this.#idGenerator(),
@@ -384,22 +401,6 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         );
       }
 
-      await measureRunPreparation(request.runId, "durable_started", this.#metrics, () =>
-        lifecycle.started(acknowledgement),
-      );
-      executionLog = await measureRunPreparation(request.runId, "log_open", this.#metrics, () =>
-        this.#executionLogs.open({
-          ...admission,
-          sessionId: request.sessionId,
-          piSession: {
-            id: request.piSessionId,
-            lane: request.piSessionLane,
-            writerId: request.piSessionWriterId,
-          },
-          turnId: request.turnId,
-          nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
-        }),
-      );
       const execution = prepared.run();
       tracked = this.#registerExecution(request.sessionId, prepared, execution, executionLog);
       try {

@@ -1181,7 +1181,7 @@ try {
   assert(
     Number(
       await psql(
-        `select count(*) from run_attempts where tenant_id=${sqlLiteral(tenantId)} and output_first_topic=${sqlLiteral(ACCEPTED_FACT_TOPIC)} and output_open_offset is not null`,
+        `select count(*) from run_attempts where tenant_id=${sqlLiteral(tenantId)} and output_first_topic=${sqlLiteral(ACCEPTED_FACT_TOPIC)} and output_first_offset is not null`,
       ),
     ) > 0,
     "The test never entered the current execution log",

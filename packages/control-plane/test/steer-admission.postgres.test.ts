@@ -1,3 +1,4 @@
+import { admitTestExecution } from "./admit-test-execution.ts";
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { sql, type QueryId } from "kysely";
@@ -76,8 +77,8 @@ it.skipIf(!external)(
         claimOwnerId: "steer-worker",
         executionAuthority: authority,
         backend: {
-          async execute(request, lifecycle) {
-            await lifecycle.started(await authority.acquire(request));
+          admit: (tx, request) => admitTestExecution(authority, tx, request),
+          async execute() {
             running.resolve();
             await finishRun.promise;
             return { stopReason: "stop" };

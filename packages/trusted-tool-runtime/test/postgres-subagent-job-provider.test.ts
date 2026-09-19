@@ -510,10 +510,10 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       database,
       claimOwnerId: "test-worker",
       backend: {
-        async execute(request, lifecycle) {
+        async execute(request) {
           dispatched.push(request.runId);
           dispatchedPiBindings.push({ id: request.piSessionId, lane: request.piSessionLane });
-          await lifecycle.started();
+
           return { stopReason: "stop" };
         },
       },
@@ -618,9 +618,9 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       database,
       claimOwnerId: "test-worker",
       backend: {
-        async execute(request, lifecycle) {
+        async execute(request) {
           dispatched.push(request.runId);
-          await lifecycle.started();
+
           const native = await nativeLane(request.piSessionLane, request.turnId);
           await native.view(request.piSessionLane).appendMessage({
             role: "user",

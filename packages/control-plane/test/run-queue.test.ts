@@ -108,12 +108,12 @@ describe.sequential("Run queue authority", () => {
       metrics,
       claimOwnerId: "claim-timing-worker",
       backend: {
-        execute: async (_request, lifecycle) => {
+        execute: async (_request) => {
           expect(_request).toMatchObject({
             sessionKind: "conversation",
             workspaceSeedKind: "empty",
           });
-          await lifecycle.started();
+
           return { stopReason: "stop" };
         },
       },
@@ -126,7 +126,7 @@ describe.sequential("Run queue authority", () => {
     // A generic prepared plan must be able to prove the ready-index predicate;
     // lifecycle constants are code, whereas user/Worker identities remain parameters.
     expect(candidates).toHaveLength(2);
-    expect(candidates[0]).toContain("candidate.state in ('queued', 'claimed')");
+    expect(candidates[0]).toContain("candidate.state = 'queued'");
     expect(candidates.every((query) => query.includes('"claim_candidate" as materialized'))).toBe(
       true,
     );
@@ -138,6 +138,7 @@ describe.sequential("Run queue authority", () => {
     const stages = await metrics.runClaimStageDuration.get();
     const counts = stages.values.filter((v) => v.metricName?.endsWith("_count"));
     expect(counts.map((v) => v.labels.stage).sort()).toEqual([
+      "admitted_running",
       "candidate_context",
       "configuration",
       "finish",
@@ -179,7 +180,7 @@ describe.sequential("Run queue authority", () => {
       database,
       claimOwnerId: "rollback-worker",
       backend: {
-        async execute(request, lifecycle) {
+        async execute(request) {
           const before = await database
             .selectFrom("runs")
             .select(["state", "row_version"])
@@ -193,8 +194,8 @@ describe.sequential("Run queue authority", () => {
           await expect(
             database.transaction().execute((tx) =>
               transitionCurrentRunAttempt(tx, request, {
-                runState: "provisioning",
-                attemptState: "provisioning",
+                runState: "settling",
+                attemptState: "settling",
                 reason: "rollback-test",
                 now: new Date(),
                 transitionId: prior.id,
@@ -211,11 +212,11 @@ describe.sequential("Run queue authority", () => {
           expect(
             await database
               .selectFrom("run_attempts")
-              .select(["state", "provisioning_at"])
+              .select(["state", "settling_at"])
               .where("id", "=", request.attemptId)
               .executeTakeFirstOrThrow(),
-          ).toEqual({ state: "claimed", provisioning_at: null });
-          await lifecycle.started();
+          ).toEqual({ state: "running", settling_at: null });
+
           return { stopReason: "stop" };
         },
       },
@@ -260,7 +261,7 @@ describe.sequential("Run queue authority", () => {
         backend: {
           async execute(_request, lifecycle) {
             executionIdentity = _request;
-            await lifecycle.started();
+
             started();
             await interrupted;
             if (order !== "no-exit-proof") lifecycle.executionExited();
@@ -380,8 +381,7 @@ describe.sequential("Run queue authority", () => {
         database,
         claimOwnerId: "next-worker",
         backend: {
-          async execute(_request, lifecycle) {
-            await lifecycle.started();
+          async execute(_request) {
             throw new TurnExecutionBackendError(
               "new_failure",
               "New execution exit unconfirmed",
@@ -452,9 +452,9 @@ describe.sequential("Run queue authority", () => {
       database: measured,
       claimOwnerId: "retry-worker",
       backend: {
-        async execute(_request, lifecycle) {
+        async execute(_request) {
           executions++;
-          await lifecycle.started();
+
           return { stopReason: "stop" };
         },
       },
@@ -526,8 +526,7 @@ describe.sequential("Run queue authority", () => {
       database,
       claimOwnerId: "run-queue-test-worker",
       backend: {
-        async execute(request, lifecycle) {
-          await lifecycle.started();
+        async execute(request) {
           if (request.runId === first.runId) {
             firstStarted();
             await release;
@@ -594,8 +593,7 @@ describe.sequential("Run queue authority", () => {
       database,
       claimOwnerId: "cancellation-test-worker",
       backend: {
-        async execute(_request, lifecycle) {
-          await lifecycle.started();
+        async execute(_request) {
           started();
           await interrupted;
           throw new TurnExecutionCancelledError("user_request", false);
@@ -676,8 +674,7 @@ describe.sequential("Run queue authority", () => {
     ]);
     const observed = new Set<string>();
     const backend: TurnExecutionBackend = {
-      async execute(request, lifecycle) {
-        await lifecycle.started();
+      async execute(request) {
         observed.add(request.runId);
         return { stopReason: "stop" };
       },
@@ -747,8 +744,7 @@ describe.sequential("Run queue authority", () => {
       database,
       claimOwnerId: "pi-session-owner-worker",
       backend: {
-        async execute(request, lifecycle) {
-          await lifecycle.started();
+        async execute(request) {
           observed.push(request.runId);
           if (request.runId === root.runId) {
             parentStarted();
@@ -811,9 +807,9 @@ describe.sequential("Run queue authority", () => {
       database,
       claimOwnerId: "replacement-worker",
       backend: {
-        async execute(request, lifecycle) {
+        async execute(request) {
           expect(request.piSessionId).toBe(rootSession.sessionId);
-          await lifecycle.started();
+
           return { stopReason: "stop" };
         },
       },
@@ -875,8 +871,7 @@ describe.sequential("Run queue authority", () => {
         database,
         claimOwnerId: owner,
         backend: {
-          async execute(_request, lifecycle) {
-            await lifecycle.started();
+          async execute(_request) {
             owners.push(owner);
             notifyStarted();
             await release;

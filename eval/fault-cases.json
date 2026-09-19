@@ -34,8 +34,8 @@
       "id": "stale-accepted-fact-authority",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/execution-publication.test.ts",
-      "test": "requires the opening and exact scope but does not query PostgreSQL for each delta",
-      "invariant": "Only the recorded execution scope after its opening is projectable; no per-delta authority query."
+      "test": "retains tenant, writer, event identity and partition checks",
+      "invariant": "Only the recorded execution scope is projectable; no standalone opening is required."
     },
     {
       "id": "session-mutation-redelivery",
@@ -80,18 +80,18 @@
       "invariant": "A replacement Projector reconstructs the unsealed prefix without repeating native mutations."
     },
     {
-      "id": "opening-commit-reply-loss",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/execution-publication.test.ts",
-      "test": "replays an opening after PostgreSQL committed but its acknowledgement was lost",
-      "invariant": "A lost PG COMMIT reply cannot poison opening state or cause later records to be skipped."
+      "id": "first-record-commit-reply-loss",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "co-commits the first native floor and replays after after_commit failure",
+      "invariant": "A lost PG COMMIT reply preserves the first recovery floor and idempotent native projection."
     },
     {
-      "id": "opening-rollback",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/execution-publication.test.ts",
-      "test": "retries a rolled-back opening without caching a negative decision",
-      "invariant": "An opening is effective only after its transaction commits, and retries can make progress."
+      "id": "first-record-rollback",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "co-commits the first native floor and replays after before_commit failure",
+      "invariant": "First native data and its recovery floor roll back together, and retry cannot skip the prefix."
     },
     {
       "id": "control-plane-process-sigkill",

@@ -1,3 +1,4 @@
+import { admitTestExecution } from "./admit-test-execution.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -68,9 +69,8 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
       clock,
       executionAuthority: coordinator,
       backend: {
-        async execute(request, lifecycle) {
-          const lease = await coordinator.acquire(request);
-          await lifecycle.started(lease);
+        admit: (tx, request) => admitTestExecution(coordinator, tx, request),
+        async execute(request) {
           const wait = new Promise<void>((r) => released.set(request.runId, r));
           started.get(request.runId)!();
           await wait;

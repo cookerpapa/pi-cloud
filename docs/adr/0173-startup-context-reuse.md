@@ -13,8 +13,8 @@ authority credentials or a second state cache. Runner seed preparation and root
 Tool construction use them without new PG reads. Deploy the paired Worker
 components together; there is no legacy-command fallback or data migration.
 
-Claim/lease/publication boundaries now follow [ADR-0174](0174-atomic-worker-admission.md).
-Started and running remain separate. State-transition writes share a data-modifying CTE, with all prior
+Claim/lease/publication/running boundaries now follow [ADR-0178](0178-admission-and-first-record.md).
+State-transition writes share a data-modifying CTE, with all prior
 lock/CAS and transition-record checks retained. No database transaction waits on
 Kafka, a provider or guest execution. No acknowledgement is weakened.
 

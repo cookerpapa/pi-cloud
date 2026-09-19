@@ -2,7 +2,6 @@ import type { WorkflowExecutor } from "./workflow-transport.ts";
 import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server";
 import {
   activeTraceCarrier,
-  measureRunPreparation,
   operationalLog,
   withSpan,
   type PiCloudMetrics,
@@ -42,7 +41,6 @@ import type {
   TrustedModelRuntimeLease,
   TrustedModelRuntimeLeaseResolver,
 } from "./agent-turn-runtime.ts";
-import type { RunAttemptPhaseObserver } from "./run-attempt-phase.ts";
 import { createTrustedRemoteAgentTools } from "./trusted-remote-tools.ts";
 import {
   createCloudAttemptContext,
@@ -81,7 +79,6 @@ export type RemoteToolSandboxTurnRunnerOptions = {
       refreshServices(): Promise<void>;
     }>,
   ) => Promise<readonly TrustedAgentTool[]> | readonly TrustedAgentTool[];
-  runAttemptPhaseObserver?: RunAttemptPhaseObserver;
   acquireModelPermit?: (
     command: ExecuteTurnCommandMessage,
     signal?: AbortSignal,
@@ -139,7 +136,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
-  readonly #runAttemptPhaseObserver: RunAttemptPhaseObserver | undefined;
   readonly #acquireModelPermit: RemoteToolSandboxTurnRunnerOptions["acquireModelPermit"];
   readonly #requestTimeoutMs: number | undefined;
   readonly #turnTimeoutMs: number | undefined;
@@ -166,7 +162,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#openAgentSession = options.openAgentSession;
     this.#publishToolCommand = options.publishToolCommand;
     this.#createTrustedTools = options.createTrustedTools;
-    this.#runAttemptPhaseObserver = options.runAttemptPhaseObserver;
     this.#acquireModelPermit = options.acquireModelPermit;
     this.#requestTimeoutMs = options.requestTimeoutMs;
     this.#turnTimeoutMs = options.turnTimeoutMs;
@@ -446,20 +441,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         fakeModel = new FakeModelServer({ defaultScenario: scenario });
         await fakeModel.start();
       }
-      if (this.#runAttemptPhaseObserver !== undefined) {
-        try {
-          await measureRunPreparation(command.payload.runId, "durable_running", this.#metrics, () =>
-            this.#runAttemptPhaseObserver!.transition(command, "running"),
-          );
-        } catch (error: unknown) {
-          throw safePiError(
-            error,
-            "run_phase_persist_failed",
-            "Run execution phase could not be persisted",
-          );
-        }
-      }
-
       const resolveModelRuntime: PiCloudTurnRunnerOptions["resolveModelRuntime"] = (model) =>
         usesEmbeddedFake
           ? {

@@ -1,5 +1,5 @@
 import { databaseTime, type Database } from "@pi-cloud/database";
-import { releaseExecutionScope, releaseIdleSessionLease } from "./worker-family-capacity.ts";
+import { releaseExecutionScope } from "./worker-family-capacity.ts";
 import { transitionSandbox } from "@pi-cloud/domain";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import {
@@ -641,23 +641,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       fencingToken: identity.fencingToken,
       now,
     });
-  }
-
-  async releaseUnboundClaim(
-    tx: Transaction<Database>,
-    request: TurnExecutionRequest,
-    now: Date,
-  ): Promise<void> {
-    await lockPiSessionWorkerOwnership(tx, request.tenantId, request.piSessionId);
-    const lease = await tx
-      .selectFrom("session_leases")
-      .select("lease_id")
-      .where("tenant_id", "=", request.tenantId)
-      .where("pi_session_id", "=", request.piSessionId)
-      .where("writer_id", "=", request.piSessionWriterId)
-      .where("sandbox_id", "=", this.#sandboxId)
-      .executeTakeFirst();
-    if (lease) await releaseIdleSessionLease(tx, lease.lease_id, now);
   }
 
   async #currentGrant(

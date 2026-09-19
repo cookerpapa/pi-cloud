@@ -8,15 +8,15 @@ and independent canonical/live/Tool consumer topology, not Cube effect semantics
 ## Decision
 
 Workers append directly to the existing Kafka transport. PostgreSQL remains the
-only Run/Lease authority. Opening an execution binds one immutable publication
-scope to that exact Attempt, Lane and native writer. An ordered opening record
-precedes data. A Projector loads/caches scope and applies in-log seals; it never
+only Run/Lease authority. Execution admission binds one immutable publication
+scope to that exact Attempt, Lane and native writer. The first actual record
+anchors recovery under ADR-0178. A Projector caches scope and applies in-log seals; it never
 rechecks wall-clock Lease expiry per token. Only the exact control-plane-requested
 seal payload in PG is a valid control record. Kafka access is private and never
 granted to Cube, browser or untrusted extensions. ADR-0164 removes cryptographic
 origin checks under this trusted-Worker/private-infrastructure threat model.
 
-Run opening/closing are authority operations, not a data gateway. Remove the
+Run admission/closing are authority operations, not a data gateway. Remove the
 Fact WebSocket, its second channel lease/renewal/progress state and remote ACKs.
 The Harness still sees append/acknowledge, not Kafka or projection internals.
 Kafka ACK means durable append, not guaranteed application of a stale record.
@@ -65,7 +65,7 @@ topic and remove old transport entry points/configuration rather than support
 mixed protocols. Preserve PG semantic history and user Volumes; no user-data
 reset is necessary for the additive publication metadata.
 
-Verify scope rejection; opened/sealed ordering; normal versus shared
+Verify scope rejection; first-record/seal ordering; normal versus shared
 writer closure; partial-output reconstruction; failures before/after PG commit;
 lost delivery ACK and replay; cross-replica SSE; effect deduplication and UNKNOWN;
 multi-Lane/provider/Compaction contracts; paid multi-round Cube coding; model-free

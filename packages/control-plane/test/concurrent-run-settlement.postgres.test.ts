@@ -1,3 +1,4 @@
+import { admitTestExecution } from "./admit-test-execution.ts";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -88,10 +89,10 @@ it.skipIf(!external)(
         claimOwnerId: "settlement-worker",
         executionAuthority: coordinator,
         backend: {
-          async execute(request, lifecycle) {
+          admit: (tx, request) => admitTestExecution(coordinator, tx, request),
+          async execute() {
             executions++;
-            const lease = await coordinator.acquire(request);
-            await lifecycle.started(lease);
+
             return { stopReason: "stop" };
           },
         },

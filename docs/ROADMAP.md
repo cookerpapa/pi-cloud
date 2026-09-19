@@ -52,7 +52,8 @@
       queue notifications; [matched GPT comparison and correctness](reports/parallel-claims-20260918.md).
 
 - [x] Atomic Worker claim/lease/publication admission, exact COMMIT confirmation
-      and output-free pre-start retry; [real-PG faults and GPT comparison](reports/atomic-admission-20260918.md).
+      ([original acceptance](reports/atomic-admission-20260918.md)); startup failure
+      now requires closure under ADR-0178 rather than output-free pre-start retry.
 
 - [x] Bounded warm PG connections, single candidate selection, claimed metadata
       reuse and fewer lifecycle-write round trips; [GPT acceptance](reports/startup-optimization-20260917.md).
@@ -69,9 +70,9 @@
       restored the disk-headroom minimum;
       [verification and rollout status](reports/architecture-consolidation-20260910.md).
 
-- [x] Idempotent opening recovery, real Child detail reads, message-level display
+- [x] Idempotent projection recovery, real Child detail reads, message-level display
       coverage, framed snapshots and the maintained CI fault gate (ADR-0165).
-- [x] Remove per-record signatures for trusted private deployment; keep PG opening,
+- [x] Remove per-record signatures for trusted private deployment; keep PG admission,
       scope and ordered seal checks (ADR-0164).
 - [x] Unify native history, live views and Tool routing in one Projector group;
       keep executor results owner-direct and remove Fact Gateway/channel leases.

@@ -49,6 +49,9 @@ export class PostgresPiSessionAppendProjector {
       await tx
         .updateTable("run_attempts")
         .set({
+          output_first_topic: sql<string>`coalesce(output_first_topic, ${position.topic})`,
+          output_first_partition: sql<number>`coalesce(output_first_partition, ${position.partition})`,
+          output_first_offset: sql<string>`coalesce(output_first_offset, ${position.offset.toString()}::bigint)`,
           output_projected_offset: position.offset.toString(),
           ...(displayThrough === undefined
             ? {}

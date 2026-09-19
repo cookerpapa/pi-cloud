@@ -136,7 +136,6 @@ describe("PiWorkerRuntime", () => {
             terminatedRuntimes: 0,
             orphanRuntimes: 0,
             settledAssignments: 0,
-            requeuedAssignments: 0,
           };
         },
         async retireSandbox() {
@@ -145,7 +144,6 @@ describe("PiWorkerRuntime", () => {
             terminatedRuntimes: 0,
             orphanRuntimes: 0,
             settledAssignments: 0,
-            requeuedAssignments: 0,
             sandboxState: "terminated" as const,
           };
         },

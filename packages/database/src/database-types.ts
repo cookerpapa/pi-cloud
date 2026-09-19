@@ -812,7 +812,6 @@ export interface RunAttemptTable {
   output_display_native_seq: GeneratedInt8;
   native_writer_anchor_id: GeneratedNullable<string>;
   output_publication: GeneratedNullable<Record<string, unknown>>;
-  output_open_offset: NullableInt8;
   native_writer_id: Generated<string>;
   native_output_drained: Generated<boolean>;
   native_writer_failed_at: NullableTimestamp;

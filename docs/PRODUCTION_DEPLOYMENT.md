@@ -34,11 +34,15 @@ that revision's deployment instructions. Reload open browser pages. Do not mix
 incompatible publishers, change a live Kafka partition count or silently convert
 an unsupported Volume layout. Back up user data before a storage/protocol cutover.
 
-The current pre-release uses the v8 Kafka protocol, without an old-wire decoder;
-this cutover is not a rolling upgrade. Retire old isolated child Workspace copies
+The current pre-release uses the v9 Kafka protocol, without an old-wire decoder;
+this cutover is not a rolling upgrade. Migration 143 requires no active Runs,
+Session leases, unprojected seals or unpublished terminal Outbox rows. Let the
+old Projector finish these before stopping it, then migrate and replace the
+Worker/Control Plane together. It removes the unused opening-position column;
+first-record recovery now uses `output_first_*`. Retire the v8 topic only after
+its sealed outputs have been fully projected. Retire old isolated child Workspace copies
 before migration 141; it does not relabel or delete them. Migrations preserve PG
-semantic history, identities and configuration. Remove the retired v7 topic only
-after confirming its complete projection.
+semantic history, identities and configuration.
 
 The pinned Confluent consumer uses a native addon: `dependencies:harden` and image
 builds rebuild it after `npm ci --ignore-scripts`.

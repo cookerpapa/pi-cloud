@@ -10,8 +10,10 @@ import { TERMINAL_OUTBOX_NOTIFICATION_CHANNEL } from "../../runtime-core/src/exe
 import { sql, type Kysely, type Transaction } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
+import type { ExecuteTurnCommandMessage, EventPublishMessage } from "@pi-cloud/protocol";
 import { AgentRunExecutionBackend } from "../../runtime-core/src/agent-run-execution-backend.ts";
 import { RunExecutor, type TurnExecutionBackend } from "../../runtime-core/src/run-executor.ts";
+import { RunCancellationExecutor } from "../../runtime-core/src/run-cancellation-executor.ts";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
@@ -20,6 +22,11 @@ import {
   registerExecutionPublication,
 } from "../../runtime-core/src/execution-publication.ts";
 import type { AcceptedFact } from "../../runtime-core/src/accepted-fact.ts";
+import {
+  loadFactReplayOffsets,
+  recordFactProjection,
+} from "../../runtime-core/src/accepted-fact-recovery.ts";
+import { acceptedFactRetentionFloors } from "../../runtime-core/src/kafka-safe-retention.ts";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
@@ -86,7 +93,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const coordinator = new SessionLeaseCoordinator({ database: db, sandboxId: worker });
     const facts: AcceptedFact[] = [];
     const append = vi.fn(async (fact: AcceptedFact) => {
-      // Kafka is called outside PG admission, after the independently committed start.
+      // Kafka is called only after the single admission transaction commits.
       const a = await db
         .selectFrom("run_attempts")
         .select(["state", "output_publication"])
@@ -98,7 +105,34 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       return { factId: fact.factId, durable: true as const };
     });
     const logs = new DirectExecutionLog(db, { append, checkHealth: async () => {} });
-    const runner = vi.fn(async () => ({ stopReason: "stop" }));
+    const runner = vi.fn(
+      async (
+        command: ExecuteTurnCommandMessage,
+        publish: (event: EventPublishMessage) => Promise<void>,
+      ) => {
+        await publish({
+          protocolVersion: 1,
+          messageId: randomUUID(),
+          sentAt: new Date().toISOString(),
+          type: "event.publish",
+          payload: {
+            executionReference: command.payload.executionReference,
+            event: {
+              schemaVersion: 1,
+              eventId: randomUUID(),
+              sessionId: command.payload.sessionId,
+              turnId: command.payload.turnId,
+              agentId: "root",
+              seq: command.payload.nextEventSeq,
+              occurredAt: new Date().toISOString(),
+              type: "turn.started",
+              payload: { inputKind: "prompt" },
+            },
+          },
+        });
+        return { stopReason: "stop" };
+      },
+    );
     const supervisor = new AgentRunSupervisor({
       runner: { run: runner },
       maxConcurrentSessions: capacity,
@@ -280,6 +314,99 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         await outcome;
         await wake.close();
       }
+    },
+  );
+
+  it("commits once before local execution and never appends an opening handshake", async () => {
+    const f = await fixture();
+    let transactions = 0;
+    const observed = new Proxy(db, {
+      get(target, property) {
+        if (property === "transaction")
+          return () => ({
+            execute: (body: (tx: Transaction<Database>) => Promise<unknown>) => {
+              transactions++;
+              return target.transaction().execute(body);
+            },
+          });
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const run = f.runner.getMockImplementation()!;
+    f.runner.mockImplementation(async (...args) => {
+      expect(transactions).toBe(1);
+      expect(f.facts).toEqual([]);
+      return run(...args);
+    });
+    expect(await f.executor(f.backend, observed).dispatchRun(f.accepted.runId)).toMatchObject({
+      status: "completed",
+    });
+    expect(transactions).toBe(2); // admission and completion, not another startup transaction
+    expect(f.facts.map((fact) => fact.kind)).toEqual(["agent_event"]);
+  });
+
+  it.each(["before_write", "after_write"])(
+    "anchors a display-only first record before visibility after %s loss",
+    async (phase) => {
+      const f = await fixture();
+      await f.executor().dispatchRun(f.accepted.runId);
+      let inject = true;
+      const targets = new WeakSet<object>();
+      const faulty = db.withPlugin({
+        transformQuery({ node, queryId }) {
+          const query = db.getExecutor().compileQuery(node, queryId).sql;
+          if (
+            query.startsWith('update "run_attempts"') &&
+            query.includes('"output_first_offset"')
+          ) {
+            targets.add(queryId);
+            if (inject && phase === "before_write") {
+              inject = false;
+              throw Error("injected write failure");
+            }
+          }
+          return node;
+        },
+        async transformResult({ result, queryId }) {
+          if (inject && phase === "after_write" && targets.has(queryId)) {
+            inject = false;
+            throw Error("injected lost reply");
+          }
+          return result;
+        },
+      });
+      const projector = new ExecutionStreamProjector(faulty);
+      const record = { fact: f.facts[0]!, topic: `display-${f.worker}`, partition: 0, offset: 10n };
+      await expect(projector.project(record)).rejects.toThrow(/injected/);
+      const state = await db
+        .selectFrom("run_attempts")
+        .select("output_first_offset")
+        .where("run_id", "=", f.accepted.runId)
+        .executeTakeFirstOrThrow();
+      expect(state.output_first_offset).toBe(phase === "before_write" ? null : "10");
+      await projector.project(record);
+      await projector.project({ ...record, offset: 11n });
+      expect(
+        (
+          await db
+            .selectFrom("run_attempts")
+            .select("output_first_offset")
+            .where("run_id", "=", f.accepted.runId)
+            .executeTakeFirstOrThrow()
+        ).output_first_offset,
+      ).toBe("10");
+      expect(
+        (await loadFactReplayOffsets(db, record.topic, [{ partition: 0, low: 0n, high: 60n }])).get(
+          0,
+        ),
+      ).toBe(0n);
+      await db.transaction().execute((tx) => recordFactProjection(tx, { ...record, offset: 50n }));
+      expect(
+        (await loadFactReplayOffsets(db, record.topic, [{ partition: 0, low: 0n, high: 60n }])).get(
+          0,
+        ),
+      ).toBe(10n);
     },
   );
 
@@ -568,38 +695,61 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(f.runner).toHaveBeenCalledOnce();
     expect((await f.state()).attempts).toHaveLength(1);
   });
-  it("cancellation between admission and started prevents Kafka and Agent execution", async () => {
+  it("cancellation after admission owns settlement even before the local Runner is prepared", async () => {
     const f = await fixture();
+    const cancelling = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    let cancelled!: Promise<unknown>;
     const backend: TurnExecutionBackend = {
       admit: f.backend.admit.bind(f.backend),
       execute: async (r, l, a) => {
-        // Represent a control transaction winning before durable started; public
-        // cancellation only accepts running Turns, so don't bypass it via a fake API call.
-        await db.transaction().execute(async (tx) => {
-          await tx
-            .updateTable("runs")
-            .set({ state: "cancel_requested" })
-            .where("id", "=", r.runId)
-            .execute();
-          await tx
-            .updateTable("turns")
-            .set({ state: "cancelling" })
-            .where("id", "=", r.turnId)
-            .execute();
-          await tx
-            .updateTable("sessions")
-            .set({ state: "cancelling" })
-            .where("id", "=", r.sessionId)
-            .execute();
+        await f.store.acceptTurnCancellation(
+          f.session.sessionId,
+          f.accepted.turnId,
+          randomUUID(),
+          {},
+        );
+        const cancellation = new RunCancellationExecutor({
+          database: db,
+          executionAuthority: f.coordinator,
+          backend: {
+            async cancel(_request, lifecycle) {
+              await lifecycle.started(a!);
+              cancelling.resolve();
+              await release.promise;
+              return { reason: _request.reason, forced: false };
+            },
+          },
         });
+        cancelled = cancellation.dispatchTargetRun(f.accepted.runId);
+        await Promise.race([
+          cancelling.promise,
+          cancelled.then(() => {
+            throw Error("Cancellation failed before admission");
+          }),
+        ]);
         return f.backend.execute(r, l, a);
       },
     };
-    await expect(f.executor(backend).dispatchRun(f.accepted.runId)).rejects.toThrow();
-    expect(f.append).not.toHaveBeenCalled();
-    expect(f.runner).not.toHaveBeenCalled();
+    try {
+      expect(await f.executor(backend).dispatchRun(f.accepted.runId)).toMatchObject({
+        status: "cancellation_pending",
+      });
+      expect(f.runner).toHaveBeenCalledOnce();
+    } finally {
+      release.resolve();
+    }
+    expect(await cancelled).toMatchObject({ status: "cancelled" });
+    await f.project();
+    expect((await f.state()).run.state).toBe("cancelled");
+    const terminals = await db
+      .selectFrom("session_terminal_events")
+      .select("type")
+      .where("run_id", "=", f.accepted.runId)
+      .execute();
+    expect(terminals).toEqual([{ type: "turn.cancelled" }]);
   });
-  it("preparation rejection releases the committed capacity before retry, without any Kafka opening", async () => {
+  it("preparation rejection seals the admitted attempt instead of requeueing it", async () => {
     const f = await fixture();
     const prepare = f.supervisor.prepare.bind(f.supervisor);
     vi.spyOn(f.supervisor, "prepare").mockImplementationOnce((...args) => {
@@ -611,15 +761,27 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       });
     });
     expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({
-      status: "retry_scheduled",
+      status: "failed",
+      phase: "after_admission",
     });
     expect(f.append).not.toHaveBeenCalled();
     expect((await f.state()).leases).toEqual([]);
     expect((await f.state()).worker.active_sessions).toBe(0);
-    expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({
-      status: "completed",
-      attempt: 2,
-    });
+    expect(await f.executor().dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
+    const seal = await db
+      .selectFrom("outbox")
+      .select("payload")
+      .where("tenant_id", "=", f.tenant.tenantId)
+      .executeTakeFirstOrThrow();
+    expect(seal.payload).toMatchObject({ closesWriter: false }); // known-empty local writer drained
+    await f.project();
+    const attempt = await db
+      .selectFrom("run_attempts")
+      .select(["output_first_offset", "output_sealed_at"])
+      .where("run_id", "=", f.accepted.runId)
+      .executeTakeFirstOrThrow();
+    expect(attempt.output_first_offset).toBe("0");
+    expect(attempt.output_sealed_at).not.toBeNull();
   });
   it("two concurrent Lanes bind to one lease, writer and family slot", async () => {
     const f = await fixture(1);
@@ -712,7 +874,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       await running;
     }
   });
-  it("a lost opening ACK fails and seals, without starting or replaying the Agent", async () => {
+  it("a lost first append ACK fails and seals, without replaying the Agent", async () => {
     const f = await fixture();
     f.append.mockImplementation(async (fact) => {
       f.facts.push(fact);
@@ -720,9 +882,9 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     });
     expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({
       status: "failed",
-      phase: "after_start",
+      phase: "after_admission",
     });
-    expect(f.runner).not.toHaveBeenCalled();
+    expect(f.runner).toHaveBeenCalledOnce();
     expect((await f.state()).leases).toEqual([]);
     expect(await f.executor().dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
     await f.project();
@@ -736,7 +898,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       ).output_sealed_at,
     ).not.toBeNull();
   });
-  it("owner loss before started can requeue, but a bound claim cannot be stolen on its shorter deadline", async () => {
+  it("owner loss immediately after admission requires a seal and cannot requeue the Run", async () => {
     const f = await fixture();
     await expect(
       f
@@ -786,10 +948,91 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       inventory: { listAssignments: async () => [], terminateAndConfirmAbsent: async () => {} },
     });
     await reconciler.retireExpiredAssignments();
-    expect((await f.state()).run.state).toBe("queued");
-    expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({
-      status: "completed",
-      attempt: 2,
-    });
+    expect((await f.state()).run.state).toBe("failed");
+    expect(await f.executor().dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
+    await f.project();
+    expect((await f.state()).attempts).toHaveLength(1);
   });
+
+  it.each(["before_commit", "after_commit"])(
+    "co-commits the first native floor and replays after %s failure",
+    async (phase) => {
+      const f = await fixture();
+      expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({
+        status: "completed",
+      });
+      const seq = Number(
+        (
+          await db
+            .selectFrom("pi_sessions")
+            .select("next_seq")
+            .where("id", "=", f.session.sessionId)
+            .executeTakeFirstOrThrow()
+        ).next_seq,
+      );
+      const fact: AcceptedFact = {
+        kind: "pi_session_append",
+        factId: randomUUID(),
+        scope: f.facts[0]!.scope,
+        piSession: { id: f.session.sessionId, lane: "main", writerId: f.facts[0]!.scope.writerId },
+        items: [{ kind: "fact", fact: "name", seq, name: "first-record-test" }],
+        events: [],
+        occurredAt: new Date().toISOString(),
+      };
+      const record = { fact, topic: `first-${f.worker}`, partition: 0, offset: 10n };
+      let inject = true;
+      const faulty = new Proxy(db, {
+        get(target, property) {
+          if (property === "transaction")
+            return () => ({
+              execute: async (callback: (tx: Transaction<Database>) => Promise<unknown>) => {
+                const result = await target.transaction().execute(async (tx) => {
+                  const result = await callback(tx);
+                  if (inject && phase === "before_commit") {
+                    inject = false;
+                    throw new Error("injected rollback");
+                  }
+                  return result;
+                });
+                if (inject && phase === "after_commit") {
+                  inject = false;
+                  throw new Error("injected lost commit reply");
+                }
+                return result;
+              },
+            });
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      const projector = new ExecutionStreamProjector(faulty);
+      await expect(projector.project(record)).rejects.toThrow(/injected/);
+      const floor = await db
+        .selectFrom("run_attempts")
+        .select("output_first_offset")
+        .where("id", "=", fact.scope.attemptId)
+        .executeTakeFirstOrThrow();
+      expect(floor.output_first_offset).toBe(phase === "before_commit" ? null : "10");
+      await projector.project(record);
+      expect(
+        await db
+          .selectFrom("pi_session_log")
+          .select("seq")
+          .where("append_id", "=", fact.factId)
+          .execute(),
+      ).toHaveLength(1);
+      await db.transaction().execute((tx) => recordFactProjection(tx, { ...record, offset: 50n }));
+      expect(
+        (await loadFactReplayOffsets(db, record.topic, [{ partition: 0, low: 0n, high: 60n }])).get(
+          0,
+        ),
+      ).toBe(10n);
+      expect((await acceptedFactRetentionFloors(db, record.topic, [0])).get(0)).toBe(10n);
+      const replay = new ExecutionStreamProjector(db);
+      await replay.project(record);
+      await expect(
+        new ExecutionStreamProjector(db).project({ ...record, offset: 11n }),
+      ).rejects.toThrow(/prefix is missing/);
+    },
+  );
 });

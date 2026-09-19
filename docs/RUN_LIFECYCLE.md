@@ -33,7 +33,8 @@ proceed without reserving a second family slot.
 - every requested predecessor execution seal for this product Session is projected.
 
 It creates a RunAttempt with a startup claim deadline, binds it to the physical
-Session's owner lease and registers publication scope in one transaction. The
+Session's owner lease, registers publication scope and marks the Turn/Session
+running in one transaction. There is no separate startup phase commit. The
 startup deadline cannot steal a lease-bound claim. The Worker renews that owner once per heartbeat;
 it does not renew a child task's startup deadline. Each task carries an
 `ExecutionReference`: the shared lease/epoch plus its own Attempt identity. The
@@ -92,8 +93,10 @@ result is `UNKNOWN`.
 ## Events and terminal commit
 
 Admission binds an immutable publication scope to the current
-Session lease and task identity. After durable `started`, the Worker appends the opening and subsequent records
-directly to Kafka. There is no Fact WebSocket or second renewable channel lease.
+Session lease and task identity. After admission commits, the Worker appends real
+records directly to Kafka, without an opening marker. The first native record
+co-commits its recovery floor in PG; first display/control records persist that
+floor before delivery. There is no Fact WebSocket or second renewable channel lease.
 One Projector group checks recorded scope and same-partition seals, applies native
 PG state, updates the live view and routes Tool commands to their owners.
 The Worker continues at Kafka ACK without waiting for per-Step PG receipts.
@@ -105,7 +108,7 @@ not merely because a Worker reported completion. Snapshots are framed values;
 partial transport values never become user-visible messages.
 
 Complete native state and projection position commit atomically. At completion,
-the Worker drains its append queue, records the Workspace observation and the
+the Worker drains its append queue, persists that drained-output proof and the
 authority requests a seal through Outbox. Projector commits the seal, interrupted
 prefix if any and public terminal, then updates its live view directly. A queued
 successor waits for this PG closure. No second Kafka commit notice is needed.
@@ -124,9 +127,10 @@ task of an expired physical Session, while leaving unrelated Sessions on that
 Worker alone. The shared lease is removed only after its task scopes drain.
 Already admitted shell effects
 remain UNKNOWN. SQL-only lifecycle retries cannot re-execute the Agent Loop.
-Before durable `started`, no Kafka opening or Agent execution is allowed;
-failed preparation may safely requeue and release capacity in one transaction.
-After `started`, even a lost Kafka opening ACK requires a seal, not a blind retry.
+Before admission commits, no output or Agent execution is allowed. After admission,
+even preparation failure or a lost first Kafka ACK requires a seal, not a blind
+retry or output-free pre-start requeue. Running includes context preparation,
+not proof that a model or Tool has actually started.
 An execution seal in the same Kafka partition closes a retired Attempt. A delayed
 Worker producer can still append its old record, but if it arrives after the seal both
 canonical and live consumers discard it. Earlier accepted data is projected

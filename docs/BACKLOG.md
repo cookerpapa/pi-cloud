@@ -12,6 +12,9 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Implement ADR-0178: atomic admitted/running state, first-record recovery,
+      no standalone opening, updated crash tests, drained rollout and live timing.
+
 - [ ] Discuss drain/completion durability before any further boundary merging.
       [Terminal wake and transaction-local SQL](reports/terminal-wake-acceptance-20260918.md)
       are implemented; shared-row/WAL tails remain. Do not remove the drained

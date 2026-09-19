@@ -22,14 +22,11 @@ function walkTurn(initial: TurnState, transitions: readonly TurnState[]): TurnSt
 describe("domain state machines", () => {
   it("enforces durable run and attempt phases", () => {
     expect(transitionRun("queued", "claimed")).toBe("claimed");
-    expect(transitionRun("claimed", "provisioning")).toBe("provisioning");
-    expect(transitionRun("provisioning", "restoring")).toBe("restoring");
-    expect(transitionRun("restoring", "running")).toBe("running");
+    expect(transitionRun("claimed", "running")).toBe("running");
     expect(transitionRun("running", "settling")).toBe("settling");
     expect(transitionRun("settling", "completed")).toBe("completed");
 
-    expect(transitionRunAttempt("claimed", "provisioning")).toBe("provisioning");
-    expect(transitionRunAttempt("provisioning", "running")).toBe("running");
+    expect(transitionRunAttempt("claimed", "running")).toBe("running");
     expect(transitionRunAttempt("running", "cancel_requested")).toBe("cancel_requested");
     expect(transitionRunAttempt("cancel_requested", "cancelled")).toBe("cancelled");
 

@@ -1,3 +1,4 @@
+import { admitTestExecution } from "./admit-test-execution.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -11,12 +12,8 @@ import { getModel } from "@earendil-works/pi-ai/compat";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { RunExecutor, TurnExecutionBackendError } from "../../runtime-core/src/run-executor.ts";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
-import { transitionCurrentRunAttempt } from "../../runtime-core/src/run-attempt-state.ts";
 import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
-import {
-  ExecutionPublicationBoundary,
-  registerExecutionPublication,
-} from "../../runtime-core/src/execution-publication.ts";
+import { ExecutionPublicationBoundary } from "../../runtime-core/src/execution-publication.ts";
 import { NativeSessionLogPublisher } from "../../runtime-core/src/native-session-log-publisher.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import type { AcceptedFact, AcceptedFactWriter } from "../../runtime-core/src/accepted-fact.ts";
@@ -91,10 +88,10 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
         claimOwnerId: owner,
         executionAuthority: coordinator,
         backend: {
-          async execute(request, lifecycle) {
+          admit: (tx, request) => admitTestExecution(coordinator, tx, request),
+          async execute(request, _lifecycle, admission) {
             try {
-              const grant = await coordinator.acquire(request);
-              await lifecycle.started(grant);
+              const grant = admission!;
               const scope = {
                 tenantId: request.tenantId,
                 sessionId: request.sessionId,
@@ -114,9 +111,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                   writerId: request.piSessionWriterId,
                 },
               };
-              const publication = await db
-                .transaction()
-                .execute((tx) => registerExecutionPublication(tx, opening));
+              const publication = admission!.publication;
               const channel = await service.open({ ...opening, publication });
               channels.set(grant.executionReference, channel);
               const readCancellation = new AbortController();
@@ -131,25 +126,6 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                   executionReference: grant.executionReference,
                 }),
               });
-              await db.transaction().execute((tx) =>
-                transitionCurrentRunAttempt(
-                  tx,
-                  {
-                    tenantId: request.tenantId,
-                    runId: request.runId,
-                    attemptId: request.attemptId,
-                    executionReference: grant.executionReference,
-                  },
-                  {
-                    runState: "running",
-                    attemptState: "running",
-                    reason: "test_runner_running",
-                    now: new Date(),
-                    heartbeat: true,
-                    transitionId: crypto.randomUUID(),
-                  },
-                ),
-              );
               try {
                 if (phase === 4) {
                   const runtime = new CloudAgentRuntime({
@@ -381,15 +357,6 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
       for (const fact of pending) {
         const record = { fact, topic: "native-host", partition: 0, offset: offset++ };
         expect(fact).not.toHaveProperty("signature");
-        if (fact.kind === "execution_opened") {
-          expect(fact.publication).not.toHaveProperty("publicKey");
-          const unopened = new ExecutionPublicationBoundary(db);
-          const data = pending.find(
-            (f) => f.kind !== "execution_opened" && f.scope.attemptId === fact.scope.attemptId,
-          )!;
-          expect(data).toBeDefined();
-          expect(await unopened.accept({ ...record, fact: data })).toBe(false);
-        }
         expect(
           await boundary.accept({
             ...record,

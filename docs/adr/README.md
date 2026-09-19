@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0178](0178-admission-and-first-record.md) — admitted execution without
+   separate startup commits or opening records; first-record recovery floor.
+
 1. [ADR-0177](0177-terminal-wake-and-local-sql.md) — commit-time seal wake hints
    and fewer SQL round trips without moving durable boundaries.
 
@@ -20,7 +23,7 @@ Read the documents in this order:
    conservative pending capacity and unchanged PG authority.
 
 1. [ADR-0174](0174-atomic-worker-admission.md) — one claim/lease/publication
-   transaction; Kafka opening only after durable execution start.
+   transaction, with running/first-record placement refined by ADR-0178.
 
 1. [ADR-0173](0173-startup-context-reuse.md) — single candidate selection, claimed
    metadata reuse and fewer state-transition round trips; admission boundaries
@@ -47,9 +50,9 @@ Read the documents in this order:
 1. [ADR-0166](0166-log-driven-subagents.md) — Projector-admitted Subagent control,
    Worker-native Lanes and Cube-isolated workflows.
 1. [ADR-0165](0165-message-level-display-and-framed-snapshots.md) — idempotent
-   openings, message-level display coverage and bounded SSE snapshot framing.
+   projection, message-level display coverage and bounded SSE snapshot framing.
 1. [ADR-0164](0164-trusted-private-log-publication.md) — unsigned publication on
-   trusted private infrastructure; retain scope/opening/seal boundaries.
+   trusted private infrastructure; retain scope/recovery/seal boundaries.
 1. [ADR-0163](0163-direct-log-and-unified-projector.md) — direct Worker log,
    one Session Projector group, direct terminal projection and owner-routed SSE.
 

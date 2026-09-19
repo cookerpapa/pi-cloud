@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { Database } from "@pi-cloud/database";
 import { parseExecutionReference } from "@pi-cloud/protocol";
@@ -6,7 +5,6 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import type { ExecutionPublication } from "./accepted-fact.ts";
 import type { ExecutionLogOpenRequest } from "./execution-log.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
-import { recordFactProjection } from "./accepted-fact-recovery.ts";
 
 /** Authority is a one-time PG operation. There is no channel lease or token-time SELECT. */
 export async function registerExecutionPublication(
@@ -71,7 +69,6 @@ export async function registerExecutionPublication(
   if (row.output_publication !== null)
     throw new Error("An Attempt cannot reopen its publication identity");
   const permit: ExecutionPublication = {
-    id: randomUUID(),
     scope: {
       tenantId: row.tenant_id,
       sessionId: row.session_id,
@@ -93,11 +90,11 @@ export async function registerExecutionPublication(
   return permit;
 }
 
-/** Check attribution and opening order for trusted producers, not cryptographic origin. */
+/** Check PG-issued attribution for trusted producers, not cryptographic origin. */
 export class ExecutionPublicationBoundary {
   readonly #cache = new Map<
     string,
-    { permit: ExecutionPublication; openedAt: bigint | null; topic: string; partition: number }
+    { permit: ExecutionPublication; topic: string; partition: number }
   >();
   constructor(readonly database: Kysely<Database>) {}
   reset(): void {
@@ -119,12 +116,7 @@ export class ExecutionPublicationBoundary {
     if (!authority) {
       const row = await this.database
         .selectFrom("run_attempts")
-        .select([
-          "output_publication",
-          "output_open_offset",
-          "output_first_topic",
-          "output_first_partition",
-        ])
+        .select(["output_publication", "output_first_topic", "output_first_partition"])
         .where("id", "=", id)
         .where("tenant_id", "=", fact.scope.tenantId)
         .executeTakeFirst();
@@ -132,7 +124,6 @@ export class ExecutionPublicationBoundary {
       const permit = row.output_publication as unknown as ExecutionPublication;
       authority = {
         permit,
-        openedAt: row.output_open_offset === null ? null : BigInt(row.output_open_offset),
         topic: row.output_first_topic ?? record.topic,
         partition: row.output_first_partition ?? record.partition,
       };
@@ -145,62 +136,8 @@ export class ExecutionPublicationBoundary {
       authority.topic !== record.topic
     )
       return false;
-    if (fact.kind === "execution_opened") {
-      if (
-        fact.factId !== authority.permit.id ||
-        !isDeepStrictEqual(fact.publication, authority.permit)
-      )
-        return false;
-      if (authority.openedAt === null) {
-        const opened = await this.database.transaction().execute(async (tx) => {
-          const updated = await tx
-            .updateTable("run_attempts")
-            .set({
-              output_open_offset: record.offset.toString(),
-              output_first_topic: record.topic,
-              output_first_partition: record.partition,
-              output_first_offset: record.offset.toString(),
-            })
-            .where("id", "=", id)
-            .where("output_open_offset", "is", null)
-            .where("output_sealed_at", "is", null)
-            .where(
-              sql<boolean>`not exists(select 1 from run_attempts writer where writer.id=run_attempts.native_writer_id and writer.native_writer_sealed_at is not null)`,
-            )
-            .executeTakeFirst();
-          if (updated.numUpdatedRows > 0n) {
-            await recordFactProjection(tx, record);
-            return record.offset;
-          }
-          // A concurrent consumer or a lost COMMIT reply may have opened it.
-          // Zero updated rows is not an authority rejection. Preserve the first
-          // durable position; only an unopened, retired identity is refused.
-          const existing = await tx
-            .selectFrom("run_attempts")
-            .select(["output_open_offset", "output_first_topic", "output_first_partition"])
-            .where("id", "=", id)
-            .where("tenant_id", "=", fact.scope.tenantId)
-            .executeTakeFirst();
-          return existing?.output_open_offset !== null &&
-            existing?.output_open_offset !== undefined &&
-            existing.output_first_topic === record.topic &&
-            existing.output_first_partition === record.partition
-            ? BigInt(existing.output_open_offset)
-            : null;
-        });
-        if (opened === null) return false;
-        authority.openedAt = opened;
-      }
-      if (record.offset < authority.openedAt) return false;
-    }
-    // Never cache an unconfirmed opening: a rolled-back transaction or lost
-    // COMMIT reply must reload PG on retry, not pin an obsolete negative cache.
-    if (authority.openedAt !== null) {
-      this.#cache.set(id, authority);
-      if (this.#cache.size > 65_536) this.#cache.delete(this.#cache.keys().next().value!);
-    }
-    if (fact.kind === "execution_opened") return true;
-    if (authority.openedAt === null || record.offset <= authority.openedAt) return false;
+    this.#cache.set(id, authority);
+    if (this.#cache.size > 65_536) this.#cache.delete(this.#cache.keys().next().value!);
     if (fact.kind === "subagent_command") {
       const lease = parseExecutionReference(fact.executionReference);
       return (

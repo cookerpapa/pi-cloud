@@ -81,7 +81,7 @@ const controlRequestTransitions = {
 
 const runTransitions = {
   queued: ["claimed", "cancel_requested", "failed"],
-  claimed: ["queued", "provisioning", "cancel_requested", "failed", "timed_out", "superseded"],
+  claimed: ["running", "cancel_requested", "failed", "timed_out", "superseded"],
   provisioning: [
     "queued",
     "restoring",
@@ -103,7 +103,7 @@ const runTransitions = {
 } as const satisfies TransitionTable<RunState>;
 
 const runAttemptTransitions = {
-  claimed: ["provisioning", "failed", "timed_out", "superseded"],
+  claimed: ["running", "failed", "timed_out", "superseded"],
   provisioning: ["restoring", "running", "cancel_requested", "failed", "timed_out", "superseded"],
   restoring: ["running", "cancel_requested", "failed", "timed_out", "superseded"],
   running: ["settling", "cancel_requested", "completed", "failed", "timed_out", "superseded"],

@@ -77,19 +77,9 @@ export type AcceptedPiSessionAppendFact = Readonly<{
 }>;
 
 export type ExecutionPublication = Readonly<{
-  id: string;
   scope: AcceptedFactScope & { leaseId: string; piSessionLane: string };
 }>;
-export type ExecutionOpenedFact = Readonly<{
-  kind: "execution_opened";
-  factId: string;
-  scope: AcceptedFactScope;
-  publication: ExecutionPublication;
-  occurredAt: string;
-}>;
-
 export type AcceptedFact =
-  | ExecutionOpenedFact
   | AcceptedToolCommand
   | AcceptedAgentEventFact
   | AcceptedExecutionSealFact

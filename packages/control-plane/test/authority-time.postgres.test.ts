@@ -1,3 +1,4 @@
+import { admitTestExecution } from "./admit-test-execution.ts";
 import { randomUUID } from "node:crypto";
 import { createDatabase, databaseTime, runMigrations, type Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
@@ -58,7 +59,10 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
   });
   async function fixture(
     skewMs = 0,
-    beforeAcquire?: (request: TurnExecutionRequest) => Promise<void>,
+    beforeAcquire?: (
+      request: TurnExecutionRequest,
+      tx: import("kysely").Transaction<Database>,
+    ) => Promise<void>,
   ) {
     const tenant = await createPrivateTenant(db, {
       slug: `clock-${randomUUID()}`,
@@ -97,10 +101,12 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       claimOwnerId: workerId,
       executionAuthority: coordinator,
       backend: {
-        execute: async (request, lifecycle) => {
-          await beforeAcquire?.(request);
-          const binding = await coordinator.acquire(request);
-          await lifecycle.started(binding);
+        admit: async (tx, request) => {
+          await beforeAcquire?.(request, tx);
+          return admitTestExecution(coordinator, tx, request);
+        },
+        execute: async (request, _lifecycle, admission) => {
+          const binding = admission!;
           ready.resolve({ request, reference: binding.executionReference });
           await finish.promise;
           return { stopReason: "stop" };
@@ -159,25 +165,25 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     await f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference });
   });
   it("rolls back epoch, capacity and Session touch when the combined binding is rejected", async () => {
-    const f = await fixture(0, async (request) => {
-      const owner = await db
+    const f = await fixture(0, async (request, tx) => {
+      const owner = await tx
         .selectFrom("run_attempts")
         .select("claim_owner_id")
         .where("id", "=", request.attemptId)
         .executeTakeFirstOrThrow();
       const read = async () => ({
-        physical: await db
+        physical: await tx
           .selectFrom("pi_sessions")
           .select("lease_epoch")
           .where("tenant_id", "=", request.tenantId)
           .where("id", "=", request.piSessionId)
           .executeTakeFirstOrThrow(),
-        session: await db
+        session: await tx
           .selectFrom("sessions")
           .select("row_version")
           .where("id", "=", request.sessionId)
           .executeTakeFirstOrThrow(),
-        worker: await db
+        worker: await tx
           .selectFrom("sandboxes")
           .select(["state", "active_sessions"])
           .where("id", "=", owner.claim_owner_id)
@@ -185,9 +191,9 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       });
       const before = await read(),
         queries: string[] = [];
-      const measured = db.withPlugin({
+      const measured = tx.withPlugin({
         transformQuery({ node, queryId }) {
-          queries.push(db.getExecutor().compileQuery(node, queryId).sql);
+          queries.push(tx.getExecutor().compileQuery(node, queryId).sql);
           return node;
         },
         async transformResult({ result }) {
@@ -195,22 +201,24 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
         },
       });
       await sql`create function reject_test_binding() returns trigger language plpgsql as 'begin return null; end'`.execute(
-        db,
+        tx,
       );
       await sql`create trigger reject_test_binding before update of lease_id on run_attempts for each row when (old.lease_id is null and new.lease_id is not null) execute function reject_test_binding()`.execute(
-        db,
+        tx,
       );
       try {
         const coordinator = new SessionLeaseCoordinator({
           database: measured,
           sandboxId: owner.claim_owner_id,
         });
-        await expect(coordinator.acquire(request)).rejects.toMatchObject({
+        await sql`savepoint rejected_binding`.execute(tx);
+        await expect(coordinator.acquireInTransaction(measured, request)).rejects.toMatchObject({
           code: "session_lease_invariant",
         });
+        await sql`rollback to savepoint rejected_binding`.execute(tx);
         expect(await read()).toEqual(before);
         expect(
-          await db
+          await tx
             .selectFrom("session_leases")
             .selectAll()
             .where("tenant_id", "=", request.tenantId)
@@ -221,8 +229,8 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
         ).toHaveLength(1);
         expect(queries.filter((q) => q.startsWith('with "touched_session"'))).toHaveLength(1);
       } finally {
-        await sql`drop trigger reject_test_binding on run_attempts`.execute(db);
-        await sql`drop function reject_test_binding()`.execute(db);
+        await sql`drop trigger reject_test_binding on run_attempts`.execute(tx);
+        await sql`drop function reject_test_binding()`.execute(tx);
       }
     });
     expect(f.lease.fencing_token).toBe("1");
@@ -407,7 +415,12 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
   it("rejects issuance when the startup claim expires behind a Session lock", async () => {
     const entered = Promise.withResolvers<TurnExecutionRequest>(),
       proceed = Promise.withResolvers<void>();
-    const pending = fixture(0, async (request) => {
+    const pending = fixture(0, async (request, tx) => {
+      await tx
+        .updateTable("run_attempts")
+        .set({ claim_expires_at: sql<Date>`clock_timestamp() + interval '1 second'` })
+        .where("id", "=", request.attemptId)
+        .execute();
       entered.resolve(request);
       await proceed.promise;
     });
@@ -416,11 +429,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       () => "rejected",
     );
     const request = await entered.promise;
-    await db
-      .updateTable("run_attempts")
-      .set({ claim_expires_at: sql<Date>`clock_timestamp() + interval '1 second'` })
-      .where("id", "=", request.attemptId)
-      .execute();
+    const expiry = (await databaseTime(db)).valueOf() + 1100;
     const locked = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();
     const blocker = db.transaction().execute(async (tx) => {
@@ -446,12 +455,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       });
       await vi.waitFor(
         async () => {
-          const row = await db
-            .selectFrom("run_attempts")
-            .select(sql<boolean>`claim_expires_at<=clock_timestamp()`.as("expired"))
-            .where("id", "=", request.attemptId)
-            .executeTakeFirstOrThrow();
-          expect(row.expired).toBe(true);
+          expect((await databaseTime(db)).valueOf()).toBeGreaterThan(expiry);
         },
         { timeout: 3000, interval: 20 },
       );

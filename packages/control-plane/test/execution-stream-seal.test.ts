@@ -84,9 +84,9 @@ async function fixture() {
     database: db,
     claimOwnerId: "seal-worker",
     backend: {
-      async execute(input, lifecycle) {
+      async execute(input) {
         request = input;
-        await lifecycle.started();
+
         throw new TurnExecutionBackendError("worker_lost", "Worker stopped", false);
       },
     },

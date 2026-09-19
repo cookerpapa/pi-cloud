@@ -6,8 +6,6 @@ import {
 } from "@pi-cloud/runtime-core/worker-family-capacity";
 import { databaseTime, retryTransaction } from "@pi-cloud/database";
 import {
-  transitionRun,
-  transitionRunAttempt,
   transitionSandbox,
   transitionSession,
   transitionTurn,
@@ -43,7 +41,6 @@ export type AssignmentReconciliationResult = {
   terminatedRuntimes: number;
   orphanRuntimes: number;
   settledAssignments: number;
-  requeuedAssignments: number;
 };
 
 export type SandboxRetirementResult = AssignmentReconciliationResult & {
@@ -70,7 +67,7 @@ type DurableAssignment = {
   turnId: string;
 };
 
-type Finalization = "settled" | "requeued" | "released" | "skipped";
+type Finalization = "settled" | "released" | "skipped";
 
 function positiveInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) {
@@ -121,7 +118,6 @@ function emptyResult(inspectedRuntimes: number): AssignmentReconciliationResult 
     terminatedRuntimes: 0,
     orphanRuntimes: 0,
     settledAssignments: 0,
-    requeuedAssignments: 0,
   };
 }
 
@@ -171,8 +167,7 @@ export class AssignmentReconciler {
         if (outcome !== "skipped") await this.#synchronizeCapacity(tx, validDate(this.#clock));
         return outcome;
       });
-      if (finalized === "requeued") result.requeuedAssignments++;
-      else if (finalized !== "skipped") result.settledAssignments++;
+      if (finalized !== "skipped") result.settledAssignments++;
     }
     return result;
   }
@@ -413,65 +408,6 @@ export class AssignmentReconciler {
       );
     }
 
-    const safelyUnacknowledged =
-      run.runState === "claimed" &&
-      run.attemptState === "claimed" &&
-      turn.state === "queued" &&
-      (session.state === "cold" || session.state === "idle") &&
-      candidate.runId === run.runId;
-    if (safelyUnacknowledged) {
-      const failedAttemptState = transitionRunAttempt(run.attemptState, "failed");
-      await transaction
-        .updateTable("run_attempts")
-        .set({
-          state: failedAttemptState,
-          failure_code: ASSIGNMENT_LOST,
-          failure_message: ASSIGNMENT_LOST_MESSAGE,
-          failure_retryable: true,
-          settled_at: now,
-          updated_at: now,
-        })
-        .where("tenant_id", "=", session.tenant_id)
-        .where("run_id", "=", run.runId)
-        .where("id", "=", run.attemptId)
-        .where("state", "=", run.attemptState)
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("run_attempt_transitions")
-        .values({
-          id: randomUUID(),
-          tenant_id: session.tenant_id,
-          run_id: run.runId,
-          attempt_id: run.attemptId,
-          from_state: run.attemptState,
-          to_state: failedAttemptState,
-          reason: "assignment_lost_before_ack",
-          occurred_at: now,
-        })
-        .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("runs")
-        .set({
-          state: transitionRun(run.runState, "queued"),
-          stop_reason: null,
-          failure_code: null,
-          failure_message: null,
-          failure_retryable: null,
-          settled_at: null,
-          available_at: now,
-          row_version: sql<string>`${sql.ref("row_version")} + 1`,
-          updated_at: now,
-        })
-        .where("tenant_id", "=", session.tenant_id)
-        .where("id", "=", run.runId)
-        .where("current_attempt_id", "=", run.attemptId)
-        .where("state", "=", run.runState)
-        .where("row_version", "=", run.runVersion)
-        .executeTakeFirstOrThrow();
-      await this.#deleteLease(transaction, candidate, now);
-      return "requeued";
-    }
-
     if (!ACTIVE_SESSION_STATES.has(session.state) || !ACTIVE_TURN_STATES.has(turn.state)) {
       throw new AssignmentReconcilerError(
         "assignment_invariant",
@@ -612,7 +548,6 @@ export class AssignmentReconciler {
     await this.#database.transaction().execute(async (transaction) => {
       for (const assignment of assignments) {
         const finalized = await this.#finalizeLease(transaction, assignment, false);
-        if (finalized === "requeued") result.requeuedAssignments += 1;
         if (finalized === "settled" || finalized === "released") {
           result.settledAssignments += 1;
         }

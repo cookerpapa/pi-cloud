@@ -10,7 +10,6 @@ import {
 } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
-import { PostgresRunAttemptPhaseObserver } from "@pi-cloud/runtime-core/run-attempt-runtime";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { createDatabase, type Database } from "@pi-cloud/database";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
@@ -546,9 +545,6 @@ export class PiWorkerRuntime {
           }),
         }),
       createTrustedTools: (command, context) => trustedTools.create({ command, ...context }),
-      runAttemptPhaseObserver: new PostgresRunAttemptPhaseObserver({
-        database: this.#database,
-      }),
       scenario: resolveProductionSandboxScenario,
       modelRuntimeLeaseResolver: (command) => modelGateway.issue(command),
       workspaceSeedResolver: resolveWorkspaceSeed,

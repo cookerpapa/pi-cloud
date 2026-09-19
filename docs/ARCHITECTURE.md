@@ -67,10 +67,12 @@ the physical `pi_sessions` row to keep all active Lanes on one Worker boot.
 One materialized candidate supplies the startup context without a second queue
 scan. Immutable Session kind and Workspace seed kind travel in the internal
 execute command; downstream preparation does not re-query them.
-Claim, Session lease binding and publication registration commit together;
-failed admission reserves neither an Attempt nor capacity. The durable started
-transition precedes Kafka opening, keeping pre-start requeue output-free. An
-uncertain admission COMMIT can resume only its exact confirmed record (ADR-0174).
+Claim, Session lease binding, publication registration and running state commit
+together; failed admission reserves neither an Attempt nor capacity. The Runner
+prepares and executes immediately after that commit, without separate started/
+running transactions or an opening append. An uncertain admission COMMIT can
+resume only its exact confirmed record; a post-admission failure requires a seal,
+not a pre-start requeue (ADR-0178).
 Cold Sessions have no Worker affinity or permanent process. Successful claims
 wake the next free slot; LISTEN/NOTIFY reduces idle latency and periodic polling
 covers missed wakeups. There is no Temporal or competing dispatcher.
@@ -112,13 +114,13 @@ operator responsibility.
 ## Direct execution log
 
 During atomic execution admission the PG authority freezes publication scope against the exact
-Lease, Attempt, native writer and Lane. The trusted Worker appends an opening
-record, then semantic records, display events and concrete Tool commands directly
-to private Kafka. An Attempt opens once; there are no signing keys or per-record
-signatures.
+Lease, Attempt, native writer and Lane. The trusted Worker appends semantic
+records, display events and concrete Tool commands directly to private Kafka.
+There is no standalone opening record, signing key or per-record signature.
 
-The Projector caches the recorded scope and requires the ordered opening before
-data. The exact seal payload must match the control authority's PG Outbox request.
+The Projector caches the recorded scope. The first native append co-commits its
+recovery floor with semantic state; a first display/control record persists that
+floor before visibility or routing. The exact seal payload must match the PG Outbox request.
 These checks catch misattributed/stale records; they do not authenticate a hostile
 producer. Workers, PG and Kafka are trusted deployment services, inaccessible to
 guests and browsers. No token requires a remote authority RPC or a fresh
@@ -132,10 +134,10 @@ still stops on lease loss to avoid wasted work. A normally drained Run closes
 only its execution; uncertain native publication also closes its shared writer
 incarnation. Unrelated Sessions and later writer incarnations stay independent.
 
-The code-owned topic is `pi-cloud.execution-log.v8`. Physical Pi Session ID is
+The code-owned topic is `pi-cloud.execution-log.v9`. Physical Pi Session ID is
 the immutable partition key, shared by all Lanes and control boundaries. Do not
 change its partition count in place. Producers use RF3/acks-all and bounded
-pending bytes/records, respecting transport backpressure. Worker opening/drain
+pending bytes/records, respecting transport backpressure. Worker admission/drain
 are one-time authority operations; its ordinary append path only produces.
 Provider/guest credentials never enter these records.
 
@@ -147,7 +149,7 @@ unchanged; this introduces no authority cache or additional durability boundary.
 ## Unified projection and recovery
 
 One `pi-cloud-session-projector-v1` consumer group assigns disjoint partitions.
-After scope/opening checks, a record updates native PG state, its disposable
+After scope/closure checks, a record updates native PG state, its disposable
 live view and the Tool routing module as applicable. Guest execution itself is
 never awaited by the partition handler. PG or live-owner delivery failure stalls
 that partition; it does not serialize unrelated partitions.

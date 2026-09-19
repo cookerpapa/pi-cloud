@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(142);
+      expect(firstMigrationPass.rows).toHaveLength(143);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("142_pending_control_lookup");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("143_first_record_execution");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -118,6 +118,8 @@ describe("current PiCloud schema", () => {
       expect(keys.has("runs.request_sha256")).toBe(true);
       expect(keys.has("runs.available_at")).toBe(true);
       expect(keys.has("run_attempts.agent_exited_at")).toBe(true);
+      expect(keys.has("run_attempts.output_first_offset")).toBe(true);
+      expect(keys.has("run_attempts.output_open_offset")).toBe(false);
       expect(keys.has("sessions.agent_revision_id")).toBe(true);
       expect(keys.has("sessions.desired_thinking_level")).toBe(true);
       expect(keys.has("sessions.desired_service_tier")).toBe(true);
@@ -157,7 +159,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("142_pending_control_lookup");
+      expect(applied.rows.at(-1)?.name).toBe("143_first_record_execution");
       const pendingControls = await sql<{ indexdef: string }>`select indexdef from pg_indexes
         where schemaname='public' and indexname='turn_control_requests_pending_run_idx'`.execute(
         database,
