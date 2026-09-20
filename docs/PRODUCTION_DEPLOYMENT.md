@@ -52,6 +52,12 @@ discarding them. Resolve such a refusal explicitly before retrying. Current
 Session lease rows retain released writer-cutoff evidence; operational queries
 must filter `released_at IS NULL` when they mean active ownership, not history.
 Migration 146 rekeys environment-validation uniqueness to the single Run identity.
+Migration 147 removes dormant accounting and environment-operation tables, not
+native Pi usage/history. It requires drained Runs/current leases and refuses
+nonempty historical usage/request/operation rows. Investigate such data rather
+than bypassing the guard. Deploy Control Plane and Worker together: retired WS
+Steer messages and unused monetary budget fields are no longer supported.
+This migration does not change Kafka v10 or the current Cube guest Tool contract.
 
 For a component-only replacement, after draining and applying its migrations,
 use Compose `up --no-deps` for the selected services when dependencies are already

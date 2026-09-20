@@ -24,15 +24,28 @@ export async function projectNativeSessionAppend(
     .where("id", "=", sessionId)
     .forUpdate()
     .executeTakeFirstOrThrow();
-  const prior = await transaction
-    .selectFrom("pi_session_log")
-    .select("seq")
-    .where("tenant_id", "=", tenantId)
-    .where("session_id", "=", sessionId)
-    .where("append_id", "=", appendId)
-    .executeTakeFirst();
-  if (prior) {
-    if (Number(prior.seq) !== committedItemSequence(items.at(-1)!))
+  const ids = items.flatMap((item) =>
+    item.kind === "entry" ? [item.entry.id] : item.kind === "record" ? [item.record.id] : [],
+  );
+  // These reads share one fresh snapshot AFTER the Session lock. Combining the
+  // lock itself with them would miss state committed while waiting for it.
+  const {
+    rows: [context],
+  } = await sql<{
+    prior_seq: string | null;
+    lanes: Array<{ lane: string; leaf_id: string | null }>;
+    collision: boolean;
+  }>`select
+    (select seq from pi_session_log where tenant_id=${tenantId}::uuid and session_id=${sessionId}
+      and append_id=${appendId}::uuid limit 1) as prior_seq,
+    coalesce((select jsonb_agg(jsonb_build_object('lane',lane,'leaf_id',leaf_id))
+      from pi_session_lanes where tenant_id=${tenantId}::uuid and session_id=${sessionId}), '[]'::jsonb) as lanes,
+    exists(select 1 from pi_session_visible_entries where tenant_id=${tenantId}::uuid
+      and session_id=${sessionId} and id=any(${ids}::text[])
+      union all select 1 from pi_session_records where tenant_id=${tenantId}::uuid
+      and session_id=${sessionId} and id=any(${ids}::text[])) as collision`.execute(transaction);
+  if (context!.prior_seq !== null) {
+    if (Number(context!.prior_seq) !== committedItemSequence(items.at(-1)!))
       throw new SessionError("storage", "Native append identity changed sequence");
     return;
   }
@@ -41,30 +54,11 @@ export async function projectNativeSessionAppend(
     if (!Number.isSafeInteger(first + index) || committedItemSequence(item) !== first + index)
       throw new SessionError("storage", "Native Session append is not contiguous");
   }
-  const rows = await transaction
-    .selectFrom("pi_session_lanes")
-    .select(["lane", "leaf_id"])
-    .where("tenant_id", "=", tenantId)
-    .where("session_id", "=", sessionId)
-    .execute();
-  const heads = new Map(rows.map((r) => [r.lane, r.leaf_id]));
+  const heads = new Map(context!.lanes.map((r) => [r.lane, r.leaf_id]));
   const created = new Set<string>(),
     changed = new Set<string>();
-  const ids = items.flatMap((item) =>
-    item.kind === "entry" ? [item.entry.id] : item.kind === "record" ? [item.record.id] : [],
-  );
-  if (new Set(ids).size !== ids.length)
+  if (new Set(ids).size !== ids.length || context!.collision)
     throw new SessionError("already_exists", "Native append reuses an ID");
-  if (ids.length) {
-    const collision = await sql<{ found: boolean }>`select exists(
-      select 1 from pi_session_visible_entries where tenant_id=${tenantId}::uuid
-        and session_id=${sessionId} and id=any(${ids}::text[])
-      union all select 1 from pi_session_records where tenant_id=${tenantId}::uuid
-        and session_id=${sessionId} and id=any(${ids}::text[])
-    ) as found`.execute(transaction);
-    if (collision.rows[0]?.found)
-      throw new SessionError("already_exists", "Native append reuses an ID");
-  }
   const targets = items.flatMap((item) =>
     item.kind === "lane" && item.leafId
       ? [item.leafId]

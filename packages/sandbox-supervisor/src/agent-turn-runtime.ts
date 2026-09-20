@@ -5,15 +5,6 @@ import type {
 } from "@pi-cloud/protocol";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 
-export type AgentTurnScenario =
-  "text" | "java_repair" | "java_followup" | "coding_eval" | "tool_hold" | "timeout";
-
-export type AgentTurnScenarioContext = {
-  command: ExecuteTurnCommandMessage;
-};
-
-export type AgentTurnScenarioResolver = (context: AgentTurnScenarioContext) => AgentTurnScenario;
-
 export type AgentWorkspaceSeedResolver = (
   command: ExecuteTurnCommandMessage,
   signal: AbortSignal,

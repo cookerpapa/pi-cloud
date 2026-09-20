@@ -139,6 +139,53 @@ it("projects exact writer stamps, mixed records and inherited/empty Lanes after 
   ).toBe(false);
 });
 
+it("loads append identity, Lane heads and ID conflicts in one post-lock query", async () => {
+  const f = await fixture();
+  await f.main.mutate({
+    kind: "append_items",
+    items: [
+      {
+        kind: "append_entry",
+        lane: "main",
+        entry: { id: f.writer.idGenerator(), type: "custom", customType: "state" },
+      },
+      {
+        kind: "append_record",
+        record: {
+          id: f.writer.idGenerator(),
+          lane: "main",
+          type: "operation_started",
+          sourceLeafId: null,
+          intent: { kind: "run", originalPrompt: [], initialMessages: [] },
+        },
+      },
+    ],
+  });
+  const queries: string[] = [],
+    statements = new WeakMap<object, string>();
+  const measured = db.withPlugin({
+    transformQuery({ node, queryId }) {
+      statements.set(queryId, db.getExecutor().compileQuery(node, queryId).sql);
+      return node;
+    },
+    async transformResult({ result, queryId }) {
+      queries.push(statements.get(queryId)!);
+      return result;
+    },
+  });
+  await f.project(f.frames[0]!, measured);
+  expect(queries).toHaveLength(7); // plus driver BEGIN/COMMIT; outer Run projection is separate
+  expect(queries[0]).toContain("for update");
+  expect(queries[1]).toContain("as prior_seq");
+  expect(queries[1]).toContain("as lanes");
+  expect(queries[1]).toContain("as collision");
+  const before = await f.storage.getLog();
+  queries.length = 0;
+  await f.project(f.frames[0]!, measured);
+  expect(queries).toHaveLength(2);
+  expect(await f.storage.getLog()).toEqual(before);
+});
+
 it("rolls back Entries, Lane heads and sequence when log insertion fails", async () => {
   const f = await fixture();
   const entry = await f.main.appendEntry(

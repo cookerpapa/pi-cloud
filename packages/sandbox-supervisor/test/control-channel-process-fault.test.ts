@@ -85,9 +85,6 @@ describe("Control Channel process fault", () => {
       applyHeartbeatAcknowledgement() {
         return undefined;
       },
-      prepareSteer() {
-        throw new Error("Fixture does not deliver steer commands");
-      },
       revokeAllAssignments() {
         revocations += 1;
         settleAssignments();

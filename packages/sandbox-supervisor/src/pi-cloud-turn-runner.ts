@@ -10,13 +10,15 @@ import {
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import {
-  CloudAgentRuntime,
   PI_MODEL_RETRY_CUSTOM_TYPE,
-  type CloudAgentExecutionAuthority,
-  type CloudAgentRuntimeEvent,
   type PiSessionMutationOperation,
   type PiSessionMutationPublisher,
 } from "@pi-cloud/pi-session-postgres";
+import {
+  CloudAgentRuntime,
+  type CloudAgentExecutionAuthority,
+  type CloudAgentRuntimeEvent,
+} from "./cloud-agent-runtime.ts";
 import type { AgentMessage, Session } from "@earendil-works/pi-agent-core";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";

@@ -23,6 +23,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { once } from "node:events";
+import { addAbortSignal } from "node:stream";
 import { zstdDecompressSync } from "node:zlib";
 import { ResponsesHostedActivityObserver } from "./responses-hosted-activity.ts";
 
@@ -456,7 +457,6 @@ export class TenantModelGateway {
             ? {}
             : {
                 "pi_cloud.run.id": active.runId,
-                "pi_cloud.attempt.id": active.runId,
                 ...(sampling === undefined
                   ? {}
                   : {
@@ -653,17 +653,9 @@ export class TenantModelGateway {
       throw new SafeGatewayHttpError(404, "route_not_found", "Model Gateway route not found");
     }
     const token = bearerCapability(request.headers.authorization);
-    const active =
-      token === undefined ? undefined : this.#capabilities.get(capabilityDigest(token));
-    const now = validDate(this.#clock).valueOf();
-    if (active === undefined || active.revoked || active.expiresAt <= now) {
-      if (active !== undefined && active.expiresAt <= now) this.#revoke(active);
-      throw new SafeGatewayHttpError(
-        401,
-        "invalid_capability",
-        "Model Gateway capability is invalid",
-      );
-    }
+    const active = this.#requireCapability(
+      token === undefined ? undefined : this.#capabilities.get(capabilityDigest(token)),
+    );
     if (path !== active.requestPath) {
       throw new SafeGatewayHttpError(
         403,
@@ -672,42 +664,6 @@ export class TenantModelGateway {
       );
     }
     const requestSamplingIdentity = samplingIdentity(request);
-    if (active.requestsStarted >= active.maximumRequestsPerRun) {
-      throw new SafeGatewayHttpError(
-        429,
-        "model_request_limit_exceeded",
-        "Model request limit was exceeded",
-      );
-    }
-    const requestBytes = await readBody(request);
-    const body = parseBody(requestBytes, request.headers["content-encoding"]);
-    if (body.model !== active.modelId) {
-      throw new SafeGatewayHttpError(
-        403,
-        "model_binding_mismatch",
-        "Model request does not match its Turn capability",
-      );
-    }
-    const requestedServiceTier = body.service_tier;
-    if (
-      (active.serviceTier === "fast" && requestedServiceTier !== "fast") ||
-      (active.serviceTier === null && requestedServiceTier !== undefined)
-    ) {
-      throw new SafeGatewayHttpError(
-        403,
-        "model_service_tier_mismatch",
-        "Model request does not match its Turn service tier",
-      );
-    }
-    if (body.stream !== true) {
-      throw new SafeGatewayHttpError(
-        400,
-        "streaming_required",
-        "Model Gateway requires a streaming request",
-      );
-    }
-    active.requestsStarted += 1;
-
     const controller = new AbortController();
     let timeoutPhase: "connect" | "idle" | undefined;
     let disconnected = false;
@@ -745,6 +701,47 @@ export class TenantModelGateway {
       upstreamStatus: number | null = null;
     let transportCompleted = false;
     try {
+      // Uploads are in-flight work too: revocation must interrupt them before
+      // they can become provider requests. Node removes this hook on stream end.
+      addAbortSignal(controller.signal, request);
+      const requestBytes = await readBody(request);
+      const body = parseBody(requestBytes, request.headers["content-encoding"]);
+      if (body.model !== active.modelId) {
+        throw new SafeGatewayHttpError(
+          403,
+          "model_binding_mismatch",
+          "Model request does not match its Turn capability",
+        );
+      }
+      const requestedServiceTier = body.service_tier;
+      if (
+        (active.serviceTier === "fast" && requestedServiceTier !== "fast") ||
+        (active.serviceTier === null && requestedServiceTier !== undefined)
+      ) {
+        throw new SafeGatewayHttpError(
+          403,
+          "model_service_tier_mismatch",
+          "Model request does not match its Turn service tier",
+        );
+      }
+      if (body.stream !== true) {
+        throw new SafeGatewayHttpError(
+          400,
+          "streaming_required",
+          "Model Gateway requires a streaming request",
+        );
+      }
+      // No await between the final authority/count check and reservation.
+      this.#requireCapability(active);
+      controller.signal.throwIfAborted();
+      if (active.requestsStarted >= active.maximumRequestsPerRun) {
+        throw new SafeGatewayHttpError(
+          429,
+          "model_request_limit_exceeded",
+          "Model request limit was exceeded",
+        );
+      }
+      active.requestsStarted++;
       let upstream: Response | undefined;
       timing.upstreamStartMs = elapsed();
       for (let attempt = 1; attempt <= PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS; attempt += 1) {
@@ -871,6 +868,25 @@ export class TenantModelGateway {
         },
       });
     }
+  }
+
+  #requireCapability(active: ActiveCapability | undefined): ActiveCapability {
+    const expired = active !== undefined && active.expiresAt <= validDate(this.#clock).valueOf();
+    if (
+      !active ||
+      active.revoked ||
+      expired ||
+      this.#capabilities.get(active.tokenDigest) !== active
+    ) {
+      if (active && expired && this.#capabilities.get(active.tokenDigest) === active)
+        this.#revoke(active);
+      throw new SafeGatewayHttpError(
+        401,
+        "invalid_capability",
+        "Model Gateway capability is invalid",
+      );
+    }
+    return active;
   }
 
   #observe(

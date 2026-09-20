@@ -53,3 +53,4 @@ export function committedItemSequence(item: PiCommittedItem): number {
 export interface PiSessionAppendPublisher {
   publish(items: readonly PiCommittedItem[], events?: readonly PiCloudEvent[]): Promise<void>;
 }
+export const PI_MODEL_RETRY_CUSTOM_TYPE = "pi-cloud.model_retry";

@@ -1,5 +1,4 @@
 export { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
-export { isIncompleteModelStreamError } from "./model-stream-error.ts";
 export { rebuildPostgresPiSessionProjections } from "./postgres-session-projection-rebuilder.ts";
 export { projectNativeSessionAppend } from "./project-native-session-append.ts";
 export { assertIdleNativeSession } from "./idle-session-mutation.ts";
@@ -19,7 +18,12 @@ export {
   type PiCloudPiSessionMetadata,
   type PostgresPiSessionStorageOptions,
 } from "./postgres-session-storage.ts";
-export type { PiSessionMutationOperation, PiSessionMutationPublisher } from "./session-mutation.ts";
+export {
+  PI_MODEL_RETRY_CUSTOM_TYPE,
+  type PiSessionMutationOperation,
+  type PiSessionAppendOperation,
+  type PiSessionMutationPublisher,
+} from "./session-mutation.ts";
 export {
   committedItemSequence,
   type PiCommittedItem,
@@ -30,14 +34,6 @@ export {
   PostgresSessionExecutionAuthority,
   type PostgresSessionExecutionAuthorityOptions,
 } from "./postgres-execution-authority.ts";
-export {
-  CloudAgentRuntime,
-  PI_MODEL_RETRY_CUSTOM_TYPE,
-  type CloudAgentExecutionAuthority,
-  type CloudAgentRunResult,
-  type CloudAgentRuntimeEvent,
-  type CloudAgentRuntimeOptions,
-} from "./cloud-agent-runtime.ts";
 export {
   createPostgresPiSessionLaneInTransaction,
   forkPostgresPiSessionInTransaction,

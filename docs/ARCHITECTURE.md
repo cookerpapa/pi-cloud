@@ -60,6 +60,8 @@ PostgreSQL is the sole Run and execution authority. The public API authenticates
 the user, persists input/Turn/Run together and deduplicates admission by Session
 and idempotency key. Follow-up remains a queued input; Steer first lives in
 `turn_control_requests`. Neither becomes a native Pi user Entry until consumed.
+Steer uses the Worker HTTP management endpoint; WebSocket carries registration
+and heartbeats, not an alternative execution or Steer transport.
 
 `queued` means accepted, not necessarily dispatchable. Input acceptance freezes
 the model/configuration and writes Turn, Run and mailbox advancement together;
@@ -67,6 +69,9 @@ the model/configuration and writes Turn, Run and mailbox advancement together;
 seal projection promotes it in the closure transaction. Both paths hold the
 product Session row lock, so racing input and closure cannot lose readiness.
 Child preparation readies its own Lane without waiting for its parent to finish.
+Unchanged environment versions use a shared read. Only an image-version change
+locks the Project for update and re-reads the current version; ordinary input
+does not serialize unrelated Sessions on that Project.
 
 Workers claim only ready `runs` with `FOR UPDATE SKIP LOCKED`. Local pending/active
 family reservations decide capacity; PG checks ownership and parent liveness,
@@ -175,6 +180,9 @@ Worker before Kafka publication. PostgreSQL applies those exact records and
 updates projection progress in the same transaction. A crash before commit
 replays the record; a crash after commit can redeliver it without changing its
 meaning. Native sequence conflicts stop recovery rather than being skipped.
+Projection reads its prior append, Lane heads and identity conflicts together,
+but only after acquiring the physical Session lock in a separate statement.
+This preserves a fresh snapshot after waiting for another projection.
 Native message/Tool-intent projection co-commits display event/native positions
 on the Run. Active conversation reads stop at that semantic boundary. A
 proposed Tool is not rendered as running until its native execution intent exists.
@@ -255,6 +263,9 @@ append-only `pi_session_log` per physical Session. Entries, operation Records,
 Lane moves and facts share a Session-local sequence. Entry/Record/Lane/label
 tables are query projections. Official Pi backend conformance tests define the
 base contract; tenant and cloud ownership checks are additional constraints.
+`pi-session-postgres` owns this storage contract. Concrete Pi execution lives in
+`sandbox-supervisor`; Worker execution wiring lives in `supervisor-host`, not
+the infrastructure-neutral `runtime-core`. Fake models are test-injected only.
 
 Cold restore reads the newest Compaction and active suffix, not lifetime JSONL.
 The active native writer maintains acknowledged Lane views. Each Step reads that
@@ -380,6 +391,10 @@ use independent product authority; they are not Agent execution commands.
 
 CLIProxyAPI owns upstream subscription/API credentials and account affinity.
 Workers see only scoped model-runtime access through their local Model Gateway.
+Revocation also aborts incomplete request uploads. After body validation, the
+Gateway atomically rechecks its local capability and reserves the request count
+before contacting the provider. This adds no database query. Usage remains in
+native Pi history; dormant billing tables and monetary budgets are removed.
 Provider/model/reasoning/Fast settings are immutable per accepted Turn. Hosted
 search stays provider-native; verified GPT/DeepSeek actions and citations are
 stored in native assistant messages, with portable replay across providers.

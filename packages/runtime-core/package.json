@@ -16,7 +16,6 @@
     "./kafka-accepted-fact-consumer": "./src/kafka-accepted-fact-consumer.ts",
     "./native-session-log-publisher": "./src/native-session-log-publisher.ts",
     "./accepted-fact-terminal-outbox-relay": "./src/accepted-fact-terminal-outbox-relay.ts",
-    "./agent-run-execution-backend": "./src/agent-run-execution-backend.ts",
     "./run-state": "./src/run-state.ts",
     "./run-cancellation-executor": "./src/run-cancellation-executor.ts",
     "./run-executor": "./src/run-executor.ts",
@@ -41,7 +40,6 @@
     "@pi-cloud/observability": "0.1.0",
     "@pi-cloud/pi-session-postgres": "0.1.0",
     "@pi-cloud/protocol": "0.1.0",
-    "@pi-cloud/sandbox-supervisor": "0.1.0",
     "@platformatic/kafka": "^2.9.0",
     "kysely": "0.29.4",
     "ws": "8.21.1"

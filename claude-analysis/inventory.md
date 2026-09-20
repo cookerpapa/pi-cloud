@@ -135,7 +135,7 @@ View：active_execution_scopes、pi_session_visible_entries。没有独立持久
 - [packages/tool-broker/src/cubesandbox-runtime-client.ts](../packages/tool-broker/src/cubesandbox-runtime-client.ts)：1263 行。
 - [packages/control-plane/src/supervisor-connection-manager.ts](../packages/control-plane/src/supervisor-connection-manager.ts)：1215 行。
 - [packages/database/src/database-types.ts](../packages/database/src/database-types.ts)：1206 行。
-- [packages/pi-session-postgres/src/cloud-agent-runtime.ts](../packages/pi-session-postgres/src/cloud-agent-runtime.ts)：1173 行。
+- `packages/pi-session-postgres/src/cloud-agent-runtime.ts`：基线 1173 行，现移至 [sandbox-supervisor](../packages/sandbox-supervisor/src/cloud-agent-runtime.ts)。
 - [packages/tool-broker/src/tool-broker-server.ts](../packages/tool-broker/src/tool-broker-server.ts)：1147 行。
 
 ## Controller 路由
@@ -195,4 +195,3 @@ View：active_execution_scopes、pi_session_visible_entries。没有独立持久
 | POST | sessions/:sessionId/turns/:turnId/cancellations |
 | POST | sessions/:sessionId/turns/:turnId/steers |
 | GET | sessions/:sessionId/events |
-

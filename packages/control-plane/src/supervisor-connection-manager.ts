@@ -28,7 +28,7 @@ import {
 
 const DEFAULT_SUPERVISOR_VERSION = "0.1.0";
 const DEFAULT_PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const DEFAULT_REQUIRED_CAPABILITIES = ["event.replay", "pi.sdk"] as const;
+const DEFAULT_REQUIRED_CAPABILITIES = ["pi.sdk"] as const;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000;
 const DEFAULT_LEASE_DURATION_MS = 60_000;

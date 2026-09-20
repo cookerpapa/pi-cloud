@@ -83,9 +83,6 @@ function clientOptions(
     applyHeartbeatAcknowledgement(heartbeat, acknowledgement) {
       return options.runtime.applyHeartbeatAcknowledgement(heartbeat, acknowledgement);
     },
-    prepareSteer(value) {
-      return options.runtime.prepareSteer(value);
-    },
     revokeAllAssignments() {
       return options.runtime.revokeAllAssignments();
     },

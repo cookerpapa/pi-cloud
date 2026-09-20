@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(146);
+      expect(firstMigrationPass.rows).toHaveLength(147);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("146_environment_validation_run_identity");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("147_retire_dormant_accounting");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -54,6 +54,10 @@ describe("current PiCloud schema", () => {
         "artifacts",
         "run_attempts",
         "run_attempt_transitions",
+        "usage_ledger",
+        "model_requests",
+        "model_rates",
+        "environment_operations",
       ])
         expect(names.has(retired)).toBe(false);
       for (const required of [
@@ -175,7 +179,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("146_environment_validation_run_identity");
+      expect(applied.rows.at(-1)?.name).toBe("147_retire_dormant_accounting");
       const pendingControls = await sql<{ indexdef: string }>`select indexdef from pg_indexes
         where schemaname='public' and indexname='turn_control_requests_pending_run_idx'`.execute(
         database,

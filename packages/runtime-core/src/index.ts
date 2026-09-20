@@ -7,7 +7,6 @@ export * from "./kafka-accepted-fact.ts";
 export * from "./kafka-accepted-fact-consumer.ts";
 export * from "./native-session-log-publisher.ts";
 export * from "./accepted-fact-terminal-outbox-relay.ts";
-export * from "./agent-run-execution-backend.ts";
 export * from "./run-state.ts";
 export * from "./run-cancellation-executor.ts";
 export * from "./run-executor.ts";

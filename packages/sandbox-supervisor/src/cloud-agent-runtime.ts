@@ -37,9 +37,10 @@ import type {
 } from "@earendil-works/pi-ai";
 import { isContextOverflow, isRetryableAssistantError } from "@earendil-works/pi-ai";
 import { isIncompleteModelStreamError } from "./model-stream-error.ts";
-import type { PiSessionMutationOperation, PiSessionAppendOperation } from "./session-mutation.ts";
-
-export const PI_MODEL_RETRY_CUSTOM_TYPE = "pi-cloud.model_retry";
+import type {
+  PiSessionMutationOperation,
+  PiSessionAppendOperation,
+} from "@pi-cloud/pi-session-postgres";
 
 export interface CloudAgentExecutionAuthority {
   readonly signal: AbortSignal;

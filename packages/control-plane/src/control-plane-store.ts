@@ -1757,17 +1757,7 @@ export class ControlPlaneStore {
     transaction: Transaction<Database>,
     projectId: string,
   ): Promise<EnvironmentRuntimeSnapshot> {
-    const project = await transaction
-      .selectFrom("projects")
-      .select("id")
-      .where("tenant_id", "=", this.#tenantId)
-      .where("id", "=", projectId)
-      .forUpdate()
-      .executeTakeFirst();
-    if (project === undefined) {
-      throw new ControlPlaneStoreError("not_found", "Project was not found");
-    }
-    const active = await transaction
+    const selection = transaction
       .selectFrom("environment_versions as environment")
       .select([
         "environment.id as environmentVersionId",
@@ -1785,9 +1775,27 @@ export class ControlPlaneStore {
       ])
       .where("environment.tenant_id", "=", this.#tenantId)
       .where("environment.project_id", "=", projectId)
-      .where("environment.active", "=", true)
-      .forUpdate()
+      .where("environment.active", "=", true);
+    // Ordinary input shares a matching immutable version; it need not serialize
+    // every Session behind the Project's version-update lock.
+    let active = await selection
+      .where("environment.image_revision", "=", this.#environmentImageRevision)
+      .forShare()
       .executeTakeFirst();
+    if (active === undefined) {
+      const project = await transaction
+        .selectFrom("projects")
+        .select("id")
+        .where("tenant_id", "=", this.#tenantId)
+        .where("id", "=", projectId)
+        // Serialize version writers without blocking a reader's Run FK check.
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      if (!project) throw new ControlPlaneStoreError("not_found", "Project was not found");
+      // A different claimant may have published the version during our wait.
+      // This separate statement deliberately takes a fresh READ COMMITTED snapshot.
+      active = await selection.forUpdate().executeTakeFirst();
+    }
     if (active === undefined) {
       throw new ControlPlaneStoreError(
         "control_plane_misconfigured",

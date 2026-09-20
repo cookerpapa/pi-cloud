@@ -171,7 +171,7 @@ it is not a measurement of the provider's internal inference alone.
   bounded deployment-owned sets;
 - logs recursively redact token, authorization, credential, password, secret,
   cookie and API-key fields;
-- durable usage rows, not Prometheus counters, remain any future billing
+- native Pi usage Entries/Records, not Prometheus counters, remain any future billing
   authority.
 
 ## Verification

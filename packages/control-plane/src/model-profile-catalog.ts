@@ -156,17 +156,6 @@ export async function ensureSelectableModelProfile(options: {
       updated_at: options.now,
     })
     .executeTakeFirstOrThrow();
-  await options.transaction
-    .insertInto("model_rates")
-    .values({
-      tenant_id: options.tenantId,
-      provider: options.selection.provider,
-      model_id: options.selection.modelId,
-      created_at: options.now,
-      updated_at: options.now,
-    })
-    .onConflict((conflict) => conflict.doNothing())
-    .execute();
   return {
     profileId,
     provider: options.selection.provider,

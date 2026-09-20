@@ -77,16 +77,6 @@ function environmentSnapshot() {
   } as const;
 }
 
-function commandResultIdentity() {
-  return {
-    requestId: IDS.command,
-    sessionId: "session-1",
-    turnId: "turn-1",
-    executionReference: EXECUTION_LEASE,
-    commitMessageId: IDS.commit,
-  } as const;
-}
-
 function registration() {
   return {
     ...envelope(),
@@ -101,7 +91,7 @@ function registration() {
         version: "0.84.1",
       },
       supportedProtocolVersions: [1],
-      capabilities: ["pi.sdk", "event.replay", "extension_ui.confirm"],
+      capabilities: ["pi.sdk"],
       acceptingAssignments: true,
       maxConcurrentSessions: 4,
     },
@@ -334,70 +324,14 @@ describe("supervisor/control-plane wire protocol", () => {
     expect(() => parseControlToSupervisorMessage(accepted)).toThrow(PiCloudWireProtocolError);
   });
 
-  it("requires an exact ACK reference before commit and correlates command results", () => {
-    const commit = {
-      ...envelope(IDS.commit),
-      type: "command.commit",
-      payload: {
-        requestId: IDS.command,
-        sessionId: "session-1",
-        turnId: "turn-1",
-        executionReference: EXECUTION_LEASE,
-        acknowledgedMessageId: IDS.message,
-      },
-    } as const;
-    const release = {
-      ...commit,
-      type: "command.release",
-    } as const;
-    const completed = {
-      ...envelope(IDS.message2),
-      type: "command.result",
-      payload: {
-        ...commandResultIdentity(),
-        commandKind: "turn.execute",
-        status: "completed",
-        stopReason: "stop",
-      },
-    } as const;
-    const cancelled = {
-      ...completed,
-      payload: {
-        ...commandResultIdentity(),
-        commandKind: "turn.execute",
-        status: "cancelled",
-        reason: "user_request",
-        forced: false,
-      },
-    } as const;
-    const failed = {
-      ...completed,
-      payload: {
-        ...commandResultIdentity(),
-        commandKind: "turn.cancel",
-        status: "failed",
-        code: "pi_process_exit",
-        message: "Pi process exited",
-        retryable: true,
-      },
-    } as const;
-
-    expect(parseControlToSupervisorMessage(commit)).toEqual(commit);
-    expect(parseControlToSupervisorMessage(release)).toEqual(release);
-    expect(
-      [completed, cancelled, failed].map(
-        (message) => parseSupervisorToControlMessage(message).type,
-      ),
-    ).toEqual(["command.result", "command.result", "command.result"]);
-    expect(() => parseSupervisorToControlMessage(commit)).toThrow(PiCloudWireProtocolError);
-    expect(() => parseControlToSupervisorMessage(completed)).toThrow(PiCloudWireProtocolError);
-    expect(() =>
-      parseSupervisorToControlMessage({
-        ...completed,
-        payload: { ...completed.payload, apiKey: "must-not-cross-the-wire" },
-      }),
-    ).toThrow(PiCloudWireProtocolError);
-  });
+  it.each(["command.commit", "command.release", "command.result"])(
+    "rejects retired wire exchange %s",
+    (type) => {
+      const message = { ...envelope(), type, payload: {} };
+      expect(() => parseControlToSupervisorMessage(message)).toThrow(PiCloudWireProtocolError);
+      expect(() => parseSupervisorToControlMessage(message)).toThrow(PiCloudWireProtocolError);
+    },
+  );
 
   it("checks family heartbeat capacity and uniqueness, without task-progress observations", () => {
     const message = heartbeat();

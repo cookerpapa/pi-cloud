@@ -15,10 +15,6 @@ import {
 } from "./supervisor-maintenance-runtime.ts";
 import { SessionEventHub } from "@pi-cloud/runtime-core/session-event-hub";
 import {
-  WorkerControlChannelRouter,
-  type WorkerControlChannelRouterOptions,
-} from "./worker-control-channel.ts";
-import {
   SupervisorConnectionManager,
   type SupervisorBootIdentity,
   type SupervisorConnectionManagerOptions,
@@ -37,12 +33,7 @@ type ConnectionManagerConfiguration = Omit<
   "database" | "controlPlaneInstanceId" | "ownerBoundary" | "assignmentRetirerFactory"
 >;
 
-type ControlChannelConfiguration = WorkerControlChannelRouterOptions;
-
-type GatewayConfiguration = Omit<
-  SupervisorWebSocketGatewayOptions,
-  "manager" | "authorizer" | "controlChannelRouter"
->;
+type GatewayConfiguration = Omit<SupervisorWebSocketGatewayOptions, "manager" | "authorizer">;
 
 type MaintenanceConfiguration = Omit<SupervisorMaintenanceRuntimeOptions, "maintenanceRunner">;
 
@@ -59,7 +50,6 @@ export type ControlPlaneRuntimeOptions = Omit<
   productionHttpGateway?: ProductionHttpGateway;
   eventRuntime: ControlPlaneApplicationOptions["eventRuntime"];
   connectionManager?: ConnectionManagerConfiguration;
-  controlChannelRouter?: ControlChannelConfiguration;
   gateway?: GatewayConfiguration;
   maintenance?: MaintenanceConfiguration;
 };
@@ -70,7 +60,6 @@ export class ControlPlaneRuntime {
   readonly application: NestFastifyApplication;
   readonly eventHub: SessionEventHub;
   readonly eventStore: LiveSessionTailSource;
-  readonly controlChannelRouter: WorkerControlChannelRouter;
   readonly connectionManager: SupervisorConnectionManager;
   readonly gateway: SupervisorWebSocketGateway;
   readonly maintenance: SupervisorMaintenanceRuntime;
@@ -81,7 +70,6 @@ export class ControlPlaneRuntime {
     application: NestFastifyApplication;
     eventHub: SessionEventHub;
     eventStore: LiveSessionTailSource;
-    controlChannelRouter: WorkerControlChannelRouter;
     connectionManager: SupervisorConnectionManager;
     gateway: SupervisorWebSocketGateway;
     maintenance: SupervisorMaintenanceRuntime;
@@ -89,7 +77,6 @@ export class ControlPlaneRuntime {
     this.application = options.application;
     this.eventHub = options.eventHub;
     this.eventStore = options.eventStore;
-    this.controlChannelRouter = options.controlChannelRouter;
     this.connectionManager = options.connectionManager;
     this.gateway = options.gateway;
     this.maintenance = options.maintenance;
@@ -149,13 +136,11 @@ export async function createControlPlaneRuntime(
     supervisorOwnerBoundary,
     assignmentInventoryFactory,
     connectionManager: connectionOptions,
-    controlChannelRouter: channelOptions,
     gateway: gatewayOptions,
     maintenance: maintenanceOptions,
     ...applicationOptions
   } = options;
   const { eventHub, eventStore } = applicationOptions.eventRuntime;
-  const controlChannelRouter = new WorkerControlChannelRouter(channelOptions);
   const connectionManager = new SupervisorConnectionManager({
     ...connectionOptions,
     database: options.database,
@@ -172,7 +157,6 @@ export async function createControlPlaneRuntime(
     ...gatewayOptions,
     manager: connectionManager,
     authorizer: supervisorAuthorizer,
-    controlChannelRouter,
   });
   const maintenance = new SupervisorMaintenanceRuntime({
     ...maintenanceOptions,
@@ -195,7 +179,6 @@ export async function createControlPlaneRuntime(
     application,
     eventHub,
     eventStore,
-    controlChannelRouter,
     connectionManager,
     gateway,
     maintenance,

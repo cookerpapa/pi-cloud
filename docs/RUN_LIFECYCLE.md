@@ -14,6 +14,8 @@ Session mutation. Steer is first stored in `turn_control_requests` and delivered
 to the running Pi queue; only native consumption creates its user Entry through
 the Fact path. A `delivered` response does not prove model consumption. See
 [the real API/Worker check](reports/worker-handoff-findings.md).
+Delivery uses the HTTP management backend. WebSocket registration/heartbeat
+has no Steer prepare/commit/release fallback.
 
 ## Claim and execution
 

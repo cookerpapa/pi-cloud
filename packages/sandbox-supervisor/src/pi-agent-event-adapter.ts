@@ -6,7 +6,7 @@ import type {
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { toolResultIsUnknown } from "@pi-cloud/protocol";
-import { isIncompleteModelStreamError } from "@pi-cloud/pi-session-postgres";
+import { isIncompleteModelStreamError } from "./model-stream-error.ts";
 import { isContextOverflow, type AssistantMessage } from "@earendil-works/pi-ai";
 
 type JsonRecord = Record<string, unknown>;

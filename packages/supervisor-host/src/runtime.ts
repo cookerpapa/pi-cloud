@@ -8,7 +8,7 @@ import {
   AcceptedFactPublisherFailedError,
   type ActiveExecutionLogResolver,
 } from "@pi-cloud/runtime-core/accepted-fact";
-import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
+import { AgentRunExecutionBackend } from "./agent-run-execution-backend.ts";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { createDatabase, type Database } from "@pi-cloud/database";
@@ -23,8 +23,6 @@ import {
   AgentRunSupervisor,
   RemoteToolSandboxTurnRunner,
   ReconnectingSupervisorWebSocketClient,
-  type AgentTurnScenario,
-  type AgentTurnScenarioContext,
   type ReconnectingSupervisorWebSocketClientStop,
 } from "@pi-cloud/sandbox-supervisor";
 import { PostgresTrustedToolRuntime } from "@pi-cloud/trusted-tool-runtime";
@@ -96,26 +94,6 @@ export type SupervisorToolBroker = Pick<
 >;
 
 export type SupervisorHostTerminalReason = "owner_stopped" | "connection_failed";
-
-export const PRODUCTION_CANCELLATION_PROBE_PROMPT = "pi-cloud://acceptance/cancellation-hold";
-
-export function resolveProductionSandboxScenario({
-  command,
-}: AgentTurnScenarioContext): AgentTurnScenario {
-  if (
-    command.payload.input.kind === "prompt" &&
-    command.payload.input.text.startsWith("pi-cloud-eval://")
-  ) {
-    return "coding_eval";
-  }
-  if (
-    command.payload.input.kind === "prompt" &&
-    command.payload.input.text === PRODUCTION_CANCELLATION_PROBE_PROMPT
-  ) {
-    return "tool_hold";
-  }
-  return "java_repair";
-}
 
 export class PiWorkerRuntimeError extends Error {
   readonly code: string;
@@ -545,7 +523,6 @@ export class PiWorkerRuntime {
           }),
         }),
       createTrustedTools: (command, context) => trustedTools.create({ command, ...context }),
-      scenario: resolveProductionSandboxScenario,
       modelRuntimeLeaseResolver: (command) => modelGateway.issue(command),
       workspaceSeedResolver: resolveWorkspaceSeed,
       turnTimeoutMs: this.#config.piTurnTimeoutMs,

@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
-import { AgentRunSupervisor, type AgentTurnScenarioContext } from "@pi-cloud/sandbox-supervisor";
+import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
 import { AcceptedFactPublisherFailedError } from "@pi-cloud/runtime-core/accepted-fact";
 import { KafkaAcceptedFactBus } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import {
@@ -18,8 +18,6 @@ import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
-  PRODUCTION_CANCELLATION_PROBE_PROMPT,
-  resolveProductionSandboxScenario,
   PiWorkerRuntime,
   TenantModelGateway,
   type SupervisorHostConfig,
@@ -100,20 +98,6 @@ function toolBroker(): SupervisorToolBroker {
 }
 
 describe("PiWorkerRuntime", () => {
-  it("keeps the production fixture closed while providing a deterministic cancellation probe", () => {
-    const context = (text: string) =>
-      ({
-        command: { payload: { input: { kind: "prompt", text } } },
-      }) as AgentTurnScenarioContext;
-
-    expect(resolveProductionSandboxScenario(context("repair the Java fixture"))).toBe(
-      "java_repair",
-    );
-    expect(resolveProductionSandboxScenario(context(PRODUCTION_CANCELLATION_PROBE_PROMPT))).toBe(
-      "tool_hold",
-    );
-  });
-
   it("provisions a fresh generation, registers after recovery, and never reuses boot identity", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-cloud-host-runtime-"));
     const server = Fastify({ logger: false });

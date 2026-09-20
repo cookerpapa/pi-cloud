@@ -41,7 +41,6 @@ function callKey(scope: ToolLogFact["scope"], toolCallId: string): string {
     scope.sessionId,
     scope.turnId,
     scope.runId,
-    scope.runId,
     scope.fencingToken,
     toolCallId,
   ]);
@@ -55,7 +54,7 @@ export class ToolCommandExecutor {
   readonly #positions = new Map<string, bigint>();
   readonly #sealed = new Set<string>();
   readonly #sealedWriters = new Set<string>();
-  readonly #attemptWriters = new Map<string, string>();
+  readonly #runWriters = new Map<string, string>();
   readonly #results = new Map<string, Outcome>();
   readonly #calls = new Map<
     string,
@@ -123,9 +122,9 @@ export class ToolCommandExecutor {
 
   consume(record: ToolLogRecord<ToolLogFact>): void {
     const fact = record.fact;
-    this.#attemptWriters.set(fact.scope.runId, fact.scope.writerId);
-    if (this.#attemptWriters.size > 65_536)
-      this.#attemptWriters.delete(this.#attemptWriters.keys().next().value!);
+    this.#runWriters.set(fact.scope.runId, fact.scope.writerId);
+    if (this.#runWriters.size > 65_536)
+      this.#runWriters.delete(this.#runWriters.keys().next().value!);
     this.#consumed++;
     if (fact.kind === "execution_seal") {
       this.#sealed.add(fact.scope.runId);
@@ -378,7 +377,7 @@ export class ToolCommandExecutor {
     });
   }
   #isSealed(runId: string) {
-    const writerId = this.#attemptWriters.get(runId);
+    const writerId = this.#runWriters.get(runId);
     return this.#sealed.has(runId) || (writerId !== undefined && this.#sealedWriters.has(writerId));
   }
 

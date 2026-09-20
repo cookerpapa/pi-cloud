@@ -271,17 +271,6 @@ export class TenantModelConfigurationService {
       })
       .executeTakeFirstOrThrow();
     await transaction
-      .insertInto("model_rates")
-      .values({
-        tenant_id: tenantId,
-        provider: request.provider,
-        model_id: request.modelId,
-        created_at: now,
-        updated_at: now,
-      })
-      .onConflict((conflict) => conflict.doNothing())
-      .execute();
-    await transaction
       .updateTable("tenant_runtime_policies")
       .set({ default_model_profile_id: profileId })
       .where("tenant_id", "=", tenantId)

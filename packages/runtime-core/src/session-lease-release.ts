@@ -1,5 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import type { Transaction } from "kysely";
+import { sql, type Transaction } from "kysely";
 
 /** Closing a task does not release a sibling Lane's shared Session owner. */
 export async function releaseExecutionScope(
@@ -42,19 +42,15 @@ export async function releaseIdleSessionLease(
   leaseId: string,
   now: Date,
 ): Promise<boolean> {
-  const peer = await tx
-    .selectFrom("runs")
-    .select("id")
-    .where("lease_id", "=", leaseId)
-    .where("execution_released_at", "is", null)
-    .limit(1)
-    .executeTakeFirst();
-  if (peer) return false;
   const result = await tx
     .updateTable("session_leases")
     .set({ released_at: now })
     .where("lease_id", "=", leaseId)
     .where("released_at", "is", null)
+    .where(
+      sql<boolean>`not exists(select 1 from runs where lease_id=${leaseId}::uuid
+      and execution_released_at is null)`,
+    )
     .executeTakeFirst();
   return result.numUpdatedRows === 1n;
 }

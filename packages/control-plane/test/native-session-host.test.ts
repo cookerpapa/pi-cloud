@@ -2,7 +2,8 @@ import { admitTestExecution } from "./admit-test-execution.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { PostgresNativeSessionHost, CloudAgentRuntime } from "@pi-cloud/pi-session-postgres";
+import { PostgresNativeSessionHost } from "@pi-cloud/pi-session-postgres";
+import { CloudAgentRuntime } from "@pi-cloud/sandbox-supervisor";
 import {
   EventStream,
   type AssistantMessageEvent,

@@ -10,7 +10,8 @@
 
 - [架构分析与施工优先级](architecture-review.md)：六条主线，含已复现竞态、可清理遗留、合理取舍及变更边界。
 - [结构盘点](inventory.md)：67 个类型化数据库关系、20 个包的内部依赖、51 个 controller 路由及规模口径。
-- [本机竞态复现](model-gateway-repro.mjs)：只用临时 loopback Model Gateway 和假上游，不调用付费模型。
+- 原竞态复现已转入 [Model Gateway 回归测试](../packages/supervisor-host/test/model-gateway.test.ts)；
+  只使用临时 loopback Gateway 和假上游，不调用付费模型。历史复现脚本在审查基线的 Git 版本中。
 
 ## 进度
 

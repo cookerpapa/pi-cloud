@@ -143,9 +143,6 @@ function runtime(
     applyHeartbeatAcknowledgement() {
       return undefined;
     },
-    prepareSteer() {
-      throw new Error("Fake connection does not deliver steer commands");
-    },
     revokeAllAssignments() {
       options.revokeAllAssignments?.();
     },

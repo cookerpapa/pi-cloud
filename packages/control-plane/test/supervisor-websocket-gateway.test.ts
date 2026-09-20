@@ -266,19 +266,25 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
         return registered;
       });
       const starting = first.start().catch((error: unknown) => error);
+      let secondConnectionId: string | undefined;
       try {
         await entered.promise;
         await first.stop();
         if (scenario === "shutdown") hosted.gateway.shutdown();
-        else await second.start();
+        else secondConnectionId = (await second.start()).payload.connectionId;
         release.resolve();
         await spy.mock.results[0]!.value;
         if (scenario === "shutdown") {
           expect(hosted.gateway.activeConnectionCount).toBe(0);
         } else {
-          await expect(
-            hosted.gateway.currentSessionLeaseCoordinator(supervisorIdentity.sandboxId),
-          ).resolves.toBeDefined();
+          expect(
+            await database
+              .selectFrom("supervisor_connections")
+              .select("connection_id")
+              .where("connection_id", "=", secondConnectionId!)
+              .where("state", "=", "active")
+              .executeTakeFirst(),
+          ).toBeDefined();
           expect(second.state).toBe("registered");
           expect(hosted.gateway.activeConnectionCount).toBe(1);
         }

@@ -270,16 +270,6 @@ export async function createPrivateTenant(
         })
         .executeTakeFirstOrThrow();
       await transaction
-        .insertInto("model_rates")
-        .values({
-          tenant_id: tenantId,
-          provider: initialModel?.provider ?? "pi-cloud-fake",
-          model_id: initialModel?.modelId ?? "pi-cloud-fake",
-          created_at: now,
-          updated_at: now,
-        })
-        .executeTakeFirstOrThrow();
-      await transaction
         .insertInto("tenant_runtime_policies")
         .values({
           tenant_id: tenantId,

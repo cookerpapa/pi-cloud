@@ -16,14 +16,16 @@ import type {
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
-  CloudAgentRuntime,
   NativeSessionWriter,
   projectNativeSessionAppend,
   PostgresPiSessionStorage,
+  type PiSessionMutationOperation,
+} from "@pi-cloud/pi-session-postgres";
+import {
+  CloudAgentRuntime,
   type CloudAgentExecutionAuthority,
   type CloudAgentRuntimeEvent,
-  type PiSessionMutationOperation,
-} from "../src/index.ts";
+} from "../src/cloud-agent-runtime.ts";
 
 const TENANT_ID = "d2000000-0000-4000-8000-000000000001";
 

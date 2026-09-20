@@ -7,7 +7,7 @@ import {
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import { zstdCompressSync } from "node:zlib";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type ClientRequest } from "node:http";
 import { PiCloudMetrics } from "@pi-cloud/observability";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TenantModelGateway } from "../src/index.ts";
@@ -110,6 +110,7 @@ function createGateway(
     upstreamConnectTimeoutMs?: number;
     upstreamIdleTimeoutMs?: number;
     metrics?: PiCloudMetrics;
+    clock?: () => Date;
   } = {},
 ) {
   const gateway = new TenantModelGateway({
@@ -127,6 +128,135 @@ function createGateway(
 }
 
 describe("tenant model gateway", () => {
+  function partialRequest(gateway: TenantModelGateway, capability: string) {
+    let request!: ClientRequest;
+    const response = new Promise<{ status?: number; error?: NodeJS.ErrnoException }>((resolve) => {
+      request = httpRequest(
+        `http://127.0.0.1:${gateway.listeningPort}/v1/responses`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${capability}`,
+            "content-type": "application/json",
+            ...samplingHeaders(),
+          },
+        },
+        (res) => {
+          res.resume();
+          res.once("end", () => resolve({ status: res.statusCode! }));
+        },
+      );
+      request.once("error", (error) => resolve({ error }));
+      request.setTimeout(3000, () => request.destroy(new Error("Test upload did not settle")));
+      request.write('{"model":"deepseek-v4-pro",');
+    });
+    return { request, response };
+  }
+
+  it.each(["release", "shutdown", "expiry"])(
+    "rejects an in-flight upload after %s",
+    async (action) => {
+      const upstream = vi.fn<typeof fetch>();
+      const checked = Promise.withResolvers<void>();
+      let armed = false,
+        now = Date.now();
+      const gateway = createGateway(upstream, 1, {
+        clock: () => {
+          if (armed) checked.resolve();
+          return new Date(now);
+        },
+      });
+      await gateway.start();
+      const lease = gateway.issue(command("deepseek", "deepseek-v4-pro"));
+      armed = true;
+      const upload = partialRequest(gateway, lease.runtime.capability);
+      try {
+        await checked.promise;
+        if (action === "expiry") {
+          now += 60 * 60_000;
+          upload.request.end('"stream":true,"input":[]}');
+        } else if (action === "release") await lease.release();
+        else await gateway.close();
+        const result = await upload.response;
+        if (action === "expiry") expect(result.status).toBe(401);
+        else expect(result.error?.code).toBe("ECONNRESET");
+        expect(upstream).not.toHaveBeenCalled();
+      } finally {
+        upload.request.destroy();
+        await lease.release();
+      }
+    },
+  );
+
+  it("reserves the last model request once when concurrent uploads finish", async () => {
+    const upstream = vi.fn<typeof fetch>(
+      async () =>
+        new Response('data: {"type":"response.completed","response":{"id":"r1"}}\n\n', {
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
+    let checks = 0,
+      armed = false;
+    const checked = Promise.withResolvers<void>();
+    const gateway = createGateway(upstream, 1, {
+      clock: () => {
+        if (armed && ++checks === 2) checked.resolve();
+        return new Date();
+      },
+    });
+    await gateway.start();
+    const lease = gateway.issue(command("deepseek", "deepseek-v4-pro"));
+    armed = true;
+    const uploads = [
+      partialRequest(gateway, lease.runtime.capability),
+      partialRequest(gateway, lease.runtime.capability),
+    ];
+    try {
+      await checked.promise;
+      for (const upload of uploads) upload.request.end('"stream":true,"input":[]}');
+      expect(
+        (await Promise.all(uploads.map((u) => u.response))).map((r) => r.status).sort(),
+      ).toEqual([200, 429]);
+      expect(upstream).toHaveBeenCalledOnce();
+    } finally {
+      for (const upload of uploads) upload.request.destroy();
+      await lease.release();
+    }
+  });
+
+  it("does not spend a request reservation on malformed input", async () => {
+    const upstream = vi.fn<typeof fetch>(
+      async () =>
+        new Response('data: {"type":"response.completed","response":{"id":"r1"}}\n\n', {
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
+    const gateway = createGateway(upstream, 1);
+    await gateway.start();
+    const lease = gateway.issue(command("deepseek", "deepseek-v4-pro"));
+    try {
+      for (const [body, status] of [
+        ["{bad", 400],
+        [JSON.stringify({ model: "deepseek-v4-pro", stream: true, input: [] }), 200],
+      ] as const) {
+        const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/v1/responses`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${lease.runtime.capability}`,
+            "content-type": "application/json",
+            ...samplingHeaders(),
+          },
+          body,
+        });
+        expect(response.status).toBe(status);
+        await response.text();
+      }
+      expect(upstream).toHaveBeenCalledOnce();
+    } finally {
+      await lease.release();
+    }
+  });
+
   it("enforces a Turn capability and forwards native DeepSeek Responses with stable Session affinity", async () => {
     const upstream = vi.fn<typeof fetch>(async (input, init) => {
       expect(String(input)).toBe("http://provider-gateway:8317/v1/responses");

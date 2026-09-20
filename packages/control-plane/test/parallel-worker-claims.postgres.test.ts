@@ -5,7 +5,7 @@ import { createDatabase, runMigrations, type Database } from "@pi-cloud/database
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
-import { AgentRunExecutionBackend } from "../../runtime-core/src/agent-run-execution-backend.ts";
+import { AgentRunExecutionBackend } from "../../supervisor-host/src/agent-run-execution-backend.ts";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import type { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";

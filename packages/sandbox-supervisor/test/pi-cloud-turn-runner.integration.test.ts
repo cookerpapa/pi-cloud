@@ -1,4 +1,5 @@
 import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server";
+import type { TrustedModelRuntimeLeaseResolver } from "../src/agent-turn-runtime.ts";
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
@@ -10,9 +11,9 @@ import {
 } from "@pi-cloud/protocol";
 import {
   PI_MODEL_RETRY_CUSTOM_TYPE,
-  type CloudAgentExecutionAuthority,
   type PiSessionMutationOperation,
 } from "@pi-cloud/pi-session-postgres";
+import type { CloudAgentExecutionAuthority } from "../src/cloud-agent-runtime.ts";
 import {
   buildSessionContext,
   InMemorySessionStorage,
@@ -20,6 +21,31 @@ import {
 } from "@earendil-works/pi-agent-core";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
+
+const fakeTextModelLease: TrustedModelRuntimeLeaseResolver = async (command) => {
+  const server = new FakeModelServer({ defaultScenario: "text" });
+  await server.start();
+  return {
+    runtime: {
+      kind: "openai_compatible_gateway",
+      provider: command.payload.model.provider,
+      modelId: command.payload.model.modelId,
+      baseUrl: server.baseUrl,
+      api: "openai-completions",
+      capability: FAKE_MODEL_API_KEY,
+      reasoning: false,
+      contextWindow: 131_072,
+      autoCompactTokenLimit: 100_000,
+      maxTokens: 16_384,
+      requestTimeoutMs: 10_000,
+      turnTimeoutMs: 60_000,
+      inputModalities: ["text"],
+      hostedTools: [],
+      serviceTier: null,
+    } as unknown as AgentModelRuntime, // test-only completions adapter, never a production profile
+    release: () => server.stop(),
+  };
+};
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -623,7 +649,7 @@ describe("PiCloudTurnRunner integration", () => {
         sandboxId: "sandbox-lazy-test",
       },
       trustedWorkspaceDirectory: directory,
-      scenario: "text",
+      modelRuntimeLeaseResolver: fakeTextModelLease,
       openAgentSession: async () => ({ session, lane: "main", authority }),
     });
     try {
@@ -691,7 +717,7 @@ describe("PiCloudTurnRunner integration", () => {
         sandboxId: "sandbox-development-test",
       },
       trustedWorkspaceDirectory: directory,
-      scenario: "text",
+      modelRuntimeLeaseResolver: fakeTextModelLease,
       openAgentSession: async () => ({ session, lane: "main", authority }),
     });
     try {

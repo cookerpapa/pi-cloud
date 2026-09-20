@@ -13,7 +13,6 @@ COPY packages/control-plane/package.json packages/control-plane/package.json
 COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/domain/package.json packages/domain/package.json
-COPY packages/fake-model-server/package.json packages/fake-model-server/package.json
 COPY packages/event-log/package.json packages/event-log/package.json
 COPY packages/observability/package.json packages/observability/package.json
 COPY packages/pi-session-postgres/package.json packages/pi-session-postgres/package.json
@@ -52,8 +51,6 @@ COPY packages/database/package.json packages/database/package.json
 COPY packages/database/src packages/database/src
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/domain/src packages/domain/src
-COPY packages/fake-model-server/package.json packages/fake-model-server/package.json
-COPY packages/fake-model-server/src packages/fake-model-server/src
 COPY packages/event-log/package.json packages/event-log/package.json
 COPY packages/observability/package.json packages/observability/package.json
 COPY packages/event-log/src packages/event-log/src

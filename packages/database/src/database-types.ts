@@ -60,11 +60,9 @@ export type SandboxRetirementState = "pending" | "claimed" | "blocked" | "comple
 export type TenantApiCredentialRole = "owner" | "member" | "viewer";
 export type WorkspaceSeedKind = "empty" | "sample_java";
 export type WorkspaceOperationKind = "fork" | "rollback" | "archive" | "unarchive" | "promote";
-export type ModelRequestState = "reserved" | "completed" | "failed" | "aborted" | "budget_denied";
 export type EnvironmentVersionState = "pending" | "validated" | "failed";
 export type SandboxProfileKey = "starter" | "standard" | "performance";
 export type EnvironmentValidationStatus = "validated" | "failed";
-export type EnvironmentOperationKind = "create" | "activate" | "rollback" | "validate";
 export type SandboxDomainState = "active" | "draining" | "disabled";
 export type ExecutionMode = "elastic" | "development_environment";
 export type SessionKind = "conversation" | "subagent";
@@ -439,9 +437,6 @@ export interface TenantRuntimePolicyTable {
   maximum_projects: GeneratedInteger;
   maximum_sessions: GeneratedInteger;
   maximum_model_requests_per_run: GeneratedInteger;
-  maximum_cost_microusd_per_run: GeneratedInt8;
-  daily_token_budget: GeneratedInt8;
-  monthly_cost_microusd_budget: GeneratedInt8;
   maximum_tool_calls_per_run: GeneratedInteger;
   maximum_tool_output_bytes: GeneratedInteger;
   maximum_run_duration_ms: GeneratedInteger;
@@ -517,19 +512,6 @@ export interface EnvironmentVersionTable {
   validated_at: NullableTimestamp;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
-}
-
-export interface EnvironmentOperationTable {
-  id: string;
-  tenant_id: string;
-  project_id: string;
-  actor_user_id: string;
-  kind: EnvironmentOperationKind;
-  from_environment_version_id: string | null;
-  to_environment_version_id: string;
-  idempotency_key: string;
-  request_fingerprint: string;
-  created_at: GeneratedTimestamp;
 }
 
 export interface EnvironmentValidationTable {
@@ -967,73 +949,6 @@ export interface WorkspaceOperationTable {
   created_at: GeneratedTimestamp;
 }
 
-export interface UsageLedgerTable {
-  id: string;
-  tenant_id: string;
-  session_id: string;
-  turn_id: string;
-  provider: string;
-  model_id: string;
-  input_tokens: Int8;
-  output_tokens: Int8;
-  cache_read_tokens: Int8;
-  cache_write_tokens: Int8;
-  cost_amount: ColumnType<string, number | string, number | string>;
-  run_id: GeneratedNullable<string>;
-  model_request_id: GeneratedNullable<string>;
-  model_profile_id: GeneratedNullable<string>;
-  cost_microusd: NullableInt8;
-  created_at: GeneratedTimestamp;
-}
-
-export interface ModelRateTable {
-  tenant_id: string;
-  provider: string;
-  model_id: string;
-  input_microusd_per_million: GeneratedInt8;
-  output_microusd_per_million: GeneratedInt8;
-  cache_read_microusd_per_million: GeneratedInt8;
-  cache_write_microusd_per_million: GeneratedInt8;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-}
-
-export interface ModelRequestTable {
-  id: string;
-  tenant_id: string;
-  session_id: string;
-  turn_id: string;
-  run_id: string;
-  model_profile_id: string;
-  request_sequence: number;
-  step_context_sequence: number | null;
-  step_context_sha256: string | null;
-  sampling_attempt: number | null;
-  requested_provider: string;
-  requested_model_id: string;
-  actual_provider: string | null;
-  actual_model_id: string | null;
-  state: ModelRequestState;
-  fallback_reason: string | null;
-  reserved_input_tokens: Int8;
-  reserved_output_tokens: Int8;
-  reserved_cost_microusd: Int8;
-  actual_input_tokens: NullableInt8;
-  actual_output_tokens: NullableInt8;
-  actual_cache_read_tokens: NullableInt8;
-  actual_cache_write_tokens: NullableInt8;
-  actual_input_microusd_per_million: NullableInt8;
-  actual_output_microusd_per_million: NullableInt8;
-  actual_cache_read_microusd_per_million: NullableInt8;
-  actual_cache_write_microusd_per_million: NullableInt8;
-  actual_cost_microusd: NullableInt8;
-  upstream_status: number | null;
-  failure_code: string | null;
-  reservation_expires_at: Timestamp;
-  started_at: GeneratedTimestamp;
-  settled_at: NullableTimestamp;
-}
-
 export interface PlatformRuntimeSettingsTable {
   settings_key: "default";
   cube_proxy_enabled: GeneratedBoolean;
@@ -1165,7 +1080,6 @@ export interface Database {
   projects: ProjectTable;
   environment_versions: EnvironmentVersionTable;
   environment_validations: EnvironmentValidationTable;
-  environment_operations: EnvironmentOperationTable;
   workspaces: WorkspaceTable;
   workspace_operations: WorkspaceOperationTable;
   workspace_delete_operations: WorkspaceDeleteOperationTable;
@@ -1190,9 +1104,6 @@ export interface Database {
   conversation_fork_operations: ConversationForkOperationTable;
   session_terminal_events: SessionTerminalEventTable;
   outbox: OutboxTable;
-  usage_ledger: UsageLedgerTable;
-  model_rates: ModelRateTable;
-  model_requests: ModelRequestTable;
   platform_runtime_settings: PlatformRuntimeSettingsTable;
   platform_runtime_setting_changes: PlatformRuntimeSettingChangeTable;
   pi_sessions: PiSessionTable;

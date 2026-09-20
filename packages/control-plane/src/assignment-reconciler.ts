@@ -405,17 +405,6 @@ export class AssignmentReconciler {
       },
     );
     await transaction
-      .updateTable("model_requests")
-      .set({
-        state: "failed",
-        failure_code: ASSIGNMENT_LOST,
-        settled_at: now,
-      })
-      .where("tenant_id", "=", session.tenant_id)
-      .where("run_id", "=", run.runId)
-      .where("state", "=", "reserved")
-      .execute();
-    await transaction
       .updateTable("turn_control_requests")
       .set({ state: "failed", completed_at: now, failure_code: ASSIGNMENT_LOST })
       .where("tenant_id", "=", session.tenant_id)

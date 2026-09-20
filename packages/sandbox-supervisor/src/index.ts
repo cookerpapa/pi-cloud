@@ -98,9 +98,6 @@ export {
 } from "./sandbox-assignment-inventory.ts";
 
 export {
-  type AgentTurnScenario,
-  type AgentTurnScenarioContext,
-  type AgentTurnScenarioResolver,
   type AgentWorkspaceSeedResolver,
   type ProviderHostedActivity,
   type ProviderHostedActivitySubscriber,
@@ -147,3 +144,10 @@ export {
 } from "./reconnecting-supervisor-websocket-client.ts";
 export { SubagentControlClient } from "./subagent-control-client.ts";
 export type { WorkflowExecutor, WorkflowHostCall } from "./workflow-transport.ts";
+export {
+  CloudAgentRuntime,
+  type CloudAgentExecutionAuthority,
+  type CloudAgentRunResult,
+  type CloudAgentRuntimeEvent,
+  type CloudAgentRuntimeOptions,
+} from "./cloud-agent-runtime.ts";

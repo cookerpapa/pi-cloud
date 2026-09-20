@@ -22,7 +22,6 @@ import {
 } from "./workspace-browser-service.ts";
 import { WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
-import type { SupervisorWebSocketGateway } from "./supervisor-websocket-gateway.ts";
 import { TurnSteeringService } from "./turn-steering-service.ts";
 import type { TurnSteerBackend } from "./turn-steer.ts";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
@@ -43,7 +42,6 @@ export type ControlPlaneModuleOptions = Omit<
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
   cubeEgressConfigToken?: string;
-  supervisorWebSocketGateway?: SupervisorWebSocketGateway;
   turnSteerBackendFactory?: (sandboxId: string) => Promise<TurnSteerBackend>;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   sshAccessTicketService?: SshAccessTicketService;
@@ -157,9 +155,6 @@ export class ControlPlaneModule {
           provide: TurnSteeringService,
           useValue: new TurnSteeringService({
             database: options.database,
-            ...(options.supervisorWebSocketGateway === undefined
-              ? {}
-              : { gateway: options.supervisorWebSocketGateway }),
             ...(options.turnSteerBackendFactory === undefined
               ? {}
               : { backendFactory: options.turnSteerBackendFactory }),

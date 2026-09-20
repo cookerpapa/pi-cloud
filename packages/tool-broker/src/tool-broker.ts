@@ -1570,7 +1570,7 @@ export class ToolBroker {
     }
     if (request.executionContextSha256 !== activation.executionContextSha256) {
       throw new ToolBrokerError(
-        "attempt_context_mismatch",
+        "execution_context_mismatch",
         "Tool operation did not match the current Cloud execution context",
         false,
       );

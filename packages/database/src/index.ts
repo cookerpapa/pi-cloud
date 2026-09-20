@@ -10,7 +10,6 @@ export {
   type CredentialBindingStatus,
   type CredentialKind,
   type EnvironmentValidationStatus,
-  type EnvironmentOperationKind,
   type EnvironmentVersionState,
   type DevelopmentEnvironmentAction,
   type DevelopmentEnvironmentState,

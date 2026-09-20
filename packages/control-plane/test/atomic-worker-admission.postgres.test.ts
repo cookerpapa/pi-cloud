@@ -15,7 +15,7 @@ import {
   type ExecuteTurnCommandMessage,
   type EventPublishMessage,
 } from "@pi-cloud/protocol";
-import { AgentRunExecutionBackend } from "../../runtime-core/src/agent-run-execution-backend.ts";
+import { AgentRunExecutionBackend } from "../../supervisor-host/src/agent-run-execution-backend.ts";
 import {
   RunExecutor,
   type TurnExecutionBackend,
@@ -303,7 +303,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const store = new ControlPlaneStore({ database: measured, ...f.tenant });
     await store.acceptTurn(f.session.sessionId, randomUUID(), { prompt: "follow-up" });
     // The driver adds BEGIN/COMMIT outside Kysely's query-plugin callbacks.
-    expect(queries).toHaveLength(6);
+    expect(queries).toHaveLength(5);
     expect(queries.filter((q) => q.startsWith('with "accepted_turn"'))).toHaveLength(1);
     queries.length = 0;
     const backend: TurnExecutionBackend = {
@@ -323,6 +323,123 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       queries.filter((q) => q.includes('from "pi_sessions"') && q.startsWith("select ")),
     ).toHaveLength(1);
     await f.project();
+  });
+
+  it.each(["unchanged", "upgrade"])(
+    "does not serialize ordinary environment readers or deadlock a version writer (%s)",
+    async (mode) => {
+      const f = await fixture();
+      const sibling = await f.store.createSession(
+        f.workspace.projectId,
+        f.workspace.workspaceId,
+        "parallel",
+        "elastic",
+      );
+      const held = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const sharedQueries = new WeakSet<object>();
+      const measured = db.withPlugin({
+        transformQuery({ node, queryId }) {
+          const q = db.getExecutor().compileQuery(node, queryId).sql;
+          if (q.includes('from "environment_versions"') && q.includes("for share"))
+            sharedQueries.add(queryId);
+          return node;
+        },
+        async transformResult({ result, queryId }) {
+          if (sharedQueries.has(queryId)) {
+            held.resolve();
+            await release.promise;
+          }
+          return result;
+        },
+      });
+      const first = new ControlPlaneStore({ database: measured, ...f.tenant }).acceptTurn(
+        f.session.sessionId,
+        randomUUID(),
+        { prompt: "first" },
+      );
+      void first.catch(held.reject);
+      let second: ReturnType<ControlPlaneStore["acceptTurn"]> | undefined;
+      try {
+        await held.promise;
+        second = new ControlPlaneStore({
+          database: db,
+          ...f.tenant,
+          ...(mode === "upgrade" ? { environmentImageRevision: "next-image" } : {}),
+        }).acceptTurn(sibling.sessionId, randomUUID(), { prompt: "second" });
+        if (mode === "unchanged") {
+          let finished = false;
+          void second.then(
+            () => {
+              finished = true;
+            },
+            () => {},
+          );
+          await vi.waitFor(() => expect(finished).toBe(true), { timeout: 2000 });
+        } else {
+          await vi.waitFor(async () => {
+            const { rows } = await sql<{ n: number }>`select count(*)::int n from pg_stat_activity
+            where datname=${name} and wait_event_type='Lock'`.execute(admin);
+            expect(rows[0]!.n).toBeGreaterThan(0);
+          });
+        }
+        release.resolve();
+        const [a, b] = await Promise.all([first, second]);
+        const rows = await db
+          .selectFrom("runs")
+          .innerJoin("environment_versions as e", "e.id", "runs.environment_version_id")
+          .select(["runs.id", "e.image_revision"])
+          .where("runs.id", "in", [a.runId, b.runId])
+          .execute();
+        expect(rows.find((r) => r.id === a.runId)?.image_revision).toBe(
+          f.workspace.environment.imageRevision,
+        );
+        expect(rows.find((r) => r.id === b.runId)?.image_revision).toBe(
+          mode === "upgrade" ? "next-image" : f.workspace.environment.imageRevision,
+        );
+      } finally {
+        release.resolve();
+        await Promise.allSettled([first, ...(second ? [second] : [])]);
+      }
+    },
+  );
+
+  it("publishes one new environment version for competing input requests", async () => {
+    const f = await fixture();
+    const sibling = await f.store.createSession(
+      f.workspace.projectId,
+      f.workspace.workspaceId,
+      "second",
+      "elastic",
+    );
+    const store = new ControlPlaneStore({
+      database: db,
+      ...f.tenant,
+      environmentImageRevision: "updated-image",
+    });
+    const accepted = await Promise.all(
+      [f.session.sessionId, sibling.sessionId].map((id) =>
+        store.acceptTurn(id, randomUUID(), { prompt: "new version" }),
+      ),
+    );
+    const rows = await db
+      .selectFrom("runs")
+      .select("environment_version_id")
+      .where(
+        "id",
+        "in",
+        accepted.map((a) => a.runId),
+      )
+      .execute();
+    expect(new Set(rows.map((r) => r.environment_version_id)).size).toBe(1);
+    expect(
+      await db
+        .selectFrom("environment_versions")
+        .select("id")
+        .where("project_id", "=", f.workspace.projectId)
+        .where("image_revision", "=", "updated-image")
+        .execute(),
+    ).toHaveLength(1);
   });
 
   it.each(["input-first", "seal-first"])(

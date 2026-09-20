@@ -3,7 +3,6 @@ import type { Database } from "@pi-cloud/database";
 import type { CreateTurnSteerRequest, TurnSteerResource } from "@pi-cloud/protocol";
 import type { Kysely, Transaction } from "kysely";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
-import type { SupervisorWebSocketGateway } from "./supervisor-websocket-gateway.ts";
 import {
   TurnSteerBackendError,
   type TurnSteerBackend,
@@ -95,7 +94,6 @@ function terminalResource(row: StoredSteer, replayed: boolean): TurnSteerResourc
 
 export class TurnSteeringService {
   readonly #database: Kysely<Database>;
-  readonly #gateway: SupervisorWebSocketGateway | undefined;
   readonly #backendFactory: ((sandboxId: string) => Promise<TurnSteerBackend>) | undefined;
   readonly #idGenerator: () => string;
   readonly #clock: () => Date;
@@ -103,13 +101,11 @@ export class TurnSteeringService {
 
   constructor(options: {
     database: Kysely<Database>;
-    gateway?: SupervisorWebSocketGateway;
     backendFactory?: (sandboxId: string) => Promise<TurnSteerBackend>;
     idGenerator?: () => string;
     clock?: () => Date;
   }) {
     this.#database = options.database;
-    this.#gateway = options.gateway;
     this.#backendFactory = options.backendFactory;
     this.#idGenerator = options.idGenerator ?? randomUUID;
     this.#clock = options.clock ?? (() => new Date());
@@ -163,7 +159,7 @@ export class TurnSteeringService {
   }
 
   async #deliverStored(stored: StoredSteer, replayed: boolean): Promise<TurnSteerResource> {
-    if (this.#backendFactory === undefined && this.#gateway === undefined) {
+    if (this.#backendFactory === undefined) {
       throw new TurnSteeringError(
         "steer_transport_unavailable",
         "Active Pi steer transport is unavailable",
@@ -172,10 +168,7 @@ export class TurnSteeringService {
     await this.#markDispatched(stored);
     const terminal = terminalResource(stored, replayed);
     if (terminal !== undefined) return terminal;
-    const backend =
-      this.#backendFactory === undefined
-        ? this.#gateway!.createRemoteSteerBackend(stored.sandboxId)
-        : await this.#backendFactory(stored.sandboxId);
+    const backend = await this.#backendFactory(stored.sandboxId);
     const delivery: TurnSteerRequest = {
       controlRequestId: stored.controlRequestId,
       idempotencyKey: stored.idempotencyKey,

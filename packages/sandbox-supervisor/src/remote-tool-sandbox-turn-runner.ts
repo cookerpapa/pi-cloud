@@ -1,5 +1,4 @@
 import type { WorkflowExecutor } from "./workflow-transport.ts";
-import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server";
 import {
   activeTraceCarrier,
   operationalLog,
@@ -34,8 +33,6 @@ import {
   type SandboxRuntimeIdentity,
 } from "./sandbox-assignment-inventory.ts";
 import type {
-  AgentTurnScenario,
-  AgentTurnScenarioResolver,
   AgentWorkspaceSeedResolver,
   TrustedAgentTool,
   TrustedModelRuntimeLease,
@@ -64,8 +61,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   broker: ToolBrokerBoundary;
   runtimeIdentity: SandboxRuntimeIdentity;
   trustedWorkspaceDirectory: string;
-  scenario?: AgentTurnScenario | AgentTurnScenarioResolver;
-  modelRuntimeLeaseResolver?: TrustedModelRuntimeLeaseResolver;
+  modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver;
   workspaceSeedResolver?: AgentWorkspaceSeedResolver;
   openAgentSession: (
     command: ExecuteTurnCommandMessage,
@@ -120,18 +116,15 @@ function safePiError(error: unknown, fallbackCode: string, fallbackMessage: stri
   return new PiTurnError(fallbackCode, fallbackMessage, true);
 }
 
-async function releaseModelRuntimeLease(
-  lease: TrustedModelRuntimeLease | undefined,
-): Promise<void> {
-  if (lease !== undefined) await lease.release();
+async function releaseModelRuntimeLease(lease: TrustedModelRuntimeLease): Promise<void> {
+  await lease.release();
 }
 
 export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #broker: ToolBrokerBoundary;
   readonly #runtimeIdentity: SandboxRuntimeIdentity;
   readonly #trustedWorkspaceDirectory: string;
-  readonly #scenario: AgentTurnScenario | AgentTurnScenarioResolver;
-  readonly #modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver | undefined;
+  readonly #modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver;
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
@@ -156,7 +149,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#broker = options.broker;
     this.#runtimeIdentity = validateSandboxRuntimeIdentity(options.runtimeIdentity);
     this.#trustedWorkspaceDirectory = resolve(options.trustedWorkspaceDirectory);
-    this.#scenario = options.scenario ?? "java_repair";
     this.#modelRuntimeLeaseResolver = options.modelRuntimeLeaseResolver;
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
     this.#openAgentSession = options.openAgentSession;
@@ -305,34 +297,18 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     const cloudTurn = createCloudTurnContext(command);
     const toolFree = cloudTurn.context.tools.names.length === 0;
 
-    const usesEmbeddedFake =
-      command.payload.model.provider === "pi-cloud-fake" &&
-      command.payload.model.modelId === "pi-cloud-fake";
-    let modelRuntimeLease: TrustedModelRuntimeLease | undefined;
-    if (!usesEmbeddedFake) {
-      if (this.#modelRuntimeLeaseResolver === undefined) {
-        throw new PiTurnError(
-          "credential_unavailable",
-          "A real model runtime is not configured for this Agent Runner",
-          true,
-        );
-      }
-      modelRuntimeLease = await this.#modelRuntimeLeaseResolver(command);
-      if (
-        modelRuntimeLease.runtime.provider !== command.payload.model.provider ||
-        modelRuntimeLease.runtime.modelId !== command.payload.model.modelId
-      ) {
-        await releaseModelRuntimeLease(modelRuntimeLease).catch(() => undefined);
-        throw new PiTurnError(
-          "model_binding_mismatch",
-          "Resolved model runtime does not match the accepted turn",
-          false,
-        );
-      }
+    const modelRuntimeLease = await this.#modelRuntimeLeaseResolver(command);
+    if (
+      modelRuntimeLease.runtime.provider !== command.payload.model.provider ||
+      modelRuntimeLease.runtime.modelId !== command.payload.model.modelId
+    ) {
+      await releaseModelRuntimeLease(modelRuntimeLease).catch(() => undefined);
+      throw new PiTurnError(
+        "model_binding_mismatch",
+        "Resolved model runtime does not match the accepted turn",
+        false,
+      );
     }
-
-    const scenario =
-      typeof this.#scenario === "function" ? this.#scenario({ command }) : this.#scenario;
     const toolAssignment = assignment(command, this.#runtimeIdentity);
     const cloudExecution = createCloudExecutionContext({
       command,
@@ -361,7 +337,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     };
     let activation: ToolSandboxCreateResponse | undefined;
     let activationPromise: Promise<ToolSandboxCreateResponse> | undefined;
-    let fakeModel: FakeModelServer | undefined;
     let completedSuccessfully = false;
     let executionError: unknown;
     let toolRuntimeFailure: PiTurnError | undefined;
@@ -437,42 +412,29 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       // chat must not reserve machine authority or depend on Broker uptime.
       // recordActive receives the actual binding before the next clean Step.
 
-      if (usesEmbeddedFake) {
-        fakeModel = new FakeModelServer({ defaultScenario: scenario });
-        await fakeModel.start();
-      }
-      const resolveModelRuntime: PiCloudTurnRunnerOptions["resolveModelRuntime"] = (model) =>
-        usesEmbeddedFake
-          ? {
-              provider: model.provider,
-              modelId: model.modelId,
-              baseUrl: fakeModel!.baseUrl,
-              api: "openai-completions",
-              apiKey: FAKE_MODEL_API_KEY,
-            }
-          : {
-              provider: modelRuntimeLease!.runtime.provider,
-              modelId: modelRuntimeLease!.runtime.modelId,
-              baseUrl: modelRuntimeLease!.runtime.baseUrl,
-              api: modelRuntimeLease!.runtime.api,
-              apiKey: modelRuntimeLease!.runtime.capability,
-              ...(modelRuntimeLease!.runtime.api === "openai-codex-responses"
-                ? { transport: "sse" as const }
-                : {}),
-              ...(modelRuntimeLease!.runtime.reasoning === undefined
-                ? {}
-                : { reasoning: modelRuntimeLease!.runtime.reasoning }),
-              ...(modelRuntimeLease!.runtime.contextWindow === undefined
-                ? {}
-                : { contextWindow: modelRuntimeLease!.runtime.contextWindow }),
-              autoCompactTokenLimit: modelRuntimeLease!.runtime.autoCompactTokenLimit,
-              ...(modelRuntimeLease!.runtime.maxTokens === undefined
-                ? {}
-                : { maxTokens: modelRuntimeLease!.runtime.maxTokens }),
-              inputModalities: modelRuntimeLease!.runtime.inputModalities,
-              hostedTools: modelRuntimeLease!.runtime.hostedTools,
-              serviceTier: modelRuntimeLease!.runtime.serviceTier,
-            };
+      const resolveModelRuntime: PiCloudTurnRunnerOptions["resolveModelRuntime"] = () => ({
+        provider: modelRuntimeLease.runtime.provider,
+        modelId: modelRuntimeLease.runtime.modelId,
+        baseUrl: modelRuntimeLease.runtime.baseUrl,
+        api: modelRuntimeLease.runtime.api,
+        apiKey: modelRuntimeLease.runtime.capability,
+        ...(modelRuntimeLease.runtime.api === "openai-codex-responses"
+          ? { transport: "sse" as const }
+          : {}),
+        ...(modelRuntimeLease.runtime.reasoning === undefined
+          ? {}
+          : { reasoning: modelRuntimeLease.runtime.reasoning }),
+        ...(modelRuntimeLease.runtime.contextWindow === undefined
+          ? {}
+          : { contextWindow: modelRuntimeLease.runtime.contextWindow }),
+        autoCompactTokenLimit: modelRuntimeLease.runtime.autoCompactTokenLimit,
+        ...(modelRuntimeLease.runtime.maxTokens === undefined
+          ? {}
+          : { maxTokens: modelRuntimeLease.runtime.maxTokens }),
+        inputModalities: modelRuntimeLease.runtime.inputModalities,
+        hostedTools: modelRuntimeLease.runtime.hostedTools,
+        serviceTier: modelRuntimeLease.runtime.serviceTier,
+      });
       const onSettled = () => {
         if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
       };
@@ -511,24 +473,22 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           toolPolicySha256: cloudTurn.toolPolicySha256,
         },
         onSettled,
-        ...(modelRuntimeLease?.subscribeHostedActivity === undefined
+        ...(modelRuntimeLease.subscribeHostedActivity === undefined
           ? {}
           : { subscribeHostedActivity: modelRuntimeLease.subscribeHostedActivity }),
-        ...(modelRuntimeLease?.subscribeHostedTranscript === undefined
+        ...(modelRuntimeLease.subscribeHostedTranscript === undefined
           ? {}
           : { subscribeHostedTranscript: modelRuntimeLease.subscribeHostedTranscript }),
         ...(this.#requestTimeoutMs === undefined
           ? {
-              requestTimeoutMs: usesEmbeddedFake
-                ? 10_000
-                : modelRuntimeLease!.runtime.requestTimeoutMs,
+              requestTimeoutMs: modelRuntimeLease.runtime.requestTimeoutMs,
             }
           : { requestTimeoutMs: this.#requestTimeoutMs }),
         ...(this.#turnTimeoutMs === undefined
           ? {
               turnTimeoutMs: Math.min(
                 command.payload.budgets?.maximumRunDurationMs ?? Number.MAX_SAFE_INTEGER,
-                usesEmbeddedFake ? 60_000 : modelRuntimeLease!.runtime.turnTimeoutMs,
+                modelRuntimeLease.runtime.turnTimeoutMs,
               ),
             }
           : {
@@ -742,7 +702,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       throw executionError;
     } finally {
       signal.removeEventListener("abort", abortSandbox);
-      await fakeModel?.stop().catch(() => undefined);
       let cleanupError: unknown;
       if (
         activation !== undefined &&

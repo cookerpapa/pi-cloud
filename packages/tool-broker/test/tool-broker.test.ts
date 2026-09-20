@@ -1338,7 +1338,7 @@ describe("provider-backed Tool Tool Broker", () => {
         ...operation("10000000-0000-4000-8000-000000000021"),
         executionContextSha256: "d".repeat(64),
       }),
-    ).rejects.toMatchObject({ code: "attempt_context_mismatch" });
+    ).rejects.toMatchObject({ code: "execution_context_mismatch" });
     expect(fixture.createSpec).toBeUndefined();
 
     await expect(

@@ -109,7 +109,7 @@
     },
     {
       "id": "message-stream-independence",
-      "workspace": "@pi-cloud/pi-session-postgres",
+      "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/cloud-agent-runtime.test.ts",
       "test": "commits a complete assistant message independently of public event delivery",
       "invariant": "A live-stream failure cannot roll back a complete native Pi message."

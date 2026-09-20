@@ -24,8 +24,6 @@ export {
   type SupervisorHostEnvironment,
 } from "./config.ts";
 export {
-  PRODUCTION_CANCELLATION_PROBE_PROMPT,
-  resolveProductionSandboxScenario,
   PiWorkerRuntime,
   PiWorkerRuntimeError,
   type PiWorkerRuntimeOptions,
@@ -46,3 +44,7 @@ export {
   type PostgresPiWorkerOptions,
   type PostgresPiWorkerState,
 } from "./postgres-pi-worker.ts";
+export {
+  AgentRunExecutionBackend,
+  type AgentRunExecutionBackendOptions,
+} from "./agent-run-execution-backend.ts";

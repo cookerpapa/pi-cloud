@@ -105,14 +105,6 @@ export {
 } from "./control-plane.module.ts";
 export type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 export { projectConversationTurnTranscript } from "@pi-cloud/runtime-core/conversation-turn-projection";
-export {
-  AgentRunExecutionBackend,
-  type AgentRunExecutionBackendOptions,
-} from "@pi-cloud/runtime-core/agent-run-execution-backend";
-export {
-  RemoteSupervisorSteerBackend,
-  type RemoteSupervisorSteerBackendOptions,
-} from "./remote-supervisor-steer-backend.ts";
 
 export {
   TurnSteerBackendError,
@@ -173,15 +165,6 @@ export {
   type SupervisorRetirementWorkResult,
   type SupervisorTransportAuthority,
 } from "./supervisor-connection-manager.ts";
-export {
-  TWO_PHASE_COMMAND_CAPABILITY,
-  WorkerControlChannelRouter,
-  WorkerControlChannelError,
-  type RemoteWorkerControlTransport,
-  type WorkerControlConnection,
-  type WorkerControlChannelRouterOptions,
-  type WorkerControlCommand,
-} from "./worker-control-channel.ts";
 export {
   HashedBearerSupervisorAuthorizer,
   SUPERVISOR_SOCKET_CLOSE,

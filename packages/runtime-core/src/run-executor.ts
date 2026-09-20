@@ -694,9 +694,6 @@ export class RunExecutor {
           "environment.recipe as environmentRecipe",
           "environment.recipe_sha256 as environmentRecipeSha256",
           "policy.maximum_model_requests_per_run as maximumModelRequests",
-          "policy.maximum_cost_microusd_per_run as maximumCostMicrousd",
-          "policy.daily_token_budget as dailyTokenBudget",
-          "policy.monthly_cost_microusd_budget as monthlyCostMicrousdBudget",
           "policy.maximum_tool_calls_per_run as maximumToolCalls",
           "policy.maximum_tool_output_bytes as maximumToolOutputBytes",
           "policy.maximum_run_duration_ms as maximumRunDurationMs",
@@ -782,12 +779,6 @@ export class RunExecutor {
           maximumModelRequests: safeNonNegativeInteger(
             row.maximumModelRequests,
             "model-request budget",
-          ),
-          maximumCostMicrousd: safeNonNegativeInteger(row.maximumCostMicrousd, "run cost budget"),
-          dailyTokenBudget: safeNonNegativeInteger(row.dailyTokenBudget, "daily token budget"),
-          monthlyCostMicrousdBudget: safeNonNegativeInteger(
-            row.monthlyCostMicrousdBudget,
-            "monthly cost budget",
           ),
           maximumToolCalls,
           remainingToolCalls,

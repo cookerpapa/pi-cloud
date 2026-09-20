@@ -10,6 +10,10 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0181](0181-review-repair-boundaries.md) — HTTP-only Steer delivery,
+   revocable model uploads, native usage without dormant accounting, and
+   transaction-local SQL consolidation; rollout in progress.
+
 1. [ADR-0180](0180-run-identity-and-session-ownership.md) — one Run execution
    identity, lease-owned Session writer and Worker-local capacity, replacing
    independent Attempt/PG slot bookkeeping.

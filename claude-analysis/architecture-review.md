@@ -188,10 +188,11 @@ PostgresPiWorker → RunExecutor → AgentRunExecutionBackend → AgentRunSuperv
 随后 `await readBody()`，之后直接递增次数并发往上游；abort controller 也在读完 body 后才登记。
 等待期间 `lease.release()` 已从 map 删除并标记 revoked，但 handler 仍持有旧对象并继续执行。
 
-本机可重复实验：[model-gateway-repro.mjs](model-gateway-repro.mjs)。运行：
+审查时的本机实验现已转入 [model-gateway.test.ts](../packages/supervisor-host/test/model-gateway.test.ts)
+作为修复后的回归，旧缺陷复现脚本保留在 `365e8aa6` 的 Git 历史。运行当前回归：
 
 ```bash
-node --import tsx claude-analysis/model-gateway-repro.mjs
+npm test --workspace @pi-cloud/supervisor-host -- test/model-gateway.test.ts
 ```
 
 | 交错 | 期望 | 实际 |
