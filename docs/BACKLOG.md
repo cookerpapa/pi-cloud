@@ -12,6 +12,12 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Fix Model Gateway admission across request-body reads: local diagnostic
+      reproduced forwarding after capability release and concurrent overshoot of
+      the per-Run request count. [Six-area analysis](../claude-analysis/architecture-review.md)
+      separates confirmed defects from optional simplifications; its storage and
+      service-boundary proposals are not approved implementation contracts.
+
 - [ ] Investigate Cube's stale master Volume reference after full-VM retirement.
       The [Run identity acceptance](reports/run-identity-acceptance-20260919.md)
       confirmed an empty Cube/node inventory with master refcount still one on
