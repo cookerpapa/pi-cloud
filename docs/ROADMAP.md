@@ -39,6 +39,10 @@
 
 ## Current release gate
 
+- [x] Model Gateway upload revocation/count admission, HTTP-only Steer, dormant
+      accounting removal, concrete runtime package boundaries and fewer projection/
+      environment SQL exchanges. [Regression and real GPT/Cube acceptance](reports/review-repair-20260921.md).
+
 - [x] One Run execution identity, Session-lease native writer and Worker-local
       capacity; ordinary input/admission SQL reduced from 24 to 18 exchanges.
       [Migration, real Luna/Cube, child-Lane and process-fault acceptance](reports/run-identity-acceptance-20260919.md).

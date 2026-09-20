@@ -264,8 +264,8 @@ Lane moves and facts share a Session-local sequence. Entry/Record/Lane/label
 tables are query projections. Official Pi backend conformance tests define the
 base contract; tenant and cloud ownership checks are additional constraints.
 `pi-session-postgres` owns this storage contract. Concrete Pi execution lives in
-`sandbox-supervisor`; Worker execution wiring lives in `supervisor-host`, not
-the infrastructure-neutral `runtime-core`. Fake models are test-injected only.
+`sandbox-supervisor`; Worker execution wiring lives in `supervisor-host`, so
+`runtime-core` no longer depends on the concrete Pi Runner. Fake models are test-injected only.
 
 Cold restore reads the newest Compaction and active suffix, not lifetime JSONL.
 The active native writer maintains acknowledged Lane views. Each Step reads that
