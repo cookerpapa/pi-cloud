@@ -39,6 +39,11 @@
 
 ## Current release gate
 
+- [x] Provider-phase-aware assistant display: complete GPT commentary, streaming
+      final answers and native-history/reconnect consistency. DeepSeek remains
+      unclassified until its early phase contract is reliable.
+      [Real Luna/Sol/DeepSeek, Cube and browser acceptance](reports/assistant-phase-acceptance-20260921.md).
+
 - [x] Model Gateway upload revocation/count admission, HTTP-only Steer, dormant
       accounting removal, concrete runtime package boundaries and fewer projection/
       environment SQL exchanges. [Regression and real GPT/Cube acceptance](reports/review-repair-20260921.md).

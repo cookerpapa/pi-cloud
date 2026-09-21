@@ -12,6 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Separate provider first-token latency from phase-aware first-display latency
+      in future timing comparisons. Complete commentary waits for its provider
+      text block; that interval must not be labelled entirely as internal relay time.
+
 - [ ] Investigate Cube's stale master Volume reference after full-VM retirement.
       The [Run identity acceptance](reports/run-identity-acceptance-20260919.md)
       confirmed an empty Cube/node inventory with master refcount still one on

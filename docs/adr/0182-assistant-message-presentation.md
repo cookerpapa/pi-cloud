@@ -28,3 +28,7 @@ seals and UNKNOWN stay unchanged. No per-token PG writes or extra durability ACK
 Deploy matching Worker/Projector/Web after draining; no database migration or
 Cube template change is required. Historical phase-absent text remains valid
 because phase is genuinely optional provider metadata, not a second decoder.
+
+Reference: [OpenAI assistant phase guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.5#phase-parameter).
+Pi 0.84.1's public subscribe/text_start/text_end contract is tested with its real
+Responses adapter; early phase is not inferred from Pi's provisional stopReason.
