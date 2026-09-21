@@ -9,6 +9,7 @@ import {
   UuidSchema,
 } from "./protocol-primitives.ts";
 import {
+  AssistantMessagePhaseSchema,
   ProviderHostedWebSearchActionSchema,
   SessionStateSchema,
   TurnCancellationReasonSchema,
@@ -678,6 +679,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
     {
       kind: Type.Literal("text"),
       text: Type.String(),
+      phase: Type.Optional(AssistantMessagePhaseSchema),
       firstSequence: PositiveSafeIntegerSchema,
       lastSequence: PositiveSafeIntegerSchema,
     },

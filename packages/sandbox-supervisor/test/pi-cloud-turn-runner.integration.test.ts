@@ -141,6 +141,202 @@ function deferred<T>() {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it("publishes commentary only when complete, waits its ACK, then streams final text before the response ends", async () => {
+    const allowIntroEnd = deferred<void>(),
+      allowResponseEnd = deferred<void>(),
+      introDeltaSeen = deferred<void>(),
+      introPublished = deferred<void>(),
+      allowIntroAck = deferred<void>(),
+      finalPublished = deferred<void>();
+    const events: PiCloudEvent[] = [];
+    const server = createServer(async (request, response) => {
+      for await (const _chunk of request) {
+        /* consume the request body */
+      }
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      const send = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`);
+      const message = (id: string, phase: string, text: string) => ({
+        id,
+        type: "message",
+        role: "assistant",
+        phase,
+        status: "completed",
+        content: [{ type: "output_text", text, annotations: [] }],
+      });
+      const intro = message("intro", "commentary", "Checking."),
+        final = message("final", "final_answer", "All done.");
+      send({
+        type: "response.created",
+        response: { id: "phased-response", status: "in_progress", output: [] },
+      });
+      send({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { ...intro, content: [] },
+      });
+      send({ type: "response.output_text.delta", output_index: 0, delta: "Check" });
+      await allowIntroEnd.promise;
+      send({ type: "response.output_text.delta", output_index: 0, delta: "ing." });
+      send({ type: "response.output_item.done", output_index: 0, item: intro });
+      send({
+        type: "response.output_item.added",
+        output_index: 1,
+        item: { ...final, content: [] },
+      });
+      send({ type: "response.output_text.delta", output_index: 1, delta: "All " });
+      await allowResponseEnd.promise;
+      send({ type: "response.output_text.delta", output_index: 1, delta: "done." });
+      send({ type: "response.output_item.done", output_index: 1, item: final });
+      send({
+        type: "response.completed",
+        response: {
+          id: "phased-response",
+          status: "completed",
+          output: [intro, final],
+          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+        },
+      });
+      response.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const controller = new AbortController();
+    let execution: Promise<unknown> | undefined;
+    const reached = async (promise: Promise<void>, label: string) => {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          promise,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error(`Missing ${label}; events=${events.map((e) => e.type).join(",")}`),
+                ),
+              3000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw Error("No listener");
+      const session = new Session(
+        new InMemorySessionStorage({ id: "phased-session", createdAt: 1 }),
+      );
+      const turn = createCloudTurnContext(command);
+      let step = 0;
+      const runner = new PiCloudTurnRunner({
+        resolveModelRuntime: () => ({
+          provider: command.payload.model.provider,
+          modelId: command.payload.model.modelId,
+          api: "openai-responses",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: FAKE_MODEL_API_KEY,
+          contextWindow: 1_000_000,
+          autoCompactTokenLimit: 900_000,
+        }),
+        openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
+        resolveAssistantTextPhase: (id, index) =>
+          id === "phased-response" ? (index === 0 ? "commentary" : "final_answer") : undefined,
+        sandboxContinuity: {
+          continuityId: "unused",
+          continuity: "cold_restore",
+          environmentSha256: turn.environmentSha256,
+          workspaceBindingSha256: turn.workspaceBindingSha256,
+          toolPolicySha256: turn.toolPolicySha256,
+        },
+        createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
+          tools: [],
+          systemPrompt: async (base) => base,
+          transformHeaders: async (headers = {}) => headers,
+          executeWorkflow: async () => {
+            throw Error("No tools");
+          },
+          async transformContext(messages, purpose = "agent") {
+            await captureSamplingStep(
+              async () => {
+                const world = await stepWorldState.capture();
+                return {
+                  step: createCloudStepContext({
+                    sequence: ++step,
+                    turnContextSha256: turn.sha256,
+                    executionContextSha256: "b".repeat(64),
+                    allowedTools: [],
+                    activeTools: [],
+                    worldState: world.worldState,
+                  }),
+                  modelMessages: world.modelMessages,
+                };
+              },
+              { publishEvent: purpose === "agent" },
+            );
+            return messages;
+          },
+        }),
+        observeEvent(event) {
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "text_delta" &&
+            event.assistantMessageEvent.delta === "Check"
+          )
+            introDeltaSeen.resolve();
+        },
+      });
+      let settled = false;
+      execution = runner
+        .run(
+          command,
+          async (message) => {
+            const event = message.payload.event;
+            events.push(event);
+            if (event.type === "assistant.text.delta" && event.payload.phase === "commentary") {
+              introPublished.resolve();
+              await allowIntroAck.promise;
+            }
+            if (event.type === "assistant.text.delta" && event.payload.phase === "final_answer")
+              finalPublished.resolve();
+          },
+          controller.signal,
+        )
+        .then((result) => {
+          settled = true;
+          return result;
+        });
+      await reached(introDeltaSeen.promise, "intro delta");
+      expect(events.filter((e) => e.type === "assistant.text.delta")).toEqual([]);
+      allowIntroEnd.resolve();
+      await reached(introPublished.promise, "intro publication");
+      expect(events.filter((e) => e.type === "assistant.text.delta").map((e) => e.payload)).toEqual(
+        [{ text: "Checking.", phase: "commentary" }],
+      );
+      allowIntroAck.resolve();
+      await reached(finalPublished.promise, "final publication");
+      expect(settled).toBe(false);
+      allowResponseEnd.resolve();
+      await execution;
+      const text = events.filter((e) => e.type === "assistant.text.delta");
+      expect(text.filter((e) => e.payload.phase === "commentary")).toHaveLength(1);
+      expect(
+        text
+          .filter((e) => e.payload.phase === "final_answer")
+          .map((e) => e.payload.text)
+          .join(""),
+      ).toBe("All done.");
+    } finally {
+      controller.abort();
+      allowIntroEnd.resolve();
+      allowIntroAck.resolve();
+      allowResponseEnd.resolve();
+      await execution?.catch(() => undefined);
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  }, 20000);
   it("recovers an HTTP-200 SSE overflow with fresh maintenance/agent Steps and one terminal", async () => {
     const requests: unknown[] = [],
       events: PiCloudEvent[] = [],

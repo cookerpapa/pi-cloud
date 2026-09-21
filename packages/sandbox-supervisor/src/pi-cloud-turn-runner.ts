@@ -24,6 +24,7 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
 import { measureRunPreparation, type PiCloudMetrics } from "@pi-cloud/observability";
 import { PiAgentEventAdapter } from "./pi-agent-event-adapter.ts";
+import { AssistantTextPresentation } from "./assistant-text-presentation.ts";
 import {
   PI_WORLD_STATE_ENTRY_PROJECTORS,
   PiSessionWorldStateController,
@@ -47,6 +48,7 @@ import {
 } from "./pi-turn-runtime.ts";
 import type { TrustedRemoteAgentTools } from "./trusted-remote-tools.ts";
 import type {
+  AssistantTextPhaseResolver,
   ProviderHostedActivitySubscriber,
   ProviderHostedTranscript,
   ProviderHostedTranscriptSubscriber,
@@ -83,6 +85,7 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   onSettled?: () => Promise<void> | void;
   observeEvent?: (event: CloudAgentRuntimeEvent) => void;
   subscribeHostedActivity?: ProviderHostedActivitySubscriber;
+  resolveAssistantTextPhase?: AssistantTextPhaseResolver;
   subscribeHostedTranscript?: ProviderHostedTranscriptSubscriber;
   prepareFollowUp?: () => AgentMessage | undefined | Promise<AgentMessage | undefined>;
   requestTimeoutMs?: number;
@@ -582,6 +585,9 @@ export class PiCloudTurnRunner {
         );
         const samplingSteps = new PiSamplingStepController();
         let eventChain = Promise.resolve();
+        const textPresentation = new AssistantTextPresentation(
+          this.#options.resolveAssistantTextPhase,
+        );
         let pendingPublicEvents = 0;
         let fatalError: Error | undefined;
         let unsubscribeHostedActivity: (() => void) | undefined;
@@ -901,14 +907,23 @@ export class PiCloudTurnRunner {
               }),
           onEvent: async (event) => {
             observeRuntimeEvent(event);
-            const textDelta = streamedTextDelta(event);
-            if (textDelta === undefined) {
+            const presented = textPresentation.present(event);
+            if (presented === undefined) {
+              if (fatalError !== undefined) throw fatalError;
+              return;
+            }
+            const textDelta = streamedTextDelta(presented);
+            const completeText =
+              presented.type === "message_update" &&
+              "presentationPhase" in presented.assistantMessageEvent &&
+              presented.assistantMessageEvent.presentationPhase === "commentary";
+            if (textDelta === undefined || completeText) {
               flushPendingText();
               textBlockActive = false;
-              enqueue(event);
+              enqueue(presented);
               await eventChain;
             } else {
-              bufferText(event, textDelta);
+              bufferText(presented, textDelta);
               if (pendingPublicEvents >= MAXIMUM_PENDING_PUBLIC_EVENTS) {
                 flushPendingText();
                 await eventChain;

@@ -99,6 +99,44 @@ function command(
 
 const gateways: TenantModelGateway[] = [];
 
+it("scopes early assistant phases to the issued Codex lease, never DeepSeek or a released lease", async () => {
+  const gateway = createGateway(
+    async () =>
+      new Response(
+        [
+          { type: "response.created", response: { id: "response" } },
+          {
+            type: "response.output_item.added",
+            item: { id: "message", type: "message", phase: "commentary" },
+          },
+        ]
+          .map((e) => `data: ${JSON.stringify(e)}\n\n`)
+          .join(""),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+  await gateway.start();
+  const a = gateway.issue(command("openai-codex", "gpt-5.6-luna"));
+  const b = gateway.issue(command("openai-codex", "gpt-5.6-luna"));
+  const d = gateway.issue(command("deepseek", "deepseek-v4-pro"));
+  const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/codex/responses`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${a.runtime.capability}`,
+      "content-type": "application/json",
+      ...samplingHeaders(),
+    },
+    body: JSON.stringify({ model: "gpt-5.6-luna", stream: true, input: [] }),
+  });
+  expect(response.ok).toBe(true);
+  await response.text();
+  expect(a.resolveAssistantTextPhase?.("response", 0)).toBe("commentary");
+  expect(b.resolveAssistantTextPhase?.("response", 0)).toBeUndefined();
+  expect(d.resolveAssistantTextPhase).toBeUndefined();
+  await a.release();
+  expect(a.resolveAssistantTextPhase?.("response", 0)).toBeUndefined();
+});
+
 afterEach(async () => {
   await Promise.all(gateways.splice(0).map((gateway) => gateway.close()));
 });

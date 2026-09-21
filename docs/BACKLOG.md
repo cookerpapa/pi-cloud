@@ -77,6 +77,9 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Deliberately deferred capabilities
 
+- [ ] Recheck DeepSeek's early assistant phase before enabling final-only streaming.
+      The current route revises a Tool preamble from final_answer to commentary
+      at completion; GPT's phase-aware presentation must not be copied blindly.
 - [ ] Benchmark Standard/Fast on enabled GPT models before changing the default.
 - [ ] Replace PiCloud's hosted-item adapter when pinned Pi has a backend-conformant
       native contract. DeepSeek Flash stays hidden; do not silently switch its

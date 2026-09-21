@@ -45,7 +45,8 @@ export function deriveConversationPresentationRows(
         kind: "text",
         key: item.key,
         item,
-        processNarration: index < lastToolIndex,
+        processNarration:
+          item.phase === "commentary" || (item.phase === undefined && index < lastToolIndex),
       });
       index += 1;
       continue;

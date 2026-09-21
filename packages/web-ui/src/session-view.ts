@@ -1,5 +1,6 @@
 import type {
   AcceptedTurnResource,
+  AssistantMessagePhase,
   PiCloudEvent,
   ConversationDetailResource,
   ConversationSessionResource,
@@ -17,6 +18,7 @@ export type TranscriptItem =
       kind: "text";
       key: string;
       text: string;
+      phase?: AssistantMessagePhase;
       firstSequence: number;
       lastSequence: number;
       /** Text recovered before this browser attached; render it without replay animation. */
@@ -176,10 +178,20 @@ function updateTurn(
   return turns.map((turn, current) => (current === index ? update(turn) : turn));
 }
 
-function appendText(turn: TurnView, text: string, sequence: number): TurnView {
+function appendText(
+  turn: TurnView,
+  text: string,
+  sequence: number,
+  phase?: AssistantMessagePhase,
+): TurnView {
   const items = [...turn.items];
   const last = items.at(-1);
-  if (last?.kind === "text") {
+  if (
+    last?.kind === "text" &&
+    last.phase !== "commentary" &&
+    phase !== "commentary" &&
+    last.phase === phase
+  ) {
     items[items.length - 1] = {
       ...last,
       text: `${last.text}${text}`,
@@ -190,6 +202,7 @@ function appendText(turn: TurnView, text: string, sequence: number): TurnView {
       kind: "text",
       key: `text:${String(sequence)}`,
       text,
+      ...(phase === undefined ? {} : { phase }),
       firstSequence: sequence,
       lastSequence: sequence,
     });
@@ -240,7 +253,7 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
       };
     }
     if (event.type === "assistant.text.delta") {
-      return appendText(turn, event.payload.text, event.seq);
+      return appendText(turn, event.payload.text, event.seq, event.payload.phase);
     }
     if (event.type === "provider.hosted_tool.started") {
       if (

@@ -69,11 +69,11 @@ const root = createRoot(document.getElementById("root"));
 const configuration={productUrl:location.origin,adminUrl:location.origin,
   managementUrls:{providerGateway:'https://models.example.test/management.html',grafana:'',prometheus:'',alertmanager:'',jaeger:''}};
 window.renderPanel = () => root.render(React.createElement(React.StrictMode, null, React.createElement(Panel)));
-window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReason = null) => root.render(
+window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReason = null, phase) => root.render(
   React.createElement(React.StrictMode, null, React.createElement(ConversationTurn, {turn:{
     runId:"run",turnId:"turn",mailboxPosition:null,prompt:"Question",acceptedAt:null,
     status,startedSequence:1,terminalSequence:null,stopReason,failure:null,cancellation:null,
-    items:[{kind:"text",key:"text:1",text,firstSequence:1,lastSequence:2,recoveredTextLength}]
+    items:[{kind:"text",key:"text:"+(phase??'1'),text,firstSequence:1,lastSequence:2,recoveredTextLength,...(phase?{phase}:{})}]
   }})));
 window.turnBodies = [];
 window.copyFixtureText=copyMessageText;
@@ -323,6 +323,13 @@ try {
     );
     await page.waitFor('document.querySelector("#panel").dataset.width === "320"');
     const target = "Durable text with live animation. ".repeat(300);
+    const commentary = "Complete progress update without a typing animation.";
+    await page.evaluate(`renderTurn(${JSON.stringify(commentary)},0,'running',null,'commentary')`);
+    await page.waitFor(
+      `document.querySelector('.product-agent-stage')?.textContent===${JSON.stringify(commentary)}`,
+    );
+    // No advanceFrame(): a whole commentary must be immediately visible.
+    assert.equal(await page.evaluate("document.querySelector('.product-agent-answer')"), null);
     await page.evaluate(`renderTurn(${JSON.stringify(target)})`);
     await page.waitFor('document.querySelector(".product-agent-answer")');
     assert.equal(

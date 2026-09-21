@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 const TENANT_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "10000000-0000-4000-8000-000000000002";
 
-function database(): Kysely<Database> {
+function database(entries?: unknown[]): Kysely<Database> {
   const rows: Record<string, unknown[]> = {
     pi_session_entries: [
       {
@@ -134,6 +134,7 @@ function database(): Kysely<Database> {
       },
     ],
   };
+  if (entries) rows.pi_session_entries = entries;
   return {
     isTransaction: true,
     selectFrom(table: string) {
@@ -160,6 +161,46 @@ function database(): Kysely<Database> {
 }
 
 describe("canonical Pi conversation", () => {
+  it("restores native commentary/final phases without merging their message boundaries", async () => {
+    const transcript = await readCanonicalPiTurnTranscripts(
+      database([
+        {
+          turn_id: TURN_ID,
+          seq: "2",
+          timestamp_ms: "1787529600000",
+          payload: {
+            type: "message",
+            message: {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: "First update.",
+                  textSignature: JSON.stringify({ v: 1, id: "a", phase: "commentary" }),
+                },
+                {
+                  type: "text",
+                  text: "Second update.",
+                  textSignature: JSON.stringify({ v: 1, id: "b", phase: "commentary" }),
+                },
+                {
+                  type: "text",
+                  text: "Final.",
+                  textSignature: JSON.stringify({ v: 1, id: "c", phase: "final_answer" }),
+                },
+              ],
+            },
+          },
+        },
+      ]),
+      { tenantId: TENANT_ID, turnIds: [TURN_ID] },
+    );
+    expect(transcript.get(TURN_ID)?.items).toMatchObject([
+      { kind: "text", text: "First update.", phase: "commentary" },
+      { kind: "text", text: "Second update.", phase: "commentary" },
+      { kind: "text", text: "Final.", phase: "final_answer" },
+    ]);
+  });
   it("reconstructs completed compaction and retry attempts from native SessionStorage facts", async () => {
     const transcripts = await readCanonicalPiTurnTranscripts(database(), {
       tenantId: TENANT_ID,

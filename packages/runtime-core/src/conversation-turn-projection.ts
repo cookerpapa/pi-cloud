@@ -56,7 +56,12 @@ export function projectConversationTurnTranscript(
     }
     if (event.type === "assistant.text.delta") {
       const last = items.at(-1);
-      if (last?.kind === "text") {
+      if (
+        last?.kind === "text" &&
+        last.phase !== "commentary" &&
+        event.payload.phase !== "commentary" &&
+        last.phase === event.payload.phase
+      ) {
         items[items.length - 1] = {
           ...last,
           text: `${last.text}${event.payload.text}`,
@@ -66,6 +71,7 @@ export function projectConversationTurnTranscript(
         items.push({
           kind: "text",
           text: event.payload.text,
+          ...(event.payload.phase === undefined ? {} : { phase: event.payload.phase }),
           firstSequence: event.seq,
           lastSequence: event.seq,
         });

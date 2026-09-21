@@ -1,4 +1,4 @@
-import { reviewedModel, type ReviewedModel } from "@pi-cloud/protocol";
+import { reviewedModel, type ReviewedModel, type AssistantMessagePhase } from "@pi-cloud/protocol";
 import {
   MODEL_SAMPLING_ATTEMPT_HEADER,
   MODEL_STEP_SEQUENCE_HEADER,
@@ -62,6 +62,7 @@ type ActiveCapabilityFields = {
   requestControllers: Set<AbortController>;
   hostedActivityListeners: Set<(activity: ProviderHostedActivity) => void>;
   hostedTranscriptListeners: Set<(transcript: ProviderHostedTranscript) => void>;
+  assistantTextPhases: Map<string, Map<number, AssistantMessagePhase>>;
 };
 
 type ActiveCapability =
@@ -569,6 +570,7 @@ export class TenantModelGateway {
       requestControllers: new Set(),
       hostedActivityListeners: new Set(),
       hostedTranscriptListeners: new Set(),
+      assistantTextPhases: new Map(),
     };
     this.#capabilities.set(digest, active);
     let released = false;
@@ -610,6 +612,14 @@ export class TenantModelGateway {
           };
     return {
       runtime,
+      // DeepSeek currently revises final_answer to commentary at item completion;
+      // only the verified Codex route supplies a reliable early phase contract.
+      ...(active.provider === "openai-codex"
+        ? {
+            resolveAssistantTextPhase: (responseId: string, index: number) =>
+              active.assistantTextPhases.get(responseId)?.get(index),
+          }
+        : {}),
       subscribeHostedActivity: (listener) => {
         if (released || active.revoked) return () => undefined;
         active.hostedActivityListeners.add(listener);
@@ -803,6 +813,12 @@ export class TenantModelGateway {
         (kind) => {
           timing[`first${kind}Ms`] = elapsed();
         },
+        (responseId, index, phase) => {
+          if (active.provider !== "openai-codex" || phase === undefined) return;
+          const phases = active.assistantTextPhases.get(responseId) ?? new Map();
+          phases.set(index, phase);
+          active.assistantTextPhases.set(responseId, phases);
+        },
       );
       armUpstreamTimeout("idle", this.#upstreamIdleTimeoutMs);
       for await (const rawChunk of upstream.body) {
@@ -928,6 +944,7 @@ export class TenantModelGateway {
     active.requestControllers.clear();
     active.hostedActivityListeners.clear();
     active.hostedTranscriptListeners.clear();
+    active.assistantTextPhases.clear();
     this.#capabilities.delete(active.tokenDigest);
   }
 

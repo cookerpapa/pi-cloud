@@ -251,7 +251,13 @@ for the lifetime of an SSE connection. Blocked writes have a 30-second deadline;
 slow readers disconnect without blocking Kafka or other viewers. Pending text
 still needs memory proportional to its actual content, not constant RAM for
 unbounded output. SSE heartbeats keep idle connections open. Pi's first text
-delta is sent promptly; adjacent text can coalesce for 25 ms. Tool argument JSON,
+delta of a streaming answer is sent promptly; adjacent text can coalesce for 25 ms.
+On the verified GPT route, early provider phase distinguishes complete commentary
+from a streaming final answer. Commentary publishes once at Pi's text_end and
+renders without typing animation; original native phase/signatures remain intact.
+DeepSeek's early phase can change at completion, so that route retains ordinary
+text streaming. No wording heuristics or buffered "fake streaming" are used.
+See [ADR-0182](adr/0182-assistant-message-presentation.md). Tool argument JSON,
 thinking fragments and Tool stdout deltas are not public streams. One durable,
 argument-free preparation event marks a long Tool-call generation interval, then
 the complete Tool start/result replaces it.

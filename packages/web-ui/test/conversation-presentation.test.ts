@@ -18,6 +18,33 @@ function tool(key: string, sequence: number): Extract<TranscriptItem, { kind: "t
 }
 
 describe("conversation presentation rows", () => {
+  it("uses explicit phase before a Tool exists and does not reclassify an explicit final answer", () => {
+    expect(
+      deriveConversationPresentationRows([
+        {
+          kind: "text",
+          key: "a",
+          text: "Working.",
+          phase: "commentary",
+          firstSequence: 1,
+          lastSequence: 1,
+        },
+        {
+          kind: "text",
+          key: "b",
+          text: "Answer.",
+          phase: "final_answer",
+          firstSequence: 2,
+          lastSequence: 2,
+        },
+        tool("bash", 3),
+      ]),
+    ).toMatchObject([
+      { kind: "text", processNarration: true },
+      { kind: "text", processNarration: false },
+      { kind: "activity" },
+    ]);
+  });
   it("groups only adjacent Tools and preserves every durable key", () => {
     const items: TranscriptItem[] = [
       {

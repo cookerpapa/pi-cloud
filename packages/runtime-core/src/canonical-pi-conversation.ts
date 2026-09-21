@@ -4,6 +4,7 @@ import {
   parseConversationTurnTranscriptResource,
   type ConversationTranscriptItemResource,
   type ConversationTurnTranscriptResource,
+  type AssistantMessagePhase,
 } from "@pi-cloud/protocol";
 import { normalizeProviderHostedWebSearchAction, toolResultIsUnknown } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
@@ -16,7 +17,7 @@ type TerminalProjectionMetadata = Pick<
   "throughSequence" | "terminalSequence" | "stopReason" | "failure" | "cancellation"
 > & { occurredAt: string };
 type DraftItem =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; phase?: AssistantMessagePhase }
   | {
       kind: "hosted_search";
       activityId: string;
@@ -77,6 +78,21 @@ function textParts(message: JsonRecord | undefined): string[] {
     const candidate = record(part);
     return candidate?.type === "text" && typeof candidate.text === "string" ? [candidate.text] : [];
   });
+}
+
+function textPhase(part: JsonRecord): AssistantMessagePhase | undefined {
+  if (typeof part.textSignature !== "string" || !part.textSignature.startsWith("{")) return;
+  // Pi signatures may also be opaque provider IDs, not versioned metadata.
+  try {
+    const signature = record(JSON.parse(part.textSignature));
+    if (
+      signature?.v === 1 &&
+      (signature.phase === "commentary" || signature.phase === "final_answer")
+    )
+      return signature.phase;
+  } catch {
+    /* A provider-owned signature is not necessarily JSON. */
+  }
 }
 
 function interruptedPrefix(payload: unknown): string | undefined {
@@ -231,8 +247,20 @@ function projectPiEntries(
           candidate.text.length > 0
         ) {
           const last = drafts.at(-1);
-          if (last?.kind === "text") last.text += candidate.text;
-          else drafts.push({ kind: "text", text: candidate.text });
+          const phase = textPhase(candidate);
+          if (
+            last?.kind === "text" &&
+            last.phase !== "commentary" &&
+            phase !== "commentary" &&
+            last.phase === phase
+          )
+            last.text += candidate.text;
+          else
+            drafts.push({
+              kind: "text",
+              text: candidate.text,
+              ...(phase === undefined ? {} : { phase }),
+            });
           continue;
         }
         if (candidate?.type === "providerHostedToolCall" && candidate.toolName === "web_search") {
@@ -299,7 +327,7 @@ function projectPiEntries(
     const prefix = interruptedPrefix(row.payload);
     if (prefix !== undefined) {
       const last = drafts.at(-1);
-      if (last?.kind === "text") last.text += prefix;
+      if (last?.kind === "text" && last.phase === undefined) last.text += prefix;
       else drafts.push({ kind: "text", text: prefix });
     }
   }

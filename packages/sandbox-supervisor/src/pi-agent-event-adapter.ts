@@ -321,7 +321,13 @@ export class PiAgentEventAdapter {
         terminal: false,
         event: this.#eventFactory.next({
           type: "assistant.text.delta",
-          payload: { text: streamEvent.delta },
+          payload: {
+            text: streamEvent.delta,
+            ...(streamEvent.presentationPhase === "commentary" ||
+            streamEvent.presentationPhase === "final_answer"
+              ? { phase: streamEvent.presentationPhase }
+              : {}),
+          },
         }),
       };
     }

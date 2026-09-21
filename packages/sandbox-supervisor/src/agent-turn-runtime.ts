@@ -1,5 +1,6 @@
 import type {
   AgentModelRuntime,
+  AssistantMessagePhase,
   ExecuteTurnCommandMessage,
   ProviderHostedWebSearchAction,
 } from "@pi-cloud/protocol";
@@ -58,8 +59,15 @@ export type TrustedModelRuntimeLease = Readonly<{
   runtime: AgentModelRuntime;
   subscribeHostedActivity?: ProviderHostedActivitySubscriber;
   subscribeHostedTranscript?: ProviderHostedTranscriptSubscriber;
+  resolveAssistantTextPhase?: AssistantTextPhaseResolver;
   release(): Promise<void> | void;
 }>;
+
+/** Text-item order is Pi's text_start order, not its mixed contentIndex. */
+export type AssistantTextPhaseResolver = (
+  responseId: string,
+  textItemIndex: number,
+) => AssistantMessagePhase | undefined;
 
 export type TrustedModelRuntimeLeaseResolver = (
   command: ExecuteTurnCommandMessage,

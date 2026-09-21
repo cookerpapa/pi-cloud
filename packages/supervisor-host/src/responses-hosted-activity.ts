@@ -2,7 +2,10 @@ import type {
   ProviderHostedActivity,
   ProviderHostedTranscriptItem,
 } from "@pi-cloud/sandbox-supervisor";
-import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/protocol";
+import {
+  normalizeProviderHostedWebSearchAction,
+  type AssistantMessagePhase,
+} from "@pi-cloud/protocol";
 
 type JsonRecord = Record<string, unknown>;
 type FirstResponseKind = "Frame" | "Text" | "Tool" | "Search";
@@ -34,15 +37,28 @@ export class ResponsesHostedActivityObserver {
   >();
   #anonymousActivityId: string | undefined;
   #nextActivity = 0;
+  #responseId: string | undefined;
+  readonly #textItems = new Set<string>();
+  readonly #textPhase: (
+    responseId: string,
+    index: number,
+    phase: AssistantMessagePhase | undefined,
+  ) => void;
 
   constructor(
     emit: (activity: ProviderHostedActivity) => void,
     emitTranscript: (items: readonly ProviderHostedTranscriptItem[]) => void = () => undefined,
     first: (kind: FirstResponseKind) => void = () => undefined,
+    textPhase: (
+      responseId: string,
+      index: number,
+      phase: AssistantMessagePhase | undefined,
+    ) => void = () => undefined,
   ) {
     this.#emit = emit;
     this.#emitTranscript = emitTranscript;
     this.#first = first;
+    this.#textPhase = textPhase;
   }
 
   push(chunk: Uint8Array): void {
@@ -91,6 +107,29 @@ export class ResponsesHostedActivityObserver {
     }
     if (!isRecord(value) || typeof value.type !== "string") return;
     this.#observeFirst("Frame");
+    if (
+      value.type === "response.created" &&
+      isRecord(value.response) &&
+      typeof value.response.id === "string"
+    )
+      this.#responseId = value.response.id;
+    if (
+      value.type === "response.output_item.added" &&
+      this.#responseId !== undefined &&
+      isRecord(value.item) &&
+      value.item.type === "message" &&
+      typeof value.item.id === "string" &&
+      !this.#textItems.has(value.item.id)
+    ) {
+      const index = this.#textItems.size;
+      this.#textItems.add(value.item.id);
+      const phase = value.item.phase;
+      this.#textPhase(
+        this.#responseId,
+        index,
+        phase === "commentary" || phase === "final_answer" ? phase : undefined,
+      );
+    }
     if (
       value.type === "response.output_text.delta" &&
       typeof value.delta === "string" &&

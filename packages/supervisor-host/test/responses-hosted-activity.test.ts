@@ -2,6 +2,36 @@ import { describe, expect, it } from "vitest";
 import { ResponsesHostedActivityObserver } from "../src/index.ts";
 
 describe("ResponsesHostedActivityObserver", () => {
+  it("records only early text phases in text-item order, leaving late revisions alone", () => {
+    const phases: unknown[] = [];
+    const observer = new ResponsesHostedActivityObserver(
+      () => {},
+      undefined,
+      undefined,
+      (...args) => phases.push(args),
+    );
+    const push = (value: unknown) =>
+      observer.push(new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`));
+    push({ type: "response.created", response: { id: "response" } });
+    for (const [id, type, phase] of [
+      ["r", "reasoning"],
+      ["a", "message", "commentary"],
+      ["f", "function_call"],
+      ["w", "web_search_call"],
+      ["b", "message"],
+      ["c", "message", "final_answer"],
+    ])
+      push({ type: "response.output_item.added", item: { id, type, phase } });
+    push({
+      type: "response.output_item.done",
+      item: { id: "c", type: "message", phase: "commentary" },
+    });
+    expect(phases).toEqual([
+      ["response", 0, "commentary"],
+      ["response", 1, undefined],
+      ["response", 2, "final_answer"],
+    ]);
+  });
   it("separates first response frame, nonempty text, Tool arguments and hosted search without recording content", () => {
     const first: string[] = [];
     const observer = new ResponsesHostedActivityObserver(

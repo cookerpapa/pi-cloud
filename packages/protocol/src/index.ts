@@ -29,6 +29,8 @@ export {
 } from "./sandbox-preview.ts";
 
 export {
+  AssistantMessagePhaseSchema,
+  type AssistantMessagePhase,
   PiCloudEventSchema,
   ProviderHostedWebSearchActionSchema,
   PiCloudProtocolError,

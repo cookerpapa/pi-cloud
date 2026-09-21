@@ -499,6 +499,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             }),
       };
       const runner = new PiCloudTurnRunner({
+        ...(modelRuntimeLease.resolveAssistantTextPhase === undefined
+          ? {}
+          : {
+              resolveAssistantTextPhase: modelRuntimeLease.resolveAssistantTextPhase,
+            }),
         ...(this.#acquireModelPermit
           ? {
               acquireModelPermit: (signal?: AbortSignal) =>

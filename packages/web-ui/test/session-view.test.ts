@@ -11,6 +11,7 @@ import {
 } from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
 import { projectConversationTurnTranscript } from "../../runtime-core/src/conversation-turn-projection.ts";
+import { CompactEventTail } from "../../runtime-core/src/compact-event-tail.ts";
 import {
   activeTurn,
   createInitialSessionView,
@@ -119,6 +120,46 @@ function preparedState(): SessionViewState {
 }
 
 describe("session transcript reducer", () => {
+  it("keeps complete commentary separate from streamed final text in live, compacted and snapshot views", () => {
+    const events = [
+      envelope(1, {
+        type: "assistant.text.delta",
+        payload: { text: "Checking.", phase: "commentary" },
+      }),
+      envelope(2, {
+        type: "assistant.text.delta",
+        payload: { text: "Still checking.", phase: "commentary" },
+      }),
+      envelope(3, {
+        type: "assistant.text.delta",
+        payload: { text: "All ", phase: "final_answer" },
+      }),
+      envelope(4, {
+        type: "assistant.text.delta",
+        payload: { text: "done.", phase: "final_answer" },
+      }),
+    ];
+    const ui = events.reduce(
+      (s, event) => sessionViewReducer(s, { type: "stream.event", event }),
+      preparedState(),
+    );
+    const expected = [
+      { kind: "text", text: "Checking.", phase: "commentary" },
+      { kind: "text", text: "Still checking.", phase: "commentary" },
+      { kind: "text", text: "All done.", phase: "final_answer" },
+    ];
+    expect(ui.turns[0]!.items).toMatchObject(expected);
+    expect(projectConversationTurnTranscript(events).items).toMatchObject(expected);
+    const tail = new CompactEventTail();
+    events.forEach((e) => tail.accept(e));
+    expect(tail.size).toBe(3);
+    const captured = tail.events;
+    expect(projectConversationTurnTranscript(captured).items).toMatchObject(expected);
+    expect(tail.text()).toBe("Checking.Still checking.All done.");
+    tail.cover(2);
+    expect(tail.text()).toBe("All done.");
+    expect(projectConversationTurnTranscript(captured).items).toMatchObject(expected);
+  });
   it.each(["failed", "aborted"] as const)(
     "does not turn a %s sampling search into a successful search at Run completion",
     (outcome) => {

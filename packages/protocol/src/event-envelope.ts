@@ -20,6 +20,12 @@ export const SessionStateSchema = Type.Union([
 ]);
 export type SessionState = Static<typeof SessionStateSchema>;
 
+export const AssistantMessagePhaseSchema = Type.Union([
+  Type.Literal("commentary"),
+  Type.Literal("final_answer"),
+]);
+export type AssistantMessagePhase = Static<typeof AssistantMessagePhaseSchema>;
+
 export const TurnCancellationReasonSchema = Type.Union([
   Type.Literal("user_request"),
   Type.Literal("timeout"),
@@ -83,6 +89,7 @@ const AssistantTextDeltaEventSchema = Type.Object(
     payload: Type.Object(
       {
         text: Type.String(),
+        phase: Type.Optional(AssistantMessagePhaseSchema),
       },
       { additionalProperties: false },
     ),

@@ -36,7 +36,9 @@ export class CompactEventTail {
     this.#high = Math.max(this.#high, event.seq);
     const text = event.type === "assistant.text.delta" ? event.payload.text : undefined;
     const envelopeBytes = utf8.encode(
-      JSON.stringify(text === undefined ? event : { ...event, payload: { text: "" } }),
+      JSON.stringify(
+        text === undefined ? event : { ...event, payload: { ...event.payload, text: "" } },
+      ),
     ).byteLength;
     const span = {
       event,
@@ -68,6 +70,9 @@ export class CompactEventTail {
       !right ||
       left.event.type !== "assistant.text.delta" ||
       right.event.type !== "assistant.text.delta" ||
+      left.event.payload.phase === "commentary" ||
+      right.event.payload.phase === "commentary" ||
+      left.event.payload.phase !== right.event.payload.phase ||
       left.event.turnId !== right.event.turnId ||
       left.event.sessionId !== right.event.sessionId ||
       left.event.seq + 1 !== right.first
@@ -76,7 +81,10 @@ export class CompactEventTail {
     this.#spans.splice(at, 2, {
       event: {
         ...right.event,
-        payload: { text: left.event.payload.text + right.event.payload.text },
+        payload: {
+          ...right.event.payload,
+          text: left.event.payload.text + right.event.payload.text,
+        },
       },
       first: left.first,
       bytes: left.bytes + right.bytes - left.envelopeBytes,

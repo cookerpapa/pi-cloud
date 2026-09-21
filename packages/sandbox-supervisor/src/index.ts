@@ -100,6 +100,7 @@ export {
 export {
   type AgentWorkspaceSeedResolver,
   type ProviderHostedActivity,
+  type AssistantTextPhaseResolver,
   type ProviderHostedActivitySubscriber,
   type ProviderHostedTranscript,
   type ProviderHostedTranscriptItem,
