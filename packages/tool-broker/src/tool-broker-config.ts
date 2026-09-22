@@ -2,18 +2,13 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
-import {
-  DEFAULT_TOOL_TRANSPORT_CAPACITY,
-  type ToolDeliveryCapacity,
-} from "./tool-transport-capacity.ts";
 
 export type ToolBrokerConfig = {
   host: string;
   port: number;
   databaseUrl: string;
+  kafkaBrokers: readonly string[];
   maximumActiveCommands: number;
-  resultDelivery: ToolDeliveryCapacity;
-  maximumResultBytes: number;
   sandboxDomainId: string;
   advertisedBaseUrl: string;
   ownershipLeaseMs: number;
@@ -231,38 +226,10 @@ export async function loadToolBrokerConfig(
     host: bounded(environment.PI_CLOUD_TOOL_BROKER_HOST ?? "127.0.0.1", "host", 256),
     port: integer(environment.PI_CLOUD_TOOL_BROKER_PORT, 4_300, 1, 65_535),
     databaseUrl: await readDatabaseUrl(required(environment, "DATABASE_URL_FILE")),
-    maximumActiveCommands: integer(
-      environment.PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS,
-      DEFAULT_TOOL_TRANSPORT_CAPACITY.maximumActiveCommands,
-      1,
-      4096,
-    ),
-    resultDelivery: {
-      maximumResultReaders: integer(
-        environment.PI_CLOUD_TOOL_MAXIMUM_RESULT_READERS,
-        DEFAULT_TOOL_TRANSPORT_CAPACITY.maximumResultReaders,
-        1,
-        8192,
-      ),
-      maximumSendingBytes: integer(
-        environment.PI_CLOUD_TOOL_RESULT_SENDING_BYTES,
-        DEFAULT_TOOL_TRANSPORT_CAPACITY.maximumSendingBytes,
-        1024,
-        1073741824,
-      ),
-      sendTimeoutMs: integer(
-        environment.PI_CLOUD_TOOL_RESULT_SEND_TIMEOUT_MS,
-        DEFAULT_TOOL_TRANSPORT_CAPACITY.sendTimeoutMs,
-        1000,
-        120000,
-      ),
-    },
-    maximumResultBytes: integer(
-      environment.PI_CLOUD_TOOL_RESULT_CACHE_BYTES,
-      64 * 1024 * 1024,
-      1024,
-      1024 * 1024 * 1024,
-    ),
+    kafkaBrokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
+      .split(",")
+      .map((value) => bounded(value.trim(), "Kafka broker", 256)),
+    maximumActiveCommands: integer(environment.PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS, 32, 1, 4096),
     sandboxDomainId: bounded(
       required(environment, "PI_CLOUD_SANDBOX_DOMAIN_ID"),
       "sandboxDomainId",

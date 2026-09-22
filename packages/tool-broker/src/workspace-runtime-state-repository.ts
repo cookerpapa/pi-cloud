@@ -3,7 +3,6 @@ import type {
   Database,
   DevelopmentEnvironmentState,
   ToolBrokerWorkspaceRuntimeState,
-  ToolBrokerOperationState,
   WorkspaceTerminalState,
 } from "@pi-cloud/database";
 import {
@@ -156,18 +155,7 @@ export interface WorkspaceRuntimeStateRepository {
     state: ToolBrokerWorkspaceRuntimeState,
     detail?: { handle?: SandboxHandle; failureCode?: string },
   ): Promise<void>;
-  beginOperation(
-    workspaceRuntimeId: string,
-    toolBindingId: string,
-    assignment: ToolSandboxAssignment,
-    operationId: string,
-    requestSha256: string,
-  ): Promise<"started" | "unknown">;
-  settleOperation(
-    operationId: string,
-    state: Exclude<ToolBrokerOperationState, "running">,
-    failureCode?: string,
-  ): Promise<void>;
+  authorizeOperation(workspaceRuntimeId: string, assignment: ToolSandboxAssignment): Promise<void>;
   claimOrphanedWorkspaceRuntimes(limit: number): Promise<readonly OrphanedWorkspaceRuntime[]>;
   claimUnboundWorkspaceRuntimes(
     limit: number,
@@ -190,7 +178,6 @@ export class WorkspaceRuntimeStateRepositoryError extends Error {
 }
 
 export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntimeStateRepository {
-  readonly #operations = new Map<string, string>();
   readonly #terminals = new Map<string, OrphanedWorkspaceTerminal>();
   readonly #activations = new Map<string, WorkspaceRuntimeReservation>();
   readonly #developmentEnvironments = new Map<
@@ -379,19 +366,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<void> {
     if (state === "released") this.#activations.delete(activationId);
   }
-  async beginOperation(
-    _activationId: string,
-    _toolBindingId: string,
-    _assignment: ToolSandboxAssignment,
-    operationId: string,
-    requestSha256: string,
-  ): Promise<"started" | "unknown"> {
-    const existing = this.#operations.get(operationId);
-    if (existing !== undefined) return "unknown";
-    this.#operations.set(operationId, requestSha256);
-    return "started";
-  }
-  async settleOperation(): Promise<void> {}
+  async authorizeOperation(): Promise<void> {}
   async claimOrphanedWorkspaceRuntimes(): Promise<readonly OrphanedWorkspaceRuntime[]> {
     return [];
   }
@@ -1711,15 +1686,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     }
   }
 
-  async beginOperation(
+  async authorizeOperation(
     workspaceRuntimeId: string,
-    toolBindingId: string,
     assignment: ToolSandboxAssignment,
-    operationId: string,
-    requestSha256: string,
-  ): Promise<"started" | "unknown"> {
-    const now = validDate(this.#clock);
-    return this.#database.transaction().execute(async (transaction) => {
+  ): Promise<void> {
+    await this.#database.transaction().execute(async (transaction) => {
       await transaction
         .selectFrom("tool_broker_workspace_runtimes")
         .select("workspace_runtime_id")
@@ -1760,61 +1731,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "Workspace runtime is not executable by this owner",
         );
       }
-      const existing = await transaction
-        .selectFrom("tool_broker_operations")
-        .select("operation_id")
-        .where("operation_id", "=", operationId)
-        .executeTakeFirst();
-      if (existing !== undefined) return "unknown";
-      await transaction
-        .insertInto("tool_broker_operations")
-        .values({
-          operation_id: operationId,
-          workspace_runtime_id: workspaceRuntimeId,
-          tool_binding_id: toolBindingId,
-          tenant_id: assignment.tenantId,
-          session_id: assignment.sessionId,
-          run_id: assignment.runId,
-          lease_id: execution.leaseId,
-          fencing_token: execution.fencingToken,
-          owner_instance_id: this.#instanceId,
-          request_sha256: requestSha256,
-          state: "running",
-          failure_code: null,
-          started_at: now,
-          settled_at: null,
-        })
-        .executeTakeFirstOrThrow();
-      return "started";
     });
-  }
-
-  async settleOperation(
-    operationId: string,
-    state: Exclude<ToolBrokerOperationState, "running">,
-    code?: string,
-  ): Promise<void> {
-    const now = validDate(this.#clock);
-    const settled = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
-      return transaction
-        .updateTable("tool_broker_operations")
-        .set({
-          state,
-          failure_code: failureCode(code),
-          settled_at: sql<Date>`greatest(${sql.ref("started_at")}, ${now})`,
-        })
-        .where("operation_id", "=", operationId)
-        .where("owner_instance_id", "=", this.#instanceId)
-        .where("state", "=", "running")
-        .executeTakeFirst();
-    });
-    if (settled.numUpdatedRows !== 1n) {
-      throw new WorkspaceRuntimeStateRepositoryError(
-        "ownership_lost",
-        "Sandbox operation ownership is no longer current",
-      );
-    }
   }
 
   async claimOrphanedWorkspaceRuntimes(
@@ -1950,16 +1867,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           })
           .where("workspace_runtime_id", "in", activationIds)
           .execute();
-        await transaction
-          .updateTable("tool_broker_operations")
-          .set({
-            state: "failed",
-            failure_code: "workspace_runtime_unbound",
-            settled_at: now,
-          })
-          .where("workspace_runtime_id", "in", activationIds)
-          .where("state", "=", "running")
-          .execute();
       }
       return rows.map((row) => ({
         activationId: row.workspace_runtime_id,
@@ -2090,12 +1997,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     await this.#heartbeatTask;
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
-      await transaction
-        .updateTable("tool_broker_operations")
-        .set({ state: "unknown", failure_code: "tool_broker_stopped", settled_at: now })
-        .where("owner_instance_id", "=", this.#instanceId)
-        .where("state", "=", "running")
-        .execute();
       await transaction
         .updateTable("tool_broker_workspace_runtimes")
         .set({ state: "unknown", failure_code: "tool_broker_stopped", updated_at: now })
@@ -2245,12 +2146,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     ).rows;
     const lostIds = lostInstances.map((instance) => instance.instance_id);
     if (lostIds.length === 0) return;
-    await transaction
-      .updateTable("tool_broker_operations")
-      .set({ state: "unknown", failure_code: "tool_broker_owner_lost", settled_at: now })
-      .where("owner_instance_id", "in", lostIds)
-      .where("state", "=", "running")
-      .execute();
     await transaction
       .updateTable("tool_broker_workspace_runtimes")
       .set({ state: "unknown", failure_code: "tool_broker_owner_lost", updated_at: now })

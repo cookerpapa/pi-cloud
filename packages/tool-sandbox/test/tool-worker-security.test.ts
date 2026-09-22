@@ -254,10 +254,10 @@ describe("credential-free Tool Sandbox worker", () => {
             bundle: encodeWorkspaceBlob(createWorkspaceSeed([])),
           },
         }),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(workspace);
       await expect(
         attachToolExecution({ ...base, workspaceSeed: { kind: "sample_java" } }),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(workspace);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

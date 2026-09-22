@@ -28,9 +28,10 @@ protocol, record the decision under `docs/adr/` before implementation.
 
 ## Engineering rules
 
-- Keep Pi-specific runtime events inside the trusted
-  runner/sandbox-supervisor adapter; the public API and durable domain model
-  must use PiCloud-owned schemas.
+- Keep Pi-specific runtime events at the trusted runner and fixed guest Tool
+  transport boundary; the public API and durable domain model use PiCloud-owned
+  schemas. Native Tool update/end payloads are internal replies, not canonical
+  Session events until the Worker Harness processes them.
 - Run the fixed Pi core only in the trusted Agent Runner, never in the API/control-plane
   process. Route every untrusted file or shell operation to a separate Tool Sandbox.
 - Load only code-owned trusted infrastructure tools in the Agent Runner.
@@ -59,6 +60,10 @@ protocol, record the decision under `docs/adr/` before implementation.
   channel lease, separate live/Tool consumers or a commit-notification round trip.
   Tool executors remain independently authorized external-effect endpoints;
   replaying a projection must never imply replaying arbitrary shell work.
+  Projector confirms its monotonic Kafka dispatch commit before issuing a Tool
+  command. Rewinding for text reconstruction never reissues committed commands.
+  Whole fixed Pi Tools execute in Cube; boot-scoped Kafka replies resolve the
+  original Worker's callbacks. No raw-result GET/cache or PG operation ledger.
   Workers/Kafka/PG are trusted private infrastructure; do not reintroduce per-record
   signatures or key management. This does not remove tenant checks or Tool fencing.
 - Treat the persistent Cube Volume as the sole Workspace byte authority. Do

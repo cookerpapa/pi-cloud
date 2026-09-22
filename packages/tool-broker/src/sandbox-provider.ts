@@ -10,6 +10,7 @@ import type {
   ToolSandboxAssignment,
   ToolSandboxOperationRequest,
   ToolSandboxOperationResponse,
+  NativeToolUpdate,
   SourceControlWorkspaceCredentialAuthorizeRequest,
   SourceControlWorkspaceCredentialDisconnectRequest,
   SourceControlWorkspaceCredentialDisconnectResponse,
@@ -194,6 +195,7 @@ export interface SandboxProvider {
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
     toolRoot?: string,
+    onUpdate?: (event: NativeToolUpdate) => Promise<void>,
   ): Promise<ToolSandboxOperationResponse>;
   discoverHttpServices?(
     handle: SandboxHandle,

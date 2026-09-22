@@ -98,6 +98,16 @@ vi.mock("../src/tool-command-executor.ts", () => ({
     }
   },
 }));
+vi.mock("@pi-cloud/event-log", () => ({
+  KafkaToolReplyPublisher: class {
+    async start() {
+      fixture.call("replies.start");
+    }
+    async close() {
+      fixture.call("replies.close");
+    }
+  },
+}));
 vi.mock("../src/tool-broker-server.ts", () => ({
   ToolBrokerServer: class {
     constructor(private readonly options: { broker: { close(): Promise<void> } }) {}
@@ -146,6 +156,7 @@ const closed = [
   "provider.close",
   "volume.close",
   "ownership.close",
+  "replies.close",
   "database.close",
   "metrics.close",
 ];

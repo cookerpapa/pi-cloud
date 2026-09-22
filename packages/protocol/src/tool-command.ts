@@ -3,6 +3,7 @@ import type { ToolSandboxOperationRequest } from "./tool-sandbox.ts";
 export type CandidateToolCommand = Readonly<{
   executionReference: string;
   toolCallId: string;
+  replyTopic?: string;
   request: ToolSandboxOperationRequest;
   occurredAt: string;
   traceContext?: Readonly<{ traceparent: string; tracestate?: string }>;
@@ -12,6 +13,7 @@ export type AcceptedToolCommand = Readonly<{
   kind: "tool_command";
   factId: string;
   toolCallId: string;
+  replyTopic?: string;
   scope: Readonly<{
     tenantId: string;
     sessionId: string;

@@ -12,6 +12,7 @@
     "test": "vitest --run --maxWorkers=1"
   },
   "dependencies": {
+    "@pi-cloud/event-log": "0.1.0",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/observability": "0.1.0",
     "@pi-cloud/pi-session-postgres": "0.1.0",

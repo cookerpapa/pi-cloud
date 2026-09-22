@@ -261,20 +261,40 @@
         "managementUrls"
       ],
       "properties": {
-        "replicas": { "type": "integer", "minimum": 2, "maximum": 256 },
-        "autoscaling": { "$ref": "#/$defs/autoscaling" },
-        "resources": { "$ref": "#/$defs/resources" },
-        "adminOriginBaseUrl": { "$ref": "#/$defs/httpUrl" },
+        "replicas": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 256
+        },
+        "autoscaling": {
+          "$ref": "#/$defs/autoscaling"
+        },
+        "resources": {
+          "$ref": "#/$defs/resources"
+        },
+        "adminOriginBaseUrl": {
+          "$ref": "#/$defs/httpUrl"
+        },
         "managementUrls": {
           "type": "object",
           "additionalProperties": false,
           "required": ["providerGateway", "grafana", "prometheus", "alertmanager", "jaeger"],
           "properties": {
-            "providerGateway": { "$ref": "#/$defs/optionalHttpUrl" },
-            "grafana": { "$ref": "#/$defs/optionalHttpUrl" },
-            "prometheus": { "$ref": "#/$defs/optionalHttpUrl" },
-            "alertmanager": { "$ref": "#/$defs/optionalHttpUrl" },
-            "jaeger": { "$ref": "#/$defs/optionalHttpUrl" }
+            "providerGateway": {
+              "$ref": "#/$defs/optionalHttpUrl"
+            },
+            "grafana": {
+              "$ref": "#/$defs/optionalHttpUrl"
+            },
+            "prometheus": {
+              "$ref": "#/$defs/optionalHttpUrl"
+            },
+            "alertmanager": {
+              "$ref": "#/$defs/optionalHttpUrl"
+            },
+            "jaeger": {
+              "$ref": "#/$defs/optionalHttpUrl"
+            }
           }
         },
         "ingress": {
@@ -291,7 +311,9 @@
             "host": {
               "$ref": "#/$defs/dnsName"
             },
-            "adminHost": { "$ref": "#/$defs/dnsName" },
+            "adminHost": {
+              "$ref": "#/$defs/dnsName"
+            },
             "tlsSecretName": {
               "$ref": "#/$defs/optionalDnsName"
             }
@@ -451,30 +473,10 @@
           "minimum": 1,
           "maximum": 4096
         },
-        "toolResultCacheBytes": {
-          "type": "integer",
-          "minimum": 1024,
-          "maximum": 1073741824
-        },
         "maximumActiveCommands": {
           "type": "integer",
           "minimum": 1,
           "maximum": 4096
-        },
-        "maximumResultReaders": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 8192
-        },
-        "resultSendingBytes": {
-          "type": "integer",
-          "minimum": 1024,
-          "maximum": 1073741824
-        },
-        "resultSendTimeoutMs": {
-          "type": "integer",
-          "minimum": 1000,
-          "maximum": 120000
         },
         "maximumWarmWorkspaceRuntimesPerReplica": {
           "type": "integer",

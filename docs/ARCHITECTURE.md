@@ -23,7 +23,7 @@ Browser → Control Plane → PostgreSQL accepted Run
                                                        ↓
                                              owning Tool executor → Cube
                                                        ↓
-                                                 result → Worker/Pi
+                                                 native reply → Kafka reply topic → Worker/Pi
 
 Control authority → PG seal Outbox → Kafka seal → PG terminal + closure
                                                     ↓
@@ -194,11 +194,14 @@ PG transaction-time closure checks remain: a stale Projector handler cannot
 overwrite a successor merely because it cached an older OPEN state.
 
 Recovery starts at the minimum of PG's canonical/unsealed-prefix floor and the
-group's completed delivery position. This protects both volatile text and a
-record whose PG mutation committed before Tool routing finished. Kafka fetching
-is not acknowledgement. Complete message/seal transactions advance PG progress;
-token fragments create no PG rows. Rebalance invalidates old subscriptions and
-rebuilds the assigned prefix before its Projector serves snapshots.
+group's committed position. It can replay text/native history but cannot move
+the dispatch commit backwards. A new Tool command is dispatched only after its
+Kafka offset commit is confirmed; commands below that commit are never dispatched
+again during projection replay. A crash between commit and dispatch may omit
+execution and remains UNKNOWN. Kafka fetching is not acknowledgement. Complete
+message/seal transactions advance PG progress; token fragments create no PG rows.
+Rebalance invalidates old subscriptions and rebuilds the assigned prefix before
+its Projector serves snapshots.
 
 At a seal, one PG transaction stores the exact public terminal, interrupted
 visible prefix, Run closure and recovery progress. The Projector then updates
@@ -309,13 +312,13 @@ Workspace bytes. Deleting a parent includes its descendant transcript views.
 
 ## Tools and Cube
 
-Tool Broker is now an execution/lifecycle service, not a Kafka consumer. Its
-immutable PG Run/binding routes point to one Broker boot. Projector forwards
-only commands and small result-retirement/seal notifications through an internal
-credential unavailable to the Worker. The receiver folds positions synchronously
-and acknowledges admission, not guest completion. Replayed/delayed lower offsets
-and reused operation IDs cannot start another effect. Old bindings are never
-adopted by a replacement boot. Worker result GETs go directly to the actual owner.
+Tool Broker is an execution/lifecycle service, not an execution-log consumer.
+Immutable PG Run/binding routes point to one Broker boot. Projector forwards
+commands and seals through an internal credential unavailable to the Worker.
+It confirms Kafka commit before dispatch and does not retry ambiguous command
+delivery. The receiver folds positions synchronously and acknowledges admission,
+not guest completion. Old bindings are never adopted by a replacement boot.
+There is no completed-result GET endpoint or PostgreSQL operation ledger.
 
 Broker validates the existing Lease/fence, frozen Tool policy and Cloud Step,
 then the provider adapter calls Cube's native envd/vsock facilities. Pi cannot
@@ -330,13 +333,22 @@ Recovered machines count even above a newly lowered capacity; new allocation
 waits until usage falls below the limit. This is not a Workspace write lock or
 tenant scheduling quota.
 
-Completed raw results live in a bounded owner retry cache. Pi performs its usual
-redaction/truncation and appends the native Tool Result. Projector forwards the
-matching small acknowledgement to retire raw bytes; seals/binding retirement
-also release them. Already-admitted work may finish after closure but cannot
-repopulate the cache or enter the sealed transcript. UNKNOWN never triggers
-automatic shell replay. Kafka fencing cannot undo an already-issued Cube request
-or roll back a running process.
+The guest executes the whole fixed Tool, with native edit/write logic and source
+output bounds. Internal reads/writes are not separate RPCs. The trusted Cube
+adapter forwards Pi-native update/end payloads to a Worker-boot Kafka reply topic;
+all slots share one topic. A random operation ID correlates the waiting callback,
+not authority. Ordered updates invoke `onUpdate`; the final reply resolves or
+rejects `execute`. Pi still owns after-Tool hooks, its lifecycle events and the
+canonical Tool Result appended to the execution log. Partial Tool output remains
+outside the public UI/context. Kafka reply ACK releases transport buffers, with
+no completed-result cache or per-result retirement notification.
+
+Reply topics have bounded retention, are deleted at graceful Worker shutdown,
+and are reaped only after positively completed Worker retirement plus grace.
+They are not a cold recovery source. Already-admitted work may finish after
+closure; late replies cannot reopen a call or enter sealed history. UNKNOWN
+never triggers automatic shell replay. Kafka fencing cannot undo an already-issued
+Cube request or roll back a running process. See [ADR-0183](adr/0183-native-remote-tool-execution.md).
 
 `TrustedToolRuntime` supplies thin, code-owned tool adapters. Subagent start,
 communication and cancellation requests append to Kafka; Projector persists
@@ -348,7 +360,8 @@ of the Provider HTTP proxy, rather than per-child status polling.
 Direct delegation creates no script or Cube. Workflow JavaScript runs in Cube
 through envd's bounded stdin/stdout bridge. Guest `runs.*` requests return to the
 owning Worker publication port; no PG/Kafka/model credentials enter the guest.
-The script's explicit return becomes the outer Tool Result. Variables and JS
+The script's explicit return travels over the Kafka reply channel and becomes
+the outer Tool Result. Its `runs.*` duplex host-call channel is unchanged. Variables and JS
 call stacks are not recovery checkpoints. Preview remains a fixed trusted
 platform adapter; user-supplied Worker extensions are not supported.
 

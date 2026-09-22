@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0183](0183-native-remote-tool-execution.md) — whole guest-side Tools,
+   native Pi Kafka replies and commit-before-dispatch without effect replay.
+
 1. [ADR-0182](0182-assistant-message-presentation.md) — complete commentary and
    streaming final answers using verified provider phases; no prose heuristics.
 
@@ -71,13 +74,11 @@ Read the documents in this order:
    one Session Projector group, direct terminal projection and owner-routed SSE.
 
 1. [ADR-0162](0162-sharded-tool-command-routing.md) — positioned owner routing,
-   exact owner boots and direct result reads.
+   exact owner boots; native Kafka replies follow ADR-0183.
 1. [ADR-0161](0161-kafka-native-session-commit.md) — Kafka-acknowledged native
    Session storage, shared Lane ordering, bounded restore and safe retention.
 1. [ADR-0158](0158-bounded-transport-backpressure.md) — bounded Producer/Broker
    transport and shared configuration; native commit placement follows ADR-0161.
-1. [ADR-0157](0157-kafka-driven-tool-commands.md) — Kafka-driven Agent Tool dispatch,
-   read-only result waits; unified consumption follows ADR-0163.
 1. [ADR-0154](0154-ordered-execution-stream-seals.md) — ordered Run closure
    before handoff, shared canonical/live cutoff and interrupted-prefix recovery.
 1. [ADR-0152](0152-volume-deletion-and-tool-preparation.md) — native Volume

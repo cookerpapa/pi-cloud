@@ -11,6 +11,8 @@ import {
   parseToolBrokerReadWorkspaceFileResponse,
   parseToolSandboxOperationResponse,
   parseToolWorkerOutput,
+  parseNativeToolEvent,
+  type NativeToolUpdate,
   type EnvironmentValidationReport,
   type EnvironmentToolchainReport,
   type ToolBrokerListWorkspaceDirectoryRequest,
@@ -735,6 +737,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       maximumOutputBytes?: number;
       signal?: AbortSignal;
       onDispatch?: () => void;
+      onUpdate?: (event: NativeToolUpdate) => Promise<void>;
     }>,
   ): Promise<unknown> {
     const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
@@ -792,12 +795,44 @@ export class CubeSandboxProvider implements SandboxProvider {
       throw options.signal.reason;
     }
     options.onDispatch?.();
+    let pending = Buffer.alloc(0);
+    let streamedResult: unknown;
+    const onStdout =
+      options.onUpdate === undefined
+        ? undefined
+        : async (chunk: Buffer) => {
+            pending = Buffer.concat([pending, chunk]);
+            for (;;) {
+              const newline = pending.indexOf(10);
+              if (newline < 0) break;
+              if (newline > maximumOutputBytes)
+                throw new Error("Guest Tool event exceeded its limit");
+              const line = JSON.parse(pending.subarray(0, newline).toString("utf8")) as Record<
+                string,
+                unknown
+              >;
+              pending = pending.subarray(newline + 1);
+              if (streamedResult !== undefined)
+                throw new Error("Guest Tool emitted data after its final result");
+              if (line.event !== undefined) {
+                const event = parseNativeToolEvent(line.event);
+                if (event.type !== "tool_execution_update")
+                  throw new Error("Unexpected intermediate Tool event");
+                await options.onUpdate!(event);
+              } else {
+                streamedResult = line;
+              }
+            }
+            if (pending.byteLength > maximumOutputBytes)
+              throw new Error("Guest Tool event exceeded its limit");
+          };
     const result = await this.#client.runCommand(instance, {
       command: `trap '/bin/rm -f -- ${path}' EXIT; ${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
       cwd: "/",
       user: "root",
       timeoutMs: options.timeoutMs,
       maximumOutputBytes,
+      ...(onStdout === undefined ? {} : { onStdout }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     if (result.exitCode !== 0) {
@@ -809,6 +844,11 @@ export class CubeSandboxProvider implements SandboxProvider {
           `Guest helper exited with code ${String(result.exitCode)}: ${result.stderr.slice(-1_024)}`,
         ),
       );
+    }
+    if (onStdout !== undefined) {
+      if (pending.byteLength || streamedResult === undefined)
+        throw new Error("Guest Tool stream ended before its final result");
+      return streamedResult;
     }
     const output = result.stdout.trim();
     if (output.length < 2 || output.length > maximumOutputBytes) {
@@ -1047,6 +1087,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
     toolRoot = handle.workspaceRoot,
+    onUpdate?: (event: NativeToolUpdate) => Promise<void>,
   ): Promise<ToolSandboxOperationResponse> {
     const activation = this.#dataOwned(handle);
     if (activation.seenOperationIds.has(request.operationId)) {
@@ -1061,7 +1102,9 @@ export class CubeSandboxProvider implements SandboxProvider {
     let output: ReturnType<typeof parseToolWorkerOutput>;
     try {
       const timeoutMs =
-        request.operation === "bash.exec" ? request.timeoutMs + 5_000 : this.#readyTimeoutMs;
+        request.operation === "bash.exec" || request.operation === "tool.execute"
+          ? request.timeoutMs + 5_000
+          : this.#readyTimeoutMs;
       output = parseToolWorkerOutput(
         await this.#guestJson(
           activation.instance,
@@ -1081,6 +1124,9 @@ export class CubeSandboxProvider implements SandboxProvider {
             onDispatch: () => {
               dispatched = true;
             },
+            ...(request.operation === "tool.execute"
+              ? { onUpdate: onUpdate ?? (async () => {}) }
+              : {}),
             ...(signal === undefined ? {} : { signal }),
           },
         ),
@@ -1089,7 +1135,8 @@ export class CubeSandboxProvider implements SandboxProvider {
       const persistent = activation.lifetime === "development_environment";
       const mayHaveEffects =
         dispatched &&
-        (request.operation === "bash.exec" ||
+        ((request.operation === "tool.execute" && request.toolName !== "read") ||
+          request.operation === "bash.exec" ||
           request.operation === "file.write" ||
           request.operation === "file.mkdir");
       // Only disposable runtimes have fail-closed destruction. A failed Tool

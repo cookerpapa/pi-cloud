@@ -16,7 +16,8 @@ Pi Tool call
   -> Cube API
   -> CubeProxy -> cube-agent/vsock/envd
   -> credential-free one-shot Tool Worker
-  -> bounded owner-direct result read by the Worker
+  -> trusted adapter -> Worker-boot Kafka reply topic
+  -> native onUpdate / execute completion in Worker
   -> Pi Agent Loop
 ```
 
@@ -26,13 +27,14 @@ a supported production runtime menu.
 
 ## Identity and authority
 
-The Tool Broker derives tenant, Workspace, Session, Run, Run, fence, Tool
+The Tool Broker derives tenant, Workspace, Session, Run, fence, Tool
 binding and Cloud Step identity from trusted state. The browser, model and
 Tool arguments cannot choose a Sandbox ID, image, mount, resource limit or
 network policy.
 
-Each operation has an immutable operation ID. Duplicate delivery returns the
-same in-process result while it is known; conflicting reuse fails closed. A
+Each whole Tool has one immutable operation ID. Projector commits its dispatch
+position before issuing the command; text recovery never reissues that prefix.
+Broker keeps only active executions, not completed result bodies or a PG Tool ledger. A
 transport break after dispatch is `UNKNOWN` and is never reattached or replayed,
 because envd is deliberately not a durable PiCloud operation ledger. A stale
 Run cannot start another authorized Tool. Previously admitted guest work may
@@ -41,6 +43,11 @@ continue with an unknown result; fencing does not undo its file/process effects.
 The Worker never receives Cube management credentials. Cube receives no model,
 PostgreSQL, Kubernetes, Volume-gateway or Cube-control
 credential.
+
+The guest helper reuses fixed Pi edit/write logic locally and emits native
+`tool_execution_update`/`tool_execution_end` payloads. Source-side bounded output
+does not kill a command just because its preview is full. No full-output archive
+is created. Kafka credentials remain in the trusted adapter, never in Cube.
 
 ## Workspace and process lifetime
 

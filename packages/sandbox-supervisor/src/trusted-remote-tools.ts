@@ -1,13 +1,12 @@
 import {
   modelSamplingHeaders,
-  parseInternalServiceError,
   parseCloudToolCapabilitySnapshot,
-  parseToolSandboxOperationResponse,
   parseToolSandboxOperationRequest,
   CLOUD_TOOL_NAMES,
-  MAX_TOOL_RESPONSE_BYTES,
   MIN_TOOL_EXECUTION_TIMEOUT_MS,
   MAX_TOOL_EXECUTION_TIMEOUT_MS,
+  type NativeToolEnd,
+  type NativeToolUpdate,
   type CloudToolCapabilitySnapshot,
   type CloudToolName,
   type ToolSandboxOperationRequest,
@@ -21,16 +20,8 @@ import {
   createEditTool,
   createReadTool,
   createWriteTool,
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  type BashOperations,
-  type EditOperations,
-  type ReadToolInput,
-  type ReadOperations,
-  type WriteOperations,
 } from "@earendil-works/pi-coding-agent";
-import { createHash, randomUUID } from "node:crypto";
-import { extname } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { FrozenCloudStep } from "./cloud-context.ts";
 import type { PiWorldStateModelMessage } from "./pi-sandbox-continuity.ts";
 import {
@@ -39,7 +30,6 @@ import {
   type WorkflowExecutor,
 } from "./workflow-transport.ts";
 
-const HIDDEN_GIT_CREDENTIAL_FILE = ".git-credentials";
 const UNAVAILABLE_TOOL_CODES = new Set([
   "cubesandbox_tool_result_unknown",
   "cubesandbox_tool_unavailable",
@@ -52,26 +42,6 @@ const UNAVAILABLE_TOOL_CODES = new Set([
   "stale_session_lease",
   "ownership_lost",
 ]);
-
-export function redactToolSecrets(value: Buffer): Buffer {
-  const source = value.toString("utf8");
-  const redacted = source
-    .replace(/(https?:\/\/[^\s/:@]+:)[^\s@/]+(@[^\s]+)/giu, "$1[PI_CLOUD_REDACTED]$2")
-    .replace(/\b(?:glpat|gldt|glcbt|glptt)-[A-Za-z0-9._~-]{8,}\b/gu, "[PI_CLOUD_REDACTED]")
-    .replace(/\bgithub_pat_[A-Za-z0-9_]{8,}\b/gu, "[PI_CLOUD_REDACTED]")
-    .replace(/\bgh[pousr]_[A-Za-z0-9]{8,}\b/gu, "[PI_CLOUD_REDACTED]");
-  return redacted === source ? value : Buffer.from(redacted, "utf8");
-}
-
-function assertModelReadablePath(path: string): void {
-  if (path.split(/[\\/]/u).includes(HIDDEN_GIT_CREDENTIAL_FILE)) {
-    throw new RemoteToolError(
-      "tool_secret_path",
-      "Code Host credentials are not available through file tools",
-      false,
-    );
-  }
-}
 
 /**
  * Keep each model's Tool batch ordered across remote requests. Other Session
@@ -108,11 +78,17 @@ class RemoteToolError extends Error {
 
 export type TrustedRemoteToolsRuntimeConfiguration = {
   publishToolCommand: ToolCommandPublisher["publishToolCommand"];
-  operationResultUrl?: string;
+  waitForToolReply?: (
+    request: ToolSandboxOperationRequest,
+    signal: AbortSignal,
+    onUpdate?: (event: NativeToolUpdate) => void,
+    toolCallId?: string,
+  ) => Promise<NativeToolEnd>;
+  workflowUrl?: string;
   activationId?: string;
   resolveOperationTarget?: () =>
-    | Promise<Readonly<{ operationResultUrl: string; activationId: string }>>
-    | Readonly<{ operationResultUrl: string; activationId: string }>;
+    | Promise<Readonly<{ workflowUrl: string; activationId: string }>>
+    | Readonly<{ workflowUrl: string; activationId: string }>;
   executionReference: string;
   turnContextSha256: string;
   executionContextSha256: string;
@@ -146,16 +122,16 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
 
 type ValidatedRemoteToolsRuntimeConfiguration = Omit<
   TrustedRemoteToolsRuntimeConfiguration,
-  "operationResultUrl" | "activationId" | "resolveOperationTarget"
+  "workflowUrl" | "activationId" | "resolveOperationTarget"
 > & {
-  resolveOperationTarget(): Promise<Readonly<{ operationResultUrl: string; activationId: string }>>;
+  resolveOperationTarget(): Promise<Readonly<{ workflowUrl: string; activationId: string }>>;
 };
 
 function validateOperationTarget(target: {
-  operationResultUrl: string;
+  workflowUrl: string;
   activationId: string;
-}): Readonly<{ operationResultUrl: string; activationId: string }> {
-  const parsed = new URL(target.operationResultUrl);
+}): Readonly<{ workflowUrl: string; activationId: string }> {
+  const parsed = new URL(target.workflowUrl);
   if (
     (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
     parsed.username ||
@@ -168,17 +144,17 @@ function validateOperationTarget(target: {
   ) {
     throw new Error("Trusted Tool Sandbox operation target is invalid");
   }
-  return { operationResultUrl: parsed.toString(), activationId: target.activationId };
+  return { workflowUrl: parsed.toString(), activationId: target.activationId };
 }
 
 function validateRuntimeConfiguration(
   candidate: TrustedRemoteToolsRuntimeConfiguration,
 ): ValidatedRemoteToolsRuntimeConfiguration {
   const staticTarget =
-    candidate.operationResultUrl === undefined || candidate.activationId === undefined
+    candidate.workflowUrl === undefined || candidate.activationId === undefined
       ? undefined
       : validateOperationTarget({
-          operationResultUrl: candidate.operationResultUrl,
+          workflowUrl: candidate.workflowUrl,
           activationId: candidate.activationId,
         });
   if ((staticTarget === undefined) === (candidate.resolveOperationTarget === undefined)) {
@@ -232,6 +208,7 @@ function validateRuntimeConfiguration(
   }
   return {
     publishToolCommand: candidate.publishToolCommand,
+    ...(candidate.waitForToolReply ? { waitForToolReply: candidate.waitForToolReply } : {}),
     resolveOperationTarget,
     executionReference,
     turnContextSha256,
@@ -250,113 +227,6 @@ function validateRuntimeConfiguration(
     ...(traceparent === undefined ? {} : { traceparent }),
     ...(tracestate === undefined ? {} : { tracestate }),
   };
-}
-
-function utf8Head(value: Buffer, maximumBytes: number): Buffer {
-  if (value.byteLength <= maximumBytes) return value;
-  let end = maximumBytes;
-  while (end > 0 && (value[end]! & 0xc0) === 0x80) end -= 1;
-  return value.subarray(0, end);
-}
-
-function utf8Tail(value: Buffer, maximumBytes: number): Buffer {
-  if (value.byteLength <= maximumBytes) return value;
-  let start = value.byteLength - maximumBytes;
-  while (start < value.byteLength && (value[start]! & 0xc0) === 0x80) start += 1;
-  return value.subarray(start);
-}
-
-function modelOutputPreview(value: Buffer, maximumBytes: number): Buffer {
-  if (value.byteLength <= maximumBytes) return value;
-  const marker = Buffer.from(
-    `\n\n[PiCloud omitted the middle of this output from model context. The omitted output is not archived. For large outputs, write to a Workspace file and inspect it with focused reads. Do not rerun commands with uncertain side effects just to recover output.]\n\n`,
-    "utf8",
-  );
-  const bodyBytes = Math.max(0, maximumBytes - marker.byteLength);
-  const headBytes = Math.min(8 * 1_024, Math.floor(bodyBytes / 5));
-  const tailBytes = Math.max(0, bodyBytes - headBytes);
-  return Buffer.concat([utf8Head(value, headBytes), marker, utf8Tail(value, tailBytes)]);
-}
-
-function canonicalBase64(value: string): Buffer {
-  const decoded = Buffer.from(value, "base64");
-  if (decoded.toString("base64") !== value || decoded.byteLength > MAX_TOOL_RESPONSE_BYTES) {
-    throw new RemoteToolError(
-      "tool_protocol_error",
-      "Tool Sandbox returned invalid binary output",
-      false,
-    );
-  }
-  return decoded;
-}
-
-function orderedBashOutput(
-  response: Extract<
-    ToolSandboxOperationResponse,
-    { type: "tool_sandbox.operation_result"; operation: "bash.exec" }
-  >,
-): Buffer {
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  for (const [index, chunk] of response.outputChunks.entries()) {
-    if (chunk.seq !== index + 1) {
-      throw new RemoteToolError(
-        "tool_output_sequence_invalid",
-        "Tool Sandbox returned non-contiguous command output",
-        false,
-      );
-    }
-    const bytes = canonicalBase64(chunk.data);
-    totalBytes += bytes.byteLength;
-    if (totalBytes > MAX_TOOL_RESPONSE_BYTES) {
-      throw new RemoteToolError(
-        "tool_protocol_error",
-        "Tool Sandbox command output exceeded its trusted byte limit",
-        false,
-      );
-    }
-    chunks.push(bytes);
-  }
-  const output = Buffer.concat(chunks);
-  if (createHash("sha256").update(output).digest("hex") !== response.outputSha256) {
-    throw new RemoteToolError(
-      "tool_output_digest_mismatch",
-      "Tool Sandbox returned corrupt command output",
-      false,
-    );
-  }
-  return output;
-}
-
-async function responseJson(response: Response): Promise<unknown> {
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength < 1 || bytes.byteLength > MAX_TOOL_RESPONSE_BYTES) {
-    throw new RemoteToolError(
-      "tool_protocol_error",
-      "Tool Sandbox response was outside its byte limit",
-      false,
-    );
-  }
-  try {
-    return JSON.parse(bytes.toString("utf8")) as unknown;
-  } catch {
-    throw new RemoteToolError("tool_protocol_error", "Tool Sandbox returned malformed JSON", false);
-  }
-}
-
-function throwFailure(
-  response: Extract<ToolSandboxOperationResponse, { type: "tool_sandbox.operation_failed" }>,
-): never {
-  throw new RemoteToolError(response.code, response.message, response.retryable);
-}
-
-function errorForPi(error: unknown, timeoutSeconds?: number): Error {
-  if (error instanceof RemoteToolError) {
-    if (error.code === "tool_timeout") return new Error(`timeout:${String(timeoutSeconds ?? 0)}`);
-    if (error.code === "tool_cancelled") return new Error("aborted");
-    return new Error(`${error.code}: ${error.message}`);
-  }
-  return new Error("Tool Sandbox request failed");
 }
 
 export type TrustedRemoteAgentTools = Readonly<{
@@ -444,13 +314,13 @@ export function createTrustedRemoteAgentTools(
     request: RemoteOperationInput,
     signal?: AbortSignal,
     workflowCall?: WorkflowHostCall,
-    workflowProgress?: (value: unknown) => void,
+    onUpdate?: (event: NativeToolUpdate) => void,
   ): Promise<ToolSandboxOperationResponse> => {
     signal?.throwIfAborted();
     if (currentStep === undefined) {
       throw new RemoteToolError(
         "step_context_unavailable",
-        "Tool call preceded its Pi context boundary",
+        "step_context_unavailable: Tool call preceded its Pi context boundary",
         false,
       );
     }
@@ -469,21 +339,51 @@ export function createTrustedRemoteAgentTools(
       ...request,
     });
     signal?.throwIfAborted();
-    await runtime.publishToolCommand({
-      executionReference: runtime.executionReference,
-      toolCallId,
-      request: candidate,
-      occurredAt: new Date().toISOString(),
-      ...(runtime.traceparent
-        ? {
-            traceContext: {
-              traceparent: runtime.traceparent,
-              ...(runtime.tracestate ? { tracestate: runtime.tracestate } : {}),
-            },
-          }
-        : {}),
-    });
-    const resultUrl = new URL(target.operationResultUrl);
+    const pendingAbort = new AbortController();
+    const replySignal = AbortSignal.any([
+      pendingAbort.signal,
+      ...(signal ? [signal] : []),
+      AbortSignal.timeout(MAX_TOOL_EXECUTION_TIMEOUT_MS + 120_000),
+    ]);
+    if (!runtime.waitForToolReply) throw new Error("Native Tool reply transport is unavailable");
+    const pending = runtime.waitForToolReply(candidate, replySignal, onUpdate, toolCallId);
+    await runtime
+      .publishToolCommand({
+        executionReference: runtime.executionReference,
+        toolCallId,
+        request: candidate,
+        occurredAt: new Date().toISOString(),
+        ...(runtime.traceparent
+          ? {
+              traceContext: {
+                traceparent: runtime.traceparent,
+                ...(runtime.tracestate ? { tracestate: runtime.tracestate } : {}),
+              },
+            }
+          : {}),
+      })
+      .catch((error) => {
+        pendingAbort.abort(error);
+        throw error;
+      });
+    if (candidate.operation === "tool.execute") {
+      const event = await pending.catch((error: unknown) => {
+        if (signal?.aborted) throw new Error("aborted");
+        throw new Error(
+          "tool_operation_outcome_unknown: Tool reply could not be confirmed; do not automatically repeat the command",
+          { cause: error },
+        );
+      });
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.operation_result",
+        activationId: target.activationId,
+        operationId: candidate.operationId,
+        operation: "tool.execute",
+        event,
+      };
+    }
+    const resultUrl = new URL(target.workflowUrl);
     resultUrl.searchParams.set("activationId", target.activationId);
     resultUrl.searchParams.set("operationId", candidate.operationId);
     if (candidate.operation === "workflow.exec") {
@@ -494,237 +394,12 @@ export function createTrustedRemoteAgentTools(
         activationId: target.activationId,
         operationId: candidate.operationId,
         call: workflowCall,
+        completion: pending,
         ...(signal ? { signal } : {}),
-        ...(workflowProgress ? { progress: workflowProgress } : {}),
-      });
+      }).finally(() => pendingAbort.abort(new Error("Workflow bridge closed")));
     }
-    const requestOnce = async (): Promise<{ response: Response; value: unknown }> => {
-      const response = await fetch(resultUrl, {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${runtime.executionReference}`,
-          "content-type": "application/json",
-          ...(runtime.traceparent === undefined ? {} : { traceparent: runtime.traceparent }),
-          ...(runtime.tracestate === undefined ? {} : { tracestate: runtime.tracestate }),
-        },
-        ...(signal === undefined ? {} : { signal }),
-      });
-      return { response, value: await responseJson(response) };
-    };
-    let received: { response: Response; value: unknown } | undefined;
-    let transportFailure: unknown;
-    for (let attempt = 0; attempt < 2 && received === undefined; attempt += 1) {
-      try {
-        received = await requestOnce();
-      } catch (error: unknown) {
-        if (signal?.aborted) throw new Error("aborted");
-        if (error instanceof RemoteToolError) throw errorForPi(error);
-        transportFailure = error;
-      }
-    }
-    if (received === undefined) throw errorForPi(transportFailure);
-    const { response, value } = received;
-    if (!response.ok) {
-      try {
-        const failure = parseInternalServiceError(value).error;
-        if (UNAVAILABLE_TOOL_CODES.has(failure.code)) {
-          await runtime.onToolOperationUnavailable?.(failure);
-        }
-        throw new RemoteToolError(failure.code, failure.message, failure.retryable);
-      } catch (error: unknown) {
-        if (error instanceof RemoteToolError) throw error;
-        throw new RemoteToolError(
-          "tool_protocol_error",
-          "Tool Sandbox returned an invalid failure",
-          false,
-        );
-      }
-    }
-    const parsed = parseToolSandboxOperationResponse(value);
-    if (
-      parsed.activationId !== target.activationId ||
-      parsed.operationId !== candidate.operationId
-    ) {
-      throw new RemoteToolError(
-        "tool_protocol_error",
-        "Tool Sandbox response identity did not match",
-        false,
-      );
-    }
-    if (parsed.type === "tool_sandbox.operation_failed") {
-      if (UNAVAILABLE_TOOL_CODES.has(parsed.code)) {
-        await runtime.onToolOperationUnavailable?.(parsed);
-      }
-      throwFailure(parsed);
-    }
-    if (parsed.operation !== candidate.operation) {
-      throw new RemoteToolError(
-        "tool_protocol_error",
-        "Tool Sandbox response kind did not match",
-        false,
-      );
-    }
-    return parsed;
+    throw new Error("Unsupported remote Tool operation");
   };
-
-  const readOperations = (toolName: "read" | "edit", toolCallId: string): ReadOperations => ({
-    readFile: async (path) => {
-      try {
-        assertModelReadablePath(path);
-        const response = await operation(toolName, toolCallId, { operation: "file.read", path });
-        if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-        if (response.operation !== "file.read") throw new Error("Tool response kind changed");
-        const content = canonicalBase64(response.content);
-        return content;
-      } catch (error: unknown) {
-        throw errorForPi(error);
-      }
-    },
-    access: async (path) => {
-      try {
-        const response = await operation(toolName, toolCallId, { operation: "file.access", path });
-        if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-      } catch (error: unknown) {
-        throw errorForPi(error);
-      }
-    },
-    detectImageMimeType: async (path) => {
-      switch (extname(path).toLowerCase()) {
-        case ".png":
-          return "image/png";
-        case ".jpg":
-        case ".jpeg":
-          return "image/jpeg";
-        case ".gif":
-          return "image/gif";
-        case ".webp":
-          return "image/webp";
-        default:
-          return null;
-      }
-    },
-  });
-  const writeOperations = (toolCallId: string): WriteOperations => ({
-    writeFile: async (path, content) => {
-      try {
-        assertModelReadablePath(path);
-        const response = await operation("write", toolCallId, {
-          operation: "file.write",
-          path,
-          content,
-        });
-        if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-        if (response.operation !== "file.write") throw new Error("Tool response kind changed");
-      } catch (error: unknown) {
-        throw errorForPi(error);
-      }
-    },
-    // Pi calls mkdir before writeFile; the remote write performs both under
-    // one Broker operation, with the same guest-side path checks.
-    mkdir: async (path) => {
-      assertModelReadablePath(path);
-    },
-  });
-  const editOperations = (toolCallId: string): EditOperations => {
-    const editDigests = new Map<string, string>();
-    return {
-      readFile: async (path) => {
-        try {
-          assertModelReadablePath(path);
-          const response = await operation("edit", toolCallId, { operation: "file.read", path });
-          if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-          if (response.operation !== "file.read") throw new Error("Tool response kind changed");
-          const content = canonicalBase64(response.content);
-          const actual = createHash("sha256").update(content).digest("hex");
-          if (actual !== response.sha256) {
-            throw new RemoteToolError(
-              "tool_protocol_error",
-              "Tool Sandbox returned an invalid file digest",
-              false,
-            );
-          }
-          editDigests.set(path, response.sha256);
-          return content;
-        } catch (error: unknown) {
-          throw errorForPi(error);
-        }
-      },
-      writeFile: async (path, content) => {
-        assertModelReadablePath(path);
-        const expectedSha256 = editDigests.get(path);
-        editDigests.delete(path);
-        if (expectedSha256 === undefined) {
-          throw new Error("tool_edit_conflict: Edit did not read the current file revision");
-        }
-        try {
-          const response = await operation("edit", toolCallId, {
-            operation: "file.write",
-            path,
-            content,
-            expectedSha256,
-          });
-          if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-          if (response.operation !== "file.write") throw new Error("Tool response kind changed");
-          const writtenSha256 = createHash("sha256").update(content, "utf8").digest("hex");
-          if (writtenSha256 !== response.sha256) {
-            throw new RemoteToolError(
-              "tool_protocol_error",
-              "Tool Sandbox returned an invalid written-file digest",
-              false,
-            );
-          }
-        } catch (error: unknown) {
-          throw errorForPi(error);
-        }
-      },
-      // A remote read already verifies existence and readability.
-      access: async (path) => {
-        assertModelReadablePath(path);
-      },
-    };
-  };
-  const bashOperations = (toolCallId: string): BashOperations => ({
-    exec: async (command, cwd, { onData, signal, timeout }) => {
-      const timeoutSeconds = timeout ?? MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000;
-      if (
-        !Number.isFinite(timeoutSeconds) ||
-        timeoutSeconds < MIN_TOOL_EXECUTION_TIMEOUT_MS / 1_000 ||
-        timeoutSeconds > MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000
-      ) {
-        throw new Error(
-          `Invalid Bash timeout: use ${MIN_TOOL_EXECUTION_TIMEOUT_MS / 1_000}–${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000} seconds`,
-        );
-      }
-      try {
-        // Deliberately do not forward the `env` argument. It contains the
-        // trusted Pi/model environment and must never cross into Tool Sandbox.
-        const response = await operation(
-          "bash",
-          toolCallId,
-          {
-            operation: "bash.exec",
-            command,
-            cwd,
-            timeoutMs: Math.ceil(timeoutSeconds * 1_000),
-          },
-          signal,
-        );
-        if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-        if (response.operation !== "bash.exec") throw new Error("Tool response kind changed");
-        const fullOutput = redactToolSecrets(orderedBashOutput(response));
-        const maximumModelBytes = Math.min(runtime.maximumToolOutputBytes, DEFAULT_MAX_BYTES);
-        // Pi's Bash tool applies its own tail truncation at DEFAULT_MAX_BYTES.
-        // Keeping this preview at or below that boundary ensures Pi receives
-        // the head/tail preview selected from the original output instead of
-        // truncating an already-truncated prefix a second time.
-        const output = modelOutputPreview(fullOutput, maximumModelBytes);
-        if (output.byteLength > 0) onData(output);
-        return { exitCode: response.exitCode };
-      } catch (error: unknown) {
-        throw errorForPi(error, timeoutSeconds);
-      }
-    },
-  });
 
   const systemPrompt = async (base: string): Promise<string> => {
     const cwdLine = /^Current working directory:.*$/m;
@@ -773,129 +448,77 @@ export function createTrustedRemoteAgentTools(
   const bashTool = createBashTool(toolRoot);
   const allowedTools = new Set(runtime.allowedTools);
 
-  if (allowedTools.has("read")) {
-    tools.push({
-      ...readTool,
-      executionMode: CLOUD_TOOL_EXECUTION_MODE,
-      async execute(id, params, signal, onUpdate) {
-        consumeToolCall();
-        const input = params as ReadToolInput;
-        if (/\.(?:png|jpe?g|gif|webp|bmp)$/i.test(input.path)) {
-          return createReadTool(toolRoot, { operations: readOperations("read", id) }).execute(
-            id,
-            input,
-            signal,
-            onUpdate,
-          );
-        }
-        const offsetLine = input.offset ?? 1;
-        const requestedLimit = input.limit ?? DEFAULT_MAX_LINES;
-        if (
-          !Number.isSafeInteger(offsetLine) ||
-          offsetLine < 1 ||
-          !Number.isSafeInteger(requestedLimit) ||
-          requestedLimit < 1
-        ) {
-          throw new Error("tool_read_range_invalid: offset and limit must be positive integers");
-        }
-        try {
-          const response = await operation(
-            "read",
-            id,
-            {
-              operation: "file.read_range",
-              path: input.path,
-              offsetLine,
-              limitLines: Math.min(DEFAULT_MAX_LINES, requestedLimit),
+  for (const tool of [readTool, writeTool, editTool, bashTool]) {
+    if (!allowedTools.has(tool.name as CloudToolName)) continue;
+    const parameters =
+      tool.name === "bash"
+        ? {
+            ...tool.parameters,
+            additionalProperties: false,
+            properties: {
+              ...tool.parameters.properties,
+              timeout: {
+                ...bashTool.parameters.properties.timeout,
+                minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS / 1000,
+                maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS / 1000,
+              },
             },
-            signal,
-          );
-          if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-          if (response.operation !== "file.read_range") {
-            throw new Error("Tool response kind changed");
           }
-          if (response.firstLineBytes !== undefined) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `[Line ${response.startLine} is ${response.firstLineBytes} bytes, exceeds ${DEFAULT_MAX_BYTES} byte limit. Use bash with sed/head to inspect a bounded slice.]`,
-                },
-              ],
-              details: undefined,
-            };
-          }
-          const range = canonicalBase64(response.content);
-          const maximumInlineBytes = Math.min(runtime.maximumToolOutputBytes, DEFAULT_MAX_BYTES);
-          let output = modelOutputPreview(range, maximumInlineBytes).toString("utf8");
-          if (response.nextOffsetLine !== undefined) {
-            output += `\n\n[Showing lines ${response.startLine}-${response.endLine}. Use offset=${response.nextOffsetLine} to continue.]`;
-          }
-          return { content: [{ type: "text", text: output }], details: undefined };
-        } catch (error: unknown) {
-          throw errorForPi(error);
-        }
-      },
-    });
-  }
-  if (allowedTools.has("write")) {
+        : tool.parameters;
     tools.push({
-      ...writeTool,
+      ...tool,
+      parameters,
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
+      ...(tool.name === "bash"
+        ? {
+            description:
+              "Execute a Bash command in the selected working directory. Output is limited to the last 2000 lines or 50 KiB; omitted output is not archived. Only command and timeout are accepted. Use cd inside command to change directory. Timeout defaults to 300 seconds (maximum 300). Detach long-running services and redirect stdin, stdout and stderr.",
+          }
+        : {}),
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();
-        return createWriteTool(toolRoot, { operations: writeOperations(id) }).execute(
+        const args = params as Record<string, unknown>;
+        const timeout =
+          tool.name === "bash" ? (args.timeout ?? MAX_TOOL_EXECUTION_TIMEOUT_MS / 1000) : 60;
+        if (
+          typeof timeout !== "number" ||
+          !Number.isFinite(timeout) ||
+          timeout * 1000 < MIN_TOOL_EXECUTION_TIMEOUT_MS ||
+          timeout * 1000 > MAX_TOOL_EXECUTION_TIMEOUT_MS
+        )
+          throw new Error("Invalid Tool timeout");
+        const response = await operation(
+          tool.name as CloudToolName,
           id,
-          params as Parameters<typeof writeTool.execute>[1],
-          signal,
-          onUpdate,
-        );
-      },
-    });
-  }
-  if (allowedTools.has("edit")) {
-    tools.push({
-      ...editTool,
-      executionMode: CLOUD_TOOL_EXECUTION_MODE,
-      async execute(id, params, signal, onUpdate) {
-        consumeToolCall();
-        return createEditTool(toolRoot, { operations: editOperations(id) }).execute(
-          id,
-          params as Parameters<typeof editTool.execute>[1],
-          signal,
-          onUpdate,
-        );
-      },
-    });
-  }
-  if (allowedTools.has("bash")) {
-    tools.push({
-      ...bashTool,
-      // Pi's validator accepts unknown properties unless the schema is closed.
-      // In particular, silently ignoring `cwd` would execute in the wrong directory.
-      parameters: {
-        ...bashTool.parameters,
-        properties: {
-          ...bashTool.parameters.properties,
-          timeout: {
-            ...bashTool.parameters.properties.timeout,
-            minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS / 1_000,
-            maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000,
-            description: `Timeout in seconds (optional, default ${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000}; cloud maximum ${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000})`,
+          {
+            operation: "tool.execute",
+            toolCallId: id,
+            args,
+            timeoutMs: Math.ceil(timeout * 1000),
+            maximumOutputBytes: runtime.maximumToolOutputBytes,
           },
-        },
-        additionalProperties: false,
-      },
-      description: `${bashTool.description}\n\nOnly command and timeout are accepted. Cloud timeout: ${MIN_TOOL_EXECUTION_TIMEOUT_MS / 1_000}–${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000} seconds, default ${MAX_TOOL_EXECUTION_TIMEOUT_MS / 1_000}; out-of-range values are rejected. To change directory, use cd inside command (for example: cd /path/to/project && npm test).\n\nFor a long-running service, detach it and redirect stdin, stdout, and stderr (for example: nohup command </dev/null >server.log 2>&1 &). Verify the service in a separate bash call.`,
-      executionMode: CLOUD_TOOL_EXECUTION_MODE,
-      async execute(id, params, signal, onUpdate) {
-        consumeToolCall();
-        return createBashTool(toolRoot, { operations: bashOperations(id) }).execute(
-          id,
-          params as Parameters<typeof bashTool.execute>[1],
           signal,
-          onUpdate,
+          undefined,
+          (event) => onUpdate?.(event.partialResult),
         );
+        if (
+          response.type !== "tool_sandbox.operation_result" ||
+          response.operation !== "tool.execute" ||
+          response.event.type !== "tool_execution_end"
+        )
+          throw new Error("Tool ended without a native result");
+        const event = response.event;
+        if (event.isError) {
+          const message = event.result.content
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n");
+          const code = message.split(":", 1)[0]!;
+          if (UNAVAILABLE_TOOL_CODES.has(code))
+            await runtime.onToolOperationUnavailable?.({ code, message, retryable: false });
+          throw new Error(message);
+        }
+        return event.result;
       },
     });
   }
@@ -914,19 +537,14 @@ export function createTrustedRemoteAgentTools(
         toolCallId,
         {
           operation: "workflow.exec",
+          toolCallId,
           script,
           cwd: toolRoot,
           timeoutMs: MAX_TOOL_EXECUTION_TIMEOUT_MS,
         },
         signal,
         call,
-        (value) =>
-          onUpdate?.({
-            content: [
-              { type: "text", text: typeof value === "string" ? value : JSON.stringify(value) },
-            ],
-            details: {},
-          }),
+        (event) => onUpdate?.(event.partialResult),
       );
       if (result.type !== "tool_sandbox.operation_result" || result.operation !== "workflow.exec")
         throw new Error("Workflow returned an invalid response");

@@ -2,7 +2,7 @@ import { WebSocket } from "ws";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import {
   TOOL_WORKFLOW_PATH,
-  parseToolSandboxOperationResponse,
+  type NativeToolEnd,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
 
@@ -26,8 +26,8 @@ export async function readWorkflowResult(input: {
   operationId: string;
   activationId: string;
   call: WorkflowHostCall;
+  completion: Promise<NativeToolEnd>;
   signal?: AbortSignal;
-  progress?(value: unknown): void;
 }): Promise<ToolSandboxOperationResponse> {
   input.signal?.throwIfAborted();
   const url = new URL(input.resultUrl);
@@ -63,20 +63,7 @@ export async function readWorkflowResult(input: {
     socket.on("message", (bytes) => {
       try {
         const frame = JSON.parse(bytes.toString());
-        if (frame.type === "result") {
-          const result = parseToolSandboxOperationResponse(frame.response);
-          if (
-            result.operationId !== input.operationId ||
-            result.activationId !== input.activationId
-          )
-            throw new Error("Workflow result identity mismatch");
-          if (result.type === "tool_sandbox.operation_failed")
-            throw new Error(`${result.code}: ${result.message}`);
-          if (result.operation !== "workflow.exec")
-            throw new Error("Workflow result operation mismatch");
-          finish(undefined, result);
-        } else if (frame.type === "error") finish(new Error(frame.message));
-        else if (frame.type === "progress") input.progress?.(frame.value);
+        if (frame.type === "error") finish(new Error(frame.message));
         else if (frame.type === "call") {
           const fingerprint = JSON.stringify([frame.method, frame.args]);
           let call = calls.get(frame.id);
@@ -113,5 +100,31 @@ export async function readWorkflowResult(input: {
         finish(error instanceof Error ? error : new Error("Invalid workflow frame"));
       }
     });
+    void input.completion.then(
+      (event) => {
+        if (event.isError) {
+          finish(
+            new Error(
+              event.result.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join("\n"),
+            ),
+          );
+          return;
+        }
+        finish(undefined, {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.operation_result",
+          activationId: input.activationId,
+          operationId: input.operationId,
+          operation: "workflow.exec",
+          ok: true,
+          value: event.result.details,
+        });
+      },
+      (error: unknown) =>
+        finish(error instanceof Error ? error : new Error("Workflow result unavailable")),
+    );
   });
 }

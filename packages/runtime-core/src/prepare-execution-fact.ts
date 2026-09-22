@@ -40,6 +40,7 @@ export function prepareExecutionFact(
         writerId: scope.writerId,
       },
       request: command.request,
+      ...(command.replyTopic ? { replyTopic: command.replyTopic } : {}),
       occurredAt: command.occurredAt,
       ...(command.traceContext ? { traceContext: command.traceContext } : {}),
     };

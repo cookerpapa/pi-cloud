@@ -41,13 +41,17 @@ async function start(script: string, timeoutMs = 2000) {
     stepContextSha256: "c".repeat(64),
     toolName: "bash",
     operation: "workflow.exec",
+    toolCallId: "workflow-call",
     script,
     cwd,
     timeoutMs,
   } as const satisfies ToolSandboxOperationRequest;
-  const result = channels.run(request, stream, controller.signal);
+  const progress: unknown[] = [];
+  const result = channels.run(request, stream, controller.signal, async (value) => {
+    progress.push(value);
+  });
   void result.catch(() => {});
-  return { channels, controller, result, request, cwd };
+  return { channels, controller, result, request, cwd, progress };
 }
 describe("workflow guest request/response contract", () => {
   it.each([
@@ -100,7 +104,7 @@ describe("workflow guest request/response contract", () => {
       value: { selected: "b" },
     });
     expect(calls.filter((f) => f.type === "call")).toHaveLength(2);
-    expect(calls.some((f) => f.type === "progress")).toBe(true);
+    expect(f.progress).toContain("a");
     await expect(
       readFile(join(f.cwd, "workflows", f.request.operationId + ".js"), "utf8"),
     ).resolves.toBe(script);

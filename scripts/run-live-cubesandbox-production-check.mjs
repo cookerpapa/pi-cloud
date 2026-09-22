@@ -563,10 +563,10 @@ async function workspaceRuntimeEvidence(workspaceId) {
 
 async function toolBindingForRun(runId) {
   const value = await psql(
-    `select tool_binding_id::text
-       from tool_broker_operations
+    `select binding_id::text
+       from tool_broker_binding_routes
       where run_id = ${sqlLiteral(runId)}
-      order by started_at
+      order by binding_id
       limit 1`,
   );
   assert(value.length > 0, `Run ${runId} did not record a Tool binding`);
@@ -892,22 +892,13 @@ async function runTurn(sessionId, prompt, expectTools) {
 
 async function runLatencyEvidence(runId) {
   const transitionEvidence = await psql(
-    `with timeline as (
-       select min(transition.occurred_at) filter (where transition.to_state = 'claimed') as started_at,
-              min(transition.occurred_at) filter (where transition.to_state = 'provisioning') as acknowledged_at,
-              min(transition.occurred_at) filter (where transition.to_state = 'running') as runner_at
-         from run_transitions transition
-        where transition.run_id = ${sqlLiteral(runId)}
-     )
-     select round(extract(epoch from (timeline.started_at - run.queued_at)) * 1000)::text || '|' ||
-            round(extract(epoch from (timeline.acknowledged_at - timeline.started_at)) * 1000)::text || '|' ||
-            round(extract(epoch from (timeline.runner_at - timeline.acknowledged_at)) * 1000)::text || '|' ||
-            round(extract(epoch from (run.settled_at - timeline.runner_at)) * 1000)::text
-       from runs run cross join timeline
-      where run.id = ${sqlLiteral(runId)}`,
+    `select round(extract(epoch from (started_at - queued_at)) * 1000)::text || '|' ||
+            round(extract(epoch from (settled_at - started_at)) * 1000)::text
+       from runs where id = ${sqlLiteral(runId)}`,
   );
-  const [queueToClaimStartMs, claimStartToCommandAckMs, commandAckToRunnerMs, runnerToTerminalMs] =
-    transitionEvidence.split("|").map(Number);
+  const [acceptedToExecutionMs, executionToSettlementMs] = transitionEvidence
+    .split("|")
+    .map(Number);
   const modelEvidence = await psql(
     `select count(*)::text || '|' ||
             coalesce(sum(greatest(0, entry.timestamp_ms -
@@ -923,26 +914,21 @@ async function runLatencyEvidence(runId) {
   );
   const [modelRequests, modelTotalMs] = modelEvidence.split("|").map(Number);
   const toolEvidence = await psql(
-    `select count(operation.operation_id)::text || '|' ||
-            coalesce(round(sum(extract(epoch from (operation.settled_at - operation.started_at)) * 1000)), 0)::text || '|' ||
-            count(*) filter (where operation.settled_at < operation.started_at)::text
+    `select count(*)::text || '|' || coalesce(sum(result.timestamp_ms - intent.timestamp_ms), 0)::text
        from runs run
-       join tool_broker_operations operation on operation.run_id = run.id
-      where run.id = ${sqlLiteral(runId)}
-        and operation.started_at >= run.started_at
-        and operation.started_at <= run.settled_at`,
+       join pi_session_records intent on intent.tenant_id=run.tenant_id and intent.turn_id=run.turn_id and intent.type='tool_started'
+       join pi_session_entries result on result.tenant_id=intent.tenant_id and result.session_id=intent.session_id and result.id=intent.payload->>'resultEntryId'
+      where run.id=${sqlLiteral(runId)}`,
   );
-  const [toolOperations, toolTotalMs, negativeToolDurations] = toolEvidence.split("|").map(Number);
-  assert.equal(negativeToolDurations, 0, "Tool operation timestamps used inconsistent clocks");
+  const [toolOperations, toolBoundaryMs] = toolEvidence.split("|").map(Number);
+  assert(toolBoundaryMs >= 0, "Native Tool boundary timestamps used inconsistent clocks");
   return {
-    queueToClaimStartMs,
-    claimStartToCommandAckMs,
-    commandAckToRunnerMs,
-    runnerToTerminalMs,
+    acceptedToExecutionMs,
+    executionToSettlementMs,
     modelRequests,
-    modelTotalMs,
+    modelMessageLifecycleMs: modelTotalMs,
     toolOperations,
-    toolTotalMs,
+    toolBoundaryMs,
   };
 }
 
@@ -1405,12 +1391,12 @@ try {
         `- Checked at: ${report.checkedAt}`,
         `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
         `- Pure-chat first activity / assistant text / settled: ${String(report.pureChat.firstDurableActivityMs)} / ${String(report.pureChat.firstAssistantTextMs)} / ${String(report.pureChat.settledMs)} ms`,
-        `- Pure-chat queue-to-claim-start / claim-and-preparation / model: ${String(report.pureChat.latency.queueToClaimStartMs)} / ${String(report.pureChat.latency.claimStartToCommandAckMs + report.pureChat.latency.commandAckToRunnerMs)} / ${String(report.pureChat.latency.modelTotalMs)} ms`,
+        `- Pure-chat accepted-to-execution / execution-to-settlement: ${report.pureChat.latency.acceptedToExecutionMs} / ${report.pureChat.latency.executionToSettlementMs} ms`,
         `- Pure-chat Tool calls / Cube activations: ${String(report.pureChat.toolCalls)} / ${String(report.pureChat.cubeActivations)}`,
         `- First coding first activity / Tool / assistant text / settled: ${String(report.firstCoding.firstDurableActivityMs)} / ${String(report.firstCoding.firstToolStartedMs)} / ${String(report.firstCoding.firstAssistantTextMs)} / ${String(report.firstCoding.settledMs)} ms`,
         `- Follow-up first activity / Tool / assistant text / settled: ${String(report.followUpCoding.firstDurableActivityMs)} / ${String(report.followUpCoding.firstToolStartedMs)} / ${String(report.followUpCoding.firstAssistantTextMs)} / ${String(report.followUpCoding.settledMs)} ms`,
-        `- First coding queue-to-claim-start / claim-and-preparation / model / Tool: ${String(report.firstCoding.latency.queueToClaimStartMs)} / ${String(report.firstCoding.latency.claimStartToCommandAckMs + report.firstCoding.latency.commandAckToRunnerMs)} / ${String(report.firstCoding.latency.modelTotalMs)} / ${String(report.firstCoding.latency.toolTotalMs)} ms`,
-        `- Follow-up queue-to-claim-start / claim-and-preparation / model / Tool: ${String(report.followUpCoding.latency.queueToClaimStartMs)} / ${String(report.followUpCoding.latency.claimStartToCommandAckMs + report.followUpCoding.latency.commandAckToRunnerMs)} / ${String(report.followUpCoding.latency.modelTotalMs)} / ${String(report.followUpCoding.latency.toolTotalMs)} ms`,
+        `- First coding accepted-to-execution / model-message lifecycle / native Tool boundaries: ${report.firstCoding.latency.acceptedToExecutionMs} / ${report.firstCoding.latency.modelMessageLifecycleMs} / ${report.firstCoding.latency.toolBoundaryMs} ms`,
+        `- Follow-up accepted-to-execution / model-message lifecycle / native Tool boundaries: ${report.followUpCoding.latency.acceptedToExecutionMs} / ${report.followUpCoding.latency.modelMessageLifecycleMs} / ${report.followUpCoding.latency.toolBoundaryMs} ms`,
         `- Coding Tool calls: ${String(report.firstCoding.toolCalls)} + ${String(report.followUpCoding.toolCalls)}`,
         `- Same running Workspace Cube KVM guest reused: ${String(report.multiRound.sameCubeMicroVm)}`,
         `- Agent Preview / background process survived cross-Run Tool bindings: ${String(report.multiRound.agentPreviewPublished)} / ${String(report.multiRound.backgroundProcessSurvived)}`,

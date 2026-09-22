@@ -7,10 +7,12 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run --maxWorkers=1"
   },
   "dependencies": {
-    "@confluentinc/kafka-javascript": "1.10.0",
+    "@pi-cloud/protocol": "0.1.0",
+    "@confluentinc/kafka-javascript": "1.10.1",
     "@pi-cloud/observability": "0.1.0"
   }
 }

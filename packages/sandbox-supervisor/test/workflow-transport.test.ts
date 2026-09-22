@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { once } from "node:events";
 import { WebSocketServer } from "ws";
 import { readWorkflowResult } from "../src/workflow-transport.ts";
+import type { NativeToolEnd } from "@pi-cloud/protocol";
 
 it("streams many sequential workflow calls without retaining completed replies", async () => {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
@@ -12,6 +13,10 @@ it("streams many sequential workflow calls without retaining completed replies",
     operationId = crypto.randomUUID();
   const resultUrl = new URL(`http://127.0.0.1:${address.port}/result`);
   let count = 0;
+  let completed!: (event: NativeToolEnd) => void;
+  const completion = new Promise<NativeToolEnd>((resolve) => {
+    completed = resolve;
+  });
   server.on("connection", (socket) => {
     const next = () =>
       socket.send(
@@ -22,20 +27,13 @@ it("streams many sequential workflow calls without retaining completed replies",
       expect(frame).toMatchObject({ id: count, ok: true, value: { state: "running" } });
       if (count < 512) next();
       else
-        socket.send(
-          JSON.stringify({
-            type: "result",
-            response: {
-              toolBrokerProtocolVersion: 1,
-              type: "tool_sandbox.operation_result",
-              activationId,
-              operationId,
-              operation: "workflow.exec",
-              ok: true,
-              value: "complete",
-            },
-          }),
-        );
+        completed({
+          type: "tool_execution_end",
+          toolCallId: "workflow",
+          toolName: "bash",
+          result: { content: [], details: "complete" },
+          isError: false,
+        });
     });
     next();
   });
@@ -48,6 +46,7 @@ it("streams many sequential workflow calls without retaining completed replies",
         operationId,
         signal: AbortSignal.timeout(5000),
         call: async () => ({ state: "running" }),
+        completion,
       }),
     ).resolves.toMatchObject({ ok: true, value: "complete" });
     expect(count).toBe(512);

@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
 import { ToolCommandExecutor } from "./tool-command-executor.ts";
+import { KafkaToolReplyPublisher } from "@pi-cloud/event-log";
 
 function reportFailure(error: unknown): void {
   operationalLog({
@@ -32,6 +33,7 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
   let deletionReaper: WorkspaceVolumeDeletionReaper | undefined;
   let broker: ToolBroker | undefined;
   let commands: ToolCommandExecutor | undefined;
+  let replies: KafkaToolReplyPublisher | undefined;
   let server: ToolBrokerServer | undefined;
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => {
@@ -45,6 +47,7 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
         () => deletionReaper?.close(),
         () => commands?.close(),
         () => (server ? server.close() : broker ? broker.close() : provider?.close()),
+        () => replies?.close(),
         () => (broker ? undefined : ownership?.close()),
         () => (provider ? undefined : volume?.close()),
         () => database?.destroy(),
@@ -137,10 +140,13 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
           event: "maintenance.failed",
         }),
     });
+    replies = new KafkaToolReplyPublisher(config.kafkaBrokers, `tool-replies-${instanceId}`);
+    await replies.start();
+    const replyPublisher = replies;
     commands = new ToolCommandExecutor({
       broker,
+      publishReply: (topic, reply) => replyPublisher.publish(topic, reply),
       maximumActiveCommands: config.maximumActiveCommands,
-      maximumResultBytes: config.maximumResultBytes,
       metrics: observability.metrics,
     });
     const ownedCommands = commands,
@@ -154,7 +160,6 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
         ? {}
         : { workspaceServiceToken: config.workspaceServiceToken }),
       broker,
-      commands,
       logDelivery: {
         instanceId,
         token: config.dispatchToken,
@@ -164,7 +169,6 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
         },
         checkHealth: () => ownedCommands.checkHealth(),
       },
-      resultDelivery: config.resultDelivery,
       metrics: observability.metrics,
     });
     await broker.recoverPersistentDevelopmentEnvironments();

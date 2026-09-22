@@ -3,6 +3,7 @@ import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation
 import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 import { DirectExecutionLog } from "@pi-cloud/runtime-core/direct-execution-log";
 import { KafkaAcceptedFactBus } from "@pi-cloud/runtime-core/kafka-accepted-fact";
+import { KafkaToolReplyMailbox } from "@pi-cloud/event-log";
 import { NativeSessionLogPublisher } from "@pi-cloud/runtime-core/native-session-log-publisher";
 import {
   AcceptedFactPublisherFailedError,
@@ -82,7 +83,7 @@ function executionLogResolver(value: ExecutionLogFactory): ActiveExecutionLogRes
 
 export type SupervisorToolBroker = Pick<
   ReplicatedToolBrokerClient,
-  | "operationResultUrlFor"
+  | "workflowUrlFor"
   | "checkHealth"
   | "create"
   | "refreshServices"
@@ -134,6 +135,7 @@ export class PiWorkerRuntime {
   #nativeSessions: PostgresNativeSessionHost | undefined;
   #subagentControl: SubagentControlClient | undefined;
   #agentRunner: RemoteToolSandboxTurnRunner | undefined;
+  #toolReplies: KafkaToolReplyMailbox | undefined;
   #activeExecutionLogs:
     (ExecutionLogFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
   #ownsExecutionLogs = false;
@@ -412,6 +414,14 @@ export class PiWorkerRuntime {
     this.#ownsExecutionLogs = this.#executionLogs === undefined;
     await executionLogs.checkHealth?.();
     this.#assertStarting();
+    const toolReplies = new KafkaToolReplyMailbox({
+      brokers: this.#config.kafka.brokers,
+      replicas: this.#config.kafka.replicas,
+      bootId: identity.bootId,
+    });
+    this.#toolReplies = toolReplies;
+    await toolReplies.start();
+    this.#assertStarting();
     const sessionMutationProducer =
       this.#configuredSessionMutationProducer ??
       new NativeSessionLogPublisher({
@@ -493,7 +503,17 @@ export class PiWorkerRuntime {
       publishToolCommand: (command) => {
         const channel = executionLogResolver(executionLogs).resolve(command.executionReference);
         if (!channel) throw new Error("Tool command Fact Stream is unavailable");
-        return channel.publishToolCommand(command);
+        return channel.publishToolCommand({ ...command, replyTopic: toolReplies.topic });
+      },
+      waitForToolReply: (request, signal, onUpdate, toolCallId) => {
+        if (!toolCallId) throw new Error("Tool call identity is unavailable");
+        return toolReplies.wait(
+          request.operationId,
+          toolCallId,
+          request.toolName,
+          signal,
+          onUpdate,
+        );
       },
       broker: this.#toolBroker,
       runtimeIdentity: identity,
@@ -705,6 +725,7 @@ export class PiWorkerRuntime {
       () => this.#runSupervisor?.waitUntilAssignmentsSettled(),
       () => this.#modelPermits?.close(),
       () => this.#nativeSessions?.close(),
+      () => this.#toolReplies?.shutdown(),
       () => this.#subagentControl?.close(),
       () => this.#client?.stop(),
       () => this.#managementServer?.close(),

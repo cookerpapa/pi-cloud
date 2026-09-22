@@ -12,7 +12,9 @@ const f = vi.hoisted(() => ({
   start: vi.fn<(resource: string, partitions?: number) => void>(),
   close: vi.fn<(resource: string) => Promise<void>>(),
   decode: undefined as undefined | ((value: Buffer) => any),
-  handler: undefined as undefined | ((record: any, current?: () => boolean) => Promise<void>),
+  handler: undefined as
+    | undefined
+    | ((record: any, current?: () => boolean, commit?: () => Promise<boolean>) => Promise<void>),
 }));
 vi.mock("@pi-cloud/event-log", () => ({
   KafkaLogConsumer: class {
@@ -136,6 +138,39 @@ function deferred<T>() {
 }
 
 describe("Unified Projector handoff boundaries (transport/PG simulated)", () => {
+  it("routes a Tool only after confirmed dispatch commit and skips replayed commands", async () => {
+    const commit = deferred<boolean>();
+    const r = record("session", "tool_command");
+    const handling = f.handler!(
+      r,
+      () => true,
+      () => commit.promise,
+    );
+    await vi.waitFor(() => expect(f.project).toHaveBeenCalledOnce());
+    expect(route).not.toHaveBeenCalled();
+    commit.resolve(true);
+    await handling;
+    expect(route).toHaveBeenCalledOnce();
+    await f.handler!(
+      r,
+      () => true,
+      async () => false,
+    );
+    expect(route).toHaveBeenCalledOnce();
+  });
+
+  it("does not route a Tool when its dispatch commit fails", async () => {
+    await expect(
+      f.handler!(
+        record("session", "tool_command"),
+        () => true,
+        async () => {
+          throw new Error("commit lost");
+        },
+      ),
+    ).rejects.toThrow("commit lost");
+    expect(route).not.toHaveBeenCalled();
+  });
   it("uses the producer-verified partition count without a second offset query at startup", async () => {
     await projector.start();
     expect(f.start.mock.calls).toEqual([["producer"], ["consumer"], ["relay"], ["retention", 2]]);
@@ -219,9 +254,13 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     expect(route).not.toHaveBeenCalled();
   });
 
-  it("retries the same record after delivery ACK loss without duplicating its live event", async () => {
+  it("retries seal delivery after ACK loss without duplicating its live terminal", async () => {
     route.mockRejectedValueOnce(new Error("lost delivery ACK"));
-    const r = record(),
+    f.project.mockResolvedValue({
+      terminal: event("session", "turn.completed"),
+      canonicalThroughSequence: 1,
+    });
+    const r = record("session", "execution_seal"),
       display = vi.spyOn(projector.eventHub, "publish");
     await expect(f.handler!(r)).rejects.toThrow("lost delivery ACK");
     await f.handler!(r);

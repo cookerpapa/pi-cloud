@@ -3,9 +3,12 @@ import type { Duplex } from "node:stream";
 import { createInterface } from "node:readline";
 import type { ToolSandboxOperationRequest, ToolSandboxOperationResponse } from "@pi-cloud/protocol";
 
-export type WorkflowFrame =
-  | { type: "call"; id: number; method: string; args: Record<string, unknown> }
-  | { type: "progress"; value: unknown };
+export type WorkflowFrame = {
+  type: "call";
+  id: number;
+  method: string;
+  args: Record<string, unknown>;
+};
 type Channel = {
   activationId: string;
   stream: Duplex;
@@ -26,6 +29,7 @@ export class WorkflowChannels {
     request: Extract<ToolSandboxOperationRequest, { operation: "workflow.exec" }>,
     stream: Duplex,
     signal: AbortSignal,
+    onProgress?: (value: unknown) => Promise<void>,
   ): Promise<ToolSandboxOperationResponse> {
     const channel: Channel = { activationId: request.activationId, stream, calls: new Map() };
     this.#channels.set(request.operationId, channel);
@@ -70,7 +74,7 @@ export class WorkflowChannels {
             throw new Error("Invalid or excessive workflow request");
           channel.calls.set(frame.id, frame);
           channel.peer?.(frame);
-        } else if (frame.type === "progress") channel.peer?.(frame);
+        } else if (frame.type === "progress") await onProgress?.(frame.value);
         else throw new Error("Unknown workflow frame");
       }
       throw new Error("Workflow process ended without a result");

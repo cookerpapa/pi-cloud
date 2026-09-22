@@ -41,13 +41,14 @@ scope and closure, applies canonical state, updates the live view and delivers r
 commands/control notices to exact owner boots. It never waits for a guest Bash
 to finish. Different partitions run concurrently.
 
-Native PG state and projection progress are one transaction. The consumer marks
-a record handled only after its required work finishes. Fetch position is not
-committed processing progress. On restart/rebalance, replay begins no later than
-PG's canonical/unsealed-prefix floor and the group's completed delivery position.
-This covers PG commit succeeding before Tool routing was acknowledged.
-Replayed native appends are idempotent; effect receivers retain operation IDs and
-applied log positions. A new executor boot cannot adopt old Tool bindings.
+Native PG state and projection progress are one transaction. Fetch position is
+not committed processing progress. On restart/rebalance, replay begins no later
+than PG's canonical/unsealed-prefix floor and the group's committed position.
+For Tool commands, required projection precedes an explicit Kafka offset commit;
+only a confirmed commit permits dispatch. The saved dispatch boundary never
+moves backwards during replay. Old text/history can be reconstructed without
+reissuing commands. A crash between commit and dispatch may omit work and remains
+UNKNOWN. A new executor boot cannot adopt old Tool bindings.
 
 First closure also advances Lane readiness in that PG transaction. The Run's
 first-seal trigger decrements its family's unsealed count; duplicate projection
@@ -115,15 +116,15 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 | model message before validated intent | no effect admitted for that Tool |
 | intent without durable Tool result | that Tool may be UNKNOWN; later unstarted Tools stay unstarted |
 | during PG transaction | rollback state and position; re-read the record |
-| PG commit succeeds, consumer ACK lost | idempotent replay; never skip unfinished delivery |
+| PG commit succeeds, consumer ACK lost | idempotent semantic replay; Tool dispatch requires confirmed commit |
 | seal request before Kafka append | retry the same seal; next Run stays queued |
 | old data before first seal | valid historical input, even if PG already knows closure |
 | old data after first seal | no PG, UI or new execution effect |
 | seal commit before UI update | replacement snapshot or seal replay restores visibility |
 | rebalance during awaited work | invalidate subscriptions and suppress stale live/dispatch continuations |
-| command admitted, delivery ACK lost | repeat positioned delivery, not shell execution |
+| command offset committed, dispatch or delivery ACK lost | do not redispatch; outcome may be UNKNOWN |
 | executor dies | old binding cannot move to a new boot; ambiguous outcome is UNKNOWN |
-| result arrives after seal | no cache resurrection or publication into closed history |
+| native reply arrives after seal | no completion of a closed call or publication into closed history |
 | Cube dies | preserve Volume files, not lost processes/memory; Harness reports the reset |
 
 ## Retention and trust

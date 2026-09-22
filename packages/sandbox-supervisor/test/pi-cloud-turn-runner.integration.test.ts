@@ -833,7 +833,7 @@ describe("PiCloudTurnRunner integration", () => {
         throw new Error("unused");
       },
       async stop() {},
-      operationResultUrlFor() {
+      workflowUrlFor() {
         return "http://tool-broker.test/internal/v1/tool-operation";
       },
     } as ToolBrokerBoundary;
@@ -901,7 +901,7 @@ describe("PiCloudTurnRunner integration", () => {
       async refreshServices() {},
       release,
       async stop() {},
-      operationResultUrlFor() {
+      workflowUrlFor() {
         return "http://tool-broker.test/internal/v1/tool-operation";
       },
     } as ToolBrokerBoundary;
@@ -1000,7 +1000,7 @@ describe("PiCloudTurnRunner integration", () => {
         release,
         stop,
         async refreshServices() {},
-        operationResultUrlFor() {
+        workflowUrlFor() {
           return "http://tool-broker.test/internal/v1/tool-operation";
         },
       } as ToolBrokerBoundary;
@@ -1008,6 +1008,21 @@ describe("PiCloudTurnRunner integration", () => {
         publishToolCommand: async (command) => ({
           operationId: command.request.operationId,
           accepted: true,
+        }),
+        waitForToolReply: async (request, _signal, _onUpdate, toolCallId) => ({
+          type: "tool_execution_end",
+          toolCallId: toolCallId!,
+          toolName: request.toolName,
+          isError: true,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: "cubesandbox_tool_result_unknown: Guest disconnected after dispatch",
+              },
+            ],
+            details: undefined,
+          },
         }),
         broker,
         runtimeIdentity: {
@@ -1080,26 +1095,6 @@ describe("PiCloudTurnRunner integration", () => {
           },
         ],
       });
-      const nativeFetch = globalThis.fetch;
-      const toolFetch = vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              error: {
-                code: "cubesandbox_tool_result_unknown",
-                message: "Guest disconnected after dispatch",
-                retryable: false,
-              },
-            }),
-            { status: 503, headers: { "content-type": "application/json" } },
-          ),
-      );
-      if (toolFails)
-        vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
-          String(input).startsWith("http://tool-broker.test")
-            ? toolFetch()
-            : nativeFetch(input, init),
-        );
       try {
         await expect(
           runner.run(developmentCommand, () => undefined, new AbortController().signal),
@@ -1107,7 +1102,6 @@ describe("PiCloudTurnRunner integration", () => {
           code: toolFails ? "cubesandbox_tool_result_unknown" : "model_error",
         });
         if (toolFails) {
-          expect(toolFetch).toHaveBeenCalledTimes(1);
           expect(fake.observations).toHaveLength(1);
           const messages = buildSessionContext(await session.findEntriesOnBranch()).messages;
           expect(

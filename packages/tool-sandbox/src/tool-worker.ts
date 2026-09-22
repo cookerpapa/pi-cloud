@@ -623,6 +623,7 @@ export async function readWorkspaceFileRange(
   offsetLine: number,
   limitLines: number,
   workspaceDirectory = TOOL_WORKSPACE_DIRECTORY,
+  maximumBytes = MAX_TOOL_READ_RANGE_BYTES,
 ): Promise<WorkspaceFileRange> {
   const target = resolveToolWorkspacePath(path, workspaceDirectory);
   await assertNoFinalSymlink(target);
@@ -651,13 +652,13 @@ export async function readWorkspaceFileRange(
         if (currentLine < offsetLine) continue;
         const lineBytes = Buffer.byteLength(line, "utf8");
         const separatorBytes = selected.length === 0 ? 0 : 1;
-        if (selected.length === 0 && lineBytes > MAX_TOOL_READ_RANGE_BYTES) {
+        if (selected.length === 0 && lineBytes > maximumBytes) {
           firstLineBytes = lineBytes;
           break;
         }
         if (
           selected.length >= limitLines ||
-          selectedBytes + separatorBytes + lineBytes > MAX_TOOL_READ_RANGE_BYTES
+          selectedBytes + separatorBytes + lineBytes > maximumBytes
         ) {
           nextOffsetLine = currentLine;
           break;
@@ -769,7 +770,7 @@ async function accessWorkspaceFile(path: string): Promise<void> {
   });
 }
 
-function terminateProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+export function terminateProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (process.platform !== "win32" && child.pid !== undefined) {
     try {
       process.kill(-child.pid, signal);
@@ -939,7 +940,7 @@ async function executeBash(
 }
 
 export async function executeToolOperation(
-  request: ToolSandboxOperationRequest,
+  request: Exclude<ToolSandboxOperationRequest, { operation: "tool.execute" }>,
   signal: AbortSignal,
   webProxy?: ToolWebProxyBootstrap,
 ): Promise<ToolSandboxOperationResponse> {
@@ -1093,8 +1094,9 @@ function validateAttachedInitialization(): Promise<void> {
 
 export async function attachToolExecution(
   message: Extract<ToolWorkerInput, { type: "worker.initialize" }>,
-): Promise<void> {
+): Promise<string> {
   await selectToolRoot(message.toolRoot);
   safeToolEnvironment(message.webProxy);
   await validateAttachedInitialization();
+  return TOOL_WORKSPACE_DIRECTORY;
 }

@@ -637,15 +637,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
       state: "active",
     });
     await expect(
-      repository.beginOperation(
-        activation.activationId,
-        "20000000-0000-4000-8000-000000000042",
-        childActivation.assignment,
-        "20000000-0000-4000-8000-000000000041",
-        "6".repeat(64),
-      ),
-    ).resolves.toBe("started");
-    await repository.settleOperation("20000000-0000-4000-8000-000000000041", "succeeded");
+      repository.authorizeOperation(activation.activationId, childActivation.assignment),
+    ).resolves.toBeUndefined();
     await repository.setWorkspaceRuntimeState(activation.activationId, "active");
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "reserved" });
     await expect(
@@ -659,23 +652,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
       state: "active",
     });
     await expect(
-      repository.beginOperation(
-        activation.activationId,
-        activation.activationId,
-        activation.assignment,
-        "20000000-0000-4000-8000-000000000039",
-        "4".repeat(64),
-      ),
-    ).resolves.toBe("started");
-    await repository.settleOperation("20000000-0000-4000-8000-000000000039", "succeeded");
-    const operationTiming = await database
-      .selectFrom("tool_broker_operations")
-      .select(["started_at", "settled_at"])
-      .where("operation_id", "=", "20000000-0000-4000-8000-000000000039")
-      .executeTakeFirstOrThrow();
-    expect(operationTiming.settled_at!.valueOf()).toBeGreaterThanOrEqual(
-      operationTiming.started_at.valueOf(),
-    );
+      repository.authorizeOperation(activation.activationId, activation.assignment),
+    ).resolves.toBeUndefined();
     await database
       .updateTable("runs")
       .set({ compute_session_id: delegatedSessionId })
@@ -691,23 +669,11 @@ describe("PostgreSQL Tool Broker ownership", () => {
       repository.reserve({ ...childCompute, computeSessionId: crypto.randomUUID() }),
     ).rejects.toMatchObject({ code: "ownership_lost" });
     await expect(
-      repository.beginOperation(
-        activation.activationId,
-        crypto.randomUUID(),
-        childActivation.assignment,
-        crypto.randomUUID(),
-        "7".repeat(64),
-      ),
+      repository.authorizeOperation(activation.activationId, childActivation.assignment),
     ).rejects.toMatchObject({ code: "ownership_lost" });
     await expect(
-      repository.beginOperation(
-        childCompute.activationId,
-        crypto.randomUUID(),
-        childActivation.assignment,
-        crypto.randomUUID(),
-        "8".repeat(64),
-      ),
-    ).resolves.toBe("started");
+      repository.authorizeOperation(childCompute.activationId, childActivation.assignment),
+    ).resolves.toBeUndefined();
     expect(
       await database
         .selectFrom("tool_broker_workspace_runtimes")
@@ -727,13 +693,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .where("lease_id", "=", "20000000-0000-4000-8000-000000000009")
       .executeTakeFirstOrThrow();
     await expect(
-      repository.beginOperation(
-        activation.activationId,
-        activation.activationId,
-        activation.assignment,
-        "20000000-0000-4000-8000-000000000040",
-        "5".repeat(64),
-      ),
+      repository.authorizeOperation(activation.activationId, activation.assignment),
     ).rejects.toMatchObject({ code: "ownership_lost" });
     await database
       .updateTable("runs")

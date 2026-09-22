@@ -55,6 +55,7 @@ RUN node node_modules/esbuild/bin/esbuild \
       --platform=node \
       --format=esm \
       --target=node24 \
+      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
       --out-extension:.js=.mjs \
       --outdir=/out
 

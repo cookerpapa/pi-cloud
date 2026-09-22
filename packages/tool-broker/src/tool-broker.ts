@@ -14,6 +14,7 @@ import type {
   ToolSandboxCreateResponse,
   ToolSandboxOperationRequest,
   ToolSandboxOperationResponse,
+  NativeToolUpdate,
   ToolSandboxReleaseRequest,
   ToolSandboxReleaseResponse,
   ToolBrokerListWorkspaceDirectoryRequest,
@@ -188,10 +189,10 @@ function operationFailureCode(error: unknown): string {
 }
 
 const TOOL_OPERATIONS: Readonly<Record<CloudToolName, ReadonlySet<string>>> = {
-  read: new Set(["file.read", "file.read_range", "file.access"]),
-  write: new Set(["file.write", "file.mkdir"]),
-  edit: new Set(["file.read", "file.write", "file.access"]),
-  bash: new Set(["bash.exec", "workflow.exec"]),
+  read: new Set(["tool.execute", "file.read", "file.read_range", "file.access"]),
+  write: new Set(["tool.execute", "file.write", "file.mkdir"]),
+  edit: new Set(["tool.execute", "file.read", "file.write", "file.access"]),
+  bash: new Set(["tool.execute", "bash.exec", "workflow.exec"]),
 };
 
 function sameEnvironment(
@@ -1544,6 +1545,7 @@ export class ToolBroker {
     executionReference: string,
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
+    onUpdate?: (event: NativeToolUpdate) => Promise<void>,
   ): Promise<ToolSandboxOperationResponse> {
     const activation = this.#authorizedBinding(request.activationId, executionReference);
     const elasticRuntime = activation.elasticRuntime;
@@ -1609,25 +1611,13 @@ export class ToolBroker {
         ? operationController.signal
         : AbortSignal.any([signal, operationController.signal]);
     const durable = (async (): Promise<ToolSandboxOperationResponse> => {
-      let admitted = false;
       activation.activeOperations += 1;
       if (elasticRuntime !== undefined) elasticRuntime.activeOperations += 1;
       try {
-        const started = await this.#stateRepository.beginOperation(
+        await this.#stateRepository.authorizeOperation(
           elasticRuntime?.physicalActivationId ?? activation.reservation.activationId,
-          request.activationId,
           activation.assignment,
-          request.operationId,
-          requestSha256,
         );
-        if (started !== "started") {
-          throw new ToolBrokerError(
-            "tool_operation_outcome_unknown",
-            "Tool operation may already have produced side effects",
-            false,
-          );
-        }
-        admitted = true;
         const handle = await this.#materialize(activation, operationSignal);
         let response: ToolSandboxOperationResponse;
         try {
@@ -1644,7 +1634,28 @@ export class ToolBroker {
               cwd: activation.spec.toolRoot ?? handle.workspaceRoot,
             });
             try {
-              response = await this.#workflowChannels.run(request, stream, operationSignal);
+              response = await this.#workflowChannels.run(
+                request,
+                stream,
+                operationSignal,
+                async (value) => {
+                  await onUpdate?.({
+                    type: "tool_execution_update",
+                    toolCallId: request.toolCallId,
+                    toolName: request.toolName,
+                    args: { script: request.script },
+                    partialResult: {
+                      content: [
+                        {
+                          type: "text",
+                          text: typeof value === "string" ? value : JSON.stringify(value),
+                        },
+                      ],
+                      details: {},
+                    },
+                  });
+                },
+              );
             } catch (error) {
               throw new ToolBrokerError(
                 "workflow_result_unknown",
@@ -1659,6 +1670,7 @@ export class ToolBroker {
               request,
               operationSignal,
               activation.spec.toolRoot,
+              onUpdate,
             );
           }
         } catch (error: unknown) {
@@ -1679,23 +1691,7 @@ export class ToolBroker {
           }
           throw error;
         }
-        await this.#stateRepository.settleOperation(request.operationId, "succeeded");
         return response;
-      } catch (error: unknown) {
-        if (!admitted) throw error;
-        await this.#stateRepository
-          .settleOperation(
-            request.operationId,
-            error instanceof ToolBrokerError &&
-              ["cubesandbox_tool_result_unknown", "workflow_result_unknown"].includes(error.code)
-              ? "unknown"
-              : operationSignal.aborted
-                ? "cancelled"
-                : "failed",
-            operationFailureCode(error),
-          )
-          .catch(() => undefined);
-        throw error;
       } finally {
         activation.activeOperations -= 1;
         if (elasticRuntime !== undefined) elasticRuntime.activeOperations -= 1;
@@ -1707,8 +1703,7 @@ export class ToolBroker {
       controller: operationController,
     });
     // Only running operations belong here (cancellation and concurrent dedup).
-    // The Tool command executor owns delivered-result retention. Keeping a
-    // settled Promise here would retain its body after the consumer releases it.
+    // Completed results belong to Kafka. Do not retain them in the Broker.
     const forget = () => activation.operations.delete(request.operationId);
     void durable.then(forget, forget);
     return durable;
@@ -1725,12 +1720,8 @@ export class ToolBroker {
     send: (frame: WorkflowFrame) => void,
     signal: AbortSignal,
   ) {
-    this.assertToolResultReader(activationId, executionReference);
-    return this.#workflowChannels.attach(activationId, operationId, send, signal);
-  }
-
-  assertToolResultReader(activationId: string, executionReference: string): void {
     this.#authorizedBinding(activationId, executionReference);
+    return this.#workflowChannels.attach(activationId, operationId, send, signal);
   }
 
   async refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {

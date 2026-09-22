@@ -2,7 +2,6 @@ import type {
   SupervisorRuntimeAssignment,
   ToolSandboxAssignment,
   ToolSandboxCreateRequest,
-  ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
 import {
   createExecutionReference,
@@ -65,29 +64,6 @@ const runtimeAssignment: SupervisorRuntimeAssignment = {
   sessionId: assignment.sessionId,
   turnId: assignment.turnId,
   executionReference: assignment.executionReference,
-};
-
-const commands = {
-  checkHealth() {},
-  async waitResult(
-    capability: string,
-    activationId: string,
-    operationId: string,
-  ): Promise<import("@pi-cloud/protocol").ToolSandboxOperationResponse> {
-    if (capability !== CAPABILITY) throw new Error("wrong capability");
-    return {
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.operation_result",
-      activationId: activationId,
-      operationId: operationId,
-      operation: "bash.exec",
-      exitCode: 0,
-      outputChunks: [
-        { seq: 1, stream: "stdout", data: Buffer.from("isolated\n").toString("base64") },
-      ],
-      outputSha256: createHash("sha256").update("isolated\n").digest("hex"),
-    };
-  },
 };
 
 const servers: ToolBrokerServer[] = [];
@@ -231,7 +207,6 @@ describe("Tool Broker authenticated RPC", () => {
         ),
       );
       const server = new ToolBrokerServer({
-        commands,
         host: "127.0.0.1",
         port: 0,
         serviceToken: SERVICE_TOKEN,
@@ -263,7 +238,6 @@ describe("Tool Broker authenticated RPC", () => {
     const failure = new Error("provider cleanup failed");
     const close = vi.spyOn(broker, "close").mockRejectedValueOnce(failure);
     const server = new ToolBrokerServer({
-      commands,
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
@@ -284,7 +258,6 @@ describe("Tool Broker authenticated RPC", () => {
 
   it("routes Workspace-owned Git credential authorization without cloning", async () => {
     const server = new ToolBrokerServer({
-      commands,
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
@@ -375,7 +348,6 @@ describe("Tool Broker authenticated RPC", () => {
         },
       };
       const server = new ToolBrokerServer({
-        commands,
         host: "127.0.0.1",
         port: 0,
         serviceToken: SERVICE_TOKEN,
@@ -523,7 +495,6 @@ describe("Tool Broker authenticated RPC", () => {
 
   it("stays ready while at least one Tool Broker replica is healthy", async () => {
     const server = new ToolBrokerServer({
-      commands,
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
@@ -569,7 +540,6 @@ describe("Tool Broker authenticated RPC", () => {
         },
       };
       const server = new ToolBrokerServer({
-        commands,
         host: "127.0.0.1",
         port: 0,
         serviceToken: SERVICE_TOKEN,
@@ -612,8 +582,8 @@ describe("Tool Broker authenticated RPC", () => {
       };
       const reserved = await client.create(request);
       expect(reserved.activationId).toBe(activationIds[0]);
-      expect(client.operationResultUrlFor(reserved.activationId)).toBe(
-        new URL("/internal/v1/tool-operation-result", addresses[0]).toString(),
+      expect(client.workflowUrlFor(reserved.activationId)).toBe(
+        new URL("/internal/v1/tool-workflow", addresses[0]).toString(),
       );
       await expect(client.stop(reserved.activationId, request.assignment)).resolves.toBeUndefined();
       const siblingSessionRequest: ToolSandboxCreateRequest = {
@@ -626,8 +596,8 @@ describe("Tool Broker authenticated RPC", () => {
       };
       const sibling = await client.create(siblingSessionRequest);
       expect(sibling.activationId).toBe(activationIds[1]);
-      expect(client.operationResultUrlFor(sibling.activationId)).toBe(
-        new URL("/internal/v1/tool-operation-result", addresses[1]).toString(),
+      expect(client.workflowUrlFor(sibling.activationId)).toBe(
+        new URL("/internal/v1/tool-workflow", addresses[1]).toString(),
       );
       await expect(
         client.stop(sibling.activationId, siblingSessionRequest.assignment),
@@ -639,7 +609,6 @@ describe("Tool Broker authenticated RPC", () => {
   it("keeps each colocated Tool binding owner independent", async () => {
     let ownerBaseUrl = "http://tool-broker.invalid";
     const server = new ToolBrokerServer({
-      commands,
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
@@ -712,22 +681,21 @@ describe("Tool Broker authenticated RPC", () => {
     await client.release(child.activationId, childAssignment, {
       kind: "keep_warm",
     });
-    expect(client.operationResultUrlFor(parent.activationId)).toBe(
-      new URL("/internal/v1/tool-operation-result", ownerBaseUrl).toString(),
+    expect(client.workflowUrlFor(parent.activationId)).toBe(
+      new URL("/internal/v1/tool-workflow", ownerBaseUrl).toString(),
     );
     await expect(
       client.release(parent.activationId, assignment, {
         kind: "keep_warm",
       }),
     ).resolves.toMatchObject({ activationId: parent.activationId });
-    expect(() => client.operationResultUrlFor(parent.activationId)).toThrow(
+    expect(() => client.workflowUrlFor(parent.activationId)).toThrow(
       "Tool binding owner is unavailable",
     );
   });
 
   it("follows the durable activation owner instead of replaying create elsewhere", async () => {
     const owner = new ToolBrokerServer({
-      commands,
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
@@ -736,7 +704,6 @@ describe("Tool Broker authenticated RPC", () => {
     servers.push(owner);
     const ownerAddress = await owner.listen();
     const redirect = new ToolBrokerServer({
-      commands,
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
@@ -784,7 +751,6 @@ describe("Tool Broker authenticated RPC", () => {
   it("uses the Session lease for Tool effects and the service credential for management", async () => {
     const metrics = new PiCloudMetrics("tool-broker-test");
     const server = new ToolBrokerServer({
-      commands,
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
@@ -837,27 +803,6 @@ describe("Tool Broker authenticated RPC", () => {
     });
     expect(observedServerTrace?.traceparent).toContain("1".repeat(32));
 
-    const operation: ToolSandboxOperationRequest = {
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.operation",
-      activationId: ACTIVATION_ID,
-      operationId: "10000000-0000-4000-8000-000000000012",
-      turnContextSha256: STEP_CONTEXT_SHA256,
-      executionContextSha256: STEP_CONTEXT_SHA256,
-      stepContextSequence: 1,
-      stepContextSha256: STEP_CONTEXT_SHA256,
-      toolName: "bash",
-      operation: "bash.exec",
-      command: "pwd",
-      cwd: "/workspace",
-      timeoutMs: 1_000,
-    };
-    await expect(
-      client.operationResult(CAPABILITY, operation.activationId, operation.operationId),
-    ).resolves.toMatchObject({
-      operation: "bash.exec",
-      exitCode: 0,
-    });
     await expect(client.listAssignments(runtimeAssignment.sandboxId)).resolves.toEqual([
       runtimeAssignment,
     ]);
@@ -918,9 +863,6 @@ describe("Tool Broker authenticated RPC", () => {
     const exportedMetrics = await metrics.registry.metrics();
     expect(exportedMetrics).toContain(
       'pi_cloud_sandbox_operation_seconds_count{service="tool-broker-test",operation="reserve",outcome="completed"} 1',
-    );
-    expect(exportedMetrics).toContain(
-      'pi_cloud_sandbox_operation_seconds_count{service="tool-broker-test",operation="tool_result_read",outcome="completed"} 1',
     );
     expect(exportedMetrics).toContain(
       'pi_cloud_sandbox_admission_active{provider="test-provider",service="tool-broker-test"} 0',

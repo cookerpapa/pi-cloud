@@ -14,6 +14,7 @@ import {
 import { CloudToolCapabilitySnapshotSchema, CloudToolNameSchema } from "./tool-capabilities.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
 import { ExecutionReferenceSchema } from "./execution-reference.ts";
+import { NativeToolEventSchema } from "./native-tool-event.ts";
 
 export const MAX_TOOL_COMMAND_BYTES = 64 * 1_024;
 export const MIN_TOOL_EXECUTION_TIMEOUT_MS = 100;
@@ -320,7 +321,28 @@ export const ToolSandboxOperationRequestSchema = Type.Union([
   Type.Object(
     {
       ...OperationEnvelope,
+      operation: Type.Literal("tool.execute"),
+      toolName: Type.Union([
+        Type.Literal("read"),
+        Type.Literal("write"),
+        Type.Literal("edit"),
+        Type.Literal("bash"),
+      ]),
+      toolCallId: Type.String({ minLength: 1 }),
+      args: Type.Record(Type.String(), Type.Unknown()),
+      maximumOutputBytes: Type.Integer({ minimum: 1024, maximum: MAX_TOOL_OUTPUT_BYTES }),
+      timeoutMs: Type.Integer({
+        minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS,
+        maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS,
+      }),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...OperationEnvelope,
       operation: Type.Literal("workflow.exec"),
+      toolCallId: Type.String({ minLength: 1 }),
       script: Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES }),
       cwd: ToolPathSchema,
       timeoutMs: Type.Integer({
@@ -390,6 +412,17 @@ export const ToolSandboxOperationRequestSchema = Type.Union([
 ]);
 
 export const ToolSandboxOperationResponseSchema = Type.Union([
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.operation_result"),
+      activationId: UuidSchema,
+      operationId: UuidSchema,
+      operation: Type.Literal("tool.execute"),
+      event: NativeToolEventSchema,
+    },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       ...ToolSandboxEnvelope,

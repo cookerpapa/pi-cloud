@@ -7,7 +7,7 @@ import {
 } from "@pi-cloud/protocol";
 import { ToolBrokerServer, type ToolBrokerBackend } from "../src/tool-broker-server.ts";
 
-it("upgrades the real workflow endpoint and transports a large correlated reply", async () => {
+it("keeps workflow host calls on WebSocket while final completion uses the reply channel", async () => {
   const activationId = crypto.randomUUID(),
     operationId = crypto.randomUUID();
   const lease = createExecutionReference(crypto.randomUUID(), crypto.randomUUID(), 1);
@@ -62,7 +62,6 @@ it("upgrades the real workflow endpoint and transports a large correlated reply"
         };
       },
     } as unknown as ToolBrokerBackend,
-    commands: { checkHealth() {}, waitResult: async () => result },
   });
   const address = await server.listen();
   const url = new URL(TOOL_WORKFLOW_PATH, address);
@@ -71,6 +70,7 @@ it("upgrades the real workflow endpoint and transports a large correlated reply"
   const socket = new WebSocket(url, { headers: { authorization: `Bearer ${lease}` } });
   try {
     const response = await new Promise<unknown>((resolve, reject) => {
+      void result.then(resolve, reject);
       socket.on("error", reject);
       socket.on("unexpected-response", () =>
         reject(new Error("Workflow endpoint failed to upgrade")),
@@ -79,7 +79,7 @@ it("upgrades the real workflow endpoint and transports a large correlated reply"
         const frame = JSON.parse(bytes.toString());
         if (frame.type === "call")
           socket.send(JSON.stringify({ id: frame.id, ok: true, value: payload }));
-        if (frame.type === "result") resolve(frame.response);
+        expect(frame.type).not.toBe("result");
       });
     });
     expect(response).toMatchObject({ operation: "workflow.exec", ok: true, value: "done" });

@@ -230,7 +230,6 @@ export interface SandboxDomainTable {
 export type ToolBrokerInstanceState = "ready" | "stopped" | "lost";
 export type ToolBrokerWorkspaceRuntimeState =
   "reserved" | "materializing" | "active" | "warm" | "cleaning" | "released" | "unknown";
-export type ToolBrokerOperationState = "running" | "succeeded" | "failed" | "cancelled" | "unknown";
 export type WorkspaceTerminalState =
   "reserved" | "materializing" | "active" | "cleaning" | "released" | "unknown";
 export type DevelopmentEnvironmentState =
@@ -283,23 +282,6 @@ export interface ToolBrokerWorkspaceRuntimeTable {
   failure_code: string | null;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
-}
-
-export interface ToolBrokerOperationTable {
-  operation_id: string;
-  workspace_runtime_id: string;
-  tool_binding_id: string;
-  tenant_id: string;
-  session_id: string;
-  run_id: string;
-  lease_id: string;
-  fencing_token: Int8;
-  owner_instance_id: string;
-  request_sha256: string;
-  state: ToolBrokerOperationState;
-  failure_code: string | null;
-  started_at: GeneratedTimestamp;
-  settled_at: NullableTimestamp;
 }
 
 export interface ToolBrokerBindingRouteTable {
@@ -1063,7 +1045,6 @@ export interface Database {
   sandbox_domains: SandboxDomainTable;
   tool_broker_instances: ToolBrokerInstanceTable;
   tool_broker_workspace_runtimes: ToolBrokerWorkspaceRuntimeTable;
-  tool_broker_operations: ToolBrokerOperationTable;
   tool_broker_binding_routes: ToolBrokerBindingRouteTable;
   sandbox_http_services: SandboxHttpServiceTable;
   workspace_terminal_sessions: WorkspaceTerminalSessionTable;

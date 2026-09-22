@@ -38,7 +38,10 @@ import type {
   TrustedModelRuntimeLease,
   TrustedModelRuntimeLeaseResolver,
 } from "./agent-turn-runtime.ts";
-import { createTrustedRemoteAgentTools } from "./trusted-remote-tools.ts";
+import {
+  createTrustedRemoteAgentTools,
+  type TrustedRemoteToolsRuntimeConfiguration,
+} from "./trusted-remote-tools.ts";
 import {
   createCloudExecutionContext,
   createCloudStepContext,
@@ -54,7 +57,7 @@ export interface ToolBrokerBoundary {
     disposition: { kind: "detach" } | { kind: "keep_warm" } | { kind: "destroy" },
   ): Promise<{ retained: boolean }>;
   stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
-  operationResultUrlFor(activationId: string): string;
+  workflowUrlFor(activationId: string): string;
 }
 
 export type RemoteToolSandboxTurnRunnerOptions = {
@@ -68,6 +71,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     readSignal?: AbortSignal,
   ) => Promise<PiCloudSessionHandle>;
   publishToolCommand?: import("@pi-cloud/protocol").ToolCommandPublisher["publishToolCommand"];
+  waitForToolReply?: TrustedRemoteToolsRuntimeConfiguration["waitForToolReply"];
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
     context: Readonly<{
@@ -128,6 +132,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
+  readonly #waitForToolReply: RemoteToolSandboxTurnRunnerOptions["waitForToolReply"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
   readonly #acquireModelPermit: RemoteToolSandboxTurnRunnerOptions["acquireModelPermit"];
   readonly #requestTimeoutMs: number | undefined;
@@ -153,6 +158,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
     this.#openAgentSession = options.openAgentSession;
     this.#publishToolCommand = options.publishToolCommand;
+    this.#waitForToolReply = options.waitForToolReply;
     this.#createTrustedTools = options.createTrustedTools;
     this.#acquireModelPermit = options.acquireModelPermit;
     this.#requestTimeoutMs = options.requestTimeoutMs;
@@ -604,6 +610,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           }
           let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
+            ...(this.#waitForToolReply ? { waitForToolReply: this.#waitForToolReply } : {}),
             publishToolCommand: (command) => {
               if (!this.#publishToolCommand)
                 throw new Error("Tool command publisher is unavailable");
@@ -613,7 +620,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               const active = await ensureActivation();
               return {
                 activationId: active.activationId,
-                operationResultUrl: this.#broker.operationResultUrlFor(active.activationId),
+                workflowUrl: this.#broker.workflowUrlFor(active.activationId),
               };
             },
             executionReference: toolAssignment.executionReference,

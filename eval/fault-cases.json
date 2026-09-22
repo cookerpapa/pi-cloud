@@ -216,8 +216,8 @@
       "id": "projector-owner-ack-loss",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/session-projector-handoffs.test.ts",
-      "test": "retries the same record after delivery ACK loss without duplicating its live event",
-      "invariant": "A failed owner delivery retries the same positioned record without emitting its live event twice; this test simulates PG/transport."
+      "test": "retries seal delivery after ACK loss without duplicating its live terminal",
+      "invariant": "A failed seal delivery retries its positioned control record without emitting the terminal twice; Tool command delivery is not retried."
     },
     {
       "id": "projector-rebalance-after-pg",
@@ -232,6 +232,34 @@
       "file": "test/tool-broker.test.ts",
       "test": "closes queued materialization before shutdown releases physical capacity",
       "invariant": "Broker shutdown rejects pending VM creation before freeing existing capacity; it never launches the waiter during teardown."
+    },
+    {
+      "id": "tool-commit-before-effect",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/ordered-effects.test.ts",
+      "test": "a lost commit acknowledgement cannot start an effect",
+      "invariant": "A Tool command cannot dispatch until Kafka confirms its monotonic commit boundary."
+    },
+    {
+      "id": "tool-replay-without-effect",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/ordered-effects.test.ts",
+      "test": "replays an unfinished display prefix without executing commands below the committed dispatch boundary",
+      "invariant": "Rebuilding volatile display state does not replay already committed Tool commands."
+    },
+    {
+      "id": "tool-native-late-result",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-command-executor.test.ts",
+      "test": "does not publish a running command's late result after a seal",
+      "invariant": "Completing guest work after closure cannot publish a usable native Tool result."
+    },
+    {
+      "id": "tool-reply-worker-loss",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/tool-replies.test.ts",
+      "test": "closing one worker does not hand abandoned replies to another worker",
+      "invariant": "A replacement Worker cannot attach an old operation's replies to a new Tool call."
     },
     {
       "id": "broker-adopted-capacity",

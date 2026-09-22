@@ -13,10 +13,6 @@ export class PiCloudMetrics {
   readonly modelTokens: Counter<"provider" | "model" | "kind">;
   readonly modelCostMicrousd: Counter<"provider" | "model">;
   readonly toolDuration: Histogram<"tool" | "outcome">;
-  readonly toolResultCacheBytes: Gauge;
-  readonly toolResultCacheReleased: Counter<"reason">;
-  readonly toolResultReaders: Gauge;
-  readonly toolResultSendingBytes: Gauge;
   readonly toolTransportRejected: Counter<"reason">;
   readonly toolLogConsumed: Counter<"kind">;
   readonly toolLogDelivery: Histogram<"route" | "outcome">;
@@ -161,11 +157,6 @@ export class PiCloudMetrics {
       buckets: DURATION_BUCKETS,
       registers: [this.registry],
     });
-    this.toolResultCacheBytes = new Gauge({
-      name: "pi_cloud_tool_result_cache_bytes",
-      help: "Encoded response bytes retained for Tool result delivery (not process heap)",
-      registers: [this.registry],
-    });
     this.toolLogConsumed = new Counter({
       name: "pi_cloud_tool_log_consumed_total",
       help: "Partition-sharded Broker log records",
@@ -177,22 +168,6 @@ export class PiCloudMetrics {
       help: "Owner admission latency excluding guest execution",
       labelNames: ["route", "outcome"],
       buckets: DURATION_BUCKETS,
-      registers: [this.registry],
-    });
-    this.toolResultCacheReleased = new Counter({
-      name: "pi_cloud_tool_result_cache_released_total",
-      help: "Tool response copies released after native result, seal, binding loss or capacity",
-      labelNames: ["reason"],
-      registers: [this.registry],
-    });
-    this.toolResultReaders = new Gauge({
-      name: "pi_cloud_tool_result_readers",
-      help: "Admitted Tool HTTP deliveries including waiting readers",
-      registers: [this.registry],
-    });
-    this.toolResultSendingBytes = new Gauge({
-      name: "pi_cloud_tool_result_sending_bytes",
-      help: "Encoded Tool HTTP bodies held until finish or close",
       registers: [this.registry],
     });
     this.toolTransportRejected = new Counter({

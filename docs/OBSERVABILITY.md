@@ -106,9 +106,9 @@ Transport capacity signals are process-local and should be summed across replica
 
 - `pi_cloud_kafka_producer_pending_bytes` / `_pending_facts`: queued and submitted
   Facts awaiting PubAck; `_rejected_total` counts rejection before enqueue.
-- `pi_cloud_tool_result_readers` / `_sending_bytes`: outstanding HTTP deliveries;
-  cache bytes remain a separate gauge. `pi_cloud_tool_transport_rejected_total`
-  distinguishes command, reader and response-byte capacity.
+- `pi_cloud_tool_transport_rejected_total`: failed Tool reply publication and
+  transport capacity rejection. Completed-result HTTP/cache gauges are removed;
+  replies use Kafka and are not a second Broker result store.
 - `pi_cloud_tool_log_consumed_total` counts each router's partition reads;
   `pi_cloud_tool_log_delivery_seconds{route="local"|"remote"}` measures owner
   admission, excluding guest execution. Its outcome distinguishes delivery,

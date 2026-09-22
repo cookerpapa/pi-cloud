@@ -151,11 +151,7 @@ Do not commit proxy credentials or expose a local proxy publicly.
 | `PI_CLOUD_WORKER_MODEL_CONCURRENCY` | `4` | simultaneous provider requests across the Worker, including Compaction |
 | `PI_CLOUD_SESSION_MODEL_CONCURRENCY` | `4` | simultaneous provider requests per physical Session; cannot exceed the Worker limit |
 | `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes owned by the one-host Broker; leaves two elastic slots beside one starter development machine |
-| `PI_CLOUD_TOOL_RESULT_CACHE_BYTES` | `67108864` | per-Broker completed response retry-cache budget (encoded bytes); native Kafka Tool Results release bodies; overflow drops oldest retry copies without re-executing effects; excludes in-flight/HTTP buffers; Helm: `sandboxPlane.toolResultCacheBytes` |
 | `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous executing operations per one-host Broker (standalone/Helm default 32); distinct from physical Cube allocations |
-| `PI_CLOUD_TOOL_MAXIMUM_RESULT_READERS` | `128` | HTTP result deliveries, including repeated readers of one running operation; Helm: `sandboxPlane.maximumResultReaders` |
-| `PI_CLOUD_TOOL_RESULT_SENDING_BYTES` | `33554432` | encoded response bytes held until HTTP finish/close; Helm: `sandboxPlane.resultSendingBytes` |
-| `PI_CLOUD_TOOL_RESULT_SEND_TIMEOUT_MS` | `30000` | stalled response send deadline, starts only after a Tool result exists; does not limit command execution |
 | `PI_CLOUD_TOOL_BROKER_MEMORY_LIMIT` / `PI_CLOUD_TOOL_BROKER_CPUS` | `384m` / `1.0` | one-host Broker resources; raise together with measured operation/delivery capacity; Helm uses workload resources |
 | `PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES` | `4` | idle warm Cube limit |
 | `PI_CLOUD_SANDBOX_WARM_TTL_MS` | `900000` | idle warm lifetime (15 minutes) |

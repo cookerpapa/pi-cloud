@@ -1,11 +1,23 @@
-import { validateToolArguments } from "@earendil-works/pi-ai";
-import { createExecutionReference, type CandidateToolCommand } from "@pi-cloud/protocol";
+import {
+  EventStream,
+  validateToolArguments,
+  type AssistantMessage,
+  type AssistantMessageEvent,
+} from "@earendil-works/pi-ai";
+import { getModel } from "@earendil-works/pi-ai/compat";
+import { Agent, type AgentEvent } from "@earendil-works/pi-agent-core";
+import {
+  createExecutionReference,
+  type CandidateToolCommand,
+  type NativeToolEnd,
+  type NativeToolUpdate,
+} from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTrustedRemoteAgentTools, redactToolSecrets } from "../src/trusted-remote-tools.ts";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createTrustedRemoteAgentTools,
+  type TrustedRemoteToolsRuntimeConfiguration,
+} from "../src/trusted-remote-tools.ts";
 
 const TURN_CONTEXT_SHA256 = "b".repeat(64);
 const ATTEMPT_CONTEXT_SHA256 = "e".repeat(64);
@@ -44,641 +56,295 @@ function createStepCapture() {
   };
 }
 
-let latestPublishedCommand: CandidateToolCommand | undefined;
-function publishedRequest(init: RequestInit) {
-  expect(init.method).toBe("GET");
-  expect(init.body).toBeUndefined();
-  if (!latestPublishedCommand)
-    throw new Error("HTTP result read preceded Kafka command publication");
-  return latestPublishedCommand.request;
-}
-const BASE_CONFIGURATION = {
-  async publishToolCommand(command: CandidateToolCommand) {
-    latestPublishedCommand = command;
+function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration> = {}) {
+  let pending:
+    { resolve(value: NativeToolEnd): void; update?: (value: NativeToolUpdate) => void } | undefined;
+  const publishToolCommand = vi.fn(async (command: CandidateToolCommand) => {
+    expect(pending).toBeDefined(); // register BEFORE publication: even an immediate reply must not be lost
+    pending!.update?.({
+      type: "tool_execution_update",
+      toolCallId: command.toolCallId,
+      toolName: command.request.toolName,
+      args: {},
+      partialResult: { content: [{ type: "text", text: "working" }], details: undefined },
+    });
+    pending!.resolve({
+      type: "tool_execution_end",
+      toolCallId: command.toolCallId,
+      toolName: command.request.toolName,
+      isError: false,
+      result: { content: [{ type: "text", text: "complete" }], details: { source: "guest" } },
+    });
     return { operationId: command.request.operationId, accepted: true as const };
-  },
-  operationResultUrl: "http://127.0.0.1:4999/v1/tool-operations",
-  activationId: "10000000-0000-4000-8000-000000000001",
-  executionReference: EXECUTION_LEASE,
-  turnContextSha256: TURN_CONTEXT_SHA256,
-  executionContextSha256: ATTEMPT_CONTEXT_SHA256,
-  captureStepContext: createStepCapture(),
-  remainingToolCalls: 0,
-  maximumToolOutputBytes: 1_024,
+  });
+  const value: TrustedRemoteToolsRuntimeConfiguration = {
+    publishToolCommand,
+    waitForToolReply: (_request, signal, update) =>
+      new Promise((resolve, reject) => {
+        pending = { resolve, ...(update ? { update } : {}) };
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      }),
+    workflowUrl: "http://127.0.0.1:4999/v1/tool-operations",
+    activationId: "10000000-0000-4000-8000-000000000001",
+    executionReference: EXECUTION_LEASE,
+    turnContextSha256: TURN_CONTEXT_SHA256,
+    executionContextSha256: ATTEMPT_CONTEXT_SHA256,
+    captureStepContext: createStepCapture(),
+    remainingToolCalls: 4,
+    maximumToolOutputBytes: 65536,
+    workingDirectory: "/workspace",
+    traceparent: "00-11111111111111111111111111111111-2222222222222222-01",
+    ...overrides,
+  };
+  return { value, publishToolCommand };
+}
 
-  workingDirectory: "/workspace",
-  traceparent: "00-11111111111111111111111111111111-2222222222222222-01",
-} as const;
+describe("whole-tool Worker adapter", () => {
+  it("lets Pi own native update/end events and after-Tool hooks, without adding progress to model context", async () => {
+    const { value } = configuration();
+    const runtime = createTrustedRemoteAgentTools(value);
+    const events: AgentEvent[] = [];
+    let sample = 0;
+    const agent = new Agent({
+      initialState: { model: getModel("openai", "gpt-4o-mini"), tools: [...runtime.tools] },
+      transformContext: (messages) => runtime.transformContext(messages),
+      afterToolCall: async () => ({ content: [{ type: "text", text: "accepted by Worker hook" }] }),
+      streamFn: () => {
+        const first = sample++ === 0;
+        const message: AssistantMessage = {
+          role: "assistant",
+          api: "openai-responses",
+          provider: "openai",
+          model: "gpt-4o-mini",
+          timestamp: Date.now(),
+          stopReason: first ? "toolUse" : "stop",
+          content: first
+            ? [
+                {
+                  type: "toolCall",
+                  id: "native-call",
+                  name: "bash",
+                  arguments: { command: "echo hello" },
+                },
+              ]
+            : [{ type: "text", text: "done" }],
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 2,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+        const stream = new EventStream<AssistantMessageEvent, AssistantMessage>(
+          (event) => event.type === "done",
+          (event) => (event.type === "done" ? event.message : message),
+        );
+        queueMicrotask(() =>
+          stream.push({ type: "done", reason: first ? "toolUse" : "stop", message }),
+        );
+        return stream;
+      },
+    });
+    agent.subscribe((event) => {
+      events.push(event);
+    });
+    await agent.prompt("exercise the remote tool");
+    expect(
+      events.filter((event) => event.type.startsWith("tool_execution_")).map((event) => event.type),
+    ).toEqual(["tool_execution_start", "tool_execution_update", "tool_execution_end"]);
+    const result = agent.state.messages.find((message) => message.role === "toolResult");
+    expect(result).toMatchObject({
+      role: "toolResult",
+      content: [{ type: "text", text: "accepted by Worker hook" }],
+    });
+    expect(JSON.stringify(result)).not.toContain("working");
+  });
+  it.each(["read", "write", "edit", "bash"])(
+    "publishes one %s command and forwards native updates/result without local execution",
+    async (name) => {
+      const { value, publishToolCommand } = configuration();
+      const runtime = createTrustedRemoteAgentTools(value);
+      await runtime.transformContext([]);
+      const tool = runtime.tools.find((tool) => tool.name === name)!;
+      const update = vi.fn();
+      const args =
+        name === "bash"
+          ? { command: "echo hello" }
+          : name === "edit"
+            ? { path: "x", edits: [{ oldText: "a", newText: "b" }] }
+            : name === "write"
+              ? { path: "x", content: "a" }
+              : { path: "x", offset: 3, limit: 4 };
+      await expect(tool.execute("native-call", args, undefined, update)).resolves.toEqual({
+        content: [{ type: "text", text: "complete" }],
+        details: { source: "guest" },
+      });
+      expect(update).toHaveBeenCalledWith({
+        content: [{ type: "text", text: "working" }],
+        details: undefined,
+      });
+      expect(publishToolCommand).toHaveBeenCalledTimes(1);
+      expect(publishToolCommand.mock.calls[0]![0]).toMatchObject({
+        toolCallId: "native-call",
+        request: { operation: "tool.execute", toolName: name, toolCallId: "native-call", args },
+      });
+    },
+  );
 
-afterEach(() => {
-  latestPublishedCommand = undefined;
-  vi.unstubAllGlobals();
-});
-
-describe("trusted remote Agent tools", () => {
   it.each([
-    { timeout: undefined, timeoutMs: 300_000 },
-    { timeout: 0.1, timeoutMs: 100 },
-    { timeout: 37.25, timeoutMs: 37_250 },
-    { timeout: 300, timeoutMs: 300_000 },
-  ])("preserves the declared Bash timeout policy: %j", async ({ timeout, timeoutMs }) => {
-    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      const request = publishedRequest(init);
-      expect(request).toMatchObject({ operation: "bash.exec", timeoutMs });
-      return new Response(
-        JSON.stringify({
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.operation_result",
-          activationId: request.activationId,
-          operationId: request.operationId,
-          operation: "bash.exec",
-          exitCode: 0,
-          outputChunks: [],
-          outputSha256: createHash("sha256").update("").digest("hex"),
-        }),
-      );
-    });
-    const runtime = createTrustedRemoteAgentTools({
-      ...BASE_CONFIGURATION,
-      captureStepContext: createStepCapture(),
-      remainingToolCalls: 1,
-    });
+    { timeout: undefined, ms: 300000 },
+    { timeout: 0.1, ms: 100 },
+    { timeout: 37.25, ms: 37250 },
+  ])("retains Bash timeout semantics: %j", async ({ timeout, ms }) => {
+    const { value, publishToolCommand } = configuration();
+    const runtime = createTrustedRemoteAgentTools(value);
     await runtime.transformContext([]);
-    const bash = runtime.tools.find((tool) => tool.name === "bash")!;
-    await bash.execute(
-      "default-timeout",
-      { command: "npm test", timeout },
-      new AbortController().signal,
-      () => undefined,
-    );
-    expect(bash.parameters).toMatchObject({
-      properties: { timeout: { minimum: 0.1, maximum: 300 } },
-    });
-    expect(bash.description).toContain("default 300");
+    await runtime.tools
+      .find((tool) => tool.name === "bash")!
+      .execute("call", { command: "pwd", timeout });
+    expect(publishToolCommand.mock.calls[0]![0].request).toMatchObject({ timeoutMs: ms });
   });
 
-  it.each([0, -1, 0.05, 301, Number.POSITIVE_INFINITY])(
-    "rejects Bash timeout %s before publication instead of silently changing it",
+  it.each([0, -1, 0.05, 301, Infinity])(
+    "rejects timeout %s before publication",
     async (timeout) => {
-      vi.stubGlobal("fetch", async () => {
-        throw new Error("Unexpected remote IO");
-      });
-      const publishToolCommand = vi.fn(BASE_CONFIGURATION.publishToolCommand);
-      const runtime = createTrustedRemoteAgentTools({
-        ...BASE_CONFIGURATION,
-        captureStepContext: createStepCapture(),
-        publishToolCommand,
-        remainingToolCalls: 1,
-      });
+      const { value, publishToolCommand } = configuration();
+      const runtime = createTrustedRemoteAgentTools(value);
       await runtime.transformContext([]);
       const bash = runtime.tools.find((tool) => tool.name === "bash")!;
       expect(() =>
         validateToolArguments(bash, {
           type: "toolCall",
-          id: "invalid-timeout",
+          id: "bad",
           name: "bash",
-          arguments: { command: "npm test", timeout },
+          arguments: { command: "pwd", timeout },
         }),
-      ).toThrow(/timeout/iu);
-      await expect(
-        bash.execute(
-          "invalid-timeout",
-          { command: "npm test", timeout },
-          new AbortController().signal,
-          () => undefined,
-        ),
-      ).rejects.toThrow(/timeout/iu);
+      ).toThrow(/timeout/i);
+      await expect(bash.execute("bad", { command: "pwd", timeout })).rejects.toThrow(/timeout/i);
       expect(publishToolCommand).not.toHaveBeenCalled();
     },
   );
 
-  it.each(["cwd", "env", "timeuot"])(
-    "rejects unsupported Bash parameter %s through Pi validation",
-    (name) => {
-      const runtime = createTrustedRemoteAgentTools(BASE_CONFIGURATION);
-      const bash = runtime.tools.find((tool) => tool.name === "bash")!;
-      expect(bash.parameters).toMatchObject({ additionalProperties: false });
-      expect(() =>
-        validateToolArguments(bash, {
-          type: "toolCall",
-          id: "bad-bash",
-          name: "bash",
-          arguments: { command: "node --check game.js", [name]: "/home/user/snake-game" },
-        }),
-      ).toThrow(new RegExp(name));
-    },
-  );
-
-  it.each([
-    { command: "pwd" },
-    { command: "cd /home/user/snake-game && node --check game.js", timeout: 20 },
-  ])("preserves Pi's declared Bash parameters: %j", (args) => {
-    const bash = createTrustedRemoteAgentTools(BASE_CONFIGURATION).tools.find(
+  it.each(["cwd", "env", "timeuot"])("rejects undeclared Bash argument %s", (name) => {
+    const bash = createTrustedRemoteAgentTools(configuration().value).tools.find(
       (tool) => tool.name === "bash",
     )!;
-    expect(
+    expect(() =>
       validateToolArguments(bash, {
         type: "toolCall",
-        id: "valid-bash",
+        id: "bad",
         name: "bash",
-        arguments: args,
+        arguments: { command: "pwd", [name]: "/elsewhere" },
       }),
-    ).toEqual(args);
-    expect(bash.description).toContain("use cd inside command");
+    ).toThrow(new RegExp(name));
   });
 
-  it("redacts Code Host tokens and authenticated URLs before model context", () => {
-    const source = Buffer.from(
-      "https://oauth2:glpat-super-secret-token@gitlab.example.com/group/repo.git\n" +
-        "github_pat_abcdefghijklmnopqrstuvwxyz123456\n",
-    );
-    const redacted = redactToolSecrets(source).toString("utf8");
-    expect(redacted).not.toContain("glpat-super-secret-token");
-    expect(redacted).not.toContain("github_pat_abcdefghijklmnopqrstuvwxyz123456");
-    expect(redacted).toContain("[PI_CLOUD_REDACTED]");
-  });
-
-  it("exposes governed Tools and model hooks to the SessionStorage Harness", async () => {
-    const runtime = createTrustedRemoteAgentTools(BASE_CONFIGURATION);
-    expect(runtime.tools.map((tool) => tool.name).sort()).toEqual([
-      "bash",
-      "edit",
-      "read",
-      "write",
-    ]);
-    expect(runtime.tools.every((tool) => tool.executionMode === "sequential")).toBe(true);
-    expect(runtime.tools.find((tool) => tool.name === "bash")?.description).toContain(
-      "nohup command </dev/null >server.log 2>&1 &",
-    );
-    await expect(runtime.systemPrompt("Base prompt")).resolves.toContain(
-      "Current working directory: /workspace",
-    );
-    await expect(runtime.transformContext([])).resolves.toEqual([]);
-    const headers = { "x-test": "yes" };
-    await expect(runtime.transformHeaders(headers)).resolves.toMatchObject({
-      "x-test": "yes",
-      traceparent: BASE_CONFIGURATION.traceparent,
-      "x-pi-cloud-step-sequence": "1",
-    });
-    expect(headers).toEqual({ "x-test": "yes" });
-  });
-
-  it("exposes only the immutable Run capability snapshot to one Agent runtime", () => {
-    const runtime = createTrustedRemoteAgentTools({
-      ...BASE_CONFIGURATION,
-      allowedTools: ["read", "bash"],
-    });
-    expect(runtime.tools.map((tool) => tool.name)).toEqual(["read", "bash"]);
-  });
-
-  it("resolves the physical Sandbox only when the model actually calls a local Tool", async () => {
-    const {
-      activationId: _activationId,
-      operationResultUrl: _operationUrl,
-      ...configuration
-    } = BASE_CONFIGURATION;
+  it("has no sandbox activation during prompt/context preparation", async () => {
+    const { value } = configuration();
+    delete value.activationId;
+    delete value.workflowUrl;
     const resolveOperationTarget = vi.fn(async () => ({
       activationId: "10000000-0000-4000-8000-000000000077",
-      operationResultUrl: "http://127.0.0.1:4999/v1/tool-operations",
+      workflowUrl: "http://broker/workflow",
     }));
-    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      const request = publishedRequest(init) as {
-        activationId: string;
-        operationId: string;
-      };
-      return new Response(
-        JSON.stringify({
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.operation_result",
-          activationId: request.activationId,
-          operationId: request.operationId,
-          operation: "file.read_range",
-          content: Buffer.from("lazy\n").toString("base64"),
-          startLine: 1,
-          endLine: 1,
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
-    });
-    const runtime = createTrustedRemoteAgentTools({
-      ...configuration,
-      allowedTools: ["read"],
-      remainingToolCalls: 1,
-      resolveOperationTarget,
-    });
-
-    await runtime.systemPrompt("Base prompt");
+    value.resolveOperationTarget = resolveOperationTarget;
+    const runtime = createTrustedRemoteAgentTools(value);
+    expect(runtime.tools.every((tool) => tool.executionMode === "sequential")).toBe(true);
+    await expect(runtime.systemPrompt("Current working directory: /trusted")).resolves.toContain(
+      "Current working directory: /workspace",
+    );
     await runtime.transformContext([]);
     expect(resolveOperationTarget).not.toHaveBeenCalled();
-    await runtime.tools[0]!.execute(
-      "tool-call-lazy",
-      { path: "README.md" },
-      new AbortController().signal,
-      () => undefined,
+    await runtime.tools.find((tool) => tool.name === "read")!.execute("read", { path: "a" });
+    expect(resolveOperationTarget).toHaveBeenCalledOnce();
+  });
+
+  it("keeps immutable capabilities, Tool budget and clean sampling boundaries", async () => {
+    const { value, publishToolCommand } = configuration({
+      allowedTools: ["read", "bash"],
+      remainingToolCalls: 1,
+    });
+    const runtime = createTrustedRemoteAgentTools(value);
+    expect(runtime.tools.map((tool) => tool.name)).toEqual(["read", "bash"]);
+    await expect(runtime.tools[0]!.execute("early", { path: "a" })).rejects.toThrow(
+      "step_context_unavailable",
     );
-    expect(resolveOperationTarget).toHaveBeenCalledTimes(1);
+    expect(publishToolCommand).not.toHaveBeenCalled();
+    await expect(runtime.tools[0]!.execute("exhausted", { path: "a" })).rejects.toThrow(
+      "tool_budget_exhausted",
+    );
   });
 
-  it("assigns fresh governed identities to Pi context-maintenance requests", async () => {
-    const purposes: Array<string | undefined> = [];
-    const capture = createStepCapture();
-    const runtime = createTrustedRemoteAgentTools({
-      ...BASE_CONFIGURATION,
-      captureStepContext: (activeTools, purpose) => {
+  it("refreshes maintenance sampling identities and retains trace headers", async () => {
+    const purposes: Array<string | undefined> = [],
+      capture = createStepCapture();
+    const { value } = configuration({
+      captureStepContext: (tools, purpose) => {
         purposes.push(purpose);
-        return capture(activeTools);
+        return capture(tools);
       },
     });
-
+    const runtime = createTrustedRemoteAgentTools(value);
     await runtime.transformContext([]);
-    const agentHeaders = await runtime.transformHeaders();
-    const compactionHeaders = await runtime.transformHeaders();
+    expect(await runtime.transformHeaders({ "x-test": "yes" })).toMatchObject({
+      "x-test": "yes",
+      "x-pi-cloud-step-sequence": "1",
+      traceparent: value.traceparent,
+    });
+    expect(await runtime.transformHeaders()).toMatchObject({ "x-pi-cloud-step-sequence": "2" });
     await runtime.transformContext([]);
-    const resumedAgentHeaders = await runtime.transformHeaders();
-
+    expect(await runtime.transformHeaders()).toMatchObject({ "x-pi-cloud-step-sequence": "3" });
     expect(purposes).toEqual(["agent", "context_maintenance", "agent"]);
-    expect(agentHeaders["x-pi-cloud-step-sequence"]).toBe("1");
-    expect(compactionHeaders["x-pi-cloud-step-sequence"]).toBe("2");
-    expect(resumedAgentHeaders["x-pi-cloud-step-sequence"]).toBe("3");
   });
 
-  it("rejects a Pi tool call before Tool RPC when the durable run budget is exhausted", async () => {
-    const runtime = createTrustedRemoteAgentTools(BASE_CONFIGURATION);
-    const registered = runtime.tools;
-    expect(registered.map((tool) => tool.name).sort()).toEqual(["bash", "edit", "read", "write"]);
-    await expect(
-      registered
-        .find((tool) => tool.name === "read")!
-        .execute(
-          "tool-call-1",
-          { path: "README.md" },
-          new AbortController().signal,
-          () => undefined,
-        ),
-    ).rejects.toThrow("tool_budget_exhausted");
-  });
-
-  it("captures every Pi sampling boundary and binds Tool RPC to the latest Step", async () => {
-    const capturedSteps: Array<ReturnType<ReturnType<typeof createStepCapture>>> = [];
+  it("preserves one model-visible world-state fact across repeated context boundaries", async () => {
     const capture = createStepCapture();
-    const onToolOperationStarted = vi.fn();
-    let requestBody: Record<string, unknown> | undefined;
-    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      requestBody = publishedRequest(init) as Record<string, unknown>;
-      return new Response(
-        JSON.stringify({
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.operation_result",
-          activationId: requestBody.activationId,
-          operationId: requestBody.operationId,
-          operation: "bash.exec",
-          exitCode: 0,
-          outputChunks: [],
-          outputSha256: createHash("sha256").update(Buffer.alloc(0)).digest("hex"),
+    const runtime = createTrustedRemoteAgentTools(
+      configuration({
+        captureStepContext: (tools) => ({
+          ...capture(tools),
+          modelMessages: [
+            {
+              customType: "pi-cloud.sandbox_reset",
+              content: "<sandbox_reset>reset</sandbox_reset>",
+              display: false,
+              details: { schemaVersion: 1, changeSha256: "e".repeat(64) },
+            },
+          ],
         }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
-    });
-    const runtime = createTrustedRemoteAgentTools({
-      ...BASE_CONFIGURATION,
-      remainingToolCalls: 2,
-      captureStepContext: (activeTools) => {
-        const captured = capture(activeTools);
-        capturedSteps.push(captured);
-        return captured;
-      },
-      onToolOperationStarted,
-    });
-    const registered = runtime.tools;
-
-    await expect(
-      registered
-        .find((tool) => tool.name === "bash")!
-        .execute(
-          "tool-call-before-step",
-          { command: "pwd", timeout: 10 },
-          new AbortController().signal,
-          () => undefined,
-        ),
-    ).rejects.toThrow("step_context_unavailable");
-    await runtime.transformContext([]);
-    await runtime.transformContext([]);
-    await registered
-      .find((tool) => tool.name === "bash")!
-      .execute(
-        "tool-call-after-step",
-        { command: "pwd", timeout: 10 },
-        new AbortController().signal,
-        () => undefined,
-      );
-
-    expect(capturedSteps.map((entry) => entry.step.context.sequence)).toEqual([1, 2]);
-    expect(requestBody).toMatchObject({
-      toolName: "bash",
-      turnContextSha256: TURN_CONTEXT_SHA256,
-      executionContextSha256: ATTEMPT_CONTEXT_SHA256,
-      stepContextSequence: 2,
-      stepContextSha256: capturedSteps[1]!.step.sha256,
-    });
-    expect(onToolOperationStarted).toHaveBeenCalledTimes(1);
+      }).value,
+    );
+    const first = await runtime.transformContext([]);
+    expect(first).toHaveLength(1);
+    expect(await runtime.transformContext(first)).toHaveLength(1);
   });
 
-  it("injects one model-visible world-state delta at repeated context boundaries", async () => {
-    const capture = createStepCapture();
-    const runtime = createTrustedRemoteAgentTools({
-      ...BASE_CONFIGURATION,
-      captureStepContext: (activeTools) => ({
-        ...capture(activeTools),
-        modelMessages: [
-          {
-            customType: "pi-cloud.sandbox_reset",
-            content: "<sandbox_reset>reset</sandbox_reset>",
-            display: false,
-            details: { schemaVersion: 1, changeSha256: "e".repeat(64) },
-          },
-        ],
+  it("preserves UNKNOWN as an error and marks unavailable execution state", async () => {
+    const unavailable = vi.fn();
+    const { value } = configuration({
+      onToolOperationUnavailable: unavailable,
+      waitForToolReply: async (request) => ({
+        type: "tool_execution_end",
+        toolCallId: "call",
+        toolName: request.toolName,
+        isError: true,
+        result: {
+          content: [{ type: "text", text: "cubesandbox_tool_result_unknown: No confirmed result" }],
+          details: undefined,
+        },
+      }),
+      publishToolCommand: async (command) => ({
+        operationId: command.request.operationId,
+        accepted: true,
       }),
     });
-    const first = await runtime.transformContext([]);
-    const second = await runtime.transformContext(first);
-    expect(first).toHaveLength(1);
-    expect(second).toHaveLength(1);
-  });
-
-  it("marks the Step world unavailable when Cube can no longer prove a Tool result", async () => {
-    const onToolOperationUnavailable = vi.fn();
-    vi.stubGlobal(
-      "fetch",
-      async () =>
-        new Response(
-          JSON.stringify({
-            error: {
-              code: "cubesandbox_tool_result_unknown",
-              message: "The Cube operation ledger was lost",
-              retryable: false,
-            },
-          }),
-          { status: 503, headers: { "content-type": "application/json" } },
-        ),
-    );
-    const runtime = createTrustedRemoteAgentTools({
-      ...BASE_CONFIGURATION,
-      remainingToolCalls: 1,
-      onToolOperationUnavailable,
-    });
-    const registered = runtime.tools;
+    const runtime = createTrustedRemoteAgentTools(value);
     await runtime.transformContext([]);
-
     await expect(
-      registered
-        .find((tool) => tool.name === "bash")!
-        .execute(
-          "tool-call-unknown",
-          { command: "migrate", timeout: 10 },
-          new AbortController().signal,
-          () => undefined,
-        ),
+      runtime.tools.find((tool) => tool.name === "bash")!.execute("call", { command: "migrate" }),
     ).rejects.toThrow("cubesandbox_tool_result_unknown");
-    expect(onToolOperationUnavailable).toHaveBeenCalledTimes(1);
-  });
-
-  it("layers bounded project instructions and preserves a large read result", async () => {
-    const directory = await mkdtemp(resolve(tmpdir(), "pi-cloud-tool-output-test-"));
-    try {
-      vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-        expect(new Headers(init.headers).get("traceparent")).toBe(BASE_CONFIGURATION.traceparent);
-        const request = publishedRequest(init) as {
-          activationId: string;
-          operationId: string;
-          operation: string;
-          path?: string;
-        };
-        const common = {
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.operation_result",
-          activationId: request.activationId,
-          operationId: request.operationId,
-          operation: request.operation,
-        };
-        const body =
-          request.operation === "file.read_range"
-            ? {
-                ...common,
-                content: Buffer.from("x".repeat(2_048)).toString("base64"),
-                startLine: 1,
-                endLine: 1,
-              }
-            : common;
-        return new Response(JSON.stringify(body), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      });
-      const runtime = createTrustedRemoteAgentTools({
-        ...BASE_CONFIGURATION,
-        remainingToolCalls: 1,
-      });
-      const registered = runtime.tools;
-      const prompt = await runtime.systemPrompt("Current working directory: /trusted");
-      expect(prompt).toContain("Current working directory: /workspace");
-      expect(prompt).not.toContain("/trusted");
-      await runtime.transformContext([]);
-      const providerHeaders = await runtime.transformHeaders();
-      expect(providerHeaders.traceparent).toBe(BASE_CONFIGURATION.traceparent);
-      expect(providerHeaders["x-pi-cloud-step-sequence"]).toMatch(/^[1-9][0-9]*$/);
-      expect(providerHeaders["x-pi-cloud-sampling-attempt"]).toBe("1");
-
-      await registered
-        .find((tool) => tool.name === "read")!
-        .execute(
-          "tool-call-large-read",
-          { path: "large.txt" },
-          new AbortController().signal,
-          () => undefined,
-        );
-      expect(await readdir(directory)).toEqual([]);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it("selects one bounded head-tail Bash preview without archiving from the original output", async () => {
-    const directory = await mkdtemp(resolve(tmpdir(), "pi-cloud-bash-preview-test-"));
-    try {
-      const original = Buffer.from(
-        `BEGIN-${"a".repeat(2_000)}-MIDDLE-${"b".repeat(2_000)}-FINAL-COMPILER-ERROR`,
-        "utf8",
-      );
-      vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-        const request = publishedRequest(init) as {
-          activationId: string;
-          operationId: string;
-          operation: string;
-        };
-        return new Response(
-          JSON.stringify({
-            toolBrokerProtocolVersion: 1,
-            type: "tool_sandbox.operation_result",
-            activationId: request.activationId,
-            operationId: request.operationId,
-            operation: "bash.exec",
-            exitCode: 0,
-            outputChunks: [
-              { seq: 1, stream: "stdout", data: original.subarray(0, 700).toString("base64") },
-              {
-                seq: 2,
-                stream: "stderr",
-                data: original.subarray(700, 1_400).toString("base64"),
-              },
-              { seq: 3, stream: "stdout", data: original.subarray(1_400).toString("base64") },
-            ],
-            outputSha256: createHash("sha256").update(original).digest("hex"),
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      });
-      const runtime = createTrustedRemoteAgentTools({
-        ...BASE_CONFIGURATION,
-        remainingToolCalls: 1,
-      });
-      const registered = runtime.tools;
-      await runtime.transformContext([]);
-
-      const result = (await registered
-        .find((tool) => tool.name === "bash")!
-        .execute(
-          "tool-call-large-bash",
-          { command: "compile", timeout: 10 },
-          new AbortController().signal,
-          () => undefined,
-        )) as {
-        content: Array<{ type: string; text: string }>;
-        details?: { truncation?: unknown };
-      };
-
-      const preview = result.content[0]?.text ?? "";
-      expect(Buffer.byteLength(preview, "utf8")).toBeLessThanOrEqual(1_024);
-      expect(preview).toContain("BEGIN-");
-      expect(preview).toContain("FINAL-COMPILER-ERROR");
-      expect(preview).toContain("omitted output is not archived");
-      expect(result.details?.truncation).toBeUndefined();
-      expect(await readdir(directory)).toEqual([]);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it("rejects non-contiguous Bash output before exposing it to Pi", async () => {
-    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      const request = publishedRequest(init) as {
-        activationId: string;
-        operationId: string;
-      };
-      return new Response(
-        JSON.stringify({
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.operation_result",
-          activationId: request.activationId,
-          operationId: request.operationId,
-          operation: "bash.exec",
-          exitCode: 0,
-          outputChunks: [
-            { seq: 1, stream: "stdout", data: Buffer.from("first").toString("base64") },
-            { seq: 3, stream: "stderr", data: Buffer.from("lost").toString("base64") },
-          ],
-          outputSha256: createHash("sha256").update("firstlost").digest("hex"),
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
-    });
-    const runtime = createTrustedRemoteAgentTools({
-      ...BASE_CONFIGURATION,
-      remainingToolCalls: 1,
-    });
-    const registered = runtime.tools;
-    await runtime.transformContext([]);
-
-    await expect(
-      registered
-        .find((tool) => tool.name === "bash")!
-        .execute(
-          "tool-call-invalid-output",
-          { command: "compile", timeout: 10 },
-          new AbortController().signal,
-          () => undefined,
-        ),
-    ).rejects.toThrow("tool_output_sequence_invalid");
-  });
-
-  it("binds edit writes to the file revision that Pi actually read", async () => {
-    const callIds: string[] = [];
-
-    const original = Buffer.from("before\n", "utf8");
-    const originalSha256 = createHash("sha256").update(original).digest("hex");
-    let written: string | undefined;
-    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      const request = publishedRequest(init) as {
-        activationId: string;
-        operationId: string;
-        operation: string;
-        content?: string;
-        expectedSha256?: string;
-      };
-      const common = {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.operation_result",
-        activationId: request.activationId,
-        operationId: request.operationId,
-        operation: request.operation,
-      };
-      if (request.operation === "file.read") {
-        callIds.push(latestPublishedCommand!.toolCallId);
-        return new Response(
-          JSON.stringify({
-            ...common,
-            content: original.toString("base64"),
-            sha256: originalSha256,
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      }
-      if (request.operation === "file.write") {
-        callIds.push(latestPublishedCommand!.toolCallId);
-        expect(request.expectedSha256).toBe(originalSha256);
-        written = request.content;
-        return new Response(
-          JSON.stringify({
-            ...common,
-            sha256: createHash("sha256").update(request.content!, "utf8").digest("hex"),
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      }
-      return new Response(JSON.stringify(common), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    });
-    const runtime = createTrustedRemoteAgentTools({
-      ...BASE_CONFIGURATION,
-      remainingToolCalls: 1,
-    });
-    const registered = runtime.tools;
-    await runtime.transformContext([]);
-
-    await expect(
-      registered
-        .find((tool) => tool.name === "edit")!
-        .execute(
-          "tool-call-atomic-edit",
-          { path: "example.txt", edits: [{ oldText: "before", newText: "after" }] },
-          new AbortController().signal,
-          () => undefined,
-        ),
-    ).resolves.toMatchObject({
-      content: [{ type: "text", text: "Successfully replaced 1 block(s) in example.txt." }],
-    });
-    expect(written).toBe("after\n");
-    expect(callIds).toEqual(["tool-call-atomic-edit", "tool-call-atomic-edit"]);
+    expect(unavailable).toHaveBeenCalledOnce();
   });
 });

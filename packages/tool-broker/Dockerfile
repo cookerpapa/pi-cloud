@@ -11,11 +11,13 @@ COPY tsconfig.base.json ./
 COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
 COPY packages/database/package.json packages/database/package.json
 COPY packages/domain/package.json packages/domain/package.json
+COPY packages/event-log/package.json packages/event-log/package.json
 COPY packages/observability/package.json packages/observability/package.json
 COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/tool-broker/package.json packages/tool-broker/package.json
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
+    && npm rebuild @confluentinc/kafka-javascript \
     && npm cache clean --force
 
 FROM os-base
@@ -63,6 +65,8 @@ COPY packages/database/package.json packages/database/package.json
 COPY packages/database/src packages/database/src
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/domain/src packages/domain/src
+COPY packages/event-log/package.json packages/event-log/package.json
+COPY packages/event-log/src packages/event-log/src
 COPY packages/observability/package.json packages/observability/package.json
 COPY packages/observability/src packages/observability/src
 COPY packages/protocol/package.json packages/protocol/package.json

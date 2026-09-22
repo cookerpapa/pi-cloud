@@ -69,6 +69,7 @@ export type CubeSandboxGuestCommandRequest = Readonly<{
   timeoutMs: number;
   maximumOutputBytes: number;
   signal?: AbortSignal;
+  onStdout?: (chunk: Buffer) => Promise<void>;
 }>;
 
 export type CubeSandboxGuestCommandResult = Readonly<{
@@ -747,6 +748,12 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         const chunk = Buffer.from(stream, "base64");
         if (chunk.toString("base64") !== stream) {
           throw new CubeRuntimeClientError("CubeSandbox envd process output was invalid");
+        }
+        if (target === stdout && input.onStdout) {
+          if (chunk.byteLength > maximumOutputBytes)
+            throw new CubeRuntimeClientError("CubeSandbox envd output frame exceeded its limit");
+          await input.onStdout(chunk);
+          continue;
         }
         bytes += chunk.byteLength;
         if (bytes > maximumOutputBytes) {

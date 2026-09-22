@@ -1,10 +1,10 @@
 import {
+  TOOL_WORKFLOW_PATH,
   parseInternalServiceError,
   parseToolBrokerListWorkspaceDirectoryResponse,
   parseToolBrokerReadWorkspaceFileResponse,
   parseToolBrokerResponse,
   parseSupervisorManagementResponse,
-  parseToolSandboxOperationResponse,
   parseSourceControlWorkspaceCredentialResponse,
   parseSourceControlWorkspaceCredentialDisconnectResponse,
   parseSourceControlWorkspaceCredentialListResponse,
@@ -20,7 +20,6 @@ import {
   type ToolSandboxAssignment,
   type ToolSandboxCreateRequest,
   type ToolSandboxCreateResponse,
-  type ToolSandboxOperationResponse,
   type ToolSandboxReleaseResponse,
   type SourceControlWorkspaceCredentialAuthorizeRequest,
   type SourceControlWorkspaceCredentialDisconnectRequest,
@@ -38,7 +37,6 @@ import { Agent, fetch as internalFetch, type Response } from "undici";
 const internalDispatcher = new Agent();
 
 export const TOOL_BROKER_SERVICE_PATH = "/internal/v1/tool-broker";
-export const TOOL_BROKER_OPERATION_RESULT_PATH = "/internal/v1/tool-operation-result";
 export const TOOL_BROKER_INVENTORY_PATH = "/internal/v1/sandbox-inventory";
 export const TOOL_BROKER_WORKSPACE_BROWSER_PATH = "/internal/v1/workspace-browser";
 export const TOOL_BROKER_SOURCE_CONTROL_PATH = "/internal/v1/source-control";
@@ -135,12 +133,12 @@ export class ToolBrokerClient {
     this.#idGenerator = options.idGenerator ?? randomUUID;
   }
 
-  get operationResultUrl(): string {
-    return new URL(TOOL_BROKER_OPERATION_RESULT_PATH, this.#baseUrl).toString();
+  get workflowUrl(): string {
+    return new URL(TOOL_WORKFLOW_PATH, this.#baseUrl).toString();
   }
 
-  operationResultUrlFor(_activationId: string): string {
-    return this.operationResultUrl;
+  workflowUrlFor(_activationId: string): string {
+    return this.workflowUrl;
   }
 
   async checkHealth(): Promise<void> {
@@ -272,32 +270,6 @@ export class ToolBrokerClient {
         false,
       );
     }
-  }
-
-  async operationResult(
-    executionReference: string,
-    activationId: string,
-    operationId: string,
-    signal?: AbortSignal,
-  ): Promise<ToolSandboxOperationResponse> {
-    const query = new URLSearchParams({ activationId, operationId });
-    const response = await this.#request(
-      `${TOOL_BROKER_OPERATION_RESULT_PATH}?${query}`,
-      executionReference,
-      undefined,
-      signal,
-      0,
-      "GET",
-    );
-    const parsed = parseToolSandboxOperationResponse(response);
-    if (parsed.activationId !== activationId || parsed.operationId !== operationId) {
-      throw new ToolBrokerClientError(
-        "tool_broker_protocol_error",
-        "Tool operation response identity did not match",
-        false,
-      );
-    }
-    return parsed;
   }
 
   async listWorkspaceDirectory(
@@ -494,7 +466,6 @@ export class ToolBrokerClient {
     body: unknown,
     signal?: AbortSignal,
     redirects = 0,
-    method: "POST" | "GET" = "POST",
   ): Promise<unknown> {
     const timeoutSignal = AbortSignal.timeout(this.#requestTimeoutMs);
     const combinedSignal =
@@ -504,7 +475,7 @@ export class ToolBrokerClient {
       const trace = activeTraceCarrier();
       response = await internalFetch(new URL(path, this.#baseUrl), {
         dispatcher: internalDispatcher,
-        method,
+        method: "POST",
         headers: {
           authorization: `Bearer ${bearer}`,
           "content-type": "application/json",
@@ -605,8 +576,8 @@ export class ReplicatedToolBrokerClient {
     });
   }
 
-  operationResultUrlFor(activationId: string): string {
-    return this.#ownedClient(activationId).operationResultUrlFor(activationId);
+  workflowUrlFor(activationId: string): string {
+    return this.#ownedClient(activationId).workflowUrlFor(activationId);
   }
 
   async checkHealth(): Promise<void> {
@@ -655,20 +626,6 @@ export class ReplicatedToolBrokerClient {
     } finally {
       this.#forgetToolBindingOwner(activationId, assignment);
     }
-  }
-
-  operationResult(
-    executionReference: string,
-    activationId: string,
-    operationId: string,
-    signal?: AbortSignal,
-  ): Promise<ToolSandboxOperationResponse> {
-    return this.#ownedClient(activationId).operationResult(
-      executionReference,
-      activationId,
-      operationId,
-      signal,
-    );
   }
 
   listWorkspaceDirectory(

@@ -2,7 +2,6 @@ import {
   TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_PATH,
   TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
   MAX_WORKSPACE_TERMINAL_FRAME_BYTES,
-  MAX_TOOL_RESPONSE_BYTES,
   TOOL_BROKER_TERMINAL_PATH,
   parseWorkspaceTerminalClientFrame,
   parseWorkspaceTerminalOpenRequest,
@@ -31,7 +30,6 @@ import {
   TOOL_BROKER_INVENTORY_PATH,
   TOOL_BROKER_LIVE_PATH,
   TOOL_BROKER_WORKSPACE_BROWSER_PATH,
-  TOOL_BROKER_OPERATION_RESULT_PATH,
   TOOL_BROKER_READY_PATH,
   TOOL_BROKER_SERVICE_PATH,
   TOOL_BROKER_SOURCE_CONTROL_PATH,
@@ -40,12 +38,6 @@ import { ToolBrokerError } from "./sandbox-provider.ts";
 import { WorkspaceVolumeGatewayError } from "./workspace-volume-gateway-contract.ts";
 import { ToolBrokerOwnerRedirectError, type ToolBroker } from "./tool-broker.ts";
 import { TOOL_BROKER_LOG_DELIVERY_PATH, type ToolLogDelivery } from "./tool-command-router.ts";
-import type { ToolCommandExecutor } from "./tool-command-executor.ts";
-import {
-  ToolResultDeliveryBudget,
-  DEFAULT_TOOL_TRANSPORT_CAPACITY,
-  type ToolDeliveryCapacity,
-} from "./tool-transport-capacity.ts";
 
 const DEFAULT_BODY_LIMIT = 5 * 1_024 * 1_024;
 const DEFAULT_TERMINAL_SEND_BUFFER_BYTES = 1 * 1_024 * 1_024;
@@ -60,7 +52,6 @@ export type ToolBrokerServerOptions = {
   workspaceServiceToken?: string;
   terminalToken?: string;
   broker: ToolBrokerBackend;
-  commands: Pick<ToolCommandExecutor, "waitResult" | "checkHealth">;
   logDelivery?: {
     instanceId: string;
     token: string;
@@ -69,7 +60,6 @@ export type ToolBrokerServerOptions = {
   };
   bodyLimit?: number;
   metrics?: PiCloudMetrics;
-  resultDelivery?: ToolDeliveryCapacity;
 };
 
 export type ToolBrokerBackend = Pick<
@@ -194,22 +184,16 @@ export class ToolBrokerServer {
   readonly #workspaceServiceDigest: Buffer | undefined;
   readonly #terminalDigest: Buffer | undefined;
   readonly #broker: ToolBrokerBackend;
-  readonly #commands: ToolBrokerServerOptions["commands"];
   readonly #logDelivery: ToolBrokerServerOptions["logDelivery"];
   readonly #deliveryDigest: Buffer | undefined;
   readonly #server: FastifyInstance;
   readonly #metrics: PiCloudMetrics | undefined;
-  readonly #resultDelivery: ToolResultDeliveryBudget;
   readonly #capacityMetrics: NodeJS.Timeout;
   #address: string | undefined;
   #ready = false;
   readonly #previewConnections = new Set<import("node:stream").Duplex>();
 
   constructor(options: ToolBrokerServerOptions) {
-    this.#resultDelivery = new ToolResultDeliveryBudget(
-      options.resultDelivery ?? DEFAULT_TOOL_TRANSPORT_CAPACITY,
-      options.metrics,
-    );
     if (options.host.trim().length === 0) throw new TypeError("host must not be empty");
     if (!Number.isSafeInteger(options.port) || options.port < 0 || options.port > 65_535) {
       throw new TypeError("port must be an integer between 0 and 65535");
@@ -226,7 +210,6 @@ export class ToolBrokerServer {
         ? undefined
         : digest(validServiceToken(options.terminalToken));
     this.#broker = options.broker;
-    this.#commands = options.commands;
     this.#logDelivery = options.logDelivery;
     this.#deliveryDigest =
       options.logDelivery && digest(validServiceToken(options.logDelivery.token));
@@ -320,7 +303,7 @@ export class ToolBrokerServer {
   async listen(): Promise<string> {
     if (this.#address !== undefined) throw new Error("Tool Broker is already listening");
     await this.#broker.checkHealth();
-    this.#commands.checkHealth();
+    this.#logDelivery?.checkHealth();
     this.#recordCapacityMetrics();
     this.#address = await this.#server.listen({ host: this.#host, port: this.#port });
     this.#ready = true;
@@ -492,16 +475,6 @@ export class ToolBrokerServer {
           .catch((error) => {
             if (!controller.signal.aborted) fail(error);
           });
-        void this.#commands
-          .waitResult(lease, query.activationId, query.operationId, controller.signal)
-          .then((response) => {
-            send({ type: "result", response });
-            socket.close(1000);
-            controller.abort();
-          })
-          .catch((error) => {
-            if (!controller.signal.aborted) fail(error);
-          });
       });
     });
     this.#server.post(TOOL_BROKER_LOG_DELIVERY_PATH, async (request, reply) => {
@@ -536,7 +509,6 @@ export class ToolBrokerServer {
       if (healthy) {
         try {
           await this.#broker.checkHealth();
-          this.#commands.checkHealth();
           this.#logDelivery?.checkHealth();
         } catch {
           healthy = false;
@@ -841,74 +813,6 @@ export class ToolBrokerServer {
         );
       } catch (error: unknown) {
         await this.#failure(reply, error);
-      }
-    });
-
-    this.#server.get(TOOL_BROKER_OPERATION_RESULT_PATH, async (request, reply) => {
-      const executionReference = bearer(request.headers.authorization);
-      if (
-        executionReference === undefined ||
-        !/^pcer2_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionReference)
-      ) {
-        await reply.code(401).send({
-          error: {
-            code: "invalid_execution_lease",
-            message: "Tool Sandbox operation is not authorized",
-            retryable: false,
-          },
-        } satisfies InternalServiceError);
-        return;
-      }
-      let delivery: ReturnType<ToolResultDeliveryBudget["open"]> | undefined;
-      try {
-        const message = request.query as { activationId?: string; operationId?: string };
-        if (
-          !message.activationId ||
-          !message.operationId ||
-          ![message.activationId, message.operationId].every((id) =>
-            /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id),
-          )
-        )
-          throw new ToolBrokerError(
-            "invalid_tool_result_request",
-            "Tool result requires activationId and operationId",
-            false,
-          );
-        const activationId = message.activationId,
-          operationId = message.operationId;
-        delivery = this.#resultDelivery.open(reply.raw);
-        const signal = delivery.signal;
-        const response = await this.#observed({
-          request,
-          spanName: "tool.result",
-          operation: "tool_result_read",
-          // Tool execution is owned by operationId and the task's Session authority, not by
-          // this particular HTTP connection. Explicit stop/cancel revokes it.
-          run: () =>
-            this.#commands.waitResult(executionReference, activationId, operationId, signal),
-        });
-        this.#metrics?.sandboxActive.set(
-          { provider: this.#broker.providerId },
-          this.#broker.activeCount,
-        );
-        this.#metrics?.sandboxPrewarm.set(
-          { provider: this.#broker.providerId },
-          this.#broker.cleanPrewarmCount,
-        );
-        signal.throwIfAborted();
-        const body = JSON.stringify(response);
-        const bytes = Buffer.byteLength(body);
-        if (bytes > MAX_TOOL_RESPONSE_BYTES)
-          throw new ToolBrokerError(
-            "tool_operation_outcome_unknown",
-            "Tool result exceeds the response byte limit",
-            false,
-          );
-        delivery.sending(bytes);
-        await reply.code(200).type("application/json").send(body);
-      } catch (error: unknown) {
-        delivery?.close();
-        if (!reply.raw.destroyed) await this.#failure(reply, error);
       }
     });
 

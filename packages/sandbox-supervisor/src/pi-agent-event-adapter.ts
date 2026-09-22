@@ -37,7 +37,8 @@ const REVIEWED_IGNORED_EVENT_TYPES = new Set([
   "session_info_changed",
   "thinking_level_changed",
   // The public v1 protocol publishes durable tool boundaries and the final
-  // result. Pi's partial tool output is intentionally not persisted yet.
+  // result. Native partial Tool output travels through the private reply topic,
+  // not the public Session event stream or model context.
   "tool_execution_update",
   "auto_retry_end",
   // Pi 0.84 emits these around retryable compaction/branch-summary requests.

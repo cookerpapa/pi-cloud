@@ -32,7 +32,9 @@ and PG recovery position commit together. A seal commits the interrupted prefix
 and terminal, then announces it directly to the local live view: remove the
 second execution-committed Kafka round trip and pending-notification buffers.
 The partition handler does not wait for guest execution, only command admission.
-PG or live-owner routing failure stalls that partition, not unrelated partitions.
+PG/control delivery failure stalls that partition, not unrelated partitions.
+ADR-0183 makes committed Tool dispatch at-most-once: uncertain command delivery
+is abandoned rather than retried.
 
 Projector replicas advertise their HTTP endpoint in Kafka group membership.
 Session SSE requests are served by the assigned Projector; another API replica
@@ -41,11 +43,11 @@ browser cursor, cache cluster or stream-reading gateway is introduced. Rebalance
 invalidates old subscriptions and rebuilds unsealed tails before serving snapshots.
 
 Replay starts no later than PG's canonical/unsealed-prefix floor and the group's
-completed delivery position. Fetching is not acknowledging. Duplicate native
-projection is idempotent; owner Tool admission keeps exact operation IDs and
-positioned no-replay semantics. Tool execution remains an external effect, not a
+committed position. Fetching is not acknowledging. Duplicate native projection
+is idempotent; ADR-0183 separates rewindable projection from a monotonic committed
+Tool dispatch boundary. Tool execution remains an external effect, not a
 replayable materialized view. Already-admitted guest work may remain UNKNOWN.
-The existing owner-direct raw-result path and Cube lifecycle interfaces remain.
+Native replies use a Worker-boot Kafka topic; Cube lifecycle interfaces remain.
 
 ## Adopt before build
 

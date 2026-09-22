@@ -17,11 +17,7 @@ export function toolDeliveryFact(fact: ToolLogFact): ToolLogFact | undefined {
   if (fact.kind === "tool_command") return fact;
   if (fact.kind === "execution_seal")
     return { kind: fact.kind, scope: fact.scope, closesWriter: fact.closesWriter === true };
-  if (fact.kind !== "pi_session_append") return undefined;
-  const events = (fact.events ?? [])
-    .filter((e) => e.type === "tool.completed" && e.payload.toolCallId)
-    .map((e) => ({ type: e.type, payload: { toolCallId: e.payload.toolCallId! } }));
-  return events.length ? { kind: fact.kind, scope: fact.scope, events } : undefined;
+  return undefined;
 }
 
 /** Partition ownership is independent from boot-local Cube ownership. */
@@ -94,7 +90,8 @@ export class ToolCommandRouter {
           // An uncertain live-owner delivery is replayed at the same Kafka offset.
           // A vanished boot's bindings cannot be adopted or executed elsewhere.
           outcome = "retry";
-          if (await this.#routes.isAlive(route.instanceId)) throw error;
+          if (fact.kind !== "tool_command" && (await this.#routes.isAlive(route.instanceId)))
+            throw error;
           this.#abandoned++;
           outcome = "abandoned";
         } finally {

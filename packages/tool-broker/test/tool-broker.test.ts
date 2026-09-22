@@ -916,7 +916,6 @@ describe("provider-backed Tool Tool Broker", () => {
   it("quarantines a broken development binding without deleting its VM, capsule or first error", async () => {
     const fixture = providerFixture();
     const repository = new InMemoryWorkspaceRuntimeStateRepository();
-    const settleOperation = vi.spyOn(repository, "settleOperation");
     const returnMachine = vi.spyOn(repository, "returnDevelopmentEnvironment");
     const destroyRuntime = vi.spyOn(fixture.provider, "destroyRuntime");
     const manager = testBroker({
@@ -961,7 +960,6 @@ describe("provider-backed Tool Tool Broker", () => {
       ),
     ).rejects.toBe(failure);
     expect(fixture.exec).toHaveBeenCalledTimes(1);
-    expect(settleOperation).toHaveBeenCalledWith(expect.anything(), "unknown", failure.code);
     await manager.stop(binding.activationId, assignment);
     await manager.stop(binding.activationId, assignment);
     expect(returnMachine).toHaveBeenCalledWith(
@@ -1366,14 +1364,8 @@ describe("provider-backed Tool Tool Broker", () => {
       policy: { network: { mode: "public_web_proxy_private_denied" } },
     });
     expect(fixture.createSpec).not.toHaveProperty("capability");
-    // Completed bodies belong to the command consumer, not the execution map.
-    // A direct repeat hits the durable operation ledger and must not replay.
-    await expect(manager.execute(assignment.executionReference, request)).rejects.toMatchObject({
-      code: "tool_operation_outcome_unknown",
-    });
-    await expect(
-      manager.execute(assignment.executionReference, { ...request, command: "whoami" }),
-    ).rejects.toMatchObject({ code: "tool_operation_outcome_unknown" });
+    // Replay is stopped at Projector dispatch progress; Cube separately rejects
+    // reused operation IDs. This fixture tests authority, not a second PG ledger.
     expect(fixture.exec).toHaveBeenCalledTimes(1);
 
     const secondStep = {
@@ -2365,6 +2357,7 @@ describe("provider-backed Tool Tool Broker", () => {
       await expect(
         loadToolBrokerConfig({
           DATABASE_URL_FILE: databaseUrlPath,
+          PI_CLOUD_KAFKA_BROKERS: "kafka:9092",
           PI_CLOUD_SANDBOX_DOMAIN_ID: "sandbox-domain-0001",
           PI_CLOUD_TOOL_BROKER_ADVERTISED_URL: "http://tool-broker-0:4300",
           PI_CLOUD_TOOL_BROKER_TOKEN_FILE: tokenPath,
@@ -2390,11 +2383,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ).resolves.toMatchObject({
         databaseUrl: "postgresql://pi-cloud:secret@postgres:5432/pi-cloud",
         maximumActiveCommands: 32,
-        resultDelivery: {
-          maximumResultReaders: 128,
-          maximumSendingBytes: 33554432,
-          sendTimeoutMs: 30000,
-        },
+        kafkaBrokers: ["kafka:9092"],
         sandboxDomainId: "sandbox-domain-0001",
         advertisedBaseUrl: "http://tool-broker-0:4300/",
         maximumActiveSandboxes: 3,

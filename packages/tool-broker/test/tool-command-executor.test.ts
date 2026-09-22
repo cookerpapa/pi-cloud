@@ -1,21 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  createExecutionReference,
   type AcceptedToolCommand,
+  type NativeToolEvent,
+  type NativeToolUpdate,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
 import { ToolCommandExecutor } from "../src/tool-command-executor.ts";
-
 const instances: ToolCommandExecutor[] = [];
 afterEach(async () => {
   for (const instance of instances.splice(0)) await instance.close();
-  vi.useRealTimers();
 });
 function command(): AcceptedToolCommand {
+  const toolCallId = crypto.randomUUID();
   return {
     kind: "tool_command",
     factId: crypto.randomUUID(),
-    toolCallId: crypto.randomUUID(),
+    toolCallId,
+    replyTopic: "pi-cloud.tool-replies.v1.test",
     scope: {
       tenantId: crypto.randomUUID(),
       sessionId: crypto.randomUUID(),
@@ -36,376 +37,211 @@ function command(): AcceptedToolCommand {
       stepContextSequence: 1,
       stepContextSha256: "c".repeat(64),
       toolName: "bash",
-      operation: "bash.exec",
-      command: "echo once",
-      cwd: "/workspace",
+      operation: "tool.execute",
+      toolCallId,
+      args: { command: "echo once" },
       timeoutMs: 1000,
+      maximumOutputBytes: 51200,
     },
     occurredAt: new Date().toISOString(),
   };
 }
-const lease = (c: AcceptedToolCommand) =>
-  createExecutionReference(c.scope.leaseId, c.scope.runId, c.scope.fencingToken);
-const record = <T extends { kind: string; scope: { runId: string } }>(fact: T, offset = 0n) => ({
-  fact,
-  topic: "test",
-  partition: 0,
-  offset,
-});
-const output = (c: AcceptedToolCommand): ToolSandboxOperationResponse => ({
-  toolBrokerProtocolVersion: 1,
-  type: "tool_sandbox.operation_result",
-  activationId: c.request.activationId,
-  operationId: c.request.operationId,
-  operation: "bash.exec",
-  exitCode: 0,
-  outputChunks: [],
-  outputSha256: "d".repeat(64),
-});
-function fixture(maximumResultBytes?: number, maximumActiveCommands?: number) {
-  const bindings = new Map<string, string>();
-  const execute = vi.fn(async (_lease: string, request: AcceptedToolCommand["request"]) =>
-    output({ ...command(), request }),
-  );
-  const consumer = new ToolCommandExecutor({
-    ...(maximumResultBytes === undefined ? {} : { maximumResultBytes }),
-    ...(maximumActiveCommands === undefined ? {} : { maximumActiveCommands }),
-    broker: {
-      execute,
-      ownsToolBinding: (id) => bindings.has(id),
-      assertToolResultReader: (id, expected) => {
-        if (bindings.get(id) !== expected) throw new Error("stale binding");
-      },
-    },
-  });
-  instances.push(consumer);
-  const own = (c: AcceptedToolCommand) => bindings.set(c.request.activationId, lease(c));
-  return { consumer, own, execute, bindings };
-}
-
-function receipt(c: AcceptedToolCommand) {
+const record = <T>(fact: T, offset = 0n) => ({ fact, topic: "test", partition: 0, offset });
+function output(request: AcceptedToolCommand["request"]): ToolSandboxOperationResponse {
+  if (request.operation !== "tool.execute") throw new Error("Expected native Tool");
   return {
-    kind: "pi_session_append",
-    scope: c.scope,
-    events: [{ type: "tool.completed", payload: { toolCallId: c.toolCallId } }],
-    operation: {
-      kind: "append_items",
-      items: [
-        {
-          kind: "append_entry",
-          entry: {
-            type: "message",
-            message: { role: "toolResult", toolCallId: c.toolCallId },
-          },
-        },
-      ],
+    toolBrokerProtocolVersion: 1,
+    type: "tool_sandbox.operation_result",
+    activationId: request.activationId,
+    operationId: request.operationId,
+    operation: "tool.execute",
+    event: {
+      type: "tool_execution_end",
+      toolCallId: request.toolCallId,
+      toolName: request.toolName,
+      result: { content: [{ type: "text", text: "finished" }], details: undefined },
+      isError: false,
     },
   };
 }
-
-describe("Kafka-driven Tool command execution", () => {
-  it("does not deliver an earlier attempt's response after a machine binding is reused", async () => {
+function fixture(maximumActiveCommands = 32) {
+  const bindings = new Set<string>();
+  const execute = vi.fn(
+    async (
+      _lease: string,
+      request: AcceptedToolCommand["request"],
+      _signal?: AbortSignal,
+      _update?: (event: NativeToolUpdate) => Promise<void>,
+    ) => output(request),
+  );
+  const publish = vi.fn(
+    async (
+      _topic: string,
+      _reply: { operationId: string; sequence: number; event: NativeToolEvent },
+    ) => {},
+  );
+  const executor = new ToolCommandExecutor({
+    maximumActiveCommands,
+    broker: { execute, ownsToolBinding: (id) => bindings.has(id) },
+    publishReply: publish,
+  });
+  instances.push(executor);
+  return {
+    executor,
+    execute,
+    publish,
+    bindings,
+    own: (c: AcceptedToolCommand) => bindings.add(c.request.activationId),
+    settled: () =>
+      vi.waitFor(() => expect(executor.statistics().activeCommands).toBe(0), { interval: 1 }),
+  };
+}
+describe("native Kafka Tool replies without completed-result retention", () => {
+  it("returns native intermediate events and the final result in operation order", async () => {
     const f = fixture(),
-      earlier = command();
-    f.own(earlier);
-    f.consumer.consume(record(earlier));
-    await f.consumer.waitResult(
-      lease(earlier),
-      earlier.request.activationId,
-      earlier.request.operationId,
+      c = command();
+    f.own(c);
+    f.execute.mockImplementationOnce(async (_lease, request, _signal, update) => {
+      await update!({
+        type: "tool_execution_update",
+        toolCallId: c.toolCallId,
+        toolName: "bash",
+        args: {},
+        partialResult: { content: [{ type: "text", text: "working" }], details: undefined },
+      });
+      return output(request);
+    });
+    f.executor.receive(record(c));
+    await f.settled();
+    expect(
+      f.publish.mock.calls.map(([, reply]) => [
+        reply.operationId,
+        reply.sequence,
+        reply.event.type,
+      ]),
+    ).toEqual([
+      [c.request.operationId, 1, "tool_execution_update"],
+      [c.request.operationId, 2, "tool_execution_end"],
+    ]);
+  });
+  it("ignores duplicate delivery and delayed lower offsets after a seal", async () => {
+    const f = fixture(),
+      c = command();
+    f.own(c);
+    f.executor.receive(record(c, 10n));
+    f.executor.receive(record(c, 10n));
+    f.executor.receive(record({ kind: "execution_seal", scope: c.scope }, 12n));
+    f.executor.receive(
+      record({ ...c, request: { ...c.request, operationId: crypto.randomUUID() } }, 11n),
     );
-    const later = { ...earlier, scope: { ...earlier.scope, runId: crypto.randomUUID() } };
-    // A persistent machine can lend its physical binding ID to the next Run;
-    // the old retry body may still be present until its receipt/seal is routed.
-    f.own(later);
-    await expect(
-      f.consumer.waitResult(lease(later), later.request.activationId, earlier.request.operationId),
-    ).rejects.toMatchObject({ code: "tool_command_identity_mismatch" });
+    await f.settled();
     expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.publish).not.toHaveBeenCalled();
   });
-
-  it("retires sibling responses and refuses later commands after a native writer seal", async () => {
+  it("does not publish a running command's late result after a seal", async () => {
     const f = fixture(),
-      parent = command(),
-      rawChild = command();
-    const child = {
-      ...rawChild,
-      scope: {
-        ...rawChild.scope,
-        piSessionId: parent.scope.piSessionId,
-        writerId: parent.scope.writerId,
-      },
-    };
-    f.own(parent);
-    f.own(child);
-    await f.consumer.consume(record(parent));
-    await f.consumer.consume(record(child));
-    await f.consumer.waitResult(
-      lease(parent),
-      parent.request.activationId,
-      parent.request.operationId,
+      c = command();
+    f.own(c);
+    let finish!: (response: ToolSandboxOperationResponse) => void;
+    f.execute.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
     );
-    await f.consumer.waitResult(
-      lease(child),
-      child.request.activationId,
-      child.request.operationId,
-    );
-    expect(f.consumer.statistics().retainedResults).toBe(2);
-    await f.consumer.consume(
-      record({ kind: "execution_seal", scope: child.scope, closesWriter: true }),
-    );
-    expect(f.consumer.statistics().retainedResultBytes).toBe(0);
-    await expect(
-      f.consumer.waitResult(lease(parent), parent.request.activationId, parent.request.operationId),
-    ).rejects.toMatchObject({ code: "tool_command_sealed" });
-    const later = {
-      ...parent,
-      factId: crypto.randomUUID(),
-      toolCallId: crypto.randomUUID(),
-      request: { ...parent.request, operationId: crypto.randomUUID() },
-    };
-    await f.consumer.consume(record(later));
-    await expect(
-      f.consumer.waitResult(lease(later), later.request.activationId, later.request.operationId),
-    ).rejects.toMatchObject({ code: "tool_command_sealed" });
-    expect(f.execute).toHaveBeenCalledTimes(2);
+    f.executor.receive(record(c));
+    f.executor.receive(record({ kind: "execution_seal", scope: c.scope }, 1n));
+    finish(output(c.request));
+    await f.settled();
+    expect(f.publish).not.toHaveBeenCalled();
   });
-  it("bounds execution and detaches cancelled readers without cancelling Tools", async () => {
-    const f = fixture(undefined, 1),
+  it("a writer seal closes siblings but not an unrelated Session", async () => {
+    const f = fixture(),
+      a = command(),
+      b = command(),
+      raw = command();
+    const sibling = { ...raw, scope: { ...raw.scope, writerId: a.scope.writerId } };
+    for (const c of [a, b, sibling]) f.own(c);
+    f.executor.receive(record({ kind: "execution_seal", scope: a.scope, closesWriter: true }));
+    f.executor.receive(record(sibling, 1n));
+    f.executor.receive(record(b, 2n));
+    await f.settled();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.publish.mock.calls[0]![1].operationId).toBe(b.request.operationId);
+  });
+  it("bounds active execution and returns capacity errors without starting another effect", async () => {
+    const f = fixture(1),
       a = command(),
       b = command();
     f.own(a);
     f.own(b);
-    let finish!: (value: ToolSandboxOperationResponse) => void;
+    let finish!: (response: ToolSandboxOperationResponse) => void;
     f.execute.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           finish = resolve;
         }),
     );
-    await f.consumer.consume(record(a));
-    const controller = new AbortController();
-    const reader = f.consumer
-      .waitResult(lease(a), a.request.activationId, a.request.operationId, controller.signal)
-      .catch((error) => error);
-    expect(f.consumer.statistics().waitingReaders).toBe(1);
-    controller.abort();
-    await reader;
-    expect(f.consumer.statistics()).toMatchObject({ waitingReaders: 0, activeCommands: 1 });
-    await f.consumer.consume(record(b));
-    await expect(
-      f.consumer.waitResult(lease(b), b.request.activationId, b.request.operationId),
-    ).rejects.toMatchObject({ code: "tool_command_capacity_exhausted" });
-    expect(f.execute).toHaveBeenCalledOnce();
-    await f.consumer.consume(record({ kind: "execution_seal", scope: a.scope }));
-    finish(output(a));
-    await vi.waitFor(() => expect(f.consumer.statistics().activeCommands).toBe(0));
-    expect(f.consumer.statistics().retainedResultBytes).toBe(0);
-  });
-  it("uses a native result as delivery ACK, releasing all operations but preserving dedup", async () => {
-    const f = fixture(),
-      a = command();
-    const b = { ...a, request: { ...a.request, operationId: crypto.randomUUID() } };
-    f.own(a);
-    for (const c of [a, b]) {
-      await f.consumer.consume(record(c));
-      await f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId);
-    }
-    expect(f.consumer.statistics().retainedResults).toBe(2);
-    expect(f.consumer.statistics().retainedResultBytes).toBeGreaterThan(0);
-    // A UI event and another execution's same tool ID are not acknowledgements.
-    await f.consumer.consume(record({ kind: "agent_event", scope: a.scope }));
-    for (const field of ["tenantId", "sessionId", "runId", "turnId"] as const) {
-      const other = { ...receipt(a), scope: { ...a.scope, [field]: crypto.randomUUID() } };
-      await f.consumer.consume(record(other));
-    }
-    expect(f.consumer.statistics().retainedResults).toBe(2);
-    await f.consumer.consume(record(receipt(a)));
-    await f.consumer.consume(record(receipt(a))); // duplicate receipt is harmless
-    expect(f.consumer.statistics()).toMatchObject({
-      retainedResults: 0,
-      retainedResultBytes: 0,
-      releasedResults: 2,
+    f.executor.receive(record(a));
+    f.executor.receive(record(b, 1n));
+    await vi.waitFor(() => expect(f.publish).toHaveBeenCalledOnce());
+    expect(f.publish.mock.calls[0]![1].event).toMatchObject({
+      isError: true,
+      result: { content: [{ text: expect.stringContaining("capacity") }] },
     });
-    for (const c of [a, b]) {
-      await f.consumer.consume(record(c));
-      await expect(
-        f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId),
-      ).rejects.toMatchObject({ code: "tool_result_released" });
-    }
-    expect(f.execute).toHaveBeenCalledTimes(2);
-    expect(() => f.consumer.consume(record({ ...a, toolCallId: "different" }))).toThrow(
-      "different arguments",
-    );
+    expect(f.execute).toHaveBeenCalledOnce();
+    finish(output(a.request));
+    await f.settled();
   });
-
-  it("does not resurrect results when an UNKNOWN receipt arrives before a running effect finishes", async () => {
+  it("never treats a Kafka reply failure as a dead Cube or retries the command", async () => {
     const f = fixture(),
       c = command();
     f.own(c);
-    let finish!: (result: ToolSandboxOperationResponse) => void;
-    f.execute.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
-    await f.consumer.consume(record(c));
-    const reader = f.consumer
-      .waitResult(lease(c), c.request.activationId, c.request.operationId)
-      .catch((error) => error);
-    await f.consumer.consume(record(receipt(c)));
-    finish(output(c));
-    expect(await reader).toMatchObject({ code: "tool_result_released" });
-    expect(f.consumer.statistics()).toMatchObject({ retainedResults: 0, retainedResultBytes: 0 });
-    await f.consumer.consume(record(c));
+    f.publish.mockRejectedValueOnce(new Error("Kafka unavailable"));
+    f.execute.mockImplementationOnce(async (_lease, request, _signal, update) => {
+      await update!({
+        type: "tool_execution_update",
+        toolCallId: c.toolCallId,
+        toolName: "bash",
+        args: {},
+        partialResult: { content: [], details: undefined },
+      });
+      return output(request);
+    });
+    f.executor.receive(record(c));
+    await f.settled();
     expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.publish).toHaveBeenCalledOnce();
+    expect(() => f.executor.checkHealth()).not.toThrow();
+    // A destination's failed reply must not permanently disable the Broker or
+    // prevent another invocation from using a recovered producer.
+    const next = command();
+    f.own(next);
+    f.executor.receive(record(next, 1n));
+    await f.settled();
+    expect(f.publish).toHaveBeenCalledTimes(2);
   });
-
-  it("seals release missing-result bodies and never affect another active lane", async () => {
-    const f = fixture(),
-      a = command(),
-      b = { ...command(), toolCallId: a.toolCallId };
-    for (const c of [a, b]) {
-      f.own(c);
-      await f.consumer.consume(record(c));
-      await f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId);
-    }
-    await f.consumer.consume(record({ kind: "execution_seal", scope: a.scope }));
-    expect(f.consumer.statistics().retainedResults).toBe(1);
-    await expect(
-      f.consumer.waitResult(lease(a), a.request.activationId, a.request.operationId),
-    ).rejects.toMatchObject({ code: "tool_command_sealed" });
-    await f.consumer.consume(record(receipt(a)));
-    expect(f.consumer.statistics().retainedResults).toBe(1);
-    await f.consumer.consume(record(receipt(b)));
-    expect(f.consumer.statistics().retainedResults).toBe(0);
-  });
-
-  it("bounds retry-body bytes without re-executing an evicted operation", async () => {
-    const c = command();
-    const bytes = Buffer.byteLength(JSON.stringify(output(c)));
-    const f = fixture(bytes + 1),
-      b = command();
-    for (const value of [c, b]) {
-      f.own(value);
-      await f.consumer.consume(record(value));
-      await f.consumer.waitResult(
-        lease(value),
-        value.request.activationId,
-        value.request.operationId,
-      );
-    }
-    expect(f.consumer.statistics()).toMatchObject({ retainedResults: 1, releasedResults: 1 });
-    expect(f.consumer.statistics().retainedResultBytes).toBeLessThanOrEqual(bytes + 1);
-    await f.consumer.consume(record(c));
-    await expect(
-      f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId),
-    ).rejects.toMatchObject({ code: "tool_result_released" });
-    expect(f.execute).toHaveBeenCalledTimes(2);
-    await f.consumer.consume(record(receipt(b)));
-    expect(f.consumer.statistics().retainedResultBytes).toBe(0);
-  });
-
-  it("a long Run releases each tool body before its eventual execution seal", async () => {
+  it("does not retain completed result bodies across a long Run", async () => {
     const f = fixture(),
       first = command();
     f.own(first);
-    for (let i = 0; i < 500; i++) {
-      const c = {
-        ...first,
-        toolCallId: `call-${i}`,
-        request: { ...first.request, operationId: crypto.randomUUID() },
-      };
-      await f.consumer.consume(record(c));
-      await f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId);
-      await f.consumer.consume(record(receipt(c)));
-      expect(f.consumer.statistics().retainedResultBytes).toBe(0);
+    for (let i = 0; i < 100; i++) {
+      const c = { ...first, request: { ...first.request, operationId: crypto.randomUUID() } };
+      f.executor.receive(record(c, BigInt(i)));
+      await f.settled();
     }
-    expect(f.consumer.statistics()).toMatchObject({ releasedResults: 500, retainedResults: 0 });
-    expect(f.execute).toHaveBeenCalledTimes(500);
+    expect(f.executor.statistics()).toEqual({
+      acceptedCommands: 100,
+      activeCommands: 0,
+      maximumActiveCommands: 32,
+    });
   });
-  it("a result read never starts a command; only consuming its log record does", async () => {
+  it("does not execute another owner's bindings or accept commands after shutdown", async () => {
     const f = fixture(),
       c = command();
-    f.own(c);
-    const result = f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId);
+    f.executor.receive(record(c));
     expect(f.execute).not.toHaveBeenCalled();
-    await f.consumer.consume(record(c));
-    expect(await result).toMatchObject({ exitCode: 0 });
-    await f.consumer.consume(record(c, 1n));
-    expect(f.execute).toHaveBeenCalledOnce();
-    await expect(
-      f.consumer.waitResult("wrong", c.request.activationId, c.request.operationId),
-    ).rejects.toThrow("stale binding");
-  });
-  it("long Tool execution does not block another Session or hide an execution seal", async () => {
-    const f = fixture(),
-      a = command(),
-      b = command();
-    f.own(a);
-    f.own(b);
-    let finish!: (value: ToolSandboxOperationResponse) => void;
-    f.execute.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
-    await f.consumer.consume(record(a));
-    const result = f.consumer
-      .waitResult(lease(a), a.request.activationId, a.request.operationId)
-      .catch((error) => error);
-    await f.consumer.consume(record(b, 1n));
-    expect(
-      await f.consumer.waitResult(lease(b), b.request.activationId, b.request.operationId),
-    ).toMatchObject({ exitCode: 0 });
-    await f.consumer.consume(record({ kind: "execution_seal", scope: a.scope }, 2n));
-    const late = { ...a, request: { ...a.request, operationId: crypto.randomUUID() } };
-    await f.consumer.consume(record(late, 3n));
-    await expect(
-      f.consumer.waitResult(lease(a), late.request.activationId, late.request.operationId),
-    ).rejects.toMatchObject({ code: "tool_command_sealed" });
-    expect(f.execute).toHaveBeenCalledTimes(2);
-    finish(output(a));
-    expect(await result).toMatchObject({ code: "tool_command_sealed" });
-  });
-  it("ignores another Broker's bindings and fails a reader after its binding disappears", async () => {
-    const f = fixture(),
-      c = command();
-    await f.consumer.consume(record(c));
-    expect(f.execute).not.toHaveBeenCalled();
-    f.own(c);
-    vi.useFakeTimers();
-    const result = f.consumer
-      .waitResult(lease(c), c.request.activationId, c.request.operationId)
-      .catch((error) => error);
-    f.bindings.clear();
-    // Timer was registered before fake timers, so close is the explicit wake here.
-    await f.consumer.close();
-    expect(await result).toBeInstanceOf(Error);
-  });
-  it("ignores replayed and delayed lower offsets after receiver admission", async () => {
-    const f = fixture(),
-      c = command();
-    f.own(c);
-    f.consumer.receive(record(c, 10n));
-    f.consumer.receive(record(c, 10n));
-    f.consumer.receive(record({ kind: "execution_seal", scope: c.scope }, 12n));
-    f.consumer.receive(
-      record({ ...c, request: { ...c.request, operationId: crypto.randomUUID() } }, 11n),
-    );
-    expect(f.execute).toHaveBeenCalledOnce();
-    expect(f.consumer.statistics().retainedResultBytes).toBe(0);
-  });
-  it("rejects a reused command ID with different arguments", async () => {
-    const f = fixture(),
-      c = command();
-    f.own(c);
-    await f.consumer.consume(record(c));
-    expect(() =>
-      f.consumer.consume(record({ ...c, request: { ...c.request, command: "different" } }, 1n)),
-    ).toThrow("different arguments");
-    expect(f.execute).toHaveBeenCalledOnce();
+    await f.executor.close();
+    expect(() => f.executor.receive(record(c, 1n))).toThrow("stopped");
   });
 });

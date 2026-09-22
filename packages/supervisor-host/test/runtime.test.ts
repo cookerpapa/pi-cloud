@@ -17,6 +17,18 @@ import Fastify from "fastify";
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+vi.mock("@pi-cloud/event-log", async (original) => ({
+  ...(await original<typeof import("@pi-cloud/event-log")>()),
+  KafkaToolReplyMailbox: class {
+    topic = "pi-cloud.tool-replies.v1.test";
+    async start() {}
+    async shutdown() {}
+    async wait() {
+      throw new Error("Unused Tool reply in Worker lifecycle test");
+    }
+  },
+}));
+
 import {
   PiWorkerRuntime,
   TenantModelGateway,
@@ -78,7 +90,7 @@ afterAll(async () => {
 function toolBroker(): SupervisorToolBroker {
   return {
     async refreshServices() {},
-    operationResultUrlFor: () => "http://tool-broker.test/internal/v1/tool-operation",
+    workflowUrlFor: () => "http://tool-broker.test/internal/v1/tool-operation",
     async checkHealth() {},
     async create() {
       throw new Error("unused");

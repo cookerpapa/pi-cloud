@@ -11,6 +11,7 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.1",
     "@pi-cloud/protocol": "0.1.0",
     "@pi-cloud/workspace-runtime": "0.1.0"
   }

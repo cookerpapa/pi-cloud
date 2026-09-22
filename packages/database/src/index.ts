@@ -33,7 +33,6 @@ export {
   type SubagentSandboxMode,
   type ToolBrokerWorkspaceRuntimeState,
   type ToolBrokerInstanceState,
-  type ToolBrokerOperationState,
   type SupervisorConnectionCloseReason,
   type SupervisorConnectionState,
   type TenantApiCredentialRole,

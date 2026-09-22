@@ -442,6 +442,14 @@ describe.sequential("Execution stream closure", () => {
           ];
         },
         deleteRecords,
+        async listTopics() {
+          return [];
+        },
+        async deleteTopics() {},
+        async listGroups() {
+          return new Map();
+        },
+        async deleteGroups() {},
         async close() {},
       },
     });

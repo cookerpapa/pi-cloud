@@ -2,7 +2,11 @@ import {
   parseToolWorkerInput,
   type ToolWorkerInput,
   type ToolWorkerOutput,
+  type NativeToolUpdate,
+  type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
+import { executeNativeTool } from "./native-tools.ts";
+import { once } from "node:events";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import {
@@ -89,13 +93,51 @@ async function main(): Promise<ToolWorkerOutput> {
       environment,
     };
   }
-  await attachToolExecution(input.initialization);
+  const toolRoot = await attachToolExecution(input.initialization);
   const request = input.operation.request;
-  const response = await executeToolOperation(
-    request,
-    AbortSignal.timeout(request.operation === "bash.exec" ? request.timeoutMs + 1_000 : 60_000),
-    input.initialization.webProxy,
-  ).catch((error: unknown) => toolOperationFailure(request, error));
+  let sequence = 0;
+  let draining: Promise<unknown> | undefined;
+  let latest: NativeToolUpdate | undefined;
+  const progress = (event: NativeToolUpdate): void => {
+    // onUpdate is synchronous in Pi. Keep only the newest progress snapshot
+    // while the transport is blocked, never an unbounded stdout write queue.
+    if (draining) {
+      latest = event;
+      return;
+    }
+    if (
+      !process.stdout.write(
+        `${JSON.stringify({ operationId: request.operationId, sequence: ++sequence, event })}\n`,
+      )
+    ) {
+      draining = once(process.stdout, "drain").then(() => {
+        draining = undefined;
+        const event = latest;
+        latest = undefined;
+        if (event) progress(event);
+      });
+    }
+  };
+  const signal = AbortSignal.timeout(
+    request.operation === "bash.exec" || request.operation === "tool.execute"
+      ? request.timeoutMs
+      : 60_000,
+  );
+  const execution: Promise<ToolSandboxOperationResponse> =
+    request.operation === "tool.execute"
+      ? executeNativeTool(request, toolRoot, signal, progress, input.initialization.webProxy).then(
+          (event) => ({
+            toolBrokerProtocolVersion: 1,
+            type: "tool_sandbox.operation_result",
+            activationId: request.activationId,
+            operationId: request.operationId,
+            operation: "tool.execute",
+            event,
+          }),
+        )
+      : executeToolOperation(request, signal, input.initialization.webProxy);
+  const response = await execution.catch((error: unknown) => toolOperationFailure(request, error));
+  while (draining) await draining;
   return {
     toolWorkerProtocolVersion: 1,
     type: "worker.operation_result",

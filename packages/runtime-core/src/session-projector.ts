@@ -64,6 +64,7 @@ export class SessionProjector {
       clientId:
         PREFIX + Buffer.from(new URL(options.advertisedBaseUrl).toString()).toString("base64url"),
       groupRecovery: true,
+      orderedEffects: true,
       decode: parseKafkaAcceptedFact,
       replayOffsets: (bounds) => loadFactReplayOffsets(options.database, topic, bounds),
       onReset: () => {
@@ -71,7 +72,7 @@ export class SessionProjector {
         this.#publication.reset();
         this.eventStore.reset();
       },
-      handler: async (record, current) => {
+      handler: async (record, current, commitBeforeEffect) => {
         if (!(await this.#publication.accept(record)) || current?.() === false) return;
         const { fact } = record;
         const projected = await this.#projection.project(record);
@@ -88,7 +89,9 @@ export class SessionProjector {
               fact.scope.sessionId,
               projected.canonicalThroughSequence,
             );
-          await options.toolCommands.consume(record, current);
+          if (fact.kind !== "tool_command" || (await commitBeforeEffect!())) {
+            await options.toolCommands.consume(record, current);
+          }
           await options.subagentCommands?.consume(record, current);
         }
       },

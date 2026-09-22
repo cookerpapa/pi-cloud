@@ -19,6 +19,7 @@ function command(): AcceptedToolCommand {
     kind: "tool_command",
     factId: randomUUID(),
     toolCallId: randomUUID(),
+    replyTopic: "pi-cloud.tool-replies.v1.test",
     occurredAt: new Date().toISOString(),
     scope: {
       tenantId: randomUUID(),
@@ -40,9 +41,10 @@ function command(): AcceptedToolCommand {
       stepContextSequence: 1,
       stepContextSha256: "c".repeat(64),
       toolName: "bash",
-      operation: "bash.exec",
-      command: "echo once",
-      cwd: "/workspace",
+      operation: "tool.execute",
+      toolCallId: "native",
+      args: { command: "echo once" },
+      maximumOutputBytes: 51200,
       timeoutMs: 1000,
     },
   };
@@ -61,7 +63,7 @@ const receipt = (c: AcceptedToolCommand) => ({
 });
 
 describe("sharded Tool routing", () => {
-  it("filters deltas without route queries and forwards only small native acknowledgements", async () => {
+  it("filters display and native results without route queries", async () => {
     const c = command(),
       route = {
         bindingId: c.request.activationId,
@@ -80,20 +82,15 @@ describe("sharded Tool routing", () => {
     await router.consume(record(c, 1n));
     await router.consume(record(receipt(c), 2n));
     expect(find).toHaveBeenCalledOnce();
-    const frame = deliver.mock.calls.at(-1) as unknown as [unknown, { fact: unknown }];
-    expect(frame[1].fact).toEqual({
-      kind: "pi_session_append",
-      scope: c.scope,
-      events: [{ type: "tool.completed", payload: { toolCallId: c.toolCallId } }],
-    });
-    expect(toolDeliveryFact({ kind: "pi_session_append", scope: c.scope })).toBeUndefined();
+    expect(deliver).toHaveBeenCalledOnce();
+    expect(toolDeliveryFact(receipt(c))).toBeUndefined();
     let current = true;
     find.mockImplementationOnce(async () => {
       current = false;
       return [route];
     });
     await router.consume(record({ kind: "execution_seal", scope: c.scope }, 3n), () => current);
-    expect(deliver).toHaveBeenCalledTimes(2); // rebalance during route lookup cannot dispatch
+    expect(deliver).toHaveBeenCalledTimes(1); // rebalance during route lookup cannot dispatch
   });
 
   it("rebuilds routes after dispatcher replacement and refreshes all owners at a writer seal", async () => {
@@ -121,10 +118,10 @@ describe("sharded Tool routing", () => {
       await router.consume(record(fact));
     }
     expect(find).toHaveBeenLastCalledWith(c.scope, true);
-    expect(deliver).toHaveBeenCalledTimes(4);
+    expect(deliver).toHaveBeenCalledTimes(3);
   });
 
-  it("retries uncertain live-owner delivery but never sends it to a replacement boot", async () => {
+  it("abandons uncertain committed command delivery without executing it twice", async () => {
     const c = command(),
       route = {
         bindingId: c.request.activationId,
@@ -140,14 +137,12 @@ describe("sharded Tool routing", () => {
       deliver,
     });
     resources.push(() => router.close());
-    await expect(router.consume(record(c))).rejects.toThrow("lost ACK");
-    isAlive.mockResolvedValue(false);
     await router.consume(record(c));
     expect(router.statistics().abandonedDeliveries).toBe(1);
-    expect(deliver.mock.calls).toHaveLength(2);
+    expect(deliver.mock.calls).toHaveLength(1);
   });
 
-  it("requires Broker-only auth, rejects wrong boots, and gets large results directly from owner", async () => {
+  it("requires Broker-only auth, rejects wrong boots, and publishes native results instead of HTTP retrieval", async () => {
     const c = command(),
       instanceId = randomUUID(),
       token = "r".repeat(64),
@@ -158,21 +153,21 @@ describe("sharded Tool routing", () => {
       type: "tool_sandbox.operation_result" as const,
       activationId: c.request.activationId,
       operationId: c.request.operationId,
-      operation: "bash.exec" as const,
-      exitCode: 0,
-      outputSha256: "d".repeat(64),
-      outputChunks: [
-        { seq: 1, stream: "stdout" as const, data: Buffer.alloc(96 * 1024).toString("base64") },
-      ],
+      operation: "tool.execute" as const,
+      event: {
+        type: "tool_execution_end" as const,
+        toolCallId: c.toolCallId,
+        toolName: "bash",
+        isError: false,
+        result: { content: [{ type: "text" as const, text: "done" }], details: undefined },
+      },
     }));
+    const publishReply = vi.fn(async () => {});
     const executor = new ToolCommandExecutor({
+      publishReply,
       broker: {
         execute,
         ownsToolBinding: (id) => id === c.request.activationId,
-        assertToolResultReader: (id, lease) => {
-          if (id !== c.request.activationId || lease !== executionReference)
-            throw new Error("not owner");
-        },
       },
     });
     resources.push(() => executor.close());
@@ -180,7 +175,6 @@ describe("sharded Tool routing", () => {
       host: "127.0.0.1",
       port: 0,
       serviceToken,
-      commands: executor,
       broker: {
         checkHealth: async () => {},
         close: async () => {},
@@ -222,10 +216,9 @@ describe("sharded Tool routing", () => {
       ),
       { headers: { authorization: `Bearer ${executionReference}` } },
     );
-    expect(response.status).toBe(200);
-    expect(JSON.stringify(await response.json()).length).toBeGreaterThan(96 * 1024);
-    await send(route, { ...frame, offset: "2", fact: toolDeliveryFact(receipt(c))! });
-    expect(executor.statistics().retainedResultBytes).toBe(0);
+    expect(response.status).toBe(404);
+    await vi.waitFor(() => expect(publishReply).toHaveBeenCalledOnce());
+    expect(executor.statistics().activeCommands).toBe(0);
     await send(route, { ...frame, offset: "3", fact: { kind: "execution_seal", scope: c.scope } });
     await send(route, frame); // delayed pre-seal RPC
     expect(execute).toHaveBeenCalledOnce();

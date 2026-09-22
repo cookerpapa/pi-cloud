@@ -634,23 +634,21 @@ try {
     }),
   ]);
   assert(concurrentRuns.every((run) => run.events.some((event) => event.type === "tool.started")));
-  const concurrentRuntimeEvidence = await psql(
-    `select count(distinct workspace_runtime_id)::text || '|' ||
-            count(distinct tool_binding_id)::text || '|' ||
-            exists (
-              select 1
-                from tool_broker_operations left_operation
-                join tool_broker_operations right_operation
-                  on left_operation.run_id <> right_operation.run_id
-                 and left_operation.started_at < right_operation.settled_at
-                 and right_operation.started_at < left_operation.settled_at
-               where left_operation.run_id in ('${concurrentRuns[0].accepted.runId}', '${concurrentRuns[1].accepted.runId}')
-                 and right_operation.run_id in ('${concurrentRuns[0].accepted.runId}', '${concurrentRuns[1].accepted.runId}')
-            )::text
-       from tool_broker_operations
-      where run_id in ('${concurrentRuns[0].accepted.runId}', '${concurrentRuns[1].accepted.runId}')`,
+  assert(
+    concurrentRuns.every(
+      (run) => run.events.filter((event) => event.type === "tool.started").length === 1,
+    ),
+    "Rendezvous must succeed without retrying either command",
   );
-  assert.equal(concurrentRuntimeEvidence, "1|2|true");
+  const concurrentRuntimeEvidence = await psql(
+    `select count(distinct runtime.workspace_runtime_id)::text || '|' || count(distinct route.binding_id)::text
+       from runs run
+       join tool_broker_binding_routes route on route.run_id=run.id and route.tenant_id=run.tenant_id
+       join tool_broker_workspace_runtimes runtime on runtime.workspace_id=run.workspace_id and runtime.tenant_id=run.tenant_id
+      where run.id in ('${concurrentRuns[0].accepted.runId}', '${concurrentRuns[1].accepted.runId}')
+        and runtime.state in ('reserved','materializing','active','warm')`,
+  );
+  assert.equal(concurrentRuntimeEvidence, "1|2");
   progress("two Sessions sharing one Workspace ran concurrently");
 
   let steerAccepted = false;

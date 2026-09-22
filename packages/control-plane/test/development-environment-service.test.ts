@@ -231,12 +231,6 @@ beforeAll(async () => {
   });
   await stateRepository.start();
   server = new ToolBrokerServer({
-    commands: {
-      checkHealth() {},
-      async waitResult() {
-        throw new Error("Not a Tool command fixture");
-      },
-    },
     host: "127.0.0.1",
     port: 0,
     serviceToken: `service-${"s".repeat(48)}`,
