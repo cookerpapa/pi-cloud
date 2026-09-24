@@ -1,6 +1,6 @@
 # ADR 0183: whole-tool execution and native Pi replies
 
-Status: accepted for implementation, 2026-09-22. Cutover acceptance is pending.
+Status: implemented and validated, 2026-09-24.
 
 ## Decision
 
@@ -47,3 +47,5 @@ Require native-tool conformance, update/terminal ordering, source output bounds,
 commit/replay/rebalance faults, multi-Worker reply routing, late-reply rejection,
 and real Cube multi-round GPT-5.6 Luna coding. Do not use DeepSeek for paid tests.
 Record latency excluding model time and clean only resources created by tests.
+
+[Acceptance and remaining Cube template risk](../reports/native-remote-tools-acceptance-20260924.md).

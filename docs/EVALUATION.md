@@ -91,7 +91,13 @@ npm run cubesandbox:live-check
 PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
 PI_CLOUD_LIVE_WORKER_POOL_CHECK=1 npm run production:worker-pool-check
 PI_CLOUD_LIVE_DIRECTORY_PICKER_CHECK=1 npm run production:directory-picker-check
+PI_CLOUD_LIVE_NATIVE_TOOL_CHECK=1 npm run production:native-tool-check
 ```
+
+The native Tool check explicitly uses GPT-5.6 Luna for two coding rounds. It
+requires real write/read/edit/bash calls, checks a 1.5MB command's bounded tail,
+records model time separately from Tool boundaries, and releases its test Session
+and Workspace through the product API. It never selects DeepSeek implicitly.
 
 The Cube gate attests real KVM guests, tenant-separated persistent Workspaces,
 credential isolation, egress policy, resource/output bounds, authority

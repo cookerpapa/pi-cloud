@@ -1,0 +1,69 @@
+{
+  "checkedAt": "2026-09-24T13:52:01.451Z",
+  "model": "gpt-5.6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "1039cdb5-4387-4bf4-add3-a1bcde85f0a0",
+      "elapsedMs": 42265,
+      "modelTransportMs": 38519.393000000004,
+      "tools": [
+        {
+          "name": "write",
+          "state": "completed",
+          "durationMs": 2132,
+          "resultBytes": 99
+        },
+        {
+          "name": "read",
+          "state": "completed",
+          "durationMs": 224,
+          "resultBytes": 687
+        },
+        {
+          "name": "edit",
+          "state": "completed",
+          "durationMs": 299,
+          "resultBytes": 1225
+        },
+        {
+          "name": "bash",
+          "state": "completed",
+          "durationMs": 371,
+          "resultBytes": 74
+        }
+      ]
+    },
+    {
+      "runId": "951b34b0-337c-40ab-af2b-d3721f185444",
+      "elapsedMs": 28908,
+      "modelTransportMs": 27264.908,
+      "tools": [
+        {
+          "name": "write",
+          "state": "completed",
+          "durationMs": 369,
+          "resultBytes": 98
+        },
+        {
+          "name": "bash",
+          "state": "completed",
+          "durationMs": 270,
+          "resultBytes": 100
+        },
+        {
+          "name": "bash",
+          "state": "completed",
+          "durationMs": 452,
+          "resultBytes": 497
+        }
+      ]
+    }
+  ],
+  "resources": {
+    "projectId": "486ec65f-8178-4a98-87f9-12e260443e57",
+    "workspaceId": "b4bad62c-bfe8-46bf-8069-41893015608e",
+    "sessionId": "52b393f2-ccb3-43cd-94a7-663af96e134d"
+  },
+  "cleanupCompleted": true
+}

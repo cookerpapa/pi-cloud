@@ -39,6 +39,10 @@
 
 ## Current release gate
 
+- [x] Source-side whole Pi Tool execution, native Kafka replies and monotonic
+      commit-before-dispatch; no result GET/cache or PG operation ledger.
+      [Luna/Cube, Subagent, browser and crash acceptance](reports/native-remote-tools-acceptance-20260924.md).
+
 - [x] Provider-phase-aware assistant display: complete GPT commentary, streaming
       final answers and native-history/reconnect consistency. DeepSeek remains
       unclassified until its early phase contract is reliable.
@@ -95,7 +99,8 @@
 - [x] Remove per-record signatures for trusted private deployment; keep PG admission,
       scope and ordered seal checks (ADR-0164).
 - [x] Unify native history, live views and Tool routing in one Projector group;
-      keep executor results owner-direct and remove Fact Gateway/channel leases.
+      remove Fact Gateway/channel leases. Tool replies now use the boot-scoped
+      Kafka transport under ADR-0183.
 - [x] Replace per-Step PG receipts with Kafka-acknowledged native Session writes;
       retain bounded cold restore and exact asynchronous PG projection.
 - [x] Complete paid model/Cube, interrupted-prefix and process-fault acceptance
@@ -104,8 +109,9 @@
 - [x] Bound Producer/Broker transport under slow downstreams, align capacity
       configuration and measure native publication independently from model time.
 
-- [x] Reuse native Kafka Tool Results as raw-response delivery acknowledgements;
-      retire the duplicate execution cache and preserve no-replay semantics.
+- [x] Whole native Tools execute in Cube; Pi callbacks receive bounded native
+      updates/results through Kafka, without completed-result caches or GET.
+      Dispatch commits precede effects; projection replay never re-executes Tools.
 
 - [x] Route Agent Tool commands from the Kafka Projector to Broker; retain native Session
       checkpoints, result redaction, duplicate protection and explicit UNKNOWN.

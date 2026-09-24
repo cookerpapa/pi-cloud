@@ -63,6 +63,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Deployment operations
 
+- [ ] Investigate the 4GB Cube template restore failure seen after a WSL reboot:
+      CubeShim's `SetGuestDateTime` RPC timed out twice before guest tools started.
+      Rebuilding that specification from the same image restored creation, but
+      the underlying snapshot/vsock failure is not yet established. No automatic
+      template replacement, Tool retry or weaker readiness was introduced.
 - [ ] Run the one-host installer on a genuinely clean machine; current k3d
       cutover tests do not establish that broader claim.
 - [ ] Reconcile Cube Volume node references after host/guest loss and resolve

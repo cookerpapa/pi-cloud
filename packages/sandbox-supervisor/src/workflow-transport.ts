@@ -19,7 +19,7 @@ export type WorkflowExecutor = (
   onUpdate?: (result: AgentToolResult<unknown>) => void,
 ) => Promise<unknown>;
 
-/** Owner-direct duplex result delivery; guest calls still publish through the Worker WAL. */
+/** Duplex guest host calls; progress/completion arrive on the native Kafka reply channel. */
 export async function readWorkflowResult(input: {
   resultUrl: URL;
   executionReference: string;

@@ -258,17 +258,19 @@ is required for native allocations and Linux page cache; the container limit
 must never be lower than `-Xmx`.
 
 One Projector group consumes the execution log, using partition pause/seek, a
-32 MiB native queue and a 5 ms fetch-queue backoff. Tool Broker has no Kafka
-connection. Result readers, active commands and response bytes retain their
-separate limits. Command arrival wait is 30 seconds; after admission the Tool
-deadline applies, followed by a send deadline only once the result exists.
+32 MiB native queue and a 5 ms fetch-queue backoff. Tool Broker publishes native
+Tool replies to a separate Worker-boot Kafka topic; it does not consume the
+execution log. The reply producer caps in-flight bytes at 16 MiB and delivery
+at 30 seconds. Replies expire after 11 minutes; positively retired boot topics
+and groups are reaped after that grace. Active commands remain separately bounded.
 
 `PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE` points to `tool-dispatch-token`, shared by
 Projectors and executors, never Workers or Cube. Internal TCP/4300 must be
-reachable. Native result/seal notices retire raw-result copies. A five-second
-delivery timeout retries the same positioned record while its owner is live;
-a vanished boot does not cause execution on another machine. The seal Outbox
-polls every 50 ms. There is no second Kafka commit-notification round trip.
+reachable. Projector confirms Kafka consumption progress before dispatching a
+Tool. A five-second ambiguous command delivery is not retried; missed execution
+is UNKNOWN. Seal delivery can retry the same positioned control record. A vanished
+boot does not cause execution on another machine. The seal Outbox polls every
+50 ms. There is no completed-result GET/cache or commit-notification RPC.
 
 Kafka retention must cover a maximum Turn plus settlement grace. Browser
 reconnect always receives a replacement PostgreSQL + Gateway-tail snapshot;

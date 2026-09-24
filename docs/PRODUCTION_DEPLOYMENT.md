@@ -59,6 +59,14 @@ than bypassing the guard. Deploy Control Plane and Worker together: retired WS
 Steer messages and unused monetary budget fields are no longer supported.
 This migration does not change Kafka v10 or the current Cube guest Tool contract.
 
+Migration 148 changes Tool dispatch/replies and removes the old operation ledger.
+Drain all Runs, commit their seals and release Session leases. Stop old Workers
+and Brokers before migration; deploy the matched guest template, Control Plane,
+Broker and Worker images. Recreate the `database-bootstrap` service from that
+same image, even if migrations were first applied with a one-off `run --rm`;
+leaving an old bootstrap container can break a later Compose dependency restart.
+There is no old Tool-wire fallback or automatic replay of uncertain commands.
+
 For a component-only replacement, after draining and applying its migrations,
 use Compose `up --no-deps` for the selected services when dependencies are already
 healthy. An ordinary `up` may recreate changed dependencies too. If PostgreSQL
@@ -69,12 +77,13 @@ authority. A live process alone is not execution readiness.
 The pinned Confluent consumer uses a native addon: `dependencies:harden` and image
 builds rebuild it after `npm ci --ignore-scripts`.
 
-Workers append directly and Control Plane's Session Projector is the sole log
-consumer group. Tool Broker no longer needs Kafka connectivity. Kubernetes shares
-Kafka settings under `global.kafka`; allow Worker/Projector Kafka access and
+Workers append directly and Control Plane's Session Projector is the sole execution-log
+consumer group. Brokers publish native Tool replies to separate Worker-boot topics;
+they do not consume the execution log. Kubernetes shares Kafka settings under
+`global.kafka`; allow Worker/Projector/Broker Kafka access and
 Projector-to-executor TCP/4300. The dispatch secret belongs only to Projectors
 and executors. Each Projector advertises a unique internal URL for SSE owner
-routing. Operation results remain owner-direct authenticated GETs.
+routing. Workers consume their boot's replies; there is no result GET endpoint.
 
 The safe default binds the Web/Preview entry to loopback. For a trusted LAN,
 set `PI_CLOUD_HTTP_BIND_ADDRESS=0.0.0.0` in the private production environment

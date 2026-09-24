@@ -1,10 +1,10 @@
 # Control Plane restart acceptance
 
-- Checked at: 2026-09-16T22:13:43.849Z
+- Checked at: 2026-09-24T13:43:02.154Z
 - Provider/model: openai-codex / gpt-5.6-luna
-- First visible / terminal sequence: 3 / 963
-- SSE reconnects: 24
-- Run Attempts: 1
-- Elapsed: 42867 ms
+- First visible / terminal sequence: 3 / 762
+- SSE reconnects: 22
+- Same Run and Worker retained: true
+- Elapsed: 47599 ms
 
-The Control Plane container received SIGKILL after the first Kafka-acknowledged assistant delta. The trusted Worker continued the fenced Run while Kafka retained the AcceptedFact stream and PostgreSQL retained canonical Pi state. The replacement Gateway rebuilt the Session snapshot, SSE reconnected, and the Run completed with one Attempt.
+The Control Plane received SIGKILL after the first Kafka-acknowledged assistant delta. The Worker continued its Run. The replacement Projector rebuilt the snapshot, SSE reconnected, and the same Run/Worker reached completion.
