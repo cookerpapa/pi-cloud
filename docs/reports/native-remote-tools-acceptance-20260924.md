@@ -101,10 +101,16 @@ the large-output Bash completed in 452ms with a 497-byte canonical result.
   snapshot/vsock defect is **not yet established or fixed**. No auto-retry or
   template fallback was added. Two failed test instances were deleted through
   Cube API; their leftover Shim processes required exact-ID host cleanup.
-- Cube's deletion of the replaced, unused template still times out against its
-  recorded node endpoint. It is not selected in the active catalog; this retained
-  template metadata/cache is an explicit cleanup limitation, not a successful
-  deletion claim. Existing unrelated historical templates were not manually erased.
+- The replaced template initially could not be deleted because its replica
+  still pointed to `10.42.0.124`, whereas the same node now uses `10.42.0.157`.
+  In the owner's September 24 cleanup follow-up, zero live references were
+  verified and only that retired replica's locator was corrected. Cube's official
+  delete then removed `tpl-afeed7df117d475992523fa9`, its job/replica metadata,
+  memory snapshot and private writable layer; the empty parent directory was
+  removed separately. The current `tpl-4ffa8c7ef26d4b79a300c141` and their shared
+  rootfs artifact remain intact and READY. This was scoped operational repair,
+  not an automatic node-endpoint reconciliation fix. Unrelated older templates
+  were not deleted.
 - Security audit passed its high-severity gate; two existing moderate dev-only
   Vitest findings remain. No package-major upgrade was bundled into this task.
 
@@ -122,5 +128,5 @@ machine record. Original users and their conversation remain.
 The active Worker's reply topic and formal service logs are retained; retired-boot
 reply topics were verified reaped. The shared execution log follows normal safe
 retention; it was not truncated to erase test records. Temporary test files and
-the isolated test database/container are removed. The inactive Cube template limitation above
-remains separate from user Workspace/VM cleanup.
+the isolated test database/container are removed. The retired 4GB template was
+subsequently removed in the scoped follow-up above; the active catalog is retained.
