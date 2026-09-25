@@ -115,6 +115,11 @@ export class SessionProjector {
   }
   async owner(tenant: string, session: string): Promise<string | undefined> {
     const p = await this.#partition(tenant, session);
+    return this.ownerForPartition(p);
+  }
+  async ownerForPartition(p: number): Promise<string | undefined> {
+    if (!Number.isSafeInteger(p) || p < 0 || p >= this.#partitions)
+      throw new Error("Invalid Projector partition");
     if (this.#consumer.ownsPartition(p)) return undefined;
     const client = await this.#consumer.ownerClientId(p);
     if (!client?.startsWith(PREFIX)) throw new Error("Session Projector owner unavailable");

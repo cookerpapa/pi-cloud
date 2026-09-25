@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0184](0184-ephemeral-tool-progress.md) — lossy Tool progress through
+   internal HTTP and SSE; final results alone return through Kafka.
+
 1. [ADR-0183](0183-native-remote-tool-execution.md) — whole guest-side Tools,
    native Pi Kafka replies and commit-before-dispatch without effect replay.
 

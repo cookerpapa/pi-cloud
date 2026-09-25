@@ -582,3 +582,4 @@ export { normalizeProviderHostedWebSearchAction } from "./hosted-search-action.t
 export * from "./tool-command.ts";
 export * from "./subagent-command.ts";
 export * from "./native-tool-event.ts";
+export * from "./tool-progress.ts";

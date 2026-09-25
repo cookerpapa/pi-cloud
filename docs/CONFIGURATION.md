@@ -263,6 +263,11 @@ Tool replies to a separate Worker-boot Kafka topic; it does not consume the
 execution log. The reply producer caps in-flight bytes at 16 MiB and delivery
 at 30 seconds. Replies expire after 11 minutes; positively retired boot topics
 and groups are reaped after that grace. Active commands remain separately bounded.
+Only final results use that topic. Temporary progress uses Broker's
+`PI_CLOUD_CONTROL_PLANE_URL` (the internal Control Plane Service URL), the existing
+dispatch credential and TCP/3000. Compose/Helm supply it. HTTP connections are
+pooled; snapshots are bounded to 8,192 characters with a one-second send cadence
+and one-second deadline. Progress failure never changes execution status.
 
 `PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE` points to `tool-dispatch-token`, shared by
 Projectors and executors, never Workers or Cube. Internal TCP/4300 must be

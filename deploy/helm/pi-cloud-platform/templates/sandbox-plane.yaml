@@ -97,6 +97,7 @@ spec:
             - { name: PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES, value: {{ .Values.sandboxPlane.maximumWarmWorkspaceRuntimesPerReplica | quote }} }
             - { name: PI_CLOUD_TOOL_BROKER_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-broker-token }
             - { name: PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-dispatch-token }
+            - { name: PI_CLOUD_CONTROL_PLANE_URL, value: "http://control-plane:3000" }
             - { name: PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-service-token }
             - { name: PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-terminal-token }
             - { name: PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE, value: /run/pi-cloud-secrets/cube-persistent-state-key }

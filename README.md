@@ -20,11 +20,12 @@ Pi Worker -> Kafka -> Session Projector
                       `-> Tool Broker -> CubeSandbox
 ```
 
-Whole file/shell Tools execute in Cube. Native progress/results return through
-Kafka reply topics to Pi Worker, which commits the final Tool Result to its Session.
+Whole file/shell Tools execute in Cube. Final results return through Kafka to
+Pi Worker; optional temporary logs go directly through Projector to the browser.
 Workspace files live on persistent Cube Volumes.
 The API and Projector share the Control Plane process. Outputs are persisted
-before display, and recovery does not automatically replay uncertain commands.
+before display, except disposable Tool log previews. Recovery never automatically
+replays uncertain commands.
 
 ## Quick start
 

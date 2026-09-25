@@ -1,8 +1,9 @@
-import type { PiCloudEvent } from "@pi-cloud/protocol";
+import type { PiCloudEvent, ToolProgress } from "@pi-cloud/protocol";
 
 export type SessionEventWake = {
   throughSequence: number | null;
   event?: PiCloudEvent;
+  progress?: ToolProgress;
 };
 
 type PendingRead = {
@@ -16,6 +17,7 @@ export class SessionEventSubscription {
   #queuedWakes: SessionEventWake[] = [];
   #pendingRead: PendingRead | undefined;
   #closed = false;
+  readonly #progress = new Map<string, ToolProgress>();
 
   constructor(
     tenantId: string,
@@ -47,8 +49,25 @@ export class SessionEventSubscription {
     this.#push({ throughSequence: event.seq, event });
   }
 
+  notifyProgress(progress: ToolProgress): void {
+    if (this.#closed || this.#queuedWakes.some((wake) => wake.throughSequence === null)) return;
+    if (this.#pendingRead) {
+      const pending = this.#pendingRead;
+      this.#pendingRead = undefined;
+      pending.resolve({ throughSequence: null, progress });
+    } else {
+      // Slow readers keep a bounded newest snapshot, never an observation history.
+      if (this.#progress.size >= 64 && !this.#progress.has(progress.operationId))
+        this.#progress.delete(this.#progress.keys().next().value!);
+      const previous = this.#progress.get(progress.operationId);
+      if (!previous || progress.revision > previous.revision)
+        this.#progress.set(progress.operationId, progress);
+    }
+  }
+
   resync(): void {
     if (this.#closed) return;
+    this.#progress.clear();
     this.#push({ throughSequence: null });
   }
 
@@ -76,6 +95,11 @@ export class SessionEventSubscription {
   next(heartbeatMs?: number): Promise<SessionEventWake | "heartbeat" | undefined> {
     const wake = this.#queuedWakes.shift();
     if (wake !== undefined) return Promise.resolve(wake);
+    const progress = this.#progress.values().next().value;
+    if (progress) {
+      this.#progress.delete(progress.operationId);
+      return Promise.resolve({ throughSequence: null, progress });
+    }
     if (this.#closed) return Promise.resolve(undefined);
     if (this.#pendingRead !== undefined) {
       throw new Error("Only one pending session-event read is allowed");
@@ -103,6 +127,7 @@ export class SessionEventSubscription {
     if (this.#closed) return;
     this.#closed = true;
     this.#queuedWakes = [];
+    this.#progress.clear();
     const pending = this.#pendingRead;
     this.#pendingRead = undefined;
     pending?.resolve(undefined);
@@ -131,6 +156,12 @@ export class SessionEventHub {
     const current = this.#subscriptions.get(this.#key(tenantId, event.sessionId));
     if (current === undefined) return;
     for (const subscription of [...current]) subscription.notifyEvent(event);
+  }
+
+  publishProgress(tenantId: string, progress: ToolProgress): void {
+    for (const subscription of this.#subscriptions.get(this.#key(tenantId, progress.sessionId)) ??
+      [])
+      subscription.notifyProgress(progress);
   }
 
   resyncAll(): void {

@@ -49,6 +49,7 @@ import {
 import { isConversationTailVisible } from "./conversation-scroll.ts";
 import { activeTurn, createInitialSessionView, sessionViewReducer } from "./session-view.ts";
 import { streamSessionEvents } from "./sse.ts";
+import { ToolProgressStore } from "./tool-progress.tsx";
 import { errorMessage } from "./ui-errors.ts";
 import { WorkspaceInspector } from "./WorkspaceInspector.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
@@ -624,6 +625,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }, [refreshConversationTree, authPhase, state.session?.sessionId, treeView, update]);
 
   const streamPresentation = useRef({ treeView, t, elasticWorkspaces });
+  const toolProgress = useMemo(() => new ToolProgressStore(), []);
   streamPresentation.current = { treeView, t, elasticWorkspaces };
   useEffect(() => {
     const sessionId = streamSessionId;
@@ -635,6 +637,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       signal: controller.signal,
       onSnapshot(snapshot) {
         if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
+        toolProgress.reset();
         // Reject a snapshot which raced with an accepted local input. This is
         // request invalidation, not a persisted or server-supplied stream cursor.
         if (snapshotInputRevision !== inputRevision.current) {
@@ -690,8 +693,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           );
         }
       },
+      onToolProgress(progress) {
+        if (!controller.signal.aborted && currentStreamSession.current === sessionId)
+          toolProgress.receive(progress);
+      },
       onStatus(status) {
         if (controller.signal.aborted) return;
+        if (status.phase !== "live") toolProgress.reset();
         if (status.phase === "connecting" || status.phase === "reconnecting")
           snapshotInputRevision = inputRevision.current;
         update({ type: "stream.status", status });
@@ -705,7 +713,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         });
       }
     });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      toolProgress.reset();
+    };
   }, [
     api,
     authPhase,
@@ -713,6 +724,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     refreshConversations,
     refreshConversationTree,
     streamSessionId,
+    toolProgress,
     update,
   ]);
 
@@ -2162,6 +2174,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                   const target = forkTargets.get(turn.turnId);
                   return (
                     <ConversationTurn
+                      progressStore={toolProgress}
                       canFork={
                         canMutate &&
                         selectedDelegatedSession === null &&

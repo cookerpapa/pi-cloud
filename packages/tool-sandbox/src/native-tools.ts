@@ -179,7 +179,6 @@ async function executeNativeBash(
   if (Buffer.byteLength(request.args.command) > MAX_TOOL_COMMAND_BYTES)
     throw new Error("Bash command exceeds its byte limit");
   const output = new NativeToolOutput(request.maximumOutputBytes);
-  update({ content: [], details: undefined });
   const child = spawn("/bin/bash", ["--noprofile", "--norc", "-lc", request.args.command], {
     cwd,
     detached: process.platform !== "win32",
@@ -202,7 +201,7 @@ async function executeNativeBash(
       dirty = false;
       update(output.snapshot());
     }
-  }, 100);
+  }, 1000);
   let force: NodeJS.Timeout | undefined;
   const abort = () => {
     terminateProcessGroup(child, "SIGTERM");
@@ -213,7 +212,6 @@ async function executeNativeBash(
   try {
     const exitCode = await waitForShellProcess(child);
     output.finish();
-    update(output.snapshot());
     const status = signal.aborted
       ? signal.reason?.name === "TimeoutError"
         ? `Command timed out after ${request.timeoutMs / 1000} seconds`

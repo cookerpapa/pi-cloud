@@ -261,7 +261,8 @@ renders without typing animation; original native phase/signatures remain intact
 DeepSeek's early phase can change at completion, so that route retains ordinary
 text streaming. No wording heuristics or buffered "fake streaming" are used.
 See [ADR-0182](adr/0182-assistant-message-presentation.md). Tool argument JSON,
-thinking fragments and Tool stdout deltas are not public streams. One durable,
+thinking fragments are not public streams. Temporary Tool output snapshots use
+a separate unsequenced SSE event, described below. One durable,
 argument-free preparation event marks a long Tool-call generation interval, then
 the complete Tool start/result replaces it.
 
@@ -335,13 +336,24 @@ tenant scheduling quota.
 
 The guest executes the whole fixed Tool, with native edit/write logic and source
 output bounds. Internal reads/writes are not separate RPCs. The trusted Cube
-adapter forwards Pi-native update/end payloads to a Worker-boot Kafka reply topic;
+adapter forwards Pi-native final results to a Worker-boot Kafka reply topic;
 all slots share one topic. A random operation ID correlates the waiting callback,
-not authority. Ordered updates invoke `onUpdate`; the final reply resolves or
+not authority. The final reply resolves or
 rejects `execute`. Pi still owns after-Tool hooks, its lifecycle events and the
-canonical Tool Result appended to the execution log. Partial Tool output remains
-outside the public UI/context. Kafka reply ACK releases transport buffers, with
+canonical Tool Result appended to the execution log. Kafka reply ACK releases transport buffers, with
 no completed-result cache or per-result retirement notification.
+
+Pi source updates are disposable observations, not model context. Bash emits
+bounded snapshots at most once per second; Broker coalesces the newest text per
+active operation (8,192 characters) and sends pooled HTTP to Projector. An internal
+credential protects ingress. Partition ownership redirects use existing Kafka
+membership, not a PG query. Failures drop snapshots and cannot fail the Tool.
+SSE subscribers keep bounded newest observations separately from formal sequence;
+only running Tools can display them. Complete results/terminal events win over
+late progress. Reconnect starts without old observations. The browser renders an
+opt-in fixed-height preview without updating the transcript or scrolling it.
+No Kafka/PG row, replay, Worker callback or background-service log follower is
+created for progress. See [ADR-0184](adr/0184-ephemeral-tool-progress.md).
 
 Reply topics have bounded retention, are deleted at graceful Worker shutdown,
 and are reaped only after positively completed Worker retirement plus grace.

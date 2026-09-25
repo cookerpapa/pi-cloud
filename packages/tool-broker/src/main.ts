@@ -12,6 +12,7 @@ import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-regis
 import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
 import { ToolCommandExecutor } from "./tool-command-executor.ts";
 import { KafkaToolReplyPublisher } from "@pi-cloud/event-log";
+import { ToolProgressPublisher } from "./tool-progress-publisher.ts";
 
 function reportFailure(error: unknown): void {
   operationalLog({
@@ -34,6 +35,7 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
   let broker: ToolBroker | undefined;
   let commands: ToolCommandExecutor | undefined;
   let replies: KafkaToolReplyPublisher | undefined;
+  let progress: ToolProgressPublisher | undefined;
   let server: ToolBrokerServer | undefined;
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => {
@@ -46,6 +48,7 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
       for (const release of [
         () => deletionReaper?.close(),
         () => commands?.close(),
+        () => progress?.close(),
         () => (server ? server.close() : broker ? broker.close() : provider?.close()),
         () => replies?.close(),
         () => (broker ? undefined : ownership?.close()),
@@ -143,7 +146,9 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
     replies = new KafkaToolReplyPublisher(config.kafkaBrokers, `tool-replies-${instanceId}`);
     await replies.start();
     const replyPublisher = replies;
+    progress = new ToolProgressPublisher(config.controlPlaneUrl, config.dispatchToken);
     commands = new ToolCommandExecutor({
+      progress,
       broker,
       publishReply: (topic, reply) => replyPublisher.publish(topic, reply),
       maximumActiveCommands: config.maximumActiveCommands,

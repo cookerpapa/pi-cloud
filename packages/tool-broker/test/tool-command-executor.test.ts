@@ -80,16 +80,21 @@ function fixture(maximumActiveCommands = 32) {
       _reply: { operationId: string; sequence: number; event: NativeToolEvent },
     ) => {},
   );
+  const progress = vi.fn(),
+    forget = vi.fn();
   const executor = new ToolCommandExecutor({
     maximumActiveCommands,
     broker: { execute, ownsToolBinding: (id) => bindings.has(id) },
     publishReply: publish,
+    progress: { update: progress, forget },
   });
   instances.push(executor);
   return {
     executor,
     execute,
     publish,
+    progress,
+    forget,
     bindings,
     own: (c: AcceptedToolCommand) => bindings.add(c.request.activationId),
     settled: () =>
@@ -97,7 +102,7 @@ function fixture(maximumActiveCommands = 32) {
   };
 }
 describe("native Kafka Tool replies without completed-result retention", () => {
-  it("returns native intermediate events and the final result in operation order", async () => {
+  it("sends observations outside Kafka and publishes only the native final result", async () => {
     const f = fixture(),
       c = command();
     f.own(c);
@@ -119,10 +124,15 @@ describe("native Kafka Tool replies without completed-result retention", () => {
         reply.sequence,
         reply.event.type,
       ]),
-    ).toEqual([
-      [c.request.operationId, 1, "tool_execution_update"],
-      [c.request.operationId, 2, "tool_execution_end"],
-    ]);
+    ).toEqual([[c.request.operationId, 1, "tool_execution_end"]]);
+    expect(f.progress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: c.scope.tenantId,
+        partition: 0,
+        progress: expect.objectContaining({ toolCallId: c.toolCallId, text: "working" }),
+      }),
+    );
+    expect(f.forget).toHaveBeenCalledWith(c.request.operationId);
   });
   it("ignores duplicate delivery and delayed lower offsets after a seal", async () => {
     const f = fixture(),

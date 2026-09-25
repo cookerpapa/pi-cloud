@@ -14,6 +14,40 @@ const SESSION_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "20000000-0000-4000-8000-000000000001";
 const CREATED_AT = "2026-07-19T00:00:00.000Z";
 
+it("delivers temporary progress separately from formal events on the same SSE connection", async () => {
+  const controller = new AbortController(),
+    onEvent = vi.fn(),
+    onProgress = vi.fn();
+  const progress = {
+    type: "tool.progress",
+    sessionId: SESSION_ID,
+    turnId: TURN_ID,
+    toolCallId: "call",
+    operationId: "op",
+    revision: 1,
+    text: "temporary",
+  };
+  const frames: string[] = [];
+  for await (const frame of sessionJsonFrames(snapshot(), "snapshot")) frames.push(frame);
+  frames.push(`event: tool.progress\ndata: ${JSON.stringify(progress)}\n\n`);
+  frames.push(`event: assistant.text.delta\ndata: ${JSON.stringify(event(1, "formal"))}\n\n`);
+  await streamSessionEvents({
+    sessionId: SESSION_ID,
+    signal: controller.signal,
+    fetchImplementation: async () =>
+      new Response(frames.join(""), { headers: { "content-type": "text/event-stream" } }),
+    onSnapshot() {},
+    onStatus() {},
+    onToolProgress: onProgress,
+    onEvent(value) {
+      onEvent(value);
+      controller.abort();
+    },
+  });
+  expect(onProgress).toHaveBeenCalledExactlyOnceWith(progress);
+  expect(onEvent).toHaveBeenCalledExactlyOnceWith(event(1, "formal"));
+});
+
 it("stops reconnecting for a deleted or unauthorized Session", async () => {
   const request = vi.fn(async () => new Response(null, { status: 404 }));
   await expect(

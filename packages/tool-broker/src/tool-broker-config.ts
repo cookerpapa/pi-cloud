@@ -15,6 +15,7 @@ export type ToolBrokerConfig = {
   ownershipHeartbeatMs: number;
   serviceToken: string;
   dispatchToken: string;
+  controlPlaneUrl: string;
   workspaceServiceToken?: string;
   terminalToken: string;
   persistentStateKey: Uint8Array;
@@ -243,6 +244,10 @@ export async function loadToolBrokerConfig(
     ownershipHeartbeatMs,
     serviceToken: await readSecret(required(environment, "PI_CLOUD_TOOL_BROKER_TOKEN_FILE")),
     dispatchToken: await readSecret(required(environment, "PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE")),
+    controlPlaneUrl: serviceUrl(
+      required(environment, "PI_CLOUD_CONTROL_PLANE_URL"),
+      "controlPlaneUrl",
+    ),
     terminalToken: await readSecret(
       required(environment, "PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE"),
     ),

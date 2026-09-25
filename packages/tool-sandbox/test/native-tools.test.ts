@@ -144,7 +144,7 @@ describe("whole native tools at the execution source", () => {
     expect(read.isError).toBe(false);
     expect(read.result.content[0]).toMatchObject({ text: expect.stringContaining("two") });
   });
-  it("drains >1MiB without failing the command and returns native partial snapshots", async () => {
+  it("drains >1MiB and returns only a final result for a short command", async () => {
     const cwd = await directory();
     const updates: NativeToolUpdate[] = [];
     const result = await executeNativeTool(
@@ -156,12 +156,7 @@ describe("whole native tools at the execution source", () => {
     expect(result.isError).toBe(false);
     expect(result.result.content[0]).toMatchObject({ text: expect.stringContaining("finished") });
     expect(JSON.stringify(result).length).toBeLessThan(60000);
-    expect(updates.length).toBeGreaterThan(1);
-    expect(
-      updates.every(
-        (event) => event.type === "tool_execution_update" && event.toolCallId === "call_native",
-      ),
-    ).toBe(true);
+    expect(updates).toHaveLength(0);
     expect(JSON.stringify(result)).not.toContain("fullOutputPath");
   });
   it("preserves failing command output in a native error result", async () => {
@@ -176,6 +171,40 @@ describe("whole native tools at the execution source", () => {
     expect(result.result.content[0]).toMatchObject({
       text: expect.stringMatching(/diagnostic\n+Command exited with code 7/),
     });
+  });
+  it("observes a long noisy command at most once per second and never after completion", async () => {
+    const cwd = await directory();
+    const updates: NativeToolUpdate[] = [];
+    const result = await executeNativeTool(
+      request("bash", {
+        command:
+          'python3 -u -c \'import time; [(print("x"*100000), time.sleep(.1)) for _ in range(23)]; print("DONE")\'',
+      }),
+      cwd,
+      new AbortController().signal,
+      (event) => updates.push(event),
+    );
+    expect(result.isError).toBe(false);
+    expect(updates.length).toBeGreaterThanOrEqual(2);
+    expect(updates.length).toBeLessThanOrEqual(3);
+    expect(
+      updates.every((event) => Buffer.byteLength(JSON.stringify(event.partialResult)) < 110000),
+    ).toBe(true);
+    expect(JSON.stringify(result.result)).toContain("DONE");
+    const count = updates.length;
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect(updates).toHaveLength(count);
+  });
+  it("finishes a silent long command without requiring observation heartbeats", async () => {
+    const updates: NativeToolUpdate[] = [];
+    const result = await executeNativeTool(
+      request("bash", { command: "sleep 1.2" }),
+      await directory(),
+      new AbortController().signal,
+      (event) => updates.push(event),
+    );
+    expect(result.isError).toBe(false);
+    expect(updates).toEqual([]);
   });
   it("bounds cancellation and does not treat partial output as success", async () => {
     const cwd = await directory();

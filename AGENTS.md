@@ -30,8 +30,8 @@ protocol, record the decision under `docs/adr/` before implementation.
 
 - Keep Pi-specific runtime events at the trusted runner and fixed guest Tool
   transport boundary; the public API and durable domain model use PiCloud-owned
-  schemas. Native Tool update/end payloads are internal replies, not canonical
-  Session events until the Worker Harness processes them.
+  schemas. Native Tool final replies become canonical only after Worker Harness
+  processing. Observation-only updates use lossy HTTP/SSE, never Kafka/PG or context.
 - Run the fixed Pi core only in the trusted Agent Runner, never in the API/control-plane
   process. Route every untrusted file or shell operation to a separate Tool Sandbox.
 - Load only code-owned trusted infrastructure tools in the Agent Runner.

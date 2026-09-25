@@ -53,7 +53,9 @@ Scripts execute with the Bash capability inside Cube and are saved under
 one child; `runs.all(tasks)` retains input order and returns individual failure
 results. A failed single child rejects its script call. Every launch must be
 awaited; conflicting reuse of a key fails. `console`/`emit` are progress, not the
-return value, and do not create model messages.
+return value, and do not create model messages. Their newest bounded text may
+appear in the disposable Tool log preview; they never enter Kafka or PG. Actual
+`runs.*` control and messaging requests retain their durable execution path.
 
 The API also offers `runs.status`, `runs.wait`, `runs.cancel` and
 `runs.send(target, message, delivery)`. A target is a returned execution ID or

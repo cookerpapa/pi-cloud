@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [ ] Ephemeral Tool log preview via Broker HTTP → Projector SSE; final-only
+      Kafka replies, no observation history or background-service log follower.
+
 - [x] Source-side whole Pi Tool execution, native Kafka replies and monotonic
       commit-before-dispatch; no result GET/cache or PG operation ledger.
       [Luna/Cube, Subagent, browser and crash acceptance](reports/native-remote-tools-acceptance-20260924.md).
@@ -110,7 +113,7 @@
       configuration and measure native publication independently from model time.
 
 - [x] Whole native Tools execute in Cube; Pi callbacks receive bounded native
-      updates/results through Kafka, without completed-result caches or GET.
+      final results through Kafka, without completed-result caches or GET.
       Dispatch commits precede effects; projection replay never re-executes Tools.
 
 - [x] Route Agent Tool commands from the Kafka Projector to Broker; retain native Session

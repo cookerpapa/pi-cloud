@@ -6,6 +6,7 @@ import { SESSION_STREAM_SEND_TIMEOUT_MS } from "@pi-cloud/protocol";
 import { sessionJsonFrames } from "./session-stream-framing.ts";
 import { projectConversationTurnTranscript } from "./conversation-turn-projection.ts";
 import { setImmediate as yieldToIo } from "node:timers/promises";
+import { ToolProgressView } from "./tool-progress-view.ts";
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -60,6 +61,7 @@ export class OpenSessionEventStream {
   readonly #highWaterMark: number;
   readonly #heartbeatIntervalMs: number;
   readonly #sendTimeoutMs: number;
+  readonly #progress: ToolProgressView;
 
   constructor(options: {
     subscription: SessionEventSubscription;
@@ -70,6 +72,7 @@ export class OpenSessionEventStream {
   }) {
     this.#subscription = options.subscription;
     this.#snapshot = options.snapshot;
+    this.#progress = new ToolProgressView(options.snapshot.conversation);
     this.#highWaterMark = options.highWaterMark;
     this.#heartbeatIntervalMs = options.heartbeatIntervalMs;
     this.#sendTimeoutMs = options.sendTimeoutMs ?? SESSION_STREAM_SEND_TIMEOUT_MS;
@@ -107,12 +110,25 @@ export class OpenSessionEventStream {
           continue;
         }
         if (item === undefined) return;
+        if (item.progress) {
+          if (
+            this.#progress.accept(item.progress) &&
+            !(await writeChunk(
+              response,
+              `event: tool.progress\ndata: ${JSON.stringify(item.progress)}\n\n`,
+              this.#sendTimeoutMs,
+            ))
+          )
+            return;
+          continue;
+        }
         // Queue overflow deliberately asks the browser to reconnect and receive
         // one replacement snapshot instead of pinning shared Gateway memory.
         if (item.throughSequence === null || item.event === undefined) return;
         const event = item.event;
         if (event.seq <= lastSentSequence) continue;
         if (event.seq !== lastSentSequence + 1) return;
+        this.#progress.event(event);
         if (!(await this.#sendValue(response, event, "event", event.type))) return;
         lastSentSequence = event.seq;
       }

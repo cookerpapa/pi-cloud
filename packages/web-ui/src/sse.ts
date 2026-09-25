@@ -97,6 +97,7 @@ export type StreamSessionEventsOptions = {
   signal: AbortSignal;
   onSnapshot(snapshot: SessionViewSnapshotResource): void;
   onEvent(event: PiCloudEvent): void;
+  onToolProgress?(progress: ToolProgress): void;
   onStatus(status: SessionStreamStatus): void;
   fetchImplementation?: FetchImplementation;
   retryDelayMs?: number;
@@ -190,6 +191,13 @@ async function consumeResponse(
       if (!snapshotReceived) {
         throw new SessionStreamError("SSE live event arrived before its Session snapshot", false);
       }
+      if (frame.event === "tool.progress") {
+        const progress = parseToolProgress(value);
+        if (progress.sessionId !== options.sessionId)
+          throw new SessionStreamError("Tool progress belongs to another Session", false);
+        options.onToolProgress?.(progress);
+        continue;
+      }
       const event = parsePiCloudEvent(value);
       if (event.sessionId !== options.sessionId || (!framed && frame.event !== event.type)) {
         throw new SessionStreamError("SSE event identity is invalid", false);
@@ -270,3 +278,4 @@ export async function streamSessionEvents(options: StreamSessionEventsOptions): 
     await wait(delayMs, options.signal);
   }
 }
+import { parseToolProgress, type ToolProgress } from "@pi-cloud/protocol";

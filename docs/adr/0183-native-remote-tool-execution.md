@@ -11,16 +11,17 @@ Keep Agent Loop, validation/hooks, Session ownership and canonical Tool
 Results in the trusted Worker. One invocation has one random operation ID;
 internal filesystem calls are not separate distributed operations.
 
-Carry Pi-native `tool_execution_update` and `tool_execution_end` payloads in a
-small operation/routing envelope. Updates invoke the waiting Worker's native
-`onUpdate`; completion resolves or rejects its `execute`. Worker Pi still owns
+Carry Pi-native `tool_execution_end` payloads in a small operation/routing
+envelope; completion resolves or rejects the waiting Worker's `execute`.
+Source updates now follow [ADR-0184](0184-ephemeral-tool-progress.md), not Kafka.
+Worker Pi still owns
 the actual lifecycle events, after-tool hooks and canonical result publication.
 The guest executes no Agent Loop and holds no Kafka/model/database credential.
 
 The trusted Cube adapter publishes bounded replies to a Worker-boot Kafka reply
 topic. All slots share that topic. Replies are transport, not canonical Session
-history. The reply channel must preserve per-operation order and reject updates
-after completion/cancellation. It replaces completed raw-result caches and GET
+history. Replies cannot reopen completed/cancelled calls. This replaces completed
+raw-result caches and GET
 retrieval; neither late replies nor another Worker resume an abandoned Tool.
 
 Use explicit Kafka commit-before-dispatch for ordinary remote Tool commands.

@@ -17,6 +17,7 @@ import type { DevelopmentEnvironmentService } from "./development-environment-se
 import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import type { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import type { SourceControlService } from "./source-control-service.ts";
+import type { ToolProgressIngress } from "./tool-progress-ingress.ts";
 
 export type ControlPlaneApplicationOptions = Omit<
   ControlPlaneStoreOptions,
@@ -41,6 +42,7 @@ export type ControlPlaneApplicationOptions = Omit<
   sandboxPreviewGateway?: SandboxPreviewGateway;
   sshAccessTicketService?: SshAccessTicketService;
   sourceControlService?: SourceControlService;
+  toolProgressIngress?: ToolProgressIngress;
 };
 
 export async function createControlPlaneApplication(
@@ -48,6 +50,7 @@ export async function createControlPlaneApplication(
 ): Promise<NestFastifyApplication> {
   const adapter = new FastifyAdapter({ logger: false });
   options.productionHttpGateway?.install(adapter.getInstance());
+  options.toolProgressIngress?.install(adapter.getInstance());
   options.supervisorProvisioningGateway?.install(adapter.getInstance());
   options.supervisorWebSocketGateway?.install(adapter.getInstance());
   options.workspaceTerminalGateway?.install(adapter.getInstance());

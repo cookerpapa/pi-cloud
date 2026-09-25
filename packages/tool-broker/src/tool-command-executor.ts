@@ -3,6 +3,8 @@ import {
   parseToolSandboxOperationRequest,
   type AcceptedToolCommand,
   type NativeToolEvent,
+  type ToolProgressDelivery,
+  TOOL_PROGRESS_MAX_CHARACTERS,
 } from "@pi-cloud/protocol";
 import {
   operationalLog,
@@ -33,10 +35,12 @@ export class ToolCommandExecutor {
   readonly #publishReply: (topic: string, reply: Reply) => Promise<void>;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #maximumActiveCommands: number;
+  readonly #progress:
+    { update(value: ToolProgressDelivery): void; forget(id: string): void } | undefined;
   readonly #positions = new Map<string, bigint>();
   readonly #sealed = new Set<string>();
   readonly #sealedWriters = new Set<string>();
-  readonly #active = new Map<string, Promise<void>>();
+  readonly #active = new Map<string, AcceptedToolCommand["scope"]>();
   #commands = 0;
   #closed = false;
 
@@ -45,9 +49,11 @@ export class ToolCommandExecutor {
     publishReply: (topic: string, reply: Reply) => Promise<void>;
     maximumActiveCommands?: number;
     metrics?: PiCloudMetrics;
+    progress?: { update(value: ToolProgressDelivery): void; forget(id: string): void };
   }) {
     this.#broker = options.broker;
     this.#publishReply = options.publishReply;
+    this.#progress = options.progress;
     this.#maximumActiveCommands = options.maximumActiveCommands ?? 32;
     this.#metrics = options.metrics;
     if (!Number.isSafeInteger(this.#maximumActiveCommands) || this.#maximumActiveCommands < 1)
@@ -67,6 +73,13 @@ export class ToolCommandExecutor {
   consume(record: ToolLogRecord<ToolLogFact>): void {
     const { fact } = record;
     if (fact.kind === "execution_seal") {
+      for (const [id, scope] of this.#active) {
+        if (
+          scope.runId === fact.scope.runId ||
+          (fact.closesWriter && scope.writerId === fact.scope.writerId)
+        )
+          this.#progress?.forget(id);
+      }
       this.#sealed.add(fact.scope.runId);
       if (fact.closesWriter) this.#sealedWriters.add(fact.scope.writerId);
       if (this.#sealed.size > 65536) this.#sealed.delete(this.#sealed.values().next().value!);
@@ -74,7 +87,8 @@ export class ToolCommandExecutor {
         this.#sealedWriters.delete(this.#sealedWriters.values().next().value!);
     } else if (fact.kind === "tool_command") {
       const command = fact as AcceptedToolCommand;
-      if (this.#broker.ownsToolBinding(command.request.activationId)) this.#dispatch(command);
+      if (this.#broker.ownsToolBinding(command.request.activationId))
+        this.#dispatch(command, record.partition);
     }
   }
   #closedFor(command: AcceptedToolCommand): boolean {
@@ -85,7 +99,7 @@ export class ToolCommandExecutor {
       !this.#broker.ownsToolBinding(command.request.activationId)
     );
   }
-  #dispatch(command: AcceptedToolCommand): void {
+  #dispatch(command: AcceptedToolCommand, partition: number): void {
     const request = parseToolSandboxOperationRequest(command.request);
     if (request.operation !== "tool.execute" && request.operation !== "workflow.exec")
       throw new Error("WAL commands must execute whole Tools");
@@ -94,8 +108,31 @@ export class ToolCommandExecutor {
     const topic = command.replyTopic;
     let sequence = 0,
       publicationFailure: unknown;
+    let revision = 0;
     const send = async (event: NativeToolEvent) => {
       if (this.#closedFor(command) || publicationFailure) return;
+      if (event.type === "tool_execution_update") {
+        const text = event.partialResult.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n")
+          .slice(-TOOL_PROGRESS_MAX_CHARACTERS);
+        if (text)
+          this.#progress?.update({
+            tenantId: command.scope.tenantId,
+            partition,
+            progress: {
+              type: "tool.progress",
+              sessionId: command.scope.sessionId,
+              turnId: command.scope.turnId,
+              toolCallId: command.toolCallId,
+              operationId: request.operationId,
+              revision: ++revision,
+              text,
+            },
+          });
+        return;
+      }
       try {
         await this.#publishReply(topic, {
           operationId: request.operationId,
@@ -118,7 +155,7 @@ export class ToolCommandExecutor {
     const parent = parseTraceCarrier(command.traceContext ?? {});
     this.#commands++;
     const started = performance.now();
-    const pending = withSpan({
+    void withSpan({
       serviceName: "pi-cloud-tool-broker",
       name: `tool.${request.operation}`,
       ...(parent ? { parent } : {}),
@@ -193,8 +230,11 @@ export class ToolCommandExecutor {
           isError: true,
         });
       })
-      .finally(() => this.#active.delete(request.operationId));
-    this.#active.set(request.operationId, pending);
+      .finally(() => {
+        this.#progress?.forget(request.operationId);
+        this.#active.delete(request.operationId);
+      });
+    this.#active.set(request.operationId, command.scope);
   }
   statistics() {
     return {
@@ -205,5 +245,6 @@ export class ToolCommandExecutor {
   }
   async close(): Promise<void> {
     this.#closed = true;
+    for (const id of this.#active.keys()) this.#progress?.forget(id);
   }
 }

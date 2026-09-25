@@ -341,6 +341,11 @@ export async function startControlPlane(): Promise<void> {
       ...(gitlabRuntime === undefined ? {} : { gitlab: gitlabRuntime }),
     });
     runtime = await createControlPlaneRuntime({
+      toolProgressIngress: new ToolProgressIngress(
+        config.toolDispatchToken,
+        (partition) => activeAgentEvents.ownerForPartition(partition),
+        ({ tenantId, progress }) => activeAgentEvents.eventHub.publishProgress(tenantId, progress),
+      ),
       database,
       controlPlaneInstanceId,
       eventRuntime: {
@@ -447,3 +452,4 @@ if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
     process.exitCode = 1;
   });
 }
+import { ToolProgressIngress } from "./tool-progress-ingress.ts";

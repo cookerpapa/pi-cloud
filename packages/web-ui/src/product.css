@@ -3782,3 +3782,24 @@ body.product-panel-resizing {
     grid-template-columns: 1fr;
   }
 }
+.product-tool-progress button {
+  border: 0;
+  background: none;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  padding: 6px 0;
+  font: inherit;
+  font-size: 12px;
+}
+.product-tool-progress-tail {
+  height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.5 monospace;
+  background: rgba(127, 127, 127, 0.06);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 4px 0;
+  contain: layout paint;
+}

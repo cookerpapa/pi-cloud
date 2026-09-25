@@ -17,7 +17,7 @@ Pi Tool call
   -> CubeProxy -> cube-agent/vsock/envd
   -> credential-free one-shot Tool Worker
   -> trusted adapter -> Worker-boot Kafka reply topic
-  -> native onUpdate / execute completion in Worker
+  -> native execute completion in Worker
   -> Pi Agent Loop
 ```
 
@@ -48,6 +48,8 @@ The guest helper reuses fixed Pi edit/write logic locally and emits native
 `tool_execution_update`/`tool_execution_end` payloads. Source-side bounded output
 does not kill a command just because its preview is full. No full-output archive
 is created. Kafka credentials remain in the trusted adapter, never in Cube.
+Updates take a separate best-effort Broker HTTP → Projector SSE path, not Kafka
+or Worker. They are collapsed temporary log previews, not durable Tool results.
 
 ## Workspace and process lifetime
 

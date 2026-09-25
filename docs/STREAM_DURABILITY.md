@@ -6,6 +6,10 @@ read Kafka, and the public SSE proxy never builds a second tail.
 
 ## Boundaries
 
+These guarantees concern formal conversation events. Disposable `tool.progress`
+snapshots are a separate HTTP/SSE observation: no Kafka/PG write, durable sequence,
+context entry or reconnect replay. Losing one cannot fail or complete a Tool.
+
 - `A`: PG committed execution admission and publication identity;
 - `K`: Kafka durably accepted a record under the configured replication policy;
 - `F`: the execution's first-record recovery floor is committed in PG;
