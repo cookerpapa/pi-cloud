@@ -39,8 +39,9 @@
 
 ## Current release gate
 
-- [ ] Ephemeral Tool log preview via Broker HTTP → Projector SSE; final-only
+- [x] Ephemeral Tool log preview via Broker HTTP → Projector SSE; final-only
       Kafka replies, no observation history or background-service log follower.
+      [Luna/Cube/browser and process-restart acceptance](reports/tool-progress-acceptance-20260925.md).
 
 - [x] Source-side whole Pi Tool execution, native Kafka replies and monotonic
       commit-before-dispatch; no result GET/cache or PG operation ledger.

@@ -1,6 +1,6 @@
 # ADR 0184: ephemeral Tool observation
 
-Status: approved, implementation in progress, 2026-09-25.
+Status: implemented and validated, 2026-09-25.
 
 Tool updates are observation, not model context or durable conversation history.
 Broker forwards bounded text snapshots over pooled internal HTTP to the Session
@@ -24,3 +24,5 @@ log archive, new middleware or old-Loop recovery is introduced.
 
 Acceptance: bounded output/slow readers, update/final races, tenant isolation,
 reconnect/reassignment, cancellation, silent commands and real Luna/Cube UI calls.
+
+[Acceptance](../reports/tool-progress-acceptance-20260925.md).

@@ -19,8 +19,8 @@ replays and operation-ID reuse cannot execute another effect. A different boot
 rejects delivery rather than adopting old bindings. Unconfirmed command delivery
 results in UNKNOWN semantics; a failed control/seal delivery may stall its partition.
 
-Native Tool updates/results return through the boot-scoped Kafka channel in
-ADR-0183. This routing module neither retains result bodies nor consumes native
+Native Tool final results return through the boot-scoped Kafka channel in
+ADR-0183; temporary updates use HTTP/SSE under ADR-0184. This routing module neither retains result bodies nor consumes native
 result acknowledgements. Already-started work may finish after retirement but
 cannot reopen a closed invocation.
 

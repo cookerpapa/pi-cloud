@@ -1,0 +1,47 @@
+{
+  "checkedAt": "2026-09-25T04:09:05.672Z",
+  "model": "gpt-5.6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "kind": "continuous-output",
+      "elapsedMs": 59715,
+      "progressCount": 37,
+      "maximumProgressCharacters": 577,
+      "modelTransportMs": 4894.176,
+      "commandExecutions": 1
+    },
+    {
+      "kind": "silent-command",
+      "elapsedMs": 30278,
+      "progressCount": 0
+    },
+    {
+      "kind": "cancel",
+      "lateProgress": 0
+    },
+    {
+      "kind": "coding-after-cancel",
+      "tools": [
+        {
+          "name": "write",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "edit",
+          "status": "completed"
+        },
+        {
+          "name": "bash",
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "projectorRestart": true,
+  "resourcesReleased": true
+}

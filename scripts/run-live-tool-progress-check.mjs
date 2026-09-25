@@ -23,6 +23,7 @@ let cookie = "",
   session,
   active,
   stream;
+let snapshots = 0;
 const abort = new AbortController();
 const apiFetch = async (path, init = {}) => {
   const response = await fetch(new URL(path, base), {
@@ -83,7 +84,9 @@ try {
     sessionId: session.sessionId,
     signal: abort.signal,
     fetchImplementation: apiFetch,
-    onSnapshot() {},
+    onSnapshot() {
+      snapshots++;
+    },
     onStatus() {},
     onEvent(event) {
       events.push(event);
@@ -93,7 +96,7 @@ try {
     },
   });
   void stream.catch(() => {});
-  await withChromePage({}, async (page) => {
+  await withChromePage({ height: 600 }, async (page) => {
     await page.navigate(base);
     assert.equal(
       await page.evaluate(
@@ -141,12 +144,20 @@ try {
     await page.evaluate(
       "window.__progressScroll=document.querySelector('.product-tool-progress-tail').getBoundingClientRect().height",
     );
+    await page.evaluate(
+      "const area=document.querySelector('.product-chat-scroll');area.scrollTop=0;area.dispatchEvent(new Event('scroll'))",
+    );
     await page.wait(2200);
     assert.equal(
       await page.evaluate(
         "document.querySelector('.product-tool-progress-tail').getBoundingClientRect().height===window.__progressScroll",
       ),
       true,
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-chat-scroll').scrollTop"),
+      0,
+      "Progress scrolled the transcript",
     );
     await select();
     await page.waitFor("document.querySelector('.product-tool-progress button')", 15000);
@@ -174,16 +185,20 @@ try {
         "select id from runs where state in ('queued','running','cancelling') order by id",
       ]);
       assert.equal(stdout.trim(), active.runId, "Refuse process fault while other Runs are active");
-      const before = updates.length;
+      const before = snapshots;
       await exec("docker", ["kill", "--signal=KILL", "pi-cloud-production-control-plane-1"]);
-      // The deployed container's restart policy must restore Projector without restarting the Tool.
+      await exec("docker", ["start", "pi-cloud-production-control-plane-1"]);
+      // Replace the Projector process, not the Worker or the running Tool.
       await page.waitFor(
         "document.querySelector('.product-tool-progress-tail')?.textContent.includes('OBS_TICK_')",
         25000,
       );
       const deadline = Date.now() + 25000;
-      while (updates.length <= before && Date.now() < deadline) await page.wait(250);
-      assert(updates.length > before, "No new progress after Projector restart");
+      while (snapshots <= before && Date.now() < deadline) await page.wait(250);
+      assert(snapshots > before, "No replacement snapshot after Projector restart");
+      const updateCount = updates.length;
+      while (updates.length <= updateCount && Date.now() < deadline) await page.wait(250);
+      assert(updates.length > updateCount, "No new progress after Projector restart");
       report.projectorRestart = true;
     }
     const run = await waitRun(active.runId);
@@ -242,6 +257,26 @@ try {
     await page.wait(2500);
     assert.equal(updates.length, count, "Cancelled Tool leaked late progress");
     report.runs.push({ kind: "cancel", lateProgress: 0 });
+    active = await api.acceptTurn(
+      session.sessionId,
+      "继续这个会话。依次实际使用四种工具：write 创建 insertion_sort.py，实现插入排序和空数组、重复值、负数、逆序的 assert 测试；read 读取它；edit 新增固定随机种子的随机测试；bash 执行 python3 insertion_sort.py。不要搜索或子代理，最后简要报告测试结果。",
+      newIdempotencyKey("progress-coding"),
+      "low",
+    );
+    assert.equal((await waitRun(active.runId)).state, "completed");
+    const coding = (await api.getConversation(session.sessionId)).turns.find(
+      (t) => t.runId === active.runId,
+    );
+    const calls = coding.transcript.items.filter((item) => item.kind === "tool");
+    for (const name of ["write", "read", "edit", "bash"])
+      assert(
+        calls.some((call) => call.toolName === name && call.status === "completed"),
+        `Missing completed ${name}`,
+      );
+    report.runs.push({
+      kind: "coding-after-cancel",
+      tools: calls.map((call) => ({ name: call.toolName, status: call.status })),
+    });
   });
   report.accepted = true;
 } finally {

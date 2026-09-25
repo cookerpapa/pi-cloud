@@ -1,4 +1,12 @@
-import { createContext, useContext, useState, useSyncExternalStore, useCallback } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useSyncExternalStore,
+  useCallback,
+  useRef,
+  useLayoutEffect,
+} from "react";
 import type { ToolProgress } from "@pi-cloud/protocol";
 import { useI18n } from "./i18n.tsx";
 
@@ -47,6 +55,8 @@ export const ToolProgressContext = createContext<{
 function ProgressPreview({ store, id }: { store: ToolProgressStore; id: string }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  const output = useRef<HTMLPreElement>(null);
+  const following = useRef(true);
   const subscribe = useCallback(
     (listener: () => void) => store.subscribe(id, listener),
     [store, id],
@@ -56,13 +66,25 @@ function ProgressPreview({ store, id }: { store: ToolProgressStore; id: string }
     () => store.get(id),
     () => undefined,
   );
+  useLayoutEffect(() => {
+    // Follow only inside the fixed-height log box, and respect manual scrolling.
+    if (output.current && following.current) output.current.scrollTop = output.current.scrollHeight;
+  }, [expanded, progress]);
   return (
     <div className="product-tool-progress">
       <button type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
         {expanded ? "▾" : "▸"} {t("turn.liveOutput")}
       </button>
       {expanded ? (
-        <pre aria-label={t("turn.liveOutput")} className="product-tool-progress-tail">
+        <pre
+          ref={output}
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            following.current = element.scrollHeight - element.clientHeight - element.scrollTop < 8;
+          }}
+          aria-label={t("turn.liveOutput")}
+          className="product-tool-progress-tail"
+        >
           {progress?.text || t("turn.waitingOutput")}
         </pre>
       ) : null}

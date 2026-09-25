@@ -99,6 +99,12 @@ requires real write/read/edit/bash calls, checks a 1.5MB command's bounded tail,
 records model time separately from Tool boundaries, and releases its test Session
 and Workspace through the product API. It never selects DeepSeek implicitly.
 
+For temporary Tool logs, run
+`PI_CLOUD_LIVE_TOOL_PROGRESS_CHECK=1 node --import tsx scripts/run-live-tool-progress-check.mjs`.
+It uses Luna, Cube and Chrome to check noisy/silent commands, reload, cancellation
+and subsequent coding. Adding `PI_CLOUD_TOOL_PROGRESS_RESTART_CHECK=1` permits
+SIGKILL/start of the local Control Plane only after excluding unrelated active Runs.
+
 The Cube gate attests real KVM guests, tenant-separated persistent Workspaces,
 credential isolation, egress policy, resource/output bounds, authority
 rotation, cancellation and cleanup. The production gate consumes real model
