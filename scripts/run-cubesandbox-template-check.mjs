@@ -250,14 +250,23 @@ try {
     baseUrl,
     "printf 'PI_CLOUD_PREVIEW_OK\\n' > /workspace/preview.txt && setsid --fork python3 -m http.server 5173 --bind 0.0.0.0 --directory /workspace </dev/null >/tmp/pi-cloud-preview.log 2>&1",
   );
-  await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
-  const previewResult = await envdRun(
-    baseUrl,
-    "curl --fail --silent http://127.0.0.1:5173/preview.txt",
-  );
+  let previewResult;
+  const previewDeadline = Date.now() + 10_000;
+  do {
+    previewResult = await envdRun(
+      baseUrl,
+      "curl --max-time 1 --fail --silent http://127.0.0.1:5173/preview.txt",
+    );
+    if (previewResult.exitCode === 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  } while (Date.now() < previewDeadline);
+  const previewDiagnostics =
+    previewResult.exitCode === 0
+      ? undefined
+      : await envdRun(baseUrl, "cat /tmp/pi-cloud-preview.log");
   assert(
     previewResult.exitCode === 0 && previewResult.stdout === "PI_CLOUD_PREVIEW_OK\n",
-    `Guest HTTP service failed: ${JSON.stringify(previewResult)}`,
+    `Guest HTTP service failed: ${JSON.stringify({ previewResult, previewDiagnostics })}`,
   );
   await envdRun(baseUrl, "/usr/bin/pkill -f '^python3 -m http.server 5173 '");
 
