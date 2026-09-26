@@ -18,6 +18,11 @@ import {
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { ExecutionAuthority } from "./execution-authority.ts";
 import { assertIdleNativeSession } from "./idle-session-mutation.ts";
+import {
+  encodeSessionImages,
+  decodeSessionImages,
+  type ImageAttachmentCodec,
+} from "@pi-cloud/session-attachments";
 import type { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
 
 export type { ActiveExecutionAuthority, ExecutionAuthority } from "./execution-authority.ts";
@@ -33,6 +38,7 @@ export type PostgresPiSessionStorageOptions = {
   turnId?: string;
   authority?: ExecutionAuthority;
   entryPayloadCache?: PostgresPiSessionEntryPayloadCache;
+  images?: ImageAttachmentCodec;
 };
 
 function safeInteger(value: string | number, name: string): number {
@@ -117,6 +123,7 @@ type HydratedVisibleEntryRow = Omit<VisibleEntryRow, "payload"> & {
 /** PostgreSQL implementation of Pi 0.84's public bounded SessionStorage port. */
 export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSessionMetadata> {
   readonly #database: Kysely<Database>;
+  readonly #images: ImageAttachmentCodec | undefined;
   readonly #tenantId: string;
   readonly #sessionId: string;
   readonly #turnId: string | undefined;
@@ -125,6 +132,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
 
   constructor(options: PostgresPiSessionStorageOptions) {
     this.#database = options.database;
+    this.#images = options.images;
     this.#tenantId = options.tenantId;
     this.#sessionId = options.sessionId;
     this.#turnId = options.turnId;
@@ -241,11 +249,19 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     newEntry: ProvisionedEntry<TEntry>,
     lane: string,
   ): Promise<TEntry> {
-    return this.#mutate((transaction) => this.#appendEntry(transaction, newEntry, lane));
+    const stored = await encodeSessionImages(this.#images, { tenantId: this.#tenantId }, newEntry);
+    const committed = await this.#mutate((transaction) =>
+      this.#appendEntry(transaction, stored as ProvisionedEntry<TEntry>, lane),
+    );
+    return decodeSessionImages<TEntry>(this.#images, { tenantId: this.#tenantId }, committed);
   }
 
   async appendRecord<TRecord extends LaneRecord>(newRecord: NewRecord<TRecord>): Promise<TRecord> {
-    return this.#mutate((transaction) => this.#appendRecord(transaction, newRecord));
+    const stored = await encodeSessionImages(this.#images, { tenantId: this.#tenantId }, newRecord);
+    const committed = await this.#mutate((transaction) =>
+      this.#appendRecord(transaction, stored as NewRecord<TRecord>),
+    );
+    return decodeSessionImages<TRecord>(this.#images, { tenantId: this.#tenantId }, committed);
   }
 
   async getEntry(id: string): Promise<Entry | undefined> {
@@ -256,7 +272,9 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       .where("session_id", "=", this.#sessionId)
       .where("id", "=", id)
       .executeTakeFirst();
-    return row === undefined ? undefined : entryFromRow(row);
+    return row === undefined
+      ? undefined
+      : decodeSessionImages<Entry>(this.#images, { tenantId: this.#tenantId }, entryFromRow(row));
   }
 
   async findEntries(query: EntryQuery = {}): Promise<Entry[]> {
@@ -278,7 +296,11 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     }
     selection = selection.orderBy("seq", query.order === "oldestFirst" ? "asc" : "desc");
     if (boundedLimit !== undefined) selection = selection.limit(boundedLimit);
-    return (await selection.execute()).map(entryFromRow);
+    return decodeSessionImages<Entry[]>(
+      this.#images,
+      { tenantId: this.#tenantId },
+      (await selection.execute()).map(entryFromRow),
+    );
   }
 
   async findEntriesOnBranch(
@@ -456,7 +478,11 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
         source_session_id: row.source_session_id,
         source_entry_id: row.source_entry_id,
       }));
-    return (await this.#hydrateEntryRows(selectedRows)).map(entryFromRow);
+    return decodeSessionImages<Entry[]>(
+      this.#images,
+      { tenantId: this.#tenantId },
+      (await this.#hydrateEntryRows(selectedRows)).map(entryFromRow),
+    );
   }
 
   async findRecords<K extends LaneRecord["type"]>(
@@ -480,14 +506,22 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       selection = selection.where("seq", ">", String(query.afterSeq));
     selection = selection.orderBy("seq", query.order === "oldestFirst" ? "asc" : "desc");
     if (boundedLimit !== undefined) selection = selection.limit(boundedLimit);
-    return (await selection.execute()).map(recordFromRow);
+    return decodeSessionImages<LaneRecord[]>(
+      this.#images,
+      { tenantId: this.#tenantId },
+      (await selection.execute()).map(recordFromRow),
+    );
   }
 
   async findOpenOperations(
     lane: string,
     options?: { limit?: number },
   ): Promise<OperationStartedRecord[]> {
-    return this.#findOpenOperations(this.#database, lane, limit(options?.limit));
+    return decodeSessionImages<OperationStartedRecord[]>(
+      this.#images,
+      { tenantId: this.#tenantId },
+      await this.#findOpenOperations(this.#database, lane, limit(options?.limit)),
+    );
   }
 
   async getLog(options: { afterSeq?: number; limit?: number } = {}): Promise<LogItem[]> {
@@ -501,16 +535,20 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       selection = selection.where("seq", ">", String(options.afterSeq));
     }
     const rows = await selection.orderBy("seq", "asc").limit(boundedLimit).execute();
-    return rows.map((row) => {
-      const seq = safeInteger(row.seq, "Pi log sequence");
-      if (row.kind === "entry") {
-        return { kind: "entry", seq, entry: payload<Entry>(row.payload.entry) };
-      }
-      if (row.kind === "record") {
-        return { kind: "record", seq, record: payload<LaneRecord>(row.payload.record) };
-      }
-      return { ...payload<Record<string, unknown>>(row.payload), kind: row.kind, seq } as LogItem;
-    });
+    return decodeSessionImages<LogItem[]>(
+      this.#images,
+      { tenantId: this.#tenantId },
+      rows.map((row) => {
+        const seq = safeInteger(row.seq, "Pi log sequence");
+        if (row.kind === "entry") {
+          return { kind: "entry", seq, entry: payload<Entry>(row.payload.entry) };
+        }
+        if (row.kind === "record") {
+          return { kind: "record", seq, record: payload<LaneRecord>(row.payload.record) };
+        }
+        return { ...payload<Record<string, unknown>>(row.payload), kind: row.kind, seq } as LogItem;
+      }),
+    );
   }
 
   async getName(): Promise<string | undefined> {

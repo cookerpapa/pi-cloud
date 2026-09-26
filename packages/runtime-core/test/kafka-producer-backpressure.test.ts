@@ -208,6 +208,18 @@ it("bounds queued and submitted bytes/count, rejects before enqueue and recovers
   await held;
 });
 
+it("rejects an oversized record without poisoning another Session's Producer callback", async () => {
+  const bus = await fixture({ maximumPendingBytes: 8 * 1024 * 1024, maximumPendingFacts: 32 });
+  const oversized = { ...fact(), occurredAt: "x".repeat(1024 * 1024) };
+  await expect(bus.append(oversized)).rejects.toMatchObject({ code: "event_capacity_exhausted" });
+  const pending = bus.append(fact());
+  await tick();
+  transport.streams[kafkaProducerLane("a", 2)]!.deliver();
+  await expect(pending).resolves.toMatchObject({ durable: true });
+  expect(bus.statistics()).toMatchObject({ pendingFacts: 0, pendingBytes: 0 });
+  await bus.close();
+});
+
 it("fails pending receipts on stream error or bounded close instead of fabricating delivery", async () => {
   const bus = await fixture();
   const first = bus.append(fact()).catch((e) => e),

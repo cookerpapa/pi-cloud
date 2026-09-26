@@ -119,6 +119,32 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
 }
 
 describe("whole-tool Worker adapter", () => {
+  it.each([false, true])(
+    "makes image capability explicit before returning native content (supported=%s)",
+    async (supported) => {
+      const image = { type: "image" as const, data: "aW1hZ2U=", mimeType: "image/png" };
+      const { value } = configuration({
+        supportsImages: supported,
+        publishToolCommand: async (command) => ({
+          operationId: command.request.operationId,
+          accepted: true,
+        }),
+        waitForToolReply: async (request) => ({
+          type: "tool_execution_end",
+          toolCallId: (request as { toolCallId: string }).toolCallId,
+          toolName: "read",
+          isError: false,
+          result: { content: [image], details: undefined },
+        }),
+      });
+      const runtime = createTrustedRemoteAgentTools(value);
+      await runtime.transformContext([]);
+      const tool = runtime.tools.find((t) => t.name === "read")!;
+      const result = tool.execute("image", { path: "shot.png", detail: "original" });
+      if (supported) await expect(result).resolves.toMatchObject({ content: [image] });
+      else await expect(result).rejects.toThrow("does not support image input");
+    },
+  );
   it("lets Pi own native update/end events and after-Tool hooks, without adding progress to model context", async () => {
     const { value } = configuration();
     const runtime = createTrustedRemoteAgentTools(value);

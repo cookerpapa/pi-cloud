@@ -79,6 +79,8 @@ const applicationSecretNames = [
   "cli-proxy-config.yaml",
   "cli-proxy-management-key",
   "database-url",
+  "session-image-s3-credentials.json",
+  "session-image-s3-server.json",
   "grafana-admin-password",
   "metrics-token",
   "source-control-credential-master-key",

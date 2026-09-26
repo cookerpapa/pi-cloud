@@ -237,7 +237,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
         title: "Test conversation",
         model: {
           provider: "openai-codex",
-          modelId: "gpt-5.6-terra",
+          modelId: "gpt-6-sol",
           thinkingLevel: "medium",
           fastMode: true,
         },
@@ -258,8 +258,8 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       models: expect.arrayContaining([
         expect.objectContaining({
           provider: "openai-codex",
-          modelId: "gpt-5.6-terra",
-          displayName: "GPT-5.6 Terra",
+          modelId: "gpt-6-sol",
+          displayName: "GPT-6 Sol",
         }),
         expect.objectContaining({
           provider: "deepseek",
@@ -277,7 +277,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     expect(selectedModel.json()).toMatchObject({
       sessionId: sessionA.sessionId,
       provider: "openai-codex",
-      modelId: "gpt-5.6-terra",
+      modelId: "gpt-6-sol",
       thinkingLevel: "medium",
       fastMode: true,
     });

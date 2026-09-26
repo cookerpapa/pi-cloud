@@ -144,7 +144,7 @@ networkPolicy:
   trustedNamespaceLabel:
     key: pi-cloud.io/trusted-plane
     value: "true"
-  trustedTcpPorts: [443, 3000, 3129, 4100, 4300, 4318, 4500, 5432, 9092, 9464, 9465, 9466]
+  trustedTcpPorts: [8333, 443, 3000, 3129, 4100, 4300, 4318, 4500, 5432, 9092, 9464, 9465, 9466]
   # Add explicit CIDRs for PostgreSQL/PgBouncer, provider proxy,
   # Cube API and OTLP endpoints. Never use 0.0.0.0/0 here.
   externalEgressCidrs: []
@@ -184,7 +184,7 @@ sandboxPlane:
     requestTimeoutMs: 120000
   toolBrokerResources:
     requests: { cpu: 250m, memory: 256Mi }
-    limits: { cpu: "2", memory: 768Mi }
+    limits: { cpu: "2", memory: 1536Mi }
   volumeGatewayResources:
     requests: { cpu: 250m, memory: 256Mi }
     limits: { cpu: "2", memory: 1Gi }
@@ -253,10 +253,17 @@ pi-workers:
   networkPolicy:
     enabled: true
     trustedNamespaceLabel: { key: pi-cloud.io/trusted-plane, value: "true" }
-    trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432, 8317, 9092]
+    trustedTcpPorts: [8333, 443, 3000, 3129, 4300, 4318, 5432, 8317, 9092]
     externalEgressCidrs: []
   disruptionBudget: { minAvailable: 1 }
   placement: { nodeSelector: {}, tolerations: [] }
   management:
     ingress: { enabled: false, className: "", hostSuffix: workers.pi-cloud.local, scheme: http }
   serviceAccount: { create: true, name: "" }
+
+# A private S3 bucket with durable PUT acknowledgements; provision it before rollout.
+imageAttachments:
+  endpoint: ""
+  region: us-east-1
+  bucket: pi-cloud-session-images
+  credentialsSecretKey: session-image-s3-credentials.json

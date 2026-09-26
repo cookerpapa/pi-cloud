@@ -29,7 +29,7 @@
 - Provider → model → reasoning selection with GPT request-scoped Fast mode,
   Session desired settings and immutable Turn snapshots.
 - composer-level cascading Provider/model/reasoning selection, with new Web
-  conversations starting on GPT-5.6 Sol, medium reasoning and Standard service.
+  conversations starting on GPT-6 Sol, medium reasoning and Standard service.
 - role-free neutral Subagents with explicit task/context/compute/cwd/Tool settings
   and lazy Cube activation on the first local Tool call.
 - owner-local Lane-bound Subagents sharing one durable Pi Session Entry DAG
@@ -38,6 +38,9 @@
   stable-region Markdown rendering for citation-heavy streams.
 
 ## Current release gate
+
+- [ ] Accept ADR-0191/0192: GPT-6 Luna Tool/vision/search, immutable image
+      references, cold recovery, cleanup faults and matched local rollout.
 
 - [x] Complete ADR-0190's GitLab note-sync migration and local rollout: real PG
       concurrency, controlled HTTP faults, lost replies, late writes, independent
@@ -48,7 +51,7 @@
       [Pi-alignment repairs](reports/pi-alignment-repair-20260926.md): native
       Record/invocation semantics, guest file behavior, eligible Tool concurrency,
       sampling/retry boundaries, conversation discovery and guest build identity.
-      Images remain an explicitly deferred design discussion.
+      The subsequently approved image slice is tracked under ADR-0192.
 
 - [x] Ephemeral Tool log preview via Broker HTTP → Projector SSE; final-only
       Kafka replies, no observation history or background-service log follower.

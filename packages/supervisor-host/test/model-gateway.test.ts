@@ -29,9 +29,9 @@ function command(
   modelId:
     | "deepseek-v4-flash"
     | "deepseek-v4-pro"
-    | "gpt-5.6-luna"
-    | "gpt-5.6-terra"
-    | "gpt-5.6-sol" = "deepseek-v4-flash",
+    | "gpt-6-luna"
+    | "gpt-6-astra"
+    | "gpt-6-sol" = "deepseek-v4-flash",
   serviceTier: "fast" | null = null,
 ): ExecuteTurnCommandMessage {
   return {
@@ -116,8 +116,8 @@ it("scopes early assistant phases to the issued Codex lease, never DeepSeek or a
       ),
   );
   await gateway.start();
-  const a = gateway.issue(command("openai-codex", "gpt-5.6-luna"));
-  const b = gateway.issue(command("openai-codex", "gpt-5.6-luna"));
+  const a = gateway.issue(command("openai-codex", "gpt-6-luna"));
+  const b = gateway.issue(command("openai-codex", "gpt-6-luna"));
   const d = gateway.issue(command("deepseek", "deepseek-v4-pro"));
   const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/codex/responses`, {
     method: "POST",
@@ -126,7 +126,7 @@ it("scopes early assistant phases to the issued Codex lease, never DeepSeek or a
       "content-type": "application/json",
       ...samplingHeaders(),
     },
-    body: JSON.stringify({ model: "gpt-5.6-luna", stream: true, input: [] }),
+    body: JSON.stringify({ model: "gpt-6-luna", stream: true, input: [] }),
   });
   expect(response.ok).toBe(true);
   await response.text();
@@ -317,8 +317,8 @@ describe("tenant model gateway", () => {
       modelId: "deepseek-v4-flash",
       api: "openai-responses",
       baseUrl: "http://pi-worker:4200/v1",
-      inputModalities: ["text"],
-      hostedTools: ["web_search"],
+      inputModalities: ["text", "image"],
+      hostedTools: [],
     });
     const capabilityPayload = JSON.parse(
       Buffer.from(lease.runtime.capability.split(".")[1]!, "base64url").toString("utf8"),
@@ -362,7 +362,7 @@ describe("tenant model gateway", () => {
     });
     const gateway = createGateway(upstream);
     await gateway.start();
-    const lease = gateway.issue(command("openai-codex", "gpt-5.6-terra"));
+    const lease = gateway.issue(command("openai-codex", "gpt-6-sol"));
     expect(lease.runtime).toMatchObject({
       provider: "openai-codex",
       api: "openai-codex-responses",
@@ -371,7 +371,7 @@ describe("tenant model gateway", () => {
       hostedTools: ["web_search"],
     });
     const body = zstdCompressSync(
-      Buffer.from(JSON.stringify({ model: "gpt-5.6-terra", stream: true, input: [] })),
+      Buffer.from(JSON.stringify({ model: "gpt-6-sol", stream: true, input: [] })),
     );
     const response = await fetch(
       `http://127.0.0.1:${String(gateway.listeningPort)}/codex/responses`,
@@ -390,6 +390,46 @@ describe("tenant model gateway", () => {
     expect(await response.text()).toContain("response.completed");
   });
 
+  it("forwards an image request larger than the former 8 MiB limit without rewriting it", async () => {
+    const body = JSON.stringify({
+      model: "gpt-6-luna",
+      stream: true,
+      input: [
+        {
+          type: "function_call_output",
+          call_id: "image-call",
+          output: [
+            {
+              type: "input_image",
+              image_url: "data:image/png;base64," + "A".repeat(9 * 1024 * 1024),
+            },
+          ],
+        },
+      ],
+    });
+    const upstream = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(Buffer.from(init!.body as Uint8Array).toString()).toBe(body);
+      return new Response('data: {"type":"response.completed","response":{"id":"image"}}\n\n', {
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const gateway = createGateway(upstream);
+    await gateway.start();
+    const lease = gateway.issue(command("openai-codex", "gpt-6-luna"));
+    const result = await fetch(`http://127.0.0.1:${gateway.listeningPort}/codex/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${lease.runtime.capability}`,
+        "content-type": "application/json",
+        ...samplingHeaders(),
+      },
+      body,
+    });
+    expect(result.status).toBe(200);
+    await result.text();
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
+
   it("binds Fast mode to the issued GPT Turn and rejects a mismatched request", async () => {
     const upstream = vi.fn<typeof fetch>(async (_input, init) => {
       expect(JSON.parse(new TextDecoder().decode(init?.body as Uint8Array))).toMatchObject({
@@ -402,7 +442,7 @@ describe("tenant model gateway", () => {
     });
     const gateway = createGateway(upstream);
     await gateway.start();
-    const lease = gateway.issue(command("openai-codex", "gpt-5.6-sol", "fast"));
+    const lease = gateway.issue(command("openai-codex", "gpt-6-sol", "fast"));
     expect(lease.runtime.serviceTier).toBe("fast");
     expect(lease.runtime.contextWindow).toBe(1_000_000);
     expect(lease.runtime.autoCompactTokenLimit).toBe(900_000);
@@ -415,7 +455,7 @@ describe("tenant model gateway", () => {
         ...samplingHeaders(),
       },
       body: JSON.stringify({
-        model: "gpt-5.6-sol",
+        model: "gpt-6-sol",
         stream: true,
         service_tier: "fast",
         input: [],
@@ -430,7 +470,7 @@ describe("tenant model gateway", () => {
         "content-type": "application/json",
         ...samplingHeaders(),
       },
-      body: JSON.stringify({ model: "gpt-5.6-sol", stream: true, input: [] }),
+      body: JSON.stringify({ model: "gpt-6-sol", stream: true, input: [] }),
     });
     expect(rejected.status).toBe(403);
     expect(upstream).toHaveBeenCalledTimes(1);
@@ -455,7 +495,7 @@ describe("tenant model gateway", () => {
       ),
     );
     await gateway.start();
-    const lease = gateway.issue(command("openai-codex", "gpt-5.6-luna"));
+    const lease = gateway.issue(command("openai-codex", "gpt-6-luna"));
     const activities: unknown[] = [];
     const transcripts: unknown[] = [];
     lease.subscribeHostedActivity?.((activity) => activities.push(activity));
@@ -472,7 +512,7 @@ describe("tenant model gateway", () => {
           "content-type": "application/json",
           ...headers,
         },
-        body: JSON.stringify({ model: "gpt-5.6-luna", stream: true, input: [] }),
+        body: JSON.stringify({ model: "gpt-6-luna", stream: true, input: [] }),
       },
     );
 
@@ -491,7 +531,7 @@ describe("tenant model gateway", () => {
       expect.objectContaining({
         provider: "openai-codex",
         api: "openai-codex-responses",
-        modelId: "gpt-5.6-luna",
+        modelId: "gpt-6-luna",
         stepSequence: Number(headers["x-pi-cloud-step-sequence"]),
         stepSha256: headers["x-pi-cloud-step-sha256"],
         samplingAttempt: 1,

@@ -106,3 +106,16 @@ Before claiming high availability, test on the actual storage/network stack:
 - Tool Broker/Volume gateway owner loss;
 - Cube compute-node drain and persistent Volume reattachment;
 - KEDA and node-autoscaler scale-up/down under real backlog.
+
+## Image byte storage
+
+Provision a private S3-compatible bucket with durable PUT acknowledgements.
+Configure `imageAttachments` and `pi-workers.imageAttachments` to the identical
+endpoint/region/bucket and install `session-image-s3-credentials.json` in both
+existing trusted Secrets. Allow only the configured S3 endpoint/port in network
+policy. No storage credential belongs in Cube templates or Volume mounts.
+
+The bundled Compose SeaweedFS service is a single-host convenience. Distributed
+installations should use their operated S3 service with an explicit replication,
+backup and failure contract. PG inventory plus retained S3 objects is one logical
+native-history backup; Workspace Cube Volumes remain a separate byte authority.

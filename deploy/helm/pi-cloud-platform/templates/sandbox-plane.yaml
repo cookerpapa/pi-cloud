@@ -81,6 +81,12 @@ spec:
             - { name: broker, containerPort: 4300 }
             - { name: metrics, containerPort: 9466 }
           env:
+            {{- if .Values.imageAttachments.endpoint }}
+            - { name: PI_CLOUD_IMAGE_S3_ENDPOINT, value: {{ .Values.imageAttachments.endpoint | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_REGION, value: {{ .Values.imageAttachments.region | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_BUCKET, value: {{ .Values.imageAttachments.bucket | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
+            {{- end }}
             - { name: NODE_ENV, value: production }
             - name: POD_NAME
               valueFrom: { fieldRef: { fieldPath: metadata.name } }
@@ -130,6 +136,9 @@ spec:
             capabilities: { drop: [ALL] }
           resources: {{- toYaml .Values.sandboxPlane.toolBrokerResources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.imageAttachments.endpoint }}
+            - { name: secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }
+            {{- end }}
             - { name: secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: {{ .Values.external.database.secretKey }}, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/tool-broker-token, subPath: tool-broker-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/tool-dispatch-token, subPath: tool-dispatch-token, readOnly: true }

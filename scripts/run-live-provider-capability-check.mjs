@@ -290,7 +290,7 @@ try {
 
   await api.updateSessionModel(session.sessionId, {
     provider: "openai-codex",
-    modelId: "gpt-5.6-luna",
+    modelId: "gpt-6-luna",
     thinkingLevel: "medium",
     fastMode: false,
   });
@@ -389,7 +389,7 @@ const report = {
   checkedAt: new Date().toISOString(),
   route: {
     firstTurn: `deepseek/${deepSeekModel} + Provider web_search`,
-    secondTurn: "openai-codex/gpt-5.6-luna + Provider web_search",
+    secondTurn: "openai-codex/gpt-6-luna + Provider web_search",
   },
   assertions: {
     deepSeekProviderSearchReachedFinalMessage: true,

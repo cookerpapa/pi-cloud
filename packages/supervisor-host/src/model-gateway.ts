@@ -29,8 +29,8 @@ import { ResponsesHostedActivityObserver } from "./responses-hosted-activity.ts"
 
 const CODEX_RESPONSES_PATH = "/codex/responses";
 const PROVIDER_RESPONSES_PATH = "/v1/responses";
-const MAX_REQUEST_BYTES = 8 * 1_024 * 1_024;
-const MAX_DECOMPRESSED_REQUEST_BYTES = 32 * 1_024 * 1_024;
+const MAX_REQUEST_BYTES = 128 * 1_024 * 1_024;
+const MAX_DECOMPRESSED_REQUEST_BYTES = 128 * 1_024 * 1_024;
 const MAX_RESPONSE_BYTES = 64 * 1_024 * 1_024;
 
 type SupportedModel =
@@ -237,7 +237,10 @@ function sendStreamingError(
   );
 }
 
-async function readBody(request: IncomingMessage): Promise<Buffer> {
+async function readBody(
+  request: IncomingMessage,
+  reserve: (bytes: number) => void,
+): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const value of request) {
@@ -246,12 +249,17 @@ async function readBody(request: IncomingMessage): Promise<Buffer> {
     if (size > MAX_REQUEST_BYTES) {
       throw new SafeGatewayHttpError(413, "request_too_large", "Model request is too large");
     }
+    reserve(chunk.length);
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
 }
 
-function parseBody(bytes: Buffer, contentEncoding: string | undefined): Record<string, unknown> {
+function parseBody(
+  bytes: Buffer,
+  contentEncoding: string | undefined,
+  reserve: (bytes: number) => void,
+): Record<string, unknown> {
   let decoded = bytes;
   if (contentEncoding !== undefined && contentEncoding.trim().length > 0) {
     if (contentEncoding.trim().toLowerCase() !== "zstd") {
@@ -274,6 +282,7 @@ function parseBody(bytes: Buffer, contentEncoding: string | undefined): Record<s
   if (decoded.length > MAX_DECOMPRESSED_REQUEST_BYTES) {
     throw new SafeGatewayHttpError(413, "request_too_large", "Model request is too large");
   }
+  reserve(Math.max(0, decoded.length - bytes.length));
   let value: unknown;
   try {
     value = JSON.parse(decoded.toString("utf8")) as unknown;
@@ -366,6 +375,7 @@ export class TenantModelGateway {
   readonly #server: Server;
   readonly #capabilities = new Map<string, ActiveCapability>();
   #started = false;
+  #requestBytes = 0;
   #closing: Promise<void> | undefined;
 
   constructor(options: TenantModelGatewayOptions) {
@@ -690,12 +700,23 @@ export class TenantModelGateway {
       responseBytes = 0,
       upstreamStatus: number | null = null;
     let transportCompleted = false;
+    let reservedBytes = 0;
+    const reserve = (bytes: number) => {
+      if (this.#requestBytes + bytes > 256 * 1024 * 1024)
+        throw new SafeGatewayHttpError(
+          429,
+          "model_upload_capacity_exhausted",
+          "Model image/context upload capacity is exhausted",
+        );
+      this.#requestBytes += bytes;
+      reservedBytes += bytes;
+    };
     try {
       // Uploads are in-flight work too: revocation must interrupt them before
       // they can become provider requests. Node removes this hook on stream end.
       addAbortSignal(controller.signal, request);
-      const requestBytes = await readBody(request);
-      const body = parseBody(requestBytes, request.headers["content-encoding"]);
+      const requestBytes = await readBody(request, reserve);
+      const body = parseBody(requestBytes, request.headers["content-encoding"], reserve);
       if (body.model !== active.modelId) {
         throw new SafeGatewayHttpError(
           403,
@@ -820,6 +841,7 @@ export class TenantModelGateway {
       );
     } finally {
       clearUpstreamTimeout();
+      this.#requestBytes -= reservedBytes;
       request.off("aborted", abortOnRequest);
       response.off("close", abortOnResponse);
       active.requestControllers.delete(controller);

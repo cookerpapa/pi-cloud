@@ -84,6 +84,21 @@ verification, including jobs whose previous pending flag was clear. Native Run
 and guest protocols do not change. Restore a matched database backup/code version
 for rollback; there is no dual-writer or old-column compatibility path.
 
+Migrations 150/151 introduce GPT-6 selections and immutable Session images. Drain
+accepted Runs and wait for ordered closure, back up PG, then stop the old API and
+Workers before migration. Roll out matching Broker, Control Plane, Worker and
+guest images together. There is no rolling mixed-version image-reply contract.
+Migration 150 changes future profiles only; historical Turn/Run/model records
+remain unchanged. Use GPT-6 Luna for paid acceptance.
+
+`production:init` creates private S3 credentials and `state/session-images`.
+Compose provisions pinned SeaweedFS 4.47 with SQLite FULL metadata and an explicit
+bucket fsync rule before applications start. Its internal filer/master/S3 ports
+are not public. This single-host storage is not a replicated multi-host guarantee.
+PG backups must be paired with all retained objects: copying PG alone cannot
+restore image history. Export through S3 and checksum the PG reference inventory
+before replacing the backend. Do not configure independent object-expiry rules.
+
 For a component-only replacement, after draining and applying its migrations,
 use Compose `up --no-deps` for the selected services when dependencies are already
 healthy. An ordinary `up` may recreate changed dependencies too. If PostgreSQL

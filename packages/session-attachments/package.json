@@ -1,0 +1,19 @@
+{
+  "name": "@pi-cloud/session-attachments",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run --maxWorkers=1 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1141.0",
+    "@pi-cloud/database": "0.1.0",
+    "@pi-cloud/protocol": "0.1.0",
+    "kysely": "0.29.4"
+  }
+}

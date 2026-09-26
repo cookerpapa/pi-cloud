@@ -8,6 +8,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { executeNativeTool, type NativeToolRequest } from "../src/native-tools.ts";
 import { NativeToolOutput } from "../src/native-tool-output.ts";
 import type { NativeToolUpdate } from "@pi-cloud/protocol";
+import sharp from "sharp";
 
 const directories: string[] = [];
 async function directory() {
@@ -41,6 +42,26 @@ function request(
 }
 
 describe("whole native tools at the execution source", () => {
+  it("reads image magic without depending on a filename extension", async () => {
+    const root = await directory();
+    const path = join(root, "screenshot");
+    await writeFile(
+      path,
+      await sharp({ create: { width: 320, height: 200, channels: 3, background: "blue" } })
+        .png()
+        .toBuffer(),
+    );
+    const result = await executeNativeTool(
+      request("read", { path, detail: "original" }),
+      root,
+      new AbortController().signal,
+      () => {},
+    );
+    expect(result).toMatchObject({ isError: false });
+    expect(result.result.content).toContainEqual(
+      expect.objectContaining({ type: "image", mimeType: "image/png" }),
+    );
+  });
   it("treats cwd as a base and follows guest file links without replacing them", async () => {
     const root = await directory();
     const cwd = join(root, "repo");

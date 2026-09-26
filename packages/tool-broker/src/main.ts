@@ -13,6 +13,11 @@ import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reape
 import { ToolCommandExecutor } from "./tool-command-executor.ts";
 import { KafkaToolReplyPublisher } from "@pi-cloud/event-log";
 import { ToolProgressPublisher } from "./tool-progress-publisher.ts";
+import {
+  encodeSessionImages,
+  configuredImageAttachments,
+  type ConfiguredImageAttachments,
+} from "@pi-cloud/session-attachments";
 
 function reportFailure(error: unknown): void {
   operationalLog({
@@ -26,6 +31,7 @@ function reportFailure(error: unknown): void {
 
 export async function startToolBroker(): Promise<{ close: () => Promise<void> }> {
   const config = await loadToolBrokerConfig();
+  let images: ConfiguredImageAttachments | undefined;
   let database: ReturnType<typeof createDatabase> | undefined;
   let ownership: PostgresWorkspaceRuntimeStateRepository | undefined;
   let observability: Awaited<ReturnType<typeof startServiceObservability>> | undefined;
@@ -53,6 +59,7 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
         () => replies?.close(),
         () => (broker ? undefined : ownership?.close()),
         () => (provider ? undefined : volume?.close()),
+        () => images?.blobs.close(),
         () => database?.destroy(),
         () => observability?.close(),
       ]) {
@@ -75,6 +82,8 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
   };
   try {
     database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
+    images = await configuredImageAttachments(database);
+    if (images) await images.blobs.checkHealth();
     const instanceId = randomUUID();
     ownership = new PostgresWorkspaceRuntimeStateRepository({
       database,
@@ -150,7 +159,35 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
     commands = new ToolCommandExecutor({
       progress,
       broker,
-      publishReply: (topic, reply) => replyPublisher.publish(topic, reply),
+      publishReply: async (topic, reply, scope) => {
+        if (reply.event.type !== "tool_execution_end")
+          throw new Error("Only final Tool results use Kafka replies");
+        const parts = reply.event.result.content.filter((part) => part.type === "image");
+        const event = await (
+          parts.length > 1 || (parts.length && reply.event.toolName !== "read")
+            ? Promise.reject(new Error("Fixed guest Tools return at most one read image"))
+            : encodeSessionImages(
+                images?.codec,
+                { tenantId: scope.tenantId, runId: scope.runId },
+                reply.event,
+              )
+        ).catch(() => ({
+          type: "tool_execution_end" as const,
+          toolName: reply.event.toolName,
+          toolCallId: reply.event.toolCallId,
+          isError: true,
+          result: {
+            content: [
+              {
+                type: "text" as const,
+                text: "image_attachment_upload_failed: The image could not be stored; no image was added to model context.",
+              },
+            ],
+            details: undefined,
+          },
+        }));
+        await replyPublisher.publish(topic, { ...reply, event });
+      },
       maximumActiveCommands: config.maximumActiveCommands,
       metrics: observability.metrics,
     });

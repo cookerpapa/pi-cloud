@@ -2,6 +2,9 @@
 
 Accepted and implemented, 2026-09-09; replaces the PG receipt/cache boundary.
 [Validation matrix](../EVALUATION.md).
+Image bytes are externalized under [ADR-0192](0192-session-image-attachments.md).
+PG log plus retained S3 objects reconstructs the exact native records; only the
+storage representation changes, not the writer or acknowledgement boundary.
 The earlier isolated experiment (archived in Git before this production cutover)
 proved the append boundary but is not the production implementation.
 

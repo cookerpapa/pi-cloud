@@ -42,7 +42,8 @@
     "@pi-cloud/protocol": "0.1.0",
     "@platformatic/kafka": "^2.9.0",
     "kysely": "0.29.4",
-    "ws": "8.21.1"
+    "ws": "8.21.1",
+    "@pi-cloud/session-attachments": "0.1.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.4",

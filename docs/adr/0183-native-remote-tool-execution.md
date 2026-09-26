@@ -2,6 +2,10 @@
 
 Status: implemented and validated, 2026-09-24.
 
+Image serialization is amended by [ADR-0192](0192-session-image-attachments.md):
+Kafka replies carry immutable image references, hydrated before native completion.
+The operation callback, fencing and no-result-cache contract below still applies.
+
 ## Decision
 
 Run whole fixed read/write/edit/bash Tools in the credential-free Cube helper.

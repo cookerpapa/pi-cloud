@@ -1,3 +1,4 @@
+import type { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { Database } from "@pi-cloud/database";
 import {
   Session,
@@ -22,6 +23,7 @@ export type PostgresPiSessionRepositoryOptions = {
   turnId?: string;
   authority?: ExecutionAuthority;
   entryPayloadCache?: PostgresPiSessionEntryPayloadCache;
+  images?: ImageAttachmentCodec;
 };
 
 export type PostgresPiSessionCreateOptions = SessionCreateOptions;
@@ -107,6 +109,7 @@ export class PostgresPiSessionRepository implements SessionRepo<
   void
 > {
   readonly #database: Kysely<Database>;
+  readonly #images: ImageAttachmentCodec | undefined;
   readonly #tenantId: string;
   readonly #turnId: string | undefined;
   readonly #authority: ExecutionAuthority | undefined;
@@ -114,6 +117,7 @@ export class PostgresPiSessionRepository implements SessionRepo<
 
   constructor(options: PostgresPiSessionRepositoryOptions) {
     this.#database = options.database;
+    this.#images = options.images;
     this.#tenantId = options.tenantId;
     this.#turnId = options.turnId;
     this.#authority = options.authority;
@@ -125,6 +129,7 @@ export class PostgresPiSessionRepository implements SessionRepo<
   ): Promise<Session<PiCloudPiSessionMetadata>> {
     const storage = await PostgresPiSessionStorage.create({
       database: this.#database,
+      ...(this.#images ? { images: this.#images } : {}),
       tenantId: this.#tenantId,
       sessionId: options.id ?? uuidv7(),
       ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
@@ -237,6 +242,7 @@ export class PostgresPiSessionRepository implements SessionRepo<
   #storage(sessionId: string): PostgresPiSessionStorage {
     return new PostgresPiSessionStorage({
       database: this.#database,
+      ...(this.#images ? { images: this.#images } : {}),
       tenantId: this.#tenantId,
       sessionId,
       ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),

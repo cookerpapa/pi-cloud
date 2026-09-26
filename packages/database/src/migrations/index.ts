@@ -148,6 +148,8 @@ import * as environmentValidationRunIdentity from "./146_environment_validation_
 import * as retireDormantAccounting from "./147_retire_dormant_accounting.ts";
 import * as retireToolOperationLedger from "./148_retire_tool_operation_ledger.ts";
 import * as gitlabIssueNoteSync from "./149_gitlab_issue_note_sync.ts";
+import * as gpt6ModelSelection from "./150_gpt6_model_selection.ts";
+import * as sessionImageAttachments from "./151_session_image_attachments.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -301,6 +303,8 @@ export const migrationProvider: MigrationProvider = {
       "147_retire_dormant_accounting": retireDormantAccounting,
       "148_retire_tool_operation_ledger": retireToolOperationLedger,
       "149_gitlab_issue_note_sync": gitlabIssueNoteSync,
+      "150_gpt6_model_selection": gpt6ModelSelection,
+      "151_session_image_attachments": sessionImageAttachments,
     };
   },
 };

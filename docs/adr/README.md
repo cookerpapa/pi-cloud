@@ -10,6 +10,10 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0192](0192-session-image-attachments.md) — immutable image attachments,
+   reference-only Kafka transport and lossless native Session decoding.
+1. [ADR-0191](0191-gpt6-model-catalog.md) — GPT-6 selection migration and
+   verified DeepSeek search availability.
 1. [ADR-0190](0190-gitlab-issue-note-convergence.md) — short-transaction GitLab
    note synchronization, independent reconciliation and remote convergence.
 

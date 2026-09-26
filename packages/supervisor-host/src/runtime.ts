@@ -135,6 +135,7 @@ export class PiWorkerRuntime {
   #nativeSessions: PostgresNativeSessionHost | undefined;
   #subagentControl: SubagentControlClient | undefined;
   #agentRunner: RemoteToolSandboxTurnRunner | undefined;
+  #images: ConfiguredImageAttachments | undefined;
   #toolReplies: KafkaToolReplyMailbox | undefined;
   #activeExecutionLogs:
     (ExecutionLogFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
@@ -422,10 +423,14 @@ export class PiWorkerRuntime {
     this.#toolReplies = toolReplies;
     await toolReplies.start();
     this.#assertStarting();
+    const images = await configuredImageAttachments(this.#database!);
+    this.#images = images;
+    if (images) await images.blobs.checkHealth();
     const sessionMutationProducer =
       this.#configuredSessionMutationProducer ??
       new NativeSessionLogPublisher({
         channels: executionLogResolver(executionLogs),
+        ...(images ? { images: images.codec } : {}),
         ...(this.#metrics ? { metrics: this.#metrics } : {}),
       });
     this.#ownsSessionMutationProducer = this.#configuredSessionMutationProducer === undefined;
@@ -459,6 +464,7 @@ export class PiWorkerRuntime {
     this.#assertStarting();
     const sessionEntryPayloadCache = new PostgresPiSessionEntryPayloadCache();
     const nativeSessions = new PostgresNativeSessionHost({
+      ...(images ? { images: images.codec } : {}),
       database: this.#database,
       entryPayloadCache: sessionEntryPayloadCache,
       ...(this.#metrics
@@ -505,15 +511,17 @@ export class PiWorkerRuntime {
         if (!channel) throw new Error("Tool command Fact Stream is unavailable");
         return channel.publishToolCommand({ ...command, replyTopic: toolReplies.topic });
       },
-      waitForToolReply: (request, signal, onUpdate, toolCallId) => {
+      waitForToolReply: async (request, signal, onUpdate, toolCallId, imageScope) => {
         if (!toolCallId) throw new Error("Tool call identity is unavailable");
-        return toolReplies.wait(
+        const event = await toolReplies.wait(
           request.operationId,
           toolCallId,
           request.toolName,
           signal,
           onUpdate,
         );
+        if (!imageScope) throw new Error("Tool image scope is unavailable");
+        return decodeSessionImages<NativeToolEnd>(images?.codec, imageScope, event, signal);
       },
       broker: this.#toolBroker,
       runtimeIdentity: identity,
@@ -726,6 +734,7 @@ export class PiWorkerRuntime {
       () => this.#modelPermits?.close(),
       () => this.#nativeSessions?.close(),
       () => this.#toolReplies?.shutdown(),
+      () => this.#images?.blobs.close(),
       () => this.#subagentControl?.close(),
       () => this.#client?.stop(),
       () => this.#managementServer?.close(),
@@ -785,3 +794,9 @@ export class PiWorkerRuntime {
     this.#resolveTerminal(reason);
   }
 }
+import {
+  decodeSessionImages,
+  configuredImageAttachments,
+  type ConfiguredImageAttachments,
+} from "@pi-cloud/session-attachments";
+import type { NativeToolEnd } from "@pi-cloud/protocol";

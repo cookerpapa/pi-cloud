@@ -102,6 +102,26 @@ function fixture(maximumActiveCommands = 32) {
   };
 }
 describe("native Kafka Tool replies without completed-result retention", () => {
+  it("bounds large read materialization and retires queued reads after a seal", async () => {
+    const f = fixture();
+    const release = Promise.withResolvers<void>();
+    f.execute.mockImplementation(async (_lease, request) => {
+      await release.promise;
+      return output(request);
+    });
+    const commands = Array.from({ length: 3 }, () => {
+      const c = command();
+      c.request.toolName = "read";
+      f.own(c);
+      return c;
+    });
+    commands.forEach((c, index) => f.executor.receive(record(c, BigInt(index))));
+    await vi.waitFor(() => expect(f.execute).toHaveBeenCalledTimes(2));
+    f.executor.receive(record({ kind: "execution_seal", scope: commands[2]!.scope }, 5n));
+    release.resolve();
+    await f.settled();
+    expect(f.execute).toHaveBeenCalledTimes(2);
+  });
   it.each([false, true])(
     "keeps cloud progress identity separate from native reply identity (failure=%s)",
     async (failure) => {

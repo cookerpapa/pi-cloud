@@ -11,6 +11,7 @@ COPY scripts/harden-pi-dependencies.mjs scripts/harden-pi-dependencies.mjs
 COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
 COPY packages/control-plane/package.json packages/control-plane/package.json
 COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
+COPY packages/session-attachments/package.json packages/session-attachments/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/event-log/package.json packages/event-log/package.json
@@ -47,7 +48,9 @@ COPY tsconfig.base.json ./
 COPY packages/control-plane/package.json packages/control-plane/package.json
 COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
 COPY packages/control-plane/src packages/control-plane/src
+COPY packages/session-attachments/package.json packages/session-attachments/package.json
 COPY packages/database/package.json packages/database/package.json
+COPY packages/session-attachments/src packages/session-attachments/src
 COPY packages/database/src packages/database/src
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/domain/src packages/domain/src

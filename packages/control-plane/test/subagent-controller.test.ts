@@ -1,3 +1,4 @@
+import { encodeSessionImages } from "@pi-cloud/session-attachments";
 import { beforeAll, afterAll, afterEach, describe, it, expect, vi } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -205,12 +206,12 @@ beforeAll(async () => {
     { branch: [], reader, openOperations: [] },
     {
       publish: (items) =>
-        db.transaction().execute((tx) =>
+        db.transaction().execute(async (tx) =>
           projectNativeSessionAppend(tx, {
             tenantId,
             sessionId,
             appendId: crypto.randomUUID(),
-            items,
+            items: await encodeSessionImages(undefined, { tenantId }, items),
           }),
         ),
     },

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { validateProviderRelayProxy } from "./production-runtime-policy.mjs";
 import { updateModelRetryPolicyFile } from "./lib/model-retry-policy.mjs";
+import { ensureSessionImageConfig } from "./lib/session-image-config.mjs";
 import {
   readPrivateRuntimeFile,
   runtimeSecretMode,
@@ -549,6 +550,10 @@ if (await validateExisting(runtimeDirectory)) {
   const observabilitySecretsCreated = await ensureObservabilitySecrets(runtimeDirectory);
   const cliProxyRuntimeCreated = await ensureCliProxyRuntime(runtimeDirectory);
   await ensureVolumeReaderSecrets(runtimeDirectory);
+  await ensureSessionImageConfig(runtimeDirectory, {
+    read: readPrivateFile,
+    write: writePrivateFile,
+  });
   process.stdout.write(
     `${JSON.stringify({
       initialized: true,
@@ -581,6 +586,10 @@ await mkdir(secretsDirectory, { mode: 0o700 });
 await chmod(secretsDirectory, 0o700);
 await ensureWorkspaceStorage(runtimeDirectory);
 await ensureCliProxyRuntime(runtimeDirectory);
+await ensureSessionImageConfig(runtimeDirectory, {
+  read: readPrivateFile,
+  write: writePrivateFile,
+});
 
 const postgresPassword = randomSecret();
 const identities = {

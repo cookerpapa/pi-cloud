@@ -32,7 +32,7 @@ const providerGatewayUrl =
   ).trim()}:8317`;
 
 const routes = {
-  gpt: "gpt-5.6-luna",
+  gpt: "gpt-6-luna",
   deepseek: "deepseek-v4-pro",
 };
 

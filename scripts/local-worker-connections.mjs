@@ -13,6 +13,7 @@ export const bridgeTargets = [
   { name: "tool-broker", network: composeNetworks.sandboxControl, port: 4300, workerAlias: true },
   { name: "provider-egress-relay", network: composeNetworks.modelEgress, port: 3129 },
   { name: "cli-proxy-api", network: composeNetworks.modelEgress, port: 8317 },
+  { name: "session-images", network: composeNetworks.database, port: 8333 },
   { name: "postgres", network: composeNetworks.database, port: 5432 },
   ...[1, 2, 3].map((id) => ({
     name: `kafka-${id}`,
@@ -92,6 +93,12 @@ export function localWorkerValues(environment, systemNamespace) {
       toolBrokerUrls: [service("tool-broker", 4300)],
       providerProxyUrl: service("provider-egress-relay", 3129),
       providerGatewayUrl: service("cli-proxy-api", 8317),
+    },
+    imageAttachments: {
+      endpoint: service("session-images", 8333),
+      region: "us-east-1",
+      bucket: "pi-cloud-session-images",
+      credentialsSecretKey: "session-image-s3-credentials.json",
     },
     workerPool: { capacity: Number(environment.PI_CLOUD_SUPERVISOR_CAPACITY ?? 4) },
     database: {

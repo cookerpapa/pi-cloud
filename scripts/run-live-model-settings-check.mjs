@@ -115,7 +115,7 @@ try {
     "/workspace",
     {
       provider: "openai-codex",
-      modelId: "gpt-5.6-luna",
+      modelId: "gpt-6-luna",
       thinkingLevel: "medium",
       fastMode: true,
     },
@@ -124,8 +124,8 @@ try {
     sessionId: session.sessionId,
     modelProfileId: session.modelProfileId,
     provider: "openai-codex",
-    modelId: "gpt-5.6-luna",
-    displayName: "GPT-5.6 Luna",
+    modelId: "gpt-6-luna",
+    displayName: "GPT-6 Luna",
     thinkingLevel: "medium",
     fastMode: true,
   });
@@ -153,7 +153,7 @@ try {
   assert.match(transcriptText(fastTurn), /FAST-MODE-OK/u);
   assert.deepEqual(turnSnapshot(fastAccepted.turnId), {
     provider: "openai-codex",
-    modelId: "gpt-5.6-luna",
+    modelId: "gpt-6-luna",
     thinkingLevel: "medium",
     serviceTier: "fast",
   });

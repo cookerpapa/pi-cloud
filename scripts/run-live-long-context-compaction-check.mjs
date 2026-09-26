@@ -1076,7 +1076,7 @@ try {
   assert(!providerSwitchWorkers.includes(crossWorkerEvidence.supervisorId));
   await api.updateSessionModel(session.sessionId, {
     provider: "openai-codex",
-    modelId: "gpt-5.6-luna",
+    modelId: "gpt-6-luna",
     thinkingLevel: "medium",
     fastMode: true,
   });
@@ -1101,7 +1101,7 @@ try {
   assert.match(providerSwitch.text, new RegExp(marker, "u"));
   assert.deepEqual(providerSwitchModel, {
     provider: "openai-codex",
-    modelId: "gpt-5.6-luna",
+    modelId: "gpt-6-luna",
     thinkingLevel: "medium",
     serviceTier: "fast",
   });

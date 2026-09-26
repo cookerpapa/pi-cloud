@@ -409,87 +409,112 @@ function operation(activationId: string): ToolSandboxOperationRequest {
 }
 
 describe("CubeSandbox Provider contract", () => {
-  it.each([false, true])(
-    "streams native Tool updates before completion (late update=%s)",
-    async (late) => {
-      const runtime = new FakeCubeRuntimeClient();
-      const provider = testCubeProvider({
-        templateId: "pi-cloud-tool-v1",
-        imageRevision: "development",
-        webProxy: WEB_PROXY,
-        runtimeClient: runtime,
-        workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
-      });
-      const handle = await provider.create({
-        activationId: ACTIVATION_ID,
-        assignment,
-        environment,
-        workspaceSeed: { kind: "sample_java" },
-        policy: provider.defaultPolicy,
-      });
-      const request: ToolSandboxOperationRequest = {
-        ...operation(ACTIVATION_ID),
-        operation: "tool.execute",
-        toolName: "bash",
-        toolCallId: "native-call",
-        args: { command: "printf 测试" },
-        maximumOutputBytes: 50000,
-        timeoutMs: 1000,
-      };
-      const update = {
-        type: "tool_execution_update" as const,
-        toolCallId: "native-call",
-        toolName: "bash",
-        args: request.args,
-        partialResult: { content: [{ type: "text" as const, text: "测试" }], details: undefined },
-      };
-      const end = {
-        type: "tool_execution_end" as const,
-        toolCallId: "native-call",
-        toolName: "bash",
-        result: update.partialResult,
-        isError: false,
-      };
-      const final = {
-        toolWorkerProtocolVersion: 1,
-        type: "worker.operation_result",
-        response: {
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.operation_result",
-          activationId: ACTIVATION_ID,
-          operationId: request.operationId,
-          operation: "tool.execute",
-          event: end,
-        },
-      };
-      const originalRun = runtime.runCommand.bind(runtime);
-      vi.spyOn(runtime, "runCommand").mockImplementation(async (instance, input) => {
-        if (!input.command.includes("envd-tool-exec.mjs")) return originalRun(instance, input);
-        const wire = Buffer.from(
-          JSON.stringify({ event: update }) +
-            "\n" +
-            JSON.stringify(final) +
-            "\n" +
-            (late ? JSON.stringify({ event: update }) + "\n" : ""),
-        );
-        for (const byte of wire) await input.onStdout!(Buffer.from([byte]));
-        return { stdout: "", stderr: "", exitCode: 0 };
-      });
-      const seen = vi.fn(async () => {});
-      try {
-        const result = provider.exec(handle, request, undefined, handle.workspaceRoot, seen);
-        if (late) await expect(result).rejects.toThrow();
-        else
-          await expect(result).resolves.toMatchObject({
-            operation: "tool.execute",
-            event: JSON.parse(JSON.stringify(end)),
-          });
-        expect(seen).toHaveBeenCalledExactlyOnceWith(update);
-      } finally {
-        await provider.close();
-      }
+  it.each([
+    {
+      late: false,
+      imageBytes: 0,
+      title: "streams native Tool updates before completion (late update=false)",
     },
-  );
+    {
+      late: true,
+      imageBytes: 0,
+      title: "streams native Tool updates before completion (late update=true)",
+    },
+    {
+      late: false,
+      imageBytes: 6 * 1024 * 1024,
+      title: "accepts a large image result split across bounded HTTP chunks",
+    },
+  ])("$title", async ({ late, imageBytes }) => {
+    const runtime = new FakeCubeRuntimeClient();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    });
+    const handle = await provider.create({
+      activationId: ACTIVATION_ID,
+      assignment,
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+      policy: provider.defaultPolicy,
+    });
+    const request: ToolSandboxOperationRequest = {
+      ...operation(ACTIVATION_ID),
+      operation: "tool.execute",
+      toolName: imageBytes ? "read" : "bash",
+      toolCallId: "native-call",
+      args: { command: "printf 测试" },
+      maximumOutputBytes: 50000,
+      timeoutMs: 1000,
+    };
+    const update = {
+      type: "tool_execution_update" as const,
+      toolCallId: "native-call",
+      toolName: imageBytes ? "read" : "bash",
+      args: request.args,
+      partialResult: { content: [{ type: "text" as const, text: "测试" }], details: undefined },
+    };
+    const end = {
+      type: "tool_execution_end" as const,
+      toolCallId: "native-call",
+      toolName: imageBytes ? "read" : "bash",
+      result: imageBytes
+        ? {
+            content: [
+              {
+                type: "image" as const,
+                data: Buffer.alloc(imageBytes, 42).toString("base64"),
+                mimeType: "image/png",
+              },
+            ],
+            details: undefined,
+          }
+        : update.partialResult,
+      isError: false,
+    };
+    const final = {
+      toolWorkerProtocolVersion: 1,
+      type: "worker.operation_result",
+      response: {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.operation_result",
+        activationId: ACTIVATION_ID,
+        operationId: request.operationId,
+        operation: "tool.execute",
+        event: end,
+      },
+    };
+    const originalRun = runtime.runCommand.bind(runtime);
+    vi.spyOn(runtime, "runCommand").mockImplementation(async (instance, input) => {
+      if (!input.command.includes("envd-tool-exec.mjs")) return originalRun(instance, input);
+      const wire = Buffer.from(
+        JSON.stringify({ event: update }) +
+          "\n" +
+          JSON.stringify(final) +
+          "\n" +
+          (late ? JSON.stringify({ event: update }) + "\n" : ""),
+      );
+      const size = imageBytes ? 16 * 1024 : 1;
+      for (let i = 0; i < wire.length; i += size) await input.onStdout!(wire.subarray(i, i + size));
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const seen = vi.fn(async () => {});
+    try {
+      const result = provider.exec(handle, request, undefined, handle.workspaceRoot, seen);
+      if (late) await expect(result).rejects.toThrow();
+      else
+        await expect(result).resolves.toMatchObject({
+          operation: "tool.execute",
+          event: JSON.parse(JSON.stringify(end)),
+        });
+      expect(seen).toHaveBeenCalledExactlyOnceWith(update);
+    } finally {
+      await provider.close();
+    }
+  });
 
   it("does not publish released when Cube deletion fails during Broker shutdown", async () => {
     const runtime = new FakeCubeRuntimeClient(),

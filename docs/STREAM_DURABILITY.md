@@ -10,6 +10,14 @@ These guarantees concern formal conversation events. Disposable `tool.progress`
 snapshots are a separate HTTP/SSE observation: no Kafka/PG write, durable sequence,
 context entry or reconnect replay. Losing one cannot fail or complete a Tool.
 
+Model-consumed images are durable Session attachments, not disposable observations.
+An image upload must complete before its reference can reach Kafka. The native
+after-hook result becomes canonical through the ordinary writer/Projector path.
+The Projector retains attachment references in the same transaction as the native
+log and projection progress. It never downloads image bytes or executes a Tool
+while replaying. Unsealed source Runs protect uploads until that ordered projection
+can decide retention. A missing/corrupt object causes an explicit read failure.
+
 - `A`: PG committed execution admission and publication identity;
 - `K`: Kafka durably accepted a record under the configured replication policy;
 - `F`: the execution's first-record recovery floor is committed in PG;

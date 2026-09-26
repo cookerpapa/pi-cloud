@@ -16,7 +16,8 @@
     "external",
     "networkPolicy",
     "sandboxPlane",
-    "pi-workers"
+    "pi-workers",
+    "imageAttachments"
   ],
   "properties": {
     "piWorkersEnabled": {
@@ -597,6 +598,28 @@
     },
     "pi-workers": {
       "type": "object"
+    },
+    "imageAttachments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "region", "bucket", "credentialsSecretKey"],
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/optionalHttpUrl"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bucket": {
+          "type": "string",
+          "minLength": 3
+        },
+        "credentialsSecretKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
   },
   "$defs": {

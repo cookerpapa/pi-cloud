@@ -4,7 +4,7 @@ import { sql } from "kysely";
 import { expect, it, vi } from "vitest";
 import { PostgresPiSessionStorage } from "../src/postgres-session-storage.ts";
 import { projectNativeSessionAppend } from "../src/project-native-session-append.ts";
-import type { PiCommittedItem } from "../src/session-mutation.ts";
+import type { StoredPiCommittedItem } from "../src/session-mutation.ts";
 
 it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
   "reads the committed Lane head after waiting for the previous projector's Session lock",
@@ -31,7 +31,7 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
         sessionId = randomUUID();
       await db.insertInto("tenants").values({ id: tenantId, slug: tenantId }).execute();
       const storage = await PostgresPiSessionStorage.create({ database: db, tenantId, sessionId });
-      const items: PiCommittedItem[] = [
+      const items: StoredPiCommittedItem[] = [
         {
           kind: "entry",
           lane: "main",

@@ -78,6 +78,7 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
     signal: AbortSignal,
     onUpdate?: (event: NativeToolUpdate) => void,
     toolCallId?: string,
+    imageScope?: { tenantId: string; runId: string },
   ) => Promise<NativeToolEnd>;
   workflowUrl?: string;
   activationId?: string;
@@ -111,6 +112,7 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   remainingToolCalls: number;
   maximumToolOutputBytes: number;
   workingDirectory: string;
+  supportsImages?: boolean;
   traceparent?: string;
   tracestate?: string;
 };
@@ -219,6 +221,7 @@ function validateRuntimeConfiguration(
     remainingToolCalls,
     maximumToolOutputBytes,
     workingDirectory,
+    supportsImages: candidate.supportsImages ?? false,
     ...(traceparent === undefined ? {} : { traceparent }),
     ...(tracestate === undefined ? {} : { tracestate }),
   };
@@ -391,7 +394,20 @@ export function createTrustedRemoteAgentTools(
               },
             },
           }
-        : tool.parameters;
+        : tool.name === "read"
+          ? {
+              ...tool.parameters,
+              properties: {
+                ...tool.parameters.properties,
+                detail: {
+                  type: "string",
+                  enum: ["high", "original"],
+                  description:
+                    "Image detail: high (default) or original for fine visual inspection.",
+                },
+              },
+            }
+          : tool.parameters;
     tools.push({
       ...tool,
       parameters,
@@ -435,6 +451,10 @@ export function createTrustedRemoteAgentTools(
         )
           throw new Error("Tool ended without a native result");
         const event = response.event;
+        if (!runtime.supportsImages && event.result.content.some((part) => part.type === "image"))
+          throw new Error(
+            "The selected model does not support image input. Select an image-capable model to read this image.",
+          );
         if (event.isError) {
           const message = event.result.content
             .filter((part) => part.type === "text")

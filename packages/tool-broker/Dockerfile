@@ -9,6 +9,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
 COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
+COPY packages/session-attachments/package.json packages/session-attachments/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/event-log/package.json packages/event-log/package.json
@@ -61,7 +62,9 @@ WORKDIR /app
 COPY --from=dependencies /app/node_modules /app/node_modules
 COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
+COPY packages/session-attachments/package.json packages/session-attachments/package.json
 COPY packages/database/package.json packages/database/package.json
+COPY packages/session-attachments/src packages/session-attachments/src
 COPY packages/database/src packages/database/src
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/domain/src packages/domain/src

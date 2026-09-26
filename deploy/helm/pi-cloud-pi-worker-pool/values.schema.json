@@ -19,7 +19,8 @@
     "networkPolicy",
     "disruptionBudget",
     "placement",
-    "serviceAccount"
+    "serviceAccount",
+    "imageAttachments"
   ],
   "properties": {
     "global": {
@@ -260,8 +261,16 @@
         "timeouts"
       ],
       "properties": {
-        "modelConcurrency": { "type": "integer", "minimum": 1, "maximum": 1000 },
-        "sessionModelConcurrency": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "modelConcurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "sessionModelConcurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
         "allowInsecureInternalHttp": {
           "type": "boolean"
         },
@@ -429,6 +438,28 @@
         "name": {
           "type": "string",
           "maxLength": 63
+        }
+      }
+    },
+    "imageAttachments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "region", "bucket", "credentialsSecretKey"],
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/optionalHttpUrl"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bucket": {
+          "type": "string",
+          "minLength": 3
+        },
+        "credentialsSecretKey": {
+          "type": "string",
+          "minLength": 1
         }
       }
     }

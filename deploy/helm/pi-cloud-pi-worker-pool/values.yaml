@@ -93,7 +93,7 @@ networkPolicy:
   trustedNamespaceLabel:
     key: pi-cloud.io/trusted-plane
     value: "true"
-  trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432, 8317, 9092]
+  trustedTcpPorts: [8333, 443, 3000, 3129, 4300, 4318, 5432, 8317, 9092]
   externalEgressCidrs: []
 
 disruptionBudget:
@@ -106,3 +106,10 @@ placement:
 serviceAccount:
   create: true
   name: ""
+
+# A private S3 bucket with durable PUT acknowledgements; provision it before rollout.
+imageAttachments:
+  endpoint: ""
+  region: us-east-1
+  bucket: pi-cloud-session-images
+  credentialsSecretKey: session-image-s3-credentials.json

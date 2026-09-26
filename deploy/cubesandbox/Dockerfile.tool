@@ -53,6 +53,7 @@ RUN node node_modules/esbuild/bin/esbuild \
       packages/tool-sandbox/src/envd-guest-control.ts \
       --bundle \
       --platform=node \
+      --external:sharp \
       --format=esm \
       --target=node24 \
       --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
@@ -156,6 +157,10 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
 
 COPY --from=tool-worker-builder /out/envd-tool-exec.mjs /opt/pi-cloud/bin/envd-tool-exec.mjs
 COPY --from=tool-worker-builder /out/envd-guest-control.mjs /opt/pi-cloud/bin/envd-guest-control.mjs
+COPY --from=tool-worker-builder /src/node_modules/sharp /opt/pi-cloud/node_modules/sharp
+COPY --from=tool-worker-builder /src/node_modules/@img /opt/pi-cloud/node_modules/@img
+COPY --from=tool-worker-builder /src/node_modules/detect-libc /opt/pi-cloud/node_modules/detect-libc
+COPY --from=tool-worker-builder /src/node_modules/semver /opt/pi-cloud/node_modules/semver
 COPY --chown=1000:1000 \
   packages/sandbox-supervisor/test/fixtures/sample-java-repair \
   /opt/pi-cloud/sample-java-repair

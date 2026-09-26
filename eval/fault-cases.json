@@ -295,6 +295,48 @@
       "file": "test/gitlab-issue-note-reconciler.test.ts",
       "test": "checks expiry after waiting for the acknowledgement row lock",
       "invariant": "Synchronization acknowledgement uses PG decision time after locking; a lease that expires while waiting cannot confirm remote output."
+    },
+    {
+      "id": "image-upload-and-cleanup-failure",
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/storage.postgres.test.ts",
+      "test": "failed uploads stay unpublishable and interrupted cleanup is repeatable",
+      "invariant": "Failed uploads cannot be retained; cleanup claims survive remote deletion failure."
+    },
+    {
+      "id": "image-unprojected-retention",
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/storage.postgres.test.ts",
+      "test": "protects uploads until their Run is sealed, including the unprojected Kafka interval",
+      "invariant": "Kafka-acknowledged but unprojected images remain protected by their unsealed source Run."
+    },
+    {
+      "id": "image-cleanup-reference-race",
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/storage.postgres.test.ts",
+      "test": "serializes cleanup claims with new native references",
+      "invariant": "A deleting attachment cannot gain a canonical native reference."
+    },
+    {
+      "id": "image-cross-tenant-integrity",
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/storage.postgres.test.ts",
+      "test": "missing and cross-tenant images fail explicitly without substituting a mutable file",
+      "invariant": "A hash or tenant mismatch never becomes a successful native image."
+    },
+    {
+      "id": "image-native-fork-retention",
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/storage.postgres.test.ts",
+      "test": "cold public SessionStorage reads reconstruct exact images while PG stores only references",
+      "invariant": "Cold reads and independent native Fork history retain the exact image bytes."
+    },
+    {
+      "id": "native-record-oversize-isolation",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/kafka-producer-backpressure.test.ts",
+      "test": "rejects an oversized record without poisoning another Session's Producer callback",
+      "invariant": "Oversized individual publications fail before entering the shared Kafka Producer stream."
     }
   ]
 }

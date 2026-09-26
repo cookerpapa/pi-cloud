@@ -518,7 +518,16 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
           let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
-            ...(this.#waitForToolReply ? { waitForToolReply: this.#waitForToolReply } : {}),
+            supportsImages: modelRuntimeLease.runtime.inputModalities.includes("image"),
+            ...(this.#waitForToolReply
+              ? {
+                  waitForToolReply: (request, signal, onUpdate, toolCallId) =>
+                    this.#waitForToolReply!(request, signal, onUpdate, toolCallId, {
+                      tenantId: command.payload.tenantId,
+                      runId: command.payload.runId,
+                    }),
+                }
+              : {}),
             publishToolCommand: (command) => {
               if (!this.#publishToolCommand)
                 throw new Error("Tool command publisher is unavailable");

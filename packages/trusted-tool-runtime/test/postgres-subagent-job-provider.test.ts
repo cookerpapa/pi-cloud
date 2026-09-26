@@ -1,3 +1,4 @@
+import { encodeSessionImages } from "@pi-cloud/session-attachments";
 import { SessionEventHub } from "@pi-cloud/runtime-core/session-event-hub";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import {
@@ -98,12 +99,12 @@ async function nativeLane(lane: string, turnId: string, lease?: string) {
       },
       {
         publish: (items) =>
-          database.transaction().execute((tx) =>
+          database.transaction().execute(async (tx) =>
             projectNativeSessionAppend(tx, {
               tenantId,
               sessionId: parentSessionId,
               appendId: crypto.randomUUID(),
-              items,
+              items: await encodeSessionImages(undefined, { tenantId }, items),
             }),
           ),
       },

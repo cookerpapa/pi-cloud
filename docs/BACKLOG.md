@@ -12,10 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Discuss image/native payload size and persistence before implementing PI-03
+- [ ] Implement and accept ADR-0192's approved image attachments to resolve PI-03
       from the [Pi-alignment review](reports/pi-alignment-review-20260926.md).
-      The owner explicitly deferred this item. Reply-topic and execution-log bounds
-      still differ; do not introduce attachment storage or truncation silently.
+      The owner approved the design on September 26. Validate Tool replies,
+      native history, cold recovery and bounded GPT-6 Luna vision end to end.
 
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
@@ -104,6 +104,9 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 - [ ] Replace PiCloud's hosted-item adapter when pinned Pi has a backend-conformant
       native contract. DeepSeek Flash stays hidden; do not silently switch its
       protocol or add a substitute search tool.
+      September 26 probes confirm Flash search on Anthropic Messages while its
+      Responses route still ignores search. Any Flash protocol migration is a
+      separate slice, not evidence that the current route has recovered.
 - [ ] Add user-image input and generated-image results only with native storage,
       Compaction and cross-Worker/provider recovery contracts.
 

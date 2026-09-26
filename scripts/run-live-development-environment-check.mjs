@@ -399,7 +399,7 @@ try {
   await waitForRun(continuityRun.runId);
   await api.updateSessionModel(session.sessionId, {
     provider: "openai-codex",
-    modelId: "gpt-5.6-luna",
+    modelId: "gpt-6-luna",
     thinkingLevel: "low",
     fastMode: false,
   });

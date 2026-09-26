@@ -218,7 +218,7 @@ try {
       );
       await page.waitFor('document.body.innerText.includes("新对话")');
       await page.waitFor(
-        'document.querySelector(".product-composer .product-model-menu-trigger")?.textContent.includes("GPT-5.6 Sol")===true',
+        'document.querySelector(".product-composer .product-model-menu-trigger")?.textContent.includes("GPT-6 Sol")===true',
       );
       record("composer.defaultModelVisible");
 
@@ -255,6 +255,19 @@ try {
         'document.querySelector(".product-code-host-modal") && document.body.innerText.includes("访问令牌")',
       );
       await click(".product-code-host-modal header > button", "codeHost.close");
+
+      // Default selection is checked above without spending Sol tokens.
+      await click(".product-composer .product-model-menu-trigger", "conversation.testModelMenu");
+      await clickText(
+        ".product-model-menu-panel:first-child button",
+        "ChatGPT",
+        "conversation.testProvider",
+      );
+      await clickText(".product-model-menu-subpanel button", "GPT-6 Luna", "conversation.testLuna");
+      await click(
+        ".product-composer .product-model-menu-trigger",
+        "conversation.testModelMenuClose",
+      );
 
       await setValue(
         ".product-composer textarea",
@@ -316,11 +329,11 @@ try {
         },
         {
           provider: "openai-codex",
-          modelId: "gpt-5.6-sol",
+          modelId: "gpt-6-luna",
           thinkingLevel: "medium",
           fastMode: false,
         },
-        "New conversation did not use the GPT-5.6 Sol / medium / Standard default",
+        "Paid browser probe did not use GPT-6 Luna / medium / Standard",
       );
       record("conversation.defaultModel");
       await waitFor(
@@ -434,15 +447,15 @@ try {
       );
       await clickText(
         ".product-model-menu-subpanel button",
-        "GPT-5.6 Terra",
-        "conversation.modelTerra",
+        "GPT-6 Sol",
+        "conversation.modelSolFast",
       );
       await click(".product-model-menu-fast", "conversation.fastMode");
       await waitFor(async () => {
         const selected = await api.getSessionModel(elasticConversation.sessionId);
         return (
           selected.provider === "openai-codex" &&
-          selected.modelId === "gpt-5.6-terra" &&
+          selected.modelId === "gpt-6-sol" &&
           selected.thinkingLevel === "medium" &&
           selected.fastMode
         );
@@ -493,15 +506,15 @@ try {
       );
       await clickText(
         ".product-model-menu-subpanel button",
-        "GPT-5.6 Sol",
-        "conversation.modelSol",
+        "GPT-6 Luna",
+        "conversation.modelLuna",
       );
       await clickText(".product-model-menu-subpanel button", "中", "conversation.reasoningMedium");
       await waitFor(async () => {
         const selected = await api.getSessionModel(elasticConversation.sessionId);
         return (
           selected.provider === "openai-codex" &&
-          selected.modelId === "gpt-5.6-sol" &&
+          selected.modelId === "gpt-6-luna" &&
           selected.thinkingLevel === "medium" &&
           selected.fastMode === false
         );

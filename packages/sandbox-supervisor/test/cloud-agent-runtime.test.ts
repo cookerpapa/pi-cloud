@@ -1,3 +1,4 @@
+import { encodeSessionImages } from "@pi-cloud/session-attachments";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
@@ -235,13 +236,14 @@ async function withNativeSession(
     },
     {
       publish: async (items) => {
-        await database.transaction().execute((tx) =>
+        await database.transaction().execute(async (tx) =>
           projectNativeSessionAppend(tx, {
             tenantId: TENANT_ID,
             sessionId: metadata.id,
             appendId: crypto.randomUUID(),
-            items: items.map((item) =>
-              item.kind === "entry" || item.kind === "record" ? { ...item, turnId: null } : item,
+            items: (await encodeSessionImages(undefined, { tenantId: TENANT_ID }, items)).map(
+              (item) =>
+                item.kind === "entry" || item.kind === "record" ? { ...item, turnId: null } : item,
             ),
           }),
         );

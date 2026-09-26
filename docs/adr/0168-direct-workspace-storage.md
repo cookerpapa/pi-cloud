@@ -2,6 +2,10 @@
 
 Status: accepted and implemented.
 
+[ADR-0192](0192-session-image-attachments.md) adds immutable Session image
+attachments. Those preserve model context independently of changing Workspace
+files; they are not a revived per-Run Workspace archive or checkpoint head.
+
 Acceptance: [direct Workspace storage](../reports/direct-workspace-storage-20260914.md).
 
 ## Decision

@@ -4,8 +4,9 @@ import {
   MAX_TOOL_EXECUTION_TIMEOUT_MS,
   MAX_TOOL_RESPONSE_BYTES,
   type NativeToolEnd,
-  type NativeToolEvent,
   type NativeToolUpdate,
+  type ImagePacked,
+  validateImageReferencePayload,
 } from "@pi-cloud/protocol";
 import { KafkaLogConsumer } from "./kafka-log-consumer.ts";
 
@@ -20,7 +21,11 @@ export function toolReplyTopic(bootId: string): string {
     throw new Error("Invalid Worker boot identity");
   return `${PREFIX}${bootId}`;
 }
-export type ToolReply = { operationId: string; sequence: number; event: NativeToolEvent };
+export type ToolReply = {
+  operationId: string;
+  sequence: number;
+  event: ImagePacked<NativeToolEnd> | NativeToolUpdate;
+};
 
 function parseReply(value: string | Buffer): ToolReply {
   const reply = JSON.parse(value.toString()) as ToolReply;
@@ -30,7 +35,8 @@ function parseReply(value: string | Buffer): ToolReply {
     reply.sequence < 1
   )
     throw new Error("Invalid Tool reply identity");
-  return { ...reply, event: parseNativeToolEvent(reply.event) };
+  validateImageReferencePayload(reply.event);
+  return { ...reply, event: parseNativeToolEvent(reply.event) as ToolReply["event"] };
 }
 
 export class KafkaToolReplyPublisher {
@@ -52,6 +58,7 @@ export class KafkaToolReplyPublisher {
   }
   async publish(topic: string, reply: ToolReply): Promise<void> {
     if (!TOOL_REPLY_TOPIC_PATTERN.test(topic)) throw new Error("Invalid Tool reply destination");
+    validateImageReferencePayload(reply.event);
     const value = Buffer.from(JSON.stringify(reply));
     if (this.#bytes + value.byteLength > 16 * 1024 * 1024)
       throw new Error("Tool reply producer capacity exhausted");
@@ -75,7 +82,7 @@ type Pending = {
   toolCallId: string;
   toolName: string;
   update: ((event: NativeToolUpdate) => void) | undefined;
-  resolve(event: NativeToolEnd): void;
+  resolve(event: ImagePacked<NativeToolEnd>): void;
   reject(error: unknown): void;
   cleanup(): void;
 };
@@ -92,7 +99,7 @@ export class ToolReplyMailbox {
   ) {
     signal.throwIfAborted();
     if (this.#pending.has(operationId)) throw new Error("Tool operation already waiting");
-    const promise = new Promise<NativeToolEnd>((resolve, reject) => {
+    const promise = new Promise<ImagePacked<NativeToolEnd>>((resolve, reject) => {
       const abort = () => {
         this.#pending.delete(operationId);
         signal.removeEventListener("abort", abort);

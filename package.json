@@ -115,7 +115,9 @@
     "check": "npm run typecheck && npm test && npm run test:acceptance-helpers",
     "security:audit": "node scripts/run-security-audit.mjs",
     "eval:faults": "node scripts/run-fault-eval.mjs",
-    "eval:load": "node scripts/run-control-plane-load.mjs"
+    "eval:load": "node scripts/run-control-plane-load.mjs",
+    "production:image-check": "node --import tsx scripts/run-live-image-attachment-check.mjs",
+    "production:gpt6-check": "node scripts/run-live-gpt6-capability-check.mjs"
   },
   "devDependencies": {
     "@pi-cloud/database": "0.1.0",

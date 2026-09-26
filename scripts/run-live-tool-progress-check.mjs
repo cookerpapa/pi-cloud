@@ -40,7 +40,7 @@ const updates = [],
   events = [],
   report = {
     checkedAt: new Date().toISOString(),
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     accepted: false,
     runs: [],
   };

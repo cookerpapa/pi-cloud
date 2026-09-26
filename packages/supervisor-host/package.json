@@ -25,7 +25,8 @@
     "fastify": "5.12.1",
     "kysely": "0.29.4",
     "pg": "8.22.0",
-    "tsx": "4.23.1"
+    "tsx": "4.23.1",
+    "@pi-cloud/session-attachments": "0.1.0"
   },
   "devDependencies": {
     "@pi-cloud/control-plane": "0.1.0",

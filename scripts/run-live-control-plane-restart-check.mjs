@@ -183,7 +183,7 @@ const selection =
         thinkingLevel: "off",
         fastMode: false,
       }
-    : { provider: "openai-codex", modelId: "gpt-5.6-luna", thinkingLevel: "low", fastMode: false };
+    : { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "low", fastMode: false };
 const startedAt = performance.now();
 let project, session, accepted, primaryFailure;
 let cleanupCompleted = false;

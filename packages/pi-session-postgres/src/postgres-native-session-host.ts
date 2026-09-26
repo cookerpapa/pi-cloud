@@ -1,3 +1,4 @@
+import type { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { Database } from "@pi-cloud/database";
 import { parseExecutionReference } from "@pi-cloud/protocol";
 import {
@@ -36,6 +37,7 @@ export type NativeSessionOpen = {
  * handed to the Harness keeps its active view and writes to the durable port. */
 export class PostgresNativeSessionHost {
   readonly #database: Kysely<Database>;
+  readonly #images: ImageAttachmentCodec | undefined;
   readonly #cache: PostgresPiSessionEntryPayloadCache | undefined;
   readonly #onViewRead: ((sample: NativeViewRead) => void) | undefined;
   readonly #writers = new Map<string, Promise<NativeSessionWriter>>();
@@ -49,10 +51,12 @@ export class PostgresNativeSessionHost {
 
   constructor(options: {
     database: Kysely<Database>;
+    images?: ImageAttachmentCodec;
     entryPayloadCache?: PostgresPiSessionEntryPayloadCache;
     onViewRead?: (sample: NativeViewRead) => void;
   }) {
     this.#database = options.database;
+    this.#images = options.images;
     this.#cache = options.entryPayloadCache;
     this.#onViewRead = options.onViewRead;
     this.#reaper = setInterval(() => void this.#reap().catch(() => {}), 60_000);
@@ -91,6 +95,7 @@ export class PostgresNativeSessionHost {
   #reader(scope: CloudAgentExecutionScope) {
     return new PostgresPiSessionStorage({
       database: this.#database,
+      ...(this.#images ? { images: this.#images } : {}),
       tenantId: scope.tenantId,
       sessionId: scope.piSessionId,
       ...(this.#cache ? { entryPayloadCache: this.#cache } : {}),
@@ -171,6 +176,7 @@ export class PostgresNativeSessionHost {
         references: 0,
         authority: new PostgresSessionExecutionAuthority({
           database: this.#database,
+          ...(this.#images ? { images: this.#images } : {}),
           tenantId: scope.tenantId,
           piSessionId: scope.piSessionId,
           leaseId: ref.leaseId,

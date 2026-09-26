@@ -1,4 +1,5 @@
 export { toolResultIsUnknown } from "./tool-result-outcome.ts";
+export * from "./image-attachment.ts";
 export * from "./session-stream-framing.ts";
 export {
   REVIEWED_MODELS,

@@ -3,6 +3,7 @@ import type { Duplex } from "node:stream";
 import {
   isExpectedDefaultToolchain,
   MAX_TOOL_EXECUTION_TIMEOUT_MS,
+  MAX_IMAGE_GUEST_RESPONSE_BYTES,
   validGuestDirectoryName,
   parseEnvironmentToolchainReport,
   createExecutionReference,
@@ -757,7 +758,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     if (
       !Number.isSafeInteger(maximumOutputBytes) ||
       maximumOutputBytes < 1 ||
-      maximumOutputBytes > TOOL_RESPONSE_LIMIT_BYTES
+      maximumOutputBytes > MAX_IMAGE_GUEST_RESPONSE_BYTES
     ) {
       throw new ToolBrokerError(
         "cubesandbox_guest_request_invalid",
@@ -795,23 +796,30 @@ export class CubeSandboxProvider implements SandboxProvider {
       throw options.signal.reason;
     }
     options.onDispatch?.();
-    let pending = Buffer.alloc(0);
+    let pending: Buffer[] = [];
+    let pendingBytes = 0;
     let streamedResult: unknown;
     const onStdout =
       options.onUpdate === undefined
         ? undefined
         : async (chunk: Buffer) => {
-            pending = Buffer.concat([pending, chunk]);
-            for (;;) {
-              const newline = pending.indexOf(10);
-              if (newline < 0) break;
-              if (newline > maximumOutputBytes)
+            for (let start = 0; start < chunk.length;) {
+              const newline = chunk.indexOf(10, start);
+              const end = newline < 0 ? chunk.length : newline;
+              const part = chunk.subarray(start, end);
+              pendingBytes += part.length;
+              if (pendingBytes > maximumOutputBytes)
                 throw new Error("Guest Tool event exceeded its limit");
-              const line = JSON.parse(pending.subarray(0, newline).toString("utf8")) as Record<
-                string,
-                unknown
-              >;
-              pending = pending.subarray(newline + 1);
+              pending.push(part);
+              if (newline < 0) break;
+              // Concatenate once per frame, not once per HTTP chunk: image
+              // replies must not repeatedly copy the growing Base64 prefix.
+              const line = JSON.parse(
+                Buffer.concat(pending, pendingBytes).toString("utf8"),
+              ) as Record<string, unknown>;
+              pending = [];
+              pendingBytes = 0;
+              start = newline + 1;
               if (streamedResult !== undefined)
                 throw new Error("Guest Tool emitted data after its final result");
               if (line.event !== undefined) {
@@ -823,8 +831,6 @@ export class CubeSandboxProvider implements SandboxProvider {
                 streamedResult = line;
               }
             }
-            if (pending.byteLength > maximumOutputBytes)
-              throw new Error("Guest Tool event exceeded its limit");
           };
     const result = await this.#client.runCommand(instance, {
       command: `trap '/bin/rm -f -- ${path}' EXIT; ${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
@@ -846,7 +852,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     if (onStdout !== undefined) {
-      if (pending.byteLength || streamedResult === undefined)
+      if (pendingBytes || streamedResult === undefined)
         throw new Error("Guest Tool stream ended before its final result");
       return streamedResult;
     }
@@ -1125,7 +1131,13 @@ export class CubeSandboxProvider implements SandboxProvider {
               dispatched = true;
             },
             ...(request.operation === "tool.execute"
-              ? { onUpdate: onUpdate ?? (async () => {}) }
+              ? {
+                  onUpdate: onUpdate ?? (async () => {}),
+                  maximumOutputBytes:
+                    request.toolName === "read"
+                      ? MAX_IMAGE_GUEST_RESPONSE_BYTES
+                      : TOOL_RESPONSE_LIMIT_BYTES,
+                }
               : {}),
             ...(signal === undefined ? {} : { signal }),
           },

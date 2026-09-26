@@ -44,6 +44,20 @@ The Worker never receives Cube management credentials. Cube receives no model,
 PostgreSQL, Kubernetes, Volume-gateway or Cube-control
 credential.
 
+S3 image credentials also remain outside Cube. The trusted Broker stores images
+received over envd HTTP and sends opaque references through Kafka. The Worker
+verifies tenant, length and SHA-256 before returning native ImageContent to Pi.
+Two concurrent read materializations bound large guest replies; other Tool and
+command admission limits still apply. No completed Tool result is fetched by GET.
+
+The guest uses Pi's public image processor hook with pinned Sharp. `read` accepts
+optional image `detail: high | original`; high is the default. The dimensions and
+32px patch budgets match the inspected Codex client: high 2048/2500, original
+6000/10000. Images are sniffed by content and normalized to static lossless 8-bit
+PNG; hints report the delivered dimensions. Input is capped at 64 MiB/100 million
+decoded pixels and output at 42 MiB. Decode errors and unsupported model vision
+are visible; the system never silently switches models or reduces detail on retry.
+
 The guest helper reuses fixed Pi edit/write logic locally and emits native
 `tool_execution_update`/`tool_execution_end` payloads. Source-side bounded output
 does not kill a command just because its preview is full. No full-output archive

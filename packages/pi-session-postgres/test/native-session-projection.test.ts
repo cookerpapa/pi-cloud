@@ -1,3 +1,4 @@
+import { encodeSessionImages } from "@pi-cloud/session-attachments";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -5,7 +6,7 @@ import { beforeAll, afterAll, expect, it } from "vitest";
 import { PostgresPiSessionStorage } from "../src/postgres-session-storage.ts";
 import { NativeSessionWriter } from "../src/native-session-writer.ts";
 import { projectNativeSessionAppend } from "../src/project-native-session-append.ts";
-import type { PiCommittedItem } from "../src/session-mutation.ts";
+import type { PiCommittedItem, StoredPiCommittedItem } from "../src/session-mutation.ts";
 
 let pg: PGlite, socket: PGLiteSocketServer, db: ReturnType<typeof createDatabase>;
 beforeAll(async () => {
@@ -29,13 +30,16 @@ async function fixture() {
     sessionId = crypto.randomUUID();
   await db.insertInto("tenants").values({ id: tenantId, slug: tenantId }).execute();
   const storage = await PostgresPiSessionStorage.create({ database: db, tenantId, sessionId });
-  const frames: { appendId: string; items: PiCommittedItem[] }[] = [];
+  const frames: { appendId: string; items: StoredPiCommittedItem[] }[] = [];
   const publisher = {
     publish: async (input: readonly PiCommittedItem[]) => {
       const items = structuredClone([...input]).map((item) =>
         item.kind === "entry" || item.kind === "record" ? { ...item, turnId: null } : item,
       );
-      frames.push({ appendId: crypto.randomUUID(), items });
+      frames.push({
+        appendId: crypto.randomUUID(),
+        items: await encodeSessionImages(undefined, { tenantId }, items),
+      });
     },
   };
   const writer = new NativeSessionWriter({
@@ -216,7 +220,9 @@ it("rejects sequence holes, conflicting parents and Entry/Record ID reuse withou
     "main",
   );
   await f.project(f.frames[0]!);
-  const bad = (items: PiCommittedItem[]) => f.project({ appendId: crypto.randomUUID(), items });
+  const bad = (items: StoredPiCommittedItem[]) =>
+    f.project({ appendId: crypto.randomUUID(), items });
+  if (first.type !== "custom") throw new Error("Expected the custom fixture Entry");
   await expect(
     bad([
       {

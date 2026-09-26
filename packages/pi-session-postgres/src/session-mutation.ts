@@ -1,5 +1,5 @@
 import type { Entry, LaneRecord, NewRecord, ProvisionedEntry } from "@earendil-works/pi-agent-core";
-import type { PiCloudEvent } from "@pi-cloud/protocol";
+import type { PiCloudEvent, ImagePacked } from "@pi-cloud/protocol";
 
 export type PiSessionAppendOperation =
   | Readonly<{
@@ -42,7 +42,8 @@ export type PiCommittedItem =
       label?: string | undefined;
     }>;
 
-export function committedItemSequence(item: PiCommittedItem): number {
+export type StoredPiCommittedItem = ImagePacked<PiCommittedItem>;
+export function committedItemSequence(item: PiCommittedItem | StoredPiCommittedItem): number {
   return item.kind === "entry"
     ? item.entry.seq
     : item.kind === "record"

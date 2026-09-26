@@ -1,7 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import { SessionError } from "@earendil-works/pi-agent-core";
 import { sql, type Insertable, type Transaction } from "kysely";
-import { committedItemSequence, type PiCommittedItem } from "./session-mutation.ts";
+import { committedItemSequence, type StoredPiCommittedItem } from "./session-mutation.ts";
 
 /** Apply acknowledged, fully stamped native records. The caller co-commits its
  * Kafka position and execution boundary in this transaction. No sequence, ID,
@@ -12,7 +12,7 @@ export async function projectNativeSessionAppend(
     tenantId: string;
     sessionId: string;
     appendId: string;
-    items: readonly PiCommittedItem[];
+    items: readonly StoredPiCommittedItem[];
   },
 ): Promise<void> {
   const { tenantId, sessionId, appendId, items } = input;

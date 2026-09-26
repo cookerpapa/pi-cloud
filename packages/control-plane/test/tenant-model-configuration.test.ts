@@ -89,15 +89,15 @@ describe.sequential("tenant model configuration", () => {
       routeVersion: 1,
     });
     await expect(
-      service.replace(identity, { provider: "openai-codex", modelId: "gpt-5.6-terra" }),
+      service.replace(identity, { provider: "openai-codex", modelId: "gpt-6-sol" }),
     ).resolves.toMatchObject({
       mode: "real",
       provider: "openai-codex",
-      modelId: "gpt-5.6-terra",
+      modelId: "gpt-6-sol",
       routeVersion: 2,
     });
     await expect(
-      service.replace(identity, { provider: "openai-codex", modelId: "gpt-5.6-terra" }),
+      service.replace(identity, { provider: "openai-codex", modelId: "gpt-6-sol" }),
     ).resolves.toMatchObject({ routeVersion: 2 });
     await expect(
       service.replace(identity, { provider: "deepseek", modelId: "deepseek-v4-pro" }),
@@ -113,7 +113,7 @@ describe.sequential("tenant model configuration", () => {
       {
         provider: "openai-codex",
         kind: "brokered",
-        route: "provider-gateway://openai-codex/gpt-5.6-terra",
+        route: "provider-gateway://openai-codex/gpt-6-sol",
       },
       {
         provider: "deepseek",
@@ -156,11 +156,11 @@ describe.sequential("tenant model configuration", () => {
     });
     await service.replace(ownerIdentity(source), {
       provider: "openai-codex",
-      modelId: "gpt-5.6-sol",
+      modelId: "gpt-6-sol",
     });
     await expect(service.get(ownerIdentity(managed))).resolves.toMatchObject({
       provider: "openai-codex",
-      modelId: "gpt-5.6-sol",
+      modelId: "gpt-6-sol",
     });
   });
 
@@ -180,7 +180,7 @@ describe.sequential("tenant model configuration", () => {
       tenantSlug: "dynamic-route-first",
       displayName: "Dynamic Route First",
     });
-    initialModel = { provider: "openai-codex", modelId: "gpt-5.6-terra" };
+    initialModel = { provider: "openai-codex", modelId: "gpt-6-sol" };
     const second = await registration.register({
       tenantSlug: "dynamic-route-second",
       displayName: "Dynamic Route Second",
@@ -205,7 +205,7 @@ describe.sequential("tenant model configuration", () => {
       {
         tenantId: second.tenantId,
         provider: "openai-codex",
-        modelId: "gpt-5.6-terra",
+        modelId: "gpt-6-sol",
       },
     ]);
   });
@@ -227,13 +227,13 @@ describe.sequential("tenant model configuration", () => {
       const replaced = await fetch(`${baseUrl}/v1/model-configuration`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ provider: "openai-codex", modelId: "gpt-5.6-luna" }),
+        body: JSON.stringify({ provider: "openai-codex", modelId: "gpt-6-luna" }),
       });
       expect(replaced.status).toBe(200);
       expect(await replaced.json()).toMatchObject({
         mode: "real",
         provider: "openai-codex",
-        modelId: "gpt-5.6-luna",
+        modelId: "gpt-6-luna",
         routeVersion: 2,
       });
       const rejected = await fetch(`${baseUrl}/v1/model-configuration`, {

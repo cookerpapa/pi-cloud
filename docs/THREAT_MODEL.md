@@ -45,6 +45,13 @@ AcceptedFact log; the persistent Cube Volume owns Workspace bytes. Worker and
 Gateway caches are rebuildable. There is no competing workflow or checkpoint
 head.
 
+Private S3 owns immutable Session image bytes; PG owns their tenant-scoped
+inventory and native-log reachability. Broker/Worker/Control Plane receive bucket
+credentials, never Cube or the browser. References cannot name arbitrary URLs or
+paths. Guest-supplied references, cross-tenant lookups, mismatched hashes and
+oversized bodies are rejected. The native loop receives decoded images only at
+the trusted Tool/SessionStorage adapters. Image decoders run inside Cube.
+
 ## Key threats and controls
 
 | Threat | Control |

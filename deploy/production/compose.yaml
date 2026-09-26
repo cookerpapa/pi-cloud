@@ -23,11 +23,13 @@ x-application-security: &application-security
     - no-new-privileges:true
 
 x-control-plane-runtime-environment: &control-plane-runtime-environment
+  PI_CLOUD_IMAGE_S3_ENDPOINT: http://session-images:8333
+  PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE: /run/pi-cloud-secrets/session-image-s3-credentials.json
   NODE_ENV: production
   NODE_USE_ENV_PROXY: "1"
   HTTP_PROXY: http://provider-egress-relay:3129
   HTTPS_PROXY: http://provider-egress-relay:3129
-  NO_PROXY: 127.0.0.1,localhost,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,control-plane,tool-broker,cli-proxy-api,kafka-1,kafka-2,kafka-3,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2,.workers.pi-cloud.local
+  NO_PROXY: 127.0.0.1,localhost,session-images,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,control-plane,tool-broker,cli-proxy-api,kafka-1,kafka-2,kafka-3,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2,.workers.pi-cloud.local
   PI_CLOUD_IMAGE_REVISION: ${PI_CLOUD_IMAGE_REVISION:-unknown}
   PI_CLOUD_PROJECTOR_ADVERTISED_URL: http://control-plane:3000
   PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE: /run/pi-cloud-secrets/tool-dispatch-token
@@ -99,6 +101,10 @@ x-bootstrap-environment: &bootstrap-environment
     [{"id":"sandbox-domain-0001","displayName":"Primary sandbox domain","state":"active","toolBrokerBaseUrl":"http://tool-broker:4300","workspaceStorageKey":"workspace-domain-0001","maximumActiveSandboxes":1024}]
 
 x-control-plane-runtime-secrets: &control-plane-runtime-secrets
+  - type: bind
+    source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/session-image-s3-credentials.json
+    target: /run/pi-cloud-secrets/session-image-s3-credentials.json
+    read_only: true
   - type: bind
     source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/database-url
     target: /run/pi-cloud-secrets/database-url
@@ -308,6 +314,8 @@ services:
       network: host
     restart: unless-stopped
     depends_on:
+      session-images-init:
+        condition: service_completed_successfully
       database-bootstrap:
         condition: service_completed_successfully
       kafka-1:
@@ -516,6 +524,58 @@ services:
     stop_grace_period: 15s
     logging: *bounded-logging
 
+  session-images:
+    image: chrislusf/seaweedfs:4.47_full@sha256:1ed51b50d7586b42761b507b6ee3fc7f4b305ce2fca7590c438bb71c9c0813c9
+    restart: unless-stopped
+    user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
+    command:
+      [
+        server,
+        -dir=/data,
+        -ip=session-images,
+        -ip.bind=0.0.0.0,
+        -s3,
+        -s3.config=/run/pi-cloud-secrets/s3.json,
+        -master.volumeSizeLimitMB=256,
+        -volume.max=64,
+      ]
+    volumes:
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/state/session-images
+        target: /data
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/session-image-s3-server.json
+        target: /run/pi-cloud-secrets/s3.json
+        read_only: true
+      - ../session-images/filer.toml:/etc/seaweedfs/filer.toml:ro
+    networks: [database]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:9333/cluster/status]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=32m"]
+    mem_limit: 1g
+    pids_limit: 128
+    logging: *bounded-logging
+
+  session-images-init:
+    image: chrislusf/seaweedfs:4.47_full@sha256:1ed51b50d7586b42761b507b6ee3fc7f4b305ce2fca7590c438bb71c9c0813c9
+    restart: "no"
+    depends_on:
+      session-images:
+        condition: service_healthy
+    entrypoint: [/bin/sh, /initialize.sh]
+    volumes: ["../session-images/initialize.sh:/initialize.sh:ro"]
+    networks: [database]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *bounded-logging
+
   cli-proxy-api:
     image: pi-cloud/cli-proxy-api:production
     build:
@@ -530,7 +590,7 @@ services:
       HOME: /data
       HTTP_PROXY: http://provider-egress-relay:3129
       HTTPS_PROXY: http://provider-egress-relay:3129
-      NO_PROXY: 127.0.0.1,localhost,control-plane,supervisor-host,supervisor-host-1
+      NO_PROXY: 127.0.0.1,localhost,session-images,control-plane,supervisor-host,supervisor-host-1
       MANAGEMENT_STATIC_PATH: /data/static
     command: [./CLIProxyAPI, -config, /run/pi-cloud-secrets/cli-proxy-config.yaml]
     user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
@@ -581,6 +641,8 @@ services:
     restart: unless-stopped
     user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
     depends_on:
+      session-images-init:
+        condition: service_completed_successfully
       control-plane:
         condition: service_healthy
       cli-proxy-api:
@@ -590,11 +652,13 @@ services:
       supervisor-volume-bootstrap:
         condition: service_completed_successfully
     environment:
+      PI_CLOUD_IMAGE_S3_ENDPOINT: http://session-images:8333
+      PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE: /run/pi-cloud-secrets/session-image-s3-credentials.json
       NODE_ENV: production
       NODE_USE_ENV_PROXY: "1"
       HTTP_PROXY: http://provider-egress-relay:3129
       HTTPS_PROXY: http://provider-egress-relay:3129
-      NO_PROXY: 127.0.0.1,localhost,control-plane,tool-broker,cli-proxy-api,jaeger,postgres,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2
+      NO_PROXY: 127.0.0.1,localhost,session-images,control-plane,tool-broker,cli-proxy-api,jaeger,postgres,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
       PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true"
       PI_CLOUD_CONTROL_PLANE_URL: http://control-plane:3000
@@ -636,6 +700,10 @@ services:
       PI_CLOUD_METRICS_TOKEN_FILE: /run/pi-cloud-secrets/metrics-token
       PI_CLOUD_OTLP_TRACES_ENDPOINT: ${PI_CLOUD_OTLP_TRACES_ENDPOINT:-}
     volumes:
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/session-image-s3-credentials.json
+        target: /run/pi-cloud-secrets/session-image-s3-credentials.json
+        read_only: true
       - supervisor-boot:/var/lib/pi-cloud/boot-volume
       - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/database-url
@@ -698,9 +766,15 @@ services:
     extends:
       service: supervisor-host
     environment:
+      PI_CLOUD_IMAGE_S3_ENDPOINT: http://session-images:8333
+      PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE: /run/pi-cloud-secrets/session-image-s3-credentials.json
       PI_CLOUD_SUPERVISOR_ID: ${PI_CLOUD_SUPERVISOR_ID_PREFIX:-pi-cloud-worker-}2
       PI_CLOUD_SUPERVISOR_MANAGEMENT_ADVERTISED_URL: http://${PI_CLOUD_SUPERVISOR_ID_PREFIX:-pi-cloud-worker-}2:4100
     volumes:
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/session-image-s3-credentials.json
+        target: /run/pi-cloud-secrets/session-image-s3-credentials.json
+        read_only: true
       - supervisor-1-boot:/var/lib/pi-cloud/boot-volume
     networks:
       management:
@@ -761,7 +835,7 @@ services:
       NODE_ENV: production
       HTTP_PROXY: http://provider-egress-relay:3129
       HTTPS_PROXY: http://provider-egress-relay:3129
-      NO_PROXY: 127.0.0.1,localhost,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,tool-broker
+      NO_PROXY: 127.0.0.1,localhost,session-images,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,tool-broker
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_HOST: 0.0.0.0
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_PORT: "4500"
@@ -827,6 +901,8 @@ services:
       network: host
     restart: unless-stopped
     depends_on:
+      session-images-init:
+        condition: service_completed_successfully
       control-plane:
         condition: service_healthy
       workspace-volume-gateway:
@@ -834,6 +910,8 @@ services:
       database-bootstrap:
         condition: service_completed_successfully
     environment:
+      PI_CLOUD_IMAGE_S3_ENDPOINT: http://session-images:8333
+      PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE: /run/pi-cloud-secrets/session-image-s3-credentials.json
       NODE_ENV: production
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
       PI_CLOUD_SANDBOX_DOMAIN_ID: sandbox-domain-0001
@@ -866,6 +944,10 @@ services:
       PI_CLOUD_METRICS_TOKEN_FILE: /run/pi-cloud-secrets/metrics-token
       PI_CLOUD_OTLP_TRACES_ENDPOINT: ${PI_CLOUD_OTLP_TRACES_ENDPOINT:-}
     volumes:
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/session-image-s3-credentials.json
+        target: /run/pi-cloud-secrets/session-image-s3-credentials.json
+        read_only: true
       - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/database-url
         target: /run/pi-cloud-secrets/database-url
@@ -920,7 +1002,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777,uid=${PI_CLOUD_APPLICATION_UID:-1000},gid=${PI_CLOUD_APPLICATION_GID:-1000}
     pids_limit: 128
-    mem_limit: ${PI_CLOUD_TOOL_BROKER_MEMORY_LIMIT:-384m}
+    mem_limit: ${PI_CLOUD_TOOL_BROKER_MEMORY_LIMIT:-1536m}
     cpus: ${PI_CLOUD_TOOL_BROKER_CPUS:-1.0}
     stop_grace_period: 12m
     logging: *bounded-logging

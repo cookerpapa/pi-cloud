@@ -585,6 +585,7 @@ async function ensureWorkspaceDirectory(
 export async function readWorkspaceFile(
   path: string,
   workspaceDirectory = TOOL_WORKSPACE_DIRECTORY,
+  maximumBytes = MAX_TOOL_MUTATION_FILE_BYTES,
 ): Promise<{ content: Buffer; sha256: string }> {
   const target = resolveToolWorkspacePath(path, workspaceDirectory);
   await assertNoFinalSymlink(target);
@@ -594,11 +595,11 @@ export async function readWorkspaceFile(
   });
   try {
     const metadata = await handle.stat();
-    if (!metadata.isFile() || metadata.size > MAX_TOOL_MUTATION_FILE_BYTES) {
+    if (!metadata.isFile() || metadata.size > maximumBytes) {
       throw new ToolWorkerError("tool_file_limit", "Tool file is outside its byte limit");
     }
     const content = await handle.readFile();
-    if (content.byteLength > MAX_TOOL_MUTATION_FILE_BYTES) {
+    if (content.byteLength > maximumBytes) {
       throw new ToolWorkerError("tool_file_limit", "Tool file is outside its byte limit");
     }
     return {

@@ -1,0 +1,123 @@
+import { createHash } from "node:crypto";
+import {
+  MAX_IMAGE_ATTACHMENT_BYTES,
+  IMAGE_OPAQUE_FIELDS,
+  parseImageAttachmentReference,
+  type ImageAttachmentReference,
+  type ImagePacked,
+} from "@pi-cloud/protocol";
+
+export type ImageScope = { tenantId: string; runId?: string };
+export interface ImageAttachmentStore {
+  put(
+    scope: ImageScope,
+    bytes: Buffer,
+    mimeType: ImageAttachmentReference["mimeType"],
+    signal?: AbortSignal,
+  ): Promise<ImageAttachmentReference>;
+  get(tenantId: string, reference: ImageAttachmentReference, signal?: AbortSignal): Promise<Buffer>;
+}
+
+const object = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Only serialization changes. Pi receives exact native image content after decoding. */
+export class ImageAttachmentCodec {
+  // References only, never a completed Tool result or a retained image byte cache.
+  readonly #known = new Map<string, ImageAttachmentReference>();
+  constructor(readonly store: ImageAttachmentStore) {}
+  #remember(key: string, ref: ImageAttachmentReference) {
+    this.#known.set(key, ref);
+    if (this.#known.size > 1024) this.#known.delete(this.#known.keys().next().value!);
+  }
+  async pack<T>(scope: ImageScope, value: T, signal?: AbortSignal): Promise<ImagePacked<T>> {
+    const visit = async (part: unknown): Promise<unknown> => {
+      signal?.throwIfAborted();
+      if (Array.isArray(part)) {
+        const out = [];
+        for (const p of part) out.push(await visit(p));
+        return out;
+      }
+      if (!object(part)) return part;
+      if (part.type === "pi_cloud_image_v1")
+        throw new Error("An attachment reference cannot originate in native Tool content");
+      if (
+        part.type === "image" &&
+        typeof part.data === "string" &&
+        typeof part.mimeType === "string"
+      ) {
+        if (!["image/png", "image/jpeg", "image/webp"].includes(part.mimeType))
+          throw new Error("Image must be normalized before attachment upload");
+        if (
+          part.data.length > Math.ceil(MAX_IMAGE_ATTACHMENT_BYTES / 3) * 4 ||
+          part.data.length % 4 !== 0
+        )
+          throw new Error("Invalid or oversized image content");
+        const bytes = Buffer.from(part.data, "base64");
+        if (
+          !bytes.length ||
+          bytes.length > MAX_IMAGE_ATTACHMENT_BYTES ||
+          bytes.toString("base64") !== part.data
+        )
+          throw new Error("Invalid or oversized image content");
+        const sha = createHash("sha256").update(bytes).digest("hex");
+        const key = `${scope.tenantId}:${scope.runId ?? "cold"}:${part.mimeType}:${sha}`;
+        const ref =
+          (scope.runId ? this.#known.get(key) : undefined) ??
+          (await this.store.put(
+            scope,
+            bytes,
+            part.mimeType as ImageAttachmentReference["mimeType"],
+            signal,
+          ));
+        if (scope.runId) this.#remember(key, ref);
+        const { type: _type, data: _data, mimeType: _mime, ...rest } = part;
+        return { ...rest, type: "pi_cloud_image_v1", attachment: ref };
+      }
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(part))
+        Object.defineProperty(out, k, {
+          value: IMAGE_OPAQUE_FIELDS.has(k) ? structuredClone(v) : await visit(v),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      return out;
+    };
+    return (await visit(value)) as ImagePacked<T>;
+  }
+  async unpack<T>(scope: ImageScope, value: ImagePacked<T>, signal?: AbortSignal): Promise<T> {
+    const visit = async (part: unknown): Promise<unknown> => {
+      signal?.throwIfAborted();
+      if (Array.isArray(part)) {
+        const out = [];
+        for (const p of part) out.push(await visit(p));
+        return out;
+      }
+      if (!object(part)) return part;
+      if (part.type === "pi_cloud_image_v1") {
+        const ref = parseImageAttachmentReference(part.attachment);
+        const bytes = await this.store.get(scope.tenantId, ref, signal);
+        if (
+          bytes.length !== ref.byteLength ||
+          createHash("sha256").update(bytes).digest("hex") !== ref.sha256
+        )
+          throw new Error("Image attachment integrity check failed");
+        if (scope.runId)
+          this.#remember(`${scope.tenantId}:${scope.runId}:${ref.mimeType}:${ref.sha256}`, ref);
+        const { type: _type, attachment: _attachment, ...rest } = part;
+        return { ...rest, type: "image", data: bytes.toString("base64"), mimeType: ref.mimeType };
+      }
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(part))
+        Object.defineProperty(out, k, {
+          value: IMAGE_OPAQUE_FIELDS.has(k) ? structuredClone(v) : await visit(v),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      return out;
+    };
+    return (await visit(value)) as T;
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "checkedAt": "2026-09-26T08:34:26.014Z",
+  "backend": "SeaweedFS 4.47 full",
+  "bytes": 5242880,
+  "sha256": "78b2d26b0166cf6ac97fa9ad68f9d8b8d820846711171f98917c96bfd1565df9",
+  "killedImmediatelyAfterPut": true,
+  "recovered": true,
+  "storageImage": "chrislusf/seaweedfs:4.47_full@sha256:1ed51b50d7586b42761b507b6ee3fc7f4b305ce2fca7590c438bb71c9c0813c9",
+  "metadata": "SQLite WAL + synchronous FULL",
+  "bucketFsync": true,
+  "topology": "single host, one S3 service",
+  "scope": "process kill/restart, not power-loss or independent-node HA"
+}

@@ -164,7 +164,7 @@ describe("Provider Hosted transcript", () => {
     };
     replayProviderHostedTranscripts(crossProviderPayload, { messages: [message] }, {
       provider: "openai-codex",
-      id: "gpt-5.6-luna",
+      id: "gpt-6-luna",
       api: "openai-codex-responses",
     } as Model<"openai-codex-responses">);
     expect(crossProviderPayload.input.map((item) => item.type)).toEqual(["reasoning", "message"]);

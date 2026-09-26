@@ -32,7 +32,11 @@ type Reply = { operationId: string; sequence: number; event: NativeToolEvent };
 /** Projector committed the dispatch boundary before delivery. No completed-result cache. */
 export class ToolCommandExecutor {
   readonly #broker: Pick<ToolBroker, "execute" | "ownsToolBinding">;
-  readonly #publishReply: (topic: string, reply: Reply) => Promise<void>;
+  readonly #publishReply: (
+    topic: string,
+    reply: Reply,
+    scope: AcceptedToolCommand["scope"],
+  ) => Promise<void>;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #maximumActiveCommands: number;
   readonly #progress:
@@ -42,11 +46,17 @@ export class ToolCommandExecutor {
   readonly #sealedWriters = new Set<string>();
   readonly #active = new Map<string, AcceptedToolCommand["scope"]>();
   #commands = 0;
+  #readActive = 0;
+  readonly #readWaiters: Array<() => void> = [];
   #closed = false;
 
   constructor(options: {
     broker: Pick<ToolBroker, "execute" | "ownsToolBinding">;
-    publishReply: (topic: string, reply: Reply) => Promise<void>;
+    publishReply: (
+      topic: string,
+      reply: Reply,
+      scope: AcceptedToolCommand["scope"],
+    ) => Promise<void>;
     maximumActiveCommands?: number;
     metrics?: PiCloudMetrics;
     progress?: { update(value: ToolProgressDelivery): void; forget(id: string): void };
@@ -99,6 +109,36 @@ export class ToolCommandExecutor {
       !this.#broker.ownsToolBinding(command.request.activationId)
     );
   }
+  async #acquireRead(): Promise<() => void> {
+    // At most two potentially large native read replies may be materialized.
+    // The existing command admission cap also bounds this in-memory FIFO.
+    if (this.#readActive < 2) this.#readActive++;
+    else
+      await new Promise<void>((resolve, reject) => {
+        const grant = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        const timer = setTimeout(() => {
+          const index = this.#readWaiters.indexOf(grant);
+          if (index >= 0) this.#readWaiters.splice(index, 1);
+          reject(
+            new ToolBrokerError(
+              "tool_read_capacity_timeout",
+              "Read transfer admission timed out before execution",
+              false,
+            ),
+          );
+        }, 30_000);
+        timer.unref();
+        this.#readWaiters.push(grant);
+      });
+    return () => {
+      const next = this.#readWaiters.shift();
+      if (next) next();
+      else this.#readActive--;
+    };
+  }
   #dispatch(command: AcceptedToolCommand, partition: number): void {
     const request = parseToolSandboxOperationRequest(command.request);
     if (request.operation !== "tool.execute" && request.operation !== "workflow.exec")
@@ -134,11 +174,15 @@ export class ToolCommandExecutor {
         return;
       }
       try {
-        await this.#publishReply(topic, {
-          operationId: request.operationId,
-          sequence: ++sequence,
-          event,
-        });
+        await this.#publishReply(
+          topic,
+          {
+            operationId: request.operationId,
+            sequence: ++sequence,
+            event,
+          },
+          command.scope,
+        );
       } catch (error) {
         publicationFailure = error;
         // A reply transport failure is not evidence that the Cube has died.
@@ -155,6 +199,7 @@ export class ToolCommandExecutor {
     const parent = parseTraceCarrier(command.traceContext ?? {});
     this.#commands++;
     const started = performance.now();
+    let releaseRead: (() => void) | undefined;
     void withSpan({
       serviceName: "pi-cloud-tool-broker",
       name: `tool.${request.operation}`,
@@ -170,6 +215,15 @@ export class ToolCommandExecutor {
             "Tool executor is at capacity",
             false,
           );
+        if (request.operation === "tool.execute" && request.toolName === "read") {
+          releaseRead = await this.#acquireRead();
+          if (this.#closedFor(command))
+            throw new ToolBrokerError(
+              "tool_command_sealed",
+              "Tool execution closed before image transfer admission",
+              false,
+            );
+        }
         const response = await this.#broker.execute(
           createExecutionReference(
             command.scope.leaseId,
@@ -231,6 +285,7 @@ export class ToolCommandExecutor {
         });
       })
       .finally(() => {
+        releaseRead?.();
         this.#progress?.forget(request.operationId);
         this.#active.delete(request.operationId);
       });

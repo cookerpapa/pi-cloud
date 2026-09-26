@@ -55,7 +55,7 @@ const testProvider = process.env.PI_CLOUD_LIVE_MACHINE_PROVIDER ?? "deepseek";
 assert(["deepseek", "openai-codex"].includes(testProvider), "Unsupported machine test Provider");
 const selection = {
   provider: testProvider,
-  modelId: testProvider === "deepseek" ? "deepseek-v4-pro" : "gpt-5.6-luna",
+  modelId: testProvider === "deepseek" ? "deepseek-v4-pro" : "gpt-6-luna",
   thinkingLevel: "low",
   fastMode: false,
 };

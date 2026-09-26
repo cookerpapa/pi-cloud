@@ -33,6 +33,12 @@ Control authority → PG seal Outbox → Kafka seal → PG terminal + closure
 The Projector currently runs in the Control Plane process. Its modules remain
 separate from authentication, resource APIs and the Agent Loop. There is one
 execution-log consumer group, not separate canonical, live and Tool groups.
+Image bytes travel over Cube's existing HTTP transport and a private S3 attachment
+port. Broker externalizes image parts before Kafka replies; Worker restores them
+before native Tool completion. The Session append codec externalizes the final
+after-hook content too. PG native-log rows retain references; public SessionStorage
+reads reconstruct the exact native images. PG plus retained attachments is the
+lossless native history (ADR-0192), while Cube Volume remains Workspace authority.
 The old Fact Gateway, Fact WebSocket, secondary channel lease/progress store,
 independent projection service and execution-committed notification are removed.
 Historical migrations/reports describe their named revisions, not alternate modes.
@@ -279,6 +285,12 @@ append-only `pi_session_log` per physical Session. Entries, operation Records,
 Lane moves and facts share a Session-local sequence. Entry/Record/Lane/label
 tables are query projections. Official Pi backend conformance tests define the
 base contract; tenant and cloud ownership checks are additional constraints.
+Image parts have a `pi_cloud_image_v1` storage representation. Their immutable
+objects are retained transactionally when native log rows commit, including Fork
+copies and Compaction retained tails. Reachability follows retained native history,
+not a mutable Workspace path or an expiring provider URL. Pending attachments of
+unsealed Runs survive projection lag. Cleanup claims unreferenced inventory under
+PG row locks, then deletes S3 objects outside the transaction; failures are retryable.
 `pi-session-postgres` owns this storage contract. Concrete Pi execution lives in
 `sandbox-supervisor`; Worker execution wiring lives in `supervisor-host`, so
 `runtime-core` no longer depends on the concrete Pi Runner. Fake models are test-injected only.

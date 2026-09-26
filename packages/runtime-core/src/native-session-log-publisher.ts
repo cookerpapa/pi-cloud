@@ -1,5 +1,6 @@
 import type { PiSessionAppendPublisher } from "@pi-cloud/pi-session-postgres";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
+import { encodeSessionImages, type ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { ActiveExecutionLogResolver, CandidatePiSessionAppendFact } from "./accepted-fact.ts";
 
 export type PiSessionAppendScope = CandidatePiSessionAppendFact["scope"];
@@ -9,10 +10,16 @@ export type PiSessionAppendScope = CandidatePiSessionAppendFact["scope"];
 export class NativeSessionLogPublisher {
   readonly #channels: ActiveExecutionLogResolver;
   readonly #metrics: PiCloudMetrics | undefined;
+  readonly #images: ImageAttachmentCodec | undefined;
   #closed = false;
-  constructor(options: { channels: ActiveExecutionLogResolver; metrics?: PiCloudMetrics }) {
+  constructor(options: {
+    channels: ActiveExecutionLogResolver;
+    metrics?: PiCloudMetrics;
+    images?: ImageAttachmentCodec;
+  }) {
     this.#channels = options.channels;
     this.#metrics = options.metrics;
+    this.#images = options.images;
   }
   scoped(scope: PiSessionAppendScope): PiSessionAppendPublisher {
     return {
@@ -22,11 +29,16 @@ export class NativeSessionLogPublisher {
         if (!channel) throw new Error("Pi Session Fact Stream is unavailable");
         const mutationId = crypto.randomUUID(),
           started = performance.now();
+        const stored = await encodeSessionImages(
+          this.#images,
+          { tenantId: scope.tenantId, runId: scope.runId },
+          items,
+        );
         const ack = await channel.mutate({
           schemaVersion: 1,
           mutationId,
           scope,
-          items,
+          items: stored,
           events,
           occurredAt: new Date().toISOString(),
         });

@@ -63,7 +63,7 @@ try {
       "/workspace",
       {
         provider,
-        modelId: provider === "deepseek" ? "deepseek-v4-pro" : "gpt-5.6-sol",
+        modelId: provider === "deepseek" ? "deepseek-v4-pro" : "gpt-6-luna",
         thinkingLevel: provider === "deepseek" ? "off" : "medium",
         fastMode: false,
       },

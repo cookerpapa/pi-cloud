@@ -35,6 +35,11 @@ import { GitHubAppClient } from "./github-app-client.ts";
 import { SourceControlService } from "./source-control-service.ts";
 import { SourceControlIssueCoordinator } from "./source-control-issue-coordinator.ts";
 import { GitLabIssueNoteReconciler } from "./gitlab-issue-note-reconciler.ts";
+import {
+  configuredImageAttachments,
+  ImageAttachmentReaper,
+  type ConfiguredImageAttachments,
+} from "@pi-cloud/session-attachments";
 import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
 import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 
@@ -82,11 +87,14 @@ export async function startControlPlane(): Promise<void> {
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
   let issueNoteReconciler: GitLabIssueNoteReconciler | undefined;
+  let images: ConfiguredImageAttachments | undefined;
+  let imageReaper: ImageAttachmentReaper | undefined;
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let internalSourceControlDispatcher: Agent | undefined;
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => {
     return (closePromise ??= closeControlPlaneResources([
+      () => imageReaper?.close(),
       () => issueNoteReconciler?.close(),
       () => issueCoordinator?.close(),
       () => runtime?.close(),
@@ -96,6 +104,7 @@ export async function startControlPlane(): Promise<void> {
       () => unattachedSubagents?.close(),
       () => sourceControlDispatcher?.close(),
       () => internalSourceControlDispatcher?.close(),
+      () => images?.blobs.close(),
       () => ownedDatabase?.destroy(),
       () => ownedObservability?.close(),
     ]));
@@ -108,6 +117,17 @@ export async function startControlPlane(): Promise<void> {
     ownedObservability = observability;
     const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
     ownedDatabase = database;
+    images = await configuredImageAttachments(database);
+    if (images) {
+      await images.blobs.checkHealth();
+      imageReaper = new ImageAttachmentReaper(images.store, () =>
+        operationalLog({
+          service: "pi-cloud-control-plane",
+          level: "error",
+          event: "image.cleanup.failed",
+        }),
+      );
+    }
     const workspaceBrowserClient = new ReplicatedToolBrokerClient({
       baseUrls: config.toolBrokerBaseUrls,
       serviceToken: config.workspaceServiceToken,

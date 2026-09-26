@@ -23,6 +23,8 @@ Pi Worker -> Kafka -> Session Projector
 Whole file/shell Tools execute in Cube. Final results return through Kafka to
 Pi Worker; optional temporary logs go directly through Projector to the browser.
 Workspace files live on persistent Cube Volumes.
+Images used by the Agent are immutable Session attachments in private S3 storage;
+Kafka carries their references and Pi receives ordinary image content.
 The API and Projector share the Control Plane process. Outputs are persisted
 before display, except disposable Tool log previews. Recovery never automatically
 replays uncertain commands.

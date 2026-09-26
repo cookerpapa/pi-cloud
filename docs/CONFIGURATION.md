@@ -152,7 +152,7 @@ Do not commit proxy credentials or expose a local proxy publicly.
 | `PI_CLOUD_SESSION_MODEL_CONCURRENCY` | `4` | simultaneous provider requests per physical Session; cannot exceed the Worker limit |
 | `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes owned by the one-host Broker; leaves two elastic slots beside one starter development machine |
 | `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous executing operations per one-host Broker (standalone/Helm default 32); distinct from physical Cube allocations |
-| `PI_CLOUD_TOOL_BROKER_MEMORY_LIMIT` / `PI_CLOUD_TOOL_BROKER_CPUS` | `384m` / `1.0` | one-host Broker resources; raise together with measured operation/delivery capacity; Helm uses workload resources |
+| `PI_CLOUD_TOOL_BROKER_MEMORY_LIMIT` / `PI_CLOUD_TOOL_BROKER_CPUS` | `1536m` / `1.0` | one-host Broker resources; raise together with measured operation/delivery capacity; Helm uses workload resources |
 | `PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES` | `4` | idle warm Cube limit |
 | `PI_CLOUD_SANDBOX_WARM_TTL_MS` | `900000` | idle warm lifetime (15 minutes) |
 | `PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS` | `15000` | Broker replica ownership lease |
@@ -466,3 +466,34 @@ scope the workflow needs.
 Kafka currently uses private-network plaintext connections. The chart does not
 wire TLS/SASL credentials into the runtime; placing them in a Secret does not
 enable authenticated Kafka. Keep those listeners restricted to trusted services.
+
+## Session image attachments
+
+Trusted Control Plane, Broker and Workers use the same private S3 bucket:
+
+| Setting | Meaning |
+| --- | --- |
+| `PI_CLOUD_IMAGE_S3_ENDPOINT` | Private S3 endpoint; no guest/browser access |
+| `PI_CLOUD_IMAGE_S3_REGION` | Signing region, default `us-east-1` |
+| `PI_CLOUD_IMAGE_S3_BUCKET` | Exclusive attachment bucket, default `pi-cloud-session-images` |
+| `PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE` | Private JSON containing `accessKeyId` and `secretAccessKey` |
+
+Compose initializes these automatically. Helm exposes `imageAttachments` with
+`endpoint`, `region`, `bucket` and `credentialsSecretKey`; configure the same
+backend in the platform and `pi-workers` values, and put the JSON in each trusted
+component's existing Secret. An empty endpoint disables image storage explicitly;
+reading images then fails clearly instead of returning inline Kafka payloads.
+
+Per-image input/output bounds are 64/42 MiB; guest image replies are capped at
+64 MiB. S3 transfer admission is 128 MiB per process, independent of native
+context memory. Model requests permit 128 MiB raw/decompressed bodies with a
+256 MiB aggregate in-flight payload budget; buffers and parsed JSON add memory
+beyond these byte counters. Kafka execution records stay below 900 KiB and reject
+oversized individual publications before entering a shared Producer stream.
+Orphan inventory is eligible after 24 hours and source Run closure; retained
+native history pins attachments through Compaction, Fork and Lane pruning.
+
+New conversations default to GPT-6 Sol. GPT-6 Luna is the paid-test model; Astra
+is an explicit higher-cost choice and does not offer disabled reasoning.
+DeepSeek Flash remains hidden on the Responses route. A September 26 direct
+Anthropic-route probe succeeded, but that does not change its current protocol.

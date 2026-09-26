@@ -1,4 +1,4 @@
-import type { PiCommittedItem } from "@pi-cloud/pi-session-postgres";
+import type { StoredPiCommittedItem } from "@pi-cloud/pi-session-postgres";
 import type { EventPublishMessage, PiCloudEvent, PiCloudEventBody } from "@pi-cloud/protocol";
 import type {
   AcceptedToolCommand,
@@ -22,7 +22,7 @@ export type CandidatePiSessionAppendFact = Readonly<{
     runId: string;
     executionReference: string;
   }>;
-  items: readonly PiCommittedItem[];
+  items: readonly StoredPiCommittedItem[];
   events: readonly PiCloudEvent[];
   occurredAt: string;
 }>;
@@ -70,7 +70,7 @@ export type AcceptedPiSessionAppendFact = Readonly<{
   factId: string;
   scope: AcceptedFactScope;
   piSession: Readonly<{ id: string; lane: string; writerId: string }>;
-  items: readonly PiCommittedItem[];
+  items: readonly StoredPiCommittedItem[];
   events: readonly PiCloudEvent[];
   occurredAt: string;
 }>;

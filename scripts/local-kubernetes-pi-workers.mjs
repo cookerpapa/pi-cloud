@@ -576,6 +576,7 @@ async function applyWorkerSecret() {
     "supervisor-management-token": await source("supervisor-management-token"),
     "tool-broker-token": await source("tool-broker-token"),
     "cli-proxy-api-key": await source("cli-proxy-api-key"),
+    "session-image-s3-credentials.json": await source("session-image-s3-credentials.json"),
     "metrics-token": await source("metrics-token"),
   };
   await applyManifest([

@@ -383,8 +383,8 @@ describe("tenant-aware browser API", () => {
             models: [
               {
                 provider: "openai-codex",
-                modelId: "gpt-5.6-terra",
-                displayName: "GPT-5.6 Terra",
+                modelId: "gpt-6-sol",
+                displayName: "GPT-6 Sol",
                 default: true,
                 thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
                 defaultThinkingLevel: "medium",
@@ -418,8 +418,8 @@ describe("tenant-aware browser API", () => {
           sessionId,
           modelProfileId: "50000000-0000-4000-8000-000000000001",
           provider: init?.method === "PUT" ? "deepseek" : "openai-codex",
-          modelId: init?.method === "PUT" ? "deepseek-v4-pro" : "gpt-5.6-terra",
-          displayName: init?.method === "PUT" ? "DeepSeek V4 Pro" : "GPT-5.6 Terra",
+          modelId: init?.method === "PUT" ? "deepseek-v4-pro" : "gpt-6-sol",
+          displayName: init?.method === "PUT" ? "DeepSeek V4 Pro" : "GPT-6 Sol",
           thinkingLevel: init?.method === "PUT" ? "high" : "medium",
           fastMode: false,
         }),
@@ -428,10 +428,10 @@ describe("tenant-aware browser API", () => {
     });
     const api = new PiCloudApi(fetchImplementation);
     await expect(api.getModelCatalog()).resolves.toMatchObject({
-      models: [{ modelId: "gpt-5.6-terra" }, { modelId: "deepseek-v4-pro" }],
+      models: [{ modelId: "gpt-6-sol" }, { modelId: "deepseek-v4-pro" }],
     });
     await expect(api.getSessionModel(sessionId)).resolves.toMatchObject({
-      modelId: "gpt-5.6-terra",
+      modelId: "gpt-6-sol",
     });
     await expect(
       api.updateSessionModel(sessionId, {

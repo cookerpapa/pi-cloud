@@ -1,0 +1,25 @@
+{
+  "checkedAt": "2026-09-26T08:38:51.225Z",
+  "model": "gpt-6-luna",
+  "functionCalling": true,
+  "toolResultVision": true,
+  "imageBytes": 3206008,
+  "imageSha256": "dbb2c5d855a85b20a616ea9e2351ed9d7c0b701e1be67d54c43be18dc9718daa",
+  "visionAnswerCorrect": true,
+  "hostedSearchCalls": 1,
+  "usage": [
+    {
+      "input": 367,
+      "output": 15
+    },
+    {
+      "input": 1866,
+      "output": 6
+    },
+    {
+      "input": 8416,
+      "output": 91
+    }
+  ],
+  "accepted": true
+}

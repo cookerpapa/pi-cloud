@@ -1179,7 +1179,7 @@ describe("PiCloudTurnRunner integration", () => {
     const pool = new PiModelRuntimePool(0);
     const lease = await pool.acquire({
       provider: "openai-codex",
-      modelId: "gpt-5.6-terra",
+      modelId: "gpt-6-sol",
       baseUrl: "http://127.0.0.1:4200",
       api: "openai-codex-responses",
       apiKey: `${header}.${payload}.${"s".repeat(43)}`,
@@ -1194,7 +1194,7 @@ describe("PiCloudTurnRunner integration", () => {
     expect(lease.runtime.getProviderAuthStatus("openai-codex")).toMatchObject({
       configured: true,
     });
-    expect(lease.runtime.getModel("openai-codex", "gpt-5.6-terra")).toMatchObject({
+    expect(lease.runtime.getModel("openai-codex", "gpt-6-sol")).toMatchObject({
       api: "openai-codex-responses",
       baseUrl: "http://127.0.0.1:4200",
       input: ["text", "image"],

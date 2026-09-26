@@ -87,7 +87,7 @@ try {
     "elastic",
     "starter",
     "/workspace",
-    { provider: "openai-codex", modelId: "gpt-5.6-luna", thinkingLevel: "low", fastMode: false },
+    { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "low", fastMode: false },
   );
   report.sessionId = session.sessionId;
   stream = streamSessionEvents({

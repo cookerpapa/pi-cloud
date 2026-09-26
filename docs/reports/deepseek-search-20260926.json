@@ -1,0 +1,45 @@
+{
+  "checkedAt": "2026-09-26T09:07:43.726Z",
+  "modelList": {
+    "name": "deepseek-models",
+    "status": 200,
+    "elapsedMs": 345,
+    "models": [
+      {
+        "id": "deepseek-flash",
+        "name": "DeepSeek-V4.1-Flash"
+      },
+      {
+        "id": "deepseek-v4-pro",
+        "name": "DeepSeek-V4-Pro"
+      }
+    ]
+  },
+  "responses": {
+    "name": "deepseek-flash-search",
+    "status": 200,
+    "elapsedMs": 892,
+    "model": "deepseek-flash",
+    "outputTypes": ["message"],
+    "searchCount": 0
+  },
+  "anthropic": {
+    "checkedAt": "2026-09-26T08:39:18.688Z",
+    "status": 200,
+    "model": "deepseek-flash",
+    "contentTypes": [
+      "thinking",
+      "server_tool_use",
+      "server_tool_use",
+      "web_search_tool_result",
+      "web_search_tool_result",
+      "text"
+    ],
+    "searchBlocks": 2
+  },
+  "decision": {
+    "flashResponsesVisible": false,
+    "separatePublicSearchModelVerified": false,
+    "anthropicProtocolChangeInThisSlice": false
+  }
+}

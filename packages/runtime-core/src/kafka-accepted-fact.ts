@@ -7,7 +7,7 @@ import {
   stringSerializers,
   type ProducerStream,
 } from "@platformatic/kafka";
-import { parsePiCloudEvent } from "@pi-cloud/protocol";
+import { parsePiCloudEvent, validateImageReferencePayload } from "@pi-cloud/protocol";
 import type { AcceptedFact, AcceptedFactBus, AcceptedFactReceipt } from "./accepted-fact.ts";
 import { AcceptedFactCapacityError, AcceptedFactPublisherFailedError } from "./accepted-fact.ts";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
@@ -254,8 +254,12 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
     if (this.#streamFailure !== undefined) throw this.#streamFailure;
     const existing = this.#pending.get(fact.factId);
     if (existing !== undefined) return existing.promise;
+    if (fact.kind === "pi_session_append") validateImageReferencePayload(fact.items);
     const value = JSON.stringify(fact);
     const bytes = Buffer.byteLength(value);
+    // Reject this publication before touching the shared Producer stream. A
+    // record-size error must not poison callbacks for unrelated Sessions.
+    if (bytes > 900 * 1024) throw new AcceptedFactCapacityError();
     if (
       this.#pending.size >= this.#capacity.maximumPendingFacts ||
       this.#pendingBytes + bytes > this.#capacity.maximumPendingBytes
