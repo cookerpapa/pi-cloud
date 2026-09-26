@@ -8,6 +8,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { OfficialCubeSandboxRuntimeClient } from "../src/index.ts";
 import { CubeApplicationPortError } from "../src/cubesandbox-runtime-client.ts";
+import { MAX_IMAGE_GUEST_RESPONSE_BYTES } from "@pi-cloud/protocol";
 
 type ObservedRequest = {
   method: string;
@@ -379,6 +380,20 @@ describe("official CubeSandbox HTTP compatibility client", () => {
         maximumOutputBytes: 64 * 1_024,
       }),
     ).resolves.toEqual({ stdout: "envd command\n", stderr: "", exitCode: 0 });
+    const imageStream: Buffer[] = [];
+    await expect(
+      client.runCommand(instance, {
+        command: "read image fixture",
+        cwd: "/workspace",
+        user: "root",
+        timeoutMs: 1000,
+        maximumOutputBytes: MAX_IMAGE_GUEST_RESPONSE_BYTES,
+        onStdout: async (bytes) => {
+          imageStream.push(bytes);
+        },
+      }),
+    ).resolves.toEqual({ stdout: "", stderr: "", exitCode: 0 });
+    expect(Buffer.concat(imageStream).toString()).toBe("envd command\n");
     const dataRequest = observed.find((request) => request.path === "/process.Process/Start");
     expect(dataRequest).toMatchObject({
       headers: {

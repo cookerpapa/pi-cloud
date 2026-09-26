@@ -1,6 +1,6 @@
 import { Agent, buildConnector, fetch, type Dispatcher } from "undici";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
-import { PREVIEW_ACCESS_TTL_MS } from "@pi-cloud/protocol";
+import { PREVIEW_ACCESS_TTL_MS, MAX_IMAGE_GUEST_RESPONSE_BYTES } from "@pi-cloud/protocol";
 import { Duplex, Readable, Writable } from "node:stream";
 
 const controlDispatcher = new Agent();
@@ -678,7 +678,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       input.maximumOutputBytes,
       8 * 1_024 * 1_024,
       1,
-      32 * 1_024 * 1_024,
+      MAX_IMAGE_GUEST_RESPONSE_BYTES,
     );
     const payload = encodeConnectEnvelope(
       Buffer.from(

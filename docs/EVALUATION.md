@@ -205,7 +205,9 @@ broker loss and capacity targets remain unproven until run on that topology.
 checks actual GPT-6 Luna function calls, image Tool results and hosted search.
 `PI_CLOUD_LIVE_IMAGE_CHECK=1 node --import tsx scripts/run-live-image-attachment-check.mjs`
 creates a disposable Cube Workspace, reads repeated >5 MiB images at high/original
-quality, overwrites the source and restarts an idle local Kubernetes Worker. The
+quality, overwrites the source and replaces an idle Worker. Compose keeps the
+other Worker running for an actual owner change; the local Kubernetes mode
+restarts the owning Pod. The
 final Run must identify earlier image-only digits after cold restore without any
 file Tools. Test fixture digits are verified only after that answer. The script
 refuses the restart if any other Run is active and cleans its Session/Workspace.

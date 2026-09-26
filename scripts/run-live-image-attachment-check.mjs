@@ -45,7 +45,7 @@ const report = {
   runs: [],
   images: [],
 };
-let project, session, active, failure;
+let project, session, active, failure, stoppedWorkerService;
 const pause = () => new Promise((r) => setTimeout(r, 250));
 async function waitRun(id) {
   const until = Date.now() + 600000;
@@ -148,24 +148,35 @@ try {
     );
   assert.equal(counts.n, 0, "Another active Run prevents the Worker restart");
   const owner = report.runs.at(-1).workerId;
-  const kubeconfig = `${runtime}/kubernetes/pi-worker-local.kubeconfig`;
   const {
     rows: [old],
   } = await sql`select boot_id from sandboxes where id=${owner}::uuid`.execute(db);
   const {
     rows: [sandbox],
   } = await sql`select supervisor_id from sandboxes where id=${owner}::uuid`.execute(db);
-  await execFile("kubectl", [
-    "--kubeconfig",
-    kubeconfig,
-    "-n",
-    "pi-cloud-workers",
-    "delete",
-    "pod",
-    sandbox.supervisor_id,
-    "--wait=true",
-    "--timeout=120s",
-  ]);
+  if (env.match(/^PI_CLOUD_PI_WORKER_DEPLOYMENT=(.*)$/m)?.[1] === "kubernetes") {
+    await execFile(process.env.PI_CLOUD_KUBECTL_BIN ?? "/usr/local/bin/kubectl", [
+      "--kubeconfig",
+      `${runtime}/kubernetes/pi-worker-local.kubeconfig`,
+      "-n",
+      "pi-cloud-workers",
+      "delete",
+      "pod",
+      sandbox.supervisor_id,
+      "--wait=true",
+      "--timeout=120s",
+    ]);
+  } else {
+    const prefix = env.match(/^PI_CLOUD_SUPERVISOR_ID_PREFIX=(.*)$/m)?.[1] ?? "pi-cloud-worker-";
+    assert([prefix + "1", prefix + "2"].includes(sandbox.supervisor_id), "Unknown local Worker");
+    stoppedWorkerService =
+      sandbox.supervisor_id === prefix + "1" ? "supervisor-host" : "supervisor-host-1";
+    await execFile(process.execPath, [
+      "scripts/production-compose.mjs",
+      "stop",
+      stoppedWorkerService,
+    ]);
+  }
   const recalled = await turn(
     "不要调用任何工具、不要读取文件。只根据前面三张图片，按显示顺序输出三组四位数字，用逗号分隔。",
   );
@@ -175,6 +186,14 @@ try {
     .map((i) => i.text)
     .join("")
     .trim();
+  if (stoppedWorkerService) {
+    await execFile(process.execPath, [
+      "scripts/production-compose.mjs",
+      "start",
+      stoppedWorkerService,
+    ]);
+    stoppedWorkerService = undefined;
+  }
   const verify = await turn(
     "只调用一次 bash，执行 cat /workspace/.image-check-expected.json，然后原样输出文件内容。不要其他工具或搜索。",
   );
@@ -200,6 +219,16 @@ try {
   failure = error;
 } finally {
   const errors = [];
+  try {
+    if (stoppedWorkerService)
+      await execFile(process.execPath, [
+        "scripts/production-compose.mjs",
+        "start",
+        stoppedWorkerService,
+      ]);
+  } catch (e) {
+    errors.push(e);
+  }
   try {
     if (
       active &&
