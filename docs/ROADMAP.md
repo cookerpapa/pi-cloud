@@ -39,9 +39,10 @@
 
 ## Current release gate
 
-- [ ] Complete ADR-0190's GitLab note-sync migration and local rollout: real PG
+- [x] Complete ADR-0190's GitLab note-sync migration and local rollout: real PG
       concurrency, controlled HTTP faults, lost replies, late writes, independent
       Issue admission and bounded shutdown.
+      [Acceptance](reports/gitlab-note-sync-20260926.md).
 
 - [x] Complete the matched local rollout acceptance for the September 26
       [Pi-alignment repairs](reports/pi-alignment-repair-20260926.md): native

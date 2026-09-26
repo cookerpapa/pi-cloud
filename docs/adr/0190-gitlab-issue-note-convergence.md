@@ -1,6 +1,7 @@
 # ADR-0190: independent GitLab Issue-note convergence
 
-Status: accepted for implementation, 2026-09-26.
+Status: accepted, implemented and locally validated, 2026-09-26.
+Evidence: [GitLab note-sync acceptance](../reports/gitlab-note-sync-20260926.md).
 
 ## Context and authorization
 

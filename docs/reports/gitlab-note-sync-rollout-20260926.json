@@ -1,0 +1,115 @@
+{
+  "startedAt": "2026-09-26T06:25:14.448Z",
+  "revision": "b4d77bf2a53a41eb9fd1d88e1df04c175b6074f1",
+  "previous": {
+    "revision": "dc20c96bd57dbf20457a098e9bff84c9626b2c02",
+    "imageId": "sha256:b36e13e268430fbf5d1443a9f294d345bafa1104e3d7819de903d497b0962009"
+  },
+  "preflight": {
+    "activeRuns": 0,
+    "unsealedSessions": 0,
+    "currentLeases": 0,
+    "issueOwners": 0,
+    "gitlabJobs": 0
+  },
+  "backup": {
+    "bytes": 689412,
+    "sha256": "56856a0c37538aebe42ddbb0a44f7411fe376a6ee97e162cfba0872c8b79ced4",
+    "mode": "600",
+    "format": "PostgreSQL custom",
+    "locationRecordedPrivately": true
+  },
+  "checkedAt": "2026-09-26T06:31:41.438Z",
+  "postMigration": {
+    "migration149": true,
+    "oldFlagAbsent": true,
+    "syncTablePresent": true,
+    "invalidationTriggers": 2,
+    "syncRows": 0,
+    "gitlabJobs": 0,
+    "activeRuns": 0,
+    "currentSessionLeases": 0,
+    "unsealedSessions": 0
+  },
+  "services": [
+    {
+      "name": "control-plane",
+      "revision": "b4d77bf2a53a41eb9fd1d88e1df04c175b6074f1",
+      "status": "running",
+      "health": "healthy",
+      "exitCode": 0,
+      "restarts": 0,
+      "startedAt": "2026-09-26T06:26:56.787019724Z"
+    },
+    {
+      "name": "database-bootstrap",
+      "revision": "b4d77bf2a53a41eb9fd1d88e1df04c175b6074f1",
+      "status": "exited",
+      "health": null,
+      "exitCode": 0,
+      "restarts": 0,
+      "startedAt": "2026-09-26T06:26:51.752711211Z"
+    },
+    {
+      "name": "web",
+      "revision": "dc20c96bd57dbf20457a098e9bff84c9626b2c02",
+      "status": "running",
+      "health": "healthy",
+      "exitCode": 0,
+      "restarts": 0,
+      "startedAt": "2026-09-26T06:27:03.831092431Z"
+    },
+    {
+      "name": "supervisor-host",
+      "revision": "dc20c96bd57dbf20457a098e9bff84c9626b2c02",
+      "status": "running",
+      "health": "healthy",
+      "exitCode": 0,
+      "restarts": 1,
+      "startedAt": "2026-09-26T06:27:08.117573078Z"
+    },
+    {
+      "name": "supervisor-host-1",
+      "revision": "dc20c96bd57dbf20457a098e9bff84c9626b2c02",
+      "status": "running",
+      "health": "healthy",
+      "exitCode": 0,
+      "restarts": 1,
+      "startedAt": "2026-09-26T06:27:08.102599507Z"
+    }
+  ],
+  "internalReady": 200,
+  "http": [
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/v1/conversations",
+      "status": 200
+    },
+    {
+      "path": "/v1/source-control",
+      "status": 200
+    },
+    {
+      "path": "/v1/source-control/issue-jobs",
+      "status": 200
+    }
+  ],
+  "accepted": true,
+  "baselineRevision": "0e8362e9e7a820de451759c3eae0e91fb031282d",
+  "topology": "one WSL host / Docker Compose",
+  "verification": {
+    "workspaceTestsPassed": 1117,
+    "workspaceTestsSkipped": 108,
+    "workspaceTestsFailed": 0,
+    "realPostgresHttpCasesPassed": 17,
+    "faultCasesPassed": 42,
+    "faultCasesTotal": 42,
+    "modelCalls": 0,
+    "externalGitlabCommentsCreated": 0
+  },
+  "temporaryPostgresRemoved": true,
+  "guestBuildIdentity": "908d27fc397894bdebe74ccc1c9a7d075df8389a"
+}

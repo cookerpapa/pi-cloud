@@ -12,11 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Complete ADR-0190 GitLab note synchronization: short business transactions,
-      independent bounded reconciliation, version/lease recovery and remote
-      verification. Replace the old pending flag and lock-held HTTP path; verify
-      real PostgreSQL concurrency and controlled provider failures before rollout.
-
 - [ ] Discuss image/native payload size and persistence before implementing PI-03
       from the [Pi-alignment review](reports/pi-alignment-review-20260926.md).
       The owner explicitly deferred this item. Reply-topic and execution-log bounds

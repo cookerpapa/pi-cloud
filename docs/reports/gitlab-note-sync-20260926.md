@@ -1,6 +1,8 @@
 # GitLab Issue-note synchronization — 2026-09-26
 
-Baseline: `0e8362e9`. This is the owner-approved follow-up to PI-12, which the
+Baseline: `0e8362e9`; implemented/deployed code:
+`b4d77bf2a53a41eb9fd1d88e1df04c175b6074f1`.
+This is the owner-approved follow-up to PI-12, which the
 earlier Pi-alignment repair intentionally retained until its consistency boundary
 was discussed. Decision: [ADR-0190](../adr/0190-gitlab-issue-note-convergence.md).
 
@@ -88,7 +90,26 @@ GitLab Issue jobs. One configured GitLab connection remains, without tasks to
 seed or comments to modify. The guest build-input identity still matches the
 deployed `908d27fc397894bdebe74ccc1c9a7d075df8389a`.
 
-The pending rollout replaces Control Plane and its database-bootstrap image,
-with the old Control Plane stopped before migration 149. Guest and native
-execution-log protocols are unchanged. Final deployment and cleanup evidence
-will be recorded here after verification.
+The rollout completed on one WSL/Compose host. The Web entry and old Control
+Plane were stopped before migration. A private custom-format PG rollback dump
+was preserved before applying schema 149 (689,412 bytes, mode 0600; location and
+previous image identity recorded privately). The new bootstrap applied migration
+149 successfully; its persistent service was also recreated from the new image.
+Control Plane and database-bootstrap image labels both match `b4d77bf2`.
+
+[Post-deployment evidence](gitlab-note-sync-rollout-20260926.json) verifies the
+new table and both enabled invalidation triggers, the old column's absence and
+zero active Runs/current Session leases/unsealed Sessions. Internal readiness
+returned 200; Web, conversation discovery, source-control configuration and Issue
+listing returned 200. The bootstrap exited successfully and the deployment's
+services are healthy.
+
+Both Workers restarted during the planned Control Plane outage and are healthy
+again, using their previous images. No Run or Session lease was active at cutover.
+This observation is not a claim of uninterrupted ownership during an arbitrary
+Control Plane outage. Web, Worker, Broker and guest images were not rebuilt for
+this integration-only change; guest and native log protocols stay unchanged.
+
+The isolated PostgreSQL service/data and test HTTP servers were removed; no test
+tenant, Workspace or model Run was created in the production database. This gate
+does not replace the separate external TLS GitLab acceptance in BACKLOG.
