@@ -252,7 +252,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     });
     expect(catalog.statusCode).toBe(200);
     expect(catalog.json().models.map((model: { modelId: string }) => model.modelId)).not.toContain(
-      "deepseek-v4-flash",
+      "deepseek-v4-pro",
     );
     expect(catalog.json()).toMatchObject({
       models: expect.arrayContaining([
@@ -263,8 +263,8 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
         }),
         expect.objectContaining({
           provider: "deepseek",
-          modelId: "deepseek-v4-pro",
-          displayName: "DeepSeek V4 Pro",
+          modelId: "deepseek-v4-flash",
+          displayName: "DeepSeek V4.1 Flash",
         }),
       ]),
     });

@@ -39,6 +39,10 @@
 
 ## Current release gate
 
+- [ ] ADR-0191 amendment: restore selectable Flash with its requested search
+      declaration, hide Pro, and verify the matched rollout without claiming
+      that the currently ignored Responses search has recovered.
+
 - [x] ADR-0194: editable pending messages, cancellation, ordering and promotion
       to active steer; matched schema/API/Worker/Web rollout completed.
       [Admission races, fault checks and real Luna/browser acceptance](reports/queued-inputs-20260926.md).

@@ -23,7 +23,16 @@ embedded snapshot lacks GPT-6. Pin and embed the upstream catalog revision
 `4d4647e8ca669f23c27c76a7d0bc32fe98d0a909` when building the existing gateway.
 This is deployment metadata, not a second model proxy or provider implementation.
 
-DeepSeek Flash stays hidden. On 2026-09-26, the official `/models` endpoint returned
+Owner amendment, 2026-09-26: show DeepSeek V4.1 Flash and hide V4 Pro from the
+conversation/admin selection catalog. Keep Flash's `web_search` declaration on
+the existing Responses route at the owner's explicit request, even while the
+upstream ignores it. This is a requested Tool declaration, not evidence of an
+executed search; only actual provider events/results appear as search activity.
+Do not substitute a search backend or switch provider protocols. Retain existing
+model identities and issued history; this change does not remap Pro to Flash.
+The local rollout must verify no desired Session or default still selects Pro.
+
+On 2026-09-26, the official `/models` endpoint returned
 only `deepseek-flash` and `deepseek-v4-pro`; a direct Flash Responses request with
 `web_search` and required tool choice returned a message and zero search calls.
 The current Responses documentation explicitly marks built-in search as ignored.
@@ -31,7 +40,8 @@ There is no verified public separate search-model ID. A second direct request
 using the same `deepseek-flash` model on `/anthropic/v1/messages` returned two
 `web_search_tool_result` blocks. Thus hosted search works on the Anthropic route,
 while the currently integrated Responses route still ignores it. This is not a
-distinct public search model. Switching Flash's provider protocol/transcript
+distinct official search model. Third-party web proxies publish `-search` aliases;
+the official endpoint rejects those names. Switching Flash's provider protocol/transcript
 adapter is a separate vertical slice; this migration does not silently add an
 auxiliary search-model request or change its wire protocol.
 
@@ -56,3 +66,8 @@ history; genuine GPT-6 Luna completion, function Tool round trip, image input an
 hosted search through the deployed gateway. Failed availability never falls back
 to a different model. Rollback uses the prior image/catalog and pre-migration
 database backup; do not rewrite historical model output.
+
+The Flash visibility amendment additionally requires public/admin catalog checks,
+Worker runtime/Tool declaration checks and a real Flash completion/vision call
+through the deployed gateway with `web_search` present. An ignored search must
+not be reported as a successful search. No schema or database migration is needed.

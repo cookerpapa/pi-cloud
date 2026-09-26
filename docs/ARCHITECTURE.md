@@ -514,7 +514,12 @@ native Pi history; dormant billing tables and monetary budgets are removed.
 Provider/model/reasoning/Fast settings are immutable per accepted Turn. Hosted
 search stays provider-native; verified GPT/DeepSeek actions and citations are
 stored in native assistant messages, with portable replay across providers.
-Image input/generation remain outside the current public feature boundary.
+The selectable DeepSeek model is V4.1 Flash; V4 Pro is hidden. Flash declares
+`web_search` on Responses at the owner's request, although the upstream currently
+ignores it. Search activity still requires actual provider events/results;
+a declaration alone is never recorded as a performed search (ADR-0191).
+User-uploaded image input and generated-image results remain outside the current
+public feature boundary; image-capable models can consume remote read Tool images.
 
 CloudAgentRuntime owns bounded sampling retries; Model Gateway forwards one
 send per admitted request. Generated CLIProxyAPI settings disable extra retry

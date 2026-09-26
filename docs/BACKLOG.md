@@ -97,11 +97,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       at completion; GPT's phase-aware presentation must not be copied blindly.
 - [ ] Benchmark Standard/Fast on enabled GPT models before changing the default.
 - [ ] Replace PiCloud's hosted-item adapter when pinned Pi has a backend-conformant
-      native contract. DeepSeek Flash stays hidden; do not silently switch its
-      protocol or add a substitute search tool.
-      September 26 probes confirm Flash search on Anthropic Messages while its
-      Responses route still ignores search. Any Flash protocol migration is a
-      separate slice, not evidence that the current route has recovered.
+      native contract. Recheck Flash's Responses search when upstream support
+      changes: Flash is selectable with the owner's requested `web_search`
+      declaration, but September 26 probes still return no search on that route.
+      Anthropic Messages search works; changing protocols or adding a substitute
+      search tool remains a separate slice.
 - [ ] Add user-image input and generated-image results only with native storage,
       Compaction and cross-Worker/provider recovery contracts.
 

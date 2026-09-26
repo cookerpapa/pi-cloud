@@ -39,11 +39,12 @@ and capability tests, not just a catalog entry.
 Every accepted Turn freezes its own provider/model snapshot; changing the
 platform default or Session default never changes historical or in-flight Runs.
 
-DeepSeek Flash is temporarily hidden from conversation/admin selection because
-its V4.1 Responses route no longer executes hosted search. DeepSeek Pro remains
-listed. This is catalog visibility, not a protocol switch or model deletion:
-existing Flash selections/history stay intact and can be changed explicitly.
-No standalone search tool is added.
+DeepSeek V4.1 Flash is selectable; V4 Pro is hidden from conversation/admin
+selection at the owner's request. Flash keeps `hostedTools: ["web_search"]` on
+Responses: the upstream currently accepts but ignores that declaration, so it
+does not establish working search. Only real provider search events/results are
+shown. Existing model identities and history remain readable; no automatic
+Pro-to-Flash alias or alternate search backend is introduced.
 
 Use:
 
@@ -504,5 +505,7 @@ native history pins attachments through Compaction, Fork and Lane pruning.
 
 New conversations default to GPT-6 Sol. GPT-6 Luna is the paid-test model; Astra
 is an explicit higher-cost choice and does not offer disabled reasoning.
-DeepSeek Flash remains hidden on the Responses route. A September 26 direct
-Anthropic-route probe succeeded, but that does not change its current protocol.
+DeepSeek Flash uses the Responses route with text/image input and an owner-approved
+search declaration. September 26 probes confirm image input and an accepted search
+parameter, but no actual Responses search. The separate Anthropic-route search
+probe succeeded; this deployment retains Responses.

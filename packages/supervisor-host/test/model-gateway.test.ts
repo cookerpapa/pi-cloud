@@ -301,6 +301,9 @@ describe("tenant model gateway", () => {
       const headers = new Headers(init?.headers);
       expect(headers.get("authorization")).toBe(`Bearer ${PROVIDER_GATEWAY_KEY}`);
       expect(headers.get("session-id")).toBe(command().payload.sessionId);
+      expect(JSON.parse(Buffer.from(init?.body as Uint8Array).toString("utf8")).tools).toEqual([
+        { type: "web_search" },
+      ]);
       return new Response(
         'data: {"type":"response.output_text.delta","delta":"ok"}\n\ndata: {"type":"response.completed","response":{"id":"r1"}}\n\n',
         {
@@ -318,7 +321,7 @@ describe("tenant model gateway", () => {
       api: "openai-responses",
       baseUrl: "http://pi-worker:4200/v1",
       inputModalities: ["text", "image"],
-      hostedTools: [],
+      hostedTools: ["web_search"],
     });
     const capabilityPayload = JSON.parse(
       Buffer.from(lease.runtime.capability.split(".")[1]!, "base64url").toString("utf8"),
@@ -333,7 +336,12 @@ describe("tenant model gateway", () => {
         "content-type": "application/json",
         ...samplingHeaders(),
       },
-      body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
+      body: JSON.stringify({
+        model: "deepseek-v4-flash",
+        stream: true,
+        input: [],
+        tools: [{ type: "web_search" }],
+      }),
     });
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('"delta":"ok"');

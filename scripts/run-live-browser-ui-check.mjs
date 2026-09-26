@@ -474,8 +474,8 @@ try {
       );
       await clickText(
         ".product-model-menu-subpanel button",
-        "DeepSeek V4 Pro",
-        "conversation.modelDeepSeekPro",
+        "DeepSeek V4.1 Flash",
+        "conversation.modelDeepSeekFlash",
       );
       const deepSeekFastVisible = await page.evaluate(
         'document.querySelector(".product-model-menu-fast") !== null',
@@ -490,7 +490,7 @@ try {
         const selected = await api.getSessionModel(elasticConversation.sessionId);
         return (
           selected.provider === "deepseek" &&
-          selected.modelId === "deepseek-v4-pro" &&
+          selected.modelId === "deepseek-v4-flash" &&
           selected.thinkingLevel === "high" &&
           selected.fastMode === false
         );

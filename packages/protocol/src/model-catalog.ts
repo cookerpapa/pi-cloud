@@ -39,17 +39,17 @@ export const REVIEWED_MODELS = [
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4.1 Flash",
     inputModalities: ["text", "image"],
-    hostedTools: [],
+    // Owner-approved declaration; Responses currently accepts but ignores search.
+    // Only actual upstream search events count as executed hosted Tools.
+    hostedTools: ["web_search"],
     defaultThinkingLevel: "off",
-    // Flash now resolves to V4.1, whose Responses route no longer executes search.
-    // Keep existing selections readable; omit this route from selection menus.
-    visible: false,
   },
   {
     ...DEEPSEEK,
     modelId: "deepseek-v4-pro",
     displayName: "DeepSeek V4 Pro",
     defaultThinkingLevel: "off",
+    visible: false,
   },
 ] as const;
 for (const model of REVIEWED_MODELS) {
