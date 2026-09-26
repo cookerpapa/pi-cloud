@@ -2,6 +2,8 @@
 
 Status: implemented and locally validated (2026-09-26).
 See [acceptance](../reports/image-attachments-20260926.md).
+The later owner-requested [Flash catalog amendment](../reports/flash-catalog-20260926.md)
+is also deployed and locally validated.
 
 ## Decision
 

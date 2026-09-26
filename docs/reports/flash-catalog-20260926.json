@@ -1,0 +1,183 @@
+{
+  "checkedAt": "2026-09-26T15:37:38.021Z",
+  "implementationRevision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb",
+  "checks": {
+    "allWorkspaceTypechecks": true,
+    "targetedFiles": 5,
+    "targetedTestsPassed": 52,
+    "fullRepositoryTestsRepeated": false,
+    "docs": true,
+    "format": true,
+    "scriptSyntax": true,
+    "composeConfiguration": true,
+    "imageClosure": true,
+    "applicationImagesBuilt": true
+  },
+  "declarationProbe": {
+    "checkedAt": "2026-09-26T15:33:50.998Z",
+    "through": "deployed CLIProxyAPI /v1/responses",
+    "requestedModel": "deepseek-v4-flash",
+    "returnedModel": "deepseek-flash",
+    "tools": [
+      {
+        "type": "web_search"
+      }
+    ],
+    "httpStatus": 200,
+    "completionCorrect": true,
+    "searchEvents": 0,
+    "elapsedMs": 706
+  },
+  "live": {
+    "checkedAt": "2026-09-26T15:36:00.236Z",
+    "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb",
+    "model": "deepseek-v4-flash",
+    "accepted": true,
+    "visibleModels": ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "deepseek-v4-flash"],
+    "resources": {
+      "sessionId": "37cffd3b-332d-45a9-85bf-9976ea3ae4a2",
+      "workspaceId": "3fb5a676-4f89-4953-bda7-f245b9a5d0cf"
+    },
+    "browserSelection": true,
+    "run": {
+      "runId": "4e1ba953-c5cf-4f72-9de4-4204642e6af1",
+      "state": "completed",
+      "workerId": "31d5c1a4-4c55-4ff7-9934-eb129102c993"
+    },
+    "tools": [
+      {
+        "name": "bash",
+        "status": "completed"
+      },
+      {
+        "name": "read",
+        "status": "completed"
+      }
+    ],
+    "toolImageVisionCorrect": true,
+    "hostedSearchActions": 0,
+    "cleanupCompleted": true
+  },
+  "rollout": {
+    "checkedAt": "2026-09-26T15:34:47.273Z",
+    "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb",
+    "schemaChanged": false,
+    "containersBefore": [
+      {
+        "container": "pi-cloud-production-control-plane-1",
+        "imageId": "sha256:a9fbe31a3d0f883d7dd08686ee22756f2a22defebc0c518bb59309a961168c10",
+        "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3"
+      },
+      {
+        "container": "pi-cloud-production-supervisor-host-1",
+        "imageId": "sha256:e2103f8a2ac8f944d08f111a93bd9d2e4423d57656410ccb59569a789d8a46ed",
+        "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3"
+      },
+      {
+        "container": "pi-cloud-production-supervisor-host-1-1",
+        "imageId": "sha256:e2103f8a2ac8f944d08f111a93bd9d2e4423d57656410ccb59569a789d8a46ed",
+        "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3"
+      },
+      {
+        "container": "pi-cloud-production-tool-broker-1",
+        "imageId": "sha256:fcfe9f1b6f160f36eae5c16b4b2bdeb864735c0e89aeb1674780c32a9f2279aa",
+        "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3"
+      },
+      {
+        "container": "pi-cloud-production-web-1",
+        "imageId": "sha256:69eda19db856da56ac4cd3999ac9a72d8843ad60e214a6ffff504eaa1f49b004",
+        "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3"
+      }
+    ],
+    "guestBuildIdentity": "14f89c9518957b49663901f025757dd0db8e4c86",
+    "guestImageDigest": "sha256:3fa581594e2eb32983440f983a64b245462eea77336f81ccbf77bd5b0182216e",
+    "templates": {
+      "agent": "tpl-d7ef93304f194587aa333cb9",
+      "starter": "tpl-af8187e9298d4e6d85a8d3b2",
+      "standard": "tpl-0ec3cd83ab554df6815e3cfb",
+      "performance": "tpl-9fd78876c6f14a77889f282d"
+    },
+    "before": {
+      "unfinished_runs": 0,
+      "unreleased_leases": 0,
+      "unsealed_sessions": 0,
+      "pro_sessions": 0,
+      "pro_defaults": 0
+    },
+    "drained": {
+      "unfinished_runs": 0,
+      "unreleased_leases": 0,
+      "unsealed_sessions": 0,
+      "pro_sessions": 0,
+      "pro_defaults": 0
+    },
+    "containers": [
+      {
+        "container": "pi-cloud-production-control-plane-1",
+        "health": "healthy",
+        "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb",
+        "imageId": "sha256:4f4c909440fa47da4020a02ac405dd0e9ddd9a8be0e0252f593cc98ca582996a",
+        "catalogSha256": "5883dae108b92ad615c13d4979c83c472c99f92b57d6d20ddd73a03880495c0c"
+      },
+      {
+        "container": "pi-cloud-production-supervisor-host-1",
+        "health": "healthy",
+        "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb",
+        "imageId": "sha256:941573e6dd70c958b184caa64abd08413462b5f30d6c9a3170682f55fbef26d5",
+        "catalogSha256": "5883dae108b92ad615c13d4979c83c472c99f92b57d6d20ddd73a03880495c0c"
+      },
+      {
+        "container": "pi-cloud-production-supervisor-host-1-1",
+        "health": "healthy",
+        "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb",
+        "imageId": "sha256:941573e6dd70c958b184caa64abd08413462b5f30d6c9a3170682f55fbef26d5",
+        "catalogSha256": "5883dae108b92ad615c13d4979c83c472c99f92b57d6d20ddd73a03880495c0c"
+      },
+      {
+        "container": "pi-cloud-production-tool-broker-1",
+        "health": "healthy",
+        "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb",
+        "imageId": "sha256:a6d266a6adcd8d54138d711f7810383e2f54e9caa9a8e52581594b1881a4bf7b",
+        "catalogSha256": "5883dae108b92ad615c13d4979c83c472c99f92b57d6d20ddd73a03880495c0c"
+      },
+      {
+        "container": "pi-cloud-production-web-1",
+        "health": "healthy",
+        "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb",
+        "imageId": "sha256:082184f2f913cea4fe9d1eab70301e3c36c86626faf20b21725e27d0aac21e22"
+      }
+    ],
+    "after": {
+      "unfinished_runs": 0,
+      "unreleased_leases": 0,
+      "unsealed_sessions": 0,
+      "pro_sessions": 0,
+      "pro_defaults": 0
+    },
+    "schema": "152_editable_pending_inputs"
+  },
+  "cleanup": {
+    "checkedAt": "2026-09-26T15:37:38.021Z",
+    "cleanup": {
+      "deleted_at": "2026-09-26T15:36:13.630Z",
+      "storage_purged_at": "2026-09-26T15:36:44.638Z"
+    },
+    "state": {
+      "unfinished_runs": 0,
+      "unreleased_leases": 0,
+      "unsealed_sessions": 0
+    },
+    "images": [
+      {
+        "mime_type": "image/png",
+        "byte_length": "3205863",
+        "sha256": "ce99f36d4a5c9fdf5396238fdde920a444393ee278e6490001d35c41dd4b1b63",
+        "state": "ready"
+      }
+    ]
+  },
+  "templateRetention": {
+    "deleted": 4,
+    "preexistingStaleNodeCleanupDeferred": 11
+  }
+}

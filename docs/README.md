@@ -29,6 +29,9 @@ ADRs above.
 The [image and GPT-6 acceptance](reports/image-attachments-20260926.md) records
 the subsequent attachment cutover, model migration and current DeepSeek search
 protocol evidence.
+The [Flash catalog amendment](reports/flash-catalog-20260926.md) records its later
+return to selection with the owner's requested search declaration, Pro removal
+from menus and real Flash Tool-image verification.
 
 The [CloudAgentRuntime review](reports/cloud-agent-runtime-review-20260926.md)
 compares the current execution boundary with pinned Pi and records reproducible

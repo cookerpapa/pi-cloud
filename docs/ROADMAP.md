@@ -39,9 +39,9 @@
 
 ## Current release gate
 
-- [ ] ADR-0191 amendment: restore selectable Flash with its requested search
-      declaration, hide Pro, and verify the matched rollout without claiming
-      that the currently ignored Responses search has recovered.
+- [x] ADR-0191 amendment: restore selectable Flash with its requested search
+      declaration and hide Pro. [Gateway, browser and real Tool-image acceptance](reports/flash-catalog-20260926.md)
+      confirms the matched rollout; Responses search remains ignored upstream.
 
 - [x] ADR-0194: editable pending messages, cancellation, ordering and promotion
       to active steer; matched schema/API/Worker/Web rollout completed.
