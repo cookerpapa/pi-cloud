@@ -445,42 +445,48 @@ it("one slow job does not prevent another tenant's note from being synchronized"
   await active;
 });
 
-it("bounds background HTTP concurrency while the independent Issue loop keeps ticking", async () => {
-  const first = await fixture();
-  await fixture();
-  await fixture();
-  const release = deferred();
-  let started = 0;
-  beforeWrite = async () => {
-    started++;
-    await release.promise;
-  };
-  const coordinator = new SourceControlIssueCoordinator({
-    database: db,
-    sourceControl: first.service,
-    instanceId: "independent-issue-loop",
-    environmentImageRevision: "0".repeat(40),
-  });
-  const observe = vi.spyOn(coordinator, "reconcileOnce");
-  try {
-    first.makeReconciler().start();
-    coordinator.start();
-    await vi.waitFor(() => expect(started).toBe(2), { timeout: 5000 });
-    await vi.waitFor(() => expect(observe.mock.calls.length).toBeGreaterThanOrEqual(2), {
-      timeout: 4000,
+// This exercises simultaneous claimant transactions and an independent owner
+// loop. PGlite's multiplexed socket sessions are not PostgreSQL concurrency
+// evidence; the real-PG fault gate requires and executes this case.
+it.skipIf(!external)(
+  "bounds background HTTP concurrency while the independent Issue loop keeps ticking",
+  async () => {
+    const first = await fixture();
+    await fixture();
+    await fixture();
+    const release = deferred();
+    let started = 0;
+    beforeWrite = async () => {
+      started++;
+      await release.promise;
+    };
+    const coordinator = new SourceControlIssueCoordinator({
+      database: db,
+      sourceControl: first.service,
+      instanceId: "independent-issue-loop",
+      environmentImageRevision: "0".repeat(40),
     });
-    expect(started).toBe(2);
-    const leased = await db
-      .selectFrom("gitlab_issue_note_sync")
-      .select("issue_job_id")
-      .where("claim_token", "is not", null)
-      .execute();
-    expect(leased).toHaveLength(2);
-  } finally {
-    release.resolve();
-    await coordinator.close();
-  }
-});
+    const observe = vi.spyOn(coordinator, "reconcileOnce");
+    try {
+      first.makeReconciler().start();
+      coordinator.start();
+      await vi.waitFor(() => expect(started).toBe(2), { timeout: 5000 });
+      await vi.waitFor(() => expect(observe.mock.calls.length).toBeGreaterThanOrEqual(2), {
+        timeout: 4000,
+      });
+      expect(started).toBe(2);
+      const leased = await db
+        .selectFrom("gitlab_issue_note_sync")
+        .select("issue_job_id")
+        .where("claim_token", "is not", null)
+        .execute();
+      expect(leased).toHaveLength(2);
+    } finally {
+      release.resolve();
+      await coordinator.close();
+    }
+  },
+);
 
 it.each(["create", "update"])(
   "reads back an applied %s whose response was lost",
