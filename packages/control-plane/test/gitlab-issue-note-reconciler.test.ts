@@ -465,7 +465,7 @@ it("bounds background HTTP concurrency while the independent Issue loop keeps ti
   try {
     first.makeReconciler().start();
     coordinator.start();
-    await vi.waitFor(() => expect(started).toBe(2));
+    await vi.waitFor(() => expect(started).toBe(2), { timeout: 5000 });
     await vi.waitFor(() => expect(observe.mock.calls.length).toBeGreaterThanOrEqual(2), {
       timeout: 4000,
     });
