@@ -25,7 +25,7 @@ describe("GitLab project adapter", () => {
     });
     await expect(
       client.findIssueNote({ projectId: "77", issueNumber: 1, marker: "<!-- claims:fixture -->" }),
-    ).resolves.toEqual({ id: "101" });
+    ).resolves.toEqual({ id: "101", body: "<!-- claims:fixture -->" });
     expect(pages).toEqual(["1", "2"]);
     fetchImplementation.mockImplementation(async (input) =>
       new URL(String(input)).searchParams.get("page") === "1"

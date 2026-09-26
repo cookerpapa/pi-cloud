@@ -3,6 +3,15 @@ import { readCodeHostJson } from "./code-host-response.ts";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+export type GitLabIssueNote = Readonly<{ id: string; body: string }>;
+
+function issueNote(value: unknown): GitLabIssueNote {
+  const note = record(value);
+  if (typeof note.body !== "string" || note.body.length > 1_000_000)
+    throw new GitLabProjectClientError("gitlab_response_invalid", "GitLab note was invalid", false);
+  return { id: decimalId(note.id, "GitLab note ID"), body: note.body };
+}
+
 export type GitLabProject = Readonly<{
   id: string;
   namespaceId: string;
@@ -218,11 +227,13 @@ export class GitLabProjectClient {
     projectId: string;
     issueNumber: number;
     body: string;
+    signal?: AbortSignal;
   }): Promise<{ id: string }> {
     const value = record(
       await this.#request(`projects/${input.projectId}/issues/${String(input.issueNumber)}/notes`, {
         method: "POST",
         body: JSON.stringify({ body: input.body }),
+        signal: input.signal ?? null,
       }),
     );
     return { id: decimalId(value.id, "GitLab note ID") };
@@ -233,19 +244,51 @@ export class GitLabProjectClient {
     issueNumber: number;
     noteId: string;
     body: string;
+    signal?: AbortSignal;
   }): Promise<void> {
     await this.#request(
       `projects/${input.projectId}/issues/${String(input.issueNumber)}/notes/${decimalId(input.noteId, "GitLab note ID")}`,
-      { method: "PUT", body: JSON.stringify({ body: input.body }) },
+      { method: "PUT", body: JSON.stringify({ body: input.body }), signal: input.signal ?? null },
     );
+  }
+
+  async getIssueNote(input: {
+    projectId: string;
+    issueNumber: number;
+    noteId: string;
+    signal?: AbortSignal;
+  }): Promise<GitLabIssueNote | undefined> {
+    try {
+      const note = issueNote(
+        await this.#request(
+          `projects/${input.projectId}/issues/${String(input.issueNumber)}/notes/${decimalId(input.noteId, "GitLab note ID")}`,
+          { signal: input.signal ?? null },
+        ),
+      );
+      if (note.id !== input.noteId)
+        throw new GitLabProjectClientError(
+          "gitlab_response_invalid",
+          "GitLab note identity changed",
+          false,
+        );
+      return note;
+    } catch (error) {
+      if (error instanceof GitLabProjectClientError && error.code === "gitlab_resource_not_found")
+        return undefined;
+      throw error;
+    }
   }
 
   async findIssueNote(input: {
     projectId: string;
     issueNumber: number;
     marker: string;
-  }): Promise<{ id: string } | undefined> {
-    const signal = AbortSignal.timeout(30_000);
+    signal?: AbortSignal;
+  }): Promise<GitLabIssueNote | undefined> {
+    const signal = AbortSignal.any([
+      AbortSignal.timeout(30_000),
+      ...(input.signal === undefined ? [] : [input.signal]),
+    ]);
     for (let page = 1; page <= 100; page++) {
       signal.throwIfAborted();
       const values = await this.#request(
@@ -260,8 +303,8 @@ export class GitLabProjectClient {
         );
       for (const candidate of values) {
         const note = record(candidate);
-        if (typeof note.body === "string" && note.body.includes(input.marker))
-          return { id: decimalId(note.id, "GitLab note ID") };
+        if (typeof note.body === "string" && note.body.startsWith(input.marker))
+          return issueNote(note);
       }
       if (values.length < 100) return undefined;
     }
@@ -309,6 +352,11 @@ export class GitLabProjectClient {
 
   async #request(path: string, init: RequestInit = {}): Promise<unknown> {
     try {
+      const signal = AbortSignal.any([
+        AbortSignal.timeout(30_000),
+        ...(init.signal == null ? [] : [init.signal]),
+      ]);
+      signal.throwIfAborted();
       const response = await this.#fetch(new URL(path, this.#apiBaseUrl), {
         ...init,
         headers: {
@@ -317,7 +365,7 @@ export class GitLabProjectClient {
           "private-token": this.#accessToken,
           ...(init.headers ?? {}),
         },
-        signal: init.signal ?? AbortSignal.timeout(30_000),
+        signal,
       });
       return await readCodeHostJson(response, "GitLab", GitLabProjectClientError);
     } catch (error) {

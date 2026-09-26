@@ -85,6 +85,11 @@ The Issue coordinator is not a scheduler. It creates and observes ordinary
 PiCloud Runs; the shared PostgreSQL Run queue remains the only Agent execution
 queue.
 
+GitLab claim/status comments are maintained independently under
+[ADR-0190](0190-gitlab-issue-note-convergence.md): short PG transactions, coalesced
+versions, bounded provider calls and periodic remote verification. Comment
+delivery cannot hold the Issue job's business lock or block its execution loop.
+
 ## Alternatives
 
 - Reusing the project integration token inside a Workspace was rejected because

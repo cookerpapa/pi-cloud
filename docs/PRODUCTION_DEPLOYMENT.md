@@ -75,6 +75,15 @@ same image, even if migrations were first applied with a one-off `run --rm`;
 leaving an old bootstrap container can break a later Compose dependency restart.
 There is no old Tool-wire fallback or automatic replay of uncertain commands.
 
+Migration 149 replaces GitLab's old `claim_sync_pending` flag with a versioned
+note-sync target and transactional invalidation triggers. Stop old Control Plane
+processes before applying it, then start the matching image; old and new Issue
+sync implementations must not overlap. The migration refuses an unexpired Issue
+coordinator owner. Existing GitLab jobs are seeded for bounded note discovery and
+verification, including jobs whose previous pending flag was clear. Native Run
+and guest protocols do not change. Restore a matched database backup/code version
+for rollback; there is no dual-writer or old-column compatibility path.
+
 For a component-only replacement, after draining and applying its migrations,
 use Compose `up --no-deps` for the selected services when dependencies are already
 healthy. An ordinary `up` may recreate changed dependencies too. If PostgreSQL

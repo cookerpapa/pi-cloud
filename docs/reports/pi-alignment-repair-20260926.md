@@ -37,6 +37,10 @@ contract. The GitLab row lock intentionally prevents competing metadata writers;
 removing it safely would add coordination state to an optional low-volume path.
 The concrete first-page lookup error is fixed independently.
 
+After this acceptance, the owner approved the separate PI-12 redesign.
+[GitLab note-sync follow-up](gitlab-note-sync-20260926.md) records that change
+under ADR-0190; the dispositions above describe this report's original revision.
+
 ## Data and failure behavior
 
 The Runner allocates the result Entry identity once for each response/call and

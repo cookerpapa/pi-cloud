@@ -496,6 +496,27 @@ environment, not the conversation database. Provider Webhook/project credentials
 remain separate trusted integration secrets. No GitLab is required for ordinary
 PiCloud deployment or local-account login.
 
+GitLab's managed Issue comment is an eventually consistent view of PG claim/job
+state. Atomic database triggers advance one `gitlab_issue_note_sync` target per
+job when displayed state changes. A separate Control Plane loop claims only that
+sync row in a short transaction, reads the committed latest state, then releases
+the transaction before loading credentials or calling GitLab. Two local requests
+are allowed in flight, independently of Issue-to-Run execution. A 60-second
+PG-time lease/token fences local acknowledgements; the whole HTTP attempt is
+bounded to 30 seconds and shutdown aborts it. Success acknowledges only the
+captured version, so newer changes remain pending.
+
+Sync rows contain identities/versions and bounded retry metadata, never comment
+bodies or credentials. Lost replies are reconciled by note ID or the bounded
+marker search. Transient failures back off per job from 2 to 60 seconds; persistent
+failures retain a safe code and become due again after 15 minutes. Equal
+desired/synced versions become eligible for verification after five minutes,
+subject to backlog and the concurrency limit, so late older writes can be
+repaired. GitLab does not enforce our local token: duplicates after ambiguous
+creates and temporary remote regression remain possible. The database business
+state stays authoritative. No Agent scheduler, Kafka event or new service is
+added; see [ADR-0190](adr/0190-gitlab-issue-note-convergence.md).
+
 ## Authorities and scaling
 
 | Concern | Authority |

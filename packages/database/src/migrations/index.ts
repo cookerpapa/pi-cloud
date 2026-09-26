@@ -147,6 +147,7 @@ import * as runExecutionIdentity from "./145_run_execution_identity.ts";
 import * as environmentValidationRunIdentity from "./146_environment_validation_run_identity.ts";
 import * as retireDormantAccounting from "./147_retire_dormant_accounting.ts";
 import * as retireToolOperationLedger from "./148_retire_tool_operation_ledger.ts";
+import * as gitlabIssueNoteSync from "./149_gitlab_issue_note_sync.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -299,6 +300,7 @@ export const migrationProvider: MigrationProvider = {
       "146_environment_validation_run_identity": environmentValidationRunIdentity,
       "147_retire_dormant_accounting": retireDormantAccounting,
       "148_retire_tool_operation_ledger": retireToolOperationLedger,
+      "149_gitlab_issue_note_sync": gitlabIssueNoteSync,
     };
   },
 };

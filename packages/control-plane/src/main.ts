@@ -34,6 +34,7 @@ import { OperationalMetricsSampler } from "./operational-metrics-sampler.ts";
 import { GitHubAppClient } from "./github-app-client.ts";
 import { SourceControlService } from "./source-control-service.ts";
 import { SourceControlIssueCoordinator } from "./source-control-issue-coordinator.ts";
+import { GitLabIssueNoteReconciler } from "./gitlab-issue-note-reconciler.ts";
 import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
 import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 
@@ -80,11 +81,13 @@ export async function startControlPlane(): Promise<void> {
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
+  let issueNoteReconciler: GitLabIssueNoteReconciler | undefined;
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let internalSourceControlDispatcher: Agent | undefined;
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => {
     return (closePromise ??= closeControlPlaneResources([
+      () => issueNoteReconciler?.close(),
       () => issueCoordinator?.close(),
       () => runtime?.close(),
       () => developmentEnvironmentService?.close(),
@@ -388,38 +391,48 @@ export async function startControlPlane(): Promise<void> {
       },
     });
     await runtime.listen(config.port, config.host);
+    const sourceControlFailure = (source: string, error: unknown): void =>
+      operationalLog({
+        service: "pi-cloud-control-plane",
+        level: "warn",
+        event: "source-control-coordinator.failed",
+        attributes: {
+          source,
+          name: error instanceof Error ? error.name : "UnknownError",
+          code:
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            typeof error.code === "string"
+              ? error.code
+              : "unknown",
+          retryable:
+            typeof error === "object" &&
+            error !== null &&
+            "retryable" in error &&
+            typeof error.retryable === "boolean"
+              ? error.retryable
+              : false,
+        },
+      });
     if (sourceControlService.configured) {
       issueCoordinator = new SourceControlIssueCoordinator({
         database,
         sourceControl: sourceControlService,
         instanceId: controlPlaneInstanceId,
         environmentImageRevision: config.environmentImageRevision,
-        onError: (source, error) =>
-          operationalLog({
-            service: "pi-cloud-control-plane",
-            level: "warn",
-            event: "source-control-coordinator.failed",
-            attributes: {
-              source,
-              name: error instanceof Error ? error.name : "UnknownError",
-              code:
-                typeof error === "object" &&
-                error !== null &&
-                "code" in error &&
-                typeof error.code === "string"
-                  ? error.code
-                  : "unknown",
-              retryable:
-                typeof error === "object" &&
-                error !== null &&
-                "retryable" in error &&
-                typeof error.retryable === "boolean"
-                  ? error.retryable
-                  : false,
-            },
-          }),
+        onError: sourceControlFailure,
       });
       issueCoordinator.start();
+    }
+    if (sourceControlService.gitlabConfigured) {
+      issueNoteReconciler = new GitLabIssueNoteReconciler({
+        database,
+        access: (tenantId, installationId) =>
+          sourceControlService.gitlabIssueNoteAccess(tenantId, installationId),
+        onError: (error) => sourceControlFailure("issue_note_sync", error),
+      });
+      issueNoteReconciler.start();
     }
     process.stdout.write(
       `PiCloud production control plane listening on ${config.host}:${String(config.port)}\n`,

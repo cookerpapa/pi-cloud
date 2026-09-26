@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0190](0190-gitlab-issue-note-convergence.md) — short-transaction GitLab
+   note synchronization, independent reconciliation and remote convergence.
+
 1. [ADR-0189](0189-guest-build-input-identity.md) — guest build-input identity
    independent of the platform Git revision, with existing image/READY checks.
 1. [ADR-0188](0188-bounded-conversation-discovery.md) — bounded conversation-list

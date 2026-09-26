@@ -267,6 +267,34 @@
       "file": "test/sandbox-admission.test.ts",
       "test": "accounts for adopted machines above a lowered limit before admitting new work",
       "invariant": "Existing adopted machines count against a lowered capacity; new work remains queued until a physical slot is free."
+    },
+    {
+      "id": "gitlab-note-business-lock-release",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/gitlab-issue-note-reconciler.test.ts",
+      "test": "HTTP releases the transaction: another replica skips its lease while claim and Run admission finish",
+      "invariant": "Provider HTTP holds no business transaction or row lock; one current note-sync claim does not block claim changes or ordinary Run admission."
+    },
+    {
+      "id": "gitlab-note-uncertain-create",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/gitlab-issue-note-reconciler.test.ts",
+      "test": "reads back an applied create whose response was lost",
+      "invariant": "An uncertain remote create remains pending; marker readback recovers the applied note without repeating its creation in the tested lost-reply case."
+    },
+    {
+      "id": "gitlab-note-late-write",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/gitlab-issue-note-reconciler.test.ts",
+      "test": "periodic verification repairs a late stale remote write even when PG versions were equal",
+      "invariant": "Local claim fencing rejects a stale acknowledgement, and periodic remote verification repairs its late external write even after PG considered the latest version synced."
+    },
+    {
+      "id": "gitlab-note-ack-expiry",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/gitlab-issue-note-reconciler.test.ts",
+      "test": "checks expiry after waiting for the acknowledgement row lock",
+      "invariant": "Synchronization acknowledgement uses PG decision time after locking; a lease that expires while waiting cannot confirm remote output."
     }
   ]
 }

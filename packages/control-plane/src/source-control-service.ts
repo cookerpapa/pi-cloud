@@ -217,6 +217,22 @@ export class SourceControlService {
     return this.#github !== undefined || this.#gitlab !== undefined;
   }
 
+  get gitlabConfigured(): boolean {
+    return this.#gitlab !== undefined;
+  }
+
+  /** Trusted integration access; no credential or provider client reaches the public API. */
+  async gitlabIssueNoteAccess(tenantId: string, installationId: string) {
+    const { client } = await this.#gitlabClientByInternalInstallation(tenantId, installationId);
+    return {
+      client,
+      resourceUrl: new URL(
+        "/?resource=source-control",
+        this.#requireGitLab().publicOrigin,
+      ).toString(),
+    };
+  }
+
   async configuration(
     identity: TenantRequestIdentity,
   ): Promise<SourceControlConfigurationResource> {
@@ -615,7 +631,7 @@ export class SourceControlService {
         .execute();
       await transaction
         .updateTable("source_control_issue_jobs")
-        .set({ claim_sync_pending: true, updated_at: now })
+        .set({ updated_at: now })
         .where("id", "=", jobId)
         .executeTakeFirstOrThrow();
     });
@@ -655,7 +671,7 @@ export class SourceControlService {
         .execute();
       await transaction
         .updateTable("source_control_issue_jobs")
-        .set({ claim_sync_pending: true, updated_at: now })
+        .set({ updated_at: now })
         .where("id", "=", jobId)
         .executeTakeFirstOrThrow();
     });
@@ -803,52 +819,11 @@ export class SourceControlService {
           failure_code: null,
           failure_message: null,
           updated_at: now,
-          claim_sync_pending: true,
         })
         .where("id", "=", jobId)
         .executeTakeFirstOrThrow();
     });
     return this.#issueJob(identity, jobId);
-  }
-
-  async reconcileNextClaimSync(): Promise<boolean> {
-    const result = await this.#database.transaction().execute(async (transaction) => {
-      const pending = await transaction
-        .selectFrom("source_control_issue_jobs")
-        .select("id")
-        .where("provider", "=", "gitlab")
-        .where("claim_sync_pending", "=", true)
-        .orderBy("updated_at", "asc")
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst();
-      if (pending === undefined) return undefined;
-      // This low-volume metadata upsert holds the job lock through the bounded
-      // provider call. A crash leaves it pending; another reconciler cannot race
-      // its note creation or overwrite a newer claim with an older snapshot.
-      let failure: unknown;
-      try {
-        await this.#syncGitLabIssueClaims(pending.id, transaction);
-      } catch (error) {
-        failure = error;
-        if (
-          !(
-            error instanceof GitLabProjectClientError || error instanceof SourceControlServiceError
-          ) ||
-          error.retryable
-        )
-          return { failure };
-      }
-      await transaction
-        .updateTable("source_control_issue_jobs")
-        .set({ claim_sync_pending: false })
-        .where("id", "=", pending.id)
-        .executeTakeFirstOrThrow();
-      return { failure };
-    });
-    if (result?.failure !== undefined) throw result.failure;
-    return result !== undefined;
   }
 
   async acceptGitHubWebhook(
@@ -1331,7 +1306,6 @@ export class SourceControlService {
           branch_name: branchName,
           owner_id: null,
           lease_expires_at: null,
-          claim_sync_pending: input.provider === "gitlab",
           started_by_user_id: null,
           execution_mode: null,
           sandbox_profile_key: null,
@@ -2029,77 +2003,6 @@ export class SourceControlService {
       );
     }
     return job;
-  }
-
-  async #syncGitLabIssueClaims(jobId: string, transaction: Transaction<Database>): Promise<void> {
-    const job = await transaction
-      .selectFrom("source_control_issue_jobs as job")
-      .innerJoin("source_control_repositories as repository", (join) =>
-        join
-          .onRef("repository.tenant_id", "=", "job.tenant_id")
-          .onRef("repository.id", "=", "job.repository_id"),
-      )
-      .select([
-        "job.id",
-        "job.tenant_id as tenantId",
-        "job.issue_number as issueNumber",
-        "job.state",
-        "repository.installation_id as installationId",
-        "repository.provider_repository_id as providerRepositoryId",
-      ])
-      .where("job.id", "=", jobId)
-      .where("job.provider", "=", "gitlab")
-      .executeTakeFirst();
-    if (job === undefined) return;
-    const claims = await transaction
-      .selectFrom("source_control_issue_claims as claim")
-      .select([
-        "claim.username",
-        "claim.display_name as displayName",
-        "claim.claimed_at as claimedAt",
-      ])
-      .where("claim.issue_job_id", "=", jobId)
-      .orderBy("claim.claimed_at", "asc")
-      .execute();
-    const marker = `<!-- picloud-claims:${jobId} -->`;
-    const body = [
-      marker,
-      "### PiCloud 处理意向",
-      "",
-      ...(claims.length === 0
-        ? ["当前没有员工认领。"]
-        : claims.map(
-            (claim) =>
-              `- PiCloud \`${claim.username}\` · ${claim.displayName} · ${iso(claim.claimedAt)}`,
-          )),
-      "",
-      job.state === "awaiting_claim" ? "状态：等待开始" : `状态：${job.state}`,
-      `[在 PiCloud 中查看](${new URL("/?resource=source-control", this.#requireGitLab().publicOrigin).toString()})`,
-    ].join("\n");
-    const { client } = await this.#gitlabClientByInternalInstallation(
-      job.tenantId,
-      job.installationId,
-      transaction,
-    );
-    const existing = await client.findIssueNote({
-      projectId: job.providerRepositoryId,
-      issueNumber: job.issueNumber,
-      marker,
-    });
-    if (existing === undefined) {
-      await client.createIssueNote({
-        projectId: job.providerRepositoryId,
-        issueNumber: job.issueNumber,
-        body,
-      });
-    } else {
-      await client.updateIssueNote({
-        projectId: job.providerRepositoryId,
-        issueNumber: job.issueNumber,
-        noteId: existing.id,
-        body,
-      });
-    }
   }
 
   #requireGitHub(): GitHubAppRuntime {

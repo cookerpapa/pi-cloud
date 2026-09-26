@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(148);
+      expect(firstMigrationPass.rows).toHaveLength(149);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("148_retire_tool_operation_ledger");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("149_gitlab_issue_note_sync");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -81,9 +81,14 @@ describe("current PiCloud schema", () => {
         "agent_definitions",
         "agent_revisions",
         "source_control_issue_claims",
+        "gitlab_issue_note_sync",
       ]) {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }
+      const retiredIssueFlag = await sql`select 1 from information_schema.columns
+        where table_schema='public' and table_name='source_control_issue_jobs'
+          and column_name='claim_sync_pending'`.execute(database);
+      expect(retiredIssueFlag.rows).toHaveLength(0);
       for (const retired of [
         "pi_session_mutation_results",
         "workspace_sources",
@@ -180,7 +185,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("148_retire_tool_operation_ledger");
+      expect(applied.rows.at(-1)?.name).toBe("149_gitlab_issue_note_sync");
       const pendingControls = await sql<{ indexdef: string }>`select indexdef from pg_indexes
         where schemaname='public' and indexname='turn_control_requests_pending_run_idx'`.execute(
         database,

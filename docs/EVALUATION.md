@@ -30,6 +30,13 @@ as the general suite. The suite is deterministic fault injection, not a
 multi-node chaos claim. The latest current-topology run is recorded in the
 [fault evaluation report](reports/fault-eval-latest.md).
 
+Real PostgreSQL cases use two existing opt-in variables:
+`PI_CLOUD_POSTGRES_INTEGRATION_URL` and
+`PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL`. Set both to the disposable test
+PostgreSQL service when running the whole fault gate, as CI does. A skipped
+required test is a failed gate. The GitLab note cases use localhost HTTP fault
+injection and isolated databases; they do not post to an external GitLab server.
+
 The stream-independence and interrupted-prefix fault cases verify that a public
 stream outage cannot roll back a complete Pi message, while a visible failed
 prefix still survives Worker replacement.

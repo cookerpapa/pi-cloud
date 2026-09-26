@@ -2,7 +2,7 @@ import { createDatabase, runMigrations, type Database } from "@pi-cloud/database
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createHmac, generateKeyPairSync, randomUUID } from "node:crypto";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ToolBrokerClient } from "@pi-cloud/tool-broker/client";
@@ -10,6 +10,7 @@ import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { GitHubAppClient } from "../src/github-app-client.ts";
 import { SourceControlService, SourceControlServiceError } from "../src/source-control-service.ts";
 import { SourceControlIssueCoordinator } from "../src/source-control-issue-coordinator.ts";
+import { GitLabIssueNoteReconciler } from "../src/gitlab-issue-note-reconciler.ts";
 import type { TenantRequestIdentity } from "../src/tenant-identity.ts";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { SourceControlCredentialVault } from "../src/source-control-credential-vault.ts";
@@ -149,6 +150,11 @@ describe.sequential("source-control App boundary", () => {
       if (url.includes("/api/v4/projects/501/issues/12/notes") && rejectClaimNotes) {
         return new Response("{}", { status: 404 });
       }
+      if (url.endsWith("/api/v4/projects/501/issues/12/notes/701") && init?.method === undefined) {
+        return claimNotes[0]
+          ? new Response(JSON.stringify(claimNotes[0]))
+          : new Response("{}", { status: 404 });
+      }
       if (url.includes("/api/v4/projects/501/issues/12/notes") && init?.method === undefined) {
         return new Response(JSON.stringify(claimNotes), { status: 200 });
       }
@@ -182,6 +188,10 @@ describe.sequential("source-control App boundary", () => {
         internalBaseUrl: "https://gitlab.internal.example.com",
         fetch: fetchImplementation,
       },
+    });
+    const noteReconciler = new GitLabIssueNoteReconciler({
+      database,
+      access: (tenantId, installationId) => service.gitlabIssueNoteAccess(tenantId, installationId),
     });
     const configured = await service.connectGitLabProject(identity(tenant), {
       baseUrl: "https://gitlab.example.com",
@@ -442,55 +452,50 @@ describe.sequential("source-control App boundary", () => {
     await expect(service.unclaimIssueJob(claimant, pendingJob.jobId)).rejects.toMatchObject({
       code: "source_control_conflict",
     });
-    inspectPendingSync = async () => {
-      // Independent transaction visibility requires real PostgreSQL; PGlite's
-      // single backend serializes a second connection behind the held transaction.
-      if (!external) return;
-      const pending = await database
-        .selectFrom("source_control_issue_jobs")
-        .select("claim_sync_pending")
-        .where("id", "=", pendingJob.jobId)
+    const syncState = () =>
+      database
+        .selectFrom("gitlab_issue_note_sync")
+        .selectAll()
+        .where("issue_job_id", "=", pendingJob.jobId)
         .executeTakeFirstOrThrow();
-      expect
-        .soft(pending.claim_sync_pending, "Unfinished external effect must remain durably pending")
-        .toBe(true);
-      await expect(service.reconcileNextClaimSync()).resolves.toBe(false);
+    const due = (advance = false) =>
+      database
+        .updateTable("gitlab_issue_note_sync")
+        .set({
+          available_at: sql<Date>`clock_timestamp()`,
+          ...(advance ? { desired_version: sql<string>`desired_version + 1` } : {}),
+        })
+        .where("issue_job_id", "=", pendingJob.jobId)
+        .execute();
+    inspectPendingSync = async () => {
+      // Provider HTTP holds no transaction, including on PGlite's single backend.
+      const pending = await syncState();
+      expect(BigInt(pending.desired_version)).toBeGreaterThan(BigInt(pending.synced_version));
+      await expect(noteReconciler.reconcileOnce()).resolves.toBe(false);
     };
-    await expect(service.reconcileNextClaimSync()).resolves.toBe(true);
+    await expect(noteReconciler.reconcileOnce()).resolves.toBe(true);
     inspectPendingSync = undefined;
-    await database
-      .updateTable("source_control_issue_jobs")
-      .set({ claim_sync_pending: true })
-      .where("id", "=", pendingJob.jobId)
-      .execute();
+    await due(true);
     loseNoteAcknowledgement = true;
-    await expect(service.reconcileNextClaimSync()).rejects.toMatchObject({ retryable: true });
-    expect(
-      await database
-        .selectFrom("source_control_issue_jobs")
-        .select("claim_sync_pending")
-        .where("id", "=", pendingJob.jobId)
-        .executeTakeFirstOrThrow(),
-    ).toEqual({ claim_sync_pending: true });
-    await expect(service.reconcileNextClaimSync()).resolves.toBe(true);
+    await expect(noteReconciler.reconcileOnce()).rejects.toMatchObject({ retryable: true });
+    const uncertain = await syncState();
+    expect(BigInt(uncertain.desired_version)).toBeGreaterThan(BigInt(uncertain.synced_version));
+    await due();
+    await expect(noteReconciler.reconcileOnce()).resolves.toBe(true);
     expect(claimNotes).toHaveLength(1);
     rejectClaimNotes = true;
-    await database
-      .updateTable("source_control_issue_jobs")
-      .set({ claim_sync_pending: true, updated_at: new Date() })
-      .where("id", "=", pendingJob.jobId)
-      .executeTakeFirstOrThrow();
-    await expect(service.reconcileNextClaimSync()).rejects.toMatchObject({
+    await due(true);
+    await expect(noteReconciler.reconcileOnce()).rejects.toMatchObject({
       code: "gitlab_resource_not_found",
       retryable: false,
     });
-    await expect(
-      database
-        .selectFrom("source_control_issue_jobs")
-        .select("claim_sync_pending")
-        .where("id", "=", pendingJob.jobId)
-        .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ claim_sync_pending: false });
+    const failedSync = await syncState();
+    expect(failedSync).toMatchObject({
+      failure_code: "gitlab_resource_not_found",
+      claim_token: null,
+    });
+    expect(BigInt(failedSync.desired_version)).toBeGreaterThan(BigInt(failedSync.synced_version));
+    await noteReconciler.close();
     await database
       .updateTable("source_control_issue_jobs")
       .set({ state: "awaiting_claim" })

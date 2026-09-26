@@ -177,7 +177,6 @@ export interface SourceControlIssueJobTable {
   branch_name: string;
   owner_id: string | null;
   lease_expires_at: NullableTimestamp;
-  claim_sync_pending: GeneratedBoolean;
   started_by_user_id: GeneratedNullable<string>;
   execution_mode: GeneratedNullable<ExecutionMode>;
   sandbox_profile_key: GeneratedNullable<SandboxProfileKey>;
@@ -907,6 +906,20 @@ export interface SessionTerminalEventTable {
   persisted_at: GeneratedTimestamp;
 }
 
+export interface GitLabIssueNoteSyncTable {
+  issue_job_id: string;
+  tenant_id: string;
+  desired_version: GeneratedInt8;
+  synced_version: GeneratedInt8;
+  note_id: GeneratedNullable<string>;
+  claim_token: GeneratedNullable<string>;
+  lease_expires_at: NullableTimestamp;
+  available_at: GeneratedTimestamp;
+  checked_at: NullableTimestamp;
+  failure_count: GeneratedInteger;
+  failure_code: GeneratedNullable<string>;
+}
+
 export interface OutboxTable {
   id: string;
   tenant_id: string;
@@ -1040,6 +1053,7 @@ export interface Database {
   source_control_repositories: SourceControlRepositoryTable;
   source_control_webhook_deliveries: SourceControlWebhookDeliveryTable;
   source_control_issue_jobs: SourceControlIssueJobTable;
+  gitlab_issue_note_sync: GitLabIssueNoteSyncTable;
   source_control_issue_claims: SourceControlIssueClaimTable;
   source_control_credentials: SourceControlCredentialTable;
   sandbox_domains: SandboxDomainTable;
