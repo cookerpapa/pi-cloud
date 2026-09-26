@@ -119,10 +119,14 @@ function providerFixture() {
     type: "tool_sandbox.operation_result",
     activationId: request.activationId,
     operationId: request.operationId,
-    operation: "bash.exec",
-    exitCode: 0,
-    outputChunks: [{ seq: 1, stream: "stdout", data: Buffer.from("ok\n").toString("base64") }],
-    outputSha256: createHash("sha256").update("ok\n").digest("hex"),
+    operation: "tool.execute",
+    event: {
+      type: "tool_execution_end",
+      toolCallId: request.toolCallId,
+      toolName: request.toolName,
+      isError: false,
+      result: { content: [{ type: "text", text: "ok\n" }], details: undefined },
+    },
   }));
   const discoverHttpServices = vi.fn<NonNullable<SandboxProvider["discoverHttpServices"]>>(
     async () => ({ listeningPorts: [], httpServices: [] }),
@@ -210,10 +214,6 @@ function providerFixture() {
     },
     discoverHttpServices,
     exec,
-    async readFile() {
-      return Buffer.alloc(0);
-    },
-    async writeFile() {},
     async openTerminal() {
       return {
         pid: 77,
@@ -311,7 +311,7 @@ function providerFixture() {
 
 function operation(
   operationId: string,
-): Extract<ToolSandboxOperationRequest, { operation: "bash.exec" }> {
+): Extract<ToolSandboxOperationRequest, { operation: "tool.execute" }> {
   return {
     toolBrokerProtocolVersion: 1,
     type: "tool_sandbox.operation",
@@ -322,9 +322,10 @@ function operation(
     stepContextSequence: 1,
     stepContextSha256: STEP_CONTEXT_SHA256,
     toolName: "bash",
-    operation: "bash.exec",
-    command: "pwd",
-    cwd: "/workspace",
+    operation: "tool.execute",
+    toolCallId: "native-bash",
+    args: { command: "pwd" },
+    maximumOutputBytes: 65_536,
     timeoutMs: 1_000,
   };
 }
@@ -640,7 +641,7 @@ describe("provider-backed Tool Tool Broker", () => {
         assignment.executionReference,
         operation("21111111-1111-4111-8111-111111111111"),
       ),
-    ).resolves.toMatchObject({ exitCode: 0 });
+    ).resolves.toMatchObject({ event: { isError: false } });
     await expect(
       manager.release({
         toolBrokerProtocolVersion: 1,
@@ -1351,7 +1352,7 @@ describe("provider-backed Tool Tool Broker", () => {
     ).rejects.toMatchObject({ code: "stale_session_lease" });
     const request = operation("10000000-0000-4000-8000-000000000013");
     await expect(manager.execute(assignment.executionReference, request)).resolves.toMatchObject({
-      exitCode: 0,
+      event: { isError: false },
     });
     expect(fixture.createSpec).toMatchObject({
       activationId: ACTIVATION_ID,
@@ -1375,7 +1376,7 @@ describe("provider-backed Tool Tool Broker", () => {
     };
     await expect(manager.execute(assignment.executionReference, secondStep)).resolves.toMatchObject(
       {
-        exitCode: 0,
+        event: { isError: false },
       },
     );
     await expect(manager.execute(assignment.executionReference, request)).rejects.toMatchObject({
@@ -1464,10 +1465,18 @@ describe("provider-backed Tool Tool Broker", () => {
         operation("10000000-0000-4000-8000-000000000041"),
       ),
     ).rejects.toMatchObject({ code: "tool_not_granted" });
+    const {
+      args: _args,
+      maximumOutputBytes: _maximumOutputBytes,
+      ...envelope
+    } = operation("10000000-0000-4000-8000-000000000042");
     await expect(
       manager.execute(assignment.executionReference, {
-        ...operation("10000000-0000-4000-8000-000000000042"),
+        ...envelope,
+        operation: "workflow.exec",
         toolName: "read",
+        script: "return null",
+        cwd: "/workspace",
       }),
     ).rejects.toMatchObject({ code: "tool_operation_not_granted" });
     expect(fixture.createCount).toBe(0);
@@ -1513,7 +1522,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.createCount).toBe(1);
 
     await manager.stop(first.activationId, assignment);
-    await expect(waiting).resolves.toMatchObject({ exitCode: 0 });
+    await expect(waiting).resolves.toMatchObject({ event: { isError: false } });
     expect(manager.admissionWaitingCount).toBe(0);
     expect(manager.admittedCount).toBe(1);
     expect(fixture.createCount).toBe(2);
@@ -1757,7 +1766,7 @@ describe("provider-backed Tool Tool Broker", () => {
         assignment.executionReference,
         operation("73300000-0000-4000-8000-000000000007"),
       ),
-    ).resolves.toMatchObject({ operation: "bash.exec" });
+    ).resolves.toMatchObject({ operation: "tool.execute" });
     expect(fixture.createCount).toBe(1);
     await manager.stop(parent.activationId, assignment);
   });
@@ -2242,7 +2251,7 @@ describe("provider-backed Tool Tool Broker", () => {
         ...operation("50000000-0000-4000-8000-000000000016"),
         activationId: second.activationId,
       }),
-    ).resolves.toMatchObject({ exitCode: 0 });
+    ).resolves.toMatchObject({ event: { isError: false } });
 
     expect(fixture.stopped).toBe(true);
     expect(fixture.createCount).toBe(2);

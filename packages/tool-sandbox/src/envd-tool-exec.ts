@@ -12,7 +12,6 @@ import { open } from "node:fs/promises";
 import {
   initializeToolExecution,
   attachToolExecution,
-  executeToolOperation,
   toolOperationFailure,
   ToolWorkerError,
 } from "./tool-worker.ts";
@@ -95,6 +94,11 @@ async function main(): Promise<ToolWorkerOutput> {
   }
   const toolRoot = await attachToolExecution(input.initialization);
   const request = input.operation.request;
+  if (request.operation !== "tool.execute")
+    throw new ToolWorkerError(
+      "workflow_transport_required",
+      "Workflow execution requires the scoped duplex process transport",
+    );
   let sequence = 0;
   let draining: Promise<unknown> | undefined;
   let latest: NativeToolUpdate | undefined;
@@ -118,24 +122,21 @@ async function main(): Promise<ToolWorkerOutput> {
       });
     }
   };
-  const signal = AbortSignal.timeout(
-    request.operation === "bash.exec" || request.operation === "tool.execute"
-      ? request.timeoutMs
-      : 60_000,
-  );
-  const execution: Promise<ToolSandboxOperationResponse> =
-    request.operation === "tool.execute"
-      ? executeNativeTool(request, toolRoot, signal, progress, input.initialization.webProxy).then(
-          (event) => ({
-            toolBrokerProtocolVersion: 1,
-            type: "tool_sandbox.operation_result",
-            activationId: request.activationId,
-            operationId: request.operationId,
-            operation: "tool.execute",
-            event,
-          }),
-        )
-      : executeToolOperation(request, signal, input.initialization.webProxy);
+  const signal = AbortSignal.timeout(request.timeoutMs);
+  const execution: Promise<ToolSandboxOperationResponse> = executeNativeTool(
+    request,
+    toolRoot,
+    signal,
+    progress,
+    input.initialization.webProxy,
+  ).then((event) => ({
+    toolBrokerProtocolVersion: 1,
+    type: "tool_sandbox.operation_result",
+    activationId: request.activationId,
+    operationId: request.operationId,
+    operation: "tool.execute",
+    event,
+  }));
   const response = await execution.catch((error: unknown) => toolOperationFailure(request, error));
   while (draining) await draining;
   return {

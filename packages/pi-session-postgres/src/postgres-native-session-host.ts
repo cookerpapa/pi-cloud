@@ -7,12 +7,13 @@ import {
   type OperationStartedRecord,
 } from "@earendil-works/pi-agent-core";
 import { sql, type Kysely } from "kysely";
+import { jsonArrayFrom } from "kysely/helpers/postgres";
 import {
   NativeSessionWriter,
   type NativeLaneSessionStorage,
   type NativeViewRead,
 } from "./native-session-writer.ts";
-import { PostgresPiSessionStorage } from "./postgres-session-storage.ts";
+import { PostgresPiSessionStorage, sessionMetadataFromRow } from "./postgres-session-storage.ts";
 import { PostgresSessionExecutionAuthority } from "./postgres-execution-authority.ts";
 import type { PiSessionAppendPublisher } from "./session-mutation.ts";
 import type { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
@@ -103,7 +104,6 @@ export class PostgresNativeSessionHost {
   }
 
   async #loadWriter({ scope, writerId }: NativeSessionOpen) {
-    const reader = this.#reader(scope);
     const session = await this.#database
       .selectFrom("pi_sessions as p")
       .innerJoin("session_leases as l", (join) =>
@@ -112,7 +112,21 @@ export class PostgresNativeSessionHost {
           .onRef("l.pi_session_id", "=", "p.id")
           .on("l.lease_id", "=", writerId),
       )
-      .select("p.next_seq")
+      .select((eb) => [
+        "p.next_seq",
+        "p.id",
+        "p.tenant_id",
+        "p.created_at_ms",
+        "p.parent_session_id",
+        jsonArrayFrom(
+          eb
+            .selectFrom("pi_session_lanes")
+            .select(["lane", "leaf_id as leafId"])
+            .whereRef("tenant_id", "=", "p.tenant_id")
+            .whereRef("session_id", "=", "p.id")
+            .orderBy("lane", "asc"),
+        ).as("lanes"),
+      ])
       .where("p.tenant_id", "=", scope.tenantId)
       .where("p.id", "=", scope.piSessionId)
       .where("l.released_at", "is", null)
@@ -121,9 +135,9 @@ export class PostgresNativeSessionHost {
     return new NativeSessionWriter({
       id: writerId,
       ...(this.#onViewRead ? { onViewRead: this.#onViewRead } : {}),
-      metadata: await reader.getMetadata(),
+      metadata: sessionMetadataFromRow(session),
       nextSequence: Number(session.next_seq),
-      lanes: await reader.getLanes(),
+      lanes: session.lanes,
       hasId: async (id) => {
         const result = await sql<{ found: boolean }>`select exists(
           select 1 from pi_session_visible_entries where tenant_id=${scope.tenantId}::uuid and session_id=${scope.piSessionId} and id=${id}
@@ -176,7 +190,6 @@ export class PostgresNativeSessionHost {
         references: 0,
         authority: new PostgresSessionExecutionAuthority({
           database: this.#database,
-          ...(this.#images ? { images: this.#images } : {}),
           tenantId: scope.tenantId,
           piSessionId: scope.piSessionId,
           leaseId: ref.leaseId,

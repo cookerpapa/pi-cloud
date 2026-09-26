@@ -899,20 +899,20 @@ try {
     "/workspace",
     {
       provider: "deepseek",
-      modelId: "deepseek-v4-pro",
+      modelId: "deepseek-v4-flash",
       thinkingLevel: "off",
       fastMode: false,
     },
   );
   const model = await api.getSessionModel(session.sessionId);
   assert.equal(model.provider, "deepseek");
-  assert.equal(model.modelId, "deepseek-v4-pro");
+  assert.equal(model.modelId, "deepseek-v4-flash");
   progress(
     `starting ${model.provider}/${model.modelId} Session ${session.sessionId} on ${initialWorkers.length} Workers`,
   );
   await api.updateSessionModel(session.sessionId, {
     provider: "deepseek",
-    modelId: "deepseek-v4-pro",
+    modelId: "deepseek-v4-flash",
     thinkingLevel: "low",
     fastMode: false,
   });
@@ -930,7 +930,7 @@ try {
   progress(`pre-compaction Pro research: hosted-search=${searchBeforeCompaction.hostedSearches}`);
   await api.updateSessionModel(session.sessionId, {
     provider: "deepseek",
-    modelId: "deepseek-v4-pro",
+    modelId: "deepseek-v4-flash",
     thinkingLevel: "off",
     fastMode: false,
   });
@@ -1115,7 +1115,7 @@ try {
   await waitForWorkers(1);
   await api.updateSessionModel(session.sessionId, {
     provider: "deepseek",
-    modelId: "deepseek-v4-pro",
+    modelId: "deepseek-v4-flash",
     thinkingLevel: "high",
     fastMode: false,
   });
@@ -1132,7 +1132,7 @@ try {
   assert.match(switchBack.text, /SWITCH-BACK-SEARCH-OK/);
   assert.deepEqual(switchBackModel, {
     provider: "deepseek",
-    modelId: "deepseek-v4-pro",
+    modelId: "deepseek-v4-flash",
     thinkingLevel: "high",
     serviceTier: null,
   });
@@ -1183,7 +1183,7 @@ try {
     }
     assert.deepEqual(await turnModelSnapshot(child.turnId), {
       provider: "deepseek",
-      modelId: "deepseek-v4-pro",
+      modelId: "deepseek-v4-flash",
       thinkingLevel: "high",
       serviceTier: null,
     });

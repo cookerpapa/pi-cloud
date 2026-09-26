@@ -231,8 +231,8 @@ async function registerTenant(index, suffix) {
         "starter",
         "/workspace",
         {
-          provider: "deepseek",
-          modelId: "deepseek-v4-pro",
+          provider: "openai-codex",
+          modelId: "gpt-6-luna",
           thinkingLevel: "off",
           fastMode: false,
         },
@@ -255,7 +255,7 @@ async function registerTenant(index, suffix) {
     tenantId: body.tenantId,
     token: body.apiToken,
     api,
-    model: { ...model, provider: "deepseek", modelId: "deepseek-v4-pro" },
+    model: { ...model, provider: "openai-codex", modelId: "gpt-6-luna" },
     session,
     marker: `TENANT-${index + 1}-SESSION-${sessionIndex + 1}-${suffix.toUpperCase()}`,
   }));

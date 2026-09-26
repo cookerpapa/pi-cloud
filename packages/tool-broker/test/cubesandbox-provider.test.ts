@@ -321,8 +321,8 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
         });
       }
       const operation = request.operation as ToolSandboxOperationRequest;
-      if (operation.operation !== "bash.exec") throw new Error("unexpected operation");
-      return this.#result({
+      if (operation.operation !== "tool.execute") throw new Error("unexpected operation");
+      const result = this.#result({
         toolWorkerProtocolVersion: 1,
         type: "worker.operation_result",
         response: {
@@ -330,14 +330,18 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
           type: "tool_sandbox.operation_result",
           activationId: operation.activationId,
           operationId: operation.operationId,
-          operation: "bash.exec",
-          exitCode: 0,
-          outputChunks: [
-            { seq: 1, stream: "stdout", data: Buffer.from("inside cube\n").toString("base64") },
-          ],
-          outputSha256: createHash("sha256").update("inside cube\n").digest("hex"),
+          operation: "tool.execute",
+          event: {
+            type: "tool_execution_end",
+            toolCallId: operation.toolCallId,
+            toolName: operation.toolName,
+            isError: false,
+            result: { content: [{ type: "text", text: "inside cube\n" }], details: undefined },
+          },
         },
       });
+      await input.onStdout?.(Buffer.from(result.stdout));
+      return input.onStdout ? { ...result, stdout: "" } : result;
     }
     throw new Error("unexpected guest command");
   }
@@ -390,7 +394,9 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   }
 }
 
-function operation(activationId: string): ToolSandboxOperationRequest {
+function operation(
+  activationId: string,
+): Extract<ToolSandboxOperationRequest, { operation: "tool.execute" }> {
   return {
     toolBrokerProtocolVersion: 1,
     type: "tool_sandbox.operation",
@@ -401,9 +407,10 @@ function operation(activationId: string): ToolSandboxOperationRequest {
     stepContextSequence: 1,
     stepContextSha256: STEP_CONTEXT_SHA256,
     toolName: "bash",
-    operation: "bash.exec",
-    command: "printf 'inside cube\\n'",
-    cwd: "/workspace",
+    operation: "tool.execute",
+    toolCallId: "native-bash",
+    args: { command: "printf 'inside cube\\n'" },
+    maximumOutputBytes: 65_536,
     timeoutMs: 1_000,
   };
 }
@@ -654,8 +661,8 @@ describe("CubeSandbox Provider contract", () => {
       .spyOn(runtime, "read")
       .mockRejectedValue(new Error("control plane unavailable"));
     await expect(provider.exec(handle, operation(handle.activationId))).resolves.toMatchObject({
-      operation: "bash.exec",
-      exitCode: 0,
+      operation: "tool.execute",
+      event: { isError: false },
     });
     expect(inspect).not.toHaveBeenCalled();
     // Lifecycle identity validation remains authoritative when explicitly inspecting.
@@ -876,7 +883,7 @@ describe("CubeSandbox Provider contract", () => {
       assignment.executionReference,
       operation(reserved.activationId),
     );
-    expect(response).toMatchObject({ operation: "bash.exec", exitCode: 0 });
+    expect(response).toMatchObject({ operation: "tool.execute", event: { isError: false } });
     expect(runtime.creates[0]?.timeoutSeconds).toBe(-1);
     expect(runtime.creates).toHaveLength(1);
     expect(runtime.creates[0]?.metadata).not.toHaveProperty("host-mount");
@@ -1151,7 +1158,7 @@ describe("CubeSandbox Provider contract", () => {
       provider.exec(parent, { ...operation(ACTIVATION_ID), activationId: childBindingId }),
     ).resolves.toMatchObject({
       type: "tool_sandbox.operation_result",
-      exitCode: 0,
+      event: { isError: false },
     });
     await expect(provider.inspect(parent)).resolves.toMatchObject({ state: "running" });
     expect(runtime.creates).toHaveLength(1);
@@ -1384,7 +1391,7 @@ describe("CubeSandbox Provider contract", () => {
     await provider.close();
   });
 
-  it.each(["file.read", "bash.exec", "cancelled_mutation"] as const)(
+  it.each(["read", "bash", "cancelled_mutation"] as const)(
     "preserves a persistent VM after disconnected %s and keeps its recovery capsule",
     async (kind) => {
       const runtime = new FakeCubeRuntimeClient();
@@ -1416,17 +1423,15 @@ describe("CubeSandbox Provider contract", () => {
         return original(instance, input);
       };
       const request: ToolSandboxOperationRequest =
-        kind === "file.read"
+        kind === "read"
           ? {
               ...operation(ACTIVATION_ID),
-              operation: "file.read",
               toolName: "read",
-              path: "/home/user/package.json",
+              args: { path: "/home/user/package.json" },
             }
           : operation(ACTIVATION_ID);
       await expect(provider.exec(handle, request, abort.signal)).rejects.toMatchObject({
-        code:
-          kind === "file.read" ? "cubesandbox_tool_unavailable" : "cubesandbox_tool_result_unknown",
+        code: kind === "read" ? "cubesandbox_tool_unavailable" : "cubesandbox_tool_result_unknown",
         cause,
       });
       expect(runtime.destroyed).toEqual([]);
@@ -1484,7 +1489,7 @@ describe("CubeSandbox Provider contract", () => {
     const originalRunCommand = runtime.runCommand.bind(runtime);
     runtime.runCommand = async (instance, input) => {
       if (runtime.requestForCommand(input).mode === "operation") {
-        return {
+        const result = {
           stdout: `${JSON.stringify({
             toolWorkerProtocolVersion: 1,
             type: "worker.failed",
@@ -1495,6 +1500,8 @@ describe("CubeSandbox Provider contract", () => {
           stderr: "",
           exitCode: 0,
         };
+        await input.onStdout?.(Buffer.from(result.stdout));
+        return input.onStdout ? { ...result, stdout: "" } : result;
       }
       return originalRunCommand(instance, input);
     };

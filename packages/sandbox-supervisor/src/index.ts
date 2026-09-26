@@ -1,7 +1,6 @@
 export { PiAgentEventAdapter, type PiAgentEventAdapterOutcome } from "./pi-agent-event-adapter.ts";
 
 export {
-  PINNED_PI_CODING_AGENT_VERSION,
   PiTurnCancelledError,
   PiTurnError,
   resolveCompactionReserveTokens,
@@ -87,14 +86,6 @@ export {
   type SupervisorTurnCancellationResult,
   type SupervisorTurnRunner,
 } from "./agent-run-supervisor.ts";
-
-export {
-  SandboxAssignmentInventoryError,
-  validateSandboxRuntimeIdentity,
-  type SandboxAssignmentInventory,
-  type SandboxRuntimeAssignment,
-  type SandboxRuntimeIdentity,
-} from "./sandbox-assignment-inventory.ts";
 
 export {
   type AgentWorkspaceSeedResolver,

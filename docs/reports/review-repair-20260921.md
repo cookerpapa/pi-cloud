@@ -2,7 +2,8 @@
 
 Implementation/deployed application revision `2c3a4457`, migration 147; Pi 0.84.1,
 Kafka v10 and production Cube template `f9ebe6af` unchanged. This implements the
-approved local repairs from the [Claude-followup review](../../claude-analysis/architecture-review.md),
+approved local repairs from the Claude-followup review (archived in Git at
+`9a3b60f4:claude-analysis/architecture-review.md`, describing baseline `5d1e8bf5`),
 not another architecture migration or a claim of line-by-line whole-repository review.
 
 ## What changed

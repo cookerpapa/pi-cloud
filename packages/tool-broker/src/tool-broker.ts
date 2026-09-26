@@ -189,10 +189,10 @@ function operationFailureCode(error: unknown): string {
 }
 
 const TOOL_OPERATIONS: Readonly<Record<CloudToolName, ReadonlySet<string>>> = {
-  read: new Set(["tool.execute", "file.read", "file.read_range", "file.access"]),
-  write: new Set(["tool.execute", "file.write", "file.mkdir"]),
-  edit: new Set(["tool.execute", "file.read", "file.write", "file.access"]),
-  bash: new Set(["tool.execute", "bash.exec", "workflow.exec"]),
+  read: new Set(["tool.execute"]),
+  write: new Set(["tool.execute"]),
+  edit: new Set(["tool.execute"]),
+  bash: new Set(["tool.execute", "workflow.exec"]),
 };
 
 function sameEnvironment(

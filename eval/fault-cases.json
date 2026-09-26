@@ -290,6 +290,34 @@
       "invariant": "Completing guest work after closure cannot publish a usable native Tool result."
     },
     {
+      "id": "image-cleanup-composite-identity",
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/storage.postgres.test.ts",
+      "test": "reaps only claimed tenant/object pairs when tenants share an object ID",
+      "invariant": "Image cleanup mutates only the tenant/object identities it locked, preserving another tenant's unexpired object."
+    },
+    {
+      "id": "tool-reply-publication-failure",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "test": "retires the image-adapter reply wait after publication fails without an unhandled rejection",
+      "invariant": "Failed publication retires the pending image-adapter callback without crashing unrelated Worker families."
+    },
+    {
+      "id": "tool-reply-before-publication-ack",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "test": "observes early reply failure while publication is pending and never republishes the Tool",
+      "invariant": "Early reply rejection stays observed until command publication settles and never triggers an effect replay."
+    },
+    {
+      "id": "tool-reply-progress-rejected",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/tool-replies.test.ts",
+      "test": "rejects progress on the final-only Kafka reply transport",
+      "invariant": "Observation-only progress cannot enter the final-result Kafka transport."
+    },
+    {
       "id": "tool-reply-worker-loss",
       "workspace": "@pi-cloud/event-log",
       "file": "test/tool-replies.test.ts",

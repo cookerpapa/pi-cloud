@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { operationalLog } from "@pi-cloud/observability";
 import { sql, type Kysely, type Transaction } from "kysely";
+import { jsonArrayFrom } from "kysely/helpers/postgres";
 import type { Database } from "@pi-cloud/database";
 import { advanceLaneReadiness } from "@pi-cloud/runtime-core/run-readiness";
 import {
@@ -97,57 +98,58 @@ export class QueuedInputService {
   }
 
   async list(tenantId: string, sessionId: string): Promise<InputQueueResource> {
-    return this.#database
-      .transaction()
-      .setIsolationLevel("repeatable read")
-      .execute(async (tx) => {
-        const session = await tx
-          .selectFrom("sessions")
-          .select(["id", "row_version", "session_kind", "archived_at"])
-          .where("tenant_id", "=", tenantId)
-          .where("id", "=", sessionId)
-          .executeTakeFirst();
-        if (!session || session.archived_at !== null)
-          throw new ControlPlaneStoreError("not_found", "Session was not found");
-        const items = await tx
-          .selectFrom("runs as r")
-          .innerJoin("turns as t", "t.id", "r.turn_id")
-          .select([
-            "r.id",
-            "r.turn_id",
-            "r.mailbox_position",
-            "r.created_at",
-            "r.queued_steer_id",
-            "t.input_text",
-          ])
-          .where("r.tenant_id", "=", tenantId)
-          .where("r.session_id", "=", sessionId)
-          .where(sql<boolean>`r.state='queued'`)
-          .where("r.lease_id", "is", null)
-          .where("t.state", "=", "queued")
-          .orderBy("r.mailbox_position", "asc")
-          .execute();
-        const active = await tx
+    // One statement supplies one MVCC snapshot without a polling transaction
+    // or separate Session / pending / active reads.
+    const session = await this.#database
+      .selectFrom("sessions as s")
+      .select((eb) => [
+        "s.row_version",
+        eb
           .selectFrom("runs")
           .select("turn_id")
-          .where("tenant_id", "=", tenantId)
-          .where("session_id", "=", sessionId)
+          .whereRef("tenant_id", "=", "s.tenant_id")
+          .whereRef("session_id", "=", "s.id")
           .where("state", "=", "running")
-          .executeTakeFirst();
-        return parseInputQueueResource({
-          sessionId,
-          revision: number(session.row_version),
-          activeTurnId: active?.turn_id ?? null,
-          items: items.map((item) => ({
-            turnId: item.turn_id,
-            runId: item.id,
-            text: item.input_text,
-            mailboxPosition: number(item.mailbox_position),
-            acceptedAt: new Date(item.created_at).toISOString(),
-            status: item.queued_steer_id === null ? "queued" : "steering",
-          })),
-        });
-      });
+          .limit(1)
+          .as("activeTurnId"),
+        jsonArrayFrom(
+          eb
+            .selectFrom("runs as r")
+            .innerJoin("turns as t", "t.id", "r.turn_id")
+            .select([
+              "r.id",
+              "r.turn_id",
+              "r.mailbox_position",
+              "r.created_at",
+              "r.queued_steer_id",
+              "t.input_text",
+            ])
+            .whereRef("r.tenant_id", "=", "s.tenant_id")
+            .whereRef("r.session_id", "=", "s.id")
+            .where(sql<boolean>`r.state='queued'`)
+            .where("r.lease_id", "is", null)
+            .where("t.state", "=", "queued")
+            .orderBy("r.mailbox_position", "asc"),
+        ).as("items"),
+      ])
+      .where("s.tenant_id", "=", tenantId)
+      .where("s.id", "=", sessionId)
+      .where("s.archived_at", "is", null)
+      .executeTakeFirst();
+    if (!session) throw new ControlPlaneStoreError("not_found", "Session was not found");
+    return parseInputQueueResource({
+      sessionId,
+      revision: number(session.row_version),
+      activeTurnId: session.activeTurnId ?? null,
+      items: session.items.map((item) => ({
+        turnId: item.turn_id,
+        runId: item.id,
+        text: item.input_text,
+        mailboxPosition: number(item.mailbox_position),
+        acceptedAt: new Date(item.created_at).toISOString(),
+        status: item.queued_steer_id === null ? "queued" : "steering",
+      })),
+    });
   }
 
   async #lockSession(tx: Transaction<Database>, tenantId: string, sessionId: string) {

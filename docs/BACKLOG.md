@@ -12,6 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Discuss the remaining [repository-review architecture choices](reports/repository-review-20260927.md):
+      non-image result budgets, possible Tool intent/command batching, shared Worker
+      lease observation and tighter package/build boundaries. Do not change these
+      authorities or protocols merely to remove a round trip.
+
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
       text block; that interval must not be labelled entirely as internal relay time.

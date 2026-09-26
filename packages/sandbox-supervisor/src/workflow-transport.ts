@@ -1,5 +1,4 @@
 import { WebSocket } from "ws";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import {
   TOOL_WORKFLOW_PATH,
   type NativeToolEnd,
@@ -16,7 +15,6 @@ export type WorkflowExecutor = (
   script: string,
   call: WorkflowHostCall,
   signal?: AbortSignal,
-  onUpdate?: (result: AgentToolResult<unknown>) => void,
 ) => Promise<unknown>;
 
 /** Duplex guest host calls; completion arrives on Kafka, observations bypass Worker. */

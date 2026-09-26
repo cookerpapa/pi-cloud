@@ -1,0 +1,136 @@
+{
+  "baseline": "9a3b60f424661800ef5c84bf56f88bb025453158",
+  "trackedFiles": 1105,
+  "packages": 21,
+  "sourceFiles": 452,
+  "migrationFiles": 153,
+  "coverage": [
+    {
+      "package": "control-plane",
+      "files": 107,
+      "sourceFiles": 55,
+      "testFiles": 48
+    },
+    {
+      "package": "cube-api-authorizer",
+      "files": 9,
+      "sourceFiles": 4,
+      "testFiles": 2
+    },
+    {
+      "package": "cube-egress-gateway",
+      "files": 10,
+      "sourceFiles": 5,
+      "testFiles": 2
+    },
+    {
+      "package": "database",
+      "files": 175,
+      "sourceFiles": 161,
+      "testFiles": 11
+    },
+    {
+      "package": "domain",
+      "files": 8,
+      "sourceFiles": 4,
+      "testFiles": 2
+    },
+    {
+      "package": "event-log",
+      "files": 8,
+      "sourceFiles": 4,
+      "testFiles": 2
+    },
+    {
+      "package": "fake-model-server",
+      "files": 8,
+      "sourceFiles": 3,
+      "testFiles": 2
+    },
+    {
+      "package": "observability",
+      "files": 11,
+      "sourceFiles": 7,
+      "testFiles": 2
+    },
+    {
+      "package": "pi-session-postgres",
+      "files": 21,
+      "sourceFiles": 12,
+      "testFiles": 7
+    },
+    {
+      "package": "protocol",
+      "files": 47,
+      "sourceFiles": 30,
+      "testFiles": 15
+    },
+    {
+      "package": "provider-egress-relay",
+      "files": 8,
+      "sourceFiles": 4,
+      "testFiles": 1
+    },
+    {
+      "package": "runtime-core",
+      "files": 48,
+      "sourceFiles": 32,
+      "testFiles": 13
+    },
+    {
+      "package": "sandbox-supervisor",
+      "files": 63,
+      "sourceFiles": 26,
+      "testFiles": 35
+    },
+    {
+      "package": "session-attachments",
+      "files": 11,
+      "sourceFiles": 6,
+      "testFiles": 3
+    },
+    {
+      "package": "ssh-gateway",
+      "files": 10,
+      "sourceFiles": 5,
+      "testFiles": 2
+    },
+    {
+      "package": "supervisor-host",
+      "files": 37,
+      "sourceFiles": 16,
+      "testFiles": 18
+    },
+    {
+      "package": "tool-broker",
+      "files": 56,
+      "sourceFiles": 29,
+      "testFiles": 24
+    },
+    {
+      "package": "tool-sandbox",
+      "files": 12,
+      "sourceFiles": 7,
+      "testFiles": 3
+    },
+    {
+      "package": "trusted-tool-runtime",
+      "files": 12,
+      "sourceFiles": 6,
+      "testFiles": 3
+    },
+    {
+      "package": "web-ui",
+      "files": 59,
+      "sourceFiles": 33,
+      "testFiles": 19
+    },
+    {
+      "package": "workspace-runtime",
+      "files": 6,
+      "sourceFiles": 3,
+      "testFiles": 1
+    }
+  ],
+  "method": "tracked-file inventory and import/export scan for every package; public Pi contracts and production critical-path review, plus full test/config verification; not a third-party dependency line-by-line audit"
+}

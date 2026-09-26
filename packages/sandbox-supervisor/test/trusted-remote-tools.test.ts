@@ -10,7 +10,6 @@ import {
   createExecutionReference,
   type CandidateToolCommand,
   type NativeToolEnd,
-  type NativeToolUpdate,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
@@ -76,17 +75,9 @@ function createStepCapture() {
 }
 
 function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration> = {}) {
-  let pending:
-    { resolve(value: NativeToolEnd): void; update?: (value: NativeToolUpdate) => void } | undefined;
+  let pending: { resolve(value: NativeToolEnd): void } | undefined;
   const publishToolCommand = vi.fn(async (command: CandidateToolCommand) => {
     expect(pending).toBeDefined(); // register BEFORE publication: even an immediate reply must not be lost
-    pending!.update?.({
-      type: "tool_execution_update",
-      toolCallId: (command.request as { toolCallId: string }).toolCallId,
-      toolName: command.request.toolName,
-      args: {},
-      partialResult: { content: [{ type: "text", text: "working" }], details: undefined },
-    });
     pending!.resolve({
       type: "tool_execution_end",
       toolCallId: (command.request as { toolCallId: string }).toolCallId,
@@ -98,9 +89,9 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
   });
   const value: TrustedRemoteToolsRuntimeConfiguration = {
     publishToolCommand,
-    waitForToolReply: (_request, signal, update) =>
+    waitForToolReply: (_request, signal) =>
       new Promise((resolve, reject) => {
-        pending = { resolve, ...(update ? { update } : {}) };
+        pending = { resolve };
         signal.addEventListener("abort", () => reject(signal.reason), { once: true });
       }),
     workflowUrl: "http://127.0.0.1:4999/v1/tool-operations",
@@ -119,6 +110,53 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
 }
 
 describe("whole-tool Worker adapter", () => {
+  it("retires the image-adapter reply wait after publication fails without an unhandled rejection", async () => {
+    let replySignal: AbortSignal | undefined;
+    const { value } = configuration({
+      publishToolCommand: async () => {
+        throw new Error("publication failed");
+      },
+      // Production wraps the mailbox in an async attachment decoder, so the
+      // mailbox's own rejection observer cannot handle this outer Promise.
+      waitForToolReply: async (_request, signal) => {
+        replySignal = signal;
+        return await new Promise<NativeToolEnd>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+    });
+    const runtime = createTrustedRemoteAgentTools(value);
+    await runtime.transformContext([]);
+    await expect(
+      runtime.tools.find((t) => t.name === "read")!.execute("failed", { path: "a" }),
+    ).rejects.toThrow("publication failed");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(replySignal?.aborted).toBe(true);
+  });
+
+  it("observes early reply failure while publication is pending and never republishes the Tool", async () => {
+    const publish = Promise.withResolvers<{ operationId: string; accepted: true }>();
+    const started = Promise.withResolvers<void>();
+    const reply = Promise.withResolvers<NativeToolEnd>();
+    const publishToolCommand = vi.fn(async () => {
+      started.resolve();
+      return publish.promise;
+    });
+    const { value } = configuration({
+      publishToolCommand,
+      waitForToolReply: async () => reply.promise,
+    });
+    const runtime = createTrustedRemoteAgentTools(value);
+    await runtime.transformContext([]);
+    const pending = runtime.tools.find((t) => t.name === "read")!.execute("early", { path: "a" });
+    await started.promise;
+    reply.reject(new Error("reply worker stopped"));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    publish.resolve({ operationId: "probe", accepted: true });
+    await expect(pending).rejects.toThrow("tool_operation_outcome_unknown");
+    expect(publishToolCommand).toHaveBeenCalledOnce();
+  });
+
   it.each([false, true])(
     "makes image capability explicit before returning native content (supported=%s)",
     async (supported) => {
@@ -145,7 +183,7 @@ describe("whole-tool Worker adapter", () => {
       else await expect(result).rejects.toThrow("does not support image input");
     },
   );
-  it("lets Pi own native update/end events and after-Tool hooks, without adding progress to model context", async () => {
+  it("lets Pi own final Tool events and after-Tool hooks, without adding progress to model context", async () => {
     const { value } = configuration();
     const runtime = createTrustedRemoteAgentTools(value);
     const events: AgentEvent[] = [];
@@ -198,7 +236,7 @@ describe("whole-tool Worker adapter", () => {
     await agent.prompt("exercise the remote tool");
     expect(
       events.filter((event) => event.type.startsWith("tool_execution_")).map((event) => event.type),
-    ).toEqual(["tool_execution_start", "tool_execution_update", "tool_execution_end"]);
+    ).toEqual(["tool_execution_start", "tool_execution_end"]);
     const result = agent.state.messages.find((message) => message.role === "toolResult");
     expect(result).toMatchObject({
       role: "toolResult",
@@ -207,7 +245,7 @@ describe("whole-tool Worker adapter", () => {
     expect(JSON.stringify(result)).not.toContain("working");
   });
   it.each(["read", "write", "edit", "bash"])(
-    "publishes one %s command and forwards native updates/result without local execution",
+    "publishes one %s command and returns only the final result without local execution",
     async (name) => {
       const { value, publishToolCommand } = configuration();
       const runtime = createTrustedRemoteAgentTools(value);
@@ -226,10 +264,7 @@ describe("whole-tool Worker adapter", () => {
         content: [{ type: "text", text: "complete" }],
         details: { source: "guest" },
       });
-      expect(update).toHaveBeenCalledWith({
-        content: [{ type: "text", text: "working" }],
-        details: undefined,
-      });
+      expect(update).not.toHaveBeenCalled();
       expect(publishToolCommand).toHaveBeenCalledTimes(1);
       expect(publishToolCommand.mock.calls[0]![0]).toMatchObject({
         toolCallId: "invocation-native-call",

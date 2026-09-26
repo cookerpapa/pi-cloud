@@ -1,5 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import type { SandboxAssignmentInventory } from "@pi-cloud/sandbox-supervisor/sandbox-assignment-inventory";
+import type { SandboxAssignmentInventory } from "@pi-cloud/protocol";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import type { Kysely } from "kysely";
 

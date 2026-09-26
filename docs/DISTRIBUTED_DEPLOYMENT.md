@@ -75,7 +75,9 @@ labels and installs/upgrades the release.
 Secret keys follow the rendered mounts: database URLs, API/bootstrap credentials,
 Cube/Tool credentials, metrics tokens, SSH host key when enabled, and optional
 source-control credentials. Worker credentials may use a separate named Secret.
-No S3 or Temporal credential is required. External egress CIDRs and TCP ports
+Image attachments require a private S3 credential in the trusted Worker and
+platform Secrets, as described below; Workspace files still use Cube Volumes.
+External egress CIDRs and TCP ports
 must include every configured endpoint, including Kafka and provider gateways.
 
 ## Scaling
@@ -95,8 +97,8 @@ settle or lose authority safely. Correctness does not depend on a stable Worker
 ordinal or local Session cache. A replacement may acquire a Session after its
 previous owner's Session lease expires and every affected task closure projects;
 stale execution references cannot commit effects. A task timeout alone does not
-transfer the physical Session. The migration-137 wire cutover requires drained,
-matching-version services; ordinary subsequent same-protocol rollouts can drain.
+transfer the physical Session. Protocol changes require drained, matching-version
+services; ordinary same-protocol rollouts can drain.
 
 Before claiming high availability, test on the actual storage/network stack:
 

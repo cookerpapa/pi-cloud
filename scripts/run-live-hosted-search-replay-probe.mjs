@@ -33,7 +33,7 @@ const providerGatewayUrl =
 
 const routes = {
   gpt: "gpt-6-luna",
-  deepseek: "deepseek-v4-pro",
+  deepseek: "deepseek-v4-flash",
 };
 
 async function response(model, input, suffix, tools = []) {

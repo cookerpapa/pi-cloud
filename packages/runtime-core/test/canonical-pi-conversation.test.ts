@@ -2,6 +2,7 @@ import type { Database } from "@pi-cloud/database";
 import { readCanonicalPiTurnTranscripts } from "../src/canonical-pi-conversation.ts";
 import type { Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
+import { buildSessionContext, estimateTokens, type Entry } from "@earendil-works/pi-agent-core";
 
 const TENANT_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "10000000-0000-4000-8000-000000000002";
@@ -303,5 +304,67 @@ describe("canonical Pi conversation", () => {
         },
       },
     ]);
+  });
+
+  it("counts retained image references with Pi's native image estimate without fetching bytes", async () => {
+    const retained = {
+      role: "toolResult",
+      toolCallId: "image",
+      toolName: "read",
+      isError: false,
+      timestamp: 1,
+      content: [{ type: "image", mimeType: "image/png", data: "aW1hZ2U=" }],
+    };
+    const entry = {
+      id: "summary-entry",
+      parentId: null,
+      seq: 4,
+      timestamp: 1,
+      type: "compaction",
+      summary: "Earlier work",
+      tokensBefore: 80000,
+      retainedTail: [retained],
+    } as unknown as Entry;
+    const nativeEstimate = buildSessionContext([entry]).messages.reduce(
+      (total, message) => total + estimateTokens(message),
+      0,
+    );
+    const stored = {
+      ...entry,
+      retainedTail: [
+        {
+          ...retained,
+          content: [
+            {
+              type: "pi_cloud_image_v1",
+              attachment: {
+                id: "10000000-0000-4000-8000-000000000003",
+                mimeType: "image/png",
+                byteLength: 5,
+                sha256: "a".repeat(64),
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const transcript = await readCanonicalPiTurnTranscripts(
+      database([
+        {
+          turn_id: TURN_ID,
+          seq: "4",
+          timestamp_ms: "1787529600100",
+          payload: stored,
+        },
+      ]),
+      { tenantId: TENANT_ID, turnIds: [TURN_ID] },
+    );
+    expect(nativeEstimate).toBeGreaterThan(1000);
+    expect(transcript.get(TURN_ID)?.items).toContainEqual(
+      expect.objectContaining({
+        kind: "compaction",
+        estimatedTokensAfter: nativeEstimate,
+      }),
+    );
   });
 });

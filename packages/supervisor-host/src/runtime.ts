@@ -511,14 +511,13 @@ export class PiWorkerRuntime {
         if (!channel) throw new Error("Tool command Fact Stream is unavailable");
         return channel.publishToolCommand({ ...command, replyTopic: toolReplies.topic });
       },
-      waitForToolReply: async (request, signal, onUpdate, toolCallId, imageScope) => {
+      waitForToolReply: async (request, signal, toolCallId, imageScope) => {
         if (!toolCallId) throw new Error("Tool call identity is unavailable");
         const event = await toolReplies.wait(
           request.operationId,
           toolCallId,
           request.toolName,
           signal,
-          onUpdate,
         );
         if (!imageScope) throw new Error("Tool image scope is unavailable");
         return decodeSessionImages<NativeToolEnd>(images?.codec, imageScope, event, signal);

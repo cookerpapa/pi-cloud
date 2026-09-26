@@ -323,25 +323,6 @@ export function parseEnvironmentValidationReport(value: unknown): EnvironmentVal
   return Value.Parse(EnvironmentValidationReportSchema, value);
 }
 
-export function parseCreateProjectEnvironmentVersionRequest(
-  value: unknown,
-): CreateProjectEnvironmentVersionRequest {
-  const request = Value.Parse(CreateProjectEnvironmentVersionRequestSchema, value);
-  return { recipe: parseEnvironmentRecipe(request.recipe) };
-}
-
-export function parseActivateProjectEnvironmentVersionRequest(
-  value: unknown,
-): ActivateProjectEnvironmentVersionRequest {
-  return Value.Parse(ActivateProjectEnvironmentVersionRequestSchema, value);
-}
-
-export function parseProjectEnvironmentHistoryResource(
-  value: unknown,
-): ProjectEnvironmentHistoryResource {
-  return Value.Parse(ProjectEnvironmentHistoryResourceSchema, value);
-}
-
 export function isExpectedDefaultToolchain(report: EnvironmentToolchainReport): boolean {
   const versions = new Map(report.tools.map((tool) => [tool.name, tool.version]));
   return (

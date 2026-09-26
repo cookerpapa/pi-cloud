@@ -6,7 +6,7 @@ import {
   type SupervisorRegisteredMessage,
 } from "@pi-cloud/protocol";
 import WebSocket, { type RawData } from "ws";
-import { PINNED_PI_CODING_AGENT_VERSION } from "./pi-turn-runtime.ts";
+import { PINNED_PI_CODING_AGENT_VERSION } from "@pi-cloud/protocol";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_CLOSE_TIMEOUT_MS = 1_000;

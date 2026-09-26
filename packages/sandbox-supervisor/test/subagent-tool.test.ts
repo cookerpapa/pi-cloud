@@ -51,7 +51,7 @@ describe("role-free log-driven Subagent Tool", () => {
       tool = createCloudSubagentTool(backend);
     const source = "throw new Error('must never execute in this process')";
     const result = await tool.execute("call", { action: "workflow", script: source });
-    expect(backend.workflow).toHaveBeenCalledWith("call", source, undefined, undefined);
+    expect(backend.workflow).toHaveBeenCalledWith("call", source, undefined);
     expect(result.content).toEqual([{ type: "text", text: '{"selected":"only B","score":7}' }]);
   });
   it("rejects retired persona/CLI/workflowScript parameters through its Pi schema", () => {

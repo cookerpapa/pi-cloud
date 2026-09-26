@@ -4,7 +4,7 @@ import {
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
-import type { SandboxRuntimeIdentity } from "./sandbox-assignment-inventory.ts";
+import type { SandboxRuntimeIdentity } from "@pi-cloud/protocol";
 
 export const CLOUD_TURN_CONTEXT_SCHEMA_VERSION = 2 as const;
 export const CLOUD_EXECUTION_CONTEXT_SCHEMA_VERSION = 1 as const;

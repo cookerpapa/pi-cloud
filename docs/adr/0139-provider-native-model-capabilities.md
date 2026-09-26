@@ -58,10 +58,11 @@ effective capabilities, rather than assuming wire compatibility:
   tail. Completed native actions and assistant citations are
   instead part of the issuing Pi message under ADR-0141; PiCloud maintains no
   parallel Provider-activity sidecar.
-- The reviewed OpenAI Codex and DeepSeek Pro Responses routes expose hosted
-  Web Search. Flash is temporarily hidden from selection because its V4.1
-  Responses search stopped executing; no protocol fallback or replacement
-  search Tool is added. Provider image
+- The reviewed OpenAI Codex route exposes hosted Web Search. Under the later
+  owner amendment in ADR-0191, Flash is selectable with a requested `web_search`
+  declaration, although its Responses route currently ignores it; Pro is hidden.
+  Only real provider events establish search activity. No protocol fallback or
+  replacement search Tool is added. Provider image
   generation and user image attachments remain disabled until Pi's portable
   result/input contracts can be persisted and restored end to end.
 

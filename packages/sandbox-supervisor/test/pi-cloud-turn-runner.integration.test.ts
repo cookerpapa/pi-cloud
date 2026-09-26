@@ -1093,7 +1093,7 @@ describe("PiCloudTurnRunner integration", () => {
           operationId: command.request.operationId,
           accepted: true,
         }),
-        waitForToolReply: async (request, _signal, _onUpdate, toolCallId) => ({
+        waitForToolReply: async (request, _signal, toolCallId) => ({
           type: "tool_execution_end",
           toolCallId: toolCallId!,
           toolName: request.toolName,

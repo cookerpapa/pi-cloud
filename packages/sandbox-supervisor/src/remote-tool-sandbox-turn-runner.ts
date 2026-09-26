@@ -27,10 +27,7 @@ import {
   PiSettlementGateController,
   settlementGatePolicyFromCommand,
 } from "./pi-settlement-gate.ts";
-import {
-  validateSandboxRuntimeIdentity,
-  type SandboxRuntimeIdentity,
-} from "./sandbox-assignment-inventory.ts";
+import { validateSandboxRuntimeIdentity, type SandboxRuntimeIdentity } from "@pi-cloud/protocol";
 import type {
   AgentWorkspaceSeedResolver,
   TrustedAgentTool,
@@ -521,8 +518,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             supportsImages: modelRuntimeLease.runtime.inputModalities.includes("image"),
             ...(this.#waitForToolReply
               ? {
-                  waitForToolReply: (request, signal, onUpdate, toolCallId) =>
-                    this.#waitForToolReply!(request, signal, onUpdate, toolCallId, {
+                  waitForToolReply: (request, signal, toolCallId) =>
+                    this.#waitForToolReply!(request, signal, toolCallId, {
                       tenantId: command.payload.tenantId,
                       runId: command.payload.runId,
                     }),

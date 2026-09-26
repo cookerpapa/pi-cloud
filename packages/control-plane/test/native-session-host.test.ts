@@ -29,7 +29,17 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
     connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
     maxConnections: 2,
   });
-  let host = new PostgresNativeSessionHost({ database: db });
+  const hostQueries: string[] = [];
+  const hostDatabase = db.withPlugin({
+    transformQuery({ node, queryId }) {
+      hostQueries.push(db.getExecutor().compileQuery(node, queryId).sql);
+      return node;
+    },
+    async transformResult({ result }) {
+      return result;
+    },
+  });
+  let host = new PostgresNativeSessionHost({ database: hostDatabase });
   const facts: AcceptedFact[] = [],
     channels = new Map<string, AcceptedFactWriter>();
   const service = new DirectExecutionLog(db, {
@@ -115,6 +125,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
               const channel = await service.open({ ...opening, publication });
               channels.set(grant.executionReference, channel);
               const readCancellation = new AbortController();
+              hostQueries.length = 0;
               const session = await host.open({
                 scope,
                 writerId: grant.publication.scope.writerId,
@@ -127,6 +138,16 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                 }),
               });
               try {
+                expect(await session.session.getMetadata()).toMatchObject({
+                  id: request.piSessionId,
+                  tenantId: request.tenantId,
+                });
+                if (phase === 1) {
+                  const bootstrapReads = hostQueries.filter((query) =>
+                    /from "(?:pi_sessions|pi_session_lanes)"/.test(query),
+                  );
+                  expect(bootstrapReads).toHaveLength(request.piSessionLane === "main" ? 1 : 0);
+                }
                 if (phase === 4) {
                   const runtime = new CloudAgentRuntime({
                     session: session.session,
@@ -412,7 +433,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
       ),
     ).toMatchObject({ state: "completed", output: "child-answer" });
     host.close();
-    host = new PostgresNativeSessionHost({ database: db });
+    host = new PostgresNativeSessionHost({ database: hostDatabase });
     phase = 2;
     executor = await makeExecutor("worker-two");
     const next = await store.acceptTurn(conversation.sessionId, "second", { prompt: "continue" });
@@ -434,7 +455,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
       )?.interrupted_prefix,
     ).toBe("visible-interrupted-prefix");
     host.close();
-    host = new PostgresNativeSessionHost({ database: db });
+    host = new PostgresNativeSessionHost({ database: hostDatabase });
     phase = 4;
     executor = await makeExecutor("worker-three");
     const recover = await store.acceptTurn(conversation.sessionId, "recover", {

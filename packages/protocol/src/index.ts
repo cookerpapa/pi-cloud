@@ -1,4 +1,12 @@
 export { toolResultIsUnknown } from "./tool-result-outcome.ts";
+export {
+  PINNED_PI_CODING_AGENT_VERSION,
+  SandboxAssignmentInventoryError,
+  validateSandboxRuntimeIdentity,
+  type SandboxAssignmentInventory,
+  type SandboxRuntimeAssignment,
+  type SandboxRuntimeIdentity,
+} from "./worker-runtime-identity.ts";
 export * from "./image-attachment.ts";
 export * from "./session-stream-framing.ts";
 export {
@@ -80,7 +88,6 @@ export {
   SourceControlWorkspaceCredentialListResponseSchema,
   SourceControlWorkspaceCredentialDisconnectResponseSchema,
   SourceControlProtocolError,
-  parseSourceControlConfigurationResource,
   parseSourceControlIssueJobListResource,
   parseSourceControlIssueJobResource,
   parseSourceControlIssueGitCredentialRequest,
@@ -212,9 +219,6 @@ export {
   parseEnvironmentRecipe,
   parseEnvironmentToolchainReport,
   parseEnvironmentValidationReport,
-  parseActivateProjectEnvironmentVersionRequest,
-  parseCreateProjectEnvironmentVersionRequest,
-  parseProjectEnvironmentHistoryResource,
   type ActivateProjectEnvironmentVersionRequest,
   type CreateProjectEnvironmentVersionRequest,
   type EnvironmentRecipe,
@@ -240,7 +244,6 @@ export {
   MAX_TOOL_RESPONSE_BYTES,
   MAX_TOOL_RANGE_FILE_BYTES,
   MAX_TOOL_READ_RANGE_BYTES,
-  MAX_TOOL_READ_RANGE_LINES,
   ToolWebProxyBootstrapSchema,
   ToolBrokerListWorkspaceDirectoryRequestSchema,
   ToolBrokerListWorkspaceDirectoryResponseSchema,
@@ -416,7 +419,6 @@ export {
   parseUpdateSessionModelRequest,
   parseSessionModelResource,
   parseCubeProxyConfigurationResource,
-  parseInternalCubeProxyConfigurationResource,
   parseReplaceModelConfigurationRequest,
   parseReplaceCubeProxyConfigurationRequest,
   parseRunResource,
@@ -430,7 +432,6 @@ export {
   parseSshAccessTicketResource,
   parseIdempotencyKey,
   parseProjectResource,
-  parsePositiveIntegerPathParameter,
   parseSessionResource,
   parseTenantIdentityResource,
   parseAuthenticationConfigurationResource,

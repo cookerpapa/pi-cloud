@@ -45,8 +45,6 @@ export type PiCancellationSignal = {
 
 export type PiEventPublisher = (message: EventPublishMessage) => Promise<void> | void;
 
-export const PINNED_PI_CODING_AGENT_VERSION = "0.84.1";
-
 export class PiTurnError extends Error {
   readonly code: string;
   readonly retryable: boolean;

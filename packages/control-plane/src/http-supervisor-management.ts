@@ -12,7 +12,7 @@ import {
   SandboxAssignmentInventoryError,
   type SandboxAssignmentInventory,
   type SandboxRuntimeAssignment,
-} from "@pi-cloud/sandbox-supervisor/sandbox-assignment-inventory";
+} from "@pi-cloud/protocol";
 import type {
   SupervisorBootIdentity,
   SupervisorOwnerBoundary,

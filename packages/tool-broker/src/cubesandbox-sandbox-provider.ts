@@ -56,17 +56,14 @@ import {
   type SandboxInspection,
   type SandboxPolicy,
   type SandboxProvider,
-  type SandboxReadFileInput,
   type SandboxTerminalSession,
   type SandboxTerminalSize,
-  type SandboxWriteFileInput,
 } from "./sandbox-provider.ts";
 import { CubePersistentCapsuleCodec } from "./cube-persistent-capsule.ts";
 import { browseCubeWorkspace } from "./cubesandbox-workspace-browser.ts";
 
 const READY_TIMEOUT_MS = 60_000;
 const TOOL_RESPONSE_LIMIT_BYTES = 8 * 1_024 * 1_024;
-const INTERNAL_STEP_CONTEXT_SHA256 = "0".repeat(64);
 const HTTP_SERVICE_DISCOVERY_SCRIPT = Buffer.from(
   String.raw`
 const fs = require("node:fs");
@@ -1107,10 +1104,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     let dispatched = false;
     let output: ReturnType<typeof parseToolWorkerOutput>;
     try {
-      const timeoutMs =
-        request.operation === "bash.exec" || request.operation === "tool.execute"
-          ? request.timeoutMs + 5_000
-          : this.#readyTimeoutMs;
+      const timeoutMs = request.timeoutMs + 5_000;
       output = parseToolWorkerOutput(
         await this.#guestJson(
           activation.instance,
@@ -1146,11 +1140,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     } catch (error: unknown) {
       const persistent = activation.lifetime === "development_environment";
       const mayHaveEffects =
-        dispatched &&
-        ((request.operation === "tool.execute" && request.toolName !== "read") ||
-          request.operation === "bash.exec" ||
-          request.operation === "file.write" ||
-          request.operation === "file.mkdir");
+        dispatched && (request.operation === "workflow.exec" || request.toolName !== "read");
       // Only disposable runtimes have fail-closed destruction. A failed Tool
       // does not grant authority to release a user's complete development VM.
       if (!persistent) {
@@ -1183,76 +1173,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     return parseToolSandboxOperationResponse(output.response);
-  }
-
-  async readFile(
-    handle: SandboxHandle,
-    input: SandboxReadFileInput,
-    signal?: AbortSignal,
-  ): Promise<Uint8Array> {
-    const response = await this.exec(
-      handle,
-      {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.operation",
-        activationId: handle.activationId,
-        operationId: input.operationId,
-        turnContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
-        executionContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
-        stepContextSequence: 1,
-        stepContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
-        toolName: "read",
-        operation: "file.read",
-        path: input.path,
-      },
-      signal,
-    );
-    if (response.type === "tool_sandbox.operation_failed") {
-      throw new ToolBrokerError(response.code, response.message, response.retryable);
-    }
-    if (response.operation !== "file.read") {
-      throw new ToolBrokerError(
-        "cubesandbox_protocol_error",
-        "CubeSandbox returned the wrong file operation",
-        false,
-      );
-    }
-    return Buffer.from(response.content, "base64");
-  }
-
-  async writeFile(
-    handle: SandboxHandle,
-    input: SandboxWriteFileInput,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    const response = await this.exec(
-      handle,
-      {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.operation",
-        activationId: handle.activationId,
-        operationId: input.operationId,
-        turnContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
-        executionContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
-        stepContextSequence: 1,
-        stepContextSha256: INTERNAL_STEP_CONTEXT_SHA256,
-        toolName: "write",
-        operation: "file.write",
-        path: input.path,
-        content: input.content,
-      },
-      signal,
-    );
-    if (response.type === "tool_sandbox.operation_failed") {
-      throw new ToolBrokerError(response.code, response.message, response.retryable);
-    }
-    if (response.operation !== "file.write") {
-      throw new ToolBrokerError(
-        "cubesandbox_protocol_error",
-        "CubeSandbox returned the wrong file operation",
-        false,
-      );
-    }
   }
 
   async openTerminal(

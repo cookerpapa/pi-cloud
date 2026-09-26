@@ -139,7 +139,7 @@ try {
   try {
     await api.updateSessionModel(session.sessionId, {
       provider: "deepseek",
-      modelId: "deepseek-v4-pro",
+      modelId: "deepseek-v4-flash",
       thinkingLevel: "high",
       fastMode: false,
     });
@@ -160,7 +160,7 @@ try {
 
   const deepSeekSettings = await api.updateSessionModel(session.sessionId, {
     provider: "deepseek",
-    modelId: "deepseek-v4-pro",
+    modelId: "deepseek-v4-flash",
     thinkingLevel: "high",
     fastMode: false,
   });
@@ -173,7 +173,7 @@ try {
     },
     {
       provider: "deepseek",
-      modelId: "deepseek-v4-pro",
+      modelId: "deepseek-v4-flash",
       thinkingLevel: "high",
       fastMode: false,
     },
@@ -194,7 +194,7 @@ try {
   assert.match(transcriptText(deepSeekTurn), /DEEPSEEK-HIGH-OK/u);
   assert.deepEqual(turnSnapshot(deepSeekAccepted.turnId), {
     provider: "deepseek",
-    modelId: "deepseek-v4-pro",
+    modelId: "deepseek-v4-flash",
     thinkingLevel: "high",
     serviceTier: "standard",
   });

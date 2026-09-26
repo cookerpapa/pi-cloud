@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { ToolReplyMailbox } from "../src/tool-replies.ts";
+import { ToolReplyMailbox, type ToolReply } from "../src/tool-replies.ts";
 import type { NativeToolEnd, NativeToolUpdate } from "@pi-cloud/protocol";
 
 const update: NativeToolUpdate = {
@@ -17,22 +17,24 @@ const end: NativeToolEnd = {
   isError: false,
 };
 
-it("delivers native updates and completion only to their registered invocation", async () => {
-  const mailbox = new ToolReplyMailbox(),
-    seen: NativeToolUpdate[] = [];
-  const a = mailbox.wait("a", "call_1", "bash", new AbortController().signal, (event) =>
-    seen.push(event),
-  );
+it("delivers one final result only to its registered operation, ignoring duplicates", async () => {
+  const mailbox = new ToolReplyMailbox();
+  const a = mailbox.wait("a", "call_1", "bash", new AbortController().signal);
   const b = mailbox.wait("b", "call_1", "bash", new AbortController().signal);
-  mailbox.accept({ operationId: "a", sequence: 1, event: update });
-  mailbox.accept({ operationId: "a", sequence: 1, event: update });
-  mailbox.accept({ operationId: "a", sequence: 2, event: end });
-  mailbox.accept({ operationId: "a", sequence: 3, event: update });
+  mailbox.accept({ operationId: "a", sequence: 1, event: end });
+  mailbox.accept({ operationId: "a", sequence: 1, event: end });
   expect(await a).toEqual(end);
-  expect(seen).toEqual([update]);
   expect(mailbox.size).toBe(1);
   mailbox.accept({ operationId: "b", sequence: 1, event: end });
   expect(await b).toEqual(end);
+  expect(mailbox.size).toBe(0);
+});
+
+it("rejects progress on the final-only Kafka reply transport", async () => {
+  const mailbox = new ToolReplyMailbox();
+  const pending = mailbox.wait("op", "call_1", "bash", new AbortController().signal);
+  mailbox.accept({ operationId: "op", sequence: 1, event: update } as unknown as ToolReply);
+  await expect(pending).rejects.toThrow("identity/order");
   expect(mailbox.size).toBe(0);
 });
 
@@ -59,7 +61,7 @@ it("rejects identity and sequence changes without passing a partial success to P
   mailbox.accept({ operationId: "wrong", sequence: 1, event: end });
   await expect(wrong).rejects.toThrow("identity/order");
   const gap = mailbox.wait("gap", "call_1", "bash", new AbortController().signal);
-  mailbox.accept({ operationId: "gap", sequence: 2, event: end });
+  mailbox.accept({ operationId: "gap", sequence: 2, event: end } as unknown as ToolReply);
   await expect(gap).rejects.toThrow("identity/order");
 });
 

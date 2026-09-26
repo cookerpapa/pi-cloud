@@ -11,7 +11,7 @@ import {
   type SupervisorRegisterMessage,
   type SupervisorRegisteredMessage,
 } from "@pi-cloud/protocol";
-import { PINNED_PI_CODING_AGENT_VERSION } from "@pi-cloud/sandbox-supervisor/pi-turn-runtime";
+import { PINNED_PI_CODING_AGENT_VERSION } from "@pi-cloud/protocol";
 import { confirmStoppedWorkerExecutions } from "@pi-cloud/runtime-core/quarantined-session-recovery";
 import { createHash } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";

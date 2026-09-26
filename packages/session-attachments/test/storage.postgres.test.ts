@@ -135,6 +135,21 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     await expect(store.get(tenantId, ref)).rejects.toThrow("integrity");
   });
 
+  it("reaps only claimed tenant/object pairs when tenants share an object ID", async () => {
+    const data = Buffer.from("same immutable bytes");
+    const ref = await store.put({ tenantId }, data, "image/png");
+    await sql`update session_image_objects set created_at=clock_timestamp()-interval '2 days'
+      where tenant_id=${tenantId}::uuid and id=${ref.id}::uuid`.execute(db);
+    await sql`insert into session_image_objects(tenant_id,id,state,sha256,byte_length,mime_type)
+      values(${otherTenant}::uuid,${ref.id}::uuid,'ready',${ref.sha256},${ref.byteLength},${ref.mimeType})`.execute(
+      db,
+    );
+    bytes.set(`session-images/${otherTenant}/${ref.id}`, data);
+    expect(await store.reap()).toBe(1);
+    await expect(store.get(otherTenant, ref)).resolves.toEqual(data);
+    expect(bytes.has(`session-images/${tenantId}/${ref.id}`)).toBe(false);
+  });
+
   it("keeps opaque custom JSON outside attachment reachability", async () => {
     const sessionId = randomUUID();
     const native = await PostgresPiSessionStorage.create({

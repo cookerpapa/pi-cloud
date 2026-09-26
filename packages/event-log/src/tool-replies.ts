@@ -4,7 +4,6 @@ import {
   MAX_TOOL_EXECUTION_TIMEOUT_MS,
   MAX_TOOL_RESPONSE_BYTES,
   type NativeToolEnd,
-  type NativeToolUpdate,
   type ImagePacked,
   validateImageReferencePayload,
 } from "@pi-cloud/protocol";
@@ -23,16 +22,16 @@ export function toolReplyTopic(bootId: string): string {
 }
 export type ToolReply = {
   operationId: string;
-  sequence: number;
-  event: ImagePacked<NativeToolEnd> | NativeToolUpdate;
+  sequence: 1;
+  event: ImagePacked<NativeToolEnd>;
 };
 
 function parseReply(value: string | Buffer): ToolReply {
   const reply = JSON.parse(value.toString()) as ToolReply;
   if (
     typeof reply.operationId !== "string" ||
-    !Number.isSafeInteger(reply.sequence) ||
-    reply.sequence < 1
+    reply.sequence !== 1 ||
+    reply.event?.type !== "tool_execution_end"
   )
     throw new Error("Invalid Tool reply identity");
   validateImageReferencePayload(reply.event);
@@ -58,6 +57,8 @@ export class KafkaToolReplyPublisher {
   }
   async publish(topic: string, reply: ToolReply): Promise<void> {
     if (!TOOL_REPLY_TOPIC_PATTERN.test(topic)) throw new Error("Invalid Tool reply destination");
+    if (reply.sequence !== 1 || reply.event.type !== "tool_execution_end")
+      throw new Error("Kafka Tool replies require one final result");
     validateImageReferencePayload(reply.event);
     const value = Buffer.from(JSON.stringify(reply));
     if (this.#bytes + value.byteLength > 16 * 1024 * 1024)
@@ -78,10 +79,8 @@ export class KafkaToolReplyPublisher {
 }
 
 type Pending = {
-  sequence: number;
   toolCallId: string;
   toolName: string;
-  update: ((event: NativeToolUpdate) => void) | undefined;
   resolve(event: ImagePacked<NativeToolEnd>): void;
   reject(error: unknown): void;
   cleanup(): void;
@@ -90,13 +89,7 @@ type Pending = {
 /** One boot-local mailbox for all slots. A new Worker never resumes old promises. */
 export class ToolReplyMailbox {
   readonly #pending = new Map<string, Pending>();
-  wait(
-    operationId: string,
-    toolCallId: string,
-    toolName: string,
-    signal: AbortSignal,
-    update?: (event: NativeToolUpdate) => void,
-  ) {
+  wait(operationId: string, toolCallId: string, toolName: string, signal: AbortSignal) {
     signal.throwIfAborted();
     if (this.#pending.has(operationId)) throw new Error("Tool operation already waiting");
     const promise = new Promise<ImagePacked<NativeToolEnd>>((resolve, reject) => {
@@ -106,10 +99,8 @@ export class ToolReplyMailbox {
         reject(signal.reason);
       };
       this.#pending.set(operationId, {
-        sequence: 0,
         toolCallId,
         toolName,
-        update,
         resolve,
         reject,
         cleanup: () => signal.removeEventListener("abort", abort),
@@ -122,27 +113,19 @@ export class ToolReplyMailbox {
   }
   accept(reply: ToolReply): void {
     const pending = this.#pending.get(reply.operationId);
-    if (!pending || reply.sequence <= pending.sequence) return;
+    if (!pending) return;
     if (
       reply.event.toolCallId !== pending.toolCallId ||
       reply.event.toolName !== pending.toolName ||
-      reply.sequence !== pending.sequence + 1
+      reply.sequence !== 1 ||
+      reply.event.type !== "tool_execution_end"
     ) {
       this.#finish(reply.operationId, pending, new Error("Tool reply identity/order changed"));
       return;
     }
-    pending.sequence = reply.sequence;
-    if (reply.event.type === "tool_execution_update") {
-      try {
-        pending.update?.(reply.event);
-      } catch (error) {
-        this.#finish(reply.operationId, pending, error);
-      }
-    } else {
-      this.#pending.delete(reply.operationId);
-      pending.cleanup();
-      pending.resolve(reply.event);
-    }
+    this.#pending.delete(reply.operationId);
+    pending.cleanup();
+    pending.resolve(reply.event);
   }
   #finish(id: string, pending: Pending, error: unknown) {
     this.#pending.delete(id);

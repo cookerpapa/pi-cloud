@@ -359,13 +359,6 @@ function parse<T>(schema: TSchema, value: unknown, label: string): T {
   }
   return value as T;
 }
-
-export const parseSourceControlConfigurationResource = (value: unknown) =>
-  parse<SourceControlConfigurationResource>(
-    SourceControlConfigurationResourceSchema,
-    value,
-    "source-control configuration resource",
-  );
 export const parseSourceControlIssueJobListResource = (value: unknown) =>
   parse<SourceControlIssueJobListResource>(
     SourceControlIssueJobListResourceSchema,

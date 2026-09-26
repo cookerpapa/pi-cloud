@@ -95,10 +95,6 @@ function provider(): SandboxProvider {
     async exec() {
       throw new Error("not used");
     },
-    async readFile() {
-      return Buffer.alloc(0);
-    },
-    async writeFile() {},
     async openTerminal() {
       return {
         pid: 1,

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, lstat } from "node:fs
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { createBashTool, createEditTool } from "@earendil-works/pi-agent-core";
+import { createBashTool, createEditTool, createReadTool } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { executeNativeTool, type NativeToolRequest } from "../src/native-tools.ts";
 import { NativeToolOutput } from "../src/native-tool-output.ts";
@@ -42,6 +42,26 @@ function request(
 }
 
 describe("whole native tools at the execution source", () => {
+  it.each([
+    { text: "first\nsecond\n", offset: 1 },
+    { text: "first\nsecond\n", offset: 3 },
+    { text: "first\r\nsecond\r\n", offset: 1 },
+    { text: "first\rsecond\n", offset: 1 },
+    { text: "\uFEFFfirst\n", offset: 1 },
+    { text: "", offset: 1 },
+  ])("matches Pi text-read line and BOM semantics for %j", async ({ text, offset }) => {
+    const root = await directory();
+    await writeFile(join(root, "lines.txt"), text);
+    const args = { path: "lines.txt", offset };
+    const signal = new AbortController().signal;
+    const native = await createReadTool().execute("native", args, signal, undefined, {
+      env: new NodeExecutionEnv({ cwd: root }),
+    });
+    const remote = await executeNativeTool(request("read", args), root, signal, () => {});
+    expect(remote.isError).toBe(false);
+    expect(remote.result.content).toEqual(native.content);
+  });
+
   it("reads image magic without depending on a filename extension", async () => {
     const root = await directory();
     const path = join(root, "screenshot");

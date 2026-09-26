@@ -31,6 +31,20 @@ export type PiCloudPiSessionMetadata = SessionMetadata & {
   tenantId: string;
 };
 
+export function sessionMetadataFromRow(row: {
+  id: string;
+  tenant_id: string;
+  created_at_ms: string | number;
+  parent_session_id: string | null;
+}): PiCloudPiSessionMetadata {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    createdAt: safeInteger(row.created_at_ms, "Pi Session creation timestamp"),
+    ...(row.parent_session_id === null ? {} : { parentSessionId: row.parent_session_id }),
+  };
+}
+
 export type PostgresPiSessionStorageOptions = {
   database: Kysely<Database>;
   tenantId: string;
@@ -187,12 +201,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       .where("id", "=", this.#sessionId)
       .executeTakeFirst();
     if (row === undefined) throw new SessionError("not_found", "Pi Session was not found");
-    return {
-      id: row.id,
-      tenantId: row.tenant_id,
-      createdAt: safeInteger(row.created_at_ms, "Pi Session creation timestamp"),
-      ...(row.parent_session_id === null ? {} : { parentSessionId: row.parent_session_id }),
-    };
+    return sessionMetadataFromRow(row);
   }
 
   async getLanes(): Promise<{ lane: string; leafId: string | null }[]> {

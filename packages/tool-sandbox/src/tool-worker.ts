@@ -1,7 +1,6 @@
 import {
   canonicalEnvironmentRecipeJson,
   isExpectedDefaultToolchain,
-  MAX_TOOL_COMMAND_BYTES,
   MAX_TOOL_MUTATION_FILE_BYTES,
   MAX_TOOL_OUTPUT_BYTES,
   MAX_TOOL_RANGE_FILE_BYTES,
@@ -22,21 +21,10 @@ import {
   initializeWorkspaceSeed,
 } from "@pi-cloud/workspace-runtime";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import {
-  access,
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  realpath,
-  rename,
-  unlink,
-} from "node:fs/promises";
+import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { createInterface } from "node:readline";
 import { isIPv4 } from "node:net";
 
 let TOOL_WORKSPACE_DIRECTORY = "/workspace";
@@ -452,10 +440,6 @@ export function safeToolEnvironment(webProxy?: ToolWebProxyBootstrap): NodeJS.Pr
   };
 }
 
-function byteLengthWithin(value: string, maximum: number): boolean {
-  return Buffer.byteLength(value, "utf8") <= maximum;
-}
-
 function isInsideWorkspace(path: string, workspaceDirectory = TOOL_WORKSPACE_DIRECTORY): boolean {
   const fromRoot = relative(resolve(workspaceDirectory), path);
   return (
@@ -548,40 +532,6 @@ async function assertNoFinalSymlink(path: string): Promise<void> {
   }
 }
 
-async function ensureWorkspaceDirectory(
-  path: string,
-  workspaceDirectory = TOOL_WORKSPACE_DIRECTORY,
-): Promise<void> {
-  const relativePath = relative(workspaceDirectory, path);
-  if (relativePath === "") return;
-  let current = workspaceDirectory;
-  for (const segment of relativePath.split(sep)) {
-    current = join(current, segment);
-    let metadata = await lstat(current).catch((error: unknown) => {
-      if (isMissing(error)) return undefined;
-      throw error;
-    });
-    if (metadata === undefined) {
-      await mkdir(current, { mode: 0o755 }).catch((error: unknown) => {
-        if (
-          typeof error !== "object" ||
-          error === null ||
-          !("code" in error) ||
-          error.code !== "EEXIST"
-        )
-          throw error;
-      });
-      metadata = await lstat(current);
-    }
-    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-      throw new ToolWorkerError(
-        "tool_directory_rejected",
-        "Tool directory path contains a link or non-directory",
-      );
-    }
-  }
-}
-
 export async function readWorkspaceFile(
   path: string,
   workspaceDirectory = TOOL_WORKSPACE_DIRECTORY,
@@ -619,6 +569,31 @@ type WorkspaceFileRange = {
   firstLineBytes?: number;
 };
 
+/** Match Pi's TextDecoder + split("\n") while retaining bounded streamed reads. */
+async function* nativeTextLines(stream: AsyncIterable<string | Buffer>): AsyncGenerator<string> {
+  let first = true;
+  let parts: string[] = [];
+  for await (const chunk of stream) {
+    let text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    if (first && text.length) {
+      first = false;
+      if (text.startsWith("\uFEFF")) text = text.slice(1);
+    }
+    let start = 0;
+    let end = text.indexOf("\n");
+    while (end >= 0) {
+      parts.push(text.slice(start, end));
+      yield parts.join("");
+      parts = [];
+      start = end + 1;
+      end = text.indexOf("\n", start);
+    }
+    if (start < text.length) parts.push(text.slice(start));
+  }
+  // split("\n") retains an empty final line, including for an empty file.
+  yield parts.join("");
+}
+
 export async function readWorkspaceFileRange(
   path: string,
   offsetLine: number,
@@ -638,14 +613,13 @@ export async function readWorkspaceFileRange(
       throw new ToolWorkerError("tool_file_limit", "Tool file is outside its ranged-read limit");
     }
     const stream = handle.createReadStream({ autoClose: false, encoding: "utf8" });
-    const lines = createInterface({ input: stream, crlfDelay: Infinity });
     const selected: string[] = [];
     let currentLine = 0;
     let selectedBytes = 0;
     let nextOffsetLine: number | undefined;
     let firstLineBytes: number | undefined;
     try {
-      for await (const line of lines) {
+      for await (const line of nativeTextLines(stream)) {
         currentLine += 1;
         if (currentLine < offsetLine) continue;
         const lineBytes = Buffer.byteLength(line, "utf8");
@@ -665,12 +639,8 @@ export async function readWorkspaceFileRange(
         selectedBytes += separatorBytes + lineBytes;
       }
     } finally {
-      lines.close();
       stream.destroy();
     }
-    // Guest procfs/sysfs text can report size zero while still yielding bytes.
-    if (currentLine === 0 && offsetLine === 1)
-      return { content: Buffer.alloc(0), startLine: 1, endLine: 1 };
     if (currentLine < offsetLine) {
       throw new ToolWorkerError(
         "tool_read_offset_out_of_range",
@@ -687,88 +657,6 @@ export async function readWorkspaceFileRange(
   } finally {
     await handle.close();
   }
-}
-
-async function currentWorkspaceFileSha256(target: string): Promise<string> {
-  const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => {
-    throw new ToolWorkerError("tool_edit_conflict", "Tool file changed before it was written");
-  });
-  try {
-    const metadata = await handle.stat();
-    if (!metadata.isFile() || metadata.size > MAX_TOOL_MUTATION_FILE_BYTES) {
-      throw new ToolWorkerError("tool_file_limit", "Tool file is outside its byte limit");
-    }
-    return createHash("sha256")
-      .update(await handle.readFile())
-      .digest("hex");
-  } finally {
-    await handle.close();
-  }
-}
-
-export async function writeWorkspaceFile(
-  path: string,
-  content: string,
-  expectedSha256?: string,
-  workspaceDirectory = TOOL_WORKSPACE_DIRECTORY,
-): Promise<string> {
-  if (!byteLengthWithin(content, MAX_TOOL_MUTATION_FILE_BYTES)) {
-    throw new ToolWorkerError("tool_file_limit", "Tool file is outside its byte limit");
-  }
-  const target = resolveToolWorkspacePath(path, workspaceDirectory);
-  await assertNoFinalSymlink(target);
-  const parent = dirname(target);
-  if (expectedSha256 === undefined) await ensureWorkspaceDirectory(parent, workspaceDirectory);
-  await assertRealPathInsideWorkspace(parent, workspaceDirectory);
-  if (expectedSha256 !== undefined) {
-    const actualSha256 = await currentWorkspaceFileSha256(target);
-    if (actualSha256 !== expectedSha256) {
-      throw new ToolWorkerError("tool_edit_conflict", "Tool file changed before it was written");
-    }
-  }
-  const existing = await lstat(target).catch((error: unknown) => {
-    if (isMissing(error)) return undefined;
-    throw error;
-  });
-  const temporary = join(parent, `.pi-cloud-${randomUUID()}.tmp`);
-  let handle;
-  try {
-    handle = await open(
-      temporary,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-      existing === undefined ? 0o644 : existing.mode & 0o777,
-    );
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    if (expectedSha256 !== undefined) {
-      const actualSha256 = await currentWorkspaceFileSha256(target);
-      if (actualSha256 !== expectedSha256) {
-        throw new ToolWorkerError("tool_edit_conflict", "Tool file changed before it was written");
-      }
-    }
-    await rename(temporary, target);
-    const directory = await open(parent, constants.O_RDONLY);
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
-    }
-  } finally {
-    await handle?.close().catch(() => undefined);
-    await unlink(temporary).catch(() => undefined);
-  }
-  return createHash("sha256").update(content, "utf8").digest("hex");
-}
-
-async function accessWorkspaceFile(path: string): Promise<void> {
-  const target = resolveToolWorkspacePath(path);
-  await assertNoFinalSymlink(target);
-  await assertRealPathInsideWorkspace(target);
-  await access(target, constants.R_OK | constants.W_OK).catch(() => {
-    throw new ToolWorkerError("tool_file_unavailable", "Tool file is not accessible");
-  });
 }
 
 export function terminateProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -864,146 +752,6 @@ export function waitForShellProcess(child: ChildProcess): Promise<number | null>
     child.once("exit", onExit);
     child.once("close", onClose);
   });
-}
-
-async function executeBash(
-  request: Extract<ToolSandboxOperationRequest, { operation: "bash.exec" }>,
-  signal: AbortSignal,
-  webProxy?: ToolWebProxyBootstrap,
-): Promise<Extract<ToolSandboxOperationResponse, { operation: "bash.exec" }>> {
-  if (!byteLengthWithin(request.command, MAX_TOOL_COMMAND_BYTES)) {
-    throw new ToolWorkerError("tool_command_limit", "Tool command is outside its byte limit");
-  }
-  const cwd = resolveToolWorkspacePath(request.cwd);
-  await assertRealPathInsideWorkspace(cwd);
-  const child = spawn("/bin/bash", ["--noprofile", "--norc", "-lc", request.command], {
-    cwd,
-    detached: process.platform !== "win32",
-    env: safeToolEnvironment(webProxy),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const outputChunks: Array<{ stream: "stdout" | "stderr"; data: Buffer }> = [];
-  let outputBytes = 0;
-  let overflow = false;
-  let timedOut = false;
-  const append = (stream: "stdout" | "stderr", chunk: Buffer): void => {
-    if (overflow) return;
-    outputBytes += chunk.byteLength;
-    if (outputBytes > MAX_TOOL_OUTPUT_BYTES || outputChunks.length >= 16_384) {
-      overflow = true;
-      terminateProcessGroup(child, "SIGKILL");
-      return;
-    }
-    const previous = outputChunks.at(-1);
-    if (previous?.stream === stream) previous.data = Buffer.concat([previous.data, chunk]);
-    else outputChunks.push({ stream, data: Buffer.from(chunk) });
-  };
-  child.stdout?.on("data", (chunk: Buffer) => append("stdout", chunk));
-  child.stderr?.on("data", (chunk: Buffer) => append("stderr", chunk));
-  const timer = setTimeout(() => {
-    timedOut = true;
-    terminateProcessGroup(child, "SIGTERM");
-    const force = setTimeout(() => terminateProcessGroup(child, "SIGKILL"), 250);
-    force.unref();
-  }, request.timeoutMs);
-  timer.unref();
-  const abort = (): void => terminateProcessGroup(child, "SIGTERM");
-  signal.addEventListener("abort", abort, { once: true });
-  try {
-    const code = await waitForShellProcess(child).catch(() => {
-      throw new ToolWorkerError("tool_process_failed", "Tool process could not start", true);
-    });
-    if (overflow) {
-      throw new ToolWorkerError("tool_output_limit", "Tool output exceeded its byte limit");
-    }
-    if (timedOut) throw new ToolWorkerError("tool_timeout", "Tool command timed out", true);
-    if (signal.aborted)
-      throw new ToolWorkerError("tool_cancelled", "Tool command was cancelled", true);
-    const output = Buffer.concat(outputChunks.map((chunk) => chunk.data));
-    return {
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.operation_result",
-      activationId: request.activationId,
-      operationId: request.operationId,
-      operation: "bash.exec",
-      exitCode: code,
-      outputChunks: outputChunks.map((chunk, index) => ({
-        seq: index + 1,
-        stream: chunk.stream,
-        data: chunk.data.toString("base64"),
-      })),
-      outputSha256: createHash("sha256").update(output).digest("hex"),
-    };
-  } finally {
-    clearTimeout(timer);
-    signal.removeEventListener("abort", abort);
-  }
-}
-
-export async function executeToolOperation(
-  request: Exclude<ToolSandboxOperationRequest, { operation: "tool.execute" }>,
-  signal: AbortSignal,
-  webProxy?: ToolWebProxyBootstrap,
-): Promise<ToolSandboxOperationResponse> {
-  if (request.operation === "workflow.exec")
-    throw new ToolWorkerError(
-      "workflow_transport_required",
-      "Workflow execution requires the scoped duplex process transport",
-    );
-  if (request.operation === "bash.exec") return executeBash(request, signal, webProxy);
-  if (request.operation === "file.read") {
-    const file = await readWorkspaceFile(request.path);
-    return {
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.operation_result",
-      activationId: request.activationId,
-      operationId: request.operationId,
-      operation: "file.read",
-      content: file.content.toString("base64"),
-      sha256: file.sha256,
-    };
-  }
-  if (request.operation === "file.read_range") {
-    const range = await readWorkspaceFileRange(
-      request.path,
-      request.offsetLine,
-      request.limitLines,
-    );
-    return {
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.operation_result",
-      activationId: request.activationId,
-      operationId: request.operationId,
-      operation: "file.read_range",
-      content: range.content.toString("base64"),
-      startLine: range.startLine,
-      endLine: range.endLine,
-      ...(range.nextOffsetLine === undefined ? {} : { nextOffsetLine: range.nextOffsetLine }),
-      ...(range.firstLineBytes === undefined ? {} : { firstLineBytes: range.firstLineBytes }),
-    };
-  }
-  if (request.operation === "file.write") {
-    const sha256 = await writeWorkspaceFile(request.path, request.content, request.expectedSha256);
-    return {
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.operation_result",
-      activationId: request.activationId,
-      operationId: request.operationId,
-      operation: "file.write",
-      sha256,
-    };
-  }
-  if (request.operation === "file.mkdir") {
-    await ensureWorkspaceDirectory(resolveToolWorkspacePath(request.path));
-  }
-  if (request.operation === "file.access") await accessWorkspaceFile(request.path);
-  return {
-    toolBrokerProtocolVersion: 1,
-    type: "tool_sandbox.operation_result",
-    activationId: request.activationId,
-    operationId: request.operationId,
-    operation: request.operation,
-  };
 }
 
 export function toolOperationFailure(

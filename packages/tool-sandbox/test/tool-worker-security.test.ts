@@ -9,16 +9,7 @@ import {
 import { spawn } from "node:child_process";
 import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import { createHash } from "node:crypto";
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -26,7 +17,6 @@ import {
   dependencyRecipeWebProxy,
   attachToolExecution,
   executeEnvironmentRecipe,
-  readWorkspaceFile,
   readWorkspaceFileRange,
   resolveToolWorkspacePath,
   safeToolEnvironment,
@@ -35,7 +25,6 @@ import {
   validateAttachedWorkspaceRoot,
   waitForShellProcess,
   validateToolEnvironment,
-  writeWorkspaceFile,
 } from "../src/tool-worker.ts";
 
 function recipeEnvironment(recipe: EnvironmentRecipe): EnvironmentRuntimeSnapshot {
@@ -178,38 +167,6 @@ describe("credential-free Tool Sandbox worker", () => {
         endLine: 1,
         firstLineBytes: 60 * 1_024,
       });
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  });
-
-  it("atomically replaces an expected file revision and rejects stale edits", async () => {
-    const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-atomic-edit-"));
-    try {
-      await writeWorkspaceFile("nested/new/source.ts", "created\n", undefined, workspace);
-      expect(await readFile(resolve(workspace, "nested/new/source.ts"), "utf8")).toBe("created\n");
-      await writeFile(resolve(workspace, "source.ts"), "export const value = 1;\n");
-      const original = await readWorkspaceFile("source.ts", workspace);
-      const writtenSha256 = await writeWorkspaceFile(
-        "source.ts",
-        "export const value = 2;\n",
-        original.sha256,
-        workspace,
-      );
-      await expect(readFile(resolve(workspace, "source.ts"), "utf8")).resolves.toBe(
-        "export const value = 2;\n",
-      );
-      expect((await readWorkspaceFile("source.ts", workspace)).sha256).toBe(writtenSha256);
-      expect((await readdir(workspace)).some((entry) => entry.endsWith(".tmp"))).toBe(false);
-
-      await writeFile(resolve(workspace, "source.ts"), "external change\n");
-      await expect(
-        writeWorkspaceFile("source.ts", "stale replacement\n", writtenSha256, workspace),
-      ).rejects.toMatchObject({ code: "tool_edit_conflict", retryable: false });
-      await expect(readFile(resolve(workspace, "source.ts"), "utf8")).resolves.toBe(
-        "external change\n",
-      );
-      expect((await readdir(workspace)).some((entry) => entry.endsWith(".tmp"))).toBe(false);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

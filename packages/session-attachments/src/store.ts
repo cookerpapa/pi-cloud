@@ -131,7 +131,7 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore {
         tenant_id: string;
         id: string;
       }>`update session_image_objects o set state='deleting'
-        where id=any(${candidates.map((r) => r.id)}::uuid[])
+        where (tenant_id,id) in (${sql.join(candidates.map((r) => sql`(${r.tenant_id}::uuid,${r.id}::uuid)`))})
           and not exists(select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
         returning tenant_id,id`.execute(tx);

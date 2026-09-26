@@ -5,7 +5,6 @@ import {
   MIN_TOOL_EXECUTION_TIMEOUT_MS,
   MAX_TOOL_EXECUTION_TIMEOUT_MS,
   type NativeToolEnd,
-  type NativeToolUpdate,
   type CloudToolCapabilitySnapshot,
   type CloudToolName,
   type ToolSandboxOperationRequest,
@@ -76,7 +75,6 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   waitForToolReply?: (
     request: ToolSandboxOperationRequest,
     signal: AbortSignal,
-    onUpdate?: (event: NativeToolUpdate) => void,
     toolCallId?: string,
     imageScope?: { tenantId: string; runId: string },
   ) => Promise<NativeToolEnd>;
@@ -267,7 +265,6 @@ export function createTrustedRemoteAgentTools(
     request: RemoteOperationInput,
     signal?: AbortSignal,
     workflowCall?: WorkflowHostCall,
-    onUpdate?: (event: NativeToolUpdate) => void,
   ): Promise<ToolSandboxOperationResponse> => {
     signal?.throwIfAborted();
     const invocationId = toolInvocationId(toolCallId);
@@ -300,9 +297,12 @@ export function createTrustedRemoteAgentTools(
       AbortSignal.timeout(MAX_TOOL_EXECUTION_TIMEOUT_MS + 120_000),
     ]);
     if (!runtime.waitForToolReply) throw new Error("Native Tool reply transport is unavailable");
-    const pending = runtime.waitForToolReply(candidate, replySignal, onUpdate, toolCallId);
-    await runtime
-      .publishToolCommand({
+    const pending = runtime.waitForToolReply(candidate, replySignal, toolCallId);
+    // The image-decoding adapter adds a Promise above the mailbox. Observe that
+    // Promise now: failure/cancellation can precede the command's Kafka ACK.
+    void pending.catch(() => {});
+    try {
+      await runtime.publishToolCommand({
         executionReference: runtime.executionReference,
         toolCallId: invocationId,
         request: candidate,
@@ -315,44 +315,43 @@ export function createTrustedRemoteAgentTools(
               },
             }
           : {}),
-      })
-      .catch((error) => {
-        pendingAbort.abort(error);
-        throw error;
       });
-    if (candidate.operation === "tool.execute") {
-      const event = await pending.catch((error: unknown) => {
-        if (signal?.aborted) throw new Error("aborted");
-        throw new Error(
-          "tool_operation_outcome_unknown: Tool reply could not be confirmed; do not automatically repeat the command",
-          { cause: error },
-        );
-      });
-      return {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.operation_result",
-        activationId: target.activationId,
-        operationId: candidate.operationId,
-        operation: "tool.execute",
-        event,
-      };
+      if (candidate.operation === "tool.execute") {
+        const event = await pending.catch((error: unknown) => {
+          if (signal?.aborted) throw new Error("aborted");
+          throw new Error(
+            "tool_operation_outcome_unknown: Tool reply could not be confirmed; do not automatically repeat the command",
+            { cause: error },
+          );
+        });
+        return {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.operation_result",
+          activationId: target.activationId,
+          operationId: candidate.operationId,
+          operation: "tool.execute",
+          event,
+        };
+      }
+      const resultUrl = new URL(target.workflowUrl);
+      resultUrl.searchParams.set("activationId", target.activationId);
+      resultUrl.searchParams.set("operationId", candidate.operationId);
+      if (candidate.operation === "workflow.exec") {
+        if (!workflowCall) throw new Error("Workflow host bridge is unavailable");
+        return await readWorkflowResult({
+          resultUrl,
+          executionReference: runtime.executionReference,
+          activationId: target.activationId,
+          operationId: candidate.operationId,
+          call: workflowCall,
+          completion: pending,
+          ...(signal ? { signal } : {}),
+        });
+      }
+      throw new Error("Unsupported remote Tool operation");
+    } finally {
+      pendingAbort.abort(new Error("Tool reply wait closed"));
     }
-    const resultUrl = new URL(target.workflowUrl);
-    resultUrl.searchParams.set("activationId", target.activationId);
-    resultUrl.searchParams.set("operationId", candidate.operationId);
-    if (candidate.operation === "workflow.exec") {
-      if (!workflowCall) throw new Error("Workflow host bridge is unavailable");
-      return readWorkflowResult({
-        resultUrl,
-        executionReference: runtime.executionReference,
-        activationId: target.activationId,
-        operationId: candidate.operationId,
-        call: workflowCall,
-        completion: pending,
-        ...(signal ? { signal } : {}),
-      }).finally(() => pendingAbort.abort(new Error("Workflow bridge closed")));
-    }
-    throw new Error("Unsupported remote Tool operation");
   };
 
   const systemPrompt = async (base: string): Promise<string> => {
@@ -418,7 +417,7 @@ export function createTrustedRemoteAgentTools(
               "Execute a Bash command in the selected working directory. Output is limited to the last 2000 lines or 50 KiB; omitted output is not archived. Only command and timeout are accepted. Use cd inside command to change directory. Timeout defaults to 300 seconds (maximum 300). Detach long-running services and redirect stdin, stdout and stderr.",
           }
         : {}),
-      async execute(id, params, signal, onUpdate) {
+      async execute(id, params, signal) {
         consumeToolCall();
         const args = params as Record<string, unknown>;
         const timeout =
@@ -441,8 +440,6 @@ export function createTrustedRemoteAgentTools(
             maximumOutputBytes: runtime.maximumToolOutputBytes,
           },
           signal,
-          undefined,
-          (event) => onUpdate?.(event.partialResult),
         );
         if (
           response.type !== "tool_sandbox.operation_result" ||
@@ -475,7 +472,7 @@ export function createTrustedRemoteAgentTools(
     systemPrompt,
     transformHeaders: sampling.transformHeaders,
     transformContext: sampling.transformContext,
-    executeWorkflow: (async (toolCallId, script, call, signal, onUpdate) => {
+    executeWorkflow: (async (toolCallId, script, call, signal) => {
       if (!allowedTools.has("bash"))
         throw new Error("Workflow code requires the Bash execution capability");
       consumeToolCall();
@@ -491,7 +488,6 @@ export function createTrustedRemoteAgentTools(
         },
         signal,
         call,
-        (event) => onUpdate?.(event.partialResult),
       );
       if (result.type !== "tool_sandbox.operation_result" || result.operation !== "workflow.exec")
         throw new Error("Workflow returned an invalid response");

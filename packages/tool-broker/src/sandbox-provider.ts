@@ -21,8 +21,6 @@ import type {
 } from "@pi-cloud/protocol";
 import type { Duplex } from "node:stream";
 
-export const SANDBOX_PROVIDER_API_VERSION = 1 as const;
-
 export class ToolBrokerError extends Error {
   readonly code: string;
   readonly retryable: boolean;
@@ -146,17 +144,6 @@ export type SandboxInspection =
       effectiveIsolation: SandboxEffectiveIsolation;
     }>;
 
-export type SandboxReadFileInput = Readonly<{
-  operationId: string;
-  path: string;
-}>;
-
-export type SandboxWriteFileInput = Readonly<{
-  operationId: string;
-  path: string;
-  content: string;
-}>;
-
 export type SandboxTerminalSize = Readonly<{
   rows: number;
   cols: number;
@@ -201,16 +188,6 @@ export interface SandboxProvider {
     handle: SandboxHandle,
     signal?: AbortSignal,
   ): Promise<SandboxHttpServiceDiscovery>;
-  readFile(
-    handle: SandboxHandle,
-    input: SandboxReadFileInput,
-    signal?: AbortSignal,
-  ): Promise<Uint8Array>;
-  writeFile(
-    handle: SandboxHandle,
-    input: SandboxWriteFileInput,
-    signal?: AbortSignal,
-  ): Promise<void>;
   /** Open a human-operated PTY without granting Agent Tool authority. */
   openTerminal?(handle: SandboxHandle, size: SandboxTerminalSize): Promise<SandboxTerminalSession>;
   /** Pause a long-lived user environment while preserving Cube VM state. */

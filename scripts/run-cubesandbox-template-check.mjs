@@ -145,7 +145,7 @@ const environment = (imageRevision) => ({
   },
   recipeSha256: "2d6c5260fe7bc3901e454ff93106dc5ed263d6edbbabf7bafdf852021289e5ba",
 });
-const operation = (body) => ({
+const operation = (toolName, args) => ({
   toolBrokerProtocolVersion: 1,
   type: "tool_sandbox.operation",
   activationId,
@@ -154,9 +154,12 @@ const operation = (body) => ({
   executionContextSha256: contextSha256("attempt"),
   stepContextSequence: 1,
   stepContextSha256: contextSha256("step"),
-  toolName:
-    body.operation === "bash.exec" ? "bash" : body.operation === "file.write" ? "write" : "read",
-  ...body,
+  operation: "tool.execute",
+  toolCallId: randomUUID(),
+  toolName,
+  args,
+  maximumOutputBytes: 51_200,
+  timeoutMs: 30_000,
 });
 
 let started = false;
@@ -285,32 +288,48 @@ try {
       baseUrl,
       `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /opt/pi-cloud/bin/envd-tool-exec.mjs ${path}`,
       "root",
-      request.operation === "bash.exec" ? request.timeoutMs + 5_000 : 30_000,
+      request.timeoutMs + 5_000,
     );
-    return JSON.parse(result.stdout).response;
+    const frames = result.stdout
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line));
+    const final = frames.pop();
+    assert(
+      frames.every(
+        (frame) =>
+          frame.operationId === request.operationId &&
+          frame.event?.type === "tool_execution_update",
+      ),
+      "Unexpected Tool progress frame",
+    );
+    assert(final?.type === "worker.operation_result", "Guest omitted its final Tool result");
+    const response = final.response;
+    assert(
+      response.activationId === request.activationId &&
+        response.operationId === request.operationId &&
+        response.operation === "tool.execute",
+      "Tool result identity changed",
+    );
+    assert(
+      response.event?.type === "tool_execution_end" && !response.event.isError,
+      "Native Tool failed",
+    );
+    return response.event.result;
   };
 
   const source = "print('envd-tool-worker-ok')\n";
-  const wrote = await runTool(
-    operation({ operation: "file.write", path: "check.py", content: source }),
-  );
-  assert(wrote.type === "tool_sandbox.operation_result", "Tool file write failed");
-  const executed = await runTool(
-    operation({
-      operation: "bash.exec",
-      command: "python3 check.py",
-      cwd: "/workspace",
-      timeoutMs: 10_000,
-    }),
-  );
-  const output = Buffer.concat(
-    executed.outputChunks.map((chunk) => Buffer.from(chunk.data, "base64")),
-  ).toString("utf8");
-  assert(executed.exitCode === 0 && output === "envd-tool-worker-ok\n", "Tool command failed");
-  const escaped = await runTool(operation({ operation: "file.read", path: "../etc/passwd" }));
+  await runTool(operation("write", { path: "check.py", content: source }));
+  const executed = await runTool(operation("bash", { command: "python3 check.py" }));
+  const output = executed.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+  assert(output === "envd-tool-worker-ok\n", "Tool command failed");
+  const guestFile = await runTool(operation("read", { path: "../etc/passwd" }));
   assert(
-    escaped.type === "tool_sandbox.operation_failed" && escaped.code === "tool_path_escape",
-    "Path traversal was not rejected",
+    guestFile.content.some((part) => part.type === "text" && part.text.includes("root:")),
+    "Native guest read did not resolve cwd-relative paths inside the isolated guest",
   );
 
   process.stdout.write(
@@ -325,7 +344,7 @@ try {
         noNewPrivileges: evidence.noNewPrivileges,
       },
       execution: { exitCode: executed.exitCode, output: output.trim() },
-      pathTraversalRejected: true,
+      nativeGuestPathSemanticsVerified: true,
       directoryControl: true,
       arbitraryPortPreview: true,
     })}\n`,

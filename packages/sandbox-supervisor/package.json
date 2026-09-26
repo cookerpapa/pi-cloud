@@ -4,10 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./pi-turn-runtime": "./src/pi-turn-runtime.ts",
-    "./sandbox-assignment-inventory": "./src/sandbox-assignment-inventory.ts",
-    "./workspace-seed": "./src/workspace-seed.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

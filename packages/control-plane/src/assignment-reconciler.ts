@@ -10,10 +10,7 @@ import {
   transitionTurn,
   type SandboxState,
 } from "@pi-cloud/domain";
-import type {
-  SandboxAssignmentInventory,
-  SandboxRuntimeAssignment,
-} from "@pi-cloud/sandbox-supervisor/sandbox-assignment-inventory";
+import type { SandboxAssignmentInventory, SandboxRuntimeAssignment } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
 import { transitionCurrentRun } from "@pi-cloud/runtime-core/run-state";

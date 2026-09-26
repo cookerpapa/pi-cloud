@@ -39,6 +39,11 @@
 
 ## Current release gate
 
+- [ ] Complete the [September 27 repository review](reports/repository-review-20260927.md)
+      cleanup rollout: final-only native Tool transport, callback failure isolation,
+      Pi text-read parity, image metadata/cleanup, shared management contracts and
+      single-statement snapshots. Architectural alternatives remain for discussion.
+
 - [x] ADR-0191 amendment: restore selectable Flash with its requested search
       declaration and hide Pro. [Gateway, browser and real Tool-image acceptance](reports/flash-catalog-20260926.md)
       confirms the matched rollout; Responses search remains ignored upstream.

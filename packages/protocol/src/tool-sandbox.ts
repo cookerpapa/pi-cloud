@@ -23,7 +23,6 @@ export const MAX_TOOL_FILE_BYTES = 512 * 1_024;
 export const MAX_TOOL_MUTATION_FILE_BYTES = 2 * 1_024 * 1_024;
 export const MAX_TOOL_RANGE_FILE_BYTES = 64 * 1_024 * 1_024;
 export const MAX_TOOL_READ_RANGE_BYTES = 50 * 1_024;
-export const MAX_TOOL_READ_RANGE_LINES = 2_000;
 export const MAX_TOOL_OUTPUT_BYTES = 1 * 1_024 * 1_024;
 export const MAX_TOOL_RESPONSE_BYTES = 5 * 1_024 * 1_024;
 
@@ -47,20 +46,6 @@ const Base64Schema = Type.String({
   maxLength: Math.ceil(MAX_TOOL_OUTPUT_BYTES / 3) * 4 + 4,
   pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
 });
-
-const MutationFileBase64Schema = Type.String({
-  maxLength: Math.ceil(MAX_TOOL_MUTATION_FILE_BYTES / 3) * 4 + 4,
-  pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
-});
-
-const ToolOutputChunkSchema = Type.Object(
-  {
-    seq: PositiveSafeIntegerSchema,
-    stream: Type.Union([Type.Literal("stdout"), Type.Literal("stderr")]),
-    data: Base64Schema,
-  },
-  { additionalProperties: false },
-);
 
 export const ToolWebProxyBootstrapSchema = Type.Object(
   {
@@ -352,63 +337,6 @@ export const ToolSandboxOperationRequestSchema = Type.Union([
     },
     { additionalProperties: false },
   ),
-  Type.Object(
-    {
-      ...OperationEnvelope,
-      operation: Type.Literal("bash.exec"),
-      command: Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES }),
-      cwd: ToolPathSchema,
-      timeoutMs: Type.Integer({
-        minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS,
-        maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS,
-      }),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...OperationEnvelope,
-      operation: Type.Literal("file.read"),
-      path: ToolPathSchema,
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...OperationEnvelope,
-      operation: Type.Literal("file.read_range"),
-      path: ToolPathSchema,
-      offsetLine: Type.Integer({ minimum: 1, maximum: 1_000_000_000 }),
-      limitLines: Type.Integer({ minimum: 1, maximum: MAX_TOOL_READ_RANGE_LINES }),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...OperationEnvelope,
-      operation: Type.Literal("file.write"),
-      path: ToolPathSchema,
-      content: Type.String({ maxLength: MAX_TOOL_MUTATION_FILE_BYTES }),
-      expectedSha256: Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...OperationEnvelope,
-      operation: Type.Literal("file.mkdir"),
-      path: ToolPathSchema,
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...OperationEnvelope,
-      operation: Type.Literal("file.access"),
-      path: ToolPathSchema,
-    },
-    { additionalProperties: false },
-  ),
 ]);
 
 export const ToolSandboxOperationResponseSchema = Type.Union([
@@ -433,67 +361,6 @@ export const ToolSandboxOperationResponseSchema = Type.Union([
       ok: Type.Boolean(),
       value: Type.Unknown(),
       error: Type.Optional(Type.String()),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.operation_result"),
-      activationId: UuidSchema,
-      operationId: UuidSchema,
-      operation: Type.Literal("bash.exec"),
-      exitCode: Type.Union([Type.Integer({ minimum: 0, maximum: 255 }), Type.Null()]),
-      outputChunks: Type.Array(ToolOutputChunkSchema, { maxItems: 16_384 }),
-      outputSha256: Sha256Schema,
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.operation_result"),
-      activationId: UuidSchema,
-      operationId: UuidSchema,
-      operation: Type.Literal("file.read"),
-      content: MutationFileBase64Schema,
-      sha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.operation_result"),
-      activationId: UuidSchema,
-      operationId: UuidSchema,
-      operation: Type.Literal("file.read_range"),
-      content: Base64Schema,
-      startLine: Type.Integer({ minimum: 1 }),
-      endLine: Type.Integer({ minimum: 0 }),
-      nextOffsetLine: Type.Optional(Type.Integer({ minimum: 1 })),
-      firstLineBytes: Type.Optional(Type.Integer({ minimum: 1 })),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.operation_result"),
-      activationId: UuidSchema,
-      operationId: UuidSchema,
-      operation: Type.Literal("file.write"),
-      sha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.operation_result"),
-      activationId: UuidSchema,
-      operationId: UuidSchema,
-      operation: Type.Union([Type.Literal("file.mkdir"), Type.Literal("file.access")]),
     },
     { additionalProperties: false },
   ),

@@ -156,7 +156,23 @@ describe.sequential("pending conversation inputs", () => {
     const a = await f.accept("A"),
       b = await f.accept("B", "original-b"),
       c = await f.accept("C");
-    let q = await f.list();
+    const queries: string[] = [];
+    const measured = new QueuedInputService({
+      database: database.withPlugin({
+        transformQuery({ node, queryId }) {
+          queries.push(database.getExecutor().compileQuery(node, queryId).sql);
+          return node;
+        },
+        async transformResult({ result }) {
+          return result;
+        },
+      }),
+      steering: f.steering,
+    });
+    let q = await measured.list(f.tenant.tenantId, f.session.sessionId);
+    expect(queries).toHaveLength(1);
+    expect(q.activeTurnId).toBeNull();
+    expect(q.items.map((item) => item.turnId)).toEqual([a.turnId, b.turnId, c.turnId]);
     const before = q.revision;
     const edit = { action: "edit" as const, revision: q.revision, text: "B revised" };
     q = (await f.queue.mutate(f.tenant.tenantId, f.session.sessionId, b.turnId, "edit-b", edit))

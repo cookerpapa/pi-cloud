@@ -173,13 +173,13 @@ if (
 const api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production restart check requires a real model");
-const testProvider = process.env.PI_CLOUD_LIVE_FAULT_PROVIDER ?? "deepseek";
+const testProvider = process.env.PI_CLOUD_LIVE_FAULT_PROVIDER ?? "openai-codex";
 assert(["deepseek", "openai-codex"].includes(testProvider), "Unsupported fault-test Provider");
 const selection =
   testProvider === "deepseek"
     ? {
         provider: "deepseek",
-        modelId: "deepseek-v4-pro",
+        modelId: "deepseek-v4-flash",
         thinkingLevel: "off",
         fastMode: false,
       }

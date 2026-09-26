@@ -123,9 +123,10 @@ describe("Tool Sandbox protocol", () => {
         stepContextSequence: 1,
         stepContextSha256: "a".repeat(64),
         toolName: "bash",
-        operation: "bash.exec",
-        command: "pwd",
-        cwd: "/workspace",
+        operation: "tool.execute",
+        toolCallId: "native-bash",
+        args: { command: "pwd" },
+        maximumOutputBytes: 65_536,
         timeoutMs: 300_001,
       }),
     ).toThrow(ToolSandboxProtocolError);
@@ -156,16 +157,50 @@ describe("Tool Sandbox protocol", () => {
           type: "tool_sandbox.operation_result",
           activationId: "10000000-0000-4000-8000-000000000008",
           operationId: "10000000-0000-4000-8000-000000000009",
-          operation: "file.read",
-          content: Buffer.from("isolated\n").toString("base64"),
-          sha256: "b56cd21cdde6e2f4df2a1d34322d092ede320284fb273345ee0de579b1d32dce",
+          operation: "tool.execute",
+          event: {
+            type: "tool_execution_end",
+            toolCallId: "native-read",
+            toolName: "read",
+            isError: false,
+            result: { content: [{ type: "text", text: "isolated\n" }] },
+          },
         },
       }),
     ).toMatchObject({
       type: "worker.operation_result",
-      response: { operation: "file.read" },
+      response: { operation: "tool.execute" },
     });
   });
+
+  it.each(["bash.exec", "file.read", "file.read_range", "file.write", "file.mkdir", "file.access"])(
+    "rejects retired per-operation guest command %s",
+    (operation) => {
+      const body =
+        operation === "bash.exec"
+          ? { command: "pwd", cwd: "/workspace", timeoutMs: 1000 }
+          : operation === "file.read_range"
+            ? { path: "test.txt", offsetLine: 1, limitLines: 5 }
+            : operation === "file.write"
+              ? { path: "test.txt", content: "old interface" }
+              : { path: "test.txt" };
+      expect(() =>
+        parseToolSandboxOperationRequest({
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.operation",
+          activationId: "10000000-0000-4000-8000-000000000008",
+          operationId: "10000000-0000-4000-8000-000000000009",
+          turnContextSha256: "a".repeat(64),
+          executionContextSha256: "b".repeat(64),
+          stepContextSequence: 1,
+          stepContextSha256: "c".repeat(64),
+          toolName: operation === "bash.exec" ? "bash" : "read",
+          operation,
+          ...body,
+        }),
+      ).toThrow(ToolSandboxProtocolError);
+    },
+  );
 
   it.each(["worker.capture", "worker.cancel", "worker.shutdown"])(
     "rejects unsupported guest daemon command %s",

@@ -380,8 +380,8 @@ try {
   // Bootstrap tenants may use a deterministic fixture provider. Paid machine
   // acceptance must select its real route rather than inherit that default.
   await api.updateSessionModel(session.sessionId, {
-    provider: "deepseek",
-    modelId: "deepseek-v4-pro",
+    provider: "openai-codex",
+    modelId: "gpt-6-luna",
     thinkingLevel: "low",
     fastMode: false,
   });

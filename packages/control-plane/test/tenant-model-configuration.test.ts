@@ -51,7 +51,7 @@ function ownerIdentity(
 }
 
 describe.sequential("tenant model configuration", () => {
-  it("hides Flash from selection without rewriting the stored route", async () => {
+  it("offers Flash and omits Pro while preserving the selected Flash route", async () => {
     const tenant = await createPrivateTenant(database, {
       slug: "hidden-model-route",
       ownerDisplayName: "Hidden Model Route",
@@ -65,7 +65,7 @@ describe.sequential("tenant model configuration", () => {
     const { models } = await store.modelCatalog();
     expect(
       models.filter((model) => model.provider === "deepseek").map((model) => model.modelId),
-    ).toEqual(["deepseek-v4-pro"]);
+    ).toEqual(["deepseek-v4-flash"]);
     expect(models.filter((model) => model.default)).toHaveLength(1);
     await expect(
       new TenantModelConfigurationService({ database }).get(ownerIdentity(tenant)),

@@ -1,4 +1,4 @@
-import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import {
@@ -28,12 +28,7 @@ export interface CloudSubagentToolRuntime {
     request: Exclude<SubagentControlRequest, { action: "start" }>,
     signal?: AbortSignal,
   ): Promise<Record<string, unknown>>;
-  workflow(
-    toolCallId: string,
-    script: string,
-    signal?: AbortSignal,
-    onUpdate?: (result: AgentToolResult<unknown>) => void,
-  ): Promise<unknown>;
+  workflow(toolCallId: string, script: string, signal?: AbortSignal): Promise<unknown>;
 }
 
 const context = Type.Union([Type.Literal("fresh"), Type.Literal("branch")]);
@@ -152,7 +147,7 @@ export function createCloudSubagentTool(
       "Use a returned executionId or a workflow key as target. notify does not wake an idle Agent; steer targets the current task; follow_up queues later work.",
       "Do not send inherited 'start a subagent' instructions as the child's actual task. Do not replay uncertain external effects.",
     ].join(" "),
-    async execute(toolCallId, raw, signal, onUpdate) {
+    async execute(toolCallId, raw, signal) {
       const args = argumentsForAction(raw);
       let result: unknown;
       if (args.action === "run") {
@@ -174,7 +169,7 @@ export function createCloudSubagentTool(
             `${child.state === "unknown" ? "subagent_result_unknown" : "subagent_failed"}: ${String(child.failureMessage ?? child.state)}`,
           );
       } else if (args.action === "workflow") {
-        result = await runtime.workflow(toolCallId, args.script, signal, onUpdate);
+        result = await runtime.workflow(toolCallId, args.script, signal);
       } else result = await runtime.control(toolCallId, args, signal);
       const text = typeof result === "string" ? result : JSON.stringify(result ?? null);
       return { content: [{ type: "text", text }], details: { action: args.action } };

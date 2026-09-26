@@ -21,6 +21,10 @@ Use documentation in this order:
 research, conversations and superseded implementation logs remain in Git
 history instead of the maintained tree.
 
+The [September 27 repository review](reports/repository-review-20260927.md) covers
+Pi alignment, component boundaries, duplicated IO and removal of obsolete paths;
+it distinguishes implemented repairs from architecture decisions still awaiting discussion.
+
 The [Pi-alignment review](reports/pi-alignment-review-20260926.md) records its named
 baseline; the [repair and verification record](reports/pi-alignment-repair-20260926.md)
 tracks its disposition. Current architecture remains defined by the documents and

@@ -112,7 +112,7 @@ try {
       "elastic",
       "starter",
       "/workspace",
-      { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "off", fastMode: false },
+      { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "off", fastMode: false },
     );
     sessions.push(candidate);
     const nativeId = await sql(

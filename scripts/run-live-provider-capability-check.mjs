@@ -157,8 +157,7 @@ function assertHostedSearchProgress(events, turnId, label, minimumCalls = 1) {
 }
 
 const suffix = Date.now().toString(36);
-const deepSeekModel = process.env.PI_CLOUD_PROVIDER_CAPABILITY_DEEPSEEK_MODEL ?? "deepseek-v4-pro";
-assert(["deepseek-v4-flash", "deepseek-v4-pro"].includes(deepSeekModel));
+const deepSeekModel = "deepseek-v4-flash";
 const cookieFetch = new BrowserCookieFetch();
 const api = new PiCloudApi(cookieFetch.fetch, bootstrapToken);
 

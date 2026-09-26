@@ -88,6 +88,8 @@ claim returns a conflict without a lock cycle. PostgreSQL's deferrable mailbox
 uniqueness permits atomic adjacent swaps. Original acceptance fingerprints remain
 unchanged. Unstarted cancelled rows are retained as audit/idempotency tombstones,
 outside conversation history. At most 64 pending inputs are accepted per Session.
+Queue reads return revision, active input and pending order in one SQL snapshot;
+they do not open a transaction for each browser poll.
 
 Promotion holds the source out of readiness and creates a control request in the
 same transaction. Its payload references the held Turn text. A bounded reconciler
@@ -339,6 +341,10 @@ PG row locks, then deletes S3 objects outside the transaction; failures are retr
 `runtime-core` no longer depends on the concrete Pi Runner. Fake models are test-injected only.
 
 Cold restore reads the newest Compaction and active suffix, not lifetime JSONL.
+Writer metadata, next sequence and Lane heads load in one owner-scoped SQL
+snapshot. Worker management identities and the pinned Pi version belong to the
+shared protocol package; the Control Plane does not import those contracts from
+the concrete Runner.
 The active native writer maintains acknowledged Lane views. Each Step reads that
 view and returns from writes at Kafka ACK, without PG receipt polling. Pi's
 public Agent and Compaction primitives implement the loop; PiCloud does not fork
@@ -415,6 +421,9 @@ not authority. The final reply resolves or
 rejects `execute`. Pi still owns after-Tool hooks, its lifecycle events and the
 canonical Tool Result appended to the execution log. Kafka reply ACK releases transport buffers, with
 no completed-result cache or per-result retirement notification.
+Kafka replies accept only the final result; guest updates use the separate HTTP
+observation path. The Worker observes its reply Promise before awaiting command
+publication and retires it on every exit, including image-decoding failure.
 
 Guest file Tools treat cwd as a relative-path base and follow ordinary guest
 paths/symlinks. Native Node writes retain byte bounds, edit-conflict detection
@@ -422,6 +431,9 @@ and file/parent fsync before success. Host Volume browsing retains its separate
 containment checks. Pi may run read-only/delegation batches concurrently; any
 fixed write/edit/bash in a batch retains native sequential execution. Existing
 Tool, child-tree and executor limits remain, as does one ordered Session writer.
+The former per-file and raw Bash RPC forms are removed; native Tools and scoped
+workflows are the only Agent execution requests. Text reads retain Pi's LF split,
+CR and BOM behavior, including an empty final line, within the existing bounds.
 
 One Runner sampling-context adapter prepares World State and model headers for
 both pure chat and file-capable Runs. The Step's `activeTools` is explicitly the

@@ -158,7 +158,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       recipe:DEFAULT_PROJECT_ENVIRONMENT_RECIPE,recipeSha256:DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,state:'pending',active:true,createdAt}};
   const models = [
     {...DEFAULT_NEW_CONVERSATION_MODEL,displayName:"Fixture GPT",default:true,thinkingLevels:["off","medium","high"],defaultThinkingLevel:"medium",fastModeAvailable:true},
-    {provider:"deepseek",modelId:"deepseek-v4-pro",displayName:"Fixture DeepSeek",default:false,thinkingLevels:["off","medium","high"],defaultThinkingLevel:"high",fastModeAvailable:false}
+    {provider:"deepseek",modelId:"deepseek-v4-flash",displayName:"Fixture DeepSeek",default:false,thinkingLevels:["off","medium","high"],defaultThinkingLevel:"high",fastModeAvailable:false}
   ];
   let selection = {...DEFAULT_NEW_CONVERSATION_MODEL,thinkingLevel:"medium",fastMode:false};
   let session;

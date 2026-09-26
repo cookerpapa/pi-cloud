@@ -1316,16 +1316,6 @@ export function parseCubeProxyConfigurationResource(
   );
 }
 
-export function parseInternalCubeProxyConfigurationResource(
-  value: unknown,
-): InternalCubeProxyConfigurationResource {
-  return parseSchema(
-    InternalCubeProxyConfigurationResourceSchema,
-    value,
-    "internal Cube proxy configuration resource",
-  );
-}
-
 export function parseCreateTenantRegistrationRequest(
   value: unknown,
 ): CreateTenantRegistrationRequest {
@@ -1580,9 +1570,4 @@ export function parseIdempotencyKey(value: unknown): string {
 
 export function parseUuidPathParameter(value: unknown, name: string): string {
   return parseSchema(UuidSchema, value, `${name} path parameter`);
-}
-
-export function parsePositiveIntegerPathParameter(value: unknown, name: string): number {
-  const normalized = typeof value === "string" && /^[1-9]\d*$/.test(value) ? Number(value) : value;
-  return parseSchema(PositiveSafeIntegerSchema, normalized, `${name} path parameter`);
 }

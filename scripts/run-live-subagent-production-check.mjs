@@ -399,11 +399,11 @@ api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 authorizationToken = registration.apiToken;
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must use a real model");
-const testProvider = process.env.PI_CLOUD_LIVE_SUBAGENT_PROVIDER ?? "deepseek";
+const testProvider = process.env.PI_CLOUD_LIVE_SUBAGENT_PROVIDER ?? "openai-codex";
 assert(["deepseek", "openai-codex"].includes(testProvider), "Unsupported Subagent test Provider");
 const acceptanceModel = {
   provider: testProvider,
-  modelId: testProvider === "deepseek" ? "deepseek-v4-pro" : "gpt-6-luna",
+  modelId: testProvider === "deepseek" ? "deepseek-v4-flash" : "gpt-6-luna",
   thinkingLevel: "low",
   fastMode: false,
 };

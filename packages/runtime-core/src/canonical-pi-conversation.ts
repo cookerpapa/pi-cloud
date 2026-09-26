@@ -8,7 +8,12 @@ import {
 } from "@pi-cloud/protocol";
 import { normalizeProviderHostedWebSearchAction, toolResultIsUnknown } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
-import { buildSessionContext, estimateTokens, type Entry } from "@earendil-works/pi-agent-core";
+import {
+  buildSessionContext,
+  estimateTokens,
+  type AgentMessage,
+  type Entry,
+} from "@earendil-works/pi-agent-core";
 
 export const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";
 
@@ -191,6 +196,19 @@ function outputValue(message: JsonRecord): unknown {
   };
 }
 
+function estimateStoredMessageTokens(message: AgentMessage): number {
+  if (!("content" in message) || !Array.isArray(message.content)) return estimateTokens(message);
+  // Pi's heuristic counts an image by its content type, without reading bytes.
+  // Normalize only this local estimate; never fetch blobs or expose placeholders
+  // as model context or canonical history.
+  const content = message.content.map((part) =>
+    record(part)?.type === "pi_cloud_image_v1"
+      ? { type: "image", mimeType: "image/png", data: "" }
+      : part,
+  );
+  return estimateTokens({ ...message, content } as AgentMessage);
+}
+
 function projectPiEntries(
   rows: readonly { seq: string; timestamp_ms: string; payload: JsonRecord }[],
   terminal: ReturnType<typeof terminalMetadata>,
@@ -242,7 +260,7 @@ function projectPiEntries(
         status: "completed",
         willRetry: false,
         estimatedTokensAfter: buildSessionContext([payload as unknown as Entry]).messages.reduce(
-          (total, message) => total + estimateTokens(message),
+          (total, message) => total + estimateStoredMessageTokens(message),
           0,
         ),
         ...(typeof payload.tokensBefore === "number" &&

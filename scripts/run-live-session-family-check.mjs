@@ -114,8 +114,8 @@ const runs = [];
 const timings = [];
 let tenantId;
 const model = {
-  provider: "deepseek",
-  modelId: "deepseek-v4-pro",
+  provider: "openai-codex",
+  modelId: "gpt-6-luna",
   thinkingLevel: "low",
   fastMode: false,
 };

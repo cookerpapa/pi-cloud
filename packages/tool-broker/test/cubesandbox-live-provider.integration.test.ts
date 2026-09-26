@@ -8,7 +8,7 @@ import {
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { connect } from "node:net";
@@ -213,9 +213,10 @@ function operation(
     stepContextSequence: 1,
     stepContextSha256: STEP_CONTEXT_SHA256,
     toolName: "bash",
-    operation: "bash.exec",
-    command,
-    cwd: "/workspace",
+    operation: "tool.execute",
+    toolCallId: "native-security-probe",
+    args: { command },
+    maximumOutputBytes: 65_536,
     timeoutMs,
   };
 }
@@ -223,41 +224,17 @@ function operation(
 function output(response: ToolSandboxOperationResponse): string {
   if (
     response.type !== "tool_sandbox.operation_result" ||
-    response.operation !== "bash.exec" ||
-    response.exitCode !== 0
-  ) {
-    const diagnostic =
-      response.type === "tool_sandbox.operation_result" && response.operation === "bash.exec"
-        ? {
-            type: response.type,
-            operation: response.operation,
-            exitCode: response.exitCode,
-            output: Buffer.concat(
-              response.outputChunks.map((chunk) => Buffer.from(chunk.data, "base64")),
-            )
-              .toString("utf8")
-              .slice(0, 2_048),
-          }
-        : response.type === "tool_sandbox.operation_result"
-          ? {
-              type: response.type,
-              operation: response.operation,
-            }
-          : {
-              type: response.type,
-              code: response.code,
-              message: response.message,
-              retryable: response.retryable,
-            };
-    throw new Error(`CubeSandbox live command did not succeed: ${JSON.stringify(diagnostic)}`);
-  }
-  const bytes = Buffer.concat(
-    response.outputChunks.map((chunk) => Buffer.from(chunk.data, "base64")),
-  );
-  if (createHash("sha256").update(bytes).digest("hex") !== response.outputSha256) {
-    throw new Error("CubeSandbox live command output digest did not match");
-  }
-  return bytes.toString("utf8");
+    response.operation !== "tool.execute" ||
+    response.event.type !== "tool_execution_end"
+  )
+    throw new Error("CubeSandbox live command returned no native final result");
+  const text = response.event.result.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+  if (response.event.isError)
+    throw new Error("CubeSandbox live command failed: " + text.slice(0, 2048));
+  return text;
 }
 
 async function assertReachableFromTrustedHost(

@@ -3,6 +3,7 @@ import {
   parseToolSandboxOperationRequest,
   type AcceptedToolCommand,
   type NativeToolEvent,
+  type NativeToolEnd,
   type ToolProgressDelivery,
   TOOL_PROGRESS_MAX_CHARACTERS,
 } from "@pi-cloud/protocol";
@@ -27,7 +28,7 @@ export type ToolLogFact = {
     Partial<AcceptedToolCommand["scope"]>;
   closesWriter?: boolean;
 };
-type Reply = { operationId: string; sequence: number; event: NativeToolEvent };
+type Reply = { operationId: string; sequence: 1; event: NativeToolEnd };
 
 /** Projector committed the dispatch boundary before delivery. No completed-result cache. */
 export class ToolCommandExecutor {
@@ -146,8 +147,7 @@ export class ToolCommandExecutor {
     if (this.#active.has(request.operationId) || this.#closedFor(command)) return;
     if (!command.replyTopic) throw new Error("Tool reply destination is unavailable");
     const topic = command.replyTopic;
-    let sequence = 0,
-      publicationFailure: unknown;
+    let publicationFailure: unknown;
     let revision = 0;
     const send = async (event: NativeToolEvent) => {
       if (this.#closedFor(command) || publicationFailure) return;
@@ -178,7 +178,7 @@ export class ToolCommandExecutor {
           topic,
           {
             operationId: request.operationId,
-            sequence: ++sequence,
+            sequence: 1,
             event,
           },
           command.scope,

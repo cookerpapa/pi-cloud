@@ -36,7 +36,6 @@ export {
   type PostgresSessionExecutionAuthorityOptions,
 } from "./postgres-execution-authority.ts";
 export {
-  createPostgresPiSessionLaneInTransaction,
   forkPostgresPiSessionInTransaction,
   PostgresPiSessionRepository,
   type PostgresPiSessionCreateOptions,

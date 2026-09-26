@@ -151,7 +151,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
     const runtime: CloudSubagentToolRuntime = {
       run: (id, task, signal) => run(toolInvocationId(id), task, signal),
       control: nativeControl,
-      workflow: async (toolCallId, script, signal, onUpdate) => {
+      workflow: async (toolCallId, script, signal) => {
         const invocationId = toolInvocationId(toolCallId);
         if (!context.executeWorkflow) throw new Error("Isolated workflow execution is unavailable");
         return context.executeWorkflow(
@@ -176,7 +176,6 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
             );
           },
           signal,
-          onUpdate,
         );
       },
     };
