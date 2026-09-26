@@ -51,7 +51,7 @@ type GeneratedJsonArray = JSONColumnType<unknown[], unknown[] | undefined, unkno
 export type CredentialBindingStatus = "active" | "disabled" | "revoked";
 export type CredentialKind = "oauth" | "api_key" | "brokered";
 export type TurnInputKind = "prompt";
-export type TurnControlRequestKind = "cancel" | "steer";
+export type TurnControlRequestKind = "cancel" | "steer" | "queue";
 export type TurnControlRequestState = DomainTurnControlRequestState;
 export type SupervisorConnectionState = "active" | "superseded" | "fenced";
 export type SupervisorConnectionCloseReason = "reconnected" | "heartbeat_timeout" | "new_boot";
@@ -700,6 +700,7 @@ export interface TurnTable {
 }
 
 export interface RunTable {
+  queued_steer_id: GeneratedNullable<string>;
   compute_session_id: GeneratedNullable<string>;
   id: string;
   tenant_id: string;

@@ -23,6 +23,7 @@ import {
 import { WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { TurnSteeringService } from "./turn-steering-service.ts";
+import { QueuedInputService } from "./queued-input-service.ts";
 import type { TurnSteerBackend } from "./turn-steer.ts";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
@@ -57,6 +58,13 @@ export type ControlPlaneEventRuntime = {
 export class ControlPlaneModule {
   static register(options: ControlPlaneModuleOptions): DynamicModule {
     const { eventHub, eventStore } = options.eventRuntime;
+    const turnSteering = new TurnSteeringService({
+      database: options.database,
+      ...(options.turnSteerBackendFactory === undefined
+        ? {}
+        : { backendFactory: options.turnSteerBackendFactory }),
+      ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
+    });
     const conversationArchive = new ConversationArchiveService({
       database: options.database,
       ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
@@ -153,12 +161,14 @@ export class ControlPlaneModule {
         },
         {
           provide: TurnSteeringService,
-          useValue: new TurnSteeringService({
+          useValue: turnSteering,
+        },
+        {
+          provide: QueuedInputService,
+          useValue: new QueuedInputService({
             database: options.database,
-            ...(options.turnSteerBackendFactory === undefined
-              ? {}
-              : { backendFactory: options.turnSteerBackendFactory }),
-            ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
+            steering: turnSteering,
+            autoStart: options.turnSteerBackendFactory !== undefined,
           }),
         },
         {

@@ -1,5 +1,14 @@
 # Configuration
 
+Pending conversation inputs have a code-owned maximum of 64 items per Session
+and the existing 100,000-character input limit. The pending-input view polls at
+two seconds while visible and refreshes on focus/actions; browser requests have
+a ten-second deadline. Promotion reconciliation scans at most 32 eligible rows,
+allows two local HTTP deliveries in flight and retains per-Run delivery order.
+Retries use the existing control-request identity and bounded next-attempt times.
+These are product limits, not another Run scheduler or tenant model concurrency
+setting. See [ADR-0194](adr/0194-editable-pending-inputs.md).
+
 PiCloud has four configuration surfaces. A setting belongs to exactly one of
 them:
 

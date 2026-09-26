@@ -75,9 +75,29 @@ only after predecessor closure and Lane readiness. Native in-Run steer is
 consumed after the current model response/Tool batch, before the next model
 request. Native follow-up is consumed when that Agent would otherwise stop;
 internal verification reminders and Agent messages use this path. These two
-follow-up lifecycles are distinct. Currently queued Turns cannot be individually
-cancelled, edited, reordered or converted to steer, and delivered steer has no
-per-message recall. The stop action cancels only the active Turn.
+follow-up lifecycles are distinct. Pending ordinary-conversation inputs can be
+edited, reordered by adjacent swaps, individually removed or promoted to the
+active Run. Input text/order freeze at admission. Model/environment/credential
+snapshots remain frozen at acceptance. Started inputs and consumed steer cannot
+be recalled. The stop action still cancels only the active Turn (ADR-0194).
+
+Queue mutations use the product Session revision and a bounded idempotency
+receipt in `turn_control_requests` (`kind=queue`). They acquire affected queued
+Run/Turn locks with NOWAIT while holding the Session lock, so a concurrent Worker
+claim returns a conflict without a lock cycle. PostgreSQL's deferrable mailbox
+uniqueness permits atomic adjacent swaps. Original acceptance fingerprints remain
+unchanged. Unstarted cancelled rows are retained as audit/idempotency tombstones,
+outside conversation history. At most 64 pending inputs are accepted per Session.
+
+Promotion holds the source out of readiness and creates a control request in the
+same transaction. Its payload references the held Turn text. A bounded reconciler
+uses the existing HTTP steer transport and stable native input identity; no PG
+transaction spans that RPC. Two local deliveries may run concurrently, while
+promotions to the same Run retain acceptance order through acknowledgements.
+Only a canonical user Entry confirms consumption and retires the queued source.
+A projected target seal plus absent Entry restores the input to its queue position;
+an HTTP error alone cannot restore it. This is input reconciliation, not another
+Run scheduler or a mechanism to replay arbitrary Tools.
 
 The Runner rechecks native queues after a successful Agent continuation and
 closes input admission synchronously with its last empty-queue decision. Final
@@ -106,6 +126,9 @@ It adds no client round trip; rollback and duplicate seal delivery cannot drift 
 One materialized candidate supplies the startup context without a second queue
 scan. Immutable Session kind and Workspace seed kind travel in the internal
 execute command; downstream preparation does not re-query them.
+Mutable pending input text is read in a fresh statement after the candidate Run
+lock, avoiding a stale joined value from the original statement snapshot. This
+adds one `input_snapshot` admission read, never a per-Step query.
 Session lease binding, publication scope and running state commit together in
 one Run update; rejected admission leaves input queued without another execution
 identity. The Runner
@@ -261,6 +284,10 @@ discarded; only a complete replacement is applied. Small live events remain
 immediate. The browser does not submit Kafka offsets or Last-Event-ID. A local
 POST which raced with an older snapshot invalidates that UI request, not the Run.
 History opens on the latest 40 Turns; earlier pages use an owned Turn identity.
+Queued inputs and unstarted cancellations do not occupy history pages or Turn
+counts. The composer owns a separate pending-input view, refreshed every two
+seconds while visible, on focus and after input actions. Queue changes do not
+restart the execution SSE stream. Optimistic conflicts preserve the editing draft.
 Tree jumps load missing pages, and export traverses them. These history anchors
 are not stream recovery cursors.
 

@@ -9,6 +9,13 @@ Same-Lane Runs remain serialized by mailbox position. A queued Run is dispatchab
 only when `ready_at` is non-null. Acceptance readies the initial head; committed
 predecessor closure readies its successor under the same Session row lock.
 
+Pending human inputs are editable before admission (ADR-0194). Queue actions use
+the Session revision and an idempotent control receipt. Adjacent swaps are atomic;
+cancelled unstarted Runs retain their identity without a native execution/seal.
+Model, credential, environment and Tool snapshots remain fixed at acceptance.
+The Worker locks the Run, then reads current input text in a fresh statement;
+queue edits acquire that lock with NOWAIT and cannot change admitted context.
+
 Queued Follow-up is a persisted input/Run, not yet a Pi user Entry or Kafka
 Session mutation. Steer is first stored in `turn_control_requests` and delivered
 to the running Pi queue; only native consumption creates its user Entry through
@@ -16,6 +23,14 @@ the Fact path. A `delivered` response does not prove model consumption. See
 [the real API/Worker check](reports/worker-handoff-findings.md).
 Delivery uses the HTTP management backend. WebSocket registration/heartbeat
 has no Steer prepare/commit/release fallback.
+
+Promoting a queued input holds it out of dispatch until native consumption is
+confirmed. Its control ID is the stable Agent-input identity. HTTP retries cannot
+append a second input. A lost acknowledgement does not cause queue re-execution:
+the reconciler checks the canonical input Entry and the target's projected seal.
+Only a sealed target with no consumed Entry restores the source's queued position.
+Promotions to the same Run are sent in acceptance order; different Sessions can
+deliver concurrently. An optional edited text is committed with promotion.
 
 ## Claim and execution
 

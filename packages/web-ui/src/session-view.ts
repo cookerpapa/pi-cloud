@@ -1,5 +1,6 @@
 import type {
   AcceptedTurnResource,
+  InputQueueResource,
   AssistantMessagePhase,
   PiCloudEvent,
   ConversationDetailResource,
@@ -119,6 +120,7 @@ export type SessionViewState = {
 };
 
 export type SessionViewAction =
+  | { type: "queue.updated"; queue: InputQueueResource }
   | { type: "session.created"; project: ProjectResource; session: SessionResource }
   | {
       type: "conversation.loaded";
@@ -710,6 +712,36 @@ export function sessionViewReducer(
           : turn.status,
     }));
     return { ...state, turns, apiError: null };
+  }
+  if (action.type === "queue.updated") {
+    if (state.session?.sessionId !== action.queue.sessionId) return state;
+    const history = state.turns.filter((turn) => turn.status !== "queued");
+    const started = new Set(history.map((turn) => turn.turnId));
+    const pending = action.queue.items
+      .filter((item) => !started.has(item.turnId))
+      .map((item) => ({
+        ...unknownTurn(item.turnId),
+        runId: item.runId,
+        mailboxPosition: item.mailboxPosition,
+        prompt: item.text,
+        acceptedAt: item.acceptedAt,
+        status: "queued" as const,
+      }));
+    const previous = state.turns.filter((turn) => turn.status === "queued");
+    if (
+      previous.length === pending.length &&
+      previous.every((turn, index) => {
+        const next = pending[index]!;
+        return (
+          turn.turnId === next.turnId &&
+          turn.prompt === next.prompt &&
+          turn.mailboxPosition === next.mailboxPosition &&
+          turn.runId === next.runId
+        );
+      })
+    )
+      return state;
+    return { ...state, turns: [...history, ...pending] };
   }
   if (action.type === "turn.cancellation.requested") {
     return {

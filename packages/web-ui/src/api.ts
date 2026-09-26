@@ -1,4 +1,9 @@
 import {
+  parseInputQueueResource,
+  parseQueuedInputActionResult,
+  type InputQueueResource,
+  type QueuedInputAction,
+  type QueuedInputActionResult,
   parseAcceptedTurnCancellationResource,
   parseAcceptedTurnResource,
   parseTurnSteerResource,
@@ -760,6 +765,38 @@ export class PiCloudApi {
           },
           idempotencyKey,
         ),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async getInputQueue(sessionId: string, signal?: AbortSignal): Promise<InputQueueResource> {
+    return parseInputQueueResource(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs`,
+        {
+          method: "GET",
+          signal: signal
+            ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+            : AbortSignal.timeout(10_000),
+        },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async mutateQueuedInput(
+    sessionId: string,
+    turnId: string,
+    action: QueuedInputAction,
+    idempotencyKey: string,
+  ): Promise<QueuedInputActionResult> {
+    return parseQueuedInputActionResult(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs/${encodeURIComponent(turnId)}/actions`,
+        { ...jsonRequest(action, idempotencyKey), signal: AbortSignal.timeout(10_000) },
         this.#authorizationToken,
       ),
     );

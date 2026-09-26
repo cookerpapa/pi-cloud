@@ -372,6 +372,62 @@
       "file": "test/kafka-producer-backpressure.test.ts",
       "test": "rejects an oversized record without poisoning another Session's Producer callback",
       "invariant": "Oversized individual publications fail before entering the shared Kafka Producer stream."
+    },
+    {
+      "id": "queued-edit-claim-race",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rejects edit when Worker admission holds the affected Run without deadlocking",
+      "invariant": "An admitted/locked Run cannot have its input rewritten by a pending edit."
+    },
+    {
+      "id": "queued-cancel-claim-race",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rejects cancel when Worker admission holds the affected Run without deadlocking",
+      "invariant": "Pending cancellation cannot retire a Run whose admission already won."
+    },
+    {
+      "id": "queued-reorder-claim-race",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rejects move when Worker admission holds the affected Run without deadlocking",
+      "invariant": "A locked queue neighbor cannot be reordered under an active admission."
+    },
+    {
+      "id": "queued-steer-lost-reply",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "recovers a consumed promotion after a lost reply and API restart without duplicate delivery",
+      "invariant": "Canonical input consumption resolves a lost HTTP reply without executing the queued source."
+    },
+    {
+      "id": "queued-steer-seal-restore",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "restores unconsumed promotion only after the target seal (reply lost=true)",
+      "invariant": "A missing reply alone cannot restore a queued source; an absent input plus projected seal can."
+    },
+    {
+      "id": "queued-steer-order",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "orders promotions to one Run across API replicas while an earlier reply is pending",
+      "invariant": "Promotions to the same target preserve accepted delivery order across replicas."
+    },
+    {
+      "id": "queued-steer-shutdown",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "stops new promotion deliveries during shutdown and resumes persisted work after restart",
+      "invariant": "Shutdown starts no further deliveries and restart finds the remaining durable controls."
+    },
+    {
+      "id": "queued-mutation-idempotency",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "deduplicates concurrent replicas and rejects a competing stale queue mutation",
+      "invariant": "Concurrent API replicas cannot repeat a queue operation or silently overwrite a stale edit."
     }
   ]
 }

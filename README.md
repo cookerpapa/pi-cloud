@@ -4,6 +4,7 @@ A self-hosted, multi-tenant coding agent. Pi SDK runs the Agent Loop in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
 - Multi-round chat, model switching, hosted search and Subagents.
+- Editable queued messages, ordering, individual removal and promotion to active steer.
 - Persistent conversations, context compaction and interruption recovery.
 - Elastic Workspaces or dedicated development machines, with file browsing,
   terminals and app previews. Dedicated machines also support SSH.

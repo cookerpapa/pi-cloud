@@ -91,6 +91,8 @@ import { WorkspaceBrowserService } from "./workspace-browser-service.ts";
 import { readWebSessionCookie, WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { TurnSteeringService } from "./turn-steering-service.ts";
+import { QueuedInputService } from "./queued-input-service.ts";
+import { parseQueuedInputAction } from "@pi-cloud/protocol";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
@@ -120,6 +122,7 @@ export class ControlPlaneController {
     private readonly platformRuntimeSettings: PlatformRuntimeSettingsService,
     @Inject(TurnSteeringService)
     private readonly turnSteering: TurnSteeringService,
+    @Inject(QueuedInputService) private readonly queuedInputs: QueuedInputService,
     @Inject(ConversationTreeService)
     private readonly conversationTrees: ConversationTreeService,
     @Inject(DevelopmentEnvironmentService)
@@ -782,6 +785,34 @@ export class ControlPlaneController {
     const request = parseCreateTurnSteerRequest(body);
     const identity = this.tenantRequestContext.requireMutation(httpRequest);
     return this.turnSteering.deliver(identity, sessionId, turnId, idempotencyKey, request);
+  }
+
+  @Get("sessions/:sessionId/queued-inputs")
+  async getQueuedInputs(@Req() request: FastifyRequest, @Param("sessionId") sessionId: unknown) {
+    const identity = this.tenantRequestContext.resolve(request);
+    return this.queuedInputs.list(
+      identity.tenantId,
+      parseUuidPathParameter(sessionId, "sessionId"),
+    );
+  }
+
+  @Post("sessions/:sessionId/queued-inputs/:turnId/actions")
+  @HttpCode(200)
+  async mutateQueuedInput(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionId: unknown,
+    @Param("turnId") turnId: unknown,
+    @Headers("idempotency-key") key: unknown,
+    @Body() body: unknown,
+  ) {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    return this.queuedInputs.mutate(
+      identity.tenantId,
+      parseUuidPathParameter(sessionId, "sessionId"),
+      parseUuidPathParameter(turnId, "turnId"),
+      parseIdempotencyKey(key),
+      parseQueuedInputAction(body),
+    );
   }
 
   @Get("sessions/:sessionId/events")

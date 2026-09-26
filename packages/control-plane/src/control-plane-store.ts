@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { MAX_QUEUED_INPUTS } from "@pi-cloud/protocol";
 import { laneDependenciesReady } from "@pi-cloud/runtime-core/run-readiness";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -1463,6 +1464,15 @@ export class ControlPlaneStore {
         session.next_mailbox_position,
         "Next mailbox position",
       );
+      const queued = await transaction
+        .selectFrom("runs")
+        .select(sql<number>`count(*)::int`.as("count"))
+        .where("tenant_id", "=", this.#tenantId)
+        .where("session_id", "=", session.id)
+        .where(sql<boolean>`state='queued'`)
+        .executeTakeFirstOrThrow();
+      if (queued.count >= MAX_QUEUED_INPUTS)
+        throw new ControlPlaneStoreError("conflict", "Pending input queue is full");
       const model = await this.#resolveModelSnapshot(
         transaction,
         session.desired_model_profile_id,

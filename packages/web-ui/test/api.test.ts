@@ -45,6 +45,27 @@ const environment = {
 } as const;
 
 describe("tenant-aware browser API", () => {
+  it("sends versioned queue actions with their stable idempotency key", async () => {
+    const sessionId = "10000000-0000-4000-8000-000000000001";
+    const turnId = "20000000-0000-4000-8000-000000000001";
+    const queue = { sessionId, revision: 7, activeTurnId: turnId, items: [] };
+    const action = { action: "steer" as const, revision: 7, targetTurnId: turnId, text: "edited" };
+    const transport = vi.fn<typeof fetch>(async (input, init) => {
+      if (init?.method === "GET") {
+        expect(input).toBe(`/v1/sessions/${sessionId}/queued-inputs`);
+        return Response.json(queue);
+      }
+      expect(input).toBe(`/v1/sessions/${sessionId}/queued-inputs/${turnId}/actions`);
+      expect(new Headers(init?.headers).get("idempotency-key")).toBe("queue-action");
+      expect(JSON.parse(String(init?.body))).toEqual(action);
+      return Response.json({ queue, replayed: false });
+    });
+    const api = new PiCloudApi(transport);
+    expect(await api.getInputQueue(sessionId)).toEqual(queue);
+    expect(await api.mutateQueuedInput(sessionId, turnId, action, "queue-action")).toMatchObject({
+      replayed: false,
+    });
+  });
   it("passes the opaque conversation page cursor without changing stream requests", async () => {
     const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
       expect(String(input)).toBe("/v1/conversations?cursor=page_position");

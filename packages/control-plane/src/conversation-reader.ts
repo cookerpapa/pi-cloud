@@ -90,7 +90,9 @@ export class ConversationReader {
         join
           .onRef("turn.tenant_id", "=", "session_row.tenant_id")
           .onRef("turn.session_id", "=", "session_row.id")
-          .on("turn.pruned_at", "is", null),
+          .on("turn.pruned_at", "is", null)
+          .on("turn.state", "!=", "queued")
+          .on(sql<boolean>`not (turn.state='cancelled' and turn.started_at is null)`),
       )
       .select([
         "session_row.id as sessionId",
@@ -337,6 +339,8 @@ export class ConversationReader {
         .where("run.tenant_id", "=", this.#tenantId)
         .where("run.session_id", "=", node.sessionId)
         .where("turn.pruned_at", "is", null)
+        .where("run.state", "!=", "queued")
+        .where(sql<boolean>`not (run.state='cancelled' and run.started_at is null)`)
         .where("run.mailbox_position", "is not", null)
         .$if(anchor?.session_id === node.sessionId, (query) =>
           query.where("run.mailbox_position", "<", anchor!.mailbox_position),

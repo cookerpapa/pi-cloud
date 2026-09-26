@@ -588,7 +588,7 @@ describe("AgentRunSupervisor", () => {
 
   it("delivers a fenced steer only to the exact running assignment", async () => {
     let settle!: () => void;
-    const observed: Array<{ targetRunId: string; text: string }> = [];
+    const observed: Array<{ targetRunId: string; text: string; inputId: string }> = [];
     const steeringRunner: SupervisorTurnRunner = {
       async run() {
         await new Promise<void>((resolvePromise) => {
@@ -596,8 +596,8 @@ describe("AgentRunSupervisor", () => {
         });
         return { stopReason: "stop" };
       },
-      async steer(targetRunId, text) {
-        observed.push({ targetRunId, text });
+      async steer(targetRunId, text, inputId) {
+        observed.push({ targetRunId, text, inputId });
       },
     };
     const supervisor = new AgentRunSupervisor({ runner: steeringRunner });
@@ -612,8 +612,11 @@ describe("AgentRunSupervisor", () => {
       {
         targetRunId: execute.payload.runId,
         text: "Inspect the boundary condition first.",
+        inputId: IDS.steer,
       },
     ]);
+    await supervisor.prepareSteer(steer(execute)).run();
+    expect(observed).toHaveLength(1);
     settle();
     await expect(execution).resolves.toEqual({ stopReason: "stop", lastEventSeq: 0 });
   });

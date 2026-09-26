@@ -570,6 +570,7 @@ export class RunExecutor {
         // These code-owned states are also the partial ready-index predicate.
         // Parameters prevent a generic prepared plan from proving that match.
         .where(sql<boolean>`candidate.state = 'queued' and candidate.ready_at is not null`)
+        .where("candidate.queued_steer_id", "is", null)
         .where("candidate_session.state", "in", ["cold", "idle"])
         .where(this.#familyAdmission("candidate_session", admission))
         .where(this.#taskOwnerAvailable("candidate"))
@@ -622,7 +623,7 @@ export class RunExecutor {
           "turn.id as turnId",
           "turn.state as turnState",
           "turn.input_kind as inputKind",
-          "turn.input_text as inputText",
+          sql<string | null>`null`.as("inputText"),
           "turn.model_profile_id as modelProfileId",
           "turn.provider as provider",
           "turn.model_id as modelId",
@@ -661,6 +662,19 @@ export class RunExecutor {
 
       mark("candidate_context");
       if (!context) return undefined;
+
+      // The candidate Run lock fences pending-input edits. Its statement's
+      // snapshot may predate a just-committed edit, so read the mutable Turn
+      // text in a new READ COMMITTED statement before freezing execution.
+      const input = await transaction
+        .selectFrom("turns")
+        .select("input_text")
+        .where("tenant_id", "=", context.tenantId)
+        .where("id", "=", context.turnId)
+        .where("state", "=", "queued")
+        .executeTakeFirstOrThrow();
+      context.inputText = input.input_text;
+      mark("input_snapshot");
 
       // Fixed-ID configuration lookup stays in the claim transaction. Keeping
       // it separate avoids planning one large join/anti-join graph per Run.
@@ -912,7 +926,8 @@ export class RunExecutor {
         fencing_token=${ref.fencingToken},last_event_seq=${Math.max(0, Number(r.nextEventSeq) - 1)},
         output_publication=${JSON.stringify(claim.admission.publication)}::jsonb,native_output_drained=false
         where tenant_id=${r.tenantId}::uuid and id=${r.runId}::uuid
-          and state='queued' and ready_at is not null and lease_id is null and row_version=${runVersion}::bigint
+          and state='queued' and ready_at is not null and queued_steer_id is null
+          and lease_id is null and row_version=${runVersion}::bigint
           and exists(select 1 from session_leases l where l.lease_id=${ref.leaseId}::uuid
             and l.tenant_id=${r.tenantId}::uuid and l.pi_session_id=${r.piSessionId}
             and l.sandbox_id=${this.#workerId}::uuid and l.fencing_token=${ref.fencingToken}

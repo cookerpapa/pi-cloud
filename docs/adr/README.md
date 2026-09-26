@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0194](0194-editable-pending-inputs.md) — editable pending inputs,
+   ordered queue mutations and consumption-confirmed promotion to steer.
 1. [ADR-0193](0193-native-run-lifecycle-boundaries.md) — native input closure,
    per-sampling retry state, compaction usage freshness and Run-local cancellation.
 1. [ADR-0192](0192-session-image-attachments.md) — immutable image attachments,

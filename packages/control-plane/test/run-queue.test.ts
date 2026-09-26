@@ -127,6 +127,7 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
       "candidate_context",
       "configuration",
       "finish",
+      "input_snapshot",
       "ownership",
       "transaction_begin",
     ]);

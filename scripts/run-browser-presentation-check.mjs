@@ -163,6 +163,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   let selection = {...DEFAULT_NEW_CONVERSATION_MODEL,thinkingLevel:"medium",fastMode:false};
   let session;
   const fixtureTurnId='50000000-0000-4000-8000-000000000011';
+  window.fixtureQueue={sessionId:sid,revision:0,activeTurnId:sessionState==='running'?fixtureTurnId:null,items:[]};
   const delegates=['branch','fresh'].map((contextMode,index)=>({sessionId:'10000000-0000-4000-8000-00000000000'+(index+2),
     executionId:'80000000-0000-4000-8000-00000000000'+(index+1),parentSessionId:sid,rootSessionId:sid,parentTurnId:fixtureTurnId,
     depth:1,title:contextMode+' child',contextMode,sandboxMode:'shared',state:'completed',workspaceName:'fixture',createdAt}));
@@ -212,6 +213,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     },
     getSessionModel:async()=>modelResource(),
     getConversation:async(sessionId)=>conversation(sessionId),
+    getInputQueue:async(sessionId)=>({...structuredClone(window.fixtureQueue),sessionId}),
   });
   const nativeFetch=window.fetch;
   window.fetch=async (url,init={})=>{
@@ -236,11 +238,14 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       return Response.json(modelResource());
     }
     if(String(url).endsWith("/turns")) {
-      window.turnBodies.push(JSON.parse(init.body));
+      const submitted=JSON.parse(init.body);window.turnBodies.push(submitted);
       if(window.deferTurn) return new Promise(resolve=>{
-        window.finishTurn=()=>resolve(Response.json({turnId:"50000000-0000-4000-8000-000000000001",
+        window.finishTurn=()=>{
+          window.fixtureQueue.revision++;window.fixtureQueue.items=[{turnId:"50000000-0000-4000-8000-000000000001",runId:"60000000-0000-4000-8000-000000000001",text:submitted.prompt,mailboxPosition:1,acceptedAt:new Date().toISOString(),status:"queued"}];
+          resolve(Response.json({turnId:"50000000-0000-4000-8000-000000000001",
           sessionId:sid,runId:"60000000-0000-4000-8000-000000000001",mailboxPosition:1,
           state:"queued",acceptedAt:new Date().toISOString(),replayed:false},{status:202}));
+        };
       });
       // Capture the real request builder without creating a model Run.
       return Response.json({error:{code:"conflict",message:"Fixture does not execute models"}},{status:409});
@@ -489,7 +494,7 @@ try {
     await fill(".product-composer textarea", "next draft");
     await page.evaluate("finishTurn()");
     await page.waitFor(
-      'document.querySelector(".product-user-bubble")?.textContent==="submitted draft"',
+      'document.querySelector(".pending-input-content p")?.textContent==="submitted draft"',
     );
     assert.equal(
       await page.evaluate('document.querySelector(".product-composer textarea").value'),

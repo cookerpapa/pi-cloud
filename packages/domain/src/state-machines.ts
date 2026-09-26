@@ -51,7 +51,7 @@ const sessionTransitions = {
 } as const satisfies TransitionTable<SessionState>;
 
 const turnTransitions = {
-  queued: ["running", "cancelling", "failed"],
+  queued: ["running", "cancelling", "failed", "cancelled"],
   running: ["cancelling", "completed", "failed"],
   cancelling: ["cancelled", "failed"],
   completed: [],
@@ -76,7 +76,7 @@ const controlRequestTransitions = {
 } as const satisfies TransitionTable<TurnControlRequestState>;
 
 const runTransitions = {
-  queued: ["running", "cancel_requested", "failed"],
+  queued: ["running", "cancel_requested", "failed", "cancelled"],
   running: ["settling", "cancel_requested", "completed", "failed", "timed_out"],
   settling: ["cancel_requested", "completed", "failed", "timed_out"],
   cancel_requested: ["cancelled", "failed", "timed_out"],

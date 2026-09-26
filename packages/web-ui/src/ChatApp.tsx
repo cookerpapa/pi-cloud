@@ -34,6 +34,7 @@ import { AuthScreen } from "./AuthScreen.tsx";
 import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
 import { copyMessageText } from "./MessageCopyButton.tsx";
 import { ConversationTurn } from "./ConversationTurn.tsx";
+import { PendingInputQueue } from "./PendingInputQueue.tsx";
 import {
   conversationExportFilename,
   conversationExportMarkdown,
@@ -167,6 +168,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const renderedState = useRef(state);
   renderedState.current = state;
   const inputRevision = useRef(0);
+  const [queueRefreshGeneration, setQueueRefreshGeneration] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
   const historyRequest = useRef(false);
   const historyScroll = useRef<{ sessionId: string; anchor: HTMLElement; top: number } | null>(
@@ -347,6 +349,8 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }, [conversationTree]);
 
   const update = useCallback((action: Parameters<typeof sessionViewReducer>[1]) => {
+    if (action.type === "turn.accepted" || action.type === "conversation.loaded")
+      setQueueRefreshGeneration((value) => value + 1);
     if (
       action.type === "turn.accepted" ||
       action.type === "session.created" ||
@@ -2210,41 +2214,43 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                     </div>
                   </section>
                 )}
-                {state.turns.map((turn) => {
-                  const target = forkTargets.get(turn.turnId);
-                  return (
-                    <ConversationTurn
-                      progressStore={toolProgress}
-                      canFork={
-                        canMutate &&
-                        selectedDelegatedSession === null &&
-                        operation === null &&
-                        currentTurn === undefined &&
-                        target !== undefined
-                      }
-                      canPrune={
-                        canMutate &&
-                        selectedDelegatedSession === null &&
-                        operation === null &&
-                        currentTurn === undefined &&
-                        target !== undefined &&
-                        target.sourceSessionId === state.session?.sessionId
-                      }
-                      key={turn.turnId}
-                      onPresentationProgress={followProgressiveText}
-                      {...(target === undefined
-                        ? {}
-                        : {
-                            onFork: () => {
-                              setForkTitle("");
-                              setForkTarget(target);
-                            },
-                            onPrune: () => void pruneConversationTail(target),
-                          })}
-                      turn={turn}
-                    />
-                  );
-                })}
+                {state.turns
+                  .filter((turn) => turn.status !== "queued")
+                  .map((turn) => {
+                    const target = forkTargets.get(turn.turnId);
+                    return (
+                      <ConversationTurn
+                        progressStore={toolProgress}
+                        canFork={
+                          canMutate &&
+                          selectedDelegatedSession === null &&
+                          operation === null &&
+                          currentTurn === undefined &&
+                          target !== undefined
+                        }
+                        canPrune={
+                          canMutate &&
+                          selectedDelegatedSession === null &&
+                          operation === null &&
+                          currentTurn === undefined &&
+                          target !== undefined &&
+                          target.sourceSessionId === state.session?.sessionId
+                        }
+                        key={turn.turnId}
+                        onPresentationProgress={followProgressiveText}
+                        {...(target === undefined
+                          ? {}
+                          : {
+                              onFork: () => {
+                                setForkTitle("");
+                                setForkTarget(target);
+                              },
+                              onPrune: () => void pruneConversationTail(target),
+                            })}
+                        turn={turn}
+                      />
+                    );
+                  })}
                 <div ref={transcriptEndRef} />
               </div>
             )}
@@ -2278,6 +2284,23 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         </div>
 
         <footer className="product-composer-area">
+          {authPhase === "authenticated" &&
+          state.session !== null &&
+          selectedDelegatedSession === null ? (
+            <PendingInputQueue
+              key={state.session.sessionId}
+              api={api}
+              sessionId={state.session.sessionId}
+              canMutate={canMutate}
+              refreshSignal={`${queueRefreshGeneration}:${currentTurn?.turnId ?? ""}:${currentTurn?.status ?? ""}`}
+              onSnapshot={(queue) => update({ type: "queue.updated", queue })}
+              onRestoreDraft={(text) => {
+                draftRevision.current++;
+                setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text));
+                focusComposer();
+              }}
+            />
+          ) : null}
           {selectedDelegatedSession === null ? null : (
             <div className="product-delegated-readonly">{t("chat.subagentReadOnly")}</div>
           )}

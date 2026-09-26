@@ -206,7 +206,7 @@ describe("PiCloudTurnRunner integration", () => {
     const running = runner.run(command, () => {});
     try {
       await entered.promise;
-      await expect(runner.steer("too late")).rejects.toMatchObject({
+      await expect(runner.steer("too late", crypto.randomUUID())).rejects.toMatchObject({
         code: "steer_target_unavailable",
         retryable: false,
       });
@@ -813,7 +813,7 @@ describe("PiCloudTurnRunner integration", () => {
       });
       const run = runner.run(command, () => {}).catch((error) => error);
       const queued = [
-        runner.steer("new focus"),
+        runner.steer("new focus", crypto.randomUUID()),
         runner.agentInput("child-1", "child input", "notify"),
       ].map((p) => p.catch((error) => error));
       preparing.resolve();
@@ -828,9 +828,9 @@ describe("PiCloudTurnRunner integration", () => {
         expect.objectContaining({ code: "steer_target_unavailable" }),
       ]);
       expect(authority.closed).toBe(phase === "model");
-      expect(await settled([runner.steer("late focus").catch((error) => error)])).toEqual([
-        expect.objectContaining({ code: "steer_target_unavailable" }),
-      ]);
+      expect(
+        await settled([runner.steer("late focus", crypto.randomUUID()).catch((error) => error)]),
+      ).toEqual([expect.objectContaining({ code: "steer_target_unavailable" })]);
     },
   );
 

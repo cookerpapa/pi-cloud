@@ -920,3 +920,36 @@ describe("session transcript reducer", () => {
     expect(sessionViewReducer(state, { type: "stream.event", event: lateEvent })).toBe(state);
   });
 });
+it("reconciles pending edits, ordering and cancellation without replacing an active Turn", () => {
+  let state = sessionViewReducer(createInitialSessionView(), {
+    type: "session.created",
+    project,
+    session,
+  });
+  state = sessionViewReducer(state, { type: "turn.accepted", accepted, prompt: "old draft" });
+  const item = {
+    turnId: accepted.turnId,
+    runId: accepted.runId,
+    text: "edited draft",
+    mailboxPosition: 2,
+    acceptedAt: CREATED_AT,
+    status: "queued" as const,
+  };
+  const snapshot = { sessionId: SESSION_ID, revision: 1, activeTurnId: null, items: [item] };
+  state = sessionViewReducer(state, { type: "queue.updated", queue: snapshot });
+  expect(state.turns[0]?.prompt).toBe("edited draft");
+  expect(sessionViewReducer(state, { type: "queue.updated", queue: snapshot })).toBe(state);
+  state = sessionViewReducer(state, {
+    type: "queue.updated",
+    queue: { ...snapshot, revision: 2, items: [] },
+  });
+  expect(state.turns).toEqual([]);
+  state = sessionViewReducer(state, { type: "turn.accepted", accepted, prompt: "started" });
+  state = {
+    ...state,
+    turns: state.turns.map((turn) => ({ ...turn, status: "running" as const, startedSequence: 1 })),
+  };
+  const after = sessionViewReducer(state, { type: "queue.updated", queue: snapshot });
+  expect(after.turns).toHaveLength(1);
+  expect(after.turns[0]).toMatchObject({ status: "running", prompt: "started" });
+});

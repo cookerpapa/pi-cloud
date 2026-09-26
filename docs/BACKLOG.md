@@ -12,6 +12,9 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Finish ADR-0194's matched rollout and real Luna/browser acceptance after
+      pending-input CRUD, admission races, native consumption and restart tests.
+
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
       text block; that interval must not be labelled entirely as internal relay time.
@@ -85,13 +88,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       support is limited to already-bound integrations and environment Git credentials.
 
 ## Deliberately deferred capabilities
-
-- [ ] Design product pending-message management: cancel/delete one queued input,
-      edit it, reorder it and promote it to active steer. The current Web UI
-      supports Enter-to-queue and draft-to-steer, but cancellation targets only
-      the active Turn. Define a mutable pending-input boundary before changing
-      immutable accepted Turns/Runs, and handle races with execution admission.
-      This is a separate product slice from ADR-0193's runtime repairs.
 
 - [ ] Define project text-resource discovery separately from executable extensions
       if that feature is requested. Automatic AGENTS.md loading (review PI-06) was

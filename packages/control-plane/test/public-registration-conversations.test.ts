@@ -260,11 +260,11 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     const bravoList = bravoListResponse.json<ConversationListResource>();
     expect(alphaList).toMatchObject({
       truncated: false,
-      conversations: [{ sessionId: alphaSession.sessionId, turnCount: 1 }],
+      conversations: [{ sessionId: alphaSession.sessionId, turnCount: 0 }],
     });
     expect(bravoList).toMatchObject({
       truncated: false,
-      conversations: [{ sessionId: bravoSession.sessionId, turnCount: 1 }],
+      conversations: [{ sessionId: bravoSession.sessionId, turnCount: 0 }],
     });
     expect(alphaListResponse.body).not.toContain(bravoSession.sessionId);
     expect(bravoListResponse.body).not.toContain(alphaSession.sessionId);
@@ -281,17 +281,33 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         source: { kind: "empty", status: "ready" },
       },
       session: { sessionId: alphaSession.sessionId, state: "cold" },
-      turns: [
+      turns: [],
+      historyTruncated: false,
+    });
+    const pending = await http.inject({
+      method: "GET",
+      url: `/v1/sessions/${alphaSession.sessionId}/queued-inputs`,
+      headers: authorization(alpha.apiToken),
+    });
+    expect(pending.statusCode).toBe(200);
+    expect(pending.json()).toMatchObject({
+      items: [
         {
           turnId: alphaTurn.turnId,
           runId: alphaTurn.runId,
           mailboxPosition: 1,
-          prompt: "alpha private prompt",
-          state: "queued",
+          text: "alpha private prompt",
+          status: "queued",
         },
       ],
-      historyTruncated: false,
     });
+    const foreignPending = await http.inject({
+      method: "GET",
+      url: `/v1/sessions/${alphaSession.sessionId}/queued-inputs`,
+      headers: authorization(bravo.apiToken),
+    });
+    expect(foreignPending.statusCode).toBe(404);
+    expect(foreignPending.body).not.toContain("alpha private prompt");
 
     const foreignDetail = await http.inject({
       method: "GET",
@@ -1145,6 +1161,29 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       expect(accepted.statusCode, accepted.body).toBe(202);
       ids.push(accepted.json<AcceptedTurnResource>().turnId);
     }
+    // This read-model fixture represents finished history. Unstarted inputs
+    // have their own queue endpoint and do not consume history page positions.
+    const settled = new Date();
+    await database.transaction().execute(async (tx) => {
+      await tx
+        .updateTable("runs")
+        .set({
+          state: "completed",
+          ready_at: null,
+          started_at: settled,
+          settled_at: settled,
+          stop_reason: "stop",
+        })
+        .where("tenant_id", "=", alpha.tenantId)
+        .where("session_id", "=", session.sessionId)
+        .execute();
+      await tx
+        .updateTable("turns")
+        .set({ state: "completed", started_at: settled, settled_at: settled, stop_reason: "stop" })
+        .where("tenant_id", "=", alpha.tenantId)
+        .where("session_id", "=", session.sessionId)
+        .execute();
+    });
     const recent = await http.inject({
       method: "GET",
       url: `/v1/conversations/${session.sessionId}`,

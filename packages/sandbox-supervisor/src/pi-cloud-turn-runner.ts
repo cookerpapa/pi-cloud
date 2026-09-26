@@ -442,8 +442,8 @@ export class PiCloudTurnRunner {
     this.#id = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
   }
 
-  async steer(text: string): Promise<void> {
-    await this.#deliverInput((runtime) => runtime.steer(text));
+  async steer(text: string, inputId: string): Promise<void> {
+    await this.#deliverInput((runtime) => runtime.agentInput(inputId, text, "steer"));
   }
   async agentInput(
     id: string,

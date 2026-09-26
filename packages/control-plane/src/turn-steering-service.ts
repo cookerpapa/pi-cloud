@@ -158,7 +158,49 @@ export class TurnSteeringService {
     }
   }
 
-  async #deliverStored(stored: StoredSteer, replayed: boolean): Promise<TurnSteerResource> {
+  /** A persisted queue promotion owns retries and resolves native consumption. */
+  async deliverQueued(controlRequestId: string): Promise<void> {
+    const row = await this.#database
+      .selectFrom("turn_control_requests as c")
+      .innerJoin("runs as source", "source.queued_steer_id", "c.id")
+      .innerJoin("turns as input", "input.id", "source.turn_id")
+      .selectAll("c")
+      .select("input.input_text as text")
+      .where("c.id", "=", controlRequestId)
+      .where("c.kind", "=", "queue")
+      .whereRef("source.tenant_id", "=", "c.tenant_id")
+      .whereRef("source.session_id", "=", "c.session_id")
+      .where("source.state", "=", "queued")
+      .executeTakeFirst();
+    if (!row) return;
+    if (row.payload.action !== "steer" || !row.text)
+      throw new Error("Invalid queued steer reference");
+    const stored: StoredSteer = {
+      controlRequestId: row.id,
+      targetRunId: row.target_run_id,
+      tenantId: row.tenant_id,
+      sessionId: row.session_id,
+      turnId: row.turn_id,
+      runId: row.target_run_id,
+      idempotencyKey: row.idempotency_key,
+      text: row.text,
+      requestHash: row.request_sha256,
+      state: row.state,
+      acceptedAt: row.created_at,
+      completedAt: row.completed_at,
+      projectId: payloadString(row.payload, "projectId"),
+      workspaceId: payloadString(row.payload, "workspaceId"),
+      sandboxId: payloadString(row.payload, "sandboxId"),
+    };
+    if (stored.state === "completed" || stored.state === "failed") return;
+    await this.#deliverStored(stored, false, true);
+  }
+
+  async #deliverStored(
+    stored: StoredSteer,
+    replayed: boolean,
+    queued = false,
+  ): Promise<TurnSteerResource> {
     if (this.#backendFactory === undefined) {
       throw new TurnSteeringError(
         "steer_transport_unavailable",
@@ -185,6 +227,14 @@ export class TurnSteeringService {
     try {
       await backend.steer(delivery);
     } catch (error: unknown) {
+      if (queued) {
+        // An HTTP error is not proof that the native input was unconsumed.
+        // The queue reconciler checks canonical Entry/seal state before release.
+        throw new TurnSteeringError(
+          "steer_transport_unavailable",
+          "Queued steer awaits confirmation",
+        );
+      }
       if (error instanceof TurnSteerBackendError && error.ambiguous) {
         return this.#committedResult(stored, replayed);
       }

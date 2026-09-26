@@ -1850,6 +1850,126 @@ body.product-panel-resizing {
   background: linear-gradient(to top, #212121 75%, rgba(33, 33, 33, 0));
 }
 
+.pending-input-queue {
+  margin: 0 0 10px;
+  padding: 11px 12px;
+  border: 1px solid #444;
+  border-radius: 14px;
+  background: #282828;
+  color: #e4e4e4;
+  font-size: 12px;
+}
+.pending-input-queue header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.pending-input-queue header span {
+  color: #bbb;
+}
+.pending-input-queue header small {
+  margin-left: auto;
+  color: #aaa;
+  font-size: 11px;
+}
+.pending-input-list {
+  max-height: min(32vh, 280px);
+  overflow-y: auto;
+}
+.pending-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: flex-start;
+  padding: 9px 0;
+  border-top: 1px solid #3c3c3c;
+}
+.pending-input-number {
+  color: #999;
+  min-width: 15px;
+  padding-top: 2px;
+}
+.pending-input-content {
+  flex: 1 1 190px;
+  min-width: 0;
+}
+.pending-input-content p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pending-input-status {
+  display: block;
+  margin-top: 5px;
+  color: #a6c9e6;
+}
+.pending-input-actions,
+.pending-input-editor-actions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.pending-input-queue button {
+  border: 1px solid #535353;
+  background: #333;
+  color: #ddd;
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.pending-input-queue button:hover:not(:disabled) {
+  background: #444;
+  border-color: #777;
+}
+.pending-input-queue button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.pending-input-editor {
+  border-top: 1px solid #555;
+  margin-top: 6px;
+  padding-top: 10px;
+}
+.pending-input-row.editing {
+  background: #303740;
+  border-radius: 7px;
+}
+.pending-input-edit-title {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.pending-input-editor textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  background: #202020;
+  color: #eee;
+  border: 1px solid #666;
+  border-radius: 8px;
+  padding: 9px;
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 80px;
+  max-height: 180px;
+}
+.pending-input-editor-actions {
+  margin-top: 7px;
+}
+.pending-input-error {
+  color: #edbf95;
+  margin: 5px 0 8px;
+  line-height: 1.5;
+}
+
 .product-composer {
   display: flex;
   align-items: flex-end;

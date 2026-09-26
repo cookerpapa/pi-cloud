@@ -25,7 +25,7 @@ export interface SupervisorTurnRunner {
     publishEvent: PiEventPublisher,
     signal: AbortSignal,
   ): Promise<PiTurnResult>;
-  steer?(targetRunId: string, text: string): Promise<void>;
+  steer?(targetRunId: string, text: string, inputId: string): Promise<void>;
 }
 
 export type PreparedTurnExecution = {
@@ -924,7 +924,12 @@ export class AgentRunSupervisor {
       );
     }
     steer.runPromise = deliver
-      .call(this.#runner, steer.command.payload.targetRunId, steer.command.payload.text)
+      .call(
+        this.#runner,
+        steer.command.payload.targetRunId,
+        steer.command.payload.text,
+        steer.command.payload.controlRequestId,
+      )
       .then(
         () => {
           steer.state = "completed";

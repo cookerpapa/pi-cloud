@@ -510,6 +510,53 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     });
   });
 
+  it("protects pending input actions and preserves replay identity over HTTP", async () => {
+    const path = `/v1/sessions/${sessionA.sessionId}/queued-inputs`;
+    expect((await http.inject({ method: "GET", url: path })).statusCode).toBe(401);
+    expect(
+      (
+        await http.inject({
+          method: "GET",
+          url: path,
+          headers: authorization(tenantB.credential.token),
+        })
+      ).statusCode,
+    ).toBe(404);
+    const read = await http.inject({
+      method: "GET",
+      url: path,
+      headers: authorization(viewerAToken),
+    });
+    expect(read.statusCode).toBe(200);
+    const queue = read.json();
+    expect(queue.items.length).toBeGreaterThan(0);
+    const target = `${path}/${queue.items[0].turnId}/actions`;
+    const payload = { action: "edit", revision: queue.revision, text: "edited pending input" };
+    expect(
+      (
+        await http.inject({
+          method: "POST",
+          url: target,
+          headers: { ...authorization(viewerAToken), "idempotency-key": "viewer-queue" },
+          payload,
+        })
+      ).statusCode,
+    ).toBe(403);
+    const request = {
+      method: "POST" as const,
+      url: target,
+      headers: { ...authorization(memberAToken), "idempotency-key": "member-queue" },
+      payload,
+    };
+    const edited = await http.inject(request);
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json().queue.items[0].text).toBe("edited pending input");
+    expect((await http.inject(request)).json().replayed).toBe(true);
+    expect(
+      (await http.inject({ ...request, payload: { ...payload, text: "different" } })).statusCode,
+    ).toBe(409);
+  });
+
   it("invalidates a revoked tenant credential without affecting another tenant", async () => {
     await expect(
       revokePrivateTenantCredential(database, {

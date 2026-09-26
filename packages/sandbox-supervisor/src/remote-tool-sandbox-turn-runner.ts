@@ -225,7 +225,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
   }
 
-  async steer(targetRunId: string, text: string): Promise<void> {
+  async steer(targetRunId: string, text: string, inputId: string): Promise<void> {
     const slot = this.#activePiRunners.get(targetRunId);
     if (slot === undefined) {
       throw new PiTurnError(
@@ -242,7 +242,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         false,
       );
     }
-    await runner.steer(text);
+    await runner.steer(text, inputId);
   }
   async agentInput(
     runId: string,
