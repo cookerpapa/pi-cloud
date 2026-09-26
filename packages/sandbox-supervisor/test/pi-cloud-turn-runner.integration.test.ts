@@ -165,6 +165,9 @@ describe("PiCloudTurnRunner integration", () => {
         baseUrl: fake.baseUrl,
         api: "openai-completions",
         apiKey: FAKE_MODEL_API_KEY,
+        contextWindow: 131_072,
+        autoCompactTokenLimit: 100_000,
+        maxTokens: 16_384,
       }),
       openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
       sandboxContinuity: {
@@ -213,8 +216,11 @@ describe("PiCloudTurnRunner integration", () => {
       });
     } finally {
       release.resolve();
-      await running;
-      await fake.stop();
+      try {
+        await running;
+      } finally {
+        await fake.stop();
+      }
     }
     expect(fake.observations).toHaveLength(1);
   });
