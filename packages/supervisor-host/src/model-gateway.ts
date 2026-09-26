@@ -32,8 +32,6 @@ const PROVIDER_RESPONSES_PATH = "/v1/responses";
 const MAX_REQUEST_BYTES = 8 * 1_024 * 1_024;
 const MAX_DECOMPRESSED_REQUEST_BYTES = 32 * 1_024 * 1_024;
 const MAX_RESPONSE_BYTES = 64 * 1_024 * 1_024;
-const PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS = 3;
-const PROVIDER_GATEWAY_RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
 
 type SupportedModel =
   | (Extract<ReviewedModel, { provider: "deepseek" }> & {
@@ -295,24 +293,6 @@ async function writeChunk(
 ): Promise<void> {
   signal.throwIfAborted();
   if (!response.write(chunk)) await once(response, "drain", { signal });
-}
-
-async function retryDelay(attempt: number, signal: AbortSignal): Promise<void> {
-  signal.throwIfAborted();
-  await new Promise<void>((resolvePromise, rejectPromise) => {
-    const settle = (): void => {
-      signal.removeEventListener("abort", abort);
-      resolvePromise();
-    };
-    const timer = setTimeout(settle, attempt * 100);
-    timer.unref();
-    const abort = (): void => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-      rejectPromise(signal.reason);
-    };
-    signal.addEventListener("abort", abort, { once: true });
-  });
 }
 
 function supportedModel(provider: string, modelId: string): SupportedModel | undefined {
@@ -752,37 +732,16 @@ export class TenantModelGateway {
         );
       }
       active.requestsStarted++;
-      let upstream: Response | undefined;
       timing.upstreamStartMs = elapsed();
-      for (let attempt = 1; attempt <= PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS; attempt += 1) {
-        upstreamAttempts = attempt;
-        try {
-          armUpstreamTimeout("connect", this.#upstreamConnectTimeoutMs);
-          upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
-            method: "POST",
-            headers: upstreamHeaders(request, active, this.#providerGatewayApiKey),
-            body: new Uint8Array(requestBytes),
-            signal: controller.signal,
-          });
-          clearUpstreamTimeout();
-        } catch (error: unknown) {
-          clearUpstreamTimeout();
-          if (attempt === PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS || controller.signal.aborted) {
-            throw error;
-          }
-          await retryDelay(attempt, controller.signal);
-          continue;
-        }
-        if (
-          !PROVIDER_GATEWAY_RETRYABLE_STATUS.has(upstream.status) ||
-          attempt === PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS
-        ) {
-          break;
-        }
-        await upstream.body?.cancel().catch(() => undefined);
-        await retryDelay(attempt, controller.signal);
-      }
-      if (upstream === undefined) throw new Error("Provider Gateway returned no response");
+      upstreamAttempts = 1;
+      armUpstreamTimeout("connect", this.#upstreamConnectTimeoutMs);
+      const upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
+        method: "POST",
+        headers: upstreamHeaders(request, active, this.#providerGatewayApiKey),
+        body: new Uint8Array(requestBytes),
+        signal: controller.signal,
+      });
+      clearUpstreamTimeout();
       timing.upstreamHeadersMs = elapsed();
       upstreamStatus = upstream.status;
       response.writeHead(upstream.status, {

@@ -10,6 +10,17 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0189](0189-guest-build-input-identity.md) — guest build-input identity
+   independent of the platform Git revision, with existing image/READY checks.
+1. [ADR-0188](0188-bounded-conversation-discovery.md) — bounded conversation-list
+   paging; no change to cursor-free SSE.
+1. [ADR-0187](0187-model-retry-ownership.md) — Runner-owned sampling retry,
+   one Gateway send and separate provider credential selection.
+1. [ADR-0186](0186-runner-and-guest-pi-parity.md) — guest cwd/file semantics,
+   eligible native Tool parallelism and one sampling-preparation path.
+1. [ADR-0185](0185-native-record-and-invocation-contract.md) — native Step/Tool
+   ordinals, result-Entry invocation identities and trusted Pi hooks.
+
 1. [ADR-0184](0184-ephemeral-tool-progress.md) — lossy Tool progress through
    internal HTTP and SSE; final results alone return through Kafka.
 

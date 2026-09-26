@@ -15,9 +15,28 @@ import {
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
-  createTrustedRemoteAgentTools,
+  createTrustedRemoteAgentTools as createRemoteTools,
   type TrustedRemoteToolsRuntimeConfiguration,
 } from "../src/trusted-remote-tools.ts";
+import { withToolInvocation } from "../src/tool-invocation.ts";
+
+function createTrustedRemoteAgentTools(configuration: TrustedRemoteToolsRuntimeConfiguration) {
+  const runtime = createRemoteTools(configuration);
+  return {
+    ...runtime,
+    tools: runtime.tools.map((tool) => ({
+      ...tool,
+      execute: ((id, ...args) =>
+        withToolInvocation({ id: `invocation-${id}`, nativeToolCallId: id }, () =>
+          tool.execute(id, ...args),
+        )) as typeof tool.execute,
+    })),
+    executeWorkflow: ((id, ...args) =>
+      withToolInvocation({ id: `invocation-${id}`, nativeToolCallId: id }, () =>
+        runtime.executeWorkflow(id, ...args),
+      )) as typeof runtime.executeWorkflow,
+  };
+}
 
 const TURN_CONTEXT_SHA256 = "b".repeat(64);
 const ATTEMPT_CONTEXT_SHA256 = "e".repeat(64);
@@ -63,14 +82,14 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
     expect(pending).toBeDefined(); // register BEFORE publication: even an immediate reply must not be lost
     pending!.update?.({
       type: "tool_execution_update",
-      toolCallId: command.toolCallId,
+      toolCallId: (command.request as { toolCallId: string }).toolCallId,
       toolName: command.request.toolName,
       args: {},
       partialResult: { content: [{ type: "text", text: "working" }], details: undefined },
     });
     pending!.resolve({
       type: "tool_execution_end",
-      toolCallId: command.toolCallId,
+      toolCallId: (command.request as { toolCallId: string }).toolCallId,
       toolName: command.request.toolName,
       isError: false,
       result: { content: [{ type: "text", text: "complete" }], details: { source: "guest" } },
@@ -187,7 +206,7 @@ describe("whole-tool Worker adapter", () => {
       });
       expect(publishToolCommand).toHaveBeenCalledTimes(1);
       expect(publishToolCommand.mock.calls[0]![0]).toMatchObject({
-        toolCallId: "native-call",
+        toolCallId: "invocation-native-call",
         request: { operation: "tool.execute", toolName: name, toolCallId: "native-call", args },
       });
     },
@@ -251,7 +270,12 @@ describe("whole-tool Worker adapter", () => {
     }));
     value.resolveOperationTarget = resolveOperationTarget;
     const runtime = createTrustedRemoteAgentTools(value);
-    expect(runtime.tools.every((tool) => tool.executionMode === "sequential")).toBe(true);
+    expect(
+      runtime.tools
+        .filter((tool) => tool.name !== "read")
+        .every((tool) => tool.executionMode === "sequential"),
+    ).toBe(true);
+    expect(runtime.tools.find((tool) => tool.name === "read")!.executionMode).toBe("parallel");
     await expect(runtime.systemPrompt("Current working directory: /trusted")).resolves.toContain(
       "Current working directory: /workspace",
     );

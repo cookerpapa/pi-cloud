@@ -3,7 +3,7 @@ import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
 import { PostgresTrustedToolRuntime } from "../src/index.ts";
-import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
+import { SubagentControlClient, withToolInvocation } from "@pi-cloud/sandbox-supervisor";
 
 function rootSessionDatabase(): Kysely<Database> {
   return {
@@ -29,6 +29,35 @@ const command = {
 } as unknown as ExecuteTurnCommandMessage;
 
 describe("PostgresTrustedToolRuntime", () => {
+  it("deduplicates a workflow key within one invocation, not across reused provider IDs", async () => {
+    const starts: string[] = [];
+    const runtime = new PostgresTrustedToolRuntime({
+      database: rootSessionDatabase(),
+      nativeLanes: { childAnchor: () => null, createChildLane: async () => {} },
+      control: {
+        async request(input: Parameters<SubagentControlClient["request"]>[0]) {
+          input.onPublished?.();
+          if (input.request.action === "start") {
+            starts.push(input.toolCallId);
+            return { executionId: input.toolCallId };
+          }
+          return { state: "completed", output: input.toolCallId };
+        },
+      } as unknown as SubagentControlClient,
+    });
+    const bindings = await runtime.create({ command, refreshServices: async () => {} });
+    const tool = bindings.find(({ tool }) => tool.name === "subagent")!.tool;
+    const invoke = (id: string, task: string) =>
+      withToolInvocation({ id, nativeToolCallId: "provider-reused" }, () =>
+        tool.execute("provider-reused", { action: "run", task }),
+      );
+    const first = await invoke("result-one", "first task");
+    expect(await invoke("result-one", "first task")).toEqual(first);
+    const second = await invoke("result-two", "second task");
+    expect(second).not.toEqual(first);
+    expect(starts).toEqual(["result-one", "result-two"]);
+  });
+
   it("exposes root-session Tools with explicit non-Sandbox execution planes", async () => {
     const runtime = new PostgresTrustedToolRuntime({
       database: rootSessionDatabase(),

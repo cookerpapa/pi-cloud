@@ -21,6 +21,11 @@ Use documentation in this order:
 research, conversations and superseded implementation logs remain in Git
 history instead of the maintained tree.
 
+The [Pi-alignment review](reports/pi-alignment-review-20260926.md) records its named
+baseline; the [repair and verification record](reports/pi-alignment-repair-20260926.md)
+tracks its disposition. Current architecture remains defined by the documents and
+ADRs above.
+
 Superseded ADRs and retired architecture documents are kept in Git history
 instead of the current tree. This is intentional: repository-reading agents
 should not have to infer which of several mutually exclusive production paths

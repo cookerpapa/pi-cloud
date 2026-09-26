@@ -58,6 +58,7 @@ try {
   for (const [index, prompt] of [
     "严格按顺序使用工具：write 创建 insertion_sort.py，实现插入排序及空数组、重复值、负数、逆序 assert 测试；read 读取它；edit 新增固定随机种子的随机测试；bash 执行 python3 insertion_sort.py。不要子代理或搜索，实际运行后简要报告。",
     '保留 insertion_sort.py。write 新建 binary_search.py，实现二分查找，覆盖命中、不存在、空数组、重复值测试。bash 执行 python3 insertion_sort.py && python3 binary_search.py。然后另一次 bash 执行 python3 -c \'print("x"*1500000); print("LARGE_OUTPUT_DONE")\'，不要修改这个大输出命令，也不要把它重定向到文件。不要子代理或搜索。最后简要报告。',
+    "验证沙箱文件工具：write 向 /tmp/pi-cloud-parity.txt 写入 before；bash 执行 ln -s /tmp/pi-cloud-parity.txt parity-link.txt；read 读取 parity-link.txt；edit 通过 parity-link.txt 把 before 改为 after；read 读取 /tmp/pi-cloud-parity.txt；最后 bash 验证 test -L parity-link.txt 且文件内容为 after，成功输出 FILE_PARITY_OK。严格使用这些文件工具，不要用 bash 代替 read/write/edit，不要子代理或搜索。",
   ].entries()) {
     const started = Date.now();
     active = await api.acceptTurn(
@@ -74,7 +75,7 @@ try {
     const tools = turn.transcript.items.filter((item) => item.kind === "tool");
     assert(tools.length > 0, "Model did not execute tools");
     for (const tool of tools) assert.equal(tool.status, "completed", `${tool.toolName} failed`);
-    for (const name of index === 0 ? ["write", "read", "edit", "bash"] : ["write", "bash"])
+    for (const name of index === 1 ? ["write", "bash"] : ["write", "read", "edit", "bash"])
       assert(
         tools.some((tool) => tool.toolName === name),
         `Missing native ${name}`,
@@ -87,6 +88,27 @@ try {
       const output = JSON.stringify(large.output);
       assert(output.includes("LARGE_OUTPUT_DONE"), "The source tail lost its completion marker");
       assert(Buffer.byteLength(output) < 64 * 1024, "Unbounded output reached canonical history");
+    }
+    if (index === 2) {
+      assert(
+        tools.some(
+          (tool) =>
+            tool.toolName === "write" &&
+            JSON.stringify(tool.input).includes("/tmp/pi-cloud-parity.txt"),
+        ),
+      );
+      assert(
+        tools.some(
+          (tool) =>
+            tool.toolName === "edit" && JSON.stringify(tool.input).includes("parity-link.txt"),
+        ),
+      );
+      assert(
+        tools.some(
+          (tool) =>
+            tool.toolName === "bash" && JSON.stringify(tool.output).includes("FILE_PARITY_OK"),
+        ),
+      );
     }
     const modelTimings = await readWorkerModelTimings([active.runId], started);
     report.runs.push({

@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
 import { unsafeRuntimeFileMode } from "./lib/runtime-file-policy.mjs";
+import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const composeFile = resolve(repositoryRoot, "deploy/production/compose.yaml");
@@ -216,9 +217,11 @@ const repositoryRevision = execFileSync("git", ["rev-parse", "HEAD"], {
 }).trim();
 const imageRevision =
   process.env.PI_CLOUD_IMAGE_REVISION ??
-  (command === "build" || invalidTemplateEvidence ? repositoryRevision : template.imageRevision);
+  (command === "build" || invalidTemplateEvidence
+    ? await guestBuildIdentity(repositoryRoot)
+    : template.imageRevision);
 if (!/^[0-9a-f]{40}$/.test(imageRevision)) {
-  throw new Error("PI_CLOUD_IMAGE_REVISION must be a full lowercase Git commit");
+  throw new Error("PI_CLOUD_IMAGE_REVISION must be a 40-hex guest build identity");
 }
 if (
   !allowsStaleCubeTemplate &&
@@ -226,7 +229,7 @@ if (
   template.imageRevision !== imageRevision
 ) {
   throw new Error(
-    "CubeSandbox READY template does not match this PiCloud Git revision; register a fresh immutable template",
+    "CubeSandbox READY template does not match the guest build identity; register a matching immutable template",
   );
 }
 const cubeEnvironment = {
@@ -304,6 +307,7 @@ await new Promise((resolvePromise, rejectPromise) => {
     env: {
       ...process.env,
       PI_CLOUD_IMAGE_REVISION: imageRevision,
+      PI_CLOUD_CODE_REVISION: repositoryRevision,
       PI_CLOUD_APPLICATION_UID: String(applicationOwner.uid),
       PI_CLOUD_APPLICATION_GID: String(applicationOwner.gid),
       PI_CLOUD_OTLP_TRACES_ENDPOINT:

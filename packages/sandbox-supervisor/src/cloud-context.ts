@@ -98,6 +98,7 @@ export type CloudStepContext = Readonly<{
   sequence: number;
   turnContextSha256: string;
   executionContextSha256: string;
+  /** Frozen file/shell capabilities; the complete Agent Tool registry lives in Pi. */
   activeTools: readonly string[];
   worldState: CloudStepWorldState;
 }>;

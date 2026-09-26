@@ -10,6 +10,7 @@ import {
   type TrustedAgentTool,
   type WorkflowExecutor,
   type WorkflowHostCall,
+  toolInvocationId,
 } from "@pi-cloud/sandbox-supervisor";
 import type { Kysely } from "kysely";
 import {
@@ -75,6 +76,8 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
         ...(onPublished ? { onPublished } : {}),
       });
     };
+    const nativeControl: typeof control = (id, request, signal, onPublished) =>
+      control(toolInvocationId(id), request, signal, onPublished);
     const preview = trusted(
       "platform",
       createCloudPreviewTool({
@@ -89,9 +92,9 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
         ? await this.#jobs.treeContext(scope.tenantId, scope.runId)
         : undefined;
     const contact = tree
-      ? trusted("orchestration", createCloudContactSupervisorTool(control))
+      ? trusted("orchestration", createCloudContactSupervisorTool(nativeControl))
       : undefined;
-    const supervisor = trusted("orchestration", createCloudSubagentSupervisorTool(control));
+    const supervisor = trusted("orchestration", createCloudSubagentSupervisorTool(nativeControl));
     const tools = [preview, ...(contact ? [contact] : [])];
     if (tree && !tree.canSpawnChildren) return [...tools, supervisor];
 
@@ -146,9 +149,10 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
       return promise;
     };
     const runtime: CloudSubagentToolRuntime = {
-      run,
-      control,
+      run: (id, task, signal) => run(toolInvocationId(id), task, signal),
+      control: nativeControl,
       workflow: async (toolCallId, script, signal, onUpdate) => {
+        const invocationId = toolInvocationId(toolCallId);
         if (!context.executeWorkflow) throw new Error("Isolated workflow execution is unavailable");
         return context.executeWorkflow(
           toolCallId,
@@ -158,7 +162,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
               if (typeof args.key !== "string" || !args.task || typeof args.task !== "object")
                 throw new Error("runs.run requires a key and task specification");
               return run(
-                toolCallId,
+                invocationId,
                 { ...args.task, key: args.key } as SubagentTask,
                 callSignal ?? signal,
               );
@@ -166,7 +170,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
             if (!["status", "wait", "cancel", "send"].includes(method))
               throw new Error("Unknown workflow control method");
             return control(
-              toolCallId,
+              invocationId,
               validateSubagentControl({ ...args, action: method }),
               callSignal ?? signal,
             );

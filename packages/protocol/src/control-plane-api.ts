@@ -480,6 +480,9 @@ export const ConversationListResourceSchema = Type.Object(
     conversations: Type.Array(ConversationSummaryResourceSchema, { maxItems: 100 }),
     delegatedSessions: Type.Array(DelegatedSessionSummaryResourceSchema, { maxItems: 500 }),
     truncated: Type.Boolean(),
+    nextCursor: Type.Optional(
+      Type.String({ minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9_-]+$" }),
+    ),
   },
   { additionalProperties: false },
 );

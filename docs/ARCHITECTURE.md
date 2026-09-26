@@ -155,7 +155,7 @@ still stops on lease loss to avoid wasted work. A normally drained Run closes
 only its execution; uncertain native publication also closes its shared writer
 incarnation. Unrelated Sessions and later writer incarnations stay independent.
 
-The code-owned topic is `pi-cloud.execution-log.v10`. Physical Pi Session ID is
+The code-owned topic is `pi-cloud.execution-log.v11`. Physical Pi Session ID is
 the immutable partition key, shared by all Lanes and control boundaries. Do not
 change its partition count in place. Producers use RF3/acks-all and bounded
 pending bytes/records, respecting transport backpressure. Worker admission/drain
@@ -242,6 +242,12 @@ History opens on the latest 40 Turns; earlier pages use an owned Turn identity.
 Tree jumps load missing pages, and export traverses them. These history anchors
 are not stream recovery cursors.
 
+Conversation discovery returns pages of 100 Sessions with an optional opaque
+`nextCursor`. It preserves PostgreSQL timestamp precision for the descending
+activity/ID position; every page retains tenant and archive filtering. Browser
+load-more appends by Session ID, and a newer refresh invalidates an older page
+request. This list position is neither authorization nor an SSE cursor.
+
 A request arriving on another API replica is proxied to the partition owner
 discovered from Kafka group membership. Each replica advertises a unique internal
 HTTP URL; Kubernetes derives it from Pod IP. There is no PG partition-owner ring
@@ -288,6 +294,18 @@ forms another. A concrete remote command additionally requires durable publicati
 and executor admission. Invalid arguments never create execution intent. Native
 Compaction retains relevant interruption/World State facts and refuses truncated
 or empty summaries. Model retries do not replay completed Tools.
+
+Native Step attempt numbers restart after a completed response; only retries of
+an unfinished Step increment them. Tool ordinals refer to the original Assistant
+Tool-call list, including rejected calls. Code-owned before/after policies use
+Pi's hooks: rejection precedes intent, and the after-hook result becomes native
+history. No user extension or durable approval UI is introduced.
+
+The native Tool Result Entry ID is also the cloud invocation identity used by
+public Tool events, progress and Subagent deduplication. Provider Tool IDs remain
+unchanged in Pi messages and guest replies. The remote operation UUID separately
+correlates Kafka callbacks. Cold projection uses the result Entry identity too;
+Compaction reason and size presentation come from its native Step and context.
 
 An explicit current-model context-overflow error forces one native Compaction
 and sampling continuation even below the estimated threshold (ADR-0176).
@@ -342,6 +360,18 @@ not authority. The final reply resolves or
 rejects `execute`. Pi still owns after-Tool hooks, its lifecycle events and the
 canonical Tool Result appended to the execution log. Kafka reply ACK releases transport buffers, with
 no completed-result cache or per-result retirement notification.
+
+Guest file Tools treat cwd as a relative-path base and follow ordinary guest
+paths/symlinks. Native Node writes retain byte bounds, edit-conflict detection
+and file/parent fsync before success. Host Volume browsing retains its separate
+containment checks. Pi may run read-only/delegation batches concurrently; any
+fixed write/edit/bash in a batch retains native sequential execution. Existing
+Tool, child-tree and executor limits remain, as does one ordered Session writer.
+
+One Runner sampling-context adapter prepares World State and model headers for
+both pure chat and file-capable Runs. The Step's `activeTools` is explicitly the
+file/shell grant; Pi owns the complete executable Tool registry. Preparing an
+empty file grant does not activate Cube.
 
 Pi source updates are disposable observations, not model context. Bash emits
 bounded snapshots at most once per second; Broker coalesces the newest text per
@@ -430,6 +460,11 @@ Provider/model/reasoning/Fast settings are immutable per accepted Turn. Hosted
 search stays provider-native; verified GPT/DeepSeek actions and citations are
 stored in native assistant messages, with portable replay across providers.
 Image input/generation remain outside the current public feature boundary.
+
+CloudAgentRuntime owns bounded sampling retries; Model Gateway forwards one
+send per admitted request. Generated CLIProxyAPI settings disable extra retry
+rounds while keeping its account selection/failover responsibility. Logical
+model-request limits do not claim to count every provider-account attempt.
 
 The role-free Subagent tool uses Pi's public runtime/storage contracts and the
 community `runs.run`/`runs.all` programming model, not a CLI-emulation backend.

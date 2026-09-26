@@ -7,7 +7,6 @@ import {
 } from "@pi-cloud/observability";
 import {
   type ExecuteTurnCommandMessage,
-  modelSamplingHeaders,
   parseExecutionReference,
   type ToolSandboxAssignment,
   type ToolSandboxCreateRequest,
@@ -301,7 +300,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       }
     }
     const cloudTurn = createCloudTurnContext(command);
-    const toolFree = cloudTurn.context.tools.names.length === 0;
 
     const modelRuntimeLease = await this.#modelRuntimeLeaseResolver(command);
     if (
@@ -518,96 +516,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : {}),
         ...commonRunnerOptions,
         createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
-          if (toolFree) {
-            let stepSequence = 0;
-            let currentStep: Awaited<ReturnType<typeof captureSamplingStep>>["step"] | undefined;
-            let currentSamplingAttempt: number | undefined;
-            let currentSamplingHeadersIssued = false;
-            const captureStep = async (purpose: "agent" | "context_maintenance") => {
-              const captured = await captureSamplingStep(
-                async () => {
-                  const world = await stepWorldState.capture();
-                  const step = createCloudStepContext({
-                    sequence: (stepSequence += 1),
-                    turnContextSha256: cloudTurn.sha256,
-                    executionContextSha256: cloudExecution.sha256,
-                    allowedTools: cloudTurn.context.tools.names,
-                    activeTools: [],
-                    worldState: world.worldState,
-                  });
-                  return { step, modelMessages: world.modelMessages };
-                },
-                { publishEvent: purpose === "agent" },
-              );
-              currentStep = captured.step;
-              currentSamplingAttempt = captured.samplingAttempt;
-              currentSamplingHeadersIssued = false;
-              return captured;
-            };
-            executeWorkflow = async () => {
-              throw new Error("Workflow code requires Bash execution capability");
-            };
-            return {
-              tools: [...trustedTools],
-              executeWorkflow,
-              async systemPrompt(base: string) {
-                return trustedTools.length === 0
-                  ? base
-                  : [base]
-                      .concat(
-                        hasDelegationTool
-                          ? [
-                              "You may delegate substantial independent work through the subagent Tool. " +
-                                "Use stable workflow keys and inspect every returned result. " +
-                                "When a Child pauses for input, answer it through subagent_supervisor.",
-                            ]
-                          : [],
-                        hasSupervisorContact
-                          ? [
-                              "A durable contact_supervisor Tool can reach the parent Agent on this Session's owning Worker.",
-                            ]
-                          : [],
-                      )
-                      .join("\n");
-              },
-              async transformContext(messages, purpose = "agent") {
-                currentStep = undefined;
-                currentSamplingAttempt = undefined;
-                const captured = await captureStep(purpose);
-                const transformed = [...messages];
-                for (const message of captured.modelMessages) {
-                  const alreadyPresent = transformed.some(
-                    (candidate) =>
-                      candidate.role === "custom" &&
-                      candidate.customType === message.customType &&
-                      typeof candidate.details === "object" &&
-                      candidate.details !== null &&
-                      (candidate.details as { changeSha256?: unknown }).changeSha256 ===
-                        message.details.changeSha256,
-                  );
-                  if (!alreadyPresent) {
-                    transformed.push({ ...message, role: "custom", timestamp: Date.now() });
-                  }
-                }
-                return transformed;
-              },
-              async transformHeaders(headers = {}) {
-                if (currentSamplingHeadersIssued) await captureStep("context_maintenance");
-                if (currentStep === undefined || currentSamplingAttempt === undefined) {
-                  throw new Error("Model request preceded its Cloud Step capture");
-                }
-                currentSamplingHeadersIssued = true;
-                return {
-                  ...headers,
-                  ...modelSamplingHeaders({
-                    stepSequence: currentStep.context.sequence,
-                    stepSha256: currentStep.sha256,
-                    samplingAttempt: currentSamplingAttempt,
-                  }),
-                };
-              },
-            };
-          }
           let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
             ...(this.#waitForToolReply ? { waitForToolReply: this.#waitForToolReply } : {}),

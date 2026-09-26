@@ -8,6 +8,7 @@ import {
 } from "@pi-cloud/protocol";
 import { normalizeProviderHostedWebSearchAction, toolResultIsUnknown } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
+import { buildSessionContext, estimateTokens, type Entry } from "@earendil-works/pi-agent-core";
 
 export const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";
 
@@ -36,10 +37,11 @@ type DraftItem =
     }
   | {
       kind: "compaction";
-      reason: "threshold";
+      reason: "manual" | "threshold" | "overflow";
       status: "completed";
       willRetry: false;
       tokensBefore?: number;
+      estimatedTokensAfter: number;
     }
   | {
       kind: "retry";
@@ -196,19 +198,33 @@ function projectPiEntries(
   const drafts: DraftItem[] = [];
   const tools = new Map<string, number>();
   const proposed = new Map<string, { name: string; input: unknown }>();
+  const compactionReasons = new Map<string, "manual" | "threshold" | "overflow">();
+  for (const row of rows) {
+    const value = record(row.payload);
+    if (
+      value?.type === "step_attempt" &&
+      value.step === "compaction" &&
+      typeof value.resultEntryId === "string" &&
+      (value.compactionReason === "manual" ||
+        value.compactionReason === "threshold" ||
+        value.compactionReason === "overflow")
+    )
+      compactionReasons.set(value.resultEntryId, value.compactionReason);
+  }
   for (const row of rows) {
     const payload = record(row.payload);
     const occurredAt = timestamp(safeInteger(row.timestamp_ms, "Pi entry timestamp"));
     if (
       payload?.type === "tool_started" &&
       typeof payload.toolCallId === "string" &&
+      typeof payload.resultEntryId === "string" &&
       typeof payload.toolName === "string"
     ) {
-      if (!tools.has(payload.toolCallId)) {
-        tools.set(payload.toolCallId, drafts.length);
+      if (!tools.has(payload.resultEntryId)) {
+        tools.set(payload.resultEntryId, drafts.length);
         drafts.push({
           kind: "tool",
-          toolCallId: payload.toolCallId,
+          toolCallId: payload.resultEntryId,
           toolName: payload.toolName,
           input: payload.effectiveArgs ?? null,
           status: "running",
@@ -218,11 +234,17 @@ function projectPiEntries(
       continue;
     }
     if (payload?.type === "compaction") {
+      const reason = compactionReasons.get(String(payload.id));
+      if (!reason) throw new Error("Native Compaction is missing its Step reason");
       drafts.push({
         kind: "compaction",
-        reason: "threshold",
+        reason,
         status: "completed",
         willRetry: false,
+        estimatedTokensAfter: buildSessionContext([payload as unknown as Entry]).messages.reduce(
+          (total, message) => total + estimateTokens(message),
+          0,
+        ),
         ...(typeof payload.tokensBefore === "number" &&
         Number.isSafeInteger(payload.tokensBefore) &&
         payload.tokensBefore >= 0
@@ -238,6 +260,7 @@ function projectPiEntries(
     }
     const message = messageFromEntry(row.payload);
     if (message?.role === "assistant") {
+      proposed.clear();
       if (!Array.isArray(message.content)) continue;
       for (const part of message.content) {
         const candidate = record(part);
@@ -292,7 +315,10 @@ function projectPiEntries(
       typeof message.toolCallId === "string" &&
       typeof message.toolName === "string"
     ) {
-      const index = tools.get(message.toolCallId);
+      if (typeof payload?.id !== "string")
+        throw new Error("Native Tool result Entry identity is missing");
+      const invocationId = payload.id;
+      const index = tools.get(invocationId);
       const status =
         message.isError === true
           ? toolResultIsUnknown(message)
@@ -300,10 +326,10 @@ function projectPiEntries(
             : "failed"
           : "completed";
       if (index === undefined) {
-        tools.set(message.toolCallId, drafts.length);
+        tools.set(invocationId, drafts.length);
         drafts.push({
           kind: "tool",
-          toolCallId: message.toolCallId,
+          toolCallId: invocationId,
           toolName: message.toolName,
           input: proposed.get(message.toolCallId)?.input ?? null,
           output: outputValue(message),
@@ -413,7 +439,12 @@ export async function readCanonicalPiTurnTranscripts(
       .where("tenant_id", "=", input.tenantId)
       .where("turn_id", "in", turnIds)
       .where(ownedTurnSession("pi_session_records"))
-      .where("type", "=", "tool_started")
+      .where((eb) =>
+        eb.or([
+          eb("type", "=", "tool_started"),
+          eb.and([eb("type", "=", "step_attempt"), sql<boolean>`payload->>'step'='compaction'`]),
+        ]),
+      )
       .orderBy("seq", "asc")
       .execute(),
     database

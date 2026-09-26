@@ -311,7 +311,7 @@ describe("ordered Subagent admission and delivery", () => {
       fact = start("late");
     await parent.appendEntry(
       {
-        id: writer.idGenerator(),
+        id: fact.toolCallId,
         type: "message",
         message: {
           role: "toolResult",

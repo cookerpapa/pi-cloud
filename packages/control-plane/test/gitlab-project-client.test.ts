@@ -4,6 +4,43 @@ import { GitLabProjectClient } from "../src/gitlab-project-client.ts";
 import { SourceControlCredentialVault } from "../src/source-control-credential-vault.ts";
 
 describe("GitLab project adapter", () => {
+  it("finds a claim marker beyond the first page and does not mistake a failed page for absence", async () => {
+    const pages: string[] = [];
+    const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
+      const page = new URL(String(input)).searchParams.get("page")!;
+      pages.push(page);
+      return new Response(
+        JSON.stringify(
+          page === "1"
+            ? Array.from({ length: 100 }, (_, i) => ({ id: i + 1, body: "another comment" }))
+            : [{ id: 101, body: "<!-- claims:fixture -->" }],
+        ),
+        { status: 200 },
+      );
+    });
+    const client = new GitLabProjectClient({
+      baseUrl: "https://gitlab.example.com",
+      accessToken: "fixture-project-token",
+      fetch: fetchImplementation,
+    });
+    await expect(
+      client.findIssueNote({ projectId: "77", issueNumber: 1, marker: "<!-- claims:fixture -->" }),
+    ).resolves.toEqual({ id: "101" });
+    expect(pages).toEqual(["1", "2"]);
+    fetchImplementation.mockImplementation(async (input) =>
+      new URL(String(input)).searchParams.get("page") === "1"
+        ? new Response(
+            JSON.stringify(
+              Array.from({ length: 100 }, (_, i) => ({ id: i + 1, body: "another comment" })),
+            ),
+          )
+        : new Response("{}", { status: 503 }),
+    );
+    await expect(
+      client.findIssueNote({ projectId: "77", issueNumber: 1, marker: "missing" }),
+    ).rejects.toThrow();
+  });
+
   it("stops reading an oversized response instead of buffering its entire body", async () => {
     let pulls = 0;
     let cancelled = false;

@@ -510,7 +510,7 @@ export class SubagentController {
       .where("turn_id", "=", command.scope.turnId)
       .where("type", "=", "message")
       .where(sql<string>`payload->'message'->>'role'`, "=", "toolResult")
-      .where(sql<string>`payload->'message'->>'toolCallId'`, "=", command.toolCallId)
+      .where("id", "=", command.toolCallId)
       .limit(1)
       .executeTakeFirst();
     return !!entry;
@@ -551,7 +551,7 @@ export class SubagentController {
           sql<boolean>`not exists(select 1 from subagent_supervisor_requests sr where sr.execution_id=e.id and sr.expects_reply=true)
           and exists(select 1 from pi_session_entries pe where pe.tenant_id=e.tenant_id and pe.turn_id=parent.turn_id
             and pe.type='message' and pe.payload->'message'->>'role'='toolResult'
-            and pe.payload->'message'->>'toolCallId'=e.parent_tool_call_id)`,
+            and pe.id=e.parent_tool_call_id)`,
         ]),
       )
       .where("r.state", "in", ["queued", "running"])

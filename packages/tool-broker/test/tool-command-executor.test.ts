@@ -102,6 +102,39 @@ function fixture(maximumActiveCommands = 32) {
   };
 }
 describe("native Kafka Tool replies without completed-result retention", () => {
+  it.each([false, true])(
+    "keeps cloud progress identity separate from native reply identity (failure=%s)",
+    async (failure) => {
+      const f = fixture();
+      const c = { ...command(), toolCallId: "native-result-entry" };
+      if (c.request.operation !== "tool.execute") throw new Error("Expected native Tool");
+      const nativeId = c.request.toolCallId;
+      f.own(c);
+      f.execute.mockImplementationOnce(async (_lease, request, _signal, update) => {
+        await update!({
+          type: "tool_execution_update",
+          toolCallId: nativeId,
+          toolName: "bash",
+          args: {},
+          partialResult: { content: [{ type: "text", text: "working" }], details: undefined },
+        });
+        if (failure) throw new Error("Fixture delivery uncertainty");
+        return output(request);
+      });
+      f.executor.receive(record(c));
+      await f.settled();
+      expect(f.progress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          progress: expect.objectContaining({ toolCallId: c.toolCallId }),
+        }),
+      );
+      expect(f.publish.mock.calls[0]![1]).toMatchObject({
+        operationId: c.request.operationId,
+        event: { toolCallId: nativeId, isError: failure },
+      });
+    },
+  );
+
   it("sends observations outside Kafka and publishes only the native final result", async () => {
     const f = fixture(),
       c = command();

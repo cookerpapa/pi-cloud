@@ -1164,8 +1164,8 @@ export class ControlPlaneStore {
     });
   }
 
-  listConversations(): Promise<ConversationListResource> {
-    return this.#conversations.listConversations();
+  listConversations(cursor?: string): Promise<ConversationListResource> {
+    return this.#conversations.listConversations(cursor);
   }
   getConversation(sessionId: string, beforeTurnId?: string): Promise<ConversationDetailResource> {
     return this.#conversations.getConversation(sessionId, beforeTurnId);

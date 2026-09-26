@@ -12,6 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Discuss image/native payload size and persistence before implementing PI-03
+      from the [Pi-alignment review](reports/pi-alignment-review-20260926.md).
+      The owner explicitly deferred this item. Reply-topic and execution-log bounds
+      still differ; do not introduce attachment storage or truncation silently.
+
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
       text block; that interval must not be labelled entirely as internal relay time.
@@ -85,6 +90,12 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       support is limited to already-bound integrations and environment Git credentials.
 
 ## Deliberately deferred capabilities
+
+- [ ] Define project text-resource discovery separately from executable extensions
+      if that feature is requested. Automatic AGENTS.md loading (review PI-06) was
+      not an existing promise; the repair preserves pure chat without Cube and the
+      code-owned Runner boundary. Trusted native hook composition does not itself
+      implement durable user approval.
 
 - [ ] Recheck DeepSeek's early assistant phase before enabling final-only streaming.
       The current route revises a Tool preamble from final_answer to commentary

@@ -245,23 +245,33 @@ export class GitLabProjectClient {
     issueNumber: number;
     marker: string;
   }): Promise<{ id: string } | undefined> {
-    const values = await this.#request(
-      `projects/${input.projectId}/issues/${String(input.issueNumber)}/notes?sort=desc&order_by=created_at&per_page=100`,
-    );
-    if (!Array.isArray(values)) {
-      throw new GitLabProjectClientError(
-        "gitlab_response_invalid",
-        "GitLab notes were invalid",
-        false,
+    const signal = AbortSignal.timeout(30_000);
+    for (let page = 1; page <= 100; page++) {
+      signal.throwIfAborted();
+      const values = await this.#request(
+        `projects/${input.projectId}/issues/${String(input.issueNumber)}/notes?sort=desc&order_by=created_at&per_page=100&page=${page}`,
+        { signal },
       );
-    }
-    for (const candidate of values) {
-      const note = record(candidate);
-      if (typeof note.body === "string" && note.body.includes(input.marker)) {
-        return { id: decimalId(note.id, "GitLab note ID") };
+      if (!Array.isArray(values) || values.length > 100)
+        throw new GitLabProjectClientError(
+          "gitlab_response_invalid",
+          "GitLab notes were invalid",
+          false,
+        );
+      for (const candidate of values) {
+        const note = record(candidate);
+        if (typeof note.body === "string" && note.body.includes(input.marker))
+          return { id: decimalId(note.id, "GitLab note ID") };
       }
+      if (values.length < 100) return undefined;
     }
-    return undefined;
+    // Exhausted lookup is not evidence of absence; never create a duplicate
+    // note merely because the marker fell beyond our bounded read budget.
+    throw new GitLabProjectClientError(
+      "gitlab_note_lookup_limit",
+      "GitLab note lookup exceeded its bounded page budget",
+      false,
+    );
   }
 
   static verifyWebhook(input: {

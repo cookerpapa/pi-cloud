@@ -36,7 +36,6 @@ export {
 } from "./pi-cloud-turn-runner.ts";
 
 export {
-  CLOUD_TOOL_EXECUTION_MODE,
   createTrustedRemoteAgentTools,
   type TrustedRemoteAgentTools,
   type TrustedRemoteToolsRuntimeConfiguration,
@@ -152,3 +151,9 @@ export {
   type CloudAgentRuntimeEvent,
   type CloudAgentRuntimeOptions,
 } from "./cloud-agent-runtime.ts";
+export {
+  ToolInvocations,
+  toolInvocationId,
+  withToolInvocation,
+  type ToolInvocation,
+} from "./tool-invocation.ts";

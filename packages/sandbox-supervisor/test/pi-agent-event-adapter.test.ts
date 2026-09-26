@@ -20,7 +20,7 @@ function createAdapter() {
         idGenerator: () => eventIds[eventIndex++]!,
       },
     ),
-    { inputKind: "prompt" },
+    { inputKind: "prompt", resolveToolCallId: (id) => id },
   );
 }
 
@@ -186,7 +186,7 @@ describe("PiAgentEventAdapter", () => {
           idGenerator: () => `${String(++eventId).padStart(8, "0")}-0000-4000-8000-000000000000`,
         },
       ),
-      { inputKind: "prompt", requireSamplingIdentity: true },
+      { inputKind: "prompt", resolveToolCallId: (id) => id, requireSamplingIdentity: true },
     );
     const step = { stepSequence: 3, stepSha256: "a".repeat(64) } as const;
     adapter.adapt({ type: "agent_start" });
@@ -263,7 +263,7 @@ describe("PiAgentEventAdapter", () => {
           idGenerator: () => `${String(++eventId).padStart(8, "0")}-0000-4000-8000-000000000000`,
         },
       ),
-      { inputKind: "prompt", requireSamplingIdentity: true },
+      { inputKind: "prompt", resolveToolCallId: (id) => id, requireSamplingIdentity: true },
     );
     const step = { stepSequence: 9, stepSha256: "b".repeat(64) } as const;
     adapter.adapt({ type: "agent_start" });
@@ -564,7 +564,7 @@ describe("PiAgentEventAdapter", () => {
         { sessionId: "session-1", turnId: "turn-1", agentId: "root" },
         { idGenerator: () => "11111111-1111-4111-8111-111111111111" },
       ),
-      { inputKind: "prompt", maximumToolOutputBytes: 1_024 },
+      { inputKind: "prompt", resolveToolCallId: (id) => id, maximumToolOutputBytes: 1_024 },
     );
     const outcome = adapter.adapt({
       type: "tool_execution_end",

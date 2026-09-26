@@ -2,6 +2,7 @@ import type { ToolSandboxOperationRequest } from "./tool-sandbox.ts";
 
 export type CandidateToolCommand = Readonly<{
   executionReference: string;
+  /** Cloud invocation identity (native result Entry ID); request retains the Pi call ID. */
   toolCallId: string;
   replyTopic?: string;
   request: ToolSandboxOperationRequest;

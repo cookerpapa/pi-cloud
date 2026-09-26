@@ -21,6 +21,10 @@ import {
   type StreamFn,
   type ThinkingLevel,
   type ToolExecutionMode,
+  type BeforeToolCallContext,
+  type BeforeToolCallResult,
+  type AfterToolCallContext,
+  type AfterToolCallResult,
 } from "@earendil-works/pi-agent-core";
 import type {
   Api,
@@ -37,6 +41,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { isContextOverflow, isRetryableAssistantError } from "@earendil-works/pi-ai";
 import { isIncompleteModelStreamError } from "./model-stream-error.ts";
+import { ToolInvocations, withToolInvocation } from "./tool-invocation.ts";
 import type {
   PiSessionMutationOperation,
   PiSessionAppendOperation,
@@ -88,6 +93,15 @@ export type CloudAgentRuntimeOptions = Readonly<{
   retry?: RetryPolicy;
   compaction?: CompactionSettings;
   toolExecution?: ToolExecutionMode;
+  toolInvocations?: ToolInvocations;
+  beforeToolCall?: (
+    context: BeforeToolCallContext,
+    signal?: AbortSignal,
+  ) => Promise<BeforeToolCallResult | undefined>;
+  afterToolCall?: (
+    context: AfterToolCallContext,
+    signal?: AbortSignal,
+  ) => Promise<AfterToolCallResult | undefined>;
   transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
   prepareContextMaintenance?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<void>;
   transformHeaders?: (
@@ -282,6 +296,7 @@ export class CloudAgentRuntime {
   readonly #options: CloudAgentRuntimeOptions;
   readonly #id: () => string;
   readonly #compaction: CompactionSettings;
+  readonly #toolInvocations: ToolInvocations;
   #agent: Agent | undefined;
   readonly #agentReady = Promise.withResolvers<void>();
   readonly #agentInputIds = new WeakMap<object, string>();
@@ -295,6 +310,7 @@ export class CloudAgentRuntime {
     }
     this.#options = options;
     this.#id = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
+    this.#toolInvocations = options.toolInvocations ?? new ToolInvocations(this.#id);
     this.#compaction = { ...(options.compaction ?? DEFAULT_COMPACTION_SETTINGS) };
   }
 
@@ -344,21 +360,27 @@ export class CloudAgentRuntime {
         typeof this.#options.systemPrompt === "function"
           ? await this.#options.systemPrompt()
           : this.#options.systemPrompt;
-      const resultEntryIds = new Map<string, string>();
       const completedTools = new Map<string, Extract<AgentEvent, { type: "tool_execution_end" }>>();
       let assistantEntryId: string | undefined;
       let pendingAssistantEntryId: string | undefined;
       let deferredAssistantEntryId: string | undefined;
       let assistantAttempt = 0;
-      let toolIndex = 0;
+      let assistantToolCalls: Extract<AssistantMessage["content"][number], { type: "toolCall" }>[] =
+        [];
 
       const tools = (this.#options.tools ?? []).map((tool) =>
         this.#bindTool(
           tool,
           operationId,
-          resultEntryIds,
           () => assistantEntryId,
-          () => toolIndex++,
+          (id, name) => {
+            const index = assistantToolCalls.findIndex(
+              (call) => call.id === id && call.name === name,
+            );
+            if (index < 0)
+              throw new Error("Tool invocation does not belong to its assistant message");
+            return index;
+          },
         ),
       );
       const streamFn: StreamFn = async (model, context, options) => {
@@ -368,6 +390,7 @@ export class CloudAgentRuntime {
           await authority.assertCurrent();
           assistantAttempt += 1;
           pendingAssistantEntryId = this.#id();
+          this.#toolInvocations.beginSampling();
           await this.#appendItems(
             [
               {
@@ -443,7 +466,9 @@ export class CloudAgentRuntime {
             ? this.#options.transformContext(current, signal)
             : current;
         },
-        toolExecution: this.#options.toolExecution ?? "sequential",
+        toolExecution: this.#options.toolExecution ?? "parallel",
+        ...(this.#options.beforeToolCall ? { beforeToolCall: this.#options.beforeToolCall } : {}),
+        ...(this.#options.afterToolCall ? { afterToolCall: this.#options.afterToolCall } : {}),
         steeringMode: "one-at-a-time",
         followUpMode: "one-at-a-time",
       });
@@ -470,12 +495,17 @@ export class CloudAgentRuntime {
             await this.#options.decorateAssistantMessage?.(event.message);
           }
           const message = normalizeMessage(event.message);
+          if (message.role === "assistant") {
+            const calls = message.content.filter((part) => part.type === "toolCall");
+            if (new Set(calls.map((call) => call.id)).size !== calls.length)
+              throw new Error("Provider repeated a Tool call ID within one Assistant response");
+          }
           let entryId: string;
           if (message.role === "assistant") {
             entryId = pendingAssistantEntryId ?? this.#id();
             pendingAssistantEntryId = undefined;
           } else if (message.role === "toolResult") {
-            entryId = resultEntryIds.get(message.toolCallId) ?? this.#id();
+            entryId = this.#toolInvocations.resultEntryId(message.toolCallId);
           } else {
             entryId = this.#agentInputIds.get(event.message) ?? this.#id();
           }
@@ -518,7 +548,10 @@ export class CloudAgentRuntime {
             assistantEntryId = durableMessage ? entryId : undefined;
             deferredAssistantEntryId = durableMessage ? undefined : entryId;
             finalMessage = message;
-            toolIndex = 0;
+            assistantToolCalls = message.content.filter((part) => part.type === "toolCall");
+            // Pi attempt is the retry ordinal of one unfinished Step, not the
+            // number of model requests made by the enclosing cloud Run.
+            if (durableMessage) assistantAttempt = 0;
             if (
               message.stopReason !== "error" &&
               message.stopReason !== "aborted" &&
@@ -614,6 +647,7 @@ export class CloudAgentRuntime {
             // never schedule a transport retry against the old frozen Step.
             overflowRecoveryAttempted = true;
             pendingOverflowCompaction = true;
+            assistantAttempt = 0;
             if (retryAttempt > 0) {
               await this.#options.onEvent?.({
                 type: "auto_retry_end",
@@ -853,12 +887,7 @@ export class CloudAgentRuntime {
 
     await this.#options.onEvent?.({ type: "compaction_start", reason });
     const entryId = this.#id();
-    const attempts = await this.#options.session.findRecords({
-      lane: this.#options.lane,
-      type: "step_attempt",
-      runId: operationId,
-    });
-    const attempt = attempts.filter((record) => record.step === "compaction").length + 1;
+    const attempt = 1;
     await this.#options.session.appendRecord({
       id: this.#id(),
       lane: this.#options.lane,
@@ -1014,9 +1043,8 @@ export class CloudAgentRuntime {
   #bindTool(
     tool: AgentTool,
     operationId: string,
-    resultEntryIds: Map<string, string>,
     assistantEntryId: () => string | undefined,
-    nextToolIndex: () => number,
+    toolIndex: (toolCallId: string, toolName: string) => number,
   ): AgentTool {
     return {
       ...tool,
@@ -1027,15 +1055,14 @@ export class CloudAgentRuntime {
         if (durableAssistantEntryId === undefined) {
           throw new Error("Tool execution started before its assistant message was durable");
         }
-        const resultEntryId = this.#id();
-        resultEntryIds.set(toolCallId, resultEntryId);
+        const resultEntryId = this.#toolInvocations.resultEntryId(toolCallId);
         const intent: NewRecord<LaneRecord> = {
           id: this.#id(),
           lane: this.#options.lane,
           type: "tool_started",
           runId: operationId,
           assistantEntryId: durableAssistantEntryId,
-          toolIndex: nextToolIndex(),
+          toolIndex: toolIndex(toolCallId, tool.name),
           toolCallId,
           toolName: tool.name,
           effectiveArgs: isObject(params) ? structuredClone(params) : {},
@@ -1059,7 +1086,10 @@ export class CloudAgentRuntime {
         // Intent ACK can race user cancellation; do not begin a new effect
         // merely because its arguments were validated before that await.
         executionSignal.throwIfAborted();
-        const result = await tool.execute(toolCallId, params, executionSignal, onUpdate);
+        const result = await withToolInvocation(
+          { id: resultEntryId, nativeToolCallId: toolCallId },
+          () => tool.execute(toolCallId, params, executionSignal, onUpdate),
+        );
         return result;
       },
     };

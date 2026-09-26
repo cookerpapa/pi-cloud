@@ -7,22 +7,25 @@ import {
   FileError,
   err,
   ok,
+  getOrThrow,
   truncateHead,
 } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import {
   MAX_TOOL_COMMAND_BYTES,
+  MAX_TOOL_MUTATION_FILE_BYTES,
   type NativeToolEnd,
   type NativeToolUpdate,
   type ToolSandboxOperationRequest,
   type ToolWebProxyBootstrap,
 } from "@pi-cloud/protocol";
 import { spawn } from "node:child_process";
+import { open } from "node:fs/promises";
+import { constants } from "node:fs";
+import { dirname } from "node:path";
 import {
   readWorkspaceFile,
   readWorkspaceFileRange,
-  writeWorkspaceFile,
-  resolveToolWorkspacePath,
   safeToolEnvironment,
   waitForShellProcess,
   terminateProcessGroup,
@@ -54,12 +57,17 @@ export async function executeNativeTool(
       if (typeof path !== "string") throw new Error("Tool path is required");
       if (path.split(/[\\/]/u).includes(".git-credentials"))
         throw new Error("Code Host credentials are not available through file tools");
-      const absolutePath = resolveToolWorkspacePath(path, cwd);
       const env = new NodeExecutionEnv({ cwd });
+      const absolutePath = getOrThrow(await env.absolutePath(path));
+      const canonicalPath = async (target: string) => {
+        signal.throwIfAborted();
+        return getOrThrow(await env.canonicalPath(target));
+      };
+      const nativeWrite = env.writeFile.bind(env);
       let digest: string | undefined;
       env.readTextFile = async (target) => {
         try {
-          const file = await readWorkspaceFile(target, cwd);
+          const file = await readWorkspaceFile(await canonicalPath(target), "/");
           digest = file.sha256;
           return ok(file.content.toString("utf8"));
         } catch (error) {
@@ -68,7 +76,7 @@ export async function executeNativeTool(
       };
       env.readBinaryFile = async (target) => {
         try {
-          return ok((await readWorkspaceFile(target, cwd)).content);
+          return ok((await readWorkspaceFile(await canonicalPath(target), "/")).content);
         } catch (error) {
           return err(fileError(error, target));
         }
@@ -76,12 +84,28 @@ export async function executeNativeTool(
       env.writeFile = async (target, content) => {
         try {
           signal.throwIfAborted();
-          await writeWorkspaceFile(
-            target,
-            typeof content === "string" ? content : Buffer.from(content).toString("utf8"),
-            digest,
-            cwd,
-          );
+          if (Buffer.byteLength(content) > MAX_TOOL_MUTATION_FILE_BYTES)
+            throw new Error("Tool file is outside its byte limit");
+          if (
+            digest !== undefined &&
+            (await readWorkspaceFile(await canonicalPath(target), "/")).sha256 !== digest
+          )
+            throw new Error("Tool file changed before it was written");
+          getOrThrow(await nativeWrite(target, content, signal));
+          // Native Node file semantics (including symlinks) inside the guest;
+          // retain a durable file/parent acknowledgement before Tool success.
+          const file = await open(target, constants.O_WRONLY);
+          try {
+            await file.sync();
+          } finally {
+            await file.close();
+          }
+          const parent = await open(dirname(await canonicalPath(target)), constants.O_RDONLY);
+          try {
+            await parent.sync();
+          } finally {
+            await parent.close();
+          }
           return ok(undefined);
         } catch (error) {
           return err(fileError(error, target));
@@ -130,10 +154,10 @@ export async function executeNativeTool(
           throw new Error("tool_read_range_invalid: offset and limit must be positive integers");
         const maximum = Math.min(request.maximumOutputBytes, DEFAULT_MAX_BYTES);
         const range = await readWorkspaceFileRange(
-          absolutePath,
+          await canonicalPath(absolutePath),
           Number(offset),
           Math.min(Number(limit), DEFAULT_MAX_LINES),
-          cwd,
+          "/",
           maximum,
         );
         let text =

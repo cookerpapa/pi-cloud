@@ -52,6 +52,7 @@ function database(entries?: unknown[]): Kysely<Database> {
         seq: "4",
         timestamp_ms: "1787529600100",
         payload: {
+          id: "summary-entry",
           type: "compaction",
           summary: "Earlier work",
           retainedTail: [],
@@ -108,6 +109,7 @@ function database(entries?: unknown[]): Kysely<Database> {
         seq: "8",
         timestamp_ms: "1787529600300",
         payload: {
+          id: "preview-result-entry",
           type: "message",
           message: {
             role: "toolResult",
@@ -120,6 +122,19 @@ function database(entries?: unknown[]): Kysely<Database> {
               previewPath: `/v1/conversations/${TURN_ID}/preview/4173/`,
             },
           },
+        },
+      },
+    ],
+    pi_session_records: [
+      {
+        turn_id: TURN_ID,
+        seq: "3",
+        timestamp_ms: "1787529600090",
+        payload: {
+          type: "step_attempt",
+          step: "compaction",
+          compactionReason: "overflow",
+          resultEntryId: "summary-entry",
         },
       },
     ],
@@ -161,6 +176,52 @@ function database(entries?: unknown[]): Kysely<Database> {
 }
 
 describe("canonical Pi conversation", () => {
+  it("keeps separate native results when later model responses reuse a provider Tool ID", async () => {
+    const entries = [1, 2].flatMap((n) => [
+      {
+        turn_id: TURN_ID,
+        seq: String(n * 2),
+        timestamp_ms: "1787529600000",
+        payload: {
+          id: `assistant-${n}`,
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "toolCall", id: "reused", name: "bash", arguments: { command: `echo ${n}` } },
+            ],
+          },
+        },
+      },
+      {
+        turn_id: TURN_ID,
+        seq: String(n * 2 + 1),
+        timestamp_ms: "1787529600001",
+        payload: {
+          id: `result-${n}`,
+          type: "message",
+          message: {
+            role: "toolResult",
+            toolCallId: "reused",
+            toolName: "bash",
+            content: [{ type: "text", text: String(n) }],
+            isError: false,
+          },
+        },
+      },
+    ]);
+    const result = (
+      await readCanonicalPiTurnTranscripts(database(entries), {
+        tenantId: TENANT_ID,
+        turnIds: [TURN_ID],
+      })
+    ).get(TURN_ID)!;
+    expect(result.items).toMatchObject([
+      { kind: "tool", toolCallId: "result-1", input: { command: "echo 1" } },
+      { kind: "tool", toolCallId: "result-2", input: { command: "echo 2" } },
+    ]);
+  });
+
   it("restores native commentary/final phases without merging their message boundaries", async () => {
     const transcript = await readCanonicalPiTurnTranscripts(
       database([
@@ -216,8 +277,10 @@ describe("canonical Pi conversation", () => {
       },
       {
         kind: "compaction",
+        reason: "overflow",
         status: "completed",
         tokensBefore: 80_000,
+        estimatedTokensAfter: expect.any(Number),
       },
       {
         kind: "retry",
@@ -228,7 +291,7 @@ describe("canonical Pi conversation", () => {
       { kind: "text", text: "After maintenance." },
       {
         kind: "tool",
-        toolCallId: "preview-call",
+        toolCallId: "preview-result-entry",
         toolName: "preview",
         status: "completed",
         output: {

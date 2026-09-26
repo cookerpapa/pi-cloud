@@ -636,9 +636,6 @@ export async function readWorkspaceFileRange(
     if (!metadata.isFile() || metadata.size > MAX_TOOL_RANGE_FILE_BYTES) {
       throw new ToolWorkerError("tool_file_limit", "Tool file is outside its ranged-read limit");
     }
-    if (metadata.size === 0 && offsetLine === 1) {
-      return { content: Buffer.alloc(0), startLine: 1, endLine: 1 };
-    }
     const stream = handle.createReadStream({ autoClose: false, encoding: "utf8" });
     const lines = createInterface({ input: stream, crlfDelay: Infinity });
     const selected: string[] = [];
@@ -670,6 +667,9 @@ export async function readWorkspaceFileRange(
       lines.close();
       stream.destroy();
     }
+    // Guest procfs/sysfs text can report size zero while still yielding bytes.
+    if (currentLine === 0 && offsetLine === 1)
+      return { content: Buffer.alloc(0), startLine: 1, endLine: 1 };
     if (currentLine < offsetLine) {
       throw new ToolWorkerError(
         "tool_read_offset_out_of_range",

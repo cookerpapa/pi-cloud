@@ -178,6 +178,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const presentedConnectionPhase = usePresentedConnectionPhase(state.connection.phase);
   const [conversations, setConversations] = useState<readonly ConversationSummaryResource[]>([]);
   const conversationListRequest = useRef(0);
+  const [conversationCursor, setConversationCursor] = useState<string>();
+  const [conversationPageLoading, setConversationPageLoading] = useState(false);
+  const conversationPageRequest = useRef(false);
   const [delegatedSessions, setDelegatedSessions] = useState<
     readonly DelegatedSessionSummaryResource[]
   >([]);
@@ -417,10 +420,37 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       if (request !== conversationListRequest.current) return;
       setConversations(listed.conversations);
       setDelegatedSessions(listed.delegatedSessions);
+      setConversationCursor(listed.nextCursor);
     } catch (error) {
       if (request === conversationListRequest.current) throw error;
     }
   }, [api]);
+
+  const loadMoreConversations = useCallback(async (): Promise<void> => {
+    if (!conversationCursor || conversationPageRequest.current) return;
+    const generation = conversationListRequest.current;
+    conversationPageRequest.current = true;
+    setConversationPageLoading(true);
+    try {
+      const page = await api.listConversations(conversationCursor);
+      if (generation !== conversationListRequest.current) return;
+      setConversations((current) => [
+        ...new Map([...current, ...page.conversations].map((row) => [row.sessionId, row])).values(),
+      ]);
+      setDelegatedSessions((current) => [
+        ...new Map(
+          [...current, ...page.delegatedSessions].map((row) => [row.sessionId, row]),
+        ).values(),
+      ]);
+      setConversationCursor(page.nextCursor);
+    } catch (error) {
+      if (generation === conversationListRequest.current)
+        update({ type: "api.error", message: errorMessage(error, t) });
+    } finally {
+      conversationPageRequest.current = false;
+      setConversationPageLoading(false);
+    }
+  }, [api, conversationCursor, t, update]);
 
   const refreshWorkspaces = useCallback(async (): Promise<void> => {
     const listed = await api.listWorkspaces();
@@ -1465,6 +1495,16 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             ) : (
               rootConversations.map((conversation) => renderConversationNode(conversation))
             )}
+            {conversationCursor ? (
+              <button
+                className="product-resource-nav"
+                type="button"
+                disabled={conversationPageLoading}
+                onClick={() => void loadMoreConversations()}
+              >
+                {conversationPageLoading ? t("common.loading") : t("chat.loadMoreConversations")}
+              </button>
+            ) : null}
           </nav>
           <footer className="product-account">
             <AccountMenu

@@ -25,6 +25,7 @@ import type { ProviderHeaders } from "@earendil-works/pi-ai";
 import { measureRunPreparation, type PiCloudMetrics } from "@pi-cloud/observability";
 import { PiAgentEventAdapter } from "./pi-agent-event-adapter.ts";
 import { AssistantTextPresentation } from "./assistant-text-presentation.ts";
+import { ToolInvocations } from "./tool-invocation.ts";
 import {
   PI_WORLD_STATE_ENTRY_PROJECTORS,
   PiSessionWorldStateController,
@@ -560,8 +561,10 @@ export class PiCloudTurnRunner {
             idGenerator: this.#id,
           },
         );
+        const toolInvocations = new ToolInvocations(() => sessionHandle.session.idGenerator.next());
         const adapter = new PiAgentEventAdapter(eventFactory, {
           inputKind: "prompt",
+          resolveToolCallId: (id) => toolInvocations.resultEntryId(id),
           requireSamplingIdentity: true,
           ...(command.payload.budgets === undefined
             ? {}
@@ -775,6 +778,7 @@ export class PiCloudTurnRunner {
           }
         };
         const runtime = new CloudAgentRuntime({
+          toolInvocations,
           ...(this.#options.acquireModelPermit
             ? { acquireModelPermit: this.#options.acquireModelPermit }
             : {}),

@@ -39,6 +39,30 @@ const MAX_CONVERSATION_SUMMARIES = 100;
 const MAX_DELEGATED_SESSION_SUMMARIES = 500;
 const MAX_CONVERSATION_TURNS = 40;
 const MAX_INHERITED_MESSAGES = 10_000;
+
+function listPosition(cursor: string | undefined): { at: string; id: string } | undefined {
+  if (cursor === undefined) return;
+  try {
+    if (typeof cursor !== "string" || !/^[A-Za-z0-9_-]{1,256}$/.test(cursor)) throw new Error();
+    const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
+      at?: unknown;
+      id?: unknown;
+    };
+    if (
+      typeof value.at !== "string" ||
+      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(value.at) ||
+      !Number.isFinite(Date.parse(value.at)) ||
+      new Date(value.at).getUTCFullYear() < 1 ||
+      new Date(value.at).toISOString() !== value.at.replace(/(\.\d{3})\d{3}Z$/, "$1Z") ||
+      typeof value.id !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.id)
+    )
+      throw new Error();
+    return { at: value.at, id: value.id };
+  } catch {
+    throw new ControlPlaneStoreError("invalid_request", "Conversation list cursor is invalid");
+  }
+}
 /** Tenant-scoped read model. A snapshot and its coverage share one PG transaction;
  * this reader cannot admit Runs, change resource ownership, or allocate native IDs. */
 export class ConversationReader {
@@ -48,7 +72,8 @@ export class ConversationReader {
     this.#database = database;
     this.#tenantId = tenantId;
   }
-  async listConversations(): Promise<ConversationListResource> {
+  async listConversations(cursor?: string): Promise<ConversationListResource> {
+    const position = listPosition(cursor);
     const rows = await this.#database
       .selectFrom("sessions as session_row")
       .innerJoin("projects as project", (join) =>
@@ -85,9 +110,19 @@ export class ConversationReader {
         "workspace.deleted_at as workspaceDeletedAt",
       ])
       .select((expression) => expression.fn.count<string>("turn.id").as("turnCount"))
+      .select(
+        sql<string>`to_char(session_row.last_active_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
+          "cursorAt",
+        ),
+      )
       .where("session_row.tenant_id", "=", this.#tenantId)
       .where("session_row.session_kind", "=", "conversation")
       .where("session_row.archived_at", "is", null)
+      .$if(position !== undefined, (query) =>
+        query.where(sql<boolean>`
+        (session_row.last_active_at, session_row.id) < (${position!.at}::timestamptz, ${position!.id}::uuid)
+      `),
+      )
       .groupBy([
         "session_row.id",
         "session_row.title",
@@ -138,6 +173,16 @@ export class ConversationReader {
       })),
       delegatedSessions: delegated.items,
       truncated: rows.length > MAX_CONVERSATION_SUMMARIES || delegated.truncated,
+      ...(rows.length > MAX_CONVERSATION_SUMMARIES
+        ? {
+            nextCursor: Buffer.from(
+              JSON.stringify({
+                at: visibleRows.at(-1)!.cursorAt,
+                id: visibleRows.at(-1)!.sessionId,
+              }),
+            ).toString("base64url"),
+          }
+        : {}),
     };
   }
 

@@ -350,9 +350,14 @@ export class PiCloudApi {
     );
   }
 
-  async listConversations(): Promise<ConversationListResource> {
+  async listConversations(cursor?: string): Promise<ConversationListResource> {
     return parseConversationListResource(
-      await request(this.#fetch, "/v1/conversations", { method: "GET" }, this.#authorizationToken),
+      await request(
+        this.#fetch,
+        `/v1/conversations${cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`}`,
+        { method: "GET" },
+        this.#authorizationToken,
+      ),
     );
   }
 

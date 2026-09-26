@@ -1,5 +1,4 @@
 import {
-  modelSamplingHeaders,
   parseCloudToolCapabilitySnapshot,
   parseToolSandboxOperationRequest,
   CLOUD_TOOL_NAMES,
@@ -22,6 +21,8 @@ import {
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
+import { toolInvocationId } from "./tool-invocation.ts";
+import { SamplingContext } from "./sampling-context.ts";
 import type { FrozenCloudStep } from "./cloud-context.ts";
 import type { PiWorldStateModelMessage } from "./pi-sandbox-continuity.ts";
 import {
@@ -42,12 +43,6 @@ const UNAVAILABLE_TOOL_CODES = new Set([
   "stale_session_lease",
   "ownership_lost",
 ]);
-
-/**
- * Keep each model's Tool batch ordered across remote requests. Other Session
- * bindings may still operate on the same physical Workspace concurrently.
- */
-export const CLOUD_TOOL_EXECUTION_MODE = "sequential" as const;
 
 type RemoteOperationInput<T = ToolSandboxOperationRequest> = T extends unknown
   ? Omit<
@@ -247,59 +242,14 @@ export function createTrustedRemoteAgentTools(
   const runtime = validateRuntimeConfiguration(configuration);
   const tools: AgentTool[] = [];
   let remainingToolCalls = runtime.remainingToolCalls;
-  let currentStep: FrozenCloudStep | undefined;
-  let currentSamplingAttempt: number | undefined;
-  let currentSamplingHeadersIssued = false;
-
-  const captureStep = async (purpose: "agent" | "context_maintenance") => {
-    const captured = await runtime.captureStepContext(
-      tools.map((tool) => tool.name),
-      purpose,
-    );
-    if (
-      captured.step.context.turnContextSha256 !== runtime.turnContextSha256 ||
-      captured.step.context.executionContextSha256 !== runtime.executionContextSha256 ||
-      !/^[0-9a-f]{64}$/.test(captured.step.sha256)
-    ) {
-      throw new Error("Captured Cloud Step did not match the accepted Turn and execution contexts");
-    }
-    currentStep = captured.step;
-    currentSamplingAttempt = captured.samplingAttempt;
-    currentSamplingHeadersIssued = false;
-    return captured;
-  };
-
-  const transformContext = async (
-    input: readonly AgentMessage[],
-    purpose: "agent" | "context_maintenance" = "agent",
-  ): Promise<AgentMessage[]> => {
-    currentStep = undefined;
-    currentSamplingAttempt = undefined;
-    const captured = await captureStep(purpose);
-    const messages = [...input];
-    for (const message of captured.modelMessages) {
-      const alreadyPresent = messages.some(
-        (candidate) =>
-          candidate.role === "custom" &&
-          candidate.customType === message.customType &&
-          typeof candidate.details === "object" &&
-          candidate.details !== null &&
-          (candidate.details as { changeSha256?: unknown }).changeSha256 ===
-            message.details.changeSha256,
-      );
-      if (!alreadyPresent) {
-        messages.push({
-          role: "custom",
-          customType: message.customType,
-          content: message.content,
-          display: message.display,
-          details: message.details,
-          timestamp: Date.now(),
-        });
-      }
-    }
-    return messages;
-  };
+  const sampling = new SamplingContext({
+    turnContextSha256: runtime.turnContextSha256,
+    executionContextSha256: runtime.executionContextSha256,
+    activeFileTools: runtime.allowedTools!,
+    capture: runtime.captureStepContext,
+    ...(runtime.traceparent === undefined ? {} : { traceparent: runtime.traceparent }),
+    ...(runtime.tracestate === undefined ? {} : { tracestate: runtime.tracestate }),
+  });
 
   const consumeToolCall = (): void => {
     if (remainingToolCalls < 1) {
@@ -317,7 +267,8 @@ export function createTrustedRemoteAgentTools(
     onUpdate?: (event: NativeToolUpdate) => void,
   ): Promise<ToolSandboxOperationResponse> => {
     signal?.throwIfAborted();
-    if (currentStep === undefined) {
+    const invocationId = toolInvocationId(toolCallId);
+    if (sampling.step === undefined) {
       throw new RemoteToolError(
         "step_context_unavailable",
         "step_context_unavailable: Tool call preceded its Pi context boundary",
@@ -333,8 +284,8 @@ export function createTrustedRemoteAgentTools(
       operationId: randomUUID(),
       turnContextSha256: runtime.turnContextSha256,
       executionContextSha256: runtime.executionContextSha256,
-      stepContextSequence: currentStep.context.sequence,
-      stepContextSha256: currentStep.sha256,
+      stepContextSequence: sampling.step.context.sequence,
+      stepContextSha256: sampling.step.sha256,
       toolName,
       ...request,
     });
@@ -350,7 +301,7 @@ export function createTrustedRemoteAgentTools(
     await runtime
       .publishToolCommand({
         executionReference: runtime.executionReference,
-        toolCallId,
+        toolCallId: invocationId,
         request: candidate,
         occurredAt: new Date().toISOString(),
         ...(runtime.traceparent
@@ -417,30 +368,6 @@ export function createTrustedRemoteAgentTools(
     return `${basePrompt}\n\n${platformContext}`;
   };
 
-  const transformHeaders = async (headers: ProviderHeaders = {}): Promise<ProviderHeaders> => {
-    const result = { ...headers };
-    if (runtime.traceparent !== undefined) result.traceparent = runtime.traceparent;
-    if (runtime.tracestate !== undefined) result.tracestate = runtime.tracestate;
-    // Pi compaction and branch-summary requests use ModelRuntime directly and
-    // therefore do not pass through the Agent `context` hook. Give each such
-    // maintenance request a fresh governed sampling identity instead of
-    // reusing the preceding Agent Step and colliding in the request ledger.
-    if (currentSamplingHeadersIssued) await captureStep("context_maintenance");
-    if (currentStep === undefined || currentSamplingAttempt === undefined) {
-      throw new Error("Model request preceded its Cloud Step capture");
-    }
-    Object.assign(
-      result,
-      modelSamplingHeaders({
-        stepSequence: currentStep.context.sequence,
-        stepSha256: currentStep.sha256,
-        samplingAttempt: currentSamplingAttempt,
-      }),
-    );
-    currentSamplingHeadersIssued = true;
-    return result;
-  };
-
   const toolRoot = runtime.workingDirectory;
   const readTool = createReadTool(toolRoot);
   const writeTool = createWriteTool(toolRoot);
@@ -468,7 +395,7 @@ export function createTrustedRemoteAgentTools(
     tools.push({
       ...tool,
       parameters,
-      executionMode: CLOUD_TOOL_EXECUTION_MODE,
+      executionMode: tool.name === "read" ? "parallel" : "sequential",
       ...(tool.name === "bash"
         ? {
             description:
@@ -526,8 +453,8 @@ export function createTrustedRemoteAgentTools(
   return {
     tools,
     systemPrompt,
-    transformHeaders,
-    transformContext,
+    transformHeaders: sampling.transformHeaders,
+    transformContext: sampling.transformContext,
     executeWorkflow: (async (toolCallId, script, call, signal, onUpdate) => {
       if (!allowedTools.has("bash"))
         throw new Error("Workflow code requires the Bash execution capability");

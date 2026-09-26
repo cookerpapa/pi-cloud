@@ -1,0 +1,136 @@
+{
+  "files": [
+    {
+      "path": "../sibling.txt",
+      "native": [
+        {
+          "type": "text",
+          "text": "sibling fixture"
+        }
+      ],
+      "cloud": [
+        {
+          "type": "text",
+          "text": "Tool path escaped the workspace"
+        }
+      ],
+      "bash": [
+        {
+          "type": "text",
+          "text": "sibling fixture"
+        }
+      ]
+    },
+    {
+      "path": "link.txt",
+      "native": [
+        {
+          "type": "text",
+          "text": "target fixture"
+        }
+      ],
+      "cloud": [
+        {
+          "type": "text",
+          "text": "Tool path was a symbolic link"
+        }
+      ],
+      "bash": [
+        {
+          "type": "text",
+          "text": "target fixture"
+        }
+      ]
+    }
+  ],
+  "repeatedToolCallId": {
+    "toolInvocations": 3,
+    "starts": 1,
+    "sameTaskReturnedSameResult": true,
+    "differentTask": "Workflow key reused with different task arguments"
+  },
+  "repeatedToolProjection": [
+    {
+      "kind": "tool",
+      "toolCallId": "same-provider-id",
+      "toolName": "bash",
+      "input": {
+        "command": "echo 2"
+      },
+      "status": "completed",
+      "firstSequence": 1,
+      "startedAt": "2026-09-26T01:33:00.500Z",
+      "output": {
+        "content": [
+          {
+            "type": "text",
+            "text": "2"
+          }
+        ]
+      },
+      "lastSequence": 4,
+      "completedAt": "2026-09-26T01:33:00.500Z"
+    }
+  ],
+  "compactionPresentation": {
+    "live": {
+      "kind": "compaction",
+      "reason": "overflow",
+      "status": "completed",
+      "willRetry": false,
+      "tokensBefore": 100,
+      "estimatedTokensAfter": 10,
+      "firstSequence": 5,
+      "lastSequence": 6
+    },
+    "cold": {
+      "kind": "compaction",
+      "reason": "threshold",
+      "status": "completed",
+      "willRetry": false,
+      "tokensBefore": 100,
+      "firstSequence": 9,
+      "lastSequence": 9
+    }
+  },
+  "recordBytes": {
+    "validToolRequestBytes": 1573480,
+    "executionTopicMaxMessageBytes": 1048588,
+    "pngBytes": 1080993,
+    "pngNativeResultBytes": 1441440
+  },
+  "multiStepRecords": {
+    "attempts": [1, 2],
+    "tools": [
+      {
+        "id": "t1",
+        "index": 0
+      },
+      {
+        "id": "t2",
+        "index": 1
+      }
+    ],
+    "upstreamValidation": "non_consecutive_attempt"
+  },
+  "loop": {
+    "native": {
+      "maximumConcurrentTools": 2,
+      "beforeToolHookCalls": 2
+    },
+    "cloud": {
+      "maximumConcurrentTools": 1,
+      "beforeToolHookCalls": 0
+    }
+  },
+  "invalidFirstToolRecord": {
+    "attempts": [1, 2],
+    "tools": [
+      {
+        "id": "t2",
+        "index": 0
+      }
+    ],
+    "upstreamValidation": "tool_call_mismatch"
+  }
+}

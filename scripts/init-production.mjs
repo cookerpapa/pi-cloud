@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { validateProviderRelayProxy } from "./production-runtime-policy.mjs";
+import { updateModelRetryPolicyFile } from "./lib/model-retry-policy.mjs";
 import {
   readPrivateRuntimeFile,
   runtimeSecretMode,
@@ -321,7 +322,7 @@ async function ensureCliProxyRuntime(runtimeDirectory) {
       "logging-to-file: false",
       "usage-statistics-enabled: true",
       'proxy-url: "http://provider-egress-relay:3129"',
-      "request-retry: 3",
+      "request-retry: 0",
       "max-retry-credentials: 0",
       "max-retry-interval: 5",
       "transient-error-cooldown-seconds: -1",
@@ -340,6 +341,8 @@ async function ensureCliProxyRuntime(runtimeDirectory) {
     if (application.changeOwnership) await chown(configPath, application.uid, application.gid);
     configCreated = true;
   }
+
+  await updateModelRetryPolicyFile(configPath);
 
   const managementAssetPath = resolve(staticDirectory, "management.html");
   let managementAssetCreated = false;

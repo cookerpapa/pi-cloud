@@ -65,7 +65,7 @@ head.
 | duplicate queue delivery | idempotent input plus transactional single-Run admission |
 | ambiguous shell result | `UNKNOWN`; no automatic replay |
 | SSRF/data exfiltration to internal network | private access denied except deployment-owned direct CIDRs; public HTTP uses governed egress proxy |
-| path/symlink escape | rooted/O_NOFOLLOW trusted Volume operations |
+| host-side path/symlink escape | rooted/O_NOFOLLOW trusted Volume operations; guest Tool cwd is a path base inside KVM, not a second isolation boundary |
 | infinite output/process/resource use | byte, timeout, PID, CPU, memory and disk limits |
 | browser observes non-durable output | Kafka `acks=all` before Gateway SSE; complete Pi entries remain PostgreSQL canonical state |
 | Cube loss | process world reset marker plus same persistent Workspace Volume |

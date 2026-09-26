@@ -39,6 +39,12 @@
 
 ## Current release gate
 
+- [ ] Finish the matched local rollout acceptance for the September 26
+      [Pi-alignment repairs](reports/pi-alignment-repair-20260926.md): native
+      Record/invocation semantics, guest file behavior, eligible Tool concurrency,
+      sampling/retry boundaries, conversation discovery and guest build identity.
+      Images remain an explicitly deferred design discussion.
+
 - [x] Ephemeral Tool log preview via Broker HTTP → Projector SSE; final-only
       Kafka replies, no observation history or background-service log follower.
       [Luna/Cube/browser and process-restart acceptance](reports/tool-progress-acceptance-20260925.md).

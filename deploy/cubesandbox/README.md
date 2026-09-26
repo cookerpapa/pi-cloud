@@ -147,7 +147,8 @@ broader Kubernetes RBAC.
 
 The registration command:
 
-1. builds `deploy/cubesandbox/Dockerfile.tool` from the exact Git revision;
+1. fingerprints `deploy/cubesandbox/Dockerfile.tool` and its explicit local COPY
+   inputs, then builds or reuses the matching guest image from a clean checkout;
 2. runs the local Tool protocol compatibility gate;
 3. pushes the image to the private registry and resolves its digest;
 4. registers Cube's standard envd port and probe `49983 /health`;

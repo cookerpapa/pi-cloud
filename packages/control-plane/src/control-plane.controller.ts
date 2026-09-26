@@ -445,9 +445,12 @@ export class ControlPlaneController {
   }
 
   @Get("conversations")
-  async listConversations(@Req() request: FastifyRequest): Promise<ConversationListResource> {
+  async listConversations(
+    @Req() request: FastifyRequest,
+    @Query("cursor") cursor?: string,
+  ): Promise<ConversationListResource> {
     const identity = this.tenantRequestContext.resolve(request);
-    return this.controlPlaneStores.forIdentity(identity).listConversations();
+    return this.controlPlaneStores.forIdentity(identity).listConversations(cursor);
   }
 
   @Get("workspaces")

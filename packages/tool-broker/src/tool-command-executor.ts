@@ -194,7 +194,7 @@ export class ToolCommandExecutor {
         } else if (response.operation === "workflow.exec") {
           await send({
             type: "tool_execution_end",
-            toolCallId: command.toolCallId,
+            toolCallId: request.toolCallId,
             toolName: request.toolName,
             isError: !response.ok,
             result: {
@@ -224,7 +224,7 @@ export class ToolCommandExecutor {
             : "Tool execution result could not be confirmed; do not automatically repeat the command";
         await send({
           type: "tool_execution_end",
-          toolCallId: command.toolCallId,
+          toolCallId: request.toolCallId,
           toolName: request.toolName,
           result: { content: [{ type: "text", text: `${code}: ${message}` }], details: undefined },
           isError: true,

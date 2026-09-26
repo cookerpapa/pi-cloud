@@ -503,7 +503,7 @@ describe("tenant model gateway", () => {
     ]);
   });
 
-  it("retries only a pre-stream Provider Gateway transport failure", async () => {
+  it("leaves failed sampling retries to the Runner instead of hiding extra upstream sends", async () => {
     let attempts = 0;
     const upstream = vi.fn<typeof fetch>(async () => {
       attempts += 1;
@@ -527,9 +527,9 @@ describe("tenant model gateway", () => {
       },
       body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
     });
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain("recovered");
-    expect(upstream).toHaveBeenCalledTimes(2);
+    expect(response.status).toBe(500);
+    expect(await response.text()).toContain("transport_failure");
+    expect(upstream).toHaveBeenCalledTimes(1);
   });
 
   it("applies the upstream timeout to connection and stream idleness instead of total duration", async () => {

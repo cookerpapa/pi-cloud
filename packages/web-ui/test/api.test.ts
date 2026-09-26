@@ -45,6 +45,19 @@ const environment = {
 } as const;
 
 describe("tenant-aware browser API", () => {
+  it("passes the opaque conversation page cursor without changing stream requests", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
+      expect(String(input)).toBe("/v1/conversations?cursor=page_position");
+      return new Response(
+        JSON.stringify({ conversations: [], delegatedSessions: [], truncated: false }),
+        { status: 200 },
+      );
+    });
+    await expect(
+      new PiCloudApi(fetchImplementation).listConversations("page_position"),
+    ).resolves.toMatchObject({ conversations: [] });
+  });
+
   it("keeps the Run inspection API used by live acceptance scripts without restoring UI polling", async () => {
     const transport = vi.fn<typeof fetch>(async (input, init) => {
       expect(input).toBe("/v1/runs/owned%2Frun");

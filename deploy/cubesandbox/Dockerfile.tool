@@ -161,11 +161,12 @@ COPY --chown=1000:1000 \
   /opt/pi-cloud/sample-java-repair
 ARG PI_CLOUD_VERSION=development
 ARG PI_CLOUD_REVISION=development
+ARG PI_CLOUD_IMAGE_REVISION=development
 LABEL org.opencontainers.image.title="PiCloud CubeSandbox tool template" \
       org.opencontainers.image.description="Cube envd guest with credential-free on-demand PiCloud Tool Worker" \
       org.opencontainers.image.version="${PI_CLOUD_VERSION}" \
       org.opencontainers.image.revision="${PI_CLOUD_REVISION}"
-RUN printf '%s\n' "${PI_CLOUD_REVISION}" > /opt/pi-cloud/image-revision \
+RUN printf '%s\n' "${PI_CLOUD_IMAGE_REVISION}" > /opt/pi-cloud/image-revision \
     && chmod 0444 /opt/pi-cloud/image-revision
 
 ENV NODE_ENV=production \

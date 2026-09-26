@@ -8,7 +8,7 @@ x-logging: &bounded-logging
 
 x-application-build-args: &application-build-args
   PI_CLOUD_VERSION: ${PI_CLOUD_IMAGE_VERSION:-production}
-  PI_CLOUD_REVISION: ${PI_CLOUD_IMAGE_REVISION:-unknown}
+  PI_CLOUD_REVISION: ${PI_CLOUD_CODE_REVISION:-unknown}
   HTTP_PROXY: ${HTTP_PROXY:-}
   HTTPS_PROXY: ${HTTPS_PROXY:-}
   NO_PROXY: ${NO_PROXY:-127.0.0.1,localhost}

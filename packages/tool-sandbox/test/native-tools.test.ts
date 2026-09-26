@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -41,6 +41,49 @@ function request(
 }
 
 describe("whole native tools at the execution source", () => {
+  it("treats cwd as a base and follows guest file links without replacing them", async () => {
+    const root = await directory();
+    const cwd = join(root, "repo");
+    await mkdir(cwd);
+    await writeFile(join(root, "shared.txt"), "before");
+    await symlink("../shared.txt", join(cwd, "linked.txt"));
+    const execute = (name: NativeToolRequest["toolName"], args: Record<string, unknown>) =>
+      executeNativeTool(request(name, args), cwd, new AbortController().signal, () => {});
+    expect(await execute("read", { path: "../shared.txt" })).toMatchObject({
+      isError: false,
+      result: { content: [{ text: "before" }] },
+    });
+    expect(await execute("read", { path: join(root, "shared.txt") })).toMatchObject({
+      isError: false,
+    });
+    expect(
+      await execute("edit", {
+        path: "linked.txt",
+        edits: [{ oldText: "before", newText: "edited" }],
+      }),
+    ).toMatchObject({ isError: false });
+    expect(await readFile(join(root, "shared.txt"), "utf8")).toBe("edited");
+    expect((await lstat(join(cwd, "linked.txt"))).isSymbolicLink()).toBe(true);
+    expect(await execute("write", { path: "linked.txt", content: "written" })).toMatchObject({
+      isError: false,
+    });
+    expect(await readFile(join(root, "shared.txt"), "utf8")).toBe("written");
+    await symlink("../new.txt", join(cwd, "new-link.txt"));
+    expect(await execute("write", { path: "new-link.txt", content: "created" })).toMatchObject({
+      isError: false,
+    });
+    expect(await readFile(join(root, "new.txt"), "utf8")).toBe("created");
+    expect(await execute("read", { path: "/proc/self/status", limit: 1 })).toMatchObject({
+      isError: false,
+      result: { content: [{ text: expect.stringContaining("Name:") }] },
+    });
+    await writeFile(join(cwd, "empty.txt"), "");
+    expect(await execute("read", { path: "empty.txt" })).toMatchObject({
+      isError: false,
+      result: { content: [{ text: "" }] },
+    });
+  });
+
   it.each(["printf hello", "true", "exit 7"])(
     "preserves native Pi Bash completion semantics: %s",
     async (command) => {

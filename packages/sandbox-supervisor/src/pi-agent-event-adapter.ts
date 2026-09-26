@@ -173,17 +173,20 @@ export class PiAgentEventAdapter {
   #lastCompletedSampling: ModelSamplingIdentity | undefined;
   readonly #maximumToolOutputBytes: number;
   readonly #requireSamplingIdentity: boolean;
+  readonly #resolveToolCallId: (nativeToolCallId: string) => string;
 
   constructor(
     eventFactory: PiCloudEventFactory,
     options: {
       inputKind: "prompt";
+      resolveToolCallId: (nativeToolCallId: string) => string;
       maximumToolOutputBytes?: number;
       requireSamplingIdentity?: boolean;
     },
   ) {
     this.#eventFactory = eventFactory;
     this.#inputKind = options.inputKind;
+    this.#resolveToolCallId = options.resolveToolCallId;
     const maximum = options.maximumToolOutputBytes ?? DEFAULT_MAXIMUM_TOOL_OUTPUT_BYTES;
     if (!Number.isSafeInteger(maximum) || maximum < 1_024 || maximum > 1_048_576) {
       throw new TypeError("maximumToolOutputBytes must be between 1024 and 1048576");
@@ -292,15 +295,16 @@ export class PiAgentEventAdapter {
           // frame. Wait for identity, not for the complete argument payload.
           return { kind: "ignored", sourceType: `message_update.${streamEvent.type}` };
         }
-        if (this.#preparingTools.has(toolCall.id))
+        const invocationId = this.#resolveToolCallId(toolCall.id);
+        if (this.#preparingTools.has(invocationId))
           return { kind: "ignored", sourceType: `message_update.${streamEvent.type}` };
-        this.#preparingTools.add(toolCall.id);
+        this.#preparingTools.add(invocationId);
         return {
           kind: "mapped",
           terminal: false,
           event: this.#eventFactory.next({
             type: "assistant.tool_call.preparing",
-            payload: { toolCallId: toolCall.id, toolName: toolCall.name },
+            payload: { toolCallId: invocationId, toolName: toolCall.name },
           }),
         };
       }
@@ -352,7 +356,7 @@ export class PiAgentEventAdapter {
         event: this.#eventFactory.next({
           type: "tool.started",
           payload: {
-            toolCallId: value.toolCallId,
+            toolCallId: this.#resolveToolCallId(value.toolCallId),
             toolName: value.toolName,
             input: value.args ?? null,
             ...(this.#lastCompletedSampling ?? {}),
@@ -382,7 +386,7 @@ export class PiAgentEventAdapter {
         event: this.#eventFactory.next({
           type: "tool.completed",
           payload: {
-            toolCallId: value.toolCallId,
+            toolCallId: this.#resolveToolCallId(value.toolCallId),
             ...(this.#lastCompletedSampling ?? {}),
             outcome: value.isError
               ? toolResultIsUnknown(value.result)

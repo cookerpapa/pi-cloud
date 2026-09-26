@@ -116,14 +116,16 @@ jobs:
           persist-credentials: false
 
       - name: Build revision-labelled production image
-        run: >-
-          docker build
-          --file "${{ matrix.dockerfile }}"
-          --build-arg PI_CLOUD_VERSION=ci
-          --build-arg PI_CLOUD_GOPROXY=https://proxy.golang.org,direct
-          --build-arg PI_CLOUD_REVISION="${{ github.sha }}"
-          --tag "pi-cloud/${{ matrix.image }}:ci"
-          .
+        run: |
+          guest_revision="$(node --input-type=module -e 'import { guestBuildIdentity } from "./scripts/lib/guest-build-identity.mjs"; console.log(await guestBuildIdentity(process.cwd()))')"
+          docker build \
+            --file "${{ matrix.dockerfile }}" \
+            --build-arg PI_CLOUD_VERSION=ci \
+            --build-arg PI_CLOUD_GOPROXY=https://proxy.golang.org,direct \
+            --build-arg PI_CLOUD_REVISION="${{ github.sha }}" \
+            --build-arg PI_CLOUD_IMAGE_REVISION="$guest_revision" \
+            --tag "pi-cloud/${{ matrix.image }}:ci" \
+            .
 
       - name: Prepare evidence directory
         run: mkdir -p evidence

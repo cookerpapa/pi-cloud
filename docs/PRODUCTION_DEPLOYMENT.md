@@ -34,8 +34,16 @@ that revision's deployment instructions. Reload open browser pages. Do not mix
 incompatible publishers, change a live Kafka partition count or silently convert
 an unsupported Volume layout. Back up user data before a storage/protocol cutover.
 
-The current pre-release uses Kafka v10 and `pcer2_` Run references, without an
-old-wire decoder; this is not a rolling upgrade. Migration 145 requires all
+The current pre-release uses Kafka v11 and `pcer2_` Run references, without an
+old-wire decoder; this is not a rolling upgrade. The v10→v11 cutover (ADR-0185)
+requires all admitted Runs to finish and all their seals to project before old
+Workers, Projectors and Brokers stop. The new generation uses result Entry IDs
+for cloud Tool identity, while native provider IDs and the Kafka reply wire stay
+unchanged. Do not start the new Projector against an unfinished v10 prefix.
+Development-only discarded resources may be explicitly retired/reset; no old-ID
+compatibility reader is provided.
+
+Migration 145 originally introduced v10 and requires all
 accepted/queued Runs, current owners, publications and terminal Outbox rows to
 drain. Stop old publishers only after their seals have projected, then migrate
 and deploy matching execution services. Retire v9 only after confirming its
@@ -76,6 +84,15 @@ authority. A live process alone is not execution readiness.
 
 The pinned Confluent consumer uses a native addon: `dependencies:harden` and image
 builds rebuild it after `npm ci --ignore-scripts`.
+
+Guest template identity now comes from its Dockerfile/COPY build inputs (ADR-0189),
+not every whole-repository commit. Registration still requires a clean checkout,
+an actual image digest, READY templates and matching runtime evidence. App image
+labels use the platform Git revision separately. The first cutover rebuilds the
+guest catalog; later documentation/frontend-only source changes can reuse it.
+`production:init` sets the owned CLIProxyAPI root `request-retry` policy to zero
+without replacing credentials or provider routes; sampling retry belongs to the
+Runner. Reload/restart the gateway to apply a changed local configuration.
 
 Workers append directly and Control Plane's Session Projector is the sole execution-log
 consumer group. Brokers publish native Tool replies to separate Worker-boot topics;

@@ -21,7 +21,7 @@ function deploymentString(value, description) {
 export function validateDistributedDeploymentValues(values) {
   const revision = deploymentString(values.global?.imageRevision, "global.imageRevision");
   if (!/^[0-9a-f]{40}$/u.test(revision)) {
-    throw new Error("global.imageRevision must be a full lowercase Git revision");
+    throw new Error("global.imageRevision must be a 40-hex guest build identity");
   }
   for (const name of ["controlPlane", "web", "toolBroker", "sshGateway"]) {
     deploymentString(values.images?.[name]?.repository, `images.${name}.repository`);

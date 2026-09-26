@@ -407,6 +407,12 @@ Kubernetes Secret for credentials. Important value groups are:
 - `networkPolicy.externalEgressCidrs`;
 - `images` and `global.imageRevision`.
 
+`global.imageRevision` / `PI_CLOUD_IMAGE_REVISION` identifies the guest build inputs
+(40 hex characters), matching the selected Cube template evidence. Application
+image labels use the separate Git code revision. The registration command computes
+the guest identity; do not substitute the current platform commit for an unchanged
+guest catalog. See ADR-0189 and the production upgrade instructions.
+
 The database URL may use PgBouncer transaction pooling with protocol-level
 prepared-statement tracking enabled (`max_prepared_statements > 0`, PgBouncer
 1.21 or newer; start with 128). Do not use SQL-level PREPARE/EXECUTE wrappers.

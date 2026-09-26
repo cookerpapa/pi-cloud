@@ -6,6 +6,7 @@ import { connect, createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
 
 import {
   parseCubeTemplateRetention,
@@ -292,7 +293,8 @@ async function pruneCubeTemplates(inventory, protectedTemplateIds, phase) {
   );
 }
 
-const revision = await repositoryHead();
+const sourceRevision = await repositoryHead();
+const revision = await guestBuildIdentity(repositoryRoot);
 const dirty = await capture(
   "git",
   ["-c", `safe.directory=${repositoryRoot}`, "status", "--porcelain", "--untracked-files=all"],
@@ -426,7 +428,9 @@ await run("docker", [
   "--build-arg",
   "PI_CLOUD_VERSION=cube-primary",
   "--build-arg",
-  `PI_CLOUD_REVISION=${revision}`,
+  `PI_CLOUD_REVISION=${sourceRevision}`,
+  "--build-arg",
+  `PI_CLOUD_IMAGE_REVISION=${revision}`,
   "--tag",
   imageTag,
   ".",
