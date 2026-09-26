@@ -35,6 +35,9 @@ compares the current execution boundary with pinned Pi and records reproducible
 queue-settlement, retry, compaction and cancellation differences.
 The [lifecycle repair](reports/cloud-agent-runtime-repair-20260926.md) records
 their resolution, local Worker rollout and current follow-up/steer capabilities.
+The subsequent [pending-input acceptance](reports/queued-inputs-20260926.md) records
+editing, removal, reordering and promotion to steer, including admission races
+and matched API/Worker/Web rollout with real Luna/browser verification.
 
 Superseded ADRs and retired architecture documents are kept in Git history
 instead of the current tree. This is intentional: repository-reading agents

@@ -1,7 +1,8 @@
 # ADR-0194: Editable pending conversation inputs
 
-Status: accepted for implementation, 2026-09-26, following the owner's request
-for individual cancellation, editing, ordering and promotion to active steer.
+Status: accepted, implemented and locally validated, 2026-09-26, following the
+owner's request for individual cancellation, editing, ordering and promotion to
+active steer. [Acceptance and matched rollout](../reports/queued-inputs-20260926.md).
 
 ## Ownership and admission
 

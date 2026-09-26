@@ -33,11 +33,11 @@ no new scheduler, input ledger, storage backend or protocol is introduced.
   revoke the shared physical Session authority; final records and other Lanes
   still require that authority.
 
-Product queued follow-ups remain immutable accepted Turns/Runs in PG, promoted
-after predecessor closure. Native `Agent.followUp()` remains an in-Run queue.
-Editing, deleting, reordering or converting product queued inputs to steer needs
-a separate design of the pending-input/admission boundary and is not implemented
-as part of this repair.
+Native `Agent.followUp()` remains an in-Run queue. This repair originally kept
+product queued follow-ups immutable in PG until predecessor closure. The subsequent
+[ADR-0194](0194-editable-pending-inputs.md) now permits editing, cancellation,
+reordering and promotion before admission, while preserving this ADR's native
+input closure and no-replay boundaries.
 
 ## Acceptance
 

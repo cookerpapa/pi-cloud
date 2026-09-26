@@ -12,9 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Finish ADR-0194's matched rollout and real Luna/browser acceptance after
-      pending-input CRUD, admission races, native consumption and restart tests.
-
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
       text block; that interval must not be labelled entirely as internal relay time.

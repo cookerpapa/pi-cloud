@@ -1,0 +1,86 @@
+{
+  "checkedAt": "2026-09-26T14:58:41.901Z",
+  "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3",
+  "topology": "single-host Compose, two Workers, Kafka R=3, PostgreSQL and CubeSandbox KVM",
+  "schema": "152_editable_pending_inputs",
+  "containers": [
+    {
+      "container": "pi-cloud-production-control-plane-1",
+      "health": "healthy",
+      "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3",
+      "imageId": "sha256:a9fbe31a3d0f883d7dd08686ee22756f2a22defebc0c518bb59309a961168c10",
+      "sourceSha256": {
+        "packages/control-plane/src/queued-input-service.ts": "ea70f47fe8f0052e110dd9e061aba1dd135ce50e96329043a0d51d4d82e7fcb7",
+        "packages/control-plane/src/conversation-reader.ts": "477fdd6df6f16d929322c85e29cd86ce49b7f48168d94b1de71eca4c5c6bb9f1",
+        "packages/protocol/src/queued-inputs.ts": "b4dc889aeae0491ecdab2947bb71c7187d9a3a23f056e240fe8faa63766a77d3"
+      }
+    },
+    {
+      "container": "pi-cloud-production-supervisor-host-1",
+      "health": "healthy",
+      "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3",
+      "imageId": "sha256:e2103f8a2ac8f944d08f111a93bd9d2e4423d57656410ccb59569a789d8a46ed",
+      "sourceSha256": {
+        "packages/runtime-core/src/run-executor.ts": "80f04e4fe052451e59ad9663dfb129fe1e9524dd1fb67ca409066800df1536a4",
+        "packages/runtime-core/src/run-readiness.ts": "818e4fd81dd7bf26efffc773e34315e68aff624e62fbfd09455cf57e641e5256",
+        "packages/sandbox-supervisor/src/pi-cloud-turn-runner.ts": "66a9f0b0adad50daa0856df0fc494341bf411e44e76e82e312207f546b351953"
+      }
+    },
+    {
+      "container": "pi-cloud-production-supervisor-host-1-1",
+      "health": "healthy",
+      "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3",
+      "imageId": "sha256:e2103f8a2ac8f944d08f111a93bd9d2e4423d57656410ccb59569a789d8a46ed",
+      "sourceSha256": {
+        "packages/runtime-core/src/run-executor.ts": "80f04e4fe052451e59ad9663dfb129fe1e9524dd1fb67ca409066800df1536a4",
+        "packages/runtime-core/src/run-readiness.ts": "818e4fd81dd7bf26efffc773e34315e68aff624e62fbfd09455cf57e641e5256",
+        "packages/sandbox-supervisor/src/pi-cloud-turn-runner.ts": "66a9f0b0adad50daa0856df0fc494341bf411e44e76e82e312207f546b351953"
+      }
+    },
+    {
+      "container": "pi-cloud-production-tool-broker-1",
+      "health": "healthy",
+      "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3",
+      "imageId": "sha256:fcfe9f1b6f160f36eae5c16b4b2bdeb864735c0e89aeb1674780c32a9f2279aa",
+      "sourceSha256": {}
+    },
+    {
+      "container": "pi-cloud-production-web-1",
+      "health": "healthy",
+      "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3",
+      "imageId": "sha256:69eda19db856da56ac4cd3999ac9a72d8843ad60e214a6ffff504eaa1f49b004",
+      "sourceSha256": {}
+    }
+  ],
+  "matchedSources": true,
+  "state": {
+    "unfinished_runs": 0,
+    "unreleased_leases": 0,
+    "unsealed_sessions": 0,
+    "held_promotions": 0
+  },
+  "cleanup": {
+    "deleted_at": "2026-09-26T14:57:12.580Z",
+    "storage_purged_at": "2026-09-26T14:58:13.030Z"
+  },
+  "backup": {
+    "path": "deploy/production/runtime/pre-queue-152-1790434437673/postgres.dump",
+    "sizeBytes": 762232,
+    "mode": "0600",
+    "contentsCommitted": false
+  },
+  "cube": {
+    "guestBuildIdentity": "1cddcc613a412340b246127c7011b13fb32288f2",
+    "imageDigest": "sha256:cdbd56fbfbfa46b57bdf6fabd62b64d91e0526c87c5f5d9e23e8b44375aff000",
+    "templates": {
+      "agent": "tpl-7f9719d3852542dfa26e94d8",
+      "starter": "tpl-bb92d64b6d354d3596d8d798",
+      "standard": "tpl-a27ad6c96aa9485e9770d236",
+      "performance": "tpl-9d3bec8acffb4830aab812dd"
+    },
+    "retention": {
+      "deletedOldTemplates": 4,
+      "preexistingStaleNodeCleanupFailuresDeferred": 11
+    }
+  }
+}

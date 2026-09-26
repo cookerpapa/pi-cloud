@@ -39,8 +39,9 @@
 
 ## Current release gate
 
-- [ ] ADR-0194: editable pending messages, cancellation, ordering and promotion
-      to active steer; complete matched schema/API/Worker/Web rollout and Luna acceptance.
+- [x] ADR-0194: editable pending messages, cancellation, ordering and promotion
+      to active steer; matched schema/API/Worker/Web rollout completed.
+      [Admission races, fault checks and real Luna/browser acceptance](reports/queued-inputs-20260926.md).
 
 - [x] ADR-0193: native input closure, per-Step retries, compaction usage freshness
       and Run-local backoff cancellation. [Regression, fault and Luna acceptance](reports/cloud-agent-runtime-repair-20260926.md).

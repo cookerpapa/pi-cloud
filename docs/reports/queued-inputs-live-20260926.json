@@ -1,0 +1,40 @@
+{
+  "checkedAt": "2026-09-26T14:56:25.401Z",
+  "revision": "5b91cd27e01ff7832c9a7246e66e34d082ed3cd3",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "62c48681-7729-4c5b-9b94-8f7894133cb4",
+      "state": "completed",
+      "workerId": "018266b5-074f-4ef2-a9f1-5827daa87967",
+      "startedAt": "2026-09-26T14:56:28.334Z",
+      "settledAt": "2026-09-26T14:56:58.585Z"
+    },
+    {
+      "runId": "784d47f9-31c6-437d-9dfb-c0fe690b2227",
+      "state": "completed",
+      "workerId": "018266b5-074f-4ef2-a9f1-5827daa87967",
+      "startedAt": "2026-09-26T14:56:58.670Z",
+      "settledAt": "2026-09-26T14:57:01.309Z"
+    },
+    {
+      "runId": "d31da1cd-57b0-4209-ac63-89314ef497c5",
+      "state": "completed",
+      "workerId": "a44a6903-d317-401d-9c14-78a79b720da9",
+      "startedAt": "2026-09-26T14:57:01.409Z",
+      "settledAt": "2026-09-26T14:57:11.992Z"
+    }
+  ],
+  "browserActions": ["编辑", "保存", "↑", "取消发送", "编辑", "立即引导"],
+  "resources": {
+    "sessionId": "08af9a66-8af6-4b86-a016-a7c446466672",
+    "workspaceId": "832d4569-e439-4c3c-b965-bf52ace9d6f3"
+  },
+  "queueEdited": true,
+  "executionOrderCorrect": true,
+  "cancelNeverAdmitted": true,
+  "editedSteerConsumed": true,
+  "noDuplicateSourceRun": true,
+  "cleanupCompleted": true
+}
