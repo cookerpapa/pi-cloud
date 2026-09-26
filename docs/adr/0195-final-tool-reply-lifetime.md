@@ -1,7 +1,9 @@
 # ADR-0195: Final Tool reply lifetime
 
-Status: accepted for implementation, 2026-09-26, under the owner's repository
-review and obsolete-code cleanup request.
+Status: implemented and validated, 2026-09-27, under the owner's repository
+review and obsolete-code cleanup request. See the
+[repository review](../reports/repository-review-20260927.md) for regression,
+matched local rollout and real Luna/Cube/browser acceptance.
 
 ## Decision
 

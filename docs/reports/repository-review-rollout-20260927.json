@@ -1,0 +1,153 @@
+{
+  "checkedAt": "2026-09-26T17:47:43.401Z",
+  "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+  "schemaChanged": false,
+  "containersBefore": [
+    {
+      "container": "pi-cloud-production-control-plane-1",
+      "imageId": "sha256:4f4c909440fa47da4020a02ac405dd0e9ddd9a8be0e0252f593cc98ca582996a",
+      "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb"
+    },
+    {
+      "container": "pi-cloud-production-supervisor-host-1",
+      "imageId": "sha256:941573e6dd70c958b184caa64abd08413462b5f30d6c9a3170682f55fbef26d5",
+      "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb"
+    },
+    {
+      "container": "pi-cloud-production-supervisor-host-1-1",
+      "imageId": "sha256:941573e6dd70c958b184caa64abd08413462b5f30d6c9a3170682f55fbef26d5",
+      "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb"
+    },
+    {
+      "container": "pi-cloud-production-tool-broker-1",
+      "imageId": "sha256:a6d266a6adcd8d54138d711f7810383e2f54e9caa9a8e52581594b1881a4bf7b",
+      "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb"
+    },
+    {
+      "container": "pi-cloud-production-web-1",
+      "imageId": "sha256:082184f2f913cea4fe9d1eab70301e3c36c86626faf20b21725e27d0aac21e22",
+      "revision": "65a1180ef1ca4c4fda9ec89105d4fb0cf9e2fdcb"
+    }
+  ],
+  "guestBuildIdentity": "00596951d4a524388bc38d0c78554b2dc9a318e5",
+  "guestImageDigest": "sha256:a8c0017b8c7a455898f3139bf145661ea8361296e914b70cbdfab8c3746ef8b6",
+  "templates": {
+    "agent": "tpl-a2ea7497b54342d28c68127e",
+    "starter": "tpl-48664ca261874e6cbb27b06f",
+    "standard": "tpl-2b2ce606ed694a89937e86ee",
+    "performance": "tpl-27bfee70dcae419984b8f7b6"
+  },
+  "before": {
+    "unfinished_runs": 0,
+    "unreleased_leases": 0,
+    "unsealed_sessions": 0,
+    "pro_sessions": 0,
+    "pro_defaults": 0
+  },
+  "drained": {
+    "unfinished_runs": 0,
+    "unreleased_leases": 0,
+    "unsealed_sessions": 0,
+    "pro_sessions": 0,
+    "pro_defaults": 0
+  },
+  "containers": [
+    {
+      "container": "pi-cloud-production-control-plane-1",
+      "health": "healthy",
+      "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+      "imageId": "sha256:1e64c495d8ee5d89cdff41a55fa8f5e2389e8769ed86ec0a4c288de319bdd4bf",
+      "sourceSha256": {
+        "packages/protocol/src/tool-sandbox.ts": "d4ae9f139ff548c3bd556cbc030e54b637512fdf15f05538f7bbaca498ffaba3",
+        "packages/protocol/src/worker-runtime-identity.ts": "245d50123f73e2e98520ba7b7895de00aaac894291caff4f830c0304ad777f8c",
+        "packages/session-attachments/src/store.ts": "6839ea1e86f1bcc25e98544786e01f1ae66fc929da222fd9f21e7dbc43d67203",
+        "packages/control-plane/src/queued-input-service.ts": "c950e5a3b672b9c74cfb07afd6fd435e55ce3fa82075b6c7af8c8e4393491ac9",
+        "packages/runtime-core/src/canonical-pi-conversation.ts": "6e90e19f566988edac6f48eeece4eb5fb081cafe64f2e562e4eb669e0b06ef99"
+      }
+    },
+    {
+      "container": "pi-cloud-production-supervisor-host-1",
+      "health": "healthy",
+      "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+      "imageId": "sha256:801a1380fcc13ba7a8c671adca98fad2e806576d728e44f5fc16239cb1f23da3",
+      "sourceSha256": {
+        "packages/protocol/src/tool-sandbox.ts": "d4ae9f139ff548c3bd556cbc030e54b637512fdf15f05538f7bbaca498ffaba3",
+        "packages/protocol/src/worker-runtime-identity.ts": "245d50123f73e2e98520ba7b7895de00aaac894291caff4f830c0304ad777f8c",
+        "packages/session-attachments/src/store.ts": "6839ea1e86f1bcc25e98544786e01f1ae66fc929da222fd9f21e7dbc43d67203",
+        "packages/sandbox-supervisor/src/trusted-remote-tools.ts": "85048e1009e5b4a85086564319446c85674292c725a6a7f26f74d443c7d34bbc",
+        "packages/pi-session-postgres/src/postgres-native-session-host.ts": "782f06b1d3877693b6548688d910ff0cda10a7324478dc004c752aea27591437",
+        "packages/event-log/src/tool-replies.ts": "e58684f20f8d1c7330253a8a0c4f4086160a55d517ee006f74f304401ee74e07"
+      }
+    },
+    {
+      "container": "pi-cloud-production-supervisor-host-1-1",
+      "health": "healthy",
+      "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+      "imageId": "sha256:801a1380fcc13ba7a8c671adca98fad2e806576d728e44f5fc16239cb1f23da3",
+      "sourceSha256": {
+        "packages/protocol/src/tool-sandbox.ts": "d4ae9f139ff548c3bd556cbc030e54b637512fdf15f05538f7bbaca498ffaba3",
+        "packages/protocol/src/worker-runtime-identity.ts": "245d50123f73e2e98520ba7b7895de00aaac894291caff4f830c0304ad777f8c",
+        "packages/session-attachments/src/store.ts": "6839ea1e86f1bcc25e98544786e01f1ae66fc929da222fd9f21e7dbc43d67203",
+        "packages/sandbox-supervisor/src/trusted-remote-tools.ts": "85048e1009e5b4a85086564319446c85674292c725a6a7f26f74d443c7d34bbc",
+        "packages/pi-session-postgres/src/postgres-native-session-host.ts": "782f06b1d3877693b6548688d910ff0cda10a7324478dc004c752aea27591437",
+        "packages/event-log/src/tool-replies.ts": "e58684f20f8d1c7330253a8a0c4f4086160a55d517ee006f74f304401ee74e07"
+      }
+    },
+    {
+      "container": "pi-cloud-production-tool-broker-1",
+      "health": "healthy",
+      "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+      "imageId": "sha256:2e1d6335223a58ce0fe7b6deeed0f11b6244ce9ed5c74901c876e0cf7d9de2cb",
+      "sourceSha256": {
+        "packages/protocol/src/tool-sandbox.ts": "d4ae9f139ff548c3bd556cbc030e54b637512fdf15f05538f7bbaca498ffaba3",
+        "packages/protocol/src/worker-runtime-identity.ts": "245d50123f73e2e98520ba7b7895de00aaac894291caff4f830c0304ad777f8c",
+        "packages/session-attachments/src/store.ts": "6839ea1e86f1bcc25e98544786e01f1ae66fc929da222fd9f21e7dbc43d67203",
+        "packages/tool-broker/src/cubesandbox-sandbox-provider.ts": "78ea9d20a9aed57e695ad4339425ee4056634ee1f7b4d00b8bb078ec47f1fe28",
+        "packages/tool-broker/src/tool-command-executor.ts": "269a36c6bc25a35ffeea475a80216bacbd857f9355da173fe0bdce34a81812e1"
+      }
+    },
+    {
+      "container": "pi-cloud-production-web-1",
+      "health": "healthy",
+      "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+      "imageId": "sha256:4a2139de016a3cd04e1f3f8b76a6a1d462400c15e8c8ee3d623cc6736a13cb16",
+      "sourceSha256": {}
+    }
+  ],
+  "after": {
+    "unfinished_runs": 0,
+    "unreleased_leases": 0,
+    "unsealed_sessions": 0,
+    "pro_sessions": 0,
+    "pro_defaults": 0
+  },
+  "schema": "152_editable_pending_inputs",
+  "matchedSources": true,
+  "templateSmoke": {
+    "image": "localhost:5000/pi-cloud/cubesandbox-tool:00596951d4a524388bc38d0c78554b2dc9a318e5",
+    "imageRevision": "00596951d4a524388bc38d0c78554b2dc9a318e5",
+    "cubeDataPlane": "cube-agent-vsock-envd",
+    "persistentPiCloudGuestDaemon": false,
+    "toolProcess": {
+      "uid": 1000,
+      "gid": 1000,
+      "noNewPrivileges": true
+    },
+    "execution": {
+      "output": "envd-tool-worker-ok"
+    },
+    "nativeGuestPathSemanticsVerified": true,
+    "directoryControl": true,
+    "arbitraryPortPreview": true
+  },
+  "templateRetention": {
+    "cubeTemplateRetention": "after-registration",
+    "retention": 3,
+    "selected": 15,
+    "deleted": 4,
+    "deferred": 11
+  },
+  "topology": "Single-host Compose control plane, Broker, Web and two Workers; CubeSandbox KVM tools",
+  "dataServicesRestarted": false,
+  "finalHealthCheckedAt": "2026-09-26T17:59:03.977Z"
+}

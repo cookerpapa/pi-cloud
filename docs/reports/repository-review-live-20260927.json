@@ -1,0 +1,459 @@
+{
+  "checkedAt": "2026-09-26T17:59:03.977Z",
+  "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "nativeTools": {
+    "checkedAt": "2026-09-26T17:49:12.496Z",
+    "model": "gpt-6-luna",
+    "accepted": true,
+    "runs": [
+      {
+        "runId": "2644ca18-3069-4c8d-a4a9-1ccf6cff9ba7",
+        "elapsedMs": 31755,
+        "modelTransportMs": 25830.332,
+        "tools": [
+          {
+            "name": "write",
+            "state": "completed",
+            "durationMs": 3783,
+            "resultBytes": 99
+          },
+          {
+            "name": "read",
+            "state": "completed",
+            "durationMs": 605,
+            "resultBytes": 648
+          },
+          {
+            "name": "edit",
+            "state": "completed",
+            "durationMs": 309,
+            "resultBytes": 1297
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 445,
+            "resultBytes": 50
+          }
+        ]
+      },
+      {
+        "runId": "23b7d800-f434-47d9-b837-39d244cb8e4a",
+        "elapsedMs": 15743,
+        "modelTransportMs": 14008.453000000001,
+        "tools": [
+          {
+            "name": "write",
+            "state": "completed",
+            "durationMs": 359,
+            "resultBytes": 98
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 324,
+            "resultBytes": 50
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 411,
+            "resultBytes": 497
+          }
+        ]
+      },
+      {
+        "runId": "08354a14-38a1-4807-9f81-35545ed35676",
+        "elapsedMs": 22381,
+        "modelTransportMs": 19697.035,
+        "tools": [
+          {
+            "name": "write",
+            "state": "completed",
+            "durationMs": 364,
+            "resultBytes": 93
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 335,
+            "resultBytes": 50
+          },
+          {
+            "name": "read",
+            "state": "completed",
+            "durationMs": 254,
+            "resultBytes": 45
+          },
+          {
+            "name": "edit",
+            "state": "completed",
+            "durationMs": 365,
+            "resultBytes": 300
+          },
+          {
+            "name": "read",
+            "state": "completed",
+            "durationMs": 321,
+            "resultBytes": 44
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 279,
+            "resultBytes": 55
+          }
+        ]
+      }
+    ],
+    "resources": {
+      "projectId": "4da8953e-a336-4934-aa62-2952aed3101f",
+      "workspaceId": "08ad3593-43cd-4ff3-a198-c77e9796dc0c",
+      "sessionId": "585bb594-5665-42b5-91ab-4a3c8f2a8f0d"
+    },
+    "cleanupCompleted": true
+  },
+  "toolProgress": {
+    "checkedAt": "2026-09-26T17:50:37.410Z",
+    "model": "gpt-6-luna",
+    "accepted": true,
+    "runs": [
+      {
+        "kind": "continuous-output",
+        "elapsedMs": 62269,
+        "progressCount": 50,
+        "maximumProgressCharacters": 589,
+        "modelTransportMs": 9119.993999999999,
+        "commandExecutions": 1
+      },
+      {
+        "kind": "silent-command",
+        "elapsedMs": 30375,
+        "progressCount": 0
+      },
+      {
+        "kind": "cancel",
+        "lateProgress": 0
+      },
+      {
+        "kind": "coding-after-cancel",
+        "tools": [
+          {
+            "name": "write",
+            "status": "completed"
+          },
+          {
+            "name": "read",
+            "status": "completed"
+          },
+          {
+            "name": "edit",
+            "status": "completed"
+          },
+          {
+            "name": "bash",
+            "status": "completed"
+          }
+        ]
+      }
+    ],
+    "resourcesReleased": true,
+    "resources": {
+      "sessionId": "1f25cd41-0bb7-46b6-993b-f28bba0298ee",
+      "workspaceId": "fcf28d53-82d3-4400-aecd-8a979171d550"
+    }
+  },
+  "queuedInputs": {
+    "checkedAt": "2026-09-26T17:53:13.396Z",
+    "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+    "model": "gpt-6-luna",
+    "accepted": true,
+    "runs": [
+      {
+        "runId": "9713b93c-0843-4c34-9c62-12f7e5d6fc51",
+        "state": "completed",
+        "workerId": "e55f48b9-015f-49db-8b96-e6d284aa2a64",
+        "startedAt": "2026-09-26T17:53:15.741Z",
+        "settledAt": "2026-09-26T17:53:45.929Z"
+      },
+      {
+        "runId": "9f6adc70-e3e9-4a45-baa9-87f18e12c5c6",
+        "state": "completed",
+        "workerId": "e55f48b9-015f-49db-8b96-e6d284aa2a64",
+        "startedAt": "2026-09-26T17:53:46.017Z",
+        "settledAt": "2026-09-26T17:53:59.862Z"
+      },
+      {
+        "runId": "df709936-5db6-47f0-8180-ba040459d0d1",
+        "state": "completed",
+        "workerId": "a6255fbf-ec60-4dcf-9336-642c3362e78f",
+        "startedAt": "2026-09-26T17:53:59.935Z",
+        "settledAt": "2026-09-26T17:54:03.488Z"
+      }
+    ],
+    "browserActions": ["编辑", "保存", "↑", "取消发送", "编辑", "立即引导"],
+    "resources": {
+      "sessionId": "798e7a9b-977a-46d3-80c7-7c1b85e47840",
+      "workspaceId": "50e8ae33-1b75-40a2-9a28-6b9c7c76d376"
+    },
+    "queueEdited": true,
+    "executionOrderCorrect": true,
+    "cancelNeverAdmitted": true,
+    "editedSteerConsumed": true,
+    "noDuplicateSourceRun": true,
+    "cleanupCompleted": true
+  },
+  "imageVision": {
+    "checkedAt": "2026-09-26T17:56:52.731Z",
+    "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+    "model": "gpt-6-luna",
+    "accepted": true,
+    "visibleModels": ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "deepseek-v4-flash"],
+    "resources": {
+      "sessionId": "5ebdbaa9-06b3-4c8a-bb22-dabe2e79af52",
+      "workspaceId": "ec9bc5ef-b4cf-44b1-afb3-3ef6fb1f69d1"
+    },
+    "browserSelection": true,
+    "run": {
+      "runId": "28740190-282f-4752-8cfd-c35abae323a3",
+      "state": "completed",
+      "workerId": "a6255fbf-ec60-4dcf-9336-642c3362e78f"
+    },
+    "tools": [
+      {
+        "name": "bash",
+        "status": "completed"
+      },
+      {
+        "name": "read",
+        "status": "completed"
+      }
+    ],
+    "toolImageVisionCorrect": true,
+    "hostedSearchActions": 0,
+    "cleanupCompleted": true,
+    "objects": [
+      {
+        "imageId": "66594b61-3896-4b5e-bb67-997f7f302a8a",
+        "state": "ready",
+        "byteLength": 3208002,
+        "mimeType": "image/png",
+        "retainedByArchivedSession": true
+      }
+    ],
+    "nativeLog": {
+      "records": 18,
+      "maximumRecordPayloadBytes": 2610,
+      "recordsWithImageReference": 1
+    }
+  },
+  "finalState": {
+    "globalState": {
+      "unfinished_runs": 0,
+      "unreleased_leases": 0,
+      "unsealed_sessions": 0
+    },
+    "workspaces": [
+      {
+        "workspaceId": "08ad3593-43cd-4ff3-a198-c77e9796dc0c",
+        "deletedAt": "2026-09-26T17:50:22.527Z",
+        "storagePurgedAt": "2026-09-26T17:51:00.459Z"
+      },
+      {
+        "workspaceId": "50e8ae33-1b75-40a2-9a28-6b9c7c76d376",
+        "deletedAt": "2026-09-26T17:54:03.897Z",
+        "storagePurgedAt": "2026-09-26T17:55:00.464Z"
+      },
+      {
+        "workspaceId": "ec9bc5ef-b4cf-44b1-afb3-3ef6fb1f69d1",
+        "deletedAt": "2026-09-26T17:57:21.616Z",
+        "storagePurgedAt": "2026-09-26T17:58:00.489Z"
+      },
+      {
+        "workspaceId": "fcf28d53-82d3-4400-aecd-8a979171d550",
+        "deletedAt": "2026-09-26T17:52:47.945Z",
+        "storagePurgedAt": "2026-09-26T17:53:30.458Z"
+      }
+    ],
+    "sessions": [
+      {
+        "sessionId": "1f25cd41-0bb7-46b6-993b-f28bba0298ee",
+        "archivedAt": "2026-09-26T17:52:47.917Z",
+        "unsealedRuns": 0
+      },
+      {
+        "sessionId": "585bb594-5665-42b5-91ab-4a3c8f2a8f0d",
+        "archivedAt": "2026-09-26T17:50:22.497Z",
+        "unsealedRuns": 0
+      },
+      {
+        "sessionId": "5ebdbaa9-06b3-4c8a-bb22-dabe2e79af52",
+        "archivedAt": "2026-09-26T17:57:21.586Z",
+        "unsealedRuns": 0
+      },
+      {
+        "sessionId": "798e7a9b-977a-46d3-80c7-7c1b85e47840",
+        "archivedAt": "2026-09-26T17:54:03.854Z",
+        "unsealedRuns": 0
+      }
+    ],
+    "runs": [
+      {
+        "runId": "2644ca18-3069-4c8d-a4a9-1ccf6cff9ba7",
+        "sessionId": "585bb594-5665-42b5-91ab-4a3c8f2a8f0d",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:49:12.669Z",
+        "settledAt": "2026-09-26T17:49:43.974Z",
+        "executionReleasedAt": "2026-09-26T17:49:43.974Z"
+      },
+      {
+        "runId": "23b7d800-f434-47d9-b837-39d244cb8e4a",
+        "sessionId": "585bb594-5665-42b5-91ab-4a3c8f2a8f0d",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:49:44.402Z",
+        "settledAt": "2026-09-26T17:49:59.684Z",
+        "executionReleasedAt": "2026-09-26T17:49:59.684Z"
+      },
+      {
+        "runId": "08354a14-38a1-4807-9f81-35545ed35676",
+        "sessionId": "585bb594-5665-42b5-91ab-4a3c8f2a8f0d",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:50:00.144Z",
+        "settledAt": "2026-09-26T17:50:22.090Z",
+        "executionReleasedAt": "2026-09-26T17:50:22.090Z"
+      },
+      {
+        "runId": "109147e9-f359-4d5e-8070-f5bdf83c6a9d",
+        "sessionId": "1f25cd41-0bb7-46b6-993b-f28bba0298ee",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:50:39.901Z",
+        "settledAt": "2026-09-26T17:51:41.963Z",
+        "executionReleasedAt": "2026-09-26T17:51:41.963Z"
+      },
+      {
+        "runId": "f0816253-1bc0-4b54-8e63-43b8ee57493e",
+        "sessionId": "1f25cd41-0bb7-46b6-993b-f28bba0298ee",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:51:42.525Z",
+        "settledAt": "2026-09-26T17:52:12.589Z",
+        "executionReleasedAt": "2026-09-26T17:52:12.589Z"
+      },
+      {
+        "runId": "76cd2a4c-2ec9-4b0c-ab9d-254e5d80a117",
+        "sessionId": "1f25cd41-0bb7-46b6-993b-f28bba0298ee",
+        "state": "cancelled",
+        "startedAt": "2026-09-26T17:52:12.871Z",
+        "settledAt": "2026-09-26T17:52:17.914Z",
+        "executionReleasedAt": "2026-09-26T17:52:17.914Z"
+      },
+      {
+        "runId": "e87eaaf3-60a1-471d-a3f5-ffba72fda48f",
+        "sessionId": "1f25cd41-0bb7-46b6-993b-f28bba0298ee",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:52:20.730Z",
+        "settledAt": "2026-09-26T17:52:47.507Z",
+        "executionReleasedAt": "2026-09-26T17:52:47.507Z"
+      },
+      {
+        "runId": "9713b93c-0843-4c34-9c62-12f7e5d6fc51",
+        "sessionId": "798e7a9b-977a-46d3-80c7-7c1b85e47840",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:53:15.741Z",
+        "settledAt": "2026-09-26T17:53:45.929Z",
+        "executionReleasedAt": "2026-09-26T17:53:45.929Z"
+      },
+      {
+        "runId": "df709936-5db6-47f0-8180-ba040459d0d1",
+        "sessionId": "798e7a9b-977a-46d3-80c7-7c1b85e47840",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:53:59.935Z",
+        "settledAt": "2026-09-26T17:54:03.488Z",
+        "executionReleasedAt": "2026-09-26T17:54:03.488Z"
+      },
+      {
+        "runId": "9f6adc70-e3e9-4a45-baa9-87f18e12c5c6",
+        "sessionId": "798e7a9b-977a-46d3-80c7-7c1b85e47840",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:53:46.017Z",
+        "settledAt": "2026-09-26T17:53:59.862Z",
+        "executionReleasedAt": "2026-09-26T17:53:59.862Z"
+      },
+      {
+        "runId": "af3f06c6-feff-4922-97e8-355b5c248c43",
+        "sessionId": "798e7a9b-977a-46d3-80c7-7c1b85e47840",
+        "state": "cancelled",
+        "startedAt": null,
+        "settledAt": "2026-09-26T17:53:21.723Z",
+        "executionReleasedAt": null
+      },
+      {
+        "runId": "6cf8b820-edf1-47e1-9daf-27dc0df9e406",
+        "sessionId": "798e7a9b-977a-46d3-80c7-7c1b85e47840",
+        "state": "cancelled",
+        "startedAt": null,
+        "settledAt": "2026-09-26T17:53:43.767Z",
+        "executionReleasedAt": null
+      },
+      {
+        "runId": "28740190-282f-4752-8cfd-c35abae323a3",
+        "sessionId": "5ebdbaa9-06b3-4c8a-bb22-dabe2e79af52",
+        "state": "completed",
+        "startedAt": "2026-09-26T17:56:55.302Z",
+        "settledAt": "2026-09-26T17:57:21.279Z",
+        "executionReleasedAt": "2026-09-26T17:57:21.279Z"
+      }
+    ],
+    "containers": [
+      {
+        "container": "pi-cloud-production-control-plane-1",
+        "health": "healthy",
+        "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+        "imageId": "sha256:1e64c495d8ee5d89cdff41a55fa8f5e2389e8769ed86ec0a4c288de319bdd4bf",
+        "sourceHashesMatch": true
+      },
+      {
+        "container": "pi-cloud-production-supervisor-host-1",
+        "health": "healthy",
+        "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+        "imageId": "sha256:801a1380fcc13ba7a8c671adca98fad2e806576d728e44f5fc16239cb1f23da3",
+        "sourceHashesMatch": true
+      },
+      {
+        "container": "pi-cloud-production-supervisor-host-1-1",
+        "health": "healthy",
+        "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+        "imageId": "sha256:801a1380fcc13ba7a8c671adca98fad2e806576d728e44f5fc16239cb1f23da3",
+        "sourceHashesMatch": true
+      },
+      {
+        "container": "pi-cloud-production-tool-broker-1",
+        "health": "healthy",
+        "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+        "imageId": "sha256:2e1d6335223a58ce0fe7b6deeed0f11b6244ce9ed5c74901c876e0cf7d9de2cb",
+        "sourceHashesMatch": true
+      },
+      {
+        "container": "pi-cloud-production-web-1",
+        "health": "healthy",
+        "revision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+        "imageId": "sha256:4a2139de016a3cd04e1f3f8b76a6a1d462400c15e8c8ee3d623cc6736a13cb16",
+        "sourceHashesMatch": true
+      }
+    ],
+    "verifiedSourceFiles": 75,
+    "isolatedPostgresRemoved": {
+      "container": "pi-cloud-review-tests-20260927",
+      "confirmedAbsent": true,
+      "checkedAt": "2026-09-26T18:01:32.208Z"
+    }
+  },
+  "notes": [
+    "Single-host Compose with two Workers and CubeSandbox KVM; no independent-machine HA claim.",
+    "No production process restart chaos was run in this review.",
+    "Workspace storage is purged. Archived native history intentionally retains its referenced immutable image; it is not an orphan.",
+    "The image probe requires only bash then read and checks the visual answer against a separate Workspace file, without returning that file to the model.",
+    "Reports contain identifiers, states and bounded metrics only; no credentials, prompts or transcripts."
+  ]
+}

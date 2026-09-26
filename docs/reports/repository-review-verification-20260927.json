@@ -150,5 +150,41 @@
     "scripts/run-live-stream-reopen-check.mjs": "f29a8d9b46dca3e3da27ce7cd17774e31a054540ff5544a0af965189c4d9fcb0",
     "scripts/run-live-subagent-production-check.mjs": "e9669e21b8185a8f7950220c4859bcfb407454eff14c23abf8d2aa58c961c774",
     "scripts/run-live-vite-preview-check.mjs": "606935fb38cf83db46ce8d7f9c93ee07a755b6567847adbef7c549df9ecffd01"
+  },
+  "implementationRevision": "b372f858a535d555f9806e69c392d81c2ee5faa5",
+  "finalCheckedAt": "2026-09-26T17:59:03.977Z",
+  "securityAudit": {
+    "securityAuditPassed": true,
+    "auditLevel": "high",
+    "remediatedShrinkwrapFindings": [],
+    "remainingVulnerabilities": [
+      {
+        "name": "@vitest/mocker",
+        "severity": "moderate",
+        "nodes": ["node_modules/@vitest/mocker"]
+      },
+      {
+        "name": "vitest",
+        "severity": "moderate",
+        "nodes": ["node_modules/vitest"]
+      }
+    ],
+    "metadata": {
+      "info": 0,
+      "low": 0,
+      "moderate": 2,
+      "high": 0,
+      "critical": 0,
+      "total": 2
+    },
+    "note": "The two moderate development-test findings were already recorded by the September 15 audit. This high-severity gate is not a claim of zero vulnerabilities."
+  },
+  "liveEvidence": "repository-review-live-20260927.json",
+  "rolloutEvidence": "repository-review-rollout-20260927.json",
+  "productionSourceDiff": {
+    "added": 245,
+    "removed": 859,
+    "net": -614,
+    "scope": "Tracked packages/*/src changes, rename-aware; excludes tests, scripts, docs and generated evidence"
   }
 }

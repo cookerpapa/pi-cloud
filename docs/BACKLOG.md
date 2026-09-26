@@ -14,8 +14,13 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 - [ ] Discuss the remaining [repository-review architecture choices](reports/repository-review-20260927.md):
       non-image result budgets, possible Tool intent/command batching, shared Worker
-      lease observation and tighter package/build boundaries. Do not change these
-      authorities or protocols merely to remove a round trip.
+      lease observation, tighter package/build boundaries and measured native-log
+      projection storage costs. Do not change these authorities or protocols merely
+      to remove a round trip.
+
+- [ ] Review the two moderate development-test dependency findings (Vitest and
+      @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
+      dependency gate passes; a test-tool upgrade needs its own contract checks.
 
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
