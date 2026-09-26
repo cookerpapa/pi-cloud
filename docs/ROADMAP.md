@@ -39,8 +39,9 @@
 
 ## Current release gate
 
-- [ ] Accept ADR-0191/0192: GPT-6 Luna Tool/vision/search, immutable image
-      references, cold recovery, cleanup faults and matched local rollout.
+- [x] ADR-0191/0192: GPT-6 Luna Tool/vision/search, immutable image references,
+      cold recovery, cleanup faults and matched local rollout.
+      [Acceptance](reports/image-attachments-20260926.md).
 
 - [x] Complete ADR-0190's GitLab note-sync migration and local rollout: real PG
       concurrency, controlled HTTP faults, lost replies, late writes, independent

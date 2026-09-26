@@ -26,6 +26,10 @@ baseline; the [repair and verification record](reports/pi-alignment-repair-20260
 tracks its disposition. Current architecture remains defined by the documents and
 ADRs above.
 
+The [image and GPT-6 acceptance](reports/image-attachments-20260926.md) records
+the subsequent attachment cutover, model migration and current DeepSeek search
+protocol evidence.
+
 Superseded ADRs and retired architecture documents are kept in Git history
 instead of the current tree. This is intentional: repository-reading agents
 should not have to infer which of several mutually exclusive production paths

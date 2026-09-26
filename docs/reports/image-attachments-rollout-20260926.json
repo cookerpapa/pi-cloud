@@ -1,0 +1,74 @@
+{
+  "checkedAt": "2026-09-26T10:29:28.904Z",
+  "topology": "one host, two Compose Workers, RF3 Kafka, PostgreSQL, Cube KVM, private SeaweedFS S3",
+  "database": {
+    "schema": "151_session_image_attachments",
+    "unfinishedRuns": 0,
+    "leases": 0,
+    "unsealedSessions": 0,
+    "retainedImageReferences": 6
+  },
+  "services": [
+    {
+      "name": "database-bootstrap",
+      "state": "exited",
+      "health": null,
+      "imageId": "sha256:0d99b3a424adacf47f8573a6734f009a1a6f000d6c698b771538dde01f49d615",
+      "codeRevision": "06526db69efc9581237168ad17d557054cf1f2a5"
+    },
+    {
+      "name": "control-plane",
+      "state": "running",
+      "health": "healthy",
+      "imageId": "sha256:0d99b3a424adacf47f8573a6734f009a1a6f000d6c698b771538dde01f49d615",
+      "codeRevision": "06526db69efc9581237168ad17d557054cf1f2a5"
+    },
+    {
+      "name": "tool-broker",
+      "state": "running",
+      "health": "healthy",
+      "imageId": "sha256:d08ec7c48517de5df50653ddbebc0fe90afe188007ea98108493f963aa1386c2",
+      "codeRevision": "089fa573cfaa6de1b7aed9319b899d0d91c5bda0"
+    },
+    {
+      "name": "supervisor-host",
+      "state": "running",
+      "health": "healthy",
+      "imageId": "sha256:3ba50e11fd75400671f39b3f46fbcc27aea995bd4ba7f543dc21ad26f534f5eb",
+      "codeRevision": "06526db69efc9581237168ad17d557054cf1f2a5"
+    },
+    {
+      "name": "supervisor-host-1",
+      "state": "running",
+      "health": "healthy",
+      "imageId": "sha256:3ba50e11fd75400671f39b3f46fbcc27aea995bd4ba7f543dc21ad26f534f5eb",
+      "codeRevision": "06526db69efc9581237168ad17d557054cf1f2a5"
+    },
+    {
+      "name": "web",
+      "state": "running",
+      "health": "healthy",
+      "imageId": "sha256:ce827070f3ab89cd07c728c9c197d00e44934a3afd80a9af55dc3b907c098ba5",
+      "codeRevision": "06526db69efc9581237168ad17d557054cf1f2a5"
+    },
+    {
+      "name": "session-images",
+      "state": "running",
+      "health": "healthy",
+      "imageId": "sha256:1ed51b50d7586b42761b507b6ee3fc7f4b305ce2fca7590c438bb71c9c0813c9",
+      "codeRevision": "c5073360007d28385a33426a42ac3e4ec504c5a3"
+    },
+    {
+      "name": "cli-proxy-api",
+      "state": "running",
+      "health": "healthy",
+      "imageId": "sha256:053139608bff3c04062f02950737703eee82f8188871efbf1675625ff6bd3474",
+      "codeRevision": null
+    }
+  ],
+  "guest": {
+    "imageRevision": "73ef2cd48c0aea33616bad926553d921f9492418",
+    "imageDigest": "sha256:7578a279e1dc234f755aeac6a05480ada83cbbde8d59a180f5c4fe497a5ad576",
+    "templateId": "tpl-5ec12a8ff4024e4ba1c2bdf3"
+  }
+}

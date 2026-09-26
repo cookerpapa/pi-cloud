@@ -1,0 +1,101 @@
+{
+  "checkedAt": "2026-09-26T10:24:01.535Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "9b1f4e28-0127-4fcf-b3cd-a4890804b3dc",
+      "workerId": "b1f7c687-3e54-47be-b8ad-e719dbbfb1f4",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "acf601c0-5754-4ef3-9969-f9be88cb398a",
+      "workerId": "1798130c-11a3-431a-aa63-bb29c170c381",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "63f5c328-ccb7-4b2b-8002-380bd7720c4c",
+      "workerId": "b1f7c687-3e54-47be-b8ad-e719dbbfb1f4",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "27d6807d-4762-42f0-95c2-b48f64d1515d",
+      "workerId": "1798130c-11a3-431a-aa63-bb29c170c381",
+      "tools": []
+    }
+  ],
+  "images": [
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "0cc1e339-5c04-48f1-9d88-5d2327f27567",
+        "sha256": "1505566bbae7951c0b9d0d7c003ee272c2db6e7ce3c5396012ca0e0924de47ef",
+        "mimeType": "image/png",
+        "byteLength": 6597579
+      },
+      "recordBytes": 778,
+      "detail": "high"
+    },
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "9f49eae7-ca2c-4844-a557-bd683bb0faf8",
+        "sha256": "278d496ef77cf3bf1d4776513ca06e21bfa4b1d0a6571164fb3d7b11eb4226d1",
+        "mimeType": "image/png",
+        "byteLength": 6597004
+      },
+      "recordBytes": 778,
+      "detail": "high"
+    },
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "ee9740e8-59a2-4491-b23a-b94f6ae105bc",
+        "sha256": "1b8dd285ddae98c511b6a7f0c48880ca966d5953e6ff2aedb135534af133da8a",
+        "mimeType": "image/png",
+        "byteLength": 26343518
+      },
+      "recordBytes": 779,
+      "detail": "original"
+    }
+  ],
+  "resources": {
+    "projectId": "105e5499-1a3e-4cf0-b689-957b9300b9d6",
+    "workspaceId": "ceba00aa-8729-4bb1-9ba6-ed600f46a108",
+    "sessionId": "fdf5b356-aa64-4937-9f45-a16c2dac83e1"
+  },
+  "coldRecovery": {
+    "previousWorker": "b1f7c687-3e54-47be-b8ad-e719dbbfb1f4",
+    "nextWorker": "1798130c-11a3-431a-aa63-bb29c170c381",
+    "changedBoot": true,
+    "visionRecallCorrect": true
+  },
+  "cleanupCompleted": true
+}

@@ -12,11 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Implement and accept ADR-0192's approved image attachments to resolve PI-03
-      from the [Pi-alignment review](reports/pi-alignment-review-20260926.md).
-      The owner approved the design on September 26. Validate Tool replies,
-      native history, cold recovery and bounded GPT-6 Luna vision end to end.
-
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
       text block; that interval must not be labelled entirely as internal relay time.

@@ -1,0 +1,32 @@
+{
+  "checkedAt": "2026-09-26T10:38:24.406Z",
+  "commands": {
+    "workspace": "npm run check",
+    "faults": "Both PostgreSQL integration endpoints enabled; npm run eval:faults"
+  },
+  "workspace": {
+    "suites": 22,
+    "passed": 1134,
+    "skipped": 116,
+    "failed": 0
+  },
+  "faults": {
+    "cases": 48,
+    "passed": 48
+  },
+  "live": {
+    "images": "image-attachments-live-20260926.json",
+    "gpt6": "gpt6-capabilities-20260926.json",
+    "storageCrash": "image-storage-crash-20260926.json"
+  },
+  "checks": [
+    "format",
+    "documentation",
+    "application build",
+    "runtime budgets",
+    "Helm",
+    "installer contract",
+    "image closure",
+    "high/critical security audit"
+  ]
+}

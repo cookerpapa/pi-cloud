@@ -194,15 +194,9 @@ try {
     ]);
     stoppedWorkerService = undefined;
   }
-  const verify = await turn(
-    "只调用一次 bash，执行 cat /workspace/.image-check-expected.json，然后原样输出文件内容。不要其他工具或搜索。",
-  );
-  const expectedTool = verify.transcript.items.find(
-    (i) => i.kind === "tool" && i.toolName === "bash",
-  );
-  assert(expectedTool);
-  const digits = JSON.stringify(expectedTool.output).match(/\b\d{4}\b/g);
-  assert(digits && digits.length === 3);
+  const expectedFile = await api.readWorkspaceFile(session.sessionId, ".image-check-expected.json");
+  const digits = JSON.parse(Buffer.from(expectedFile.bytes).toString("utf8"));
+  assert(Array.isArray(digits) && digits.length === 3 && digits.every((d) => /^\d{4}$/.test(d)));
   assert.deepEqual(answer.match(/\b\d{4}\b/g), digits);
   const {
     rows: [newOwner],

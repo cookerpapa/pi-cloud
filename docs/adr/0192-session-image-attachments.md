@@ -1,6 +1,7 @@
 # ADR-0192: Immutable Session image attachments
 
-Status: accepted, implementation and acceptance in progress (2026-09-26).
+Status: implemented and locally validated (2026-09-26).
+See [acceptance](../reports/image-attachments-20260926.md).
 
 ## Problem and decision
 

@@ -1,6 +1,7 @@
 # ADR-0191: GPT-6 model catalog and current DeepSeek search evidence
 
-Status: accepted, implementation and acceptance in progress (2026-09-26).
+Status: implemented and locally validated (2026-09-26).
+See [acceptance](../reports/image-attachments-20260926.md).
 
 ## Decision
 
