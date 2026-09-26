@@ -93,6 +93,8 @@ guest catalog; later documentation/frontend-only source changes can reuse it.
 `production:init` sets the owned CLIProxyAPI root `request-retry` policy to zero
 without replacing credentials or provider routes; sampling retry belongs to the
 Runner. Reload/restart the gateway to apply a changed local configuration.
+The full deploy command recreates that gateway explicitly: a single-file bind
+mount can otherwise retain the old inode after an atomic host configuration update.
 
 Workers append directly and Control Plane's Session Projector is the sole execution-log
 consumer group. Brokers publish native Tool replies to separate Worker-boot topics;

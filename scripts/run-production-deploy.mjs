@@ -41,6 +41,16 @@ await run("scripts/init-cubesandbox-runtime.mjs");
 await run("scripts/register-cubesandbox-tool-template.mjs");
 await run("scripts/production-compose.mjs", ["build"]);
 await run("scripts/production-compose.mjs", ["up", "--detach", "--wait", "--remove-orphans"]);
+// A single-file bind mount can retain the old inode after an atomic host-side
+// configuration replacement. Recreate the gateway to mount the governed file.
+await run("scripts/production-compose.mjs", [
+  "up",
+  "--detach",
+  "--wait",
+  "--no-deps",
+  "--force-recreate",
+  "cli-proxy-api",
+]);
 
 const runtimeDirectory = resolve(
   repositoryRoot,
