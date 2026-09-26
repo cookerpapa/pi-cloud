@@ -1,10 +1,11 @@
 # Pi-alignment repairs — 2026-09-26
 
 Baseline: `ad1aad5fba4aba2f61320283f374fc6ccf6688f5`.
+Implementation: `dfbb4727`; deployment configuration remount fix:
+`dc20c96bd57dbf20457a098e9bff84c9626b2c02`.
 The owner authorized the review repairs, required historical-design checks and
 removal of wrong paths instead of compatibility branches, and deferred images.
-The implementation accompanies this report; local rollout acceptance is recorded
-separately below as it completes.
+The implementation and its bounded local acceptance are recorded below.
 
 ## Decisions and scope
 
@@ -117,6 +118,66 @@ Outbox rows**. No existing resource was deleted to obtain this state.
 
 Local build, Helm/preflight, installer and static gates passed. Final boundary
 tests additionally cover ambiguous within-response Tool IDs and split native-reply
-versus cloud-progress identities. Real Luna/Cube acceptance is still being
-completed. No new claim of physical multi-node capacity, HA or physical effect
-fencing follows from this repair.
+versus cloud-progress identities: the six native contract tests and ten Broker
+executor tests passed after the full-suite run above.
+
+The full deployment completed at `dc20c96b`. Control Plane, both Workers, Broker
+and Web image labels match that revision. The topology is one WSL host, two
+Compose Workers, RF3 Kafka, PostgreSQL and real CubeSandbox KVM. The remounted
+CLIProxyAPI configuration was checked to contain `request-retry: 0`.
+After cutover, admitted unsealed Runs and unpublished terminal seals were zero.
+
+The deployed guest build-input identity is
+`908d27fc397894bdebe74ccc1c9a7d075df8389a`; its actual image digest is
+`sha256:2690489e09131b1e713411973f3d40100fbbd2a638460967a5eaab735812ad8e`.
+The agent template is `tpl-a6cb7c0d04df4427b9df5b6a`, with matching development
+profiles. Runtime source labels and guest build identity remain separate.
+
+All paid acceptance used GPT-5.6 Luna, low reasoning and Standard service.
+No DeepSeek request was made.
+
+- [Whole native Tools](native-tools-acceptance-latest.json): three rounds and
+  13 completed Tools, including insertion sort, binary search, bounded 1.5 MB
+  command output, absolute `/tmp` paths and read/edit through a symbolic link.
+- [Subagents](subagent-production-acceptance-latest.json): 13 rounds passed,
+  covering Cube-free direct delegation, lazy Tools, fresh/branch context,
+  shared/temporary compute, parallel Git worktrees and parent merge, nested
+  compute, recursive Lanes, parallel coding, message consumption, supervisor
+  reply, cancellation, guest isolation and cold product-tree/detail reads.
+- Real Chrome conversation discovery: the first page contained 100 Sessions;
+  one cursor request produced 103 distinct rows with all expected titles and
+  removed the exhausted load-more button. No model or Cube execution was needed.
+  The first fixture correctly hit the self-registration quota of 100 Sessions;
+  the successful fixture used a quota of 110 for that isolated test tenant only.
+- [Tool progress and process loss](tool-progress-acceptance-latest.json): a
+  50-second Bash survived Projector SIGKILL/restart and browser reload with one
+  execution, 40 temporary updates and a bounded final result. The silent command
+  produced zero updates; cancellation produced zero late updates; subsequent
+  write/read/edit/bash coding completed in the same Session. The preview stayed
+  collapsed on reload and did not move the manually scrolled conversation.
+
+The first Subagent attempt failed its round-10 marker assertion. The parent
+model omitted the final character while generating the workflow script. Native
+Tool arguments, the durable send command, consumed input, child response and
+Tool result all contained the same submitted marker. This failed attempt is not
+counted as passing; the unchanged script passed all 13 rounds on repetition.
+No runtime workaround or weaker assertion was added.
+
+The [combined numeric evidence](pi-alignment-live-20260926.json) includes both
+Subagent attempts. Native usage Records reported 238,836 input, 987,136 cache-read
+and 11,393 output tokens across these paid checks. These are Pi counters, not
+monetary billing or exact provider account-attempt counts. Owned native history
+contained zero observation-only Tool progress records.
+
+All six test Workspaces were released through the API and verified physically
+purged. Five isolated test tenants and 3,216 scoped database rows were then
+removed with foreign keys enforced, after checking zero active Runs, current
+leases and unsealed Sessions. The native Tool fixture is archived in the existing
+bootstrap tenant. Browser profiles were removed by the test helper. Shared Kafka
+and official service logs retain their normal retention policy.
+
+The current working tree still computes the deployed guest build-input identity;
+clean-commit catalog reuse is the last operational check. Existing old-template
+cleanup failures against stale Cube node addresses remain the separate documented
+BACKLOG issue. These are functional one-host checks, not new claims of physical
+multi-node capacity, HA or physical effect fencing.

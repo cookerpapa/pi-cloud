@@ -1,0 +1,190 @@
+{
+  "baselineRevision": "ad1aad5fba4aba2f61320283f374fc6ccf6688f5",
+  "deployedRevision": "dc20c96bd57dbf20457a098e9bff84c9626b2c02",
+  "topology": {
+    "physicalHosts": 1,
+    "environment": "WSL2 / Docker Compose",
+    "workers": 2,
+    "kafkaBrokers": 3,
+    "kafkaReplicationFactor": 3,
+    "toolRuntime": "CubeSandbox KVM"
+  },
+  "model": {
+    "provider": "openai-codex",
+    "modelId": "gpt-5.6-luna",
+    "thinkingLevel": "low",
+    "fastMode": false
+  },
+  "guest": {
+    "buildInputIdentity": "908d27fc397894bdebe74ccc1c9a7d075df8389a",
+    "imageDigest": "sha256:2690489e09131b1e713411973f3d40100fbbd2a638460967a5eaab735812ad8e",
+    "agentTemplateId": "tpl-a6cb7c0d04df4427b9df5b6a"
+  },
+  "nativeTools": {
+    "accepted": true,
+    "rounds": 3,
+    "report": "native-tools-acceptance-latest.json"
+  },
+  "subagents": {
+    "attempts": [
+      {
+        "accepted": false,
+        "completedRootTurns": 10,
+        "sessionId": "a8ddf499-d582-48a1-958c-a24ac669fb83",
+        "failure": "Model-generated workflow omitted one character from the requested fixture marker",
+        "transportPreservedSubmittedContent": true
+      },
+      {
+        "accepted": true,
+        "completedRootTurns": 13,
+        "sessionId": "ba35ed5c-07d6-4fbf-b1d5-fbe89c64a41c"
+      }
+    ],
+    "report": "subagent-production-acceptance-latest.json",
+    "scriptOrRuntimeChangedBetweenAttempts": false
+  },
+  "progress": {
+    "checkedAt": "2026-09-26T03:21:39.645Z",
+    "model": "gpt-5.6-luna",
+    "accepted": true,
+    "runs": [
+      {
+        "kind": "continuous-output",
+        "elapsedMs": 58543,
+        "progressCount": 40,
+        "maximumProgressCharacters": 577,
+        "modelTransportMs": 5154.552,
+        "commandExecutions": 1
+      },
+      {
+        "kind": "silent-command",
+        "elapsedMs": 30138,
+        "progressCount": 0
+      },
+      {
+        "kind": "cancel",
+        "lateProgress": 0
+      },
+      {
+        "kind": "coding-after-cancel",
+        "tools": [
+          {
+            "name": "write",
+            "status": "completed"
+          },
+          {
+            "name": "read",
+            "status": "completed"
+          },
+          {
+            "name": "edit",
+            "status": "completed"
+          },
+          {
+            "name": "bash",
+            "status": "completed"
+          }
+        ]
+      }
+    ],
+    "projectorRestart": true,
+    "resourcesReleased": true,
+    "report": "tool-progress-acceptance-latest.json"
+  },
+  "conversationDiscovery": {
+    "checkedAt": "2026-09-26T03:18:47.223Z",
+    "accepted": true,
+    "modelCalls": 0,
+    "firstPage": 100,
+    "finalCount": 103,
+    "distinctCount": 103,
+    "cursorRequests": 1,
+    "exhaustedButtonRemoved": true,
+    "resourcesReleased": true
+  },
+  "usage": {
+    "basis": "Native Pi assistant and compaction usage Records, including failed acceptance; not monetary billing or provider account-attempt counts",
+    "byPhysicalSession": [
+      {
+        "sessionId": "1f2c4b3a-22fe-44b9-b059-8666faf5eade",
+        "modelRequests": 16,
+        "input": 23131,
+        "output": 1658,
+        "cacheRead": 102400,
+        "cacheWrite": 0
+      },
+      {
+        "sessionId": "a8ddf499-d582-48a1-958c-a24ac669fb83",
+        "modelRequests": 57,
+        "input": 99545,
+        "output": 4135,
+        "cacheRead": 348416,
+        "cacheWrite": 0
+      },
+      {
+        "sessionId": "ba35ed5c-07d6-4fbf-b1d5-fbe89c64a41c",
+        "modelRequests": 69,
+        "input": 99832,
+        "output": 4766,
+        "cacheRead": 479488,
+        "cacheWrite": 0
+      },
+      {
+        "sessionId": "d7743990-6978-4177-8678-c4d8c4346583",
+        "modelRequests": 10,
+        "input": 16328,
+        "output": 834,
+        "cacheRead": 56832,
+        "cacheWrite": 0
+      }
+    ],
+    "totals": {
+      "modelRequests": 152,
+      "input": 238836,
+      "output": 11393,
+      "cacheRead": 987136,
+      "cacheWrite": 0
+    }
+  },
+  "cleanup": {
+    "completed": true,
+    "removedTenantCount": 5,
+    "removedRows": 3216,
+    "foreignKeysEnforced": true,
+    "workspaces": [
+      {
+        "workspaceId": "c248a28c-7a4b-48af-8ed0-c7806c4b751c",
+        "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+        "purged": true
+      },
+      {
+        "workspaceId": "49e25689-739e-4bbd-af8a-4087c493cf17",
+        "tenantId": "1bdd09db-3134-4938-a2dd-88ab824fb02b",
+        "purged": true
+      },
+      {
+        "workspaceId": "caedc16e-72bc-4a99-8700-48b487ab2b29",
+        "tenantId": "c48edd2b-5333-4122-b221-1e1ba1c2d911",
+        "purged": true
+      },
+      {
+        "workspaceId": "82e9c587-698d-40a7-b6e5-88f9c0da6284",
+        "tenantId": "452d11c5-0ad2-4277-b9a7-b68ee472db42",
+        "purged": true
+      },
+      {
+        "workspaceId": "56b4d662-c6e4-4f22-b981-0157f48f8a01",
+        "tenantId": "fe6eb35e-20bc-4d58-a255-6235976afeac",
+        "purged": true
+      },
+      {
+        "workspaceId": "adf15705-62ca-4b21-b5af-5f5e843a10d6",
+        "tenantId": "790f9d27-4ef0-4077-b79f-64b2fed14383",
+        "purged": true
+      }
+    ],
+    "nativeFixtureArchived": true,
+    "observationHistoryRecords": 0,
+    "sharedKafkaRetentionUnchanged": true
+  }
+}
