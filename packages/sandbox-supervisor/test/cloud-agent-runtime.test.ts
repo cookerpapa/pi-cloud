@@ -282,6 +282,75 @@ afterAll(async () => {
 });
 
 describe.sequential("CloudAgentRuntime", () => {
+  it.each([false, true])(
+    "drains input accepted at native agent_end (native append=%s)",
+    async (cached) => {
+      const storage = await createStorage();
+      const contexts: Context[] = [];
+      let runtime!: CloudAgentRuntime;
+      let delivered = false;
+      runtime = new CloudAgentRuntime({
+        lane: "main",
+        ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
+        authority: new TestAuthority(),
+        model: { ...getModel("openai", "gpt-4o-mini"), id: "gpt-6-luna" },
+        systemPrompt: "test",
+        streamFn: scriptedStream(["initial answer", "consumed late input"], contexts),
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+        onEvent: async (event) => {
+          if (event.type !== "agent_end" || delivered) return;
+          delivered = true;
+          await runtime.agentInput("late-native-input", "late marker", "follow_up");
+        },
+      });
+      expect(await runtime.run("start")).toMatchObject({ kind: "completed" });
+      expect(contexts).toHaveLength(2);
+      expect(JSON.stringify(contexts[1])).toContain("late marker");
+      expect(await storage.getEntry("pc-agent-input-late-native-input")).toMatchObject({
+        type: "message",
+      });
+      expect(await storage.findRecords({ type: "operation_started" })).toHaveLength(1);
+      expect(await storage.findOpenOperations("main")).toEqual([]);
+    },
+  );
+
+  it.each([false, true])(
+    "ignores pre-compaction retained usage on restore (native append=%s)",
+    async (cached) => {
+      const storage = await createStorage();
+      const session = storage.asSession();
+      const old = assistant("short retained answer");
+      old.usage.input = 950_000;
+      old.usage.totalTokens = 950_001;
+      await session.appendEntry(
+        {
+          id: crypto.randomUUID(),
+          type: "compaction",
+          summary: "short summary",
+          retainedTail: [old],
+          tokensBefore: 950_001,
+        },
+        "main",
+      );
+      const summarize = vi.fn(async () => assistant("unnecessary summary"));
+      const contexts: Context[] = [];
+      const runtime = new CloudAgentRuntime({
+        lane: "main",
+        ...(cached ? await withNativeSession(storage) : { session }),
+        authority: new TestAuthority(),
+        model: { ...getModel("openai", "gpt-4o-mini"), id: "gpt-6-luna", contextWindow: 1_000_000 },
+        models: { completeSimple: summarize } as unknown as Models,
+        systemPrompt: "test",
+        streamFn: scriptedStream(["continued"], contexts),
+        compaction: { enabled: true, reserveTokens: 100_000, keepRecentTokens: 20_000 },
+      });
+      expect(await runtime.run("continue")).toMatchObject({ kind: "completed" });
+      expect(summarize).not.toHaveBeenCalled();
+      expect(contexts).toHaveLength(1);
+      expect(await storage.findEntries({ type: "compaction" })).toHaveLength(1);
+    },
+  );
+
   it.each(["steer", "follow_up", "notify"] as const)(
     "accepts %s Agent input during native bootstrap exactly once",
     async (delivery) => {

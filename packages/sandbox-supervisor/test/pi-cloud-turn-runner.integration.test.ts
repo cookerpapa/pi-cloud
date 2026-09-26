@@ -141,6 +141,84 @@ function deferred<T>() {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it("reports target-unavailable for controls arriving while final native append waits", async () => {
+    const fake = new FakeModelServer({ defaultScenario: "text" });
+    await fake.start();
+    const session = new Session(
+      new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
+    );
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const append = session.appendRecord.bind(session);
+    vi.spyOn(session, "appendRecord").mockImplementation(async (record) => {
+      if (record.type === "operation_finished") {
+        entered.resolve();
+        await release.promise;
+      }
+      return append(record);
+    });
+    const turn = createCloudTurnContext(command);
+    const runner = new PiCloudTurnRunner({
+      resolveModelRuntime: () => ({
+        provider: "pi-cloud-fake",
+        modelId: "pi-cloud-fake",
+        baseUrl: fake.baseUrl,
+        api: "openai-completions",
+        apiKey: FAKE_MODEL_API_KEY,
+      }),
+      openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
+      sandboxContinuity: {
+        continuityId: "unused",
+        continuity: "cold_restore",
+        environmentSha256: turn.environmentSha256,
+        workspaceBindingSha256: turn.workspaceBindingSha256,
+        toolPolicySha256: turn.toolPolicySha256,
+      },
+      createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
+        tools: [],
+        systemPrompt: async (base) => base,
+        executeWorkflow: async () => {
+          throw new Error("No guest execution expected");
+        },
+        transformHeaders: async (headers = {}) => headers,
+        transformContext: async (messages) => {
+          await captureSamplingStep(async () => {
+            const captured = await stepWorldState.capture();
+            return {
+              step: createCloudStepContext({
+                sequence: 1,
+                turnContextSha256: turn.sha256,
+                executionContextSha256: "b".repeat(64),
+                allowedTools: [],
+                activeTools: [],
+                worldState: captured.worldState,
+              }),
+              modelMessages: captured.modelMessages,
+            };
+          });
+          return messages;
+        },
+      }),
+    });
+    const running = runner.run(command, () => {});
+    try {
+      await entered.promise;
+      await expect(runner.steer("too late")).rejects.toMatchObject({
+        code: "steer_target_unavailable",
+        retryable: false,
+      });
+      await expect(runner.agentInput("late", "too late", "follow_up")).rejects.toMatchObject({
+        code: "steer_target_unavailable",
+        retryable: false,
+      });
+    } finally {
+      release.resolve();
+      await running;
+      await fake.stop();
+    }
+    expect(fake.observations).toHaveLength(1);
+  });
+
   it("publishes commentary only when complete, waits its ACK, then streams final text before the response ends", async () => {
     const allowIntroEnd = deferred<void>(),
       allowResponseEnd = deferred<void>(),

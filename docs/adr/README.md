@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0193](0193-native-run-lifecycle-boundaries.md) — native input closure,
+   per-sampling retry state, compaction usage freshness and Run-local cancellation.
 1. [ADR-0192](0192-session-image-attachments.md) — immutable image attachments,
    reference-only Kafka transport and lossless native Session decoding.
 1. [ADR-0191](0191-gpt6-model-catalog.md) — GPT-6 selection migration and

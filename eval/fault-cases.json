@@ -3,6 +3,41 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "native-late-input-drain",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
+      "test": "consumes steer accepted at agent_end within the same operation",
+      "invariant": "Accepted late native input continues within the same operation before successful Run closure."
+    },
+    {
+      "id": "native-final-append-input-fence",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
+      "test": "rejects input while final persistence is still waiting",
+      "invariant": "Waiting for final durable append cannot reopen control-input admission."
+    },
+    {
+      "id": "native-followup-retry-reset",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
+      "test": "resets sampling retries after ordinary success before an in-Run follow-up",
+      "invariant": "A successful sampling response resets retry state before a subsequent input's sampling."
+    },
+    {
+      "id": "native-compaction-usage-freshness",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
+      "test": "uses the Compaction entry boundary when deciding thresholds: stale",
+      "invariant": "A retained pre-compaction usage value cannot force another threshold compaction."
+    },
+    {
+      "id": "native-cancel-retry-backoff",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
+      "test": "cancels backoff immediately, reports failure and preserves shared authority",
+      "invariant": "Run cancellation interrupts retry backoff without another model call or shared-authority revocation."
+    },
+    {
       "id": "expired-owner-at-run-admission",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",

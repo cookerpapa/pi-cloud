@@ -6,6 +6,7 @@ import {
   convertToLlm,
   estimateContextTokens,
   estimateTokens,
+  getLastAssistantUsage,
   prepareCompaction,
   shouldCompact,
   type AgentEvent,
@@ -51,6 +52,13 @@ export interface CloudAgentExecutionAuthority {
   readonly signal: AbortSignal;
   assertCurrent(): Promise<void>;
   close(): Promise<void>;
+}
+
+export class CloudAgentInputClosedError extends Error {
+  constructor() {
+    super("Target Agent is not running");
+    this.name = "CloudAgentInputClosedError";
+  }
 }
 
 export type CloudAgentRuntimeEvent =
@@ -301,8 +309,13 @@ export class CloudAgentRuntime {
   readonly #agentReady = Promise.withResolvers<void>();
   readonly #agentInputIds = new WeakMap<object, string>();
   readonly #queuedAgentInputs = new Set<string>();
+  readonly #runCancellation = new AbortController();
   #started = false;
-  #abortRequested = false;
+  #acceptingInputs = false;
+
+  get #abortRequested(): boolean {
+    return this.#runCancellation.signal.aborted;
+  }
 
   constructor(options: CloudAgentRuntimeOptions) {
     if (options.models === undefined && options.streamFn === undefined) {
@@ -318,6 +331,7 @@ export class CloudAgentRuntime {
     if (this.#started) throw new Error("Cloud Agent Runtime has already started");
     if (text.trim().length === 0) throw new TypeError("Cloud Agent prompt must not be empty");
     this.#started = true;
+    this.#acceptingInputs = true;
 
     const authority = this.#options.authority;
     const session = this.#options.session;
@@ -569,7 +583,8 @@ export class CloudAgentRuntime {
         if (
           event.type === "message_end" &&
           event.message.role === "assistant" &&
-          event.message.stopReason === "toolUse" &&
+          event.message.stopReason !== "error" &&
+          event.message.stopReason !== "aborted" &&
           retryAttempt > 0
         ) {
           await this.#options.onEvent?.({
@@ -607,6 +622,8 @@ export class CloudAgentRuntime {
             message?.provider === this.#options.model.provider &&
             message.model === this.#options.model.id;
           if (
+            this.#abortRequested ||
+            authority.signal.aborted ||
             message?.stopReason !== "error" ||
             (!recoverOverflow &&
               (overflow ||
@@ -617,10 +634,27 @@ export class CloudAgentRuntime {
                   isIncompleteModelStreamError(message.errorMessage ?? "")
                 )))
           ) {
+            if (
+              !this.#abortRequested &&
+              !authority.signal.aborted &&
+              message !== undefined &&
+              message.stopReason !== "error" &&
+              message.stopReason !== "aborted" &&
+              agent.hasQueuedMessages()
+            ) {
+              continue;
+            }
+            // No await between the last queue check and closing admission.
+            // A final native append may wait while control deliveries arrive.
+            this.#acceptingInputs = false;
             if (retryAttempt > 0) {
               await this.#options.onEvent?.({
                 type: "auto_retry_end",
-                success: finalMessage?.stopReason !== "error",
+                success:
+                  !this.#abortRequested &&
+                  message !== undefined &&
+                  message.stopReason !== "error" &&
+                  message.stopReason !== "aborted",
                 attempt: retryAttempt,
                 ...(finalMessage?.stopReason === "error" && finalMessage.errorMessage
                   ? { finalError: finalMessage.errorMessage }
@@ -673,7 +707,19 @@ export class CloudAgentRuntime {
           }
           agent.state.messages = agent.state.messages.slice(0, -1);
           finalMessage = undefined;
-          if (!recoverOverflow) await abortableDelay(delayMs, authority.signal);
+          if (!recoverOverflow) {
+            try {
+              await abortableDelay(
+                delayMs,
+                combinedSignal(this.#runCancellation.signal, authority.signal),
+              );
+            } catch (error) {
+              authority.signal.throwIfAborted();
+              if (!this.#abortRequested) throw error;
+              // Settle through Pi's existing agent_start abort latch, without
+              // another model request or revoking the shared Session authority.
+            }
+          }
         }
       } finally {
         unsubscribe();
@@ -740,6 +786,7 @@ export class CloudAgentRuntime {
           : {}),
       };
     } catch (error: unknown) {
+      this.#acceptingInputs = false;
       const failure = operationError(error);
       if (!authority.signal.aborted) {
         await tree
@@ -760,6 +807,7 @@ export class CloudAgentRuntime {
       }
       throw error;
     } finally {
+      this.#acceptingInputs = false;
       removeAuthorityAbort?.();
       this.#agent = undefined;
       this.#agentReady.resolve();
@@ -767,13 +815,18 @@ export class CloudAgentRuntime {
   }
 
   async #inputAgent(): Promise<Agent> {
-    if (!this.#started) throw new Error("Target Agent is not running");
+    if (!this.#started) throw new CloudAgentInputClosedError();
     // The Run/Runtime exists before native Session bootstrap and Agent creation.
     // Keep accepted mailbox delivery pending through that interval, not failed.
     await this.#agentReady.promise;
     await this.#options.authority.assertCurrent();
-    if (!this.#agent || this.#abortRequested) throw new Error("Target Agent is not running");
+    this.#assertInputOpen(this.#agent);
     return this.#agent;
+  }
+
+  #assertInputOpen(agent: Agent | undefined): asserts agent is Agent {
+    if (!this.#acceptingInputs || !agent || agent !== this.#agent || this.#abortRequested)
+      throw new CloudAgentInputClosedError();
   }
 
   async steer(text: string): Promise<void> {
@@ -781,6 +834,7 @@ export class CloudAgentRuntime {
       throw new TypeError("Steer text is invalid");
     }
     const agent = await this.#inputAgent();
+    this.#assertInputOpen(agent);
     agent.steer(createUserMessage(text));
   }
 
@@ -794,8 +848,7 @@ export class CloudAgentRuntime {
     if (this.#queuedAgentInputs.has(entryId) || (await this.#options.session.getEntry(entryId)))
       return;
     if (this.#queuedAgentInputs.has(entryId)) return;
-    if (this.#agent !== agent || this.#abortRequested)
-      throw new Error("Target Agent is not running");
+    this.#assertInputOpen(agent);
     const message = createUserMessage(text);
     this.#agentInputIds.set(message, entryId);
     this.#queuedAgentInputs.add(entryId);
@@ -804,7 +857,7 @@ export class CloudAgentRuntime {
   }
 
   abort(): void {
-    this.#abortRequested = true;
+    this.#runCancellation.abort();
     this.#agent?.abort();
   }
 
@@ -852,7 +905,13 @@ export class CloudAgentRuntime {
   ): Promise<AgentMessage[]> {
     const context = this.#context(path);
     if (!this.#compaction.enabled) return context;
-    const tokens = estimateContextTokens(context).tokens;
+    const compactionIndex = path.findLastIndex((entry) => entry.type === "compaction");
+    // Retained Assistant usage describes a request before compaction. Entry
+    // order identifies new usage even when provider timestamps are equal/old.
+    const tokens =
+      compactionIndex >= 0 && getLastAssistantUsage(path.slice(compactionIndex + 1)) === undefined
+        ? context.reduce((total, message) => total + estimateTokens(message), 0)
+        : estimateContextTokens(context).tokens;
     if (
       reason === "threshold" &&
       !shouldCompact(tokens, this.#options.model.contextWindow, this.#compaction)

@@ -12,6 +12,20 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] CR-01: close the control-input/Run-settlement race. Accepted native queued
+      inputs must be consumed or explicitly rejected before closing; retain the
+      current durable-input and no-Run-replay contracts.
+      [Focused runtime review](reports/cloud-agent-runtime-review-20260926.md#cr-01--p1--收尾窗口可以成功接收控制消息但不再消费).
+- [ ] CR-02: reset sampling retry state at every successful response, including
+      an ordinary answer followed by a queued input or project verification.
+      [Evidence](reports/cloud-agent-runtime-review-20260926.md#cr-02--p2--成功回答后进入-follow-up重试预算没有重置).
+- [ ] CR-03: make compaction threshold decisions recognize usage retained from
+      before the latest native Compaction; preserve explicit-overflow recovery.
+      [Evidence](reports/cloud-agent-runtime-review-20260926.md#cr-03--p2--最新-compaction-保留的旧-usage-会触发多余压缩).
+- [ ] CR-04: make Run cancellation interrupt retry backoff and report a cancelled
+      retry correctly, without revoking the shared Session authority.
+      [Evidence](reports/cloud-agent-runtime-review-20260926.md#cr-04--p3--取消无法立即结束重试退避且被标成重试成功).
+
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
       text block; that interval must not be labelled entirely as internal relay time.
@@ -85,6 +99,13 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       support is limited to already-bound integrations and environment Git credentials.
 
 ## Deliberately deferred capabilities
+
+- [ ] Design product pending-message management: cancel/delete one queued input,
+      edit it, reorder it and promote it to active steer. The current Web UI
+      supports Enter-to-queue and draft-to-steer, but cancellation targets only
+      the active Turn. Define a mutable pending-input boundary before changing
+      immutable accepted Turns/Runs, and handle races with execution admission.
+      This is a separate product slice from ADR-0193's runtime repairs.
 
 - [ ] Define project text-resource discovery separately from executable extensions
       if that feature is requested. Automatic AGENTS.md loading (review PI-06) was

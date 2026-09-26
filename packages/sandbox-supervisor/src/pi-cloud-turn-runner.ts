@@ -16,6 +16,7 @@ import {
 } from "@pi-cloud/pi-session-postgres";
 import {
   CloudAgentRuntime,
+  CloudAgentInputClosedError,
   type CloudAgentExecutionAuthority,
   type CloudAgentRuntimeEvent,
 } from "./cloud-agent-runtime.ts";
@@ -442,16 +443,28 @@ export class PiCloudTurnRunner {
   }
 
   async steer(text: string): Promise<void> {
-    const runtime = await this.#runtimeForControl();
-    await runtime.steer(text);
+    await this.#deliverInput((runtime) => runtime.steer(text));
   }
   async agentInput(
     id: string,
     text: string,
     delivery: "notify" | "steer" | "follow_up",
   ): Promise<void> {
-    const runtime = await this.#runtimeForControl();
-    await runtime.agentInput(id, text, delivery);
+    await this.#deliverInput((runtime) => runtime.agentInput(id, text, delivery));
+  }
+
+  async #deliverInput(deliver: (runtime: CloudAgentRuntime) => Promise<void>): Promise<void> {
+    try {
+      await deliver(await this.#runtimeForControl());
+    } catch (error) {
+      if (error instanceof CloudAgentInputClosedError)
+        throw new PiTurnError(
+          "steer_target_unavailable",
+          "Pi Run has closed input delivery",
+          false,
+        );
+      throw error;
+    }
   }
 
   async #runtimeForControl(): Promise<CloudAgentRuntime> {

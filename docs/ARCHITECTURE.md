@@ -69,6 +69,22 @@ and idempotency key. Follow-up remains a queued input; Steer first lives in
 Steer uses the Worker HTTP management endpoint; WebSocket carries registration
 and heartbeats, not an alternative execution or Steer transport.
 
+The Web composer queues a new Turn with Enter while a Run is active; its Steer
+button instead sends the current draft to that Run. Product queued Turns start
+only after predecessor closure and Lane readiness. Native in-Run steer is
+consumed after the current model response/Tool batch, before the next model
+request. Native follow-up is consumed when that Agent would otherwise stop;
+internal verification reminders and Agent messages use this path. These two
+follow-up lifecycles are distinct. Currently queued Turns cannot be individually
+cancelled, edited, reordered or converted to steer, and delivered steer has no
+per-message recall. The stop action cancels only the active Turn.
+
+The Runner rechecks native queues after a successful Agent continuation and
+closes input admission synchronously with its last empty-queue decision. Final
+native writes occur after that close; late control delivery returns the existing
+target-unavailable error. Input delivery rechecks closure after asynchronous
+authority/deduplication reads (ADR-0193).
+
 `queued` means accepted, not necessarily dispatchable. Input acceptance freezes
 the model/configuration and writes Turn, Run and mailbox advancement together;
 `ready_at` is set only for a Lane head whose predecessor has closed. Otherwise
