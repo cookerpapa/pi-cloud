@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-26T12:24:18.402Z",
+  "revision": "ac500bda075c865acefe324390daebd967090f97",
+  "scope": "CloudAgentRuntime versus Pi AgentSession, synthetic streams and in-memory native storage",
+  "realProviderCalls": 0,
+  "piVersions": {
+    "pi-agent-core": "0.84.1",
+    "pi-ai": "0.84.1",
+    "pi-coding-agent": "0.84.1"
+  },
+  "sourceSha256": {
+    "CloudAgentRuntime": "1a5b007800f35f50e2dc40b95627afde86907ed2478f700db25aea2b19a5ab6f",
+    "PiCloudTurnRunner": "f9916de8c128cb133c651e702a6f317fd20e05321dd97bb03f806cda13d93b0a",
+    "Pi.Agent": "d84351e451b9fef40fe2532c446aca90d26a4be9038b2d77d3d45dd6eab21d41",
+    "Pi.AgentSession": "91e72d5497f665e731cbd79da6a6e826d8cae7d2ce156a7dee39f8ca205e32c8"
+  },
+  "probes": {
+    "lateInput": {
+      "cloud": [
+        {
+          "delivery": "steer",
+          "accepted": true,
+          "result": "completed",
+          "requests": 2,
+          "consumed": true
+        },
+        {
+          "delivery": "follow_up",
+          "accepted": true,
+          "result": "completed",
+          "requests": 2,
+          "consumed": true
+        },
+        {
+          "delivery": "human_steer",
+          "accepted": true,
+          "result": "completed",
+          "requests": 2,
+          "consumed": true
+        }
+      ],
+      "native": {
+        "requests": 2,
+        "consumed": true
+      }
+    },
+    "lateInputDuringFinish": {
+      "accepted": false,
+      "outcome": "completed",
+      "requests": 1,
+      "consumed": false
+    },
+    "retryBudgetAcrossFollowup": [
+      {
+        "kind": "cloud",
+        "requests": 5,
+        "outcome": "completed",
+        "final": "stop"
+      },
+      {
+        "kind": "native",
+        "requests": 5,
+        "final": "stop"
+      }
+    ],
+    "staleCompaction": {
+      "estimatedFromOldUsage": 9501,
+      "structuralTokens": 15,
+      "cloud": {
+        "extraSummaries": 0,
+        "requests": 1,
+        "result": "completed"
+      },
+      "native": {
+        "requests": 1,
+        "extraSummaries": 0
+      }
+    },
+    "cancelBackoff": [
+      {
+        "kind": "cloud",
+        "calls": 1,
+        "settledAfterCancelMs": 2,
+        "outcome": "aborted",
+        "retryEnds": [
+          {
+            "success": false,
+            "attempt": 1
+          }
+        ]
+      },
+      {
+        "kind": "native",
+        "calls": 1,
+        "settledAfterCancelMs": 1,
+        "outcome": "settled",
+        "retryEnds": [
+          {
+            "success": false,
+            "attempt": 1
+          }
+        ]
+      }
+    ],
+    "interruptedToolPair": {
+      "providerResults": [
+        {
+          "id": "one",
+          "text": "The previous Worker stopped while this Tool was active. Its side effects are unknown. Do not replay it blindly; inspect the Workspace and environment before continuing.",
+          "isError": true
+        },
+        {
+          "id": "two",
+          "text": "No result provided",
+          "isError": true
+        }
+      ],
+      "newToolIntents": 0,
+      "durableResults": ["one"]
+    }
+  },
+  "findingsObserved": [],
+  "probesCompleted": 6
+}

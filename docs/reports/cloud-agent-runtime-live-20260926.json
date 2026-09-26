@@ -1,0 +1,29 @@
+{
+  "checkedAt": "2026-09-26T12:30:36.751Z",
+  "revision": "58ce256cafcc9f730b9b30903ac6407d5aa06faa",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "c8cd25ce-ee67-417f-a3e9-0d1de0396e81",
+      "workerId": "78a0a674-ddd3-4f98-991b-feb5f4238337",
+      "state": "completed"
+    },
+    {
+      "runId": "3563f418-0aff-4f95-82ec-861f432fda56",
+      "workerId": "78a0a674-ddd3-4f98-991b-feb5f4238337",
+      "state": "completed"
+    }
+  ],
+  "resources": {
+    "projectId": "71d8d7fd-0c54-4acd-b6e1-b0e90a618dbf",
+    "workspaceId": "eb0a59a0-67c3-4bf3-b6f3-97a13257d6c1",
+    "sessionId": "614fc133-b803-4153-a5a4-306c2a04b59d"
+  },
+  "followUpWaited": true,
+  "queuedCancellationStatus": 409,
+  "steerDelivered": true,
+  "steerConsumed": true,
+  "followUpConsumed": true,
+  "cleanupCompleted": true
+}

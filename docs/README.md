@@ -32,8 +32,9 @@ protocol evidence.
 
 The [CloudAgentRuntime review](reports/cloud-agent-runtime-review-20260926.md)
 compares the current execution boundary with pinned Pi and records reproducible
-queue-settlement, retry, compaction and cancellation differences. Its findings
-remain open; this review does not change the runtime contract.
+queue-settlement, retry, compaction and cancellation differences.
+The [lifecycle repair](reports/cloud-agent-runtime-repair-20260926.md) records
+their resolution, local Worker rollout and current follow-up/steer capabilities.
 
 Superseded ADRs and retired architecture documents are kept in Git history
 instead of the current tree. This is intentional: repository-reading agents

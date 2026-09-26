@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] ADR-0193: native input closure, per-Step retries, compaction usage freshness
+      and Run-local backoff cancellation. [Regression, fault and Luna acceptance](reports/cloud-agent-runtime-repair-20260926.md).
+
 - [x] ADR-0191/0192: GPT-6 Luna Tool/vision/search, immutable image references,
       cold recovery, cleanup faults and matched local rollout.
       [Acceptance](reports/image-attachments-20260926.md).

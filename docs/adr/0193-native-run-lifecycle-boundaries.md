@@ -1,7 +1,8 @@
 # ADR-0193: Native Run input, retry and compaction boundaries
 
-Status: accepted for implementation, 2026-09-26, following owner approval of
+Status: accepted, implemented and locally validated, 2026-09-26, following owner approval of
 the [focused review](../reports/cloud-agent-runtime-review-20260926.md).
+[Repair and acceptance](../reports/cloud-agent-runtime-repair-20260926.md).
 
 Keep Pi 0.84.1, the public Agent Loop and existing SessionStorage, authority,
 Kafka ACK and no-effect-replay contracts. This is one runtime lifecycle slice;

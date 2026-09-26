@@ -493,6 +493,11 @@ CloudAgentRuntime owns bounded sampling retries; Model Gateway forwards one
 send per admitted request. Generated CLIProxyAPI settings disable extra retry
 rounds while keeping its account selection/failover responsibility. Logical
 model-request limits do not claim to count every provider-account attempt.
+Successful Assistant responses reset sampling retry state before further queued
+input is processed. Run-local cancellation interrupts backoff without revoking
+the shared Session authority. Compaction threshold checks ignore usage retained
+from before the latest Compaction and use Pi's structural estimate until a new
+valid usage-bearing Entry follows that boundary (ADR-0193).
 
 The role-free Subagent tool uses Pi's public runtime/storage contracts and the
 community `runs.run`/`runs.all` programming model, not a CLI-emulation backend.
