@@ -1,6 +1,7 @@
 # ADR-0189: guest build-input identity
 
-Status: accepted for implementation, 2026-09-26.
+Status: accepted and implemented, 2026-09-26.
+Validation: [Pi-alignment repairs](../reports/pi-alignment-repair-20260926.md).
 
 Guest template reuse is keyed by a digest of its Dockerfile and explicit local
 COPY inputs, including source bytes, paths, executable bits and symbolic-link

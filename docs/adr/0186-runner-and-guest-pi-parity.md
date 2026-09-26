@@ -1,6 +1,7 @@
 # ADR-0186: Runner preparation and guest file semantics
 
-Status: accepted for implementation, 2026-09-26.
+Status: accepted and implemented, 2026-09-26.
+Validation: [Pi-alignment repairs](../reports/pi-alignment-repair-20260926.md).
 
 ## Decision and historical boundaries
 

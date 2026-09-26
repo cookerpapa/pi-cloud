@@ -39,7 +39,7 @@
 
 ## Current release gate
 
-- [ ] Finish the matched local rollout acceptance for the September 26
+- [x] Complete the matched local rollout acceptance for the September 26
       [Pi-alignment repairs](reports/pi-alignment-repair-20260926.md): native
       Record/invocation semantics, guest file behavior, eligible Tool concurrency,
       sampling/retry boundaries, conversation discovery and guest build identity.

@@ -1,6 +1,7 @@
 # ADR-0187: model retry ownership
 
-Status: accepted for implementation, 2026-09-26.
+Status: accepted and implemented, 2026-09-26.
+Validation: [Pi-alignment repairs](../reports/pi-alignment-repair-20260926.md).
 
 CloudAgentRuntime owns retries of an incomplete model sampling Step, using the
 existing frozen-step identity, cancellation and bounded retry policy. Pi's lower

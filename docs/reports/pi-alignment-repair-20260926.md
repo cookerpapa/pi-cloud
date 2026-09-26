@@ -176,8 +176,15 @@ leases and unsealed Sessions. The native Tool fixture is archived in the existin
 bootstrap tenant. Browser profiles were removed by the test helper. Shared Kafka
 and official service logs retain their normal retention policy.
 
-The current working tree still computes the deployed guest build-input identity;
-clean-commit catalog reuse is the last operational check. Existing old-template
-cleanup failures against stale Cube node addresses remain the separate documented
-BACKLOG issue. These are functional one-host checks, not new claims of physical
+After the documentation/evidence-only commit `d4cd43f7`, the real registration
+command returned `registered: true, reused: true`. Guest identity, image digest
+and all four template IDs stayed identical. It took the existing-catalog path
+without rebuilding the guest image. This validates reuse across a changed Git
+revision, in addition to the build-input mutation tests.
+
+Retention selected 11 older templates and deferred all 11 after the existing
+stale Cube node-address cleanup timeouts. That separate BACKLOG issue remains;
+no deletion guard or readiness check was weakened to hide it. The deployment is
+healthy, with zero active Runs, current Session leases or unsealed Sessions after
+acceptance. These are functional one-host checks, not new claims of physical
 multi-node capacity, HA or physical effect fencing.

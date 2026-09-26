@@ -18,7 +18,25 @@
   "guest": {
     "buildInputIdentity": "908d27fc397894bdebe74ccc1c9a7d075df8389a",
     "imageDigest": "sha256:2690489e09131b1e713411973f3d40100fbbd2a638460967a5eaab735812ad8e",
-    "agentTemplateId": "tpl-a6cb7c0d04df4427b9df5b6a"
+    "agentTemplateId": "tpl-a6cb7c0d04df4427b9df5b6a",
+    "catalogReuse": {
+      "checkedRevision": "d4cd43f7",
+      "registered": true,
+      "reused": true,
+      "agentTemplateId": "tpl-a6cb7c0d04df4427b9df5b6a",
+      "developmentTemplateIds": {
+        "starter": "tpl-3c366f65eb2c4ec5bbea52a5",
+        "standard": "tpl-c2a39f19429449e5a77d54bb",
+        "performance": "tpl-bd1e538da6fb40599c6ec5ae"
+      },
+      "retention": {
+        "cubeTemplateRetention": "reuse-existing-catalog",
+        "retention": 3,
+        "selected": 11,
+        "deleted": 0,
+        "deferred": 11
+      }
+    }
   },
   "nativeTools": {
     "accepted": true,
@@ -186,5 +204,12 @@
     "nativeFixtureArchived": true,
     "observationHistoryRecords": 0,
     "sharedKafkaRetentionUnchanged": true
-  }
+  },
+  "postAcceptanceState": {
+    "healthy": true,
+    "activeRuns": 0,
+    "currentSessionLeases": 0,
+    "unsealedSessions": 0
+  },
+  "accepted": true
 }

@@ -1,6 +1,7 @@
 # ADR-0185: native Record semantics and invocation identity
 
-Status: accepted for implementation, 2026-09-26.
+Status: accepted and implemented, 2026-09-26.
+Validation: [Pi-alignment repairs](../reports/pi-alignment-repair-20260926.md).
 
 ## Context
 

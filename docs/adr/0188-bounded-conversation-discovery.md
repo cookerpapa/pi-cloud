@@ -1,6 +1,7 @@
 # ADR-0188: paginated conversation discovery
 
-Status: accepted for implementation, 2026-09-26.
+Status: accepted and implemented, 2026-09-26.
+Validation: [Pi-alignment repairs](../reports/pi-alignment-repair-20260926.md).
 
 The conversation list keeps its 100-row page and tenant filter, but returns an
 optional opaque `nextCursor`. GET `/v1/conversations?cursor=...` reads the next
