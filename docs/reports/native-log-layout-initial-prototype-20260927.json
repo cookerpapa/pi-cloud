@@ -1,0 +1,138 @@
+{
+  "scope": "Initial read adapter with old COW UNION, before indexed_log visible view simplification. Synthetic fixture only.",
+  "recordedAt": "2026-09-27T05:07:13.231Z",
+  "revision": "08fb771715d380617489e4beca9e68ce1fa852c2",
+  "sourceHashes": {
+    "scripts/research/native-log-layout.mjs": "1db81c1722b30d9866496380783b34dcc10f9a14e705648caa5a4cf0dd825864",
+    "scripts/research/native-log-layout.sql": "7a1dc4cb55ca33f0cd3d5976c6d8b345738c99e50f3bf9b09d3b7c6a99c10321",
+    "packages/pi-session-postgres/src/postgres-session-storage.ts": "6a099e0b0a919892389b8fa706eebe76ee5e1ff6c8a132589499c5316a18e78b"
+  },
+  "postgres": {
+    "version": "PostgreSQL 17.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 14.2.0) 14.2.0, 64-bit",
+    "fsync": "on",
+    "synchronous_commit": "on",
+    "full_page_writes": "on"
+  },
+  "query": [
+    {
+      "schema": "indexed_log",
+      "sessionId": "s2000",
+      "name": "page_messages",
+      "index": 0,
+      "mode": "force_custom_plan",
+      "executionMs": 41.014,
+      "sharedHitBlocks": 2176,
+      "sharedReadBlocks": 0,
+      "recursiveRows": [],
+      "scans": [
+        {
+          "type": "Bitmap Heap Scan",
+          "relation": "pi_session_log",
+          "rows": 1875,
+          "loops": 1,
+          "removed": 0
+        },
+        {
+          "type": "Seq Scan",
+          "relation": "pi_session_entry_refs",
+          "rows": 0,
+          "loops": 1,
+          "removed": 0
+        },
+        {
+          "type": "Index Scan",
+          "relation": "pi_session_log",
+          "index": "log_item_id",
+          "rows": 0,
+          "loops": 0,
+          "indexCond": "((tenant_id = '11111111-1111-4111-8111-111111111111'::uuid) AND (session_id = ref.source_session_id) AND (item_id = ref.source_entry_id))",
+          "removed": 0
+        }
+      ]
+    },
+    {
+      "schema": "indexed_log",
+      "sessionId": "s2000",
+      "name": "page_messages",
+      "index": 0,
+      "mode": "force_generic_plan",
+      "executionMs": 40.682,
+      "sharedHitBlocks": 2195,
+      "sharedReadBlocks": 0,
+      "recursiveRows": [],
+      "scans": [
+        {
+          "type": "Index Scan",
+          "relation": "pi_session_log",
+          "index": "log_entry_type",
+          "rows": 1875,
+          "loops": 1,
+          "indexCond": "((tenant_id = $1) AND (session_id = $2) AND (item_type = $3))",
+          "removed": 0
+        },
+        {
+          "type": "Seq Scan",
+          "relation": "pi_session_entry_refs",
+          "rows": 0,
+          "loops": 1,
+          "removed": 0
+        },
+        {
+          "type": "Index Scan",
+          "relation": "pi_session_log",
+          "index": "log_item_id",
+          "rows": 0,
+          "loops": 0,
+          "indexCond": "((tenant_id = $1) AND (session_id = ref.source_session_id) AND (item_id = ref.source_entry_id))",
+          "removed": 0
+        }
+      ]
+    }
+  ],
+  "refined": [
+    {
+      "schema": "indexed_log",
+      "sessionId": "s2000",
+      "name": "page_messages",
+      "index": 0,
+      "mode": "force_custom_plan",
+      "executionMs": 0.456,
+      "sharedHitBlocks": 43,
+      "sharedReadBlocks": 0,
+      "recursiveRows": [],
+      "scans": [
+        {
+          "type": "Index Scan",
+          "relation": "pi_session_log",
+          "index": "log_entry_type",
+          "rows": 40,
+          "loops": 1,
+          "indexCond": "((tenant_id = '11111111-1111-4111-8111-111111111111'::uuid) AND (session_id = 's2000'::text) AND (item_type = 'message'::text))",
+          "removed": 0
+        }
+      ]
+    },
+    {
+      "schema": "indexed_log",
+      "sessionId": "s2000",
+      "name": "page_messages",
+      "index": 0,
+      "mode": "force_generic_plan",
+      "executionMs": 0.357,
+      "sharedHitBlocks": 43,
+      "sharedReadBlocks": 0,
+      "recursiveRows": [],
+      "scans": [
+        {
+          "type": "Index Scan",
+          "relation": "pi_session_log",
+          "index": "log_entry_type",
+          "rows": 40,
+          "loops": 1,
+          "indexCond": "((tenant_id = $1) AND (session_id = $2) AND (item_type = $3))",
+          "removed": 0
+        }
+      ]
+    }
+  ]
+}

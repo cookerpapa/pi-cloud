@@ -27,6 +27,9 @@ it distinguishes implemented repairs from architecture decisions still awaiting 
 The approved [D1/D3/D4 follow-up](reports/repository-review-followup-20260927.md)
 repairs result admission and tightens lease/package/build boundaries without
 merging durable acknowledgements or changing native history ownership.
+The [native-log layout study](reports/native-log-layout-study-20260927.md) compares
+indexed log reads with full and thin Entry/Record tables on isolated PostgreSQL;
+the storage cutover remains a decision, not an implemented change.
 
 The [Pi-alignment review](reports/pi-alignment-review-20260926.md) records its named
 baseline; the [repair and verification record](reports/pi-alignment-repair-20260926.md)
