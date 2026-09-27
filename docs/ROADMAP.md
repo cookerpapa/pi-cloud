@@ -39,9 +39,9 @@
 
 ## Current release gate
 
-- [ ] Complete ADR-0197's indexed native-log cutover: migrate all readers/writers,
-      remove Entry/Record/COW tables, retain current-state reconstruction and
-      verify matched deployment, Pi conformance, fault and Luna acceptance.
+- [x] ADR-0197: indexed native log, independent Fork copies and bounded current
+      operation state; old Entry/Record/COW tables removed, with matched schema/app
+      rollout and [Pi, fault and real Luna acceptance](reports/indexed-native-log-acceptance-20260927.md).
 
 - [x] Complete the approved [D1/D3/D4 follow-up](reports/repository-review-followup-20260927.md):
       bounded Subagent results, batched lease observations and narrower runtime/Guest

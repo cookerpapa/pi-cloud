@@ -31,6 +31,8 @@ The [native-log layout study](reports/native-log-layout-study-20260927.md) compa
 indexed log reads with full and thin Entry/Record tables on isolated PostgreSQL;
 the selected layout and its lifecycle contract are defined in
 [ADR-0197](adr/0197-indexed-native-session-log.md).
+The [indexed-log acceptance](reports/indexed-native-log-acceptance-20260927.md)
+records its completed schema/app cutover, preserved history and Pi/fault/Luna checks.
 
 The [Pi-alignment review](reports/pi-alignment-review-20260926.md) records its named
 baseline; the [repair and verification record](reports/pi-alignment-repair-20260926.md)

@@ -1,0 +1,120 @@
+{
+  "checkedAt": "2026-09-27T07:28:10.635Z",
+  "scriptSha256": "39b89728d97cc30ebdecbe0f896d2f7414df760a95ad64867a86649d801685d0",
+  "fixture": "Synthetic bar charts; compare three color-height rankings without a numeric challenge",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "c6ed411e-a989-4d5b-a0be-d22758caff09",
+      "workerId": "b1e908bf-536b-44e4-9942-2601993567f2",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "9cc4ec71-e8af-4c60-8d26-c72c0eaf4210",
+      "workerId": "3c7b828b-86e3-4579-a784-3a40c53b6779",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "8d66ccee-d81f-4517-b288-f4b5d15f587a",
+      "workerId": "3c7b828b-86e3-4579-a784-3a40c53b6779",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "240feaef-0b07-46bc-98e9-e1635aab4af5",
+      "workerId": "b1e908bf-536b-44e4-9942-2601993567f2",
+      "tools": []
+    }
+  ],
+  "images": [
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "20000072-fe42-42ff-878e-9d8cc6721fd5",
+        "sha256": "5ad0e583b7a5437592253f3278f8f80dcd31b05f4a2dee21fc70dc3b48b2432e",
+        "mimeType": "image/png",
+        "byteLength": 6294670
+      },
+      "recordBytes": 778,
+      "detail": "high"
+    },
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "c5073a97-17b9-49be-86ca-7ea7993fa4de",
+        "sha256": "5de1cc0e4c9a5dc75caf572355779c02c56f49c72f0687faa5b948417b6e8f62",
+        "mimeType": "image/png",
+        "byteLength": 6294291
+      },
+      "recordBytes": 778,
+      "detail": "high"
+    },
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "e95101c2-ecdd-40da-97f4-5a951d0ffd6e",
+        "sha256": "10f683b81dba7b7453572311538da9d769cc0f1233bd981966f038807a0ed5ad",
+        "mimeType": "image/png",
+        "byteLength": 25128725
+      },
+      "recordBytes": 779,
+      "detail": "original"
+    }
+  ],
+  "resources": {
+    "projectId": "e473c9f8-3ffb-4494-8e90-434b51a8752d",
+    "workspaceId": "cc2fe76a-4d6d-4114-a8f2-9d92bb58f290",
+    "sessionId": "61f88bde-dbe5-4030-8286-4d283b96fe77"
+  },
+  "coldRecovery": {
+    "previousWorker": "3c7b828b-86e3-4579-a784-3a40c53b6779",
+    "nextWorker": "b1e908bf-536b-44e4-9942-2601993567f2",
+    "changedBoot": true,
+    "visionRecallCorrect": true
+  },
+  "cleanupCompleted": true,
+  "postRunCommandVerification": [
+    {
+      "runId": "c6ed411e-a989-4d5b-a0be-d22758caff09",
+      "commandUnmodified": true,
+      "sha256": "f58ec87781824bcb3b5401d7f4c11e96f38c93329a411715c1b5b51d5ffe836e"
+    },
+    {
+      "runId": "9cc4ec71-e8af-4c60-8d26-c72c0eaf4210",
+      "commandUnmodified": true,
+      "sha256": "f58ec87781824bcb3b5401d7f4c11e96f38c93329a411715c1b5b51d5ffe836e"
+    },
+    {
+      "runId": "8d66ccee-d81f-4517-b288-f4b5d15f587a",
+      "commandUnmodified": true,
+      "sha256": "076a8dff8a8aef40ba692e06ed2d2ee6613730a433eeaae31f6a0b829a09b78e"
+    }
+  ]
+}

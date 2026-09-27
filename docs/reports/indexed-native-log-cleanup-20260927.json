@@ -1,0 +1,38 @@
+{
+  "checkedAt": "2026-09-27T07:34:43.562Z",
+  "runtimeRevision": "83a84cfdeb24de54d768135d8686e8f7b22a3a78",
+  "accepted": true,
+  "model": "gpt-6-luna",
+  "successfulAcceptanceRuns": 10,
+  "diagnosticDeclinedFixtureRuns": 4,
+  "workspaces": [
+    {
+      "id": "56261b98-93a4-4aaa-b6ff-f687f2bc21fb",
+      "deleted": true,
+      "storage_purged": true
+    },
+    {
+      "id": "7df784c4-1a4a-4527-90a8-01c6d381463c",
+      "deleted": true,
+      "storage_purged": true
+    },
+    {
+      "id": "831b7d0b-746b-4c4b-b996-b822fd2a5082",
+      "deleted": true,
+      "storage_purged": true
+    },
+    {
+      "id": "cc2fe76a-4d6d-4114-a8f2-9d92bb58f290",
+      "deleted": true,
+      "storage_purged": true
+    }
+  ],
+  "globalWork": {
+    "unfinished_runs": 0,
+    "owners": 0,
+    "unsealed_runs": 0,
+    "open_native_operations": 0
+  },
+  "temporaryPostgresRemoved": true,
+  "retainedHistory": "Product archive retains its native logs and referenced images; Workspace bytes are purged through the product API."
+}

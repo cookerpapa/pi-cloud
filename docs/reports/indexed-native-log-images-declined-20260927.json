@@ -1,0 +1,96 @@
+{
+  "checkedAt": "2026-09-27T07:17:27.355Z",
+  "model": "gpt-6-luna",
+  "accepted": false,
+  "runs": [
+    {
+      "runId": "a83a4b37-1a69-4b1d-8175-40990164196d",
+      "workerId": "b1e908bf-536b-44e4-9942-2601993567f2",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "84acb7c3-906a-48d7-bcd6-4840b560deba",
+      "workerId": "63d55709-845d-41c2-a803-1eccd074b6c7",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "4e048317-355a-40e1-99b8-28b4bbb06bf5",
+      "workerId": "63d55709-845d-41c2-a803-1eccd074b6c7",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "1c346e99-4c48-47fc-b8f5-b4a4acf6d117",
+      "workerId": "b1e908bf-536b-44e4-9942-2601993567f2",
+      "tools": []
+    }
+  ],
+  "images": [
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "26d661c4-4c79-4837-a24b-bede13d6b0a7",
+        "sha256": "c37f3df8b65e9d57bef072bd904c485890a7f0cbff3b60cae6254948931b2e81",
+        "mimeType": "image/png",
+        "byteLength": 6589165
+      },
+      "recordBytes": 778,
+      "detail": "high"
+    },
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "2f54a444-7d33-48ef-9540-b140bd3bf54a",
+        "sha256": "dbbd9beb6522720fe1e426a9444b327648b8c8dd342c58f4ca2a9ae3006e9e59",
+        "mimeType": "image/png",
+        "byteLength": 6596523
+      },
+      "recordBytes": 778,
+      "detail": "high"
+    },
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "7d566114-8991-47c2-a112-34175a8f6156",
+        "sha256": "a7d896bfcfed014711151707d5b8cf4dc5de6591e555019eac4bc5d6be2bb6a5",
+        "mimeType": "image/png",
+        "byteLength": 26340501
+      },
+      "recordBytes": 779,
+      "detail": "original"
+    }
+  ],
+  "resources": {
+    "projectId": "0dc95032-96bf-4163-9205-acb3bafc8859",
+    "workspaceId": "7df784c4-1a4a-4527-90a8-01c6d381463c",
+    "sessionId": "81167da0-1fa7-4e21-901c-473db87eb232"
+  },
+  "cleanupCompleted": true,
+  "disposition": "Diagnostic run, not a passed vision acceptance. The provider declined the generated number-on-noise images as a CAPTCHA; replaced by synthetic bar charts for the independent visual recall gate."
+}

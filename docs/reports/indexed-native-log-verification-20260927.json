@@ -1895,7 +1895,8 @@
     "Both whole-workspace typecheck passes succeeded. Full suite second run had 1301 passed, 2 failed, 3 opt-in skipped; the two affected files were then rerun in full (40 and 4 tests) and passed.",
     "Initial indexed-log trigger bulk DELETE join exceeded the 60-second test budget and was cancelled in the owned test DB. Exact scoped finish lookups fixed it; the final full suite passed all 76 native tests including prepared 2000/20000-entry plans. No production/test time budgets were increased.",
     "Admission SQL expectations now include the pre-existing pending-input cap and post-lock input snapshot. SSH fixture finishes only after command arrival instead of racing a 20ms timer.",
-    "Acceptance-helper tests ran separately because failed whole-suite invocations do not reach that command. Counts are deduplicated by workspace/file."
+    "Acceptance-helper tests ran separately because failed whole-suite invocations do not reach that command. Counts are deduplicated by workspace/file.",
+    "Two live-only scripts were corrected after the offline source snapshot. Their final hashes match the successful real-Luna artifacts named in liveScriptAmendments; deployed runtime source is unchanged."
   ],
   "sourceHashes": {
     "packages/control-plane/src/conversation-reader.ts": "788a9555d420b6a8b30a92a1f43ff41c6a0ea7485e47822ea3ff18f10b05944b",
@@ -1933,8 +1934,8 @@
     "packages/subagent-control/test/postgres-subagent-job-provider.test.ts": "a8228752b768f039cf557db38e678638e22553ed22f2d6aa14766e513e35009b",
     "scripts/run-live-cubesandbox-production-check.mjs": "853cc97f023c785c2e7dfe22db3cba06ebb8a4879b99e4c3933f36d8bab5d157",
     "scripts/run-live-development-environment-check.mjs": "89dd98b746788d04912596d69feaf9c3fafd376fdfb4284c177c9ae9628624ea",
-    "scripts/run-live-image-attachment-check.mjs": "49d26f2d5b68033ae4b2c11b488ebcdcf97b37f5d6c883683be4fd9a6bdb2ee1",
-    "scripts/run-live-indexed-log-check.mjs": "182789449f3edf0b4af8e9c69453124e1f3581174c7e6f2bddc5bbd8bc7ac7c4",
+    "scripts/run-live-image-attachment-check.mjs": "39b89728d97cc30ebdecbe0f896d2f7414df760a95ad64867a86649d801685d0",
+    "scripts/run-live-indexed-log-check.mjs": "5908f3ed99b5f9bed6b2ea3aa5f3d676d43aefe2a988e5ace6113dc19cb0b89c",
     "scripts/run-live-long-context-compaction-check.mjs": "48f797587d566036b15c3dc229b2701b51229ddd8b1ed97a2abf4a40c41e366c",
     "scripts/run-live-machine-failure-check.mjs": "ab37c0ce5583fe0a9a985917059fa4111a3781d7c82d3baee764c7503d675a82",
     "scripts/run-live-multi-tenant-model-load.mjs": "572a34a609c70712906adf39830036cd69a3f9ad05e498d952e8e3ea2ce0e36a",
@@ -1945,5 +1946,19 @@
     "scripts/run-live-session-family-check.mjs": "19bfa9a1d669e9f6f194c7960e6d38d19a3275bef11ba91f4d61454eab23befd",
     "scripts/run-live-subagent-production-check.mjs": "98b3db2b04b567a0897c8db83e673d8583341d6760ebdac6006ae9df7a7811b8",
     "scripts/run-postgres-session-projection-benchmark.ts": "aff3fb0418c158b4182757ccabf8ff66144be70891f8d7702e5fda6741378602"
-  }
+  },
+  "liveScriptAmendments": [
+    {
+      "file": "scripts/run-live-indexed-log-check.mjs",
+      "offlineSnapshotSha256": "182789449f3edf0b4af8e9c69453124e1f3581174c7e6f2bddc5bbd8bc7ac7c4",
+      "sha256": "5908f3ed99b5f9bed6b2ea3aa5f3d676d43aefe2a988e5ace6113dc19cb0b89c",
+      "validatedBy": "indexed-native-log-live-20260927.json"
+    },
+    {
+      "file": "scripts/run-live-image-attachment-check.mjs",
+      "offlineSnapshotSha256": "49d26f2d5b68033ae4b2c11b488ebcdcf97b37f5d6c883683be4fd9a6bdb2ee1",
+      "sha256": "39b89728d97cc30ebdecbe0f896d2f7414df760a95ad64867a86649d801685d0",
+      "validatedBy": "indexed-native-log-images-20260927.json"
+    }
+  ]
 }

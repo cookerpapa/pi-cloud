@@ -1,0 +1,65 @@
+{
+  "revision": "83a84cfdeb24de54d768135d8686e8f7b22a3a78",
+  "checkedAt": "2026-09-27T07:15:18.562Z",
+  "scriptSha256": "5908f3ed99b5f9bed6b2ea3aa5f3d676d43aefe2a988e5ace6113dc19cb0b89c",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "3aba02a5-0cbe-454b-a315-99a2c0e81efb",
+      "turnId": "225dd025-dbf5-474f-9401-ba4efb470109",
+      "sessionId": "6e3700cb-00f7-4f35-98f4-39ee1183b511",
+      "workerId": "63d55709-845d-41c2-a803-1eccd074b6c7",
+      "tools": [
+        {
+          "name": "write",
+          "state": "completed"
+        },
+        {
+          "name": "read",
+          "state": "completed"
+        },
+        {
+          "name": "bash",
+          "state": "completed"
+        },
+        {
+          "name": "subagent",
+          "state": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "9070e776-0066-48b2-a5bf-99c24f0cc59a",
+      "turnId": "05f3e507-0777-4cc4-b2a9-48c510f0d155",
+      "sessionId": "dbf1c8ba-11f3-46ed-aae0-8800ebeb5003",
+      "workerId": "63d55709-845d-41c2-a803-1eccd074b6c7",
+      "tools": [
+        {
+          "name": "read",
+          "state": "completed"
+        }
+      ]
+    }
+  ],
+  "compactionMethod": "Seed one native Compaction through the quiescent SessionStorage port; verify real Luna cold reads. This is not an automatic-threshold or model-summary-generation benchmark.",
+  "resources": {
+    "projectId": "a91c7c56-da9f-4d41-b005-6285d6824152",
+    "workspaceId": "831b7d0b-746b-4c4b-b996-b822fd2a5082",
+    "sourceSessionId": "6e3700cb-00f7-4f35-98f4-39ee1183b511",
+    "forkSessionId": "dbf1c8ba-11f3-46ed-aae0-8800ebeb5003"
+  },
+  "child": {
+    "runId": "2fc7a3c7-6ee2-4e3c-b86b-2d8c246e45ff",
+    "samePhysicalSession": true,
+    "completed": true,
+    "model": "gpt-6-luna"
+  },
+  "compaction": {
+    "entryId": "8602526a-a50a-423a-bc9d-b00caa7a5896",
+    "tokensBeforeEstimate": 224,
+    "selectedSeedEntries": 1,
+    "coldLunaRecall": true
+  },
+  "cleanupCompleted": true
+}

@@ -40,6 +40,10 @@ const blobs = new S3ImageBlobStore({
 const images = new PostgresImageAttachmentStore(db, blobs);
 const report = {
   checkedAt: new Date().toISOString(),
+  scriptSha256: createHash("sha256")
+    .update(await readFile(new URL(import.meta.url)))
+    .digest("hex"),
+  fixture: "Synthetic bar charts; compare three color-height rankings without a numeric challenge",
   model: "gpt-6-luna",
   accepted: false,
   runs: [],
@@ -75,11 +79,17 @@ function generate(side) {
   return `node <<'IMAGE'
 const sharp=require('/opt/pi-cloud/node_modules/sharp');
 const fs=require('node:fs');const crypto=require('node:crypto');
-(async()=>{const side=${side};const digits=String(crypto.randomInt(1000,10000));
-const overlay=Buffer.from('<svg width="'+side+'" height="'+side+'"><rect x="'+side*.15+'" y="'+side*.32+'" width="'+side*.7+'" height="'+side*.36+'" fill="white"/><text x="'+side*.5+'" y="'+side*.60+'" text-anchor="middle" font-family="sans-serif" font-size="'+side*.18+'" font-weight="bold" fill="black">'+digits+'</text></svg>');
+(async()=>{const side=${side};const order=['BLUE','ORANGE','GREEN'];
+for(let i=order.length-1;i>0;i--){const j=crypto.randomInt(i+1);[order[i],order[j]]=[order[j],order[i]];}
+const colors=['BLUE','ORANGE','GREEN'];const fills=['#2266cc','#ef8819','#23964c'];
+const bars=colors.map((color,i)=>{const x=side*(.26+i*.24),height=side*(.21-order.indexOf(color)*.065);
+return '<rect x="'+(x-side*.055)+'" y="'+(side*.63-height)+'" width="'+side*.11+'" height="'+height+'" fill="'+fills[i]+'"/>'+
+'<text x="'+x+'" y="'+side*.68+'" text-anchor="middle" font-family="sans-serif" font-size="'+side*.038+'" fill="black">'+color+'</text>';}).join('');
+const overlay=Buffer.from('<svg width="'+side+'" height="'+side+'"><rect x="'+side*.15+'" y="'+side*.30+'" width="'+side*.7+'" height="'+side*.41+'" fill="white"/>'+
+'<text x="'+side*.5+'" y="'+side*.37+'" text-anchor="middle" font-family="sans-serif" font-size="'+side*.055+'" font-weight="bold" fill="black">BAR CHART</text>'+bars+'</svg>');
 const png=await sharp(crypto.randomBytes(side*side*3),{raw:{width:side,height:side,channels:3}}).composite([{input:overlay}]).png().toBuffer();
 fs.writeFileSync('/workspace/shot.png',png);
-const old=fs.existsSync('/workspace/.image-check-expected.json')?JSON.parse(fs.readFileSync('/workspace/.image-check-expected.json','utf8')):[];old.push(digits);fs.writeFileSync('/workspace/.image-check-expected.json',JSON.stringify(old));
+const old=fs.existsSync('/workspace/.image-check-expected.json')?JSON.parse(fs.readFileSync('/workspace/.image-check-expected.json','utf8')):[];old.push(order);fs.writeFileSync('/workspace/.image-check-expected.json',JSON.stringify(old));
 console.log('IMAGE_READY bytes='+png.length);})().catch(e=>{console.error(e.message);process.exitCode=1;});
 IMAGE`;
 }
@@ -102,7 +112,7 @@ try {
   for (const [index, side] of [1600, 1600, 3200].entries()) {
     const detail = index === 2 ? "original" : "high";
     const { transcript } = await turn(
-      `严格执行两次工具调用：先 bash 原样运行下面的命令，然后 read /workspace/shot.png（detail=${detail}）。必须实际看图。最后只回复 SEEN，不要说出图片数字，不要读取任何其他文件，不要搜索或子代理。\n${generate(side)}`,
+      `严格执行两次工具调用：先 bash 原样运行下面的命令，然后 read /workspace/shot.png（detail=${detail}）。必须实际看图。最后只回复 SEEN，不要说出柱子的高度顺序，不要读取任何其他文件，不要搜索或子代理。\n${generate(side)}`,
     );
     const tools = transcript.items.filter((i) => i.kind === "tool");
     assert.deepEqual(
@@ -178,7 +188,7 @@ try {
     ]);
   }
   const recalled = await turn(
-    "不要调用任何工具、不要读取文件。只根据前面三张图片，按显示顺序输出三组四位数字，用逗号分隔。",
+    "不要调用任何工具、不要读取文件。只根据前面三张柱状图，按图片显示顺序分别输出每张图的柱子从高到低的颜色名称。每张图一行，只用 BLUE、ORANGE、GREEN 三个英文大写名称并用逗号分隔。",
   );
   assert.equal(recalled.transcript.items.filter((i) => i.kind === "tool").length, 0);
   const answer = recalled.transcript.items
@@ -195,9 +205,14 @@ try {
     stoppedWorkerService = undefined;
   }
   const expectedFile = await api.readWorkspaceFile(session.sessionId, ".image-check-expected.json");
-  const digits = JSON.parse(Buffer.from(expectedFile.bytes).toString("utf8"));
-  assert(Array.isArray(digits) && digits.length === 3 && digits.every((d) => /^\d{4}$/.test(d)));
-  assert.deepEqual(answer.match(/\b\d{4}\b/g), digits);
+  const rankings = JSON.parse(Buffer.from(expectedFile.bytes).toString("utf8"));
+  assert(Array.isArray(rankings) && rankings.length === 3);
+  for (const ranking of rankings)
+    assert.deepEqual([...ranking].sort(), ["BLUE", "GREEN", "ORANGE"]);
+  assert.deepEqual(
+    (answer.match(/\b(?:BLUE|ORANGE|GREEN)\b/gi) ?? []).map((c) => c.toUpperCase()),
+    rankings.flat(),
+  );
   const {
     rows: [newOwner],
   } = await sql`select boot_id from sandboxes where id=${recalled.run.workerId}::uuid`.execute(db);

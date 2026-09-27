@@ -12,12 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Complete the approved [ADR-0197](adr/0197-indexed-native-session-log.md)
-      cutover and matched deployment acceptance: indexed log reads, nullable live
-      Turn bindings, independent Fork copies, bounded current operations and image
-      retention. The [D5 study](reports/native-log-layout-study-20260927.md) supplies
-      the named baseline; full backend, failure and live acceptance must pass.
-
 - [ ] Discuss the remaining [repository-review architecture choice](reports/repository-review-20260927.md):
       Tool intent/command batching.
       General large-result attachments remain a separate capability decision;

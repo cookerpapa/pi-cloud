@@ -1,0 +1,171 @@
+{
+  "checkedAt": "2026-09-27T07:11:43.786Z",
+  "revision": "83a84cfdeb24de54d768135d8686e8f7b22a3a78",
+  "images": [
+    {
+      "name": "/pi-cloud-production-control-plane-1",
+      "revision": "83a84cfdeb24de54d768135d8686e8f7b22a3a78",
+      "imageId": "sha256:468851794a8bae6c7e62d574411dcc8fbd80e2b72309eb4a6ab4f5a3d657e99f",
+      "state": "running",
+      "health": "healthy",
+      "exitCode": 0
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1",
+      "revision": "83a84cfdeb24de54d768135d8686e8f7b22a3a78",
+      "imageId": "sha256:2d34339fbec460f2d4dabf33c1c7390b600403e0a7502cec91e63b3374c2f8f5",
+      "state": "running",
+      "health": "healthy",
+      "exitCode": 0
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1-1",
+      "revision": "83a84cfdeb24de54d768135d8686e8f7b22a3a78",
+      "imageId": "sha256:2d34339fbec460f2d4dabf33c1c7390b600403e0a7502cec91e63b3374c2f8f5",
+      "state": "running",
+      "health": "healthy",
+      "exitCode": 0
+    },
+    {
+      "name": "/pi-cloud-production-tool-broker-1",
+      "revision": "83a84cfdeb24de54d768135d8686e8f7b22a3a78",
+      "imageId": "sha256:cc158adf484a700e16309b9dc5f069908f83c07f74f730d95add20c31f7e83dd",
+      "state": "running",
+      "health": "healthy",
+      "exitCode": 0
+    },
+    {
+      "name": "/pi-cloud-production-web-1",
+      "revision": "83a84cfdeb24de54d768135d8686e8f7b22a3a78",
+      "imageId": "sha256:fc1c5bdcc7a66613b010f502e48780f3e1959c2f5c2da29227da6bf63923c941",
+      "state": "running",
+      "health": "healthy",
+      "exitCode": 0
+    },
+    {
+      "name": "/pi-cloud-production-database-bootstrap-1",
+      "revision": "83a84cfdeb24de54d768135d8686e8f7b22a3a78",
+      "imageId": "sha256:468851794a8bae6c7e62d574411dcc8fbd80e2b72309eb4a6ab4f5a3d657e99f",
+      "state": "exited",
+      "exitCode": 0
+    }
+  ],
+  "sourceFiles": [
+    {
+      "name": "pi-cloud-production-control-plane-1",
+      "path": "packages/pi-session-postgres/src/postgres-session-storage.ts",
+      "sha256": "48d9920fcb5598cccbec3d496466a6de1a4ea1baaccd61fc10de2a6b5b4b037c"
+    },
+    {
+      "name": "pi-cloud-production-control-plane-1",
+      "path": "packages/pi-session-postgres/src/project-native-session-append.ts",
+      "sha256": "348c9d5061219419890c1e1a273611d84b870d8b79fafaf9377dd90f9c595824"
+    },
+    {
+      "name": "pi-cloud-production-control-plane-1",
+      "path": "packages/pi-session-postgres/src/postgres-native-session-host.ts",
+      "sha256": "cffadbdd48f135aea8a649b271fd52f033b1d79d9a0ec9ee08c9969887cba232"
+    },
+    {
+      "name": "pi-cloud-production-control-plane-1",
+      "path": "packages/database/src/migrations/153_indexed_native_session_log.ts",
+      "sha256": "1987c483915130536c140666e9ee39d5a8219e98751bdea53a2df6874ea43713"
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1",
+      "path": "packages/pi-session-postgres/src/postgres-session-storage.ts",
+      "sha256": "48d9920fcb5598cccbec3d496466a6de1a4ea1baaccd61fc10de2a6b5b4b037c"
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1",
+      "path": "packages/pi-session-postgres/src/project-native-session-append.ts",
+      "sha256": "348c9d5061219419890c1e1a273611d84b870d8b79fafaf9377dd90f9c595824"
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1",
+      "path": "packages/pi-session-postgres/src/postgres-native-session-host.ts",
+      "sha256": "cffadbdd48f135aea8a649b271fd52f033b1d79d9a0ec9ee08c9969887cba232"
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1",
+      "path": "packages/database/src/migrations/153_indexed_native_session_log.ts",
+      "sha256": "1987c483915130536c140666e9ee39d5a8219e98751bdea53a2df6874ea43713"
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1-1",
+      "path": "packages/pi-session-postgres/src/postgres-session-storage.ts",
+      "sha256": "48d9920fcb5598cccbec3d496466a6de1a4ea1baaccd61fc10de2a6b5b4b037c"
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1-1",
+      "path": "packages/pi-session-postgres/src/project-native-session-append.ts",
+      "sha256": "348c9d5061219419890c1e1a273611d84b870d8b79fafaf9377dd90f9c595824"
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1-1",
+      "path": "packages/pi-session-postgres/src/postgres-native-session-host.ts",
+      "sha256": "cffadbdd48f135aea8a649b271fd52f033b1d79d9a0ec9ee08c9969887cba232"
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1-1",
+      "path": "packages/database/src/migrations/153_indexed_native_session_log.ts",
+      "sha256": "1987c483915130536c140666e9ee39d5a8219e98751bdea53a2df6874ea43713"
+    }
+  ],
+  "schema": {
+    "version": "153_indexed_native_session_log",
+    "retired_relations": 0,
+    "open_native_operations": 0
+  },
+  "before": {
+    "checkedAt": "2026-09-27T07:08:12.395Z",
+    "schema": "152_editable_pending_inputs",
+    "work": {
+      "unfinished_runs": 0,
+      "owners": 0,
+      "unsealed_runs": 0
+    },
+    "history": {
+      "rows": 825,
+      "digest": "bcb1db4b492dc079b1567850f992251b"
+    },
+    "native": {
+      "invalid_native_rows": 0
+    },
+    "duplicateNativeIds": 0,
+    "bindingMismatches": 0,
+    "attachments": {
+      "objects": 9,
+      "references": 9
+    }
+  },
+  "after": {
+    "checkedAt": "2026-09-27T07:08:49.019Z",
+    "schema": "153_indexed_native_session_log",
+    "work": {
+      "unfinished_runs": 0,
+      "owners": 0,
+      "unsealed_runs": 0
+    },
+    "history": {
+      "rows": 825,
+      "digest": "bcb1db4b492dc079b1567850f992251b"
+    },
+    "native": {
+      "invalid_native_rows": 0
+    },
+    "duplicateNativeIds": 0,
+    "attachments": {
+      "objects": 9,
+      "references": 9
+    }
+  },
+  "backup": {
+    "created": true,
+    "bytes": 895003,
+    "sha256": "0bf754d4116bf0b1d62715707ad004696a3dc9c4ebbc89b8cd0f4d85d2bebe39",
+    "scope": "Private local PG dump; credentials/transcripts not committed"
+  },
+  "guestBuildIdentity": "dbcdd74b623a27ffbdf266c706e2e09331c0532c",
+  "dataServicesRestarted": false
+}

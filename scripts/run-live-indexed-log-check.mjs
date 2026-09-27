@@ -28,6 +28,9 @@ const db = createDatabase({ connectionString: url.toString(), maxConnections: 2 
 const report = {
   revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   checkedAt: new Date().toISOString(),
+  scriptSha256: createHash("sha256")
+    .update(await readFile(new URL(import.meta.url)))
+    .digest("hex"),
   model: "gpt-6-luna",
   accepted: false,
   runs: [],
@@ -73,15 +76,11 @@ async function run(sessionId, prompt) {
 }
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 try {
-  assert.equal((await api.getModelConfiguration()).mode, "real");
-  const retired =
-    (await sql) <
-    { remaining: number } >
-    `select count(*)::int as remaining
+  const retired = await sql`select count(*)::int as remaining
     from information_schema.tables where table_schema='public' and table_name in
       ('pi_session_entries','pi_session_records','pi_session_entry_refs','pi_session_visible_entries')`.execute(
-      db,
-    );
+    db,
+  );
   assert.equal(retired.rows[0].remaining, 0);
   project = await api.createProject(`Indexed log ${Date.now()}`);
   source = await api.createSession(
@@ -98,6 +97,9 @@ try {
       fastMode: false,
     },
   );
+  const selectedModel = await api.getSessionModel(source.sessionId);
+  assert.equal(selectedModel.provider, "openai-codex");
+  assert.equal(selectedModel.modelId, report.model);
   report.resources = {
     projectId: project.projectId,
     workspaceId: project.workspaceId,
