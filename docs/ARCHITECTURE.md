@@ -352,6 +352,9 @@ Writer metadata, next sequence and Lane heads load in one owner-scoped SQL
 snapshot. Worker management identities and the pinned Pi version belong to the
 shared protocol package; the Control Plane does not import those contracts from
 the concrete Runner.
+Native append/checkpoint ports live in the internal `protocol/native-session`
+entry point. Runner code depends on that contract, not on the PG implementation;
+the PG adapter implements it without re-exporting a compatibility alias.
 The active native writer maintains acknowledged Lane views. Each Step reads that
 view and returns from writes at Kafka ACK, without PG receipt polling. Pi's
 public Agent and Compaction primitives implement the loop; PiCloud does not fork
@@ -466,7 +469,10 @@ closure; late replies cannot reopen a call or enter sealed history. UNKNOWN
 never triggers automatic shell replay. Kafka fencing cannot undo an already-issued
 Cube request or roll back a running process. See [ADR-0183](adr/0183-native-remote-tool-execution.md).
 
-`TrustedToolRuntime` supplies thin, code-owned tool adapters. Subagent start,
+Worker-local `supervisor-host/src/tools` supplies the code-owned Tool adapters.
+The separate `subagent-control` package owns PG task coordination and has no
+Runner dependency; Control Plane neither imports nor copies Runner source.
+Subagent start,
 communication and cancellation requests append to Kafka; Projector persists
 idempotent admission and dispatch state, then routes native Lane operations to
 the owning Worker. Long preparation and result waits never block its partition

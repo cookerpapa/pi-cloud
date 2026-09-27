@@ -18,18 +18,6 @@ export {
   type PiCloudPiSessionMetadata,
   type PostgresPiSessionStorageOptions,
 } from "./postgres-session-storage.ts";
-export {
-  PI_MODEL_RETRY_CUSTOM_TYPE,
-  type PiSessionMutationOperation,
-  type PiSessionAppendOperation,
-  type PiSessionMutationPublisher,
-} from "./session-mutation.ts";
-export {
-  committedItemSequence,
-  type PiCommittedItem,
-  type StoredPiCommittedItem,
-  type PiSessionAppendPublisher,
-} from "./session-mutation.ts";
 export type { ActiveExecutionAuthority, ExecutionAuthority } from "./execution-authority.ts";
 export {
   forkPostgresPiSessionInTransaction,

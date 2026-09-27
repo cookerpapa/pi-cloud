@@ -1,4 +1,4 @@
-import { MAX_WORKSPACE_BLOB_BYTES, type WorkspaceBlob } from "@pi-cloud/protocol";
+import { MAX_WORKSPACE_BLOB_BYTES, type WorkspaceBlob } from "@pi-cloud/protocol/workspace";
 import { createHash, randomUUID } from "node:crypto";
 import { link, mkdir, open, rm } from "node:fs/promises";
 import { dirname, posix, resolve } from "node:path";

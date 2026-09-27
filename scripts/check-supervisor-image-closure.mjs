@@ -17,22 +17,35 @@ for (const entry of packageDirectories) {
 }
 
 const rootName = "@pi-cloud/supervisor-host";
-const pending = [rootName];
-const closure = new Set();
-while (pending.length > 0) {
-  const name = pending.pop();
-  if (closure.has(name)) continue;
-  const workspace = workspaces.get(name);
-  assert(workspace, `Unknown internal workspace dependency ${name}`);
-  closure.add(name);
-  const dependencies = {
-    ...workspace.manifest.dependencies,
-    ...workspace.manifest.optionalDependencies,
-  };
-  for (const dependencyName of Object.keys(dependencies)) {
-    if (workspaces.has(dependencyName)) pending.push(dependencyName);
+function dependencyClosure(root) {
+  const pending = [root],
+    closure = new Set();
+  while (pending.length > 0) {
+    const name = pending.pop();
+    if (closure.has(name)) continue;
+    const workspace = workspaces.get(name);
+    assert(workspace, `Unknown internal workspace dependency ${name}`);
+    closure.add(name);
+    const dependencies = {
+      ...workspace.manifest.dependencies,
+      ...workspace.manifest.optionalDependencies,
+    };
+    for (const dependencyName of Object.keys(dependencies)) {
+      if (workspaces.has(dependencyName)) pending.push(dependencyName);
+    }
   }
+  return closure;
 }
+const closure = dependencyClosure(rootName);
+const controlClosure = dependencyClosure("@pi-cloud/control-plane");
+assert(
+  !controlClosure.has("@pi-cloud/sandbox-supervisor"),
+  "Control Plane must not depend transitively on the Pi Runner",
+);
+assert(
+  !dependencyClosure("@pi-cloud/sandbox-supervisor").has("@pi-cloud/pi-session-postgres"),
+  "Pi Runner ports must not depend on the PG adapter",
+);
 
 const dockerfile = await readFile(
   resolve(packagesDirectory, "supervisor-host", "Dockerfile"),
@@ -66,6 +79,10 @@ assert(
 const controlPlaneDockerfile = await readFile(
   resolve(packagesDirectory, "control-plane", "Dockerfile"),
   "utf8",
+);
+assert(
+  !controlPlaneDockerfile.includes("COPY packages/sandbox-supervisor/"),
+  "Control Plane image must not copy the concrete Runner",
 );
 assert(
   controlPlaneDockerfile.includes(

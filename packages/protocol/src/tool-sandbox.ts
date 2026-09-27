@@ -1,6 +1,6 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { AgentWorkspaceSeedSchema } from "./agent-runtime.ts";
+import { AgentWorkspaceSeedSchema } from "./workspace-seed.ts";
 import {
   OpaqueIdSchema,
   PositiveSafeIntegerSchema,

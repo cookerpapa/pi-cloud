@@ -72,7 +72,7 @@ Tool ordinal 绑定 intent。补“正常多 Step、真正重试、前一调用�
 问题出在以下 Subagent 缓存和展示关联；它们没有使用这条远程请求的 operationId。
 直接委派还可能完全不经过 Cube Tool 执行路径。
 
-[TrustedToolRuntime](../../packages/trusted-tool-runtime/src/trusted-tool-runtime.ts#L100)
+[TrustedToolRuntime](../../packages/supervisor-host/src/tools/trusted-tool-runtime.ts)
 在整个 Run 生命周期内用 `[toolCallId, task.key]` 缓存子任务 Promise，并将
 `workflowId` 直接设为 `toolCallId`。两个不同模型响应若复用同一个供应商 ID：
 

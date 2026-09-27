@@ -19,7 +19,7 @@ import {
   type NativeToolUpdate,
   type ToolSandboxOperationRequest,
   type ToolWebProxyBootstrap,
-} from "@pi-cloud/protocol";
+} from "@pi-cloud/protocol/guest";
 import { spawn } from "node:child_process";
 import { open } from "node:fs/promises";
 import { constants } from "node:fs";

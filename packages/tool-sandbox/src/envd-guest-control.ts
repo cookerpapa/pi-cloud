@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { validGuestDirectoryName } from "@pi-cloud/protocol";
+import { validGuestDirectoryName } from "@pi-cloud/protocol/guest";
 import { chown, lstat, mkdir, open, readFile, readdir, realpath, rmdir } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";

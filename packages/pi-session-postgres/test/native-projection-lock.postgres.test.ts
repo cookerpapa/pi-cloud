@@ -4,7 +4,7 @@ import { sql } from "kysely";
 import { expect, it, vi } from "vitest";
 import { PostgresPiSessionStorage } from "../src/postgres-session-storage.ts";
 import { projectNativeSessionAppend } from "../src/project-native-session-append.ts";
-import type { StoredPiCommittedItem } from "../src/session-mutation.ts";
+import type { StoredPiCommittedItem } from "@pi-cloud/protocol/native-session";
 
 it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
   "reads the committed Lane head after waiting for the previous projector's Session lock",

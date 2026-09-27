@@ -45,7 +45,18 @@ COPY packages/tool-sandbox/package.json packages/tool-sandbox/package.json
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
     && sh scripts/retry-npm-command.sh install --no-save --ignore-scripts esbuild@0.28.1
-COPY packages/protocol/src packages/protocol/src
+COPY packages/protocol/src/development-environment-profile.ts \
+  packages/protocol/src/environment.ts \
+  packages/protocol/src/execution-reference.ts \
+  packages/protocol/src/guest-directory.ts \
+  packages/protocol/src/guest.ts \
+  packages/protocol/src/image-attachment.ts \
+  packages/protocol/src/native-tool-event.ts \
+  packages/protocol/src/protocol-primitives.ts \
+  packages/protocol/src/tool-capabilities.ts \
+  packages/protocol/src/tool-sandbox.ts \
+  packages/protocol/src/workspace-seed.ts \
+  packages/protocol/src/
 COPY packages/tool-sandbox/src packages/tool-sandbox/src
 COPY packages/workspace-runtime/src packages/workspace-runtime/src
 RUN node node_modules/esbuild/bin/esbuild \

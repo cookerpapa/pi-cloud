@@ -6,7 +6,7 @@ import { beforeAll, afterAll, expect, it } from "vitest";
 import { PostgresPiSessionStorage } from "../src/postgres-session-storage.ts";
 import { NativeSessionWriter } from "../src/native-session-writer.ts";
 import { projectNativeSessionAppend } from "../src/project-native-session-append.ts";
-import type { PiCommittedItem, StoredPiCommittedItem } from "../src/session-mutation.ts";
+import type { PiCommittedItem, StoredPiCommittedItem } from "@pi-cloud/protocol/native-session";
 
 let pg: PGlite, socket: PGLiteSocketServer, db: ReturnType<typeof createDatabase>;
 beforeAll(async () => {

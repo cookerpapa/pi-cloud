@@ -1,7 +1,7 @@
 import { InMemorySessionStorage, type Entry } from "@earendil-works/pi-agent-core";
 import { describe, expect, it, vi } from "vitest";
 import { NativeSessionWriter } from "../src/native-session-writer.ts";
-import { committedItemSequence, type PiCommittedItem } from "../src/session-mutation.ts";
+import { committedItemSequence, type PiCommittedItem } from "@pi-cloud/protocol/native-session";
 
 const metadata = { id: "native-session", createdAt: 1 };
 const value = (id: string) => ({

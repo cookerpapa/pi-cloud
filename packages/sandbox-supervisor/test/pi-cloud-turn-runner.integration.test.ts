@@ -12,7 +12,7 @@ import {
 import {
   PI_MODEL_RETRY_CUSTOM_TYPE,
   type PiSessionMutationOperation,
-} from "@pi-cloud/pi-session-postgres";
+} from "@pi-cloud/protocol/native-session";
 import type { CloudAgentExecutionAuthority } from "../src/cloud-agent-runtime.ts";
 import {
   buildSessionContext,

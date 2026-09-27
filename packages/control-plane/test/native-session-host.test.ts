@@ -18,7 +18,7 @@ import { ExecutionPublicationBoundary } from "../../runtime-core/src/execution-p
 import { NativeSessionLogPublisher } from "../../runtime-core/src/native-session-log-publisher.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import type { AcceptedFact, AcceptedFactWriter } from "../../runtime-core/src/accepted-fact.ts";
-import { PostgresSubagentJobProvider } from "../../trusted-tool-runtime/src/postgres-subagent-job-provider.ts";
+import { PostgresSubagentJobProvider } from "../../subagent-control/src/postgres-subagent-job-provider.ts";
 import { expect, it, vi } from "vitest";
 
 it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restores on a replacement Host", async () => {

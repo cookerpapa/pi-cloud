@@ -120,6 +120,7 @@
     "production:gpt6-check": "node scripts/run-live-gpt6-capability-check.mjs"
   },
   "devDependencies": {
+    "esbuild": "0.28.1",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/pi-session-postgres": "0.1.0",
     "@types/node": "24.12.4",

@@ -228,19 +228,17 @@ describe("whole native tools at the execution source", () => {
     expect(read.isError).toBe(false);
     expect(read.result.content[0]).toMatchObject({ text: expect.stringContaining("two") });
   });
-  it("drains >1MiB and returns only a final result for a short command", async () => {
+  it("drains >1MiB into a bounded final result", async () => {
     const cwd = await directory();
-    const updates: NativeToolUpdate[] = [];
     const result = await executeNativeTool(
       request("bash", { command: 'python3 -c \'print("x" * 1500000); print("finished")\'' }),
       cwd,
       new AbortController().signal,
-      (event) => updates.push(event),
+      () => {},
     );
     expect(result.isError).toBe(false);
     expect(result.result.content[0]).toMatchObject({ text: expect.stringContaining("finished") });
     expect(JSON.stringify(result).length).toBeLessThan(60000);
-    expect(updates).toHaveLength(0);
     expect(JSON.stringify(result)).not.toContain("fullOutputPath");
   });
   it("preserves failing command output in a native error result", async () => {

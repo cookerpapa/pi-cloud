@@ -1,5 +1,6 @@
 import type { Database } from "@pi-cloud/database";
-import { projectNativeSessionAppend, committedItemSequence } from "@pi-cloud/pi-session-postgres";
+import { projectNativeSessionAppend } from "@pi-cloud/pi-session-postgres";
+import { committedItemSequence } from "@pi-cloud/protocol/native-session";
 import { sql, type Kysely } from "kysely";
 import type { AcceptedPiSessionAppendFact } from "./accepted-fact.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";

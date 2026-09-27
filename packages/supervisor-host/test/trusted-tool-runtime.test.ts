@@ -2,7 +2,7 @@ import type { Database } from "@pi-cloud/database";
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
-import { PostgresTrustedToolRuntime } from "../src/index.ts";
+import { PostgresTrustedToolRuntime } from "../src/tools/trusted-tool-runtime.ts";
 import { SubagentControlClient, withToolInvocation } from "@pi-cloud/sandbox-supervisor";
 
 function rootSessionDatabase(): Kysely<Database> {

@@ -19,7 +19,7 @@ import {
 } from "./native-session-writer.ts";
 import { PostgresPiSessionStorage, sessionMetadataFromRow } from "./postgres-session-storage.ts";
 import { PostgresSessionLeaseObserver } from "./postgres-session-lease-observer.ts";
-import type { PiSessionAppendPublisher } from "./session-mutation.ts";
+import type { PiSessionAppendPublisher } from "@pi-cloud/protocol/native-session";
 import type { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
 export type CloudAgentExecutionScope = Readonly<{
   tenantId: string;

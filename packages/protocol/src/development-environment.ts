@@ -1,6 +1,7 @@
+import { validGuestDirectoryName } from "./guest-directory.ts";
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { AgentWorkspaceSeedSchema } from "./agent-runtime.ts";
+import { AgentWorkspaceSeedSchema } from "./workspace-seed.ts";
 import { EnvironmentRuntimeSnapshotSchema } from "./environment.ts";
 import { UuidSchema } from "./protocol-primitives.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
@@ -31,20 +32,6 @@ export function validMachineDirectory(path: string): boolean {
       .slice(1)
       .split("/")
       .every((part) => part !== "" && part !== "." && part !== "..")
-  );
-}
-
-/** Linux NAME_MAX counts encoded bytes; API, Broker and guest share this boundary. */
-export function validGuestDirectoryName(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= 255 &&
-    value !== "." &&
-    value !== ".." &&
-    value.trim() === value &&
-    !/[\/\u0000-\u001f\u007f]/u.test(value) &&
-    new TextEncoder().encode(value).byteLength <= 255
   );
 }
 

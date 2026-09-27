@@ -4,7 +4,7 @@ import {
   type ToolWorkerOutput,
   type NativeToolUpdate,
   type ToolSandboxOperationResponse,
-} from "@pi-cloud/protocol";
+} from "@pi-cloud/protocol/guest";
 import { executeNativeTool } from "./native-tools.ts";
 import { once } from "node:events";
 import { constants } from "node:fs";

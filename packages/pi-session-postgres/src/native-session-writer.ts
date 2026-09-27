@@ -21,7 +21,7 @@ import {
   type PiSessionAppendPublisher,
   type PiSessionMutationOperation,
   type PiSessionMutationPublisher,
-} from "./session-mutation.ts";
+} from "@pi-cloud/protocol/native-session";
 
 export type NativeLaneScope = Readonly<{ lane: string; turnId: string; runId: string }>;
 export type NativeLaneSeed = Readonly<{

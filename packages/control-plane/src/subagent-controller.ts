@@ -14,8 +14,8 @@ import {
   type StartCloudSubagentJobInput,
   type CloudSubagentTreePolicy,
   type SubagentDirectoryTarget,
-} from "@pi-cloud/trusted-tool-runtime/subagent-jobs";
-import { PostgresSubagentSupervisorChannel } from "@pi-cloud/trusted-tool-runtime/subagent-supervisor";
+} from "@pi-cloud/subagent-control/subagent-jobs";
+import { PostgresSubagentSupervisorChannel } from "@pi-cloud/subagent-control/subagent-supervisor";
 import { sql, type Kysely, type Selectable } from "kysely";
 import { HttpSupervisorManagementClient } from "./http-supervisor-management.ts";
 

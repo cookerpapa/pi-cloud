@@ -1,4 +1,4 @@
-import type { StoredPiCommittedItem } from "@pi-cloud/pi-session-postgres";
+import type { StoredPiCommittedItem } from "@pi-cloud/protocol/native-session";
 import type { EventPublishMessage, PiCloudEvent, PiCloudEventBody } from "@pi-cloud/protocol";
 import type {
   AcceptedToolCommand,

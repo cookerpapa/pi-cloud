@@ -13,7 +13,7 @@ import {
   PI_MODEL_RETRY_CUSTOM_TYPE,
   type PiSessionMutationOperation,
   type PiSessionMutationPublisher,
-} from "@pi-cloud/pi-session-postgres";
+} from "@pi-cloud/protocol/native-session";
 import {
   CloudAgentRuntime,
   CloudAgentInputClosedError,

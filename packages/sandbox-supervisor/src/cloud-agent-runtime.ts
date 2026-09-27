@@ -46,7 +46,7 @@ import { ToolInvocations, withToolInvocation } from "./tool-invocation.ts";
 import type {
   PiSessionMutationOperation,
   PiSessionAppendOperation,
-} from "@pi-cloud/pi-session-postgres";
+} from "@pi-cloud/protocol/native-session";
 
 export interface CloudAgentExecutionAuthority {
   readonly signal: AbortSignal;

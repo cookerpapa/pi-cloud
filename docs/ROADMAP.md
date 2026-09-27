@@ -39,6 +39,10 @@
 
 ## Current release gate
 
+- [ ] Complete the approved [D1/D3/D4 follow-up](reports/repository-review-followup-20260927.md):
+      bounded Subagent results, batched lease observations and narrower runtime/Guest
+      dependencies, with matched rollout and real Luna acceptance.
+
 - [x] Complete the [September 27 repository review](reports/repository-review-20260927.md)
       cleanup rollout and real Luna/Cube/browser acceptance: final-only native Tool
       transport, callback failure isolation, Pi text-read parity, image metadata/cleanup,

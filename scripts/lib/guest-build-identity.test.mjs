@@ -1,8 +1,89 @@
-import { mkdtemp, mkdir, writeFile, chmod, symlink, unlink, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  chmod,
+  symlink,
+  unlink,
+  rm,
+  cp,
+  readFile,
+  appendFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { guestBuildIdentity, guestCopyInputs } from "./guest-build-identity.mjs";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+import { build } from "esbuild";
+
+const repository = fileURLToPath(new URL("../..", import.meta.url));
+
+it("bundles the real guest using only declared COPY inputs, without model/API modules", async () => {
+  const copied = guestCopyInputs(
+    await readFile(join(repository, "deploy/cubesandbox/Dockerfile.tool"), "utf8"),
+  );
+  const bundle = await build({
+    absWorkingDir: repository,
+    entryPoints: [
+      "packages/tool-sandbox/src/envd-tool-exec.ts",
+      "packages/tool-sandbox/src/envd-guest-control.ts",
+    ],
+    bundle: true,
+    write: false,
+    metafile: true,
+    platform: "node",
+    format: "esm",
+    target: "node24",
+    external: ["sharp"],
+    outdir: "unused-guest-test-output",
+    logLevel: "silent",
+  });
+  const inputs = Object.keys(bundle.metafile.inputs).filter((path) => path.startsWith("packages/"));
+  for (const input of inputs)
+    expect(
+      copied.some((path) => input === path || input.startsWith(path + "/")),
+      input,
+    ).toBe(true);
+  expect(inputs).not.toContain("packages/protocol/src/index.ts");
+  expect(inputs).not.toContain("packages/protocol/src/model-catalog.ts");
+  expect(inputs).not.toContain("packages/protocol/src/control-plane-api.ts");
+  expect(inputs.some((path) => path.startsWith("packages/sandbox-supervisor/"))).toBe(false);
+});
+
+it("the actual guest identity ignores model edits but includes copied protocol and Tool changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-cloud-guest-closure-"));
+  try {
+    const copied = guestCopyInputs(
+      await readFile(join(repository, "deploy/cubesandbox/Dockerfile.tool"), "utf8"),
+    );
+    for (const input of copied) {
+      const target = join(root, input);
+      await mkdir(dirname(target), { recursive: true });
+      await cp(join(repository, input), target, { recursive: true });
+    }
+    const original = await guestBuildIdentity(root);
+    await writeFile(
+      join(root, "packages/protocol/src/model-catalog.ts"),
+      "// an unrelated model change\n",
+    );
+    expect(await guestBuildIdentity(root)).toBe(original);
+    await appendFile(
+      join(root, "packages/protocol/src/environment.ts"),
+      "\n// a guest dependency change\n",
+    );
+    const changed = await guestBuildIdentity(root);
+    expect(changed).not.toBe(original);
+    await appendFile(
+      join(root, "packages/tool-sandbox/src/image-processor.ts"),
+      "\n// a guest Tool change\n",
+    );
+    expect(await guestBuildIdentity(root)).not.toBe(changed);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it("includes explicit guest inputs, modes and links while ignoring unrelated UI/docs", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-cloud-guest-build-"));

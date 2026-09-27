@@ -20,8 +20,8 @@ import {
   NativeSessionWriter,
   projectNativeSessionAppend,
   PostgresPiSessionStorage,
-  type PiSessionMutationOperation,
 } from "@pi-cloud/pi-session-postgres";
+import { type PiSessionMutationOperation } from "@pi-cloud/protocol/native-session";
 import {
   CloudAgentRuntime,
   type CloudAgentExecutionAuthority,

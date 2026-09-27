@@ -1,7 +1,10 @@
 import type { Database } from "@pi-cloud/database";
 import { SessionError } from "@earendil-works/pi-agent-core";
 import { sql, type Insertable, type Transaction } from "kysely";
-import { committedItemSequence, type StoredPiCommittedItem } from "./session-mutation.ts";
+import {
+  committedItemSequence,
+  type StoredPiCommittedItem,
+} from "@pi-cloud/protocol/native-session";
 
 /** Apply acknowledged, fully stamped native records. The caller co-commits its
  * Kafka position and execution boundary in this transaction. No sequence, ID,

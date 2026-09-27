@@ -14,7 +14,7 @@ import {
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
   type ToolWebProxyBootstrap,
-} from "@pi-cloud/protocol";
+} from "@pi-cloud/protocol/guest";
 import {
   createWorkspaceSeed,
   decodeWorkspaceBlob,

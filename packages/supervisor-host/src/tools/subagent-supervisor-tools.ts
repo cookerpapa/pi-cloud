@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { SubagentControlRequest } from "@pi-cloud/protocol";
+import { assertSubagentResultBudget, type SubagentControlRequest } from "@pi-cloud/protocol";
 import { Type } from "typebox";
 
 type Request = (
@@ -38,10 +38,10 @@ export function createCloudContactSupervisorTool(
     parameters: contactSchema,
     async execute(id, args, signal) {
       const result = await request(id, { action: "contact", ...args }, signal);
-      return {
+      const output = {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text:
               typeof result.replyMessage === "string"
                 ? result.replyMessage
@@ -50,6 +50,8 @@ export function createCloudContactSupervisorTool(
         ],
         details: result,
       };
+      assertSubagentResultBudget(output);
+      return output;
     },
   };
 }
@@ -73,15 +75,17 @@ export function createCloudSubagentSupervisorTool(
         },
         signal,
       );
-      return {
+      const output = {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text: typeof result.output === "string" ? result.output : JSON.stringify(result),
           },
         ],
         details: result,
       };
+      assertSubagentResultBudget(output);
+      return output;
     },
   };
 }

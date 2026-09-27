@@ -456,6 +456,55 @@
       "file": "test/queued-inputs.test.ts",
       "test": "deduplicates concurrent replicas and rejects a competing stale queue mutation",
       "invariant": "Concurrent API replicas cannot repeat a queue operation or silently overwrite a stale edit."
+    },
+    {
+      "id": "workflow-result-budget",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/workflow-channels.test.ts",
+      "test": "fails a large return explicitly after one execution, preserving its prior effects",
+      "invariant": "A completed oversized workflow return becomes an explicit bounded error without repeating effects."
+    },
+    {
+      "id": "native-subagent-result-budget",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime.test.ts",
+      "test": "persists bounded Subagent completion and continues (oversized=true)",
+      "invariant": "The native Harness persists a result-size Tool error and can finish the next model Step normally."
+    },
+    {
+      "id": "lease-batch-renewal-race",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/session-lease-observer.test.ts",
+      "test": "a newer committed heartbeat wins over an older in-flight negative read",
+      "invariant": "An older lookup cannot revoke ownership confirmed by a newer committed renewal."
+    },
+    {
+      "id": "lease-batch-one-second-revocation",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/session-lease-observer.test.ts",
+      "test": "shares fresh renewal evidence without extending the one-second revocation window",
+      "invariant": "Sharing heartbeat evidence does not slow periodic PG revocation observation."
+    },
+    {
+      "id": "lease-batch-no-revival",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/session-lease-observer.test.ts",
+      "test": "missing renewal revokes only its reported family and cannot be revived",
+      "invariant": "Missing renewal retires the reported family while retaining other families; later replies cannot revive it."
+    },
+    {
+      "id": "lease-batch-read-failure",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/session-lease-observer.test.ts",
+      "test": "fails all affected observers on a PG read error",
+      "invariant": "A failed batch read fails closed for every owner in that observation."
+    },
+    {
+      "id": "lease-batch-incarnation",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/session-lease-observer.test.ts",
+      "test": "does not apply a late query to a closed or newly opened observer",
+      "invariant": "Closing a lease observer prevents stale reads from affecting a later local incarnation."
     }
   ]
 }

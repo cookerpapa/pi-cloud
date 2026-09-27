@@ -1,5 +1,6 @@
 import type { Entry, LaneRecord, NewRecord, ProvisionedEntry } from "@earendil-works/pi-agent-core";
-import type { PiCloudEvent, ImagePacked } from "@pi-cloud/protocol";
+import type { PiCloudEvent } from "./event-envelope.ts";
+import type { ImagePacked } from "./image-attachment.ts";
 
 export type PiSessionAppendOperation =
   | Readonly<{

@@ -1,5 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import { PI_MODEL_RETRY_CUSTOM_TYPE } from "@pi-cloud/pi-session-postgres";
+import { PI_MODEL_RETRY_CUSTOM_TYPE } from "@pi-cloud/protocol/native-session";
 import {
   parseConversationTurnTranscriptResource,
   type ConversationTranscriptItemResource,

@@ -16,7 +16,6 @@
     "@earendil-works/pi-coding-agent": "0.84.1",
     "@earendil-works/pi-tui": "0.84.1",
     "@pi-cloud/observability": "0.1.0",
-    "@pi-cloud/pi-session-postgres": "0.1.0",
     "@pi-cloud/protocol": "0.1.0",
     "@pi-cloud/workspace-runtime": "0.1.0",
     "typebox": "1.1.38",
@@ -26,6 +25,7 @@
     "@pi-cloud/fake-model-server": "0.1.0",
     "@electric-sql/pglite": "0.5.4",
     "@electric-sql/pglite-socket": "0.2.7",
-    "@types/ws": "8.18.1"
+    "@types/ws": "8.18.1",
+    "@pi-cloud/pi-session-postgres": "0.1.0"
   }
 }

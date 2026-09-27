@@ -21,6 +21,13 @@ A copied guest input change requires a new immutable image/template. Rollback
 selects the previous compatible catalog/image identity, not an alias that rewrites
 an old template. Development cutover rebuilds once; no legacy matching rule remains.
 
+The September 27 boundary cleanup uses a narrow `protocol/guest` entry point and
+explicit protocol file COPY inputs. Workspace seed and guest directory rules are
+independent of model/API schemas, so editing the model catalog does not invalidate
+Guest templates. The identity algorithm is unchanged: all actual COPY inputs,
+including the shared package manifests/lockfile, remain covered. Bundle-closure
+tests reject missing inputs; actual image digests and Cube READY checks still apply.
+
 Acceptance: unrelated files do not change the guest identity; copied files,
 Dockerfile, file modes and link targets do; templates must still match the
 chosen runtime identity. Compose application labels retain the platform revision.

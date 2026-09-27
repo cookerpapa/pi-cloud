@@ -1,4 +1,4 @@
-import type { PiSessionAppendPublisher } from "@pi-cloud/pi-session-postgres";
+import type { PiSessionAppendPublisher } from "@pi-cloud/protocol/native-session";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { encodeSessionImages, type ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { ActiveExecutionLogResolver, CandidatePiSessionAppendFact } from "./accepted-fact.ts";

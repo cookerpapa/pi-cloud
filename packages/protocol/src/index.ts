@@ -128,18 +128,20 @@ export {
   AgentRuntimeKindSchema,
   SessionStorageKindSchema,
   AgentModelRuntimeSchema,
-  AgentWorkspaceSeedSchema,
-  MAX_WORKSPACE_BLOB_BYTES,
-  WorkspaceBlobSchema,
   type AgentRevisionSnapshot,
   type AgentRuntimeKind,
   type SessionStorageKind,
   type AgentModelRuntime,
   type AgentModelInputModality,
   type AgentModelHostedTool,
+} from "./agent-runtime.ts";
+export {
+  AgentWorkspaceSeedSchema,
+  MAX_WORKSPACE_BLOB_BYTES,
+  WorkspaceBlobSchema,
   type AgentWorkspaceSeed,
   type WorkspaceBlob,
-} from "./agent-runtime.ts";
+} from "./workspace-seed.ts";
 
 export {
   TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_PATH,
@@ -156,7 +158,6 @@ export {
   DevelopmentEnvironmentProtocolError,
   DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
   validMachineDirectory,
-  validGuestDirectoryName,
   DEVELOPMENT_ENVIRONMENT_PROFILES,
   DevelopmentEnvironmentProfileKeySchema,
   parseDevelopmentEnvironmentBrokerRequest,
@@ -176,6 +177,7 @@ export {
   type DevelopmentEnvironmentTerminalOpenRequest,
   type DevelopmentEnvironmentProfileKey,
 } from "./development-environment.ts";
+export { validGuestDirectoryName } from "./guest-directory.ts";
 
 export {
   MAX_WORKSPACE_TERMINAL_FRAME_BYTES,
@@ -299,6 +301,7 @@ export {
   MAX_EXECUTION_FACT_BYTES,
   MAX_SUBAGENT_RESULT_BYTES,
   SUBAGENT_RESULT_TOO_LARGE,
+  assertSubagentResultBudget,
   serializeSubagentResult,
 } from "./tool-result-budget.ts";
 

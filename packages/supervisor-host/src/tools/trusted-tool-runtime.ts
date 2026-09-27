@@ -9,7 +9,6 @@ import {
   type SubagentTask,
   type TrustedAgentTool,
   type WorkflowExecutor,
-  type WorkflowHostCall,
   toolInvocationId,
 } from "@pi-cloud/sandbox-supervisor";
 import type { Kysely } from "kysely";
@@ -17,23 +16,19 @@ import {
   PostgresSubagentJobProvider,
   type NativeSubagentLanes,
   type CloudSubagentTreePolicy,
-} from "./postgres-subagent-job-provider.ts";
+} from "@pi-cloud/subagent-control";
 import {
   createCloudContactSupervisorTool,
   createCloudSubagentSupervisorTool,
 } from "./subagent-supervisor-tools.ts";
 import { createCloudPreviewTool } from "./postgres-preview-tool.ts";
 
-export type WorkflowCall = WorkflowHostCall;
-export type TrustedToolRunContext = Readonly<{
+type TrustedToolRunContext = Readonly<{
   command: ExecuteTurnCommandMessage;
   refreshServices(): Promise<void>;
   executeWorkflow?: WorkflowExecutor;
 }>;
-export interface TrustedToolRuntime {
-  create(context: TrustedToolRunContext): Promise<readonly TrustedAgentTool[]>;
-}
-export type PostgresTrustedToolRuntimeOptions = Readonly<{
+type PostgresTrustedToolRuntimeOptions = Readonly<{
   database: Kysely<Database>;
   nativeLanes: NativeSubagentLanes;
   control: SubagentControlClient;
@@ -47,7 +42,7 @@ function trusted(
 }
 
 /** Worker composition: native context and log publication, never child admission. */
-export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
+export class PostgresTrustedToolRuntime {
   readonly #jobs: PostgresSubagentJobProvider;
   constructor(readonly options: PostgresTrustedToolRuntimeOptions) {
     this.#jobs = new PostgresSubagentJobProvider(options);

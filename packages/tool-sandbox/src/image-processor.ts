@@ -3,7 +3,7 @@ import {
   MAX_IMAGE_ATTACHMENT_BYTES,
   MAX_IMAGE_DECODE_PIXELS,
   MAX_IMAGE_INPUT_BYTES,
-} from "@pi-cloud/protocol";
+} from "@pi-cloud/protocol/guest";
 import type { ReadImageProcessor } from "@earendil-works/pi-agent-core";
 
 /** Codex 40e5de9's patch-grid sizing, expressed through Pi's public processor port. */

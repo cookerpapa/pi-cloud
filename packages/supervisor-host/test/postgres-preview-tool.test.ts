@@ -2,13 +2,13 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { afterEach, describe, expect, it } from "vitest";
-import { createCloudPreviewTool } from "../src/index.ts";
+import { createCloudPreviewTool } from "../src/tools/postgres-preview-tool.ts";
 
 const resources: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
   for (const close of resources.splice(0).reverse()) await close();
-});
+}, 60_000);
 
 describe("trusted Preview Tool", () => {
   it.each([null, "child-compute"])(

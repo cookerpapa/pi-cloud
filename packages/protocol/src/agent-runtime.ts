@@ -2,13 +2,6 @@ import { Type, type Static } from "typebox";
 import { DeepSeekModelIdSchema, OpenAICodexModelIdSchema } from "./control-plane-api.ts";
 import { UuidSchema } from "./protocol-primitives.ts";
 
-// Initial provisioning bundles only; existing Workspace bytes live in Cube Volumes.
-export const MAX_WORKSPACE_BLOB_BYTES = 32 * 1_024 * 1_024;
-
-const MAX_BASE64_WORKSPACE_BLOB_LENGTH = Math.ceil(MAX_WORKSPACE_BLOB_BYTES / 3) * 4;
-
-const Sha256Schema = Type.String({ pattern: "^[0-9a-f]{64}$" });
-
 export const AgentRuntimeKindSchema = Type.Union([Type.Literal("pi_sdk")]);
 export const SessionStorageKindSchema = Type.Union([Type.Literal("pi_session_storage_v1")]);
 
@@ -72,32 +65,9 @@ export const AgentModelRuntimeSchema = Type.Union([
   ),
 ]);
 
-export const WorkspaceBlobSchema = Type.Object(
-  {
-    encoding: Type.Literal("base64"),
-    sha256: Sha256Schema,
-    sizeBytes: Type.Integer({
-      minimum: 1,
-      maximum: MAX_WORKSPACE_BLOB_BYTES,
-    }),
-    data: Type.String({ minLength: 4, maxLength: MAX_BASE64_WORKSPACE_BLOB_LENGTH }),
-  },
-  { additionalProperties: false },
-);
-
-export const AgentWorkspaceSeedSchema = Type.Union([
-  Type.Object({ kind: Type.Literal("sample_java") }, { additionalProperties: false }),
-  Type.Object(
-    { kind: Type.Literal("bundle"), bundle: WorkspaceBlobSchema },
-    { additionalProperties: false },
-  ),
-]);
-
 export type AgentModelRuntime = Static<typeof AgentModelRuntimeSchema>;
 export type AgentModelInputModality = AgentModelRuntime["inputModalities"][number];
 export type AgentModelHostedTool = AgentModelRuntime["hostedTools"][number];
 export type AgentRevisionSnapshot = Static<typeof AgentRevisionSnapshotSchema>;
 export type AgentRuntimeKind = Static<typeof AgentRuntimeKindSchema>;
 export type SessionStorageKind = Static<typeof SessionStorageKindSchema>;
-export type AgentWorkspaceSeed = Static<typeof AgentWorkspaceSeedSchema>;
-export type WorkspaceBlob = Static<typeof WorkspaceBlobSchema>;

@@ -26,7 +26,7 @@ import {
   ReconnectingSupervisorWebSocketClient,
   type ReconnectingSupervisorWebSocketClientStop,
 } from "@pi-cloud/sandbox-supervisor";
-import { PostgresTrustedToolRuntime } from "@pi-cloud/trusted-tool-runtime";
+import { PostgresTrustedToolRuntime } from "./tools/trusted-tool-runtime.ts";
 import { FamilyModelPermits } from "./family-model-permits.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";

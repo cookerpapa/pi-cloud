@@ -9,11 +9,17 @@ export const SUBAGENT_RESULT_TOO_LARGE =
 
 const utf8 = new TextEncoder();
 
+export function assertSubagentResultBudget(value: unknown): void {
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined) throw new Error("Subagent result must be JSON serializable");
+  if (utf8.encode(encoded).byteLength > MAX_SUBAGENT_RESULT_BYTES)
+    throw new Error(SUBAGENT_RESULT_TOO_LARGE);
+}
+
 /** Preserve the Tool's existing string/JSON representation without truncation. */
 export function serializeSubagentResult(value: unknown): string {
   const text = typeof value === "string" ? value : JSON.stringify(value ?? null);
   if (typeof text !== "string") throw new Error("Subagent result must be JSON serializable");
-  if (utf8.encode(JSON.stringify(text)).byteLength > MAX_SUBAGENT_RESULT_BYTES)
-    throw new Error(SUBAGENT_RESULT_TOO_LARGE);
+  assertSubagentResultBudget(text);
   return text;
 }
