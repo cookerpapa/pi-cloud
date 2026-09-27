@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Value } from "typebox/value";
 import { createCloudSubagentTool, type CloudSubagentToolRuntime } from "../src/subagent-tool.ts";
 import { SubagentControlClient } from "../src/subagent-control-client.ts";
-import type { CandidateSubagentCommand } from "@pi-cloud/protocol";
+import { MAX_SUBAGENT_RESULT_BYTES, type CandidateSubagentCommand } from "@pi-cloud/protocol";
 
 function runtime(): CloudSubagentToolRuntime {
   return {
@@ -12,6 +12,41 @@ function runtime(): CloudSubagentToolRuntime {
   };
 }
 describe("role-free log-driven Subagent Tool", () => {
+  it.each(["workflow", "run", "status"] as const)(
+    "rejects an oversized %s result without repeating the action",
+    async (action) => {
+      const backend = runtime();
+      const result = { state: "completed", output: "x".repeat(1024 * 1024) };
+      const call = vi.fn(async () => result);
+      backend.workflow = call;
+      backend.run = call;
+      backend.control = call;
+      const args =
+        action === "workflow"
+          ? { action, script: "return 1" }
+          : action === "run"
+            ? { action, task: "inspect" }
+            : { action, target: "child" };
+      await expect(createCloudSubagentTool(backend).execute("call", args)).rejects.toThrow(
+        "subagent_result_too_large",
+      );
+      expect(call).toHaveBeenCalledTimes(1);
+    },
+  );
+  it("preserves a largest accepted workflow text exactly", async () => {
+    const backend = runtime();
+    const text = "x".repeat(MAX_SUBAGENT_RESULT_BYTES - 2);
+    backend.workflow = vi.fn(async () => text);
+    await expect(
+      createCloudSubagentTool(backend).execute("call", {
+        action: "workflow",
+        script: "return text",
+      }),
+    ).resolves.toEqual({
+      content: [{ type: "text", text }],
+      details: { action: "workflow" },
+    });
+  });
   it("delegates without evaluating scripts or creating local sessions", async () => {
     const backend = runtime(),
       tool = createCloudSubagentTool(backend),

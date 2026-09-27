@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { workflowGuestSource } from "../src/workflow-guest-source.ts";
 import { WorkflowChannels, type WorkflowFrame } from "../src/workflow-channels.ts";
-import type { ToolSandboxOperationRequest } from "@pi-cloud/protocol";
+import { MAX_SUBAGENT_RESULT_BYTES, type ToolSandboxOperationRequest } from "@pi-cloud/protocol";
 
 const children: ChildProcess[] = [],
   folders: string[] = [];
@@ -54,6 +54,46 @@ async function start(script: string, timeoutMs = 2000) {
   return { channels, controller, result, request, cwd, progress };
 }
 describe("workflow guest request/response contract", () => {
+  it("fails a large return explicitly after one execution, preserving its prior effects", async () => {
+    const f = await start(
+      'const fs=await import("node:fs"); fs.appendFileSync("effect-marker","once"); return "x".repeat(3*1024*1024);',
+    );
+    await expect(f.result).resolves.toMatchObject({
+      ok: false,
+      value: null,
+      error: expect.stringContaining("subagent_result_too_large"),
+    });
+    expect(await readFile(join(f.cwd, "effect-marker"), "utf8")).toBe("once");
+    expect(JSON.stringify(await f.result).length).toBeLessThan(1024);
+  });
+  it("bounds oversized script errors before emitting the complete frame", async () => {
+    const f = await start('throw new Error("x".repeat(3*1024*1024));');
+    await expect(f.result).resolves.toMatchObject({
+      ok: false,
+      value: null,
+      error: expect.stringContaining("subagent_result_too_large"),
+    });
+  });
+  it.each([true, false])(
+    "checks oversized untrusted complete frames independently (ok=%s)",
+    async (ok) => {
+      const f = await start(
+        `process.stdout.write(JSON.stringify({type:"complete",ok:${ok},${ok ? "value" : "error"}:"x".repeat(1024*1024)})+"\\n"); await new Promise(()=>{});`,
+      );
+      await expect(f.result).resolves.toMatchObject({
+        ok: false,
+        value: null,
+        error: expect.stringContaining("subagent_result_too_large"),
+      });
+    },
+  );
+  it("preserves an exact-boundary return in the guest and trusted receiver", async () => {
+    const f = await start(`return "x".repeat(${MAX_SUBAGENT_RESULT_BYTES - 2});`);
+    await expect(f.result).resolves.toMatchObject({
+      ok: true,
+      value: "x".repeat(MAX_SUBAGENT_RESULT_BYTES - 2),
+    });
+  });
   it.each([
     [
       '{task:"x",sandbox:"shared",cwd:"/workspace/a"}',

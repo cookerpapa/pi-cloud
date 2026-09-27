@@ -27,6 +27,13 @@ import {
   type CloudAgentExecutionAuthority,
   type CloudAgentRuntimeEvent,
 } from "../src/cloud-agent-runtime.ts";
+import { createCloudSubagentTool } from "../src/subagent-tool.ts";
+import {
+  MAX_EXECUTION_FACT_BYTES,
+  MAX_SUBAGENT_RESULT_BYTES,
+  createPiCloudEventFactory,
+} from "@pi-cloud/protocol";
+import { PiAgentEventAdapter } from "../src/pi-agent-event-adapter.ts";
 
 const TENANT_ID = "d2000000-0000-4000-8000-000000000001";
 
@@ -282,6 +289,101 @@ afterAll(async () => {
 });
 
 describe.sequential("CloudAgentRuntime", () => {
+  it.each([false, true])(
+    "persists bounded Subagent completion and continues (oversized=%s)",
+    async (oversized) => {
+      const storage = await createStorage();
+      const execution = await withNativeSession(storage);
+      const value = oversized ? "x".repeat(1024 * 1024) : "x".repeat(MAX_SUBAGENT_RESULT_BYTES - 2);
+      const workflow = vi.fn(async () => value);
+      const tool = createCloudSubagentTool({
+        workflow,
+        run: async () => {
+          throw new Error("unexpected child");
+        },
+        control: async () => {
+          throw new Error("unexpected control");
+        },
+      });
+      const adapter = new PiAgentEventAdapter(
+        createPiCloudEventFactory({
+          sessionId: crypto.randomUUID(),
+          turnId: crypto.randomUUID(),
+          agentId: "root",
+        }),
+        { inputKind: "prompt", resolveToolCallId: (id) => id, maximumToolOutputBytes: 1_048_576 },
+      );
+      let steps = 0;
+      let completionBytes = 0;
+      const runtime = new CloudAgentRuntime({
+        ...execution,
+        lane: "main",
+        authority: new TestAuthority(),
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+        tools: [tool],
+        streamFn: (_model, context) => {
+          steps++;
+          if (steps === 2) {
+            const result = context.messages.find((m) => m.role === "toolResult");
+            expect(result).toMatchObject({ isError: oversized });
+            expect(JSON.stringify(result)).toContain(
+              oversized ? "subagent_result_too_large" : value,
+            );
+          }
+          const stream = new MockAssistantStream();
+          queueMicrotask(() => {
+            const message: AssistantMessage =
+              steps === 1
+                ? {
+                    ...assistant(""),
+                    stopReason: "toolUse",
+                    content: [
+                      {
+                        type: "toolCall",
+                        id: "large-return",
+                        name: "subagent",
+                        arguments: { action: "workflow", script: "return selected" },
+                      },
+                    ],
+                  }
+                : assistant("finished without repeating effects");
+            stream.push({
+              type: "done",
+              reason: message.stopReason as "toolUse" | "stop",
+              message,
+            });
+          });
+          return stream;
+        },
+        commitCheckpoint: async (operation, event) => {
+          if (event?.type === "tool_execution_end") {
+            const display = adapter.adapt(event);
+            expect(display.kind).toBe("mapped");
+            // Real Harness operations and the largest configured display event,
+            // with ample room for the writer stamps and outer AcceptedFact scope.
+            completionBytes = Buffer.byteLength(JSON.stringify({ operation, display }));
+            expect(completionBytes + 64 * 1024).toBeLessThan(MAX_EXECUTION_FACT_BYTES);
+          }
+          await execution.commitCheckpoint(operation);
+        },
+      });
+      await expect(runtime.run("return the selected value")).resolves.toMatchObject({
+        kind: "completed",
+      });
+      expect(steps).toBe(2);
+      expect(workflow).toHaveBeenCalledTimes(1);
+      expect(completionBytes).toBeGreaterThan(0);
+      const [intent] = await storage.findRecords({ type: "tool_started" });
+      const stored = await storage.getEntry(intent!.resultEntryId);
+      expect(stored).toMatchObject({
+        type: "message",
+        message: { role: "toolResult", isError: oversized },
+      });
+      expect(JSON.stringify(stored)).toContain(oversized ? "subagent_result_too_large" : value);
+    },
+  );
   it.each([false, true])(
     "drains input accepted at native agent_end (native append=%s)",
     async (cached) => {

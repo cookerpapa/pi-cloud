@@ -57,6 +57,13 @@ return value, and do not create model messages. Their newest bounded text may
 appear in the disposable Tool log preview; they never enter Kafka or PG. Actual
 `runs.*` control and messaging requests retain their durable execution path.
 
+Explicit returns and direct child/control results are limited to 256 KiB of
+JSON-encoded text, including UTF-8 and escaping. Small results are preserved
+exactly; an oversized value or error becomes an explicit `subagent_result_too_large`
+Tool error. The script may already have changed files or completed child tasks.
+Inspect those effects before retrying; write large data explicitly to the
+Workspace and return a summary or file path. No implicit result archive is created.
+
 The API also offers `runs.status`, `runs.wait`, `runs.cancel` and
 `runs.send(target, message, delivery)`. A target is a returned execution ID or
 workflow key. `notify` does not wake a closed Agent; `steer` is received at a safe

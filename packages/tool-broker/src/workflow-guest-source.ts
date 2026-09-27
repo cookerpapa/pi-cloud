@@ -1,3 +1,5 @@
+import { MAX_SUBAGENT_RESULT_BYTES, SUBAGENT_RESULT_TOO_LARGE } from "@pi-cloud/protocol";
+
 /** This source is sent to Cube. It is NEVER evaluated by the trusted host. */
 export function workflowGuestSource(input: {
   script: string;
@@ -5,7 +7,7 @@ export function workflowGuestSource(input: {
   cwd: string;
 }): string {
   return (
-    `const input=${JSON.stringify(input)};\n` +
+    `const input=${JSON.stringify({ ...input, maximumResultBytes: MAX_SUBAGENT_RESULT_BYTES, resultTooLarge: SUBAGENT_RESULT_TOO_LARGE })};\n` +
     String.raw`
 const readline = require('node:readline');
 const fs = require('node:fs');
@@ -15,6 +17,13 @@ const pending = new Map();
 const children = new Map();
 let sequence = 0;
 const send = (frame) => process.stdout.write(JSON.stringify(frame) + '\n');
+const checkedResult = (value) => {
+  const text = typeof value === 'string' ? value : JSON.stringify(value ?? null);
+  if (typeof text !== 'string') throw new Error('Subagent result must be JSON serializable');
+  if (Buffer.byteLength(JSON.stringify(text), 'utf8') > input.maximumResultBytes)
+    throw new Error(input.resultTooLarge);
+  return value;
+};
 const call = (method, args) => new Promise((resolve, reject) => {
   const id = ++sequence;
   pending.set(id, { resolve, reject });
@@ -68,8 +77,12 @@ const emit = (value) => send({type:'progress', value});
   const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
   const value = await new AsyncFunction('runs', 'console', 'emit', input.script)(runs, {log,info:log,warn:log,error:log}, emit);
   if (pending.size) throw new Error('Workflow returned with unawaited child requests');
-  send({type:'complete', ok:true, value: value === undefined ? null : value});
-})().catch(error => send({type:'complete', ok:false, value:null, error:String(error.message || error)}))
+  send({type:'complete', ok:true, value:checkedResult(value === undefined ? null : value)});
+})().catch(error => {
+  let message = String(error.message || error);
+  try { checkedResult(message); } catch { message = input.resultTooLarge; }
+  send({type:'complete', ok:false, value:null, error:message});
+})
   .finally(() => { inputLines.close(); process.stdout.end(() => process.exit(0)); });
 `
   );

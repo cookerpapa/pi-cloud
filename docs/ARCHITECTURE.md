@@ -474,6 +474,12 @@ the outer Tool Result. Its `runs.*` duplex host-call channel is unchanged. Varia
 call stacks are not recovery checkpoints. Preview remains a fixed trusted
 platform adapter; user-supplied Worker extensions are not supported.
 
+Subagent return admission bounds JSON-encoded text to 256 KiB, leaving space for
+the native Entry and accompanying display event inside the unchanged 900 KiB
+execution-fact limit. Guest completion, trusted receipt and the outer Pi Tool
+apply the same budget. Oversized values/errors become explicit bounded Tool
+errors, not truncated success or automatic effect retries (ADR-0196).
+
 ## Workspaces and development machines
 
 An elastic Workspace owns one persistent Cube Volume and one default bounded-warm

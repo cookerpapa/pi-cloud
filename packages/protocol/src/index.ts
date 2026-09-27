@@ -296,6 +296,13 @@ export {
 } from "./tool-sandbox.ts";
 
 export {
+  MAX_EXECUTION_FACT_BYTES,
+  MAX_SUBAGENT_RESULT_BYTES,
+  SUBAGENT_RESULT_TOO_LARGE,
+  serializeSubagentResult,
+} from "./tool-result-budget.ts";
+
+export {
   NonNegativeSafeIntegerSchema,
   OpaqueIdSchema,
   PositiveSafeIntegerSchema,

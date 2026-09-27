@@ -1,7 +1,11 @@
 import { EventEmitter } from "node:events";
 import type { Duplex } from "node:stream";
 import { createInterface } from "node:readline";
-import type { ToolSandboxOperationRequest, ToolSandboxOperationResponse } from "@pi-cloud/protocol";
+import {
+  serializeSubagentResult,
+  type ToolSandboxOperationRequest,
+  type ToolSandboxOperationResponse,
+} from "@pi-cloud/protocol";
 
 export type WorkflowFrame = {
   type: "call";
@@ -54,17 +58,26 @@ export class WorkflowChannels {
     try {
       for await (const line of lines) {
         const frame = JSON.parse(line);
-        if (frame.type === "complete")
+        if (frame.type === "complete") {
+          // The guest is untrusted. Reject a known oversized completion as a
+          // bounded Tool error, without misclassifying it as transport loss.
+          let error = frame.ok === true ? undefined : String(frame.error ?? "Workflow failed");
+          try {
+            serializeSubagentResult(error ?? frame.value ?? null);
+          } catch (failure) {
+            error = failure instanceof Error ? failure.message : "Invalid workflow result";
+          }
           return {
             toolBrokerProtocolVersion: 1,
             type: "tool_sandbox.operation_result",
             activationId: request.activationId,
             operationId: request.operationId,
             operation: "workflow.exec",
-            ok: frame.ok === true,
-            value: frame.value ?? null,
-            ...(frame.ok === true ? {} : { error: String(frame.error ?? "Workflow failed") }),
+            ok: error === undefined,
+            value: error === undefined ? (frame.value ?? null) : null,
+            ...(error === undefined ? {} : { error }),
           };
+        }
         if (frame.type === "call") {
           if (
             !Number.isSafeInteger(frame.id) ||

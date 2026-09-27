@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0196](0196-bounded-subagent-results.md) — bounded Subagent returns that
+   fit native history, with explicit errors and unchanged effect semantics.
 1. [ADR-0195](0195-final-tool-reply-lifetime.md) — final-only Tool replies and
    bounded callback lifetime across publication, cancellation and image decoding.
 1. [ADR-0194](0194-editable-pending-inputs.md) — editable pending inputs,
