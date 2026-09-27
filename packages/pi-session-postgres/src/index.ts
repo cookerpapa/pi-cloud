@@ -32,10 +32,6 @@ export {
 } from "./session-mutation.ts";
 export type { ActiveExecutionAuthority, ExecutionAuthority } from "./execution-authority.ts";
 export {
-  PostgresSessionExecutionAuthority,
-  type PostgresSessionExecutionAuthorityOptions,
-} from "./postgres-execution-authority.ts";
-export {
   forkPostgresPiSessionInTransaction,
   PostgresPiSessionRepository,
   type PostgresPiSessionCreateOptions,

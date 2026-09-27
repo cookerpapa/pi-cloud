@@ -587,6 +587,8 @@ export class PiWorkerRuntime {
       supervisor: runSupervisor,
       leaseCoordinator,
       executionLogs,
+      onLeaseRenewal: (heartbeat, acknowledgement, requestedAt) =>
+        nativeSessions.observeLeaseRenewals(heartbeat, acknowledgement, requestedAt),
       ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
       onUnexpectedError: (error) =>
         operationalLog({

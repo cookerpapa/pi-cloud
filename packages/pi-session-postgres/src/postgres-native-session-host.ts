@@ -1,6 +1,10 @@
 import type { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { Database } from "@pi-cloud/database";
-import { parseExecutionReference } from "@pi-cloud/protocol";
+import {
+  parseExecutionReference,
+  type SupervisorHeartbeatMessage,
+  type SupervisorHeartbeatAckMessage,
+} from "@pi-cloud/protocol";
 import {
   SessionError,
   type LaneRecord,
@@ -14,7 +18,7 @@ import {
   type NativeViewRead,
 } from "./native-session-writer.ts";
 import { PostgresPiSessionStorage, sessionMetadataFromRow } from "./postgres-session-storage.ts";
-import { PostgresSessionExecutionAuthority } from "./postgres-execution-authority.ts";
+import { PostgresSessionLeaseObserver } from "./postgres-session-lease-observer.ts";
 import type { PiSessionAppendPublisher } from "./session-mutation.ts";
 import type { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
 export type CloudAgentExecutionScope = Readonly<{
@@ -45,8 +49,9 @@ export class PostgresNativeSessionHost {
   readonly #executions = new Map<string, NativeLaneSessionStorage>();
   readonly #owners = new Map<
     string,
-    { authority: PostgresSessionExecutionAuthority; references: number }
+    { authority: ReturnType<PostgresSessionLeaseObserver["open"]>; references: number }
   >();
+  readonly #leases: PostgresSessionLeaseObserver;
   readonly #reaper: NodeJS.Timeout;
   #closed = false;
 
@@ -57,6 +62,7 @@ export class PostgresNativeSessionHost {
     onViewRead?: (sample: NativeViewRead) => void;
   }) {
     this.#database = options.database;
+    this.#leases = new PostgresSessionLeaseObserver({ database: options.database });
     this.#images = options.images;
     this.#cache = options.entryPayloadCache;
     this.#onViewRead = options.onViewRead;
@@ -188,8 +194,7 @@ export class PostgresNativeSessionHost {
     if (!owner) {
       owner = {
         references: 0,
-        authority: new PostgresSessionExecutionAuthority({
-          database: this.#database,
+        authority: this.#leases.open({
           tenantId: scope.tenantId,
           piSessionId: scope.piSessionId,
           leaseId: ref.leaseId,
@@ -333,6 +338,13 @@ export class PostgresNativeSessionHost {
     if (!parent || parent.closed) throw new Error("Parent native Session writer is unavailable");
     return inherit ? (parent.baseContext().at(-1)?.id ?? null) : null;
   }
+  observeLeaseRenewals(
+    heartbeat: SupervisorHeartbeatMessage,
+    acknowledgement: SupervisorHeartbeatAckMessage,
+    requestedAt: number,
+  ): void {
+    this.#leases.observeRenewals(heartbeat, acknowledgement, requestedAt);
+  }
   hasExecution(executionReference: string): boolean {
     const lane = this.#executions.get(executionReference);
     return !!lane && !lane.closed;
@@ -349,11 +361,12 @@ export class PostgresNativeSessionHost {
     await parent.createLane(input.lane, input.at);
   }
 
-  close() {
+  async close() {
     this.#closed = true;
     clearInterval(this.#reaper);
     this.#writers.clear();
     for (const { authority } of this.#owners.values()) void authority.close();
     this.#owners.clear();
+    await this.#leases.close();
   }
 }

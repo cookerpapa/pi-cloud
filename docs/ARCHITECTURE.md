@@ -179,6 +179,13 @@ cancellation; the database and ordered seals still decide authority. This adds
 no per-token or per-Step SQL check. Database clock/failover discipline remains an
 operator responsibility.
 
+Native writers share one Worker-local lease observer. A single read batch checks
+all observed owners, retaining the one-second revocation observation interval.
+Committed direct-PG heartbeat renewals feed that same cache. Late reads cannot
+overwrite newer renewal evidence, late renewals cannot revive a revoked observer,
+and closing one Lane retains observation for its siblings. Expired cold-restore
+observations refresh from PG before rejection. Broker fencing remains independent.
+
 ## Direct execution log
 
 During atomic execution admission the PG authority freezes publication scope against the exact

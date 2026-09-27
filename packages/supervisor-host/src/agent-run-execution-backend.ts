@@ -13,6 +13,8 @@ import {
   type EventPublishMessage,
   type CancelTurnCommandMessage,
   type ExecuteTurnCommandMessage,
+  type SupervisorHeartbeatMessage,
+  type SupervisorHeartbeatAckMessage,
 } from "@pi-cloud/protocol";
 import { measureRunPreparation, type PiCloudMetrics } from "@pi-cloud/observability";
 import {
@@ -51,6 +53,11 @@ export type AgentRunExecutionBackendOptions = {
   heartbeatIntervalMs?: number;
   onUnexpectedError?: (error: unknown) => void;
   metrics?: PiCloudMetrics;
+  onLeaseRenewal?: (
+    heartbeat: SupervisorHeartbeatMessage,
+    acknowledgement: SupervisorHeartbeatAckMessage,
+    requestedAt: number,
+  ) => void;
 };
 
 type TrackedExecution = {
@@ -242,6 +249,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   readonly #heartbeatIntervalMs: number;
   readonly #onUnexpectedError: ((error: unknown) => void) | undefined;
   readonly #metrics: PiCloudMetrics | undefined;
+  readonly #onLeaseRenewal: AgentRunExecutionBackendOptions["onLeaseRenewal"];
   readonly #trackedExecutions = new Map<string, TrackedExecution>();
   #heartbeatAbort: AbortController | undefined;
   #heartbeatTask: Promise<void> | undefined;
@@ -260,6 +268,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     );
     this.#onUnexpectedError = options.onUnexpectedError;
     this.#metrics = options.metrics;
+    this.#onLeaseRenewal = options.onLeaseRenewal;
   }
 
   async admit(
@@ -566,6 +575,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     try {
       const identity = await this.#leaseCoordinator.heartbeatIdentity();
       while (!signal.aborted && this.#trackedExecutions.size > 0) {
+        const requestedAt = performance.now();
         const heartbeat = this.#supervisor.createHeartbeat(identity);
         let acknowledgement;
         for (let attempt = 1; ; attempt += 1) {
@@ -580,6 +590,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           }
         }
         const result = this.#supervisor.applyHeartbeatAcknowledgement(heartbeat, acknowledgement);
+        this.#onLeaseRenewal?.(heartbeat, acknowledgement, requestedAt);
         if (result.revokedAssignments !== result.revokedSessionIds.length) {
           throw new AgentRunSupervisorError(
             "invalid_heartbeat_result",
