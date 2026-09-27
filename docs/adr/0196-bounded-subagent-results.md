@@ -1,7 +1,8 @@
 # ADR-0196: Subagent results must fit native history
 
-Status: accepted for implementation, 2026-09-27, following owner approval of
+Status: implemented and validated, 2026-09-27, following owner approval of
 repository-review repairs D1, D3 and D4. This decision covers D1 only.
+See [regression, matched rollout and Luna acceptance](../reports/repository-review-followup-20260927.md).
 
 ## Decision
 

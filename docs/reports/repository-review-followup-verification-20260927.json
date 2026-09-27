@@ -1,0 +1,1728 @@
+{
+  "checkedAt": "2026-09-27T03:17:31.355Z",
+  "baseline": "50da2c6e",
+  "implementationRevision": "ac763dbf6eefafc3740aa1ba32171ce941726d5a",
+  "piVersion": "0.84.1",
+  "scope": ["D1", "D3", "D4"],
+  "deferred": ["D2", "D5", "general large-result attachments"],
+  "typechecks": {
+    "allWorkspacesPassed": true,
+    "workspaceCount": 21
+  },
+  "workspaceTests": {
+    "files": {
+      "packages/control-plane/test/api-exception-filter.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/atomic-worker-admission.postgres.test.ts": {
+        "total": 40,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 40,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/authority-time.postgres.test.ts": {
+        "total": 9,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 9,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/concurrent-run-settlement.postgres.test.ts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/control-plane-runtime.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/conversation-list-pagination.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/conversation-tree.postgres.test.ts": {
+        "total": 7,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 7,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/conversation-turn-projection.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/development-environment-service.test.ts": {
+        "total": 13,
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "followup-rechecks.json"
+      },
+      "packages/control-plane/test/execution-stream-seal.test.ts": {
+        "total": 17,
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "followup-rechecks.json"
+      },
+      "packages/control-plane/test/expired-run-lease.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/github-app-client.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/gitlab-issue-note-reconciler.test.ts": {
+        "total": 17,
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "followup-rechecks.json"
+      },
+      "packages/control-plane/test/gitlab-project-client.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/gpt6-selection-migration.postgres.test.ts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/http-supervisor-management.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/main-acquisition.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/native-session-host.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/operational-metrics-sampler.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/parallel-worker-claims.postgres.test.ts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/platform-runtime-settings.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/private-multi-tenant-api.test.ts": {
+        "total": 9,
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/production-bootstrap.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/production-http-gateway.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/public-registration-conversations.test.ts": {
+        "total": 9,
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/queued-inputs.test.ts": {
+        "total": 14,
+        "passed": 10,
+        "failed": 0,
+        "skipped": 4,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/run-queue.test.ts": {
+        "total": 12,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 12,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/sandbox-preview-gateway.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/session-event-hub.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/session-family-lease.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "followup-rechecks.json"
+      },
+      "packages/control-plane/test/source-control-service.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "followup-rechecks.json"
+      },
+      "packages/control-plane/test/startup-cleanup.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/steer-admission.postgres.test.ts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/subagent-controller.test.ts": {
+        "total": 9,
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "followup-rechecks.json"
+      },
+      "packages/control-plane/test/subagent-management-transport.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/supervisor-boot-provisioner.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/supervisor-websocket-gateway.test.ts": {
+        "total": 7,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/tenant-administration.test.ts": {
+        "total": 4,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/tenant-identity.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/tenant-model-configuration.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/tool-progress-ingress.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/turn-steering-races.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/web-authentication.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/workspace-admission.integration.test.ts": {
+        "total": 6,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 6,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/workspace-browser-service.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/control-plane/test/workspace-terminal-gateway.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/cube-api-authorizer/test/authorization.test.ts": {
+        "total": 35,
+        "passed": 35,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/cube-api-authorizer/test/server.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/cube-egress-gateway/test/configuration-poller.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/cube-egress-gateway/test/proxy-server.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/database/test/current-schema.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/dormant-accounting-retirement.postgres.test.ts": {
+        "total": 5,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 5,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/first-record-cutover.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/idle-pool-recovery.postgres.test.ts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/postgres-queue-wake.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/prepared-selects.postgres.test.ts": {
+        "total": 3,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 3,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/prepared-selects.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/ready-run-cutover.postgres.test.ts": {
+        "total": 7,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 7,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/retry-transaction.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/run-identity-cutover.postgres.test.ts": {
+        "total": 3,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 3,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/database/test/slow-commit.postgres.test.ts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/domain/test/model-profile.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/domain/test/state-machines.test.ts": {
+        "total": 12,
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/event-log/test/ordered-effects.test.ts": {
+        "total": 7,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/event-log/test/tool-replies.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/fake-model-server/test/pi-openai-contract.test.ts": {
+        "total": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/fake-model-server/test/server.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/observability/test/observability.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/observability/test/run-timing.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/pi-session-postgres/test/native-projection-lock.postgres.test.ts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/pi-session-postgres/test/native-session-projection.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/pi-session-postgres/test/native-session-writer.test.ts": {
+        "total": 14,
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/pi-session-postgres/test/pi-session-backend-conformance.test.ts": {
+        "total": 29,
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/pi-session-postgres/test/postgres-pi-session-storage.test.ts": {
+        "total": 9,
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/pi-session-postgres/test/postgres-session-query.postgres.test.ts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/pi-session-postgres/test/session-lease-observer.test.ts": {
+        "total": 15,
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/protocol/test/control-plane-api.test.ts": {
+        "total": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/development-environment.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/environment.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/event-envelope.test.ts": {
+        "total": 8,
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/execution-reference.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/hot-path-validation.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/image-attachment.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/queued-inputs.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/sandbox-preview.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/source-control.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/supervisor-management.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/supervisor-wire.test.ts": {
+        "total": 13,
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/tool-capabilities.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/tool-result-budget.test.ts": {
+        "total": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/tool-sandbox.test.ts": {
+        "total": 14,
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/protocol/test/workspace-terminal.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/provider-egress-relay/test/relay.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/runtime-core/test/canonical-pi-conversation.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/execution-publication.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/execution-stream-boundary.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/kafka-consumer-lifecycle.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/kafka-producer-backpressure.test.ts": {
+        "total": 12,
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/kafka-topic-policy.integration.test.ts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/pi-session-append-publisher.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/session-event-stream.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/session-live-view.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/session-projector-handoffs.test.ts": {
+        "total": 10,
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/terminal-outbox-relay.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/tool-progress.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/runtime-core/test/tool-reply-retention.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/sandbox-supervisor/test/agent-run-supervisor.test.ts": {
+        "total": 23,
+        "passed": 23,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/assistant-text-presentation.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/cloud-agent-contract.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/cloud-agent-runtime-lifecycle.test.ts": {
+        "total": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/cloud-agent-runtime.test.ts": {
+        "total": 62,
+        "passed": 62,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "followup-rechecks.json"
+      },
+      "packages/sandbox-supervisor/test/cloud-step-context.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/control-channel-process-fault.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/pi-agent-event-adapter.test.ts": {
+        "total": 25,
+        "passed": 25,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/pi-cloud-turn-runner.integration.test.ts": {
+        "total": 20,
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/pi-sampling-step.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/pi-sandbox-continuity.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/pi-settlement-gate.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/provider-hosted-tools.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/provider-hosted-transcript.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/reconnecting-supervisor-websocket-client.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/subagent-tool.test.ts": {
+        "total": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/trusted-remote-tools.test.ts": {
+        "total": 25,
+        "passed": 25,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/workflow-transport.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/sandbox-supervisor/test/workspace-seed.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/session-attachments/test/codec.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/session-attachments/test/reaper.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/session-attachments/test/storage.postgres.test.ts": {
+        "total": 7,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 7,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/ssh-gateway/test/server.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/ssh-gateway/test/tool-broker-terminal.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/subagent-control/test/postgres-subagent-job-provider.test.ts": {
+        "total": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/boot-ledger.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/config.test.ts": {
+        "total": 7,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/family-model-permits.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/family-worker-drain.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/main.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/management-server.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/model-gateway.test.ts": {
+        "total": 17,
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/parallel-worker-claims.test.ts": {
+        "total": 8,
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/postgres-pi-worker.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/postgres-preview-tool.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/responses-hosted-activity.test.ts": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/retired-runs.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/run-claim-readiness.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/runtime.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/subagent-supervisor-tools.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/trusted-tool-runtime.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/worker-cancellation-admission.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/worker-memory-monitor.integration.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/worker-memory-monitor.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/worker-notification-recovery.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/supervisor-host/test/workspace-seed.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-remaining-tests.log"
+      },
+      "packages/tool-broker/test/cube-persistent-capsule.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/cubesandbox-live-provider.integration.test.ts": {
+        "total": 2,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 2,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/cubesandbox-provider.test.ts": {
+        "total": 27,
+        "passed": 27,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/cubesandbox-runtime-client.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/cubesandbox-workspace-browser.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/direct-private-egress.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/fixed-tcp-relay.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/main-acquisition.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/postgres-workspace-volume-gateway-lock.integration.test.ts": {
+        "total": 3,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 3,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/preview-connect.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/private-http.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/sandbox-admission.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/sandbox-http-service-registry.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "followup-rechecks.json"
+      },
+      "packages/tool-broker/test/tool-broker-server-client.test.ts": {
+        "total": 13,
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/tool-broker.test.ts": {
+        "total": 42,
+        "passed": 42,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/tool-command-executor.test.ts": {
+        "total": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/tool-command-routing.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/tool-progress-publisher.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/workflow-channels.test.ts": {
+        "total": 13,
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/workflow-websocket.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/workspace-runtime-state-repository.test.ts": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "followup-rechecks.json"
+      },
+      "packages/tool-broker/test/workspace-volume-deletion-reaper.integration.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-broker/test/workspace-volume-gateway.test.ts": {
+        "total": 21,
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-sandbox/test/image-processor.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-sandbox/test/native-tools.test.ts": {
+        "total": 21,
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/tool-sandbox/test/tool-worker-security.test.ts": {
+        "total": 14,
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/active-turn-selection.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/api.test.ts": {
+        "total": 21,
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/app-render.test.tsx": {
+        "total": 28,
+        "passed": 28,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/code-host-connections.test.tsx": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/conversation-export.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/conversation-presentation.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/conversation-scroll.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/conversation-tree-navigation.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/i18n.test.tsx": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/message-copy.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/model-settings-menu.test.ts": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/progressive-text.test.ts": {
+        "total": 18,
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/resizable-panel.test.tsx": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/session-view.test.ts": {
+        "total": 25,
+        "passed": 25,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/source-highlight.test.ts": {
+        "total": 9,
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/sse.test.ts": {
+        "total": 10,
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/tool-progress.test.ts": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/web-configuration.test.ts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/web-ui/test/workspace-directory.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      },
+      "packages/workspace-runtime/test/workspace-runtime.test.ts": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "status": "passed",
+        "source": "pi-cloud-followup-full-tests-serial.log"
+      }
+    },
+    "passed": 1184,
+    "failed": 0,
+    "skipped": 118,
+    "total": 1302,
+    "workspaceCount": 21,
+    "method": "One final result per test file across workspace commands and targeted rechecks; overlapping executions not counted twice.",
+    "note": "The first full attempt was stopped during fixture timeouts under parallel load. A later invocation repeated --maxWorkers for eight workspace scripts and was rejected before their tests ran; those workspaces were run with their maintained commands. Nine files were subsequently rechecked (131 passed) after transient initialization/time-budget failures. This is a composite verification, not a claim that one npm run check command passed."
+  },
+  "acceptanceHelpers": {
+    "files": 9,
+    "passed": 40
+  },
+  "effectiveTestPasses": 1224,
+  "faultGate": {
+    "cases": 72,
+    "passed": 72,
+    "realIsolatedPostgres": true,
+    "liveChaos": false,
+    "recordedRevision": "c82d1e56fb0c5fe2661e3a493b6b34fcad3ddd1b",
+    "recordedDirtyWorktree": true,
+    "note": "D4 source was unchanged between the dirty-worktree fault execution and its implementation commit; source hashes below identify the final files."
+  },
+  "staticChecks": {
+    "format": true,
+    "docs": true,
+    "runtimePolicy": true,
+    "imageDependencyClosure": true,
+    "imageBuildContext": true,
+    "dependencyHardening": true
+  },
+  "securityAudit": {
+    "securityAuditPassed": true,
+    "auditLevel": "high",
+    "remediatedShrinkwrapFindings": [],
+    "remainingVulnerabilities": [
+      {
+        "name": "@vitest/mocker",
+        "severity": "moderate",
+        "nodes": ["node_modules/@vitest/mocker"]
+      },
+      {
+        "name": "vitest",
+        "severity": "moderate",
+        "nodes": ["node_modules/vitest"]
+      }
+    ]
+  },
+  "sourceSha256": {
+    "deploy/cubesandbox/Dockerfile.tool": "6bd795fbe5b0eb8a916f334d60a411ab7c6c3b91868deab26445345c202acdaa",
+    "eval/fault-cases.json": "3479c6977eede3bc6138b5bd6722e105cf3697f9098c295126f76b01967074c8",
+    "package-lock.json": "dcbd4a1a0bad89460f2665189e317953db0ae3443e2a2bdfc2f49427b0971e7e",
+    "package.json": "47904e67f287cfd81a39454772d47ee2e880c022c35bf0186be1e116f03ce715",
+    "packages/control-plane/Dockerfile": "6d257f8899fa3e83b6b0d875ee9fab50433723bd107e36ecbd8c41067e269c14",
+    "packages/control-plane/package.json": "db8981c955a0ff98a34f78e5c754d62c4ff213eef8248b0f27cf1bed96873734",
+    "packages/control-plane/src/subagent-controller.ts": "618c3bd991a74529247eac8b674ee3fd11b6b1681e60c0439a7bd75fb9dcb525",
+    "packages/control-plane/test/native-session-host.test.ts": "8aa79b84e97c833092f6324dd31e93509cb339de04db2909bb32b7a1267ae86c",
+    "packages/pi-session-postgres/src/index.ts": "e393ddf5531e2cf6b73de5a1ed4d0b133a502b96005e477c468b6e416b3583d7",
+    "packages/pi-session-postgres/src/native-session-writer.ts": "25175065c95ec04e7cc3763a55ceb9bd635a1dd20801541a0c5ac044124a748b",
+    "packages/pi-session-postgres/src/postgres-native-session-host.ts": "060383fa51c9bd7fdd2c05f403792471e99ef891b0564e877ef3fedcaf6a9094",
+    "packages/pi-session-postgres/src/postgres-session-lease-observer.ts": "bb0d33d0f7cda860d6ae453622459c9c5ed3ced1c168bd1c0e7dfd8ef5aca18c",
+    "packages/pi-session-postgres/src/project-native-session-append.ts": "9251901380e9c1b5c21d78e1456d122dc1c951d0bcb2dda315570633463cd8fe",
+    "packages/pi-session-postgres/test/native-projection-lock.postgres.test.ts": "19da08eb94afc3c39610866b7a316f3e51b077d68a3103948cd685178ef796ff",
+    "packages/pi-session-postgres/test/native-session-projection.test.ts": "b96fbb776f5045e963b7d4ca1bb1817b4ff54f9f1c899dabde760f20ced668f8",
+    "packages/pi-session-postgres/test/native-session-writer.test.ts": "4ef8fdb247d390f29300c39391e43d650b06ec19e99a7f6bcda7b5a0b25ba248",
+    "packages/pi-session-postgres/test/session-lease-observer.test.ts": "3c1bb7497bae30bdc33b94eb3305617f501b4cef81c3df68cd1de5d8abd6449a",
+    "packages/protocol/package.json": "f1e4f6df9de3ec1bc8d275c09578712e877449b64b14d413219ac6a618bbcaaa",
+    "packages/protocol/src/agent-runtime.ts": "8b84819f941b331086f15969008f8b241067efa0a352965faafab3587a4914b0",
+    "packages/protocol/src/development-environment.ts": "d3ad476404937ce74947f9896749e3e89a8c1a9d13594b14e91b77754894b6a6",
+    "packages/protocol/src/guest-directory.ts": "e8b6887f84e11219e93da940c932164bb90e512db21fa7de63c1557293604d41",
+    "packages/protocol/src/guest.ts": "2ffa1e70e51cd1453018d6e1453469e789dc5889433c8887641c178e676a4176",
+    "packages/protocol/src/index.ts": "4748156f29478cea6d7b6860ef1c76c92cb5621bc5b61a6c5f4d88187f0647cb",
+    "packages/protocol/src/native-session.ts": "f28d034409ac85fd4b748d0124754c8207f91a050c70a3de1adf228446bc4778",
+    "packages/protocol/src/tool-result-budget.ts": "017f0dcf6b550aa424c0c07c9551b1dc33c343fde9fd8a0f0efc67515e6bf927",
+    "packages/protocol/src/tool-sandbox.ts": "d15420946360825b6afda7b442298133f83bc877db56fff03feb0a14604d7a8c",
+    "packages/protocol/src/workspace-seed.ts": "ab4aee2c21420c086845e055eebbcf4d3941dfc1e0ab5fa5d0376c3b9c99f9a6",
+    "packages/protocol/src/workspace-terminal.ts": "b0588659844732bb9e005921a3b5b7afeaaa5a9ffb395fa78d8b3ac8b2d8619c",
+    "packages/protocol/test/tool-result-budget.test.ts": "c208181c08ed6eaada2368c87de9b3b2359ff4a745ce08d84f8e2b7dc4ab1edd",
+    "packages/runtime-core/src/accepted-fact.ts": "0b1faad87cd0a48b6a59a71db41403d6bae18c3ce170c57c5a4f91710009e8f1",
+    "packages/runtime-core/src/canonical-pi-conversation.ts": "97556c31e3566ba657647e3f1eb3b32132df12fd18d0b9ba1a91f30842714662",
+    "packages/runtime-core/src/kafka-accepted-fact.ts": "f36e88bec71ba13619b438a02ebc37204730cec5b413e59f41884c6e32d46a49",
+    "packages/runtime-core/src/native-session-log-publisher.ts": "23c80e1bb43cb62c9b898f40098ef578be6834f7911b5ba42ac339126be838cc",
+    "packages/runtime-core/src/postgres-pi-session-append-projector.ts": "599664db82697e65da853c10fd43b2bd6dd2f97b0fd4b9a669700a94f6b8b657",
+    "packages/sandbox-supervisor/package.json": "9e93bf644828d5263002dae03c449b3fb4d0eb831dbff1ec6212f9e194a04cdd",
+    "packages/sandbox-supervisor/src/cloud-agent-runtime.ts": "019f18e91babcfe147de24c830361f7d696d14e1e88fd2146cac5a68a1460f55",
+    "packages/sandbox-supervisor/src/pi-cloud-turn-runner.ts": "841f01dd44a99dfb0a8a0512ad56d7b4bf279257f483fd3322106bdd658e4c7f",
+    "packages/sandbox-supervisor/src/subagent-tool.ts": "642d21fed4f0e0f05b6d866a6059769f22272d4751410d7b524439d170f8d272",
+    "packages/sandbox-supervisor/test/cloud-agent-runtime.test.ts": "0e20d5a84de4ee8ce0eae71d9d977d98d82f977d8457570a6fee272262e4e196",
+    "packages/sandbox-supervisor/test/pi-cloud-turn-runner.integration.test.ts": "962848a4fcc33239983b6ff21e93900a00e1fb133af314338cf6ce8cd9adc15f",
+    "packages/sandbox-supervisor/test/subagent-tool.test.ts": "a88f37d7dac1164e7a88d83ce09bef7d76f64d46efacdd7ddffb3b400befcde9",
+    "packages/subagent-control/README.md": "c68e677e59e9f22979337c36e9396625693535968f4e548c9bad5831f6381377",
+    "packages/subagent-control/package.json": "afc76e4d3f63fde34af5309acda2a70e452c537bb1709a2712a9cc4dad924993",
+    "packages/subagent-control/src/index.ts": "802cdca287d61e20a0184a8b0b68ba0e649a9158d2123d856f9f81e1bbd23f34",
+    "packages/subagent-control/src/postgres-subagent-job-provider.ts": "289f40a6bbd0ef5476702f347b0d0b1080cc533ad5e3014a0a4a640ec67bd474",
+    "packages/subagent-control/src/postgres-subagent-supervisor-channel.ts": "c978f722bc64952ad8352610586d58695ae552d44931304c7edd08de4f3b0607",
+    "packages/subagent-control/test/postgres-subagent-job-provider.test.ts": "74087ec4733817c8e13a72e6457001a4d37b3fc2b9b64939080d7dad10781ba9",
+    "packages/subagent-control/tsconfig.json": "b992e2136c3b9b2da8575145e0bb91b52a6eb89ca07c06e2690fbe35a016e5af",
+    "packages/supervisor-host/Dockerfile": "3926333317041fc56b3c5d306b82fe84e1f12c682ba9d6c1f270fc9e743d7b15",
+    "packages/supervisor-host/package.json": "69982609043d9ccc0d3ce1c4134698c15f0afe4f48c061943c8812c175aeda38",
+    "packages/supervisor-host/src/agent-run-execution-backend.ts": "6304ee240ab0b8f939fe9d5074443fb76ed00b1af5bb5b6354656818100a8c33",
+    "packages/supervisor-host/src/runtime.ts": "5756d66bd470694cab006f41b40ea1fc7ddbd5fdc35dea4b27b1dbc2fb8773a4",
+    "packages/supervisor-host/src/tools/postgres-preview-tool.ts": "d7d5f263d73ff473a526959ae51bdcbc0b5dd8b358172520c0fa93a9186bf228",
+    "packages/supervisor-host/src/tools/subagent-supervisor-tools.ts": "0013c66389f7076afe551c7ebbbe76f174c4e28ea462c95f7d25653d8ad39af2",
+    "packages/supervisor-host/src/tools/trusted-tool-runtime.ts": "31e598118bc4803a56e75fb72304fef3fa8d6f9ac3147730779f68acb1e07190",
+    "packages/supervisor-host/test/postgres-preview-tool.test.ts": "8a6bbfb4e518f209359aacb5b9c1b638b1f95b8ad15d9b82bfee7b4938c7b317",
+    "packages/supervisor-host/test/subagent-supervisor-tools.test.ts": "c6d1321ad41b6cbccd7006dc868e9963d7e5f450e03fe3dbc4ca90c7aea34530",
+    "packages/supervisor-host/test/trusted-tool-runtime.test.ts": "7909e28b527d8b6daa2a3222d0c61a14f95ab655607e48a52b79594b2195ae07",
+    "packages/tool-broker/src/workflow-channels.ts": "b16d01b268e6177da1be2cbe6cabeade6c736dfcbf4a62c97e585ac16f4e4045",
+    "packages/tool-broker/src/workflow-guest-source.ts": "51c13b22206929bee67bc19cc1a05861afef27521505a030d21ed68f77608eef",
+    "packages/tool-broker/test/workflow-channels.test.ts": "5d1de6d079d7a57d4c913f3a0e54e1622b49377c3ac7354393e2c2fd3c10f2f8",
+    "packages/tool-sandbox/src/envd-guest-control.ts": "36de00b10acc76fc2f0b1aaaa5fa1c1734d92059b5e0c5c37882e1c9dbe85f9b",
+    "packages/tool-sandbox/src/envd-tool-exec.ts": "79cd394591b86621678aa0639ff3067a11c3666ca845f54ac2781c70b8c6a544",
+    "packages/tool-sandbox/src/image-processor.ts": "0d2cf687d43f96abb6943253ae63a2d923af6812f8614b9b147a051453c91953",
+    "packages/tool-sandbox/src/native-tools.ts": "8d963f5f0fda26841d3aac34bafcf519fe7e9d1cc7b3b0525abbd669b757ac4c",
+    "packages/tool-sandbox/src/tool-worker.ts": "5709f02ea9c9674f9ae484221121d8d1864e8c2970b10d63aef0da862051e670",
+    "packages/tool-sandbox/test/native-tools.test.ts": "d40607f60752946198ac6e4e30da933d8bb74dbdd157b9b7c9b1e30f32d9c997",
+    "packages/workspace-runtime/src/workspace-seed.ts": "65da6ec9a72753de550b24c070f6dff852db9ac8ad8bf545dc8fc6926d63fabb",
+    "scripts/check-supervisor-image-closure.mjs": "f7933539a9498324a61f2e49810c9c205df0ca832f2d453a84d09c565ac3927a",
+    "scripts/harden-pi-dependencies.mjs": "83d5ec34b0f1911d87ef4aaa6298bf78157418706da36e0c85c530a93928e74c",
+    "scripts/lib/dependency-hardening.test.mjs": "227e1cf1e1a8ad1f86d3dc0df3c733e590fe8ca462d2f8f56eba4d2e6d8ae98f",
+    "scripts/lib/guest-build-identity.test.mjs": "a8e2e122ebd886cef6f67878c3eb4f84ab6dff6832dae8e0e56dfc4bb32bc97d"
+  },
+  "liveEvidence": "repository-review-followup-live-20260927.json",
+  "rolloutEvidence": "repository-review-followup-rollout-20260927.json",
+  "faultEvidence": "repository-review-followup-faults-20260927.json",
+  "cleanup": {
+    "isolatedPostgresRemoved": true,
+    "ownedWorkspaceCount": 2,
+    "ownedWorkspaceStoresPurged": 2
+  }
+}

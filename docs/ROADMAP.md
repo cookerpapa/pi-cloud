@@ -39,7 +39,7 @@
 
 ## Current release gate
 
-- [ ] Complete the approved [D1/D3/D4 follow-up](reports/repository-review-followup-20260927.md):
+- [x] Complete the approved [D1/D3/D4 follow-up](reports/repository-review-followup-20260927.md):
       bounded Subagent results, batched lease observations and narrower runtime/Guest
       dependencies, with matched rollout and real Luna acceptance.
 

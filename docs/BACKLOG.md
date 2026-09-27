@@ -12,12 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Complete the approved repository-review D1/D3/D4 repairs: bounded Subagent
-      results, shared lease observation with unchanged revocation behavior, and
-      narrower package/Guest build boundaries. D1 follows ADR-0196.
 - [ ] Discuss the remaining [repository-review architecture choices](reports/repository-review-20260927.md):
       Tool intent/command batching and measured native-log projection storage costs.
-      General large-result attachments remain a separate capability decision.
+      General large-result attachments remain a separate capability decision;
+      [D1/D3/D4 implementation and acceptance](reports/repository-review-followup-20260927.md)
+      are complete.
 
 - [ ] Review the two moderate development-test dependency findings (Vitest and
       @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
