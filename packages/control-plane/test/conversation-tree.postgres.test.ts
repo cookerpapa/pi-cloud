@@ -200,7 +200,8 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       sessionId: fork.session.sessionId,
     });
     const entries = await db
-      .selectFrom("pi_session_entries")
+      .selectFrom("pi_session_log")
+      .where("kind", "=", "entry")
       .select("turn_id")
       .where("tenant_id", "=", f.tenantId)
       .where("session_id", "=", fork.session.sessionId)

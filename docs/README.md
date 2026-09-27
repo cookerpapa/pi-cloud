@@ -29,7 +29,8 @@ repairs result admission and tightens lease/package/build boundaries without
 merging durable acknowledgements or changing native history ownership.
 The [native-log layout study](reports/native-log-layout-study-20260927.md) compares
 indexed log reads with full and thin Entry/Record tables on isolated PostgreSQL;
-the storage cutover remains a decision, not an implemented change.
+the selected layout and its lifecycle contract are defined in
+[ADR-0197](adr/0197-indexed-native-session-log.md).
 
 The [Pi-alignment review](reports/pi-alignment-review-20260926.md) records its named
 baseline; the [repair and verification record](reports/pi-alignment-repair-20260926.md)

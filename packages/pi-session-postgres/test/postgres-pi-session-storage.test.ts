@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
-import { CompiledQuery, type Kysely } from "kysely";
+import { CompiledQuery, sql, type Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   PostgresPiSessionEntryPayloadCache,
@@ -61,8 +61,10 @@ describe.sequential("PostgresPiSessionStorage", () => {
     );
     const parent = (id: string, parentId: string | null) =>
       database
-        .updateTable("pi_session_entries")
-        .set({ parent_id: parentId })
+        .updateTable("pi_session_log")
+        .set({
+          payload: sql`jsonb_set(payload,'{entry,parentId}',${JSON.stringify(parentId)}::jsonb)`,
+        })
         .where("tenant_id", "=", TENANT_ID)
         .where("session_id", "=", sessionId)
         .where("id", "=", id)
@@ -277,90 +279,76 @@ describe.sequential("PostgresPiSessionStorage", () => {
     await expect(storage.getName()).resolves.toBe("durable session");
   });
 
-  it("shares Fork query payloads while retaining a self-contained destination log", async () => {
-    const entryPayloadCache = new PostgresPiSessionEntryPayloadCache({
+  it("reads independent Fork copies and caches only within the physical Session", async () => {
+    const cache = new PostgresPiSessionEntryPayloadCache({
       maximumBytes: 1024 * 1024,
       maximumEntryBytes: 256 * 1024,
     });
     const repository = new PostgresPiSessionRepository({
       database,
       tenantId: TENANT_ID,
-      entryPayloadCache,
+      entryPayloadCache: cache,
     });
     const source = await repository.openById(SESSION_ID);
-    await source.view("main").findEntriesOnBranch();
-    const warmed = entryPayloadCache.snapshot();
-    expect(warmed.entries).toBe(4);
+    const inherited = await source.view("main").findEntriesOnBranch();
+    const warmed = cache.snapshot();
     const fork = await repository.fork(await source.getMetadata(), {
-      id: "shared-entry-fork",
+      id: "independent-fork",
       scope: "branch",
     });
-    const inherited = await database
-      .selectFrom("pi_session_entry_refs")
-      .select(["id", "source_session_id as sourceSessionId"])
-      .where("tenant_id", "=", TENANT_ID)
-      .where("session_id", "=", "shared-entry-fork")
-      .orderBy("seq")
-      .execute();
-    expect(inherited).toHaveLength(4);
-    expect(new Set(inherited.map((entry) => entry.sourceSessionId))).toEqual(new Set([SESSION_ID]));
-    await expect(
-      database
-        .selectFrom("pi_session_entries")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", TENANT_ID)
-        .where("session_id", "=", "shared-entry-fork")
-        .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ count: "0" });
     expect((await fork.view("main").findEntriesOnBranch()).map((entry) => entry.id)).toEqual(
-      inherited.map((entry) => entry.id).reverse(),
+      inherited.map((entry) => entry.id),
     );
-    expect(entryPayloadCache.snapshot()).toMatchObject({
-      misses: warmed.misses,
-      hits: warmed.hits + 4,
+    expect(cache.snapshot()).toMatchObject({
+      misses: warmed.misses + inherited.length,
+      hits: warmed.hits,
     });
-    const ownEntryId = await fork.appendMessage({
+    await fork.view("main").findEntriesOnBranch();
+    expect(cache.snapshot().hits).toBe(warmed.hits + inherited.length);
+    const own = await fork.appendMessage({
       role: "user",
       content: "fork-only delta",
       timestamp: 1_700_000_000_003,
     });
-    await expect(fork.getEntry(ownEntryId)).resolves.toMatchObject({
-      message: { role: "user", content: "fork-only delta" },
-    });
-    expect((await fork.getLog()).filter((item) => item.kind === "entry")).toHaveLength(5);
-    const forkLog = await database
-      .selectFrom("pi_session_log")
-      .select(["kind", "payload"])
-      .where("tenant_id", "=", TENANT_ID)
-      .where("session_id", "=", "shared-entry-fork")
-      .orderBy("seq", "asc")
-      .execute();
-    expect(forkLog.slice(0, 4)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "entry",
-          payload: expect.objectContaining({
-            entry: expect.objectContaining({ id: expect.any(String), type: expect.any(String) }),
-          }),
-        }),
-      ]),
+    expect((await fork.getLog()).filter((item) => item.kind === "entry")).toHaveLength(
+      inherited.length + 1,
     );
-
     const nested = await repository.fork(await fork.getMetadata(), {
-      id: "nested-shared-entry-fork",
+      id: "nested-independent-fork",
       scope: "branch",
     });
-    await expect(
-      database
-        .selectFrom("pi_session_entry_refs")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", TENANT_ID)
-        .where("session_id", "=", "nested-shared-entry-fork")
-        .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ count: "5" });
     expect((await nested.view("main").findEntriesOnBranch()).map((entry) => entry.id)).toContain(
-      ownEntryId,
+      own,
     );
+    expect(await source.getEntry(own)).toBeUndefined();
+  });
+
+  it("keeps Fork and nested Fork history after native source deletion", async () => {
+    const repository = new PostgresPiSessionRepository({ database, tenantId: TENANT_ID });
+    const source = await repository.create({ id: "deletable-source" });
+    const id = await source.appendMessage({
+      role: "user",
+      content: "survives its source",
+      timestamp: 1,
+    });
+    const fork = await repository.fork(await source.getMetadata(), {
+      id: "surviving-fork",
+      scope: "branch",
+    });
+    const nested = await repository.fork(await fork.getMetadata(), {
+      id: "surviving-nested-fork",
+      scope: "branch",
+    });
+    const expected = await nested.getEntry(id);
+    await repository.delete(await source.getMetadata());
+    expect(await fork.getEntry(id)).toEqual(expected);
+    await repository.delete(await fork.getMetadata());
+    expect(await nested.getEntry(id)).toEqual(expected);
+    await rebuildPostgresPiSessionProjections(database, {
+      tenantId: TENANT_ID,
+      sessionId: "surviving-nested-fork",
+    });
+    expect(await nested.getEntry(id)).toEqual(expected);
   });
 
   it("matches Pi branch ordering, bounds, filters and limits", async () => {
@@ -523,17 +511,12 @@ describe.sequential("PostgresPiSessionStorage", () => {
         .where("session_id", "=", sessionId)
         .execute();
       await transaction
-        .deleteFrom("pi_session_records")
+        .deleteFrom("pi_session_open_operations")
         .where("tenant_id", "=", TENANT_ID)
         .where("session_id", "=", sessionId)
         .execute();
       await transaction
         .deleteFrom("pi_session_lanes")
-        .where("tenant_id", "=", TENANT_ID)
-        .where("session_id", "=", sessionId)
-        .execute();
-      await transaction
-        .deleteFrom("pi_session_entries")
         .where("tenant_id", "=", TENANT_ID)
         .where("session_id", "=", sessionId)
         .execute();

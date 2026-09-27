@@ -193,7 +193,8 @@ try {
     const replayElapsedMs = performance.now() - replayStartedAt;
     failures.push(...replay.failures);
     const entries = await database
-      .selectFrom("pi_session_entries")
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("entry"))
       .select(({ fn }) => fn.countAll<string>().as("count"))
       .executeTakeFirstOrThrow();
     const results = await database

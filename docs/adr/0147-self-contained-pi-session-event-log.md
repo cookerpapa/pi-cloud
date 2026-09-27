@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Accepted. Entry/Record/COW query storage is superseded by
+[ADR-0197](0197-indexed-native-session-log.md); the semantic log and communication
+decisions below remain current.
 
 ## Context
 
@@ -31,18 +33,16 @@ their Workspace runs, or which Tools they receive.
 - The primary key `(tenant_id, session_id, seq)` is the Session-local commit
   order. All Lanes of one physical Session share it; different Sessions do not
   compete for a global sequence.
-- `pi_session_entries`, `pi_session_records`, `pi_session_lanes` and
-  `pi_session_labels` are transactional query projections. They may accelerate
-  branch, open-operation, label and statistics reads, but they are not a
-  competing conversation authority.
+- The indexed log serves Entry/Record reads directly under ADR-0197. Lane heads,
+  labels and currently unfinished operations are transactional current state,
+  not a competing conversation authority.
 - The Projector commits a native append and its query projections in one
   PostgreSQL transaction. Active Workers acknowledge at Kafka, not at this
   asynchronous PG transaction (ADR-0161); cold reads use the projected history
   and handoff waits for ordered closure.
 - Human Forks keep independent Pi Sessions. Their canonical destination log
-  contains complete copied Entry facts for the selected source branch; the
-  existing copy-on-write Entry projection remains an implementation
-  optimization and is not required to replay the destination log.
+  contains complete copied Entry facts for the selected source branch and serves
+  its reads independently. The former COW query-table layout is removed by ADR-0197.
 - Pi Compaction remains an immutable Entry in the same log. It changes the
   model-context projection, not canonical history, and is not a process-memory
   checkpoint.
@@ -66,8 +66,7 @@ their Workspace runs, or which Tools they receive.
   complete multi-Lane conversation and its operation history.
 - Query projections keep normal reads bounded without weakening the log-first
   authority model.
-- Fork storage still benefits from copy-on-write reads, while its durable log
-  no longer depends on the source Session payload surviving forever.
+- Fork reads and durable history do not depend on the source Session surviving.
 - A projection rebuild and Pi's upstream backend conformance suite become
   required acceptance checks.
 - PostgreSQL write volume remains semantic rather than token-fragment-sized.

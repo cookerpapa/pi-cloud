@@ -555,9 +555,9 @@ try {
     ].join(" "),
   });
   const storedResult = JSON.parse(
-    await psql(`select payload->'message' from pi_session_entries
-    where session_id='${session.sessionId}' and turn_id='${largeOutput.accepted.turnId}'
-      and payload->'message'->>'role'='toolResult' order by seq desc limit 1`),
+    await psql(`select payload->'entry'->'message' from pi_session_log
+    where kind='entry' and session_id='${session.sessionId}' and turn_id='${largeOutput.accepted.turnId}'
+      and payload->'entry'->'message'->>'role'='toolResult' order by seq desc limit 1`),
   );
   const storedText = storedResult.content
     .filter((part) => part.type === "text")

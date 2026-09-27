@@ -91,6 +91,17 @@ guest images together. There is no rolling mixed-version image-reply contract.
 Migration 150 changes future profiles only; historical Turn/Run/model records
 remain unchanged. Use GPT-6 Luna for paid acceptance.
 
+Migration 153 adopts the indexed native log (ADR-0197). Stop submissions, drain
+and seal admitted Runs, then stop the old API/Projector and Workers before
+migration. The migration refuses unsettled physical Sessions. It preserves
+canonical log bodies, replaces Entry/Record/COW tables with log indexes and
+current-operation references, and keeps live Turn deletion semantics. Deploy
+matching applications and recreate `database-bootstrap` from that image; old
+readers cannot run against the new schema. Kafka and guest wire formats do not
+change. Verify the Guest build identity instead of rebuilding unchanged Cube
+templates. A rollback requires the prior PG snapshot and matching application
+revision; retain the image objects referenced by that snapshot.
+
 `production:init` creates private S3 credentials and `state/session-images`.
 Compose provisions pinned SeaweedFS 4.47 with SQLite FULL metadata and an explicit
 bucket fsync rule before applications start. Its internal filer/master/S3 ports

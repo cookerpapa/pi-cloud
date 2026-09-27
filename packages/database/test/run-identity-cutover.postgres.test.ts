@@ -6,7 +6,6 @@ import { createDatabase, runMigrations, type Database } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
-import { PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.skipIf(!endpoint)("one-Run identity cutover", () => {
@@ -42,14 +41,17 @@ describe.skipIf(!endpoint)("one-Run identity cutover", () => {
     const p = await store.createProject({ name: "retained", source: { kind: "empty" } }),
       s = await store.createSession(p.projectId, p.workspaceId, "retained", "elastic");
     sessionId = s.sessionId;
-    const native = new PostgresPiSessionStorage({ database: db, tenantId, sessionId });
-    await native.appendEntry(
-      {
-        id: randomUUID(),
-        type: "message",
-        message: { role: "user", content: "retain this native history", timestamp: Date.now() },
-      },
-      "main",
+    const entry = {
+      id: randomUUID(),
+      seq: 1,
+      type: "message",
+      parentId: null,
+      timestamp: 1,
+      message: { role: "user", content: "retain this native history", timestamp: 1 },
+    };
+    await sql`insert into pi_session_log(tenant_id,session_id,seq,kind,payload)
+      values(${tenantId}::uuid,${sessionId},1,'entry',${JSON.stringify({ lane: "main", turnId: null, entry })}::jsonb)`.execute(
+      db,
     );
     runId = randomUUID();
     const turnId = randomUUID();
@@ -108,9 +110,17 @@ describe.skipIf(!endpoint)("one-Run identity cutover", () => {
     await admin?.destroy();
   });
   it("preserves native history and closed Run evidence without an Attempt authority", async () => {
-    const before = await db.selectFrom("pi_session_log").selectAll().execute();
+    const before = await db
+      .selectFrom("pi_session_log")
+      .select(["tenant_id", "session_id", "seq", "kind", "payload", "append_id"])
+      .execute();
     await runMigrations(db, "up");
-    expect(await db.selectFrom("pi_session_log").selectAll().execute()).toEqual(before);
+    expect(
+      await db
+        .selectFrom("pi_session_log")
+        .select(["tenant_id", "session_id", "seq", "kind", "payload", "append_id"])
+        .execute(),
+    ).toEqual(before);
     expect(
       await db
         .selectFrom("runs")

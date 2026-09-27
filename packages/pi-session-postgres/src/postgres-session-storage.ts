@@ -55,9 +55,9 @@ export type PostgresPiSessionStorageOptions = {
   images?: ImageAttachmentCodec;
 };
 
-function safeInteger(value: string | number, name: string): number {
+function safeInteger(value: string | number | null, name: string): number {
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+  if (value === null || !Number.isSafeInteger(parsed) || parsed < 0) {
     throw new SessionError("storage", `${name} is outside the JavaScript safe-integer range`);
   }
   return parsed;
@@ -100,7 +100,7 @@ function entryFromRow(row: {
   payload: Record<string, unknown>;
   seq: string;
   parent_id: string | null;
-  timestamp_ms: string;
+  timestamp_ms: string | null;
 }): Entry {
   return {
     ...payload<Record<string, unknown>>(row.payload),
@@ -113,7 +113,7 @@ function entryFromRow(row: {
 function recordFromRow(row: {
   payload: Record<string, unknown>;
   seq: string;
-  timestamp_ms: string;
+  timestamp_ms: string | null;
 }): LaneRecord {
   return {
     ...payload<Record<string, unknown>>(row.payload),
@@ -122,16 +122,11 @@ function recordFromRow(row: {
   } as LaneRecord;
 }
 
-type VisibleEntryRow = {
-  payload: Record<string, unknown> | null;
+type BranchEntryRow = {
+  id: string;
   seq: string;
   parent_id: string | null;
-  timestamp_ms: string;
-  source_session_id: string;
-  source_entry_id: string;
-};
-type HydratedVisibleEntryRow = Omit<VisibleEntryRow, "payload"> & {
-  payload: Record<string, unknown>;
+  timestamp_ms: string | null;
 };
 
 /** PostgreSQL implementation of Pi 0.84's public bounded SessionStorage port. */
@@ -275,8 +270,14 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
 
   async getEntry(id: string): Promise<Entry | undefined> {
     const row = await this.#database
-      .selectFrom("pi_session_visible_entries")
-      .select(["payload", "seq", "parent_id", "timestamp_ms"])
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("entry"))
+      .select([
+        sql<Record<string, unknown>>`payload->'entry'`.as("payload"),
+        "seq",
+        "parent_id",
+        "timestamp_ms",
+      ])
       .where("tenant_id", "=", this.#tenantId)
       .where("session_id", "=", this.#sessionId)
       .where("id", "=", id)
@@ -289,8 +290,14 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
   async findEntries(query: EntryQuery = {}): Promise<Entry[]> {
     const boundedLimit = limit(query.limit);
     let selection = this.#database
-      .selectFrom("pi_session_visible_entries")
-      .select(["payload", "seq", "parent_id", "timestamp_ms"])
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("entry"))
+      .select([
+        sql<Record<string, unknown>>`payload->'entry'`.as("payload"),
+        "seq",
+        "parent_id",
+        "timestamp_ms",
+      ])
       .where("tenant_id", "=", this.#tenantId)
       .where("session_id", "=", this.#sessionId);
     if (query.type !== undefined) selection = selection.where("type", "=", query.type);
@@ -317,27 +324,22 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
   ): Promise<Entry[]> {
     const maximum = limit(query.limit) ?? Number.MAX_SAFE_INTEGER;
     const oldestFirst = query.order === "oldestFirst";
-    const direction = query.order === "oldestFirst" ? sql.raw("asc") : sql.raw("desc");
-    const cursorOperator = query.order === "oldestFirst" ? sql.raw(">") : sql.raw("<");
+    const direction = oldestFirst ? sql.raw("asc") : sql.raw("desc");
+    const cursorOperator = oldestFirst ? sql.raw(">") : sql.raw("<");
     const matches = (alias: string) => sql<number>`case when
       (${query.type ?? null}::text is null or ${sql.ref(`${alias}.type`)} = ${query.type ?? null}::text)
       and (${query.customType ?? null}::text is null or ${sql.ref(`${alias}.custom_type`)} = ${query.customType ?? null}::text)
       and (${query.cursor?.afterSeq ?? null}::bigint is null or ${sql.ref(`${alias}.seq`)} ${cursorOperator} ${query.cursor?.afterSeq ?? null}::bigint)
       then 1::bigint else 0::bigint end`;
-    // Every valid parent predates its child in the append log, including COW
-    // Forks. Decreasing sequence detects cycles without copying an O(depth)
-    // visited-ID array into every recursive row (quadratic transient storage).
-    // LATERAL/OFFSET 0 keeps each parent lookup parameterized by its exact ID;
-    // pulling the UNION into a hash join can rescan the whole Session per hop.
-    // Materialize only the one-row scope, not lifetime entries. This avoids
-    // rare-new-Session selectivity overriding the exact parent-ID lookup.
+    // Parent metadata lives on the log row: no JSON extraction or body lookup
+    // while walking. Decreasing seq detects cycles without quadratic ID arrays.
+    // Materialize only scope; LATERAL/OFFSET keeps exact parent-ID index probes
+    // even for rare Sessions and generic prepared plans. Hydrate after selection.
     const result = await sql<{
-      payload: Record<string, unknown> | null;
+      id: string | null;
       seq: string | null;
       parent_id: string | null;
       timestamp_ms: string | null;
-      source_session_id: string | null;
-      source_entry_id: string | null;
       diagnostic: boolean;
       start_missing: boolean;
       ancestry_invalid: boolean;
@@ -345,152 +347,62 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       with recursive scope as materialized (
         select ${this.#tenantId}::uuid as tenant, ${this.#sessionId}::text as session
       ), visible as not materialized (
-        select null::jsonb as payload,
-               seq,
-               parent_id,
-               timestamp_ms,
-               id,
-               type,
-               custom_type,
-               session_id as source_session_id,
-               id as source_entry_id
-          from pi_session_entries, scope
-         where tenant_id = scope.tenant and session_id = scope.session
-        union all
-        select null::jsonb as payload,
-               seq,
-               parent_id,
-               timestamp_ms,
-               id,
-               type,
-               custom_type,
-               source_session_id,
-               source_entry_id
-          from pi_session_entry_refs, scope
-         where tenant_id = scope.tenant and session_id = scope.session
+        select id,seq,parent_id,timestamp_ms,type,custom_type
+          from pi_session_log, scope
+         where kind='entry' and tenant_id=scope.tenant and session_id=scope.session
       ), branch as (
-        select payload,
-               seq,
-               parent_id,
-               timestamp_ms,
-               id,
-               type,
-               custom_type,
-               source_session_id,
-               source_entry_id,
-               ${matches("visible")} as matches
-          from visible
-         where id = ${query.start}::text
+        select visible.*, ${matches("visible")} as matches from visible where id=${query.start}::text
         union all
-        select parent.payload,
-               parent.seq,
-               parent.parent_id,
-               parent.timestamp_ms,
-               parent.id,
-               parent.type,
-               parent.custom_type,
-               parent.source_session_id,
-               parent.source_entry_id,
-               branch.matches + ${matches("parent")}
-          from branch
-          cross join lateral (
-            select * from visible where id = branch.parent_id offset 0
+        select parent.*, branch.matches + ${matches("parent")}
+          from branch cross join lateral (
+            select * from visible where id=branch.parent_id offset 0
           ) parent
-         where parent.seq < branch.seq
-           and (${oldestFirst} or branch.matches < ${maximum}::bigint)
-           and (${oldestFirst}
-                or ((${query.stopAtId ?? null}::text is null or branch.id <> ${query.stopAtId ?? null}::text)
-                    and (${query.stopAtType ?? null}::text is null or branch.type <> ${query.stopAtType ?? null}::text)))
+         where parent.seq<branch.seq
+           and (${oldestFirst} or branch.matches<${maximum}::bigint)
+           and (${oldestFirst} or (
+             (${query.stopAtId ?? null}::text is null or branch.id<>${query.stopAtId ?? null}::text)
+             and (${query.stopAtType ?? null}::text is null or branch.type<>${query.stopAtType ?? null}::text)))
       ), diagnostics as (
-        select not exists (select 1 from branch) as start_missing,
-               exists (
-                 select 1 from branch child
-                 left join lateral (
-                   select seq from visible where id = child.parent_id offset 0
-                 ) parent on true
-                 where child.parent_id is not null
-                   and (parent.seq is null or parent.seq >= child.seq)
-               ) as ancestry_invalid
+        select not exists(select 1 from branch) as start_missing,
+          exists(select 1 from branch child
+            left join lateral (select seq from visible where id=child.parent_id offset 0) parent on true
+            where child.parent_id is not null and (parent.seq is null or parent.seq>=child.seq)) as ancestry_invalid
       ), boundary as (
-        select case when ${oldestFirst}
-                    then min(branch.seq)
-                    else max(branch.seq)
-               end as seq
-          from branch
-         where ((${query.stopAtId ?? null}::text is not null and branch.id = ${query.stopAtId ?? null}::text)
-             or (${query.stopAtType ?? null}::text is not null and branch.type = ${query.stopAtType ?? null}::text))
+        select case when ${oldestFirst} then min(seq) else max(seq) end as seq
+          from branch where
+            (${query.stopAtId ?? null}::text is not null and id=${query.stopAtId ?? null}::text)
+            or (${query.stopAtType ?? null}::text is not null and type=${query.stopAtType ?? null}::text)
       ), selected as (
-        select branch.payload,
-               branch.seq,
-               branch.parent_id,
-               branch.timestamp_ms,
-               branch.source_session_id,
-               branch.source_entry_id
+        select branch.id,branch.seq,branch.parent_id,branch.timestamp_ms
           from branch, boundary
-         where (boundary.seq is null
-                or (${oldestFirst} and branch.seq <= boundary.seq)
-                or (not ${oldestFirst} and branch.seq >= boundary.seq))
-           and (${query.type ?? null}::text is null or type = ${query.type ?? null}::text)
-           and (${query.customType ?? null}::text is null or custom_type = ${query.customType ?? null}::text)
+         where (boundary.seq is null or (${oldestFirst} and branch.seq<=boundary.seq)
+           or (not ${oldestFirst} and branch.seq>=boundary.seq))
+           and (${query.type ?? null}::text is null or type=${query.type ?? null}::text)
+           and (${query.customType ?? null}::text is null or custom_type=${query.customType ?? null}::text)
            and (${query.cursor?.afterSeq ?? null}::bigint is null
-                or branch.seq ${cursorOperator} ${query.cursor?.afterSeq ?? null}::bigint)
-         order by branch.seq ${direction}
-         limit ${maximum}
+             or branch.seq ${cursorOperator} ${query.cursor?.afterSeq ?? null}::bigint)
+         order by branch.seq ${direction} limit ${maximum}
       )
-      select selected.payload,
-             selected.seq,
-             selected.parent_id,
-             selected.timestamp_ms,
-             selected.source_session_id,
-             selected.source_entry_id,
-             false as diagnostic,
-             diagnostics.start_missing,
-             diagnostics.ancestry_invalid
+      select selected.*,false as diagnostic,diagnostics.start_missing,diagnostics.ancestry_invalid
         from selected cross join diagnostics
       union all
-      select null, null, null, null, null, null, true,
-             diagnostics.start_missing,
-             diagnostics.ancestry_invalid
-        from diagnostics
-       where not exists (select 1 from selected)
+      select null,null,null,null,true,diagnostics.start_missing,diagnostics.ancestry_invalid
+        from diagnostics where not exists(select 1 from selected)
       order by diagnostic asc, seq ${direction}
     `.execute(this.#database);
     const diagnostics = result.rows[0]!;
-    if (diagnostics.start_missing) {
+    if (diagnostics.start_missing)
       throw new SessionError("not_found", `Pi entry was not found: ${query.start}`);
-    }
-    if (diagnostics.ancestry_invalid) {
+    if (diagnostics.ancestry_invalid)
       throw new SessionError("invalid_entry", "Pi Session branch is corrupt");
-    }
-    const selectedRows = result.rows
-      .filter(
-        (
-          row,
-        ): row is typeof row & {
-          payload: Record<string, unknown>;
-          seq: string;
-          timestamp_ms: string;
-          source_session_id: string;
-          source_entry_id: string;
-        } =>
-          !row.diagnostic &&
-          row.seq !== null &&
-          row.timestamp_ms !== null &&
-          row.source_session_id !== null &&
-          row.source_entry_id !== null,
-      )
-      .map((row) => ({
-        payload: row.payload,
-        seq: row.seq,
-        parent_id: row.parent_id,
-        timestamp_ms: row.timestamp_ms,
-        source_session_id: row.source_session_id,
-        source_entry_id: row.source_entry_id,
-      }));
+    const selected = result.rows.filter(
+      (row): row is typeof row & { id: string; seq: string } =>
+        !row.diagnostic && row.id !== null && row.seq !== null,
+    );
     return decodeSessionImages<Entry[]>(
       this.#images,
       { tenantId: this.#tenantId },
-      (await this.#hydrateEntryRows(selectedRows)).map(entryFromRow),
+      (await this.#hydrateEntryRows(selected)).map(entryFromRow),
     );
   }
 
@@ -501,8 +413,13 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
   async findRecords(query: RecordQuery = {}): Promise<LaneRecord[]> {
     const boundedLimit = limit(query.limit);
     let selection = this.#database
-      .selectFrom("pi_session_records")
-      .select(["payload", "seq", "timestamp_ms"])
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("record"))
+      .select([
+        sql<Record<string, unknown>>`payload->'record'`.as("payload"),
+        "seq",
+        "timestamp_ms",
+      ])
       .where("tenant_id", "=", this.#tenantId)
       .where("session_id", "=", this.#sessionId);
     if (query.lane !== undefined) selection = selection.where("lane", "=", query.lane);
@@ -642,20 +559,20 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     }>`
       select (
                select count(*)
-                 from pi_session_visible_entries
+                 from pi_session_log
                 where tenant_id = ${this.#tenantId}::uuid
                   and session_id = ${this.#sessionId}::text
-                  and type = 'message'
+                  and kind = 'entry' and type = 'message'
              )::text as message_count,
-             coalesce(sum((payload #>> '{usage,cacheRead}')::numeric),0)::text as cached_tokens,
-             coalesce(sum((payload #>> '{usage,input}')::numeric
-                        + (payload #>> '{usage,cacheWrite}')::numeric),0)::text as uncached_tokens,
-             coalesce(sum((payload #>> '{usage,totalTokens}')::numeric),0)::text as total_tokens,
-             coalesce(sum((payload #>> '{usage,cost,total}')::numeric),0)::text as cost_total
-        from pi_session_records
+             coalesce(sum((payload #>> '{record,usage,cacheRead}')::numeric),0)::text as cached_tokens,
+             coalesce(sum((payload #>> '{record,usage,input}')::numeric
+                        + (payload #>> '{record,usage,cacheWrite}')::numeric),0)::text as uncached_tokens,
+             coalesce(sum((payload #>> '{record,usage,totalTokens}')::numeric),0)::text as total_tokens,
+             coalesce(sum((payload #>> '{record,usage,cost,total}')::numeric),0)::text as cost_total
+        from pi_session_log
        where tenant_id = ${this.#tenantId}::uuid
          and session_id = ${this.#sessionId}::text
-         and type = 'usage'
+         and kind = 'record' and type = 'usage'
     `.execute(this.#database);
     const row = result.rows[0];
     if (row === undefined)
@@ -693,21 +610,6 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       timestamp,
     } as TEntry;
     const turnId = await this.#entryTurnId(transaction, lane);
-    await transaction
-      .insertInto("pi_session_entries")
-      .values({
-        tenant_id: this.#tenantId,
-        session_id: this.#sessionId,
-        id: complete.id,
-        seq,
-        parent_id: pointer.leaf_id,
-        type: complete.type,
-        custom_type: complete.type === "custom" ? complete.customType : null,
-        timestamp_ms: timestamp,
-        payload: complete as unknown as Record<string, unknown>,
-        turn_id: turnId,
-      })
-      .executeTakeFirst();
     await transaction
       .updateTable("pi_session_lanes")
       .set({ leaf_id: complete.id })
@@ -753,29 +655,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       seq,
       timestamp,
     } as TRecord;
-    const runId =
-      complete.type === "operation_started"
-        ? complete.id
-        : "runId" in complete && typeof complete.runId === "string"
-          ? complete.runId
-          : null;
     const turnId = await this.#recordTurnId(transaction, newRecord);
-    await transaction
-      .insertInto("pi_session_records")
-      .values({
-        tenant_id: this.#tenantId,
-        session_id: this.#sessionId,
-        id: complete.id,
-        seq,
-        lane: complete.lane,
-        type: complete.type,
-        run_id: runId,
-        operation_kind: complete.type === "operation_started" ? complete.intent.kind : null,
-        timestamp_ms: timestamp,
-        payload: complete as unknown as Record<string, unknown>,
-        turn_id: turnId,
-      })
-      .executeTakeFirst();
     await this.#appendLog(transaction, seq, "record", {
       turnId,
       record: complete as unknown as Record<string, unknown>,
@@ -807,44 +687,33 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     }
   }
 
-  async #hydrateEntryRows(rows: readonly VisibleEntryRow[]): Promise<HydratedVisibleEntryRow[]> {
-    const hydrated = rows.map((row) => ({ ...row }));
-    const missingBySession = new Map<string, Set<string>>();
-    for (const row of hydrated) {
-      const cached = this.#entryPayloadCache?.get(
-        this.#tenantId,
-        row.source_session_id,
-        row.source_entry_id,
-      );
-      if (cached !== undefined) {
-        row.payload = cached;
-        continue;
-      }
-      const ids = missingBySession.get(row.source_session_id) ?? new Set<string>();
-      ids.add(row.source_entry_id);
-      missingBySession.set(row.source_session_id, ids);
+  async #hydrateEntryRows(rows: readonly BranchEntryRow[]) {
+    const bodies = new Map<string, Record<string, unknown>>();
+    const missing: string[] = [];
+    for (const row of rows) {
+      const cached = this.#entryPayloadCache?.get(this.#tenantId, this.#sessionId, row.id);
+      if (cached) bodies.set(row.id, cached);
+      else missing.push(row.id);
     }
-    for (const [sourceSessionId, ids] of missingBySession) {
-      const sourceRows = await this.#database
-        .selectFrom("pi_session_entries")
-        .select(["id", "payload"])
+    if (missing.length) {
+      const fetched = await this.#database
+        .selectFrom("pi_session_log")
+        .where("kind", "=", sql.lit("entry"))
+        .select(["id", sql<Record<string, unknown>>`payload->'entry'`.as("payload")])
         .where("tenant_id", "=", this.#tenantId)
-        .where("session_id", "=", sourceSessionId)
-        .where("id", "in", [...ids])
+        .where("session_id", "=", this.#sessionId)
+        .where("id", "in", missing)
         .execute();
-      for (const source of sourceRows) {
-        this.#entryPayloadCache?.set(this.#tenantId, sourceSessionId, source.id, source.payload);
-      }
-      const payloadById = new Map(sourceRows.map((source) => [source.id, source.payload] as const));
-      for (const row of hydrated) {
-        if (row.source_session_id !== sourceSessionId || row.payload !== null) continue;
-        row.payload = payloadById.get(row.source_entry_id) ?? null;
+      for (const row of fetched) {
+        bodies.set(row.id!, row.payload);
+        this.#entryPayloadCache?.set(this.#tenantId, this.#sessionId, row.id!, row.payload);
       }
     }
-    if (hydrated.some((row) => row.payload === null)) {
-      throw new SessionError("invalid_entry", "Pi Session references a missing shared entry");
-    }
-    return hydrated as HydratedVisibleEntryRow[];
+    return rows.map((row) => {
+      const body = bodies.get(row.id);
+      if (!body) throw new SessionError("invalid_entry", "Pi Session references a missing entry");
+      return { ...row, payload: body };
+    });
   }
 
   async #nextSequence(transaction: Transaction<Database>): Promise<number> {
@@ -861,25 +730,22 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
   }
 
   async #entryTurnId(transaction: Transaction<Database>, lane: string): Promise<string | null> {
-    const open = await sql<{ turn_id: string | null }>`
-      select started.turn_id
-        from pi_session_records started
-       where started.tenant_id = ${this.#tenantId}::uuid
-         and started.session_id = ${this.#sessionId}::text
-         and started.lane = ${lane}
-         and started.type = 'operation_started'
-         and not exists (
-           select 1
-             from pi_session_records finished
-            where finished.tenant_id = started.tenant_id
-              and finished.session_id = started.session_id
-              and finished.type = 'operation_finished'
-              and finished.run_id = started.id
-         )
-       order by started.seq desc
-       limit 1
-    `.execute(transaction);
-    return open.rows[0]?.turn_id ?? this.#turnId ?? null;
+    const row = await transaction
+      .selectFrom("pi_session_open_operations as open")
+      .innerJoin("pi_session_log as started", (join) =>
+        join
+          .onRef("started.tenant_id", "=", "open.tenant_id")
+          .onRef("started.session_id", "=", "open.session_id")
+          .onRef("started.seq", "=", "open.seq"),
+      )
+      .select("started.turn_id")
+      .where("open.tenant_id", "=", this.#tenantId)
+      .where("open.session_id", "=", this.#sessionId)
+      .where("open.lane", "=", lane)
+      .orderBy("open.seq", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    return row?.turn_id ?? this.#turnId ?? null;
   }
 
   async #recordTurnId(
@@ -889,7 +755,8 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     if (record.type === "operation_started") return this.#turnId ?? null;
     if (!("runId" in record) || typeof record.runId !== "string") return this.#turnId ?? null;
     const operation = await transaction
-      .selectFrom("pi_session_records")
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("record"))
       .select("turn_id")
       .where("tenant_id", "=", this.#tenantId)
       .where("session_id", "=", this.#sessionId)
@@ -921,7 +788,8 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
   async #requireTarget(transaction: Transaction<Database>, id: string | null): Promise<void> {
     if (id === null) return;
     const row = await transaction
-      .selectFrom("pi_session_visible_entries")
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("entry"))
       .select("id")
       .where("tenant_id", "=", this.#tenantId)
       .where("session_id", "=", this.#sessionId)
@@ -931,26 +799,15 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
   }
 
   async #requireUnusedId(transaction: Transaction<Database>, id: string): Promise<void> {
-    const entry = await transaction
-      .selectFrom("pi_session_visible_entries")
+    const row = await transaction
+      .selectFrom("pi_session_log")
       .select("id")
       .where("tenant_id", "=", this.#tenantId)
       .where("session_id", "=", this.#sessionId)
       .where("id", "=", id)
       .executeTakeFirst();
-    if (entry !== undefined) {
+    if (row !== undefined)
       throw new SessionError("already_exists", `Pi Session id already exists: ${id}`);
-    }
-    const record = await transaction
-      .selectFrom("pi_session_records")
-      .select("id")
-      .where("tenant_id", "=", this.#tenantId)
-      .where("session_id", "=", this.#sessionId)
-      .where("id", "=", id)
-      .executeTakeFirst();
-    if (record !== undefined) {
-      throw new SessionError("already_exists", `Pi Session id already exists: ${id}`);
-    }
   }
 
   async #findOpenOperations(
@@ -959,24 +816,22 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     maximum?: number,
   ): Promise<OperationStartedRecord[]> {
     let query = database
-      .selectFrom("pi_session_records as started")
-      .select(["started.payload", "started.seq", "started.timestamp_ms"])
-      .where("started.tenant_id", "=", this.#tenantId)
-      .where("started.session_id", "=", this.#sessionId)
-      .where("started.lane", "=", lane)
-      .where("started.type", "=", "operation_started")
-      .where(
-        sql<boolean>`not exists (
-          select 1 from pi_session_records as finished
-           where finished.tenant_id = started.tenant_id
-             and finished.session_id = started.session_id
-             and finished.lane = started.lane
-             and finished.type = 'operation_finished'
-             and finished.run_id = started.id
-             and finished.seq > started.seq
-        )`,
+      .selectFrom("pi_session_open_operations as open")
+      .innerJoin("pi_session_log as started", (join) =>
+        join
+          .onRef("started.tenant_id", "=", "open.tenant_id")
+          .onRef("started.session_id", "=", "open.session_id")
+          .onRef("started.seq", "=", "open.seq"),
       )
-      .orderBy("started.seq", "desc");
+      .select([
+        sql<Record<string, unknown>>`started.payload->'record'`.as("payload"),
+        "started.seq",
+        "started.timestamp_ms",
+      ])
+      .where("open.tenant_id", "=", this.#tenantId)
+      .where("open.session_id", "=", this.#sessionId)
+      .where("open.lane", "=", lane)
+      .orderBy("open.seq", "desc");
     if (maximum !== undefined) query = query.limit(maximum);
     return (await query.execute()).map(recordFromRow) as OperationStartedRecord[];
   }

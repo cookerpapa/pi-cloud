@@ -133,18 +133,18 @@ async function psql(query) {
 async function readRunUsage(runId) {
   const row = await psql(
     `select count(*)::text || '|' ||
-            coalesce(sum((entry.payload #>> '{message,usage,input}')::bigint), 0)::text || '|' ||
-            coalesce(sum((entry.payload #>> '{message,usage,output}')::bigint), 0)::text || '|' ||
-            coalesce(sum((entry.payload #>> '{message,usage,cacheRead}')::bigint), 0)::text || '|' ||
-            coalesce(sum((entry.payload #>> '{message,usage,cacheWrite}')::bigint), 0)::text
+            coalesce(sum((entry.payload #>> '{entry,message,usage,input}')::bigint), 0)::text || '|' ||
+            coalesce(sum((entry.payload #>> '{entry,message,usage,output}')::bigint), 0)::text || '|' ||
+            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheRead}')::bigint), 0)::text || '|' ||
+            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheWrite}')::bigint), 0)::text
        from runs run
-       join pi_session_entries entry
-         on entry.tenant_id = run.tenant_id
+       join pi_session_log entry
+         on entry.kind='entry' and entry.tenant_id = run.tenant_id
         and entry.turn_id = run.turn_id
       where run.id = ${sqlLiteral(runId)}
         and entry.type = 'message'
-        and entry.payload #>> '{message,role}' = 'assistant'
-        and entry.payload #> '{message,usage}' is not null`,
+        and entry.payload #>> '{entry,message,role}' = 'assistant'
+        and entry.payload #> '{entry,message,usage}' is not null`,
   );
   const [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens] = row
     .trim()
@@ -162,10 +162,10 @@ async function readStreamEvidence(runIds) {
     `select count(distinct terminal.turn_id)::text || '|' ||
             count(entry.id)::text || '|' ||
             (count(entry.id) filter (where entry.type = 'message'))::text || '|' ||
-            coalesce(sum(octet_length(entry.payload::text)), 0)::text
+            coalesce(sum(octet_length((entry.payload->'entry')::text)), 0)::text
        from runs r
        join session_terminal_events terminal on terminal.turn_id = r.turn_id
-       left join pi_session_entries entry on entry.turn_id = r.turn_id
+       left join pi_session_log entry on entry.kind='entry' and entry.turn_id = r.turn_id
       where r.id in (${runIds.map(sqlLiteral).join(", ")})`,
   );
   const [terminalCount, piEntryCount, messageCount, canonicalPayloadBytes] = row

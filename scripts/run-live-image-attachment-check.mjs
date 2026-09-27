@@ -249,7 +249,7 @@ try {
   }
   report.cleanupCompleted = errors.length === 0;
   await writeFile(
-    "docs/reports/image-attachments-live-20260926.json",
+    process.argv[2] ?? "/tmp/pi-cloud-image-attachments-live.json",
     JSON.stringify(report, null, 2) + "\n",
   );
   blobs.close();

@@ -9,7 +9,7 @@ const TURN_ID = "10000000-0000-4000-8000-000000000002";
 
 function database(entries?: unknown[]): Kysely<Database> {
   const rows: Record<string, unknown[]> = {
-    pi_session_entries: [
+    entry: [
       {
         turn_id: TURN_ID,
         seq: "2",
@@ -126,7 +126,7 @@ function database(entries?: unknown[]): Kysely<Database> {
         },
       },
     ],
-    pi_session_records: [
+    record: [
       {
         turn_id: TURN_ID,
         seq: "3",
@@ -150,10 +150,11 @@ function database(entries?: unknown[]): Kysely<Database> {
       },
     ],
   };
-  if (entries) rows.pi_session_entries = entries;
+  if (entries) rows.entry = entries;
   return {
     isTransaction: true,
     selectFrom(table: string) {
+      let selectedKind: string | undefined;
       const query = {
         select() {
           return this;
@@ -161,14 +162,19 @@ function database(entries?: unknown[]): Kysely<Database> {
         innerJoin() {
           return this;
         },
-        where() {
+        where(
+          column: unknown,
+          _op?: unknown,
+          value?: { toOperationNode(): { parameters: { value: string }[] } },
+        ) {
+          if (column === "kind") selectedKind = value?.toOperationNode().parameters[0]?.value;
           return this;
         },
         orderBy() {
           return this;
         },
         async execute() {
-          return rows[table] ?? [];
+          return rows[selectedKind ?? table] ?? [];
         },
       };
       return query;

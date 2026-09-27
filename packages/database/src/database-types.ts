@@ -983,50 +983,11 @@ export interface PiSessionLaneTable {
   leaf_id: string | null;
 }
 
-export interface PiSessionEntryTable {
+export interface PiSessionOpenOperationTable {
   tenant_id: string;
   session_id: string;
-  id: string;
-  seq: Int8;
-  parent_id: string | null;
-  type: string;
-  custom_type: string | null;
-  timestamp_ms: Int8;
-  payload: JsonObject;
-  turn_id: string | null;
-}
-
-export interface PiSessionEntryRefTable {
-  tenant_id: string;
-  session_id: string;
-  id: string;
-  seq: Int8;
-  source_session_id: string;
-  source_entry_id: string;
-  parent_id: string | null;
-  type: string;
-  custom_type: string | null;
-  timestamp_ms: Int8;
-}
-
-export interface PiSessionVisibleEntryTable extends PiSessionEntryTable {
-  source_session_id: string;
-  source_entry_id: string;
-  inherited: boolean;
-}
-
-export interface PiSessionRecordTable {
-  tenant_id: string;
-  session_id: string;
-  id: string;
-  seq: Int8;
   lane: string;
-  type: string;
-  run_id: string | null;
-  operation_kind: string | null;
-  timestamp_ms: Int8;
-  payload: JsonObject;
-  turn_id: GeneratedNullable<string>;
+  seq: Int8;
 }
 
 export interface PiSessionLabelTable {
@@ -1044,6 +1005,15 @@ export interface PiSessionLogTable {
   kind: string;
   payload: JsonObject;
   append_id: string | null;
+  id: ColumnType<string | null, never, never>;
+  type: ColumnType<string | null, never, never>;
+  parent_id: ColumnType<string | null, never, never>;
+  custom_type: ColumnType<string | null, never, never>;
+  lane: ColumnType<string | null, never, never>;
+  run_id: ColumnType<string | null, never, never>;
+  operation_kind: ColumnType<string | null, never, never>;
+  timestamp_ms: ColumnType<string | null, never, never>;
+  turn_id: GeneratedNullable<string>;
 }
 
 export interface Database {
@@ -1104,10 +1074,7 @@ export interface Database {
   platform_runtime_setting_changes: PlatformRuntimeSettingChangeTable;
   pi_sessions: PiSessionTable;
   pi_session_lanes: PiSessionLaneTable;
-  pi_session_entries: PiSessionEntryTable;
-  pi_session_entry_refs: PiSessionEntryRefTable;
-  pi_session_visible_entries: PiSessionVisibleEntryTable;
-  pi_session_records: PiSessionRecordTable;
   pi_session_labels: PiSessionLabelTable;
   pi_session_log: PiSessionLogTable;
+  pi_session_open_operations: PiSessionOpenOperationTable;
 }

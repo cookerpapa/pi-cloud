@@ -504,12 +504,13 @@ export class SubagentController {
   }
   async #invocationEnded(command: AcceptedSubagentCommand): Promise<boolean> {
     const entry = await this.options.database
-      .selectFrom("pi_session_entries")
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("entry"))
       .select("id")
       .where("tenant_id", "=", command.scope.tenantId)
       .where("turn_id", "=", command.scope.turnId)
       .where("type", "=", "message")
-      .where(sql<string>`payload->'message'->>'role'`, "=", "toolResult")
+      .where(sql<string>`payload->'entry'->'message'->>'role'`, "=", "toolResult")
       .where("id", "=", command.toolCallId)
       .limit(1)
       .executeTakeFirst();
@@ -549,8 +550,8 @@ export class SubagentController {
         eb.or([
           eb("parent.output_sealed_at", "is not", null),
           sql<boolean>`not exists(select 1 from subagent_supervisor_requests sr where sr.execution_id=e.id and sr.expects_reply=true)
-          and exists(select 1 from pi_session_entries pe where pe.tenant_id=e.tenant_id and pe.turn_id=parent.turn_id
-            and pe.type='message' and pe.payload->'message'->>'role'='toolResult'
+          and exists(select 1 from pi_session_log pe where pe.kind='entry' and pe.tenant_id=e.tenant_id and pe.turn_id=parent.turn_id
+            and pe.type='message' and pe.payload->'entry'->'message'->>'role'='toolResult'
             and pe.id=e.parent_tool_call_id)`,
         ]),
       )

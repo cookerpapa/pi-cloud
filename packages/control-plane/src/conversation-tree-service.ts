@@ -40,8 +40,6 @@ type PiEntryRow = {
   customType: string | null;
   timestampMs: string;
   payload: Record<string, unknown>;
-  sourceSessionId: string;
-  sourceEntryId: string;
 };
 
 type CompletedTurnRow = {
@@ -201,8 +199,6 @@ async function sessionEntries(
       custom_type: string | null;
       timestamp_ms: string;
       payload: Record<string, unknown>;
-      source_session_id: string;
-      source_entry_id: string;
     }>`
       with recursive requested as (
         select distinct "piSessionId" as session_id, "piSessionLane" as lane
@@ -220,33 +216,28 @@ async function sessionEntries(
            and lane.leaf_id is not null
         union
         select parent.session_id, parent.parent_id
-          from pi_session_visible_entries parent
+          from pi_session_log parent
           join reachable child
             on child.session_id = parent.session_id
            and child.id = parent.id
+           and parent.kind = 'entry'
          where parent.tenant_id = ${tenantId}::uuid
            and parent.parent_id is not null
       )
       select entry.session_id,
              entry.id,
-             source.turn_id,
+             entry.turn_id,
              entry.seq,
              entry.parent_id,
              entry.type,
              entry.custom_type,
              entry.timestamp_ms,
-             entry.payload,
-             entry.source_session_id,
-             entry.source_entry_id
-        from pi_session_visible_entries entry
-        join pi_session_entries source
-          on source.tenant_id = entry.tenant_id
-         and source.session_id = entry.source_session_id
-         and source.id = entry.source_entry_id
+             entry.payload->'entry' as payload
+        from pi_session_log entry
         join reachable
           on reachable.session_id = entry.session_id
          and reachable.id = entry.id
-       where entry.tenant_id = ${tenantId}::uuid
+       where entry.tenant_id = ${tenantId}::uuid and entry.kind = 'entry'
        order by entry.session_id, entry.seq
     `.execute(database)
   ).rows;
@@ -262,8 +253,6 @@ async function sessionEntries(
       customType: row.custom_type,
       timestampMs: row.timestamp_ms,
       payload: row.payload,
-      sourceSessionId: row.source_session_id,
-      sourceEntryId: row.source_entry_id,
     });
     groupedByPiSession.set(row.session_id, entries);
   }
@@ -993,7 +982,8 @@ export class ConversationTreeService {
           });
           const open = await native.findOpenOperations("main");
           const pruned = await transaction
-            .selectFrom("pi_session_records")
+            .selectFrom("pi_session_log")
+            .where("kind", "=", sql.lit("record"))
             .select("id")
             .where("tenant_id", "=", tenantId)
             .where("session_id", "=", sessionId)
@@ -1320,23 +1310,6 @@ export class ConversationTreeService {
             name: title,
           })
           .executeTakeFirstOrThrow();
-        await transaction
-          .insertInto("pi_session_entry_refs")
-          .values(
-            copiedEntries.map((entry) => ({
-              tenant_id: tenantId,
-              session_id: childSessionId,
-              id: entry.id,
-              seq: entry.sequence,
-              source_session_id: entry.sourceSessionId,
-              source_entry_id: entry.sourceEntryId,
-              parent_id: entry.parentId,
-              type: entry.type,
-              custom_type: entry.customType,
-              timestamp_ms: entry.timestampMs,
-            })),
-          )
-          .execute();
         let nextSequence = copiedEntries.length + 1;
         await transaction
           .insertInto("pi_session_log")

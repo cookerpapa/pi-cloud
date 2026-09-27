@@ -112,6 +112,16 @@ It uses Luna, Cube and Chrome to check noisy/silent commands, reload, cancellati
 and subsequent coding. Adding `PI_CLOUD_TOOL_PROGRESS_RESTART_CHECK=1` permits
 SIGKILL/start of the local Control Plane only after excluding unrelated active Runs.
 
+For ADR-0197 storage acceptance, run
+`PI_CLOUD_LIVE_INDEXED_LOG_CHECK=1 node --import tsx scripts/run-live-indexed-log-check.mjs /tmp/indexed-log-live.json`.
+It uses real GPT-6 Luna/Cube Tools and a Child Lane, creates a human Fork, then
+seeds one native Compaction through the quiescent storage port and checks a new
+Worker-owned Run reads that summary and the existing Workspace. This verifies
+compacted cold storage without changing model windows or claiming an automatic
+900,000-token compaction test. The real image/cold-Worker gate can write a separate
+report with
+`PI_CLOUD_LIVE_IMAGE_CHECK=1 node --import tsx scripts/run-live-image-attachment-check.mjs /tmp/indexed-log-images.json`.
+
 The Cube gate attests real KVM guests, tenant-separated persistent Workspaces,
 credential isolation, egress policy, resource/output bounds, authority
 rotation, cancellation and cleanup. The production gate consumes real model

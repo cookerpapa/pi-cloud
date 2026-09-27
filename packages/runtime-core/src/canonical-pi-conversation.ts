@@ -419,15 +419,15 @@ function projectPiEntries(
 
 // Fork copies retain origin Turn IDs. They are inherited history, not additional
 // output from that Turn's execution Session, even after projection rebuild.
-function ownedTurnSession(table: "pi_session_entries" | "pi_session_records") {
+function ownedTurnSession() {
   return sql<boolean>`exists (
     select 1 from turns as owner_turn
       join sessions as owner_session
         on owner_session.tenant_id = owner_turn.tenant_id
        and owner_session.id = owner_turn.session_id
-     where owner_turn.tenant_id = ${sql.ref(`${table}.tenant_id`)}
-       and owner_turn.id = ${sql.ref(`${table}.turn_id`)}
-       and owner_session.pi_session_id = ${sql.ref(`${table}.session_id`)}
+     where owner_turn.tenant_id = pi_session_log.tenant_id
+       and owner_turn.id = pi_session_log.turn_id
+       and owner_session.pi_session_id = pi_session_log.session_id
   )`;
 }
 
@@ -444,23 +444,38 @@ export async function readCanonicalPiTurnTranscripts(
   if (turnIds.length === 0) return new Map();
   const [entries, intentRecords, durableTerminalRows, activeRows] = await Promise.all([
     database
-      .selectFrom("pi_session_entries")
-      .select(["turn_id", "seq", "timestamp_ms", "payload"])
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("entry"))
+      .select([
+        "turn_id",
+        "seq",
+        sql<string>`timestamp_ms`.as("timestamp_ms"),
+        sql<Record<string, unknown>>`payload->'entry'`.as("payload"),
+      ])
       .where("tenant_id", "=", input.tenantId)
       .where("turn_id", "in", turnIds)
-      .where(ownedTurnSession("pi_session_entries"))
+      .where(ownedTurnSession())
       .orderBy("seq", "asc")
       .execute(),
     database
-      .selectFrom("pi_session_records")
-      .select(["turn_id", "seq", "timestamp_ms", "payload"])
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("record"))
+      .select([
+        "turn_id",
+        "seq",
+        sql<string>`timestamp_ms`.as("timestamp_ms"),
+        sql<Record<string, unknown>>`payload->'record'`.as("payload"),
+      ])
       .where("tenant_id", "=", input.tenantId)
       .where("turn_id", "in", turnIds)
-      .where(ownedTurnSession("pi_session_records"))
+      .where(ownedTurnSession())
       .where((eb) =>
         eb.or([
           eb("type", "=", "tool_started"),
-          eb.and([eb("type", "=", "step_attempt"), sql<boolean>`payload->>'step'='compaction'`]),
+          eb.and([
+            eb("type", "=", "step_attempt"),
+            sql<boolean>`payload->'record'->>'step'='compaction'`,
+          ]),
         ]),
       )
       .orderBy("seq", "asc")
@@ -564,11 +579,12 @@ export async function readInterruptedAssistantPrefix(
     .join("");
   if (visibleText.length === 0) return null;
   const existingRows = await transaction
-    .selectFrom("pi_session_entries")
-    .select("payload")
+    .selectFrom("pi_session_log")
+    .where("kind", "=", sql.lit("entry"))
+    .select(sql<Record<string, unknown>>`payload->'entry'`.as("payload"))
     .where("tenant_id", "=", input.tenantId)
     .where("turn_id", "=", input.turnId)
-    .where(ownedTurnSession("pi_session_entries"))
+    .where(ownedTurnSession())
     .orderBy("seq", "asc")
     .execute();
   const canonicalText = existingRows

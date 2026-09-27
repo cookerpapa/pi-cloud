@@ -1,0 +1,1949 @@
+{
+  "recordedAt": "2026-09-27T07:01:47.379Z",
+  "baseline": "4ee30cafb21309090d4c086e305fe6905713b127",
+  "status": "passed by latest per-file result; not a single green npm run check invocation",
+  "totals": {
+    "passed": 1343,
+    "failed": 0,
+    "skipped": 3,
+    "total": 1346
+  },
+  "files": [
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "total": 40,
+      "passed": 40,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-admission-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/run-queue.test.ts",
+      "total": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/gitlab-issue-note-reconciler.test.ts",
+      "total": 17,
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/authority-time.postgres.test.ts",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/tenant-administration.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-family-lease.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/turn-steering-races.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "total": 17,
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/subagent-controller.test.ts",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/conversation-list-pagination.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/public-registration-conversations.test.ts",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-browser-service.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/source-control-service.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/native-session-host.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "total": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/platform-runtime-settings.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/conversation-tree.postgres.test.ts",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/supervisor-websocket-gateway.test.ts",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-runtime.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/web-authentication.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/private-multi-tenant-api.test.ts",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/expired-run-lease.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/production-bootstrap.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-admission.integration.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/supervisor-boot-provisioner.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/parallel-worker-claims.postgres.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/tenant-identity.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/tenant-model-configuration.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/concurrent-run-settlement.postgres.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/operational-metrics-sampler.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-terminal-gateway.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/steer-admission.postgres.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/gpt6-selection-migration.postgres.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/sandbox-preview-gateway.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/github-app-client.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/production-http-gateway.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/tool-progress-ingress.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/subagent-management-transport.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/gitlab-project-client.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/conversation-turn-projection.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/main-acquisition.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/http-supervisor-management.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-event-hub.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/startup-cleanup.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/api-exception-filter.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/cube-api-authorizer",
+      "file": "test/authorization.test.ts",
+      "total": 35,
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/cube-api-authorizer",
+      "file": "test/server.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/cube-egress-gateway",
+      "file": "test/proxy-server.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/cube-egress-gateway",
+      "file": "test/configuration-poller.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/run-identity-cutover.postgres.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/dormant-accounting-retirement.postgres.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/prepared-selects.postgres.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/current-schema.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/prepared-selects.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/indexed-native-log-cutover.postgres.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/idle-pool-recovery.postgres.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/first-record-cutover.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/retry-transaction.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/postgres-queue-wake.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/slow-commit.postgres.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/database",
+      "file": "test/ready-run-cutover.postgres.test.ts",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/domain",
+      "file": "test/state-machines.test.ts",
+      "total": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/domain",
+      "file": "test/model-profile.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/ordered-effects.test.ts",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/tool-replies.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/fake-model-server",
+      "file": "test/server.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/fake-model-server",
+      "file": "test/pi-openai-contract.test.ts",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/observability",
+      "file": "test/run-timing.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/observability",
+      "file": "test/observability.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/indexed-log.postgres.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/postgres-pi-session-storage.test.ts",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/native-session-projection.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/postgres-session-query.postgres.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/native-projection-lock.postgres.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/pi-session-backend-conformance.test.ts",
+      "total": 29,
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/native-session-writer.test.ts",
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/session-lease-observer.test.ts",
+      "total": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/tool-result-budget.test.ts",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/image-attachment.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/supervisor-management.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/tool-capabilities.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/source-control.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/sandbox-preview.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/execution-reference.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/queued-inputs.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/development-environment.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/tool-sandbox.test.ts",
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/environment.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/workspace-terminal.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/event-envelope.test.ts",
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/control-plane-api.test.ts",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/supervisor-wire.test.ts",
+      "total": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/protocol",
+      "file": "test/hot-path-validation.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/provider-egress-relay",
+      "file": "test/relay.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/kafka-consumer-lifecycle.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/execution-stream-boundary.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/kafka-producer-backpressure.test.ts",
+      "total": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/canonical-pi-conversation.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-event-stream.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/tool-progress.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/pi-session-append-publisher.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/tool-reply-retention.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/execution-publication.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-live-view.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/terminal-outbox-relay.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/kafka-topic-policy.integration.test.ts",
+      "total": 1,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 1,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/provider-hosted-tools.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-sampling-step.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/workspace-seed.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-contract.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/provider-hosted-transcript.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/assistant-text-presentation.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/subagent-tool.test.ts",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/workflow-transport.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "total": 25,
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-step-context.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-sandbox-continuity.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-settlement-gate.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-agent-event-adapter.test.ts",
+      "total": 25,
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/reconnecting-supervisor-websocket-client.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/control-channel-process-fault.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/agent-run-supervisor.test.ts",
+      "total": 23,
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-cloud-turn-runner.integration.test.ts",
+      "total": 20,
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime.test.ts",
+      "total": 62,
+      "passed": 62,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/storage.postgres.test.ts",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/codec.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/reaper.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/ssh-gateway",
+      "file": "test/tool-broker-terminal.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-ssh-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/ssh-gateway",
+      "file": "test/server.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-ssh-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/subagent-control",
+      "file": "test/postgres-subagent-job-provider.test.ts",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/runtime.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/postgres-preview-tool.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/retired-runs.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/parallel-worker-claims.test.ts",
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/model-gateway.test.ts",
+      "total": 17,
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/worker-notification-recovery.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/management-server.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/worker-cancellation-admission.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/main.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/boot-ledger.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/family-worker-drain.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/config.test.ts",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/worker-memory-monitor.integration.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/subagent-supervisor-tools.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/worker-memory-monitor.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/family-model-permits.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/trusted-tool-runtime.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/run-claim-readiness.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/responses-hosted-activity.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/workspace-seed.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/postgres-pi-worker.test.ts",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/direct-private-egress.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/cube-persistent-capsule.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/fixed-tcp-relay.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/sandbox-admission.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/cubesandbox-workspace-browser.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/private-http.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-command-executor.test.ts",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/workflow-channels.test.ts",
+      "total": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-progress-publisher.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/main-acquisition.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/workflow-websocket.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-command-routing.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/preview-connect.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/cubesandbox-live-provider.integration.test.ts",
+      "total": 2,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 2,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/postgres-workspace-volume-gateway-lock.integration.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-broker.test.ts",
+      "total": 42,
+      "passed": 42,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/cubesandbox-provider.test.ts",
+      "total": 27,
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/cubesandbox-runtime-client.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/workspace-volume-gateway.test.ts",
+      "total": 21,
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-broker-server-client.test.ts",
+      "total": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/sandbox-http-service-registry.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/workspace-volume-deletion-reaper.integration.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/image-processor.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/tool-worker-security.test.ts",
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/native-tools.test.ts",
+      "total": 21,
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/conversation-scroll.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/web-configuration.test.ts",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/active-turn-selection.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/message-copy.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/conversation-presentation.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/tool-progress.test.ts",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/conversation-tree-navigation.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/resizable-panel.test.tsx",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/source-highlight.test.ts",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/model-settings-menu.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/workspace-directory.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/code-host-connections.test.tsx",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/conversation-export.test.ts",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/api.test.ts",
+      "total": 21,
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/session-view.test.ts",
+      "total": 25,
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/progressive-text.test.ts",
+      "total": 18,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/i18n.test.tsx",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/app-render.test.tsx",
+      "total": 28,
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/sse.test.ts",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/workspace-runtime.test.ts",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-check-final.log"
+    },
+    {
+      "workspace": "root/acceptance-helpers",
+      "file": "scripts/lib/dependency-hardening.test.mjs",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-helpers.log"
+    },
+    {
+      "workspace": "root/acceptance-helpers",
+      "file": "scripts/lib/guest-build-identity.test.mjs",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-helpers.log"
+    },
+    {
+      "workspace": "root/acceptance-helpers",
+      "file": "scripts/lib/deepseek-configuration.test.mjs",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-helpers.log"
+    },
+    {
+      "workspace": "root/acceptance-helpers",
+      "file": "scripts/lib/repository-head.test.mjs",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-helpers.log"
+    },
+    {
+      "workspace": "root/acceptance-helpers",
+      "file": "scripts/lib/model-retry-policy.test.mjs",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-helpers.log"
+    },
+    {
+      "workspace": "root/acceptance-helpers",
+      "file": "scripts/lib/runtime-file-policy.test.mjs",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-helpers.log"
+    },
+    {
+      "workspace": "root/acceptance-helpers",
+      "file": "scripts/lib/long-context-worker-switch.test.mjs",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-helpers.log"
+    },
+    {
+      "workspace": "root/acceptance-helpers",
+      "file": "scripts/lib/local-worker-cutover.test.mjs",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-helpers.log"
+    },
+    {
+      "workspace": "root/acceptance-helpers",
+      "file": "scripts/lib/live-run-timing.test.mjs",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "pi-cloud-indexed-log-helpers.log"
+    }
+  ],
+  "notes": [
+    "Both whole-workspace typecheck passes succeeded. Full suite second run had 1301 passed, 2 failed, 3 opt-in skipped; the two affected files were then rerun in full (40 and 4 tests) and passed.",
+    "Initial indexed-log trigger bulk DELETE join exceeded the 60-second test budget and was cancelled in the owned test DB. Exact scoped finish lookups fixed it; the final full suite passed all 76 native tests including prepared 2000/20000-entry plans. No production/test time budgets were increased.",
+    "Admission SQL expectations now include the pre-existing pending-input cap and post-lock input snapshot. SSH fixture finishes only after command arrival instead of racing a 20ms timer.",
+    "Acceptance-helper tests ran separately because failed whole-suite invocations do not reach that command. Counts are deduplicated by workspace/file."
+  ],
+  "sourceHashes": {
+    "packages/control-plane/src/conversation-reader.ts": "788a9555d420b6a8b30a92a1f43ff41c6a0ea7485e47822ea3ff18f10b05944b",
+    "packages/control-plane/src/conversation-tree-service.ts": "b6beaebc70bf8ca51b7586eda82a11e01044d42b9c469fe94162b56e8fc17b05",
+    "packages/control-plane/src/queued-input-service.ts": "d0fb992bc2838ca72a42e23ed3495aeb34aa21e56271b74a284a35175cd44f92",
+    "packages/control-plane/src/subagent-controller.ts": "fb280c1f2c0c60f5572ac95c521adb981e6fc1c8e729deb386a20002b74988fc",
+    "packages/control-plane/test/atomic-worker-admission.postgres.test.ts": "055643c5b3b581d45c482d01ff12f5f93abde79e989a138093f21bbe1bf2cb9c",
+    "packages/control-plane/test/conversation-tree.postgres.test.ts": "2add6e3c0dfbdd5a19b445524f3d64a53c716f358e025cfe0bc1a57300eeadae",
+    "packages/control-plane/test/execution-stream-seal.test.ts": "b9d0fa46b9a5c3c23d8bbaf51ea86404c085dd5d5ed1957772c467d91e4dc04f",
+    "packages/control-plane/test/native-session-host.test.ts": "b9d509448ed13e0ff218b31f09165140447fee0794fac7f189b98a55c3538024",
+    "packages/control-plane/test/public-registration-conversations.test.ts": "2b03c87f009aae901a48a54ee2adc45ea79109a7ac9c5137b301d511cb8a0f6c",
+    "packages/database/src/database-types.ts": "1b796fbed8dc068a6a47043ed7834b0c6c65d495d7fdb26c6d43e31257775135",
+    "packages/database/src/index.ts": "6f3c8fb400eefa470993984f851cb850acbccc541174384012abdf0666cad9e5",
+    "packages/database/src/migrations/153_indexed_native_session_log.ts": "1987c483915130536c140666e9ee39d5a8219e98751bdea53a2df6874ea43713",
+    "packages/database/src/migrations/index.ts": "c36da80185a2523d2b055fd31456708bf9f53136d352ed16d92110d34ae10ffd",
+    "packages/database/test/current-schema.test.ts": "1399e2462384140741f418964725175c3ca7d78eabe4d6641bb6507bc0b78c66",
+    "packages/database/test/dormant-accounting-retirement.postgres.test.ts": "041e3dbd75266dc18acc3b92d5a65277bbc39c8407882d5e83004f15319a0db2",
+    "packages/database/test/indexed-native-log-cutover.postgres.test.ts": "b5c8359a94dc7302651498a0d2ebcc277c6b9374f8bf5cf908907b0d8e2a3039",
+    "packages/database/test/run-identity-cutover.postgres.test.ts": "00984aacbc241634f80ab4dcdb96638f473ce952c2f6d5224f69e292b21edfd7",
+    "packages/pi-session-postgres/src/postgres-native-session-host.ts": "cffadbdd48f135aea8a649b271fd52f033b1d79d9a0ec9ee08c9969887cba232",
+    "packages/pi-session-postgres/src/postgres-session-projection-rebuilder.ts": "de44f33efc68e32a90329e545885e674ae63d16e5edd99f788b0396f8ec4c634",
+    "packages/pi-session-postgres/src/postgres-session-repository.ts": "b1c783122fc6f21978f51b0ec577957133070d8c69d32b172196b57b43d7b7d2",
+    "packages/pi-session-postgres/src/postgres-session-storage.ts": "48d9920fcb5598cccbec3d496466a6de1a4ea1baaccd61fc10de2a6b5b4b037c",
+    "packages/pi-session-postgres/src/project-native-session-append.ts": "348c9d5061219419890c1e1a273611d84b870d8b79fafaf9377dd90f9c595824",
+    "packages/pi-session-postgres/src/session-entry-payload-cache.ts": "c36d80cce77e33eab62b25ee5d87d1e1ab1d72fdeb74d147edb6bdb6567eeb89",
+    "packages/pi-session-postgres/test/indexed-log.postgres.test.ts": "9d0a33cafc6bd8337b17a5d3b34f7a6af22b22451c98b4e495d50d8ef84ddbf4",
+    "packages/pi-session-postgres/test/native-session-projection.test.ts": "33cf41b1bc6fd4faeec65c35e1723cb34e2fdd912ef60f4bc71a948e80b4b9aa",
+    "packages/pi-session-postgres/test/postgres-pi-session-storage.test.ts": "f910fb91b5875f025e4827f94664d29bc9bacd42e50bdbdde60fda333fd0db71",
+    "packages/pi-session-postgres/test/postgres-session-query.postgres.test.ts": "d46aaa128f725e580e1d54f997b552eaa2399096217f6007548608a4301813ea",
+    "packages/runtime-core/src/canonical-pi-conversation.ts": "88b97172e953d6b1676ab4b28f7f03d06f646244d4f27ed7735b07be7dde143c",
+    "packages/runtime-core/test/canonical-pi-conversation.test.ts": "0f369500a83857c2b8b10eaa8321918ae96d3cda58d8115cf36355826e16bc33",
+    "packages/session-attachments/test/storage.postgres.test.ts": "07ed3a7bd59a0254ffdbddc7a1e310eb92c77f2954f21b32431964aaa479e8e8",
+    "packages/ssh-gateway/test/server.test.ts": "0f25a180d0977ad0e682bbbdf3129f4fd341d5c7aea0209dbdc27b153b71aa1d",
+    "packages/subagent-control/src/postgres-subagent-job-provider.ts": "25b7d4cd86bf744cfdfac2ad7e14eb24fa2e8c55ddd7e7712ec712e5ab92a1cf",
+    "packages/subagent-control/test/postgres-subagent-job-provider.test.ts": "a8228752b768f039cf557db38e678638e22553ed22f2d6aa14766e513e35009b",
+    "scripts/run-live-cubesandbox-production-check.mjs": "853cc97f023c785c2e7dfe22db3cba06ebb8a4879b99e4c3933f36d8bab5d157",
+    "scripts/run-live-development-environment-check.mjs": "89dd98b746788d04912596d69feaf9c3fafd376fdfb4284c177c9ae9628624ea",
+    "scripts/run-live-image-attachment-check.mjs": "49d26f2d5b68033ae4b2c11b488ebcdcf97b37f5d6c883683be4fd9a6bdb2ee1",
+    "scripts/run-live-indexed-log-check.mjs": "182789449f3edf0b4af8e9c69453124e1f3581174c7e6f2bddc5bbd8bc7ac7c4",
+    "scripts/run-live-long-context-compaction-check.mjs": "48f797587d566036b15c3dc229b2701b51229ddd8b1ed97a2abf4a40c41e366c",
+    "scripts/run-live-machine-failure-check.mjs": "ab37c0ce5583fe0a9a985917059fa4111a3781d7c82d3baee764c7503d675a82",
+    "scripts/run-live-multi-tenant-model-load.mjs": "572a34a609c70712906adf39830036cd69a3f9ad05e498d952e8e3ea2ce0e36a",
+    "scripts/run-live-pi-worker-pool-check.mjs": "df78ec4eed600386409246cc304038396d82272c2a38e89efbbb80bde7c2937f",
+    "scripts/run-live-product-surface-check.mjs": "eb028e2f459e6491caff2c8a863b250ba04e915e72252a8e21c6a5e3dc2d152a",
+    "scripts/run-live-projector-check.mjs": "437f02c3dc812e5dc605599fc2140883a1118bbc825eeaebc468b7c4ce478653",
+    "scripts/run-live-provider-capability-check.mjs": "37f5bdaac937bdb6aa1637bea4250c484006c39d5688980b8fb91b8b9437ae2f",
+    "scripts/run-live-session-family-check.mjs": "19bfa9a1d669e9f6f194c7960e6d38d19a3275bef11ba91f4d61454eab23befd",
+    "scripts/run-live-subagent-production-check.mjs": "98b3db2b04b567a0897c8db83e673d8583341d6760ebdac6006ae9df7a7811b8",
+    "scripts/run-postgres-session-projection-benchmark.ts": "aff3fb0418c158b4182757ccabf8ff66144be70891f8d7702e5fda6741378602"
+  }
+}

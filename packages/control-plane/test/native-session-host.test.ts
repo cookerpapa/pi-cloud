@@ -475,7 +475,8 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
     ).toBeNull();
     expect(
       await db
-        .selectFrom("pi_session_entries")
+        .selectFrom("pi_session_log")
+        .where("kind", "=", "entry")
         .select("id")
         .where("turn_id", "=", interrupted.turnId)
         .where("custom_type", "=", "pi-cloud.interrupted_assistant_prefix")

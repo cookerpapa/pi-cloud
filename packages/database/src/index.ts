@@ -23,8 +23,6 @@ export {
   type SandboxHttpServiceState,
   type SandboxHttpServiceTargetKind,
   type SessionKind,
-  type PiSessionEntryRefTable,
-  type PiSessionVisibleEntryTable,
   type SubagentContextMode,
   type SubagentExecutionState,
   type SubagentExecutionTable,

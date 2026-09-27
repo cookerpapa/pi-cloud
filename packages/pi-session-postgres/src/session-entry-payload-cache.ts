@@ -11,15 +11,15 @@ function positiveInteger(value: number, name: string): number {
   return value;
 }
 
-function key(tenantId: string, sourceSessionId: string, sourceEntryId: string): string {
-  return `${tenantId}\0${sourceSessionId}\0${sourceEntryId}`;
+function key(tenantId: string, sessionId: string, entryId: string): string {
+  return `${tenantId}\0${sessionId}\0${entryId}`;
 }
 
 /**
  * Bounded per-Worker cache for immutable Pi entry payloads.
  *
- * Human Forks retain source references; delegated Lanes share their physical
- * Session. Cold reads may reuse immutable payloads already loaded on this
+ * Delegated Lanes share their physical Session; Forks own independent copies.
+ * Cold reads may reuse immutable payloads already loaded on this
  * Worker, but placement and recovery never depend on a cache hit.
  */
 export class PostgresPiSessionEntryPayloadCache {
@@ -44,12 +44,8 @@ export class PostgresPiSessionEntryPayloadCache {
     }
   }
 
-  get(
-    tenantId: string,
-    sourceSessionId: string,
-    sourceEntryId: string,
-  ): Record<string, unknown> | undefined {
-    const identity = key(tenantId, sourceSessionId, sourceEntryId);
+  get(tenantId: string, sessionId: string, entryId: string): Record<string, unknown> | undefined {
+    const identity = key(tenantId, sessionId, entryId);
     const cached = this.#entries.get(identity);
     if (cached === undefined) {
       this.#misses += 1;
@@ -63,13 +59,13 @@ export class PostgresPiSessionEntryPayloadCache {
 
   set(
     tenantId: string,
-    sourceSessionId: string,
-    sourceEntryId: string,
+    sessionId: string,
+    entryId: string,
     payload: Record<string, unknown>,
   ): void {
     const bytes = Buffer.byteLength(JSON.stringify(payload), "utf8");
     if (bytes > this.#maximumEntryBytes) return;
-    const identity = key(tenantId, sourceSessionId, sourceEntryId);
+    const identity = key(tenantId, sessionId, entryId);
     const previous = this.#entries.get(identity);
     if (previous !== undefined) this.#bytes -= previous.bytes;
     this.#entries.delete(identity);

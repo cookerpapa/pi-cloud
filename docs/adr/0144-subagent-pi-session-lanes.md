@@ -48,7 +48,7 @@ the trusted Worker stamps it and Projector checks its attribution and ordered
 closure. Projector does not recheck an expired lease after durable acceptance.
 
 Human “from this response” conversation forks remain separate Pi Sessions with
-copy-on-write Entry query projections and complete destination log facts. They
+independent complete destination log facts and indexed reads (ADR-0197). They
 have independent user-controlled lifecycle and are not delegated execution
 lanes.
 

@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(152);
+      expect(firstMigrationPass.rows).toHaveLength(153);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("152_editable_pending_inputs");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("153_indexed_native_session_log");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -49,6 +49,9 @@ describe("current PiCloud schema", () => {
       `.execute(database);
       const names = new Set(tables.rows.map((row) => row.table_name));
       for (const retired of [
+        "pi_session_entries",
+        "pi_session_records",
+        "pi_session_entry_refs",
         "tool_broker_operations",
         "workspace_settlements",
         "runtime_objects",
@@ -68,7 +71,8 @@ describe("current PiCloud schema", () => {
         "turn_control_requests",
         "session_leases",
         "pi_sessions",
-        "pi_session_entries",
+        "pi_session_log",
+        "pi_session_open_operations",
         "tool_broker_workspace_runtimes",
         "tool_broker_binding_routes",
         "workspaces",
@@ -187,7 +191,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("152_editable_pending_inputs");
+      expect(applied.rows.at(-1)?.name).toBe("153_indexed_native_session_log");
       const pendingControls = await sql<{ indexdef: string }>`select indexdef from pg_indexes
         where schemaname='public' and indexname='turn_control_requests_pending_run_idx'`.execute(
         database,

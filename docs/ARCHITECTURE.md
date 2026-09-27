@@ -58,7 +58,7 @@ Tree navigation also uses one repeatable-read snapshot and each native Entry's
 persisted Turn binding; it never pairs prompts and answers by message count.
 Human Fork copies preserve that binding in their self-contained log.
 Canonical Turn reads select its actual execution Session, excluding inherited
-copies even after a Fork's query projections are rebuilt.
+copies in independent Fork logs.
 
 ## Durable input and scheduling
 
@@ -334,9 +334,23 @@ the complete Tool start/result replaces it.
 
 The pinned public Pi SessionRepo/SessionStorage adapter stores one self-contained
 append-only `pi_session_log` per physical Session. Entries, operation Records,
-Lane moves and facts share a Session-local sequence. Entry/Record/Lane/label
-tables are query projections. Official Pi backend conformance tests define the
-base contract; tenant and cloud ownership checks are additional constraints.
+Lane moves and facts share a Session-local sequence. Stored generated metadata
+and scoped indexes serve Entry/Record reads directly from that log; no separate
+Entry/Record body tables or COW references remain. Branch reads walk metadata by
+parent ID before fetching only the selected bodies. Official Pi backend
+conformance tests define the base contract; tenant and cloud ownership checks
+are additional constraints (ADR-0197).
+
+Names, Lane heads, labels and references to currently unfinished operations are
+transactional current state. A log-insert statement trigger applies operation
+starts/finishes as one batch; recovery reads this small state instead of joining
+lifetime operation history. Multiple open starts remain visible as corruption.
+Rebuild requires quiescence and reconstructs only current state, without rewriting
+native bodies or executing Tools. Immutable `payload.turnId` retains origin;
+the live `turn_id` FK can become null on control-row deletion and stays null
+through a rebuild. Native Fork copies own their bodies and image references,
+so deleting their native source does not invalidate them. Product subtree
+archive/prune rules continue to govern the human conversation tree.
 Image parts have a `pi_cloud_image_v1` storage representation. Their immutable
 objects are retained transactionally when native log rows commit, including Fork
 copies and Compaction retained tails. Reachability follows retained native history,

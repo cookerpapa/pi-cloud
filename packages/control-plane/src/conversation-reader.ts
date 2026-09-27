@@ -470,27 +470,27 @@ export class ConversationReader {
     const rows = (
       await sql<{ id: string; timestampMs: string; payload: Record<string, unknown> }>`
         with recursive branch as (
-          select id, parent_id, seq, type, timestamp_ms, payload
-            from pi_session_visible_entries
+          select id, parent_id, seq, type, timestamp_ms
+            from pi_session_log
            where tenant_id = ${this.#tenantId}::uuid
              and session_id = ${execution.piSessionId}
-             and id = ${execution.contextBaseEntryId}
+             and kind = 'entry' and id = ${execution.contextBaseEntryId}
           union all
           select parent.id,
                  parent.parent_id,
                  parent.seq,
                  parent.type,
-                 parent.timestamp_ms,
-                 parent.payload
-            from pi_session_visible_entries parent
-            join branch child on child.parent_id = parent.id
+                 parent.timestamp_ms
+            from pi_session_log parent
+            join branch child on child.parent_id = parent.id and parent.seq < child.seq
            where parent.tenant_id = ${this.#tenantId}::uuid
-             and parent.session_id = ${execution.piSessionId}
+             and parent.kind = 'entry' and parent.session_id = ${execution.piSessionId}
         )
-        select id, timestamp_ms as "timestampMs", payload
-         from branch
-         where type = 'message'
-         order by seq asc
+        select branch.id, branch.timestamp_ms as "timestampMs", log.payload->'entry' as payload
+         from branch join pi_session_log log on log.tenant_id=${this.#tenantId}::uuid
+           and log.session_id=${execution.piSessionId} and log.seq=branch.seq
+         where branch.type = 'message'
+         order by branch.seq asc
          limit ${MAX_INHERITED_MESSAGES + 1}
       `.execute(this.#database)
     ).rows;

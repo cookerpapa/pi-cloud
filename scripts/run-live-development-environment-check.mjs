@@ -487,8 +487,8 @@ try {
   assert.equal(
     await psql(
       `select count(*)
-       from pi_session_entries
-      where tenant_id = ${sqlLiteral(bootstrapTenantId)}
+       from pi_session_log
+      where kind='entry' and tenant_id = ${sqlLiteral(bootstrapTenantId)}
         and session_id = (select pi_session_id from sessions where id = ${sqlLiteral(session.sessionId)})
         and turn_id in (select id from turns where session_id=${sqlLiteral(session.sessionId)})
         and custom_type = 'pi-cloud.sandbox_reset'`,

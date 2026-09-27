@@ -12,17 +12,17 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Discuss the remaining [repository-review architecture choices](reports/repository-review-20260927.md):
-      Tool intent/command batching and native-log query storage layout.
+- [ ] Complete the approved [ADR-0197](adr/0197-indexed-native-session-log.md)
+      cutover and matched deployment acceptance: indexed log reads, nullable live
+      Turn bindings, independent Fork copies, bounded current operations and image
+      retention. The [D5 study](reports/native-log-layout-study-20260927.md) supplies
+      the named baseline; full backend, failure and live acceptance must pass.
+
+- [ ] Discuss the remaining [repository-review architecture choice](reports/repository-review-20260927.md):
+      Tool intent/command batching.
       General large-result attachments remain a separate capability decision;
       [D1/D3/D4 implementation and acceptance](reports/repository-review-followup-20260927.md)
       are complete.
-      [D5 indexed-log research](reports/native-log-layout-study-20260927.md) is complete:
-      bounded branch/page reads and reduced body duplication are demonstrated in
-      isolated PG. Decide the final layout and Turn/Fork deletion semantics before
-      an ADR and cutover; full backend/failure/image-lifecycle acceptance is still required.
-      The existing open-operation anti-join also grows with Lane history even with
-      `limit=2`; discuss bounded recovery state separately from lifetime body storage.
 
 - [ ] Review the two moderate development-test dependency findings (Vitest and
       @vitest/mocker) retained by the September 15 and 27 audits. The high/critical

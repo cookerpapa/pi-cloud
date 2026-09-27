@@ -1,16 +1,7 @@
 import type { Database } from "@pi-cloud/database";
-import type { Entry, LaneRecord } from "@earendil-works/pi-agent-core";
 import type { Kysely } from "kysely";
 
-type EntryProjection = Readonly<{
-  entry: Entry;
-  turnId: string | null;
-}>;
-
-type RecordProjection = Readonly<{
-  record: LaneRecord;
-  turnId: string | null;
-}>;
+import { assertIdleNativeSession } from "./idle-session-mutation.ts";
 
 function object(value: unknown, description: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -40,23 +31,15 @@ function safeInteger(value: unknown, description: string): number {
 }
 
 /**
- * Rebuild the query projections of one inactive Pi Session from its canonical
- * self-contained log. Callers own maintenance admission; this function takes
- * the Session row lock and performs no model or Tool work.
+ * Rebuild current state from one quiescent Session's self-contained log.
+ * Bodies and live Turn associations stay untouched. No model or Tool work.
  */
 export async function rebuildPostgresPiSessionProjections(
   database: Kysely<Database>,
   input: { tenantId: string; sessionId: string },
 ): Promise<void> {
   await database.transaction().execute(async (transaction) => {
-    const session = await transaction
-      .selectFrom("pi_sessions")
-      .select("id")
-      .where("tenant_id", "=", input.tenantId)
-      .where("id", "=", input.sessionId)
-      .forUpdate()
-      .executeTakeFirst();
-    if (session === undefined) throw new Error("Pi Session was not found");
+    await assertIdleNativeSession(transaction, input.tenantId, input.sessionId);
 
     const events = await transaction
       .selectFrom("pi_session_log")
@@ -65,8 +48,8 @@ export async function rebuildPostgresPiSessionProjections(
       .where("session_id", "=", input.sessionId)
       .orderBy("seq", "asc")
       .execute();
-    const entries = new Map<string, EntryProjection>();
-    const records = new Map<string, RecordProjection>();
+    const ids = new Set<string>();
+    const open = new Map<string, { lane: string; seq: number }>();
     const lanes = new Map<string, string | null>([["main", null]]);
     const labels = new Map<string, { label: string; sequence: number }>();
     let name: string | null = null;
@@ -84,38 +67,26 @@ export async function rebuildPostgresPiSessionProjections(
       if (event.kind === "entry") {
         const lane = text(eventPayload.lane, "Entry lane");
         const entryPayload = object(eventPayload.entry, "Entry payload");
-        const entry = {
-          ...structuredClone(entryPayload),
-          seq: sequence,
-          parentId: nullableText(entryPayload.parentId, "Entry parent"),
-          timestamp: safeInteger(entryPayload.timestamp, "Entry timestamp"),
-        } as Entry;
-        const id = text(entry.id, "Entry id");
-        if (entries.has(id) || records.has(id)) {
-          throw new Error(`Pi Session log reuses id ${id}`);
-        }
-        const rawTurnId = eventPayload.turnId;
-        const turnId =
-          rawTurnId === null || rawTurnId === undefined ? null : text(rawTurnId, "Turn id");
-        entries.set(id, { entry, turnId });
+        nullableText(entryPayload.parentId, "Entry parent");
+        safeInteger(entryPayload.timestamp, "Entry timestamp");
+        const id = text(entryPayload.id, "Entry id");
+        if (ids.has(id)) throw new Error(`Pi Session log reuses id ${id}`);
+        ids.add(id);
         lanes.set(lane, id);
         continue;
       }
       if (event.kind === "record") {
         const recordPayload = object(eventPayload.record, "Record payload");
-        const record = {
-          ...structuredClone(recordPayload),
-          seq: sequence,
-          timestamp: safeInteger(recordPayload.timestamp, "Record timestamp"),
-        } as LaneRecord;
-        const id = text(record.id, "Record id");
-        if (entries.has(id) || records.has(id)) {
-          throw new Error(`Pi Session log reuses id ${id}`);
+        safeInteger(recordPayload.timestamp, "Record timestamp");
+        const id = text(recordPayload.id, "Record id");
+        const lane = text(recordPayload.lane, "Record Lane");
+        if (ids.has(id)) throw new Error(`Pi Session log reuses id ${id}`);
+        ids.add(id);
+        if (recordPayload.type === "operation_started") open.set(id, { lane, seq: sequence });
+        else if (recordPayload.type === "operation_finished") {
+          const startedId = text(recordPayload.runId, "Finished operation id");
+          if (open.get(startedId)?.lane === lane) open.delete(startedId);
         }
-        const rawTurnId = eventPayload.turnId;
-        const turnId =
-          rawTurnId === null || rawTurnId === undefined ? null : text(rawTurnId, "Turn id");
-        records.set(id, { record, turnId });
         continue;
       }
       if (event.kind === "lane") {
@@ -144,7 +115,7 @@ export async function rebuildPostgresPiSessionProjections(
     }
 
     await transaction
-      .deleteFrom("pi_session_entry_refs")
+      .deleteFrom("pi_session_open_operations")
       .where("tenant_id", "=", input.tenantId)
       .where("session_id", "=", input.sessionId)
       .execute();
@@ -154,79 +125,23 @@ export async function rebuildPostgresPiSessionProjections(
       .where("session_id", "=", input.sessionId)
       .execute();
     await transaction
-      .deleteFrom("pi_session_records")
-      .where("tenant_id", "=", input.tenantId)
-      .where("session_id", "=", input.sessionId)
-      .execute();
-    await transaction
       .deleteFrom("pi_session_lanes")
       .where("tenant_id", "=", input.tenantId)
       .where("session_id", "=", input.sessionId)
       .execute();
 
-    const entryIds = [...entries.keys()];
-    let staleEntries = transaction
-      .deleteFrom("pi_session_entries")
-      .where("tenant_id", "=", input.tenantId)
-      .where("session_id", "=", input.sessionId);
-    if (entryIds.length > 0) staleEntries = staleEntries.where("id", "not in", entryIds);
-    await staleEntries.execute();
-
-    if (entries.size > 0) {
+    if (open.size)
       await transaction
-        .insertInto("pi_session_entries")
+        .insertInto("pi_session_open_operations")
         .values(
-          [...entries.values()].map(({ entry, turnId }) => ({
+          [...open.values()].map(({ lane, seq }) => ({
             tenant_id: input.tenantId,
             session_id: input.sessionId,
-            id: entry.id,
-            seq: entry.seq,
-            parent_id: entry.parentId,
-            type: entry.type,
-            custom_type: entry.type === "custom" ? entry.customType : null,
-            timestamp_ms: entry.timestamp,
-            payload: entry as unknown as Record<string, unknown>,
-            turn_id: turnId,
-          })),
-        )
-        .onConflict((conflict) =>
-          conflict.columns(["tenant_id", "session_id", "id"]).doUpdateSet((excluded) => ({
-            seq: excluded.ref("excluded.seq"),
-            parent_id: excluded.ref("excluded.parent_id"),
-            type: excluded.ref("excluded.type"),
-            custom_type: excluded.ref("excluded.custom_type"),
-            timestamp_ms: excluded.ref("excluded.timestamp_ms"),
-            payload: excluded.ref("excluded.payload"),
-            turn_id: excluded.ref("excluded.turn_id"),
+            lane,
+            seq,
           })),
         )
         .execute();
-    }
-    if (records.size > 0) {
-      await transaction
-        .insertInto("pi_session_records")
-        .values(
-          [...records.values()].map(({ record, turnId }) => ({
-            tenant_id: input.tenantId,
-            session_id: input.sessionId,
-            id: record.id,
-            seq: record.seq,
-            lane: record.lane,
-            type: record.type,
-            run_id:
-              record.type === "operation_started"
-                ? record.id
-                : "runId" in record && typeof record.runId === "string"
-                  ? record.runId
-                  : null,
-            operation_kind: record.type === "operation_started" ? record.intent.kind : null,
-            timestamp_ms: record.timestamp,
-            payload: record as unknown as Record<string, unknown>,
-            turn_id: turnId,
-          })),
-        )
-        .execute();
-    }
     await transaction
       .insertInto("pi_session_lanes")
       .values(

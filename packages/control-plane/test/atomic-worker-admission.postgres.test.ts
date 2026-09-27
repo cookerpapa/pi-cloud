@@ -303,7 +303,11 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const store = new ControlPlaneStore({ database: measured, ...f.tenant });
     await store.acceptTurn(f.session.sessionId, randomUUID(), { prompt: "follow-up" });
     // The driver adds BEGIN/COMMIT outside Kysely's query-plugin callbacks.
-    expect(queries).toHaveLength(5);
+    // ADR-0194 also checks the 64-input cap under the Session lock.
+    expect(queries).toHaveLength(6);
+    expect(
+      queries.filter((q) => q.startsWith('select count(*)::int as "count" from "runs"')),
+    ).toHaveLength(1);
     expect(queries.filter((q) => q.startsWith('with "accepted_turn"'))).toHaveLength(1);
     queries.length = 0;
     const backend: TurnExecutionBackend = {
@@ -316,7 +320,9 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(await f.executor(backend, measured).dispatchRun(f.accepted.runId)).toMatchObject({
       status: "completed",
     });
-    expect(queries).toHaveLength(8);
+    // The post-lock input snapshot prevents admission from reading a stale edit.
+    expect(queries).toHaveLength(9);
+    expect(queries.filter((q) => q.startsWith('select "input_text" from "turns"'))).toHaveLength(1);
     expect(queries.some((q) => q.includes('update "sandboxes"'))).toBe(false);
     expect(queries.some((q) => q.includes("from runs as earlier_run"))).toBe(false);
     expect(
@@ -1292,7 +1298,8 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         expect(settlementAttempts).toBe(injectAbort ? 2 : 1);
         expect(
           await db
-            .selectFrom("pi_session_records")
+            .selectFrom("pi_session_log")
+            .where("kind", "=", "record")
             .select("id")
             .where("tenant_id", "=", f.tenant.tenantId)
             .execute(),

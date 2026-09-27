@@ -921,13 +921,14 @@ export class PostgresSubagentJobProvider {
       .where("tenant_id", "=", tenantId)
       .executeTakeFirstOrThrow();
     const final = await this.#database
-      .selectFrom("pi_session_entries")
-      .select(["id", "payload"])
+      .selectFrom("pi_session_log")
+      .where("kind", "=", sql.lit("entry"))
+      .select(["id", sql<Record<string, unknown>>`payload->'entry'`.as("payload")])
       .where("tenant_id", "=", tenantId)
       .where("session_id", "=", binding.piSessionId)
       .where("turn_id", "=", run.turn_id)
       .where("type", "=", "message")
-      .where(sql<string>`payload->'message'->>'role'`, "=", "assistant")
+      .where(sql<string>`payload->'entry'->'message'->>'role'`, "=", "assistant")
       .orderBy("seq", "desc")
       .limit(1)
       .executeTakeFirst();

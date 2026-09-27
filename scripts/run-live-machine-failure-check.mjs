@@ -277,13 +277,13 @@ try {
   );
   report.resetMarkers = Number(
     await sql(
-      `select count(*) from pi_session_entries where session_id=${sqlString(session.sessionId)} and custom_type='pi-cloud.sandbox_reset'`,
+      `select count(*) from pi_session_log where kind='entry' and session_id=${sqlString(session.sessionId)} and custom_type='pi-cloud.sandbox_reset'`,
     ),
   );
   assert.equal(report.resetMarkers, 0);
   report.usage = JSON.parse(
     await sql(
-      `select json_build_object('input',coalesce(sum((payload->'message'->'usage'->>'input')::bigint),0),'output',coalesce(sum((payload->'message'->'usage'->>'output')::bigint),0),'cacheRead',coalesce(sum((payload->'message'->'usage'->>'cacheRead')::bigint),0)) from pi_session_entries where session_id=${sqlString(session.sessionId)}`,
+      `select json_build_object('input',coalesce(sum((payload->'entry'->'message'->'usage'->>'input')::bigint),0),'output',coalesce(sum((payload->'entry'->'message'->'usage'->>'output')::bigint),0),'cacheRead',coalesce(sum((payload->'entry'->'message'->'usage'->>'cacheRead')::bigint),0)) from pi_session_log where kind='entry' and session_id=${sqlString(session.sessionId)}`,
     ),
   );
   await terminal(

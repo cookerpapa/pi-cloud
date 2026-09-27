@@ -43,9 +43,7 @@ export async function projectNativeSessionAppend(
       and append_id=${appendId}::uuid limit 1) as prior_seq,
     coalesce((select jsonb_agg(jsonb_build_object('lane',lane,'leaf_id',leaf_id))
       from pi_session_lanes where tenant_id=${tenantId}::uuid and session_id=${sessionId}), '[]'::jsonb) as lanes,
-    exists(select 1 from pi_session_visible_entries where tenant_id=${tenantId}::uuid
-      and session_id=${sessionId} and id=any(${ids}::text[])
-      union all select 1 from pi_session_records where tenant_id=${tenantId}::uuid
+    exists(select 1 from pi_session_log where tenant_id=${tenantId}::uuid
       and session_id=${sessionId} and id=any(${ids}::text[])) as collision`.execute(transaction);
   if (context!.prior_seq !== null) {
     if (Number(context!.prior_seq) !== committedItemSequence(items.at(-1)!))
@@ -73,17 +71,16 @@ export async function projectNativeSessionAppend(
     targets.length
       ? (
           await transaction
-            .selectFrom("pi_session_visible_entries")
+            .selectFrom("pi_session_log")
+            .where("kind", "=", sql.lit("entry"))
             .select("id")
             .where("tenant_id", "=", tenantId)
             .where("session_id", "=", sessionId)
             .where("id", "in", targets)
             .execute()
-        ).map((r) => r.id)
+        ).map((r) => r.id!)
       : [],
   );
-  const entries: Insertable<Database["pi_session_entries"]>[] = [];
-  const records: Insertable<Database["pi_session_records"]>[] = [];
   const logs: Insertable<Database["pi_session_log"]>[] = [];
   const labels = new Map<string, { label: string | undefined; seq: number }>();
   let name: string | undefined;
@@ -97,36 +94,11 @@ export async function projectNativeSessionAppend(
       known.add(e.id);
       heads.set(item.lane, e.id);
       changed.add(item.lane);
-      entries.push({
-        tenant_id: tenantId,
-        session_id: sessionId,
-        id: e.id,
-        seq,
-        parent_id: e.parentId,
-        type: e.type,
-        custom_type: e.type === "custom" ? e.customType : null,
-        timestamp_ms: e.timestamp,
-        payload: e as unknown as Record<string, unknown>,
-        turn_id: item.turnId,
-      });
       payload = { lane: item.lane, turnId: item.turnId, entry: e };
     } else if (item.kind === "record") {
       const r = item.record;
       if (!heads.has(r.lane))
         throw new SessionError("invalid_lane", "Native Record Lane is missing");
-      records.push({
-        tenant_id: tenantId,
-        session_id: sessionId,
-        id: r.id,
-        seq,
-        lane: r.lane,
-        type: r.type,
-        run_id: r.type === "operation_started" ? r.id : "runId" in r ? (r.runId ?? null) : null,
-        operation_kind: r.type === "operation_started" ? r.intent.kind : null,
-        timestamp_ms: r.timestamp,
-        payload: r as unknown as Record<string, unknown>,
-        turn_id: item.turnId,
-      });
       payload = { turnId: item.turnId, record: r };
     } else if (item.kind === "lane") {
       if (item.leafId !== null && !known.has(item.leafId))
@@ -163,7 +135,6 @@ export async function projectNativeSessionAppend(
     });
   }
   logs.at(-1)!.append_id = appendId;
-  if (entries.length) await transaction.insertInto("pi_session_entries").values(entries).execute();
   if (created.size)
     await transaction
       .insertInto("pi_session_lanes")
@@ -176,7 +147,6 @@ export async function projectNativeSessionAppend(
         })),
       )
       .execute();
-  if (records.length) await transaction.insertInto("pi_session_records").values(records).execute();
   await transaction.insertInto("pi_session_log").values(logs).execute();
   if (changed.size)
     await sql`update pi_session_lanes target set leaf_id=head.id

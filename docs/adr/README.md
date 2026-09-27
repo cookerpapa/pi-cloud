@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0197](0197-indexed-native-session-log.md) — one indexed native log body,
+   independent Fork copies and bounded current operation state.
 1. [ADR-0196](0196-bounded-subagent-results.md) — bounded Subagent returns that
    fit native history, with explicit errors and unchanged effect semantics.
 1. [ADR-0195](0195-final-tool-reply-lifetime.md) — final-only Tool replies and

@@ -1,7 +1,8 @@
 # D5 研究：让原生日志直接承担查询
 
 日期：2026-09-27。生产源码基线：`08fb771715d380617489e4beca9e68ce1fa852c2`。
-状态：研究和独立 PostgreSQL 验证完成；尚未决定或实施生产存储切换。
+状态：本报告记录切换前的独立 PostgreSQL 研究；随后用户采纳方案 B，决定见
+[ADR-0197](../adr/0197-indexed-native-session-log.md)。以下数据属于所列研究基线。
 
 ## 结论
 
@@ -203,13 +204,16 @@ COW UNION；同一规模变为 40 行、约 0.36 ms 的 generic 计划。
 
 ## 可复现材料与下一步
 
-- [实验脚本](../../scripts/research/native-log-layout.mjs)、[候选日志 DDL](../../scripts/research/native-log-layout.sql)。
+- 实验脚本 `scripts/research/native-log-layout.mjs` 和候选 DDL
+  `scripts/research/native-log-layout.sql` 保存在研究提交 `4ee30caf`；当前树删除了依赖旧表的比较程序。
 - [完整数据、扫描计划摘要和源码 SHA256](native-log-layout-evidence-20260927.json)。
 - 基线读取实现：[PostgresPiSessionStorage](../../packages/pi-session-postgres/src/postgres-session-storage.ts)。
 
-在已安装依赖并可用 Docker 的检出中运行：
+在可用 Docker 的研究基线检出中运行；不能用当前存储实现混测旧布局：
 
 ```sh
+git worktree add --detach ../pi-cloud-log-study 4ee30caf
+cd ../pi-cloud-log-study
 npm ci
 node --import tsx scripts/research/native-log-layout.mjs /tmp/native-log-layout.json
 ```

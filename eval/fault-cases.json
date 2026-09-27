@@ -505,6 +505,20 @@
       "file": "test/session-lease-observer.test.ts",
       "test": "does not apply a late query to a closed or newly opened observer",
       "invariant": "Closing a lease observer prevents stale reads from affecting a later local incarnation."
+    },
+    {
+      "id": "indexed-log-quiescent-cutover",
+      "workspace": "@pi-cloud/database",
+      "file": "test/indexed-native-log-cutover.postgres.test.ts",
+      "test": "cuts over complete logs, COW Forks, live Turn bindings and image references without body rewrites",
+      "invariant": "An unsettled Session prevents schema cutover; settled cutover retains immutable bodies and never resurrects deleted Turn bindings."
+    },
+    {
+      "id": "native-open-operation-rollback",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/indexed-log.postgres.test.ts",
+      "test": "settles a whole batch independent of physical insert order and rolls state back with its log",
+      "invariant": "Native open-operation references share the log transaction, preserve Lane/tenant scope and rebuild without re-executing effects."
     }
   ]
 }

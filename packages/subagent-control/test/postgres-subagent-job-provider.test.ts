@@ -493,7 +493,8 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     ).resolves.toEqual({ count: "0" });
     await expect(
       database
-        .selectFrom("pi_session_entry_refs")
+        .selectFrom("pi_session_log")
+        .where("kind", "=", "entry")
         .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("tenant_id", "=", tenantId)
         .where("session_id", "=", started.childSessionId)
@@ -551,7 +552,8 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     });
     await expect(
       database
-        .selectFrom("pi_session_entries")
+        .selectFrom("pi_session_log")
+        .where("kind", "=", "entry")
         .select("id")
         .where("tenant_id", "=", tenantId)
         .where("session_id", "=", parentSessionId)
@@ -611,7 +613,8 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     ).resolves.toEqual({ contextBaseEntryId: inherited.at(-1)?.id });
     await expect(
       database
-        .selectFrom("pi_session_entry_refs")
+        .selectFrom("pi_session_log")
+        .where("kind", "=", "entry")
         .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("tenant_id", "=", tenantId)
         .where("session_id", "=", started.childSessionId)

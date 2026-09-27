@@ -212,19 +212,19 @@ async function waitForRun(runId) {
 async function usageForRun(runId) {
   const rows = await psql(
     `select row_number() over (order by entry.seq) || '|' ||
-            coalesce((entry.payload #>> '{message,usage,input}')::bigint, 0) || '|' ||
-            coalesce((entry.payload #>> '{message,usage,output}')::bigint, 0) || '|' ||
-            coalesce((entry.payload #>> '{message,usage,cacheRead}')::bigint, 0) || '|' ||
-            coalesce((entry.payload #>> '{message,usage,cacheWrite}')::bigint, 0)
+            coalesce((entry.payload #>> '{entry,message,usage,input}')::bigint, 0) || '|' ||
+            coalesce((entry.payload #>> '{entry,message,usage,output}')::bigint, 0) || '|' ||
+            coalesce((entry.payload #>> '{entry,message,usage,cacheRead}')::bigint, 0) || '|' ||
+            coalesce((entry.payload #>> '{entry,message,usage,cacheWrite}')::bigint, 0)
        from runs run
-       join pi_session_entries entry
-         on entry.tenant_id = run.tenant_id
+       join pi_session_log entry
+         on entry.kind='entry' and entry.tenant_id = run.tenant_id
         and entry.turn_id = run.turn_id
       where run.tenant_id = ${sqlLiteral(tenantId)}
         and run.id = ${sqlLiteral(runId)}
         and entry.type = 'message'
-        and entry.payload #>> '{message,role}' = 'assistant'
-        and entry.payload #> '{message,usage}' is not null
+        and entry.payload #>> '{entry,message,role}' = 'assistant'
+        and entry.payload #> '{entry,message,usage}' is not null
       order by entry.seq`,
   );
   const requests =
@@ -293,15 +293,15 @@ async function runEvidence(runId) {
                 count(*) filter (
                   where entry.seq >= coalesce(compaction.latest_seq, 0)
                 )::bigint as active_entries
-           from pi_session_entries entry
+           from pi_session_log entry
            cross join lateral (
              select max(candidate.seq) as latest_seq
-               from pi_session_entries candidate
-              where candidate.tenant_id = run.tenant_id
+               from pi_session_log candidate
+              where candidate.kind='entry' and candidate.tenant_id = run.tenant_id
                 and candidate.session_id = product_session.pi_session_id
                 and candidate.type = 'compaction'
            ) compaction
-          where entry.tenant_id = run.tenant_id
+          where entry.kind='entry' and entry.tenant_id = run.tenant_id
             and entry.session_id = product_session.pi_session_id
        ) pi on true
       where run.id = ${sqlLiteral(runId)}
@@ -1214,7 +1214,7 @@ try {
   const compactions = rounds.flatMap((round) => round.eventCompactions);
   const totalNativeCompactions = Number(
     await psql(`select count(*)
-    from pi_session_entries e join sessions s on s.pi_session_id=e.session_id and s.tenant_id=e.tenant_id
+    from pi_session_log e join sessions s on e.kind='entry' and s.pi_session_id=e.session_id and s.tenant_id=e.tenant_id
     where s.id=${sqlLiteral(session.sessionId)} and e.tenant_id=${sqlLiteral(tenantId)} and e.type='compaction'`),
   );
   const totalUsage = [

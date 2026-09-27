@@ -131,18 +131,18 @@ async function psql(query) {
 async function runUsageEvidence(runId) {
   const value = await psql(
     `select count(*) || '|' ||
-            coalesce(sum((entry.payload #>> '{message,usage,input}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{message,usage,output}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{message,usage,cacheRead}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{message,usage,cacheWrite}')::bigint), 0)
+            coalesce(sum((entry.payload #>> '{entry,message,usage,input}')::bigint), 0) || '|' ||
+            coalesce(sum((entry.payload #>> '{entry,message,usage,output}')::bigint), 0) || '|' ||
+            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheRead}')::bigint), 0) || '|' ||
+            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheWrite}')::bigint), 0)
        from runs run
-       join pi_session_entries entry
-         on entry.tenant_id = run.tenant_id
+       join pi_session_log entry
+         on entry.kind='entry' and entry.tenant_id = run.tenant_id
         and entry.turn_id = run.turn_id
       where run.id = ${sqlLiteral(runId)}
         and entry.type = 'message'
-        and entry.payload #>> '{message,role}' = 'assistant'
-        and entry.payload #> '{message,usage}' is not null`,
+        and entry.payload #>> '{entry,message,role}' = 'assistant'
+        and entry.payload #> '{entry,message,usage}' is not null`,
   );
   const [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens] = value
     .split("|")
@@ -694,8 +694,8 @@ try {
   const interruptedPrefixCount = Number(
     await psql(
       `select count(*)
-         from pi_session_entries
-        where session_id = ${sqlLiteral(crashSession.sessionId)}
+         from pi_session_log
+        where kind='entry' and session_id = ${sqlLiteral(crashSession.sessionId)}
           and custom_type = 'pi-cloud.interrupted_assistant_prefix'`,
     ),
   );
@@ -705,9 +705,9 @@ try {
   );
   const recoveredPrefixes = JSON.parse(
     await psql(
-      `select coalesce(json_agg(payload #>> '{data,text}'), '[]'::json)
-       from pi_session_entries
-      where session_id = (select pi_session_id from sessions where id = ${sqlLiteral(crashSession.sessionId)})
+      `select coalesce(json_agg(payload #>> '{entry,data,text}'), '[]'::json)
+       from pi_session_log
+      where kind='entry' and session_id = (select pi_session_id from sessions where id = ${sqlLiteral(crashSession.sessionId)})
         and custom_type = 'pi-cloud.interrupted_assistant_prefix'`,
     ),
   );
@@ -716,8 +716,8 @@ try {
     "Pi context did not retain the exact already-visible interrupted prefix",
   );
   const interruptionText =
-    await psql(`select coalesce(string_agg(payload #>> '{data,content}', E'\\n'), '')
-    from pi_session_entries where session_id=(select pi_session_id from sessions where id=${sqlLiteral(crashSession.sessionId)})
+    await psql(`select coalesce(string_agg(payload #>> '{entry,data,content}', E'\\n'), '')
+    from pi_session_log where kind='entry' and session_id=(select pi_session_id from sessions where id=${sqlLiteral(crashSession.sessionId)})
       and custom_type='pi-cloud.run_interrupted'`);
   assert(interruptionText.includes("<turn_aborted>"), "Recovery omitted its interruption fact");
   assert(!interruptionText.includes("Reason:"), "Recovery exposed raw failure diagnostics");

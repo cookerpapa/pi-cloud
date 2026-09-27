@@ -237,16 +237,10 @@ async function executionEvidence(parentRunId, executionId) {
           and lane.session_id = child.pi_session_id
           and lane.lane = child.pi_session_lane
       ),
-      'inheritedReferenceCount', (
-        select count(*)
-        from pi_session_entry_refs ref
-        where ref.tenant_id = execution.tenant_id
-          and ref.session_id = execution.child_session_id::text
-      ),
       'childOwnedEntryCount', (
         select count(*)
-        from pi_session_entries entry
-        where entry.tenant_id = execution.tenant_id
+        from pi_session_log entry
+        where entry.kind='entry' and entry.tenant_id = execution.tenant_id
           and entry.session_id = child.pi_session_id
           and entry.turn_id in (
             select turn.id
@@ -335,14 +329,9 @@ async function parallelExecutionEvidence(parentRunId) {
           and lane.session_id = child.pi_session_id
           and lane.lane = child.pi_session_lane
       ),
-      'inheritedReferenceCount', (
-        select count(*) from pi_session_entry_refs ref
-        where ref.tenant_id = execution.tenant_id
-          and ref.session_id = execution.child_session_id::text
-      ),
       'childOwnedEntryCount', (
-        select count(*) from pi_session_entries entry
-        where entry.tenant_id = execution.tenant_id
+        select count(*) from pi_session_log entry
+        where entry.kind='entry' and entry.tenant_id = execution.tenant_id
           and entry.session_id = child.pi_session_id
           and entry.turn_id in (
             select turn.id from turns turn
@@ -366,11 +355,11 @@ async function childUsedLocalTools(childRunId) {
   const value = await psql(`
     select exists (
       select 1
-      from pi_session_entries pe join runs r on r.turn_id=pe.turn_id
+      from pi_session_log pe join runs r on pe.kind='entry' and r.turn_id=pe.turn_id
       where r.id = ${sqlLiteral(childRunId)} and pe.type='message'
-        and pe.payload->'message'->>'role'='toolResult'
-        and pe.payload->'message'->>'toolName' in ('read','write','edit','bash')
-        and pe.payload->'message'->>'isError'='false'
+        and pe.payload->'entry'->'message'->>'role'='toolResult'
+        and pe.payload->'entry'->'message'->>'toolName' in ('read','write','edit','bash')
+        and pe.payload->'entry'->'message'->>'isError'='false'
     )::text
   `);
   return value === "true";
@@ -381,7 +370,6 @@ function assertLaneBacked(evidence, rootPiSessionId) {
   assert.match(evidence.piSessionLane, /^subagent-[0-9a-f-]{36}$/u);
   assert.equal(evidence.childPhysicalSessionExists, false);
   assert.equal(evidence.laneExists, true);
-  assert.equal(evidence.inheritedReferenceCount, 0);
   assert(evidence.childOwnedEntryCount > 0);
   assert.equal(evidence.sameWorker, true);
   assert.equal(evidence.sameOwnerLease, true);
@@ -677,7 +665,7 @@ try {
   const mailboxEvidence = JSON.parse(
     await psql(`select json_build_object(
     'commands', count(*), 'consumed', count(input_consumed_at),
-    'nativeEntries', (select count(*) from pi_session_entries where session_id=${sqlLiteral(session.sessionId)}
+    'nativeEntries', (select count(*) from pi_session_log where kind='entry' and session_id=${sqlLiteral(session.sessionId)}
       and id like 'pc-agent-input-%')) from subagent_control_commands
     where run_id=${sqlLiteral(messaging.accepted.runId)} and command->'request'->>'action'='send'`),
   );
@@ -723,9 +711,9 @@ try {
     ].join(" "),
   );
   const boundaryEntries = JSON.parse(
-    await psql(`select coalesce(json_agg(payload->'message'),'[]') from pi_session_entries
-    where turn_id=${sqlLiteral(boundary.accepted.turnId)} and type='message'
-      and payload->'message'->>'role'='toolResult' and payload->'message'->>'toolName'='subagent'`),
+    await psql(`select coalesce(json_agg(payload->'entry'->'message'),'[]') from pi_session_log
+    where kind='entry' and turn_id=${sqlLiteral(boundary.accepted.turnId)} and type='message'
+      and payload->'entry'->'message'->>'role'='toolResult' and payload->'entry'->'message'->>'toolName'='subagent'`),
   );
   assert.equal(boundaryEntries.length, 1);
   const boundaryResult = JSON.parse(
@@ -801,11 +789,11 @@ try {
     timings: measurements,
     usage: JSON.parse(
       await psql(`select json_build_object(
-      'input',coalesce(sum((payload->'message'->'usage'->>'input')::bigint),0),
-      'output',coalesce(sum((payload->'message'->'usage'->>'output')::bigint),0),
-      'cacheRead',coalesce(sum((payload->'message'->'usage'->>'cacheRead')::bigint),0),
-      'cacheWrite',coalesce(sum((payload->'message'->'usage'->>'cacheWrite')::bigint),0))
-      from pi_session_entries where session_id=${sqlLiteral(session.sessionId)} and type='message' and payload->'message'->>'role'='assistant'`),
+      'input',coalesce(sum((payload->'entry'->'message'->'usage'->>'input')::bigint),0),
+      'output',coalesce(sum((payload->'entry'->'message'->'usage'->>'output')::bigint),0),
+      'cacheRead',coalesce(sum((payload->'entry'->'message'->'usage'->>'cacheRead')::bigint),0),
+      'cacheWrite',coalesce(sum((payload->'entry'->'message'->'usage'->>'cacheWrite')::bigint),0))
+      from pi_session_log where kind='entry' and session_id=${sqlLiteral(session.sessionId)} and type='message' and payload->'entry'->'message'->>'role'='assistant'`),
     ),
     accepted: true,
     checkedAt: new Date().toISOString(),

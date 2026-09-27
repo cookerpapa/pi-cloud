@@ -604,10 +604,7 @@ describe.sequential("Execution stream closure", () => {
     await new PostgresPiSessionAppendProjector(measured).project(fact, f.record(fact, 10n));
     expect(statements.length).toBeLessThanOrEqual(17);
     expect(
-      statements.filter((query) => query.startsWith('insert into "pi_session_entries"')),
-    ).toHaveLength(1);
-    expect(
-      statements.filter((query) => query.startsWith('insert into "pi_session_records"')),
+      statements.filter((query) => query.startsWith('insert into "pi_session_log"')),
     ).toHaveLength(1);
   });
   it("shows valid pre-seal records when the live consumer starts behind PG projection", async () => {
@@ -673,8 +670,9 @@ describe.sequential("Execution stream closure", () => {
     });
     expect(snapshot.events).toHaveLength(1);
     const entries = await db
-      .selectFrom("pi_session_entries")
-      .select(["id", "payload"])
+      .selectFrom("pi_session_log")
+      .where("kind", "=", "entry")
+      .select(["id", sql<Record<string, unknown>>`payload->'entry'`.as("payload")])
       .where("session_id", "=", f.session.sessionId)
       .orderBy("seq")
       .execute();
@@ -706,7 +704,8 @@ describe.sequential("Execution stream closure", () => {
     await projector.project(f.record(f.seal, 15n)); // lost seal ACK / duplicate publication
     expect(
       await db
-        .selectFrom("pi_session_entries")
+        .selectFrom("pi_session_log")
+        .where("kind", "=", "entry")
         .select("id")
         .where("session_id", "=", f.session.sessionId)
         .execute(),
@@ -738,7 +737,8 @@ describe.sequential("Execution stream closure", () => {
     for (const record of facts) await recovered.project(record);
     await recovered.project(f.record(f.seal, 23n));
     const rows = await db
-      .selectFrom("pi_session_entries")
+      .selectFrom("pi_session_log")
+      .where("kind", "=", "entry")
       .select("payload")
       .where("session_id", "=", f.session.sessionId)
       .orderBy("seq")

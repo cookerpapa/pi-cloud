@@ -117,15 +117,21 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     expect(await store.reap(0)).toBe(0);
     const repo = new PostgresPiSessionRepository({ database: db, tenantId, images: codec });
     const fork = await repo.fork(await native.getMetadata(), { id: randomUUID() });
-    // Native Fork logs are self-contained; rebuilding removes their COW query
-    // projection's FK to source entries before physically deleting that source.
-    await rebuildPostgresPiSessionProjections(db, {
-      tenantId,
-      sessionId: (await fork.getMetadata()).id,
-    });
+    const nested = await repo.fork(await fork.getMetadata(), { id: randomUUID() });
+    // Direct source deletion requires no rebuild or materialization of a COW view.
     await repo.delete(await native.getMetadata());
     expect(await store.reap(0)).toBe(0);
     expect(await fork.getEntry("image")).toEqual(entry);
+    await repo.delete(await fork.getMetadata());
+    expect(await store.reap(0)).toBe(0);
+    expect(await nested.getEntry("image")).toEqual(entry);
+    await rebuildPostgresPiSessionProjections(db, {
+      tenantId,
+      sessionId: (await nested.getMetadata()).id,
+    });
+    expect(await nested.getEntry("image")).toEqual(entry);
+    await repo.delete(await nested.getMetadata());
+    expect(await store.reap(0)).toBe(1);
   });
 
   it("missing and cross-tenant images fail explicitly without substituting a mutable file", async () => {
@@ -196,7 +202,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       },
     };
     await expect(
-      sql`insert into pi_session_log(tenant_id,session_id,seq,kind,payload) values(${tenantId}::uuid,${sessionId},1,'entry',${JSON.stringify({ entry: { message: { content: [fake] } } })}::jsonb)`.execute(
+      sql`insert into pi_session_log(tenant_id,session_id,seq,kind,payload) values(${tenantId}::uuid,${sessionId},1,'entry',${JSON.stringify({ lane: "main", turnId: null, entry: { id: "image", type: "message", seq: 1, timestamp: 1, parentId: null, message: { role: "toolResult", toolCallId: "call", toolName: "read", isError: false, timestamp: 1, content: [fake] } } })}::jsonb)`.execute(
         db,
       ),
     ).rejects.toThrow("unavailable");
@@ -261,7 +267,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       await PostgresPiSessionStorage.create({ database: db, tenantId, sessionId });
       const image = { type: "pi_cloud_image_v1", attachment: ref };
       await expect(
-        sql`insert into pi_session_log(tenant_id,session_id,seq,kind,payload) values(${tenantId}::uuid,${sessionId},1,'entry',${JSON.stringify({ entry: { message: { content: [image] } } })}::jsonb)`.execute(
+        sql`insert into pi_session_log(tenant_id,session_id,seq,kind,payload) values(${tenantId}::uuid,${sessionId},1,'entry',${JSON.stringify({ lane: "main", turnId: null, entry: { id: "image", type: "message", seq: 1, timestamp: 1, parentId: null, message: { role: "toolResult", toolCallId: "call", toolName: "read", isError: false, timestamp: 1, content: [image] } } })}::jsonb)`.execute(
           db,
         ),
       ).rejects.toThrow("unavailable");

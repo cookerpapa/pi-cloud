@@ -146,8 +146,7 @@ export class PostgresNativeSessionHost {
       lanes: session.lanes,
       hasId: async (id) => {
         const result = await sql<{ found: boolean }>`select exists(
-          select 1 from pi_session_visible_entries where tenant_id=${scope.tenantId}::uuid and session_id=${scope.piSessionId} and id=${id}
-          union all select 1 from pi_session_records where tenant_id=${scope.tenantId}::uuid and session_id=${scope.piSessionId} and id=${id}
+          select 1 from pi_session_log where tenant_id=${scope.tenantId}::uuid and session_id=${scope.piSessionId} and id=${id}
         ) as found`.execute(this.#database);
         return result.rows[0]!.found;
       },
@@ -252,10 +251,17 @@ export class PostgresNativeSessionHost {
       const oldIds = open.map((r) => r.id);
       const rows = oldIds.length
         ? await this.#database
-            .selectFrom("pi_session_records")
-            .select(["id", "turn_id", "type", "payload"])
+            .selectFrom("pi_session_log")
+            .where("kind", "=", sql.lit("record"))
+            .select([
+              "id",
+              "turn_id",
+              "type",
+              sql<Record<string, unknown>>`payload->'record'`.as("payload"),
+            ])
             .where("tenant_id", "=", scope.tenantId)
             .where("session_id", "=", scope.piSessionId)
+            .where("lane", "=", scope.piSessionLane)
             .where("run_id", "in", oldIds)
             .where("type", "in", ["operation_started", "tool_started"])
             .orderBy("seq", "asc")

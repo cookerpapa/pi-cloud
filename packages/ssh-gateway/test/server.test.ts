@@ -20,7 +20,10 @@ describe("SSH gateway", () => {
       privateKeyEncoding: { type: "pkcs1", format: "pem" },
       publicKeyEncoding: { type: "spki", format: "pem" },
     }).privateKey;
-    const input = vi.fn(async () => undefined);
+    const inputReceived = Promise.withResolvers<void>();
+    const input = vi.fn(async () => {
+      inputReceived.resolve();
+    });
     const authority = {
       consume: vi.fn(async (username: string, password: string) =>
         username === "picloud" && password === "one-time"
@@ -51,7 +54,9 @@ describe("SSH gateway", () => {
         return {
           output: {
             async *[Symbol.asyncIterator]() {
-              await new Promise<void>((resolve) => setTimeout(resolve, 20));
+              // Complete the fake process only after its command arrives;
+              // a wall-clock delay can close SSH before a slow socket delivers it.
+              await inputReceived.promise;
               yield Buffer.from("PI_CLOUD_SSH_OK\r\n");
             },
           },

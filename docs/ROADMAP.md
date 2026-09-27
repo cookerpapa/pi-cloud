@@ -39,6 +39,10 @@
 
 ## Current release gate
 
+- [ ] Complete ADR-0197's indexed native-log cutover: migrate all readers/writers,
+      remove Entry/Record/COW tables, retain current-state reconstruction and
+      verify matched deployment, Pi conformance, fault and Luna acceptance.
+
 - [x] Complete the approved [D1/D3/D4 follow-up](reports/repository-review-followup-20260927.md):
       bounded Subagent results, batched lease observations and narrower runtime/Guest
       dependencies, with matched rollout and real Luna acceptance.

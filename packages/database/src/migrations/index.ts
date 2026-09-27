@@ -151,6 +151,7 @@ import * as gitlabIssueNoteSync from "./149_gitlab_issue_note_sync.ts";
 import * as gpt6ModelSelection from "./150_gpt6_model_selection.ts";
 import * as sessionImageAttachments from "./151_session_image_attachments.ts";
 import * as editablePendingInputs from "./152_editable_pending_inputs.ts";
+import * as indexedNativeSessionLog from "./153_indexed_native_session_log.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -307,6 +308,7 @@ export const migrationProvider: MigrationProvider = {
       "150_gpt6_model_selection": gpt6ModelSelection,
       "151_session_image_attachments": sessionImageAttachments,
       "152_editable_pending_inputs": editablePendingInputs,
+      "153_indexed_native_session_log": indexedNativeSessionLog,
     };
   },
 };

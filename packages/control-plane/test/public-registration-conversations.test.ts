@@ -660,59 +660,6 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         .where("id", "=", alphaSession.sessionId)
         .executeTakeFirstOrThrow();
       await transaction
-        .insertInto("pi_session_entries")
-        .values([
-          {
-            tenant_id: alpha.tenantId,
-            session_id: alphaSession.sessionId,
-            id: userEntryId,
-            seq: 1,
-            parent_id: null,
-            type: "message",
-            custom_type: null,
-            timestamp_ms: NOW.valueOf(),
-            turn_id: alphaTurn.turnId,
-            payload: {
-              id: userEntryId,
-              type: "message",
-              message: { role: "user", content: "alpha private prompt", timestamp: NOW.valueOf() },
-            },
-          },
-          {
-            tenant_id: alpha.tenantId,
-            session_id: alphaSession.sessionId,
-            id: assistantEntryId,
-            seq: 2,
-            parent_id: userEntryId,
-            type: "message",
-            custom_type: null,
-            timestamp_ms: NOW.valueOf() + 1,
-            turn_id: alphaTurn.turnId,
-            payload: {
-              id: assistantEntryId,
-              type: "message",
-              message: {
-                role: "assistant",
-                content: [{ type: "text", text: "alpha final answer" }],
-                provider: "test",
-                model: "test",
-                api: "test",
-                usage: {
-                  input: 1,
-                  output: 1,
-                  cacheRead: 0,
-                  cacheWrite: 0,
-                  totalTokens: 2,
-                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-                },
-                stopReason: "stop",
-                timestamp: NOW.valueOf() + 1,
-              },
-            },
-          },
-        ])
-        .execute();
-      await transaction
         .updateTable("pi_session_lanes")
         .set({ leaf_id: assistantEntryId })
         .where("tenant_id", "=", alpha.tenantId)
@@ -870,21 +817,14 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       }),
     ]);
     const copiedEntries = await database
-      .selectFrom("pi_session_entry_refs")
+      .selectFrom("pi_session_log")
+      .where("kind", "=", "entry")
       .select("id")
       .where("tenant_id", "=", alpha.tenantId)
       .where("session_id", "=", forked.session.sessionId)
       .orderBy("seq")
       .execute();
     expect(copiedEntries.map((entry) => entry.id)).toEqual([userEntryId, assistantEntryId]);
-    await expect(
-      database
-        .selectFrom("pi_session_entries")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("session_id", "=", forked.session.sessionId)
-        .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ count: "0" });
     expect(
       await database
         .selectFrom("pi_session_log")
@@ -901,7 +841,8 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     ]);
     expect(
       await database
-        .selectFrom("pi_session_records")
+        .selectFrom("pi_session_log")
+        .where("kind", "=", "record")
         .select("id")
         .where("tenant_id", "=", alpha.tenantId)
         .where("session_id", "=", forked.session.sessionId)
@@ -983,29 +924,6 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
           },
         },
       ];
-      await transaction
-        .insertInto("pi_session_entries")
-        .values(
-          laterEntries.map((entry) => ({
-            tenant_id: alpha.tenantId,
-            session_id: alphaSession.sessionId,
-            id: entry.id,
-            seq: entry.seq,
-            parent_id: entry.parentId,
-            type: "message",
-            custom_type: null,
-            timestamp_ms: entry.timestamp,
-            payload: {
-              id: entry.id,
-              seq: entry.seq,
-              type: "message",
-              parentId: entry.parentId,
-              timestamp: entry.timestamp,
-              message: entry.message,
-            },
-          })),
-        )
-        .execute();
       await transaction
         .insertInto("pi_session_log")
         .values(

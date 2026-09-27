@@ -20,10 +20,9 @@ PiCloud adopts Pi's `/fork` product semantics:
 
 - a fork starts at a settled, final assistant entry;
 - it creates a new product Session and a new Pi Session;
-- the new Pi Session records copy-on-write query references to the selected
-  root-to-leaf branch, while its canonical append-only log contains complete
-  destination Entry facts and remains independently replayable;
-- referenced entries keep their Pi entry IDs and parent links, while the child
+- the new Pi Session's canonical log contains complete copies of the selected
+  root-to-leaf branch and serves its reads independently (ADR-0197);
+- copied entries keep their Pi entry IDs and parent links, while the child
   has a fresh append sequence and no inherited open operation records;
 - the child continues to use the same Workspace as its parent. The fork changes
   conversation context; it does not rewind Workspace bytes;

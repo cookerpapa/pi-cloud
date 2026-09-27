@@ -39,12 +39,14 @@ it.skipIf(!external)(
         sessionId,
       });
       // Synthetic projection fixture, not a claim of model/context-token throughput.
-      await sql`insert into pi_session_entries(tenant_id,session_id,id,seq,parent_id,type,custom_type,timestamp_ms,payload,turn_id)
-      select ${tenant}::uuid,${sessionId},${prefix}||i::text,i,
-        case when i=1 then null else ${prefix}||(i-1)::text end,
-        'custom','state',1,jsonb_build_object('id',${prefix}||i::text,'type','custom','customType','state','data','x'),null
-      from generate_series(1,2000) i`.execute(db);
-      await sql`analyze pi_session_entries`.execute(db);
+      await sql`insert into pi_session_log(tenant_id,session_id,seq,kind,payload)
+      select ${tenant}::uuid,${sessionId},i,'entry',jsonb_build_object('lane','main','turnId',null,
+        'entry',jsonb_build_object('id',${prefix}||i::text,'seq',i,'timestamp',1,
+          'parentId',case when i=1 then null else ${prefix}||(i-1)::text end,
+          'type','custom','customType','state','data','x')) from generate_series(1,2000) i`.execute(
+        db,
+      );
+      await sql`analyze pi_session_log`.execute(db);
       const entries = await storage.findEntriesOnBranch({
         start: `${prefix}2000`,
         stopAtType: "compaction",
@@ -75,7 +77,7 @@ it.skipIf(!external)(
         nodes.filter((n) => n["Node Type"] === "Recursive Union").map((n) => n["Actual Rows"]),
       ).toEqual([2000]);
       const repeatedReads = nodes.filter(
-        (n) => n["Relation Name"] === "pi_session_entries" && Number(n["Actual Loops"]) > 100,
+        (n) => n["Relation Name"] === "pi_session_log" && Number(n["Actual Loops"]) > 100,
       );
       expect(repeatedReads.length).toBeGreaterThan(0);
       for (const node of repeatedReads) {
