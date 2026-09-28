@@ -12,13 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Implement and validate approved [ADR-0198](adr/0198-atomic-tool-invocation.md):
-      one remote Tool intent/command publication, with cancellation, replay and
-      real GPT-6 Luna acceptance.
-      General large-result attachments remain a separate capability decision;
-      [D1/D3/D4 implementation and acceptance](reports/repository-review-followup-20260927.md)
-      are complete.
-
 - [ ] Review the two moderate development-test dependency findings (Vitest and
       @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
       dependency gate passes; a test-tool upgrade needs its own contract checks.
@@ -96,6 +89,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       support is limited to already-bound integrations and environment Git credentials.
 
 ## Deliberately deferred capabilities
+
+- [ ] Decide whether large text/structured Tool results need general attachments.
+      Current Subagent results use ADR-0196's explicit bounded admission; image
+      attachments do not imply unbounded ordinary result storage.
 
 - [ ] Define project text-resource discovery separately from executable extensions
       if that feature is requested. Automatic AGENTS.md loading (review PI-06) was

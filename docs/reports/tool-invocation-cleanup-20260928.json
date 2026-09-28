@@ -1,0 +1,49 @@
+{
+  "checkedAt": "2026-09-28T05:50:52.323079+00:00",
+  "workspaces": [
+    {
+      "id": "417c15d8-8e76-4b70-8a5e-2ae9b4294d12",
+      "deleted": true,
+      "storagePurged": true
+    },
+    {
+      "id": "24df475a-7fbd-4194-b640-e208f402837d",
+      "deleted": true,
+      "storagePurged": true
+    }
+  ],
+  "runtime": {
+    "unfinishedRuns": 0,
+    "currentOwners": 0,
+    "unsealedRuns": 0,
+    "openNativeOperations": 0
+  },
+  "applications": [
+    {
+      "name": "/pi-cloud-production-control-plane-1",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1-1",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    },
+    {
+      "name": "/pi-cloud-production-tool-broker-1",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    },
+    {
+      "name": "/pi-cloud-production-web-1",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    }
+  ],
+  "temporaryPostgresRemoved": true
+}

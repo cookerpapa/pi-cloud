@@ -1,0 +1,1539 @@
+{
+  "revision": "38a4885296e5770103c129b7bb969660d465b254",
+  "fullCheck": {
+    "passed": 1253,
+    "skipped": 124,
+    "failed": 0,
+    "files": 211
+  },
+  "files": [
+    {
+      "file": "packages/control-plane/test/api-exception-filter.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/atomic-worker-admission.postgres.test.ts",
+      "passed": 40,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/authority-time.postgres.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/concurrent-run-settlement.postgres.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/control-plane-runtime.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/conversation-list-pagination.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/conversation-tree.postgres.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/conversation-turn-projection.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/development-environment-service.test.ts",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/execution-stream-seal.test.ts",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/expired-run-lease.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/github-app-client.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/gitlab-issue-note-reconciler.test.ts",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/gitlab-project-client.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/gpt6-selection-migration.postgres.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/http-supervisor-management.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/main-acquisition.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/native-session-host.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/operational-metrics-sampler.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/parallel-worker-claims.postgres.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/platform-runtime-settings.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/private-multi-tenant-api.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/production-bootstrap.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/production-http-gateway.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/public-registration-conversations.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/queued-inputs.test.ts",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/run-queue.test.ts",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/sandbox-preview-gateway.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/session-event-hub.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/session-family-lease.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/source-control-service.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/startup-cleanup.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/steer-admission.postgres.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/subagent-controller.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/subagent-management-transport.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/supervisor-boot-provisioner.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/supervisor-websocket-gateway.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/tenant-administration.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/tenant-identity.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/tenant-model-configuration.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/tool-progress-ingress.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/turn-steering-races.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/web-authentication.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/workspace-admission.integration.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/control-plane/test/workspace-browser-service.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/control-plane/test/workspace-terminal-gateway.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/cube-api-authorizer/test/authorization.test.ts",
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/cube-api-authorizer/test/server.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/cube-egress-gateway/test/configuration-poller.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/cube-egress-gateway/test/proxy-server.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/database/test/current-schema.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/database/test/dormant-accounting-retirement.postgres.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/database/test/first-record-cutover.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/database/test/idle-pool-recovery.postgres.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/database/test/indexed-native-log-cutover.postgres.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/database/test/postgres-queue-wake.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/database/test/prepared-selects.postgres.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/database/test/prepared-selects.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/database/test/ready-run-cutover.postgres.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/database/test/retry-transaction.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/database/test/run-identity-cutover.postgres.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/database/test/slow-commit.postgres.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/domain/test/model-profile.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/domain/test/state-machines.test.ts",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/event-log/test/ordered-effects.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/event-log/test/tool-replies.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/fake-model-server/test/pi-openai-contract.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/fake-model-server/test/server.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/observability/test/observability.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/observability/test/run-timing.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/pi-session-postgres/test/indexed-log.postgres.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/pi-session-postgres/test/native-projection-lock.postgres.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/pi-session-postgres/test/native-session-projection.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/pi-session-postgres/test/native-session-writer.test.ts",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/pi-session-postgres/test/pi-session-backend-conformance.test.ts",
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/pi-session-postgres/test/postgres-pi-session-storage.test.ts",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/pi-session-postgres/test/postgres-session-query.postgres.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/pi-session-postgres/test/session-lease-observer.test.ts",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/control-plane-api.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/development-environment.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/environment.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/event-envelope.test.ts",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/execution-reference.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/hot-path-validation.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/image-attachment.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/queued-inputs.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/sandbox-preview.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/source-control.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/supervisor-management.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/supervisor-wire.test.ts",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/tool-capabilities.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/tool-result-budget.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/tool-sandbox.test.ts",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/protocol/test/workspace-terminal.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/provider-egress-relay/test/relay.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/canonical-pi-conversation.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/execution-publication.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/execution-stream-boundary.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/kafka-consumer-lifecycle.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/kafka-producer-backpressure.test.ts",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/kafka-topic-policy.integration.test.ts",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 1,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/pi-session-append-publisher.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/session-event-stream.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/session-live-view.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/session-projector-handoffs.test.ts",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/terminal-outbox-relay.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/tool-invocation-fact.test.ts",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/tool-progress.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/runtime-core/test/tool-reply-retention.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/agent-run-supervisor.test.ts",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/assistant-text-presentation.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/cloud-agent-contract.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/cloud-agent-runtime-lifecycle.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/cloud-agent-runtime.test.ts",
+      "passed": 62,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/cloud-step-context.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/control-channel-process-fault.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/pi-agent-event-adapter.test.ts",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/pi-cloud-turn-runner.integration.test.ts",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/pi-sampling-step.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/pi-sandbox-continuity.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/pi-settlement-gate.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/provider-hosted-tools.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/provider-hosted-transcript.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/reconnecting-supervisor-websocket-client.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/subagent-tool.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/trusted-remote-tools.test.ts",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/workflow-transport.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/sandbox-supervisor/test/workspace-seed.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/session-attachments/test/codec.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/session-attachments/test/reaper.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/session-attachments/test/storage.postgres.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/ssh-gateway/test/server.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/ssh-gateway/test/tool-broker-terminal.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/subagent-control/test/postgres-subagent-job-provider.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/boot-ledger.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/config.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/family-model-permits.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/family-worker-drain.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/main.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/management-server.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/model-gateway.test.ts",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/parallel-worker-claims.test.ts",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/postgres-pi-worker.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/postgres-preview-tool.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/responses-hosted-activity.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/retired-runs.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/run-claim-readiness.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/runtime.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/subagent-supervisor-tools.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/trusted-tool-runtime.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/worker-cancellation-admission.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/worker-memory-monitor.integration.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/worker-memory-monitor.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/worker-notification-recovery.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/supervisor-host/test/workspace-seed.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/cube-persistent-capsule.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/cubesandbox-live-provider.integration.test.ts",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 2,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/cubesandbox-provider.test.ts",
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/cubesandbox-runtime-client.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/cubesandbox-workspace-browser.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/direct-private-egress.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/fixed-tcp-relay.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/main-acquisition.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/postgres-workspace-volume-gateway-lock.integration.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/tool-broker/test/preview-connect.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/private-http.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/sandbox-admission.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/sandbox-http-service-registry.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/tool-broker-server-client.test.ts",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/tool-broker.test.ts",
+      "passed": 42,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/tool-command-executor.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/tool-command-routing.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/tool-progress-publisher.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/workflow-channels.test.ts",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/workflow-websocket.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/workspace-runtime-state-repository.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "postgres-supplement"
+    },
+    {
+      "file": "packages/tool-broker/test/workspace-volume-deletion-reaper.integration.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-broker/test/workspace-volume-gateway.test.ts",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-sandbox/test/image-processor.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-sandbox/test/native-tools.test.ts",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/tool-sandbox/test/tool-worker-security.test.ts",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/active-turn-selection.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/api.test.ts",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/app-render.test.tsx",
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/code-host-connections.test.tsx",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/conversation-export.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/conversation-presentation.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/conversation-scroll.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/conversation-tree-navigation.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/i18n.test.tsx",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/message-copy.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/model-settings-menu.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/progressive-text.test.ts",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/resizable-panel.test.tsx",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/session-view.test.ts",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/source-highlight.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/sse.test.ts",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/tool-progress.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/web-configuration.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/web-ui/test/workspace-directory.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "packages/workspace-runtime/test/workspace-runtime.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/deepseek-configuration.test.mjs",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/dependency-hardening.test.mjs",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/guest-build-identity.test.mjs",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/live-run-timing.test.mjs",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/local-worker-cutover.test.mjs",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/long-context-worker-switch.test.mjs",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/model-retry-policy.test.mjs",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/repository-head.test.mjs",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/runtime-file-policy.test.mjs",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    },
+    {
+      "file": "scripts/lib/tool-invocation.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "source": "full-check"
+    }
+  ],
+  "totals": {
+    "passed": 1374,
+    "failed": 0,
+    "skipped": 3
+  },
+  "postgresSupplement": {
+    "files": 28,
+    "passed": 200,
+    "failed": 0,
+    "skipped": 0
+  },
+  "checks": [
+    "full workspace typecheck",
+    "full workspace tests",
+    "acceptance helpers",
+    "isolated PostgreSQL supplement",
+    "build",
+    "format",
+    "documentation",
+    "runtime policies",
+    "image closure",
+    "build context"
+  ],
+  "sourceFiles": {
+    "eval/fault-cases.json": "c99bb7ec57a48270d4babb1cdb0c7311694de6b1ecb928e1fbac501536fbb388",
+    "packages/control-plane/src/subagent-controller.ts": "3a387f1dbe155fc2583d23111c68ea7d43fe146407d40928e6e91831c0baafaf",
+    "packages/pi-session-postgres/src/native-session-writer.ts": "4c73453e5c7330527ca81711b18865b383ea48d3dd1de88fe9066356b0ce113a",
+    "packages/pi-session-postgres/test/native-session-writer.test.ts": "3e4a68c7fe5f2f2630e28f640af193d0c36fbf5b22a4a37409f8fd67c772c927",
+    "packages/protocol/src/native-session.ts": "edfca4eb7725c2c87b10ba4ce594d8ba16e5dd786f79e48cffb2eaddddc16d74",
+    "packages/runtime-core/src/accepted-fact.ts": "c50f42bdb9eb31c967c8c951e32dada84fa3d88c67e2fcde1be018cab7722794",
+    "packages/runtime-core/src/direct-execution-log.ts": "7495566b27773fb8222f42ac52ddb691cba694247a073edd78e5293089cdea53",
+    "packages/runtime-core/src/execution-publication.ts": "6fe208e58bda36f77096fbd8a0c10205d503ba8778d69ec71ca16ad49d0a2dc4",
+    "packages/runtime-core/src/execution-stream-projection.ts": "3495b03fcdb4740b662dd31cdc2864c24b8202696f0ea9d22f73096231779780",
+    "packages/runtime-core/src/kafka-accepted-fact.ts": "27e840c31bfee4050f13dea0dcc8abe825b4baff39042c0e431b8591a58d4406",
+    "packages/runtime-core/src/native-session-log-publisher.ts": "567d28d7ba775726e75ab51d6dbd2e6fd1789af5a4028408177ff23469a13872",
+    "packages/runtime-core/src/prepare-execution-fact.ts": "b2d9cb5f2ea0174879019f9f99575d0e32dda141a71ff50c840a2b360110447d",
+    "packages/runtime-core/src/session-projector.ts": "85d4fcaa96b4eeb7950d07a19bbd9604ce0af0acf4a2c90cffc448d81e8e3e14",
+    "packages/runtime-core/src/tool-invocation-fact.ts": "5b60dc0a69152673f294bfc3af133e83c4eccd710a8e3824bcacc3548b2e92f8",
+    "packages/runtime-core/test/session-projector-handoffs.test.ts": "420e0796b97f859e641373bae3a9a8b3fb86ee77f3141a597f95ab1b943b7c7b",
+    "packages/runtime-core/test/tool-invocation-fact.test.ts": "433ea52e218c9419975b39b08ff124e775a1c7fb77b134c0dd060283802d2814",
+    "packages/runtime-core/test/tool-invocation-fixture.ts": "f2e0f54e06b7405742283e9cc18a13bdefdbefc6883deb77de731df9136cb78a",
+    "packages/sandbox-supervisor/src/cloud-agent-runtime.ts": "f4e0e27a93bfc1a9a6b8f23e0ee9d1269c421d31b8a8b4bf990d5b42bab7fb1b",
+    "packages/sandbox-supervisor/src/pi-cloud-turn-runner.ts": "391fcca77cee7678f20c18be0fe61560381a9bb2befdd2ea2e378685c38f0f4f",
+    "packages/sandbox-supervisor/src/prepared-tool.ts": "e9d164afffc7b067363206df48235ff19b511bb8103b031a7b559a484da4c0fc",
+    "packages/sandbox-supervisor/src/trusted-remote-tools.ts": "73ce3945493c8862640ae0186551735d747c478039f4f6ad36d507d2e1fc5789",
+    "packages/sandbox-supervisor/test/trusted-remote-tools.test.ts": "85169d2293446b8cdc05afffac31f7de71d86b38c5c46d60c310a0f98e0ed80e",
+    "packages/supervisor-host/src/runtime.ts": "b42df3a58be803daa4e5dd5f3910af9b6e35430e0e421a62cec790e78ea9a38b",
+    "scripts/lib/tool-invocation.test.ts": "858f1f91d10c377e7da8e092538559f153baf6b69b470f6cdd1350d4d8940345",
+    "scripts/run-live-native-tool-check.mjs": "b38d4ece966c1f8faf25a3b4d10f0d3d91176de788032e812efb8ade706de467",
+    "scripts/run-live-tool-invocation-check.mjs": "095dfb8d5c89ddf7f1cc2a7f37d97998be97c21603b13a2d0733859ce687401a"
+  }
+}

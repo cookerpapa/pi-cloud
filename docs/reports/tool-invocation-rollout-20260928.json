@@ -1,0 +1,65 @@
+{
+  "checkedAt": "2026-09-28T05:40:33.440927+00:00",
+  "revision": "38a4885296e5770103c129b7bb969660d465b254",
+  "beforeState": {
+    "unfinished": 0,
+    "owners": 0,
+    "unsealed": 0
+  },
+  "beforeHistory": {
+    "rows": 1100,
+    "digest": "04abefe61fbc94a02a31c77f94f2c624"
+  },
+  "afterState": {
+    "unfinished": 0,
+    "owners": 0,
+    "unsealed": 0
+  },
+  "afterHistory": {
+    "rows": 1100,
+    "digest": "04abefe61fbc94a02a31c77f94f2c624"
+  },
+  "containers": [
+    {
+      "name": "/pi-cloud-production-control-plane-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    },
+    {
+      "name": "/pi-cloud-production-tool-broker-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    },
+    {
+      "name": "/pi-cloud-production-web-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    },
+    {
+      "name": "/pi-cloud-production-database-bootstrap-1",
+      "status": "exited",
+      "health": "",
+      "revision": "38a4885296e5770103c129b7bb969660d465b254"
+    }
+  ],
+  "guestIdentity": "dbcdd74b623a27ffbdf266c706e2e09331c0532c",
+  "backup": {
+    "bytes": 776513,
+    "sha256": "c626f0d86b0fbcf35c0969ad33a770e7545e58d26cd1b744d112d9260f2f5dca"
+  }
+}

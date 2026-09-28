@@ -23,7 +23,7 @@ history instead of the maintained tree.
 
 The [September 27 repository review](reports/repository-review-20260927.md) covers
 Pi alignment, component boundaries, duplicated IO and removal of obsolete paths;
-it distinguishes implemented repairs from architecture decisions still awaiting discussion.
+it tracks implemented repairs and subsequent approved architecture decisions.
 The approved [D1/D3/D4 follow-up](reports/repository-review-followup-20260927.md)
 repairs result admission and tightens lease/package/build boundaries without
 merging durable acknowledgements or changing native history ownership.
@@ -33,6 +33,9 @@ the selected layout and its lifecycle contract are defined in
 [ADR-0197](adr/0197-indexed-native-session-log.md).
 The [indexed-log acceptance](reports/indexed-native-log-acceptance-20260927.md)
 records its completed schema/app cutover, preserved history and Pi/fault/Luna checks.
+The [atomic Tool invocation acceptance](reports/tool-invocation-acceptance-20260928.md)
+completes D2: one post-validation intent/command publication, with native hooks,
+fault recovery and real Luna/Cube Projector-restart verification.
 
 The [Pi-alignment review](reports/pi-alignment-review-20260926.md) records its named
 baseline; the [repair and verification record](reports/pi-alignment-repair-20260926.md)

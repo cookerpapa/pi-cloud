@@ -39,6 +39,10 @@
 
 ## Current release gate
 
+- [x] ADR-0198: combine fixed remote Tool intent and dispatch in one Kafka record;
+      preserve native validation/hooks, cancellation and commit-before-dispatch.
+      [Fault, matched rollout and real Luna/Cube acceptance](reports/tool-invocation-acceptance-20260928.md).
+
 - [x] ADR-0197: indexed native log, independent Fork copies and bounded current
       operation state; old Entry/Record/COW tables removed, with matched schema/app
       rollout and [Pi, fault and real Luna acceptance](reports/indexed-native-log-acceptance-20260927.md).
@@ -51,7 +55,7 @@
       cleanup rollout and real Luna/Cube/browser acceptance: final-only native Tool
       transport, callback failure isolation, Pi text-read parity, image metadata/cleanup,
       shared management contracts and single-statement snapshots.
-      Architectural alternatives remain for discussion.
+      The approved D1–D5 follow-ups are completed in the entries above.
 
 - [x] ADR-0191 amendment: restore selectable Flash with its requested search
       declaration and hide Pro. [Gateway, browser and real Tool-image acceptance](reports/flash-catalog-20260926.md)

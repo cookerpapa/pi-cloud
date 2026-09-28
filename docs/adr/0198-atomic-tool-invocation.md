@@ -1,6 +1,8 @@
 # ADR-0198: atomic remote Tool intent and dispatch
 
-Status: accepted for implementation, 2026-09-28.
+Status: implemented and validated, 2026-09-28.
+
+[Implementation, fault and real Luna/Cube acceptance](../reports/tool-invocation-acceptance-20260928.md).
 
 ## Context and alternatives
 
@@ -43,8 +45,8 @@ This is a bounded application-envelope change, not a new log or effect ledger.
   independent authorization remain unchanged. History replay never reissues a
   command whose dispatch position was committed.
 - Preparation/result callbacks are disposed on every exit. Cancellation before
-  publication prevents the command; after publication it may race dispatch even
-  before the producing Worker receives its ACK. Cancellation cannot retract an
+  publication enters the log queue prevents the command; after submission it may
+  race dispatch even before the producing Worker receives its ACK. Cancellation cannot retract an
   accepted log record. Existing Broker authority and guest cancellation apply.
 - A failed/ambiguous publication poisons the shared native writer, without
   renumbering or re-publishing the invocation. Loss after dispatch commit but

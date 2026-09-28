@@ -452,9 +452,10 @@ Kafka replies accept only the final result; guest updates use the separate HTTP
 observation path. The Worker observes its reply Promise before awaiting command
 publication and retires it on every exit, including image-decoding failure.
 The Projector expands a combined invocation into the existing Broker command
-only after materializing its native intent. Cancellation before publication
-prevents dispatch; cancellation after publication can race execution even before
-the producing Worker receives its ACK. Projection replay never reissues the command.
+only after materializing its native intent. Cancellation before the invocation
+enters its publication queue prevents dispatch; later cancellation can race
+execution even before the producing Worker receives its ACK. Projection replay
+never reissues the command.
 
 Guest file Tools treat cwd as a relative-path base and follow ordinary guest
 paths/symlinks. Native Node writes retain byte bounds, edit-conflict detection

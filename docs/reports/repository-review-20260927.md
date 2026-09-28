@@ -5,8 +5,9 @@
 实现提交：`b372f858a535d555f9806e69c392d81c2ee5faa5`；以下发现对应审查时的实现。
 
 后续处理：用户已批准 D1 的正确性修复及 D3/D4 的等价重构，见
-[后续实现与验证](repository-review-followup-20260927.md)。D2 继续讨论；D5 随后获批并完成
-[索引日志切换与验收](indexed-native-log-acceptance-20260927.md)。
+[后续实现与验证](repository-review-followup-20260927.md)。D5 随后获批并完成
+[索引日志切换与验收](indexed-native-log-acceptance-20260927.md)；D2 也已按批准方案完成
+[工具意图/命令合并与验收](tool-invocation-acceptance-20260928.md)。
 
 ## 范围与判定依据
 
@@ -140,6 +141,9 @@ D2–D4 是保持当前故障合同前提下的往返和依赖精简；D5 需要
 intent 的语义边界、Projector commit-before-effect，以及 after-hook 后的最终 canonical
 结果。但需重设 Tool 准备接口、日志格式和恢复测试，不能仅删除其中一个 await。
 本轮保留原合同。
+
+后续已按 [ADR-0198](../adr/0198-atomic-tool-invocation.md) 完成四个固定远程 Tool 的
+原子意图/派发切换，见[实现与验收](tool-invocation-acceptance-20260928.md)。
 
 ### D3 · 同 Worker 有两份租约观察
 

@@ -35,8 +35,10 @@ first call could have started.
   checkpoint.
 - The bound Tool wrapper then submits a second atomic mutation containing one
   `tool_started` Record. The same Fact carries public `tool.started`.
-- The Tool implementation may run only after the second native append has been
-  acknowledged by Kafka. PG projection is asynchronous under ADR-0161.
+- Local Tool implementations wait for the second native append's Kafka ACK.
+  Fixed remote Tools use ADR-0198's combined record: Projector confirms its
+  dispatch commit before issuing the command, independently of when the producing
+  Worker receives its ACK. PG projection remains asynchronous to the Worker.
 - Invalid Tool calls produce Pi's validation result without a `tool_started`
   Record.
 - Tool intent uses `replay: never`. If the Worker disappears after intent but
