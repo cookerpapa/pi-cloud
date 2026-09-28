@@ -41,6 +41,8 @@ import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
 import { PostgresPiSessionRepository } from "@pi-cloud/pi-session-postgres";
+import { ConversationReader } from "../src/conversation-reader.ts";
+import { projectionTransaction } from "../../runtime-core/src/projection-transaction.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.skipIf(!endpoint)("atomic Worker admission", () => {
@@ -223,6 +225,218 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       facts,
     };
   }
+
+  it("bounds native projection and conversation SQL while retaining indexed history branches", async () => {
+    const f = await fixture();
+    await f.executor().dispatchRun(f.accepted.runId);
+    const queries: ReturnType<ReturnType<typeof db.getExecutor>["compileQuery"]>[] = [];
+    const pending = new WeakMap<object, (typeof queries)[number]>();
+    const measured = db.withPlugin({
+      transformQuery({ node, queryId }) {
+        pending.set(queryId, db.getExecutor().compileQuery(node, queryId));
+        return node;
+      },
+      async transformResult({ result, queryId }) {
+        queries.push(pending.get(queryId)!);
+        return result;
+      },
+    });
+    const scope = f.facts[0]!.scope;
+    const base = {
+      kind: "pi_session_append" as const,
+      scope,
+      piSession: { id: scope.piSessionId, lane: "main", writerId: scope.writerId },
+      events: [],
+      occurredAt: new Date().toISOString(),
+    };
+    const entry = {
+      ...base,
+      factId: randomUUID(),
+      items: [
+        {
+          kind: "entry" as const,
+          lane: "main",
+          turnId: f.accepted.turnId,
+          entry: {
+            id: "entry",
+            type: "custom" as const,
+            customType: "test",
+            seq: 1,
+            parentId: null,
+            timestamp: 1,
+          },
+        },
+      ],
+    };
+    await new PostgresPiSessionAppendProjector(measured).project(entry, {
+      topic: f.worker,
+      partition: 0,
+      offset: 10n,
+    });
+    // Seven domain statements + one SET LOCAL exchange; driver BEGIN/COMMIT add two.
+    expect(queries).toHaveLength(8);
+    expect(queries[0]!.sql).toContain("set_config('lock_timeout'");
+    expect(queries.at(-1)!.sql).toContain('with "projected_run"');
+    queries.length = 0;
+    const record = {
+      ...base,
+      factId: randomUUID(),
+      items: [
+        {
+          kind: "record" as const,
+          turnId: f.accepted.turnId,
+          record: {
+            id: "operation",
+            type: "operation_started" as const,
+            seq: 2,
+            timestamp: 2,
+            lane: "main",
+            sourceLeafId: "entry",
+            intent: { kind: "run" as const, originalPrompt: [], initialMessages: [] },
+          },
+        },
+      ],
+    };
+    await new PostgresPiSessionAppendProjector(measured).project(record, {
+      topic: f.worker,
+      partition: 0,
+      offset: 11n,
+    });
+    expect(queries).toHaveLength(8);
+    queries.length = 0;
+    const view = await new ConversationReader(measured, f.tenant.tenantId).getConversationView(
+      f.session.sessionId,
+    );
+    expect(view.conversation.turns).toHaveLength(1);
+    expect(queries).toHaveLength(6);
+    const native = queries.find((q) => q.sql.includes("union all"))!;
+    expect(native).toBeDefined();
+    // A small fixture may rationally use sequential scans. Prove both UNION
+    // branches can use the existing partial indexes without adding an index.
+    await db.transaction().execute(async (tx) => {
+      await sql`set local enable_seqscan=off`.execute(tx);
+      const plan = await tx.executeQuery({ ...native, sql: `explain (format json) ${native.sql}` });
+      const indexes: string[] = [];
+      const visit = (node: unknown) => {
+        if (!node || typeof node !== "object") return;
+        const index = (node as Record<string, unknown>)["Index Name"];
+        if (typeof index === "string" && index.startsWith("pi_session_log_")) indexes.push(index);
+        for (const value of Object.values(node)) visit(value);
+      };
+      visit(plan.rows);
+      expect(indexes, JSON.stringify(plan.rows)).toHaveLength(2);
+    });
+  });
+
+  it("rolls back a timed-out native Session lock and replays the same offset once", async () => {
+    const f = await fixture();
+    await f.executor().dispatchRun(f.accepted.runId);
+    const scope = f.facts[0]!.scope;
+    const fact: Extract<AcceptedFact, { kind: "pi_session_append" }> = {
+      kind: "pi_session_append",
+      factId: randomUUID(),
+      scope,
+      piSession: { id: scope.piSessionId, lane: "main", writerId: scope.writerId },
+      events: [],
+      occurredAt: new Date().toISOString(),
+      items: [{ kind: "fact", fact: "name", seq: 1, name: "after-lock" }],
+    };
+    const position = { topic: f.worker, partition: 0, offset: 10n };
+    const locked = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const holder = db.transaction().execute(async (tx) => {
+      await tx
+        .selectFrom("pi_sessions")
+        .select("id")
+        .where("id", "=", scope.piSessionId)
+        .forUpdate()
+        .execute();
+      locked.resolve();
+      await release.promise;
+    });
+    void holder.catch(locked.reject);
+    try {
+      await locked.promise;
+      const projector = new PostgresPiSessionAppendProjector(db, {
+        lockTimeoutMs: 50,
+        statementTimeoutMs: 500,
+      });
+      await expect(projector.project(fact, position)).rejects.toMatchObject({ code: "55P03" });
+      expect(
+        await db
+          .selectFrom("pi_session_log")
+          .select("seq")
+          .where("append_id", "=", fact.factId)
+          .execute(),
+      ).toEqual([]);
+      expect(
+        await db
+          .selectFrom("runs")
+          .select("output_projected_offset")
+          .where("id", "=", scope.runId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ output_projected_offset: null });
+      expect(
+        await db
+          .selectFrom("accepted_fact_projection_offsets")
+          .selectAll()
+          .where("topic", "=", position.topic)
+          .execute(),
+      ).toEqual([]);
+    } finally {
+      release.resolve();
+      await holder;
+    }
+    const projector = new PostgresPiSessionAppendProjector(db);
+    await projector.project(fact, position);
+    await projector.project(fact, position);
+    expect(
+      await db
+        .selectFrom("pi_session_log")
+        .select("seq")
+        .where("append_id", "=", fact.factId)
+        .execute(),
+    ).toEqual([{ seq: "1" }]);
+    expect(
+      await db
+        .selectFrom("accepted_fact_projection_offsets")
+        .select("next_offset")
+        .where("topic", "=", position.topic)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ next_offset: "11" });
+  });
+
+  it("cancels long projection statements on the server and restores transaction settings", async () => {
+    const f = await fixture();
+    await db.connection().execute(async (connection) => {
+      const settings = () =>
+        sql`select current_setting('lock_timeout') as lock, current_setting('statement_timeout') as statement`.execute(
+          connection,
+        );
+      const before = (await settings()).rows;
+      await expect(
+        projectionTransaction(
+          connection,
+          async (tx) => {
+            await tx
+              .updateTable("pi_sessions")
+              .set({ name: "must-rollback" })
+              .where("id", "=", f.session.sessionId)
+              .execute();
+            await sql`select pg_sleep(1)`.execute(tx);
+          },
+          { lockTimeoutMs: 20, statementTimeoutMs: 60 },
+        ),
+      ).rejects.toMatchObject({ code: "57014" });
+      expect((await settings()).rows).toEqual(before);
+      const row = await connection
+        .selectFrom("pi_sessions")
+        .select("name")
+        .where("id", "=", f.session.sessionId)
+        .executeTakeFirstOrThrow();
+      expect(row.name).not.toBe("must-rollback");
+    });
+  });
 
   it("deletes retired owner evidence only with quiescent native history", async () => {
     const f = await fixture();

@@ -20,6 +20,7 @@ export class PiCloudMetrics {
   readonly kafkaProducerPendingFacts: Gauge;
   readonly kafkaProducerRejected: Counter;
   readonly sessionMutationWait: Histogram<"stage">;
+  readonly sessionProjectionDuration: Histogram<"stage" | "outcome">;
   readonly sessionViewReads: Counter<"source">;
   readonly sessionViewReadDuration: Histogram<"source">;
   readonly sessionViewStorageBytes: Counter;
@@ -54,6 +55,14 @@ export class PiCloudMetrics {
   readonly workspaceVolumeGatewayDuration: Histogram<"operation" | "outcome">;
   readonly workspaceVolumeGatewayRejected: Counter<"reason">;
 
+  observeSessionMutation(stage: string, durationMs: number) {
+    try {
+      this.sessionMutationWait.observe({ stage }, durationMs / 1000);
+    } catch {
+      /* Metrics cannot change an acknowledged append's outcome. */
+    }
+  }
+
   constructor(serviceName: string, collectProcessMetrics = false) {
     this.registry = new Registry();
     this.registry.setDefaultLabels({ service: serviceName });
@@ -77,8 +86,15 @@ export class PiCloudMetrics {
     });
     this.sessionMutationWait = new Histogram({
       name: "pi_cloud_session_mutation_wait_seconds",
-      help: "Native Session Kafka append acknowledgement wait, excluding model time",
+      help: "Native Session publication and cold projection wait phases, excluding model time",
       labelNames: ["stage"],
+      buckets: DURATION_BUCKETS,
+      registers: [this.registry],
+    });
+    this.sessionProjectionDuration = new Histogram({
+      name: "pi_cloud_session_projection_seconds",
+      help: "Session Projector processing phases, including database waits",
+      labelNames: ["stage", "outcome"],
       buckets: DURATION_BUCKETS,
       registers: [this.registry],
     });

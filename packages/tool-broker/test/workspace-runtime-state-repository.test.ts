@@ -318,8 +318,21 @@ describe("PostgreSQL Tool Broker ownership", () => {
         })),
       )
       .execute();
+    let capture = false;
+    const queries: string[] = [];
+    const statements = new WeakMap<object, string>();
+    const measured = database.withPlugin({
+      transformQuery({ node, queryId }) {
+        statements.set(queryId, database.getExecutor().compileQuery(node, queryId).sql);
+        return node;
+      },
+      async transformResult({ result, queryId }) {
+        if (capture) queries.push(statements.get(queryId)!);
+        return result;
+      },
+    });
     const repository = new PostgresWorkspaceRuntimeStateRepository({
-      database,
+      database: measured,
       sandboxDomainId: "sandbox-domain-0001",
       instanceId: "20000000-0000-4000-8000-000000000004",
       ownerBaseUrl: "http://tool-broker-0:4300",
@@ -636,9 +649,30 @@ describe("PostgreSQL Tool Broker ownership", () => {
       session_id: rootSessionId,
       state: "active",
     });
+    capture = true;
+    try {
+      await expect(
+        repository.authorizeOperation(activation.activationId, childActivation.assignment),
+      ).resolves.toBeUndefined();
+    } finally {
+      capture = false;
+    }
+    expect(queries).toHaveLength(2); // Runtime lock, then fresh owner + execution authorization.
+    expect(queries[0]).toContain("for update");
+    expect(queries[1]).toContain('"tool_broker_instances" as "owner"');
+    await database
+      .updateTable("tool_broker_instances")
+      .set({ lease_expires_at: new Date(0) })
+      .where("instance_id", "=", "20000000-0000-4000-8000-000000000004")
+      .execute();
     await expect(
       repository.authorizeOperation(activation.activationId, childActivation.assignment),
-    ).resolves.toBeUndefined();
+    ).rejects.toMatchObject({ code: "ownership_lost" });
+    await database
+      .updateTable("tool_broker_instances")
+      .set({ lease_expires_at: sql<Date>`clock_timestamp() + interval '1 minute'` })
+      .where("instance_id", "=", "20000000-0000-4000-8000-000000000004")
+      .execute();
     await repository.setWorkspaceRuntimeState(activation.activationId, "active");
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "reserved" });
     await expect(

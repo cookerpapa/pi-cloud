@@ -13,7 +13,12 @@ import {
   validateImageReferencePayload,
 } from "@pi-cloud/protocol";
 import type { AcceptedFact, AcceptedFactBus, AcceptedFactReceipt } from "./accepted-fact.ts";
-import { AcceptedFactCapacityError, AcceptedFactPublisherFailedError } from "./accepted-fact.ts";
+import {
+  AcceptedFactCapacityError,
+  AcceptedFactTooLargeError,
+  AcceptedFactPublisherFailedError,
+} from "./accepted-fact.ts";
+import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { isNativeAppendFact, toolCommandForFact } from "./tool-invocation-fact.ts";
 
@@ -41,6 +46,8 @@ export type KafkaAcceptedFactConfiguration = Readonly<{
 
 type PendingAcceptedFact = {
   bytes: number;
+  enqueuedAt: number;
+  submittedAt?: number;
   promise: Promise<AcceptedFactReceipt>;
   resolve(receipt: AcceptedFactReceipt): void;
   reject(error: Error): void;
@@ -190,6 +197,10 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
     for (const delivered of lane.pending.splice(0, report.count as number)) {
       this.#pending.delete(delivered.factId);
       this.#pendingBytes -= delivered.receipt.bytes;
+      this.#metrics?.observeSessionMutation(
+        "producer_ack",
+        performance.now() - delivered.receipt.submittedAt!,
+      );
       delivered.receipt.resolve({ factId: delivered.factId, durable: true });
     }
     this.#observe();
@@ -256,16 +267,21 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
   }
 
   async append(fact: AcceptedFact): Promise<AcceptedFactReceipt> {
-    if (!this.#started) throw new Error("Kafka AcceptedFactBus is not running");
+    if (!this.#started) throw new PublicationNotSentError("Kafka AcceptedFactBus is not running");
     if (this.#streamFailure !== undefined) throw this.#streamFailure;
     const existing = this.#pending.get(fact.factId);
     if (existing !== undefined) return existing.promise;
-    if (isNativeAppendFact(fact)) validateImageReferencePayload(fact.items);
-    const value = JSON.stringify(fact);
+    let value: string;
+    try {
+      if (isNativeAppendFact(fact)) validateImageReferencePayload(fact.items);
+      value = JSON.stringify(fact);
+    } catch (error) {
+      throw new PublicationNotSentError("Execution record serialization failed", { cause: error });
+    }
     const bytes = Buffer.byteLength(value);
     // Reject this publication before touching the shared Producer stream. A
     // record-size error must not poison callbacks for unrelated Sessions.
-    if (bytes > MAX_EXECUTION_FACT_BYTES) throw new AcceptedFactCapacityError();
+    if (bytes > MAX_EXECUTION_FACT_BYTES) throw new AcceptedFactTooLargeError();
     if (
       this.#pending.size >= this.#capacity.maximumPendingFacts ||
       this.#pendingBytes + bytes > this.#capacity.maximumPendingBytes
@@ -282,6 +298,7 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
     });
     const receipt: PendingAcceptedFact = {
       bytes,
+      enqueuedAt: performance.now(),
       promise,
       resolve: resolveReceipt,
       reject: rejectReceipt,
@@ -294,6 +311,11 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
     lane.writes = lane.writes
       .then(async () => {
         if (this.#streamFailure) throw this.#streamFailure;
+        receipt.submittedAt = performance.now();
+        this.#metrics?.observeSessionMutation(
+          "producer_queue",
+          receipt.submittedAt - receipt.enqueuedAt,
+        );
         lane.pending.push({ factId: fact.factId, receipt });
         const writable = lane.stream.write({
           topic: this.#topic,

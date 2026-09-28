@@ -148,12 +148,6 @@ export async function projectNativeSessionAppend(
       )
       .execute();
   await transaction.insertInto("pi_session_log").values(logs).execute();
-  if (changed.size)
-    await sql`update pi_session_lanes target set leaf_id=head.id
-    from jsonb_to_recordset(${JSON.stringify([...changed].map((lane) => ({ lane, id: heads.get(lane) })))}::jsonb) head(lane text,id text)
-    where target.tenant_id=${tenantId}::uuid and target.session_id=${sessionId} and target.lane=head.lane`.execute(
-      transaction,
-    );
   for (const [targetId, value] of labels) {
     if (value.label === undefined)
       await transaction
@@ -180,6 +174,14 @@ export async function projectNativeSessionAppend(
         .execute();
   }
   await transaction
+    .with(
+      "moved_heads",
+      () => sql<{ lane: string }>`(
+      update pi_session_lanes target set leaf_id=head.id
+      from jsonb_to_recordset(${JSON.stringify([...changed].map((lane) => ({ lane, id: heads.get(lane) })))}::jsonb) head(lane text,id text)
+      where target.tenant_id=${tenantId}::uuid and target.session_id=${sessionId} and target.lane=head.lane
+      returning target.lane)`,
+    )
     .updateTable("pi_sessions")
     .set({ next_seq: first + items.length, ...(name === undefined ? {} : { name }) })
     .where("tenant_id", "=", tenantId)

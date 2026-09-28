@@ -3,6 +3,48 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "native-proved-rejection",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/native-session-writer.test.ts",
+      "test": "restores a proved unpublished append without stopping a sibling or consuming sequence",
+      "invariant": "A proved pre-enqueue rejection restores committed state and preserves sibling publication and contiguous sequence."
+    },
+    {
+      "id": "projection-independent-cancel",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/native-projection-progress.test.ts",
+      "test": "cancels one waiting Lane immediately without interrupting a sibling's read",
+      "invariant": "Cancelling a cold history waiter does not cancel the shared progress read or a sibling."
+    },
+    {
+      "id": "projection-owner-cache-fence",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/native-projection-progress.test.ts",
+      "test": "checks ownership even for cached positions and does not cache failed reads",
+      "invariant": "Previously observed progress cannot authorize a retired owner or cache a failed read."
+    },
+    {
+      "id": "projection-lock-timeout-replay",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "rolls back a timed-out native Session lock and replays the same offset once",
+      "invariant": "Server lock timeout leaves native history and projection positions unchanged; redelivery after release applies once."
+    },
+    {
+      "id": "projection-statement-timeout",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "cancels long projection statements on the server and restores transaction settings",
+      "invariant": "A timed-out SQL statement rolls back preceding writes and transaction-local timeout settings."
+    },
+    {
+      "id": "projection-other-partition-progress",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "test": "does not put unrelated partition handlers behind a pending owner-delivery ACK",
+      "invariant": "A blocked delivery in one partition does not serialize unrelated partition handlers."
+    },
+    {
       "id": "atomic-tool-replay",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/session-projector-handoffs.test.ts",

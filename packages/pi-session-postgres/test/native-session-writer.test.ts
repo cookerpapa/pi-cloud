@@ -1,7 +1,11 @@
 import { InMemorySessionStorage, type Entry } from "@earendil-works/pi-agent-core";
 import { describe, expect, it, vi } from "vitest";
-import { NativeSessionWriter } from "../src/native-session-writer.ts";
-import { committedItemSequence, type PiCommittedItem } from "@pi-cloud/protocol/native-session";
+import { NativeSessionWriter, type NativeWriterOptions } from "../src/native-session-writer.ts";
+import {
+  committedItemSequence,
+  PublicationNotSentError,
+  type PiCommittedItem,
+} from "@pi-cloud/protocol/native-session";
 
 const metadata = { id: "native-session", createdAt: 1 };
 const value = (id: string) => ({
@@ -21,6 +25,7 @@ async function fixture(
   branch: Entry[] = [],
   nextSequence = 1,
   reader = new InMemorySessionStorage(metadata),
+  onTiming?: NativeWriterOptions["onTiming"],
 ) {
   const waitProjected = vi.fn<() => Promise<void>>(async () => {
     throw new Error("projection intentionally stopped");
@@ -41,6 +46,7 @@ async function fixture(
     hasId,
     waitProjected,
     fail,
+    ...(onTiming ? { onTiming } : {}),
   });
   const main = await writer.open(
     { lane: "main", turnId: "turn-1", runId: "attempt-1" },
@@ -51,6 +57,95 @@ async function fixture(
 }
 
 describe("Kafka-acknowledged native Session writer", () => {
+  it("separates writer phases and keeps telemetry errors outside ACK semantics", async () => {
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const samples: [string, number][] = [];
+    try {
+      const f = await fixture([], 1, undefined, (stage, ms) => {
+        samples.push([stage, ms]);
+        throw new Error("metrics failed");
+      });
+      f.publisher.publish.mockImplementation(async () => {
+        now += 10;
+      });
+      await f.writer.append(
+        f.main,
+        async (seq) => {
+          now += 2;
+          return { items: [{ kind: "fact", fact: "name", seq, name: "timed" }], result: true };
+        },
+        undefined,
+        () => {
+          now += 3;
+        },
+      );
+      expect(samples).toEqual([
+        ["writer_queue", 0],
+        ["writer_prepare", 2],
+        ["writer_publish", 10],
+        ["writer_apply", 3],
+      ]);
+      expect(f.writer.failed).toBe(false);
+      expect(f.writer.throughSequence).toBe(1);
+      expect(f.fail).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("restores a proved unpublished append without stopping a sibling or consuming sequence", async () => {
+    const f = await fixture();
+    await f.main.createLane("child", null);
+    const child = await f.writer.open(
+      { lane: "child", turnId: "child", runId: "child" },
+      { branch: [], openOperations: [], reader: f.reader },
+      f.publisher,
+    );
+    const rejectedId = f.writer.idGenerator();
+    f.publisher.publish.mockRejectedValueOnce(new PublicationNotSentError("not enqueued"));
+    await expect(f.main.appendEntry(value(rejectedId), "main")).rejects.toThrow("not enqueued");
+    expect(f.writer.throughSequence).toBe(1);
+    expect(f.writer.failed).toBe(false);
+    expect(await f.main.getEntry(rejectedId)).toBeUndefined();
+    expect(await child.appendEntry(value(f.writer.idGenerator()), "child")).toMatchObject({
+      seq: 2,
+      parentId: null,
+    });
+    expect(await f.main.appendEntry(value(rejectedId), "main")).toMatchObject({
+      seq: 3,
+      parentId: null,
+    });
+    expect(f.published.flat().map(committedItemSequence)).toEqual([1, 2, 3]);
+    expect(f.fail).not.toHaveBeenCalled();
+  });
+
+  it("retires the writer if restoring a rejected append fails", async () => {
+    const f = await fixture();
+    f.publisher.publish.mockRejectedValueOnce(new PublicationNotSentError("not enqueued"));
+    vi.spyOn(f.main, "restoreCommitted").mockRejectedValueOnce(new Error("view corruption"));
+    await expect(f.main.appendEntry(value(f.writer.idGenerator()), "main")).rejects.toThrow(
+      "not enqueued",
+    );
+    expect(f.writer.failed).toBe(true);
+    expect(f.fail).toHaveBeenCalledOnce();
+  });
+
+  it("treats local apply failure after ACK as fatal even if it carries a not-sent error", async () => {
+    const f = await fixture();
+    vi.spyOn(f.main, "committed").mockRejectedValueOnce(
+      new PublicationNotSentError("bad local callback"),
+    );
+    await expect(f.main.appendEntry(value(f.writer.idGenerator()), "main")).rejects.toThrow(
+      "bad local callback",
+    );
+    expect(f.writer.failed).toBe(true);
+    expect(f.writer.throughSequence).toBe(1);
+    expect(f.published).toHaveLength(1);
+    await expect(f.main.appendEntry(value(f.writer.idGenerator()), "main")).rejects.toThrow(
+      "requires recovery",
+    );
+  });
   it("drops a cancelled queued publication without consuming native sequence or poisoning sibling Lanes", async () => {
     const f = await fixture();
     const entered = deferred(),

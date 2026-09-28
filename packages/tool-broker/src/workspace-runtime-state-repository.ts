@@ -1697,10 +1697,14 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("workspace_runtime_id", "=", workspaceRuntimeId)
         .forUpdate()
         .execute();
-      await this.#assertCurrentOwner(transaction);
       const execution = executionIdentity(assignment);
       const activation = await transaction
         .selectFrom("tool_broker_workspace_runtimes as activation")
+        .innerJoin(
+          "tool_broker_instances as owner",
+          "owner.instance_id",
+          "activation.owner_instance_id",
+        )
         .innerJoin("active_execution_scopes as authority", (join) =>
           join
             .onRef("authority.tenant_id", "=", "activation.tenant_id")
@@ -1710,6 +1714,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .select("activation.workspace_runtime_id")
         .where("activation.workspace_runtime_id", "=", workspaceRuntimeId)
         .where("activation.owner_instance_id", "=", this.#instanceId)
+        .where("owner.state", "=", "ready")
+        .where("owner.lease_expires_at", ">", sql<Date>`clock_timestamp()`)
         .where("activation.state", "in", ["reserved", "materializing", "active"])
         .where(
           sql<boolean>`activation.compute_session_id is not distinct from

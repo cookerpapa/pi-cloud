@@ -3,6 +3,15 @@ import type { PiCloudEvent } from "./event-envelope.ts";
 import type { ImagePacked } from "./image-attachment.ts";
 import type { CandidateToolCommand } from "./tool-command.ts";
 
+/** Trusted, local proof that this record never entered the transport. Never
+ * reconstruct this classification from a remote error or an absent PG row. */
+export class PublicationNotSentError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "PublicationNotSentError";
+  }
+}
+
 /** Local publication context; only the command enters the execution log. */
 export type PiSessionPublicationOptions = Readonly<{
   toolCommand?: CandidateToolCommand;

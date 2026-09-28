@@ -113,9 +113,25 @@ Transport capacity signals are process-local and should be summed across replica
   `pi_cloud_tool_log_delivery_seconds{route="local"|"remote"}` measures owner
   admission, excluding guest execution. Its outcome distinguishes delivery,
   retry and abandoned dead-owner delivery. Compare these with Kafka group lag.
-- `pi_cloud_session_mutation_wait_seconds{stage="kafka_publish"}` measures native
-  append acknowledgement, excluding model time. There is no active
-  `projection_receipt` stage; PG projection lag is a cloud-consumer concern.
+- `pi_cloud_session_mutation_wait_seconds` separates `writer_queue`,
+  `writer_prepare`, `writer_publish`, `writer_apply`, `attachment_prepare`,
+  `kafka_publish`, `producer_queue` and `producer_ack`. `kafka_publish` excludes
+  attachment preparation; `producer_ack` includes the client's stream batching
+  from submission through delivery confirmation. These are nested measurements,
+  not additive components of total latency. `projection_wait` / `projection_read`
+  measure shared cold-read catch-up; normal active writes still end at Kafka ACK
+  without per-Step PG receipts. Failed waits are also sampled; `producer_ack`
+  samples only confirmed deliveries, with transport failures reported separately.
+- `pi_cloud_session_projection_seconds{stage,outcome}` separates publication
+  checks, PG projection, closure checks, dispatch commit, Tool/subagent routing
+  and record total. A slow (>= 1 second) or failed record emits
+  `session.projection.slow_or_failed` with topic/partition/offset, Run/Session
+  identity, stage durations and a safe error code, never record bodies or SQL
+  parameters. IDs are log fields, never metric labels. PG projection time includes
+  connection acquisition, transaction/lock work and commit; it is not pure SQL
+  execution time. Native/seal transactions set a 2-second per-lock timeout and
+  10-second per-statement timeout locally. Neither is a whole-record deadline or
+  permission to skip offsets; a failed partition pauses and retries in order.
 - `pi_cloud_session_view_reads_total{source="storage"|"memory"}` and
   `pi_cloud_session_view_read_seconds` distinguish cold branch loads from
   committed in-memory snapshots. `pi_cloud_session_view_storage_bytes_total`

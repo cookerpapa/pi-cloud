@@ -33,6 +33,11 @@ Control authority → PG seal Outbox → Kafka seal → PG terminal + closure
 The Projector currently runs in the Control Plane process. Its modules remain
 separate from authentication, resource APIs and the Agent Loop. There is one
 execution-log consumer group, not separate canonical, live and Tool groups.
+Native append and seal transactions have PostgreSQL-local lock/statement budgets;
+timeout rolls back without advancing offsets or admitting a Tool. Failed records
+retry in partition order. Phase metrics and payload-free slow-record diagnostics
+locate waits without introducing another consumer or a skip/dead-letter path
+([ADR-0199](adr/0199-bounded-publication-and-projection.md)).
 Image bytes travel over Cube's existing HTTP transport and a private S3 attachment
 port. Broker externalizes image parts before Kafka replies; Worker restores them
 before native Tool completion. The Session append codec externalizes the final
@@ -661,6 +666,12 @@ Kafka partition, though guest execution does not; other partition handlers can
 proceed. Active Lanes share one native writer/Worker, not arbitrary placement
 across Workers. History outside the in-memory active branch still waits for PG
 projection before reading. These are explicit tradeoffs, not independent-HA claims.
+Proved pre-enqueue validation/capacity rejection restores the affected Lane view
+without consuming native sequence or poisoning siblings. Lost ACK or failed
+post-ACK apply still retires the whole writer. Cold readers share one monotonic
+progress read, retaining independent cancellation and current-owner checks.
+The PG budgets cover native/seal transactions, not pool acquisition, every API
+query or external routing; a persistently failing record still blocks its partition.
 
 Executor admission and log seals do not atomically revoke a request already
 sent to Cube or kill guest processes. The Cube-native launch-generation contract

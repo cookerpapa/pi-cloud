@@ -178,7 +178,7 @@ it("loads append identity, Lane heads and ID conflicts in one post-lock query", 
     },
   });
   await f.project(f.frames[0]!, measured);
-  expect(queries).toHaveLength(5); // plus driver BEGIN/COMMIT; outer Run projection is separate
+  expect(queries).toHaveLength(4); // plus driver BEGIN/COMMIT; outer Run projection is separate
   expect(queries[0]).toContain("for update");
   expect(queries[1]).toContain("as prior_seq");
   expect(queries[1]).toContain("as lanes");

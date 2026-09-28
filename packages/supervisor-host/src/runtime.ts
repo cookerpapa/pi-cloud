@@ -470,6 +470,8 @@ export class PiWorkerRuntime {
       entryPayloadCache: sessionEntryPayloadCache,
       ...(this.#metrics
         ? {
+            onTiming: (stage, durationMs) =>
+              this.#metrics!.observeSessionMutation(stage, durationMs),
             onViewRead: (sample) => {
               this.#metrics!.sessionViewReads.inc({ source: sample.source });
               this.#metrics!.sessionViewReadDuration.observe(

@@ -1,4 +1,5 @@
 import type { StoredPiCommittedItem } from "@pi-cloud/protocol/native-session";
+import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
 import type { EventPublishMessage, PiCloudEvent, PiCloudEventBody } from "@pi-cloud/protocol";
 import type {
   AcceptedToolCommand,
@@ -118,11 +119,20 @@ export type AcceptedFactReceipt = Readonly<{
   durable: true;
 }>;
 
-export class AcceptedFactCapacityError extends Error {
+export class AcceptedFactCapacityError extends PublicationNotSentError {
   readonly code = "event_capacity_exhausted";
   readonly retryable = true;
   constructor() {
     super("AcceptedFact transport is at capacity; the Fact was not enqueued");
+  }
+}
+
+export class AcceptedFactTooLargeError extends PublicationNotSentError {
+  readonly code = "event_payload_too_large";
+  readonly retryable = false;
+  constructor() {
+    super("AcceptedFact exceeds the record size limit; the Fact was not enqueued");
+    this.name = "AcceptedFactTooLargeError";
   }
 }
 

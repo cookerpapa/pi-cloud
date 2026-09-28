@@ -17,6 +17,7 @@ import { loadFactReplayOffsets } from "./accepted-fact-recovery.ts";
 import type { AcceptedFact } from "./accepted-fact.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { toolCommandForFact } from "./tool-invocation-fact.ts";
+import { ProjectionTiming } from "./projection-timing.ts";
 
 const PREFIX = "pi-cloud-projector@";
 export class SessionProjector {
@@ -74,30 +75,57 @@ export class SessionProjector {
         this.eventStore.reset();
       },
       handler: async (record, current, commitBeforeEffect) => {
-        if (!(await this.#publication.accept(record)) || current?.() === false) return;
-        const { fact } = record;
-        const projected = await this.#projection.project(record);
-        if (current?.() === false) return;
-        const applicable =
-          fact.kind === "execution_seal" || (await this.#projection.accepts(record));
-        if (current?.() === false) return;
-        if (projected?.terminal) this.eventStore.accept(fact.scope.tenantId, projected.terminal);
-        if (applicable) {
-          for (const event of factEvents(fact)) this.eventStore.accept(fact.scope.tenantId, event);
-          if (projected?.canonicalThroughSequence !== undefined)
-            this.eventStore.cover(
-              fact.scope.tenantId,
-              fact.scope.sessionId,
-              projected.canonicalThroughSequence,
-            );
-          const command = toolCommandForFact(fact);
-          if (command) {
-            if ((await commitBeforeEffect!()) && current?.() !== false)
-              await options.toolCommands.consume({ ...record, fact: command }, current);
-          } else {
-            await options.toolCommands.consume(record, current);
+        const timing = new ProjectionTiming(options.metrics);
+        let failure: unknown;
+        try {
+          if (
+            !(await timing.measure("publication", () => this.#publication.accept(record))) ||
+            current?.() === false
+          )
+            return;
+          const { fact } = record;
+          const projected = await timing.measure("projection", () =>
+            this.#projection.project(record),
+          );
+          if (current?.() === false) return;
+          const applicable =
+            fact.kind === "execution_seal" ||
+            (await timing.measure("boundary", () => this.#projection.accepts(record)));
+          if (current?.() === false) return;
+          if (projected?.terminal) this.eventStore.accept(fact.scope.tenantId, projected.terminal);
+          if (applicable) {
+            for (const event of factEvents(fact))
+              this.eventStore.accept(fact.scope.tenantId, event);
+            if (projected?.canonicalThroughSequence !== undefined)
+              this.eventStore.cover(
+                fact.scope.tenantId,
+                fact.scope.sessionId,
+                projected.canonicalThroughSequence,
+              );
+            const command = toolCommandForFact(fact);
+            if (command) {
+              if (
+                (await timing.measure("dispatch_commit", commitBeforeEffect!)) &&
+                current?.() !== false
+              )
+                await timing.measure("tool_route", () =>
+                  options.toolCommands.consume({ ...record, fact: command }, current),
+                );
+            } else {
+              await timing.measure("tool_route", () =>
+                options.toolCommands.consume(record, current),
+              );
+            }
+            if (options.subagentCommands)
+              await timing.measure("subagent_route", () =>
+                options.subagentCommands!.consume(record, current),
+              );
           }
-          await options.subagentCommands?.consume(record, current);
+        } catch (error) {
+          failure = error;
+          throw error;
+        } finally {
+          timing.finish(record, failure);
         }
       },
     });

@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { getModel } from "@earendil-works/pi-ai/compat";
 import type { NativeToolEnd } from "@pi-cloud/protocol";
+import { createExecutionReference } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { NativeSessionWriter } from "../../packages/pi-session-postgres/src/native-session-writer.ts";
@@ -28,6 +29,78 @@ const write = (id = "call-1"): Call => ({
   arguments: { path: "a.txt", content: "hello" },
 });
 const read = (id: string): Call => ({ id, name: "read", arguments: { path: `${id}.txt` } });
+
+it("keeps both Lanes writable when the real publication path rejects before the bus", async () => {
+  const f = toolInvocationFixture();
+  const sent: AcceptedFact[] = [];
+  const channels = new DirectExecutionLog(
+    {} as Kysely<Database>,
+    {
+      checkHealth: async () => {},
+      append: async (fact) => {
+        sent.push(fact);
+        return { factId: fact.factId, durable: true };
+      },
+    },
+    { maximumPendingBytes: 3000, maximumPendingFacts: 8 },
+  );
+  const publisher = new NativeSessionLogPublisher({ channels });
+  const metadata = { id: f.scope.piSessionId, createdAt: 1 };
+  const fail = vi.fn(async () => {});
+  const writer = new NativeSessionWriter({
+    id: f.scope.writerId,
+    metadata,
+    nextSequence: 1,
+    lanes: [
+      { lane: "main", leafId: null },
+      { lane: "child", leafId: null },
+    ],
+    hasId: async () => false,
+    waitProjected: async () => {},
+    fail,
+  });
+  const open = async (lane: string) => {
+    const runId = crypto.randomUUID(),
+      turnId = crypto.randomUUID();
+    const scope = { ...f.scope, piSessionLane: lane, runId, turnId };
+    const executionReference = createExecutionReference(scope.leaseId, runId, scope.fencingToken);
+    await channels.open({
+      executionReference,
+      sessionId: scope.sessionId,
+      turnId,
+      nextEventSeq: 1,
+      piSession: { id: scope.piSessionId, lane, writerId: scope.writerId },
+      publication: { scope },
+    });
+    return writer.open(
+      { lane, runId, turnId },
+      { reader: new InMemorySessionStorage(metadata), branch: [], openOperations: [] },
+      publisher.scoped({ ...scope, executionReference }),
+    );
+  };
+  const main = await open("main"),
+    child = await open("child");
+  const rejectedId = writer.idGenerator();
+  await expect(
+    main.appendEntry(
+      { id: rejectedId, type: "custom", customType: "test", data: { text: "x".repeat(10000) } },
+      "main",
+    ),
+  ).rejects.toMatchObject({ code: "event_capacity_exhausted" });
+  expect(sent).toHaveLength(0);
+  expect(writer.failed).toBe(false);
+  expect(
+    await child.appendEntry(
+      { id: writer.idGenerator(), type: "custom", customType: "test" },
+      "child",
+    ),
+  ).toMatchObject({ seq: 1 });
+  expect(
+    await main.appendEntry({ id: rejectedId, type: "custom", customType: "test" }, "main"),
+  ).toMatchObject({ seq: 2, parentId: null });
+  expect(sent).toHaveLength(2);
+  expect(fail).not.toHaveBeenCalled();
+});
 
 async function fixture(
   options: {

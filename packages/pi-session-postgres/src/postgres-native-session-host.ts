@@ -16,9 +16,11 @@ import {
   NativeSessionWriter,
   type NativeLaneSessionStorage,
   type NativeViewRead,
+  type NativeTimingObserver,
 } from "./native-session-writer.ts";
 import { PostgresPiSessionStorage, sessionMetadataFromRow } from "./postgres-session-storage.ts";
 import { PostgresSessionLeaseObserver } from "./postgres-session-lease-observer.ts";
+import { NativeProjectionProgress } from "./native-projection-progress.ts";
 import type { PiSessionAppendPublisher } from "@pi-cloud/protocol/native-session";
 import type { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
 export type CloudAgentExecutionScope = Readonly<{
@@ -45,6 +47,7 @@ export class PostgresNativeSessionHost {
   readonly #images: ImageAttachmentCodec | undefined;
   readonly #cache: PostgresPiSessionEntryPayloadCache | undefined;
   readonly #onViewRead: ((sample: NativeViewRead) => void) | undefined;
+  readonly #onTiming: NativeTimingObserver | undefined;
   readonly #writers = new Map<string, Promise<NativeSessionWriter>>();
   readonly #executions = new Map<string, NativeLaneSessionStorage>();
   readonly #owners = new Map<
@@ -60,12 +63,14 @@ export class PostgresNativeSessionHost {
     images?: ImageAttachmentCodec;
     entryPayloadCache?: PostgresPiSessionEntryPayloadCache;
     onViewRead?: (sample: NativeViewRead) => void;
+    onTiming?: NativeTimingObserver;
   }) {
     this.#database = options.database;
     this.#leases = new PostgresSessionLeaseObserver({ database: options.database });
     this.#images = options.images;
     this.#cache = options.entryPayloadCache;
     this.#onViewRead = options.onViewRead;
+    this.#onTiming = options.onTiming;
     this.#reaper = setInterval(() => void this.#reap().catch(() => {}), 60_000);
     this.#reaper.unref();
   }
@@ -109,7 +114,7 @@ export class PostgresNativeSessionHost {
     });
   }
 
-  async #loadWriter({ scope, writerId }: NativeSessionOpen) {
+  async #loadWriter({ scope, writerId, executionReference }: NativeSessionOpen) {
     const session = await this.#database
       .selectFrom("pi_sessions as p")
       .innerJoin("session_leases as l", (join) =>
@@ -138,9 +143,39 @@ export class PostgresNativeSessionHost {
       .where("l.released_at", "is", null)
       .where("l.writer_failed_at", "is", null)
       .executeTakeFirstOrThrow();
+    const ref = parseExecutionReference(executionReference);
+    const ownerKey = `${scope.tenantId}:${scope.piSessionId}:${ref.leaseId}:${ref.fencingToken}:${writerId}`;
+    const projection = new NativeProjectionProgress({
+      ...(this.#onTiming ? { observe: this.#onTiming } : {}),
+      initialThrough: Number(session.next_seq) - 1,
+      assertCurrent: async () => {
+        if (this.#closed) throw new Error("Native Session host is closed");
+        const owner = this.#owners.get(ownerKey);
+        if (!owner) throw new Error("Native Session owner is no longer observed");
+        await owner.authority.assertCurrent();
+      },
+      read: async () => {
+        const current = await this.#database
+          .selectFrom("pi_sessions as p")
+          .innerJoin("session_leases as l", (join) =>
+            join
+              .onRef("l.tenant_id", "=", "p.tenant_id")
+              .onRef("l.pi_session_id", "=", "p.id")
+              .on("l.lease_id", "=", writerId),
+          )
+          .select(["p.next_seq", "l.released_at", "l.writer_failed_at"])
+          .where("p.tenant_id", "=", scope.tenantId)
+          .where("p.id", "=", scope.piSessionId)
+          .executeTakeFirstOrThrow();
+        if (current.released_at !== null || current.writer_failed_at !== null)
+          throw new Error("Native Session ownership changed while reading history");
+        return Number(current.next_seq) - 1;
+      },
+    });
     return new NativeSessionWriter({
       id: writerId,
       ...(this.#onViewRead ? { onViewRead: this.#onViewRead } : {}),
+      ...(this.#onTiming ? { onTiming: this.#onTiming } : {}),
       metadata: sessionMetadataFromRow(session),
       nextSequence: Number(session.next_seq),
       lanes: session.lanes,
@@ -150,28 +185,7 @@ export class PostgresNativeSessionHost {
         ) as found`.execute(this.#database);
         return result.rows[0]!.found;
       },
-      waitProjected: async (through, signal) => {
-        while (true) {
-          signal?.throwIfAborted();
-          if (this.#closed) throw new Error("Native Session host is closed");
-          const current = await this.#database
-            .selectFrom("pi_sessions as p")
-            .innerJoin("session_leases as l", (join) =>
-              join
-                .onRef("l.tenant_id", "=", "p.tenant_id")
-                .onRef("l.pi_session_id", "=", "p.id")
-                .on("l.lease_id", "=", writerId),
-            )
-            .select(["p.next_seq", "l.released_at", "l.writer_failed_at"])
-            .where("p.tenant_id", "=", scope.tenantId)
-            .where("p.id", "=", scope.piSessionId)
-            .executeTakeFirstOrThrow();
-          if (Number(current.next_seq) > through) return;
-          if (current.released_at !== null || current.writer_failed_at !== null)
-            throw new Error("Native Session ownership changed while reading history");
-          await new Promise<void>((resolve) => setTimeout(resolve, 25));
-        }
-      },
+      waitProjected: (through, signal) => projection.wait(through, signal!),
       fail: async () => {
         await this.#database
           .updateTable("session_leases")
@@ -276,7 +290,11 @@ export class PostgresNativeSessionHost {
         {
           branch,
           reader,
-          ...(input.readSignal ? { readSignal: input.readSignal } : {}),
+          readSignal: AbortSignal.any([
+            authority.signal,
+            local.signal,
+            ...(input.readSignal ? [input.readSignal] : []),
+          ]),
           openOperations: rows
             .filter((r) => r.type === "operation_started")
             .map((r) => ({

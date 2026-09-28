@@ -121,7 +121,8 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 | first-record PG commit succeeds, reply lost | replay idempotently with the same first position; do not advance past uncommitted work |
 | semantic message PG commit | retire covered live spans, preserve borrowed reader references and uncovered suffix |
 | connection lost mid-snapshot | discard only the partial browser value; request a new snapshot without a cursor |
-| record not durably accepted by Kafka | not shown; an uncertain native append fails its writer rather than inventing success |
+| trusted local port proves rejection before enqueue | restore the uncommitted Lane view; consume no native sequence; sibling Lanes remain writable |
+| submission/ACK outcome is uncertain | fail the shared native writer; no local rollback or invented non-publication proof |
 | Kafka accepted the record but the publisher lost its ACK | it may project before the seal; do not infer it was absent or replay the Agent |
 | after ACK, before Projector | replay accepted positions; a matching execution identity does not bypass its seal |
 | visible partial output, before complete message | rebuild from Kafka; closure saves interrupted text |
@@ -129,6 +130,7 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 | intent without durable Tool result | that Tool may be UNKNOWN; later unstarted Tools stay unstarted |
 | during PG transaction | rollback state and position; re-read the record |
 | PG commit succeeds, consumer ACK lost | idempotent semantic replay; Tool dispatch requires confirmed commit |
+| native/seal SQL exceeds its local lock/statement budget | server cancellation and rollback leave the offset pending; retry that partition in order, with no Tool dispatch |
 | seal request before Kafka append | retry the same seal; next Run stays queued |
 | old data before first seal | valid historical input, even if PG already knows closure |
 | old data after first seal | no PG, UI or new execution effect |

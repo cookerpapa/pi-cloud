@@ -5,7 +5,7 @@ import { prepareExecutionFact } from "../src/prepare-execution-fact.ts";
 export function toolInvocationFixture(content = "hello") {
   const runId = "20000000-0000-4000-8000-000000000001";
   const leaseId = "20000000-0000-4000-8000-000000000002";
-  const executionReference = createExecutionReference(runId, leaseId, 3);
+  const executionReference = createExecutionReference(leaseId, runId, 3);
   const scope = {
     tenantId: "20000000-0000-4000-8000-000000000003",
     sessionId: "20000000-0000-4000-8000-000000000004",

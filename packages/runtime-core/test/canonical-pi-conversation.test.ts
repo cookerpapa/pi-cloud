@@ -155,6 +155,7 @@ function database(entries?: unknown[]): Kysely<Database> {
     isTransaction: true,
     selectFrom(table: string) {
       let selectedKind: string | undefined;
+      let union: { execute(): Promise<unknown[]> } | undefined;
       const query = {
         select() {
           return this;
@@ -173,8 +174,15 @@ function database(entries?: unknown[]): Kysely<Database> {
         orderBy() {
           return this;
         },
+        unionAll(other: { execute(): Promise<unknown[]> }) {
+          union = other;
+          return this;
+        },
         async execute() {
-          return rows[selectedKind ?? table] ?? [];
+          return [
+            ...(rows[selectedKind ?? table] ?? []),
+            ...(union ? await union.execute() : []),
+          ].sort((a, b) => Number((a as { seq: string }).seq) - Number((b as { seq: string }).seq));
         },
       };
       return query;

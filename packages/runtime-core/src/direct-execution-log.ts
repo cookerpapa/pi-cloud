@@ -15,6 +15,8 @@ import type {
 import { prepareExecutionFact } from "./prepare-execution-fact.ts";
 import { DEFAULT_PRODUCER_CAPACITY, type ProducerCapacity } from "@pi-cloud/event-log";
 import { AcceptedFactCapacityError } from "./accepted-fact.ts";
+import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
+import type { AcceptedFact } from "./accepted-fact.ts";
 
 /** Worker-owned producer port. No remote data gateway or second lease renewer. */
 export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionLogResolver {
@@ -43,19 +45,28 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       tail = Promise.resolve(),
       acknowledgedThroughSeq = request.nextEventSeq - 1;
     const publish = (candidate: CandidateFact): Promise<void> => {
-      if (closing || failure)
-        return Promise.reject(failure ?? new Error("Execution writer closed"));
-      const fact = prepareExecutionFact(
-        { ...permit.scope, executionReference: request.executionReference },
-        candidate,
-      );
-      const bytes = Buffer.byteLength(JSON.stringify(fact));
+      if (failure) return Promise.reject(failure);
+      if (closing)
+        return Promise.reject(
+          new PublicationNotSentError("Execution writer closed before enqueue"),
+        );
+      let fact: AcceptedFact, bytes: number;
+      try {
+        fact = prepareExecutionFact(
+          { ...permit.scope, executionReference: request.executionReference },
+          candidate,
+        );
+        bytes = Buffer.byteLength(JSON.stringify(fact));
+      } catch (error) {
+        return Promise.reject(
+          new PublicationNotSentError("Execution record preparation failed", { cause: error }),
+        );
+      }
       if (
         this.#queuedFacts >= this.capacity.maximumPendingFacts ||
         this.#queuedBytes + bytes > this.capacity.maximumPendingBytes
       ) {
-        failure = new AcceptedFactCapacityError();
-        return Promise.reject(failure);
+        return Promise.reject(new AcceptedFactCapacityError());
       }
       this.#queuedBytes += bytes;
       this.#queuedFacts++;
@@ -71,7 +82,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           this.#queuedFacts--;
         });
       tail = pending.catch((error) => {
-        failure = error;
+        if (!(error instanceof PublicationNotSentError)) failure = error;
       });
       return pending;
     };

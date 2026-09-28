@@ -442,44 +442,43 @@ export async function readCanonicalPiTurnTranscripts(
       .execute((tx) => readCanonicalPiTurnTranscripts(tx, input));
   const turnIds = [...new Set(input.turnIds)];
   if (turnIds.length === 0) return new Map();
-  const [entries, intentRecords, durableTerminalRows, activeRows] = await Promise.all([
-    database
-      .selectFrom("pi_session_log")
-      .where("kind", "=", sql.lit("entry"))
-      .select([
-        "turn_id",
-        "seq",
-        sql<string>`timestamp_ms`.as("timestamp_ms"),
-        sql<Record<string, unknown>>`payload->'entry'`.as("payload"),
-      ])
-      .where("tenant_id", "=", input.tenantId)
-      .where("turn_id", "in", turnIds)
-      .where(ownedTurnSession())
-      .orderBy("seq", "asc")
-      .execute(),
-    database
-      .selectFrom("pi_session_log")
-      .where("kind", "=", sql.lit("record"))
-      .select([
-        "turn_id",
-        "seq",
-        sql<string>`timestamp_ms`.as("timestamp_ms"),
-        sql<Record<string, unknown>>`payload->'record'`.as("payload"),
-      ])
-      .where("tenant_id", "=", input.tenantId)
-      .where("turn_id", "in", turnIds)
-      .where(ownedTurnSession())
-      .where((eb) =>
-        eb.or([
-          eb("type", "=", "tool_started"),
-          eb.and([
-            eb("type", "=", "step_attempt"),
-            sql<boolean>`payload->'record'->>'step'='compaction'`,
-          ]),
+  // Keep two index-compatible branches, but fetch the native bodies once over
+  // this transaction's single connection. Promise.all cannot parallelize it.
+  const entryQuery = database
+    .selectFrom("pi_session_log")
+    .where("kind", "=", sql.lit("entry"))
+    .select([
+      "turn_id",
+      "seq",
+      sql<string>`timestamp_ms`.as("timestamp_ms"),
+      sql<Record<string, unknown>>`payload->'entry'`.as("payload"),
+    ])
+    .where("tenant_id", "=", input.tenantId)
+    .where("turn_id", "in", turnIds)
+    .where(ownedTurnSession());
+  const recordQuery = database
+    .selectFrom("pi_session_log")
+    .where("kind", "=", sql.lit("record"))
+    .select([
+      "turn_id",
+      "seq",
+      sql<string>`timestamp_ms`.as("timestamp_ms"),
+      sql<Record<string, unknown>>`payload->'record'`.as("payload"),
+    ])
+    .where("tenant_id", "=", input.tenantId)
+    .where("turn_id", "in", turnIds)
+    .where(ownedTurnSession())
+    .where((eb) =>
+      eb.or([
+        eb("type", "=", "tool_started"),
+        eb.and([
+          eb("type", "=", "step_attempt"),
+          sql<boolean>`payload->'record'->>'step'='compaction'`,
         ]),
-      )
-      .orderBy("seq", "asc")
-      .execute(),
+      ]),
+    );
+  const [nativeItems, durableTerminalRows, activeRows] = await Promise.all([
+    entryQuery.unionAll(recordQuery).orderBy("seq", "asc").execute(),
     database
       .selectFrom("session_terminal_events")
       .select(["turn_id", "seq", "type", "payload", "occurred_at", "interrupted_prefix"])
@@ -497,10 +496,8 @@ export async function readCanonicalPiTurnTranscripts(
   const terminalByTurn = new Map<string, (typeof durableTerminalRows)[number]>(
     durableTerminalRows.map((row) => [row.turn_id, row]),
   );
-  const entriesByTurn = new Map<string, typeof entries>();
-  for (const entry of [...entries, ...intentRecords].sort(
-    (a, b) => Number(a.seq) - Number(b.seq),
-  )) {
+  const entriesByTurn = new Map<string, typeof nativeItems>();
+  for (const entry of nativeItems) {
     if (entry.turn_id === null) continue;
     if (
       !terminalByTurn.has(entry.turn_id) &&

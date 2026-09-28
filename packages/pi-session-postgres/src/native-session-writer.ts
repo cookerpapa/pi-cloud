@@ -17,6 +17,7 @@ import {
 import type { PiCloudEvent } from "@pi-cloud/protocol";
 import {
   committedItemSequence,
+  PublicationNotSentError,
   type PiCommittedItem,
   type PiSessionAppendPublisher,
   type PiSessionMutationOperation,
@@ -41,7 +42,18 @@ export type NativeWriterOptions = Readonly<{
   waitProjected(through: number, signal?: AbortSignal): Promise<void>;
   fail(error: Error): Promise<void>;
   onViewRead?(sample: NativeViewRead): void;
+  onTiming?: NativeTimingObserver;
 }>;
+export type NativeTimingObserver = (
+  stage:
+    | "writer_queue"
+    | "writer_prepare"
+    | "writer_publish"
+    | "writer_apply"
+    | "projection_wait"
+    | "projection_read",
+  durationMs: number,
+) => void;
 export type NativeViewRead = Readonly<{
   source: "storage" | "memory";
   durationMs: number;
@@ -103,6 +115,13 @@ export class NativeSessionWriter {
   }
   observeView(sample: NativeViewRead) {
     this.#options.onViewRead?.(sample);
+  }
+  #observe(stage: Parameters<NativeTimingObserver>[0], started: number) {
+    try {
+      this.#options.onTiming?.(stage, performance.now() - started);
+    } catch {
+      /* Telemetry must not change publication/ACK semantics. */
+    }
   }
   async name(reader: SessionStorage) {
     if (!this.#name) {
@@ -207,10 +226,13 @@ export class NativeSessionWriter {
     onCommitted?: () => void,
     publication?: PiSessionPublicationOptions,
   ): Promise<T> {
+    const queued = performance.now();
     const task = this.#tail.then(async () => {
+      this.#observe("writer_queue", queued);
       if (this.#failure) throw this.#failure;
       if (scope.closed) throw new SessionError("storage", "Native Lane is closed");
       let prepared: { items: PiCommittedItem[]; result: T };
+      const preparing = performance.now();
       try {
         publication?.signal?.throwIfAborted();
         prepared = await prepare(this.#next);
@@ -218,9 +240,16 @@ export class NativeSessionWriter {
       } catch (error) {
         // Validation is before publication. Restore the disposable query
         // engine after a rejected multi-item operation; no canonical state moved.
-        await scope.restoreCommitted();
+        try {
+          await scope.restoreCommitted();
+        } catch (restoreError) {
+          await this.poison(restoreError);
+        }
         throw error;
+      } finally {
+        this.#observe("writer_prepare", preparing);
       }
+      let acknowledged = false;
       try {
         for (const [index, item] of prepared.items.entries()) {
           if (
@@ -229,24 +258,43 @@ export class NativeSessionWriter {
           )
             throw new Error("Native append sequence changed");
         }
-        await scope.publisher.publish(structuredClone(prepared.items), events, publication);
-        for (const item of prepared.items) {
-          this.#next++;
-          if (item.kind === "entry") {
-            this.#lanes.set(item.lane, item.entry.id);
-            this.#used.add(item.entry.id);
-            this.#issued.delete(item.entry.id);
-          } else if (item.kind === "record") {
-            this.#used.add(item.record.id);
-            this.#issued.delete(item.record.id);
-          } else if (item.kind === "lane") this.#lanes.set(item.lane, item.leafId);
-          else if (item.fact === "name") this.#name = { value: item.name };
-          else this.#labels.set(item.targetId, item.label);
+        const publishing = performance.now();
+        try {
+          await scope.publisher.publish(structuredClone(prepared.items), events, publication);
+        } finally {
+          this.#observe("writer_publish", publishing);
         }
-        await scope.committed(prepared.items);
-        onCommitted?.();
-        return structuredClone(prepared.result);
+        acknowledged = true;
+        const applying = performance.now();
+        try {
+          for (const item of prepared.items) {
+            this.#next++;
+            if (item.kind === "entry") {
+              this.#lanes.set(item.lane, item.entry.id);
+              this.#used.add(item.entry.id);
+              this.#issued.delete(item.entry.id);
+            } else if (item.kind === "record") {
+              this.#used.add(item.record.id);
+              this.#issued.delete(item.record.id);
+            } else if (item.kind === "lane") this.#lanes.set(item.lane, item.leafId);
+            else if (item.fact === "name") this.#name = { value: item.name };
+            else this.#labels.set(item.targetId, item.label);
+          }
+          await scope.committed(prepared.items);
+          onCommitted?.();
+          return structuredClone(prepared.result);
+        } finally {
+          this.#observe("writer_apply", applying);
+        }
       } catch (error) {
+        if (!acknowledged && error instanceof PublicationNotSentError) {
+          try {
+            await scope.restoreCommitted();
+          } catch (restoreError) {
+            await this.poison(restoreError);
+          }
+          throw error;
+        }
         // No rollback/re-numbering after a potentially accepted publication.
         await this.poison(error);
         throw error;

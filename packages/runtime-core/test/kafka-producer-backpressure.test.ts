@@ -86,6 +86,7 @@ import { KafkaAcceptedFactBus, kafkaProducerLane } from "../src/kafka-accepted-f
 import type { AcceptedFact } from "../src/accepted-fact.ts";
 import { AcceptedFactPublisherFailedError } from "../src/accepted-fact.ts";
 import { loadProducerCapacity } from "@pi-cloud/event-log";
+import { PiCloudMetrics } from "@pi-cloud/observability";
 
 const buses: KafkaAcceptedFactBus[] = [];
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -116,7 +117,10 @@ function fact(sessionId = "a", name = "test"): AcceptedFact {
     occurredAt: new Date().toISOString(),
   };
 }
-async function fixture(capacity = { maximumPendingBytes: 100000, maximumPendingFacts: 32 }) {
+async function fixture(
+  capacity = { maximumPendingBytes: 100000, maximumPendingFacts: 32 },
+  metrics?: PiCloudMetrics,
+) {
   const bus = new KafkaAcceptedFactBus({
     brokers: ["unused"],
     topic: "test",
@@ -125,6 +129,7 @@ async function fixture(capacity = { maximumPendingBytes: 100000, maximumPendingF
     replicas: 3,
     producerLanes: 2,
     capacity,
+    ...(metrics ? { metrics } : {}),
     closeTimeoutMs: 100,
   });
   buses.push(bus);
@@ -146,6 +151,36 @@ it.each([
 it("rejects an existing topic with too few assigned replicas", async () => {
   transport.replicas = 1;
   await expect(fixture()).rejects.toThrow(/replica/);
+});
+
+it("separates producer queue delay from stream submission through delivery ACK", async () => {
+  const metrics = new PiCloudMetrics("producer-timing");
+  const samples = vi.spyOn(metrics, "observeSessionMutation");
+  let now = 0;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  try {
+    const bus = await fixture(undefined, metrics);
+    const a = bus.append(fact()),
+      b = bus.append(fact());
+    await tick();
+    now = 25;
+    const stream = transport.streams[kafkaProducerLane("a", 2)]!;
+    stream.deliver();
+    await a;
+    await tick();
+    now = 30;
+    stream.deliver();
+    await b;
+    expect(samples.mock.calls).toEqual([
+      ["producer_queue", 0],
+      ["producer_ack", 25],
+      ["producer_queue", 25],
+      ["producer_ack", 5],
+    ]);
+    await bus.close();
+  } finally {
+    clock.mockRestore();
+  }
 });
 
 it("waits for drain per lane, not PubAck globally, and preserves duplicate identity", async () => {
@@ -211,7 +246,10 @@ it("bounds queued and submitted bytes/count, rejects before enqueue and recovers
 it("rejects an oversized record without poisoning another Session's Producer callback", async () => {
   const bus = await fixture({ maximumPendingBytes: 8 * 1024 * 1024, maximumPendingFacts: 32 });
   const oversized = { ...fact(), occurredAt: "x".repeat(1024 * 1024) };
-  await expect(bus.append(oversized)).rejects.toMatchObject({ code: "event_capacity_exhausted" });
+  await expect(bus.append(oversized)).rejects.toMatchObject({
+    code: "event_payload_too_large",
+    retryable: false,
+  });
   const pending = bus.append(fact());
   await tick();
   transport.streams[kafkaProducerLane("a", 2)]!.deliver();

@@ -11,6 +11,7 @@ import { PostgresPiSessionAppendProjector } from "./postgres-pi-session-append-p
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
 import { CompactEventTail } from "./compact-event-tail.ts";
 import { isNativeAppendFact } from "./tool-invocation-fact.ts";
+import { projectionTransaction } from "./projection-transaction.ts";
 
 export type ExecutionProjectionResult = {
   terminal?: PiCloudEvent;
@@ -227,7 +228,7 @@ export class ExecutionStreamProjector {
     position: FactPosition,
     prefix: CompactEventTail | undefined,
   ): Promise<PiCloudEvent | undefined> {
-    const committed = await this.#database.transaction().execute(async (transaction) => {
+    const committed = await projectionTransaction(this.#database, async (transaction) => {
       const run = await transaction
         .selectFrom("runs")
         .select([

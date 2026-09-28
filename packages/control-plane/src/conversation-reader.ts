@@ -7,6 +7,7 @@ import type {
 } from "@pi-cloud/protocol";
 import { parseEnvironmentValidationReport } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
+import { jsonObjectFrom } from "kysely/helpers/postgres";
 import { readCanonicalPiTurnTranscripts } from "@pi-cloud/runtime-core/canonical-pi-conversation";
 import { loadDelegatedSessionTreeSummaries } from "./delegated-session-projection.ts";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
@@ -247,6 +248,7 @@ export class ConversationReader {
         "session_row.last_active_at as lastActiveAt",
         "session_row.conversation_parent_session_id as parentSessionId",
         "project.name as projectName",
+        "session_row.conversation_fork_turn_id as forkTurnId",
         "project.created_at as projectCreatedAt",
         "workspace.deleted_at as workspaceDeletedAt",
         "workspace.seed_kind as workspaceSeedKind",
@@ -262,7 +264,11 @@ export class ConversationReader {
 
     const lineage =
       conversation.sessionKind === "conversation"
-        ? await this.#conversationLineage(sessionId)
+        ? await this.#conversationLineage({
+            sessionId,
+            parentSessionId: conversation.parentSessionId,
+            forkTurnId: conversation.forkTurnId,
+          })
         : [{ sessionId, parentSessionId: null, forkTurnId: null }];
     const lineageTurnRows: ConversationHistoryRow[] = [];
     const anchor =
@@ -542,10 +548,10 @@ export class ConversationReader {
     });
   }
 
-  async #conversationLineage(sessionId: string): Promise<ConversationLineageNode[]> {
-    const lineage: ConversationLineageNode[] = [];
-    const seen = new Set<string>();
-    let cursor: string | null = sessionId;
+  async #conversationLineage(first: ConversationLineageNode): Promise<ConversationLineageNode[]> {
+    const lineage: ConversationLineageNode[] = [first];
+    const seen = new Set<string>([first.sessionId]);
+    let cursor: string | null = first.parentSessionId;
     while (cursor !== null) {
       if (seen.has(cursor) || lineage.length >= 100) {
         throw new ControlPlaneStoreError(
@@ -591,6 +597,19 @@ export class ConversationReader {
         "environment.created_at as environmentCreatedAt",
         "environment.validated_at as environmentValidatedAt",
       ])
+      .select((eb) =>
+        jsonObjectFrom(
+          eb
+            .selectFrom("environment_validations as validation")
+            .select(["validation.report", "validation.validated_at"])
+            .where("validation.tenant_id", "=", this.#tenantId)
+            .where("validation.project_id", "=", projectId)
+            .whereRef("validation.environment_version_id", "=", "environment.id")
+            .where("validation.status", "=", "validated")
+            .orderBy("validation.validated_at", "desc")
+            .limit(1),
+        ).as("validation"),
+      )
       .where("environment.tenant_id", "=", this.#tenantId)
       .where("environment.project_id", "=", projectId)
       .where("environment.active", "=", true)
@@ -602,16 +621,7 @@ export class ConversationReader {
       );
     }
     const snapshot = environmentSnapshot(row);
-    const validation = await this.#database
-      .selectFrom("environment_validations")
-      .select(["report", "validated_at"])
-      .where("tenant_id", "=", this.#tenantId)
-      .where("project_id", "=", projectId)
-      .where("environment_version_id", "=", snapshot.environmentVersionId)
-      .where("status", "=", "validated")
-      .orderBy("validated_at", "desc")
-      .limit(1)
-      .executeTakeFirst();
+    const validation = row.validation;
     let latestValidation;
     if (validation?.report !== null && validation?.report !== undefined) {
       try {
