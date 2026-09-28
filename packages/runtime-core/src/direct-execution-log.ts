@@ -103,6 +103,8 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         return { mutationId: mutation.mutationId, accepted: true };
       },
       publishToolCommand: async (command) => {
+        if (command.request.operation === "tool.execute")
+          throw new Error("Fixed Tool commands require an atomic native intent publication");
         await publish({ kind: "tool_command", command });
         return { operationId: command.request.operationId, accepted: true };
       },

@@ -10,6 +10,7 @@ import { projectConversationTurnTranscript } from "./conversation-turn-projectio
 import { PostgresPiSessionAppendProjector } from "./postgres-pi-session-append-projector.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
 import { CompactEventTail } from "./compact-event-tail.ts";
+import { isNativeAppendFact } from "./tool-invocation-fact.ts";
 
 export type ExecutionProjectionResult = {
   terminal?: PiCloudEvent;
@@ -17,7 +18,7 @@ export type ExecutionProjectionResult = {
 };
 
 function displayCoverage(fact: AcceptedFact, tail: CompactEventTail): number | undefined {
-  if (fact.kind !== "pi_session_append" || tail.highWaterMark === 0) return;
+  if (!isNativeAppendFact(fact) || tail.highWaterMark === 0) return;
   let visible = false;
   const texts: string[] = [];
   for (const item of fact.items) {
@@ -48,11 +49,7 @@ function displayCoverage(fact: AcceptedFact, tail: CompactEventTail): number | u
 }
 
 export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
-  return fact.kind === "agent_event"
-    ? [fact.event]
-    : fact.kind === "pi_session_append"
-      ? fact.events
-      : [];
+  return fact.kind === "agent_event" ? [fact.event] : isNativeAppendFact(fact) ? fact.events : [];
 }
 
 /** Durable closure is checked once per execution, not once per token. Closed
@@ -190,7 +187,7 @@ export class ExecutionStreamProjector {
     for (const event of factEvents(fact)) {
       prefix.accept(event);
     }
-    if (fact.kind === "pi_session_append") {
+    if (isNativeAppendFact(fact)) {
       const through = displayCoverage(fact, prefix);
       await this.#mutations.project(fact, record, through);
       this.#prefixes.set(fact.scope.runId, prefix);

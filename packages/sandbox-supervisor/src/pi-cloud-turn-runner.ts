@@ -13,6 +13,7 @@ import {
   PI_MODEL_RETRY_CUSTOM_TYPE,
   type PiSessionMutationOperation,
   type PiSessionMutationPublisher,
+  type PiSessionPublicationOptions,
 } from "@pi-cloud/protocol/native-session";
 import {
   CloudAgentRuntime,
@@ -884,12 +885,17 @@ export class PiCloudTurnRunner {
                 commitCheckpoint: async (
                   operation: PiSessionMutationOperation,
                   sourceEvent?: CloudAgentRuntimeEvent,
+                  publication?: PiSessionPublicationOptions,
                 ) => {
                   flushPendingText();
                   await eventChain;
                   if (fatalError !== undefined) throw fatalError;
                   if (sourceEvent === undefined) {
-                    await sessionHandle.mutationPublisher!.mutate(operation);
+                    await sessionHandle.mutationPublisher!.mutate(
+                      operation,
+                      undefined,
+                      publication,
+                    );
                     return;
                   }
                   if (sourceEvent.type === "sampling_start") {
@@ -901,7 +907,11 @@ export class PiCloudTurnRunner {
                       );
                     const started = pendingSamplingStart;
                     pendingSamplingStart = undefined;
-                    await sessionHandle.mutationPublisher!.mutate(operation, [started]);
+                    await sessionHandle.mutationPublisher!.mutate(
+                      operation,
+                      [started],
+                      publication,
+                    );
                     return;
                   }
                   const outcome = adapter.adapt(this.#adapterEvent(sourceEvent));
@@ -918,6 +928,7 @@ export class PiCloudTurnRunner {
                   await sessionHandle.mutationPublisher!.mutate(
                     operation,
                     outcome.kind === "mapped" ? [outcome.event] : [],
+                    publication,
                   );
                   observeRuntimeEvent(sourceEvent);
                 },

@@ -5,6 +5,7 @@ import { type Kysely } from "kysely";
 import type { ExecutionPublication } from "./accepted-fact.ts";
 import type { ExecutionLogOpenRequest } from "./execution-log.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
+import { isNativeAppendFact, toolCommandForFact } from "./tool-invocation-fact.ts";
 
 /** Admission stores this scope together with the single Run's owner/state. */
 export function createExecutionPublication(
@@ -87,13 +88,14 @@ export class ExecutionPublicationBoundary {
     }
     if (fact.kind === "agent_event")
       return fact.event.sessionId === scope.sessionId && fact.event.turnId === scope.turnId;
-    if (fact.kind === "pi_session_append") {
+    if (isNativeAppendFact(fact)) {
       if (
         fact.piSession.id !== scope.piSessionId ||
         fact.piSession.lane !== piSessionLane ||
         fact.piSession.writerId !== scope.writerId
       )
         return false;
+      toolCommandForFact(fact);
       return (
         fact.events.every((e) => e.sessionId === scope.sessionId && e.turnId === scope.turnId) &&
         fact.items.every((item) =>

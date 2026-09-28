@@ -430,6 +430,7 @@ export class PiWorkerRuntime {
       this.#configuredSessionMutationProducer ??
       new NativeSessionLogPublisher({
         channels: executionLogResolver(executionLogs),
+        toolReplyTopic: toolReplies.topic,
         ...(images ? { images: images.codec } : {}),
         ...(this.#metrics ? { metrics: this.#metrics } : {}),
       });

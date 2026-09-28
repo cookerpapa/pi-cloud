@@ -7,6 +7,7 @@ import type {
   CandidateSubagentCommand,
   SubagentCommandPublisher,
   SubagentControlRequest,
+  ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
 
 export type CandidatePiSessionAppendFact = Readonly<{
@@ -25,6 +26,7 @@ export type CandidatePiSessionAppendFact = Readonly<{
   items: readonly StoredPiCommittedItem[];
   events: readonly PiCloudEvent[];
   occurredAt: string;
+  toolCommand?: CandidateToolCommand;
 }>;
 
 export type CandidateFact =
@@ -65,8 +67,7 @@ export type AcceptedExecutionSealFact = Readonly<{
   occurredAt: string;
 }>;
 
-export type AcceptedPiSessionAppendFact = Readonly<{
-  kind: "pi_session_append";
+type NativeAppendFields = Readonly<{
   factId: string;
   scope: AcceptedFactScope;
   piSession: Readonly<{ id: string; lane: string; writerId: string }>;
@@ -74,6 +75,22 @@ export type AcceptedPiSessionAppendFact = Readonly<{
   events: readonly PiCloudEvent[];
   occurredAt: string;
 }>;
+
+/** Arguments and invocation IDs come from the enclosing native intent. */
+export type ToolInvocationDispatch = Readonly<{
+  request: Omit<
+    Extract<ToolSandboxOperationRequest, { operation: "tool.execute" }>,
+    "args" | "toolCallId" | "toolName"
+  >;
+  replyTopic: string;
+  traceContext?: CandidateToolCommand["traceContext"];
+}>;
+
+export type AcceptedPiSessionAppendFact = NativeAppendFields &
+  (
+    | Readonly<{ kind: "pi_session_append" }>
+    | Readonly<{ kind: "tool_invocation"; command: ToolInvocationDispatch }>
+  );
 
 export type ExecutionPublication = Readonly<{
   scope: AcceptedFactScope & { leaseId: string; piSessionLane: string };

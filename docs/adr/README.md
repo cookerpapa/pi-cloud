@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0198](0198-atomic-tool-invocation.md) — one atomic remote Tool intent and
+   command publication, preserving native hooks and commit-before-dispatch.
 1. [ADR-0197](0197-indexed-native-session-log.md) — one indexed native log body,
    independent Fork copies and bounded current operation state.
 1. [ADR-0196](0196-bounded-subagent-results.md) — bounded Subagent returns that

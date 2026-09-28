@@ -43,6 +43,13 @@ unchanged. Do not start the new Projector against an unfinished v10 prefix.
 Development-only discarded resources may be explicitly retired/reset; no old-ID
 compatibility reader is provided.
 
+ADR-0198 adds the `tool_invocation` record on the existing v11 topic. Drain and
+seal Runs before replacing Workers and Projector together. Old decoders reject
+this kind; do not mix those versions. Native history, PG schema and Guest wire
+are unchanged. Broker still receives the expanded command through its existing
+dispatch port. Before rollback, finish projecting the combined records so old
+binaries never need to consume a new-format unfinished prefix.
+
 Migration 145 originally introduced v10 and requires all
 accepted/queued Runs, current owners, publications and terminal Outbox rows to
 drain. Stop old publishers only after their seals have projected, then migrate

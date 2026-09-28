@@ -12,8 +12,9 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Discuss the remaining [repository-review architecture choice](reports/repository-review-20260927.md):
-      Tool intent/command batching.
+- [ ] Implement and validate approved [ADR-0198](adr/0198-atomic-tool-invocation.md):
+      one remote Tool intent/command publication, with cancellation, replay and
+      real GPT-6 Luna acceptance.
       General large-result attachments remain a separate capability decision;
       [D1/D3/D4 implementation and acceptance](reports/repository-review-followup-20260927.md)
       are complete.

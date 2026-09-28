@@ -16,14 +16,17 @@ export class NativeSessionLogPublisher {
     channels: ActiveExecutionLogResolver;
     metrics?: PiCloudMetrics;
     images?: ImageAttachmentCodec;
+    toolReplyTopic?: string;
   }) {
     this.#channels = options.channels;
     this.#metrics = options.metrics;
     this.#images = options.images;
+    this.#toolReplyTopic = options.toolReplyTopic;
   }
+  readonly #toolReplyTopic: string | undefined;
   scoped(scope: PiSessionAppendScope): PiSessionAppendPublisher {
     return {
-      publish: async (items, events = []) => {
+      publish: async (items, events = [], publication) => {
         if (this.#closed) throw new Error("Pi Session append publisher is closed");
         const channel = this.#channels.resolve(scope.executionReference);
         if (!channel) throw new Error("Pi Session Fact Stream is unavailable");
@@ -34,6 +37,9 @@ export class NativeSessionLogPublisher {
           { tenantId: scope.tenantId, runId: scope.runId },
           items,
         );
+        publication?.signal?.throwIfAborted();
+        if (publication?.toolCommand && !this.#toolReplyTopic)
+          throw new Error("Tool invocation reply topic is unavailable");
         const ack = await channel.mutate({
           schemaVersion: 1,
           mutationId,
@@ -41,6 +47,11 @@ export class NativeSessionLogPublisher {
           items: stored,
           events,
           occurredAt: new Date().toISOString(),
+          ...(publication?.toolCommand
+            ? {
+                toolCommand: { ...publication.toolCommand, replyTopic: this.#toolReplyTopic! },
+              }
+            : {}),
         });
         if (ack.mutationId !== mutationId || !ack.accepted)
           throw new Error("Pi Session append identity changed");

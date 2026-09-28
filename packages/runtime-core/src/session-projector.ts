@@ -16,6 +16,7 @@ import { KafkaSafeRetention } from "./kafka-safe-retention.ts";
 import { loadFactReplayOffsets } from "./accepted-fact-recovery.ts";
 import type { AcceptedFact } from "./accepted-fact.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
+import { toolCommandForFact } from "./tool-invocation-fact.ts";
 
 const PREFIX = "pi-cloud-projector@";
 export class SessionProjector {
@@ -89,7 +90,11 @@ export class SessionProjector {
               fact.scope.sessionId,
               projected.canonicalThroughSequence,
             );
-          if (fact.kind !== "tool_command" || (await commitBeforeEffect!())) {
+          const command = toolCommandForFact(fact);
+          if (command) {
+            if ((await commitBeforeEffect!()) && current?.() !== false)
+              await options.toolCommands.consume({ ...record, fact: command }, current);
+          } else {
             await options.toolCommands.consume(record, current);
           }
           await options.subagentCommands?.consume(record, current);

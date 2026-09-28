@@ -15,6 +15,7 @@ import {
 import type { AcceptedFact, AcceptedFactBus, AcceptedFactReceipt } from "./accepted-fact.ts";
 import { AcceptedFactCapacityError, AcceptedFactPublisherFailedError } from "./accepted-fact.ts";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
+import { isNativeAppendFact, toolCommandForFact } from "./tool-invocation-fact.ts";
 
 import { once } from "node:events";
 import {
@@ -88,7 +89,8 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
   )
     return parsed;
 
-  if (parsed.kind === "pi_session_append") {
+  if (isNativeAppendFact(parsed)) {
+    toolCommandForFact(parsed);
     return {
       ...parsed,
       events: (parsed.events ?? []).map((event) => parsePiCloudEvent(event)),
@@ -258,7 +260,7 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
     if (this.#streamFailure !== undefined) throw this.#streamFailure;
     const existing = this.#pending.get(fact.factId);
     if (existing !== undefined) return existing.promise;
-    if (fact.kind === "pi_session_append") validateImageReferencePayload(fact.items);
+    if (isNativeAppendFact(fact)) validateImageReferencePayload(fact.items);
     const value = JSON.stringify(fact);
     const bytes = Buffer.byteLength(value);
     // Reject this publication before touching the shared Producer stream. A

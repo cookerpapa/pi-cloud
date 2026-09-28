@@ -374,9 +374,12 @@ view and returns from writes at Kafka ACK, without PG receipt polling. Pi's
 public Agent and Compaction primitives implement the loop; PiCloud does not fork
 the unfinished upstream high-level Harness implementation.
 
-Complete model output/usage form one native boundary; Pi-validated Tool intent
-forms another. A concrete remote command additionally requires durable publication
-and executor admission. Invalid arguments never create execution intent. Native
+Complete model output/usage form one native boundary. After Pi validation and
+before-hooks, fixed remote Tools prepare their binding and reply callback; one
+`tool_invocation` record then carries native intent, display start and dispatch.
+The command reuses the intent's arguments and identities. One Kafka ACK covers
+that second boundary; Projector still commits dispatch before Broker admission
+(ADR-0198). Invalid arguments never create execution intent. Native
 Compaction retains relevant interruption/World State facts and refuses truncated
 or empty summaries. Model retries do not replay completed Tools.
 
@@ -448,6 +451,10 @@ no completed-result cache or per-result retirement notification.
 Kafka replies accept only the final result; guest updates use the separate HTTP
 observation path. The Worker observes its reply Promise before awaiting command
 publication and retires it on every exit, including image-decoding failure.
+The Projector expands a combined invocation into the existing Broker command
+only after materializing its native intent. Cancellation before publication
+prevents dispatch; cancellation after publication can race execution even before
+the producing Worker receives its ACK. Projection replay never reissues the command.
 
 Guest file Tools treat cwd as a relative-path base and follow ordinary guest
 paths/symlinks. Native Node writes retain byte bounds, edit-conflict detection

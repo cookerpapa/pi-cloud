@@ -43,9 +43,11 @@ import type {
 import { isContextOverflow, isRetryableAssistantError } from "@earendil-works/pi-ai";
 import { isIncompleteModelStreamError } from "./model-stream-error.ts";
 import { ToolInvocations, withToolInvocation } from "./tool-invocation.ts";
+import type { PreparedAgentTool, PreparedToolExecution } from "./prepared-tool.ts";
 import type {
   PiSessionMutationOperation,
   PiSessionAppendOperation,
+  PiSessionPublicationOptions,
 } from "@pi-cloud/protocol/native-session";
 
 export interface CloudAgentExecutionAuthority {
@@ -127,6 +129,7 @@ export type CloudAgentRuntimeOptions = Readonly<{
   commitCheckpoint?: (
     operation: PiSessionMutationOperation,
     sourceEvent?: CloudAgentRuntimeEvent,
+    publication?: PiSessionPublicationOptions,
   ) => Promise<void>;
   onEvent?: (event: CloudAgentRuntimeEvent) => Promise<void> | void;
   idGenerator?: () => string;
@@ -1100,7 +1103,7 @@ export class CloudAgentRuntime {
   }
 
   #bindTool(
-    tool: AgentTool,
+    tool: PreparedAgentTool,
     operationId: string,
     assistantEntryId: () => string | undefined,
     toolIndex: (toolCallId: string, toolName: string) => number,
@@ -1128,28 +1131,37 @@ export class CloudAgentRuntime {
           resultEntryId,
           replay: "never",
         };
-        if (this.#options.commitCheckpoint === undefined) {
-          await this.#options.session.appendRecord(intent);
-        } else {
-          await this.#options.commitCheckpoint(
-            { kind: "append_items", items: [{ kind: "append_record", record: intent }] },
-            {
-              type: "tool_execution_start",
-              toolCallId,
-              toolName: tool.name,
-              args: params,
-            },
-          );
-        }
         const executionSignal = combinedSignal(signal, authority.signal);
-        // Intent ACK can race user cancellation; do not begin a new effect
-        // merely because its arguments were validated before that await.
-        executionSignal.throwIfAborted();
-        const result = await withToolInvocation(
-          { id: resultEntryId, nativeToolCallId: toolCallId },
-          () => tool.execute(toolCallId, params, executionSignal, onUpdate),
-        );
-        return result;
+        return withToolInvocation({ id: resultEntryId, nativeToolCallId: toolCallId }, async () => {
+          let prepared: PreparedToolExecution | undefined;
+          try {
+            executionSignal.throwIfAborted();
+            if (tool.prepareExecution) {
+              if (!this.#options.commitCheckpoint)
+                throw new Error("Remote Tool requires a durable invocation publisher");
+              prepared = await tool.prepareExecution(toolCallId, params, executionSignal, onUpdate);
+            }
+            executionSignal.throwIfAborted();
+            await authority.assertCurrent();
+            if (this.#options.commitCheckpoint === undefined) {
+              await this.#options.session.appendRecord(intent);
+            } else {
+              await this.#options.commitCheckpoint(
+                { kind: "append_items", items: [{ kind: "append_record", record: intent }] },
+                { type: "tool_execution_start", toolCallId, toolName: tool.name, args: params },
+                { signal: executionSignal, ...(prepared ? { toolCommand: prepared.command } : {}) },
+              );
+            }
+            // A published remote invocation may already be dispatched. This
+            // check closes its local wait, not the accepted external effect.
+            executionSignal.throwIfAborted();
+            return await (prepared
+              ? prepared.result()
+              : tool.execute(toolCallId, params, executionSignal, onUpdate));
+          } finally {
+            prepared?.dispose();
+          }
+        });
       },
     };
   }

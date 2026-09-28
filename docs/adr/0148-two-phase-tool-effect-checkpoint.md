@@ -4,6 +4,10 @@
 
 Accepted.
 
+[ADR-0198](0198-atomic-tool-invocation.md) amends the second checkpoint for fixed
+remote Tools: native intent, public start and concrete dispatch now share one
+Kafka record. Complete Assistant output remains an earlier checkpoint.
+
 ## Context
 
 A Pi sampling step may produce a complete Assistant message containing one or
@@ -44,9 +48,10 @@ first call could have started.
 
 ## Consequences
 
-- An arbitrary Tool effect has two causally necessary post-sampling native
-  Session commit barriers. ADR-0157 additionally transports each concrete remote
-  operation through Kafka; its transport acknowledgement is not another Pi checkpoint.
+- This design retains two post-sampling native checkpoints: complete output and
+  individual Tool admission. They are chosen recovery boundaries, not a claim
+  that Pi or Kafka universally requires two separate commits. ADR-0198 folds the
+  fixed remote Tool's transport into its admission checkpoint.
 - Assistant message plus usage and Tool intent plus Tool-start visibility are
   each internally atomic.
 - Kafka redelivery keeps both checkpoints idempotent through their stable

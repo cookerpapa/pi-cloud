@@ -51,6 +51,34 @@ async function fixture(
 }
 
 describe("Kafka-acknowledged native Session writer", () => {
+  it("drops a cancelled queued publication without consuming native sequence or poisoning sibling Lanes", async () => {
+    const f = await fixture();
+    const entered = deferred(),
+      release = deferred();
+    f.publisher.publish.mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    const first = f.main.appendEntry(value("first"), "main");
+    await entered.promise;
+    const abort = new AbortController();
+    const cancelled = f.main.mutate(
+      { kind: "append_entry", lane: "main", entry: value("cancelled") },
+      [],
+      { signal: abort.signal },
+    );
+    const rejected = expect(cancelled).rejects.toThrow("cancelled before publication");
+    abort.abort(new Error("cancelled before publication"));
+    release.resolve();
+    await first;
+    await rejected;
+    expect(f.publisher.publish).toHaveBeenCalledOnce();
+    expect(f.writer.failed).toBe(false);
+    const next = await f.main.appendEntry(value("next"), "main");
+    expect(next.seq).toBe(2);
+    expect(next.parentId).toBe("first");
+    expect(f.fail).not.toHaveBeenCalled();
+  });
   it.each(["cancel", "close"] as const)(
     "interrupts only the Lane's cold-history wait on %s",
     async (action) => {

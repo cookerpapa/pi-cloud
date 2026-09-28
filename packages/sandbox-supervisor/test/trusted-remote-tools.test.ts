@@ -26,9 +26,15 @@ function createTrustedRemoteAgentTools(configuration: TrustedRemoteToolsRuntimeC
     tools: runtime.tools.map((tool) => ({
       ...tool,
       execute: ((id, ...args) =>
-        withToolInvocation({ id: `invocation-${id}`, nativeToolCallId: id }, () =>
-          tool.execute(id, ...args),
-        )) as typeof tool.execute,
+        withToolInvocation({ id: `invocation-${id}`, nativeToolCallId: id }, async () => {
+          const prepared = await tool.prepareExecution!(id, ...args);
+          try {
+            await configuration.publishToolCommand(prepared.command);
+            return await prepared.result();
+          } finally {
+            prepared.dispose();
+          }
+        })) as typeof tool.execute,
     })),
     executeWorkflow: ((id, ...args) =>
       withToolInvocation({ id: `invocation-${id}`, nativeToolCallId: id }, () =>

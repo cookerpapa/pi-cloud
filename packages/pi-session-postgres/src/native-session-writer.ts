@@ -21,6 +21,7 @@ import {
   type PiSessionAppendPublisher,
   type PiSessionMutationOperation,
   type PiSessionMutationPublisher,
+  type PiSessionPublicationOptions,
 } from "@pi-cloud/protocol/native-session";
 
 export type NativeLaneScope = Readonly<{ lane: string; turnId: string; runId: string }>;
@@ -204,13 +205,16 @@ export class NativeSessionWriter {
     prepare: (first: number) => Promise<{ items: PiCommittedItem[]; result: T }>,
     events?: readonly PiCloudEvent[],
     onCommitted?: () => void,
+    publication?: PiSessionPublicationOptions,
   ): Promise<T> {
     const task = this.#tail.then(async () => {
       if (this.#failure) throw this.#failure;
       if (scope.closed) throw new SessionError("storage", "Native Lane is closed");
       let prepared: { items: PiCommittedItem[]; result: T };
       try {
+        publication?.signal?.throwIfAborted();
         prepared = await prepare(this.#next);
+        publication?.signal?.throwIfAborted();
       } catch (error) {
         // Validation is before publication. Restore the disposable query
         // engine after a rejected multi-item operation; no canonical state moved.
@@ -225,7 +229,7 @@ export class NativeSessionWriter {
           )
             throw new Error("Native append sequence changed");
         }
-        await scope.publisher.publish(structuredClone(prepared.items), events);
+        await scope.publisher.publish(structuredClone(prepared.items), events, publication);
         for (const item of prepared.items) {
           this.#next++;
           if (item.kind === "entry") {
@@ -352,7 +356,9 @@ export class NativeLaneSessionStorage implements SessionStorage {
     return new Session(this, { idGenerator: { next: this.#writer.idGenerator } });
   }
   mutationPort(): PiSessionMutationPublisher {
-    return { mutate: (operation, events) => this.mutate(operation, events) };
+    return {
+      mutate: (operation, events, publication) => this.mutate(operation, events, publication),
+    };
   }
   baseContext() {
     return structuredClone(this.#baseBranch);
@@ -401,10 +407,16 @@ export class NativeLaneSessionStorage implements SessionStorage {
   async mutate(
     operation: PiSessionMutationOperation,
     events?: readonly PiCloudEvent[],
+    publication?: PiSessionPublicationOptions,
     recovery?: { entryId: string; turnId: string; recoveryId: string },
   ): Promise<unknown> {
     // Own the body before waiting for another Lane's append queue.
     operation = structuredClone(operation);
+    if (publication?.toolCommand) {
+      publication = { ...publication, toolCommand: structuredClone(publication.toolCommand) };
+      if (operation.kind !== "append_items")
+        throw new SessionError("storage", "Tool dispatch requires an atomic intent checkpoint");
+    }
     if (operation.kind === "create_lane") {
       const at = operation.at;
       let branch: Entry[] = [];
@@ -521,6 +533,8 @@ export class NativeLaneSessionStorage implements SessionStorage {
         return { items, result: operation.kind === "append_items" ? { items: values } : values[0] };
       },
       events,
+      undefined,
+      publication,
     );
   }
 
@@ -582,11 +596,16 @@ export class NativeLaneSessionStorage implements SessionStorage {
     }) as Promise<T>;
   }
   async appendRecovery(entry: ProvisionedEntry<Entry>, turnId: string, recoveryId: string) {
-    await this.mutate({ kind: "append_entry", lane: this.scope.lane, entry }, undefined, {
-      entryId: entry.id,
-      turnId,
-      recoveryId,
-    });
+    await this.mutate(
+      { kind: "append_entry", lane: this.scope.lane, entry },
+      undefined,
+      undefined,
+      {
+        entryId: entry.id,
+        turnId,
+        recoveryId,
+      },
+    );
   }
   appendRecord<T extends LaneRecord>(record: NewRecord<T>): Promise<T> {
     return this.mutate({

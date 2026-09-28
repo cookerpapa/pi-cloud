@@ -1,4 +1,5 @@
 import type { CandidateFact, AcceptedFact, ExecutionPublication } from "./accepted-fact.ts";
+import { prepareToolInvocationDispatch } from "./tool-invocation-fact.ts";
 
 export function prepareExecutionFact(
   scope: ExecutionPublication["scope"] & { executionReference: string },
@@ -105,8 +106,8 @@ export function prepareExecutionFact(
   ) {
     throw new Error("Pi Session checkpoint event does not belong to its ExecutionReference");
   }
-  return {
-    kind: "pi_session_append",
+  const append = {
+    kind: "pi_session_append" as const,
     factId: mutation.mutationId,
     scope: {
       tenantId: scope.tenantId,
@@ -121,5 +122,13 @@ export function prepareExecutionFact(
     items: mutation.items,
     events: mutation.events,
     occurredAt: mutation.occurredAt,
+  };
+  if (!mutation.toolCommand) return append;
+  if (mutation.toolCommand.executionReference !== scope.executionReference)
+    throw new Error("Tool command does not belong to its ExecutionReference");
+  return {
+    ...append,
+    kind: "tool_invocation",
+    command: prepareToolInvocationDispatch(append, mutation.toolCommand),
   };
 }

@@ -3,6 +3,48 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "atomic-tool-replay",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "test": "projects a combined invocation before dispatch commit and never reissues it on history replay",
+      "invariant": "Native intent projects before effect admission; replay never reissues the combined command."
+    },
+    {
+      "id": "atomic-tool-projection-failure",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "test": "does not dispatch the combined command across a projection failure",
+      "invariant": "Failed native projection cannot commit or dispatch its Tool command."
+    },
+    {
+      "id": "atomic-tool-commit-failure",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "test": "does not dispatch the combined command across a commit failure",
+      "invariant": "An unconfirmed Kafka dispatch commit cannot issue a Tool effect."
+    },
+    {
+      "id": "atomic-tool-rebalance",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "test": "does not dispatch the combined command across a rebalance failure",
+      "invariant": "Lost partition ownership after commit does not dispatch a new effect."
+    },
+    {
+      "id": "atomic-tool-seal",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "test": "does not dispatch the combined command across a sealed failure",
+      "invariant": "An invocation after its scope seal cannot dispatch a Tool command."
+    },
+    {
+      "id": "cancel-queued-native-publication",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/native-session-writer.test.ts",
+      "test": "drops a cancelled queued publication without consuming native sequence or poisoning sibling Lanes",
+      "invariant": "Cancellation while waiting for the Session writer neither publishes the invocation nor consumes a native sequence."
+    },
+    {
       "id": "native-late-input-drain",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/cloud-agent-runtime-lifecycle.test.ts",

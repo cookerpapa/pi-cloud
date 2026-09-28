@@ -159,7 +159,8 @@ try {
   }
   report.cleanupCompleted = cleanupErrors.length === 0;
   await writeFile(
-    "docs/reports/native-tools-acceptance-latest.json",
+    process.env.PI_CLOUD_LIVE_NATIVE_TOOL_REPORT ??
+      "docs/reports/native-tools-acceptance-latest.json",
     JSON.stringify(report, null, 2) + "\n",
   );
   if (failure || cleanupErrors.length)

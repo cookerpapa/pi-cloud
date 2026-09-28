@@ -76,6 +76,8 @@ vi.mock("../src/kafka-safe-retention.ts", () => ({
   },
 }));
 import { SessionProjector } from "../src/session-projector.ts";
+import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
+import { toolCommandForFact } from "../src/tool-invocation-fact.ts";
 
 let projector: SessionProjector;
 let route: ReturnType<typeof vi.fn>;
@@ -138,6 +140,56 @@ function deferred<T>() {
 }
 
 describe("Unified Projector handoff boundaries (transport/PG simulated)", () => {
+  it("projects a combined invocation before dispatch commit and never reissues it on history replay", async () => {
+    const { fact } = toolInvocationFixture();
+    const r = { fact, topic: "test", partition: 0, offset: 12n };
+    const projection = deferred<void>();
+    const dispatch = deferred<boolean>();
+    const commit = vi.fn(() => dispatch.promise);
+    f.project.mockImplementationOnce(() => projection.promise);
+    const pending = f.handler!(r, () => true, commit);
+    await vi.waitFor(() => expect(f.project).toHaveBeenCalledOnce());
+    expect(commit).not.toHaveBeenCalled();
+    expect(route).not.toHaveBeenCalled();
+    projection.resolve();
+    await vi.waitFor(() => expect(commit).toHaveBeenCalledOnce());
+    expect(route).not.toHaveBeenCalled();
+    dispatch.resolve(true);
+    await pending;
+    expect(route).toHaveBeenCalledWith(
+      { ...r, fact: toolCommandForFact(fact) },
+      expect.any(Function),
+    );
+    await f.handler!(
+      r,
+      () => true,
+      async () => false,
+    );
+    expect(f.project).toHaveBeenCalledTimes(2);
+    expect(route).toHaveBeenCalledOnce();
+  });
+
+  it.each(["projection", "commit", "sealed", "rebalance"])(
+    "does not dispatch the combined command across a %s failure",
+    async (failure) => {
+      const { fact } = toolInvocationFixture();
+      const r = { fact, topic: "test", partition: 0, offset: 12n };
+      let current = true;
+      if (failure === "projection") f.project.mockRejectedValueOnce(new Error("PG unavailable"));
+      if (failure === "sealed") f.applies.mockResolvedValueOnce(false);
+      const commit = vi.fn(async () => {
+        if (failure === "commit") throw new Error("commit unknown");
+        if (failure === "rebalance") current = false;
+        return true;
+      });
+      const pending = f.handler!(r, () => current, commit);
+      if (failure === "projection" || failure === "commit") await expect(pending).rejects.toThrow();
+      else await pending;
+      expect(route).not.toHaveBeenCalled();
+      if (failure === "projection" || failure === "sealed") expect(commit).not.toHaveBeenCalled();
+    },
+  );
+
   it("routes a Tool only after confirmed dispatch commit and skips replayed commands", async () => {
     const commit = deferred<boolean>();
     const r = record("session", "tool_command");

@@ -178,7 +178,7 @@ export class SubagentController {
         }
       }
     }
-    if (record.fact.kind === "pi_session_append") {
+    if (record.fact.kind === "pi_session_append" || record.fact.kind === "tool_invocation") {
       for (const item of record.fact.items) {
         if (
           item.kind === "entry" &&

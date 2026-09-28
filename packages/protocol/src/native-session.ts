@@ -1,6 +1,13 @@
 import type { Entry, LaneRecord, NewRecord, ProvisionedEntry } from "@earendil-works/pi-agent-core";
 import type { PiCloudEvent } from "./event-envelope.ts";
 import type { ImagePacked } from "./image-attachment.ts";
+import type { CandidateToolCommand } from "./tool-command.ts";
+
+/** Local publication context; only the command enters the execution log. */
+export type PiSessionPublicationOptions = Readonly<{
+  toolCommand?: CandidateToolCommand;
+  signal?: AbortSignal;
+}>;
 
 export type PiSessionAppendOperation =
   | Readonly<{
@@ -19,7 +26,11 @@ export type PiSessionMutationOperation =
   | Readonly<{ kind: "set_label"; id: string; label?: string }>;
 
 export interface PiSessionMutationPublisher {
-  mutate(operation: PiSessionMutationOperation, events?: readonly PiCloudEvent[]): Promise<unknown>;
+  mutate(
+    operation: PiSessionMutationOperation,
+    events?: readonly PiCloudEvent[],
+    publication?: PiSessionPublicationOptions,
+  ): Promise<unknown>;
 }
 
 /** Complete immutable records, assigned by the active Session writer before
@@ -53,6 +64,10 @@ export function committedItemSequence(item: PiCommittedItem | StoredPiCommittedI
 }
 
 export interface PiSessionAppendPublisher {
-  publish(items: readonly PiCommittedItem[], events?: readonly PiCloudEvent[]): Promise<void>;
+  publish(
+    items: readonly PiCommittedItem[],
+    events?: readonly PiCloudEvent[],
+    publication?: PiSessionPublicationOptions,
+  ): Promise<void>;
 }
 export const PI_MODEL_RETRY_CUSTOM_TYPE = "pi-cloud.model_retry";
