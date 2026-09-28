@@ -1,0 +1,131 @@
+{
+  "checkedAt": "2026-09-28T13:30:00.882512+00:00",
+  "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e",
+  "beforeState": {
+    "unfinished": 0,
+    "owners": 0,
+    "unsealed": 0,
+    "openNativeOperations": 0
+  },
+  "beforeHistory": {
+    "rows": 1202,
+    "digest": "da5fb0246da4c3b373b41392b893f3a0"
+  },
+  "backup": {
+    "bytes": 793678,
+    "sha256": "40c1f3c399d30ec7801ec35ffeec36f50c9b16fe3522bfdd58253245496c84a4"
+  },
+  "afterState": {
+    "unfinished": 0,
+    "owners": 0,
+    "unsealed": 0,
+    "openNativeOperations": 0
+  },
+  "afterHistory": {
+    "rows": 1202,
+    "digest": "da5fb0246da4c3b373b41392b893f3a0"
+  },
+  "containers": [
+    {
+      "name": "/pi-cloud-production-control-plane-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+    },
+    {
+      "name": "/pi-cloud-production-tool-broker-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+    },
+    {
+      "name": "/pi-cloud-production-web-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+    },
+    {
+      "name": "/pi-cloud-production-database-bootstrap-1",
+      "status": "exited",
+      "health": "",
+      "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+    }
+  ],
+  "guestIdentity": "dbcdd74b623a27ffbdf266c706e2e09331c0532c",
+  "finalCleanup": {
+    "checkedAt": "2026-09-28T13:43:28.350546+00:00",
+    "workspaces": [
+      {
+        "workspaceId": "a5f92a3c-7f93-49fd-96bf-07bd7e14681c",
+        "deleted": true,
+        "purged": true
+      },
+      {
+        "workspaceId": "d726c9b3-fcfe-44a6-ad13-3a206c69668f",
+        "deleted": true,
+        "purged": true
+      },
+      {
+        "workspaceId": "9e5634a1-56f9-40dd-8340-ae9014ff0095",
+        "deleted": true,
+        "purged": true
+      },
+      {
+        "workspaceId": "3ee8c367-73ed-4b6c-bcdb-ee899f28b855",
+        "deleted": true,
+        "purged": true
+      }
+    ],
+    "state": {
+      "unfinished": 0,
+      "owners": 0,
+      "unsealed": 0,
+      "openNativeOperations": 0
+    },
+    "applications": [
+      {
+        "service": "control-plane",
+        "health": "healthy",
+        "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+      },
+      {
+        "service": "supervisor-host",
+        "health": "healthy",
+        "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+      },
+      {
+        "service": "supervisor-host-1",
+        "health": "healthy",
+        "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+      },
+      {
+        "service": "tool-broker",
+        "health": "healthy",
+        "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+      },
+      {
+        "service": "web",
+        "health": "healthy",
+        "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+      }
+    ],
+    "testDatabase": {
+      "removedAt": "2026-09-28T13:32:27.193623+00:00",
+      "container": "pi-cloud-polish-postgres",
+      "anonymousVolumesRemoved": true
+    },
+    "historyPolicy": "Owned conversations are archived; no stored transcript or unrelated Workspace was purged."
+  }
+}

@@ -39,6 +39,10 @@
 
 ## Current release gate
 
+- [x] ADR-0199: isolate proved unpublished rejections, share cold projection waits,
+      bound native/seal SQL work and reduce transaction-local exchanges.
+      [PG, fault, timing and matched Luna/Cube acceptance](reports/runtime-polish-acceptance-20260928.md).
+
 - [x] ADR-0198: combine fixed remote Tool intent and dispatch in one Kafka record;
       preserve native validation/hooks, cancellation and commit-before-dispatch.
       [Fault, matched rollout and real Luna/Cube acceptance](reports/tool-invocation-acceptance-20260928.md).

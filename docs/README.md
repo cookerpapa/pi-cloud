@@ -36,6 +36,10 @@ records its completed schema/app cutover, preserved history and Pi/fault/Luna ch
 The [atomic Tool invocation acceptance](reports/tool-invocation-acceptance-20260928.md)
 completes D2: one post-validation intent/command publication, with native hooks,
 fault recovery and real Luna/Cube Projector-restart verification.
+The [runtime and SQL polish acceptance](reports/runtime-polish-acceptance-20260928.md)
+records proved-rejection isolation, shared projection reads, phase attribution,
+server-side projection budgets and measured SQL counts without weakening writer
+or Tool-dispatch boundaries.
 
 The [Pi-alignment review](reports/pi-alignment-review-20260926.md) records its named
 baseline; the [repair and verification record](reports/pi-alignment-repair-20260926.md)

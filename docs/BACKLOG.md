@@ -12,10 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Complete approved [ADR-0199](adr/0199-bounded-publication-and-projection.md):
-      isolate proved pre-publication rejections, coalesce projection reads, measure
-      stage waits, reduce SQL exchanges, and validate failure/rollout/Luna behavior.
-
 - [ ] Review the two moderate development-test dependency findings (Vitest and
       @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
       dependency gate passes; a test-tool upgrade needs its own contract checks.

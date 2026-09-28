@@ -1,6 +1,6 @@
 # ADR-0199: bounded publication failures and projection work
 
-Status: accepted for implementation, 2026-09-28.
+Status: implemented and locally accepted, 2026-09-28.
 
 ## Context
 
@@ -71,7 +71,11 @@ lock-timeout rollback and replay, scope/fence expiry and fork/history equality.
 Compare controlled phase timings with provider time excluded; distinguish
 business SQL from BEGIN/COMMIT and timeout-configuration exchanges.
 
-Use matched local application rollout and real GPT-6 Luna/Cube acceptance. Preserve
-existing native history and clean only owned test resources. No database schema,
-Kafka record format or Guest contract change is intended. Rollback uses matched
-application binaries after drain; native history/export remains unchanged.
+The [acceptance record](../reports/runtime-polish-acceptance-20260928.md) includes
+1,392 passing checks, 86 fault cases, real PostgreSQL counts/rollback tests,
+provider-free timing samples and four final Luna/Cube acceptance Runs. It also
+records two earlier model edit errors and the fixed-fixture driver's file equality check.
+The matched local rollout preserves existing native history; only owned test
+Workspace bytes and the isolated test database were removed. No database schema,
+Kafka format or Guest contract changed. Rollback uses matched application binaries
+after drain; native history/export remains unchanged.

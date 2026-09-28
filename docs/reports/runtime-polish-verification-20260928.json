@@ -1,0 +1,309 @@
+{
+  "runtimeRevision": "e9b41ce4051efee428df849b8387516f3ec6f66e",
+  "fullCheck": {
+    "command": "PI_CLOUD_POSTGRES_INTEGRATION_URL=<isolated PG> PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL=<isolated PG> npm run check",
+    "exitCode": 0,
+    "tests": {
+      "passed": 1392,
+      "skipped": 3,
+      "failed": 0
+    },
+    "files": {
+      "passed": 211,
+      "skipped": 2,
+      "failed": 0
+    },
+    "workspaces": [
+      {
+        "workspace": "@pi-cloud/control-plane",
+        "tests": {
+          "passed": 266
+        },
+        "files": {
+          "passed": 46
+        }
+      },
+      {
+        "workspace": "@pi-cloud/cube-api-authorizer",
+        "tests": {
+          "passed": 37
+        },
+        "files": {
+          "passed": 2
+        }
+      },
+      {
+        "workspace": "@pi-cloud/cube-egress-gateway",
+        "tests": {
+          "passed": 6
+        },
+        "files": {
+          "passed": 2
+        }
+      },
+      {
+        "workspace": "@pi-cloud/database",
+        "tests": {
+          "passed": 38
+        },
+        "files": {
+          "passed": 12
+        }
+      },
+      {
+        "workspace": "@pi-cloud/domain",
+        "tests": {
+          "passed": 16
+        },
+        "files": {
+          "passed": 2
+        }
+      },
+      {
+        "workspace": "@pi-cloud/event-log",
+        "tests": {
+          "passed": 13
+        },
+        "files": {
+          "passed": 2
+        }
+      },
+      {
+        "workspace": "@pi-cloud/fake-model-server",
+        "tests": {
+          "passed": 17
+        },
+        "files": {
+          "passed": 2
+        }
+      },
+      {
+        "workspace": "@pi-cloud/observability",
+        "tests": {
+          "passed": 9
+        },
+        "files": {
+          "passed": 2
+        }
+      },
+      {
+        "workspace": "@pi-cloud/pi-session-postgres",
+        "tests": {
+          "passed": 88
+        },
+        "files": {
+          "passed": 9
+        }
+      },
+      {
+        "workspace": "@pi-cloud/protocol",
+        "tests": {
+          "passed": 97
+        },
+        "files": {
+          "passed": 16
+        }
+      },
+      {
+        "workspace": "@pi-cloud/provider-egress-relay",
+        "tests": {
+          "passed": 5
+        },
+        "files": {
+          "passed": 1
+        }
+      },
+      {
+        "workspace": "@pi-cloud/runtime-core",
+        "tests": {
+          "passed": 71,
+          "skipped": 1
+        },
+        "files": {
+          "passed": 14,
+          "skipped": 1
+        }
+      },
+      {
+        "workspace": "@pi-cloud/sandbox-supervisor",
+        "tests": {
+          "passed": 213
+        },
+        "files": {
+          "passed": 19
+        }
+      },
+      {
+        "workspace": "@pi-cloud/session-attachments",
+        "tests": {
+          "passed": 13
+        },
+        "files": {
+          "passed": 3
+        }
+      },
+      {
+        "workspace": "@pi-cloud/ssh-gateway",
+        "tests": {
+          "passed": 4
+        },
+        "files": {
+          "passed": 2
+        }
+      },
+      {
+        "workspace": "@pi-cloud/subagent-control",
+        "tests": {
+          "passed": 11
+        },
+        "files": {
+          "passed": 1
+        }
+      },
+      {
+        "workspace": "@pi-cloud/supervisor-host",
+        "tests": {
+          "passed": 86
+        },
+        "files": {
+          "passed": 21
+        }
+      },
+      {
+        "workspace": "@pi-cloud/tool-broker",
+        "tests": {
+          "passed": 166,
+          "skipped": 2
+        },
+        "files": {
+          "passed": 22,
+          "skipped": 1
+        }
+      },
+      {
+        "workspace": "@pi-cloud/tool-sandbox",
+        "tests": {
+          "passed": 39
+        },
+        "files": {
+          "passed": 3
+        }
+      },
+      {
+        "workspace": "@pi-cloud/web-ui",
+        "tests": {
+          "passed": 143
+        },
+        "files": {
+          "passed": 19
+        }
+      },
+      {
+        "workspace": "@pi-cloud/workspace-runtime",
+        "tests": {
+          "passed": 2
+        },
+        "files": {
+          "passed": 1
+        }
+      },
+      {
+        "workspace": "pi-cloud/acceptance-helpers",
+        "tests": {
+          "passed": 52
+        },
+        "files": {
+          "passed": 10
+        }
+      }
+    ]
+  },
+  "buildPassed": true,
+  "formatPassed": true,
+  "docsPassed": true,
+  "runtimePolicyPassed": true,
+  "observabilityPassed": true,
+  "imageClosurePassed": true,
+  "buildContextPassed": true,
+  "modifiedSourceSha256": {
+    "eval/fault-cases.json": "b23ca1782ec26acf272569f634a6beba7f085bf6a2305962441421f8d0242ad7",
+    "packages/control-plane/src/conversation-reader.ts": "5d851aa9b113259365b2beb23eaac83d38ad544fde70ae9a56d5e7133eedc2ce",
+    "packages/control-plane/test/atomic-worker-admission.postgres.test.ts": "087c0b4a03725d1c1f94bdf5bd74439e2cc77866d20eb5b35b22427a4d290e56",
+    "packages/observability/src/metrics.ts": "5db1a669378048f15ddacd96ea4c5615a1224810b1eeeab7a0ce7bd495603e07",
+    "packages/pi-session-postgres/src/native-projection-progress.ts": "aeb4eb4fd394f40830c2542a24df598cdd62c3a7a0e4d8745bfc3d7db2dc4578",
+    "packages/pi-session-postgres/src/native-session-writer.ts": "d947b7fd31753f0ad6bd00b0397f4eb43ed0aa574ea1d3d86b88f92f6b3b509d",
+    "packages/pi-session-postgres/src/postgres-native-session-host.ts": "f5cebbe383031f9889f7c010d1a32f460270e51036399b565a85bf30bff25b29",
+    "packages/pi-session-postgres/src/project-native-session-append.ts": "8f7d45f7961f66a483972c2eb1849a2145ffc53d0d8a355fbf63bc3d850da770",
+    "packages/pi-session-postgres/test/native-projection-progress.test.ts": "9c1207f540d27ff1059cc056b9abf6e372b6e862494341fbcbb2b5beb10d7154",
+    "packages/pi-session-postgres/test/native-session-projection.test.ts": "6d96fb19d7c97913ac1accdf0971e898e25bc901e18ca560d579815206eb584a",
+    "packages/pi-session-postgres/test/native-session-writer.test.ts": "a4ee3c0ee1f53404f0bca4ab11f7a6c034da1e2730beaec8123da469d03c750f",
+    "packages/protocol/src/native-session.ts": "1c5fd8f2045b0a3d8f24ae7bcefecdaf9f7bbdfdcd70953fdf8e057ac6364cf3",
+    "packages/runtime-core/src/accepted-fact.ts": "7c24291ef8f8c578291717a3f54d50f4f76da9ebf6dd0c962324eec6a4417cf4",
+    "packages/runtime-core/src/canonical-pi-conversation.ts": "bdd1c23e2d935e5a084f160e8ef3c717330f2bdbf801a8755ba8ada99a9899f4",
+    "packages/runtime-core/src/direct-execution-log.ts": "96b2278335144e2d18bb5a2109a60ed896d9376f76cb4c05a2400033fe49ba2c",
+    "packages/runtime-core/src/execution-stream-projection.ts": "3db9358ed62623e24c934b879f4e1f585ea9d118638c50561ce0646ab9e01e53",
+    "packages/runtime-core/src/kafka-accepted-fact.ts": "bec1fc1e8f9879e14ca7721dfd6ad02174dee9283d86f3765470992fdc764773",
+    "packages/runtime-core/src/native-session-log-publisher.ts": "b02f0461930282b86e642ca82dc7622298a1159badb6f5c1ec0f72534769c0a9",
+    "packages/runtime-core/src/postgres-pi-session-append-projector.ts": "9e0de002c7d627c52a4a90e9c508bd2ef0b2987e7edf512aeb4f5bdba02c4cda",
+    "packages/runtime-core/src/projection-timing.ts": "7cd413997b299960a47c3045e7312118210dd85daf7cc60d40defb5388c6d495",
+    "packages/runtime-core/src/projection-transaction.ts": "c2b578183b153a17d8d54fa854414d7ca0444f3ce335ad6ec7810df390eccfc4",
+    "packages/runtime-core/src/session-projector.ts": "50d1029ad90a65fc546ddff5444cfe15cb67ce3d54873a1feb4c58fbc2bf628c",
+    "packages/runtime-core/test/canonical-pi-conversation.test.ts": "f52f092582f2c17446c5e5e8a8dc83644773dfd682e50d77a62ffb5d761d5807",
+    "packages/runtime-core/test/kafka-producer-backpressure.test.ts": "757830374a2ad87645b42b416a5c5f5f6a337eea93662ece1fe193737d731408",
+    "packages/runtime-core/test/pi-session-append-publisher.test.ts": "9ec04422828d5239c804807b03a3f0d935ae5ea19a267ca2f213cd2bb693aecf",
+    "packages/runtime-core/test/projection-timing.test.ts": "072e71cd7cf2ea3787ab486ba551e9622e6e4da9935948863788eb04615ad101",
+    "packages/runtime-core/test/tool-invocation-fixture.ts": "df6c6373a0e326f31777ff91e0f1b641476ff04ac024e68bb1d426a5d5b2ca32",
+    "packages/supervisor-host/src/runtime.ts": "4aa415f8a1190598391402d4f1873f28681c9dbb1be0b56c91a05e282baf0b7f",
+    "packages/tool-broker/src/workspace-runtime-state-repository.ts": "37959fdafb05a8e8e43578a5adef3760b45982432e337435369bc9d9236b385f",
+    "packages/tool-broker/test/workspace-runtime-state-repository.test.ts": "be178fcba110025db17d64d2de84a6eb92ab22a3cdb234fb3f30d131a95ff64c",
+    "scripts/lib/tool-invocation.test.ts": "277754df21ebed4390a9c7a14b2ce7347799541dfd608370c009b63bf9bbbcbb"
+  },
+  "faultTrial": {
+    "first": {
+      "passed": 84,
+      "skippedDueToMissingConformanceUrl": 2
+    },
+    "complete": {
+      "passed": 86,
+      "failed": 0
+    }
+  },
+  "sqlExchanges": {
+    "nativeRecord": {
+      "before": 8,
+      "after": 8
+    },
+    "nativeEntry": {
+      "before": 9,
+      "after": 8
+    },
+    "brokerAuthorization": {
+      "before": 3,
+      "after": 2
+    },
+    "ordinaryConversation": {
+      "before": 9,
+      "after": 6
+    },
+    "canonicalTranscript": {
+      "before": 4,
+      "after": 3
+    },
+    "inputAcceptance": {
+      "before": 6,
+      "after": 6
+    },
+    "workerClaim": {
+      "before": 9,
+      "after": 9
+    },
+    "note": "Client statements excluding BEGIN/COMMIT. Native projection after includes one budget-setting exchange. Initial scope-cache misses and special branches excluded."
+  },
+  "acceptanceDriver": {
+    "path": "scripts/run-live-native-tool-check.mjs",
+    "sha256": "ea1d2f43ffce8fc1a7c26d879bd852b425aa4b2506f180e3f078508bdc46ba73",
+    "change": "First scenario uses exact file bytes and edit marker; retains all-Tool-success checks and adds final file byte equality. Runtime source is unchanged.",
+    "syntaxCheckPassed": true,
+    "paidGateAccepted": true
+  }
+}

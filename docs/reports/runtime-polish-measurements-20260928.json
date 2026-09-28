@@ -1,0 +1,551 @@
+{
+  "runtimeRevision": "e9b41ce4051efee428df849b8387516f3ec6f66e",
+  "controlledLaneSample": {
+    "format": "pi-cloud.runtime-polish.measurement.v1",
+    "checkedAt": "2026-09-28T13:13:45.209Z",
+    "providerCalls": 0,
+    "injectedAckDelayMs": 5,
+    "rounds": 3,
+    "scenarios": [
+      {
+        "laneCount": 1,
+        "appends": 3,
+        "throughSequence": 3,
+        "elapsedIncludingColdReadMs": 22.93,
+        "sharedProgressQueries": 1,
+        "phases": {
+          "writer_queue": {
+            "count": 3,
+            "medianMs": 0.005,
+            "p95Ms": 0.201
+          },
+          "writer_prepare": {
+            "count": 3,
+            "medianMs": 0.097,
+            "p95Ms": 0.817
+          },
+          "writer_publish": {
+            "count": 3,
+            "medianMs": 4.761,
+            "p95Ms": 5.225
+          },
+          "writer_apply": {
+            "count": 3,
+            "medianMs": 0.039,
+            "p95Ms": 0.277
+          }
+        }
+      },
+      {
+        "laneCount": 4,
+        "appends": 12,
+        "throughSequence": 12,
+        "elapsedIncludingColdReadMs": 71.855,
+        "sharedProgressQueries": 1,
+        "phases": {
+          "writer_queue": {
+            "count": 12,
+            "medianMs": 16.373,
+            "p95Ms": 16.739
+          },
+          "writer_prepare": {
+            "count": 12,
+            "medianMs": 0.118,
+            "p95Ms": 0.349
+          },
+          "writer_publish": {
+            "count": 12,
+            "medianMs": 5.27,
+            "p95Ms": 5.69
+          },
+          "writer_apply": {
+            "count": 12,
+            "medianMs": 0.041,
+            "p95Ms": 0.087
+          }
+        }
+      },
+      {
+        "laneCount": 16,
+        "appends": 48,
+        "throughSequence": 48,
+        "elapsedIncludingColdReadMs": 258.806,
+        "sharedProgressQueries": 1,
+        "phases": {
+          "writer_queue": {
+            "count": 48,
+            "medianMs": 79.257,
+            "p95Ms": 79.748
+          },
+          "writer_prepare": {
+            "count": 48,
+            "medianMs": 0.055,
+            "p95Ms": 0.087
+          },
+          "writer_publish": {
+            "count": 48,
+            "medianMs": 5.181,
+            "p95Ms": 5.289
+          },
+          "writer_apply": {
+            "count": 48,
+            "medianMs": 0.028,
+            "p95Ms": 0.051
+          }
+        }
+      }
+    ],
+    "runtimeRevision": "e9b41ce4051efee428df849b8387516f3ec6f66e"
+  },
+  "processWindows": {
+    "beforeProjectorRestart": {
+      "checkedAt": "2026-09-28T13:40:52.824883+00:00",
+      "note": "Process cumulative phase metrics; nested stages are not additive and include background work.",
+      "services": [
+        {
+          "service": "control-plane",
+          "phases": [
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_queue",
+              "outcome": null,
+              "sum": 0.00031385600008070465,
+              "count": 5.0,
+              "meanMs": 0.063
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_ack",
+              "outcome": null,
+              "sum": 0.036437432999999145,
+              "count": 5.0,
+              "meanMs": 7.287
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "publication",
+              "outcome": "ok",
+              "sum": 0.026001292000393743,
+              "count": 239.0,
+              "meanMs": 0.109
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "projection",
+              "outcome": "ok",
+              "sum": 1.6707353120007462,
+              "count": 239.0,
+              "meanMs": 6.991
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "boundary",
+              "outcome": "ok",
+              "sum": 0.0011257119995134424,
+              "count": 234.0,
+              "meanMs": 0.005
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "tool_route",
+              "outcome": "ok",
+              "sum": 0.16171781700009896,
+              "count": 239.0,
+              "meanMs": 0.677
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "subagent_route",
+              "outcome": "ok",
+              "sum": 0.0037317330001096693,
+              "count": 239.0,
+              "meanMs": 0.016
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "record",
+              "outcome": "ok",
+              "sum": 1.9052506269999003,
+              "count": 239.0,
+              "meanMs": 7.972
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "dispatch_commit",
+              "outcome": "ok",
+              "sum": 0.005938355000092997,
+              "count": 23.0,
+              "meanMs": 0.258
+            }
+          ]
+        },
+        {
+          "service": "supervisor-host",
+          "phases": [
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_queue",
+              "outcome": null,
+              "sum": 0.0003096340000629426,
+              "count": 40.0,
+              "meanMs": 0.008
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_prepare",
+              "outcome": null,
+              "sum": 0.004929015000117942,
+              "count": 40.0,
+              "meanMs": 0.123
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "attachment_prepare",
+              "outcome": null,
+              "sum": 0.0010226650000549856,
+              "count": 40.0,
+              "meanMs": 0.026
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_queue",
+              "outcome": null,
+              "sum": 0.001480369000171777,
+              "count": 80.0,
+              "meanMs": 0.019
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_ack",
+              "outcome": null,
+              "sum": 0.4236686659997794,
+              "count": 80.0,
+              "meanMs": 5.296
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "kafka_publish",
+              "outcome": null,
+              "sum": 0.22472482000017763,
+              "count": 40.0,
+              "meanMs": 5.618
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_publish",
+              "outcome": null,
+              "sum": 0.22703488200000727,
+              "count": 40.0,
+              "meanMs": 5.676
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_apply",
+              "outcome": null,
+              "sum": 0.0024000060000689705,
+              "count": 40.0,
+              "meanMs": 0.06
+            }
+          ]
+        },
+        {
+          "service": "supervisor-host-1",
+          "phases": [
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_queue",
+              "outcome": null,
+              "sum": 0.00046935300048062324,
+              "count": 82.0,
+              "meanMs": 0.006
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_prepare",
+              "outcome": null,
+              "sum": 0.009675384000060152,
+              "count": 82.0,
+              "meanMs": 0.118
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "attachment_prepare",
+              "outcome": null,
+              "sum": 0.0022017279998035513,
+              "count": 82.0,
+              "meanMs": 0.027
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_queue",
+              "outcome": null,
+              "sum": 0.0024630259998302795,
+              "count": 154.0,
+              "meanMs": 0.016
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_ack",
+              "outcome": null,
+              "sum": 1.1312531040003746,
+              "count": 154.0,
+              "meanMs": 7.346
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "kafka_publish",
+              "outcome": null,
+              "sum": 0.516738344999918,
+              "count": 82.0,
+              "meanMs": 6.302
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_publish",
+              "outcome": null,
+              "sum": 0.5215558949999978,
+              "count": 82.0,
+              "meanMs": 6.36
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_apply",
+              "outcome": null,
+              "sum": 0.004932967999862742,
+              "count": 82.0,
+              "meanMs": 0.06
+            }
+          ]
+        }
+      ]
+    },
+    "afterProjectorRestart": {
+      "checkedAt": "2026-09-28T13:42:40.375153+00:00",
+      "note": "Process cumulative phase metrics; nested stages are not additive and include background work.",
+      "services": [
+        {
+          "service": "control-plane",
+          "phases": [
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_queue",
+              "outcome": null,
+              "sum": 0.00018418000000383473,
+              "count": 1.0,
+              "meanMs": 0.184
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_ack",
+              "outcome": null,
+              "sum": 0.019727445999997144,
+              "count": 1.0,
+              "meanMs": 19.727
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "publication",
+              "outcome": "ok",
+              "sum": 0.02093087300000661,
+              "count": 39.0,
+              "meanMs": 0.537
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "projection",
+              "outcome": "ok",
+              "sum": 0.18523651899999458,
+              "count": 39.0,
+              "meanMs": 4.75
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "boundary",
+              "outcome": "ok",
+              "sum": 0.00015369900001087442,
+              "count": 36.0,
+              "meanMs": 0.004
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "tool_route",
+              "outcome": "ok",
+              "sum": 0.0472470910000011,
+              "count": 38.0,
+              "meanMs": 1.243
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "subagent_route",
+              "outcome": "ok",
+              "sum": 0.0014714589999985038,
+              "count": 39.0,
+              "meanMs": 0.038
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "record",
+              "outcome": "ok",
+              "sum": 0.2609314170000039,
+              "count": 39.0,
+              "meanMs": 6.691
+            },
+            {
+              "metric": "pi_cloud_session_projection_seconds",
+              "stage": "dispatch_commit",
+              "outcome": "ok",
+              "sum": 8.843799999976909e-5,
+              "count": 1.0,
+              "meanMs": 0.088
+            }
+          ]
+        },
+        {
+          "service": "supervisor-host",
+          "phases": [
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_queue",
+              "outcome": null,
+              "sum": 0.00035898800019640477,
+              "count": 50.0,
+              "meanMs": 0.007
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_prepare",
+              "outcome": null,
+              "sum": 0.0061217670000623895,
+              "count": 50.0,
+              "meanMs": 0.122
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "attachment_prepare",
+              "outcome": null,
+              "sum": 0.0012588549997890365,
+              "count": 50.0,
+              "meanMs": 0.025
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_queue",
+              "outcome": null,
+              "sum": 0.001794893999991473,
+              "count": 101.0,
+              "meanMs": 0.018
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_ack",
+              "outcome": null,
+              "sum": 0.5733254180001094,
+              "count": 101.0,
+              "meanMs": 5.676
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "kafka_publish",
+              "outcome": null,
+              "sum": 0.31931949700025136,
+              "count": 50.0,
+              "meanMs": 6.386
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_publish",
+              "outcome": null,
+              "sum": 0.322186176999996,
+              "count": 50.0,
+              "meanMs": 6.444
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_apply",
+              "outcome": null,
+              "sum": 0.0029889660002663737,
+              "count": 50.0,
+              "meanMs": 0.06
+            }
+          ]
+        },
+        {
+          "service": "supervisor-host-1",
+          "phases": [
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_queue",
+              "outcome": null,
+              "sum": 0.00046935300048062324,
+              "count": 82.0,
+              "meanMs": 0.006
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_prepare",
+              "outcome": null,
+              "sum": 0.009675384000060152,
+              "count": 82.0,
+              "meanMs": 0.118
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "attachment_prepare",
+              "outcome": null,
+              "sum": 0.0022017279998035513,
+              "count": 82.0,
+              "meanMs": 0.027
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_queue",
+              "outcome": null,
+              "sum": 0.0024630259998302795,
+              "count": 154.0,
+              "meanMs": 0.016
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "producer_ack",
+              "outcome": null,
+              "sum": 1.1312531040003746,
+              "count": 154.0,
+              "meanMs": 7.346
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "kafka_publish",
+              "outcome": null,
+              "sum": 0.516738344999918,
+              "count": 82.0,
+              "meanMs": 6.302
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_publish",
+              "outcome": null,
+              "sum": 0.5215558949999978,
+              "count": 82.0,
+              "meanMs": 6.36
+            },
+            {
+              "metric": "pi_cloud_session_mutation_wait_seconds",
+              "stage": "writer_apply",
+              "outcome": null,
+              "sum": 0.004932967999862742,
+              "count": 82.0,
+              "meanMs": 0.06
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Controlled ACK delay is synthetic; no provider calls in that sample.",
+    "Process windows include all test Runs, including two model edit corrections.",
+    "Projector metrics reset on process restart; Worker counters continue.",
+    "Projection phases include display/native/seal processing, not exclusively SQL.",
+    "Nested stages are not additive and this is not an old/new latency benchmark."
+  ]
+}

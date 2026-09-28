@@ -1,0 +1,328 @@
+{
+  "runtimeRevision": "e9b41ce4051efee428df849b8387516f3ec6f66e",
+  "nativeTools": {
+    "checkedAt": "2026-09-28T13:38:12.213Z",
+    "model": "gpt-6-luna",
+    "accepted": true,
+    "runs": [
+      {
+        "runId": "43798aa0-c85a-494d-bb1f-a4367f547ae8",
+        "elapsedMs": 42740,
+        "modelTransportMs": 38737.556000000004,
+        "tools": [
+          {
+            "name": "write",
+            "state": "completed",
+            "durationMs": 2351,
+            "resultBytes": 88
+          },
+          {
+            "name": "read",
+            "state": "completed",
+            "durationMs": 296,
+            "resultBytes": 491
+          },
+          {
+            "name": "edit",
+            "state": "completed",
+            "durationMs": 191,
+            "resultBytes": 970
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 279,
+            "resultBytes": 58
+          }
+        ]
+      },
+      {
+        "runId": "c8136197-34c2-4d77-9803-6ebca32c9f36",
+        "elapsedMs": 26021,
+        "modelTransportMs": 24272.631,
+        "tools": [
+          {
+            "name": "write",
+            "state": "completed",
+            "durationMs": 222,
+            "resultBytes": 87
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 261,
+            "resultBytes": 76
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 401,
+            "resultBytes": 497
+          }
+        ]
+      },
+      {
+        "runId": "ce62e167-e44e-4d16-a020-ad797d3e144b",
+        "elapsedMs": 64122,
+        "modelTransportMs": 62127.254,
+        "tools": [
+          {
+            "name": "write",
+            "state": "completed",
+            "durationMs": 185,
+            "resultBytes": 93
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 214,
+            "resultBytes": 50
+          },
+          {
+            "name": "read",
+            "state": "completed",
+            "durationMs": 186,
+            "resultBytes": 45
+          },
+          {
+            "name": "edit",
+            "state": "completed",
+            "durationMs": 229,
+            "resultBytes": 300
+          },
+          {
+            "name": "read",
+            "state": "completed",
+            "durationMs": 248,
+            "resultBytes": 44
+          },
+          {
+            "name": "bash",
+            "state": "completed",
+            "durationMs": 239,
+            "resultBytes": 55
+          }
+        ]
+      }
+    ],
+    "resources": {
+      "projectId": "c051a3b4-3ec9-4678-b845-2dcdfae0566a",
+      "workspaceId": "9e5634a1-56f9-40dd-8340-ae9014ff0095",
+      "sessionId": "61282e26-c687-41f6-972e-70c4e2478861"
+    },
+    "cleanupCompleted": true
+  },
+  "projectorRestart": {
+    "checkedAt": "2026-09-28T13:40:54.315Z",
+    "revision": "e9b41ce4051efee428df849b8387516f3ec6f66e",
+    "model": "gpt-6-luna",
+    "accepted": true,
+    "resources": {
+      "projectId": "27e434b3-4255-4aa3-a202-3b1c8c5e1850",
+      "workspaceId": "3ee8c367-73ed-4b6c-bcdb-ee899f28b855",
+      "sessionId": "196fbded-d2c3-411a-8923-4feab5d1d060"
+    },
+    "runId": "cff19369-b02a-4f0b-90fd-27290e4c2cfe",
+    "restartStartedAt": "2026-09-28T13:41:02.131Z",
+    "restartCompletedAt": "2026-09-28T13:41:16.927Z",
+    "effectCount": 1,
+    "kafka": [
+      {
+        "runId": "43798aa0-c85a-494d-bb1f-a4367f547ae8",
+        "invocations": [
+          {
+            "operationId": "14c3649d-d644-4cba-94ea-e01c3c6c1d26",
+            "toolName": "write",
+            "resultEntryId": "pc-464ad99f-852d-411b-819e-cce3c0a049d5-6",
+            "nativeSequence": 7,
+            "kafkaBytes": 3296
+          },
+          {
+            "operationId": "ea22743f-21d5-4f06-b8d6-3a787d67a3bb",
+            "toolName": "read",
+            "resultEntryId": "pc-464ad99f-852d-411b-819e-cce3c0a049d5-c",
+            "nativeSequence": 13,
+            "kafkaBytes": 2366
+          },
+          {
+            "operationId": "12a3f5a6-aa97-40c1-9da4-51d7da02f686",
+            "toolName": "edit",
+            "resultEntryId": "pc-464ad99f-852d-411b-819e-cce3c0a049d5-h",
+            "nativeSequence": 18,
+            "kafkaBytes": 2802
+          },
+          {
+            "operationId": "716ccf13-a70e-4984-9eb5-88485d5a8c58",
+            "toolName": "bash",
+            "resultEntryId": "pc-464ad99f-852d-411b-819e-cce3c0a049d5-m",
+            "nativeSequence": 23,
+            "kafkaBytes": 2389
+          }
+        ],
+        "standaloneCommands": 0,
+        "separateFixedIntents": 0
+      },
+      {
+        "runId": "c8136197-34c2-4d77-9803-6ebca32c9f36",
+        "invocations": [
+          {
+            "operationId": "57d0789d-6aa1-409e-a5a1-6e636c1db157",
+            "toolName": "write",
+            "resultEntryId": "pc-c012598e-8867-4a71-b5d3-5dd53aa9df25-6",
+            "nativeSequence": 35,
+            "kafkaBytes": 3438
+          },
+          {
+            "operationId": "d156d0ef-5e50-46ed-998f-1ef1ee04ade9",
+            "toolName": "bash",
+            "resultEntryId": "pc-c012598e-8867-4a71-b5d3-5dd53aa9df25-c",
+            "nativeSequence": 41,
+            "kafkaBytes": 2445
+          },
+          {
+            "operationId": "101b04db-662b-4f46-8e09-7cfcaae23636",
+            "toolName": "bash",
+            "resultEntryId": "pc-c012598e-8867-4a71-b5d3-5dd53aa9df25-h",
+            "nativeSequence": 46,
+            "kafkaBytes": 2465
+          }
+        ],
+        "standaloneCommands": 0,
+        "separateFixedIntents": 0
+      },
+      {
+        "runId": "ce62e167-e44e-4d16-a020-ad797d3e144b",
+        "invocations": [
+          {
+            "operationId": "00ff253e-fb0b-4b42-99b4-7ca0aba9b4f4",
+            "toolName": "write",
+            "resultEntryId": "pc-3dcedaa2-9681-47a8-8aa4-1c8a3037e395-6",
+            "nativeSequence": 58,
+            "kafkaBytes": 2420
+          },
+          {
+            "operationId": "fef7e331-6f05-43df-8a22-d0a32f86bde4",
+            "toolName": "bash",
+            "resultEntryId": "pc-3dcedaa2-9681-47a8-8aa4-1c8a3037e395-c",
+            "nativeSequence": 64,
+            "kafkaBytes": 2431
+          },
+          {
+            "operationId": "5d4aea71-33ea-453c-a7d7-be5157a08a5c",
+            "toolName": "read",
+            "resultEntryId": "pc-3dcedaa2-9681-47a8-8aa4-1c8a3037e395-h",
+            "nativeSequence": 69,
+            "kafkaBytes": 2362
+          },
+          {
+            "operationId": "6b06e4a5-33e0-4c06-8957-762515f9fe43",
+            "toolName": "edit",
+            "resultEntryId": "pc-3dcedaa2-9681-47a8-8aa4-1c8a3037e395-m",
+            "nativeSequence": 74,
+            "kafkaBytes": 2460
+          },
+          {
+            "operationId": "07dc1a43-4e8e-4d6d-9333-980f7b4394c2",
+            "toolName": "read",
+            "resultEntryId": "pc-3dcedaa2-9681-47a8-8aa4-1c8a3037e395-r",
+            "nativeSequence": 79,
+            "kafkaBytes": 2380
+          },
+          {
+            "operationId": "50ca7e94-f8e2-4529-a7ac-2b4fe4f16048",
+            "toolName": "bash",
+            "resultEntryId": "pc-3dcedaa2-9681-47a8-8aa4-1c8a3037e395-w",
+            "nativeSequence": 84,
+            "kafkaBytes": 2550
+          }
+        ],
+        "standaloneCommands": 0,
+        "separateFixedIntents": 0
+      },
+      {
+        "runId": "cff19369-b02a-4f0b-90fd-27290e4c2cfe",
+        "invocations": [
+          {
+            "operationId": "834cba3e-ef8f-4ff9-9dbc-108af21f6b9c",
+            "toolName": "bash",
+            "resultEntryId": "pc-1a676caa-fc35-46ae-b804-47ca0763905f-6",
+            "nativeSequence": 7,
+            "kafkaBytes": 2793
+          }
+        ],
+        "standaloneCommands": 0,
+        "separateFixedIntents": 0
+      }
+    ],
+    "cleanupCompleted": true
+  },
+  "earlierTrials": [
+    {
+      "checkedAt": "2026-09-28T13:34:09.458922+00:00",
+      "model": "gpt-6-luna",
+      "runId": "3eaad337-6168-4bfc-a6da-f813241ab84d",
+      "sessionId": "36c99cd0-9693-4fe2-b865-160454df5c14",
+      "runState": "completed",
+      "firstGateAccepted": false,
+      "cause": "First model-authored edit oldText did not match the preceding write. Native edit returned an exact-match error; a later corrected edit succeeded in the same Run. The strict gate rejects any failed Tool.",
+      "editChecks": [
+        {
+          "sequence": 18,
+          "oldTextMatchesWrittenFile": [false, true],
+          "resultEntryId": "pc-4ac54611-c25d-4f09-89be-828dd16d7b0f-h"
+        },
+        {
+          "sequence": 23,
+          "oldTextMatchesWrittenFile": [true, true],
+          "resultEntryId": "pc-4ac54611-c25d-4f09-89be-828dd16d7b0f-m"
+        }
+      ],
+      "cleanupRequested": true,
+      "resources": {
+        "projectId": "e20cb8d3-b1f5-4c99-924b-ab9362ae0eb3",
+        "workspaceId": "a5f92a3c-7f93-49fd-96bf-07bd7e14681c",
+        "sessionId": "36c99cd0-9693-4fe2-b865-160454df5c14"
+      }
+    },
+    {
+      "checkedAt": "2026-09-28T13:37:01.907921+00:00",
+      "model": "gpt-6-luna",
+      "resources": {
+        "projectId": "3b1aaf58-b885-446b-ba19-260c2ab664cb",
+        "workspaceId": "d726c9b3-fcfe-44a6-ad13-3a206c69668f",
+        "sessionId": "7c0172c0-b67d-44f6-a281-2dc13d6bf9a3"
+      },
+      "runs": [
+        {
+          "runId": "7edf7df8-162a-4c91-a0a6-6bb57ca718ca",
+          "state": "completed",
+          "sealed": true
+        }
+      ],
+      "edits": [
+        {
+          "sequence": 18,
+          "oldTextMatchesWrittenFile": [false, true],
+          "modelArgsEqualEffectiveArgs": true,
+          "isError": true,
+          "failureKind": "native_edit_old_text_mismatch"
+        },
+        {
+          "sequence": 23,
+          "oldTextMatchesWrittenFile": [true, true],
+          "modelArgsEqualEffectiveArgs": true,
+          "isError": false
+        }
+      ],
+      "gateAccepted": false,
+      "cause": "Model edit oldText mismatch, with unchanged arguments through native intent; corrected later within the same completed Run."
+    }
+  ],
+  "acceptanceDriver": {
+    "path": "scripts/run-live-native-tool-check.mjs",
+    "sha256": "ea1d2f43ffce8fc1a7c26d879bd852b425aa4b2506f180e3f078508bdc46ba73",
+    "change": "First scenario uses exact file bytes and edit marker; retains all-Tool-success checks and adds final file byte equality. Runtime source is unchanged.",
+    "syntaxCheckPassed": true,
+    "paidGateAccepted": true
+  }
+}
