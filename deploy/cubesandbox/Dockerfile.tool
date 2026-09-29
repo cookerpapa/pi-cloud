@@ -56,12 +56,14 @@ COPY packages/protocol/src/development-environment-profile.ts \
   packages/protocol/src/tool-capabilities.ts \
   packages/protocol/src/tool-sandbox.ts \
   packages/protocol/src/workspace-seed.ts \
+  packages/protocol/src/user-upload.ts \
   packages/protocol/src/
 COPY packages/tool-sandbox/src packages/tool-sandbox/src
 COPY packages/workspace-runtime/src packages/workspace-runtime/src
 RUN node node_modules/esbuild/bin/esbuild \
       packages/tool-sandbox/src/envd-tool-exec.ts \
       packages/tool-sandbox/src/envd-guest-control.ts \
+      packages/tool-sandbox/src/envd-input-files.ts \
       --bundle \
       --platform=node \
       --external:sharp \
@@ -168,6 +170,7 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
 
 COPY --from=tool-worker-builder /out/envd-tool-exec.mjs /opt/pi-cloud/bin/envd-tool-exec.mjs
 COPY --from=tool-worker-builder /out/envd-guest-control.mjs /opt/pi-cloud/bin/envd-guest-control.mjs
+COPY --from=tool-worker-builder /out/envd-input-files.mjs /opt/pi-cloud/bin/envd-input-files.mjs
 COPY --from=tool-worker-builder /src/node_modules/sharp /opt/pi-cloud/node_modules/sharp
 COPY --from=tool-worker-builder /src/node_modules/@img /opt/pi-cloud/node_modules/@img
 COPY --from=tool-worker-builder /src/node_modules/detect-libc /opt/pi-cloud/node_modules/detect-libc

@@ -1,3 +1,5 @@
+export { writeWorkspaceUpload } from "./upload-file.ts";
+
 export {
   MAX_WORKSPACE_SEED_FILE_BYTES,
   MAX_WORKSPACE_SEED_FILES,

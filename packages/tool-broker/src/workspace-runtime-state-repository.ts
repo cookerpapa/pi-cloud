@@ -13,6 +13,7 @@ import {
 } from "@pi-cloud/protocol";
 import type { DevelopmentEnvironmentProfileKey, SandboxPreviewTarget } from "@pi-cloud/protocol";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES } from "@pi-cloud/protocol";
+import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
 import type { SandboxHandle } from "./sandbox-provider.ts";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
@@ -105,6 +106,7 @@ export type SandboxPreviewOwnerResult =
   | { status: "unavailable" };
 
 export interface WorkspaceRuntimeStateRepository {
+  authorizeWorkspaceUpload?(request: WorkspaceUploadRequest, byteLength: number): Promise<void>;
   start(): Promise<void>;
   checkHealth(): Promise<void>;
   assertLocalOwnership(): void;
@@ -1684,6 +1686,38 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         "Workspace runtime ownership is no longer current",
       );
     }
+  }
+
+  async authorizeWorkspaceUpload(
+    request: WorkspaceUploadRequest,
+    byteLength: number,
+  ): Promise<void> {
+    const directory =
+      request.machine?.directory ??
+      (request.rootPath ? `/workspace/${request.rootPath}` : "/workspace");
+    const { rows } = await sql`select u.id from session_uploads u
+      join sessions s on s.id=u.session_id and s.tenant_id=u.tenant_id
+      join workspaces w on w.id=u.workspace_id and w.tenant_id=u.tenant_id
+      join tool_broker_instances b on b.instance_id=${this.#instanceId}::uuid
+      where u.id=${request.uploadId}::uuid and u.claim_token=${request.claimToken}::uuid
+        and u.tenant_id=${request.tenantId}::uuid and u.session_id=${request.sessionId}::uuid
+        and u.workspace_id=${request.workspaceId}::uuid and u.name=${request.name}
+        and u.sha256=${request.sha256} and u.byte_length=${byteLength}
+        and u.state='uploading' and u.lease_expires_at>clock_timestamp()
+        and u.working_directory=${directory} and s.working_directory=u.working_directory
+        and s.workspace_id=u.workspace_id and s.archived_at is null and w.deleted_at is null
+        and w.sandbox_domain_id=${this.#sandboxDomainId}
+        and b.state='ready' and b.lease_expires_at>clock_timestamp()
+        and ((${request.machine?.environmentId ?? null}::uuid is null and s.execution_mode='elastic') or (
+          s.execution_mode='development_environment' and
+          s.development_environment_id=${request.machine?.environmentId ?? null}::uuid
+          and u.actor_user_id=${request.machine?.userId ?? null}::uuid
+        ))`.execute(this.#database);
+    if (rows.length !== 1)
+      throw new WorkspaceRuntimeStateRepositoryError(
+        "ownership_lost",
+        "Workspace upload grant is no longer current",
+      );
   }
 
   async authorizeOperation(

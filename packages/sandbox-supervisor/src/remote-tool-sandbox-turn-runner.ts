@@ -45,6 +45,18 @@ import {
 } from "./cloud-context.ts";
 
 export interface ToolBrokerBoundary {
+  prepareInputImages?(
+    activationId: string,
+    assignment: ToolSandboxAssignment,
+    images: import("@pi-cloud/protocol").ImageAttachmentReference[],
+    signal?: AbortSignal,
+  ): Promise<
+    {
+      sourceId: string;
+      image: import("@pi-cloud/protocol").ImageAttachmentReference;
+      hints: string[];
+    }[]
+  >;
   refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
   create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse>;
   release(
@@ -57,6 +69,11 @@ export interface ToolBrokerBoundary {
 }
 
 export type RemoteToolSandboxTurnRunnerOptions = {
+  decodeInputImages?: (
+    images: import("@pi-cloud/protocol").ImageAttachmentReference[],
+    scope: { tenantId: string; runId: string },
+    signal?: AbortSignal,
+  ) => Promise<import("@earendil-works/pi-ai").ImageContent[]>;
   broker: ToolBrokerBoundary;
   runtimeIdentity: SandboxRuntimeIdentity;
   trustedWorkspaceDirectory: string;
@@ -129,6 +146,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
   readonly #waitForToolReply: RemoteToolSandboxTurnRunnerOptions["waitForToolReply"];
+  readonly #decodeInputImages: RemoteToolSandboxTurnRunnerOptions["decodeInputImages"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
   readonly #acquireModelPermit: RemoteToolSandboxTurnRunnerOptions["acquireModelPermit"];
   readonly #requestTimeoutMs: number | undefined;
@@ -155,6 +173,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#openAgentSession = options.openAgentSession;
     this.#publishToolCommand = options.publishToolCommand;
     this.#waitForToolReply = options.waitForToolReply;
+    this.#decodeInputImages = options.decodeInputImages;
     this.#createTrustedTools = options.createTrustedTools;
     this.#acquireModelPermit = options.acquireModelPermit;
     this.#requestTimeoutMs = options.requestTimeoutMs;
@@ -222,7 +241,12 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
   }
 
-  async steer(targetRunId: string, text: string, inputId: string): Promise<void> {
+  async steer(
+    targetRunId: string,
+    text: string,
+    inputId: string,
+    uploads?: import("@pi-cloud/protocol").UserUpload[],
+  ): Promise<void> {
     const slot = this.#activePiRunners.get(targetRunId);
     if (slot === undefined) {
       throw new PiTurnError(
@@ -239,7 +263,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         false,
       );
     }
-    await runner.steer(text, inputId);
+    await runner.steer(text, inputId, uploads);
   }
   async agentInput(
     runId: string,
@@ -499,7 +523,42 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               ),
             }),
       };
+      let recordPreparedInput: (() => Promise<void>) | undefined;
       const runner = new PiCloudTurnRunner({
+        prepareInputUploads: async (uploads, inputSignal) => {
+          const sources = uploads.flatMap((file) => (file.image ? [file.image] : []));
+          if (!sources.length) return { images: [], hints: [] };
+          if (
+            !modelRuntimeLease.runtime.inputModalities.includes("image") ||
+            !this.#broker.prepareInputImages ||
+            !this.#decodeInputImages
+          )
+            throw new PiTurnError(
+              "input_images_unavailable",
+              "The model or runtime cannot receive input images",
+              false,
+            );
+          const combined = inputSignal ? AbortSignal.any([signal, inputSignal]) : signal;
+          const active = await ensureActivation();
+          const prepared = await this.#broker.prepareInputImages(
+            active.activationId,
+            toolAssignment,
+            sources,
+            combined,
+          );
+          const images = await this.#decodeInputImages(
+            prepared.map((item) => item.image),
+            { tenantId: command.payload.tenantId, runId: command.payload.runId },
+            combined,
+          );
+          await recordPreparedInput?.();
+          return {
+            images,
+            hints: prepared.flatMap((item, index) =>
+              item.hints.map((hint) => `Image ${index + 1}: ${hint}`),
+            ),
+          };
+        },
         ...(modelRuntimeLease.resolveAssistantTextPhase === undefined
           ? {}
           : {
@@ -513,6 +572,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : {}),
         ...commonRunnerOptions,
         createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
+          recordPreparedInput = () => stepWorldState.recordActive(activation);
           let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
             supportsImages: modelRuntimeLease.runtime.inputModalities.includes("image"),

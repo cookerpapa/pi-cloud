@@ -1,3 +1,4 @@
+import { insertHistoricalPrompt } from "./fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql } from "kysely";
@@ -44,7 +45,13 @@ it.skipIf(!endpoint)(
         "source",
         "elastic",
       );
-      const turn = await control.acceptTurn(session.sessionId, "fixture", {
+      const turn = await insertHistoricalPrompt(db, {
+        tenantId: tenant.tenantId,
+        modelProfileId: tenant.defaultModelProfileId,
+        sessionId: session.sessionId,
+        projectId: project.projectId,
+        workspaceId: project.workspaceId,
+        environmentVersionId: project.environment.environmentVersionId,
         prompt: "retained input",
       });
       const tenantId = tenant.tenantId,

@@ -25,7 +25,12 @@ export interface SupervisorTurnRunner {
     publishEvent: PiEventPublisher,
     signal: AbortSignal,
   ): Promise<PiTurnResult>;
-  steer?(targetRunId: string, text: string, inputId: string): Promise<void>;
+  steer?(
+    targetRunId: string,
+    text: string,
+    inputId: string,
+    uploads?: import("@pi-cloud/protocol").UserUpload[],
+  ): Promise<void>;
 }
 
 export type PreparedTurnExecution = {
@@ -929,6 +934,7 @@ export class AgentRunSupervisor {
         steer.command.payload.targetRunId,
         steer.command.payload.text,
         steer.command.payload.controlRequestId,
+        steer.command.payload.uploads,
       )
       .then(
         () => {

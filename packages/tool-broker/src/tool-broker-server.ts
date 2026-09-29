@@ -36,6 +36,8 @@ import {
 } from "./tool-broker-client.ts";
 import { ToolBrokerError } from "./sandbox-provider.ts";
 import { WorkspaceVolumeGatewayError } from "./workspace-volume-gateway-contract.ts";
+import { MAX_USER_UPLOAD_BYTES, parseWorkspaceUploadRequest } from "@pi-cloud/protocol";
+import { TOOL_BROKER_WORKSPACE_UPLOAD_PATH } from "./tool-broker-client.ts";
 import { ToolBrokerOwnerRedirectError, type ToolBroker } from "./tool-broker.ts";
 import { TOOL_BROKER_LOG_DELIVERY_PATH, type ToolLogDelivery } from "./tool-command-router.ts";
 
@@ -96,6 +98,8 @@ export type ToolBrokerBackend = Pick<
       | "preflightSourceCredential"
       | "listSourceCredentials"
       | "disconnectSourceCredential"
+      | "uploadWorkspaceFile"
+      | "prepareInputImages"
     >
   >;
 
@@ -626,6 +630,28 @@ export class ToolBrokerServer {
           await reply.code(200).send(reserved);
           return;
         }
+        if (message.type === "tool_sandbox.prepare_input_images") {
+          if (!this.#broker.prepareInputImages)
+            throw new ToolBrokerError(
+              "input_images_unavailable",
+              "Input image preparation is unavailable",
+              false,
+            );
+          const abort = new AbortController();
+          const closed = () => {
+            if (!reply.raw.writableEnded)
+              abort.abort(new Error("Input preparation caller disconnected"));
+          };
+          reply.raw.on("close", closed);
+          try {
+            await reply
+              .code(200)
+              .send(await this.#broker.prepareInputImages(message, abort.signal));
+          } finally {
+            reply.raw.removeListener("close", closed);
+          }
+          return;
+        }
         if (message.type === "tool_sandbox.refresh_services") {
           await this.#broker.refreshServices(message.activationId, message.assignment);
           await reply.code(200).send({
@@ -682,6 +708,64 @@ export class ToolBrokerServer {
         await this.#failure(reply, error);
       }
     });
+
+    this.#server.addContentTypeParser(
+      "application/octet-stream",
+      { parseAs: "buffer", bodyLimit: MAX_USER_UPLOAD_BYTES },
+      (_request, body, done) => done(null, body),
+    );
+    const uploads = new Set<FastifyRequest>();
+    this.#server.addHook("onRequest", async (request, reply) => {
+      if (request.url.split("?", 1)[0] !== TOOL_BROKER_WORKSPACE_UPLOAD_PATH) return;
+      if (!this.#workspaceServiceAuthorized(request.headers.authorization))
+        return reply.code(401).send({ error: { code: "unauthorized", retryable: false } });
+      if (uploads.size >= 2)
+        return reply
+          .code(429)
+          .send({ error: { code: "upload_capacity_exhausted", retryable: true } });
+      uploads.add(request);
+      reply.raw.once("close", () => {
+        uploads.delete(request);
+      });
+    });
+    this.#server.addHook("onResponse", async (request) => {
+      uploads.delete(request);
+    });
+    this.#server.addHook("onRequestAbort", async (request) => {
+      uploads.delete(request);
+    });
+    this.#server.post(
+      TOOL_BROKER_WORKSPACE_UPLOAD_PATH,
+      { bodyLimit: MAX_USER_UPLOAD_BYTES },
+      async (request, reply) => {
+        const abort = new AbortController();
+        const closed = () => {
+          if (!reply.raw.writableEnded) abort.abort(new Error("Upload caller disconnected"));
+        };
+        reply.raw.on("close", closed);
+        try {
+          const header = request.headers["x-pi-cloud-upload"];
+          if (typeof header !== "string" || header.length > 12000 || !Buffer.isBuffer(request.body))
+            throw new Error("Invalid Workspace upload body");
+          if (!this.#broker.uploadWorkspaceFile)
+            throw new ToolBrokerError(
+              "workspace_upload_unavailable",
+              "Workspace upload is unavailable",
+              false,
+            );
+          const input = parseWorkspaceUploadRequest(
+            JSON.parse(Buffer.from(header, "base64url").toString()),
+          );
+          return await this.#broker.uploadWorkspaceFile(input, request.body, abort.signal);
+        } catch (error) {
+          if (error instanceof ToolBrokerOwnerRedirectError)
+            return reply.code(307).header("location", error.ownerBaseUrl).send();
+          return this.#failure(reply, error);
+        } finally {
+          reply.raw.removeListener("close", closed);
+        }
+      },
+    );
 
     this.#server.post(TOOL_BROKER_WORKSPACE_BROWSER_PATH, async (request, reply) => {
       if (!this.#workspaceServiceAuthorized(request.headers.authorization)) {

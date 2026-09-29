@@ -117,7 +117,8 @@
     "eval:faults": "node scripts/run-fault-eval.mjs",
     "eval:load": "node scripts/run-control-plane-load.mjs",
     "production:image-check": "node --import tsx scripts/run-live-image-attachment-check.mjs",
-    "production:gpt6-check": "node scripts/run-live-gpt6-capability-check.mjs"
+    "production:gpt6-check": "node scripts/run-live-gpt6-capability-check.mjs",
+    "production:user-upload-check": "node --import tsx scripts/run-live-user-upload-check.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.1",

@@ -15,6 +15,7 @@ import { CloudToolCapabilitySnapshotSchema, CloudToolNameSchema } from "./tool-c
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
 import { ExecutionReferenceSchema } from "./execution-reference.ts";
 import { NativeToolEventSchema } from "./native-tool-event.ts";
+import { ImageAttachmentReferenceSchema } from "./image-attachment.ts";
 
 export const MAX_TOOL_COMMAND_BYTES = 64 * 1_024;
 export const MIN_TOOL_EXECUTION_TIMEOUT_MS = 100;
@@ -260,6 +261,17 @@ export const ToolBrokerRequestSchema = Type.Union([
   Type.Object(
     {
       ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.prepare_input_images"),
+      requestId: UuidSchema,
+      activationId: UuidSchema,
+      assignment: ToolSandboxAssignmentSchema,
+      images: Type.Array(ImageAttachmentReferenceSchema, { minItems: 1, maxItems: 4 }),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
       type: Type.Literal("tool_sandbox.refresh_services"),
       requestId: UuidSchema,
       activationId: UuidSchema,
@@ -273,6 +285,26 @@ export const ToolBrokerRequestSchema = Type.Union([
 ]);
 
 export const ToolBrokerResponseSchema = Type.Union([
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.input_images_prepared"),
+      requestId: UuidSchema,
+      activationId: UuidSchema,
+      images: Type.Array(
+        Type.Object(
+          {
+            sourceId: UuidSchema,
+            image: ImageAttachmentReferenceSchema,
+            hints: Type.Array(Type.String({ maxLength: 1024 }), { maxItems: 4 }),
+          },
+          { additionalProperties: false },
+        ),
+        { maxItems: 4 },
+      ),
+    },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       ...ToolSandboxEnvelope,

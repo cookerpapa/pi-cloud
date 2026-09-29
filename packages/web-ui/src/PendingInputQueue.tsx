@@ -1,3 +1,5 @@
+import { UploadCards } from "./UploadCards.tsx";
+import type { UserUpload } from "@pi-cloud/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { InputQueueResource, QueuedInputAction } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
@@ -22,7 +24,7 @@ export function PendingInputQueue({
   canMutate: boolean;
   refreshSignal: string;
   onSnapshot: (queue: InputQueueResource) => void;
-  onRestoreDraft: (text: string) => void;
+  onRestoreDraft: (text: string, uploads: UserUpload[]) => boolean | void;
 }) {
   const { t } = useI18n();
   const [queue, setQueue] = useState<InputQueueResource | null>(null);
@@ -33,7 +35,11 @@ export function PendingInputQueue({
   const [error, setError] = useState<
     "queue.loadError" | "queue.actionError" | "queue.changed" | "queue.noActive" | null
   >(null);
-  const [editing, setEditing] = useState<{ turnId: string; text: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    turnId: string;
+    text: string;
+    uploads: UserUpload[];
+  } | null>(null);
   const mounted = useRef(true);
   const sequence = useRef(0);
   const callbacks = useRef({ onSnapshot, onRestoreDraft, t });
@@ -55,6 +61,7 @@ export function PendingInputQueue({
           return (
             item.turnId === other.turnId &&
             item.text === other.text &&
+            JSON.stringify(item.uploads ?? []) === JSON.stringify(other.uploads ?? []) &&
             item.status === other.status &&
             item.mailboxPosition === other.mailboxPosition
           );
@@ -187,6 +194,7 @@ export function PendingInputQueue({
                 {item.text.slice(0, 240)}
                 {item.text.length > 240 ? "…" : ""}
               </p>
+              <UploadCards api={api} uploads={item.uploads ?? []} />
               {item.status === "steering" ? (
                 <small className="pending-input-status">{t("queue.steering")}</small>
               ) : null}
@@ -226,7 +234,7 @@ export function PendingInputQueue({
                 type="button"
                 disabled={!canMutate || busy !== null || item.status !== "queued"}
                 onClick={() => {
-                  setEditing({ turnId: item.turnId, text: item.text });
+                  setEditing({ turnId: item.turnId, text: item.text, uploads: item.uploads ?? [] });
                   setError(null);
                 }}
               >
@@ -285,7 +293,12 @@ export function PendingInputQueue({
           <div className="pending-input-editor-actions">
             <button
               type="submit"
-              disabled={!editable || !canMutate || busy !== null || !editing.text.trim()}
+              disabled={
+                !editable ||
+                !canMutate ||
+                busy !== null ||
+                (!editing.text.trim() && !editing.uploads.length)
+              }
             >
               {t("queue.save")}
             </button>
@@ -296,7 +309,7 @@ export function PendingInputQueue({
                 !canMutate ||
                 busy !== null ||
                 !queue?.activeTurnId ||
-                !editing.text.trim()
+                (!editing.text.trim() && !editing.uploads.length)
               }
               onClick={() =>
                 void perform(editing.turnId, { action: "steer", text: editing.text }).then((ok) => {
@@ -310,8 +323,8 @@ export function PendingInputQueue({
               <button
                 type="button"
                 onClick={() => {
-                  callbacks.current.onRestoreDraft(editing.text);
-                  setEditing(null);
+                  if (callbacks.current.onRestoreDraft(editing.text, editing.uploads) !== false)
+                    setEditing(null);
                 }}
               >
                 {t("queue.restoreDraft")}

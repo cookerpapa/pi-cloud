@@ -304,6 +304,7 @@ export class HttpSupervisorSteerBackend implements TurnSteerBackend {
         agentId: "root",
         executionReference: grant.executionReference,
         text: request.text,
+        ...(request.uploads?.length ? { uploads: request.uploads } : {}),
       },
     });
     if (command.type !== "command.turn.steer") {

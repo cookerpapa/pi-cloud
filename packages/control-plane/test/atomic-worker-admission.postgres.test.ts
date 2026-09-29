@@ -536,7 +536,9 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     });
     // The post-lock input snapshot prevents admission from reading a stale edit.
     expect(queries).toHaveLength(9);
-    expect(queries.filter((q) => q.startsWith('select "input_text" from "turns"'))).toHaveLength(1);
+    expect(
+      queries.filter((q) => q.startsWith('select "input_text", "input_uploads" from "turns"')),
+    ).toHaveLength(1);
     expect(queries.some((q) => q.includes('update "sandboxes"'))).toBe(false);
     expect(queries.some((q) => q.includes("from runs as earlier_run"))).toBe(false);
     expect(

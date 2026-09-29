@@ -4,6 +4,8 @@ import {
   MODEL_STEP_SHA256_HEADER,
   createPiCloudEventFactory,
   parseSupervisorToControlMessage,
+  inputWithUploads,
+  type UserUpload,
   type PiCloudEvent,
   type PiCloudEventBody,
   type EventPublishMessage,
@@ -23,7 +25,7 @@ import {
 } from "./cloud-agent-runtime.ts";
 import type { AgentMessage, Session } from "@earendil-works/pi-agent-core";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { ProviderHeaders } from "@earendil-works/pi-ai";
+import type { ProviderHeaders, ImageContent } from "@earendil-works/pi-ai";
 import { measureRunPreparation, type PiCloudMetrics } from "@pi-cloud/observability";
 import { PiAgentEventAdapter } from "./pi-agent-event-adapter.ts";
 import { AssistantTextPresentation } from "./assistant-text-presentation.ts";
@@ -67,6 +69,10 @@ export type PiCloudSessionHandle = Readonly<{
 }>;
 
 export type PiCloudTurnRunnerOptions = Readonly<{
+  prepareInputUploads?: (
+    uploads: readonly UserUpload[],
+    signal?: AbortSignal,
+  ) => Promise<{ images: ImageContent[]; hints: string[] }>;
   resolveModelRuntime: (
     model: ExecuteTurnCommandMessage["payload"]["model"],
   ) => Promise<PiModelRuntimeConfig> | PiModelRuntimeConfig;
@@ -443,15 +449,38 @@ export class PiCloudTurnRunner {
     this.#id = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
   }
 
-  async steer(text: string, inputId: string): Promise<void> {
-    await this.#deliverInput((runtime) => runtime.agentInput(inputId, text, "steer"));
+  async #prepareInput(text: string, uploads: readonly UserUpload[] = [], signal?: AbortSignal) {
+    const described = inputWithUploads(text, uploads);
+    if (!uploads.some((file) => file.image))
+      return { text: described, images: [] as ImageContent[] };
+    if (!this.#options.prepareInputUploads)
+      throw new PiTurnError(
+        "input_images_unavailable",
+        "Input image preparation is unavailable",
+        false,
+      );
+    const prepared = await this.#options.prepareInputUploads(uploads, signal);
+    return {
+      text: prepared.hints.length
+        ? `${described}\nImage preparation: ${prepared.hints.join(" ")}`
+        : described,
+      images: prepared.images,
+    };
+  }
+
+  async steer(text: string, inputId: string, uploads?: readonly UserUpload[]): Promise<void> {
+    await this.agentInput(inputId, text, "steer", uploads);
   }
   async agentInput(
     id: string,
     text: string,
     delivery: "notify" | "steer" | "follow_up",
+    uploads?: readonly UserUpload[],
   ): Promise<void> {
-    await this.#deliverInput((runtime) => runtime.agentInput(id, text, delivery));
+    await this.#deliverInput(async (runtime) => {
+      const input = await this.#prepareInput(text, uploads);
+      await runtime.agentInput(id, input.text, delivery, input.images);
+    });
   }
 
   async #deliverInput(deliver: (runtime: CloudAgentRuntime) => Promise<void>): Promise<void> {
@@ -791,6 +820,11 @@ export class PiCloudTurnRunner {
             }
           }
         };
+        const preparedInput = await this.#prepareInput(
+          command.payload.input.text,
+          command.payload.input.uploads,
+          combined,
+        );
         const runtime = new CloudAgentRuntime({
           toolInvocations,
           ...(this.#options.acquireModelPermit
@@ -990,7 +1024,7 @@ export class PiCloudTurnRunner {
         if (combined.aborted) abort();
 
         try {
-          const result = await runtime.run(command.payload.input.text);
+          const result = await runtime.run(preparedInput.text, preparedInput.images);
           flushPendingText();
           await eventChain;
           if (fatalError !== undefined) throw fatalError;

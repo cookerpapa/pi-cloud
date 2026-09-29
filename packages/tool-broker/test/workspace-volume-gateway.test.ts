@@ -679,6 +679,67 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 });
 
 describe("HttpWorkspaceVolumeGateway", () => {
+  it("places bounded binary uploads only after fresh authorization and keeps the receipt stable", async () => {
+    const workspaceRoot = await root(),
+      input = {
+        ...identity("session-upload"),
+        rootPath: "",
+        uploadId: randomUUID(),
+        claimToken: randomUUID(),
+        name: "note.txt",
+        sha256: createHash("sha256").update("note").digest("hex"),
+      };
+    await createPluginVolumeFixture(workspaceRoot, input);
+    let allowed = true;
+    const authorizeUpload = vi.fn(async () => {
+      if (!allowed) throw new Error("Expired upload");
+    });
+    const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot, authorizeUpload });
+    const serviceToken = "u".repeat(48),
+      server = new WorkspaceVolumeGatewayServer({
+        host: "127.0.0.1",
+        port: 0,
+        serviceToken,
+        gateway,
+      });
+    const address = await server.listen(),
+      client = new HttpWorkspaceVolumeGateway({ baseUrl: address, serviceToken });
+    try {
+      const url = `${address}/v1/workspaces/upload-file`;
+      expect(
+        (
+          await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/octet-stream" },
+            body: "note",
+          })
+        ).status,
+      ).toBe(401);
+      const result = await client.uploadFile(input, Buffer.from("note"));
+      expect(result.relativePath).toBe(`uploads/${input.uploadId}/note.txt`);
+      expect(
+        await readFile(
+          join(workspaceRoot, `picloud-posix-${input.volumeId}`, "workspace", result.relativePath),
+          "utf8",
+        ),
+      ).toBe("note");
+      expect(await client.uploadFile(input, Buffer.from("note"))).toEqual(result);
+      allowed = false;
+      await expect(
+        client.uploadFile({ ...input, uploadId: randomUUID() }, Buffer.from("note")),
+      ).rejects.toThrow();
+      expect(authorizeUpload).toHaveBeenCalledTimes(3);
+      expect(
+        await readdir(
+          join(workspaceRoot, `picloud-posix-${input.volumeId}`, "workspace", "uploads"),
+        ),
+      ).toEqual([input.uploadId]);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("transports a bounded current directory without a precomputed catalog", async () => {
     const entries = Array.from({ length: 3_500 }, (_, index) => ({
       name: `file-${index.toString().padStart(5, "0")}.ts`,

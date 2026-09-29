@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { MAX_QUEUED_INPUTS } from "@pi-cloud/protocol";
+import { bindInputUploads } from "./workspace-upload-service.ts";
 import { laneDependenciesReady } from "@pi-cloud/runtime-core/run-readiness";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -143,6 +144,7 @@ function turnRequestFingerprint(request: AcceptTurnRequest): string {
         inputKind: "prompt",
         prompt: request.prompt,
         thinkingLevel: request.thinkingLevel ?? null,
+        ...(request.uploadIds?.length ? { uploadIds: request.uploadIds } : {}),
       }),
     )
     .digest("hex");
@@ -1489,6 +1491,24 @@ export class ControlPlaneStore {
         );
       }
       const environment = await this.#activeEnvironmentForRun(transaction, session.project_id);
+      const uploads = await bindInputUploads(transaction, {
+        tenantId: this.#tenantId,
+        sessionId,
+        workspaceId: session.workspace_id,
+        workingDirectory: session.working_directory,
+        ids: request.uploadIds ?? [],
+      });
+      if (
+        uploads.some((file) => file.image) &&
+        !(
+          reviewedModel(model.provider, model.modelId)?.inputModalities as
+            readonly string[] | undefined
+        )?.includes("image")
+      )
+        throw new ControlPlaneStoreError(
+          "invalid_request",
+          "The selected model does not support image input",
+        );
       const turnWrite = transaction
         .insertInto("turns")
         .values({
@@ -1498,6 +1518,7 @@ export class ControlPlaneStore {
           state: "queued",
           input_kind: "prompt",
           input_text: request.prompt,
+          input_uploads: sql<unknown[]>`${JSON.stringify(uploads)}::jsonb`,
           model_profile_id: model.profileId,
           provider: model.provider,
           model_id: model.modelId,

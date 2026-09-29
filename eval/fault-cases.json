@@ -3,6 +3,34 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "upload-expiry-late-completion",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-uploads.postgres.test.ts",
+      "test": "expires unaccepted image drafts and rejects completion after a claim is removed",
+      "invariant": "Expired drafts release image pins; a revoked upload cannot become a ready input after a late external reply."
+    },
+    {
+      "id": "upload-capacity-gc-race",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-uploads.postgres.test.ts",
+      "test": "limits simultaneous HTTP bodies and fails closed if image cleanup wins publication",
+      "invariant": "Binary upload admission is bounded before buffering; image pinning cannot acknowledge a GC-deleted source."
+    },
+    {
+      "id": "upload-symlink-confinement",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/upload-file.test.ts",
+      "test": "refuses symlinked upload directories and destination files",
+      "invariant": "Upload placement cannot follow a substituted directory or destination link outside the authorized root."
+    },
+    {
+      "id": "input-image-guest-cancel",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-broker.test.ts",
+      "test": "prepares immutable input images without an Agent Tool and waits for guest cancellation (cancel=true)",
+      "invariant": "Input preparation is fenced independently of Agent Tool execution and remains tracked until guest cancellation finishes."
+    },
+    {
       "id": "native-proved-rejection",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/native-session-writer.test.ts",
@@ -475,7 +503,7 @@
       "id": "image-native-fork-retention",
       "workspace": "@pi-cloud/session-attachments",
       "file": "test/storage.postgres.test.ts",
-      "test": "cold public SessionStorage reads reconstruct exact images while PG stores only references",
+      "test": "cold public SessionStorage reads reconstruct exact images while PG stores only references (user)",
       "invariant": "Cold reads and independent native Fork history retain the exact image bytes."
     },
     {

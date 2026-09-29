@@ -331,6 +331,86 @@ function operation(
 }
 
 describe("provider-backed Tool Tool Broker", () => {
+  it.each([false, true])(
+    "prepares immutable input images without an Agent Tool and waits for guest cancellation (cancel=%s)",
+    async (cancel) => {
+      const fixture = providerFixture(),
+        repository = new InMemoryWorkspaceRuntimeStateRepository();
+      const bytes = Buffer.from("image-source"),
+        source = {
+          id: crypto.randomUUID(),
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          byteLength: bytes.length,
+          mimeType: "image/png" as const,
+        };
+      const entered = Promise.withResolvers<void>(),
+        finish = Promise.withResolvers<void>();
+      const prepare = vi.fn<NonNullable<SandboxProvider["prepareInputImage"]>>(
+        async (_handle, content) => {
+          expect(content).toEqual(bytes);
+          entered.resolve();
+          if (cancel) await finish.promise;
+          return { data: bytes.toString("base64"), mimeType: "image/png", hints: [] };
+        },
+      );
+      fixture.provider.prepareInputImage = prepare;
+      const get = vi.fn(async (tenantId, ref) => {
+        expect(tenantId).toBe(assignment.tenantId);
+        expect(ref).toEqual(source);
+        return bytes;
+      });
+      const put = vi.fn(async () => source);
+      const authorize = vi.spyOn(repository, "authorizeOperation");
+      const broker = testBroker({
+        provider: fixture.provider,
+        stateRepository: repository,
+        inputImages: { get, put },
+      });
+      const reserved = await broker.create(createRequest);
+      const request = {
+        toolBrokerProtocolVersion: 1 as const,
+        type: "tool_sandbox.prepare_input_images" as const,
+        requestId: crypto.randomUUID(),
+        activationId: reserved.activationId,
+        assignment,
+        images: [source],
+      };
+      const controller = new AbortController();
+      let settled = false;
+      const result = broker.prepareInputImages(request, controller.signal).then(
+        (value) => {
+          settled = true;
+          return value;
+        },
+        (error) => {
+          settled = true;
+          return error;
+        },
+      );
+      try {
+        await entered.promise;
+        if (cancel) {
+          controller.abort(new Error("cancelled"));
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          expect(settled).toBe(false);
+          finish.resolve();
+          expect(await result).toBeInstanceOf(Error);
+        } else
+          expect(await result).toMatchObject({
+            images: [{ sourceId: source.id, image: source, hints: [] }],
+          });
+        expect(authorize).toHaveBeenCalled();
+        expect(fixture.exec).not.toHaveBeenCalled();
+        expect(put).not.toHaveBeenCalled();
+        expect(prepare).toHaveBeenCalledOnce();
+      } finally {
+        finish.resolve();
+        await result;
+        await broker.close();
+      }
+    },
+  );
+
   it("reports a machine snapshot failure while preserving the VM and closing ownership", async () => {
     const fixture = providerFixture(),
       repository = new InMemoryWorkspaceRuntimeStateRepository();

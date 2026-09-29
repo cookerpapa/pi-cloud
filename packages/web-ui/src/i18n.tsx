@@ -14,6 +14,16 @@ export type UiLanguage = "zh-CN" | "en-US";
 const STORAGE_KEY = "pi-cloud:ui-language";
 
 const zhCN = {
+  "upload.add": "添加附件",
+  "upload.remove": "移除附件",
+  "upload.pending": "等待选择会话",
+  "upload.uploading": "上传中…",
+  "upload.ready": "已上传",
+  "upload.failed": "上传失败",
+  "upload.limit":
+    "每次最多 4 个文件，单个不超过 16 MB，总计不超过 32 MB；图片支持 PNG、JPEG、WebP。",
+  "upload.previewFailed": "图片预览暂不可用",
+
   "chat.loadEarlier": "加载更早的消息",
   "chat.loadMoreConversations": "加载更多会话",
   "language.label": "界面语言",
@@ -421,6 +431,15 @@ const zhCN = {
 export type UiTextKey = keyof typeof zhCN;
 
 const enUS: Record<UiTextKey, string> = {
+  "upload.add": "Attach files",
+  "upload.remove": "Remove attachment",
+  "upload.pending": "Waiting for a conversation",
+  "upload.uploading": "Uploading…",
+  "upload.ready": "Uploaded",
+  "upload.failed": "Upload failed",
+  "upload.limit": "Up to 4 files, 16 MB each and 32 MB total. Images: PNG, JPEG, WebP.",
+  "upload.previewFailed": "Image preview unavailable",
+
   "chat.loadEarlier": "Load earlier messages",
   "chat.loadMoreConversations": "Load more conversations",
   "language.label": "Interface language",

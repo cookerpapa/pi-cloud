@@ -51,6 +51,12 @@ credentials, never Cube or the browser. References cannot name arbitrary URLs or
 paths. Guest-supplied references, cross-tenant lookups, mismatched hashes and
 oversized bodies are rejected. The native loop receives decoded images only at
 the trusted Tool/SessionStorage adapters. Image decoders run inside Cube.
+Chat upload bodies have pre-buffer concurrency and size limits, scoped PG claims
+and fresh Broker/Gateway authorization. Workspace writes use confined directory
+descriptors, no-follow opens and exclusive publication. The API retains immutable
+image sources without decoding them; the admitted Run normalizes sources in Cube
+before requesting model capacity. A PG row lock serializes image pinning with GC.
+File metadata remains escaped user data, never a system instruction.
 
 ## Key threats and controls
 

@@ -109,6 +109,13 @@ change. Verify the Guest build identity instead of rebuilding unchanged Cube
 templates. A rollback requires the prior PG snapshot and matching application
 revision; retain the image objects referenced by that snapshot.
 
+Migration 154 adds scoped upload metadata and image-only user input (ADR-0200).
+Drain/seal Runs, retain a private PG backup and deploy matching API, Worker,
+Broker, Volume Gateway, Web and guest template builds. The fixed guest adds
+`envd-input-files.mjs`; existing machines must be recreated under the current
+guest contract rather than falling back to an older helper. Source images use
+the existing S3 backup boundary. See [chat attachments](CHAT_ATTACHMENTS.md).
+
 `production:init` creates private S3 credentials and `state/session-images`.
 Compose provisions pinned SeaweedFS 4.47 with SQLite FULL metadata and an explicit
 bucket fsync rule before applications start. Its internal filer/master/S3 ports

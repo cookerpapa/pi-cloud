@@ -845,6 +845,7 @@ export class CloudAgentRuntime {
     id: string,
     text: string,
     delivery: "notify" | "steer" | "follow_up",
+    images?: readonly ImageContent[],
   ): Promise<void> {
     const agent = await this.#inputAgent();
     const entryId = `pc-agent-input-${id}`;
@@ -852,7 +853,7 @@ export class CloudAgentRuntime {
       return;
     if (this.#queuedAgentInputs.has(entryId)) return;
     this.#assertInputOpen(agent);
-    const message = createUserMessage(text);
+    const message = createUserMessage(text, images);
     this.#agentInputIds.set(message, entryId);
     this.#queuedAgentInputs.add(entryId);
     if (delivery === "follow_up") agent.followUp(message);

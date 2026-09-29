@@ -9,6 +9,7 @@ import {
   parseCloudToolCapabilitySnapshot,
   parseEnvironmentRuntimeSnapshot,
   parseExecutionReference,
+  parseUserUploads,
 } from "@pi-cloud/protocol";
 import type {
   AgentRevisionSnapshot,
@@ -51,6 +52,7 @@ export type TurnExecutionRequest = {
   input: {
     kind: "prompt";
     prompt: string;
+    uploads?: import("@pi-cloud/protocol").UserUpload[];
   };
   executionMode: import("@pi-cloud/protocol").ExecutionMode;
   sessionKind: import("@pi-cloud/database").SessionKind;
@@ -668,7 +670,7 @@ export class RunExecutor {
       // text in a new READ COMMITTED statement before freezing execution.
       const input = await transaction
         .selectFrom("turns")
-        .select("input_text")
+        .select(["input_text", "input_uploads"])
         .where("tenant_id", "=", context.tenantId)
         .where("id", "=", context.turnId)
         .where("state", "=", "queued")
@@ -761,7 +763,11 @@ export class RunExecutor {
         },
         idempotencyKey: row.idempotencyKey,
         nextEventSeq: row.nextEventSeq,
-        input: { kind: "prompt" as const, prompt: row.inputText },
+        input: {
+          kind: "prompt" as const,
+          prompt: row.inputText,
+          ...(input.input_uploads.length ? { uploads: parseUserUploads(input.input_uploads) } : {}),
+        },
         executionMode: row.executionMode,
         sessionKind: row.sessionKind,
         workspaceSeedKind: row.workspaceSeedKind,

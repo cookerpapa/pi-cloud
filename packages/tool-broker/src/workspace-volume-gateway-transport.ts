@@ -3,6 +3,12 @@ import type { PiCloudMetrics } from "@pi-cloud/observability";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import PQueue from "p-queue";
 import { Agent, fetch } from "undici";
+import { MAX_USER_UPLOAD_BYTES, uploadRelativePath } from "@pi-cloud/protocol";
+import {
+  WORKSPACE_VOLUME_GATEWAY_UPLOAD_FILE_PATH,
+  type WorkspaceVolumeGatewayUploadInput,
+  type WorkspaceUploadReceipt,
+} from "./workspace-volume-gateway-contract.ts";
 
 import {
   MAXIMUM_REQUEST_BYTES,
@@ -46,6 +52,7 @@ export type WorkspaceVolumeGatewayServerOptions = Readonly<{
 }>;
 
 type WorkspaceVolumeGatewayOperation =
+  | "upload_file"
   | "verify"
   | "list_directory"
   | "read_file"
@@ -74,6 +81,7 @@ export class WorkspaceVolumeGatewayServer {
   readonly #queueWaitTimeoutMs: number;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #shutdown = new AbortController();
+  readonly #uploads = new Set<object>();
   #accepting = true;
   #address: string | undefined;
 
@@ -138,6 +146,65 @@ export class WorkspaceVolumeGatewayServer {
   }
 
   #routes(): void {
+    this.#server.addContentTypeParser(
+      "application/octet-stream",
+      { parseAs: "buffer", bodyLimit: MAX_USER_UPLOAD_BYTES },
+      (_request, body, done) => done(null, body),
+    );
+    this.#server.addHook("onRequest", async (request, reply) => {
+      if (request.url.split("?", 1)[0] !== WORKSPACE_VOLUME_GATEWAY_UPLOAD_FILE_PATH) return;
+      if (!this.#authorized(request.headers.authorization))
+        return reply.code(401).send({ error: { code: "unauthorized", retryable: false } });
+      if (this.#uploads.size >= 2)
+        return reply
+          .code(429)
+          .send({ error: { code: "workspace_upload_capacity_exhausted", retryable: true } });
+      this.#uploads.add(request);
+      reply.raw.once("close", () => {
+        this.#uploads.delete(request);
+      });
+    });
+    this.#server.addHook("onResponse", async (request) => {
+      this.#uploads.delete(request);
+    });
+    this.#server.addHook("onRequestAbort", async (request) => {
+      this.#uploads.delete(request);
+    });
+    this.#server.post(
+      WORKSPACE_VOLUME_GATEWAY_UPLOAD_FILE_PATH,
+      { bodyLimit: MAX_USER_UPLOAD_BYTES },
+      async (request, reply) => {
+        const abort = new AbortController();
+        const closed = () => {
+          if (!reply.raw.writableEnded) abort.abort(new Error("Upload caller disconnected"));
+        };
+        reply.raw.on("close", closed);
+        try {
+          const header = request.headers["x-pi-cloud-upload"];
+          if (
+            typeof header !== "string" ||
+            header.length > 12000 ||
+            !Buffer.isBuffer(request.body) ||
+            !this.#gateway.uploadFile
+          )
+            throw new Error("Invalid Workspace upload request");
+          const input = JSON.parse(
+            Buffer.from(header, "base64url").toString(),
+          ) as WorkspaceVolumeGatewayUploadInput;
+          return await this.#run("upload_file", () =>
+            this.#gateway.uploadFile!(
+              input,
+              request.body as Buffer,
+              AbortSignal.any([this.#shutdown.signal, abort.signal]),
+            ),
+          );
+        } catch (error) {
+          return this.#failure(reply, error);
+        } finally {
+          reply.raw.removeListener("close", closed);
+        }
+      },
+    );
     this.#server.get("/health/live", async () => ({ status: "ok" }));
     this.#server.get("/health/ready", async (_request, reply) => {
       try {
@@ -515,6 +582,45 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
       };
     });
     return { entries, truncated: response.truncated };
+  }
+
+  async uploadFile(
+    input: WorkspaceVolumeGatewayUploadInput,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceUploadReceipt> {
+    if (!bytes.length || bytes.length > MAX_USER_UPLOAD_BYTES)
+      throw new Error("Upload exceeds its size limit");
+    const response = await fetch(`${this.#baseUrl}${WORKSPACE_VOLUME_GATEWAY_UPLOAD_FILE_PATH}`, {
+      dispatcher: internalDispatcher,
+      redirect: "error",
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.#serviceToken}`,
+        "content-type": "application/octet-stream",
+        "x-pi-cloud-upload": Buffer.from(JSON.stringify(input)).toString("base64url"),
+      },
+      body: Buffer.from(bytes),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(this.#requestTimeoutMs)])
+        : AbortSignal.timeout(this.#requestTimeoutMs),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_upload_failed",
+        "Workspace upload failed",
+        response.status >= 500,
+      );
+    }
+    const result = (await response.json()) as WorkspaceUploadReceipt;
+    if (
+      result.sha256 !== input.sha256 ||
+      result.byteLength !== bytes.length ||
+      result.relativePath !== uploadRelativePath(input.uploadId, input.name)
+    )
+      throw new Error("Workspace upload receipt changed identity");
+    return result;
   }
 
   async readFile(input: WorkspaceVolumeGatewayReadFileInput): Promise<{

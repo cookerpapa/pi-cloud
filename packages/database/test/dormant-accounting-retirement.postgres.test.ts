@@ -1,3 +1,4 @@
+import { insertHistoricalPrompt } from "./fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql, type Kysely } from "kysely";
@@ -13,7 +14,7 @@ describe.skipIf(!endpoint)("dormant accounting retirement", () => {
   let tenant: Awaited<ReturnType<typeof createPrivateTenant>>;
   let project: Awaited<ReturnType<ControlPlaneStore["createProject"]>>;
   let session: Awaited<ReturnType<ControlPlaneStore["createSession"]>>;
-  let accepted: Awaited<ReturnType<ControlPlaneStore["acceptTurn"]>>;
+  let accepted: Awaited<ReturnType<typeof insertHistoricalPrompt>>;
   beforeAll(() => {
     admin = createDatabase({ connectionString: endpoint!, maxConnections: 1 });
   });
@@ -53,7 +54,15 @@ describe.skipIf(!endpoint)("dormant accounting retirement", () => {
       values(${tenant.tenantId}::uuid,${session.sessionId},1,'entry',${JSON.stringify({ lane: "main", turnId: null, entry })}::jsonb)`.execute(
       db,
     );
-    accepted = await store.acceptTurn(session.sessionId, "fixture", { prompt: "accepted input" });
+    accepted = await insertHistoricalPrompt(db, {
+      tenantId: tenant.tenantId,
+      modelProfileId: tenant.defaultModelProfileId,
+      sessionId: session.sessionId,
+      projectId: project.projectId,
+      workspaceId: project.workspaceId,
+      environmentVersionId: project.environment.environmentVersionId,
+      prompt: "accepted input",
+    });
     await sql`update runs set state='cancelled',settled_at=now() where id=${accepted.runId}::uuid`.execute(
       db,
     );

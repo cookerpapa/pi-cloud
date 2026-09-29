@@ -4,6 +4,7 @@ import {
   isExpectedDefaultToolchain,
   MAX_TOOL_EXECUTION_TIMEOUT_MS,
   MAX_IMAGE_GUEST_RESPONSE_BYTES,
+  MAX_USER_UPLOAD_BYTES,
   validGuestDirectoryName,
   parseEnvironmentToolchainReport,
   createExecutionReference,
@@ -46,6 +47,7 @@ import {
   type OfficialCubeSandboxRuntimeClientOptions,
 } from "./cubesandbox-runtime-client.ts";
 import { workspaceVolumeId, type WorkspaceVolumeGateway } from "./workspace-volume-gateway.ts";
+import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
 import {
   ToolBrokerError,
   type SandboxCreateSpec,
@@ -729,7 +731,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     instance: CubeSandboxInstance,
     input: unknown,
     options: Readonly<{
-      program: "tool" | "control";
+      program: "tool" | "control" | "input";
       runAsToolUser: boolean;
       timeoutMs: number;
       maximumOutputBytes?: number;
@@ -740,7 +742,11 @@ export class CubeSandboxProvider implements SandboxProvider {
   ): Promise<unknown> {
     const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
     const bytes = Buffer.from(JSON.stringify(input), "utf8");
-    if (bytes.byteLength < 2 || bytes.byteLength > 16 * 1_024 * 1_024) {
+    const inputLimit =
+      options.program === "input"
+        ? Math.ceil(MAX_USER_UPLOAD_BYTES / 3) * 4 + 8192
+        : 16 * 1024 * 1024;
+    if (bytes.byteLength < 2 || bytes.byteLength > inputLimit) {
       throw new ToolBrokerError(
         "cubesandbox_guest_request_invalid",
         "CubeSandbox guest request exceeded its limit",
@@ -750,6 +756,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     const program = {
       tool: "/opt/pi-cloud/bin/envd-tool-exec.mjs",
       control: "/opt/pi-cloud/bin/envd-guest-control.mjs",
+      input: "/opt/pi-cloud/bin/envd-input-files.mjs",
     }[options.program];
     const maximumOutputBytes = options.maximumOutputBytes ?? TOOL_RESPONSE_LIMIT_BYTES;
     if (
@@ -1746,6 +1753,111 @@ export class CubeSandboxProvider implements SandboxProvider {
       entries: listed.entries,
       truncated: listed.truncated,
     });
+  }
+
+  async prepareInputImage(
+    handle: SandboxHandle,
+    bytes: Uint8Array,
+    mimeType: string,
+    signal?: AbortSignal,
+  ) {
+    const activation = this.#dataOwned(handle);
+    const envelope = record(
+      await this.#guestJson(
+        activation.instance,
+        { mode: "normalize_image", data: Buffer.from(bytes).toString("base64"), mimeType },
+        {
+          program: "input",
+          runAsToolUser: true,
+          timeoutMs: 30_000,
+          maximumOutputBytes: MAX_IMAGE_GUEST_RESPONSE_BYTES,
+          ...(signal ? { signal } : {}),
+        },
+      ),
+      "Input image result",
+    );
+    if (envelope.ok !== true)
+      throw new ToolBrokerError(
+        "input_image_invalid",
+        "Uploaded image could not be decoded within its limits",
+        false,
+      );
+    const result = record(envelope.result, "Prepared input image");
+    if (
+      typeof result.data !== "string" ||
+      result.mimeType !== "image/png" ||
+      !Array.isArray(result.hints) ||
+      result.hints.length > 4 ||
+      result.hints.some((hint) => typeof hint !== "string" || hint.length > 1024)
+    )
+      throw new Error("Prepared image metadata is invalid");
+    return {
+      mimeType: "image/png" as const,
+      data: bounded(result.data, "Prepared image bytes", MAX_IMAGE_GUEST_RESPONSE_BYTES),
+      hints: result.hints as string[],
+    };
+  }
+
+  async uploadMachineWorkspaceFile(
+    handle: SandboxHandle,
+    request: WorkspaceUploadRequest,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ) {
+    const activation = this.#dataOwned(handle);
+    const envelope = record(
+      await this.#guestJson(
+        activation.instance,
+        {
+          mode: "upload_file",
+          directory: request.machine!.directory,
+          id: request.uploadId,
+          name: request.name,
+          sha256: request.sha256,
+          data: Buffer.from(bytes).toString("base64"),
+        },
+        { program: "input", runAsToolUser: true, timeoutMs: 30_000, ...(signal ? { signal } : {}) },
+      ),
+      "Upload result",
+    );
+    if (envelope.ok !== true)
+      throw new ToolBrokerError(
+        "workspace_upload_failed",
+        "Workspace file could not be placed safely",
+        false,
+      );
+    const receipt =
+      envelope.result as import("./workspace-volume-gateway-contract.ts").WorkspaceUploadReceipt;
+    if (receipt.sha256 !== request.sha256 || receipt.byteLength !== bytes.length)
+      throw new Error("Upload receipt changed identity");
+    return receipt;
+  }
+
+  async uploadWorkspaceFile(
+    request: WorkspaceUploadRequest,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ) {
+    if (!this.#workspaceVolumeGateway.uploadFile)
+      throw new Error("Workspace uploads are unavailable");
+    signal?.throwIfAborted();
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    return this.#workspaceVolumeGateway.uploadFile(
+      {
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        sessionId: request.sessionId,
+        volumeId,
+        rootPath: request.rootPath,
+        uploadId: request.uploadId,
+        name: request.name,
+        sha256: request.sha256,
+        claimToken: request.claimToken,
+      },
+      bytes,
+      signal,
+    );
   }
 
   async readWorkspaceFile(

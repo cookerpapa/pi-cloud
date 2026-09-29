@@ -84,6 +84,23 @@ export function conversationExportMarkdown(
   const turns = conversation.turns.filter((turn) => TERMINAL_TURN_STATES.has(turn.state));
   turns.forEach((turn, index) => {
     lines.push(`## Turn ${String(index + 1)}`, "", "### User", "", turn.prompt, "");
+    if (turn.uploads?.length)
+      lines.push(
+        "**Attachments**",
+        "",
+        codeBlock(
+          "json",
+          json(
+            turn.uploads.map(({ name, path, mimeType, byteLength }) => ({
+              name,
+              path,
+              mimeType,
+              byteLength,
+            })),
+          ),
+        ),
+        "",
+      );
     if (turn.transcript !== undefined) {
       lines.push("### Assistant", "");
       for (const item of turn.transcript.items) {

@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0200](0200-workspace-uploads-and-user-image-input.md) — Workspace file uploads,
+   durable input attachments and native user image content.
 1. [ADR-0199](0199-bounded-publication-and-projection.md) — proved publication
    rejection isolation, shared projection waits, phase timings and bounded SQL work.
 1. [ADR-0198](0198-atomic-tool-invocation.md) — one atomic remote Tool intent and

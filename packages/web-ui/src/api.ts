@@ -1,4 +1,6 @@
 import {
+  parseUserUpload,
+  type UserUpload,
   parseInputQueueResource,
   parseQueuedInputActionResult,
   type InputQueueResource,
@@ -130,6 +132,7 @@ async function request(
   } catch {
     throw new PiCloudApiError(0, "network_error", "Control plane is unreachable");
   }
+  if (response.status === 204) return null;
   const body = await responseJson(response);
   if (!response.ok) {
     try {
@@ -151,11 +154,13 @@ async function requestBytes(
   fetchImplementation: FetchImplementation,
   path: string,
   authorizationToken?: string,
+  signal?: AbortSignal,
 ): Promise<{ bytes: Uint8Array; contentType: string }> {
   let response: Response;
   try {
     response = await fetchImplementation(path, {
       method: "GET",
+      signal: signal ?? null,
       credentials: "same-origin",
       ...(authorizationToken === undefined
         ? {}
@@ -748,11 +753,55 @@ export class PiCloudApi {
     );
   }
 
+  async uploadWorkspaceFile(
+    sessionId: string,
+    id: string,
+    file: Blob,
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<UserUpload> {
+    return parseUserUpload(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/uploads/${encodeURIComponent(id)}?name=${encodeURIComponent(name)}`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/octet-stream" },
+          body: file,
+          signal: signal ?? null,
+        },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async removeDraftUpload(upload: UserUpload): Promise<void> {
+    await request(
+      this.#fetch,
+      `/v1/sessions/${encodeURIComponent(upload.sessionId)}/uploads/${encodeURIComponent(upload.id)}`,
+      { method: "DELETE" },
+      this.#authorizationToken,
+    );
+  }
+
+  readInputImage(
+    upload: UserUpload,
+    signal?: AbortSignal,
+  ): Promise<{ bytes: Uint8Array; contentType: string }> {
+    return requestBytes(
+      this.#fetch,
+      `/v1/sessions/${encodeURIComponent(upload.sessionId)}/uploads/${encodeURIComponent(upload.id)}/image`,
+      this.#authorizationToken,
+      signal,
+    );
+  }
+
   async acceptTurn(
     sessionId: string,
     prompt: string,
     idempotencyKey: string,
     thinkingLevel?: TurnThinkingLevel,
+    uploadIds?: string[],
   ): Promise<AcceptedTurnResource> {
     return parseAcceptedTurnResource(
       await request(
@@ -761,6 +810,7 @@ export class PiCloudApi {
         jsonRequest(
           {
             prompt,
+            ...(uploadIds?.length ? { uploadIds } : {}),
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
           },
           idempotencyKey,
@@ -823,12 +873,13 @@ export class PiCloudApi {
     turnId: string,
     text: string,
     idempotencyKey: string,
+    uploadIds?: string[],
   ): Promise<TurnSteerResource> {
     return parseTurnSteerResource(
       await request(
         this.#fetch,
         `/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/steers`,
-        jsonRequest({ text }, idempotencyKey),
+        jsonRequest({ text, ...(uploadIds?.length ? { uploadIds } : {}) }, idempotencyKey),
         this.#authorizationToken,
       ),
     );

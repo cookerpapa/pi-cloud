@@ -1,5 +1,6 @@
 import { WorkflowChannels, type WorkflowFrame } from "./workflow-channels.ts";
 import { SandboxAdmission } from "./sandbox-admission.ts";
+import PQueue from "p-queue";
 import type {
   AgentWorkspaceSeed,
   DevelopmentEnvironmentBrokerResponse,
@@ -31,6 +32,18 @@ import type {
   SourceControlWorkspaceCredentialPreflightRequest,
   SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
+import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
+import type { ImageAttachmentStore } from "@pi-cloud/session-attachments";
+import {
+  MAX_USER_INPUT_UPLOAD_BYTES,
+  type ToolBrokerRequest,
+  type ToolBrokerResponse,
+} from "@pi-cloud/protocol";
+type InputImageRequest = Extract<ToolBrokerRequest, { type: "tool_sandbox.prepare_input_images" }>;
+type InputImageResponse = Extract<
+  ToolBrokerResponse,
+  { type: "tool_sandbox.input_images_prepared" }
+>;
 import {
   createExecutionReference,
   parseCloudToolCapabilitySnapshot,
@@ -64,6 +77,7 @@ import type {
 } from "./sandbox-http-service-registry.ts";
 
 export type ToolBrokerOptions = {
+  inputImages?: ImageAttachmentStore;
   provider: SandboxProvider;
   ownerBaseUrl: string;
   stateRepository: WorkspaceRuntimeStateRepository;
@@ -103,7 +117,7 @@ type ManagedToolBinding = {
     string,
     Readonly<{
       requestSha256: string;
-      result: Promise<ToolSandboxOperationResponse>;
+      result: Promise<ToolSandboxOperationResponse | InputImageResponse>;
       controller: AbortController;
     }>
   >;
@@ -329,6 +343,8 @@ function developmentEnvironmentAssignment(
 }
 
 export class ToolBroker {
+  readonly #inputImages: ImageAttachmentStore | undefined;
+  readonly #inputPreparation = new PQueue({ concurrency: 1 });
   readonly #workflowChannels = new WorkflowChannels();
   readonly #provider: SandboxProvider;
   readonly #ownerBaseUrl: string;
@@ -351,6 +367,7 @@ export class ToolBroker {
   #developmentEnvironmentRecovery: Promise<number> | undefined;
 
   constructor(options: ToolBrokerOptions) {
+    this.#inputImages = options.inputImages;
     if (!/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/.test(options.provider.providerId)) {
       throw new TypeError("Sandbox Provider ID is invalid");
     }
@@ -1582,7 +1599,8 @@ export class ToolBroker {
       .digest("hex");
     const existing = activation.operations.get(request.operationId);
     if (existing !== undefined) {
-      if (existing.requestSha256 === requestSha256) return existing.result;
+      if (existing.requestSha256 === requestSha256)
+        return existing.result as Promise<ToolSandboxOperationResponse>;
       throw new ToolBrokerError(
         "tool_operation_identity_conflict",
         "Tool operation ID was reused for a different request",
@@ -1707,6 +1725,133 @@ export class ToolBroker {
     const forget = () => activation.operations.delete(request.operationId);
     void durable.then(forget, forget);
     return durable;
+  }
+
+  async prepareInputImages(
+    request: InputImageRequest,
+    signal?: AbortSignal,
+  ): Promise<InputImageResponse> {
+    if (!this.#inputImages || !this.#provider.prepareInputImage)
+      throw new ToolBrokerError(
+        "input_images_unavailable",
+        "Input image preparation is unavailable",
+        false,
+      );
+    const activation = this.#ownedBinding(request.activationId, request.assignment);
+    const key = `input:${request.requestId}`,
+      requestSha256 = createHash("sha256").update(JSON.stringify(request)).digest("hex");
+    const existing = activation.operations.get(key);
+    if (existing) {
+      if (existing.requestSha256 !== requestSha256)
+        throw new Error("Input preparation identity conflict");
+      return existing.result as Promise<InputImageResponse>;
+    }
+    if (this.#inputPreparation.size >= 8)
+      throw new ToolBrokerError(
+        "input_image_capacity_exhausted",
+        "Input image preparation is busy",
+        true,
+      );
+    const controller = new AbortController();
+    const combined = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+    // Cancel a queued slot promptly, but retain the in-flight operation until
+    // the guest actually stops; p-queue's running signal rejects before cleanup.
+    const queued = new AbortController();
+    const abortQueued = () => queued.abort(combined.reason);
+    combined.addEventListener("abort", abortQueued, { once: true });
+    if (combined.aborted) abortQueued();
+    const waiting = setTimeout(
+      () => controller.abort(new Error("Input image preparation queue timed out")),
+      30_000,
+    );
+    waiting.unref();
+    const result = this.#inputPreparation
+      .add(
+        async (): Promise<InputImageResponse> => {
+          clearTimeout(waiting);
+          combined.removeEventListener("abort", abortQueued);
+          combined.throwIfAborted();
+          activation.activeOperations++;
+          const runtime = activation.elasticRuntime;
+          if (runtime) runtime.activeOperations++;
+          try {
+            await this.#stateRepository.authorizeOperation(
+              runtime?.physicalActivationId ?? activation.reservation.activationId,
+              activation.assignment,
+            );
+            const handle = await this.#materialize(activation, combined);
+            const images: InputImageResponse["images"] = [];
+            let total = 0;
+            for (const source of request.images) {
+              combined.throwIfAborted();
+              this.#stateRepository.assertLocalOwnership();
+              const bytes = await this.#inputImages!.get(
+                activation.assignment.tenantId,
+                source,
+                combined,
+              );
+              const prepared = await this.#provider.prepareInputImage!(
+                handle,
+                bytes,
+                source.mimeType,
+                combined,
+              );
+              const decoded = Buffer.from(prepared.data, "base64");
+              if (
+                !decoded.length ||
+                decoded.toString("base64") !== prepared.data ||
+                (total += decoded.length) > MAX_USER_INPUT_UPLOAD_BYTES
+              )
+                throw new ToolBrokerError(
+                  "input_images_too_large",
+                  "Prepared input images exceed their combined size limit",
+                  false,
+                );
+              const image =
+                prepared.mimeType === source.mimeType &&
+                decoded.length === source.byteLength &&
+                createHash("sha256").update(decoded).digest("hex") === source.sha256
+                  ? source
+                  : await this.#inputImages!.put(
+                      {
+                        tenantId: activation.assignment.tenantId,
+                        runId: activation.assignment.runId,
+                      },
+                      decoded,
+                      prepared.mimeType,
+                      combined,
+                    );
+              images.push({ sourceId: source.id, image, hints: [...prepared.hints] });
+            }
+            combined.throwIfAborted();
+            return {
+              toolBrokerProtocolVersion: 1,
+              type: "tool_sandbox.input_images_prepared",
+              requestId: request.requestId,
+              activationId: request.activationId,
+              images,
+            };
+          } finally {
+            activation.activeOperations--;
+            if (runtime) runtime.activeOperations--;
+          }
+        },
+        { signal: queued.signal },
+      )
+      .then((value) => {
+        if (!value) throw new Error("Input image preparation did not complete");
+        return value;
+      })
+      .finally(() => {
+        clearTimeout(waiting);
+        combined.removeEventListener("abort", abortQueued);
+      });
+    activation.operations.set(key, { requestSha256, result, controller });
+    void result.then(
+      () => activation.operations.delete(key),
+      () => activation.operations.delete(key),
+    );
+    return result;
   }
 
   ownsToolBinding(activationId: string): boolean {
@@ -2105,6 +2250,38 @@ export class ToolBroker {
     return this.#provider.listWorkspaceDirectory(request);
   }
 
+  async uploadWorkspaceFile(
+    request: WorkspaceUploadRequest,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ) {
+    this.#stateRepository.assertLocalOwnership();
+    if (!this.#stateRepository.authorizeWorkspaceUpload)
+      throw new ToolBrokerError(
+        "workspace_upload_unavailable",
+        "Upload authorization is unavailable",
+        false,
+      );
+    await this.#stateRepository.authorizeWorkspaceUpload(request, bytes.length);
+    if (request.machine) {
+      const handle = await this.#machineBrowserHandle(request);
+      if (!this.#provider.uploadMachineWorkspaceFile)
+        throw new ToolBrokerError(
+          "workspace_upload_unavailable",
+          "Machine upload is unavailable",
+          false,
+        );
+      return this.#provider.uploadMachineWorkspaceFile(handle, request, bytes, signal);
+    }
+    if (!this.#provider.uploadWorkspaceFile)
+      throw new ToolBrokerError(
+        "workspace_upload_unavailable",
+        "Workspace upload is unavailable",
+        false,
+      );
+    return this.#provider.uploadWorkspaceFile(request, bytes, signal);
+  }
+
   async readWorkspaceFile(
     request: ToolBrokerReadWorkspaceFileRequest,
     signal?: AbortSignal,
@@ -2130,7 +2307,10 @@ export class ToolBroker {
   }
 
   async #machineBrowserHandle(
-    request: ToolBrokerListWorkspaceDirectoryRequest | ToolBrokerReadWorkspaceFileRequest,
+    request:
+      | ToolBrokerListWorkspaceDirectoryRequest
+      | ToolBrokerReadWorkspaceFileRequest
+      | WorkspaceUploadRequest,
   ): Promise<SandboxHandle> {
     const target = request.machine!;
     const owner = await this.#stateRepository.developmentEnvironmentOwner(

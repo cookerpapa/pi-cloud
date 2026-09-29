@@ -8,6 +8,7 @@ export {
   type EnvironmentToolchainReport,
 } from "./environment.ts";
 export { validGuestDirectoryName } from "./guest-directory.ts";
+export { MAX_USER_UPLOAD_BYTES, uploadFileName, uploadRelativePath } from "./user-upload.ts";
 export {
   MAX_IMAGE_ATTACHMENT_BYTES,
   MAX_IMAGE_DECODE_PIXELS,

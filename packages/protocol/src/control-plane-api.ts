@@ -19,6 +19,7 @@ import {
   ProjectEnvironmentResourceSchema,
 } from "./environment.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
+import { UserUploadIdsSchema, UserUploadsSchema } from "./user-upload.ts";
 // Pi's native Entry identity is opaque; product Session/Run IDs remain UUIDs.
 const PiEntryIdSchema = Type.String({ minLength: 1, maxLength: 512 });
 
@@ -789,7 +790,8 @@ export const ConversationTurnResourceSchema = Type.Object(
     runId: UuidSchema,
     turnId: UuidSchema,
     mailboxPosition: PositiveSafeIntegerSchema,
-    prompt: Type.String({ minLength: 1, maxLength: 100_000 }),
+    prompt: Type.String({ maxLength: 100_000 }),
+    uploads: Type.Optional(UserUploadsSchema),
     state: ConversationTurnStateSchema,
     transcript: Type.Optional(ConversationTurnTranscriptResourceSchema),
     acceptedAt: UtcTimestampSchema,
@@ -915,7 +917,8 @@ export const ConversationPruneResourceSchema = Type.Object(
 
 export const AcceptTurnRequestSchema = Type.Object(
   {
-    prompt: Type.String({ minLength: 1, maxLength: 100_000 }),
+    prompt: Type.String({ maxLength: 100_000 }),
+    uploadIds: Type.Optional(UserUploadIdsSchema),
     thinkingLevel: Type.Optional(TurnThinkingLevelSchema),
   },
   { additionalProperties: false },
@@ -1041,7 +1044,8 @@ export const AcceptedTurnCancellationResourceSchema = Type.Object(
 
 export const CreateTurnSteerRequestSchema = Type.Object(
   {
-    text: Type.String({ minLength: 1, maxLength: 100_000 }),
+    text: Type.String({ maxLength: 100_000 }),
+    uploadIds: Type.Optional(UserUploadIdsSchema),
   },
   { additionalProperties: false },
 );
@@ -1364,7 +1368,7 @@ export function parseCreateSessionRequest(
 
 export function parseAcceptTurnRequest(value: unknown): AcceptTurnRequest {
   const request = parseSchema(AcceptTurnRequestSchema, value, "accept-turn request");
-  if (request.prompt.trim().length === 0) {
+  if (request.prompt.trim().length === 0 && !request.uploadIds?.length) {
     throw new ControlPlaneApiValidationError("Turn prompt must contain a non-whitespace character");
   }
   return request;
@@ -1380,7 +1384,7 @@ export function parseCreateTurnCancellationRequest(value: unknown): CreateTurnCa
 
 export function parseCreateTurnSteerRequest(value: unknown): CreateTurnSteerRequest {
   const request = parseSchema(CreateTurnSteerRequestSchema, value, "create-turn-steer request");
-  if (request.text.trim().length === 0) {
+  if (request.text.trim().length === 0 && !request.uploadIds?.length) {
     throw new ControlPlaneApiValidationError("Steer text must contain a non-whitespace character");
   }
   return request;

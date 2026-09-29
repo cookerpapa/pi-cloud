@@ -88,6 +88,7 @@ import { TenantRequestContext } from "./tenant-request-context.ts";
 import { TenantModelConfigurationService } from "./tenant-model-configuration.ts";
 import { ConversationArchiveService } from "./conversation-archive-service.ts";
 import { WorkspaceBrowserService } from "./workspace-browser-service.ts";
+import { WorkspaceUploadService } from "./workspace-upload-service.ts";
 import { readWebSessionCookie, WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { TurnSteeringService } from "./turn-steering-service.ts";
@@ -116,6 +117,7 @@ export class ControlPlaneController {
     private readonly conversationArchive: ConversationArchiveService,
     @Inject(WorkspaceBrowserService)
     private readonly workspaceBrowser: WorkspaceBrowserService,
+    @Inject(WorkspaceUploadService) private readonly workspaceUploads: WorkspaceUploadService,
     @Inject(WebAuthenticationService)
     private readonly webAuthentication: WebAuthenticationService,
     @Inject(PlatformRuntimeSettingsService)
@@ -667,6 +669,81 @@ export class ControlPlaneController {
     const runId = parseUuidPathParameter(runIdValue, "runId");
     const identity = this.tenantRequestContext.resolve(request);
     return this.controlPlaneStores.forIdentity(identity).getRun(runId);
+  }
+
+  @Put("sessions/:sessionId/uploads/:uploadId")
+  async uploadWorkspaceFile(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param("sessionId") sessionValue: unknown,
+    @Param("uploadId") uploadValue: unknown,
+    @Query("name") name: unknown,
+    @Body() body: unknown,
+  ): Promise<void> {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    const sessionId = parseUuidPathParameter(sessionValue, "sessionId"),
+      uploadId = parseUuidPathParameter(uploadValue, "uploadId");
+    if (typeof name !== "string" || !Buffer.isBuffer(body))
+      throw new ControlPlaneApiValidationError(
+        "Upload must contain a filename and binary file body",
+      );
+    const abort = new AbortController();
+    const closed = () => {
+      if (!reply.raw.writableEnded) abort.abort(new Error("Upload caller disconnected"));
+    };
+    reply.raw.on("close", closed);
+    try {
+      await reply
+        .code(200)
+        .send(
+          await this.workspaceUploads.upload(
+            identity.tenantId,
+            identity.userId,
+            sessionId,
+            uploadId,
+            name,
+            body,
+            abort.signal,
+          ),
+        );
+    } finally {
+      reply.raw.removeListener("close", closed);
+    }
+  }
+
+  @Delete("sessions/:sessionId/uploads/:uploadId")
+  @HttpCode(204)
+  async removeDraftUpload(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionValue: unknown,
+    @Param("uploadId") uploadValue: unknown,
+  ) {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    await this.workspaceUploads.remove(
+      identity.tenantId,
+      parseUuidPathParameter(sessionValue, "sessionId"),
+      parseUuidPathParameter(uploadValue, "uploadId"),
+    );
+  }
+
+  @Get("sessions/:sessionId/uploads/:uploadId/image")
+  async readInputImage(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param("sessionId") sessionValue: unknown,
+    @Param("uploadId") uploadValue: unknown,
+  ) {
+    const identity = this.tenantRequestContext.resolve(request);
+    const image = await this.workspaceUploads.image(
+      identity.tenantId,
+      parseUuidPathParameter(sessionValue, "sessionId"),
+      parseUuidPathParameter(uploadValue, "uploadId"),
+    );
+    await reply
+      .header("cache-control", "private, no-store")
+      .header("x-content-type-options", "nosniff")
+      .header("content-type", image.mimeType)
+      .send(image.bytes);
   }
 
   @Get("sessions/:sessionId/workspace/directory")

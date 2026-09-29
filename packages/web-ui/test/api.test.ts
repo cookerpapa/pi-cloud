@@ -856,3 +856,32 @@ describe("tenant-aware browser API", () => {
     ).resolves.toEqual({ connections: [] });
   });
 });
+
+it("uploads binary files with authentication and treats draft deletion as an empty response", async () => {
+  const upload = {
+    id: crypto.randomUUID(),
+    sessionId: crypto.randomUUID(),
+    workspaceId: crypto.randomUUID(),
+    name: "图.png",
+    path: "/workspace/uploads/image.png",
+    mimeType: "image/png",
+    byteLength: 4,
+    sha256: "a".repeat(64),
+  };
+  const data = new Blob([new Uint8Array([1, 2, 3, 4])]);
+  const transport = vi.fn<typeof fetch>(async (url, init) => {
+    expect(new Headers(init?.headers).get("authorization")).toBe(
+      "Bearer test-upload-credential-00000000000",
+    );
+    if (init?.method === "DELETE") return new Response(null, { status: 204 });
+    expect(String(url)).toContain(`name=${encodeURIComponent(upload.name)}`);
+    expect(init?.body).toBe(data);
+    expect(new Headers(init?.headers).get("content-type")).toBe("application/octet-stream");
+    return Response.json(upload);
+  });
+  const api = new PiCloudApi(transport, "test-upload-credential-00000000000");
+  expect(await api.uploadWorkspaceFile(upload.sessionId, upload.id, data, upload.name)).toEqual(
+    upload,
+  );
+  await expect(api.removeDraftUpload(upload)).resolves.toBeUndefined();
+});

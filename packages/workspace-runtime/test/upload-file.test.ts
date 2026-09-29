@@ -1,0 +1,60 @@
+import { constants } from "node:fs";
+import { mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { afterEach, expect, it } from "vitest";
+import { writeWorkspaceUpload } from "../src/upload-file.ts";
+
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+});
+async function fixture() {
+  const path = await mkdtemp(join(tmpdir(), "pi-upload-"));
+  cleanups.push(() => rm(path, { recursive: true, force: true }));
+  const root = await open(path, constants.O_RDONLY | constants.O_DIRECTORY);
+  cleanups.push(() => root.close());
+  const bytes = Buffer.from("uploaded bytes\n"),
+    id = randomUUID(),
+    name = "截图 test.txt";
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  return { path, root, input: { id, name, bytes, sha256 } };
+}
+it("publishes complete bytes once and reconciles concurrent lost-reply retries", async () => {
+  const f = await fixture();
+  const [a, b] = await Promise.all([
+    writeWorkspaceUpload(f.root, f.input),
+    writeWorkspaceUpload(f.root, f.input),
+  ]);
+  expect(a).toEqual(b);
+  expect(await readFile(join(f.path, a.relativePath))).toEqual(f.input.bytes);
+  expect(await readdir(join(f.path, "uploads", f.input.id))).toEqual([f.input.name]);
+  await writeFile(join(f.path, a.relativePath), "changed by user");
+  await expect(writeWorkspaceUpload(f.root, f.input)).rejects.toThrow("different content");
+  expect(await readFile(join(f.path, a.relativePath), "utf8")).toBe("changed by user");
+});
+it("refuses symlinked upload directories and destination files", async () => {
+  const f = await fixture(),
+    outside = await fixture();
+  await symlink(outside.path, join(f.path, "uploads"));
+  await expect(writeWorkspaceUpload(f.root, f.input)).rejects.toThrow();
+  expect(await readdir(outside.path)).toEqual([]);
+  await rm(join(f.path, "uploads"));
+  const done = await writeWorkspaceUpload(f.root, f.input);
+  await rm(join(f.path, done.relativePath));
+  const secret = join(outside.path, "private");
+  await writeFile(secret, f.input.bytes);
+  await symlink(secret, join(f.path, done.relativePath));
+  await expect(writeWorkspaceUpload(f.root, f.input)).rejects.toThrow();
+  expect(await readFile(secret)).toEqual(f.input.bytes);
+});
+it("rejects invalid identities, bytes and cancelled writes before creating a file", async () => {
+  const f = await fixture();
+  for (const change of [{ name: "../escape" }, { id: "../id" }, { sha256: "0".repeat(64) }])
+    await expect(writeWorkspaceUpload(f.root, { ...f.input, ...change })).rejects.toThrow();
+  await expect(
+    writeWorkspaceUpload(f.root, { ...f.input, signal: AbortSignal.abort(new Error("cancelled")) }),
+  ).rejects.toThrow("cancelled");
+  expect(await readdir(f.path)).toEqual([]);
+});

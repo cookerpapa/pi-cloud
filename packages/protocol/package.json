@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./native-session": "./src/native-session.ts",
     "./guest": "./src/guest.ts",
-    "./workspace": "./src/workspace-seed.ts"
+    "./workspace": "./src/workspace-seed.ts",
+    "./uploads": "./src/user-upload.ts"
   },
   "imports": {
     "#schema-check": {

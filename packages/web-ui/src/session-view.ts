@@ -1,3 +1,4 @@
+import type { UserUpload } from "@pi-cloud/protocol";
 import type {
   AcceptedTurnResource,
   InputQueueResource,
@@ -87,6 +88,7 @@ export type TurnView = {
   turnId: string;
   mailboxPosition: number | null;
   prompt: string;
+  uploads?: UserUpload[];
   acceptedAt: string | null;
   status: TurnViewStatus;
   items: readonly TranscriptItem[];
@@ -133,7 +135,12 @@ export type SessionViewAction =
       sessionId: string;
       turn: ConversationDetailResource["turns"][number];
     }
-  | { type: "turn.accepted"; accepted: AcceptedTurnResource; prompt: string }
+  | {
+      type: "turn.accepted";
+      accepted: AcceptedTurnResource;
+      prompt: string;
+      uploads?: UserUpload[];
+    }
   | { type: "turn.cancellation.requested"; turnId: string }
   | { type: "stream.status"; status: SessionStreamStatus }
   | { type: "stream.event"; event: PiCloudEvent }
@@ -621,6 +628,7 @@ export function sessionViewReducer(
       turns: updateTurn(state.turns, action.turn.turnId, (current) => ({
         ...current,
         prompt: action.turn.prompt,
+        ...(action.turn.uploads ? { uploads: action.turn.uploads } : {}),
         runId: action.turn.runId,
         mailboxPosition: action.turn.mailboxPosition,
         acceptedAt: action.turn.acceptedAt,
@@ -673,6 +681,7 @@ export function sessionViewReducer(
         turnId: turn.turnId,
         mailboxPosition: turn.mailboxPosition,
         prompt: turn.prompt,
+        ...(turn.uploads ? { uploads: turn.uploads } : {}),
         acceptedAt: turn.acceptedAt,
         status: turn.state,
       })),
@@ -705,6 +714,7 @@ export function sessionViewReducer(
       runId: action.accepted.runId,
       mailboxPosition: action.accepted.mailboxPosition,
       prompt: action.prompt,
+      ...(action.uploads ? { uploads: action.uploads } : {}),
       acceptedAt: action.accepted.acceptedAt,
       status:
         turn.startedSequence === null && !["completed", "failed", "cancelled"].includes(turn.status)
@@ -724,6 +734,7 @@ export function sessionViewReducer(
         runId: item.runId,
         mailboxPosition: item.mailboxPosition,
         prompt: item.text,
+        ...(item.uploads ? { uploads: item.uploads } : {}),
         acceptedAt: item.acceptedAt,
         status: "queued" as const,
       }));
@@ -735,6 +746,7 @@ export function sessionViewReducer(
         return (
           turn.turnId === next.turnId &&
           turn.prompt === next.prompt &&
+          JSON.stringify(turn.uploads ?? []) === JSON.stringify(next.uploads ?? []) &&
           turn.mailboxPosition === next.mailboxPosition &&
           turn.runId === next.runId
         );

@@ -1,6 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { ControlPlaneApiValidationError } from "./control-plane-api.ts";
+import { UserUploadIdsSchema, UserUploadsSchema } from "./user-upload.ts";
 import {
   NonNegativeSafeIntegerSchema,
   PositiveSafeIntegerSchema,
@@ -9,11 +10,19 @@ import {
 } from "./protocol-primitives.ts";
 
 export const MAX_QUEUED_INPUTS = 64;
-const Text = Type.String({ minLength: 1, maxLength: 100_000 });
+const Text = Type.String({ maxLength: 100_000 });
 const Revision = NonNegativeSafeIntegerSchema;
 const options = { additionalProperties: false } as const;
 export const QueuedInputActionSchema = Type.Union([
-  Type.Object({ action: Type.Literal("edit"), revision: Revision, text: Text }, options),
+  Type.Object(
+    {
+      action: Type.Literal("edit"),
+      revision: Revision,
+      text: Text,
+      uploadIds: Type.Optional(UserUploadIdsSchema),
+    },
+    options,
+  ),
   Type.Object({ action: Type.Literal("cancel"), revision: Revision }, options),
   Type.Object(
     {
@@ -38,6 +47,7 @@ export const QueuedInputResourceSchema = Type.Object(
     turnId: UuidSchema,
     runId: UuidSchema,
     text: Text,
+    uploads: Type.Optional(UserUploadsSchema),
     mailboxPosition: PositiveSafeIntegerSchema,
     acceptedAt: UtcTimestampSchema,
     status: Type.Union([Type.Literal("queued"), Type.Literal("steering")]),

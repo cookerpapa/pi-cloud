@@ -20,6 +20,8 @@ import type {
   SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
 import type { Duplex } from "node:stream";
+import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
+import type { WorkspaceUploadReceipt } from "./workspace-volume-gateway-contract.ts";
 
 export class ToolBrokerError extends Error {
   readonly code: string;
@@ -83,6 +85,12 @@ export type SandboxHandle = Readonly<{
   assignment: ToolSandboxAssignment;
   environment: EnvironmentRuntimeSnapshot;
   environmentValidation: EnvironmentValidationReport;
+}>;
+
+export type PreparedInputImage = Readonly<{
+  data: string;
+  mimeType: "image/png";
+  hints: readonly string[];
 }>;
 
 export type SandboxHttpServiceDiscovery = Readonly<{
@@ -224,6 +232,23 @@ export interface SandboxProvider {
     request: ToolBrokerListWorkspaceDirectoryRequest,
   ): Promise<ToolBrokerListWorkspaceDirectoryResponse>;
   /** Read one current bounded file without creating a Cube. */
+  uploadWorkspaceFile?(
+    request: WorkspaceUploadRequest,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceUploadReceipt>;
+  prepareInputImage?(
+    handle: SandboxHandle,
+    bytes: Uint8Array,
+    mimeType: string,
+    signal?: AbortSignal,
+  ): Promise<PreparedInputImage>;
+  uploadMachineWorkspaceFile?(
+    handle: SandboxHandle,
+    request: WorkspaceUploadRequest,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceUploadReceipt>;
   readWorkspaceFile?(
     request: ToolBrokerReadWorkspaceFileRequest,
     signal?: AbortSignal,

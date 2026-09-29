@@ -12,6 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Implement approved [ADR-0200](adr/0200-workspace-uploads-and-user-image-input.md):
+      composer uploads to Workspace, native visual input, durable attachment
+      lifecycle and queue/history/browser/Luna acceptance.
+
 - [ ] Review the two moderate development-test dependency findings (Vitest and
       @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
       dependency gate passes; a test-tool upgrade needs its own contract checks.
@@ -110,7 +114,7 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       declaration, but September 26 probes still return no search on that route.
       Anthropic Messages search works; changing protocols or adding a substitute
       search tool remains a separate slice.
-- [ ] Add user-image input and generated-image results only with native storage,
+- [ ] Add generated-image results only with native storage,
       Compaction and cross-Worker/provider recovery contracts.
 
 These are not authorizations for a new architecture or feature. Changes to

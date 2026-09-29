@@ -141,6 +141,132 @@ function deferred<T>() {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it.each(["success", "invalid-image"])(
+    "prepares native user images before model admission (%s)",
+    async (mode) => {
+      const fake = new FakeModelServer({ defaultScenario: "text" });
+      await fake.start();
+      const session = new Session(
+        new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
+      );
+      const image = { type: "image" as const, data: "aW1hZ2U=", mimeType: "image/png" };
+      const upload = {
+        id: "aaaabbbb-1111-4111-8111-111111111111",
+        sessionId: "aaaabbbb-2222-4222-8222-222222222222",
+        workspaceId: "aaaabbbb-3333-4333-8333-333333333333",
+        name: "screenshot.png",
+        path: "/workspace/uploads/screenshot.png",
+        byteLength: 5,
+        mimeType: "image/png",
+        sha256: "a".repeat(64),
+        image: {
+          id: "aaaabbbb-4444-4444-8444-444444444444",
+          byteLength: 5,
+          mimeType: "image/png" as const,
+          sha256: "a".repeat(64),
+        },
+      };
+      const input = {
+        ...command,
+        payload: {
+          ...command.payload,
+          input: { kind: "prompt" as const, text: "", uploads: [upload] },
+        },
+      };
+      const turn = createCloudTurnContext(input);
+      let prepared = false,
+        step = 0;
+      const permits = vi.fn(async () => {
+        expect(prepared).toBe(true);
+        return () => {};
+      });
+      const nativeTools = vi.fn(async () => {
+        throw new Error("No Tool invocation expected");
+      });
+      const observed: unknown[] = [];
+      const fetchOriginal = globalThis.fetch;
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        if (String(url).startsWith(fake.baseUrl) && typeof init?.body === "string")
+          observed.push(JSON.parse(init.body));
+        return fetchOriginal(url, init);
+      });
+      const runner = new PiCloudTurnRunner({
+        resolveModelRuntime: () => ({
+          provider: command.payload.model.provider,
+          modelId: command.payload.model.modelId,
+          baseUrl: fake.baseUrl,
+          api: "openai-completions",
+          apiKey: FAKE_MODEL_API_KEY,
+          inputModalities: ["text", "image"],
+          contextWindow: 131_072,
+          autoCompactTokenLimit: 100_000,
+          maxTokens: 16_384,
+        }),
+        openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
+        acquireModelPermit: permits,
+        prepareInputUploads: async (files) => {
+          expect(files).toEqual([upload]);
+          if (mode !== "success") throw new Error("Malformed image");
+          prepared = true;
+          return { images: [image], hints: [] };
+        },
+        sandboxContinuity: {
+          continuityId: "unused",
+          continuity: "cold_restore",
+          environmentSha256: turn.environmentSha256,
+          workspaceBindingSha256: turn.workspaceBindingSha256,
+          toolPolicySha256: turn.toolPolicySha256,
+        },
+        createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
+          tools: [],
+          systemPrompt: async (base) => base,
+          executeWorkflow: nativeTools,
+          transformHeaders: async (headers = {}) => headers,
+          transformContext: async (messages) => {
+            await captureSamplingStep(async () => {
+              const world = await stepWorldState.capture();
+              return {
+                step: createCloudStepContext({
+                  sequence: ++step,
+                  turnContextSha256: turn.sha256,
+                  executionContextSha256: "b".repeat(64),
+                  allowedTools: [],
+                  activeTools: [],
+                  worldState: world.worldState,
+                }),
+                modelMessages: world.modelMessages,
+              };
+            });
+            return messages;
+          },
+        }),
+      });
+      try {
+        if (mode !== "success") {
+          await expect(runner.run(input, () => {})).rejects.toThrow("Malformed image");
+          expect(permits).not.toHaveBeenCalled();
+          expect(fake.observations).toHaveLength(0);
+        } else {
+          await runner.run(input, () => {});
+          expect(nativeTools).not.toHaveBeenCalled();
+          const entry = (await session.findEntriesOnBranch()).find(
+            (item) => item.type === "message" && item.message.role === "user",
+          );
+          expect(entry).toMatchObject({
+            message: {
+              content: [{ type: "text", text: expect.stringContaining(upload.path) }, image],
+            },
+          });
+          expect(JSON.stringify(observed)).toContain("data:image/png;base64,aW1hZ2U=");
+          expect(fake.observations).toHaveLength(1);
+        }
+      } finally {
+        fetchSpy.mockRestore();
+        await fake.stop();
+      }
+    },
+  );
+
   it("reports target-unavailable for controls arriving while final native append waits", async () => {
     const fake = new FakeModelServer({ defaultScenario: "text" });
     await fake.start();

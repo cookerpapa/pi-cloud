@@ -349,7 +349,11 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           executionReference: acknowledgement.executionReference,
           nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
           agent: request.agent,
-          input: { kind: "prompt", text: request.input.prompt },
+          input: {
+            kind: "prompt",
+            text: request.input.prompt,
+            ...(request.input.uploads?.length ? { uploads: request.input.uploads } : {}),
+          },
           executionMode: request.executionMode,
           sessionKind: request.sessionKind,
           workspaceSeedKind: request.workspaceSeedKind,

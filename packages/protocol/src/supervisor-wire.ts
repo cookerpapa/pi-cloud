@@ -16,6 +16,7 @@ import { DevelopmentEnvironmentProfileKeySchema } from "./development-environmen
 import { CloudToolCapabilitySnapshotSchema } from "./tool-capabilities.ts";
 import { ExecutionReferenceSchema } from "./execution-reference.ts";
 import { AgentRevisionSnapshotSchema } from "./agent-runtime.ts";
+import { UserUploadsSchema } from "./user-upload.ts";
 
 const WireEnvelopeProperties = {
   protocolVersion: Type.Literal(1),
@@ -59,7 +60,8 @@ const CapabilitySchema = Type.String({
 const PromptInputSchema = Type.Object(
   {
     kind: Type.Literal("prompt"),
-    text: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+    text: Type.String({ maxLength: 1_000_000 }),
+    uploads: Type.Optional(UserUploadsSchema),
   },
   { additionalProperties: false },
 );
@@ -217,7 +219,8 @@ export const SteerTurnCommandMessageSchema = Type.Object(
         ...CommandIdentityProperties,
         controlRequestId: UuidSchema,
         targetRunId: UuidSchema,
-        text: Type.String({ minLength: 1, maxLength: 100_000 }),
+        text: Type.String({ maxLength: 100_000 }),
+        uploads: Type.Optional(UserUploadsSchema),
       },
       { additionalProperties: false },
     ),

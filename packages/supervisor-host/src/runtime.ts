@@ -507,6 +507,13 @@ export class PiWorkerRuntime {
     });
     this.#modelPermits = modelPermits;
     const runner = new RemoteToolSandboxTurnRunner({
+      decodeInputImages: (references, scope, signal) =>
+        decodeSessionImages(
+          images?.codec,
+          scope,
+          references.map((attachment) => ({ type: "pi_cloud_image_v1", attachment })),
+          signal,
+        ),
       acquireModelPermit: (command, signal) =>
         modelPermits.acquire(`${command.payload.tenantId}:${command.payload.piSession.id}`, signal),
       publishToolCommand: (command) => {

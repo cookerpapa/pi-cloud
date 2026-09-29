@@ -1,3 +1,5 @@
+import { UploadCards } from "./UploadCards.tsx";
+import type { PiCloudApi } from "./api.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deriveConversationPresentationRows } from "./conversation-presentation.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -368,6 +370,7 @@ function OtherItem({
 }
 
 export function ConversationTurn({
+  api,
   turn,
   progressStore,
   canFork = false,
@@ -376,6 +379,7 @@ export function ConversationTurn({
   onPrune,
   onPresentationProgress,
 }: {
+  api?: PiCloudApi;
   turn: TurnView;
   progressStore?: ToolProgressStore;
   canFork?: boolean;
@@ -407,7 +411,11 @@ export function ConversationTurn({
       >
         <div className="product-message product-user-message">
           <div className="product-user-message-body">
-            <div className="product-user-bubble">{turn.prompt}</div>
+            <UploadCards
+              {...(api ? { api } : {})}
+              {...(turn.uploads ? { uploads: turn.uploads } : {})}
+            />
+            {turn.prompt ? <div className="product-user-bubble">{turn.prompt}</div> : null}
             <div className="product-user-message-actions">
               <MessageCopyButton
                 copiedLabel={t("turn.copied")}

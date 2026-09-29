@@ -137,6 +137,7 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
       batchSize: config.workspaceDeletionReaperBatchSize,
     });
     broker = new ToolBroker({
+      ...(images ? { inputImages: images.store } : {}),
       provider,
       ownerBaseUrl: config.advertisedBaseUrl,
       stateRepository: ownership,

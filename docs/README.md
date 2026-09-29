@@ -11,6 +11,8 @@ Use documentation in this order:
    [`CUBESANDBOX_PROVIDER.md`](CUBESANDBOX_PROVIDER.md) defines the current Tool
    execution boundary.
    [`SUBAGENTS.md`](SUBAGENTS.md) defines delegation, scripts and communication.
+   [`CHAT_ATTACHMENTS.md`](CHAT_ATTACHMENTS.md) defines Workspace uploads, native
+   visual input and the attachment API.
 4. [`CONFIGURATION.md`](CONFIGURATION.md),
    [`PRODUCTION_DEPLOYMENT.md`](PRODUCTION_DEPLOYMENT.md) and
    [`DISTRIBUTED_DEPLOYMENT.md`](DISTRIBUTED_DEPLOYMENT.md) — operations;

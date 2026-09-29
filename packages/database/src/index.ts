@@ -18,6 +18,7 @@ export {
   type JsonValue,
   type RunTransitionTable,
   type RunTable,
+  type SessionUploadTable,
   type SandboxRetirementReason,
   type SandboxRetirementState,
   type SandboxHttpServiceState,

@@ -14,6 +14,8 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { isIPv4 } from "node:net";
+import { writeWorkspaceUpload } from "@pi-cloud/workspace-runtime";
+import type { WorkspaceVolumeGatewayUploadInput } from "./workspace-volume-gateway-contract.ts";
 import {
   VOLUME_IDENTITY_FILE,
   VOLUME_METADATA_DIRECTORY,
@@ -291,11 +293,13 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
   readonly #distributedLock: WorkspaceVolumeGatewayLock | undefined;
   readonly #locks = new Map<string, Promise<void>>();
   readonly #git: WorkspaceVolumeGitRunner;
+  readonly #authorizeUpload: PersistentVolumeWorkspaceVolumeGatewayOptions["authorizeUpload"];
 
   constructor(options: PersistentVolumeWorkspaceVolumeGatewayOptions) {
     this.#workspaceRoot = validatedAbsoluteDirectory(options.workspaceRoot, "workspaceRoot");
     this.#distributedLock = options.lock;
     this.#git = options.gitRunner ?? runTrustedWorkspaceGit;
+    this.#authorizeUpload = options.authorizeUpload;
   }
 
   async checkHealth(): Promise<void> {
@@ -371,6 +375,33 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         };
       } finally {
         await handle.close();
+      }
+    }).catch(rethrowBrowseFailure);
+  }
+
+  async uploadFile(
+    input: WorkspaceVolumeGatewayUploadInput,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ) {
+    const identity = validatedIdentity(input);
+    return this.#withVolumeLock(identity.volumeId, async () => {
+      signal?.throwIfAborted();
+      if (!this.#authorizeUpload) throw new Error("Workspace upload authorization is unavailable");
+      await this.#authorizeUpload(input, bytes.length);
+      const directory = await this.#validatedVolume(identity);
+      const target = await this.#browseTarget(directory, input.rootPath, "", true);
+      const root = await this.#openBrowseTarget(target, true);
+      try {
+        return await writeWorkspaceUpload(root, {
+          id: input.uploadId,
+          name: input.name,
+          bytes,
+          sha256: input.sha256,
+          ...(signal ? { signal } : {}),
+        });
+      } finally {
+        await root.close();
       }
     }).catch(rethrowBrowseFailure);
   }

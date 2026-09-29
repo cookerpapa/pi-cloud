@@ -70,69 +70,75 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     }
   });
 
-  it("cold public SessionStorage reads reconstruct exact images while PG stores only references", async () => {
-    const id = randomUUID(),
-      native = await PostgresPiSessionStorage.create({
+  it.each(["toolResult", "user"] as const)(
+    "cold public SessionStorage reads reconstruct exact images while PG stores only references (%s)",
+    async (role) => {
+      const id = randomUUID(),
+        native = await PostgresPiSessionStorage.create({
+          database: db,
+          tenantId,
+          sessionId: id,
+          images: codec,
+        });
+      const image = {
+        type: "image" as const,
+        data: randomBytes(2 * 1024 * 1024).toString("base64"),
+        mimeType: "image/png",
+      };
+      const entry = await native.appendEntry(
+        {
+          id: "image",
+          type: "message",
+          message:
+            role === "user"
+              ? { role: "user", content: [image], timestamp: 1 }
+              : {
+                  role: "toolResult",
+                  toolCallId: "call",
+                  toolName: "read",
+                  isError: false,
+                  content: [image],
+                  timestamp: 1,
+                },
+        },
+        "main",
+      );
+      const { rows } = await sql<{
+        payload: unknown;
+      }>`select payload from pi_session_log where tenant_id=${tenantId}::uuid and session_id=${id}`.execute(
+        db,
+      );
+      expect(JSON.stringify(rows).length).toBeLessThan(2048);
+      expect(JSON.stringify(rows)).toContain("pi_cloud_image_v1");
+      const cold = new PostgresPiSessionStorage({
         database: db,
         tenantId,
         sessionId: id,
-        images: codec,
+        images: new ImageAttachmentCodec(new PostgresImageAttachmentStore(db, blobs)),
       });
-    const image = {
-      type: "image" as const,
-      data: randomBytes(2 * 1024 * 1024).toString("base64"),
-      mimeType: "image/png",
-    };
-    const entry = await native.appendEntry(
-      {
-        id: "image",
-        type: "message",
-        message: {
-          role: "toolResult",
-          toolCallId: "call",
-          toolName: "read",
-          isError: false,
-          content: [image],
-          timestamp: 1,
-        },
-      },
-      "main",
-    );
-    const { rows } = await sql<{
-      payload: unknown;
-    }>`select payload from pi_session_log where tenant_id=${tenantId}::uuid and session_id=${id}`.execute(
-      db,
-    );
-    expect(JSON.stringify(rows).length).toBeLessThan(2048);
-    expect(JSON.stringify(rows)).toContain("pi_cloud_image_v1");
-    const cold = new PostgresPiSessionStorage({
-      database: db,
-      tenantId,
-      sessionId: id,
-      images: new ImageAttachmentCodec(new PostgresImageAttachmentStore(db, blobs)),
-    });
-    expect(await cold.getEntry("image")).toEqual(entry);
-    expect(await cold.findEntriesOnBranch({ start: "image" })).toEqual([entry]);
-    expect((await cold.getLog())[0]).toMatchObject({ entry });
-    expect(await store.reap(0)).toBe(0);
-    const repo = new PostgresPiSessionRepository({ database: db, tenantId, images: codec });
-    const fork = await repo.fork(await native.getMetadata(), { id: randomUUID() });
-    const nested = await repo.fork(await fork.getMetadata(), { id: randomUUID() });
-    // Direct source deletion requires no rebuild or materialization of a COW view.
-    await repo.delete(await native.getMetadata());
-    expect(await store.reap(0)).toBe(0);
-    expect(await fork.getEntry("image")).toEqual(entry);
-    await repo.delete(await fork.getMetadata());
-    expect(await store.reap(0)).toBe(0);
-    expect(await nested.getEntry("image")).toEqual(entry);
-    await rebuildPostgresPiSessionProjections(db, {
-      tenantId,
-      sessionId: (await nested.getMetadata()).id,
-    });
-    expect(await nested.getEntry("image")).toEqual(entry);
-    await repo.delete(await nested.getMetadata());
-    expect(await store.reap(0)).toBe(1);
-  });
+      expect(await cold.getEntry("image")).toEqual(entry);
+      expect(await cold.findEntriesOnBranch({ start: "image" })).toEqual([entry]);
+      expect((await cold.getLog())[0]).toMatchObject({ entry });
+      expect(await store.reap(0)).toBe(0);
+      const repo = new PostgresPiSessionRepository({ database: db, tenantId, images: codec });
+      const fork = await repo.fork(await native.getMetadata(), { id: randomUUID() });
+      const nested = await repo.fork(await fork.getMetadata(), { id: randomUUID() });
+      // Direct source deletion requires no rebuild or materialization of a COW view.
+      await repo.delete(await native.getMetadata());
+      expect(await store.reap(0)).toBe(0);
+      expect(await fork.getEntry("image")).toEqual(entry);
+      await repo.delete(await fork.getMetadata());
+      expect(await store.reap(0)).toBe(0);
+      expect(await nested.getEntry("image")).toEqual(entry);
+      await rebuildPostgresPiSessionProjections(db, {
+        tenantId,
+        sessionId: (await nested.getMetadata()).id,
+      });
+      expect(await nested.getEntry("image")).toEqual(entry);
+      await repo.delete(await nested.getMetadata());
+      expect(await store.reap(0)).toBe(1);
+    },
+  );
 
   it("missing and cross-tenant images fail explicitly without substituting a mutable file", async () => {
     const ref = await store.put({ tenantId }, Buffer.from("test bytes"), "image/png");

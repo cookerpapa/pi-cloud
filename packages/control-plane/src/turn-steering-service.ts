@@ -3,6 +3,8 @@ import type { Database } from "@pi-cloud/database";
 import type { CreateTurnSteerRequest, TurnSteerResource } from "@pi-cloud/protocol";
 import type { Kysely, Transaction } from "kysely";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
+import { parseUserUploads, reviewedModel, type UserUpload } from "@pi-cloud/protocol";
+import { bindInputUploads } from "./workspace-upload-service.ts";
 import {
   TurnSteerBackendError,
   type TurnSteerBackend,
@@ -33,6 +35,7 @@ type StoredSteer = {
   turnId: string;
   idempotencyKey: string;
   text: string;
+  uploads: UserUpload[];
   requestHash: string;
   state: "pending" | "dispatched" | "acknowledged" | "completed" | "failed";
   sandboxId: string;
@@ -48,9 +51,16 @@ function isoTimestamp(value: Date | string): string {
   return parsed.toISOString();
 }
 
-function fingerprint(text: string): string {
+function fingerprint(text: string, uploadIds: readonly string[] = []): string {
   return createHash("sha256")
-    .update(JSON.stringify({ schemaVersion: 1, kind: "turn.steer", text }))
+    .update(
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: "turn.steer",
+        text,
+        ...(uploadIds.length ? { uploadIds } : {}),
+      }),
+    )
     .digest("hex");
 }
 
@@ -119,7 +129,7 @@ export class TurnSteeringService {
     request: CreateTurnSteerRequest,
   ): Promise<TurnSteerResource> {
     const text = request.text.trim();
-    const requestHash = fingerprint(text);
+    const requestHash = fingerprint(text, request.uploadIds);
     let stored = await this.#load(identity.tenantId, sessionId, idempotencyKey);
     const replayed = stored !== undefined;
     if (stored !== undefined) {
@@ -137,6 +147,7 @@ export class TurnSteeringService {
         idempotencyKey,
         text,
         requestHash,
+        request.uploadIds ?? [],
       );
     }
 
@@ -165,7 +176,7 @@ export class TurnSteeringService {
       .innerJoin("runs as source", "source.queued_steer_id", "c.id")
       .innerJoin("turns as input", "input.id", "source.turn_id")
       .selectAll("c")
-      .select("input.input_text as text")
+      .select(["input.input_text as text", "input.input_uploads"])
       .where("c.id", "=", controlRequestId)
       .where("c.kind", "=", "queue")
       .whereRef("source.tenant_id", "=", "c.tenant_id")
@@ -173,7 +184,7 @@ export class TurnSteeringService {
       .where("source.state", "=", "queued")
       .executeTakeFirst();
     if (!row) return;
-    if (row.payload.action !== "steer" || !row.text)
+    if (row.payload.action !== "steer" || typeof row.text !== "string")
       throw new Error("Invalid queued steer reference");
     const stored: StoredSteer = {
       controlRequestId: row.id,
@@ -184,6 +195,7 @@ export class TurnSteeringService {
       runId: row.target_run_id,
       idempotencyKey: row.idempotency_key,
       text: row.text,
+      uploads: parseUserUploads(row.input_uploads),
       requestHash: row.request_sha256,
       state: row.state,
       acceptedAt: row.created_at,
@@ -215,6 +227,7 @@ export class TurnSteeringService {
       controlRequestId: stored.controlRequestId,
       idempotencyKey: stored.idempotencyKey,
       text: stored.text,
+      ...(stored.uploads.length ? { uploads: stored.uploads } : {}),
       target: {
         tenantId: stored.tenantId,
         projectId: stored.projectId,
@@ -286,10 +299,26 @@ export class TurnSteeringService {
     idempotencyKey: string,
     text: string,
     requestHash: string,
+    uploadIds: readonly string[],
   ): Promise<StoredSteer> {
     try {
       return await this.#database.transaction().execute(async (transaction) => {
         const target = await this.#activeTarget(transaction, tenantId, sessionId, turnId);
+        const uploads = await bindInputUploads(transaction, {
+          tenantId,
+          sessionId,
+          workspaceId: target.workspaceId,
+          workingDirectory: target.workingDirectory,
+          ids: uploadIds,
+        });
+        if (
+          uploads.some((file) => file.image) &&
+          !(
+            reviewedModel(target.provider, target.modelId)?.inputModalities as
+              readonly string[] | undefined
+          )?.includes("image")
+        )
+          throw new TurnSteeringError("conflict", "The active model does not support image input");
         const controlRequestId = this.#idGenerator();
         const inserted = await transaction
           .insertInto("turn_control_requests")
@@ -310,6 +339,7 @@ export class TurnSteeringService {
               runId: target.runId,
               sandboxId: target.sandboxId,
               text,
+              ...(uploads.length ? { uploads } : {}),
             },
             attempts: 0,
             available_at: this.#clock(),
@@ -331,6 +361,7 @@ export class TurnSteeringService {
           turnId,
           idempotencyKey,
           text,
+          uploads,
           requestHash,
           state: "pending",
           sandboxId: target.sandboxId,
@@ -363,6 +394,9 @@ export class TurnSteeringService {
     workspaceId: string;
     runId: string;
     sandboxId: string;
+    workingDirectory: string;
+    provider: string;
+    modelId: string;
   }> {
     const row = await transaction
       .selectFrom("turns as turn")
@@ -387,6 +421,9 @@ export class TurnSteeringService {
         "run.state as runState",
         "run.sandbox_id as executionSandboxId",
         "lease.sandbox_id as leaseSandboxId",
+        "run.working_directory as workingDirectory",
+        "turn.provider",
+        "turn.model_id as modelId",
       ])
       .where("turn.tenant_id", "=", tenantId)
       .where("turn.session_id", "=", sessionId)
@@ -415,6 +452,9 @@ export class TurnSteeringService {
       workspaceId: row.workspaceId,
       runId: row.runId,
       sandboxId: row.leaseSandboxId,
+      workingDirectory: row.workingDirectory,
+      provider: row.provider,
+      modelId: row.modelId,
     };
   }
 
@@ -448,7 +488,9 @@ export class TurnSteeringService {
         "Idempotency-Key was already used for a different control request",
       );
     }
-    const text = payloadString(controlRequest.payload, "text");
+    const text = controlRequest.payload.text;
+    if (typeof text !== "string")
+      throw new TurnSteeringError("steer_transport_unavailable", "Stored steer text is invalid");
     const requestHash = controlRequest.request_sha256;
     return {
       controlRequestId: controlRequest.id,
@@ -461,6 +503,7 @@ export class TurnSteeringService {
       turnId: controlRequest.turn_id,
       idempotencyKey: controlRequest.idempotency_key,
       text,
+      uploads: parseUserUploads(controlRequest.payload.uploads ?? []),
       requestHash,
       state: controlRequest.state,
       sandboxId: payloadString(controlRequest.payload, "sandboxId"),

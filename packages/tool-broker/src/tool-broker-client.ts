@@ -32,6 +32,12 @@ import {
 import { activeTraceCarrier } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
 import { Agent, fetch as internalFetch, type Response } from "undici";
+import {
+  MAX_USER_UPLOAD_BYTES,
+  uploadRelativePath,
+  type WorkspaceUploadRequest,
+} from "@pi-cloud/protocol";
+import type { WorkspaceUploadReceipt } from "./workspace-volume-gateway-contract.ts";
 
 // Broker routes may be Pod IPs; they must not traverse the provider egress proxy.
 const internalDispatcher = new Agent();
@@ -39,6 +45,7 @@ const internalDispatcher = new Agent();
 export const TOOL_BROKER_SERVICE_PATH = "/internal/v1/tool-broker";
 export const TOOL_BROKER_INVENTORY_PATH = "/internal/v1/sandbox-inventory";
 export const TOOL_BROKER_WORKSPACE_BROWSER_PATH = "/internal/v1/workspace-browser";
+export const TOOL_BROKER_WORKSPACE_UPLOAD_PATH = "/internal/v1/workspace-upload";
 export const TOOL_BROKER_SOURCE_CONTROL_PATH = "/internal/v1/source-control";
 export const TOOL_BROKER_LIVE_PATH = "/health/live";
 export const TOOL_BROKER_READY_PATH = "/health/ready";
@@ -200,6 +207,39 @@ export class ToolBrokerClient {
     return response;
   }
 
+  async prepareInputImages(
+    activationId: string,
+    assignment: ToolSandboxAssignment,
+    images: import("@pi-cloud/protocol").ImageAttachmentReference[],
+    signal?: AbortSignal,
+  ) {
+    const requestId = this.#idGenerator();
+    const response = await this.#service(
+      {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.prepare_input_images",
+        requestId,
+        activationId,
+        assignment,
+        images,
+      },
+      signal,
+    );
+    if (
+      response.type !== "tool_sandbox.input_images_prepared" ||
+      response.requestId !== requestId ||
+      response.activationId !== activationId ||
+      response.images.length !== images.length ||
+      response.images.some((item, index) => item.sourceId !== images[index]!.id)
+    )
+      throw new ToolBrokerClientError(
+        "tool_broker_protocol_error",
+        "Prepared input image identity changed",
+        false,
+      );
+    return response.images;
+  }
+
   async refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
     const requestId = this.#idGenerator();
     const response = await this.#service({
@@ -292,6 +332,59 @@ export class ToolBrokerClient {
       );
     }
     return response;
+  }
+
+  async uploadWorkspaceFile(
+    request: WorkspaceUploadRequest,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+    redirects = 0,
+  ): Promise<WorkspaceUploadReceipt> {
+    if (!bytes.length || bytes.length > MAX_USER_UPLOAD_BYTES)
+      throw new Error("Upload exceeds its size limit");
+    const response = await internalFetch(
+      new URL(TOOL_BROKER_WORKSPACE_UPLOAD_PATH, this.#baseUrl),
+      {
+        dispatcher: internalDispatcher,
+        redirect: "manual",
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.#serviceToken}`,
+          "content-type": "application/octet-stream",
+          "x-pi-cloud-upload": Buffer.from(JSON.stringify(request)).toString("base64url"),
+        },
+        body: Buffer.from(bytes),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(this.#requestTimeoutMs)])
+          : AbortSignal.timeout(this.#requestTimeoutMs),
+      },
+    );
+    if (response.status === 307 && response.headers.get("location")) {
+      await response.body?.cancel();
+      if (redirects >= 3) throw new Error("Workspace owner routing did not converge");
+      const owner = new ToolBrokerClient({
+        baseUrl: response.headers.get("location")!,
+        serviceToken: this.#serviceToken,
+        allowInsecureHttp: this.#allowInsecureHttp,
+        requestTimeoutMs: this.#requestTimeoutMs,
+      });
+      return owner.uploadWorkspaceFile(request, bytes, signal, redirects + 1);
+    }
+    const value = await boundedJson(response);
+    if (!response.ok)
+      throw new ToolBrokerClientError(
+        "workspace_upload_failed",
+        "Workspace upload failed",
+        response.status >= 500,
+      );
+    const receipt = value as WorkspaceUploadReceipt;
+    if (
+      receipt.sha256 !== request.sha256 ||
+      receipt.byteLength !== bytes.length ||
+      receipt.relativePath !== uploadRelativePath(request.uploadId, request.name)
+    )
+      throw new Error("Workspace upload receipt changed identity");
+    return receipt;
   }
 
   async readWorkspaceFile(
@@ -604,6 +697,20 @@ export class ReplicatedToolBrokerClient {
     return response;
   }
 
+  prepareInputImages(
+    activationId: string,
+    assignment: ToolSandboxAssignment,
+    images: import("@pi-cloud/protocol").ImageAttachmentReference[],
+    signal?: AbortSignal,
+  ) {
+    return this.#ownedClient(activationId).prepareInputImages(
+      activationId,
+      assignment,
+      images,
+      signal,
+    );
+  }
+
   refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
     return this.#ownedClient(activationId).refreshServices(activationId, assignment);
   }
@@ -633,6 +740,14 @@ export class ReplicatedToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
     return this.#nextReplica().listWorkspaceDirectory(request, signal);
+  }
+
+  uploadWorkspaceFile(
+    request: WorkspaceUploadRequest,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceUploadReceipt> {
+    return this.#nextReplica().uploadWorkspaceFile(request, bytes, signal);
   }
 
   readWorkspaceFile(

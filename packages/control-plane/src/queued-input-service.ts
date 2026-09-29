@@ -11,6 +11,8 @@ import {
   type QueuedInputActionResult,
 } from "@pi-cloud/protocol";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
+import { parseUserUploads, reviewedModel } from "@pi-cloud/protocol";
+import { bindInputUploads } from "./workspace-upload-service.ts";
 import type { TurnSteeringService } from "./turn-steering-service.ts";
 
 function conflict(): never {
@@ -123,6 +125,7 @@ export class QueuedInputService {
               "r.created_at",
               "r.queued_steer_id",
               "t.input_text",
+              "t.input_uploads",
             ])
             .whereRef("r.tenant_id", "=", "s.tenant_id")
             .whereRef("r.session_id", "=", "s.id")
@@ -145,6 +148,7 @@ export class QueuedInputService {
         turnId: item.turn_id,
         runId: item.id,
         text: item.input_text,
+        ...(item.input_uploads.length ? { uploads: parseUserUploads(item.input_uploads) } : {}),
         mailboxPosition: number(item.mailbox_position),
         acceptedAt: new Date(item.created_at).toISOString(),
         status: item.queued_steer_id === null ? "queued" : "steering",
@@ -164,6 +168,7 @@ export class QueuedInputService {
         "pi_session_id",
         "project_id",
         "workspace_id",
+        "working_directory",
       ])
       .where("tenant_id", "=", tenantId)
       .where("id", "=", sessionId)
@@ -188,6 +193,9 @@ export class QueuedInputService {
         "r.state",
         "r.lease_id",
         "t.state as turnState",
+        "t.input_uploads",
+        "t.provider",
+        "t.model_id",
       ])
       .where("r.tenant_id", "=", tenantId)
       .where("r.session_id", "=", sessionId)
@@ -260,7 +268,12 @@ export class QueuedInputService {
   ): Promise<QueuedInputActionResult> {
     const action: QueuedInputAction =
       request.action === "edit"
-        ? { action: "edit", revision: request.revision, text: request.text.trim() }
+        ? {
+            action: "edit",
+            revision: request.revision,
+            text: request.text.trim(),
+            ...(request.uploadIds !== undefined ? { uploadIds: request.uploadIds } : {}),
+          }
         : request.action === "move"
           ? { action: "move", revision: request.revision, direction: request.direction }
           : request.action === "steer"
@@ -268,12 +281,6 @@ export class QueuedInputService {
             : { action: "cancel", revision: request.revision };
     if (action.action === "steer" && request.action === "steer" && request.text !== undefined)
       action.text = request.text.trim();
-    if (
-      (action.action === "edit" || action.action === "steer") &&
-      action.text !== undefined &&
-      !action.text
-    )
-      throw new ControlPlaneStoreError("invalid_request", "Input text cannot be empty");
     const hash = createHash("sha256")
       .update(JSON.stringify({ sessionId, turnId, action }))
       .digest("hex");
@@ -299,6 +306,39 @@ export class QueuedInputService {
         if (number(session.row_version) !== action.revision) conflict();
         const source = await this.#lockInput(tx, tenantId, sessionId, turnId);
         if (source.queued_steer_id !== null) conflict();
+        const uploads =
+          action.action === "edit" && action.uploadIds !== undefined
+            ? await bindInputUploads(tx, {
+                tenantId,
+                sessionId,
+                workspaceId: session.workspace_id,
+                workingDirectory: session.working_directory,
+                ids: action.uploadIds,
+              })
+            : action.action === "edit" || action.action === "steer"
+              ? parseUserUploads(source.input_uploads)
+              : [];
+        if (
+          (action.action === "edit" || action.action === "steer") &&
+          action.text !== undefined &&
+          !action.text &&
+          !uploads.length
+        )
+          throw new ControlPlaneStoreError(
+            "invalid_request",
+            "Input text cannot be empty without attachments",
+          );
+        if (
+          uploads.some((file) => file.image) &&
+          !(
+            reviewedModel(source.provider, source.model_id)?.inputModalities as
+              readonly string[] | undefined
+          )?.includes("image")
+        )
+          throw new ControlPlaneStoreError(
+            "invalid_request",
+            "The selected model does not support image input",
+          );
         const controlId = randomUUID();
         let targetRunId = source.id,
           targetTurnId = source.turn_id;
@@ -311,7 +351,10 @@ export class QueuedInputService {
         if (action.action === "edit") {
           await tx
             .updateTable("turns")
-            .set({ input_text: action.text })
+            .set({
+              input_text: action.text,
+              input_uploads: sql<unknown[]>`${JSON.stringify(uploads)}::jsonb`,
+            })
             .where("id", "=", turnId)
             .where("tenant_id", "=", tenantId)
             .execute();
@@ -353,7 +396,14 @@ export class QueuedInputService {
           const target = await tx
             .selectFrom("runs as r")
             .innerJoin("active_execution_scopes as a", "a.run_id", "r.id")
-            .select(["r.id", "r.turn_id", "r.sandbox_id"])
+            .innerJoin("turns as target_turn", "target_turn.id", "r.turn_id")
+            .select([
+              "r.id",
+              "r.turn_id",
+              "r.sandbox_id",
+              "target_turn.provider",
+              "target_turn.model_id",
+            ])
             .where("r.tenant_id", "=", tenantId)
             .where("r.session_id", "=", sessionId)
             .where("r.turn_id", "=", action.targetTurnId)
@@ -362,6 +412,17 @@ export class QueuedInputService {
             .noWait()
             .executeTakeFirst();
           if (!target?.sandbox_id) conflict();
+          if (
+            uploads.some((file) => file.image) &&
+            !(
+              reviewedModel(target.provider, target.model_id)?.inputModalities as
+                readonly string[] | undefined
+            )?.includes("image")
+          )
+            throw new ControlPlaneStoreError(
+              "invalid_request",
+              "The active model does not support image input",
+            );
           targetRunId = target.id;
           targetTurnId = target.turn_id;
           if (action.text !== undefined)

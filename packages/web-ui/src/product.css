@@ -3923,3 +3923,56 @@ body.product-panel-resizing {
   margin: 4px 0;
   contain: layout paint;
 }
+
+.upload-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0;
+}
+.upload-card {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border-color, #d7dbe0);
+  border-radius: 10px;
+  max-width: 240px;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.upload-card img {
+  display: block;
+  max-width: 220px;
+  width: auto;
+  max-height: 140px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.upload-card figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.upload-card small {
+  opacity: 0.75;
+}
+.upload-card code {
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-card button {
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.product-attach-button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 22px;
+  cursor: pointer;
+}

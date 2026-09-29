@@ -50,6 +50,13 @@ verifies tenant, length and SHA-256 before returning native ImageContent to Pi.
 Two concurrent read materializations bound large guest replies; other Tool and
 command admission limits still apply. No completed Tool result is fetched by GET.
 
+Chat image preparation uses the same processor through fixed `envd-input-files.mjs`
+under the current Run binding. It reads immutable source references, normalizes in
+Cube and returns references through Broker HTTP, without fabricating an Agent Tool
+or changing Kafka dispatch semantics. The same fixed helper writes dedicated-machine
+uploads under UID 1000; elastic uploads use the existing Volume Gateway. See
+[chat uploads](CHAT_ATTACHMENTS.md) for limits and claims.
+
 The guest uses Pi's public image processor hook with pinned Sharp. `read` accepts
 optional image `detail: high | original`; high is the default. The dimensions and
 32px patch budgets match the inspected Codex client: high 2048/2500, original

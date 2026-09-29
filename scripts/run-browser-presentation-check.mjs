@@ -76,6 +76,8 @@ window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReas
     items:[{kind:"text",key:"text:"+(phase??'1'),text,firstSequence:1,lastSequence:2,recoveredTextLength,...(phase?{phase}:{})}]
   }})));
 window.turnBodies = [];
+window.uploadCalls = [];
+window.uploadReceipts = [];
 window.copyFixtureText=copyMessageText;
 window.renderAdmin=()=>root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(AdminPage,{
   managementUrls:configuration.managementUrls,
@@ -211,6 +213,15 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       session={sessionId:sid,projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,state:sessionState,workspaceState:"attached",modelProfileId:profileId,createdAt:new Date().toISOString()};
       return session;
     },
+    uploadWorkspaceFile:async(sessionId,id,file,name,signal)=>{
+      window.uploadCalls.push({sessionId,id,name,size:file.size});
+      if(window.failNextUpload){window.failNextUpload=false;throw Error('Fixture upload failed');}
+      if(window.holdUpload)await new Promise((resolve,reject)=>{window.finishUpload=resolve;signal?.addEventListener('abort',()=>reject(Error('aborted')),{once:true});});
+      const upload={id,sessionId,workspaceId:session.workspaceId,name,path:'/workspace/uploads/'+id+'/'+name,mimeType:file.type||'application/octet-stream',byteLength:file.size,sha256:'a'.repeat(64),...(file.type==='image/png'?{image:{id,byteLength:file.size,mimeType:'image/png',sha256:'a'.repeat(64)}}:{})};
+      window.uploadReceipts.push(upload);return upload;
+    },
+    removeDraftUpload:async()=>{},
+    readInputImage:async()=>({bytes:Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2uV8AAAAASUVORK5CYII='),c=>c.charCodeAt(0)),contentType:'image/png'}),
     getSessionModel:async()=>modelResource(),
     getConversation:async(sessionId)=>conversation(sessionId),
     getInputQueue:async(sessionId)=>({...structuredClone(window.fixtureQueue),sessionId}),
@@ -827,6 +838,39 @@ try {
       "A late pre-deletion list must not resurrect a deleted conversation or its children",
     );
 
+    // A first, image-only message survives Session creation and sends references,
+    // while retries and picker cancellation keep the original upload identity.
+    await page.evaluate("window.deferTurn=false;renderChat('idle')");
+    await page.waitFor('document.querySelector(".product-attach-button")');
+    const countBeforeImage = await page.evaluate("turnBodies.length");
+    await page.evaluate(`(() => {
+      const data=new DataTransfer();data.items.add(new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2uV8AAAAASUVORK5CYII='),c=>c.charCodeAt(0))],'screenshot.png',{type:'image/png'}));
+      const picker=document.querySelector('input[type=file]');picker.files=data.files;picker.dispatchEvent(new Event('change',{bubbles:true}));
+    })()`);
+    await page.waitFor('document.querySelector(".upload-card")');
+    await page.evaluate('document.querySelector(".product-send-button").click()');
+    await page.waitFor('document.querySelector(".product-execution-mode-choice input")');
+    await page.evaluate('document.querySelector(".product-execution-mode-choice input").click()');
+    await chooseFixtureWorkspace();
+    await fill(".product-progressive-options input", "Image input");
+    await page.evaluate('document.querySelector(".product-workspace-modal").requestSubmit()');
+    await page.waitFor(`turnBodies.length===${countBeforeImage + 1}`);
+    const firstImageBody = await page.evaluate("turnBodies.at(-1)");
+    assert.equal(firstImageBody.prompt, "");
+    assert.equal(firstImageBody.uploadIds.length, 1);
+    assert.equal(await page.evaluate("uploadCalls.at(-1).id"), firstImageBody.uploadIds[0]);
+    assert.equal(
+      await page.evaluate('document.querySelector(".product-composer textarea").value'),
+      "",
+    );
+    await page.waitFor('!document.querySelector(".product-send-button").disabled');
+    await page.evaluate('document.querySelector(".product-send-button").click()');
+    await page.waitFor(`turnBodies.length===${countBeforeImage + 2}`);
+    assert.deepEqual(await page.evaluate("turnBodies.at(-1).uploadIds"), firstImageBody.uploadIds);
+    await page.waitFor('!document.querySelector(".upload-card button").disabled');
+    await page.evaluate('document.querySelector(".upload-card button").click()');
+    await page.waitFor('!document.querySelector(".upload-card")');
+
     for (const status of [503, 0]) {
       await page.evaluate(`window.identityErrorStatus=${status};renderChat()`);
       await page.waitFor(
@@ -877,6 +921,8 @@ try {
   console.log(
     JSON.stringify({
       accepted: true,
+      firstImageOnlyMessage: true,
+      uploadIdentityOnRetry: true,
       debuggerDisconnect: true,
       strictModeAnimation: true,
       outputLimitVisible: true,

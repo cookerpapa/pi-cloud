@@ -27,6 +27,7 @@ export const MAXIMUM_RESPONSE_BYTES = 8 * 1_024 * 1_024;
 export const WORKSPACE_VOLUME_GATEWAY_VERIFY_PATH = "/v1/workspaces/verify";
 export const WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH = "/v1/workspaces/list-directory";
 export const WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH = "/v1/workspaces/read-file";
+export const WORKSPACE_VOLUME_GATEWAY_UPLOAD_FILE_PATH = "/v1/workspaces/upload-file";
 export const WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH = "/v1/workspaces/prepare-delete";
 export const WORKSPACE_VOLUME_GATEWAY_FINALIZE_DELETE_PATH = "/v1/workspaces/finalize-delete";
 export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH =
@@ -61,6 +62,20 @@ export type WorkspaceVolumeGatewayReadFileInput = WorkspaceVolumeGatewayPathInpu
   Readonly<{
     maximumBytes: number;
   }>;
+
+export type WorkspaceVolumeGatewayUploadInput = WorkspaceVolumeGatewayIdentity &
+  Readonly<{
+    rootPath: string;
+    uploadId: string;
+    name: string;
+    sha256: string;
+    claimToken: string;
+  }>;
+export type WorkspaceUploadReceipt = Readonly<{
+  relativePath: string;
+  byteLength: number;
+  sha256: string;
+}>;
 
 export type WorkspaceVolumeDirectoryEntry = Readonly<{
   name: string;
@@ -97,6 +112,11 @@ export type WorkspaceVolumeGatewaySourceCredentialDisconnectInput = WorkspaceVol
   >;
 
 export interface WorkspaceVolumeGateway {
+  uploadFile?(
+    input: WorkspaceVolumeGatewayUploadInput,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceUploadReceipt>;
   checkHealth(): Promise<void>;
   verify(input: WorkspaceVolumeGatewayVerifyInput): Promise<{ verified: true }>;
   listDirectory(
@@ -131,6 +151,7 @@ export interface WorkspaceVolumeGatewayLock {
 
 export type PersistentVolumeWorkspaceVolumeGatewayOptions = Readonly<{
   workspaceRoot: string;
+  authorizeUpload?: (input: WorkspaceVolumeGatewayUploadInput, byteLength: number) => Promise<void>;
   lock?: WorkspaceVolumeGatewayLock;
   gitRunner?: WorkspaceVolumeGitRunner;
 }>;

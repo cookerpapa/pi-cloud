@@ -1,5 +1,7 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 import { ControlPlaneController } from "./control-plane.controller.ts";
+import { WorkspaceUploadService, type WorkspaceUploader } from "./workspace-upload-service.ts";
+import type { ImageAttachmentStore } from "@pi-cloud/session-attachments";
 import type { ControlPlaneStoreOptions } from "./control-plane-store.ts";
 import { ControlPlaneStoreFactory } from "./control-plane-store-factory.ts";
 import {
@@ -39,6 +41,8 @@ export type ControlPlaneModuleOptions = Omit<
   staticRequestIdentity?: TenantRequestIdentity;
   publicRegistration?: PublicTenantRegistrationConfiguration;
   workspaceBrowser?: TrustedWorkspaceBrowser;
+  workspaceUploader?: WorkspaceUploader;
+  imageAttachmentStore?: ImageAttachmentStore;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
@@ -104,6 +108,14 @@ export class ControlPlaneModule {
       module: ControlPlaneModule,
       controllers: [ControlPlaneController],
       providers: [
+        {
+          provide: WorkspaceUploadService,
+          useValue: new WorkspaceUploadService({
+            database: options.database,
+            ...(options.workspaceUploader ? { uploader: options.workspaceUploader } : {}),
+            ...(options.imageAttachmentStore ? { images: options.imageAttachmentStore } : {}),
+          }),
+        },
         {
           provide: ControlPlaneStoreFactory,
           useValue: controlPlaneStores,

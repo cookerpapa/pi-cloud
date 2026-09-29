@@ -576,8 +576,14 @@ The selectable DeepSeek model is V4.1 Flash; V4 Pro is hidden. Flash declares
 `web_search` on Responses at the owner's request, although the upstream currently
 ignores it. Search activity still requires actual provider events/results;
 a declaration alone is never recorded as a performed search (ADR-0191).
-User-uploaded image input and generated-image results remain outside the current
-public feature boundary; image-capable models can consume remote read Tool images.
+Chat uploads place files in Workspace through the existing Broker/Volume Gateway
+or fixed machine guest helper. PG stores bounded upload claims and accepted input
+references. Source images are retained in the existing S3 store; the current Run's
+Cube normalizes them before model admission. Pi receives ordinary user text and
+ImageContent without an Agent read Tool call. Queue edits, steer and native replay
+retain images independently of mutable Workspace files. See
+[chat attachment contracts](CHAT_ATTACHMENTS.md) and ADR-0200. Generated-image
+results remain outside the public feature boundary.
 
 CloudAgentRuntime owns bounded sampling retries; Model Gateway forwards one
 send per admitted request. Generated CLIProxyAPI settings disable extra retry

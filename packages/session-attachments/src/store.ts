@@ -118,11 +118,18 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore {
     if (!Number.isSafeInteger(graceMs) || graceMs < 0)
       throw new Error("Invalid image cleanup grace");
     signal?.throwIfAborted();
+    // Draft claims expire independently of Runs; accepted user input is retained
+    // with its native Session even before Worker consumption/projection.
+    await sql`delete from session_uploads where id in (
+      select id from session_uploads where accepted_at is null and expires_at<clock_timestamp()
+      order by expires_at limit 32 for update skip locked
+    )`.execute(this.database);
     const rows = await this.database.transaction().execute(async (tx) => {
       const { rows: candidates } = await sql<{ tenant_id: string; id: string }>`
         select tenant_id,id from session_image_objects o
         where created_at < clock_timestamp() - ${graceMs} * interval '1 millisecond'
           and not exists(select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
+          and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.image_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
         order by created_at limit 32 for update skip locked`.execute(tx);
       if (!candidates.length) return [];
@@ -133,6 +140,7 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore {
       }>`update session_image_objects o set state='deleting'
         where (tenant_id,id) in (${sql.join(candidates.map((r) => sql`(${r.tenant_id}::uuid,${r.id}::uuid)`))})
           and not exists(select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
+          and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.image_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
         returning tenant_id,id`.execute(tx);
       return rows;

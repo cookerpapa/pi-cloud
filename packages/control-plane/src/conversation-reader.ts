@@ -8,6 +8,7 @@ import type {
 import { parseEnvironmentValidationReport } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import { jsonObjectFrom } from "kysely/helpers/postgres";
+import { parseUserUploads } from "@pi-cloud/protocol";
 import { readCanonicalPiTurnTranscripts } from "@pi-cloud/runtime-core/canonical-pi-conversation";
 import { loadDelegatedSessionTreeSummaries } from "./delegated-session-projection.ts";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
@@ -30,6 +31,7 @@ type ConversationHistoryRow = {
   turnId: string;
   inputKind: string;
   prompt: string | null;
+  uploads: unknown[];
   turnState: ConversationTurnState;
   waitingForSeal: boolean;
   mailboxPosition: string | null;
@@ -335,6 +337,7 @@ export class ConversationReader {
           "turn.id as turnId",
           "turn.input_kind as inputKind",
           "turn.input_text as prompt",
+          "turn.input_uploads as uploads",
           "turn.state as turnState",
           sql<boolean>`(run.output_seal_id is not null and run.output_sealed_at is null)`.as(
             "waitingForSeal",
@@ -380,6 +383,7 @@ export class ConversationReader {
         turnId: row.turnId,
         mailboxPosition: positiveSafeInteger(row.mailboxPosition, "Conversation mailbox position"),
         prompt: row.prompt,
+        ...(row.uploads.length ? { uploads: parseUserUploads(row.uploads) } : {}),
         state:
           row.waitingForSeal &&
           (row.turnState === "completed" ||

@@ -676,6 +676,7 @@ export interface ConversationPruneOperationTable {
 }
 
 export interface TurnTable {
+  input_uploads: GeneratedJsonArray;
   id: string;
   tenant_id: string;
   session_id: string;
@@ -1016,7 +1017,31 @@ export interface PiSessionLogTable {
   turn_id: GeneratedNullable<string>;
 }
 
+export interface SessionUploadTable {
+  id: string;
+  tenant_id: string;
+  session_id: string;
+  pi_session_id: string;
+  workspace_id: string;
+  actor_user_id: string;
+  working_directory: string;
+  name: string;
+  path: string;
+  mime_type: string;
+  byte_length: Int8;
+  sha256: string;
+  state: "uploading" | "ready" | "failed";
+  claim_token: string;
+  lease_expires_at: Timestamp;
+  image_id: GeneratedNullable<string>;
+  image_reference: JsonValue;
+  accepted_at: NullableTimestamp;
+  created_at: GeneratedTimestamp;
+  expires_at: Timestamp;
+}
+
 export interface Database {
+  session_uploads: SessionUploadTable;
   accepted_fact_projection_offsets: { topic: string; partition: number; next_offset: Int8 };
   agent_definitions: AgentDefinitionTable;
   agent_revisions: AgentRevisionTable;

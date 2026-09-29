@@ -18,6 +18,9 @@ import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import type { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import type { SourceControlService } from "./source-control-service.ts";
 import type { ToolProgressIngress } from "./tool-progress-ingress.ts";
+import type { WorkspaceUploader } from "./workspace-upload-service.ts";
+import type { ImageAttachmentStore } from "@pi-cloud/session-attachments";
+import { MAX_USER_UPLOAD_BYTES } from "@pi-cloud/protocol";
 
 export type ControlPlaneApplicationOptions = Omit<
   ControlPlaneStoreOptions,
@@ -33,6 +36,8 @@ export type ControlPlaneApplicationOptions = Omit<
   eventRuntime: ControlPlaneEventRuntime;
   publicRegistration?: PublicTenantRegistrationConfiguration;
   workspaceBrowser?: TrustedWorkspaceBrowser;
+  workspaceUploader?: WorkspaceUploader;
+  imageAttachmentStore?: ImageAttachmentStore;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
@@ -49,6 +54,42 @@ export async function createControlPlaneApplication(
   options: ControlPlaneApplicationOptions,
 ): Promise<NestFastifyApplication> {
   const adapter = new FastifyAdapter({ logger: false });
+  adapter
+    .getInstance()
+    .addContentTypeParser(
+      "application/octet-stream",
+      { parseAs: "buffer", bodyLimit: MAX_USER_UPLOAD_BYTES },
+      (_request, body, done) => done(null, body),
+    );
+  adapter.getInstance().addHook("onRoute", (route) => {
+    if (route.url === "/v1/sessions/:sessionId/uploads/:uploadId" && route.method === "PUT")
+      route.bodyLimit = MAX_USER_UPLOAD_BYTES;
+  });
+  const uploads = new Set<object>();
+  adapter.getInstance().addHook("onRequest", async (request, reply) => {
+    if (
+      request.method !== "PUT" ||
+      !/^\/v1\/sessions\/[^/]+\/uploads\/[^/?]+(?:\?|$)/.test(request.url)
+    )
+      return;
+    if (uploads.size >= 2)
+      return reply.code(429).send({
+        error: {
+          code: "upload_capacity_exhausted",
+          message: "Two uploads are already in progress",
+        },
+      });
+    uploads.add(request);
+    reply.raw.once("close", () => {
+      uploads.delete(request);
+    });
+  });
+  adapter.getInstance().addHook("onResponse", async (request) => {
+    uploads.delete(request);
+  });
+  adapter.getInstance().addHook("onRequestAbort", async (request) => {
+    uploads.delete(request);
+  });
   options.productionHttpGateway?.install(adapter.getInstance());
   options.toolProgressIngress?.install(adapter.getInstance());
   options.supervisorProvisioningGateway?.install(adapter.getInstance());

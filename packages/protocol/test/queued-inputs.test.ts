@@ -10,10 +10,14 @@ describe("pending input protocol", () => {
     expect(
       parseQueuedInputAction({ action: "steer", revision: 4, targetTurnId: id, text: "updated" }),
     ).toMatchObject({ text: "updated" });
+    // Existing attachments are resolved under the queue lock, so an empty
+    // caption is valid at the wire boundary.
+    expect(parseQueuedInputAction({ action: "edit", revision: 4, text: "" })).toMatchObject({
+      text: "",
+    });
     for (const value of [
       { action: "steer", revision: 4 },
       { action: "cancel", revision: -1 },
-      { action: "edit", revision: 4, text: "" },
       { action: "cancel", revision: 4, runId: id },
       { action: "move", revision: 4, direction: "first" },
     ])

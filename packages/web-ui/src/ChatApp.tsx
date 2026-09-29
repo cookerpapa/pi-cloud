@@ -1,3 +1,5 @@
+import { useComposerUploads } from "./useComposerUploads.ts";
+import { ComposerUploadCards } from "./UploadCards.tsx";
 import {
   useCallback,
   useEffect,
@@ -209,6 +211,14 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [conversationLoading, setConversationLoading] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const draftRevision = useRef(0);
+  const filePickerRef = useRef<HTMLInputElement | null>(null);
+  const uploads = useComposerUploads(
+    api,
+    state.session?.sessionId,
+    state.session
+      ? `${state.session.sessionId}:${state.session.workspaceId}:${state.session.workingDirectory}`
+      : "",
+  );
   const [operation, setOperation] = useState<
     | "creating"
     | "submitting"
@@ -809,12 +819,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     followConversationTail,
   ]);
 
-  function resetConversation(): void {
+  function resetConversation(preserveDraft = false): void {
+    if (!preserveDraft) uploads.clear();
     currentStreamSession.current = null;
     setStreamSessionId(null);
     setState(createInitialSessionView());
     setSessionModel(null);
-    setPrompt("");
+    if (!preserveDraft) setPrompt("");
     setInspectorOpen(false);
     setSidebarOpen(false);
     setConversationTree(null);
@@ -844,7 +855,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     setConversationLoading(sessionId);
     update({ type: "api.error.cleared" });
     try {
-      if (currentStreamSession.current !== sessionId) setConversationTree(null);
+      if (currentStreamSession.current !== sessionId) {
+        setConversationTree(null);
+        uploads.clear();
+      }
       currentStreamSession.current = sessionId;
       setStreamSessionId(sessionId);
       if (streamSessionId === sessionId) setReconnectGeneration((value) => value + 1);
@@ -940,7 +954,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }
 
   function beginNewConversation(initialPrompt: string | null = null): void {
-    resetConversation();
+    resetConversation(initialPrompt !== null);
     setPendingInitialPrompt(initialPrompt);
     setNewConversationTitle(
       initialPrompt === null ? "" : conversationTitle(initialPrompt, t("chat.newConversation")),
@@ -1035,12 +1049,22 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         refreshDevelopmentEnvironments(),
       ]);
       if (pendingInitialPrompt !== null) {
+        const attached = await uploads.ready(session.sessionId);
         const accepted = await api.acceptTurn(
           session.sessionId,
           pendingInitialPrompt,
           newIdempotencyKey("turn"),
+          undefined,
+          attached.map((file) => file.id),
         );
-        update({ type: "turn.accepted", accepted, prompt: pendingInitialPrompt });
+        update({
+          type: "turn.accepted",
+          accepted,
+          prompt: pendingInitialPrompt,
+          uploads: attached,
+        });
+        uploads.clear(attached.map((file) => file.id));
+        setPrompt((current) => (current.trim() === pendingInitialPrompt ? "" : current));
       }
       setPendingInitialPrompt(null);
     } catch (error: unknown) {
@@ -1195,7 +1219,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   async function submitTurn(): Promise<void> {
     const submittedRevision = draftRevision.current;
     const text = prompt.trim();
-    if (!text || !canMutate || !canQueue || operation !== null) return;
+    if ((!text && !uploads.items.length) || !canMutate || !canQueue || operation !== null) return;
     setOperation("submitting");
     update({ type: "api.error.cleared" });
     try {
@@ -1223,8 +1247,16 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           );
         }
       }
-      const accepted = await api.acceptTurn(session.sessionId, text, newIdempotencyKey("turn"));
-      update({ type: "turn.accepted", accepted, prompt: text });
+      const attached = await uploads.ready(session.sessionId);
+      const accepted = await api.acceptTurn(
+        session.sessionId,
+        text,
+        newIdempotencyKey("turn"),
+        undefined,
+        attached.map((file) => file.id),
+      );
+      update({ type: "turn.accepted", accepted, prompt: text, uploads: attached });
+      uploads.clear(attached.map((file) => file.id));
       followConversationTail(true);
       setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       void refreshConversations().catch(() => undefined);
@@ -1260,7 +1292,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     if (
       state.session === null ||
       currentTurn?.status !== "running" ||
-      !text ||
+      (!text && !uploads.items.length) ||
       operation !== null
     ) {
       return;
@@ -1269,12 +1301,15 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     setSteerNotice(null);
     update({ type: "api.error.cleared" });
     try {
+      const attached = await uploads.ready(state.session.sessionId);
       await api.steerTurn(
         state.session.sessionId,
         currentTurn.turnId,
         text,
         newIdempotencyKey("steer"),
+        attached.map((file) => file.id),
       );
+      uploads.clear(attached.map((file) => file.id));
       setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       setSteerNotice(t("chat.steerAccepted"));
     } catch (error: unknown) {
@@ -2220,6 +2255,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                     const target = forkTargets.get(turn.turnId);
                     return (
                       <ConversationTurn
+                        api={api}
                         progressStore={toolProgress}
                         canFork={
                           canMutate &&
@@ -2294,19 +2330,70 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               canMutate={canMutate}
               refreshSignal={`${queueRefreshGeneration}:${currentTurn?.turnId ?? ""}:${currentTurn?.status ?? ""}`}
               onSnapshot={(queue) => update({ type: "queue.updated", queue })}
-              onRestoreDraft={(text) => {
+              onRestoreDraft={(text, attached) => {
+                if (!uploads.restore(attached)) return false;
                 draftRevision.current++;
                 setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text));
                 focusComposer();
+                return true;
               }}
             />
           ) : null}
           {selectedDelegatedSession === null ? null : (
             <div className="product-delegated-readonly">{t("chat.subagentReadOnly")}</div>
           )}
-          <div className="product-composer">
+          <ComposerUploadCards
+            items={uploads.items}
+            disabled={operation !== null}
+            remove={uploads.remove}
+            retry={uploads.retry}
+          />
+          {uploads.error ? (
+            <p role="alert" className="pending-input-error">
+              {t("upload.limit")}
+            </p>
+          ) : null}
+          <div
+            className="product-composer"
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (canMutate && canQueue && operation === null)
+                uploads.add([...event.dataTransfer.files]);
+            }}
+          >
+            <input
+              type="file"
+              multiple
+              hidden
+              ref={filePickerRef}
+              aria-label={t("upload.add")}
+              onChange={(event) => {
+                uploads.add([...(event.target.files ?? [])]);
+                event.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              className="product-attach-button"
+              title={t("upload.limit")}
+              aria-label={t("upload.add")}
+              disabled={!canMutate || !canQueue || operation !== null || uploads.items.length >= 4}
+              onClick={() => filePickerRef.current?.click()}
+            >
+              ＋
+            </button>
             <textarea
               aria-label={t("chat.sendLabel")}
+              onPaste={(event) => {
+                const files = [...event.clipboardData.files];
+                if (files.length && operation === null) {
+                  event.preventDefault();
+                  uploads.add(files);
+                }
+              }}
               disabled={!canMutate || !canQueue}
               onChange={(event) => {
                 draftRevision.current++;
@@ -2339,7 +2426,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               <>
                 <button
                   className="product-steer-button"
-                  disabled={!prompt.trim() || operation !== null}
+                  disabled={(!prompt.trim() && !uploads.items.length) || operation !== null}
                   onClick={() => void steerTurn()}
                   title={t("chat.steerTitle")}
                   type="button"
@@ -2358,7 +2445,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             ) : (
               <button
                 className="product-send-button"
-                disabled={!prompt.trim() || !canQueue || operation !== null}
+                disabled={
+                  (!prompt.trim() && !uploads.items.length) || !canQueue || operation !== null
+                }
                 onClick={() => void submitTurn()}
                 title={t("chat.send")}
                 type="button"

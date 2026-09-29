@@ -1,4 +1,6 @@
 export { toolResultIsUnknown } from "./tool-result-outcome.ts";
+export * from "./user-upload.ts";
+
 export {
   PINNED_PI_CODING_AGENT_VERSION,
   SandboxAssignmentInventoryError,

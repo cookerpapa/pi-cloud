@@ -62,6 +62,31 @@ const observability = await startServiceObservability({
 const gateway = new PersistentVolumeWorkspaceVolumeGateway({
   workspaceRoot: required("PI_CLOUD_WORKSPACE_POSIX_ROOT"),
   lock: new PostgresWorkspaceVolumeGatewayLock(database),
+  authorizeUpload: async (input, byteLength) => {
+    const result = await database.query(
+      `select u.id from session_uploads u
+      join sessions s on s.id=u.session_id and s.tenant_id=u.tenant_id
+      join workspaces w on w.id=u.workspace_id and w.tenant_id=u.tenant_id
+      where u.id=$1::uuid and u.claim_token=$2::uuid and u.tenant_id=$3::uuid
+        and u.workspace_id=$4::uuid and u.session_id=$5::uuid and u.sha256=$6
+        and u.name=$7 and u.byte_length=$8 and u.state='uploading'
+        and u.lease_expires_at>clock_timestamp() and s.archived_at is null
+        and s.workspace_id=u.workspace_id and s.working_directory=u.working_directory
+        and u.working_directory=$9 and w.deleted_at is null and w.workspace_kind='user'`,
+      [
+        input.uploadId,
+        input.claimToken,
+        input.tenantId,
+        input.workspaceId,
+        input.sessionId,
+        input.sha256,
+        input.name,
+        byteLength,
+        input.rootPath ? `/workspace/${input.rootPath}` : "/workspace",
+      ],
+    );
+    if (result.rowCount !== 1) throw new Error("Workspace upload grant is no longer current");
+  },
 });
 const server = new WorkspaceVolumeGatewayServer({
   host: process.env.PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_HOST ?? "127.0.0.1",

@@ -12,6 +12,7 @@ export type TurnSteerRequest = {
   idempotencyKey: string;
   target: TurnSteerTarget;
   text: string;
+  uploads?: import("@pi-cloud/protocol").UserUpload[];
 };
 
 export class TurnSteerBackendError extends Error {
