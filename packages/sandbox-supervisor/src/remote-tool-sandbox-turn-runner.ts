@@ -360,6 +360,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           ? { kind: "sample_java" }
           : { kind: "bundle", bundle: encodeWorkspaceBlob(workspaceSeed) },
     };
+    const inputPreparationAbort = new AbortController();
+    const inputPreparations = new Set<Promise<unknown>>();
     let activation: ToolSandboxCreateResponse | undefined;
     let activationPromise: Promise<ToolSandboxCreateResponse> | undefined;
     let completedSuccessfully = false;
@@ -525,39 +527,54 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       };
       let recordPreparedInput: (() => Promise<void>) | undefined;
       const runner = new PiCloudTurnRunner({
-        prepareInputUploads: async (uploads, inputSignal) => {
-          const sources = uploads.flatMap((file) => (file.image ? [file.image] : []));
-          if (!sources.length) return { images: [], hints: [] };
-          if (
-            !modelRuntimeLease.runtime.inputModalities.includes("image") ||
-            !this.#broker.prepareInputImages ||
-            !this.#decodeInputImages
-          )
-            throw new PiTurnError(
-              "input_images_unavailable",
-              "The model or runtime cannot receive input images",
-              false,
+        prepareInputUploads: (uploads, inputSignal) => {
+          const preparing = (async () => {
+            const sources = uploads.flatMap((file) => (file.image ? [file.image] : []));
+            if (!sources.length) return { images: [], hints: [] };
+            if (
+              !modelRuntimeLease.runtime.inputModalities.includes("image") ||
+              !this.#broker.prepareInputImages ||
+              !this.#decodeInputImages
+            )
+              throw new PiTurnError(
+                "input_images_unavailable",
+                "The model or runtime cannot receive input images",
+                false,
+              );
+            const combined = AbortSignal.any([
+              signal,
+              inputPreparationAbort.signal,
+              ...(inputSignal ? [inputSignal] : []),
+            ]);
+            combined.throwIfAborted();
+            const active = await ensureActivation();
+            combined.throwIfAborted();
+            const prepared = await this.#broker.prepareInputImages(
+              active.activationId,
+              toolAssignment,
+              sources,
+              combined,
             );
-          const combined = inputSignal ? AbortSignal.any([signal, inputSignal]) : signal;
-          const active = await ensureActivation();
-          const prepared = await this.#broker.prepareInputImages(
-            active.activationId,
-            toolAssignment,
-            sources,
-            combined,
+            const images = await this.#decodeInputImages(
+              prepared.map((item) => item.image),
+              { tenantId: command.payload.tenantId, runId: command.payload.runId },
+              combined,
+            );
+            combined.throwIfAborted();
+            await recordPreparedInput?.();
+            return {
+              images,
+              hints: prepared.flatMap((item, index) =>
+                item.hints.map((hint) => `Image ${index + 1}: ${hint}`),
+              ),
+            };
+          })();
+          inputPreparations.add(preparing);
+          void preparing.then(
+            () => inputPreparations.delete(preparing),
+            () => inputPreparations.delete(preparing),
           );
-          const images = await this.#decodeInputImages(
-            prepared.map((item) => item.image),
-            { tenantId: command.payload.tenantId, runId: command.payload.runId },
-            combined,
-          );
-          await recordPreparedInput?.();
-          return {
-            images,
-            hints: prepared.flatMap((item, index) =>
-              item.hints.map((hint) => `Image ${index + 1}: ${hint}`),
-            ),
-          };
+          return preparing;
         },
         ...(modelRuntimeLease.resolveAssistantTextPhase === undefined
           ? {}
@@ -687,6 +704,16 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       executionError = toolRuntimeFailure ?? error;
       throw executionError;
     } finally {
+      // A steer can still be preparing pixels when the native operation closes.
+      // Join its reservation before deciding which Cube binding to release.
+      inputPreparationAbort.abort(
+        new PiTurnError(
+          "steer_target_unavailable",
+          "Pi Run ended before input image preparation",
+          false,
+        ),
+      );
+      await Promise.allSettled([...inputPreparations]);
       signal.removeEventListener("abort", abortSandbox);
       let cleanupError: unknown;
       if (

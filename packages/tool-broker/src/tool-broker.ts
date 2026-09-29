@@ -113,6 +113,7 @@ type ManagedToolBinding = {
   handle?: SandboxHandle;
   usedPhysicalRuntime: boolean;
   activeOperations: number;
+  inputClosed?: boolean;
   operations: Map<
     string,
     Readonly<{
@@ -1738,6 +1739,12 @@ export class ToolBroker {
         false,
       );
     const activation = this.#ownedBinding(request.activationId, request.assignment);
+    if (activation.inputClosed)
+      throw new ToolBrokerError(
+        "steer_target_unavailable",
+        "Tool binding is closing input preparation",
+        false,
+      );
     const key = `input:${request.requestId}`,
       requestSha256 = createHash("sha256").update(JSON.stringify(request)).digest("hex");
     const existing = activation.operations.get(key);
@@ -1890,6 +1897,13 @@ export class ToolBroker {
     request: ToolSandboxReleaseRequest,
   ): Promise<ToolSandboxReleaseResponse> {
     const activation = this.#ownedBinding(request.activationId, request.assignment);
+    activation.inputClosed = true;
+    const preparations = [...activation.operations]
+      .filter(([key]) => key.startsWith("input:"))
+      .map(([, operation]) => operation);
+    for (const preparation of preparations)
+      preparation.controller.abort(new Error("Input preparation binding released"));
+    await Promise.allSettled(preparations.map((preparation) => preparation.result));
     if (activation.elasticRuntime !== undefined) {
       if (request.disposition === "detach") {
         throw new ToolBrokerError(

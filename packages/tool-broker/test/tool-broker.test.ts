@@ -391,10 +391,28 @@ describe("provider-backed Tool Tool Broker", () => {
         await entered.promise;
         if (cancel) {
           controller.abort(new Error("cancelled"));
+          let released = false;
+          const release = broker
+            .release({
+              toolBrokerProtocolVersion: 1,
+              type: "tool_sandbox.release",
+              requestId: crypto.randomUUID(),
+              activationId: reserved.activationId,
+              assignment,
+              disposition: "keep_warm",
+            })
+            .then(() => {
+              released = true;
+            });
           await new Promise((resolve) => setTimeout(resolve, 20));
           expect(settled).toBe(false);
+          expect(released).toBe(false);
+          await expect(
+            broker.prepareInputImages({ ...request, requestId: crypto.randomUUID() }),
+          ).rejects.toMatchObject({ code: "steer_target_unavailable" });
           finish.resolve();
           expect(await result).toBeInstanceOf(Error);
+          await release;
         } else
           expect(await result).toMatchObject({
             images: [{ sourceId: source.id, image: source, hints: [] }],

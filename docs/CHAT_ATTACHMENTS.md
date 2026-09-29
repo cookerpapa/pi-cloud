@@ -33,7 +33,10 @@ parsing or permanent archival of every uploaded file.
 4. The admitted Run uses its normal fenced Cube activation to decode/normalize
    sources before model use. Preparation is a bounded infrastructure operation,
    not an Agent Tool invocation. It holds no model permit and stays tracked until
-   guest cancellation completes. A text-only input still needs no Cube activation.
+   guest cancellation completes. Run closure also joins a late image-steer
+   reservation before releasing its binding; normal release cancels and joins
+   any remaining guest image preparation. A text-only input still needs no Cube
+   activation.
 5. The Harness gives Pi native text plus ImageContent. The existing Session codec
    externalizes the final image into the canonical append-only history and restores
    it on cold reads, Compaction and Fork. The Agent can see an attached screenshot

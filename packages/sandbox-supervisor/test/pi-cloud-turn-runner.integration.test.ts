@@ -1068,6 +1068,108 @@ describe("PiCloudTurnRunner integration", () => {
     }
   });
 
+  it("joins a late image steer reservation before releasing a completed Run", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pi-cloud-late-image-"));
+    const session = new Session(
+      new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
+    );
+    const authority = new TestAuthority();
+    const sampling = Promise.withResolvers<void>(),
+      startModel = Promise.withResolvers<void>(),
+      reserving = Promise.withResolvers<void>(),
+      finishReserve = Promise.withResolvers<void>();
+    const release = vi.fn(async () => ({ retained: false }));
+    const prepare = vi.fn(async () => {
+      throw new Error("Closed input must not start image decoding");
+    });
+    const broker: ToolBrokerBoundary = {
+      async create(request) {
+        reserving.resolve();
+        await finishReserve.promise;
+        return {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.reserved",
+          requestId: request.requestId,
+          activationId: "99999999-9999-4999-8999-999999999999",
+          executionReference: request.assignment.executionReference,
+          ownerBaseUrl: "http://tool-broker.test",
+          workspaceRoot: "/workspace",
+          continuity: "cold_restore",
+          continuityId: "late-image",
+        };
+      },
+      prepareInputImages: prepare,
+      release,
+      async refreshServices() {},
+      async stop() {},
+      workflowUrlFor() {
+        return "http://tool-broker.test/internal/v1/tool-operation";
+      },
+    };
+    const runner = new RemoteToolSandboxTurnRunner({
+      broker,
+      runtimeIdentity: {
+        supervisorId: "late-image",
+        bootId: "77777777-7777-4777-8777-777777777779",
+        sandboxId: "sandbox-late-image",
+      },
+      trustedWorkspaceDirectory: directory,
+      modelRuntimeLeaseResolver: async (c) => {
+        const lease = await fakeTextModelLease(c);
+        return { ...lease, runtime: { ...lease.runtime, inputModalities: ["text", "image"] } };
+      },
+      openAgentSession: async () => ({ session, lane: "main", authority }),
+      decodeInputImages: async () => [],
+      acquireModelPermit: async () => {
+        sampling.resolve();
+        await startModel.promise;
+        return () => {};
+      },
+    });
+    let settled = false;
+    const running = runner
+      .run(command, () => {}, new AbortController().signal)
+      .then((result) => {
+        settled = true;
+        return result;
+      });
+    let steering: Promise<unknown> | undefined;
+    try {
+      await sampling.promise;
+      const id = crypto.randomUUID();
+      steering = runner
+        .steer(command.payload.runId, "late image", crypto.randomUUID(), [
+          {
+            id,
+            sessionId: crypto.randomUUID(),
+            workspaceId: crypto.randomUUID(),
+            name: "capture.png",
+            path: "/workspace/capture.png",
+            mimeType: "image/png",
+            byteLength: 5,
+            sha256: "a".repeat(64),
+            image: { id, mimeType: "image/png", byteLength: 5, sha256: "a".repeat(64) },
+          },
+        ])
+        .catch((error) => error);
+      await reserving.promise;
+      startModel.resolve();
+      await vi.waitFor(() => expect(authority.closed).toBe(true));
+      expect(settled).toBe(false);
+      expect(release).not.toHaveBeenCalled();
+      finishReserve.resolve();
+      expect(await steering).toMatchObject({ code: "steer_target_unavailable" });
+      await expect(running).resolves.toMatchObject({ stopReason: "stop" });
+      expect(release).toHaveBeenCalledOnce();
+      expect(prepare).not.toHaveBeenCalled();
+    } finally {
+      startModel.resolve();
+      finishReserve.resolve();
+      await Promise.allSettled([running, ...(steering ? [steering] : [])]);
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps owned-machine chat independent of Tool Broker without reporting a reset", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-cloud-development-continuity-"));
     const developmentCommand: ExecuteTurnCommandMessage = {
