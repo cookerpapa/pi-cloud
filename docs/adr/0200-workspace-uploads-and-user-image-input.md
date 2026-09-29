@@ -1,6 +1,8 @@
 # ADR-0200: Workspace uploads and native user image input
 
-Status: accepted for implementation, 2026-09-29.
+Status: implemented and accepted, 2026-09-29.
+
+[Acceptance evidence](../reports/user-input-attachments-20260929.md).
 
 ## Context
 

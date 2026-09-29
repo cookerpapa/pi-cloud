@@ -23,6 +23,10 @@ Use documentation in this order:
 research, conversations and superseded implementation logs remain in Git
 history instead of the maintained tree.
 
+The [chat attachment acceptance](reports/user-input-attachments-20260929.md) records
+Workspace uploads, native user ImageContent, queue promotion, browser preview and
+real Luna recovery after Workspace modification and Worker replacement.
+
 The [September 27 repository review](reports/repository-review-20260927.md) covers
 Pi alignment, component boundaries, duplicated IO and removal of obsolete paths;
 it tracks implemented repairs and subsequent approved architecture decisions.

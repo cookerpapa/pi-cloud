@@ -2,6 +2,11 @@
 
 ## Completed foundation
 
+- [x] [ADR-0200](adr/0200-workspace-uploads-and-user-image-input.md): chat uploads
+      into Workspace, native user image content, immutable Session image sources,
+      queue/steer/history support and matched schema/Guest rollout.
+      [Browser, fault and real Luna acceptance](reports/user-input-attachments-20260929.md).
+
 - multi-tenant Web Coding Agent using Pi SDK;
 - PostgreSQL Run authority, same-Lane ordering, physical Pi Session
   Worker ownership and shared Worker queue;

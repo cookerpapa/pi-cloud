@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-09-29T07:29:30.513Z",
+  "scriptSha256": "c244074e9a24c8393b9bea7b6a09bcce9c3892aec5b9646d944e543b14717251",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "1efec7a2-fd22-44bd-a82f-a701c210b80f",
+      "workerId": "4bf4679c-450f-47bf-adc8-9b8ddeafb207",
+      "tools": []
+    },
+    {
+      "runId": "2abecedc-68ca-46a9-849f-9ceefbe5adf4",
+      "workerId": "a8a63412-de03-433f-9069-17240923bc7a",
+      "tools": [
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "bash",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "12fc06cd-744b-4e4f-8da6-eeae3aa02144",
+      "workerId": "4bf4679c-450f-47bf-adc8-9b8ddeafb207",
+      "tools": []
+    }
+  ],
+  "resources": {
+    "tenantId": "65b86345-404d-4fe4-9ad5-8a08d86fcc6c",
+    "workspaceId": "b2c524ea-23be-44ca-ab0f-6821d5d5f888",
+    "sessionId": "813cf90d-e6f6-49bd-8133-2afab3df8eb0"
+  },
+  "browser": {
+    "uploadedBytes": 1851298,
+    "previewAfterReload": true,
+    "originalTextSeparate": true,
+    "imageSeenWithoutTool": true
+  },
+  "referencesOnly": {
+    "bytes": 1956,
+    "count": 2
+  },
+  "mutableSourceChanged": true,
+  "coldRecovery": {
+    "previousWorker": "a8a63412-de03-433f-9069-17240923bc7a",
+    "nextWorker": "4bf4679c-450f-47bf-adc8-9b8ddeafb207",
+    "unseenVisualAttributeCorrect": true
+  },
+  "cleanupRequested": true
+}

@@ -86,6 +86,84 @@ async function turn(prompt, uploadIds = []) {
   );
   return completed(active);
 }
+async function queuedImageScenario() {
+  const code = String(randomInt(100000, 999999));
+  const png = await sharp(
+    Buffer.from(
+      `<svg width="600" height="240"><rect width="600" height="240" fill="white"/><text x="300" y="150" text-anchor="middle" font-family="sans-serif" font-size="85">${code}</text></svg>`,
+    ),
+  )
+    .png()
+    .toBuffer();
+  const image = await api.uploadWorkspaceFile(
+    session.sessionId,
+    randomUUID(),
+    new Blob([png]),
+    "queued.png",
+  );
+  active = await api.acceptTurn(
+    session.sessionId,
+    "先用 bash 执行 sleep 12，完成后只回复 WAIT_DONE。",
+    newIdempotencyKey("turn"),
+    "low",
+  );
+  const running = active;
+  await until(
+    async () =>
+      (await api.getConversation(session.sessionId)).turns
+        .find((t) => t.turnId === running.turnId)
+        ?.transcript?.items.some(
+          (i) => i.kind === "tool" && i.toolName === "bash" && i.status === "running",
+        ),
+    "Running Tool",
+  );
+  const queued = await api.acceptTurn(session.sessionId, "", newIdempotencyKey("turn"), "low", [
+    image.id,
+  ]);
+  let queue = await api.getInputQueue(session.sessionId);
+  const edited = await api.mutateQueuedInput(
+    session.sessionId,
+    queued.turnId,
+    {
+      action: "edit",
+      revision: queue.revision,
+      text: "改为直接看这条消息附带的图片，只回复图中的六位数字，不要再调用工具。",
+    },
+    newIdempotencyKey("turn"),
+  );
+  queue = edited.queue;
+  assert.deepEqual(queue.items.find((i) => i.turnId === queued.turnId)?.uploads, [image]);
+  await api.mutateQueuedInput(
+    session.sessionId,
+    queued.turnId,
+    { action: "steer", revision: queue.revision, targetTurnId: running.turnId },
+    newIdempotencyKey("turn"),
+  );
+  const result = await completed(running);
+  assert(result.text.includes(code));
+  assert.deepEqual(
+    result.tools.map((t) => t.name),
+    ["bash"],
+  );
+  await until(
+    async () => (await api.getRun(queued.runId)).state === "cancelled",
+    "Consumed queued input",
+  );
+  assert.equal((await api.getInputQueue(session.sessionId)).items.length, 0);
+  const { rows } =
+    await sql`select count(*)::int n from pi_session_log where session_id=${session.sessionId} and kind='entry' and id like 'pc-agent-input-%' and payload::text like '%pi_cloud_image_v1%'`.execute(
+      db,
+    );
+  assert.equal(rows[0].n, 1);
+  report.queuedImageSteer = {
+    imageOnlyAdmission: true,
+    editPreservedAttachment: true,
+    consumedExactlyOnce: true,
+    directVisionWithoutRead: true,
+    sourceRunCancelled: true,
+  };
+}
+
 try {
   tenant = await createPrivateTenant(db, {
     slug: `upload-check-${Date.now().toString(36)}`,
@@ -111,147 +189,156 @@ try {
     workspaceId: project.workspaceId,
     sessionId: session.sessionId,
   };
-  const code = String(randomInt(100000, 999999)),
-    order = ["BLUE", "GREEN", "ORANGE"];
-  for (let i = 2; i > 0; i--) {
-    const j = randomInt(i + 1);
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  const colors = ["BLUE", "GREEN", "ORANGE"],
-    fills = ["#2466dd", "#279249", "#f08a20"];
-  const bars = colors
-    .map((name, i) => {
-      const height = 310 - order.indexOf(name) * 85;
-      return `<rect x="${260 + i * 280}" y="${650 - height}" width="160" height="${height}" fill="${fills[i]}"/><text x="${340 + i * 280}" y="700" text-anchor="middle" font-size="35">${name}</text>`;
+  if (process.argv[3] === "queue") {
+    report.scenario = "queue";
+    await queuedImageScenario();
+  } else {
+    const code = String(randomInt(100000, 999999)),
+      order = ["BLUE", "GREEN", "ORANGE"];
+    for (let i = 2; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const colors = ["BLUE", "GREEN", "ORANGE"],
+      fills = ["#2466dd", "#279249", "#f08a20"];
+    const bars = colors
+      .map((name, i) => {
+        const height = 310 - order.indexOf(name) * 85;
+        return `<rect x="${260 + i * 280}" y="${650 - height}" width="160" height="${height}" fill="${fills[i]}"/><text x="${340 + i * 280}" y="700" text-anchor="middle" font-size="35">${name}</text>`;
+      })
+      .join("");
+    const overlay = Buffer.from(
+      `<svg width="1300" height="900"><rect x="180" y="100" width="940" height="680" fill="white"/><g font-family="sans-serif" fill="black"><text x="650" y="250" text-anchor="middle" font-size="90">${code}</text>${bars}</g></svg>`,
+    );
+    const png = await sharp(randomBytes(1300 * 900 * 3), {
+      raw: { width: 1300, height: 900, channels: 3 },
     })
-    .join("");
-  const overlay = Buffer.from(
-    `<svg width="1300" height="900"><rect x="180" y="100" width="940" height="680" fill="white"/><g font-family="sans-serif" fill="black"><text x="650" y="250" text-anchor="middle" font-size="90">${code}</text>${bars}</g></svg>`,
-  );
-  const png = await sharp(randomBytes(1300 * 900 * 3), {
-    raw: { width: 1300, height: 900, channels: 3 },
-  })
-    .composite([{ input: overlay }])
-    .png()
-    .toBuffer();
-  assert(png.length > 1024 * 1024);
-  const imageFile = join(directory, "capture.png");
-  await writeFile(imageFile, png);
-  let uploadId;
-  // Exercise the deployed composer, browser body, actual Caddy CSP and preview.
-  await withChromePage({}, async (page) => {
-    await page.send("Network.setExtraHTTPHeaders", {
-      headers: { Authorization: `Bearer ${tenant.credential.token}` },
+      .composite([{ input: overlay }])
+      .png()
+      .toBuffer();
+    assert(png.length > 1024 * 1024);
+    const imageFile = join(directory, "capture.png");
+    await writeFile(imageFile, png);
+    let uploadId;
+    // Exercise the deployed composer, browser body, actual Caddy CSP and preview.
+    await withChromePage({}, async (page) => {
+      await page.send("Network.setExtraHTTPHeaders", {
+        headers: { Authorization: `Bearer ${tenant.credential.token}` },
+      });
+      await page.send("Page.navigate", { url: `${baseUrl}/?session=${session.sessionId}` });
+      await page.waitFor(
+        'document.querySelector(".product-attach-button") && !document.querySelector(".product-attach-button").disabled',
+        30000,
+      );
+      await page.waitFor(
+        'document.querySelector(".product-topbar")?.innerText.includes("Upload image acceptance")',
+        30000,
+      );
+      const { root } = await page.send("DOM.getDocument");
+      const { nodeId } = await page.send("DOM.querySelector", {
+        nodeId: root.nodeId,
+        selector: "input[type=file]",
+      });
+      await page.send("DOM.setFileInputFiles", { nodeId, files: [imageFile] });
+      await page.waitFor('document.querySelector(".upload-card img")?.naturalWidth>0', 30000);
+      const upload = await until(async () => {
+        const { rows } =
+          await sql`select id,path,state from session_uploads where session_id=${session.sessionId}::uuid and name='capture.png'`.execute(
+            db,
+          );
+        return rows.find((r) => r.state === "ready");
+      }, "Browser upload");
+      uploadId = upload.id;
+      const prompt =
+        "请直接看这条消息附带的图片，只回复图片顶端的六位数字。不要描述柱状图，不要调用任何工具。";
+      await page.evaluate(
+        `(() => { const node=document.querySelector('.product-composer textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(node,${JSON.stringify(prompt)});node.dispatchEvent(new Event('input',{bubbles:true})); })()`,
+      );
+      await page.waitFor('!document.querySelector(".product-send-button").disabled');
+      await page.evaluate('document.querySelector(".product-send-button").click()');
+      active = await until(async () => {
+        const { rows } =
+          await sql`select r.id as "runId",r.turn_id as "turnId" from runs r where r.session_id=${session.sessionId}::uuid order by r.created_at desc limit 1`.execute(
+            db,
+          );
+        return rows[0];
+      }, "Browser message");
+      const first = await completed(active);
+      assert.equal(first.tools.length, 0);
+      assert(first.text.includes(code));
+      await page.send("Page.reload");
+      await page.waitFor(
+        'document.querySelector(".product-user-message .upload-card img")?.naturalWidth>0',
+        30000,
+      );
+      report.browser = {
+        uploadedBytes: png.length,
+        previewAfterReload: true,
+        originalTextSeparate: true,
+        imageSeenWithoutTool: true,
+      };
     });
-    await page.send("Page.navigate", { url: `${baseUrl}/?session=${session.sessionId}` });
-    await page.waitFor(
-      'document.querySelector(".product-attach-button") && !document.querySelector(".product-attach-button").disabled',
-      30000,
+    const { rows: sourceRows } =
+      await sql`select image_reference as image,path from session_uploads where id=${uploadId}::uuid`.execute(
+        db,
+      );
+    const source = sourceRows[0];
+    const canonical =
+      await sql`select max(octet_length(payload::text))::int as bytes,count(*)::int as count from pi_session_log where session_id=${session.sessionId} and payload::text like '%pi_cloud_image_v1%'`.execute(
+        db,
+      );
+    assert(canonical.rows[0].count > 0);
+    assert(canonical.rows[0].bytes < 16384);
+    report.referencesOnly = canonical.rows[0];
+    const note = await api.uploadWorkspaceFile(
+      session.sessionId,
+      randomUUID(),
+      new Blob(["workspace-upload-marker-78\n"]),
+      "notes.txt",
     );
-    const { root } = await page.send("DOM.getDocument");
-    const { nodeId } = await page.send("DOM.querySelector", {
-      nodeId: root.nodeId,
-      selector: "input[type=file]",
-    });
-    await page.send("DOM.setFileInputFiles", { nodeId, files: [imageFile] });
-    await page.waitFor('document.querySelector(".upload-card img")?.naturalWidth>0', 30000);
-    const upload = await until(async () => {
-      const { rows } =
-        await sql`select id,path,state from session_uploads where session_id=${session.sessionId}::uuid and name='capture.png'`.execute(
-          db,
-        );
-      return rows.find((r) => r.state === "ready");
-    }, "Browser upload");
-    uploadId = upload.id;
-    const prompt =
-      "请直接看这条消息附带的图片，只回复图片顶端的六位数字。不要描述柱状图，不要调用任何工具。";
-    await page.evaluate(
-      `(() => { const node=document.querySelector('.product-composer textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(node,${JSON.stringify(prompt)});node.dispatchEvent(new Event('input',{bubbles:true})); })()`,
+    const fileTurn = await turn(
+      `先使用 read 工具读取刚附带的 notes.txt，再使用 bash 运行 printf 'changed' > ${JSON.stringify(source.path)}，最后只回复该文本文件的内容。不要读取图片、搜索或使用子代理。`,
+      [note.id],
     );
-    await page.waitFor('!document.querySelector(".product-send-button").disabled');
-    await page.evaluate('document.querySelector(".product-send-button").click()');
-    active = await until(async () => {
-      const { rows } =
-        await sql`select r.id as "runId",r.turn_id as "turnId" from runs r where r.session_id=${session.sessionId}::uuid order by r.created_at desc limit 1`.execute(
-          db,
-        );
-      return rows[0];
-    }, "Browser message");
-    const first = await completed(active);
-    assert.equal(first.tools.length, 0);
-    assert(first.text.includes(code));
-    await page.send("Page.reload");
-    await page.waitFor(
-      'document.querySelector(".product-user-message .upload-card img")?.naturalWidth>0',
-      30000,
+    assert(fileTurn.text.includes("workspace-upload-marker-78"));
+    assert.deepEqual(
+      fileTurn.tools.map((t) => t.name),
+      ["read", "bash"],
     );
-    report.browser = {
-      uploadedBytes: png.length,
-      previewAfterReload: true,
-      originalTextSeparate: true,
-      imageSeenWithoutTool: true,
+    const retained = await api.readInputImage({ id: uploadId, sessionId: session.sessionId });
+    assert.equal(createHash("sha256").update(retained.bytes).digest("hex"), source.image.sha256);
+    report.mutableSourceChanged = true;
+    const { rows: counts } =
+      await sql`select count(*)::int n from runs where state in ('queued','running','settling','cancel_requested')`.execute(
+        db,
+      );
+    assert.equal(counts[0].n, 0, "Cannot restart a Worker while another Run is active");
+    const { rows: owners } =
+      await sql`select supervisor_id,boot_id from sandboxes where id=${fileTurn.run.workerId}::uuid`.execute(
+        db,
+      );
+    const prefix = env.match(/^PI_CLOUD_SUPERVISOR_ID_PREFIX=(.*)$/m)?.[1] ?? "pi-cloud-worker-";
+    assert([prefix + "1", prefix + "2"].includes(owners[0].supervisor_id));
+    stoppedWorker =
+      owners[0].supervisor_id === prefix + "1" ? "supervisor-host" : "supervisor-host-1";
+    await execFile(process.execPath, ["scripts/production-compose.mjs", "stop", stoppedWorker]);
+    const recalled = await turn(
+      "不调用任何工具，不读取文件。根据最早那张图片中的柱状图，只输出三个柱子从高到低的颜色英文名称，用逗号分隔。之前没有要求你回答过这个顺序，现在请看原始图片。",
+    );
+    assert.equal(recalled.tools.length, 0);
+    assert.deepEqual(
+      (recalled.text.match(/\b(BLUE|GREEN|ORANGE)\b/gi) ?? []).map((c) => c.toUpperCase()),
+      order,
+    );
+    assert.notEqual(recalled.run.workerId, fileTurn.run.workerId);
+    report.coldRecovery = {
+      previousWorker: fileTurn.run.workerId,
+      nextWorker: recalled.run.workerId,
+      unseenVisualAttributeCorrect: true,
     };
-  });
-  const { rows: sourceRows } =
-    await sql`select image_reference as image,path from session_uploads where id=${uploadId}::uuid`.execute(
-      db,
-    );
-  const source = sourceRows[0];
-  const canonical =
-    await sql`select max(octet_length(payload::text))::int as bytes,count(*)::int as count from pi_session_log where session_id=${session.sessionId} and payload::text like '%pi_cloud_image_v1%'`.execute(
-      db,
-    );
-  assert(canonical.rows[0].count > 0);
-  assert(canonical.rows[0].bytes < 16384);
-  report.referencesOnly = canonical.rows[0];
-  const note = await api.uploadWorkspaceFile(
-    session.sessionId,
-    randomUUID(),
-    new Blob(["workspace-upload-marker-78\n"]),
-    "notes.txt",
-  );
-  const fileTurn = await turn(
-    `先使用 read 工具读取刚附带的 notes.txt，再使用 bash 运行 printf 'changed' > ${JSON.stringify(source.path)}，最后只回复该文本文件的内容。不要读取图片、搜索或使用子代理。`,
-    [note.id],
-  );
-  assert(fileTurn.text.includes("workspace-upload-marker-78"));
-  assert.deepEqual(
-    fileTurn.tools.map((t) => t.name),
-    ["read", "bash"],
-  );
-  const retained = await api.readInputImage({ id: uploadId, sessionId: session.sessionId });
-  assert.equal(createHash("sha256").update(retained.bytes).digest("hex"), source.image.sha256);
-  report.mutableSourceChanged = true;
-  const { rows: counts } =
-    await sql`select count(*)::int n from runs where state in ('queued','running','settling','cancel_requested')`.execute(
-      db,
-    );
-  assert.equal(counts[0].n, 0, "Cannot restart a Worker while another Run is active");
-  const { rows: owners } =
-    await sql`select supervisor_id,boot_id from sandboxes where id=${fileTurn.run.workerId}::uuid`.execute(
-      db,
-    );
-  const prefix = env.match(/^PI_CLOUD_SUPERVISOR_ID_PREFIX=(.*)$/m)?.[1] ?? "pi-cloud-worker-";
-  assert([prefix + "1", prefix + "2"].includes(owners[0].supervisor_id));
-  stoppedWorker =
-    owners[0].supervisor_id === prefix + "1" ? "supervisor-host" : "supervisor-host-1";
-  await execFile(process.execPath, ["scripts/production-compose.mjs", "stop", stoppedWorker]);
-  const recalled = await turn(
-    "不调用任何工具，不读取文件。根据最早那张图片中的柱状图，只输出三个柱子从高到低的颜色英文名称，用逗号分隔。之前没有要求你回答过这个顺序，现在请看原始图片。",
-  );
-  assert.equal(recalled.tools.length, 0);
-  assert.deepEqual(
-    (recalled.text.match(/\b(BLUE|GREEN|ORANGE)\b/gi) ?? []).map((c) => c.toUpperCase()),
-    order,
-  );
-  assert.notEqual(recalled.run.workerId, fileTurn.run.workerId);
-  report.coldRecovery = {
-    previousWorker: fileTurn.run.workerId,
-    nextWorker: recalled.run.workerId,
-    unseenVisualAttributeCorrect: true,
-  };
-  await execFile(process.execPath, ["scripts/production-compose.mjs", "start", stoppedWorker]);
-  stoppedWorker = undefined;
+    await execFile(process.execPath, ["scripts/production-compose.mjs", "start", stoppedWorker]);
+    stoppedWorker = undefined;
+  }
   report.accepted = true;
 } catch (error) {
   failure = error;

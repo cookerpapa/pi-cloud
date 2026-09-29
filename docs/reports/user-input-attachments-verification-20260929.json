@@ -1,0 +1,147 @@
+{
+  "checkedAt": "2026-09-29T07:39:04.454451+00:00",
+  "runtimeRevision": "1341b73cf98f6d92e52874704556442a62524bff",
+  "guestIdentity": "c4d974ffa0aac9e857876b1ff2668b88c217761c",
+  "fullCheck": {
+    "command": "PI_CLOUD_POSTGRES_INTEGRATION_URL=<isolated PostgreSQL> PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL=<isolated PostgreSQL> npm run check",
+    "exitCode": 0,
+    "tests": {
+      "passed": 1413,
+      "skipped": 3,
+      "failed": 0
+    },
+    "files": {
+      "passed": 215,
+      "skipped": 2,
+      "failed": 0
+    },
+    "logSha256": "e20257c84a3d29ede822a079a8632755938789cf1a2cf81a8a9dc36402324855",
+    "skips": "Kafka topic policy and two opt-in Cube provider cases; not counted as passed."
+  },
+  "faults": {
+    "passed": 90,
+    "total": 90,
+    "report": "user-input-attachments-faults-20260929.json",
+    "note": "Preserves the evaluation start revision and dirty marker. The final late image preparation cleanup also passed the separate 67-test Runner/Broker suite."
+  },
+  "checks": {
+    "build": {
+      "passed": true,
+      "logSha256": "579dd0501913a77c1caa6b7bc881a1f7cd3870e284fdc4e80bfb1aba236579fb"
+    },
+    "browser": {
+      "passed": true,
+      "logSha256": "7938816849dc494deae4eae50f70f1bbcf7d2480eeb4387ec91d5799c797aa9e"
+    },
+    "webDeployment": {
+      "passed": true,
+      "logSha256": "e9257f31ab71fc50ebf0f094950fb3fccc28e147944fdd7bf375c84a5c5c5e30"
+    },
+    "imageClosure": {
+      "passed": true,
+      "logSha256": "3e3723a1196186f22ad04c2f3f960af3d3860c54471e62169e272cfdc07ed59d"
+    },
+    "imageContext": {
+      "passed": true,
+      "logSha256": "0a7e8ffa6f19ec589343897494a6174ad47066db848e79347903b5851e10f23f"
+    },
+    "runtimePolicy": {
+      "passed": true,
+      "logSha256": "ea80913d0ac920bed4b9c41e83a4297e66d7596bfd78e5e142d5dea42d2fbb0d"
+    },
+    "observability": {
+      "passed": true,
+      "logSha256": "6e39a928488c0ed405ae32b2da12dadc15d4d3bf7e2d88c11cd5bf7819516404"
+    },
+    "lateInputCleanup": {
+      "passed": true,
+      "logSha256": "d04f117601139c266d98ba713bfc40721b36f57f70d38181b5ec73ca3dba86c1"
+    },
+    "lateInputTypes": {
+      "passed": true,
+      "logSha256": "85403cf41939112396101bc547cc4261844e145959215080329e092cae536b8b"
+    },
+    "productionImages": {
+      "passed": true,
+      "logSha256": "284c2002d7ace0b663b6d2ee5106cb6c7234b1922944b54eda55e4d78d2ebdaa"
+    },
+    "guestTemplate": {
+      "passed": true,
+      "logSha256": "de02c2a293a739ad75432219ed922a5efe27270be9a222f708ea4ba3f71ba895",
+      "note": "READY registration and guest contract passed; 15 old template retention candidates were deferred by Cube cleanup timeouts."
+    },
+    "format": {
+      "passed": true,
+      "logSha256": "ee3c89742afe6548f8d589fa2c2a122bb7b08c46d64d5690070ee3308fcf510c"
+    },
+    "documentation": {
+      "passed": true,
+      "logSha256": "9102b21e3e117c958ff328af8a4cbbee24450b089a43776758687bd00b0c68d6"
+    }
+  },
+  "runtimeSourceSha256": {
+    "deploy/cubesandbox/Dockerfile.tool": "3ec649eea395e027ea573bdb24550e05cdb17ac5c695111e36e433992c561e85",
+    "package.json": "2a2ee78dd5a77fa2e4085e96f1dda9b251af41507e6f98cdba17aa1797dffb30",
+    "packages/control-plane/src/application.ts": "a6de789a5305f0049b80534d62d2d02e0de8ed8688a5715216af2ccfe7906275",
+    "packages/control-plane/src/control-plane-store.ts": "2dda5ff9a4c2a5768779b8555027ffe9c87cddecf77836165f4ca39f4b11c959",
+    "packages/control-plane/src/control-plane.controller.ts": "db4077fd9a4488082a6d54384ea5f155a2f86da499dbab8cd28ffdf4eea739af",
+    "packages/control-plane/src/control-plane.module.ts": "23079477b9d94864f432721175f4c06ae42d9c2a8c1386ae84b7f7bbfdac6db0",
+    "packages/control-plane/src/conversation-reader.ts": "0e715e4e6aae719253bdeae5f8d31436f8c8fe2eb24ed5724cbef9f03dcde66a",
+    "packages/control-plane/src/http-supervisor-management.ts": "d68c1b9f69b3fc8832dccded53e594e1a9abc01e8e8bab73893cf23465147bdc",
+    "packages/control-plane/src/main.ts": "f2b771e6993855ca6147cf256072397226584029d9a46ddff3ec14415272b22d",
+    "packages/control-plane/src/queued-input-service.ts": "71f6ceb1f09fe901d6ffdc5a74da0484000a52108811129f5a6f2e2ad2f08d63",
+    "packages/control-plane/src/turn-steer.ts": "50974d5d276d7b3a07c05db5447b852c5118f3fdede582cd1bcace92ea912f8c",
+    "packages/control-plane/src/turn-steering-service.ts": "32601745bb04f89d3c013ae98aa27b103d4734845412e27763976f9c81770d5d",
+    "packages/control-plane/src/workspace-upload-service.ts": "a027caee99e8b178381bb29b81b2caeec617b713589ff2731f6b6c89a203d032",
+    "packages/database/src/database-types.ts": "58ce6b741f902371c5bf77a9a05f5091c3b0cae28d37cfb3442ebbb30d77dfc9",
+    "packages/database/src/index.ts": "c8c2e4d50b1015ae9630ac3a61d65d52088ebc3b5332e047458d51fd52ddb6ed",
+    "packages/database/src/migrations/154_user_input_uploads.ts": "22ebeaccbabca684f2ed91eb07fc455d7caf067a3b240ca6de03250ef14fb637",
+    "packages/database/src/migrations/index.ts": "649b7b8323bc84bfbf45962b1c97d0543cc316199e4d2c27c2e82653666b7fe2",
+    "packages/protocol/package.json": "4d654c0647349e860ef4746713629c237a8c0107bb803f874f711398d8ea9eb0",
+    "packages/protocol/src/control-plane-api.ts": "60ffce323b9c2b36068585e95f365b732346b4234b1a1e01bde28414d0ed4ee6",
+    "packages/protocol/src/guest.ts": "97ede039fab2019e8478742a3eb7e7ca173a2b1e1d1dd7d76a656cca54bf722e",
+    "packages/protocol/src/index.ts": "202ff39a897a4093848b4ddfc9d12a72df8a88ed920a34351c5dc99c98d16f4c",
+    "packages/protocol/src/queued-inputs.ts": "5c1e48a754fbac18e1eeb650d241f173cce1d9557d0d908cbb7028f9670bee7c",
+    "packages/protocol/src/supervisor-wire.ts": "f64b53df215023828ddb950afb37ba87229762c3ebe670dd293c6b14eae4e31a",
+    "packages/protocol/src/tool-sandbox.ts": "cbf1749dbf95cb194de644a226d08b27dc7bfcbd1ea193c2b9e21e84f15006e0",
+    "packages/protocol/src/user-upload.ts": "9ba22c5c4524192187b5074d24b4c325c040fa1aeeb2c9abaff5d37c56e2d79c",
+    "packages/runtime-core/src/run-executor.ts": "82d5b4b7131aacd510a35795dad9355edf3f18d635c6d02b912651b722755f7c",
+    "packages/sandbox-supervisor/src/agent-run-supervisor.ts": "85e1a051c48b548d0652b42d179bb55ce7d0e852793b7c7855271ac863865a93",
+    "packages/sandbox-supervisor/src/cloud-agent-runtime.ts": "3928a653d1c6cd66f26f58cd1a17f0d3db203138f3e49c39d0c622176774eb59",
+    "packages/sandbox-supervisor/src/pi-cloud-turn-runner.ts": "86a32b3d45a41d8e44d37fc56206a7d52adc25707c3d32020d92b572f3f7b98b",
+    "packages/sandbox-supervisor/src/remote-tool-sandbox-turn-runner.ts": "f04e8b449bd9e92467bb2d6ceb5e2de1a4cb41ab4a1aafa650f9b48db8ea06c3",
+    "packages/session-attachments/src/store.ts": "b3a33912b214cb2ccce3bd6e3f3cb46d26bf20b5c881a7d8d4e63d3d20adf61f",
+    "packages/supervisor-host/src/agent-run-execution-backend.ts": "9b7b79c1e5f647ff5184d1c0610fdc4dfc8c7ac2fc1b8b78646ca0320213def5",
+    "packages/supervisor-host/src/runtime.ts": "7d4dd4f2add1b0a4e16d2e02b3932111dc5a683d61c4af0d1d76e0341aa70fa1",
+    "packages/tool-broker/src/cubesandbox-sandbox-provider.ts": "96e2c6cd2ee6031969bbd1495becde9cd8550853d3894d845b9e1096f9bcbbf7",
+    "packages/tool-broker/src/main.ts": "0cdf75d4307af82e4cd8c357b5ab121857c0c11bbc5dadcd41fc0e160f071bf6",
+    "packages/tool-broker/src/persistent-volume-workspace-volume-gateway.ts": "b0fd049406b748fda33cb51cd0b9434ab12807c7d691aba96ca9fa3d502d2289",
+    "packages/tool-broker/src/sandbox-provider.ts": "ea7af24bccf8f330df6e5b4947d35de4dc5443e9a838d1db39621fae2dca9e34",
+    "packages/tool-broker/src/tool-broker-client.ts": "21911e27bbcfb2b0b9325ff2527bdde32a68b5c4ba9364e5596417c83c8ac1af",
+    "packages/tool-broker/src/tool-broker-server.ts": "fd7b22cd2e1f68df739be67d5802356383377b8fe967b7b135ddb395c976dcf4",
+    "packages/tool-broker/src/tool-broker.ts": "078671d266780ae9c48f6994027281c10d2aa4ed908d44d08b9760a965e2d4a0",
+    "packages/tool-broker/src/workspace-runtime-state-repository.ts": "4eafb09d52a3ee80f508606d6b85b390ef33fa22b69a663dee22860739be0934",
+    "packages/tool-broker/src/workspace-volume-gateway-contract.ts": "aaf995bf783d6d07e1bcff0388a32cdb9f51f1979b91483b290261c9825be476",
+    "packages/tool-broker/src/workspace-volume-gateway-main.ts": "704dd3772dd8c0052b035e2f505a23cb679b8b9c7e549768ff429e2a2fd3cecc",
+    "packages/tool-broker/src/workspace-volume-gateway-transport.ts": "50e4a5413e0dd0f6f3a416748c76249008167d5aad1794b04bcc22b8f26a2d40",
+    "packages/tool-sandbox/src/envd-input-files.ts": "57080a99b1b06ac49aeb98ecabf44fb10787981ddc690a0611d81e744aa5df72",
+    "packages/tool-sandbox/src/input-files.ts": "5ab02c24dde225e5b8bf75d0a494c4b75c1abc1060a3d1dccc9430f803d8ad13",
+    "packages/web-ui/Caddyfile": "89173b763016d841591a5d1a0436e0fb745d91c00319a2d7bcf8576229d77920",
+    "packages/web-ui/src/ChatApp.tsx": "11e44fd38eadf787e68a3732953b0bd7c1a0e5aab2f72277d174d2c8c8c00ea9",
+    "packages/web-ui/src/ConversationTurn.tsx": "d6b2c1020c81040b8cc3de53e97deddb0cc5df67474f65499826e8978ec0185d",
+    "packages/web-ui/src/PendingInputQueue.tsx": "eeeb7e94415dd3b16cf93149362d8ceea7a6f839f819ed8ddedc965f42577b96",
+    "packages/web-ui/src/UploadCards.tsx": "209784052e53cec640ca10113e81fc900bae86698d632268a36f2a2142a8d834",
+    "packages/web-ui/src/api.ts": "51f727231db11f3c572af6aafffecfca5101351dc57f9491ec7b182b903796f6",
+    "packages/web-ui/src/conversation-export.ts": "cb2d2e7d6c1961c3482a3da2ec102fb480ab180dab3976e2719b0af34fe0a707",
+    "packages/web-ui/src/i18n.tsx": "b18a5b069d06cb9b9eb31448986a8b2fe63e754307d67c3cd7d364a0970e08c3",
+    "packages/web-ui/src/product.css": "6fbcc7c53aaedf7b67fa19b62f2e0fbfad65032352a2420122addd4f70808baa",
+    "packages/web-ui/src/session-view.ts": "f13363e3bf07122c19a852b92bbf35b08b0aa78aca6e71aed17e5d29858990b1",
+    "packages/web-ui/src/useComposerUploads.ts": "9c39cc091c4b15c2024096e1cadb9d824db2263452f5528ce1b6c7f905d43cf7",
+    "packages/workspace-runtime/src/index.ts": "44202a28f7df01e39b9c0fd0899153ec473add860481e448704f25fbf18dab4e",
+    "packages/workspace-runtime/src/upload-file.ts": "1d7c7b94581d9721abf997c78fa8a327b2ce1eb213facaa6d0f40319f5d642b8"
+  },
+  "ephemeralCleanup": {
+    "isolatedPostgresRemoved": true,
+    "temporaryGuestBuildTagRemoved": true
+  }
+}

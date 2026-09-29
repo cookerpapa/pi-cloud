@@ -1,0 +1,123 @@
+{
+  "runtimeRevision": "1341b73cf98f6d92e52874704556442a62524bff",
+  "guestIdentity": "c4d974ffa0aac9e857876b1ff2668b88c217761c",
+  "before": {
+    "checkedAt": "2026-09-29T07:27:59.144Z",
+    "state": {
+      "unfinished": 0,
+      "owners": 0,
+      "unsealed": 0,
+      "openNativeOperations": 0
+    },
+    "history": {
+      "rows": 1370,
+      "digest": "ca20d817c0b2c11c733a691c02e411d1"
+    },
+    "images": {
+      "objects": 15,
+      "bytes": "165936527"
+    }
+  },
+  "after": {
+    "checkedAt": "2026-09-29T07:28:53.424Z",
+    "state": {
+      "unfinished": 0,
+      "owners": 0,
+      "unsealed": 0,
+      "openNativeOperations": 0
+    },
+    "history": {
+      "rows": 1370,
+      "digest": "ca20d817c0b2c11c733a691c02e411d1"
+    },
+    "images": {
+      "objects": 15,
+      "bytes": "165936527"
+    }
+  },
+  "backup": {
+    "bytes": 821749,
+    "sha256": "a250592b0c9cb6dcef427d8da17b97750c46d5d52a9ed34587151d3e275b7e53"
+  },
+  "containers": [
+    {
+      "service": "control-plane",
+      "status": "running",
+      "health": "healthy",
+      "revision": "1341b73cf98f6d92e52874704556442a62524bff"
+    },
+    {
+      "service": "supervisor-host",
+      "status": "running",
+      "health": "healthy",
+      "revision": "1341b73cf98f6d92e52874704556442a62524bff"
+    },
+    {
+      "service": "supervisor-host-1",
+      "status": "running",
+      "health": "healthy",
+      "revision": "1341b73cf98f6d92e52874704556442a62524bff"
+    },
+    {
+      "service": "tool-broker",
+      "status": "running",
+      "health": "healthy",
+      "revision": "1341b73cf98f6d92e52874704556442a62524bff"
+    },
+    {
+      "service": "workspace-volume-gateway",
+      "status": "running",
+      "health": "healthy",
+      "revision": "1341b73cf98f6d92e52874704556442a62524bff"
+    },
+    {
+      "service": "web",
+      "status": "running",
+      "health": "healthy",
+      "revision": "1341b73cf98f6d92e52874704556442a62524bff"
+    },
+    {
+      "service": "database-bootstrap",
+      "status": "exited",
+      "health": null,
+      "revision": "1341b73cf98f6d92e52874704556442a62524bff"
+    }
+  ],
+  "cleanup": {
+    "checkedAt": "2026-09-29T07:34:23.162Z",
+    "workspaces": [
+      {
+        "workspaceId": "b2c524ea-23be-44ca-ab0f-6821d5d5f888",
+        "deleted": true,
+        "purged": true
+      },
+      {
+        "workspaceId": "b05fe5f2-a990-4b2d-9655-147cdcce69cb",
+        "deleted": true,
+        "purged": true
+      }
+    ],
+    "credentials": [
+      {
+        "tenantId": "65b86345-404d-4fe4-9ad5-8a08d86fcc6c",
+        "revoked": true
+      },
+      {
+        "tenantId": "eb5145bd-c38a-45ca-961b-98f969633cc6",
+        "revoked": true
+      }
+    ],
+    "state": {
+      "unfinished": 0,
+      "owners": 0,
+      "unsealed": 0,
+      "open_operations": 0
+    }
+  },
+  "templateRetention": {
+    "selected": 15,
+    "deleted": 0,
+    "deferred": 15,
+    "reason": "Cube node template cleanup deadline; new templates are READY, existing history and Volumes are untouched"
+  }
+}

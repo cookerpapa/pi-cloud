@@ -12,10 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Implement approved [ADR-0200](adr/0200-workspace-uploads-and-user-image-input.md):
-      composer uploads to Workspace, native visual input, durable attachment
-      lifecycle and queue/history/browser/Luna acceptance.
-
 - [ ] Review the two moderate development-test dependency findings (Vitest and
       @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
       dependency gate passes; a test-tool upgrade needs its own contract checks.
@@ -70,6 +66,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
       before increasing tree or model concurrency defaults.
 
 ## Deployment operations
+
+- [ ] Diagnose Cube node template-cleanup timeouts observed during the
+      [chat upload rollout](reports/user-input-attachments-rollout-20260929.json).
+      Fifteen retention candidates were deferred; the new templates are READY.
+      Preserve template/Volume pinning instead of bypassing cleanup guards.
 
 - [ ] Investigate the 4GB Cube template restore failure seen after a WSL reboot:
       CubeShim's `SetGuestDateTime` RPC timed out twice before guest tools started.
