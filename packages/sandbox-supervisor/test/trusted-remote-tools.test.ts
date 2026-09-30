@@ -438,4 +438,107 @@ describe("whole-tool Worker adapter", () => {
     ).rejects.toThrow("cubesandbox_tool_result_unknown");
     expect(unavailable).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    "reply timed out",
+    "reply Worker stopped",
+    "image decode failed",
+    "reply identity mismatch",
+  ])("stops native Agent sampling after transport rejection: %s", async (reason) => {
+    const cause = new Error(reason);
+    let failure: Error | undefined;
+    const capture = createStepCapture();
+    const unavailable = vi.fn((value: { code: string; message: string }) => {
+      failure = new Error(value.code);
+    });
+    const publish = vi.fn(async (command: CandidateToolCommand) => ({
+      operationId: command.request.operationId,
+      accepted: true as const,
+    }));
+    const { value } = configuration({
+      publishToolCommand: publish,
+      waitForToolReply: async () => {
+        throw cause;
+      },
+      onToolOperationUnavailable: unavailable,
+      captureStepContext: (tools) => {
+        if (failure) throw failure;
+        return capture(tools);
+      },
+    });
+    const remote = createTrustedRemoteAgentTools(value);
+    const model = getModel("openai", "gpt-4o-mini");
+    let requests = 0;
+    const agent = new Agent({
+      initialState: { model, tools: remote.tools, systemPrompt: "Fixture" },
+      transformContext: (messages) => remote.transformContext(messages),
+      streamFn: () => {
+        const first = ++requests === 1;
+        const message: AssistantMessage = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          timestamp: Date.now(),
+          stopReason: first ? "toolUse" : "stop",
+          content: first
+            ? [
+                {
+                  type: "toolCall",
+                  id: "uncertain",
+                  name: "bash",
+                  arguments: { command: "echo fixture" },
+                },
+              ]
+            : [{ type: "text", text: "must not continue" }],
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+        const stream = new EventStream<AssistantMessageEvent, AssistantMessage>(
+          (event) => event.type === "done",
+          () => message,
+        );
+        queueMicrotask(() =>
+          stream.push({ type: "done", reason: first ? "toolUse" : "stop", message }),
+        );
+        return stream;
+      },
+    });
+    await agent.prompt("Execute once");
+    expect(requests).toBe(1);
+    expect(publish).toHaveBeenCalledOnce();
+    expect(unavailable).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ code: "tool_operation_outcome_unknown", retryable: false }),
+    );
+    expect(agent.state.messages.find((message) => message.role === "toolResult")).toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: expect.stringContaining("tool_operation_outcome_unknown") }],
+    });
+  });
+
+  it("keeps an explicitly cancelled reply wait separate from infrastructure loss", async () => {
+    const cancelled = new AbortController(),
+      unavailable = vi.fn();
+    const { value } = configuration({
+      onToolOperationUnavailable: unavailable,
+      publishToolCommand: async (command) => {
+        cancelled.abort(new Error("user cancelled"));
+        return { operationId: command.request.operationId, accepted: true };
+      },
+    });
+    const remote = createTrustedRemoteAgentTools(value);
+    await remote.transformContext([]);
+    await expect(
+      remote.tools
+        .find((tool) => tool.name === "bash")!
+        .execute("cancelled", { command: "echo fixture" }, cancelled.signal),
+    ).rejects.toThrow("aborted");
+    expect(unavailable).not.toHaveBeenCalled();
+  });
 });

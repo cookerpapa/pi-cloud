@@ -19,10 +19,6 @@ release gate; final combined verification remains part of the repairs.
 
 ## September 30 review follow-up
 
-- [ ] R30-01: route rejected Tool-reply waits through the existing infrastructure
-      failure latch, covering timeout, consumer closure and decode/identity
-      failure. Preserve cancellation and UNKNOWN; prove no next sampling or
-      automatic Tool replay after loss of the confirmed result.
 - [ ] R30-05: include timed_out in Subagent seal waiting; compare every terminal
       Run state before and after output closure.
 - [ ] R30-02: preserve own JSON properties such as `__proto__` during message

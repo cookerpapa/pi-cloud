@@ -66,3 +66,16 @@ closure check pass. Workspace typechecks were run; the one Vitest-4 Mock typing
 change was corrected and runtime-core rechecked. New subprocess regressions
 exercise deep brace nesting and unsolicited WebSocket subprotocols against both
 installed undici lines. Future-advisory tests ensure audit exemptions fail closed.
+
+## R30-01: unavailable Tool reply stops subsequent sampling
+
+Rejected native-reply waits now notify the existing infrastructure-failure latch
+before surfacing the bounded UNKNOWN Tool error. The thrown error retains its
+cause; no command is republished. Explicit cancellation still bypasses the
+infrastructure-unavailable classification. This applies the existing ADR-0151
+contract consistently instead of introducing a new recovery policy.
+
+All 30 remote-tool adapter tests pass, including actual Pi Agent execution for
+timeout, stopped reply consumer, image decode rejection and mismatched reply.
+Each case publishes one Tool command and makes only one model request; user
+cancellation is covered separately.

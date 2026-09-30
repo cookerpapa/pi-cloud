@@ -325,12 +325,15 @@ export function createTrustedRemoteAgentTools(
       dispose: () => pendingAbort.abort(new Error("Tool reply wait closed")),
       result: async () => {
         if (candidate.operation === "tool.execute") {
-          const event = await pending.catch((error: unknown) => {
+          const event = await pending.catch(async (error: unknown) => {
             if (signal?.aborted) throw new Error("aborted");
-            throw new Error(
-              "tool_operation_outcome_unknown: Tool reply could not be confirmed; do not automatically repeat the command",
-              { cause: error },
-            );
+            const failure = {
+              code: "tool_operation_outcome_unknown",
+              message: "Tool reply could not be confirmed; do not automatically repeat the command",
+              retryable: false,
+            } as const;
+            await runtime.onToolOperationUnavailable?.(failure);
+            throw new Error(`${failure.code}: ${failure.message}`, { cause: error });
           });
           return {
             toolBrokerProtocolVersion: 1,
