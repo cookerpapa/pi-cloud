@@ -163,12 +163,30 @@ describe.sequential("pending conversation inputs", () => {
         .set({ desired_thinking_level: "high" })
         .where("id", "=", f.session.sessionId)
         .execute();
-      const accepted = await f.store.acceptTurnSteer(
+      const statements: string[] = [];
+      const measured = new ControlPlaneStore({
+        ...f.tenant,
+        database: database.withPlugin({
+          transformQuery({ node, queryId }) {
+            statements.push(database.getExecutor().compileQuery(node, queryId).sql);
+            return node;
+          },
+          async transformResult({ result }) {
+            return result;
+          },
+        }),
+      });
+      const accepted = await measured.acceptTurnSteer(
         f.session.sessionId,
         run.first.turnId,
         "direct",
         { text: "  preserve me  " },
       );
+      const receiptReads = () =>
+        statements.filter((query) =>
+          query.startsWith('select "id", "target_run_id" from "turn_control_requests"'),
+        );
+      expect(receiptReads()).toEqual([]);
       expect(accepted).toMatchObject({ state: "accepted", targetRunId: run.first.runId });
       const q = await f.list();
       expect(q.items.map(({ text, status }) => ({ text, status }))).toEqual([
@@ -235,10 +253,11 @@ describe.sequential("pending conversation inputs", () => {
       await seal(run.first.runId);
       await f.queue.reconcileOnce();
       expect(
-        await f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "direct", {
+        await measured.acceptTurnSteer(f.session.sessionId, run.first.turnId, "direct", {
           text: "preserve me",
         }),
       ).toEqual({ ...accepted, replayed: true });
+      expect(receiptReads()).toHaveLength(1);
       expect((await f.list()).items.at(-1)).toMatchObject({
         turnId: accepted.sourceTurnId,
         status: "queued",

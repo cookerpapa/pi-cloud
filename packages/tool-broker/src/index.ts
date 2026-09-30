@@ -11,7 +11,6 @@ export {
   type ReplicatedToolBrokerClientOptions,
 } from "./tool-broker-client.ts";
 export {
-  InMemoryWorkspaceRuntimeStateRepository,
   PostgresWorkspaceRuntimeStateRepository,
   WorkspaceRuntimeStateRepositoryError,
   type PostgresWorkspaceRuntimeStateRepositoryOptions,

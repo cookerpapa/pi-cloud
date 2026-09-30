@@ -1,3 +1,4 @@
+import { InMemoryWorkspaceRuntimeStateRepository } from "./helpers/in-memory-workspace-runtime-state-repository.ts";
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
@@ -17,7 +18,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CubeSandboxProvider,
   HttpWorkspaceVolumeGateway,
-  InMemoryWorkspaceRuntimeStateRepository,
   OfficialCubeSandboxRuntimeClient,
   ToolBroker,
   type OfficialCubeSandboxRuntimeClientOptions,

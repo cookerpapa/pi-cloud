@@ -205,3 +205,17 @@ Session admission against an old schema. Provider absence confirmation was reche
 with 28 provider tests after correcting the fixture's seed type. Documentation check
 passes. Production acceptance scripts now expect deletion to reclaim unused compute;
 those live scripts and the destructive migration have not been run against production.
+
+## Bounded cleanup: Steer receipt and production repository surface
+
+A newly accepted direct Steer returns its receipt identity from the successful
+transaction. The post-commit SELECT is removed from that path. Idempotent replay
+still reads the existing control receipt and preserves the same fingerprint and
+source/target identities; uncertain transaction outcomes do not reuse a captured
+uncommitted ID. A query-count assertion verifies zero receipt SELECTs for creation
+and one on replay. All 29 queue/composition tests pass on dedicated PostgreSQL and
+the Control Plane typecheck passes.
+
+The in-memory Workspace ownership implementation is moved to test helpers, with
+its production export removed. The repository port and PostgreSQL implementation
+remain. All 73 Broker/provider tests and the Broker typecheck pass.

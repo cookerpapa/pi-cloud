@@ -176,6 +176,10 @@ function parseRequestHash(requestHash: string): string {
   return requestHash;
 }
 
+type AcceptedInput = AcceptedTurnResource & {
+  steerReceipt?: { id: string; target_run_id: string };
+};
+
 function acceptedTurnResource(
   row: AcceptedTurnRow,
   expectedRequestHash: string,
@@ -1297,14 +1301,16 @@ export class ControlPlaneStore {
       undefined,
       targetTurnId,
     );
-    const control = await this.#database
-      .selectFrom("turn_control_requests")
-      .select(["id", "target_run_id"])
-      .where("tenant_id", "=", this.#tenantId)
-      .where("session_id", "=", sessionId)
-      .where("idempotency_key", "=", idempotencyKey)
-      .where("kind", "=", "queue")
-      .executeTakeFirstOrThrow();
+    const control =
+      accepted.steerReceipt ??
+      (await this.#database
+        .selectFrom("turn_control_requests")
+        .select(["id", "target_run_id"])
+        .where("tenant_id", "=", this.#tenantId)
+        .where("session_id", "=", sessionId)
+        .where("idempotency_key", "=", idempotencyKey)
+        .where("kind", "=", "queue")
+        .executeTakeFirstOrThrow());
     return {
       controlRequestId: control.id,
       targetRunId: control.target_run_id,
@@ -1325,7 +1331,7 @@ export class ControlPlaneStore {
     fingerprint: string,
     existingTransaction?: Transaction<Database>,
     steerTargetTurnId?: string,
-  ): Promise<AcceptedTurnResource> {
+  ): Promise<AcceptedInput> {
     const startedAt = performance.now();
     let outcome = "accepted";
     try {
@@ -1477,10 +1483,10 @@ export class ControlPlaneStore {
     fingerprint: string,
     existingTransaction?: Transaction<Database>,
     steerTargetTurnId?: string,
-  ): Promise<AcceptedTurnResource> {
+  ): Promise<AcceptedInput> {
     const turnId = this.#idGenerator();
     const runId = this.#idGenerator();
-    const accept = async (transaction: Transaction<Database>): Promise<AcceptedTurnResource> => {
+    const accept = async (transaction: Transaction<Database>): Promise<AcceptedInput> => {
       const session = await transaction
         .selectFrom("sessions as session_row")
         .leftJoin("runs as replay_run", (join) =>
@@ -1784,9 +1790,10 @@ export class ControlPlaneStore {
         );
       }
 
-      if (target !== undefined)
+      const controlId = target === undefined ? undefined : this.#idGenerator();
+      if (target !== undefined && controlId !== undefined)
         await holdQueuedSteer(transaction, {
-          controlId: this.#idGenerator(),
+          controlId,
           tenantId: this.#tenantId,
           sessionId,
           targetRunId: target.id,
@@ -1802,18 +1809,23 @@ export class ControlPlaneStore {
           piSessionId: session.pi_session_id,
         });
 
-      return acceptedTurnResource(
-        {
-          runId: run.id,
-          mailboxPosition: String(mailboxPosition),
-          turnId,
-          sessionId: session.id,
-          acceptedAt: run.created_at,
-          requestSha256: run.request_sha256,
-        },
-        fingerprint,
-        false,
-      );
+      return {
+        ...acceptedTurnResource(
+          {
+            runId: run.id,
+            mailboxPosition: String(mailboxPosition),
+            turnId,
+            sessionId: session.id,
+            acceptedAt: run.created_at,
+            requestSha256: run.request_sha256,
+          },
+          fingerprint,
+          false,
+        ),
+        ...(controlId === undefined || target === undefined
+          ? {}
+          : { steerReceipt: { id: controlId, target_run_id: target.id } }),
+      };
     };
     return existingTransaction === undefined
       ? this.#database.transaction().execute(accept)
