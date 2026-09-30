@@ -78,7 +78,7 @@ async function alone() {
 }
 async function logCount() {
   const { rows } =
-    await sql`select count(*)::int n from pi_session_log where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId}::uuid`.execute(
+    await sql`select count(*)::int n from pi_session_log where tenant_id=${tenant.tenantId} and session_id=${session.sessionId}`.execute(
       db,
     );
   return rows[0].n;
@@ -165,6 +165,9 @@ try {
   });
   void stream.catch(() => {});
   await withChromePage({}, async (page) => {
+    await page.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: "localStorage.setItem('pi-cloud:ui-language','zh-CN')",
+    });
     await page.send("Network.setExtraHTTPHeaders", {
       headers: { Authorization: `Bearer ${tenant.credential.token}` },
     });
@@ -194,10 +197,15 @@ try {
     await alone();
     await exec("docker", ["pause", "pi-cloud-production-control-plane-1"]);
     paused = true;
-    await page.waitFor(
-      `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('状态更新延迟')`,
-      60_000,
-    );
+    try {
+      await page.waitFor(
+        `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('状态更新延迟')`,
+        60_000,
+      );
+    } catch (error) {
+      report.lastBrowserStatus = await page.evaluate(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? null`);
+      throw error;
+    }
     const { rows: leases } =
       await sql`select l.valid_until > clock_timestamp() as valid from runs r join session_leases l on l.lease_id=r.lease_id where r.id=${active.runId}::uuid`.execute(
         db,
