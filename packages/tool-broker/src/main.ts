@@ -1,5 +1,5 @@
 import { loadToolBrokerConfig } from "./tool-broker-config.ts";
-import { createDatabase } from "@pi-cloud/database";
+import { createDatabase, PostgresNotificationWake } from "@pi-cloud/database";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
 import { CubeSandboxProvider } from "./cubesandbox-sandbox-provider.ts";
 import { ToolBrokerServer } from "./tool-broker-server.ts";
@@ -39,6 +39,7 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
   let provider: CubeSandboxProvider | undefined;
   let deletionReaper: WorkspaceVolumeDeletionReaper | undefined;
   let broker: ToolBroker | undefined;
+  let workspaceCleanupWake: PostgresNotificationWake | undefined;
   let commands: ToolCommandExecutor | undefined;
   let replies: KafkaToolReplyPublisher | undefined;
   let progress: ToolProgressPublisher | undefined;
@@ -56,6 +57,7 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
         () => commands?.close(),
         () => progress?.close(),
         () => (server ? server.close() : broker ? broker.close() : provider?.close()),
+        () => workspaceCleanupWake?.close(),
         () => replies?.close(),
         () => (broker ? undefined : ownership?.close()),
         () => (provider ? undefined : volume?.close()),
@@ -136,7 +138,12 @@ export async function startToolBroker(): Promise<{ close: () => Promise<void> }>
       intervalMs: config.workspaceDeletionReaperIntervalMs,
       batchSize: config.workspaceDeletionReaperBatchSize,
     });
+    workspaceCleanupWake = new PostgresNotificationWake(
+      config.databaseNotificationUrl,
+      "pi_cloud_workspace_cleanup",
+    );
     broker = new ToolBroker({
+      workspaceCleanupWake,
       ...(images ? { inputImages: images.store } : {}),
       provider,
       ownerBaseUrl: config.advertisedBaseUrl,

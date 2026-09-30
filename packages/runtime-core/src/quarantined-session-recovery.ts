@@ -22,7 +22,7 @@ export async function recoverQuarantinedSession(
     .where("s.tenant_id", "=", execution.tenantId)
     .where("s.id", "=", execution.sessionId)
     .where("s.state", "=", "failed")
-    .where("s.archived_at", "is", null)
+    .where("s.pruned_at", "is", null)
     .where(
       sql<boolean>`exists (
       select 1 from runs r

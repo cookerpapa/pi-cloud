@@ -5,7 +5,7 @@ import { ControlPlaneStoreError } from "./control-plane-store.ts";
 import { PublicTenantRegistrationError } from "./public-tenant-registration.ts";
 import { TenantRequestContextError } from "./tenant-request-context.ts";
 import { TenantModelConfigurationError } from "./tenant-model-configuration.ts";
-import { ConversationArchiveError } from "./conversation-archive-service.ts";
+import { ConversationDeletionError } from "./conversation-deletion-service.ts";
 import { WorkspaceBrowserError } from "./workspace-browser-service.ts";
 import { WebAuthenticationError } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsError } from "./platform-runtime-settings.ts";
@@ -93,14 +93,8 @@ export function mappedError(error: unknown): ErrorResponse {
                 : 503;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
-  if (error instanceof ConversationArchiveError) {
-    const status =
-      error.code === "not_found"
-        ? 404
-        : error.code === "conflict" || error.code === "idempotency_conflict"
-          ? 409
-          : 503;
-    return { status, body: { error: { code: error.code, message: error.message } } };
+  if (error instanceof ConversationDeletionError) {
+    return { status: 409, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof WorkspaceBrowserError) {
     const status =

@@ -220,8 +220,7 @@ try {
 } finally {
   streamAbort.abort();
   await stream?.catch(() => undefined);
-  if (session)
-    await api.deleteConversation(session.sessionId, newIdempotencyKey("delete-tool-ui-session"));
+  if (session) await api.deleteConversation(session.sessionId);
   if (project)
     await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-tool-ui-workspace"));
   report.resourcesReleased = true;

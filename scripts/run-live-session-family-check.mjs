@@ -429,7 +429,7 @@ try {
         "delegated task settlement",
       );
     for (const s of owned) {
-      await api.deleteConversation(s.sessionId, newIdempotencyKey("family-cleanup"));
+      await api.deleteConversation(s.sessionId);
       await api.deleteWorkspace(s.workspaceId, newIdempotencyKey("family-cleanup"));
     }
   } catch (error) {

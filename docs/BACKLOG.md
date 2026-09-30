@@ -27,11 +27,6 @@ release gate; final combined verification remains part of the repairs.
       is complete: current upstream APIs do not provide the full trusted-host
       handoff/Kafka delivery contract. A scoped protocol/prototype decision is
       still required before changing boot ownership and cleanup semantics.
-- [ ] D30-02: implement the owner's requested permanent conversation deletion,
-      including database history and child Sessions, instead of archive/restore.
-      Reclaim elastic compute with no remaining conversation users, preserve
-      independent Workspace bytes and other users, and release physical quota
-      only after confirmed runtime cleanup. Between-Turn warm reuse is unchanged.
 - [ ] Evaluate the review's remaining bounded cleanup candidates: avoid the
       new-Steer receipt re-read, move the in-memory
       Workspace runtime repository into test helpers, and reconcile the stale

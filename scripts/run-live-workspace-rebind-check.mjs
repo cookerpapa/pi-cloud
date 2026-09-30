@@ -230,8 +230,7 @@ try {
         await until(async () => terminal((await api.getRun(active.runId)).state), "Cleanup Run");
       }
     });
-  if (session)
-    await clean(() => api.deleteConversation(session.sessionId, newIdempotencyKey("cleanup")));
+  if (session) await clean(() => api.deleteConversation(session.sessionId));
   if (machine)
     await clean(() =>
       api.developmentEnvironmentAction(

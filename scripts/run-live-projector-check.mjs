@@ -178,8 +178,7 @@ try {
 } finally {
   abort.abort();
   await stream?.catch(() => {});
-  for (const s of sessions)
-    await api.deleteConversation(s.sessionId, newIdempotencyKey("delete-shard-session"));
+  for (const s of sessions) await api.deleteConversation(s.sessionId);
   if (workspace)
     await api.deleteWorkspace(workspace.workspaceId, newIdempotencyKey("delete-shard-workspace"));
 }

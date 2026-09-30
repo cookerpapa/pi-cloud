@@ -1,3 +1,4 @@
+import { insertHistoricalSession } from "./fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql, type Kysely } from "kysely";
@@ -39,7 +40,7 @@ describe.skipIf(!endpoint)("one-Run identity cutover", () => {
     tenantId = tenant.tenantId;
     store = new ControlPlaneStore({ database: db, ...tenant });
     const p = await store.createProject({ name: "retained", source: { kind: "empty" } }),
-      s = await store.createSession(p.projectId, p.workspaceId, "retained", "elastic");
+      s = await insertHistoricalSession(db, { ...tenant, ...p });
     sessionId = s.sessionId;
     const entry = {
       id: randomUUID(),

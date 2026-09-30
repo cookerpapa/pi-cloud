@@ -1,3 +1,8 @@
+import { PostgresQueueWake } from "@pi-cloud/database";
+import {
+  runWorkspaceRuntimeCleanup,
+  type WorkspaceCleanupWake,
+} from "./workspace-runtime-cleanup.ts";
 import { WorkflowChannels, type WorkflowFrame } from "./workflow-channels.ts";
 import { SandboxAdmission } from "./sandbox-admission.ts";
 import PQueue from "p-queue";
@@ -77,6 +82,7 @@ import type {
 } from "./sandbox-http-service-registry.ts";
 
 export type ToolBrokerOptions = {
+  workspaceCleanupWake?: WorkspaceCleanupWake;
   inputImages?: ImageAttachmentStore;
   provider: SandboxProvider;
   ownerBaseUrl: string;
@@ -365,6 +371,9 @@ export class ToolBroker {
   readonly #admission: SandboxAdmission;
   readonly #workspaceRuntimeProvisioningTails = new Map<string, Promise<void>>();
   readonly #reaper: NodeJS.Timeout;
+  readonly #cleanupController = new AbortController();
+  readonly #cleanupLoop: Promise<void>;
+  #workspaceCleanup: Promise<void> | undefined;
   #developmentEnvironmentRecovery: Promise<number> | undefined;
 
   constructor(options: ToolBrokerOptions) {
@@ -407,17 +416,19 @@ export class ToolBroker {
     this.#reaper = setInterval(
       () =>
         void Promise.all([
-          this.reapWarm(),
-          this.reapRetiredWarm(),
           this.recoverPersistentDevelopmentEnvironments(),
-          this.#reapOrphanedWorkspaceRuntimes(),
-          this.#reapUnboundWorkspaceRuntimes(),
           this.#reapOrphanedTerminals(),
           this.#markUnrecoverableDevelopmentEnvironments(),
         ]).catch((error: unknown) => this.#onMaintenanceError?.(error)),
       30_000,
     );
     this.#reaper.unref();
+    this.#cleanupLoop = runWorkspaceRuntimeCleanup(
+      options.workspaceCleanupWake ?? new PostgresQueueWake(),
+      this.#cleanupController.signal,
+      () => this.reapWorkspaceRuntimes(),
+      (error) => this.#onMaintenanceError?.(error),
+    );
   }
 
   get providerId(): string {
@@ -2410,6 +2421,8 @@ export class ToolBroker {
     const errors: unknown[] = [];
     this.#admission.close();
     clearInterval(this.#reaper);
+    this.#cleanupController.abort();
+    await this.#cleanupLoop;
     await this.#developmentEnvironmentRecovery?.catch((error) => {
       errors.push(error);
     });
@@ -2555,6 +2568,17 @@ export class ToolBroker {
       }
       throw error;
     }
+  }
+
+  reapWorkspaceRuntimes(): Promise<void> {
+    return (this.#workspaceCleanup ??= (async () => {
+      await this.reapWarm();
+      await this.reapRetiredWarm();
+      await this.#reapOrphanedWorkspaceRuntimes();
+      await this.#reapUnboundWorkspaceRuntimes();
+    })().finally(() => {
+      this.#workspaceCleanup = undefined;
+    }));
   }
 
   async reapWarm(): Promise<void> {

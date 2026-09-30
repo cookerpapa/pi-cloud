@@ -7,6 +7,7 @@ export type ToolBrokerConfig = {
   host: string;
   port: number;
   databaseUrl: string;
+  databaseNotificationUrl: string;
   kafkaBrokers: readonly string[];
   maximumActiveCommands: number;
   sandboxDomainId: string;
@@ -227,6 +228,9 @@ export async function loadToolBrokerConfig(
     host: bounded(environment.PI_CLOUD_TOOL_BROKER_HOST ?? "127.0.0.1", "host", 256),
     port: integer(environment.PI_CLOUD_TOOL_BROKER_PORT, 4_300, 1, 65_535),
     databaseUrl: await readDatabaseUrl(required(environment, "DATABASE_URL_FILE")),
+    databaseNotificationUrl: await readDatabaseUrl(
+      environment.DATABASE_NOTIFICATION_URL_FILE ?? required(environment, "DATABASE_URL_FILE"),
+    ),
     kafkaBrokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
       .split(",")
       .map((value) => bounded(value.trim(), "Kafka broker", 256)),

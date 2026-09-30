@@ -33,7 +33,6 @@ import {
   parseDevelopmentEnvironmentResource,
   parseDevelopmentEnvironmentDirectoryResource,
   parseWorkspaceListResource,
-  parseWorkspaceOperationResource,
   parseConversationWorkspaceBindingResource,
   parseSshAccessTicketResource,
   parseSourceControlIssueJobListResource,
@@ -72,7 +71,6 @@ import {
   type DevelopmentEnvironmentResource,
   type DevelopmentEnvironmentDirectoryResource,
   type WorkspaceListResource,
-  type WorkspaceOperationResource,
   type WorkspaceSourceRequest,
   type ConversationWorkspaceBindingResource,
   type SshAccessTicketResource,
@@ -568,20 +566,12 @@ export class PiCloudApi {
     );
   }
 
-  async deleteConversation(
-    sessionId: string,
-    idempotencyKey: string,
-  ): Promise<WorkspaceOperationResource> {
-    return parseWorkspaceOperationResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}`,
-        {
-          method: "DELETE",
-          headers: { "idempotency-key": idempotencyKey },
-        },
-        this.#authorizationToken,
-      ),
+  async deleteConversation(sessionId: string): Promise<void> {
+    await request(
+      this.#fetch,
+      `/v1/conversations/${encodeURIComponent(sessionId)}`,
+      { method: "DELETE" },
+      this.#authorizationToken,
     );
   }
 
@@ -896,7 +886,6 @@ export function newIdempotencyKey(
     | "turn"
     | "cancel"
     | "steer"
-    | "archive"
     | "delete"
     | "retry"
     | "fork"

@@ -223,8 +223,9 @@ const zhCN = {
     "保留这条回复，删除它之后的对话、分支和 Subagent 记录？Workspace 文件不会回滚。",
   "chat.selectExclusiveError": "请选择一台可用的云端开发机。",
   "chat.selectWorkspaceError": "请选择一个 Workspace。",
-  "chat.deleteTreeConfirm": "删除对话“{title}”及其全部分支和 Subagent？Workspace 文件不会被删除。",
-  "chat.deleteConfirm": "删除对话“{title}”？Workspace 文件不会被删除。",
+  "chat.deleteTreeConfirm":
+    "永久删除对话“{title}”及其全部分支和 Subagent？会话历史不可恢复，Workspace 文件保留。",
+  "chat.deleteConfirm": "永久删除对话“{title}”？会话历史不可恢复，Workspace 文件保留。",
   "chat.steerAccepted": "引导消息已保存，等待当前任务处理；若任务结束前未处理，会保留在待发队列。",
   "chat.subagentDepth": "第 {depth} 层",
   "chat.state.queued": "排队中",
@@ -674,8 +675,9 @@ const enUS: Record<UiTextKey, string> = {
   "chat.selectExclusiveError": "Select an available cloud development machine.",
   "chat.selectWorkspaceError": "Select a Workspace.",
   "chat.deleteTreeConfirm":
-    "Delete “{title}” and all its branches and Subagents? Workspace files will not be deleted.",
-  "chat.deleteConfirm": "Delete “{title}”? Workspace files will not be deleted.",
+    "Permanently delete “{title}” and all its branches and Subagents? Conversation history cannot be restored. Workspace files are kept.",
+  "chat.deleteConfirm":
+    "Permanently delete “{title}”? Conversation history cannot be restored. Workspace files are kept.",
   "chat.steerAccepted":
     "Instruction saved, awaiting the active task. If unconsumed when the task ends, it returns to the pending queue.",
   "chat.subagentDepth": "Level {depth}",

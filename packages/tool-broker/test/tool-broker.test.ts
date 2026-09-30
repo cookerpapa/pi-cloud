@@ -1952,7 +1952,35 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.stopped).toBe(true);
   });
 
-  it("reaps a retained runtime after its conversation is archived", async () => {
+  it("releases local compute quota only after an unused runtime is confirmed destroyed", async () => {
+    const fixture = providerFixture(),
+      repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const manager = testBroker({
+      provider: fixture.provider,
+      stateRepository: repository,
+      idGenerator: () => ACTIVATION_ID,
+    });
+    await manager.create(createRequest);
+    await manager.execute(assignment.executionReference, operation(crypto.randomUUID()));
+    const claim = vi
+      .spyOn(repository, "claimUnboundWorkspaceRuntimes")
+      .mockResolvedValue([{ activationId: ACTIVATION_ID, assignment }]);
+    const state = vi.spyOn(repository, "setWorkspaceRuntimeState");
+    const destroy = vi
+      .spyOn(fixture.provider, "destroyRuntime")
+      .mockRejectedValueOnce(new Error("Cube still alive"));
+    await manager.reapWorkspaceRuntimes();
+    expect(manager.admittedCount).toBe(1);
+    expect(state).toHaveBeenLastCalledWith(ACTIVATION_ID, "unknown", expect.anything());
+    destroy.mockResolvedValue(undefined);
+    await manager.reapWorkspaceRuntimes();
+    expect(manager.admittedCount).toBe(0);
+    expect(state).toHaveBeenLastCalledWith(ACTIVATION_ID, "released");
+    claim.mockResolvedValue([]);
+    await manager.close();
+  });
+
+  it("reaps a retained runtime after its Workspace is deleted", async () => {
     class RetiredStateRepository extends InMemoryWorkspaceRuntimeStateRepository {
       retired = false;
 

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Kysely } from "kysely";
 import {
-  ConversationArchiveService,
+  ConversationDeletionService,
   ControlPlaneStore,
   WorkspaceBrowserService,
   createPrivateTenant,
@@ -166,22 +166,27 @@ describe.sequential("live Workspace browser", () => {
     );
   });
 
-  it("archives a conversation idempotently without coupling it to file versions", async () => {
+  it("permanently deletes a conversation idempotently and retains Workspace storage", async () => {
     await database
       .updateTable("sessions")
       .set({ state: "failed" })
-      .where("tenant_id", "=", tenant.tenantId)
       .where("id", "=", sessionId)
-      .executeTakeFirstOrThrow();
-    const archive = new ConversationArchiveService({ database, idGenerator: randomUUID });
+      .execute();
+    const deletion = new ConversationDeletionService({ database });
+    await expect(deletion.delete(tenant.tenantId, sessionId)).resolves.toBeUndefined();
+    await expect(deletion.delete(tenant.tenantId, sessionId)).resolves.toBeUndefined();
+    expect(
+      await database.selectFrom("sessions").select("id").where("id", "=", sessionId).execute(),
+    ).toEqual([]);
+    expect(
+      await database
+        .selectFrom("workspaces")
+        .select("deleted_at")
+        .where("id", "=", workspaceId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ deleted_at: null });
     await expect(
-      archive.archive(tenant.tenantId, "archive-live-browser", sessionId, { archived: true }),
-    ).resolves.toMatchObject({ kind: "archive", replayed: false });
-    await expect(
-      archive.archive(tenant.tenantId, "archive-live-browser", sessionId, { archived: true }),
-    ).resolves.toMatchObject({ kind: "archive", replayed: true });
-    await expect(
-      store.acceptTurn(sessionId, "archived-turn", { prompt: "must reject" }),
-    ).rejects.toMatchObject({ code: "conflict" });
+      store.acceptTurn(sessionId, "deleted-turn", { prompt: "must reject" }),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
 });

@@ -240,11 +240,9 @@ export {
   type ControlPlaneStoreOptions,
 } from "./control-plane-store.ts";
 export {
-  ConversationArchiveError,
-  ConversationArchiveService,
-  type ConversationArchiveErrorCode,
-  type ConversationArchiveServiceOptions,
-} from "./conversation-archive-service.ts";
+  ConversationDeletionError,
+  ConversationDeletionService,
+} from "./conversation-deletion-service.ts";
 export {
   WorkspaceBrowserError,
   WorkspaceBrowserService,

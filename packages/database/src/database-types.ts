@@ -59,7 +59,6 @@ export type SandboxRetirementReason = "heartbeat_timeout" | "new_boot";
 export type SandboxRetirementState = "pending" | "claimed" | "blocked" | "completed";
 export type TenantApiCredentialRole = "owner" | "member" | "viewer";
 export type WorkspaceSeedKind = "empty" | "sample_java";
-export type WorkspaceOperationKind = "fork" | "rollback" | "archive" | "unarchive" | "promote";
 export type EnvironmentVersionState = "pending" | "validated" | "failed";
 export type SandboxProfileKey = "starter" | "standard" | "performance";
 export type EnvironmentValidationStatus = "validated" | "failed";
@@ -586,7 +585,7 @@ export interface SessionTable {
   conversation_parent_session_id: GeneratedNullable<string>;
   conversation_fork_turn_id: GeneratedNullable<string>;
   conversation_fork_entry_id: GeneratedNullable<string>;
-  archived_at: NullableTimestamp;
+  pruned_at: NullableTimestamp;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
   last_active_at: GeneratedTimestamp;
@@ -670,7 +669,7 @@ export interface ConversationPruneOperationTable {
   anchor_turn_id: string;
   anchor_entry_id: string;
   pruned_turn_count: number;
-  archived_session_count: number;
+  pruned_session_count: number;
   created_at: GeneratedTimestamp;
 }
 
@@ -935,16 +934,6 @@ export interface OutboxTable {
   last_error: string | null;
 }
 
-export interface WorkspaceOperationTable {
-  id: string;
-  tenant_id: string;
-  session_id: string;
-  kind: WorkspaceOperationKind;
-  idempotency_key: string;
-  source_session_id: string | null;
-  created_at: GeneratedTimestamp;
-}
-
 export interface PlatformRuntimeSettingsTable {
   settings_key: "default";
   cube_proxy_enabled: GeneratedBoolean;
@@ -1071,7 +1060,6 @@ export interface Database {
   environment_versions: EnvironmentVersionTable;
   environment_validations: EnvironmentValidationTable;
   workspaces: WorkspaceTable;
-  workspace_operations: WorkspaceOperationTable;
   workspace_delete_operations: WorkspaceDeleteOperationTable;
   credential_bindings: CredentialBindingTable;
   model_profiles: ModelProfileTable;

@@ -17,7 +17,7 @@ import {
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 import { TenantRequestContext } from "./tenant-request-context.ts";
 import { TenantModelConfigurationService } from "./tenant-model-configuration.ts";
-import { ConversationArchiveService } from "./conversation-archive-service.ts";
+import { ConversationDeletionService } from "./conversation-deletion-service.ts";
 import {
   WorkspaceBrowserService,
   type TrustedWorkspaceBrowser,
@@ -68,10 +68,7 @@ export class ControlPlaneModule {
         ? {}
         : { backendFactory: options.turnSteerBackendFactory }),
     });
-    const conversationArchive = new ConversationArchiveService({
-      database: options.database,
-      ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
-    });
+    const conversationDeletion = new ConversationDeletionService({ database: options.database });
     const workspaceBrowser = new WorkspaceBrowserService({
       database: options.database,
       browser: options.workspaceBrowser ?? {
@@ -209,8 +206,8 @@ export class ControlPlaneModule {
             new SourceControlService({ database: options.database }),
         },
         {
-          provide: ConversationArchiveService,
-          useValue: conversationArchive,
+          provide: ConversationDeletionService,
+          useValue: conversationDeletion,
         },
         {
           provide: WorkspaceBrowserService,
@@ -225,7 +222,7 @@ export class ControlPlaneModule {
       exports: [
         SessionEventHub,
         SessionEventStream,
-        ConversationArchiveService,
+        ConversationDeletionService,
         WorkspaceBrowserService,
       ],
     };

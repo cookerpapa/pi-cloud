@@ -200,9 +200,7 @@ try {
   });
 } finally {
   if (session !== undefined) {
-    await api
-      .deleteConversation(session.sessionId, newIdempotencyKey("model-settings-conversation"))
-      .catch(() => undefined);
+    await api.deleteConversation(session.sessionId).catch(() => undefined);
   }
   if (project !== undefined) {
     await api

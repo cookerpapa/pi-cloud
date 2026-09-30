@@ -155,8 +155,7 @@ try {
     "[vite-preview] root routing, CSS HMR, binary WebSocket, SSE and cookie isolation passed",
   );
 } finally {
-  if (session)
-    await api.deleteConversation(session.sessionId, newIdempotencyKey("delete-vite-session"));
+  if (session) await api.deleteConversation(session.sessionId);
   if (project)
     await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-vite-workspace"));
 }

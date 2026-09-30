@@ -120,7 +120,7 @@ export class WorkspaceUploadService {
         ])
         .where("s.id", "=", sessionId)
         .where("s.tenant_id", "=", tenantId)
-        .where("s.archived_at", "is", null)
+        .where("s.pruned_at", "is", null)
         .where("s.session_kind", "=", "conversation")
         .where("w.deleted_at", "is", null)
         .forNoKeyUpdate("s")
@@ -275,7 +275,7 @@ export class WorkspaceUploadService {
           .where(
             sql<boolean>`exists(select 1 from sessions s join workspaces w on w.id=s.workspace_id and w.tenant_id=s.tenant_id
           where s.id=u.session_id and s.tenant_id=u.tenant_id and s.workspace_id=u.workspace_id
-            and s.working_directory=u.working_directory and s.archived_at is null and w.deleted_at is null)`,
+            and s.working_directory=u.working_directory and s.pruned_at is null and w.deleted_at is null)`,
           )
           .returningAll()
           .executeTakeFirst();

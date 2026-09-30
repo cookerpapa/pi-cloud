@@ -175,3 +175,33 @@ pass. Actual pinned Pi provider conversion preserves the partial text exactly
 once across repeated restore. Native Compaction receives it both as an ordinary
 failed entry and inside an earlier retained tail. A no-prefix Tool-UNKNOWN
 failure is described after Host replacement without reflecting its diagnostic.
+
+## D30-02: permanent history deletion and unused elastic compute
+
+ADR-0207 and migration 156 replace archive/unarchive with an atomic, tenant-scoped
+subtree deletion. The API commits before 204; repeating the absent URI needs no
+stored deletion receipt. Owned control/native history and attachment/upload
+references disappear together. Independent native copies, shared image references,
+Workspace bytes and user-owned development machines retain their separate lifetimes.
+Pruning's surviving marker is named `pruned_at`; its public count is
+`prunedSessionCount`, and hidden logical views do not consume usable-Session quota.
+The obsolete archive service, operation table and public operation resource are removed.
+
+The last retained conversation disappearing wakes Broker cleanup with a bounded PG
+notification. The existing runtime rows remain the authority, with periodic fallback.
+The scan respects shared compute scopes and ordinary between-Turn warm reuse, runs
+without overlapping passes and joins on shutdown. Failed deletion remains accounted
+for and retryable; the Cube provider confirms absence before reporting success.
+Bootstrap IDs remain in cleanup records without retaining Session/Run/Turn history.
+
+Validation: 24 Control Plane tests (including 12 on dedicated PostgreSQL), 86 Broker
+cleanup/provider/lifecycle tests, 23 Web API tests and 11 schema/cutover tests pass.
+Control Plane, Broker, Web and database typechecks pass. Regressions cover child
+admission/Fork races, current and expired-but-unreleased writers, unsealed native
+history, tenant isolation, independent Forks/images, pending uploads, retained Kafka
+append replay, shared VM retention and failed cleanup accounting. The historical
+migration fixtures now seed historical contracts directly instead of calling today's
+Session admission against an old schema. Provider absence confirmation was rechecked
+with 28 provider tests after correcting the fixture's seed type. Documentation check
+passes. Production acceptance scripts now expect deletion to reclaim unused compute;
+those live scripts and the destructive migration have not been run against production.

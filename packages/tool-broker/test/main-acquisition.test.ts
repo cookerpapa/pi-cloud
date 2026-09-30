@@ -16,6 +16,11 @@ vi.mock("../src/tool-broker-config.ts", () => ({
   }),
 }));
 vi.mock("@pi-cloud/database", () => ({
+  PostgresNotificationWake: class {
+    async close() {
+      fixture.call("cleanup-wake.close");
+    }
+  },
   createDatabase: () => ({
     destroy: async () => {
       fixture.call("database.close");
@@ -156,6 +161,7 @@ const closed = [
   "provider.close",
   "volume.close",
   "ownership.close",
+  "cleanup-wake.close",
   "replies.close",
   "database.close",
   "metrics.close",

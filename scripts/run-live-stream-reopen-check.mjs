@@ -289,7 +289,7 @@ try {
           ["accepted", "queued", "running", "cancelling"].includes(t.state),
         ),
     );
-    await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+    await api.deleteConversation(session.sessionId);
   }
   if (project) await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
   await writeFile(

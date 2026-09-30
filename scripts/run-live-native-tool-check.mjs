@@ -174,7 +174,7 @@ try {
   }
   if (session) {
     try {
-      await api.deleteConversation(session.sessionId, newIdempotencyKey("native-clean-session"));
+      await api.deleteConversation(session.sessionId);
     } catch (error) {
       cleanupErrors.push(error);
     }

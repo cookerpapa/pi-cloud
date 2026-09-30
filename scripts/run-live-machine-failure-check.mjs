@@ -299,7 +299,7 @@ try {
   const cleanupErrors = [];
   if (session)
     await api
-      .deleteConversation(session.sessionId, newIdempotencyKey("delete-machine-check-session"))
+      .deleteConversation(session.sessionId)
       .catch((error) => cleanupErrors.push(error.message));
   if (machine)
     await api

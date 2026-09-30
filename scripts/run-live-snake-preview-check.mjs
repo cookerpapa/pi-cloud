@@ -437,7 +437,7 @@ async function cleanup() {
   }
   if (!conversationDeleted && session !== undefined) {
     try {
-      await api.deleteConversation(session.sessionId, newIdempotencyKey("delete-conversation"));
+      await api.deleteConversation(session.sessionId);
       conversationDeleted = true;
     } catch (error) {
       failures.push(error);

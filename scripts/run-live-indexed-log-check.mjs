@@ -262,8 +262,7 @@ try {
     }
   }
   try {
-    if (source)
-      await api.deleteConversation(source.sessionId, newIdempotencyKey("indexed-log-clean"));
+    if (source) await api.deleteConversation(source.sessionId);
   } catch (error) {
     cleanupErrors.push(error.message);
   }

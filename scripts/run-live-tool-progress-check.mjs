@@ -290,8 +290,7 @@ try {
     );
     await waitRun(active.runId);
   }
-  if (session)
-    await api.deleteConversation(session.sessionId, newIdempotencyKey("cleanup-progress-session"));
+  if (session) await api.deleteConversation(session.sessionId);
   if (project)
     await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup-progress-workspace"));
   report.resourcesReleased = true;

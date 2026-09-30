@@ -443,6 +443,7 @@ export class PostgresSubagentJobProvider {
         .selectFrom("sessions")
         .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("tenant_id", "=", input.tenantId)
+        .where("pruned_at", "is", null)
         .executeTakeFirstOrThrow();
       if (Number(sessionCount.count) >= policy.maximum_sessions) {
         throw new PostgresSubagentJobError(
@@ -506,7 +507,7 @@ export class PostgresSubagentJobProvider {
           conversation_parent_session_id: null,
           conversation_fork_turn_id: null,
           conversation_fork_entry_id: null,
-          archived_at: null,
+          pruned_at: null,
         })
         .executeTakeFirstOrThrow();
       await transaction

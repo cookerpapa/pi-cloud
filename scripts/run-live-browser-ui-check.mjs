@@ -911,9 +911,8 @@ try {
       "active fixture cancellation",
       120_000,
     );
-    const key = newIdempotencyKey("delete");
     await releaseFixture(
-      () => api.deleteConversation(conversation.sessionId, key),
+      () => api.deleteConversation(conversation.sessionId),
       "conversation cleanup",
     );
   }
@@ -926,7 +925,6 @@ try {
     );
   }
   for (const workspace of (await api.listWorkspaces()).workspaces) {
-    const key = newIdempotencyKey("delete");
     await releaseFixture(
       () => api.deleteWorkspace(workspace.workspaceId, key),
       "workspace cleanup",

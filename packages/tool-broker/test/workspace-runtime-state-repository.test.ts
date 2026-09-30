@@ -1,3 +1,4 @@
+import { ConversationDeletionService } from "../../control-plane/src/conversation-deletion-service.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
@@ -66,6 +67,110 @@ async function fixtureDatabase() {
 }
 
 describe("PostgreSQL Tool Broker ownership", () => {
+  it("keeps shared warm compute until its last conversation is deleted and accounts for failed cleanup", async () => {
+    const database = await fixtureDatabase();
+    const instanceId = randomUUID(),
+      runtimeId = randomUUID();
+    let now = new Date();
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
+      database,
+      sandboxDomainId: "sandbox-domain-0001",
+      instanceId,
+      ownerBaseUrl: "http://cleanup.test:4300",
+      clock: () => now,
+    });
+    resources.push(() => repository.close());
+    await repository.start();
+    const tenant = await createPrivateTenant(database, {
+      slug: randomUUID(),
+      ownerDisplayName: "Cleanup",
+    });
+    const store = new ControlPlaneStore({ database, ...tenant });
+    const project = await store.createProject({
+      name: "Shared cleanup",
+      source: { kind: "empty" },
+    });
+    const first = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "first",
+      "elastic",
+    );
+    const second = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "second",
+      "elastic",
+    );
+    await database
+      .insertInto("tool_broker_workspace_runtimes")
+      .values({
+        workspace_runtime_id: runtimeId,
+        tenant_id: tenant.tenantId,
+        project_id: project.projectId,
+        workspace_id: project.workspaceId,
+        sandbox_domain_id: "sandbox-domain-0001",
+        owner_instance_id: instanceId,
+        owner_base_url: "http://cleanup.test:4300",
+        supervisor_id: "fixture",
+        boot_id: randomUUID(),
+        sandbox_id: randomUUID(),
+        run_id: randomUUID(),
+        session_id: first.sessionId,
+        turn_id: randomUUID(),
+        lease_id: randomUUID(),
+        fencing_token: "1",
+        turn_context_sha256: "a".repeat(64),
+        execution_context_sha256: "b".repeat(64),
+        environment_sha256: "c".repeat(64),
+        runtime_id: randomUUID(),
+        runtime_name: "test-cube",
+        state: "warm",
+        failure_code: null,
+        updated_at: now,
+      })
+      .execute();
+    expect(await repository.claimUnboundWorkspaceRuntimes(16)).toEqual([]);
+    const deletion = new ConversationDeletionService({ database });
+    await deletion.delete(tenant.tenantId, first.sessionId);
+    expect(await repository.claimUnboundWorkspaceRuntimes(16)).toEqual([]);
+    await deletion.delete(tenant.tenantId, second.sessionId);
+    expect(await repository.claimUnboundWorkspaceRuntimes(16)).toMatchObject([
+      { activationId: runtimeId },
+    ]);
+    expect(await repository.claimUnboundWorkspaceRuntimes(16)).toEqual([]);
+    await repository.setWorkspaceRuntimeState(runtimeId, "unknown", {
+      failureCode: "delete_unconfirmed",
+    });
+    expect(await repository.claimOrphanedWorkspaceRuntimes(16)).toEqual([]);
+    expect(
+      await database
+        .selectFrom("tool_broker_workspace_runtimes")
+        .select("state")
+        .where("workspace_runtime_id", "=", runtimeId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ state: "unknown" });
+    now = new Date(now.valueOf() + 30_001);
+    expect(await repository.claimOrphanedWorkspaceRuntimes(16)).toMatchObject([
+      { activationId: runtimeId },
+    ]);
+    await repository.setWorkspaceRuntimeState(runtimeId, "released");
+    expect(
+      await database
+        .selectFrom("tool_broker_workspace_runtimes")
+        .select("state")
+        .where("workspace_runtime_id", "=", runtimeId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ state: "released" });
+    expect(
+      await database
+        .selectFrom("workspaces")
+        .select("deleted_at")
+        .where("id", "=", project.workspaceId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ deleted_at: null });
+  }, 30_000);
+
   it("never admits a development-machine Volume through the elastic terminal path", async () => {
     const database = await fixtureDatabase();
     const repository = new PostgresWorkspaceRuntimeStateRepository({

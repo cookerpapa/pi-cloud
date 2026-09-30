@@ -1356,20 +1356,15 @@ try {
     cleanup: {
       retainedRunningWorkspaceMicroVmCount: retainedMainSessionCubes.length,
       foreignSessionMicroVmCount: 0,
-      conversationDeletionPreservedWorkspaceRuntime: false,
-      mainWorkspaceExplicitWarmEvictionVerified: false,
+      conversationDeletionReleasedWorkspaceRuntime: false,
       explicitWarmEvictionVerified: false,
     },
   };
   assert(usage.requests >= 3 && usage.inputTokens > 0 && usage.outputTokens > 0);
-  await api.deleteConversation(session.sessionId, newIdempotencyKey("archive-warm"));
-  await waitForRunningCubeSession(session.sessionId);
-  report.cleanup.conversationDeletionPreservedWorkspaceRuntime = true;
-  progress("conversation deletion preserved its independently owned warm Workspace runtime");
-  await terminateWarmCubeSession(followUp.accepted.runId, session.sessionId);
+  await api.deleteConversation(session.sessionId);
   await waitForNoCubeSession(session.sessionId);
-  report.cleanup.mainWorkspaceExplicitWarmEvictionVerified = true;
-  progress("explicit eviction removed the main warm Workspace Cube");
+  report.cleanup.conversationDeletionReleasedWorkspaceRuntime = true;
+  progress("deleting the final conversation released its unused elastic Workspace runtime");
   await terminateWarmCubeSession(largeFollowUp.accepted.runId, largeSession.sessionId);
   await waitForNoCubeSession(largeSession.sessionId);
   report.cleanup.explicitWarmEvictionVerified = true;
@@ -1411,7 +1406,7 @@ try {
         `- PostgreSQL hot-event table absent / projected Session mutations: ${String(report.eventPlane.postgresHotEventTableAbsent)} / ${String(report.eventPlane.projectedSessionMutations)}`,
         `- Scheduler / Worker pool: ${report.scheduler.authority} / ${report.scheduler.workerPool}`,
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,
-        `- Explicit warm eviction / remaining Cube microVMs: ${String(report.cleanup.mainWorkspaceExplicitWarmEvictionVerified && report.cleanup.explicitWarmEvictionVerified)} / ${String(report.cleanup.retainedRunningWorkspaceMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
+        `- Final-conversation cleanup and explicit warm eviction / remaining Cube microVMs: ${String(report.cleanup.conversationDeletionReleasedWorkspaceRuntime && report.cleanup.explicitWarmEvictionVerified)} / ${String(report.cleanup.retainedRunningWorkspaceMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
         "",
         "A real-model chat Run completed without touching Cube. Two elastic coding Runs used distinct fenced Tool bindings in one bounded-warm Workspace Cube; deleting the conversation did not implicitly own or destroy that Workspace runtime, and explicit eviction removed it. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a new physical runtime identity. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
         "",
@@ -1424,9 +1419,7 @@ try {
   // Release Manager ownership/admission first, then use the native Cube API
   // only as an orphan fallback. Reversing this order would strand a warm
   // in-memory handle until the Manager's TTL/restart.
-  await api
-    .deleteConversation(session.sessionId, newIdempotencyKey("acceptance-finally-archive"))
-    .catch(() => undefined);
+  await api.deleteConversation(session.sessionId).catch(() => undefined);
   await waitForNoCubeSession(session.sessionId).catch(() => undefined);
   for (const logicalSandboxId of await logicalSandboxIdsForSession(session.sessionId).catch(
     () => [],
@@ -1440,12 +1433,7 @@ try {
     .deleteWorkspace(project.workspaceId, newIdempotencyKey("acceptance-finally-workspace"))
     .catch(() => undefined);
   if (foreignSession !== undefined) {
-    await bootstrapApi
-      .deleteConversation(
-        foreignSession.sessionId,
-        newIdempotencyKey("acceptance-finally-archive-foreign"),
-      )
-      .catch(() => undefined);
+    await bootstrapApi.deleteConversation(foreignSession.sessionId).catch(() => undefined);
     await bootstrapApi
       .deleteWorkspace(
         foreignSession.workspaceId,
@@ -1454,12 +1442,7 @@ try {
       .catch(() => undefined);
   }
   if (largeSession !== undefined) {
-    await api
-      .deleteConversation(
-        largeSession.sessionId,
-        newIdempotencyKey("acceptance-finally-archive-large"),
-      )
-      .catch(() => undefined);
+    await api.deleteConversation(largeSession.sessionId).catch(() => undefined);
     await waitForNoCubeSession(largeSession.sessionId).catch(() => undefined);
     for (const logicalSandboxId of await logicalSandboxIdsForSession(largeSession.sessionId).catch(
       () => [],

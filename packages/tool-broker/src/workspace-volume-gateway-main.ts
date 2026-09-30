@@ -70,7 +70,7 @@ const gateway = new PersistentVolumeWorkspaceVolumeGateway({
       where u.id=$1::uuid and u.claim_token=$2::uuid and u.tenant_id=$3::uuid
         and u.workspace_id=$4::uuid and u.session_id=$5::uuid and u.sha256=$6
         and u.name=$7 and u.byte_length=$8 and u.state='uploading'
-        and u.lease_expires_at>clock_timestamp() and s.archived_at is null
+        and u.lease_expires_at>clock_timestamp() and s.pruned_at is null
         and s.workspace_id=u.workspace_id and s.working_directory=u.working_directory
         and u.working_directory=$9 and w.deleted_at is null and w.workspace_kind='user'`,
       [

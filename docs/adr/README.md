@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0207](0207-permanent-conversation-deletion.md) — permanent conversation
+   deletion, native-history ownership and unused elastic VM reclamation.
 1. [ADR-0206](0206-interrupted-output-context.md) — incomplete visible text and
    confirmed interruption reasons in recovered model context.
 1. [ADR-0205](0205-bounded-inherited-context-preview.md) — bounded delegated

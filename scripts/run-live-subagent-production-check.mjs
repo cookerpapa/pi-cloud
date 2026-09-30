@@ -412,7 +412,7 @@ async function cleanup() {
         if (performance.now() > deadline) throw new Error("Subagent fixture did not retire");
         await wait(200);
       }
-      await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+      await api.deleteConversation(session.sessionId);
     } catch (error) {
       errors.push(error);
     }

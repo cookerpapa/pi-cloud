@@ -25,3 +25,4 @@ export {
   type PostgresPiSessionCreateOptions,
   type PostgresPiSessionRepositoryOptions,
 } from "./postgres-session-repository.ts";
+export { deletePostgresPiSessionsInTransaction } from "./delete-native-sessions.ts";

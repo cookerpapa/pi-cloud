@@ -1,4 +1,4 @@
-import { insertHistoricalPrompt } from "./fixtures/historical-turn.ts";
+import { insertHistoricalPrompt, insertHistoricalSession } from "./fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql } from "kysely";
@@ -39,12 +39,7 @@ it.skipIf(!endpoint)(
         name: "indexed-log",
         source: { kind: "empty" },
       });
-      const session = await control.createSession(
-        project.projectId,
-        project.workspaceId,
-        "source",
-        "elastic",
-      );
+      const session = await insertHistoricalSession(db, { ...tenant, ...project });
       const turn = await insertHistoricalPrompt(db, {
         tenantId: tenant.tenantId,
         modelProfileId: tenant.defaultModelProfileId,

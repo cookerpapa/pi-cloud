@@ -398,7 +398,6 @@ export {
   WorkspaceSourceResourceSchema,
   WorkspaceDirectoryEntryResourceSchema,
   WorkspaceDirectoryResourceSchema,
-  WorkspaceOperationResourceSchema,
   parseAcceptTurnRequest,
   parseAuthSessionResource,
   parseAcceptedTurnCancellationResource,
@@ -436,7 +435,6 @@ export {
   parseRunResource,
   parseRegisterAccountRequest,
   parseWorkspaceDirectoryResource,
-  parseWorkspaceOperationResource,
   parseWorkspaceListResource,
   parseWorkspaceDeletionResource,
   parseRebindConversationWorkspaceRequest,
@@ -524,7 +522,6 @@ export {
   type WorkspaceSourceResource,
   type WorkspaceDirectoryEntryResource,
   type WorkspaceDirectoryResource,
-  type WorkspaceOperationResource,
 } from "./control-plane-api.ts";
 
 export {

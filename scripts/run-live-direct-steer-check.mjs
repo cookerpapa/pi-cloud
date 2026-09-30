@@ -263,7 +263,7 @@ try {
           "Cleanup active input",
         );
       }
-      await api.deleteConversation(session.sessionId, newIdempotencyKey("cleanup"));
+      await api.deleteConversation(session.sessionId);
     });
   if (project)
     await cleanup(() => api.deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup")));

@@ -465,7 +465,7 @@ async function cleanup() {
           if (performance.now() >= deadline) throw new Error("Load fixture cancellation timed out");
           await wait(200);
         }
-        await fixture.api.deleteConversation(sessionId, newIdempotencyKey("cleanup-conversation"));
+        await fixture.api.deleteConversation(sessionId);
       } catch (error) {
         errors.push(error);
       }

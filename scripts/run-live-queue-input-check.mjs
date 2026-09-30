@@ -248,7 +248,7 @@ try {
         (await Promise.all(accepted.map((r) => api.getRun(r.runId)))).every(terminal),
         "Test executions did not finish during cleanup",
       );
-      await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+      await api.deleteConversation(session.sessionId);
     }
     if (project) await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
   } catch (error) {

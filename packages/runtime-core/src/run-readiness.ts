@@ -8,7 +8,7 @@ export function laneDependenciesReady(
   mailbox: RawBuilder<unknown>,
 ): RawBuilder<boolean> {
   return sql<boolean>`exists(select 1 from sessions s where s.tenant_id=${tenantId}::uuid
-      and s.id=${sessionId}::uuid and s.state in ('cold','idle') and s.archived_at is null)
+      and s.id=${sessionId}::uuid and s.state in ('cold','idle') and s.pruned_at is null)
     and not exists(select 1 from runs prior where prior.tenant_id=${tenantId}::uuid
       and prior.session_id=${sessionId}::uuid and prior.mailbox_position<${mailbox}
       and prior.state not in ('completed','failed','cancelled','timed_out'))

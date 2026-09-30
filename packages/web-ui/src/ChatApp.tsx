@@ -1122,7 +1122,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     }
     setOperation("deleting-conversation");
     try {
-      await api.deleteConversation(conversation.sessionId, newIdempotencyKey("delete"));
+      await api.deleteConversation(conversation.sessionId);
       if (state.session?.sessionId === conversation.sessionId) resetConversation();
       await Promise.all([refreshConversations(), refreshWorkspaces()]);
     } catch (error: unknown) {

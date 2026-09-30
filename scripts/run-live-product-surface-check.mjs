@@ -404,7 +404,7 @@ async function cleanup() {
           if (performance.now() >= deadline) throw new Error("Product fixture did not retire");
           await wait(200);
         }
-        await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+        await api.deleteConversation(session.sessionId);
       } catch (error) {
         errors.push(error);
       }
@@ -500,7 +500,7 @@ try {
   const treeWithFork = await api.getConversationTree(fork.session.sessionId, "full");
   assert(treeWithFork.branches.some((branch) => branch.sessionId === session.sessionId));
   assert(treeWithFork.branches.some((branch) => branch.sessionId === fork.session.sessionId));
-  await api.deleteConversation(fork.session.sessionId, newIdempotencyKey("delete"));
+  await api.deleteConversation(fork.session.sessionId);
   assert(
     !(await api.listConversations()).conversations.some(
       (item) => item.sessionId === fork.session.sessionId,
@@ -766,8 +766,8 @@ try {
       .join(""),
     /PRODUCT-SURFACE-WORKSPACE-CHANGE-SEEN/,
   );
-  await api.deleteConversation(sibling.sessionId, newIdempotencyKey("delete"));
-  await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+  await api.deleteConversation(sibling.sessionId);
+  await api.deleteConversation(session.sessionId);
   const deletion = await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
   assert.equal(deletion.workspaceId, project.workspaceId);
   await waitForWorkspacePurge(project.workspaceId);

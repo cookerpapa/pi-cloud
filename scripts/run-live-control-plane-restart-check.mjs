@@ -199,7 +199,7 @@ async function cleanup() {
         if (Date.now() > deadline) throw new Error("Fault fixture Run did not retire");
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
-      await api.deleteConversation(session.sessionId, newIdempotencyKey("cleanup-conversation"));
+      await api.deleteConversation(session.sessionId);
     } catch (error) {
       errors.push(error);
     }

@@ -433,7 +433,7 @@ export class SandboxPreviewGateway {
             .where("s.id", "=", target.sessionId)
             .where("s.tenant_id", "=", tenantId)
             .where("s.created_by_user_id", "=", userId)
-            .where("s.archived_at", "is", null)
+            .where("s.pruned_at", "is", null)
             .where("w.deleted_at", "is", null)
             .executeTakeFirst();
     if (!row) throw new Error("Preview resource unavailable");
@@ -454,7 +454,7 @@ export class SandboxPreviewGateway {
       .select("development.id")
       .where("session_row.tenant_id", "=", tenantId)
       .where("session_row.id", "=", target.sessionId)
-      .where("session_row.archived_at", "is", null)
+      .where("session_row.pruned_at", "is", null)
       .where("session_row.execution_mode", "=", "development_environment")
       .where("session_row.compute_session_id", "is", null)
       .where("development.owner_user_id", "=", userId)
@@ -515,7 +515,7 @@ export class SandboxPreviewGateway {
       ])
       .where("session_row.tenant_id", "=", tenantId)
       .where("session_row.id", "=", target.sessionId)
-      .where("session_row.archived_at", "is", null)
+      .where("session_row.pruned_at", "is", null)
       .orderBy("service.last_seen_at", "desc")
       .executeTakeFirst();
     if (row === undefined) throw new Error("Conversation preview is unavailable");

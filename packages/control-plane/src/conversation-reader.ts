@@ -129,7 +129,7 @@ export class ConversationReader {
       )
       .where("session_row.tenant_id", "=", this.#tenantId)
       .where("session_row.session_kind", "=", "conversation")
-      .where("session_row.archived_at", "is", null)
+      .where("session_row.pruned_at", "is", null)
       .$if(position !== undefined, (query) =>
         query.where(sql<boolean>`
         (session_row.last_active_at, session_row.id) < (${position!.at}::timestamptz, ${position!.id}::uuid)
@@ -265,7 +265,7 @@ export class ConversationReader {
       ])
       .where("session_row.tenant_id", "=", this.#tenantId)
       .where("session_row.id", "=", sessionId)
-      .where("session_row.archived_at", "is", null)
+      .where("session_row.pruned_at", "is", null)
       .executeTakeFirst();
     if (conversation === undefined) {
       throw new ControlPlaneStoreError("not_found", "Conversation was not found");
@@ -533,7 +533,7 @@ export class ConversationReader {
         ])
         .where("tenant_id", "=", this.#tenantId)
         .where("id", "=", cursor)
-        .where("archived_at", "is", null)
+        .where("pruned_at", "is", null)
         .executeTakeFirst();
       if (row === undefined) {
         throw new ControlPlaneStoreError("not_found", "Conversation was not found");

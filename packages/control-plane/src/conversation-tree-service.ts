@@ -380,7 +380,7 @@ export class ConversationTreeService {
       .select(["id", "session_kind as sessionKind"])
       .where("tenant_id", "=", tenantId)
       .where("id", "=", currentSessionId)
-      .where("archived_at", "is", null)
+      .where("pruned_at", "is", null)
       .executeTakeFirst();
     if (selected === undefined) {
       throw new ControlPlaneStoreError("not_found", "Conversation was not found");
@@ -745,7 +745,7 @@ export class ConversationTreeService {
             anchorTurnId: replay.anchor_turn_id,
             anchorEntryId: replay.anchor_entry_id,
             prunedTurnCount: replay.pruned_turn_count,
-            archivedSessionCount: replay.archived_session_count,
+            prunedSessionCount: replay.pruned_session_count,
             replayed: true,
             createdAt: new Date(replay.created_at).toISOString(),
           };
@@ -758,7 +758,7 @@ export class ConversationTreeService {
             "state",
             "session_kind as sessionKind",
             "conversation_fork_entry_id as forkEntryId",
-            "archived_at as archivedAt",
+            "pruned_at as prunedAt",
           ])
           .where("tenant_id", "=", tenantId)
           .where("id", "=", sessionId)
@@ -766,7 +766,7 @@ export class ConversationTreeService {
           .executeTakeFirst();
         if (
           session === undefined ||
-          session.archivedAt !== null ||
+          session.prunedAt !== null ||
           session.sessionKind !== "conversation"
         ) {
           throw new ControlPlaneStoreError("not_found", "Conversation was not found");
@@ -860,7 +860,7 @@ export class ConversationTreeService {
              where child.tenant_id = ${tenantId}::uuid
                and child.conversation_parent_session_id = ${sessionId}::uuid
                and child.session_kind = 'conversation'
-               and child.archived_at is null
+               and child.pruned_at is null
                and anchor.mailbox_position >= ${anchorRun.mailboxPosition}::bigint
             union
             select child.id
@@ -868,7 +868,7 @@ export class ConversationTreeService {
               join descendants parent on child.conversation_parent_session_id = parent.id
              where child.tenant_id = ${tenantId}::uuid
                and child.session_kind = 'conversation'
-               and child.archived_at is null
+               and child.pruned_at is null
           )
           select id from descendants
         `.execute(transaction);
@@ -949,7 +949,7 @@ export class ConversationTreeService {
           throw new ControlPlaneStoreError("conflict", "Delegated work is still active");
         }
         const subagentSessionIds = [...new Set(subagentRows.map((row) => row.sessionId))];
-        const sessionsToArchive = [...new Set([...descendantIds, ...subagentSessionIds])];
+        const sessionsToPrune = [...new Set([...descendantIds, ...subagentSessionIds])];
         const now = new Date();
         if (prunedTurnIds.length > 0) {
           await transaction
@@ -959,17 +959,17 @@ export class ConversationTreeService {
             .where("id", "in", prunedTurnIds)
             .execute();
         }
-        if (sessionsToArchive.length > 0) {
+        if (sessionsToPrune.length > 0) {
           await transaction
             .updateTable("sessions")
             .set({
-              archived_at: now,
+              pruned_at: now,
               updated_at: now,
               row_version: sql<string>`${sql.ref("row_version")} + 1`,
             })
             .where("tenant_id", "=", tenantId)
-            .where("id", "in", sessionsToArchive)
-            .where("archived_at", "is", null)
+            .where("id", "in", sessionsToPrune)
+            .where("pruned_at", "is", null)
             .execute();
         }
 
@@ -1051,7 +1051,7 @@ export class ConversationTreeService {
             anchor_turn_id: request.turnId,
             anchor_entry_id: request.entryId,
             pruned_turn_count: prunedTurnIds.length,
-            archived_session_count: sessionsToArchive.length,
+            pruned_session_count: sessionsToPrune.length,
             created_at: now,
           })
           .executeTakeFirstOrThrow();
@@ -1060,7 +1060,7 @@ export class ConversationTreeService {
           anchorTurnId: request.turnId,
           anchorEntryId: request.entryId,
           prunedTurnCount: prunedTurnIds.length,
-          archivedSessionCount: sessionsToArchive.length,
+          prunedSessionCount: sessionsToPrune.length,
           replayed: false,
           createdAt: now.toISOString(),
         };
@@ -1165,7 +1165,7 @@ export class ConversationTreeService {
             "sandbox_profile_key",
             "working_directory",
             "conversation_fork_entry_id",
-            "archived_at",
+            "pruned_at",
           ])
           .select((eb) =>
             eb
@@ -1179,7 +1179,7 @@ export class ConversationTreeService {
           .where("id", "=", sourceSessionId)
           .forUpdate()
           .executeTakeFirst();
-        if (source === undefined || source.archived_at !== null) {
+        if (source === undefined || source.pruned_at !== null) {
           throw new ControlPlaneStoreError("not_found", "Conversation was not found");
         }
         if (!(["cold", "idle", "failed"] as const).some((state) => state === source.state)) {
@@ -1479,7 +1479,7 @@ export class ConversationTreeService {
         .where("tenant_id", "=", tenantId)
         .where("id", "=", cursor)
         .where("session_kind", "=", "conversation")
-        .where("archived_at", "is", null)
+        .where("pruned_at", "is", null)
         .executeTakeFirst();
       if (row === undefined) {
         throw new ControlPlaneStoreError("not_found", "Conversation was not found");
@@ -1514,7 +1514,7 @@ export class ConversationTreeService {
           from sessions
          where tenant_id = ${tenantId}::uuid
            and id = ${rootSessionId}::uuid
-           and archived_at is null
+           and pruned_at is null
         union all
         select child.id,
                child.title,
@@ -1526,7 +1526,7 @@ export class ConversationTreeService {
           from sessions child
           join family on child.conversation_parent_session_id = family.id
          where child.tenant_id = ${tenantId}::uuid
-           and child.archived_at is null
+           and child.pruned_at is null
            and family.depth < ${MAX_TREE_BRANCHES}
       )
       select id, title, parent_session_id, fork_turn_id, fork_entry_id, depth

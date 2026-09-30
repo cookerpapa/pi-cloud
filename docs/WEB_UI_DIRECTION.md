@@ -142,8 +142,10 @@ arbitrary unprivileged HTTP ports in a live Cube. Each application has an
 authenticated isolated origin and root-relative HTTP/SSE/WebSocket forwarding;
 there is no HTML/base-tag/JavaScript rewriting. The Preview Tool supplies verified
 links; arbitrary model-authored localhost links are not rewritten. The same panel offers a brokered xterm session without exposing
-Cube ports or credentials. Deleting a parent recursively archives its human
-and Subagent descendants. Tail pruning retains the selected final answer and
+Cube ports or credentials. Deleting a parent permanently removes its human
+and Subagent descendants and their database history after execution has settled.
+The confirmation states that history cannot be restored; the API returns 204 and
+accepts repeated deletion of the same absent identity. Tail pruning retains the selected final answer and
 moves Pi's active lane back to it; neither operation rolls back Workspace bytes.
 
 A dedicated platform administrator bypasses the conversation shell and lands

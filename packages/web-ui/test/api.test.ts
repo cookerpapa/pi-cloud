@@ -44,6 +44,18 @@ const environment = {
   createdAt: "2026-07-19T00:00:00.000Z",
 } as const;
 
+it("accepts committed permanent deletion with an empty 204 response", async () => {
+  const transport = vi.fn<typeof fetch>(async (input, init) => {
+    expect(input).toBe("/v1/conversations/delete-session");
+    expect(init?.method).toBe("DELETE");
+    expect(new Headers(init?.headers).has("idempotency-key")).toBe(false);
+    return new Response(null, { status: 204 });
+  });
+  await expect(
+    new PiCloudApi(transport).deleteConversation("delete-session"),
+  ).resolves.toBeUndefined();
+});
+
 describe("tenant-aware browser API", () => {
   it("sends versioned queue actions with their stable idempotency key", async () => {
     const sessionId = "10000000-0000-4000-8000-000000000001";
@@ -714,7 +726,7 @@ describe("tenant-aware browser API", () => {
             anchorTurnId: turnId,
             anchorEntryId: entryId,
             prunedTurnCount: 2,
-            archivedSessionCount: 1,
+            prunedSessionCount: 1,
             replayed: false,
             createdAt,
           }),
@@ -760,7 +772,7 @@ describe("tenant-aware browser API", () => {
     ).resolves.toMatchObject({ session: { sessionId: childSessionId } });
     await expect(
       api.pruneConversation(sessionId, turnId, entryId, "prune:test"),
-    ).resolves.toMatchObject({ prunedTurnCount: 2, archivedSessionCount: 1 });
+    ).resolves.toMatchObject({ prunedTurnCount: 2, prunedSessionCount: 1 });
   });
 
   it("loads binary Workspace content", async () => {

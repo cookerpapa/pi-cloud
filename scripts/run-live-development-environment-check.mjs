@@ -587,7 +587,7 @@ try {
     "EXCLUSIVE_RESUME_OK",
   );
 
-  await api.deleteConversation(session.sessionId, newIdempotencyKey("delete-conversation"));
+  await api.deleteConversation(session.sessionId);
   replacementSession = await api.createSession(
     development.projectId,
     development.workspaceId,
@@ -624,10 +624,7 @@ try {
     { headers: { authorization: `Bearer ${cubeApiKey}` }, signal: AbortSignal.timeout(30_000) },
   );
   await deletedVolume.body?.cancel();
-  await api.deleteConversation(
-    replacementSession.sessionId,
-    newIdempotencyKey("delete-replacement-conversation"),
-  );
+  await api.deleteConversation(replacementSession.sessionId);
   assert.equal(deletedVolume.status, 404, "Released machine retained Cube Volume metadata");
 
   const report = {
@@ -685,10 +682,7 @@ try {
   process.stdout.write(`${JSON.stringify(report)}\n`);
 } finally {
   for (const created of [replacementSession, session]) {
-    if (created)
-      await api
-        .deleteConversation(created.sessionId, newIdempotencyKey("delete-acceptance-session"))
-        .catch(() => undefined);
+    if (created) await api.deleteConversation(created.sessionId).catch(() => undefined);
   }
   if (development)
     await api

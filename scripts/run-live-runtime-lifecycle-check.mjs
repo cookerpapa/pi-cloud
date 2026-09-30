@@ -131,7 +131,7 @@ try {
     }
   }
   try {
-    if (session) await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+    if (session) await api.deleteConversation(session.sessionId);
   } catch (error) {
     cleanupErrors.push(error);
   }

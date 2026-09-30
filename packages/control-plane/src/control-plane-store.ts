@@ -426,6 +426,7 @@ export class ControlPlaneStore {
         .selectFrom("sessions")
         .select((expression) => expression.fn.countAll<string>().as("count"))
         .where("tenant_id", "=", this.#tenantId)
+        .where("pruned_at", "is", null)
         .executeTakeFirstOrThrow();
       if (
         nonNegativeSafeInteger(sessionCount.count, "Tenant session count") >= policy.maximumSessions
@@ -701,7 +702,7 @@ export class ControlPlaneStore {
           .onRef("session_row.tenant_id", "=", "workspace.tenant_id")
           .onRef("session_row.workspace_id", "=", "workspace.id")
           .on("session_row.session_kind", "=", "conversation")
-          .on("session_row.archived_at", "is", null),
+          .on("session_row.pruned_at", "is", null),
       )
       .select([
         "workspace.id as workspaceId",
@@ -888,7 +889,7 @@ export class ControlPlaneStore {
             .where("tenant_id", "=", this.#tenantId)
             .where("workspace_id", "=", workspaceId)
             .where("session_kind", "=", "conversation")
-            .where("archived_at", "is", null)
+            .where("pruned_at", "is", null)
             .executeTakeFirstOrThrow();
           detachedSessionCount = nonNegativeSafeInteger(
             detached.count,
@@ -1024,7 +1025,7 @@ export class ControlPlaneStore {
           "id",
           "workspace_id as currentWorkspaceId",
           "session_kind as sessionKind",
-          "archived_at as archivedAt",
+          "pruned_at as prunedAt",
           "created_by_user_id as createdByUserId",
           "pi_session_id as piSessionId",
           "state",
@@ -1082,7 +1083,7 @@ export class ControlPlaneStore {
 
       if (
         session.sessionKind !== "conversation" ||
-        session.archivedAt !== null ||
+        session.prunedAt !== null ||
         !["cold", "idle"].includes(session.state)
       ) {
         throw new ControlPlaneStoreError("conflict", "Conversation cannot change Workspace");
@@ -1509,7 +1510,7 @@ export class ControlPlaneStore {
           "session_row.next_mailbox_position",
           "session_row.forked_from_session_id",
           "session_row.tool_capabilities",
-          "session_row.archived_at",
+          "session_row.pruned_at",
           "replay_run.id as replayRunId",
           "replay_run.turn_id as replayTurnId",
           "replay_run.mailbox_position as replayMailboxPosition",
@@ -1611,7 +1612,7 @@ export class ControlPlaneStore {
           "Conversation Workspace is no longer available; choose a new Workspace to continue",
         );
       }
-      if (session.archived_at !== null) {
+      if (session.pruned_at !== null) {
         throw new ControlPlaneStoreError("conflict", "Archived Session cannot accept turns");
       }
       if (!TURN_ACCEPTING_SESSION_STATES.has(session.state)) {

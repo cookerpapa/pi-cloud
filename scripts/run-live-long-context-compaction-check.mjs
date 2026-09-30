@@ -865,7 +865,7 @@ async function cleanup() {
           throw new Error("Long-context fixture cancellation timed out");
         await wait(200);
       }
-      await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+      await api.deleteConversation(session.sessionId);
     } catch (error) {
       errors.push(error);
     }

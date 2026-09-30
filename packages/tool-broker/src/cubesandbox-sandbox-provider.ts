@@ -1690,6 +1690,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     await this.#client.destroy(instance.sandboxId);
+    await this.#confirmInstanceAbsent(instance.sandboxId);
     this.#activations.delete(handle.activationId);
   }
 
@@ -2116,7 +2117,10 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    if (matches[0] !== undefined) await this.#client.destroy(matches[0].sandboxId);
+    if (matches[0] !== undefined) {
+      await this.#client.destroy(matches[0].sandboxId);
+      await this.#confirmInstanceAbsent(matches[0].sandboxId);
+    }
   }
 
   async listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {
@@ -2149,10 +2153,21 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     await this.#client.destroy(instance.sandboxId);
+    await this.#confirmInstanceAbsent(instance.sandboxId);
     for (const [activationId, active] of this.#activations) {
       if (active.instance.sandboxId === instance.sandboxId) {
         this.#activations.delete(activationId);
       }
+    }
+  }
+
+  async #confirmInstanceAbsent(sandboxId: string): Promise<void> {
+    if (await this.#client.read(sandboxId)) {
+      throw new ToolBrokerError(
+        "cubesandbox_assignment_still_alive",
+        "CubeSandbox absence could not be confirmed",
+        false,
+      );
     }
   }
 

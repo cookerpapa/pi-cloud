@@ -1,4 +1,4 @@
-import { insertHistoricalPrompt } from "./fixtures/historical-turn.ts";
+import { insertHistoricalPrompt, insertHistoricalSession } from "./fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql, type Kysely } from "kysely";
@@ -13,7 +13,7 @@ describe.skipIf(!endpoint)("dormant accounting retirement", () => {
   let admin: Kysely<Database>, db: Kysely<Database>, name: string;
   let tenant: Awaited<ReturnType<typeof createPrivateTenant>>;
   let project: Awaited<ReturnType<ControlPlaneStore["createProject"]>>;
-  let session: Awaited<ReturnType<ControlPlaneStore["createSession"]>>;
+  let session: Awaited<ReturnType<typeof insertHistoricalSession>>;
   let accepted: Awaited<ReturnType<typeof insertHistoricalPrompt>>;
   beforeAll(() => {
     admin = createDatabase({ connectionString: endpoint!, maxConnections: 1 });
@@ -36,12 +36,7 @@ describe.skipIf(!endpoint)("dormant accounting retirement", () => {
     });
     const store = new ControlPlaneStore({ database: db, ...tenant });
     project = await store.createProject({ name: "preserve", source: { kind: "empty" } });
-    session = await store.createSession(
-      project.projectId,
-      project.workspaceId,
-      "preserve",
-      "elastic",
-    );
+    session = await insertHistoricalSession(db, { ...tenant, ...project });
     const entry = {
       id: randomUUID(),
       seq: 1,

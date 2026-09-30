@@ -928,7 +928,7 @@ export const ConversationPruneResourceSchema = Type.Object(
     anchorTurnId: UuidSchema,
     anchorEntryId: PiEntryIdSchema,
     prunedTurnCount: NonNegativeSafeIntegerSchema,
-    archivedSessionCount: NonNegativeSafeIntegerSchema,
+    prunedSessionCount: NonNegativeSafeIntegerSchema,
     replayed: Type.Boolean(),
     createdAt: UtcTimestampSchema,
   },
@@ -1027,17 +1027,6 @@ export const WorkspaceDirectoryResourceSchema = Type.Object(
     path: Type.String({ minLength: 0, maxLength: 4_096 }),
     entries: Type.Array(WorkspaceDirectoryEntryResourceSchema, { maxItems: 4_096 }),
     truncated: Type.Boolean(),
-  },
-  { additionalProperties: false },
-);
-
-export const WorkspaceOperationResourceSchema = Type.Object(
-  {
-    operationId: UuidSchema,
-    kind: Type.Union([Type.Literal("archive"), Type.Literal("unarchive")]),
-    sessionId: UuidSchema,
-    replayed: Type.Boolean(),
-    createdAt: UtcTimestampSchema,
   },
   { additionalProperties: false },
 );
@@ -1194,7 +1183,6 @@ export type RunTransitionResource = Static<typeof RunTransitionResourceSchema>;
 export type RunResource = Static<typeof RunResourceSchema>;
 export type WorkspaceDirectoryEntryResource = Static<typeof WorkspaceDirectoryEntryResourceSchema>;
 export type WorkspaceDirectoryResource = Static<typeof WorkspaceDirectoryResourceSchema>;
-export type WorkspaceOperationResource = Static<typeof WorkspaceOperationResourceSchema>;
 export type CreateTurnCancellationRequest = Static<typeof CreateTurnCancellationRequestSchema>;
 export type AcceptedTurnCancellationResource = Static<
   typeof AcceptedTurnCancellationResourceSchema
@@ -1565,10 +1553,6 @@ export function parseRunResource(value: unknown): RunResource {
 
 export function parseWorkspaceDirectoryResource(value: unknown): WorkspaceDirectoryResource {
   return parseSchema(WorkspaceDirectoryResourceSchema, value, "Workspace directory resource");
-}
-
-export function parseWorkspaceOperationResource(value: unknown): WorkspaceOperationResource {
-  return parseSchema(WorkspaceOperationResourceSchema, value, "workspace-operation resource");
 }
 
 export function parseAcceptedTurnCancellationResource(

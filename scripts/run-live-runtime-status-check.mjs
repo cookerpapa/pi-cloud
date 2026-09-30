@@ -344,8 +344,7 @@ try {
   });
   controller.abort();
   await stream?.catch(() => {});
-  if (session)
-    await cleanup(() => api.deleteConversation(session.sessionId, newIdempotencyKey("cleanup")));
+  if (session) await cleanup(() => api.deleteConversation(session.sessionId));
   if (project)
     await cleanup(() => api.deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup")));
   if (tenant)

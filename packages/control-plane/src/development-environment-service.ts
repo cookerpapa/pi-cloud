@@ -731,7 +731,7 @@ export class DevelopmentEnvironmentService {
         .where("tenant_id", "=", identity.tenantId)
         .where("workspace_id", "=", environment.workspace_id)
         .where("session_kind", "=", "conversation")
-        .where("archived_at", "is", null)
+        .where("pruned_at", "is", null)
         .executeTakeFirstOrThrow();
       const detachedSessionCount = Number(detached.count);
       if (!Number.isSafeInteger(detachedSessionCount) || detachedSessionCount < 0) {

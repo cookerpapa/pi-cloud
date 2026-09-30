@@ -589,7 +589,7 @@ async function cleanup() {
         if (performance.now() > deadline) throw new Error("Worker fixture did not retire");
         await wait(200);
       }
-      await api.deleteConversation(sessionId, newIdempotencyKey("delete"));
+      await api.deleteConversation(sessionId);
     } catch (error) {
       errors.push(error);
     }

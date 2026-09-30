@@ -253,7 +253,7 @@ try {
     errors.push(e);
   }
   try {
-    if (session) await api.deleteConversation(session.sessionId, newIdempotencyKey("image-clean"));
+    if (session) await api.deleteConversation(session.sessionId);
   } catch (e) {
     errors.push(e);
   }

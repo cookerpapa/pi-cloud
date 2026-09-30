@@ -35,3 +35,26 @@ export async function insertHistoricalPrompt(
   );
   return { turnId, runId };
 }
+
+/** Stable pre-156 Session fixture; never route historical tests through current admission. */
+export async function insertHistoricalSession(
+  db: Kysely<Database>,
+  input: {
+    tenantId: string;
+    defaultModelProfileId: string;
+    projectId: string;
+    workspaceId: string;
+  },
+) {
+  const sessionId = randomUUID();
+  await sql`insert into sessions(id,tenant_id,project_id,workspace_id,desired_model_profile_id,state,pi_session_id,pi_session_lane,title)
+    values(${sessionId}::uuid,${input.tenantId}::uuid,${input.projectId}::uuid,${input.workspaceId}::uuid,
+      ${input.defaultModelProfileId}::uuid,'cold',${sessionId},'main','Historical Session')`.execute(
+    db,
+  );
+  await sql`insert into pi_sessions(tenant_id,id,created_at_ms,parent_session_id,next_seq,name)
+    values(${input.tenantId}::uuid,${sessionId},1,null,1,'Historical Session')`.execute(db);
+  await sql`insert into pi_session_lanes(tenant_id,session_id,lane,leaf_id)
+    values(${input.tenantId}::uuid,${sessionId},'main',null)`.execute(db);
+  return { sessionId };
+}

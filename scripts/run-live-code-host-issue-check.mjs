@@ -331,9 +331,7 @@ try {
   process.stdout.write(`${JSON.stringify(report)}\n`);
 } finally {
   if (sessionId !== undefined) {
-    await api
-      .deleteConversation(sessionId, newIdempotencyKey("code-host-cleanup"))
-      .catch(() => undefined);
+    await api.deleteConversation(sessionId).catch(() => undefined);
   }
   if (workspaceId !== undefined) {
     await api

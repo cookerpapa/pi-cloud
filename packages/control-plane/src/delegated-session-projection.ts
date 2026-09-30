@@ -55,7 +55,7 @@ export async function loadDelegatedSessionSummaries(
     .where("execution.tenant_id", "=", input.tenantId)
     .where("execution.parent_session_id", "in", input.parentSessionIds)
     .where("parent_turn.pruned_at", "is", null)
-    .where("child.archived_at", "is", null)
+    .where("child.pruned_at", "is", null)
     .orderBy("execution.created_at", "asc")
     .orderBy("execution.id", "asc")
     .limit(input.maximum + 1)

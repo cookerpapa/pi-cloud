@@ -23,11 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(155);
+      expect(firstMigrationPass.rows).toHaveLength(156);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe(
-        "155_remove_unused_subagent_result_pointer",
-      );
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("156_permanent_conversation_deletion");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -64,6 +62,7 @@ describe("current PiCloud schema", () => {
         "model_requests",
         "model_rates",
         "environment_operations",
+        "workspace_operations",
       ])
         expect(names.has(retired)).toBe(false);
       for (const required of [

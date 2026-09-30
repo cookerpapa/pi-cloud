@@ -66,7 +66,6 @@ import {
   type TenantRegistrationResource,
   type LogoutResource,
   type WorkspaceDirectoryResource,
-  type WorkspaceOperationResource,
   type WorkspaceListResource,
   type WorkspaceDeletionResource,
   type DevelopmentEnvironmentListResource,
@@ -86,7 +85,7 @@ import { PublicTenantRegistrationService } from "./public-tenant-registration.ts
 import { SessionEventStream } from "@pi-cloud/runtime-core/session-event-stream";
 import { TenantRequestContext } from "./tenant-request-context.ts";
 import { TenantModelConfigurationService } from "./tenant-model-configuration.ts";
-import { ConversationArchiveService } from "./conversation-archive-service.ts";
+import { ConversationDeletionService } from "./conversation-deletion-service.ts";
 import { WorkspaceBrowserService } from "./workspace-browser-service.ts";
 import { WorkspaceUploadService } from "./workspace-upload-service.ts";
 import { readWebSessionCookie, WebAuthenticationService } from "./web-authentication.ts";
@@ -112,8 +111,8 @@ export class ControlPlaneController {
     @Inject(SessionEventStream) private readonly sessionEventStream: SessionEventStream,
     @Inject(TenantModelConfigurationService)
     private readonly tenantModelConfiguration: TenantModelConfigurationService,
-    @Inject(ConversationArchiveService)
-    private readonly conversationArchive: ConversationArchiveService,
+    @Inject(ConversationDeletionService)
+    private readonly conversationDeletion: ConversationDeletionService,
     @Inject(WorkspaceBrowserService)
     private readonly workspaceBrowser: WorkspaceBrowserService,
     @Inject(WorkspaceUploadService) private readonly workspaceUploads: WorkspaceUploadService,
@@ -547,19 +546,14 @@ export class ControlPlaneController {
   }
 
   @Delete("conversations/:sessionId")
+  @HttpCode(204)
   async deleteConversation(
     @Req() request: FastifyRequest,
     @Param("sessionId") sessionIdValue: unknown,
-    @Headers("idempotency-key") idempotencyKeyValue: unknown,
-  ): Promise<WorkspaceOperationResource> {
+  ): Promise<void> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const identity = this.tenantRequestContext.requireMutation(request);
-    return this.conversationArchive.archive(
-      identity.tenantId,
-      parseIdempotencyKey(idempotencyKeyValue),
-      sessionId,
-      { archived: true },
-    );
+    await this.conversationDeletion.delete(identity.tenantId, sessionId);
   }
 
   @Put("conversations/:sessionId/workspace")

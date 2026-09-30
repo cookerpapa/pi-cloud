@@ -671,6 +671,33 @@ describe("CubeSandbox Provider contract", () => {
     await provider.destroy(handle);
     await provider.close();
   });
+  it("keeps destruction unconfirmed when Cube acknowledges DELETE but still lists the VM", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    });
+    const handle = await provider.create({
+      activationId: ACTIVATION_ID,
+      assignment,
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+      policy: provider.defaultPolicy,
+    });
+    const destroy = vi.spyOn(runtime, "destroy").mockResolvedValue(undefined);
+    await expect(provider.destroy(handle)).rejects.toMatchObject({
+      code: "cubesandbox_assignment_still_alive",
+    });
+    expect((await provider.inspect(handle)).state).toBe("running");
+    destroy.mockRestore();
+    await provider.destroy(handle);
+    expect(runtime.instances.size).toBe(0);
+    await provider.close();
+  });
+
   it("attests a real-template probe with full-public egress and private ingress", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const provider = testCubeProvider({

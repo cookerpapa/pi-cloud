@@ -403,7 +403,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         "idempotency-key": "delete-alpha-follow-up",
       },
     });
-    expect(deleted.statusCode).toBe(200);
+    expect(deleted.statusCode, deleted.body).toBe(204);
     expect(
       (
         await http.inject({
@@ -977,7 +977,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       anchorTurnId: alphaTurn.turnId,
       anchorEntryId: assistantEntryId,
       prunedTurnCount: 1,
-      archivedSessionCount: 1,
+      prunedSessionCount: 1,
       replayed: false,
     });
     expect((await http.inject(pruneRequest)).json<ConversationPruneResource>()).toMatchObject({
@@ -1002,10 +1002,10 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     expect(
       await database
         .selectFrom("sessions")
-        .select("archived_at as archivedAt")
+        .select("pruned_at as prunedAt")
         .where("id", "=", forked.session.sessionId)
         .executeTakeFirstOrThrow(),
-    ).toMatchObject({ archivedAt: expect.anything() });
+    ).toMatchObject({ prunedAt: expect.anything() });
     const afterPruneTree = await http.inject({
       method: "GET",
       url: `/v1/conversations/${alphaSession.sessionId}/tree?view=full`,
@@ -1045,18 +1045,15 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         "idempotency-key": "delete-alpha-conversation-tree",
       },
     });
-    expect(deletedTree.statusCode).toBe(200);
+    expect(deletedTree.statusCode, deletedTree.body).toBe(204);
     expect(
       await database
         .selectFrom("sessions")
-        .select(["id", "archived_at as archivedAt"])
+        .select(["id", "pruned_at as prunedAt"])
         .where("id", "in", [alphaSession.sessionId, replacementChildId])
         .orderBy("id")
         .execute(),
-    ).toEqual([
-      expect.objectContaining({ archivedAt: expect.anything() }),
-      expect.objectContaining({ archivedAt: expect.anything() }),
-    ]);
+    ).toEqual([]);
   });
 
   it("pages conversation history by a tenant-scoped Turn anchor", async () => {

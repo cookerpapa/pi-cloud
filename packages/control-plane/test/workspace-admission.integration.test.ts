@@ -1,9 +1,16 @@
+import { encodeSessionImages } from "@pi-cloud/session-attachments";
+import {
+  PostgresPiSessionStorage,
+  PostgresPiSessionRepository,
+} from "@pi-cloud/pi-session-postgres";
+import { PostgresPiSessionAppendProjector } from "../../runtime-core/src/postgres-pi-session-append-projector.ts";
+import { createTestWorker } from "./admit-test-execution.ts";
 import { randomUUID } from "node:crypto";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { sql, type Kysely, type QueryId } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
-  ConversationArchiveService,
+  ConversationDeletionService,
   ControlPlaneStore,
   createPrivateTenant,
 } from "../src/index.ts";
@@ -529,7 +536,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     ).toEqual({ deleted_at: null });
   });
 
-  it("does not archive a child whose message commits while its parent is being deleted", async () => {
+  it("does not delete a child whose message commits while its parent is being deleted", async () => {
     const { project, session: parent } = await fixture("parent-delete");
     const anchor = await store.acceptTurn(parent.sessionId, "anchor", { prompt: "prior turn" });
     await database
@@ -564,13 +571,13 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     let deletion: Promise<unknown> | undefined;
     try {
       await paused.waiting;
-      deletion = new ConversationArchiveService({ database })
-        .archive(scope.tenantId, "delete-parent", parent.sessionId, { archived: true })
+      deletion = new ConversationDeletionService({ database })
+        .delete(scope.tenantId, parent.sessionId)
         .then(
           (value) => ({ deleted: value }),
           (error) => ({ rejected: error }),
         );
-      await waitForContender();
+      expect(await deletion).toMatchObject({ rejected: { code: "conflict" } });
     } finally {
       paused.release();
     }
@@ -578,10 +585,10 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     expect(await deletion).toMatchObject({ rejected: { code: "conflict" } });
     const sessions = await database
       .selectFrom("sessions")
-      .select("archived_at")
+      .select("pruned_at")
       .where("id", "in", [parent.sessionId, child.sessionId])
       .execute();
-    expect(sessions).toEqual([{ archived_at: null }, { archived_at: null }]);
+    expect(sessions).toEqual([{ pruned_at: null }, { pruned_at: null }]);
   });
 
   it("rejects deletion if the descendant tree grows while child locks are being acquired", async () => {
@@ -644,13 +651,13 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     let deletion: Promise<unknown> | undefined;
     try {
       await ready;
-      deletion = new ConversationArchiveService({ database })
-        .archive(scope.tenantId, "delete-growing-tree", parent.sessionId, { archived: true })
+      deletion = new ConversationDeletionService({ database })
+        .delete(scope.tenantId, parent.sessionId)
         .then(
           (value) => ({ deleted: value }),
           (error) => ({ rejected: error }),
         );
-      await waitForContender();
+      expect(await deletion).toMatchObject({ rejected: { code: "conflict" } });
     } finally {
       release();
     }
@@ -659,24 +666,296 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     expect(
       await database
         .selectFrom("sessions")
-        .select("archived_at")
+        .select("pruned_at")
         .where("id", "in", [parent.sessionId, child.sessionId, grandchild.sessionId])
         .execute(),
-    ).toEqual([{ archived_at: null }, { archived_at: null }, { archived_at: null }]);
-    // Retrying against the new stable tree archives every descendant.
-    await new ConversationArchiveService({ database }).archive(
-      scope.tenantId,
-      "delete-growing-tree",
-      parent.sessionId,
-      { archived: true },
-    );
+    ).toEqual([{ pruned_at: null }, { pruned_at: null }, { pruned_at: null }]);
+    // Retrying against the new stable tree deletes every descendant.
+    await new ConversationDeletionService({ database }).delete(scope.tenantId, parent.sessionId);
     expect(
       await database
         .selectFrom("sessions")
         .select("id")
         .where("id", "in", [parent.sessionId, child.sessionId, grandchild.sessionId])
-        .where("archived_at", "is", null)
+        .where("pruned_at", "is", null)
         .execute(),
     ).toHaveLength(0);
+  });
+  it("erases owned history and references atomically while retaining independent native copies and Workspace bytes", async () => {
+    const { project, session } = await fixture("permanent-history");
+    const storage = new PostgresPiSessionStorage({
+      database,
+      tenantId: scope.tenantId,
+      sessionId: session.sessionId,
+    });
+    const entry = await storage.appendEntry(
+      {
+        id: randomUUID(),
+        type: "message",
+        message: { role: "user", content: "private-history", timestamp: 1 },
+      },
+      "main",
+    );
+    const repository = new PostgresPiSessionRepository({ database, tenantId: scope.tenantId });
+    const independent = await repository.fork(await storage.getMetadata(), {
+      id: randomUUID(),
+      scope: "branch",
+    });
+    const independentId = (await independent.getMetadata()).id;
+    const otherTenant = await createPrivateTenant(database, {
+      slug: randomUUID(),
+      ownerDisplayName: "Other",
+    });
+    await PostgresPiSessionStorage.create({
+      database,
+      tenantId: otherTenant.tenantId,
+      sessionId: session.sessionId,
+    });
+    const logicalId = randomUUID();
+    const row = await database
+      .selectFrom("sessions")
+      .selectAll()
+      .where("id", "=", session.sessionId)
+      .executeTakeFirstOrThrow();
+    await database
+      .insertInto("sessions")
+      .values({
+        ...row,
+        tool_capabilities: sql`${JSON.stringify(row.tool_capabilities)}::jsonb`,
+        id: logicalId,
+        session_kind: "subagent",
+        pi_session_lane: "test-child",
+      })
+      .execute();
+    await storage.createLane("test-child", entry.id);
+    const imageId = randomUUID();
+    await sql`insert into session_image_objects(tenant_id,id,state,sha256,byte_length,mime_type)
+      values(${scope.tenantId}::uuid,${imageId}::uuid,'ready',${"a".repeat(64)},1,'image/png')`.execute(
+      database,
+    );
+    await sql`insert into session_image_references(tenant_id,session_id,image_id)
+      values(${scope.tenantId}::uuid,${session.sessionId},${imageId}::uuid),
+        (${scope.tenantId}::uuid,${independentId},${imageId}::uuid)`.execute(database);
+    await database
+      .insertInto("session_uploads")
+      .values({
+        id: randomUUID(),
+        tenant_id: scope.tenantId,
+        session_id: session.sessionId,
+        pi_session_id: session.sessionId,
+        workspace_id: project.workspaceId,
+        actor_user_id: scope.ownerUserId,
+        working_directory: "/workspace",
+        name: "pending.txt",
+        path: "/workspace/pending.txt",
+        mime_type: "text/plain",
+        byte_length: "1",
+        sha256: "a".repeat(64),
+        state: "uploading",
+        claim_token: randomUUID(),
+        lease_expires_at: new Date(Date.now() + 60000),
+        image_reference: null,
+        accepted_at: null,
+        expires_at: new Date(Date.now() + 60000),
+      })
+      .execute();
+    const accepted = await store.acceptTurn(session.sessionId, "history", {
+      prompt: "private input",
+    });
+    const sealId = randomUUID();
+    await database
+      .updateTable("runs")
+      .set({
+        state: "completed",
+        settled_at: new Date(),
+        output_seal_id: sealId,
+        output_sealed_at: new Date(),
+      })
+      .where("id", "=", accepted.runId)
+      .execute();
+    await database
+      .updateTable("turns")
+      .set({ state: "completed", settled_at: new Date() })
+      .where("id", "=", accepted.turnId)
+      .execute();
+    await database
+      .insertInto("outbox")
+      .values({
+        id: sealId,
+        tenant_id: scope.tenantId,
+        aggregate_type: "session_terminal_event",
+        aggregate_id: sealId,
+        topic: "session.event.accepted.v1",
+        payload: { private: "terminal" },
+        published_at: null,
+        last_error: null,
+      })
+      .execute();
+    const deletion = new ConversationDeletionService({ database });
+    // Public identity is tenant-scoped, including idempotent absent results.
+    await deletion.delete(otherTenant.tenantId, session.sessionId);
+    expect(await storage.getEntry(entry.id)).toBeDefined();
+    await deletion.delete(scope.tenantId, session.sessionId);
+    await deletion.delete(scope.tenantId, session.sessionId);
+    for (const table of ["sessions", "turns", "runs"] as const) {
+      const count =
+        table === "sessions"
+          ? await database
+              .selectFrom(table)
+              .select("id")
+              .where("id", "in", [session.sessionId, logicalId])
+              .execute()
+          : await database
+              .selectFrom(table)
+              .select("id")
+              .where("session_id", "=", session.sessionId)
+              .execute();
+      expect(count).toEqual([]);
+    }
+    for (const table of [
+      "pi_sessions",
+      "pi_session_log",
+      "pi_session_lanes",
+      "session_image_references",
+    ] as const) {
+      const rows =
+        await sql`select 1 from ${sql.table(table)} where tenant_id=${scope.tenantId}::uuid
+        and ${sql.ref(table === "pi_sessions" ? "id" : "session_id")}=${session.sessionId}`.execute(
+          database,
+        );
+      expect(rows.rows).toEqual([]);
+    }
+    expect(
+      await database
+        .selectFrom("session_uploads")
+        .select("id")
+        .where("session_id", "=", session.sessionId)
+        .execute(),
+    ).toEqual([]);
+    expect(
+      await database.selectFrom("outbox").select("id").where("id", "=", sealId).execute(),
+    ).toEqual([]);
+    expect(
+      await database
+        .selectFrom("workspaces")
+        .select("deleted_at")
+        .where("id", "=", project.workspaceId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ deleted_at: null });
+    expect(await independent.view("main").findEntriesOnBranch()).toEqual([entry]);
+    expect(
+      (
+        await sql`select 1 from session_image_references where image_id=${imageId}::uuid`.execute(
+          database,
+        )
+      ).rows,
+    ).toHaveLength(1);
+    expect(
+      await database
+        .selectFrom("pi_sessions")
+        .select("id")
+        .where("tenant_id", "=", otherTenant.tenantId)
+        .where("id", "=", session.sessionId)
+        .execute(),
+    ).toHaveLength(1);
+    // A retained Kafka record can be consumed again without recreating a Run/log.
+    await new PostgresPiSessionAppendProjector(database).project(
+      {
+        kind: "pi_session_append",
+        factId: randomUUID(),
+        scope: {
+          tenantId: scope.tenantId,
+          sessionId: session.sessionId,
+          turnId: accepted.turnId,
+          runId: accepted.runId,
+          fencingToken: 1,
+          piSessionId: session.sessionId,
+          writerId: randomUUID(),
+        },
+        piSession: { id: session.sessionId, lane: "main", writerId: randomUUID() },
+        items: await encodeSessionImages(undefined, { tenantId: scope.tenantId }, [
+          { kind: "entry", lane: "main", turnId: accepted.turnId, entry },
+        ]),
+        events: [],
+        occurredAt: new Date().toISOString(),
+      },
+      { topic: "retained-history", partition: 0, offset: 100n },
+    );
+    expect(
+      await database
+        .selectFrom("pi_sessions")
+        .select("id")
+        .where("tenant_id", "=", scope.tenantId)
+        .where("id", "=", session.sessionId)
+        .execute(),
+    ).toEqual([]);
+  });
+
+  it("rolls deletion back for unsealed output or a current native writer, even after its lease time", async () => {
+    const { session } = await fixture("delete-authority");
+    const worker = await createTestWorker(database);
+    const leaseId = randomUUID();
+    const deletion = new ConversationDeletionService({ database });
+    await database
+      .insertInto("session_leases")
+      .values({
+        tenant_id: scope.tenantId,
+        pi_session_id: session.sessionId,
+        lease_id: leaseId,
+        sandbox_id: worker.workerId,
+        fencing_token: "1",
+        acquired_at: new Date(Date.now() - 60000),
+        valid_until: new Date(Date.now() - 1000),
+        released_at: null,
+        writer_failed_at: null,
+        writer_sealed_at: null,
+        writer_seal_offset: null,
+      })
+      .execute();
+    await expect(deletion.delete(scope.tenantId, session.sessionId)).rejects.toMatchObject({
+      code: "conflict",
+    });
+    expect(
+      await database
+        .selectFrom("sessions")
+        .select("id")
+        .where("id", "=", session.sessionId)
+        .execute(),
+    ).toHaveLength(1);
+    await database
+      .updateTable("session_leases")
+      .set({ released_at: new Date() })
+      .where("lease_id", "=", leaseId)
+      .execute();
+    await database
+      .updateTable("pi_sessions")
+      .set({ unsealed_runs: "1" })
+      .where("tenant_id", "=", scope.tenantId)
+      .where("id", "=", session.sessionId)
+      .execute();
+    await expect(deletion.delete(scope.tenantId, session.sessionId)).rejects.toMatchObject({
+      code: "conflict",
+    });
+    expect(
+      await database
+        .selectFrom("sessions")
+        .select("id")
+        .where("id", "=", session.sessionId)
+        .execute(),
+    ).toHaveLength(1);
+    await database
+      .updateTable("pi_sessions")
+      .set({ unsealed_runs: "0" })
+      .where("tenant_id", "=", scope.tenantId)
+      .where("id", "=", session.sessionId)
+      .execute();
+    await deletion.delete(scope.tenantId, session.sessionId);
+    expect(
+      await database
+        .selectFrom("session_leases")
+        .select("lease_id")
+        .where("lease_id", "=", leaseId)
+        .execute(),
+    ).toEqual([]);
   });
 });

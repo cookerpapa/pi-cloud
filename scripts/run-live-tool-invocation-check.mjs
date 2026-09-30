@@ -265,7 +265,7 @@ try {
   }
   if (session) {
     try {
-      await api.deleteConversation(session.sessionId, newIdempotencyKey("atomic-session"));
+      await api.deleteConversation(session.sessionId);
     } catch (error) {
       errors.push(error);
     }

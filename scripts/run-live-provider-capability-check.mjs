@@ -354,9 +354,7 @@ try {
   streamAbort?.abort();
   await streamPromise?.catch(() => undefined);
   if (session !== undefined) {
-    await api
-      .deleteConversation(session.sessionId, newIdempotencyKey("provider-cap-cleanup"))
-      .catch(() => undefined);
+    await api.deleteConversation(session.sessionId).catch(() => undefined);
     await waitFor(
       async () =>
         !(await api.listConversations()).conversations.some(

@@ -937,7 +937,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("s.tenant_id", "=", input.tenantId)
         .where("s.id", "=", input.sessionId)
         .where("s.workspace_id", "=", input.workspaceId)
-        .where("s.archived_at", "is", null)
+        .where("s.pruned_at", "is", null)
         .forUpdate("s")
         .executeTakeFirst();
       if (session === undefined) {
@@ -1278,7 +1278,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       .where("service.target_id", "=", target.sessionId)
       .where("service.state", "=", "active")
       .where("activation.state", "in", ["materializing", "active", "warm", "cleaning"])
-      .where("session_row.archived_at", "is", null)
+      .where("session_row.pruned_at", "is", null)
       .orderBy("service.last_seen_at", "desc")
       .executeTakeFirst();
     if (activation === undefined) return { status: "unavailable" };
@@ -1705,7 +1705,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         and u.sha256=${request.sha256} and u.byte_length=${byteLength}
         and u.state='uploading' and u.lease_expires_at>clock_timestamp()
         and u.working_directory=${directory} and s.working_directory=u.working_directory
-        and s.workspace_id=u.workspace_id and s.archived_at is null and w.deleted_at is null
+        and s.workspace_id=u.workspace_id and s.pruned_at is null and w.deleted_at is null
         and w.sandbox_domain_id=${this.#sandboxDomainId}
         and b.state='ready' and b.lease_expires_at>clock_timestamp()
         and ((${request.machine?.environmentId ?? null}::uuid is null and s.execution_mode='elastic') or (
@@ -1799,6 +1799,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         ])
         .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("state", "=", "unknown")
+        .where("updated_at", "<=", new Date(now.valueOf() - 30_000))
         .orderBy("updated_at", "asc")
         .limit(boundedLimit)
         .forUpdate()
@@ -1875,8 +1876,25 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "activation.fencing_token",
         ])
         .where("activation.sandbox_domain_id", "=", this.#sandboxDomainId)
-        .where("activation.state", "in", ["reserved", "materializing", "active"])
-        .where("activation.updated_at", "<", orphanedBefore)
+        .where("activation.state", "in", ["reserved", "materializing", "active", "warm"])
+        .where("activation.owner_instance_id", "=", this.#instanceId)
+        .where((eb) =>
+          eb.or([
+            // A retained conversation keeps between-Turn warm reuse. Once its
+            // final reference disappears, no warm TTL or orphan grace is needed.
+            sql<boolean>`not exists (
+            select 1 from sessions s join workspaces w
+              on w.tenant_id=s.tenant_id and w.id=s.workspace_id
+            where s.tenant_id=activation.tenant_id and s.workspace_id=activation.workspace_id
+              and s.execution_mode='elastic' and s.pruned_at is null and w.deleted_at is null
+              and s.compute_session_id is not distinct from activation.compute_session_id
+          )`,
+            eb.and([
+              eb("activation.state", "in", ["reserved", "materializing", "active"]),
+              eb("activation.updated_at", "<", orphanedBefore),
+            ]),
+          ]),
+        )
         .where(
           sql<boolean>`not exists (
             select 1

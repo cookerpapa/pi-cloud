@@ -138,7 +138,7 @@ export class QueuedInputService {
       ])
       .where("s.tenant_id", "=", tenantId)
       .where("s.id", "=", sessionId)
-      .where("s.archived_at", "is", null)
+      .where("s.pruned_at", "is", null)
       .executeTakeFirst();
     if (!session) throw new ControlPlaneStoreError("not_found", "Session was not found");
     return parseInputQueueResource({
@@ -164,7 +164,7 @@ export class QueuedInputService {
         "id",
         "row_version",
         "session_kind",
-        "archived_at",
+        "pruned_at",
         "state",
         "pi_session_id",
         "project_id",
@@ -175,7 +175,7 @@ export class QueuedInputService {
       .where("id", "=", sessionId)
       .forNoKeyUpdate()
       .executeTakeFirst();
-    if (!session || session.archived_at !== null)
+    if (!session || session.pruned_at !== null)
       throw new ControlPlaneStoreError("not_found", "Session was not found");
     if (session.session_kind !== "conversation")
       throw new ControlPlaneStoreError("conflict", "Delegated Sessions are read-only");
@@ -518,7 +518,7 @@ export class QueuedInputService {
     const send = await this.#database.transaction().execute(async (tx) => {
       const session = await tx
         .selectFrom("sessions")
-        .select(["id", "archived_at"])
+        .select(["id", "pruned_at"])
         .where("id", "=", source.session_id)
         .where("tenant_id", "=", source.tenant_id)
         .forNoKeyUpdate()
@@ -586,7 +586,7 @@ export class QueuedInputService {
         target.state === "completed" ||
         target.state === "acknowledged" ||
         target.earlierPending ||
-        session.archived_at !== null ||
+        session.pruned_at !== null ||
         target.targetState !== "running"
       )
         return false;

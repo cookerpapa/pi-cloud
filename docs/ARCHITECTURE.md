@@ -327,7 +327,7 @@ are not stream recovery cursors.
 
 Conversation discovery returns pages of 100 Sessions with an optional opaque
 `nextCursor`. It preserves PostgreSQL timestamp precision for the descending
-activity/ID position; every page retains tenant and archive filtering. Browser
+activity/ID position; every page retains tenant and branch-pruning filtering. Browser
 load-more appends by Session ID, and a newer refresh invalidates an older page
 request. This list position is neither authorization nor an SSE cursor.
 
@@ -397,7 +397,7 @@ native bodies or executing Tools. Immutable `payload.turnId` retains origin;
 the live `turn_id` FK can become null on control-row deletion and stays null
 through a rebuild. Native Fork copies own their bodies and image references,
 so deleting their native source does not invalidate them. Product subtree
-archive/prune rules continue to govern the human conversation tree.
+permanent deletion and branch-pruning rules govern the human conversation tree (ADR-0207).
 Image parts have a `pi_cloud_image_v1` storage representation. Their immutable
 objects are retained transactionally when native log rows commit, including Fork
 copies and Compaction retained tails. Reachability follows retained native history,
@@ -746,3 +746,15 @@ remains unimplemented; existing no-replay/UNKNOWN tests do not prove physical
 execution fencing. PG failover, Cube node drain and full multi-node HA remain
 separate deployment acceptance work. The isolated duplicate SSE opening remains
 unexplained; reproducing intentional stale-snapshot cancellation is not its fix.
+
+Conversation deletion commits a quiescent, locked subtree deletion in one PG transaction,
+including Run/Turn control history, its native physical Sessions and attachment/upload
+references. `DELETE /v1/conversations/:sessionId` returns 204 after commit, including
+an already absent tenant-scoped ID; no archive/restore receipt remains. Independent
+native Forks, shared image references and Workspace/Volume bytes retain their own
+lifetimes. Pruned logical views use `pruned_at` and do not consume usable-Session quota.
+An empty PG notification wakes the existing Broker cleanup scan after deletion.
+Missing hints fall back to periodic scanning. Unreferenced elastic compute is
+eligible immediately, while ordinary between-Turn warm reuse remains unchanged.
+The provider confirms Cube absence before physical quota release; uncertain cleanup
+stays in PG for retry. User-owned development machines keep their explicit lifecycle.

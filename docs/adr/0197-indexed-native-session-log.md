@@ -35,7 +35,7 @@ self-contained immutable semantic log and all execution authority boundaries.
 - Human Fork already copies complete Entry facts into its destination log.
   Query that independent copy directly, including nested Forks; remove physical
   source-Entry dependencies. Native source deletion does not invalidate a Fork.
-  Product subtree deletion, archive/prune rules and quiescence requirements are
+  Product subtree deletion (now permanent under ADR-0207), branch-pruning rules and quiescence requirements are
   retained. Product Forks preserve origin Turn bindings while canonical Turn
   output still filters by the Turn's execution Session. SDK Forks keep their
   existing null Turn binding.

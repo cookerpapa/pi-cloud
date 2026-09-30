@@ -235,7 +235,7 @@ try {
         if (performance.now() >= deadline) throw new Error("Fixture cancellation timed out");
         await wait(200);
       }
-      await api.deleteConversation(sessionId, newIdempotencyKey("delete"));
+      await api.deleteConversation(sessionId);
     } catch (error) {
       failures.push(error);
     }
