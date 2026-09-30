@@ -44,8 +44,9 @@
 
 ## Current release gate
 
-- [ ] ADR-0202: recover missing Workspaces using owned cloud development machines
-      and selected directories; backend, browser and real Luna acceptance in progress.
+- [x] ADR-0202: recover missing Workspaces using owned cloud development machines
+      and selected directories. [PG, browser and real Luna acceptance](reports/workspace-rebind-acceptance-20260930.md)
+      confirms preserved history/model settings and execution in the selected directory.
 
 - [x] ADR-0201: independent PG-time expiry sweeps, persistent runtime activity
       and quiet-Session path probes. [Fault, browser and real Luna/Cube acceptance](reports/runtime-status-acceptance-20260930.md)

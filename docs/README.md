@@ -31,6 +31,10 @@ The [runtime status acceptance](reports/runtime-status-acceptance-20260930.md) r
 independent lease sweeps, PG-time expiry selection, transient phases and quiet-Session
 path probes, including real Luna/Cube/browser and process-failure checks.
 
+The [Workspace recovery acceptance](reports/workspace-rebind-acceptance-20260930.md)
+adds owned development-machine/directory selection after Workspace deletion,
+with release-race, browser retry and real Luna history/Tool verification.
+
 The [September 27 repository review](reports/repository-review-20260927.md) covers
 Pi alignment, component boundaries, duplicated IO and removal of obsolete paths;
 it tracks implemented repairs and subsequent approved architecture decisions.

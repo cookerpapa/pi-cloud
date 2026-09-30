@@ -1,0 +1,73 @@
+{
+  "checkedAt": "2026-09-30T06:12:57.624Z",
+  "revision": "8674e29bc1d855300a79e709abec6804eb28a504",
+  "scriptSha256": "36cbdef5afdd6cd85de58f3dc429252858695ecf12467bfd3ca4e92ccc642798",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "2d1da390-a3fe-424d-bc10-4a3513515324",
+      "workspaceId": "b78e50d6-4dc4-422f-aeb8-e48706f4763e",
+      "workerId": "d1c39a38-428e-4293-9f3e-714c5976b39f",
+      "tools": []
+    },
+    {
+      "runId": "06d1a9ca-d153-4d59-a472-4f498909f192",
+      "workspaceId": "dae5f8b6-7d14-4be5-85c4-3b5c96ac5794",
+      "workerId": "d1c39a38-428e-4293-9f3e-714c5976b39f",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "write",
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "resources": {
+    "tenantId": "bd15ff4c-f2f6-4a1c-b1f7-2ace96c1ef61",
+    "sessionId": "38b6257c-1da9-4123-a5a7-cf80621533f0",
+    "originalWorkspaceId": "b78e50d6-4dc4-422f-aeb8-e48706f4763e",
+    "environmentId": "afbf886f-61c8-4de3-aac6-d3b6de6c4877",
+    "machineWorkspaceId": "dae5f8b6-7d14-4be5-85c4-3b5c96ac5794"
+  },
+  "browserMachineSelection": true,
+  "historyPreserved": true,
+  "modelSettingsPreserved": true,
+  "nextRunUsesMachineDirectory": true,
+  "workspaceChangedFact": true,
+  "cleanupRequested": true,
+  "cleanupVerified": {
+    "originalWorkspacePurged": true,
+    "testMachineReleased": true,
+    "machineWorkspacePurged": true,
+    "testCredentialRevoked": true,
+    "activeRuns": 0,
+    "ownerMachineStillRunning": true
+  },
+  "existingHistory": {
+    "rowsBefore": 1534,
+    "rowsAfterExcludingTestTenant": 1534,
+    "digestBefore": "9d384d782d63cc4bed3cabdd3b40f92d",
+    "digestAfter": "9d384d782d63cc4bed3cabdd3b40f92d"
+  },
+  "checks": {
+    "passedTargetedTests": 305,
+    "workspaces": ["control-plane", "protocol", "sandbox-supervisor", "web-ui"],
+    "realPostgresBindingAndMachineTests": 23,
+    "registrationAndConversationTests": 9,
+    "protocolTests": 99,
+    "webTests": 146,
+    "nativeWorldStateTests": 5,
+    "runnerIntegrationTests": 23,
+    "browser": true,
+    "typecheck": true,
+    "webBuild": true,
+    "docsAndImageChecks": true,
+    "faultTargetsPassed": 2,
+    "fullFaultMatrixRepeated": false
+  }
+}

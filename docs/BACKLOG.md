@@ -12,10 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Complete [ADR-0202](adr/0202-development-machine-workspace-rebinding.md):
-      machine selection in Workspace recovery, scoped transactional rebinding,
-      directory-aware World State and browser/Luna acceptance.
-
 - [ ] Review the two moderate development-test dependency findings (Vitest and
       @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
       dependency gate passes; a test-tool upgrade needs its own contract checks.

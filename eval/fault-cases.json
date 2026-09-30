@@ -3,6 +3,20 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "machine-rebind-release-race",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-admission.integration.test.ts",
+      "test": "rejects a machine rebind if release intent commits while its row lock is awaited",
+      "invariant": "A pending machine release wins over a stale target lookup; rebinding checks a fresh snapshot after the machine lock."
+    },
+    {
+      "id": "machine-rebind-identity-and-retry",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-admission.integration.test.ts",
+      "test": "binds a missing Workspace to its owner's machine without changing history identity or accepted Runs",
+      "invariant": "Binding replay cannot duplicate or retarget the operation; native Session/model identity and previously accepted Run snapshots remain unchanged."
+    },
+    {
       "id": "lease-sweep-independent-of-retirement",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/control-plane-runtime.test.ts",

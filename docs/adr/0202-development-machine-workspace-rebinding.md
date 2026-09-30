@@ -1,6 +1,9 @@
 # ADR 0202: rebind missing Workspaces to development machines
 
-Status: accepted for implementation, 2026-09-30.
+Status: implemented and validated, 2026-09-30.
+
+[Acceptance](../reports/workspace-rebind-acceptance-20260930.md) covers PostgreSQL
+release races, browser selection/retry and real Luna/Cube conversation continuity.
 
 ## Context
 
