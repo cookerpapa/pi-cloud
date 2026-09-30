@@ -153,3 +153,25 @@ Five preview boundary tests, 148 Web tests, 109 protocol tests and 18 Subagent
 tests pass, with Control Plane and Web typechecks. The empty retained tail,
 summary-only rendering, Unicode-safe clipping and clearing old preview metadata
 on a replacement snapshot are covered.
+
+## D30-03: incomplete visible text and confirmed failure context
+
+[ADR-0206](../adr/0206-interrupted-output-context.md) projects ordinary text from
+stored errored/aborted Assistant messages as explicitly incomplete context.
+Original native entries remain exact. This has no second-prefix-write crash gap,
+and thinking, private diagnostics and partial Tool arguments are not replayed.
+Native Compaction and retained-tail restoration apply the same projection.
+
+Known failure reasons flow through the trusted Runner's existing error state and
+cancellation signal. Cold Session opening also materializes a missing predecessor
+interruption, including a failure without visible text. Existing native recovery
+IDs, generated metadata and atomic prefix clearing provide deduplication; no
+receipt table or second state authority is added. An already described unfinished
+operation is closed without adding another generic interruption fact.
+
+Validation: 97 Runtime/PiRunner tests, the extended native-Host Parent/Child and
+replacement integration, reason-classification tests and Runner/PG/API typechecks
+pass. Actual pinned Pi provider conversion preserves the partial text exactly
+once across repeated restore. Native Compaction receives it both as an ordinary
+failed entry and inside an earlier retained tail. A no-prefix Tool-UNKNOWN
+failure is described after Host replacement without reflecting its diagnostic.

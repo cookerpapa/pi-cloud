@@ -2,6 +2,10 @@ import type { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { Database } from "@pi-cloud/database";
 import {
   parseExecutionReference,
+  RUN_INTERRUPTION_CUSTOM_TYPE,
+  INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
+  interruptionReasonForFailureCode,
+  runInterruptionMessage,
   type SupervisorHeartbeatMessage,
   type SupervisorHeartbeatAckMessage,
 } from "@pi-cloud/protocol";
@@ -311,24 +315,65 @@ export class PostgresNativeSessionHost {
       const recoveries = await this.#database
         .selectFrom("session_terminal_events as terminal")
         .innerJoin("turns as turn", "turn.id", "terminal.turn_id")
-        .select(["terminal.event_id", "terminal.turn_id", "terminal.interrupted_prefix"])
+        .select([
+          "terminal.event_id",
+          "terminal.turn_id",
+          "terminal.interrupted_prefix",
+          "terminal.type",
+          "terminal.payload",
+        ])
         .where("terminal.tenant_id", "=", scope.tenantId)
         .where("terminal.session_id", "=", scope.sessionId)
-        .where("terminal.interrupted_prefix", "is not", null)
+        .where("terminal.type", "in", ["turn.failed", "turn.cancelled"])
         .where("turn.pruned_at", "is", null)
+        .where(
+          sql<boolean>`not exists (
+          select 1 from pi_session_log recovered
+          where recovered.tenant_id=terminal.tenant_id and recovered.session_id=${scope.piSessionId}
+            and recovered.kind='entry'
+            and recovered.id='pc-interrupted-' || terminal.event_id::text
+        )`,
+        )
+        .where((eb) =>
+          eb.or([
+            eb("terminal.interrupted_prefix", "is not", null),
+            sql<boolean>`terminal.seq=(
+            select max(previous.seq) from session_terminal_events previous
+            join turns previous_turn on previous_turn.tenant_id=previous.tenant_id and previous_turn.id=previous.turn_id
+            where previous.tenant_id=terminal.tenant_id and previous.session_id=terminal.session_id
+              and previous_turn.pruned_at is null
+          ) and not exists (
+            select 1 from pi_session_log interrupted
+            where interrupted.tenant_id=terminal.tenant_id and interrupted.session_id=${scope.piSessionId}
+              and interrupted.turn_id=terminal.turn_id and interrupted.kind='entry' and interrupted.type='custom'
+              and interrupted.custom_type=${RUN_INTERRUPTION_CUSTOM_TYPE}
+          )`,
+          ]),
+        )
         .orderBy("terminal.seq", "asc")
         .execute();
-      for (const recovery of recoveries)
+      for (const recovery of recoveries) {
+        const reason =
+          recovery.type === "turn.cancelled"
+            ? "cancelled"
+            : (interruptionReasonForFailureCode(recovery.payload.code) ?? "execution_interrupted");
         await lane.appendRecovery(
           {
             id: `pc-interrupted-${recovery.event_id}`,
             type: "custom",
-            customType: "pi-cloud.interrupted_assistant_prefix",
-            data: { text: recovery.interrupted_prefix! },
+            customType:
+              recovery.interrupted_prefix === null
+                ? RUN_INTERRUPTION_CUSTOM_TYPE
+                : INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
+            data:
+              recovery.interrupted_prefix === null
+                ? { reason, content: runInterruptionMessage(reason) }
+                : { reason, text: recovery.interrupted_prefix },
           },
           recovery.turn_id,
           recovery.event_id,
         );
+      }
       authority.start();
       const storage = lane;
       const signal = AbortSignal.any([authority.signal, writer.signal, local.signal]);

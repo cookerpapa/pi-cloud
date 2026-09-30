@@ -32,10 +32,6 @@ release gate; final combined verification remains part of the repairs.
       Reclaim elastic compute with no remaining conversation users, preserve
       independent Workspace bytes and other users, and release physical quota
       only after confirmed runtime cleanup. Between-Turn warm reuse is unchanged.
-- [ ] D30-03: implement the owner's requested preservation of visible
-      failed/aborted Assistant text plus confirmed interruption facts in the next
-      context. Preserve Pi's rejection of incomplete Tool calls and document
-      the recovery contract before changing it.
 - [ ] Evaluate the review's remaining bounded cleanup candidates: avoid the
       new-Steer receipt re-read, move the in-memory
       Workspace runtime repository into test helpers, and reconcile the stale

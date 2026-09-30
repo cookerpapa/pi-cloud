@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0206](0206-interrupted-output-context.md) — incomplete visible text and
+   confirmed interruption reasons in recovered model context.
 1. [ADR-0205](0205-bounded-inherited-context-preview.md) — bounded delegated
    context preview with native Compaction summary/tail and explicit truncation.
 1. [ADR-0204](0204-bounded-subagent-task-input.md) — delegated task character and

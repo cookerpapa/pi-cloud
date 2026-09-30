@@ -456,6 +456,13 @@ the same Volume emits `sandbox_reset`; replacing the Workspace emits
 `workspace_changed`. Facts are minimal, hidden from ordinary UI messages and
 preserved through Compaction. A hard interruption's visible prefix is materialized
 into the next native context before sampling, together with an interruption fact.
+Errored/aborted native Assistant entries retain their exact stored payload, while
+their ordinary text becomes explicitly incomplete context before provider
+conversion. The same rule applies to native Compaction preparation and retained
+tails. Known cancellation, timeout, Worker and Tool failures use fixed safe
+explanations; raw diagnostics and partial Tool arguments are excluded. Cold
+recovery materializes a missing predecessor failure fact once, even when that
+Run produced no visible prefix (ADR-0206).
 
 Human Fork creates an independent Session with inherited history; delegated
 Branch creates a Lane. Cold administrative mutations require Session quiescence.

@@ -39,6 +39,15 @@ import {
 } from "@pi-cloud/protocol";
 import { PiAgentEventAdapter } from "../src/pi-agent-event-adapter.ts";
 
+// Pinned-source contract probe: the provider filter originally dropped the
+// failed Assistant even though the pre-provider context still contained it.
+const { transformMessages } = await import(
+  new URL(
+    "../../../node_modules/@earendil-works/pi-ai/dist/api/transform-messages.js",
+    import.meta.url,
+  ).href
+);
+
 const TENANT_ID = "d2000000-0000-4000-8000-000000000001";
 
 let pglite: PGlite;
@@ -138,6 +147,206 @@ function modelAdmissionProbe() {
     },
   };
 }
+
+it.each(["error", "aborted"] as const)(
+  "retains incomplete %s text through the actual Pi provider filter and cold restore",
+  async (reason) => {
+    const storage = await createStorage();
+    const marker = "visible-partial-response";
+    const incomplete: AssistantMessage = {
+      ...assistantError("PRIVATE_DIAGNOSTIC_CANARY"),
+      stopReason: reason,
+      content: [
+        { type: "text", text: marker },
+        { type: "thinking", thinking: "PRIVATE_THINKING_CANARY" },
+        {
+          type: "toolCall",
+          id: "never-run",
+          name: "fixture",
+          arguments: { command: "PARTIAL_TOOL_CANARY" },
+        },
+      ],
+    };
+    const model = getModel("openai", "gpt-4o-mini");
+    const common = {
+      lane: "main",
+      model,
+      systemPrompt: "Fixture",
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+    };
+    const failed = new CloudAgentRuntime({
+      ...common,
+      ...(await withNativeSession(storage)),
+      authority: new TestAuthority(),
+      streamFn: () => {
+        const stream = new MockAssistantStream();
+        queueMicrotask(() => stream.push({ type: "error", reason, error: incomplete }));
+        return stream;
+      },
+    });
+    expect(await failed.run("Generate text")).toMatchObject({
+      kind: reason === "error" ? "failed" : "aborted",
+    });
+    expect(await storage.findEntries({ type: "message" })).toContainEqual(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          stopReason: reason,
+          errorMessage: "PRIVATE_DIAGNOSTIC_CANARY",
+        }),
+      }),
+    );
+    for (let i = 0; i < 2; i++) {
+      const contexts: Context[] = [];
+      const next = new CloudAgentRuntime({
+        ...common,
+        ...(await withNativeSession(storage)),
+        authority: new TestAuthority(),
+        streamFn: scriptedStream(["Continued"], contexts),
+      });
+      expect(await next.run("Continue")).toMatchObject({ kind: "completed" });
+      const sent = JSON.stringify(transformMessages(contexts[0]!.messages, model));
+      expect(sent.match(/visible-partial-response/g)).toHaveLength(1);
+      expect(sent).toContain("incomplete assistant output");
+      expect(sent).toContain("turn_aborted");
+      expect(sent).not.toMatch(
+        /PRIVATE_DIAGNOSTIC_CANARY|PRIVATE_THINKING_CANARY|PARTIAL_TOOL_CANARY/,
+      );
+    }
+    expect(
+      await storage.findEntries({
+        type: "custom",
+        customType: "pi-cloud.interrupted_assistant_prefix",
+      }),
+    ).toHaveLength(0);
+    expect(await storage.findRecords({ type: "tool_started" })).toHaveLength(0);
+  },
+);
+
+it("projects a stored failed prefix even when interruption bookkeeping was never written", async () => {
+  const storage = await createStorage();
+  const session = storage.asSession();
+  await session.appendMessage({ role: "user", content: "Task", timestamp: 1 });
+  await session.appendMessage({
+    ...assistantError("PRIVATE_DIAGNOSTIC_CANARY"),
+    content: [{ type: "text", text: "crash-gap-prefix" }],
+  });
+  const contexts: Context[] = [];
+  const model = getModel("openai", "gpt-4o-mini");
+  const runtime = new CloudAgentRuntime({
+    ...(await withNativeSession(storage)),
+    lane: "main",
+    authority: new TestAuthority(),
+    model,
+    systemPrompt: "Fixture",
+    streamFn: scriptedStream(["Continued"], contexts),
+    compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+  });
+  await runtime.run("Continue after replacement");
+  const sent = JSON.stringify(transformMessages(contexts[0]!.messages, model));
+  expect(sent.match(/crash-gap-prefix/g)).toHaveLength(1);
+  expect(sent).not.toContain("PRIVATE_DIAGNOSTIC_CANARY");
+});
+
+it("records a confirmed Tool failure reason without labeling it a VM crash", async () => {
+  const storage = await createStorage();
+  const runtime = new CloudAgentRuntime({
+    ...(await withNativeSession(storage)),
+    lane: "main",
+    authority: new TestAuthority(),
+    model: getModel("openai", "gpt-4o-mini"),
+    systemPrompt: "Fixture",
+    interruptionReason: () => "tool_result_unknown",
+    streamFn: () => {
+      const stream = new MockAssistantStream();
+      queueMicrotask(() =>
+        stream.push({
+          type: "error",
+          reason: "error",
+          error: assistantError("PRIVATE_DIAGNOSTIC_CANARY"),
+        }),
+      );
+      return stream;
+    },
+    compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+  });
+  await runtime.run("An uncertain effect");
+  const entries = await storage.findEntries({
+    type: "custom",
+    customType: "pi-cloud.run_interrupted",
+  });
+  expect(JSON.stringify(entries)).toContain("tool_result_unknown");
+  expect(JSON.stringify(entries)).toContain("side effects may already have occurred");
+  expect(JSON.stringify(entries)).not.toMatch(/PRIVATE_DIAGNOSTIC_CANARY|VM.*crash/);
+});
+
+it.each([false, true])(
+  "includes failed text in native Compaction input (already retained=%s)",
+  async (retained) => {
+    const storage = await createStorage(),
+      session = storage.asSession();
+    const marker = "partial-text-to-summarize";
+    const failed: AssistantMessage = {
+      ...assistantError("PRIVATE_DIAGNOSTIC_CANARY"),
+      content: [
+        { type: "text", text: marker },
+        {
+          type: "toolCall",
+          id: "unexecuted",
+          name: "fixture",
+          arguments: { secret: "PARTIAL_TOOL_CANARY" },
+        },
+      ],
+    };
+    if (retained)
+      await session.appendEntry(
+        {
+          id: crypto.randomUUID(),
+          type: "compaction",
+          summary: "Earlier summary",
+          retainedTail: [failed],
+          tokensBefore: 10_000,
+        },
+        "main",
+      );
+    else await session.appendMessage(failed);
+    for (let i = 0; i < 4; i++) {
+      await session.appendMessage({
+        role: "user",
+        content: `Older task ${i} ` + "padding ".repeat(300),
+        timestamp: Date.now(),
+      });
+      await session.appendMessage({
+        ...assistant(`Answer ${i}`),
+        usage: { ...assistant("").usage, input: 50_000, totalTokens: 50_001 },
+      });
+    }
+    const model = { ...getModel("openai", "gpt-4o-mini"), contextWindow: 256 };
+    const summaries: string[] = [],
+      contexts: Context[] = [];
+    const runtime = new CloudAgentRuntime({
+      ...(await withNativeSession(storage)),
+      lane: "main",
+      authority: new TestAuthority(),
+      model,
+      systemPrompt: "Fixture",
+      models: {
+        streamSimple: scriptedStream(["Continued"], contexts),
+        async completeSimple(_model: unknown, context: Context) {
+          summaries.push(JSON.stringify(transformMessages(context.messages, model)));
+          return assistant(`Summary preserves ${marker}`);
+        },
+      } as unknown as Models,
+      compaction: { enabled: true, reserveTokens: 32, keepRecentTokens: 32 },
+    });
+    expect(await runtime.run("Continue after compaction")).toMatchObject({ kind: "completed" });
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toContain(marker);
+    expect(summaries[0]).not.toMatch(/PRIVATE_DIAGNOSTIC_CANARY|PARTIAL_TOOL_CANARY/);
+    const sent = JSON.stringify(transformMessages(contexts[0]!.messages, model));
+    expect(sent).toContain(marker);
+    expect(sent).not.toMatch(/PRIVATE_DIAGNOSTIC_CANARY|PARTIAL_TOOL_CANARY/);
+  },
+);
 
 it.each(["x", "汉", "😀", "\u0001"])(
   "fits the maximum admitted %j task in the native startup budget",

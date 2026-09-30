@@ -8,6 +8,7 @@ import {
 import {
   type ExecuteTurnCommandMessage,
   parseExecutionReference,
+  interruptionReasonForFailureCode,
   type ToolSandboxAssignment,
   type ToolSandboxCreateRequest,
   type ToolSandboxCreateResponse,
@@ -596,6 +597,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             }
           : {}),
         ...commonRunnerOptions,
+        interruptionReason: () => interruptionReasonForFailureCode(toolRuntimeFailure?.code),
         createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
           recordPreparedInput = () => stepWorldState.recordActive(activation);
           let stepSequence = 0;

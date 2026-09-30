@@ -148,7 +148,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                   );
                   expect(bootstrapReads).toHaveLength(request.piSessionLane === "main" ? 1 : 0);
                 }
-                if (phase === 4) {
+                if (phase === 4 || phase === 6 || phase === 7) {
                   const runtime = new CloudAgentRuntime({
                     session: session.session,
                     lane: session.lane,
@@ -164,6 +164,13 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                       const text = JSON.stringify(context.messages);
                       expect(text.match(/visible-interrupted-prefix/g)).toHaveLength(1);
                       expect(text).toContain("turn_aborted");
+                      expect(text).toContain("Worker became unavailable");
+                      if (phase >= 6) {
+                        expect(
+                          text.match(/Tool was submitted, but its result could not be confirmed/g),
+                        ).toHaveLength(1);
+                        expect(text).not.toContain("PRIVATE_DIAGNOSTIC_CANARY");
+                      }
                       const stream = new EventStream<AssistantMessageEvent, AssistantMessage>(
                         (e) => e.type === "done" || e.type === "error",
                         (e) => {
@@ -221,6 +228,12 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                   content: request.input.prompt,
                   timestamp: Date.now(),
                 });
+                if (phase === 5)
+                  throw new TurnExecutionBackendError(
+                    "cubesandbox_tool_result_unknown",
+                    "PRIVATE_DIAGNOSTIC_CANARY",
+                    false,
+                  );
                 if (phase === 3) {
                   const id = crypto.randomUUID();
                   await channel.ingest({
@@ -480,6 +493,35 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
         .select("id")
         .where("turn_id", "=", interrupted.turnId)
         .where("custom_type", "=", "pi-cloud.interrupted_assistant_prefix")
+        .execute(),
+    ).toHaveLength(1);
+    phase = 5;
+    const silentFailure = await store.acceptTurn(conversation.sessionId, "silent-failure", {
+      prompt: "Fail before producing text",
+    });
+    expect(await executor.dispatchRun(silentFailure.runId)).toMatchObject({ status: "failed" });
+    await projectReady();
+    for (const recoveryPhase of [6, 7]) {
+      await host.close();
+      host = new PostgresNativeSessionHost({ database: hostDatabase });
+      phase = recoveryPhase;
+      executor = await makeExecutor(`worker-recovery-${phase}`);
+      const next = await store.acceptTurn(conversation.sessionId, `silent-recover-${phase}`, {
+        prompt: "Continue after the known failure",
+      });
+      expect(await executor.dispatchRun(next.runId), JSON.stringify(failures)).toMatchObject({
+        status: "completed",
+      });
+      await projectReady();
+    }
+    expect(
+      await db
+        .selectFrom("pi_session_log")
+        .select("id")
+        .where("tenant_id", "=", tenant.tenantId)
+        .where("turn_id", "=", silentFailure.turnId)
+        .where("kind", "=", "entry")
+        .where("custom_type", "=", "pi-cloud.run_interrupted")
         .execute(),
     ).toHaveLength(1);
   } finally {

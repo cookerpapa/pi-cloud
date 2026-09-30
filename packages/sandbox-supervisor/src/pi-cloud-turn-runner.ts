@@ -5,6 +5,7 @@ import {
   createPiCloudEventFactory,
   parseSupervisorToControlMessage,
   inputWithUploads,
+  type RunInterruptionReason,
   type UserUpload,
   type PiCloudEvent,
   type PiCloudEventBody,
@@ -84,6 +85,7 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   ) => Promise<PiCloudSessionHandle>;
   modelRuntimePool?: PiModelRuntimePool;
   acquireModelPermit?: (signal?: AbortSignal) => Promise<() => void>;
+  interruptionReason?: () => RunInterruptionReason | undefined;
   metrics?: PiCloudMetrics;
   createAgentTools: (context: {
     stepWorldState: PiSessionWorldStateController;
@@ -840,6 +842,15 @@ export class PiCloudTurnRunner {
         );
         const runtime = new CloudAgentRuntime({
           toolInvocations,
+          interruptionReason: () => {
+            if (combined.aborted) {
+              const reason = cancellationSignal(combined.reason).reason;
+              if (reason === "timeout") return "execution_timeout";
+              if (reason === "user_request") return "cancelled";
+              return "execution_interrupted";
+            }
+            return this.#options.interruptionReason?.();
+          },
           ...(this.#options.acquireModelPermit
             ? { acquireModelPermit: this.#options.acquireModelPermit }
             : {}),

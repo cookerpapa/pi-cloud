@@ -609,3 +609,11 @@ export {
   MAX_INHERITED_CONTEXT_TEXT_CHARACTERS,
   MAX_INHERITED_CONTEXT_TOTAL_CHARACTERS,
 } from "./inherited-context.ts";
+export {
+  RUN_INTERRUPTION_CUSTOM_TYPE,
+  INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
+  isRunInterruptionReason,
+  interruptionReasonForFailureCode,
+  runInterruptionMessage,
+  type RunInterruptionReason,
+} from "./run-interruption.ts";

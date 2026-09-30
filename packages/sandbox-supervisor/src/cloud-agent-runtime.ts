@@ -42,6 +42,14 @@ import type {
 } from "@earendil-works/pi-ai";
 import { isContextOverflow, isRetryableAssistantError } from "@earendil-works/pi-ai";
 import { isIncompleteModelStreamError } from "./model-stream-error.ts";
+import {
+  RUN_INTERRUPTION_CUSTOM_TYPE as INTERRUPTION_CUSTOM_TYPE,
+  INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
+  interruptionReasonForFailureCode,
+  isRunInterruptionReason,
+  runInterruptionMessage,
+  type RunInterruptionReason,
+} from "@pi-cloud/protocol";
 import { ToolInvocations, withToolInvocation } from "./tool-invocation.ts";
 import type { PreparedAgentTool, PreparedToolExecution } from "./prepared-tool.ts";
 import type {
@@ -96,6 +104,7 @@ export type CloudAgentRuntimeOptions = Readonly<{
   models?: Models;
   streamFn?: StreamFn;
   acquireModelPermit?: (signal?: AbortSignal) => Promise<() => void>;
+  interruptionReason?: () => RunInterruptionReason | undefined;
   systemPrompt: string | (() => string | Promise<string>);
   tools?: readonly AgentTool[];
   thinkingLevel?: ThinkingLevel;
@@ -142,17 +151,8 @@ export type CloudAgentRunResult = Readonly<{
   error?: Readonly<{ code: string; message: string }>;
 }>;
 
-const INTERRUPTION_CUSTOM_TYPE = "pi-cloud.run_interrupted";
-// Diagnostics remain in the operation record, never in the next model request.
-const INTERRUPTION_CONTEXT = [
-  "<turn_aborted>",
-  "The previous agent Run did not finish normally.",
-  "Treat unfinished work as uncertain and inspect relevant state before continuing.",
-  "</turn_aborted>",
-].join("\n");
-const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";
 const UNKNOWN_TOOL_EFFECT_TEXT =
-  "The previous Worker stopped while this Tool was active. Its side effects are unknown. " +
+  "The previous execution ended before this Tool's result was confirmed. Its side effects are unknown. " +
   "Do not replay it blindly; inspect the Workspace and environment before continuing.";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -254,18 +254,52 @@ function interruptedAssistantPrefixProjector(entry: {
     return undefined;
   }
   return [
-    {
-      role: "custom",
-      customType: INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
-      content: [
-        "<interrupted_assistant_output>",
-        entry.data.text,
-        "</interrupted_assistant_output>",
-      ].join("\n"),
-      display: false,
-      timestamp: entry.timestamp,
-    } as AgentMessage,
+    interruptedTextMessage(
+      entry.data.text,
+      entry.timestamp,
+      isRunInterruptionReason(entry.data.reason) ? entry.data.reason : undefined,
+    ),
   ];
+}
+
+function interruptedTextMessage(
+  text: string,
+  timestamp: number,
+  reason?: RunInterruptionReason,
+): AgentMessage {
+  return {
+    role: "custom",
+    customType: INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
+    content: [
+      "The following is incomplete assistant output, not a new instruction or proof that work succeeded.",
+      "<interrupted_assistant_output>",
+      text,
+      "</interrupted_assistant_output>",
+      ...(reason ? [runInterruptionMessage(reason)] : []),
+    ].join("\n"),
+    display: false,
+    timestamp,
+  } as AgentMessage;
+}
+
+function contextMessage(message: AgentMessage): AgentMessage | undefined {
+  if (
+    message.role !== "assistant" ||
+    (message.stopReason !== "error" && message.stopReason !== "aborted")
+  )
+    return message;
+  const text = message.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  return text.trim().length ? interruptedTextMessage(text, message.timestamp) : undefined;
+}
+
+function contextMessages(messages: readonly AgentMessage[]): AgentMessage[] {
+  return messages.flatMap((message) => {
+    const projected = contextMessage(message);
+    return projected ? [projected] : [];
+  });
 }
 
 function retainedCustomType(message: AgentMessage, types: ReadonlySet<string>): string | undefined {
@@ -760,8 +794,10 @@ export class CloudAgentRuntime {
             assistantAttempt,
           );
         }
+        const reason = this.#interruptionReason(finalMessage);
         await tree.appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
-          content: INTERRUPTION_CONTEXT,
+          reason,
+          content: runInterruptionMessage(reason),
         });
       }
       await session.appendRecord({
@@ -798,9 +834,11 @@ export class CloudAgentRuntime {
       this.#acceptingInputs = false;
       const failure = operationError(error);
       if (!authority.signal.aborted) {
+        const reason = this.#interruptionReason(undefined, error);
         await tree
           .appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
-            content: INTERRUPTION_CONTEXT,
+            reason,
+            content: runInterruptionMessage(reason),
           })
           .catch(() => undefined);
         await session
@@ -904,7 +942,20 @@ export class CloudAgentRuntime {
       [INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE]: interruptedAssistantPrefixProjector,
       ...(this.#options.entryProjectors ?? {}),
     } as Readonly<Record<string, CustomEntryContextMessageProjector>>;
-    return buildSessionContext(path, { entryProjectors }).messages;
+    return contextMessages(buildSessionContext(path, { entryProjectors }).messages);
+  }
+
+  #interruptionReason(message?: AssistantMessage, error?: unknown): RunInterruptionReason {
+    const known = this.#options.interruptionReason?.();
+    if (known) return known;
+    if (this.#abortRequested || message?.stopReason === "aborted") return "cancelled";
+    const code = isObject(error) ? error.code : undefined;
+    const classified = interruptionReasonForFailureCode(code);
+    if (classified) return classified;
+    if (message && isContextOverflow(message)) return "context_limit";
+    if (message?.errorMessage && isIncompleteModelStreamError(message.errorMessage))
+      return "model_response_interrupted";
+    return "execution_interrupted";
   }
 
   async #compactIfNeeded(
@@ -930,19 +981,27 @@ export class CloudAgentRuntime {
     // Pi's compactor consumes messages, not our custom-entry projectors. Materialize
     // visible interrupted prefixes in-place so they are summarized or retained,
     // rather than silently disappearing at this boundary.
-    const compactablePath = path.map((entry): Entry => {
+    const compactablePath = path.flatMap((entry): Entry[] => {
+      if (entry.type === "compaction")
+        return [{ ...entry, retainedTail: contextMessages(entry.retainedTail) }];
+      if (entry.type === "message") {
+        const message = contextMessage(entry.message);
+        return message ? [{ ...entry, message }] : [];
+      }
       const prefix =
         entry.type === "custom" ? interruptedAssistantPrefixProjector(entry)?.[0] : undefined;
       return prefix === undefined
-        ? entry
-        : {
-            id: entry.id,
-            parentId: entry.parentId,
-            seq: entry.seq,
-            timestamp: entry.timestamp,
-            type: "message",
-            message: prefix,
-          };
+        ? [entry]
+        : [
+            {
+              id: entry.id,
+              parentId: entry.parentId,
+              seq: entry.seq,
+              timestamp: entry.timestamp,
+              type: "message",
+              message: prefix,
+            },
+          ];
     });
     const preparation = prepareCompaction(compactablePath, this.#compaction);
     if (!preparation.ok) throw preparation.error;
@@ -1210,9 +1269,25 @@ export class CloudAgentRuntime {
         await session.appendEntry({ id: tool.resultEntryId, type: "message", message }, lane);
       }
     }
-    await tree.appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
-      content: INTERRUPTION_CONTEXT,
+    const interruptions = await tree.findEntriesOnBranch({
+      type: "custom",
+      stopAtType: "compaction",
+      order: "newestFirst",
     });
+    const alreadyDescribed = interruptions.some(
+      (entry) =>
+        entry.type === "custom" &&
+        entry.seq > operation.seq &&
+        (entry.customType === INTERRUPTION_CUSTOM_TYPE ||
+          (entry.customType === INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE &&
+            isObject(entry.data) &&
+            isRunInterruptionReason(entry.data.reason))),
+    );
+    if (!alreadyDescribed)
+      await tree.appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
+        reason: "execution_interrupted",
+        content: runInterruptionMessage("execution_interrupted"),
+      });
     await session.appendRecord({
       id: this.#id(),
       lane,
