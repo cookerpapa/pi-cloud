@@ -22,7 +22,7 @@ const ASSIGNMENT_LOST_MESSAGE =
   "The Worker lost its active Run assignment before durable completion";
 const DEFAULT_RECONCILIATION_LIMIT = 100;
 
-const ACTIVE_SESSION_STATES = new Set(["starting", "running", "cancelling"]);
+const ACTIVE_SESSION_STATES = new Set(["running", "cancelling"]);
 const ACTIVE_TURN_STATES = new Set(["running", "cancelling"]);
 
 export type AssignmentReconcilerOptions = {

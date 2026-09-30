@@ -32,17 +32,15 @@ describe("domain state machines", () => {
     expect(() => transitionRun("cancelled", "running")).toThrow(DomainTransitionError);
   });
 
-  it("walks a session through activation, cancellation, and eviction", () => {
-    expect(walkSession("cold", ["starting", "idle", "running", "idle"])).toBe("idle");
-    expect(walkSession("idle", ["running", "cancelling", "idle", "evicting", "cold"])).toBe("cold");
+  it("walks a Session through atomic admission, completion and cancellation", () => {
+    expect(walkSession("cold", ["running", "idle"])).toBe("idle");
+    expect(walkSession("idle", ["running", "cancelling", "idle"])).toBe("idle");
+    expect(() => transitionSession("cold", "idle")).toThrow(DomainTransitionError);
   });
 
-  it("requires explicit session recovery after a failure", () => {
-    expect(walkSession("running", ["failed", "recovering", "idle"])).toBe("idle");
-    expect(() => transitionSession("failed", "idle")).toThrow(DomainTransitionError);
-    expect(() => transitionSession("cold", "running")).toThrow(
-      "Invalid session transition: cold -> running",
-    );
+  it("models recovery as one guarded transition before another Run may be admitted", () => {
+    expect(walkSession("running", ["failed", "idle", "running"])).toBe("running");
+    expect(() => transitionSession("failed", "running")).toThrow(DomainTransitionError);
   });
 
   it("walks a turn through execution and completion", () => {

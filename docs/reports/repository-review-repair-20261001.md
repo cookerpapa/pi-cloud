@@ -219,3 +219,21 @@ the Control Plane typecheck passes.
 The in-memory Workspace ownership implementation is moved to test helpers, with
 its production export removed. The repository port and PostgreSQL implementation
 remain. All 73 Broker/provider tests and the Broker typecheck pass.
+
+## Session lifecycle and obsolete probes
+
+ADR-0208/migration 157 align the public/domain/PG Session states with atomic Run
+admission: cold/idle → running. Retired starting/evicting states and the never-persisted
+recovering intermediate are removed. Failed → idle still requires the existing
+Agent-exit/seal/no-live-work SQL proof. Worker and VM lifecycles stay independent.
+Unsupported stored states block migration atomically rather than being silently reset.
+
+Validation: 113 protocol and 16 domain tests, two schema/cutover tests, all 43 atomic
+admission cases (including the updated product-reference deletion guard), and three
+real-PG recovery orderings pass. Every workspace typecheck passes in the combined
+check. The combined full-test pass is recorded below when complete. Both browser
+presentation and queue-editing checks pass; the fault matrix passes 104/104 cases.
+
+Four one-off probes that asserted the old bugs are removed from current scripts.
+The original review retains its baseline evidence and identifies commit `7c1f46ec`
+for historical reproduction; the maintained tests assert the corrected semantics.

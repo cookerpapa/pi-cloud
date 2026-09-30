@@ -1,3 +1,4 @@
+import { ConversationDeletionService } from "../src/conversation-deletion-service.ts";
 import { randomUUID } from "node:crypto";
 import {
   createDatabase,
@@ -445,8 +446,10 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const metadata = (await repo.list()).find((s) => s.id === f.session.sessionId)!;
     await expect(repo.delete(metadata)).rejects.toThrow("must settle before deletion");
     await f.project();
-    await repo.delete(metadata);
-    await repo.delete(metadata);
+    await expect(repo.delete(metadata)).rejects.toThrow("still has a product reference");
+    const deletion = new ConversationDeletionService({ database: db });
+    await deletion.delete(f.tenant.tenantId, f.session.sessionId);
+    await deletion.delete(f.tenant.tenantId, f.session.sessionId);
     expect(
       await db
         .selectFrom("session_leases")

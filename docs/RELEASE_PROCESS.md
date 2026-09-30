@@ -130,3 +130,8 @@ a matched backup; do not run an older binary against the renamed `pruned_at` fie
 Tool Broker uses `DATABASE_NOTIFICATION_URL_FILE` for its optional cleanup hint
 connection (direct PG or session pooling); without it the main database URL is used.
 Cleanup remains correct with missed notifications through its 30-second scan.
+
+Migration 157 removes unused Session starting/evicting/recovering states. It refuses
+unsupported stored states instead of guessing a recovery action. The retained
+recovery path still requires Agent exit and native seal; this is not a Worker or
+VM lifecycle change (ADR-0208).

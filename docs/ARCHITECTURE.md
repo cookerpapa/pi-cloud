@@ -758,3 +758,9 @@ Missing hints fall back to periodic scanning. Unreferenced elastic compute is
 eligible immediately, while ordinary between-Turn warm reuse remains unchanged.
 The provider confirms Cube absence before physical quota release; uncertain cleanup
 stays in PG for retry. User-owned development machines keep their explicit lifecycle.
+
+The public Session lifecycle matches atomic Run admission (ADR-0208): cold/idle
+becomes running in the admitted Run transaction; completion/cancellation returns
+to idle or quarantines the Session as failed. Recovery persists failed → idle only
+when the existing PG guards confirm both Agent exit and native output seal. VM
+startup/eviction is not a Session state; those resources retain their own lifecycle.

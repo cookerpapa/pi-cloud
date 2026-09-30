@@ -10,13 +10,10 @@ import {
 
 export const SessionStateSchema = Type.Union([
   Type.Literal("cold"),
-  Type.Literal("starting"),
   Type.Literal("idle"),
   Type.Literal("running"),
   Type.Literal("cancelling"),
   Type.Literal("failed"),
-  Type.Literal("recovering"),
-  Type.Literal("evicting"),
 ]);
 export type SessionState = Static<typeof SessionStateSchema>;
 

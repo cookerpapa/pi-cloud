@@ -181,7 +181,7 @@ describe("PiCloudEventSchema", () => {
 
     const stateEvent = factory.next({
       type: "session.state.changed",
-      payload: { from: "cold", to: "starting" },
+      payload: { from: "cold", to: "running" },
     });
     expect(stateEvent).toMatchObject({ seq: 1, turnId: null });
 
@@ -189,6 +189,16 @@ describe("PiCloudEventSchema", () => {
       PiCloudProtocolError,
     );
     expect(factory.currentSequence()).toBe(1);
+  });
+
+  it.each(["starting", "evicting", "recovering"])("rejects retired Session state %s", (state) => {
+    const valid = createFactory().next({
+      type: "session.state.changed",
+      payload: { from: "cold", to: "running" },
+    });
+    expect(() => parsePiCloudEvent({ ...valid, payload: { from: "cold", to: state } })).toThrow(
+      PiCloudProtocolError,
+    );
   });
 
   it("does not consume a sequence number when event validation fails", () => {

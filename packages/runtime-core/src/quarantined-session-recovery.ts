@@ -15,7 +15,7 @@ export async function recoverQuarantinedSession(
   const recovered = await tx
     .updateTable("sessions as s")
     .set({
-      state: transitionSession(transitionSession("failed", "recovering"), "idle"),
+      state: transitionSession("failed", "idle"),
       row_version: sql<string>`s.row_version + 1`,
       updated_at: sql<Date>`now()`,
     })

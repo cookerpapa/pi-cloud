@@ -39,15 +39,13 @@ export type DomainEntityKind = "session" | "turn" | "sandbox" | "control_request
 
 type TransitionTable<State extends string> = Readonly<Record<State, readonly State[]>>;
 
+// Admission is atomic; recovery's exit/seal proof is enforced by its PG owner.
 const sessionTransitions = {
-  cold: ["starting"],
-  starting: ["idle", "failed"],
-  idle: ["running", "evicting", "failed"],
+  cold: ["running"],
+  idle: ["running", "failed"],
   running: ["idle", "cancelling", "failed"],
   cancelling: ["idle", "failed"],
-  failed: ["recovering"],
-  recovering: ["idle", "failed"],
-  evicting: ["cold", "failed"],
+  failed: ["idle"],
 } as const satisfies TransitionTable<SessionState>;
 
 const turnTransitions = {

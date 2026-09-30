@@ -27,9 +27,6 @@ release gate; final combined verification remains part of the repairs.
       is complete: current upstream APIs do not provide the full trusted-host
       handoff/Kafka delivery contract. A scoped protocol/prototype decision is
       still required before changing boot ownership and cleanup semantics.
-- [ ] Reconcile the stale Session state graph with atomic admission, preserving
-      recovery guards and documenting the public schema cutover. The new-Steer
-      receipt re-read and production in-memory repository export are removed.
 
 ## Reliability and capacity
 

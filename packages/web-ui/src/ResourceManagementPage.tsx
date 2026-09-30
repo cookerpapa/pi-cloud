@@ -13,13 +13,7 @@ import { useI18n } from "./i18n.tsx";
 import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";
 import { CodeHostConnectionsModal } from "./CodeHostConnectionsModal.tsx";
 
-const ACTIVE_SESSION_STATES = new Set([
-  "starting",
-  "running",
-  "cancelling",
-  "recovering",
-  "evicting",
-]);
+const ACTIVE_SESSION_STATES = new Set(["running", "cancelling"]);
 function associations(
   conversations: readonly ConversationSummaryResource[],
   workspaceId: string,

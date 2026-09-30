@@ -1,3 +1,4 @@
+import * as atomicSessionLifecycle from "./157_atomic_session_lifecycle.ts";
 import * as permanentConversationDeletion from "./156_permanent_conversation_deletion.ts";
 import * as directWorkspaceStorage from "./138_direct_workspace_storage.ts";
 import * as removeUnusedSubagentResultPointer from "./155_remove_unused_subagent_result_pointer.ts";
@@ -315,6 +316,7 @@ export const migrationProvider: MigrationProvider = {
       "154_user_input_uploads": userInputUploads,
       "155_remove_unused_subagent_result_pointer": removeUnusedSubagentResultPointer,
       "156_permanent_conversation_deletion": permanentConversationDeletion,
+      "157_atomic_session_lifecycle": atomicSessionLifecycle,
     };
   },
 };
