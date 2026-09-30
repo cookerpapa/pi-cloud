@@ -237,3 +237,29 @@ presentation and queue-editing checks pass; the fault matrix passes 104/104 case
 Four one-off probes that asserted the old bugs are removed from current scripts.
 The original review retains its baseline evidence and identifies commit `7c1f46ec`
 for historical reproduction; the maintained tests assert the corrected semantics.
+
+## Final security follow-up: gRPC transitive dependency
+
+The final audit additionally returned GHSA-m9gg-hp2v-232j (high) and
+GHSA-f596-whhp-79r4 (low) for OpenTelemetry's indirect grpc-js 1.14.4. These
+September 17 advisories were newly returned by this audit pass, not newly
+published on October 1. Root overrides and the lockfile now pin 1.14.5; no other
+lockfile dependency was upgraded in this last patch. No new audit exemption is used.
+
+The maintainer documents the affected server certificate-authentication setting
+and unintended handler-error disclosure in the
+[authentication advisory](https://github.com/grpc/grpc-node/security/advisories/GHSA-m9gg-hp2v-232j),
+[error-details advisory](https://github.com/grpc/grpc-node/security/advisories/GHSA-f596-whhp-79r4)
+and [1.14.5 release](https://github.com/grpc/grpc-node/releases/tag/%40grpc%2Fgrpc-js%401.14.5).
+This is a vulnerable dependency finding, not proof that PiCloud exposes the
+corresponding gRPC server configuration. The current dependency arrives through
+telemetry exporters.
+
+A local public-API transport regression demonstrates handler-error disclosure on
+installed 1.14.4 and absence of that disclosure on 1.14.5. It now runs against the
+installed telemetry dependency in the helper suite. After installation, all 62
+helper tests, nine observability tests and that package's typecheck pass. Build,
+image closure, dependency hardening and the installed-tree security gate pass;
+no remaining applicable vulnerabilities are reported. Raw npm audit still sees
+three old Pi shrinkwrap metadata findings, handled only through the exact
+installed-version/range verification described under R30-08.

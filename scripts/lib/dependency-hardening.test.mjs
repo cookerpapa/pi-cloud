@@ -138,3 +138,37 @@ it.each(["../../package.json", "../../node_modules/@earendil-works/pi-coding-age
     expect(result.status, result.stderr).toBe(0);
   },
 );
+
+it("does not disclose thrown gRPC handler details through the installed telemetry dependency", () => {
+  const owner = fileURLToPath(
+    new URL("../../packages/observability/package.json", import.meta.url),
+  );
+  const result = spawnSync(
+    process.execPath,
+    [
+      "-e",
+      `
+    const grpc = require('node:module').createRequire(${JSON.stringify(owner)})('@grpc/grpc-js');
+    const method = { path: '/private.Probe/Read', requestStream: false, responseStream: false,
+      requestSerialize: Buffer.from, requestDeserialize: Buffer.from,
+      responseSerialize: Buffer.from, responseDeserialize: Buffer.from };
+    const server = new grpc.Server();
+    server.addService({ read: method }, { read() { throw new Error('private-grpc-canary'); } });
+    server.bindAsync('127.0.0.1:0', grpc.ServerCredentials.createInsecure(), (bindError, port) => {
+      if (bindError) throw bindError;
+      const Client = grpc.makeGenericClientConstructor({ read: method }, 'Probe');
+      const client = new Client('127.0.0.1:' + port, grpc.credentials.createInsecure());
+      client.read(Buffer.from('probe'), { deadline: new Date(Date.now() + 3000) }, (error) => {
+        client.close(); server.forceShutdown();
+        const leaked = !!error?.details?.includes('private-grpc-canary');
+        if (!error || error.code !== grpc.status.UNKNOWN || leaked) process.exitCode = 1;
+      });
+    });
+    setTimeout(() => process.exit(2), 5000).unref();
+  `,
+    ],
+    { encoding: "utf8", timeout: 7000 },
+  );
+  expect(result.error).toBeUndefined();
+  expect(result.status, result.stderr).toBe(0);
+});
