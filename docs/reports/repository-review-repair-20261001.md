@@ -90,3 +90,19 @@ Pi's normal validation and produce a Tool error without aborting the whole Run.
 
 Validation: 64 CloudAgentRuntime tests and its package typecheck pass, including
 two new cold-storage regressions for opaque Tool details and invalid arguments.
+
+## R30-05 and Subagent result SQL
+
+Status maps the Run state before applying its seal guard, so timed_out now waits
+alongside all other terminal states. Stable execution states no longer generate
+an UPDATE or an otherwise empty explicit transaction. Result lookup joins its
+Run, physical Session and native final Entry directly; the unused result Entry
+pointer and its write are removed by migration 155. Native history ownership
+and the seal boundary remain unchanged.
+
+Validation: 15 Subagent tests and the package typecheck pass. Four full-schema
+state fixtures compare every terminal state before/after seal. A repeat completed
+result read performs exactly two SELECTs and no writes, compared with the review's
+six business statements plus transaction control. Database tests pass (17 tests;
+21 real-PostgreSQL opt-ins deferred to final combined verification), including
+schema 155, removal of the unused pointer and a second idempotent migration pass.

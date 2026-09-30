@@ -19,8 +19,6 @@ release gate; final combined verification remains part of the repairs.
 
 ## September 30 review follow-up
 
-- [ ] R30-05: include timed_out in Subagent seal waiting; compare every terminal
-      Run state before and after output closure.
 - [ ] R30-03: align Subagent input admission with encoded native publication
       budgets and public conversation schemas. Reject oversized work early,
       accounting for Unicode, escaping and envelope overhead.
@@ -39,8 +37,8 @@ release gate; final combined verification remains part of the repairs.
 - [ ] D30-03: decide whether visible failed/aborted Assistant text should enter
       the next model context as an explicitly incomplete fact. Preserve Pi's
       rejection of invalid partial Tool calls and record any recovery change.
-- [ ] Evaluate the review's bounded cleanup candidates: merge stable terminal
-      Subagent reads, avoid the new-Steer receipt re-read, move the in-memory
+- [ ] Evaluate the review's remaining bounded cleanup candidates: avoid the
+      new-Steer receipt re-read, move the in-memory
       Workspace runtime repository into test helpers, and reconcile the stale
       Session state graph with atomic admission. Measure SQL improvements and
       preserve lock rechecks, authorization and durable acknowledgements.

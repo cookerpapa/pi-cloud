@@ -612,7 +612,6 @@ export interface SubagentExecutionTable {
   pi_context_base_entry_id: GeneratedNullable<string>;
   sandbox_mode: SubagentSandboxMode;
   state: SubagentExecutionState;
-  result_entry_id: string | null;
   failure_code: string | null;
   failure_message: string | null;
   created_at: GeneratedTimestamp;

@@ -672,6 +672,24 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       state: "completed",
       output: "Subagent result from PostgreSQL",
     });
+    const queries: string[] = [];
+    const measured = new PostgresSubagentJobProvider({
+      database: database.withPlugin({
+        transformQuery(args) {
+          queries.push(args.node.kind);
+          return args.node;
+        },
+        async transformResult(args) {
+          return args.result;
+        },
+      }),
+      nativeLanes,
+    });
+    await expect(measured.result(tenantId, started.executionId)).resolves.toMatchObject({
+      state: "completed",
+      output: "Subagent result from PostgreSQL",
+    });
+    expect(queries).toEqual(["SelectQueryNode", "SelectQueryNode"]);
     const focusTree = await new ConversationTreeService({ database }).tree(
       tenantId,
       started.childSessionId,
@@ -967,6 +985,62 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         .execute();
     }
   });
+
+  it.each(["completed", "failed", "cancelled", "timed_out"] as const)(
+    "waits for the seal before reporting terminal Child state %s",
+    async (state) => {
+      const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
+      const child = await provider.start({
+        tenantId,
+        parentSessionId,
+        parentRunId,
+        parentExecutionReference: parentExecutionReference(),
+        parentToolCallId: `seal-${state}`,
+        workflowRunId: `seal-${state}`,
+        stepIndex: 0,
+        agentName: "seal-check",
+        prompt: "Verify completion boundary",
+        contextMode: "fresh",
+        sandboxMode: "none",
+      });
+      // The full migrated schema enforces the same Run identity/closure shape.
+      // Status is deliberately exercised between terminal settlement and seal.
+      const failed = state === "failed" || state === "timed_out";
+      await database
+        .updateTable("runs")
+        .set({
+          state,
+          sandbox_id: parentSandboxId,
+          lease_id: PARENT_GRANT_ID,
+          fencing_token: FENCE,
+          started_at: new Date(),
+          settled_at: new Date(),
+          output_seal_id: crypto.randomUUID(),
+          output_first_topic: "seal-fixture",
+          output_first_partition: 0,
+          output_first_offset: "0",
+          failure_code: failed ? (state === "timed_out" ? "pi_timeout" : "fixture_failed") : null,
+          failure_message: failed ? "Test failure" : null,
+          failure_retryable: failed ? false : null,
+        })
+        .where("id", "=", child.childRunId)
+        .execute();
+      expect(await provider.status(tenantId, child.executionId)).toMatchObject({
+        state: "running",
+      });
+      expect(await provider.result(tenantId, child.executionId)).toMatchObject({
+        state: "running",
+      });
+      await database
+        .updateTable("runs")
+        .set({ output_sealed_at: new Date(), output_seal_offset: "1" })
+        .where("id", "=", child.childRunId)
+        .execute();
+      expect(await provider.status(tenantId, child.executionId)).toMatchObject({
+        state: state === "timed_out" ? "failed" : state,
+      });
+    },
+  );
 
   it("cancels a queued Child Run durably before it consumes a Worker slot", async () => {
     const provider = new PostgresSubagentJobProvider({ database, nativeLanes });

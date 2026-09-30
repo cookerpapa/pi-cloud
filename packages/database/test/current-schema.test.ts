@@ -23,9 +23,11 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(154);
+      expect(firstMigrationPass.rows).toHaveLength(155);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("154_user_input_uploads");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe(
+        "155_remove_unused_subagent_result_pointer",
+      );
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -132,6 +134,7 @@ describe("current PiCloud schema", () => {
          )
       `.execute(database);
       const keys = new Set(columns.rows.map((row) => `${row.table_name}.${row.column_name}`));
+      expect(keys.has("subagent_executions.result_entry_id")).toBe(false);
       expect(keys.has("workspaces.seed_kind")).toBe(true);
       expect(keys.has("workspaces.object_snapshot_key")).toBe(false);
       expect(keys.has("workspaces.parent_workspace_id")).toBe(false);
@@ -191,7 +194,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("154_user_input_uploads");
+      expect(applied.rows).toEqual(firstMigrationPass.rows);
       const pendingControls = await sql<{ indexdef: string }>`select indexdef from pg_indexes
         where schemaname='public' and indexname='turn_control_requests_pending_run_idx'`.execute(
         database,

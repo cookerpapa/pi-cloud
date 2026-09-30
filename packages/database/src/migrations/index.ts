@@ -1,4 +1,5 @@
 import * as directWorkspaceStorage from "./138_direct_workspace_storage.ts";
+import * as removeUnusedSubagentResultPointer from "./155_remove_unused_subagent_result_pointer.ts";
 import * as removeGithubInstallationEntry from "./139_remove_github_installation_entry.ts";
 import * as confirmedAgentExit from "./140_confirmed_agent_exit.ts";
 import * as subagentComputeScopes from "./141_subagent_compute_scopes.ts";
@@ -311,6 +312,7 @@ export const migrationProvider: MigrationProvider = {
       "152_editable_pending_inputs": editablePendingInputs,
       "153_indexed_native_session_log": indexedNativeSessionLog,
       "154_user_input_uploads": userInputUploads,
+      "155_remove_unused_subagent_result_pointer": removeUnusedSubagentResultPointer,
     };
   },
 };

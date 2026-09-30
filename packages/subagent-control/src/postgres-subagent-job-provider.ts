@@ -593,7 +593,6 @@ export class PostgresSubagentJobProvider {
           pi_context_base_entry_id: childLaneStart,
           sandbox_mode: input.sandboxMode,
           state: "preparing",
-          result_entry_id: null,
           failure_code: null,
           failure_message: null,
           settled_at: null,
@@ -838,13 +837,14 @@ export class PostgresSubagentJobProvider {
         state: "preparing",
       };
     }
+    const mappedState = mapRunState(row.runState);
     const state =
-      row.awaitingSeal && ["completed", "failed", "cancelled"].includes(row.runState)
+      row.awaitingSeal && ["completed", "failed", "cancelled"].includes(mappedState)
         ? "running"
-        : mapRunState(row.runState);
+        : mappedState;
     const terminal = ["completed", "failed", "cancelled", "unknown"].includes(state);
-    await this.#database.transaction().execute(async (transaction) => {
-      await transaction
+    if (row.executionState !== state)
+      await this.#database
         .updateTable("subagent_executions")
         .set({
           state,
@@ -857,7 +857,6 @@ export class PostgresSubagentJobProvider {
         .where("id", "=", executionId)
         .where("state", "in", ["preparing", "queued", "running"])
         .executeTakeFirst();
-    });
     return {
       executionId: row.executionId,
       childSessionId: row.childSessionId,
@@ -908,39 +907,30 @@ export class PostgresSubagentJobProvider {
   async result(tenantId: string, executionId: string): Promise<CloudSubagentJobResult> {
     const status = await this.status(tenantId, executionId);
     if (status.state !== "completed") return status;
-    const binding = await this.#database
-      .selectFrom("sessions")
-      .select(["pi_session_id as piSessionId", "pi_session_lane as piSessionLane"])
-      .where("tenant_id", "=", tenantId)
-      .where("id", "=", status.childSessionId)
-      .executeTakeFirstOrThrow();
-    const run = await this.#database
-      .selectFrom("runs")
-      .select("turn_id")
-      .where("id", "=", status.childRunId)
-      .where("tenant_id", "=", tenantId)
-      .executeTakeFirstOrThrow();
     const final = await this.#database
-      .selectFrom("pi_session_log")
-      .where("kind", "=", sql.lit("entry"))
-      .select(["id", sql<Record<string, unknown>>`payload->'entry'`.as("payload")])
-      .where("tenant_id", "=", tenantId)
-      .where("session_id", "=", binding.piSessionId)
-      .where("turn_id", "=", run.turn_id)
-      .where("type", "=", "message")
-      .where(sql<string>`payload->'entry'->'message'->>'role'`, "=", "assistant")
-      .orderBy("seq", "desc")
+      .selectFrom("runs as run")
+      .innerJoin("sessions as session", (join) =>
+        join
+          .onRef("session.tenant_id", "=", "run.tenant_id")
+          .onRef("session.id", "=", "run.session_id"),
+      )
+      .innerJoin("pi_session_log as entry", (join) =>
+        join
+          .onRef("entry.tenant_id", "=", "run.tenant_id")
+          .onRef("entry.session_id", "=", "session.pi_session_id")
+          .onRef("entry.turn_id", "=", "run.turn_id"),
+      )
+      .select(sql<Record<string, unknown>>`entry.payload->'entry'`.as("payload"))
+      .where("run.tenant_id", "=", tenantId)
+      .where("run.id", "=", status.childRunId)
+      .where("entry.kind", "=", sql.lit("entry"))
+      .where("entry.type", "=", "message")
+      .where(sql<string>`entry.payload->'entry'->'message'->>'role'`, "=", "assistant")
+      .orderBy("entry.seq", "desc")
       .limit(1)
       .executeTakeFirst();
     const message = (final?.payload as { message?: AgentMessage } | undefined)?.message;
     const assistantOutput = message?.role === "assistant" ? assistantText(message) : undefined;
-    if (final)
-      await this.#database
-        .updateTable("subagent_executions")
-        .set({ result_entry_id: final.id })
-        .where("tenant_id", "=", tenantId)
-        .where("id", "=", executionId)
-        .execute();
     return { ...status, ...(assistantOutput === undefined ? {} : { output: assistantOutput }) };
   }
 
