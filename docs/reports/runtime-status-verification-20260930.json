@@ -1,0 +1,133 @@
+{
+  "checkedAt": "2026-09-30T03:56:44.199654+00:00",
+  "runtimeRevision": "694983ac2405a479ad33959f49ebe4d479e3a4cd",
+  "guestRevision": "c4d974ffa0aac9e857876b1ff2668b88c217761c",
+  "unitTests": {
+    "passed": 1430,
+    "skipped": 3,
+    "failed": 0,
+    "method": "All workspace tests plus acceptance helpers; replace the initial runtime-core result with its complete successful rerun.",
+    "initialFullCheck": {
+      "passed": 1370,
+      "failed": 7,
+      "skipped": 3,
+      "failure": "Projector test doubles lacked the new observes() interface; updated the doubles, without a runtime compatibility branch."
+    },
+    "runtimeCoreRerun": {
+      "passed": 80,
+      "skipped": 1,
+      "failed": 0
+    },
+    "acceptanceHelpers": {
+      "passed": 52,
+      "failed": 0
+    },
+    "subsequentChecks": {
+      "runnerIntegration": 23,
+      "webWorkspace": 146
+    },
+    "skippedCases": ["Kafka topic policy opt-in", "Two Cube provider opt-in cases"]
+  },
+  "faultMatrix": {
+    "passed": 96,
+    "total": 96,
+    "report": "runtime-status-faults-20260930.json"
+  },
+  "checks": [
+    "All-workspace typecheck; final Control Plane and Web typechecks",
+    "npm run build",
+    "npm run browser:presentation:check",
+    "npm run format:check",
+    "npm run docs:check",
+    "npm run runtime-policy:check",
+    "npm run observability:check",
+    "npm run image:closure-check",
+    "npm run image:context-check"
+  ],
+  "postgres": "Disposable PostgreSQL using the production-pinned image; PI_CLOUD_POSTGRES_INTEGRATION_URL and PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL enabled.",
+  "rollout": {
+    "services": ["control-plane", "supervisor-host", "supervisor-host-1", "web"],
+    "healthy": true,
+    "nativeRowsBefore": 1417,
+    "nativeRowsAfter": 1417,
+    "nativeDigestBefore": "1abdee9b54d506d24e8acf3fbb95464a",
+    "nativeDigestAfter": "1abdee9b54d506d24e8acf3fbb95464a",
+    "schemaMigration": false
+  },
+  "sourceSha256": {
+    "packages/control-plane/src/application.ts": "e6dfa1b71f0d06447f65ca6f009fa0b9e21e2ea742501e79c16a1f9dfac6c120",
+    "packages/control-plane/src/index.ts": "1687dc861a676b7caeacb9a313284fa45a1377dfa2cb1ebd2c0f14a7badf3829",
+    "packages/control-plane/src/main.ts": "0a28f429ab4db9c9fc9efa8733a989f3f21fc4e0291dfdc103190e16158399c3",
+    "packages/control-plane/src/run-activity-ingress.ts": "458c00cbee128da3d392a9bcbe3db39aa813f881a8fb123c70477bffe0bce330",
+    "packages/control-plane/src/supervisor-connection-manager.ts": "f59b5227e619d96d33ef0e3dcfaf1efa796f0e01ec887f22b0a4941166efdd0f",
+    "packages/control-plane/src/supervisor-maintenance-runtime.ts": "82340247e631f515c427533b52a7591cf5ae09165b9102dda830d0f95840bb7a",
+    "packages/control-plane/test/control-plane-runtime.test.ts": "e0836de5c99de6e6460b5095d2612a889cb942be30a1ae5f328fda4e3673de6a",
+    "packages/control-plane/test/expired-run-lease.test.ts": "a1872580efb7a06cf05e57b6abfa6fdbb113207cdce1b87979f3a2226eccce24",
+    "packages/control-plane/test/run-activity-ingress.test.ts": "deeeda9981024a8b1aedfa8158ae39364d1d5477290ed7c481491160c5942f03",
+    "packages/protocol/src/index.ts": "03fb51be5c4e9a42bee13cca7bbb535cea8a9d2b472c45b7e6041cda062cc860",
+    "packages/protocol/src/run-observation.ts": "680bf4ac0ef0b50f6f58136aaf0b9c85fc18ec9afdee65f91d81581f86f4cc52",
+    "packages/runtime-core/src/accepted-fact.ts": "2a3d85ccaab794f8a9434b66b6996ea2e64bb58c8ba813fa18b94ff5b779c5e0",
+    "packages/runtime-core/src/direct-execution-log.ts": "8183d9c0e35aac030bd85c2563a1ba8e3a9c4b9d2805ed1aefecfc3038f33235",
+    "packages/runtime-core/src/execution-stream-projection.ts": "8cc09815910c2aca188724c4257678843d53cd26134e2d59226fae1a32f2325b",
+    "packages/runtime-core/src/kafka-accepted-fact.ts": "c741ff8d2310f2a3db32efb297a51fb1c04e2171bed651c1a1edeac16847c3d7",
+    "packages/runtime-core/src/prepare-execution-fact.ts": "39a0b55c4a475807e1d46a18a79a3fbcabc49efe0eaedfe2ad9ae2aa6c31abfb",
+    "packages/runtime-core/src/run-observation-view.ts": "409d8102d278179089ac87ec97b797b7f3a31bff9c4c651e2611b37ec0ed0bdb",
+    "packages/runtime-core/src/run-observations.ts": "fc1d318ad8c033966e29496a841fb533fa4446fa1afef374a9734a8f4eec4fe8",
+    "packages/runtime-core/src/session-event-hub.ts": "f31ed16d8f45810e5243cde13eaea6fe91d0ef19af1cae0593bd4b624929ac9d",
+    "packages/runtime-core/src/session-event-stream.ts": "e57aafab725315a4444a98f2ae164022c05214cdbe338187931be495e5f3cce2",
+    "packages/runtime-core/src/session-projector.ts": "ecdf7f02d5019cc85bbb57b1e10e4375e9835828f577136150633bc06d9c028e",
+    "packages/runtime-core/test/path-probe.test.ts": "b26362ce4cb2641f631377e9363093440616e3bd644442feccbf012b83e9590e",
+    "packages/runtime-core/test/run-observations.test.ts": "f35b9b34a529675438b5a03ef81886151c80a0754faba6390f5250bee0deb282",
+    "packages/runtime-core/test/session-event-stream.test.ts": "61f31b1c8d584766073359b32f9f5a0cd512d04752d5bcd1aa1d2f89d08e185f",
+    "packages/runtime-core/test/session-projector-handoffs.test.ts": "cea3f2fee8ee3a2cbe9fe54b72a46d68c10b92c2d98c8e7b52fefb25afba620f",
+    "packages/runtime-core/test/tool-invocation-fact.test.ts": "d1975b266e0cb777d104bd5ae1967e82d23d63ede24e62b8f5c66eb0790a8fa2",
+    "packages/sandbox-supervisor/src/pi-cloud-turn-runner.ts": "76321e7689d83e83854b35d0db7754d63f226253430b70bc9b71ec1b0b3dc7af",
+    "packages/sandbox-supervisor/src/pi-run-activity.ts": "4bdb2a94883c770e08859db38d73026e9bf1edd3d735aa6a8692f618318b1bc3",
+    "packages/sandbox-supervisor/src/remote-tool-sandbox-turn-runner.ts": "72bbe41e7af83da1a4ae66aba84839852138db602d59c7bdc69ce6baa7fee11c",
+    "packages/sandbox-supervisor/test/pi-cloud-turn-runner.integration.test.ts": "dc4b8c38ab8d223f31d7f720c6cb18363b6dc6b45e0d470ac2462742fe42d306",
+    "packages/sandbox-supervisor/test/pi-run-activity.test.ts": "c12837d184c3cebdb46b6c8b2d6cc37a172a90d958dea4d99965c766c4609978",
+    "packages/supervisor-host/src/run-activity-publisher.ts": "987c199ce14b8bba2d7e2896d458577420980a51acd7656cdd74bb43d4de869f",
+    "packages/supervisor-host/src/runtime.ts": "4fa83a0cf87debf30fe3161f5ee89044e55d05d8c59e3c5df638864eb0c24df1",
+    "packages/supervisor-host/test/run-activity-publisher.test.ts": "25206275c2759a2b219048a84bf98b3fc878f203a7b54d0373c200914760829a",
+    "packages/web-ui/src/ChatApp.tsx": "1f96da4ed74a7bd3c441a3764334d1248067f15a579a331de87227f3b5f32841",
+    "packages/web-ui/src/ConversationTurn.tsx": "67ad466296ac0691d751f7dcdc8a63f1838a3a6618cbef199fc45c85cae51596",
+    "packages/web-ui/src/RunStatus.tsx": "230ec84ec2d2a6d8fdac7cca225ec1f56aab4d580afb1c869fb61b967fa3872b",
+    "packages/web-ui/src/i18n.tsx": "62cfd815701786eeab65dc2dcbd9b1fc6c2ee74ac13553e060391ce3a266bb8b",
+    "packages/web-ui/src/product.css": "d7b5f432cc6680be56b2a11dc81d6aecdbe0319777b014065b27e5dc60904443",
+    "packages/web-ui/src/sse.ts": "cabc697e6bc901e76f5720c44bc3deb1022b977fd0b32aae33746235ba6394ed",
+    "packages/web-ui/test/run-status.test.ts": "0c513e794b2474121cd2996593565b24d7d3275da20f801edc4fff28f799c608",
+    "packages/web-ui/test/sse.test.ts": "43f07e684f687d5b4f39d58ced96596207453a06ba36b135106ce1cc7e594dd6"
+  },
+  "liveAcceptance": {
+    "report": "runtime-status-live-20260930.json",
+    "accepted": true,
+    "model": "gpt-6-luna",
+    "completedRuns": 2,
+    "cancelledRuns": 1,
+    "failedWorkerLossRuns": 1,
+    "earlierMeasurementAttempts": [
+      {
+        "failure": "Incorrect uuid cast against native log text Session ID",
+        "runCancelled": true,
+        "workspacePurged": true
+      },
+      {
+        "failure": "Browser defaulted to English while the assertion expected Chinese",
+        "runCancelled": true,
+        "workspacePurged": true
+      }
+    ],
+    "executedScriptCommit": "a6d18b3075028ba6084ce970783a8b42bebddcf7"
+  },
+  "finalIntegrity": {
+    "nativeRowsExcludingOwnedTestTenants": 1417,
+    "nativeDigest": "1abdee9b54d506d24e8acf3fbb95464a",
+    "allTestWorkspacesPurged": true,
+    "allTestCredentialsRevoked": true,
+    "activeRuns": 0,
+    "activeSessionLeases": 0,
+    "unprojectedSeals": 0,
+    "unpublishedTerminals": 0,
+    "isolatedPostgresRemoved": true
+  }
+}

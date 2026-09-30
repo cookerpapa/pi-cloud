@@ -12,11 +12,6 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
-- [ ] Implement [ADR-0201](adr/0201-runtime-activity-and-path-probes.md): independent
-      lease sweeps and PG-time candidate selection, persistent turn activity and
-      bounded Session path probes. Cover stale/replayed observations, slow cleanup,
-      cancellation and Projector recovery, then real Luna/Cube/browser acceptance.
-
 - [ ] Review the two moderate development-test dependency findings (Vitest and
       @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
       dependency gate passes; a test-tool upgrade needs its own contract checks.

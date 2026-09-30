@@ -27,6 +27,10 @@ The [chat attachment acceptance](reports/user-input-attachments-20260929.md) rec
 Workspace uploads, native user ImageContent, queue promotion, browser preview and
 real Luna recovery after Workspace modification and Worker replacement.
 
+The [runtime status acceptance](reports/runtime-status-acceptance-20260930.md) records
+independent lease sweeps, PG-time expiry selection, transient phases and quiet-Session
+path probes, including real Luna/Cube/browser and process-failure checks.
+
 The [September 27 repository review](reports/repository-review-20260927.md) covers
 Pi alignment, component boundaries, duplicated IO and removal of obsolete paths;
 it tracks implemented repairs and subsequent approved architecture decisions.

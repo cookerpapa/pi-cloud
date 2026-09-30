@@ -203,7 +203,9 @@ try {
         60_000,
       );
     } catch (error) {
-      report.lastBrowserStatus = await page.evaluate(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? null`);
+      report.lastBrowserStatus = await page.evaluate(
+        `document.querySelector(${JSON.stringify(selector)})?.textContent ?? null`,
+      );
       throw error;
     }
     const { rows: leases } =

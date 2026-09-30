@@ -1,6 +1,9 @@
 # ADR 0201: runtime activity, path probes and independent lease sweeps
 
-Status: accepted for implementation, 2026-09-30.
+Status: implemented and validated, 2026-09-30.
+
+[Acceptance](../reports/runtime-status-acceptance-20260930.md) includes deterministic
+faults, real Luna/Cube/browser execution, Projector replacement and Worker loss.
 
 ## Context and adoption
 

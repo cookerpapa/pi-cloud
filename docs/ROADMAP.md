@@ -44,8 +44,9 @@
 
 ## Current release gate
 
-- [ ] ADR-0201: independent PG-time expiry sweeps, persistent runtime activity
-      and quiet-Session path probes. Implementation and acceptance in progress.
+- [x] ADR-0201: independent PG-time expiry sweeps, persistent runtime activity
+      and quiet-Session path probes. [Fault, browser and real Luna/Cube acceptance](reports/runtime-status-acceptance-20260930.md)
+      includes Projector replacement, cancellation and Worker loss/recovery.
 
 - [x] ADR-0199: isolate proved unpublished rejections, share cold projection waits,
       bound native/seal SQL work and reduce transaction-local exchanges.

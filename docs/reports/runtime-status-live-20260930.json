@@ -1,0 +1,85 @@
+{
+  "checkedAt": "2026-09-30T03:51:47.114Z",
+  "revision": "694983ac2405a479ad33959f49ebe4d479e3a4cd",
+  "scriptSha256": "74e8ed420d4bb29ab42abaa7a2bc5809ccc0b280aa324ddc156d036d6c4965d5",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "kind": "quiet-tool-projector-recovery",
+      "runId": "a765d824-be8c-4a62-9d21-bb46d5994e8d",
+      "state": "completed",
+      "phases": ["waiting_model", "preparing_tool", "executing_tool", "receiving_model"],
+      "pathConfirmations": 12
+    },
+    {
+      "kind": "cancel",
+      "runId": "1439f6bd-08e9-4ea2-9730-5587ce8017d7",
+      "state": "cancelled",
+      "phases": ["waiting_model", "executing_tool"],
+      "pathConfirmations": 1
+    },
+    {
+      "kind": "worker-loss",
+      "runId": "b39c6565-0b18-4a57-ba8e-ffba3d780966",
+      "state": "failed",
+      "phases": ["waiting_model", "executing_tool"],
+      "pathConfirmations": 1
+    },
+    {
+      "kind": "new-run-after-worker-loss",
+      "runId": "a7c4ac39-f2f5-4ed5-8aff-c9504b85a649",
+      "state": "completed",
+      "phases": ["waiting_model", "executing_tool", "receiving_model"],
+      "pathConfirmations": 3
+    }
+  ],
+  "resources": {
+    "tenantId": "550d2e4f-35fc-4ea5-9ba0-d6468c5e0e02",
+    "workspaceId": "9b4f514b-a889-41f4-b8f6-809e3b0a00c1",
+    "sessionId": "a9824957-5be9-42d6-997f-af09b359df07"
+  },
+  "delayedStatusVisible": true,
+  "leaseSurvivedProjectorPause": true,
+  "nativeLogUnchangedDuringSilence": true,
+  "projectorReplaced": true,
+  "noToolReplay": true,
+  "cleanupRequested": true,
+  "executedScriptCommit": "a6d18b3075028ba6084ce970783a8b42bebddcf7",
+  "cleanupVerified": {
+    "workspacesPurged": 3,
+    "testCredentialsRevoked": 3,
+    "activeRuns": 0,
+    "activeSessionLeases": 0,
+    "unprojectedSeals": 0,
+    "unpublishedTerminals": 0,
+    "isolatedPostgresRemoved": true
+  },
+  "workerReplacement": {
+    "failedRunWorker": "37e73b0e-b605-4395-b2a0-42e8a1025a37",
+    "recoveryRunWorker": "0a63b8d7-a29e-4e4d-a7e8-ee999fa41229"
+  },
+  "canonicalToolChecks": {
+    "quietRun": {
+      "write": 1,
+      "read": 1,
+      "edit": 1,
+      "bash": 1,
+      "allCompleted": true
+    },
+    "cancelRun": {
+      "bash": 1,
+      "isError": true
+    },
+    "workerLossRun": {
+      "bash": 1,
+      "isError": true
+    },
+    "recoveryRun": {
+      "read": 2,
+      "allCompleted": true,
+      "returnedExpectedFileContent": true
+    },
+    "pendingNativeOperations": 0
+  }
+}
