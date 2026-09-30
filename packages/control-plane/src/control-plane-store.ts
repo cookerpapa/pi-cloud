@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { MAX_QUEUED_INPUTS } from "@pi-cloud/protocol";
 import { bindInputUploads } from "./workspace-upload-service.ts";
+import { holdQueuedSteer, lockSteerTarget } from "./queued-steer.ts";
 import { laneDependenciesReady } from "@pi-cloud/runtime-core/run-readiness";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -15,6 +16,8 @@ import type {
   AcceptTurnRequest,
   AcceptedTurnCancellationResource,
   AcceptedTurnResource,
+  CreateTurnSteerRequest,
+  TurnSteerResource,
   ConversationDetailResource,
   ConversationListResource,
   ConversationWorkspaceBindingResource,
@@ -1263,10 +1266,68 @@ export class ControlPlaneStore {
     request: AcceptTurnRequest,
     existingTransaction?: Transaction<Database>,
   ): Promise<AcceptedTurnResource> {
+    return this.#acceptInput(
+      sessionId,
+      idempotencyKey,
+      request,
+      turnRequestFingerprint(request),
+      existingTransaction,
+    );
+  }
+
+  async acceptTurnSteer(
+    sessionId: string,
+    targetTurnId: string,
+    idempotencyKey: string,
+    request: CreateTurnSteerRequest,
+  ): Promise<TurnSteerResource> {
+    const input = {
+      prompt: request.text.trim(),
+      ...(request.uploadIds?.length ? { uploadIds: request.uploadIds } : {}),
+    };
+    const fingerprint = createHash("sha256")
+      .update(JSON.stringify({ kind: "direct_steer", targetTurnId, ...input }))
+      .digest("hex");
+    const accepted = await this.#acceptInput(
+      sessionId,
+      idempotencyKey,
+      input,
+      fingerprint,
+      undefined,
+      targetTurnId,
+    );
+    const control = await this.#database
+      .selectFrom("turn_control_requests")
+      .select(["id", "target_run_id"])
+      .where("tenant_id", "=", this.#tenantId)
+      .where("session_id", "=", sessionId)
+      .where("idempotency_key", "=", idempotencyKey)
+      .where("kind", "=", "queue")
+      .executeTakeFirstOrThrow();
+    return {
+      controlRequestId: control.id,
+      targetRunId: control.target_run_id,
+      targetTurnId,
+      sourceRunId: accepted.runId,
+      sourceTurnId: accepted.turnId,
+      sessionId,
+      state: "accepted",
+      acceptedAt: accepted.acceptedAt,
+      replayed: accepted.replayed,
+    };
+  }
+
+  async #acceptInput(
+    sessionId: string,
+    idempotencyKey: string,
+    request: AcceptTurnRequest,
+    fingerprint: string,
+    existingTransaction?: Transaction<Database>,
+    steerTargetTurnId?: string,
+  ): Promise<AcceptedTurnResource> {
     const startedAt = performance.now();
     let outcome = "accepted";
     try {
-      const fingerprint = turnRequestFingerprint(request);
       try {
         return await this.#acceptNewTurn(
           sessionId,
@@ -1274,6 +1335,7 @@ export class ControlPlaneStore {
           request,
           fingerprint,
           existingTransaction,
+          steerTargetTurnId,
         );
       } catch (error) {
         if (
@@ -1293,6 +1355,22 @@ export class ControlPlaneStore {
         return acceptedTurnResource(concurrentWinner, fingerprint, true);
       }
     } catch (error) {
+      if (
+        steerTargetTurnId !== undefined &&
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "55P03"
+      )
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "The target Run is changing; refresh and try again",
+        );
+      if (isPostgresConstraint(error, "turn_control_requests_session_idempotency_unique"))
+        throw new ControlPlaneStoreError(
+          "idempotency_conflict",
+          "Idempotency-Key was used for another input operation",
+        );
       outcome = error instanceof ControlPlaneStoreError ? error.code : "failed";
       throw error;
     } finally {
@@ -1397,6 +1475,7 @@ export class ControlPlaneStore {
     request: AcceptTurnRequest,
     fingerprint: string,
     existingTransaction?: Transaction<Database>,
+    steerTargetTurnId?: string,
   ): Promise<AcceptedTurnResource> {
     const turnId = this.#idGenerator();
     const runId = this.#idGenerator();
@@ -1411,6 +1490,8 @@ export class ControlPlaneStore {
         )
         .select([
           "session_row.id",
+          "session_row.pi_session_id",
+          "session_row.row_version",
           "session_row.project_id",
           "session_row.workspace_id",
           "session_row.desired_model_profile_id",
@@ -1437,7 +1518,8 @@ export class ControlPlaneStore {
         ])
         .where("session_row.tenant_id", "=", this.#tenantId)
         .where("session_row.id", "=", sessionId)
-        .forUpdate("session_row")
+        // Acceptance changes no referenced keys; Tool binding FK checks may coexist.
+        .forNoKeyUpdate("session_row")
         .executeTakeFirst();
       if (!session) {
         throw new ControlPlaneStoreError("not_found", "Session was not found");
@@ -1551,27 +1633,52 @@ export class ControlPlaneStore {
         .executeTakeFirstOrThrow();
       if (queued.count >= MAX_QUEUED_INPUTS)
         throw new ControlPlaneStoreError("conflict", "Pending input queue is full");
-      const model = await this.#resolveModelSnapshot(
-        transaction,
-        session.desired_model_profile_id,
-        request.thinkingLevel ?? (session.desired_thinking_level as ModelThinkingLevel),
-        session.desired_service_tier,
-      );
+      if (steerTargetTurnId !== undefined && session.state !== "running")
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "The target Run no longer accepts Steer input",
+        );
+      const target =
+        steerTargetTurnId === undefined
+          ? undefined
+          : await lockSteerTarget(transaction, this.#tenantId, sessionId, steerTargetTurnId);
+      const model =
+        target === undefined
+          ? await this.#resolveModelSnapshot(
+              transaction,
+              session.desired_model_profile_id,
+              request.thinkingLevel ?? (session.desired_thinking_level as ModelThinkingLevel),
+              session.desired_service_tier,
+            )
+          : {
+              profileId: target.model_profile_id,
+              provider: target.provider,
+              modelId: target.model_id,
+              thinkingLevel: target.thinking_level,
+              serviceTier: target.service_tier,
+              credentialBindingId: target.credential_binding_id,
+              credentialBindingVersion: target.credential_binding_version,
+            };
       let toolCapabilities;
       try {
-        toolCapabilities = parseCloudToolCapabilitySnapshot(session.tool_capabilities);
+        toolCapabilities = parseCloudToolCapabilitySnapshot(
+          target?.tool_capability_snapshot ?? session.tool_capabilities,
+        );
       } catch {
         throw new ControlPlaneStoreError(
           "control_plane_misconfigured",
           "Session Tool grant is invalid",
         );
       }
-      const environment = await this.#activeEnvironmentForRun(transaction, session.project_id);
+      const environment =
+        target === undefined
+          ? await this.#activeEnvironmentForRun(transaction, session.project_id)
+          : { environmentVersionId: target.environment_version_id };
       const uploads = await bindInputUploads(transaction, {
         tenantId: this.#tenantId,
         sessionId,
         workspaceId: session.workspace_id,
-        workingDirectory: session.working_directory,
+        workingDirectory: target?.working_directory ?? session.working_directory,
         ids: request.uploadIds ?? [],
       });
       if (
@@ -1623,14 +1730,16 @@ export class ControlPlaneStore {
           workspace_id: session.workspace_id,
           session_id: session.id,
           turn_id: sql<string>`(select id from accepted_turn)`,
-          agent_revision_id: session.agent_revision_id,
+          agent_revision_id: target?.agent_revision_id ?? session.agent_revision_id,
+          agent_system_prompt: target?.agent_system_prompt ?? null,
           mailbox_position: mailboxPosition,
           request_sha256: fingerprint,
           available_at: sql<Date>`now()`,
           environment_version_id: environment.environmentVersionId,
-          working_directory: session.working_directory,
-          compute_session_id: session.compute_session_id,
-          sandbox_profile_key: session.sandbox_profile_key,
+          working_directory: target?.working_directory ?? session.working_directory,
+          compute_session_id:
+            target === undefined ? session.compute_session_id : target.compute_session_id,
+          sandbox_profile_key: target?.sandbox_profile_key ?? session.sandbox_profile_key,
           tool_capability_snapshot: sql<unknown[]>`${JSON.stringify(toolCapabilities)}::jsonb`,
           conversation_base_seq: Math.max(
             0,
@@ -1673,6 +1782,24 @@ export class ControlPlaneStore {
           "Session mailbox position could not be advanced",
         );
       }
+
+      if (target !== undefined)
+        await holdQueuedSteer(transaction, {
+          controlId: this.#idGenerator(),
+          tenantId: this.#tenantId,
+          sessionId,
+          targetRunId: target.id,
+          targetTurnId: target.turn_id,
+          sourceRunId: run.id,
+          sourceTurnId: turnId,
+          idempotencyKey,
+          requestSha256: fingerprint,
+          queueOrder: nonNegativeSafeInteger(session.row_version, "Session revision"),
+          projectId: target.project_id,
+          workspaceId: target.workspace_id,
+          sandboxId: target.sandbox_id,
+          piSessionId: session.pi_session_id,
+        });
 
       return acceptedTurnResource(
         {

@@ -12,6 +12,11 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 ## Reliability and capacity
 
+- [ ] Complete [ADR-0203](adr/0203-consumption-confirmed-direct-steer.md): direct
+      Steer acceptance, consumption-confirmed retirement and unconsumed recovery
+      through the existing input queue; verify PG races, browser retries and
+      real Luna Worker-loss recovery before the matched API/Web rollout.
+
 - [ ] Review the two moderate development-test dependency findings (Vitest and
       @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
       dependency gate passes; a test-tool upgrade needs its own contract checks.

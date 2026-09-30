@@ -90,7 +90,7 @@ try {
     `For this current task, include ${steerMarker} in your final response after the Tool completes.`,
     newIdempotencyKey("steer"),
   );
-  assert.equal(delivery.state, "delivered");
+  assert.equal(delivery.state, "accepted");
   report.steerDelivered = true;
   for (const accepted of [first, second]) {
     const run = await waitFor(() => api.getRun(accepted.runId), terminal, "Run completion");

@@ -15,6 +15,8 @@ import { QueuedInputService } from "../src/queued-input-service.ts";
 import { TurnSteeringService } from "../src/turn-steering-service.ts";
 import { TurnSteerBackendError, type TurnSteerRequest } from "../src/turn-steer.ts";
 import { createTestWorker } from "./admit-test-execution.ts";
+import { TurnExecutionCancelledError } from "@pi-cloud/runtime-core/run-executor";
+import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
 
 const external = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.sequential("pending conversation inputs", () => {
@@ -87,7 +89,7 @@ describe.sequential("pending conversation inputs", () => {
       offset: offset++,
     });
   }
-  async function active(f: Awaited<ReturnType<typeof fixture>>) {
+  async function active(f: Awaited<ReturnType<typeof fixture>>, fail = false) {
     const first = await f.accept("active task");
     const source = await f.accept("queued instruction");
     const entered = Promise.withResolvers<void>(),
@@ -98,6 +100,7 @@ describe.sequential("pending conversation inputs", () => {
         execute: async () => {
           entered.resolve();
           await finish.promise;
+          if (fail) throw new Error("Worker stopped before consuming pending input");
           return { stopReason: "stop" };
         },
       })
@@ -150,6 +153,439 @@ describe.sequential("pending conversation inputs", () => {
       }),
     );
   }
+
+  it("atomically accepts direct Steer with the active Run settings and one retry identity", async () => {
+    const f = await fixture();
+    const run = await active(f);
+    try {
+      await database
+        .updateTable("sessions")
+        .set({ desired_thinking_level: "high" })
+        .where("id", "=", f.session.sessionId)
+        .execute();
+      const accepted = await f.store.acceptTurnSteer(
+        f.session.sessionId,
+        run.first.turnId,
+        "direct",
+        { text: "  preserve me  " },
+      );
+      expect(accepted).toMatchObject({ state: "accepted", targetRunId: run.first.runId });
+      const q = await f.list();
+      expect(q.items.map(({ text, status }) => ({ text, status }))).toEqual([
+        { text: "queued instruction", status: "queued" },
+        { text: "preserve me", status: "steering" },
+      ]);
+      const snapshots = await database
+        .selectFrom("runs as r")
+        .innerJoin("turns as t", "t.id", "r.turn_id")
+        .select([
+          "r.id",
+          "r.environment_version_id",
+          "r.working_directory",
+          "r.tool_capability_snapshot",
+          "r.agent_revision_id",
+          "r.sandbox_profile_key",
+          "r.ready_at",
+          "r.lease_id",
+          "t.model_profile_id",
+          "t.provider",
+          "t.model_id",
+          "t.thinking_level",
+          "t.service_tier",
+          "t.credential_binding_id",
+          "t.credential_binding_version",
+        ])
+        .where("r.id", "in", [run.first.runId, accepted.sourceRunId])
+        .execute();
+      const {
+        id: _a,
+        ready_at: _b,
+        lease_id: _c,
+        ...original
+      } = snapshots.find((r) => r.id === run.first.runId)!;
+      const {
+        id: _d,
+        ready_at,
+        lease_id,
+        ...source
+      } = snapshots.find((r) => r.id === accepted.sourceRunId)!;
+      expect(source).toEqual(original);
+      expect(ready_at).toBeNull();
+      expect(lease_id).toBeNull();
+      const controls = await database
+        .selectFrom("turn_control_requests")
+        .selectAll()
+        .where("id", "=", accepted.controlRequestId)
+        .executeTakeFirstOrThrow();
+      expect(controls.payload).not.toHaveProperty("text");
+      expect(controls.payload).not.toHaveProperty("uploads");
+      expect(controls.state).toBe("pending");
+      for (const [target, text] of [
+        [run.first.turnId, "different"],
+        [run.source.turnId, "preserve me"],
+      ])
+        await expect(
+          f.store.acceptTurnSteer(f.session.sessionId, target!, "direct", { text: text! }),
+        ).rejects.toMatchObject({ code: "idempotency_conflict" });
+      await expect(f.accept("preserve me", "direct")).rejects.toMatchObject({
+        code: "idempotency_conflict",
+      });
+      run.finish.resolve();
+      await run.execution;
+      await seal(run.first.runId);
+      await f.queue.reconcileOnce();
+      expect(
+        await f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "direct", {
+          text: "preserve me",
+        }),
+      ).toEqual({ ...accepted, replayed: true });
+      expect((await f.list()).items.at(-1)).toMatchObject({
+        turnId: accepted.sourceTurnId,
+        status: "queued",
+      });
+    } finally {
+      run.finish.resolve();
+      await run.execution;
+      await seal(run.first.runId);
+    }
+  });
+
+  it.each([false, true])(
+    "restores direct Steer acknowledged but unconsumed when its target ends (failed=%s)",
+    async (failed) => {
+      let calls = 0;
+      const f = await fixture(async () => {
+        calls++;
+      });
+      const run = await active(f, failed);
+      try {
+        const accepted = await f.store.acceptTurnSteer(
+          f.session.sessionId,
+          run.first.turnId,
+          "direct",
+          { text: "recover this instruction" },
+        );
+        const later = await f.accept("later instruction");
+        await f.queue.reconcileOnce();
+        expect(calls).toBe(1);
+        expect(
+          await database
+            .selectFrom("turn_control_requests")
+            .select(["state", "completed_at"])
+            .where("id", "=", accepted.controlRequestId)
+            .executeTakeFirst(),
+        ).toEqual({ state: "acknowledged", completed_at: null });
+        const restarted = new QueuedInputService({ database, steering: f.steering });
+        await restarted.reconcileOnce();
+        expect(calls).toBe(1);
+        run.finish.resolve();
+        await run.execution;
+        await restarted.reconcileOnce();
+        expect((await f.list()).items.find((i) => i.turnId === accepted.sourceTurnId)?.status).toBe(
+          "steering",
+        );
+        await seal(run.first.runId);
+        await restarted.reconcileOnce();
+        expect((await f.list()).items.map((i) => [i.turnId, i.status])).toEqual([
+          [run.source.turnId, "queued"],
+          [accepted.sourceTurnId, "queued"],
+          [later.turnId, "queued"],
+        ]);
+        const executed: string[] = [];
+        for (const id of [run.source.runId, accepted.sourceRunId, later.runId]) {
+          expect(
+            await run.worker
+              .executor({
+                execute: async (r) => {
+                  executed.push(r.input.prompt);
+                  return { stopReason: "stop" };
+                },
+              })
+              .dispatchRun(id),
+          ).toMatchObject({ status: "completed" });
+          await seal(id);
+        }
+        expect(executed).toEqual([
+          "queued instruction",
+          "recover this instruction",
+          "later instruction",
+        ]);
+        await restarted.reconcileOnce();
+        expect(calls).toBe(1);
+      } finally {
+        run.finish.resolve();
+        await run.execution;
+        await seal(run.first.runId);
+      }
+    },
+  );
+
+  it("retires direct Steer only after canonical consumption even when its HTTP reply is lost", async () => {
+    let delivered: TurnSteerRequest | undefined;
+    const f = await fixture(async (request) => {
+      delivered = request;
+      throw new TurnSteerBackendError("reply_lost", "Reply lost", true, true);
+    });
+    const run = await active(f, true);
+    try {
+      const accepted = await f.store.acceptTurnSteer(
+        f.session.sessionId,
+        run.first.turnId,
+        "direct",
+        { text: "already consumed" },
+      );
+      await f.queue.reconcileOnce();
+      expect((await f.list()).items.find((i) => i.turnId === accepted.sourceTurnId)?.status).toBe(
+        "steering",
+      );
+      // Represent the delayed projection of the Worker's acknowledged Kafka Entry.
+      await recordInput(delivered!);
+      await f.queue.reconcileOnce();
+      expect((await f.list()).items.some((i) => i.turnId === accepted.sourceTurnId)).toBe(false);
+      run.finish.resolve();
+      await run.execution;
+      await seal(run.first.runId);
+      await new QueuedInputService({ database, steering: f.steering }).reconcileOnce();
+      expect(
+        await database
+          .selectFrom("runs")
+          .select(["state", "started_at", "lease_id", "stop_reason"])
+          .where("id", "=", accepted.sourceRunId)
+          .executeTakeFirst(),
+      ).toEqual({
+        state: "cancelled",
+        started_at: null,
+        lease_id: null,
+        stop_reason: "queued_input_steered",
+      });
+      expect((await f.list()).items.map((i) => i.turnId)).toEqual([run.source.turnId]);
+    } finally {
+      run.finish.resolve();
+      await run.execution;
+      await seal(run.first.runId);
+    }
+  });
+
+  it.each(["consumed-success", "consumed-error", "restored-success", "restored-error"])(
+    "preserves direct Steer reconciliation against a late delivery outcome (%s)",
+    async (scenario) => {
+      const entered = Promise.withResolvers<TurnSteerRequest>(),
+        release = Promise.withResolvers<void>();
+      const f = await fixture(async (request) => {
+        entered.resolve(request);
+        await release.promise;
+        if (scenario.endsWith("error"))
+          throw new TurnSteerBackendError("connection_lost", "lost", true, true);
+      });
+      const run = await active(f);
+      let delivery: Promise<void> | undefined;
+      try {
+        const accepted = await f.store.acceptTurnSteer(
+          f.session.sessionId,
+          run.first.turnId,
+          "direct",
+          { text: "pending" },
+        );
+        delivery = f.queue.reconcileOnce();
+        const request = await entered.promise;
+        const other = new QueuedInputService({ database, steering: f.steering });
+        const consumed = scenario.startsWith("consumed");
+        if (consumed) await recordInput(request);
+        else {
+          run.finish.resolve();
+          await run.execution;
+          await seal(run.first.runId);
+        }
+        await other.reconcileOnce();
+        release.resolve();
+        await delivery;
+        const row = await database
+          .selectFrom("turn_control_requests")
+          .select(["state", "failure_code"])
+          .where("id", "=", accepted.controlRequestId)
+          .executeTakeFirst();
+        expect(row).toEqual({
+          state: consumed ? "completed" : "failed",
+          failure_code: consumed ? null : "steer_not_consumed",
+        });
+        expect((await f.list()).items.some((i) => i.turnId === accepted.sourceTurnId)).toBe(
+          !consumed,
+        );
+      } finally {
+        release.resolve();
+        await delivery;
+        run.finish.resolve();
+        await run.execution;
+        await seal(run.first.runId);
+      }
+    },
+  );
+
+  it.skipIf(!external)(
+    "deduplicates simultaneous direct Steer acceptance and rejects locked targets without orphaned input",
+    async () => {
+      const f = await fixture();
+      const run = await active(f);
+      const pool = new Pool({ connectionString: url, max: 1 });
+      const locker = await pool.connect();
+      try {
+        const accepts = await Promise.all(
+          [1, 2].map(() =>
+            f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "direct", {
+              text: "one input",
+            }),
+          ),
+        );
+        expect(new Set(accepts.map((v) => v.sourceRunId)).size).toBe(1);
+        expect(accepts.map((v) => v.replayed).sort()).toEqual([false, true]);
+        const before = await f.list();
+        await locker.query("begin");
+        await locker.query("select id from runs where id=$1 for no key update", [run.first.runId]);
+        await expect(
+          f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "locked", {
+            text: "must not leak",
+          }),
+        ).rejects.toMatchObject({ code: "conflict" });
+        await locker.query("rollback");
+        expect(await f.list()).toEqual(before);
+        expect(
+          await database
+            .selectFrom("turn_control_requests")
+            .select("id")
+            .where("tenant_id", "=", f.tenant.tenantId)
+            .where("idempotency_key", "=", "locked")
+            .execute(),
+        ).toEqual([]);
+      } finally {
+        await locker.query("rollback");
+        locker.release();
+        await pool.end();
+        run.finish.resolve();
+        await run.execution;
+        await seal(run.first.runId);
+      }
+    },
+  );
+
+  it("keeps direct Steer after active cancellation and permits removing its restored input", async () => {
+    const f = await fixture();
+    const first = await f.accept("wait for cancellation");
+    const worker = await createTestWorker(database);
+    const entered = Promise.withResolvers<void>(),
+      interrupt = Promise.withResolvers<void>(),
+      exited = Promise.withResolvers<void>();
+    let reference!: string;
+    const execution = worker
+      .executor({
+        async execute(_r, listener, admission) {
+          reference = admission.executionReference;
+          entered.resolve();
+          await interrupt.promise;
+          listener.executionExited();
+          exited.resolve();
+          throw new TurnExecutionCancelledError("user_request", false);
+        },
+      })
+      .dispatchRun(first.runId);
+    void execution.catch(entered.reject);
+    await entered.promise;
+    try {
+      const accepted = await f.store.acceptTurnSteer(f.session.sessionId, first.turnId, "direct", {
+        text: "survives stop",
+      });
+      await f.queue.reconcileOnce();
+      await f.store.acceptTurnCancellation(f.session.sessionId, first.turnId, "cancel", {});
+      const cancellation = new RunCancellationExecutor({
+        database,
+        executionAuthority: worker.coordinator,
+        backend: {
+          async cancel(request, listener) {
+            await listener.started({ executionReference: reference });
+            interrupt.resolve();
+            await exited.promise;
+            return { reason: request.reason, forced: false };
+          },
+        },
+      });
+      expect(await cancellation.dispatchTargetRun(first.runId)).toMatchObject({
+        status: "cancelled",
+      });
+      await execution;
+      await f.queue.reconcileOnce();
+      expect((await f.list()).items[0]?.status).toBe("steering");
+      await seal(first.runId);
+      await f.queue.reconcileOnce();
+      const q = await f.list();
+      expect(q.items[0]).toMatchObject({
+        turnId: accepted.sourceTurnId,
+        text: "survives stop",
+        status: "queued",
+      });
+      await f.queue.mutate(
+        f.tenant.tenantId,
+        f.session.sessionId,
+        accepted.sourceTurnId,
+        "remove-restored",
+        { action: "cancel", revision: q.revision },
+      );
+      expect((await f.list()).items).toEqual([]);
+      expect(
+        await database
+          .selectFrom("runs")
+          .select(["state", "lease_id"])
+          .where("id", "=", accepted.sourceRunId)
+          .executeTakeFirst(),
+      ).toEqual({ state: "cancelled", lease_id: null });
+    } finally {
+      interrupt.resolve();
+      await execution;
+    }
+  });
+
+  it("enforces direct Steer tenant, control identity and queue capacity atomically", async () => {
+    const f = await fixture(),
+      other = await fixture();
+    const run = await active(f);
+    try {
+      await expect(
+        other.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "foreign", {
+          text: "no access",
+        }),
+      ).rejects.toMatchObject({ code: "not_found" });
+      const q = await f.list();
+      await f.queue.mutate(f.tenant.tenantId, f.session.sessionId, run.source.turnId, "taken", {
+        action: "edit",
+        revision: q.revision,
+        text: "edited",
+      });
+      const before = await f.list();
+      await expect(
+        f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "taken", {
+          text: "collision",
+        }),
+      ).rejects.toMatchObject({ code: "idempotency_conflict" });
+      expect(await f.list()).toEqual(before);
+      for (let i = before.items.length; i < MAX_QUEUED_INPUTS; i++) await f.accept(`input ${i}`);
+      await expect(
+        f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "overflow", {
+          text: "full",
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+      expect((await f.list()).items).toHaveLength(MAX_QUEUED_INPUTS);
+      expect(
+        await database
+          .selectFrom("turn_control_requests")
+          .select("id")
+          .where("tenant_id", "=", f.tenant.tenantId)
+          .where("idempotency_key", "in", ["foreign", "overflow"])
+          .execute(),
+      ).toEqual([]);
+    } finally {
+      run.finish.resolve();
+      await run.execution;
+      await seal(run.first.runId);
+    }
+  });
 
   it("edits, reorders and cancels pending inputs without changing original acceptance identity", async () => {
     const f = await fixture();

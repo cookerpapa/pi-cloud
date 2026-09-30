@@ -69,8 +69,9 @@ copies in independent Fork logs.
 
 PostgreSQL is the sole Run and execution authority. The public API authenticates
 the user, persists input/Turn/Run together and deduplicates admission by Session
-and idempotency key. Follow-up remains a queued input; Steer first lives in
-`turn_control_requests`. Neither becomes a native Pi user Entry until consumed.
+and idempotency key. Follow-up remains a queued input. Both direct human Steer
+and queue promotion retain their source Turn/Run in that queue and reference it
+from `turn_control_requests`. Neither becomes a native Pi user Entry until consumed.
 Steer uses the Worker HTTP management endpoint; WebSocket carries registration
 and heartbeats, not an alternative execution or Steer transport.
 
@@ -97,10 +98,16 @@ Queue reads return revision, active input and pending order in one SQL snapshot;
 they do not open a transaction for each browser poll.
 
 Promotion holds the source out of readiness and creates a control request in the
-same transaction. Its payload references the held Turn text. A bounded reconciler
+same transaction. Direct Steer atomically accepts and holds a new source at the
+next mailbox position, inheriting the target's frozen execution settings. Its
+HTTP 202 response means accepted, not delivered or consumed; the browser shows
+the held input and preserves the acceptance key on retry (ADR-0203).
+The control payload references the held Turn text and uploads. A bounded reconciler
 uses the existing HTTP steer transport and stable native input identity; no PG
 transaction spans that RPC. Two local deliveries may run concurrently, while
-promotions to the same Run retain acceptance order through acknowledgements.
+Steer inputs to the same Run retain acceptance order through acknowledgements.
+HTTP success records `acknowledged`, never `completed`; acknowledged sources
+remain held without periodic redelivery to that Worker.
 Only a canonical user Entry confirms consumption and retires the queued source.
 A projected target seal plus absent Entry restores the input to its queue position;
 an HTTP error alone cannot restore it. This is input reconciliation, not another

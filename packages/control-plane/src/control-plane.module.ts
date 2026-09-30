@@ -67,7 +67,6 @@ export class ControlPlaneModule {
       ...(options.turnSteerBackendFactory === undefined
         ? {}
         : { backendFactory: options.turnSteerBackendFactory }),
-      ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
     });
     const conversationArchive = new ConversationArchiveService({
       database: options.database,
@@ -170,10 +169,6 @@ export class ControlPlaneModule {
               : { internalServiceToken: options.cubeEgressConfigToken }),
             ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
           }),
-        },
-        {
-          provide: TurnSteeringService,
-          useValue: turnSteering,
         },
         {
           provide: QueuedInputService,

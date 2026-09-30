@@ -3,9 +3,28 @@ import {
   MAX_QUEUED_INPUTS,
   parseInputQueueResource,
   parseQueuedInputAction,
+  parseTurnSteerResource,
 } from "../src/index.ts";
 const id = "10000000-0000-4000-8000-000000000001";
 describe("pending input protocol", () => {
+  it("represents durable Steer acceptance separately from delivery and consumption", () => {
+    const accepted = {
+      controlRequestId: id,
+      targetRunId: id,
+      targetTurnId: id,
+      sourceRunId: id,
+      sourceTurnId: id,
+      sessionId: id,
+      state: "accepted",
+      acceptedAt: "2026-09-30T00:00:00.000Z",
+      replayed: false,
+    };
+    expect(parseTurnSteerResource(accepted)).toEqual(accepted);
+    expect(() =>
+      parseTurnSteerResource({ ...accepted, state: "delivered", deliveredAt: accepted.acceptedAt }),
+    ).toThrow();
+    expect(() => parseTurnSteerResource({ ...accepted, sourceTurnId: undefined })).toThrow();
+  });
   it("accepts atomic edited steer and requires an explicit target and revision", () => {
     expect(
       parseQueuedInputAction({ action: "steer", revision: 4, targetTurnId: id, text: "updated" }),

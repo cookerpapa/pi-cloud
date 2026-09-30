@@ -9,7 +9,6 @@ import { ConversationArchiveError } from "./conversation-archive-service.ts";
 import { WorkspaceBrowserError } from "./workspace-browser-service.ts";
 import { WebAuthenticationError } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsError } from "./platform-runtime-settings.ts";
-import { TurnSteeringError } from "./turn-steering-service.ts";
 import { SourceControlServiceError } from "./source-control-service.ts";
 
 type ErrorResponse = {
@@ -92,15 +91,6 @@ export function mappedError(error: unknown): ErrorResponse {
               : error.code === "conflict" || error.code === "idempotency_conflict"
                 ? 409
                 : 503;
-    return { status, body: { error: { code: error.code, message: error.message } } };
-  }
-  if (error instanceof TurnSteeringError) {
-    const status =
-      error.code === "not_found"
-        ? 404
-        : error.code === "conflict" || error.code === "idempotency_conflict"
-          ? 409
-          : 503;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof ConversationArchiveError) {

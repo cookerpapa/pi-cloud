@@ -223,7 +223,7 @@ const zhCN = {
   "chat.selectWorkspaceError": "请选择一个 Workspace。",
   "chat.deleteTreeConfirm": "删除对话“{title}”及其全部分支和 Subagent？Workspace 文件不会被删除。",
   "chat.deleteConfirm": "删除对话“{title}”？Workspace 文件不会被删除。",
-  "chat.steerAccepted": "已引导当前任务；Pi 会在当前工具调用结束后、下一次模型调用前处理。",
+  "chat.steerAccepted": "引导消息已保存，等待当前任务处理；若任务结束前未处理，会保留在待发队列。",
   "chat.subagentDepth": "第 {depth} 层",
   "chat.state.queued": "排队中",
   "chat.state.running": "运行中",
@@ -673,7 +673,7 @@ const enUS: Record<UiTextKey, string> = {
     "Delete “{title}” and all its branches and Subagents? Workspace files will not be deleted.",
   "chat.deleteConfirm": "Delete “{title}”? Workspace files will not be deleted.",
   "chat.steerAccepted":
-    "The active task was steered. Pi will process it after the current Tool call and before the next model call.",
+    "Instruction saved, awaiting the active task. If unconsumed when the task ends, it returns to the pending queue.",
   "chat.subagentDepth": "Level {depth}",
   "chat.state.queued": "Queued",
   "chat.state.running": "Running",

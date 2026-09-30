@@ -14,6 +14,7 @@ import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import { parseUserUploads, reviewedModel } from "@pi-cloud/protocol";
 import { bindInputUploads } from "./workspace-upload-service.ts";
 import type { TurnSteeringService } from "./turn-steering-service.ts";
+import { holdQueuedSteer, lockSteerTarget } from "./queued-steer.ts";
 
 function conflict(): never {
   throw new ControlPlaneStoreError(
@@ -38,7 +39,7 @@ const earlierDeliveryPending = sql<boolean>`exists(select 1 from turn_control_re
   join runs held on held.queued_steer_id=prior.id and held.state='queued'
   where prior.tenant_id=c.tenant_id and prior.session_id=c.session_id
     and prior.target_run_id=c.target_run_id and prior.kind='queue'
-    and prior.state in ('pending','dispatched','acknowledged')
+    and prior.state in ('pending','dispatched')
     and (prior.payload->>'queueOrder')::bigint < (c.payload->>'queueOrder')::bigint)`;
 
 /** Mutable input intents in the existing Run queue, not another scheduler. */
@@ -393,25 +394,7 @@ export class QueuedInputService {
           payload.direction = action.direction;
         } else {
           if (session.state !== "running") conflict();
-          const target = await tx
-            .selectFrom("runs as r")
-            .innerJoin("active_execution_scopes as a", "a.run_id", "r.id")
-            .innerJoin("turns as target_turn", "target_turn.id", "r.turn_id")
-            .select([
-              "r.id",
-              "r.turn_id",
-              "r.sandbox_id",
-              "target_turn.provider",
-              "target_turn.model_id",
-            ])
-            .where("r.tenant_id", "=", tenantId)
-            .where("r.session_id", "=", sessionId)
-            .where("r.turn_id", "=", action.targetTurnId)
-            .where("r.state", "=", "running")
-            .forNoKeyUpdate("r")
-            .noWait()
-            .executeTakeFirst();
-          if (!target?.sandbox_id) conflict();
+          const target = await lockSteerTarget(tx, tenantId, sessionId, action.targetTurnId);
           if (
             uploads.some((file) => file.image) &&
             !(
@@ -432,45 +415,44 @@ export class QueuedInputService {
               .where("id", "=", turnId)
               .where("tenant_id", "=", tenantId)
               .execute();
-          Object.assign(payload, {
-            projectId: session.project_id,
-            workspaceId: session.workspace_id,
+          await holdQueuedSteer(tx, {
+            controlId,
+            tenantId,
+            sessionId,
+            targetRunId,
+            targetTurnId,
+            sourceRunId: source.id,
+            sourceTurnId: turnId,
+            idempotencyKey,
+            requestSha256: hash,
+            queueOrder: number(session.row_version),
+            projectId: target.project_id,
+            workspaceId: target.workspace_id,
             sandboxId: target.sandbox_id,
             piSessionId: session.pi_session_id,
           });
         }
-        await tx
-          .insertInto("turn_control_requests")
-          .values({
-            id: controlId,
-            tenant_id: tenantId,
-            session_id: sessionId,
-            turn_id: targetTurnId,
-            target_run_id: targetRunId,
-            idempotency_key: idempotencyKey,
-            kind: "queue",
-            state: action.action === "steer" ? "pending" : "completed",
-            request_sha256: hash,
-            payload,
-            attempts: 0,
-            available_at: sql`clock_timestamp()`,
-            dispatched_at: null,
-            acknowledged_at: null,
-            completed_at: action.action === "steer" ? null : sql`clock_timestamp()`,
-            failure_code: null,
-          })
-          .execute();
-        if (action.action === "steer")
+        if (action.action !== "steer")
           await tx
-            .updateTable("runs")
-            .set({
-              queued_steer_id: controlId,
-              ready_at: null,
-              row_version: sql`row_version+1`,
-              updated_at: sql`clock_timestamp()`,
+            .insertInto("turn_control_requests")
+            .values({
+              id: controlId,
+              tenant_id: tenantId,
+              session_id: sessionId,
+              turn_id: targetTurnId,
+              target_run_id: targetRunId,
+              idempotency_key: idempotencyKey,
+              kind: "queue",
+              state: "completed",
+              request_sha256: hash,
+              payload,
+              attempts: 0,
+              available_at: sql`clock_timestamp()`,
+              dispatched_at: null,
+              acknowledged_at: null,
+              completed_at: sql`clock_timestamp()`,
+              failure_code: null,
             })
-            .where("id", "=", source.id)
-            .where("tenant_id", "=", tenantId)
             .execute();
         await this.#changed(tx, tenantId, sessionId);
         return false;
@@ -501,7 +483,7 @@ export class QueuedInputService {
           eb("target.output_sealed_at", "is not", null),
           eb.and([
             eb("target.state", "=", "running"),
-            eb("c.state", "in", ["pending", "dispatched", "acknowledged"]),
+            eb("c.state", "in", ["pending", "dispatched"]),
             eb("c.available_at", "<=", sql<Date>`clock_timestamp()`),
             sql<boolean>`not (${earlierDeliveryPending})`,
           ]),
@@ -602,6 +584,7 @@ export class QueuedInputService {
       }
       if (
         target.state === "completed" ||
+        target.state === "acknowledged" ||
         target.earlierPending ||
         session.archived_at !== null ||
         target.targetState !== "running"
@@ -616,7 +599,7 @@ export class QueuedInputService {
           available_at: sql`clock_timestamp()+interval '30 seconds'`,
         })
         .where("id", "=", controlId)
-        .where("state", "in", ["pending", "dispatched", "acknowledged"])
+        .where("state", "in", ["pending", "dispatched"])
         .where("available_at", "<=", sql<Date>`clock_timestamp()`)
         .returning("id")
         .executeTakeFirst();
@@ -632,7 +615,7 @@ export class QueuedInputService {
           available_at: sql`clock_timestamp()+make_interval(secs=>least(30,power(2,least(attempts,5))))`,
         })
         .where("id", "=", controlId)
-        .where("state", "in", ["pending", "dispatched", "acknowledged"])
+        .where("state", "in", ["pending", "dispatched"])
         .execute();
     }
   }

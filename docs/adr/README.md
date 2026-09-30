@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0203](0203-consumption-confirmed-direct-steer.md) — durable direct Steer,
+   consumption confirmation and restoration through the existing input queue.
 1. [ADR-0202](0202-development-machine-workspace-rebinding.md) — recover a missing
    Workspace using a user-owned development machine and selected directory.
 1. [ADR-0201](0201-runtime-activity-and-path-probes.md) — runtime activity,

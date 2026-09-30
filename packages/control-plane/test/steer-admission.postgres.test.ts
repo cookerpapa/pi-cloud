@@ -9,7 +9,7 @@ import { expect, it } from "vitest";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { TurnSteeringService } from "../src/turn-steering-service.ts";
-import type { TenantRequestIdentity } from "../src/tenant-identity.ts";
+import { QueuedInputService } from "../src/queued-input-service.ts";
 
 const external = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
@@ -103,7 +103,7 @@ it.skipIf(!external)(
             database
               .getExecutor()
               .compileQuery(node, queryId)
-              .sql.startsWith('select "turn"."state" as "turnState"')
+              .sql.includes('for no key update of "r", "target_turn" nowait')
           )
             targets.add(queryId);
           return node;
@@ -125,14 +125,9 @@ it.skipIf(!external)(
           },
         }),
       });
-      delivery = steer
-        .deliver(
-          { tenantId: tenant.tenantId } as TenantRequestIdentity,
-          session.sessionId,
-          accepted.turnId,
-          "steer",
-          { text: "new direction" },
-        )
+      const accepting = new ControlPlaneStore({ database: observed, ...tenant });
+      delivery = accepting
+        .acceptTurnSteer(session.sessionId, accepted.turnId, "steer", { text: "new direction" })
         .catch((error) => {
           targetLocked.resolve({ error });
           throw error;
@@ -145,7 +140,9 @@ it.skipIf(!external)(
       ]);
       await fk.query("commit");
       releaseTarget.resolve();
-      await expect(delivery).resolves.toMatchObject({ state: "delivered" });
+      await expect(delivery).resolves.toMatchObject({ state: "accepted" });
+      expect(deliveries).toBe(0);
+      await new QueuedInputService({ database, steering: steer }).reconcileOnce();
       expect(deliveries).toBe(1);
     } finally {
       releaseTarget.resolve();

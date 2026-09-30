@@ -235,6 +235,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     | null
   >(null);
   const [steerNotice, setSteerNotice] = useState<string | null>(null);
+  const steerSubmission = useRef<{ fingerprint: string; key: string } | undefined>(undefined);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorRefreshSignal, setInspectorRefreshSignal] = useState(0);
@@ -1288,13 +1289,24 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     update({ type: "api.error.cleared" });
     try {
       const attached = await uploads.ready(state.session.sessionId);
+      const uploadIds = attached.map((file) => file.id);
+      const fingerprint = JSON.stringify({
+        sessionId: state.session.sessionId,
+        targetTurnId: currentTurn.turnId,
+        text,
+        uploadIds,
+      });
+      if (steerSubmission.current?.fingerprint !== fingerprint)
+        steerSubmission.current = { fingerprint, key: newIdempotencyKey("steer") };
       await api.steerTurn(
         state.session.sessionId,
         currentTurn.turnId,
         text,
-        newIdempotencyKey("steer"),
-        attached.map((file) => file.id),
+        steerSubmission.current.key,
+        uploadIds,
       );
+      steerSubmission.current = undefined;
+      setQueueRefreshGeneration((generation) => generation + 1);
       uploads.clear(attached.map((file) => file.id));
       setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       setSteerNotice(t("chat.steerAccepted"));

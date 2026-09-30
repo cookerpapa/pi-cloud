@@ -113,11 +113,7 @@ export {
   type TurnSteerTarget,
 } from "./turn-steer.ts";
 
-export {
-  TurnSteeringError,
-  TurnSteeringService,
-  type TurnSteeringErrorCode,
-} from "./turn-steering-service.ts";
+export { TurnSteeringService } from "./turn-steering-service.ts";
 export {
   createControlPlaneRuntime,
   ControlPlaneRuntime,

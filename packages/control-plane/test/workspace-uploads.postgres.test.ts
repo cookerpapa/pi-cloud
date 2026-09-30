@@ -6,13 +6,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import type { FastifyInstance } from "fastify";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { parseUserUpload, uploadRelativePath } from "@pi-cloud/protocol";
+import { parseUserUpload, parseTurnSteerResource, uploadRelativePath } from "@pi-cloud/protocol";
 import { PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
 import {
   createControlPlaneApplication,
   PostgresTenantApiAuthenticator,
   ProductionHttpGateway,
   createPrivateTenant,
+  issuePrivateTenantCredential,
 } from "../src/index.ts";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { WorkspaceUploadService, type WorkspaceUploader } from "../src/workspace-upload-service.ts";
@@ -285,23 +286,48 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       await queue.reconcileOnce();
       expect(delivered).toHaveLength(1);
       expect(delivered[0]).toMatchObject({ text: "", uploads: [image] });
-      await steering.deliver(
-        {
-          tenantId: tenant.tenantId,
-          tenantSlug: tenant.tenantSlug,
-          userId: tenant.ownerUserId,
-          displayName: "Uploads",
-          credentialId: tenant.credential.credentialId,
-          role: "owner",
-          defaultModelProfileId: tenant.defaultModelProfileId,
+      const viewer = await issuePrivateTenantCredential(db, {
+        tenant: tenant.tenantId,
+        userId: tenant.ownerUserId,
+        label: "Steer viewer",
+        role: "viewer",
+      });
+      const request = {
+        method: "POST" as const,
+        url: `/v1/sessions/${s.sessionId}/turns/${first.turnId}/steers`,
+        payload: { text: "", uploadIds: [image.id] },
+      };
+      for (const [token, status] of [
+        [other.credential.token, 404],
+        [viewer.token, 403],
+      ] as const) {
+        const denied = await http.inject({
+          ...request,
+          headers: { authorization: `Bearer ${token}`, "idempotency-key": "direct-image" },
+        });
+        expect(denied.statusCode, denied.body).toBe(status);
+      }
+      const accepted = await http.inject({
+        ...request,
+        headers: {
+          authorization: `Bearer ${tenant.credential.token}`,
+          "idempotency-key": "direct-image",
         },
-        s.sessionId,
-        first.turnId,
-        "direct-image",
-        { text: "", uploadIds: [image.id] },
-      );
+      });
+      expect(accepted.statusCode, accepted.body).toBe(202);
+      const direct = parseTurnSteerResource(accepted.json());
+      expect(direct).toMatchObject({ state: "accepted", targetTurnId: first.turnId });
+      expect(delivered).toHaveLength(1);
+      await queue.reconcileOnce();
       expect(delivered).toHaveLength(2);
       expect(delivered[1]).toMatchObject({ text: "", uploads: [image] });
+      expect(
+        await db
+          .selectFrom("turns")
+          .select("input_uploads")
+          .where("id", "=", direct.sourceTurnId)
+          .executeTakeFirst(),
+      ).toMatchObject({ input_uploads: [image] });
     } finally {
       finish.resolve();
       await execution;

@@ -72,6 +72,24 @@ prompt limit. Queue actions do not change accepted model or environment settings
 Promotion uses the active Run's settings; a non-consumed input retains its original
 queued Run settings on restoration. A delivered/consumed steer cannot be recalled.
 
+Direct `POST /v1/sessions/:sessionId/turns/:turnId/steers` accepts `{ text,
+uploadIds? }` with an `Idempotency-Key` and returns HTTP 202:
+
+```text
+{ controlRequestId, targetRunId, targetTurnId, sourceRunId, sourceTurnId,
+  sessionId, state: "accepted", acceptedAt, replayed }
+```
+
+Acceptance creates and holds its source input in the same transaction. The
+source inherits the active target's frozen model/environment/credentials and
+reserves the next mailbox position. It appears as `steering` in the ordinary
+queue until canonical consumption removes it. A sealed target without its input
+Entry restores that source as an ordinary queued input, including after Worker
+loss or cancellation. An HTTP delivery acknowledgement alone never retires it.
+The old `delivered` response and `deliveredAt` field are removed. A repeated
+accepted key remains valid after the target closes; different input or target
+under the same key returns 409. The queue limit and tenant/viewer rules apply.
+
 ## State
 
 PostgreSQL is authoritative for business state, complete Pi Session records,

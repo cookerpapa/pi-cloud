@@ -91,7 +91,6 @@ import { WorkspaceBrowserService } from "./workspace-browser-service.ts";
 import { WorkspaceUploadService } from "./workspace-upload-service.ts";
 import { readWebSessionCookie, WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
-import { TurnSteeringService } from "./turn-steering-service.ts";
 import { QueuedInputService } from "./queued-input-service.ts";
 import { parseQueuedInputAction } from "@pi-cloud/protocol";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
@@ -122,8 +121,6 @@ export class ControlPlaneController {
     private readonly webAuthentication: WebAuthenticationService,
     @Inject(PlatformRuntimeSettingsService)
     private readonly platformRuntimeSettings: PlatformRuntimeSettingsService,
-    @Inject(TurnSteeringService)
-    private readonly turnSteering: TurnSteeringService,
     @Inject(QueuedInputService) private readonly queuedInputs: QueuedInputService,
     @Inject(ConversationTreeService)
     private readonly conversationTrees: ConversationTreeService,
@@ -854,7 +851,7 @@ export class ControlPlaneController {
   }
 
   @Post("sessions/:sessionId/turns/:turnId/steers")
-  @HttpCode(200)
+  @HttpCode(202)
   async steerTurn(
     @Req() httpRequest: FastifyRequest,
     @Param("sessionId") sessionIdValue: unknown,
@@ -867,7 +864,11 @@ export class ControlPlaneController {
     const idempotencyKey = parseIdempotencyKey(idempotencyKeyValue);
     const request = parseCreateTurnSteerRequest(body);
     const identity = this.tenantRequestContext.requireMutation(httpRequest);
-    return this.turnSteering.deliver(identity, sessionId, turnId, idempotencyKey, request);
+    const accepted = await this.controlPlaneStores
+      .forIdentity(identity)
+      .acceptTurnSteer(sessionId, turnId, idempotencyKey, request);
+    this.queuedInputs.wake();
+    return accepted;
   }
 
   @Get("sessions/:sessionId/queued-inputs")

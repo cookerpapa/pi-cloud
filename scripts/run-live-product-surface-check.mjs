@@ -666,7 +666,7 @@ try {
         "Replace the requested final reply with exactly PRODUCT-SURFACE-STEER-OK.",
         newIdempotencyKey("steer"),
       );
-      steerAccepted = result.state === "delivered";
+      steerAccepted = result.state === "accepted";
     },
   });
   assert.equal(steerAccepted, true);

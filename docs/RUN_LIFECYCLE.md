@@ -17,19 +17,20 @@ The Worker locks the Run, then reads current input text in a fresh statement;
 queue edits acquire that lock with NOWAIT and cannot change admitted context.
 
 Queued Follow-up is a persisted input/Run, not yet a Pi user Entry or Kafka
-Session mutation. Steer is first stored in `turn_control_requests` and delivered
-to the running Pi queue; only native consumption creates its user Entry through
-the Fact path. A `delivered` response does not prove model consumption. See
-[the real API/Worker check](reports/worker-handoff-findings.md).
+Session mutation. Direct Steer also creates a source Turn/Run and holds it with
+a queue control request in the same transaction (ADR-0203). Its HTTP 202
+`accepted` response confirms durability. Delivery to the running Pi queue records
+acknowledgement; only native consumption creates its user Entry through the
+Fact path. The held source inherits the target's frozen execution settings.
 Delivery uses the HTTP management backend. WebSocket registration/heartbeat
 has no Steer prepare/commit/release fallback.
 
-Promoting a queued input holds it out of dispatch until native consumption is
+Both direct Steer and promotion hold their source out of dispatch until consumption is
 confirmed. Its control ID is the stable Agent-input identity. HTTP retries cannot
 append a second input. A lost acknowledgement does not cause queue re-execution:
 the reconciler checks the canonical input Entry and the target's projected seal.
 Only a sealed target with no consumed Entry restores the source's queued position.
-Promotions to the same Run are sent in acceptance order; different Sessions can
+Steer inputs to the same Run are sent in acceptance order; different Sessions can
 deliver concurrently. An optional edited text is committed with promotion.
 
 ## Claim and execution

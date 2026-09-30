@@ -1,175 +1,27 @@
-import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
-import type { CreateTurnSteerRequest, TurnSteerResource } from "@pi-cloud/protocol";
-import type { Kysely, Transaction } from "kysely";
-import type { TenantRequestIdentity } from "./tenant-identity.ts";
-import { parseUserUploads, reviewedModel, type UserUpload } from "@pi-cloud/protocol";
-import { bindInputUploads } from "./workspace-upload-service.ts";
-import {
-  TurnSteerBackendError,
-  type TurnSteerBackend,
-  type TurnSteerRequest,
-} from "./turn-steer.ts";
-
-export type TurnSteeringErrorCode =
-  "not_found" | "conflict" | "idempotency_conflict" | "steer_transport_unavailable";
-
-export class TurnSteeringError extends Error {
-  readonly code: TurnSteeringErrorCode;
-
-  constructor(code: TurnSteeringErrorCode, safeMessage: string) {
-    super(safeMessage);
-    this.name = "TurnSteeringError";
-    this.code = code;
-  }
-}
-
-type StoredSteer = {
-  controlRequestId: string;
-  targetRunId: string;
-  tenantId: string;
-  projectId: string;
-  workspaceId: string;
-  sessionId: string;
-  runId: string;
-  turnId: string;
-  idempotencyKey: string;
-  text: string;
-  uploads: UserUpload[];
-  requestHash: string;
-  state: "pending" | "dispatched" | "acknowledged" | "completed" | "failed";
-  sandboxId: string;
-  acceptedAt: Date | string;
-  completedAt: Date | string | null;
-};
-
-function isoTimestamp(value: Date | string): string {
-  const parsed = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(parsed.valueOf())) {
-    throw new TurnSteeringError("steer_transport_unavailable", "Stored steer timestamp is invalid");
-  }
-  return parsed.toISOString();
-}
-
-function fingerprint(text: string, uploadIds: readonly string[] = []): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        schemaVersion: 1,
-        kind: "turn.steer",
-        text,
-        ...(uploadIds.length ? { uploadIds } : {}),
-      }),
-    )
-    .digest("hex");
-}
+import { parseUserUploads } from "@pi-cloud/protocol";
+import { sql, type Kysely } from "kysely";
+import { TurnSteerBackendError, type TurnSteerBackend } from "./turn-steer.ts";
 
 function payloadString(payload: Record<string, unknown>, property: string): string {
   const value = payload[property];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new TurnSteeringError("steer_transport_unavailable", "Stored steer request is invalid");
-  }
+  if (typeof value !== "string" || !value) throw new Error("Invalid queued Steer reference");
   return value;
 }
 
-function resource(row: StoredSteer, replayed: boolean): TurnSteerResource {
-  if (row.completedAt === null || row.state !== "completed") {
-    throw new TurnSteeringError(
-      "steer_transport_unavailable",
-      "Steer delivery did not reach a terminal state",
-    );
-  }
-  return {
-    controlRequestId: row.controlRequestId,
-    targetRunId: row.targetRunId,
-    turnId: row.turnId,
-    sessionId: row.sessionId,
-    state: "delivered",
-    acceptedAt: isoTimestamp(row.acceptedAt),
-    deliveredAt: isoTimestamp(row.completedAt),
-    replayed,
-  };
-}
-
-function terminalResource(row: StoredSteer, replayed: boolean): TurnSteerResource | undefined {
-  if (row.state === "completed") return resource(row, replayed);
-  if (row.state === "failed") {
-    throw new TurnSteeringError(
-      "conflict",
-      "The previous steer delivery failed; use a new Idempotency-Key while the Run is active",
-    );
-  }
-  return undefined;
-}
-
+/** HTTP delivery only. The pending-input reconciler owns consumption and recovery. */
 export class TurnSteeringService {
   readonly #database: Kysely<Database>;
   readonly #backendFactory: ((sandboxId: string) => Promise<TurnSteerBackend>) | undefined;
-  readonly #idGenerator: () => string;
-  readonly #clock: () => Date;
-  readonly #inflight = new Map<string, Promise<TurnSteerResource>>();
 
   constructor(options: {
     database: Kysely<Database>;
     backendFactory?: (sandboxId: string) => Promise<TurnSteerBackend>;
-    idGenerator?: () => string;
-    clock?: () => Date;
   }) {
     this.#database = options.database;
     this.#backendFactory = options.backendFactory;
-    this.#idGenerator = options.idGenerator ?? randomUUID;
-    this.#clock = options.clock ?? (() => new Date());
   }
 
-  async deliver(
-    identity: TenantRequestIdentity,
-    sessionId: string,
-    turnId: string,
-    idempotencyKey: string,
-    request: CreateTurnSteerRequest,
-  ): Promise<TurnSteerResource> {
-    const text = request.text.trim();
-    const requestHash = fingerprint(text, request.uploadIds);
-    let stored = await this.#load(identity.tenantId, sessionId, idempotencyKey);
-    const replayed = stored !== undefined;
-    if (stored !== undefined) {
-      if (stored.turnId !== turnId || stored.requestHash !== requestHash) {
-        throw new TurnSteeringError(
-          "idempotency_conflict",
-          "Idempotency-Key was already used for a different steer request",
-        );
-      }
-    } else {
-      stored = await this.#create(
-        identity.tenantId,
-        sessionId,
-        turnId,
-        idempotencyKey,
-        text,
-        requestHash,
-        request.uploadIds ?? [],
-      );
-    }
-
-    const terminal = terminalResource(stored, replayed);
-    if (terminal !== undefined) return terminal;
-
-    const inflight = this.#inflight.get(stored.controlRequestId);
-    if (inflight !== undefined) {
-      return { ...(await inflight), replayed: true };
-    }
-    const delivery = this.#deliverStored(stored, replayed);
-    this.#inflight.set(stored.controlRequestId, delivery);
-    try {
-      return await delivery;
-    } finally {
-      if (this.#inflight.get(stored.controlRequestId) === delivery) {
-        this.#inflight.delete(stored.controlRequestId);
-      }
-    }
-  }
-
-  /** A persisted queue promotion owns retries and resolves native consumption. */
   async deliverQueued(controlRequestId: string): Promise<void> {
     const row = await this.#database
       .selectFrom("turn_control_requests as c")
@@ -179,396 +31,54 @@ export class TurnSteeringService {
       .select(["input.input_text as text", "input.input_uploads"])
       .where("c.id", "=", controlRequestId)
       .where("c.kind", "=", "queue")
+      .where("c.state", "in", ["pending", "dispatched"])
       .whereRef("source.tenant_id", "=", "c.tenant_id")
       .whereRef("source.session_id", "=", "c.session_id")
       .where("source.state", "=", "queued")
       .executeTakeFirst();
     if (!row) return;
     if (row.payload.action !== "steer" || typeof row.text !== "string")
-      throw new Error("Invalid queued steer reference");
-    const stored: StoredSteer = {
+      throw new Error("Invalid queued Steer reference");
+    if (!this.#backendFactory)
+      throw new TurnSteerBackendError(
+        "steer_transport_unavailable",
+        "Steer transport is unavailable",
+        true,
+      );
+    const dispatched = await this.#database
+      .updateTable("turn_control_requests")
+      .set({ state: "dispatched", dispatched_at: sql`coalesce(dispatched_at,clock_timestamp())` })
+      .where("id", "=", row.id)
+      .where("tenant_id", "=", row.tenant_id)
+      .where("state", "in", ["pending", "dispatched"])
+      .returning("id")
+      .executeTakeFirst();
+    if (!dispatched) return;
+    const backend = await this.#backendFactory(payloadString(row.payload, "sandboxId"));
+    // An HTTP error is not evidence of non-consumption. The caller retries this
+    // stable input identity or waits for a canonical Entry / projected seal.
+    await backend.steer({
       controlRequestId: row.id,
-      targetRunId: row.target_run_id,
-      tenantId: row.tenant_id,
-      sessionId: row.session_id,
-      turnId: row.turn_id,
-      runId: row.target_run_id,
       idempotencyKey: row.idempotency_key,
       text: row.text,
       uploads: parseUserUploads(row.input_uploads),
-      requestHash: row.request_sha256,
-      state: row.state,
-      acceptedAt: row.created_at,
-      completedAt: row.completed_at,
-      projectId: payloadString(row.payload, "projectId"),
-      workspaceId: payloadString(row.payload, "workspaceId"),
-      sandboxId: payloadString(row.payload, "sandboxId"),
-    };
-    if (stored.state === "completed" || stored.state === "failed") return;
-    await this.#deliverStored(stored, false, true);
-  }
-
-  async #deliverStored(
-    stored: StoredSteer,
-    replayed: boolean,
-    queued = false,
-  ): Promise<TurnSteerResource> {
-    if (this.#backendFactory === undefined) {
-      throw new TurnSteeringError(
-        "steer_transport_unavailable",
-        "Active Pi steer transport is unavailable",
-      );
-    }
-    await this.#markDispatched(stored);
-    const terminal = terminalResource(stored, replayed);
-    if (terminal !== undefined) return terminal;
-    const backend = await this.#backendFactory(stored.sandboxId);
-    const delivery: TurnSteerRequest = {
-      controlRequestId: stored.controlRequestId,
-      idempotencyKey: stored.idempotencyKey,
-      text: stored.text,
-      ...(stored.uploads.length ? { uploads: stored.uploads } : {}),
       target: {
-        tenantId: stored.tenantId,
-        projectId: stored.projectId,
-        workspaceId: stored.workspaceId,
-        sessionId: stored.sessionId,
-        runId: stored.runId,
-        turnId: stored.turnId,
+        tenantId: row.tenant_id,
+        projectId: payloadString(row.payload, "projectId"),
+        workspaceId: payloadString(row.payload, "workspaceId"),
+        sessionId: row.session_id,
+        runId: row.target_run_id,
+        turnId: row.turn_id,
       },
-    };
-    try {
-      await backend.steer(delivery);
-    } catch (error: unknown) {
-      if (queued) {
-        // An HTTP error is not proof that the native input was unconsumed.
-        // The queue reconciler checks canonical Entry/seal state before release.
-        throw new TurnSteeringError(
-          "steer_transport_unavailable",
-          "Queued steer awaits confirmation",
-        );
-      }
-      if (error instanceof TurnSteerBackendError && error.ambiguous) {
-        return this.#committedResult(stored, replayed);
-      }
-      const code =
-        error instanceof TurnSteerBackendError &&
-        [
-          "invalid_state",
-          "stale_session_lease",
-          "stale_attempt",
-          "steer_target_unavailable",
-        ].includes(error.code)
-          ? "conflict"
-          : "steer_transport_unavailable";
-      if (!(await this.#markFailed(stored, error))) {
-        return this.#committedResult(stored, replayed);
-      }
-      throw new TurnSteeringError(
-        code,
-        code === "conflict"
-          ? "The active Pi Run ended before the steer could be delivered"
-          : "Steer delivery is temporarily unavailable",
-      );
-    }
-    const deliveredAt = this.#clock();
-    const completed = await this.#database
+    });
+    // Delivery only acknowledges the native memory queue. A late reply must
+    // never replace consumption or restoration already decided by reconciliation.
+    await this.#database
       .updateTable("turn_control_requests")
-      .set({
-        state: "completed",
-        acknowledged_at: deliveredAt,
-        completed_at: deliveredAt,
-        failure_code: null,
-      })
-      .where("tenant_id", "=", stored.tenantId)
-      .where("id", "=", stored.controlRequestId)
-      .where("state", "in", ["pending", "dispatched", "acknowledged"])
-      .returning("completed_at")
-      .executeTakeFirst();
-    if (completed === undefined) return this.#committedResult(stored, replayed);
-    return resource(
-      { ...stored, state: "completed", completedAt: completed.completed_at },
-      replayed,
-    );
-  }
-
-  async #create(
-    tenantId: string,
-    sessionId: string,
-    turnId: string,
-    idempotencyKey: string,
-    text: string,
-    requestHash: string,
-    uploadIds: readonly string[],
-  ): Promise<StoredSteer> {
-    try {
-      return await this.#database.transaction().execute(async (transaction) => {
-        const target = await this.#activeTarget(transaction, tenantId, sessionId, turnId);
-        const uploads = await bindInputUploads(transaction, {
-          tenantId,
-          sessionId,
-          workspaceId: target.workspaceId,
-          workingDirectory: target.workingDirectory,
-          ids: uploadIds,
-        });
-        if (
-          uploads.some((file) => file.image) &&
-          !(
-            reviewedModel(target.provider, target.modelId)?.inputModalities as
-              readonly string[] | undefined
-          )?.includes("image")
-        )
-          throw new TurnSteeringError("conflict", "The active model does not support image input");
-        const controlRequestId = this.#idGenerator();
-        const inserted = await transaction
-          .insertInto("turn_control_requests")
-          .values({
-            id: controlRequestId,
-            tenant_id: tenantId,
-            session_id: sessionId,
-            turn_id: turnId,
-            target_run_id: target.runId,
-            idempotency_key: idempotencyKey,
-            kind: "steer",
-            state: "pending",
-            request_sha256: requestHash,
-            payload: {
-              schemaVersion: 1,
-              projectId: target.projectId,
-              workspaceId: target.workspaceId,
-              runId: target.runId,
-              sandboxId: target.sandboxId,
-              text,
-              ...(uploads.length ? { uploads } : {}),
-            },
-            attempts: 0,
-            available_at: this.#clock(),
-            dispatched_at: null,
-            acknowledged_at: null,
-            completed_at: null,
-            failure_code: null,
-          })
-          .returning("created_at")
-          .executeTakeFirstOrThrow();
-        return {
-          controlRequestId,
-          targetRunId: target.runId,
-          tenantId,
-          projectId: target.projectId,
-          workspaceId: target.workspaceId,
-          sessionId,
-          runId: target.runId,
-          turnId,
-          idempotencyKey,
-          text,
-          uploads,
-          requestHash,
-          state: "pending",
-          sandboxId: target.sandboxId,
-          acceptedAt: inserted.created_at,
-          completedAt: null,
-        };
-      });
-    } catch (error: unknown) {
-      const concurrent = await this.#load(tenantId, sessionId, idempotencyKey);
-      if (concurrent !== undefined) {
-        if (concurrent.turnId !== turnId || concurrent.requestHash !== requestHash) {
-          throw new TurnSteeringError(
-            "idempotency_conflict",
-            "Idempotency-Key was already used for a different control request",
-          );
-        }
-        return concurrent;
-      }
-      throw error;
-    }
-  }
-
-  async #activeTarget(
-    transaction: Transaction<Database>,
-    tenantId: string,
-    sessionId: string,
-    turnId: string,
-  ): Promise<{
-    projectId: string;
-    workspaceId: string;
-    runId: string;
-    sandboxId: string;
-    workingDirectory: string;
-    provider: string;
-    modelId: string;
-  }> {
-    const row = await transaction
-      .selectFrom("turns as turn")
-      .innerJoin("sessions as session_row", (join) =>
-        join
-          .onRef("session_row.tenant_id", "=", "turn.tenant_id")
-          .onRef("session_row.id", "=", "turn.session_id"),
-      )
-      .innerJoin("runs as run", (join) =>
-        join
-          .onRef("run.tenant_id", "=", "turn.tenant_id")
-          .onRef("run.session_id", "=", "turn.session_id")
-          .onRef("run.turn_id", "=", "turn.id"),
-      )
-      .innerJoin("active_execution_scopes as lease", "lease.session_id", "session_row.id")
-      .select([
-        "turn.state as turnState",
-        "session_row.state as sessionState",
-        "session_row.project_id as projectId",
-        "session_row.workspace_id as workspaceId",
-        "run.id as runId",
-        "run.state as runState",
-        "run.sandbox_id as executionSandboxId",
-        "lease.sandbox_id as leaseSandboxId",
-        "run.working_directory as workingDirectory",
-        "turn.provider",
-        "turn.model_id as modelId",
-      ])
-      .where("turn.tenant_id", "=", tenantId)
-      .where("turn.session_id", "=", sessionId)
-      .where("turn.id", "=", turnId)
-      // Steer changes no referenced keys. FOR UPDATE would deadlock with a
-      // concurrent Tool binding INSERT acquiring Run/Session KEY SHARE locks.
-      .forNoKeyUpdate(["turn", "session_row", "run", "lease"])
-      .executeTakeFirst();
-    if (row === undefined) {
-      throw new TurnSteeringError("not_found", "Active Turn was not found");
-    }
-    if (
-      row.turnState !== "running" ||
-      row.sessionState !== "running" ||
-      row.runState !== "running" ||
-      row.executionSandboxId === null ||
-      row.executionSandboxId !== row.leaseSandboxId
-    ) {
-      throw new TurnSteeringError(
-        "conflict",
-        "Only one currently running Pi Run can accept a steer",
-      );
-    }
-    return {
-      projectId: row.projectId,
-      workspaceId: row.workspaceId,
-      runId: row.runId,
-      sandboxId: row.leaseSandboxId,
-      workingDirectory: row.workingDirectory,
-      provider: row.provider,
-      modelId: row.modelId,
-    };
-  }
-
-  async #load(
-    tenantId: string,
-    sessionId: string,
-    idempotencyKey: string,
-  ): Promise<StoredSteer | undefined> {
-    const controlRequest = await this.#database
-      .selectFrom("turn_control_requests")
-      .select([
-        "id",
-        "turn_id",
-        "target_run_id",
-        "idempotency_key",
-        "kind",
-        "state",
-        "request_sha256",
-        "payload",
-        "created_at",
-        "completed_at",
-      ])
-      .where("tenant_id", "=", tenantId)
-      .where("session_id", "=", sessionId)
-      .where("idempotency_key", "=", idempotencyKey)
-      .executeTakeFirst();
-    if (controlRequest === undefined) return undefined;
-    if (controlRequest.kind !== "steer") {
-      throw new TurnSteeringError(
-        "idempotency_conflict",
-        "Idempotency-Key was already used for a different control request",
-      );
-    }
-    const text = controlRequest.payload.text;
-    if (typeof text !== "string")
-      throw new TurnSteeringError("steer_transport_unavailable", "Stored steer text is invalid");
-    const requestHash = controlRequest.request_sha256;
-    return {
-      controlRequestId: controlRequest.id,
-      targetRunId: controlRequest.target_run_id,
-      tenantId,
-      projectId: payloadString(controlRequest.payload, "projectId"),
-      workspaceId: payloadString(controlRequest.payload, "workspaceId"),
-      sessionId,
-      runId: controlRequest.target_run_id,
-      turnId: controlRequest.turn_id,
-      idempotencyKey: controlRequest.idempotency_key,
-      text,
-      uploads: parseUserUploads(controlRequest.payload.uploads ?? []),
-      requestHash,
-      state: controlRequest.state,
-      sandboxId: payloadString(controlRequest.payload, "sandboxId"),
-      acceptedAt: controlRequest.created_at,
-      completedAt: controlRequest.completed_at,
-    };
-  }
-
-  async #markDispatched(stored: StoredSteer): Promise<void> {
-    if (stored.state !== "pending") return;
-    const dispatched = await this.#database
-      .updateTable("turn_control_requests")
-      .set({ state: "dispatched", dispatched_at: this.#clock() })
-      .where("tenant_id", "=", stored.tenantId)
-      .where("id", "=", stored.controlRequestId)
-      .where("state", "=", "pending")
-      .returning("id")
-      .executeTakeFirst();
-    if (dispatched === undefined) {
-      await this.#refreshDisposition(stored);
-    } else {
-      stored.state = "dispatched";
-    }
-  }
-
-  async #markFailed(stored: StoredSteer, error: unknown): Promise<boolean> {
-    const failureCode =
-      error instanceof TurnSteerBackendError && /^[a-z][a-z0-9_]{0,127}$/.test(error.code)
-        ? error.code
-        : "steer_delivery_failed";
-    const failed = await this.#database
-      .updateTable("turn_control_requests")
-      .set({
-        state: "failed",
-        completed_at: this.#clock(),
-        failure_code: failureCode,
-      })
-      .where("tenant_id", "=", stored.tenantId)
-      .where("id", "=", stored.controlRequestId)
-      .where("state", "in", ["pending", "dispatched", "acknowledged"])
-      .returning("id")
-      .executeTakeFirst();
-    return failed !== undefined;
-  }
-
-  async #refreshDisposition(stored: StoredSteer): Promise<void> {
-    const current = await this.#database
-      .selectFrom("turn_control_requests")
-      .select(["state", "completed_at"])
-      .where("tenant_id", "=", stored.tenantId)
-      .where("id", "=", stored.controlRequestId)
-      .executeTakeFirstOrThrow();
-    stored.state = current.state;
-    stored.completedAt = current.completed_at;
-  }
-
-  async #committedResult(stored: StoredSteer, replayed: boolean): Promise<TurnSteerResource> {
-    // A different API replica may have committed while this delivery was in
-    // flight. A late transport reply cannot replace that durable decision.
-    await this.#refreshDisposition(stored);
-    const terminal = terminalResource(stored, replayed);
-    if (terminal !== undefined) return terminal;
-    throw new TurnSteeringError(
-      "steer_transport_unavailable",
-      "Steer delivery outcome is temporarily unknown; retry with the same Idempotency-Key",
-    );
+      .set({ state: "acknowledged", acknowledged_at: sql`clock_timestamp()`, failure_code: null })
+      .where("id", "=", row.id)
+      .where("tenant_id", "=", row.tenant_id)
+      .where("state", "in", ["pending", "dispatched"])
+      .execute();
   }
 }

@@ -687,6 +687,48 @@
       "file": "test/indexed-log.postgres.test.ts",
       "test": "settles a whole batch independent of physical insert order and rolls state back with its log",
       "invariant": "Native open-operation references share the log transaction, preserve Lane/tenant scope and rebuild without re-executing effects."
+    },
+    {
+      "id": "direct-steer-unconsumed-recovery",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "restores direct Steer acknowledged but unconsumed when its target ends (failed=true)",
+      "invariant": "A Worker acknowledgement never retires input; target closure restores unconsumed input without replaying its Run."
+    },
+    {
+      "id": "direct-steer-canonical-consumption",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "retires direct Steer only after canonical consumption even when its HTTP reply is lost",
+      "invariant": "Canonical input evidence wins over missing transport acknowledgement and prevents fallback execution."
+    },
+    {
+      "id": "direct-steer-late-reply",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "preserves direct Steer reconciliation against a late delivery outcome (restored-success)",
+      "invariant": "A late Worker reply cannot overwrite a sealed-target restoration decision."
+    },
+    {
+      "id": "direct-steer-cancel-recovery",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "keeps direct Steer after active cancellation and permits removing its restored input",
+      "invariant": "Stopping the active Run retains unconsumed direct input and leaves its restored queue entry removable."
+    },
+    {
+      "id": "direct-steer-acceptance-race",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "deduplicates simultaneous direct Steer acceptance and rejects locked targets without orphaned input",
+      "invariant": "Direct Steer acceptance is atomic and idempotent under target locks and concurrent API replicas."
+    },
+    {
+      "id": "direct-steer-fk-locks",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/steer-admission.postgres.test.ts",
+      "test": "Steer admission remains compatible with concurrent Tool binding foreign keys",
+      "invariant": "Input acceptance does not deadlock with active Tool binding foreign-key checks."
     }
   ]
 }

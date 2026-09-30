@@ -39,6 +39,11 @@ product queued follow-ups immutable in PG until predecessor closure. The subsequ
 reordering and promotion before admission, while preserving this ADR's native
 input closure and no-replay boundaries.
 
+[ADR-0203](0203-consumption-confirmed-direct-steer.md) subsequently gives direct
+human Steer the same held-source recovery as queue promotion. It preserves this
+ADR's native input closure; unconsumed human input can become a future Run after
+definitive closure, without resuming the failed Run or replaying its Tools.
+
 ## Acceptance
 
 Cover inputs arriving at agent_end and while final append waits; delivery paused

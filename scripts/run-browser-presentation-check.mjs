@@ -186,6 +186,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   let session;
   const fixtureTurnId='50000000-0000-4000-8000-000000000011';
   window.fixtureQueue={sessionId:sid,revision:0,activeTurnId:sessionState==='running'?fixtureTurnId:null,items:[]};
+  window.steerRequests=[];window.steerReceipts=new Map();
   const delegates=['branch','fresh'].map((contextMode,index)=>({sessionId:'10000000-0000-4000-8000-00000000000'+(index+2),
     executionId:'80000000-0000-4000-8000-00000000000'+(index+1),parentSessionId:sid,rootSessionId:sid,parentTurnId:fixtureTurnId,
     depth:1,title:contextMode+' child',contextMode,sandboxMode:'shared',state:'completed',workspaceName:'fixture',createdAt}));
@@ -267,6 +268,18 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     if(String(url).endsWith("/model") && init.method==="PUT") {
       selection=JSON.parse(init.body); window.savedSelection=selection;
       return Response.json(modelResource());
+    }
+    if(String(url).endsWith("/steers")) {
+      const body=JSON.parse(init.body),key=new Headers(init.headers).get('idempotency-key');
+      window.steerRequests.push({body,key});
+      const previous=window.steerReceipts.get(key);
+      const source='50000000-0000-4000-8000-'+String(31+window.steerReceipts.size).padStart(12,'0');
+      const receipt=previous??{controlRequestId:source,targetRunId:'60000000-0000-4000-8000-000000000011',targetTurnId:fixtureTurnId,
+        sourceRunId:source,sourceTurnId:source,sessionId:sid,state:'accepted',acceptedAt:new Date().toISOString(),replayed:false};
+      if(!previous){window.steerReceipts.set(key,receipt);window.fixtureQueue.revision++;
+        window.fixtureQueue.items.push({turnId:source,runId:source,text:body.text,mailboxPosition:2,acceptedAt:receipt.acceptedAt,status:'steering'});}
+      if(window.loseSteerReply){window.loseSteerReply=false;throw Error('Fixture lost Steer response');}
+      return Response.json({...receipt,replayed:!!previous},{status:202});
     }
     if(String(url).endsWith("/turns")) {
       const submitted=JSON.parse(init.body);window.turnBodies.push(submitted);
@@ -927,6 +940,30 @@ try {
     await page.waitFor("document.querySelector('.product-delete-conversation')");
     await page.evaluate(`document.querySelector(${JSON.stringify(parentButton)}).click()`);
     await page.waitFor("document.querySelector('.product-stop-button')");
+    await fill(".product-composer textarea", "recover my direct instruction");
+    await page.evaluate(
+      "window.loseSteerReply=true;document.querySelector('.product-steer-button').click()",
+    );
+    await page.waitFor(
+      "document.body.textContent.includes('Control plane is unreachable') && !document.querySelector('.product-steer-button').disabled",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-composer textarea').value"),
+      "recover my direct instruction",
+    );
+    await page.evaluate("document.querySelector('.product-steer-button').click()");
+    await page.waitFor(
+      "/Instruction saved|引导消息已保存/.test(document.querySelector('.product-steer-notice')?.textContent) && document.querySelector('.product-composer textarea').value===''",
+    );
+    assert.deepEqual(
+      await page.evaluate(
+        "({calls:steerRequests.length,keys:new Set(steerRequests.map(r=>r.key)).size,inputs:fixtureQueue.items.length,status:fixtureQueue.items[0].status})",
+      ),
+      { calls: 2, keys: 1, inputs: 1, status: "steering" },
+    );
+    await page.waitFor(
+      "document.querySelector('.pending-input-queue')?.textContent.includes('recover my direct instruction')",
+    );
     await page.evaluate("window.holdNextConversationList=true;finishFixtureTurn()");
     await page.waitFor("typeof window.finishOldConversationList==='function'");
     await page.evaluate("document.querySelector('.product-delete-conversation').click()");
@@ -1022,6 +1059,8 @@ try {
   console.log(
     JSON.stringify({
       accepted: true,
+      directSteerRetryIdentity: true,
+      directSteerPendingPresentation: true,
       machineWorkspaceRebind: true,
       rebindRetryUsesSameTargetAndKey: true,
       persistentRuntimeStatus: true,
