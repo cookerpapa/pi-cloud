@@ -10,6 +10,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { EventStream } from "@earendil-works/pi-ai";
 import { getModel } from "@earendil-works/pi-ai/compat";
+import { Type } from "typebox";
 import type {
   AgentMessage,
   CustomEntryContextMessageProjector,
@@ -134,6 +135,87 @@ function modelAdmissionProbe() {
     },
   };
 }
+
+it.each(["Tool details", "invalid Tool arguments"])(
+  "preserves opaque own JSON properties through native history: %s",
+  async (scenario) => {
+    const storage = await createStorage();
+    const opaque = JSON.parse(
+      '{"__proto__":{"marker":"root"},"nested":{"__proto__":{"marker":"nested"}},"array":[{"__proto__":{"marker":"array"}}],"constructor":"ordinary"}',
+    );
+    const execute = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: "done" }],
+      details: Object.defineProperty(opaque, "omitted", { value: undefined, enumerable: true }),
+    }));
+    let requests = 0;
+    const runtime = new CloudAgentRuntime({
+      ...(await withNativeSession(storage)),
+      lane: "main",
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "Fixture",
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      tools: [
+        {
+          name: "fixture",
+          label: "Fixture",
+          description: "Return metadata",
+          parameters: Type.Object({}, { additionalProperties: false }),
+          execute,
+        },
+      ],
+      streamFn: () => {
+        const first = ++requests === 1;
+        const message: AssistantMessage = first
+          ? {
+              ...assistant(""),
+              stopReason: "toolUse",
+              content: [
+                {
+                  type: "toolCall",
+                  id: "json-call",
+                  name: "fixture",
+                  arguments: scenario === "Tool details" ? {} : opaque,
+                },
+              ],
+            }
+          : assistant("Finished");
+        const stream = new MockAssistantStream();
+        queueMicrotask(() =>
+          stream.push({ type: "done", reason: first ? "toolUse" : "stop", message }),
+        );
+        return stream;
+      },
+    });
+    expect(await runtime.run("Keep opaque JSON intact")).toMatchObject({ kind: "completed" });
+    const entries = await storage.asSession().findEntriesOnBranch();
+    const result = entries.find(
+      (entry) => entry.type === "message" && entry.message.role === "toolResult",
+    );
+    expect(result).toMatchObject({
+      type: "message",
+      message: { isError: scenario !== "Tool details" },
+    });
+    const message = entries.find(
+      (entry) =>
+        entry.type === "message" &&
+        entry.message.role === "assistant" &&
+        entry.message.stopReason === "toolUse",
+    );
+    const stored =
+      scenario === "Tool details"
+        ? (result as any).message.details
+        : (message as any).message.content[0].arguments;
+    expect(stored).toEqual(JSON.parse(JSON.stringify(opaque)));
+    for (const object of [stored, stored.nested, stored.array[0]]) {
+      expect(Object.hasOwn(object, "__proto__")).toBe(true);
+      expect(Object.getPrototypeOf(object)).toBe(Object.prototype);
+    }
+    expect(Object.hasOwn(stored, "omitted")).toBe(false);
+    expect(execute).toHaveBeenCalledTimes(scenario === "Tool details" ? 1 : 0);
+    expect(requests).toBe(2);
+  },
+);
 
 it("consumes concurrent Agent-input redelivery once and recognizes it after cold restore", async () => {
   const storage = await createStorage(),

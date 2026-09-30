@@ -79,3 +79,14 @@ All 30 remote-tool adapter tests pass, including actual Pi Agent execution for
 timeout, stopped reply consumer, image decode rejection and mismatched reply.
 Each case publishes one Tool command and makes only one model request; user
 cancellation is covered separately.
+
+## R30-02: opaque JSON properties retain native meaning
+
+Message normalization now defines own properties instead of invoking the
+`__proto__` setter. It still removes undefined object values. Nested objects,
+arrays and an ordinary own `constructor` key retain their JSON meaning through
+the actual native writer and PostgreSQL history. Invalid Tool arguments reach
+Pi's normal validation and produce a Tool error without aborting the whole Run.
+
+Validation: 64 CloudAgentRuntime tests and its package typecheck pass, including
+two new cold-storage regressions for opaque Tool details and invalid arguments.

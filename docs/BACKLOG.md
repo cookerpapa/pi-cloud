@@ -21,9 +21,6 @@ release gate; final combined verification remains part of the repairs.
 
 - [ ] R30-05: include timed_out in Subagent seal waiting; compare every terminal
       Run state before and after output closure.
-- [ ] R30-02: preserve own JSON properties such as `__proto__` during message
-      normalization. Match native Pi storage without dropping opaque details
-      or restoring undefined values.
 - [ ] R30-03: align Subagent input admission with encoded native publication
       budgets and public conversation schemas. Reject oversized work early,
       accounting for Unicode, escaping and envelope overhead.

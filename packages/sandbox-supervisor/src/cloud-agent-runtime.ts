@@ -177,7 +177,13 @@ function normalizeMessage(message: AgentMessage): AgentMessage {
     if (!isObject(value)) return value;
     const result: Record<string, unknown> = {};
     for (const [key, candidate] of Object.entries(value)) {
-      if (candidate !== undefined) result[key] = visit(candidate);
+      if (candidate !== undefined)
+        Object.defineProperty(result, key, {
+          value: visit(candidate),
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
     }
     return result;
   };
