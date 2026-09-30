@@ -51,6 +51,9 @@ it("keeps activity and path freshness separate across silence, cancellation and 
   expect(changed).toHaveBeenCalledTimes(2);
   store.reset();
   expect(store.get("turn")).toBeUndefined();
+  // Reconnecting to a long-running turn starts unknown, not immediately delayed.
+  expect(runStatus(turn, undefined, 200_000, 200_000).delayed).toBe(false);
+  expect(runStatus(turn, undefined, 246_000, 200_000).delayed).toBe(true);
   stop();
   store.receive({ ...activity, revision: 3 });
   expect(store.get("turn")).toBeUndefined();

@@ -54,7 +54,12 @@ export class RunObservationStore {
   }
 }
 
-export function runStatus(turn: TurnView, observations: Observations | undefined, now: number) {
+export function runStatus(
+  turn: TurnView,
+  observations: Observations | undefined,
+  now: number,
+  observingSince = now,
+) {
   const belongs = (value: RunObservation | undefined) =>
     value && (!turn.runId || turn.runId === value.runId);
   const activity = belongs(observations?.activity) ? observations?.activity : undefined;
@@ -72,7 +77,7 @@ export function runStatus(turn: TurnView, observations: Observations | undefined
       turn.status !== "queued" &&
       (path
         ? now - path.sentAt > RUN_OBSERVATION_STALE_MS
-        : !!turn.acceptedAt && now - Date.parse(turn.acceptedAt) > RUN_OBSERVATION_STALE_MS),
+        : now - observingSince > RUN_OBSERVATION_STALE_MS),
   };
 }
 
@@ -87,6 +92,12 @@ export function RunStatus({
 }) {
   const { t } = useI18n();
   const [now, setNow] = useState(Date.now);
+  const [observingSince, setObservingSince] = useState(Date.now);
+  const queued = turn.status === "queued";
+  useEffect(() => {
+    // A new connection or newly started queued turn begins with unknown evidence.
+    setObservingSince(Date.now());
+  }, [connected, queued]);
   const subscribe = useCallback(
     (listener: () => void) => store?.subscribe(turn.turnId, listener) ?? (() => {}),
     [store, turn.turnId],
@@ -100,7 +111,7 @@ export function RunStatus({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const status = runStatus(turn, observations, now);
+  const status = runStatus(turn, observations, now, observingSince);
   return (
     <div className="product-run-status" data-run-phase={status.phase}>
       <div role="status">

@@ -23,6 +23,14 @@ them, so reconnect can briefly show unknown freshness. No per-Run Prometheus
 labels or durable health table is introduced. See
 [ADR-0201](adr/0201-runtime-activity-and-path-probes.md) for bounds and deployment.
 
+Both SSE observations carry `sessionId`, `turnId` and `runId`. `run.activity`
+also carries `phase`, monotonic `revision`, `observedAt` and `lastActivityAt`;
+`run.path` carries original `sentAt` and Projector `observedAt`. Times are Unix
+milliseconds. Neither frame has a transcript sequence. Source phases cover
+preparation, model wait/response, Tool arguments/execution, Agent waits, retry,
+Compaction, cancellation and settlement. A fresh connection starts with unknown
+path evidence and gets a fresh 45-second observation window before warning.
+
 ## Monitoring stack
 
 PiCloud uses a deliberately small optional stack:
