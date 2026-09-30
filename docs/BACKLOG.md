@@ -12,9 +12,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 
 The [September 30 review](reports/repository-review-20260930.md) is complete at
 `5fd6159f8a0ec0cc5d4ebc0dc24071c29b82028d`. It adds eight confirmed findings,
-three decisions to discuss and scoped cleanup candidates. It does not change
-the architecture or establish a passing release gate: the full workspace check
-has one failure and the current dependency security audit fails.
+three decisions to discuss and scoped cleanup candidates. The subsequent
+[repair record](reports/repository-review-repair-20261001.md) tracks the owner's
+decisions and completed slices. The baseline review did not establish a passing
+release gate; final combined verification remains part of the repairs.
 
 ## September 30 review follow-up
 
@@ -23,10 +24,6 @@ has one failure and the current dependency security audit fails.
       @vitest/mocker retain moderate findings. Verify patched dependencies and
       their reachable paths with Pi/HTTP contracts; do not suppress the new
       findings or blindly upgrade pinned Pi to satisfy an aggregate advisory.
-- [ ] R30-07: migrate the obsolete direct-Steer runtime composition test to
-      ADR-0203's running target, held source, HTTP 202 and reconciler delivery.
-      Retain proof that an API replica without the local Worker connection uses
-      the injected remote transport. Re-run the full check after migration.
 - [ ] R30-01: route rejected Tool-reply waits through the existing infrastructure
       failure latch, covering timeout, consumer closure and decode/identity
       failure. Preserve cancellation and UNKNOWN; prove no next sampling or

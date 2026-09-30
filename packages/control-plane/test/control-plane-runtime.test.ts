@@ -4,8 +4,11 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { PiCloudMetrics } from "@pi-cloud/observability";
+import { createTestWorker } from "./admit-test-execution.ts";
+import { QueuedInputService } from "../src/queued-input-service.ts";
+import type { TurnSteerResource } from "@pi-cloud/protocol";
 
 import {
   HashedBearerSupervisorAuthorizer,
@@ -88,7 +91,10 @@ describe.sequential("remote control-plane runtime composition", () => {
       "elastic",
     );
     const metrics = new PiCloudMetrics("composition-regression");
-    const steer = vi.fn(async () => {});
+    const finishDelivery = Promise.withResolvers<void>();
+    const steer = vi.fn(async () => {
+      await finishDelivery.promise;
+    });
     const backendFactory = vi.fn(async () => ({ steer }));
     const runtime = await createControlPlaneRuntime({
       database,
@@ -116,6 +122,8 @@ describe.sequential("remote control-plane runtime composition", () => {
         },
       }),
     });
+    const finished = Promise.withResolvers<void>();
+    let execution: Promise<unknown> | undefined;
     try {
       const address = await runtime.listen(0, "127.0.0.1");
       const accepted = await fetch(`${address}/v1/sessions/${session.sessionId}/turns`, {
@@ -143,41 +151,24 @@ describe.sequential("remote control-plane runtime composition", () => {
         )
         .toBeGreaterThan(0);
 
-      // Replaying an already-persisted delivery must use the supplied transport,
-      // even when this API replica has no local Worker WebSocket. Execution
-      // authority is the injected backend's independent contract in this test.
+      const worker = await createTestWorker(database);
+      const entered = Promise.withResolvers<void>();
+      execution = worker
+        .executor({
+          execute: async () => {
+            entered.resolve();
+            await finished.promise;
+            return { stopReason: "stop" };
+          },
+        })
+        .dispatchRun(turn.runId);
+      void execution.catch(entered.reject);
+      await entered.promise;
+
+      // Acceptance must persist a held source before reconciliation uses the
+      // supplied transport, even without a local Worker WebSocket connection.
       const text = "Change the requested output.";
       const key = randomUUID();
-      await database
-        .insertInto("turn_control_requests")
-        .values({
-          id: randomUUID(),
-          tenant_id: tenant.tenantId,
-          session_id: session.sessionId,
-          turn_id: turn.turnId,
-          target_run_id: turn.runId,
-          idempotency_key: key,
-          kind: "steer",
-          state: "pending",
-          request_sha256: createHash("sha256")
-            .update(JSON.stringify({ schemaVersion: 1, kind: "turn.steer", text }))
-            .digest("hex"),
-          payload: {
-            schemaVersion: 1,
-            projectId: project.projectId,
-            workspaceId: project.workspaceId,
-            runId: turn.runId,
-            sandboxId: IDS.sandbox,
-            text,
-          },
-          attempts: 0,
-          available_at: new Date(),
-          dispatched_at: null,
-          acknowledged_at: null,
-          completed_at: null,
-          failure_code: null,
-        })
-        .execute();
       expect(runtime.gateway.activeConnectionCount).toBe(0);
       const delivered = await fetch(
         `${address}/v1/sessions/${session.sessionId}/turns/${turn.turnId}/steers`,
@@ -187,12 +178,61 @@ describe.sequential("remote control-plane runtime composition", () => {
           body: JSON.stringify({ text }),
         },
       );
-      expect(delivered.status).toBe(200);
-      expect(backendFactory).toHaveBeenCalledWith(IDS.sandbox);
+      expect(delivered.status).toBe(202);
+      const receipt = (await delivered.json()) as TurnSteerResource;
+      expect(receipt).toMatchObject({
+        targetRunId: turn.runId,
+        state: "accepted",
+        replayed: false,
+      });
+      expect(
+        await database
+          .selectFrom("runs")
+          .select(["state", "queued_steer_id"])
+          .where("id", "=", receipt.sourceRunId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ state: "queued", queued_steer_id: receipt.controlRequestId });
+      runtime.application.get(QueuedInputService).wake();
+      await waitFor(() => steer.mock.calls.length === 1);
+      expect(backendFactory).toHaveBeenCalledWith(worker.workerId);
       expect(steer).toHaveBeenCalledWith(
         expect.objectContaining({ text, target: expect.objectContaining({ runId: turn.runId }) }),
       );
+      // HTTP acceptance did not await the deliberately blocked Worker reply.
+      finishDelivery.resolve();
+      await waitFor(
+        async () =>
+          (
+            await database
+              .selectFrom("turn_control_requests")
+              .select("state")
+              .where("id", "=", receipt.controlRequestId)
+              .executeTakeFirst()
+          )?.state === "acknowledged",
+      );
+      expect(
+        await database
+          .selectFrom("turn_control_requests")
+          .select("state")
+          .where("id", "=", receipt.controlRequestId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ state: "acknowledged" });
+      const replay = await fetch(
+        `${address}/v1/sessions/${session.sessionId}/turns/${turn.turnId}/steers`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "idempotency-key": key },
+          body: JSON.stringify({ text }),
+        },
+      );
+      expect(replay.status).toBe(202);
+      expect(await replay.json()).toMatchObject({ ...receipt, replayed: true });
+      await runtime.application.get(QueuedInputService).reconcileOnce();
+      expect(steer).toHaveBeenCalledOnce();
     } finally {
+      finishDelivery.resolve();
+      finished.resolve();
+      await execution;
       await runtime.close();
     }
   });
