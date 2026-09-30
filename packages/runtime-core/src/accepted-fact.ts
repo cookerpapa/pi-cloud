@@ -31,6 +31,7 @@ export type CandidatePiSessionAppendFact = Readonly<{
 }>;
 
 export type CandidateFact =
+  | Readonly<{ kind: "path_probe"; factId: string; occurredAt: string }>
   | Readonly<{ kind: "tool_command"; command: CandidateToolCommand }>
   | Readonly<{ kind: "subagent_command"; command: CandidateSubagentCommand }>
   | Readonly<{ kind: "agent_event"; publication: EventPublishMessage }>
@@ -97,6 +98,7 @@ export type ExecutionPublication = Readonly<{
   scope: AcceptedFactScope & { leaseId: string; piSessionLane: string };
 }>;
 export type AcceptedFact =
+  | import("@pi-cloud/protocol").PathProbe
   | AcceptedToolCommand
   | AcceptedAgentEventFact
   | AcceptedExecutionSealFact

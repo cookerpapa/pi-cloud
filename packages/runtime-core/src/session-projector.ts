@@ -18,11 +18,14 @@ import type { AcceptedFact } from "./accepted-fact.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { toolCommandForFact } from "./tool-invocation-fact.ts";
 import { ProjectionTiming } from "./projection-timing.ts";
+import { RunObservations } from "./run-observations.ts";
 
 const PREFIX = "pi-cloud-projector@";
 export class SessionProjector {
   readonly eventStore: SessionLiveView;
   readonly eventHub;
+  readonly observations: RunObservations;
+  readonly #observationSweep: NodeJS.Timeout;
   readonly #consumer: KafkaLogConsumer<AcceptedFact>;
   readonly #bus: KafkaAcceptedFactBus;
   readonly #relay: AcceptedFactTerminalOutboxRelay;
@@ -57,6 +60,9 @@ export class SessionProjector {
       await this.#consumer.waitForPartition(p);
     });
     this.eventHub = this.eventStore.eventHub;
+    this.observations = new RunObservations(this.eventHub);
+    this.#observationSweep = setInterval(() => this.observations.sweep(), 60_000);
+    this.#observationSweep.unref();
     this.#publication = new ExecutionPublicationBoundary(options.database);
     this.#projection = new ExecutionStreamProjector(options.database);
     this.#consumer = new KafkaLogConsumer({
@@ -73,6 +79,7 @@ export class SessionProjector {
         this.#projection.reset();
         this.#publication.reset();
         this.eventStore.reset();
+        this.observations.reset();
       },
       handler: async (record, current, commitBeforeEffect) => {
         const timing = new ProjectionTiming(options.metrics);
@@ -84,6 +91,10 @@ export class SessionProjector {
           )
             return;
           const { fact } = record;
+          if (fact.kind === "path_probe") {
+            this.observations.record(record, this.#projection.observes(record));
+            return;
+          }
           const projected = await timing.measure("projection", () =>
             this.#projection.project(record),
           );
@@ -121,6 +132,8 @@ export class SessionProjector {
                 options.subagentCommands!.consume(record, current),
               );
           }
+          if (current?.() !== false)
+            this.observations.record(record, this.#projection.observes(record));
         } catch (error) {
           failure = error;
           throw error;
@@ -194,6 +207,8 @@ export class SessionProjector {
     return (this.#closing ??= this.#close());
   }
   async #close(): Promise<void> {
+    clearInterval(this.#observationSweep);
+    this.observations.reset();
     const errors: unknown[] = [];
     for (const close of [
       () => this.#relay.close(),

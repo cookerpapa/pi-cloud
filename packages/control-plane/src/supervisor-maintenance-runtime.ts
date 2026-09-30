@@ -1,15 +1,20 @@
-import type { SupervisorMaintenanceCycleResult } from "./supervisor-connection-manager.ts";
+import type {
+  SupervisorExpirySweepResult,
+  SupervisorRetirementWorkResult,
+} from "./supervisor-connection-manager.ts";
 
 const DEFAULT_FAILURE_POLL_MS = 1_000;
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 1_000;
 const DEFAULT_MAINTENANCE_CONNECTION_LIMIT = 100;
 const DEFAULT_MAINTENANCE_RETIREMENT_LIMIT = 10;
+const DEFAULT_MAINTENANCE_LEASE_LIMIT = 10;
 
 export interface SupervisorMaintenanceRunner {
-  runMaintenanceCycle(options?: {
+  sweepExpiredExecutions(options?: {
     connectionLimit?: number;
-    retirementLimit?: number;
-  }): Promise<SupervisorMaintenanceCycleResult>;
+    leaseLimit?: number;
+  }): Promise<SupervisorExpirySweepResult>;
+  processNextRetirement(): Promise<SupervisorRetirementWorkResult>;
 }
 
 export type SupervisorMaintenanceActivity =
@@ -17,12 +22,12 @@ export type SupervisorMaintenanceActivity =
       type: "maintenance.completed";
       scannedConnections: number;
       expiredConnections: number;
-      retirements: number;
       expiredAssignments: number;
     }
+  | { type: "retirement.completed"; kind: Exclude<SupervisorRetirementWorkResult["kind"], "idle"> }
   | {
       type: "runtime.failure";
-      component: "maintenance";
+      component: "maintenance" | "retirement";
       code: string;
       retryable: boolean;
     };
@@ -33,6 +38,7 @@ export type SupervisorMaintenanceRuntimeOptions = {
   maintenanceIntervalMs?: number;
   maintenanceConnectionLimit?: number;
   maintenanceRetirementLimit?: number;
+  maintenanceLeaseLimit?: number;
   onActivity?: (activity: SupervisorMaintenanceActivity) => void;
 };
 
@@ -89,6 +95,7 @@ export class SupervisorMaintenanceRuntime {
   readonly #maintenanceIntervalMs: number;
   readonly #maintenanceConnectionLimit: number;
   readonly #maintenanceRetirementLimit: number;
+  readonly #maintenanceLeaseLimit: number;
   readonly #onActivity: ((activity: SupervisorMaintenanceActivity) => void) | undefined;
   #state: SupervisorMaintenanceRuntimeState = "idle";
   #controller: AbortController | undefined;
@@ -112,6 +119,10 @@ export class SupervisorMaintenanceRuntime {
       options.maintenanceRetirementLimit ?? DEFAULT_MAINTENANCE_RETIREMENT_LIMIT,
       "maintenanceRetirementLimit",
     );
+    this.#maintenanceLeaseLimit = positiveInteger(
+      options.maintenanceLeaseLimit ?? DEFAULT_MAINTENANCE_LEASE_LIMIT,
+      "maintenanceLeaseLimit",
+    );
     this.#onActivity = options.onActivity;
   }
 
@@ -125,7 +136,10 @@ export class SupervisorMaintenanceRuntime {
     }
     this.#state = "running";
     this.#controller = new AbortController();
-    this.#runPromise = this.#run(this.#controller.signal).then(() => {
+    this.#runPromise = Promise.all([
+      this.#run(this.#controller.signal, "maintenance"),
+      this.#run(this.#controller.signal, "retirement"),
+    ]).then(() => {
       this.#state = "stopped";
     });
   }
@@ -145,28 +159,37 @@ export class SupervisorMaintenanceRuntime {
     await this.#runPromise;
   }
 
-  async #run(signal: AbortSignal): Promise<void> {
+  async #run(signal: AbortSignal, component: "maintenance" | "retirement"): Promise<void> {
     // Give healthy Workers one reconnect interval after a Control Plane
     // process replacement before examining the previous instance's channels.
     await abortableWait(this.#maintenanceIntervalMs, signal);
     while (!signal.aborted) {
       let delayMs = this.#maintenanceIntervalMs;
       try {
-        const result = await this.#maintenanceRunner.runMaintenanceCycle({
-          connectionLimit: this.#maintenanceConnectionLimit,
-          retirementLimit: this.#maintenanceRetirementLimit,
-        });
-        this.#observe({
-          type: "maintenance.completed",
-          scannedConnections: result.connections.scannedConnections,
-          expiredConnections: result.connections.expiredConnections,
-          retirements: result.retirements.length,
-          expiredAssignments: result.expiredAssignments,
-        });
+        if (component === "maintenance") {
+          const result = await this.#maintenanceRunner.sweepExpiredExecutions({
+            connectionLimit: this.#maintenanceConnectionLimit,
+            leaseLimit: this.#maintenanceLeaseLimit,
+          });
+          this.#observe({
+            type: "maintenance.completed",
+            scannedConnections: result.connections.scannedConnections,
+            expiredConnections: result.connections.expiredConnections,
+            expiredAssignments: result.expiredAssignments,
+          });
+        } else {
+          // One remote retirement at a time, independently of PG lease scans.
+          // The existing durable claim and management-client deadline own retries.
+          for (let i = 0; i < this.#maintenanceRetirementLimit && !signal.aborted; i++) {
+            const result = await this.#maintenanceRunner.processNextRetirement();
+            if (result.kind === "idle") break;
+            this.#observe({ type: "retirement.completed", kind: result.kind });
+          }
+        }
       } catch (error: unknown) {
         this.#observe({
           type: "runtime.failure",
-          component: "maintenance",
+          component,
           ...safeFailure(error),
         });
         delayMs = this.#failurePollMs;

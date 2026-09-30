@@ -52,6 +52,8 @@ import {
   type PiTurnResult,
 } from "./pi-turn-runtime.ts";
 import type { TrustedRemoteAgentTools } from "./trusted-remote-tools.ts";
+import { PiRunActivity } from "./pi-run-activity.ts";
+import type { RunActivityUpdate } from "@pi-cloud/protocol";
 import type {
   AssistantTextPhaseResolver,
   ProviderHostedActivitySubscriber,
@@ -93,6 +95,7 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   sandboxContinuity: PiSandboxContinuity;
   onSettled?: () => Promise<void> | void;
   observeEvent?: (event: CloudAgentRuntimeEvent) => void;
+  onActivity?: (update: RunActivityUpdate | undefined) => void;
   subscribeHostedActivity?: ProviderHostedActivitySubscriber;
   resolveAssistantTextPhase?: AssistantTextPhaseResolver;
   subscribeHostedTranscript?: ProviderHostedTranscriptSubscriber;
@@ -430,6 +433,7 @@ export class PiCloudTurnRunner {
   readonly #id: () => string;
   #activeRuntime: CloudAgentRuntime | undefined;
   #runEnded = false;
+  #activity: PiRunActivity | undefined;
   readonly #steerWaiters = new Set<{
     resolve(runtime: CloudAgentRuntime): void;
     reject(error: Error): void;
@@ -514,9 +518,17 @@ export class PiCloudTurnRunner {
     signal?: AbortSignal,
   ): Promise<PiTurnResult> {
     this.#runEnded = false;
+    this.#activity = new PiRunActivity(this.#options.onActivity);
+    this.#activity.phase("preparing");
     try {
       return await this.#executeRun(command, publishEvent, signal);
     } finally {
+      try {
+        this.#options.onActivity?.(undefined);
+      } catch {
+        /* observation only */
+      }
+      this.#activity = undefined;
       // Control requests may arrive before model/Session preparation finishes.
       // Every exit must settle them, not only exits of an active Agent Loop.
       this.#runEnded = true;
@@ -804,6 +816,7 @@ export class PiCloudTurnRunner {
           hostedTranscripts.set(hostedTranscriptKey(transcript), transcript);
         });
         const observeRuntimeEvent = (event: CloudAgentRuntimeEvent): void => {
+          this.#activity?.event(event);
           this.#options.observeEvent?.(event);
           const usage = assistantUsage(event);
           if (usage === undefined) return;
@@ -946,6 +959,7 @@ export class PiCloudTurnRunner {
                       [started],
                       publication,
                     );
+                    observeRuntimeEvent(sourceEvent);
                     return;
                   }
                   const outcome = adapter.adapt(this.#adapterEvent(sourceEvent));
@@ -1012,6 +1026,7 @@ export class PiCloudTurnRunner {
         );
         timer.unref();
         const abort = (): void => {
+          this.#activity?.phase("cancelling");
           const cancellation = cancellationSignal(combined.reason);
           try {
             adapter.requestCancellation(cancellation.reason);

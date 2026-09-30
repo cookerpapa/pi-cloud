@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0201](0201-runtime-activity-and-path-probes.md) — runtime activity,
+   Session path probes and independent PG-time lease sweeps (implementation underway).
 1. [ADR-0200](0200-workspace-uploads-and-user-image-input.md) — Workspace file uploads,
    durable input attachments and native user image content.
 1. [ADR-0199](0199-bounded-publication-and-projection.md) — proved publication

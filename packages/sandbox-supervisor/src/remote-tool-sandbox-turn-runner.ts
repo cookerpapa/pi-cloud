@@ -69,6 +69,10 @@ export interface ToolBrokerBoundary {
 }
 
 export type RemoteToolSandboxTurnRunnerOptions = {
+  onActivity?: (
+    command: ExecuteTurnCommandMessage,
+    update: import("@pi-cloud/protocol").RunActivityUpdate | undefined,
+  ) => void;
   decodeInputImages?: (
     images: import("@pi-cloud/protocol").ImageAttachmentReference[],
     scope: { tenantId: string; runId: string },
@@ -149,6 +153,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #decodeInputImages: RemoteToolSandboxTurnRunnerOptions["decodeInputImages"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
   readonly #acquireModelPermit: RemoteToolSandboxTurnRunnerOptions["acquireModelPermit"];
+  readonly #onActivity: RemoteToolSandboxTurnRunnerOptions["onActivity"];
   readonly #requestTimeoutMs: number | undefined;
   readonly #turnTimeoutMs: number | undefined;
   readonly #idGenerator: () => string;
@@ -165,6 +170,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   >();
 
   constructor(options: RemoteToolSandboxTurnRunnerOptions) {
+    this.#onActivity = options.onActivity;
     this.#broker = options.broker;
     this.#runtimeIdentity = validateSandboxRuntimeIdentity(options.runtimeIdentity);
     this.#trustedWorkspaceDirectory = resolve(options.trustedWorkspaceDirectory);
@@ -486,6 +492,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       const hasDelegationTool = trustedTools.some((tool) => tool.name === "subagent");
       const hasSupervisorContact = trustedTools.some((tool) => tool.name === "contact_supervisor");
       const commonRunnerOptions = {
+        onActivity: (update: import("@pi-cloud/protocol").RunActivityUpdate | undefined) =>
+          this.#onActivity?.(command, update),
         resolveModelRuntime,
         openSession: this.#openAgentSession,
         modelRuntimePool: this.#modelRuntimePool,

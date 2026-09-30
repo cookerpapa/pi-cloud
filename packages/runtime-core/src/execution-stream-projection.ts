@@ -81,6 +81,10 @@ export class ExecutionStreamBoundary {
     }
   }
 
+  observes(runId: string, writerId: string): boolean {
+    return this.#open.has(runId) && !this.#closed.has(runId) && !this.#writers.has(writerId);
+  }
+
   close(runId: string, offset: bigint): void {
     this.#open.delete(runId);
     const previous = this.#closed.get(runId);
@@ -170,8 +174,13 @@ export class ExecutionStreamProjector {
     return this.#boundary.isOpen(record, false);
   }
 
+  observes(record: KafkaAcceptedFactRecord): boolean {
+    return this.#boundary.observes(record.fact.scope.runId, record.fact.scope.writerId);
+  }
+
   async project(record: KafkaAcceptedFactRecord): Promise<ExecutionProjectionResult | undefined> {
     const { fact } = record;
+    if (fact.kind === "path_probe") return;
     if (!(await this.#boundary.isOpen(record, true))) {
       if (fact.kind === "execution_seal") {
         const prefix = this.#prefixes.get(fact.scope.runId);

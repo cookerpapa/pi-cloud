@@ -10,6 +10,7 @@ import {
 import {
   MAX_EXECUTION_FACT_BYTES,
   parsePiCloudEvent,
+  parsePathProbe,
   validateImageReferencePayload,
 } from "@pi-cloud/protocol";
 import type { AcceptedFact, AcceptedFactBus, AcceptedFactReceipt } from "./accepted-fact.ts";
@@ -89,6 +90,7 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
   if (parsed.kind === "agent_event") {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
+  if (parsed.kind === "path_probe") return parsePathProbe(parsed);
   if (
     parsed.kind === "execution_seal" ||
     parsed.kind === "tool_command" ||

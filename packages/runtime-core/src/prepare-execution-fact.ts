@@ -5,6 +5,15 @@ export function prepareExecutionFact(
   scope: ExecutionPublication["scope"] & { executionReference: string },
   candidate: CandidateFact,
 ): AcceptedFact {
+  if (candidate.kind === "path_probe") {
+    const {
+      leaseId: _lease,
+      piSessionLane: _lane,
+      executionReference: _reference,
+      ...identity
+    } = scope;
+    return { ...candidate, scope: identity };
+  }
   if (candidate.kind === "subagent_command") {
     const command = candidate.command;
     if (command.executionReference !== scope.executionReference)

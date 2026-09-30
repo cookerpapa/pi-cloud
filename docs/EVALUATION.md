@@ -112,6 +112,14 @@ It uses Luna, Cube and Chrome to check noisy/silent commands, reload, cancellati
 and subsequent coding. Adding `PI_CLOUD_TOOL_PROGRESS_RESTART_CHECK=1` permits
 SIGKILL/start of the local Control Plane only after excluding unrelated active Runs.
 
+For [ADR-0201](adr/0201-runtime-activity-and-path-probes.md), run
+`PI_CLOUD_LIVE_RUNTIME_STATUS_CHECK=1 node --import tsx scripts/run-live-runtime-status-check.mjs /tmp/runtime-status-live.json`.
+It uses real GPT-6 Luna, Cube and Chrome, verifies quiet-Tool path probes without
+native log growth, pauses/replaces Control Plane while PG renewals continue,
+checks cancellation and Worker replacement, and verifies the uncertain command
+is not replayed. Process faults require that only this check's Run is active;
+cleanup restores stopped services and revokes the disposable tenant credential.
+
 For ADR-0197 storage acceptance, run
 `PI_CLOUD_LIVE_INDEXED_LOG_CHECK=1 node --import tsx scripts/run-live-indexed-log-check.mjs /tmp/indexed-log-live.json`.
 It uses real GPT-6 Luna/Cube Tools and a Child Lane, creates a human Fork, then

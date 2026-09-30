@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { MAX_EXECUTION_FACT_BYTES } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
@@ -10,6 +10,11 @@ import { parseKafkaAcceptedFact } from "../src/kafka-accepted-fact.ts";
 import { toolCommandForFact } from "../src/tool-invocation-fact.ts";
 import { ExecutionPublicationBoundary } from "../src/execution-publication.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
+
+const logs: DirectExecutionLog[] = [];
+afterEach(async () => {
+  await Promise.all(logs.splice(0).map((log) => log.close()));
+});
 
 it("keeps large arguments at the existing checkpoint size and reconstructs the exact command", () => {
   const { fact, command } = toolInvocationFixture("x".repeat(360_000));
@@ -101,6 +106,7 @@ async function publisherFixture() {
     append,
     checkHealth: async () => {},
   });
+  logs.push(log);
   const writer = await log.open({
     executionReference: f.executionReference,
     sessionId: f.scope.sessionId,

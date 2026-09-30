@@ -8,6 +8,7 @@ import { compactToolSummary, ToolActivity, type ToolTranscriptItem } from "./Too
 import { useI18n } from "./i18n.tsx";
 import { MessageCopyButton } from "./MessageCopyButton.tsx";
 import { ToolProgressContext, type ToolProgressStore } from "./tool-progress.tsx";
+import { RunStatus, type RunObservationStore } from "./RunStatus.tsx";
 
 const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 32;
 const PROGRESSIVE_BOUNDARY_LOOKAHEAD = 4;
@@ -373,6 +374,8 @@ export function ConversationTurn({
   api,
   turn,
   progressStore,
+  observationStore,
+  connected = true,
   canFork = false,
   onFork,
   canPrune = false,
@@ -382,6 +385,8 @@ export function ConversationTurn({
   api?: PiCloudApi;
   turn: TurnView;
   progressStore?: ToolProgressStore;
+  observationStore?: RunObservationStore;
+  connected?: boolean;
   canFork?: boolean;
   onFork?: () => void;
   canPrune?: boolean;
@@ -427,35 +432,29 @@ export function ConversationTurn({
         </div>
         <div className="product-message product-assistant-message">
           <div className="product-assistant-content">
-            {rows.length === 0 && working ? (
-              <div className="product-thinking">
-                <i />
-                <i />
-                <i />
-                <span>{t("turn.thinking")}</span>
-              </div>
-            ) : (
-              rows.map((row) => {
-                if (row.kind === "text") {
-                  return (
-                    <AssistantTextItem
-                      item={row.item}
-                      key={row.key}
-                      onPresentationProgress={onPresentationProgress}
-                      processNarration={row.processNarration}
-                      streaming={working}
-                    />
-                  );
-                }
-                if (row.kind === "activity") {
-                  return <ToolActivityGroup items={row.items} key={row.key} />;
-                }
-                if (row.kind === "hosted_search") {
-                  return <HostedSearchGroup items={row.items} key={row.key} />;
-                }
-                return <OtherItem item={row.item} key={row.key} />;
-              })
-            )}
+            {rows.map((row) => {
+              if (row.kind === "text") {
+                return (
+                  <AssistantTextItem
+                    item={row.item}
+                    key={row.key}
+                    onPresentationProgress={onPresentationProgress}
+                    processNarration={row.processNarration}
+                    streaming={working}
+                  />
+                );
+              }
+              if (row.kind === "activity") {
+                return <ToolActivityGroup items={row.items} key={row.key} />;
+              }
+              if (row.kind === "hosted_search") {
+                return <HostedSearchGroup items={row.items} key={row.key} />;
+              }
+              return <OtherItem item={row.item} key={row.key} />;
+            })}
+            {working ? (
+              <RunStatus turn={turn} store={observationStore} connected={connected} />
+            ) : null}
             {turn.failure ? (
               <div className="product-turn-error">
                 <strong>{t("turn.runFailed")}</strong>

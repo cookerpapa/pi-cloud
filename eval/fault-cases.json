@@ -3,6 +3,48 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "lease-sweep-independent-of-retirement",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-runtime.test.ts",
+      "test": "keeps sweeping while remote retirement stalls and drains both loops without overlap",
+      "invariant": "A stalled remote stop cannot stall lease scanning; drain prevents another cleanup claim."
+    },
+    {
+      "id": "lease-sweep-pg-time",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/expired-run-lease.test.ts",
+      "test": "retires an expired Run on a healthy Worker without stopping its other Session",
+      "invariant": "Both initial expiry selection and final retirement use PG time, independent of API clock skew."
+    },
+    {
+      "id": "path-probe-stalled-ack",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/path-probe.test.ts",
+      "test": "bounds stalled probes and a lost probe ACK does not poison later semantic writes",
+      "invariant": "At most one probe is outstanding per physical Session; a probe has no semantic commit to recover."
+    },
+    {
+      "id": "path-probe-stale-replay",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/run-observations.test.ts",
+      "test": "shares Session path evidence across Lanes while rejecting replay, stale and future probes",
+      "invariant": "A replay or stale probe cannot refresh liveness or create an active execution scope."
+    },
+    {
+      "id": "activity-writer-seal",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/run-observations.test.ts",
+      "test": "authenticates observations against projected scopes and closes all Lanes on writer seal",
+      "invariant": "Tenant, partition and owner checks fence phase observations; a writer seal closes all sibling observations."
+    },
+    {
+      "id": "activity-terminal-sse",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-event-stream.test.ts",
+      "test": "delivers activity after the snapshot without advancing sequence and suppresses post-terminal observations",
+      "invariant": "Transient activity cannot alter transcript sequence or reopen a terminal turn."
+    },
+    {
       "id": "upload-expiry-late-completion",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/workspace-uploads.postgres.test.ts",

@@ -35,6 +35,7 @@ const fixture = `
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { ConversationTurn } from "/src/ConversationTurn.tsx";
+import { RunObservationStore } from "/src/RunStatus.tsx";
 import { useResizablePanel } from "/src/use-resizable-panel.ts";
 import ChatApp from "/src/ChatApp.tsx";
 import { AdminPage } from "/src/AdminPage.tsx";
@@ -69,8 +70,9 @@ const root = createRoot(document.getElementById("root"));
 const configuration={productUrl:location.origin,adminUrl:location.origin,
   managementUrls:{providerGateway:'https://models.example.test/management.html',grafana:'',prometheus:'',alertmanager:'',jaeger:''}};
 window.renderPanel = () => root.render(React.createElement(React.StrictMode, null, React.createElement(Panel)));
+window.runObservations = new RunObservationStore();
 window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReason = null, phase) => root.render(
-  React.createElement(React.StrictMode, null, React.createElement(ConversationTurn, {turn:{
+  React.createElement(React.StrictMode, null, React.createElement(ConversationTurn, {observationStore:runObservations,turn:{
     runId:"run",turnId:"turn",mailboxPosition:null,prompt:"Question",acceptedAt:null,
     status,startedSequence:1,terminalSequence:null,stopReason,failure:null,cancellation:null,
     items:[{kind:"text",key:"text:"+(phase??'1'),text,firstSequence:1,lastSequence:2,recoveredTextLength,...(phase?{phase}:{})}]
@@ -346,6 +348,25 @@ try {
     );
     // No advanceFrame(): a whole commentary must be immediately visible.
     assert.equal(await page.evaluate("document.querySelector('.product-agent-answer')"), null);
+    // Working survives already-rendered commentary and silent model intervals.
+    await page.waitFor("document.querySelector('.product-run-status')");
+    await page.evaluate(
+      `runObservations.receive({type:'run.activity',sessionId:'s',turnId:'turn',runId:'run',revision:1,phase:'waiting_model',observedAt:Date.now(),lastActivityAt:Date.now()-20000});runObservations.receive({type:'run.path',sessionId:'s',turnId:'turn',runId:'run',sentAt:Date.now(),observedAt:Date.now()})`,
+    );
+    await page.waitFor(
+      "document.querySelector('.product-run-status').dataset.runPhase==='waiting_model'",
+    );
+    assert.match(
+      await page.evaluate("document.querySelector('.product-run-status').textContent"),
+      /最近活动 (?:19|20|21) 秒前/u,
+    );
+    await page.evaluate(
+      "runObservations.receive({type:'run.path',sessionId:'s',turnId:'turn',runId:'run',sentAt:Date.now()+1,observedAt:Date.now()+1})",
+    );
+    assert.match(
+      await page.evaluate("document.querySelector('.product-run-status').textContent"),
+      /最近活动 (?:19|20|21) 秒前/u,
+    );
     await page.evaluate(`renderTurn(${JSON.stringify(target)})`);
     await page.waitFor('document.querySelector(".product-agent-answer")');
     assert.equal(
@@ -379,6 +400,7 @@ try {
       `renderTurn(${JSON.stringify(settledText)},${settledText.length},'completed')`,
     );
     await page.waitFor("document.querySelector('.product-answer-actions')");
+    assert.equal(await page.evaluate("document.querySelector('.product-run-status')"), null);
     assert.equal(
       await page.evaluate("document.querySelector('.product-agent-answer p')===stableParagraph"),
       true,
@@ -921,6 +943,8 @@ try {
   console.log(
     JSON.stringify({
       accepted: true,
+      persistentRuntimeStatus: true,
+      separateActivityAndPath: true,
       firstImageOnlyMessage: true,
       uploadIdentityOnRetry: true,
       debuggerDisconnect: true,

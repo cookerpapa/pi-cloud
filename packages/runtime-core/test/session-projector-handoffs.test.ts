@@ -8,6 +8,7 @@ const f = vi.hoisted(() => ({
   accept: vi.fn(),
   project: vi.fn(),
   applies: vi.fn(),
+  observes: vi.fn(),
   parse: vi.fn(),
   start: vi.fn<(resource: string, partitions?: number) => void>(),
   close: vi.fn<(resource: string) => Promise<void>>(),
@@ -53,6 +54,7 @@ vi.mock("../src/execution-stream-projection.ts", async (original) => ({
   ExecutionStreamProjector: class {
     project = f.project;
     accepts = f.applies;
+    observes = f.observes;
   },
 }));
 vi.mock("../src/accepted-fact-terminal-outbox-relay.ts", () => ({
@@ -89,6 +91,7 @@ beforeEach(() => {
   f.accept.mockReset().mockResolvedValue(true);
   f.project.mockReset().mockResolvedValue(undefined);
   f.applies.mockReset().mockResolvedValue(true);
+  f.observes.mockReset().mockReturnValue(false);
   f.parse.mockReset().mockImplementation(JSON.parse);
   route = vi.fn(async () => {});
   projector = new SessionProjector({
@@ -140,6 +143,43 @@ function deferred<T>() {
 }
 
 describe("Unified Projector handoff boundaries (transport/PG simulated)", () => {
+  it("handles probes on the same consumer without native projection, dispatch or public sequence", async () => {
+    const { fact } = toolInvocationFixture();
+    const original = { fact, topic: "test", partition: 0, offset: 12n };
+    f.observes.mockReturnValue(true);
+    await f.handler!(
+      original,
+      () => true,
+      async () => true,
+    );
+    f.project.mockClear();
+    route.mockClear();
+    const display = vi.spyOn(projector.eventHub, "publish"),
+      observe = vi.spyOn(projector.eventHub, "publishObservation"),
+      commit = vi.fn();
+    const probe = {
+      ...original,
+      offset: 13n,
+      fact: {
+        kind: "path_probe",
+        factId: "probe",
+        scope: fact.scope,
+        occurredAt: new Date().toISOString(),
+      },
+    };
+    await f.handler!(probe, () => true, commit);
+    expect(f.accept).toHaveBeenLastCalledWith(probe);
+    expect(f.project).not.toHaveBeenCalled();
+    expect(route).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+    expect(display).not.toHaveBeenCalled();
+    expect(observe).toHaveBeenCalledOnce();
+    await f.handler!(probe, () => true, commit);
+    expect(observe).toHaveBeenCalledOnce();
+    f.observes.mockReturnValue(false);
+    await f.handler!({ ...probe, offset: 14n }, () => true, commit);
+    expect(observe).toHaveBeenCalledOnce();
+  });
   it("projects a combined invocation before dispatch commit and never reissues it on history replay", async () => {
     const { fact } = toolInvocationFixture();
     const r = { fact, topic: "test", partition: 0, offset: 12n };

@@ -103,9 +103,8 @@ export type SupervisorRetirementWorkResult =
       errorCode: string;
     };
 
-export type SupervisorMaintenanceCycleResult = {
+export type SupervisorExpirySweepResult = {
   connections: SupervisorConnectionSweepResult;
-  retirements: readonly Exclude<SupervisorRetirementWorkResult, { kind: "idle" }>[];
   expiredAssignments: number;
 };
 
@@ -805,25 +804,19 @@ export class SupervisorConnectionManager {
     }
   }
 
-  async runMaintenanceCycle(
+  async sweepExpiredExecutions(
     options: {
       connectionLimit?: number;
-      retirementLimit?: number;
+      leaseLimit?: number;
     } = {},
-  ): Promise<SupervisorMaintenanceCycleResult> {
-    const retirementLimit = positiveInteger(
-      options.retirementLimit ?? DEFAULT_RETIREMENT_LIMIT,
-      "retirementLimit",
+  ): Promise<SupervisorExpirySweepResult> {
+    const leaseLimit = positiveInteger(
+      options.leaseLimit ?? DEFAULT_RETIREMENT_LIMIT,
+      "leaseLimit",
     );
     const connections = await this.expireConnections(
       options.connectionLimit ?? DEFAULT_SWEEP_LIMIT,
     );
-    const retirements: Exclude<SupervisorRetirementWorkResult, { kind: "idle" }>[] = [];
-    for (let index = 0; index < retirementLimit; index += 1) {
-      const result = await this.processNextRetirement();
-      if (result.kind === "idle") break;
-      retirements.push(result);
-    }
     const expired = await this.#database
       .selectFrom("session_leases as lease")
       .innerJoin("sandboxes as worker", "worker.id", "lease.sandbox_id")
@@ -833,20 +826,22 @@ export class SupervisorConnectionManager {
         "worker.boot_id as bootId",
       ])
       .select((eb) => eb.fn.min<Date>("lease.valid_until").as("oldest"))
-      .where("lease.valid_until", "<=", validDate(this.#clock))
+      // One database-time cutoff per sweep; the scalar InitPlan also permits
+      // an indexed range condition instead of a per-row volatile comparison.
+      .where("lease.valid_until", "<=", sql<Date>`(select clock_timestamp())`)
       .where("worker.state", "=", "ready")
       .where("lease.released_at", "is", null)
       .groupBy(["worker.id", "worker.supervisor_id", "worker.boot_id"])
       .orderBy("oldest")
-      .limit(retirementLimit)
+      .limit(leaseLimit)
       .execute();
     let expiredAssignments = 0;
     for (const worker of expired) {
       const result =
-        await this.#assignmentRetirerFactory(worker).retireExpiredAssignments(retirementLimit);
+        await this.#assignmentRetirerFactory(worker).retireExpiredAssignments(leaseLimit);
       expiredAssignments += result.settledAssignments;
     }
-    return { connections, retirements, expiredAssignments };
+    return { connections, expiredAssignments };
   }
 
   #parseRegistration(value: unknown): SupervisorRegisterMessage {

@@ -28,6 +28,57 @@ function response() {
 }
 
 describe("Session snapshot and live stream", () => {
+  it("delivers activity after the snapshot without advancing sequence and suppresses post-terminal observations", async () => {
+    vi.useFakeTimers();
+    const hub = new SessionEventHub();
+    const stream = new SessionEventStream(
+      { snapshot: () => ({ canonicalThroughSequence: 0, highWaterMark: 0, events: [] }) },
+      hub,
+    );
+    const opened = await stream.open({
+      tenantId: "t",
+      sessionId: "s",
+      loadCanonical: async () => ({
+        conversation: {
+          turns: [{ turnId: "turn", runId: "run", state: "running" }],
+        } as unknown as ConversationDetailResource,
+        canonicalThroughSequence: 0,
+      }),
+    });
+    const output = response(),
+      running = opened.pipe(output as unknown as ServerResponse);
+    await vi.advanceTimersByTimeAsync(0);
+    const activity = {
+      type: "run.activity" as const,
+      sessionId: "s",
+      turnId: "turn",
+      runId: "run",
+      phase: "waiting_model" as const,
+      revision: 1,
+      observedAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+    hub.publishObservation("t", activity);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(output.frames.filter((f) => f.startsWith("event: run.activity"))).toHaveLength(1);
+    hub.publish("t", {
+      schemaVersion: 1,
+      eventId: "e",
+      sessionId: "s",
+      turnId: "turn",
+      agentId: "root",
+      seq: 1,
+      occurredAt: new Date().toISOString(),
+      type: "turn.cancelled",
+      payload: { reason: "user_request", forced: false },
+    });
+    hub.publishObservation("t", { ...activity, revision: 2 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(output.frames.join("")).toContain("turn.cancelled");
+    expect(output.frames.filter((f) => f.startsWith("event: run.activity"))).toHaveLength(1);
+    output.close();
+    await running;
+  });
   it("finishes each idle read at its heartbeat boundary instead of retaining wait reactions", async () => {
     vi.useFakeTimers();
     const subscription = new SessionEventSubscription("t", "s", () => {});

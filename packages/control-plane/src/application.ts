@@ -18,6 +18,7 @@ import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import type { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import type { SourceControlService } from "./source-control-service.ts";
 import type { ToolProgressIngress } from "./tool-progress-ingress.ts";
+import type { RunActivityIngress } from "./run-activity-ingress.ts";
 import type { WorkspaceUploader } from "./workspace-upload-service.ts";
 import type { ImageAttachmentStore } from "@pi-cloud/session-attachments";
 import { MAX_USER_UPLOAD_BYTES } from "@pi-cloud/protocol";
@@ -48,6 +49,7 @@ export type ControlPlaneApplicationOptions = Omit<
   sshAccessTicketService?: SshAccessTicketService;
   sourceControlService?: SourceControlService;
   toolProgressIngress?: ToolProgressIngress;
+  runActivityIngress?: RunActivityIngress;
 };
 
 export async function createControlPlaneApplication(
@@ -92,6 +94,7 @@ export async function createControlPlaneApplication(
   });
   options.productionHttpGateway?.install(adapter.getInstance());
   options.toolProgressIngress?.install(adapter.getInstance());
+  options.runActivityIngress?.install(adapter.getInstance());
   options.supervisorProvisioningGateway?.install(adapter.getInstance());
   options.supervisorWebSocketGateway?.install(adapter.getInstance());
   options.workspaceTerminalGateway?.install(adapter.getInstance());

@@ -98,6 +98,7 @@ export type StreamSessionEventsOptions = {
   onSnapshot(snapshot: SessionViewSnapshotResource): void;
   onEvent(event: PiCloudEvent): void;
   onToolProgress?(progress: ToolProgress): void;
+  onRunObservation?(observation: RunObservation): void;
   onStatus(status: SessionStreamStatus): void;
   fetchImplementation?: FetchImplementation;
   retryDelayMs?: number;
@@ -198,6 +199,13 @@ async function consumeResponse(
         options.onToolProgress?.(progress);
         continue;
       }
+      if (frame.event === "run.activity" || frame.event === "run.path") {
+        const observation = parseRunObservation(value);
+        if (observation.sessionId !== options.sessionId || observation.type !== frame.event)
+          throw new SessionStreamError("Run observation identity is invalid", false);
+        options.onRunObservation?.(observation);
+        continue;
+      }
       const event = parsePiCloudEvent(value);
       if (event.sessionId !== options.sessionId || (!framed && frame.event !== event.type)) {
         throw new SessionStreamError("SSE event identity is invalid", false);
@@ -279,3 +287,4 @@ export async function streamSessionEvents(options: StreamSessionEventsOptions): 
   }
 }
 import { parseToolProgress, type ToolProgress } from "@pi-cloud/protocol";
+import { parseRunObservation, type RunObservation } from "@pi-cloud/protocol";

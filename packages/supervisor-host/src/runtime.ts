@@ -2,7 +2,10 @@ import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
 import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 import { DirectExecutionLog } from "@pi-cloud/runtime-core/direct-execution-log";
-import { KafkaAcceptedFactBus } from "@pi-cloud/runtime-core/kafka-accepted-fact";
+import {
+  KafkaAcceptedFactBus,
+  kafkaProducerLane,
+} from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { KafkaToolReplyMailbox } from "@pi-cloud/event-log";
 import { NativeSessionLogPublisher } from "@pi-cloud/runtime-core/native-session-log-publisher";
 import {
@@ -46,6 +49,8 @@ import {
 import { SupervisorProvisioningClient } from "./provisioning-client.ts";
 import { resolveWorkspaceSeed } from "./workspace-seed.ts";
 import { findRetiredRuns } from "./retired-runs.ts";
+import { RunActivityPublisher } from "./run-activity-publisher.ts";
+import { parseExecutionReference } from "@pi-cloud/protocol";
 
 export type PiWorkerRuntimeState =
   "idle" | "starting" | "ready" | "draining" | "stopped" | "failed";
@@ -153,6 +158,7 @@ export class PiWorkerRuntime {
   #managementServer: SupervisorManagementServer | undefined;
   #modelGateway: TenantModelGateway | undefined;
   #modelPermits: FamilyModelPermits | undefined;
+  #activity: RunActivityPublisher | undefined;
   #runWorker: SupervisorRunWorker | undefined;
   #runClaimReadiness: RunClaimReadinessMonitor | undefined;
   #closing: Promise<void> | undefined;
@@ -506,7 +512,32 @@ export class PiWorkerRuntime {
       },
     });
     this.#modelPermits = modelPermits;
+    const activity = new RunActivityPublisher(
+      this.#config.controlPlaneBaseUrl,
+      this.#config.managementToken,
+    );
+    this.#activity = activity;
     const runner = new RemoteToolSandboxTurnRunner({
+      onActivity: (command, update) => {
+        const p = command.payload;
+        if (!update) {
+          activity.forget(p.runId);
+          return;
+        }
+        activity.update(
+          {
+            tenantId: p.tenantId,
+            sessionId: p.sessionId,
+            turnId: p.turnId,
+            runId: p.runId,
+            piSessionId: p.piSession.id,
+            writerId: p.piSession.writerId,
+            fencingToken: parseExecutionReference(p.executionReference).fencingToken,
+          },
+          kafkaProducerLane(p.piSession.id, this.#config.kafka.partitions),
+          update,
+        );
+      },
       decodeInputImages: (references, scope, signal) =>
         decodeSessionImages(
           images?.codec,
@@ -743,6 +774,7 @@ export class PiWorkerRuntime {
       () => this.#runWorker?.stop(),
       () => this.#runSupervisor?.waitUntilAssignmentsSettled(),
       () => this.#modelPermits?.close(),
+      () => this.#activity?.close(),
       () => this.#nativeSessions?.close(),
       () => this.#toolReplies?.shutdown(),
       () => this.#images?.blobs.close(),

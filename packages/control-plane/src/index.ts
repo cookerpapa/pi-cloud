@@ -160,7 +160,7 @@ export {
   type SupervisorBootIdentity,
   type SupervisorConnectionManagerOptions,
   type SupervisorConnectionSweepResult,
-  type SupervisorMaintenanceCycleResult,
+  type SupervisorExpirySweepResult,
   type SupervisorOwnerBoundary,
   type SupervisorRetirementWorkResult,
   type SupervisorTransportAuthority,

@@ -191,6 +191,13 @@ overwrite newer renewal evidence, late renewals cannot revive a revoked observer
 and closing one Lane retains observation for its siblings. Expired cold-restore
 observations refresh from PG before rejection. Broker fencing remains independent.
 
+Control Plane expiry sweeps and remote Worker retirement run in independent,
+non-overlapping loops. Retirement uses one concurrent claim and the existing
+bounded management requests/retries; slow remote cleanup cannot delay the next
+lease sweep. The initial expiry query takes one PG-time cutoff, and final
+decisions still recheck authority after locks. The one-second interval is a
+delay between completed scans, not a one-second failure-detection guarantee.
+
 ## Direct execution log
 
 During atomic execution admission the PG authority freezes publication scope against the exact
@@ -334,6 +341,28 @@ thinking fragments are not public streams. Temporary Tool output snapshots use
 a separate unsequenced SSE event, described below. One durable,
 argument-free preparation event marks a long Tool-call generation interval, then
 the complete Tool start/result replaces it.
+
+Every active browser turn also has a persistent runtime status. The trusted
+Runner maps native lifecycle/stream events into PiCloud phases and last-activity
+time. Worker sends bounded, coalesced HTTP observations to the existing Projector
+partition owner; its cached admitted scope checks tenant, Run, writer and fence.
+The existing Worker management credential protects this private ingress.
+`run.activity` and `run.path` are unsequenced, disposable SSE frames. Slow readers
+retain only the latest values; reconnect starts without old observation history.
+Only active turns may display them, and terminal state wins over late frames.
+
+Ordinary successfully processed execution records provide path evidence. After
+publication silence, one physical Session emits at most one `path_probe` every
+15 seconds through its existing direct writer and Kafka partition. There is at
+most one outstanding probe per family, and an acknowledged ordinary record must
+precede it. The probe is the explicit observation-transport exception: it enters
+Kafka to measure that path, but never native Pi history, PG projection, display
+sequence, model context or Tool routing. It neither renews leases nor changes
+recovery authority. Original timestamps and monotonic positions prevent replay
+from appearing fresh; evidence older than 45 seconds is stale. A probe ACK failure
+does not create an uncertain semantic mutation; shared producer failures retain
+the existing fail-closed behavior. Phase, actual model/Tool activity and path
+confirmation are separate UI signals. See [ADR-0201](adr/0201-runtime-activity-and-path-probes.md).
 
 ## Native Pi state and Harness
 

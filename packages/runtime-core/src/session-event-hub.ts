@@ -1,9 +1,10 @@
-import type { PiCloudEvent, ToolProgress } from "@pi-cloud/protocol";
+import type { PiCloudEvent, ToolProgress, RunObservation } from "@pi-cloud/protocol";
 
 export type SessionEventWake = {
   throughSequence: number | null;
   event?: PiCloudEvent;
   progress?: ToolProgress;
+  observation?: RunObservation;
 };
 
 type PendingRead = {
@@ -18,6 +19,7 @@ export class SessionEventSubscription {
   #pendingRead: PendingRead | undefined;
   #closed = false;
   readonly #progress = new Map<string, ToolProgress>();
+  readonly #observations = new Map<string, RunObservation>();
 
   constructor(
     tenantId: string,
@@ -65,9 +67,24 @@ export class SessionEventSubscription {
     }
   }
 
+  notifyObservation(observation: RunObservation): void {
+    if (this.#closed || this.#queuedWakes.some((wake) => wake.throughSequence === null)) return;
+    if (this.#pendingRead) {
+      const pending = this.#pendingRead;
+      this.#pendingRead = undefined;
+      pending.resolve({ throughSequence: null, observation });
+      return;
+    }
+    const key = `${observation.turnId}\0${observation.type}`;
+    if (this.#observations.size >= 64 && !this.#observations.has(key))
+      this.#observations.delete(this.#observations.keys().next().value!);
+    this.#observations.set(key, observation);
+  }
+
   resync(): void {
     if (this.#closed) return;
     this.#progress.clear();
+    this.#observations.clear();
     this.#push({ throughSequence: null });
   }
 
@@ -95,6 +112,11 @@ export class SessionEventSubscription {
   next(heartbeatMs?: number): Promise<SessionEventWake | "heartbeat" | undefined> {
     const wake = this.#queuedWakes.shift();
     if (wake !== undefined) return Promise.resolve(wake);
+    const observation = this.#observations.entries().next().value;
+    if (observation) {
+      this.#observations.delete(observation[0]);
+      return Promise.resolve({ throughSequence: null, observation: observation[1] });
+    }
     const progress = this.#progress.values().next().value;
     if (progress) {
       this.#progress.delete(progress.operationId);
@@ -128,6 +150,7 @@ export class SessionEventSubscription {
     this.#closed = true;
     this.#queuedWakes = [];
     this.#progress.clear();
+    this.#observations.clear();
     const pending = this.#pendingRead;
     this.#pendingRead = undefined;
     pending?.resolve(undefined);
@@ -162,6 +185,13 @@ export class SessionEventHub {
     for (const subscription of this.#subscriptions.get(this.#key(tenantId, progress.sessionId)) ??
       [])
       subscription.notifyProgress(progress);
+  }
+
+  publishObservation(tenantId: string, observation: RunObservation): void {
+    for (const subscription of this.#subscriptions.get(
+      this.#key(tenantId, observation.sessionId),
+    ) ?? [])
+      subscription.notifyObservation(observation);
   }
 
   resyncAll(): void {

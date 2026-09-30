@@ -1,0 +1,55 @@
+import { expect, it, vi } from "vitest";
+import Fastify from "fastify";
+import { RUN_ACTIVITY_PATH } from "@pi-cloud/protocol";
+import { RunActivityIngress } from "../src/run-activity-ingress.ts";
+
+it("requires Worker management authority, validates bounded payloads and follows partition ownership", async () => {
+  const server = Fastify(),
+    owner = vi.fn(async (_p: number): Promise<string | undefined> => undefined),
+    publish = vi.fn();
+  new RunActivityIngress("worker-token", owner, publish).install(server);
+  const payload = {
+    scope: {
+      tenantId: "t",
+      sessionId: "s",
+      turnId: "turn",
+      runId: "run",
+      writerId: "writer",
+      piSessionId: "physical",
+      fencingToken: 1,
+    },
+    partition: 2,
+    phase: "waiting_model",
+    revision: 1,
+    observedAt: Date.now(),
+    lastActivityAt: Date.now() - 1000,
+  };
+  const request = {
+    method: "POST" as const,
+    url: RUN_ACTIVITY_PATH,
+    payload,
+    headers: { authorization: "Bearer worker-token" },
+  };
+  try {
+    expect((await server.inject({ ...request, headers: {} })).statusCode).toBe(401);
+    expect(owner).not.toHaveBeenCalled();
+    expect(
+      (await server.inject({ ...request, payload: { ...payload, reasoning: "PRIVATE" } }))
+        .statusCode,
+    ).toBe(400);
+    expect(
+      (await server.inject({ ...request, payload: { ...payload, phase: "invented" } })).statusCode,
+    ).toBe(400);
+    expect((await server.inject(request)).statusCode).toBe(204);
+    expect(publish).toHaveBeenCalledExactlyOnceWith(payload);
+    owner.mockResolvedValueOnce("http://other:3000");
+    const redirect = await server.inject(request);
+    expect(redirect.statusCode).toBe(307);
+    expect(redirect.headers.location).toBe(`http://other:3000${RUN_ACTIVITY_PATH}`);
+    owner.mockRejectedValueOnce(new Error("Owner changed"));
+    expect((await server.inject(request)).statusCode).toBe(503);
+    expect(publish).toHaveBeenCalledOnce();
+  } finally {
+    await server.close();
+  }
+});

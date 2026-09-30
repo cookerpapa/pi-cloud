@@ -1,5 +1,30 @@
 # Monitoring and observability
 
+## Active-turn runtime status
+
+The browser's continuous status uses Runner lifecycle observations and shows
+last actual activity separately from last Worker → Kafka → Projector path
+confirmation. It remains visible after commentary and between Tool calls.
+Worker phase snapshots are lossy HTTP/SSE observations; dropped frames cannot
+affect execution. Actual Tool log updates also refresh browser activity.
+
+Ordinary execution records provide path evidence. Quiet active Sessions send
+one bounded Kafka `path_probe` at most every 15 seconds, shared across their
+Lanes. Path evidence expires after 45 seconds. Replayed timestamps cannot refresh
+it, and timestamps over five seconds in the future are rejected. This diagnostic
+assumes synchronized Worker/Control Plane clocks; lease authority uses PG time.
+SSE keepalives establish browser connectivity only. A confirmed runtime path does
+not prove that a provider or guest is making progress, and missing observations
+do not revoke a lease or authorize automatic Tool replay.
+
+`run.activity` and `run.path` frames are separate from transcript sequence and
+are not included in exports or model context. Projector/stream resets discard
+them, so reconnect can briefly show unknown freshness. No per-Run Prometheus
+labels or durable health table is introduced. See
+[ADR-0201](adr/0201-runtime-activity-and-path-probes.md) for bounds and deployment.
+
+## Monitoring stack
+
 PiCloud uses a deliberately small optional stack:
 
 ```text

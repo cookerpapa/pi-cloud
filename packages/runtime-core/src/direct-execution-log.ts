@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
-import { parseSupervisorToControlMessage } from "@pi-cloud/protocol";
+import { parseSupervisorToControlMessage, RUN_PATH_PROBE_INTERVAL_MS } from "@pi-cloud/protocol";
 import type {
   ActiveExecutionLogResolver,
   AcceptedFactBus,
@@ -21,13 +21,42 @@ import type { AcceptedFact } from "./accepted-fact.ts";
 /** Worker-owned producer port. No remote data gateway or second lease renewer. */
 export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionLogResolver {
   readonly #writers = new Map<string, ExecutionLogWriter>();
+  readonly #families = new Map<
+    string,
+    {
+      touched: number;
+      pending: boolean;
+      writers: Map<string, { ready(): boolean; send(): Promise<void> }>;
+    }
+  >();
+  readonly #probeTimer: NodeJS.Timeout;
   #queuedBytes = 0;
   #queuedFacts = 0;
   constructor(
     readonly database: Kysely<Database>,
     readonly bus: AcceptedFactBus & { close?(): Promise<void> },
     readonly capacity: ProducerCapacity = DEFAULT_PRODUCER_CAPACITY,
-  ) {}
+    readonly probeIntervalMs = RUN_PATH_PROBE_INTERVAL_MS,
+  ) {
+    if (!Number.isSafeInteger(probeIntervalMs) || probeIntervalMs < 1)
+      throw new TypeError("Invalid path probe interval");
+    this.#probeTimer = setInterval(() => {
+      for (const family of this.#families.values()) {
+        if (family.pending || performance.now() - family.touched < this.probeIntervalMs) continue;
+        const writer = [...family.writers.values()].find((writer) => writer.ready());
+        if (!writer) continue;
+        family.pending = true;
+        family.touched = performance.now();
+        void writer
+          .send()
+          .catch(() => undefined)
+          .finally(() => {
+            family.pending = false;
+          });
+      }
+    }, probeIntervalMs);
+    this.#probeTimer.unref();
+  }
   resolve(lease: string) {
     return this.#writers.get(lease);
   }
@@ -38,11 +67,23 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     if (this.#writers.has(request.executionReference))
       throw new Error("Execution writer already open");
     const permit = request.publication;
+    let family = this.#families.get(permit.scope.writerId);
+    if (!family)
+      this.#families.set(
+        permit.scope.writerId,
+        (family = {
+          touched: performance.now(),
+          pending: false,
+          writers: new Map(),
+        }),
+      );
+    const activeFamily = family;
     // Local writer construction only. The first real append establishes the
     // Projector's recovery floor; there is no standalone opening handshake.
     let closing = false,
       failure: unknown,
       tail = Promise.resolve(),
+      published = false,
       acknowledgedThroughSeq = request.nextEventSeq - 1;
     const publish = (candidate: CandidateFact): Promise<void> => {
       if (failure) return Promise.reject(failure);
@@ -70,20 +111,27 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       }
       this.#queuedBytes += bytes;
       this.#queuedFacts++;
+      activeFamily.touched = performance.now();
       const pending = tail
         .then(async () => {
+          if (fact.kind === "path_probe" && closing) return;
           if (failure) throw failure;
           const receipt = await this.bus.append(fact);
           if (!receipt.durable || receipt.factId !== fact.factId)
             throw new Error("Kafka acknowledgement did not match the appended record");
+          if (fact.kind !== "path_probe") published = true;
         })
         .finally(() => {
           this.#queuedBytes -= bytes;
           this.#queuedFacts--;
         });
-      tail = pending.catch((error) => {
-        if (!(error instanceof PublicationNotSentError)) failure = error;
-      });
+      // A probe follows the preceding publication tail, using the same ordered
+      // Kafka producer, but its receipt is not another semantic commit barrier.
+      // A lost probe ACK must not pin native writes or Run drain indefinitely.
+      if (fact.kind !== "path_probe")
+        tail = pending.catch((error) => {
+          if (!(error instanceof PublicationNotSentError)) failure = error;
+        });
       return pending;
     };
     const writer: ExecutionLogWriter = {
@@ -124,6 +172,8 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       },
       close: async () => {
         closing = true;
+        activeFamily.writers.delete(request.executionReference);
+        if (!activeFamily.writers.size) this.#families.delete(permit.scope.writerId);
         await tail;
         this.#writers.delete(request.executionReference);
         if (failure) throw failure;
@@ -136,9 +186,23 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       },
     };
     this.#writers.set(request.executionReference, writer);
+    activeFamily.writers.set(request.executionReference, {
+      ready: () => !closing && !failure && published,
+      send: async () => {
+        // Probes never establish a recovery floor or consume native/display sequence.
+        if (closing || failure || !published) return;
+        await publish({
+          kind: "path_probe",
+          factId: randomUUID(),
+          occurredAt: new Date().toISOString(),
+        });
+      },
+    });
     return writer;
   }
   async close() {
+    clearInterval(this.#probeTimer);
+    this.#families.clear();
     await Promise.allSettled([...this.#writers.values()].map((w) => w.close()));
     this.#writers.clear();
     await this.bus.close?.();

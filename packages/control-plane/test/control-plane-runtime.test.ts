@@ -204,7 +204,10 @@ describe.sequential("remote control-plane runtime composition", () => {
     let maximumActive = 0;
     const runtime = new SupervisorMaintenanceRuntime({
       maintenanceRunner: {
-        async runMaintenanceCycle() {
+        async processNextRetirement() {
+          return { kind: "idle" };
+        },
+        async sweepExpiredExecutions() {
           calls += 1;
           active += 1;
           maximumActive = Math.max(maximumActive, active);
@@ -219,7 +222,6 @@ describe.sequential("remote control-plane runtime composition", () => {
               expiredConnections: 0,
               expiredConnectionIds: [],
             },
-            retirements: [],
             expiredAssignments: 0,
           };
         },
@@ -251,11 +253,59 @@ describe.sequential("remote control-plane runtime composition", () => {
           expiredAssignments: 0,
           scannedConnections: 0,
           expiredConnections: 0,
-          retirements: 0,
         },
       ]),
     );
     expect(JSON.stringify(activities)).not.toContain(TOKEN);
+  });
+
+  it("keeps sweeping while remote retirement stalls and drains both loops without overlap", async () => {
+    const activities: SupervisorMaintenanceActivity[] = [];
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => (release = resolve));
+    let scans = 0;
+    let retirements = 0;
+    const runtime = new SupervisorMaintenanceRuntime({
+      maintenanceRunner: {
+        async sweepExpiredExecutions() {
+          scans++;
+          return {
+            connections: { scannedConnections: 0, expiredConnections: 0, expiredConnectionIds: [] },
+            expiredAssignments: 1,
+          };
+        },
+        async processNextRetirement() {
+          retirements++;
+          await blocked;
+          throw { code: "remote_stop_timeout", retryable: true, secret: TOKEN };
+        },
+      },
+      maintenanceIntervalMs: 5,
+      failurePollMs: 5,
+      onActivity: (activity) => activities.push(activity),
+    });
+    runtime.start();
+    try {
+      await waitFor(() => scans >= 4);
+      expect(retirements).toBe(1);
+      const stopped = runtime.stop();
+      expect(runtime.state).toBe("stopping");
+      const scansAtDrain = scans;
+      release();
+      await stopped;
+      expect(scans).toBe(scansAtDrain);
+      expect(runtime.state).toBe("stopped");
+      expect(activities).toContainEqual({
+        type: "runtime.failure",
+        component: "retirement",
+        code: "remote_stop_timeout",
+        retryable: true,
+      });
+      expect(JSON.stringify(activities)).not.toContain(TOKEN);
+    } finally {
+      release();
+      await runtime.stop();
+    }
   });
 
   it("starts maintenance with the HTTP/WebSocket control plane and drains idempotently", async () => {

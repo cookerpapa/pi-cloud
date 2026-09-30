@@ -8,6 +8,7 @@ import {
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
   type PiCloudEvent,
+  type RunActivityUpdate,
 } from "@pi-cloud/protocol";
 import {
   PI_MODEL_RETRY_CUSTOM_TYPE,
@@ -184,6 +185,7 @@ describe("PiCloudTurnRunner integration", () => {
         throw new Error("No Tool invocation expected");
       });
       const observed: unknown[] = [];
+      const activity: Array<RunActivityUpdate | undefined> = [];
       const fetchOriginal = globalThis.fetch;
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
         if (String(url).startsWith(fake.baseUrl) && typeof init?.body === "string")
@@ -191,6 +193,7 @@ describe("PiCloudTurnRunner integration", () => {
         return fetchOriginal(url, init);
       });
       const runner = new PiCloudTurnRunner({
+        onActivity: (update) => activity.push(update),
         resolveModelRuntime: () => ({
           provider: command.payload.model.provider,
           modelId: command.payload.model.modelId,
@@ -248,6 +251,9 @@ describe("PiCloudTurnRunner integration", () => {
           expect(fake.observations).toHaveLength(0);
         } else {
           await runner.run(input, () => {});
+          expect(activity.map((update) => update?.phase)).toContain("waiting_model");
+          expect(activity.map((update) => update?.phase)).toContain("receiving_model");
+          expect(activity.at(-1)).toBeUndefined();
           expect(nativeTools).not.toHaveBeenCalled();
           const entry = (await session.findEntriesOnBranch()).find(
             (item) => item.type === "message" && item.message.role === "user",

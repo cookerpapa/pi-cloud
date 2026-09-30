@@ -14,6 +14,49 @@ const SESSION_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "20000000-0000-4000-8000-000000000001";
 const CREATED_AT = "2026-07-19T00:00:00.000Z";
 
+it("parses activity and path frames separately from sequenced transcript events", async () => {
+  const controller = new AbortController(),
+    onRunObservation = vi.fn(),
+    onEvent = vi.fn();
+  const frames: string[] = [];
+  for await (const frame of sessionJsonFrames(snapshot(), "snapshot")) frames.push(frame);
+  const activity = {
+    type: "run.activity",
+    sessionId: SESSION_ID,
+    turnId: TURN_ID,
+    runId: "run",
+    phase: "waiting_model",
+    revision: 1,
+    observedAt: 1000,
+    lastActivityAt: 900,
+  };
+  const path = {
+    type: "run.path",
+    sessionId: SESSION_ID,
+    turnId: TURN_ID,
+    runId: "run",
+    sentAt: 1000,
+    observedAt: 1001,
+  };
+  frames.push(`event: run.activity\ndata: ${JSON.stringify(activity)}\n\n`);
+  frames.push(`event: run.path\ndata: ${JSON.stringify(path)}\n\n`);
+  frames.push(`event: assistant.text.delta\ndata: ${JSON.stringify(event(1, "formal"))}\n\n`);
+  await streamSessionEvents({
+    sessionId: SESSION_ID,
+    signal: controller.signal,
+    fetchImplementation: async () => new Response(frames.join("")),
+    onSnapshot() {},
+    onStatus() {},
+    onRunObservation,
+    onEvent(value) {
+      onEvent(value);
+      controller.abort();
+    },
+  });
+  expect(onRunObservation.mock.calls.map(([value]) => value)).toEqual([activity, path]);
+  expect(onEvent).toHaveBeenCalledExactlyOnceWith(event(1, "formal"));
+});
+
 it("delivers temporary progress separately from formal events on the same SSE connection", async () => {
   const controller = new AbortController(),
     onEvent = vi.fn(),

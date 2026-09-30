@@ -8,6 +8,7 @@ import { ExecutionStreamProjector, type AcceptedFact } from "@pi-cloud/runtime-c
 import { expect, it } from "vitest";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
+import { SupervisorConnectionManager } from "../src/supervisor-connection-manager.ts";
 
 it("retires an expired Run on a healthy Worker without stopping its other Session", async () => {
   const pg = await PGlite.create(),
@@ -85,11 +86,6 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
       secondRun = executor.dispatchRun(second.runId);
     await secondReady;
     now += 600;
-    await db
-      .updateTable("session_leases")
-      .set({ valid_until: new Date(Date.now() - 1) })
-      .where("pi_session_id", "=", a.sessionId)
-      .execute();
     const reconciler = new AssignmentReconciler({
       database: db,
       sandboxId: workerId,
@@ -103,9 +99,27 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
         },
       },
     });
-    expect(await reconciler.retireExpiredAssignments()).toMatchObject({
-      settledAssignments: 1,
-      terminatedRuntimes: 0,
+    let apiClockSkew = 3_600_000;
+    const manager = new SupervisorConnectionManager({
+      database: db,
+      controlPlaneInstanceId: crypto.randomUUID(),
+      clock: () => new Date(Date.now() + apiClockSkew),
+      ownerBoundary: {
+        async stopAndConfirm() {
+          throw new Error("Healthy Worker must survive");
+        },
+      },
+      assignmentRetirerFactory: () => reconciler,
+    });
+    expect(await manager.sweepExpiredExecutions()).toMatchObject({ expiredAssignments: 0 });
+    await db
+      .updateTable("session_leases")
+      .set({ valid_until: new Date(Date.now() - 1) })
+      .where("pi_session_id", "=", a.sessionId)
+      .execute();
+    apiClockSkew = -3_600_000;
+    expect(await manager.sweepExpiredExecutions()).toMatchObject({
+      expiredAssignments: 1,
     });
     expect(
       await db

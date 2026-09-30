@@ -7,6 +7,7 @@ import { sessionJsonFrames } from "./session-stream-framing.ts";
 import { projectConversationTurnTranscript } from "./conversation-turn-projection.ts";
 import { setImmediate as yieldToIo } from "node:timers/promises";
 import { ToolProgressView } from "./tool-progress-view.ts";
+import { RunObservationView } from "./run-observation-view.ts";
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -62,6 +63,7 @@ export class OpenSessionEventStream {
   readonly #heartbeatIntervalMs: number;
   readonly #sendTimeoutMs: number;
   readonly #progress: ToolProgressView;
+  readonly #observations: RunObservationView;
 
   constructor(options: {
     subscription: SessionEventSubscription;
@@ -73,6 +75,7 @@ export class OpenSessionEventStream {
     this.#subscription = options.subscription;
     this.#snapshot = options.snapshot;
     this.#progress = new ToolProgressView(options.snapshot.conversation);
+    this.#observations = new RunObservationView(options.snapshot.conversation);
     this.#highWaterMark = options.highWaterMark;
     this.#heartbeatIntervalMs = options.heartbeatIntervalMs;
     this.#sendTimeoutMs = options.sendTimeoutMs ?? SESSION_STREAM_SEND_TIMEOUT_MS;
@@ -110,6 +113,18 @@ export class OpenSessionEventStream {
           continue;
         }
         if (item === undefined) return;
+        if (item.observation) {
+          if (
+            this.#observations.accept(item.observation) &&
+            !(await writeChunk(
+              response,
+              `event: ${item.observation.type}\ndata: ${JSON.stringify(item.observation)}\n\n`,
+              this.#sendTimeoutMs,
+            ))
+          )
+            return;
+          continue;
+        }
         if (item.progress) {
           if (
             this.#progress.accept(item.progress) &&
@@ -129,6 +144,7 @@ export class OpenSessionEventStream {
         if (event.seq <= lastSentSequence) continue;
         if (event.seq !== lastSentSequence + 1) return;
         this.#progress.event(event);
+        this.#observations.event(event);
         if (!(await this.#sendValue(response, event, "event", event.type))) return;
         lastSentSequence = event.seq;
       }
