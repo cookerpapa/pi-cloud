@@ -165,13 +165,19 @@ try {
       target.state,
       kind === "consumed" ? "completed" : kind === "cancelled" ? "cancelled" : "failed",
     );
+    // Pi can consume queued input while unwinding an aborted Tool. A canonical
+    // user Entry wins even if cancellation prevents its next model request.
+    const consumedCount = await consumption(receipt);
+    assert([0, 1].includes(consumedCount));
+    if (kind !== "cancelled") assert.equal(consumedCount, kind === "consumed" ? 1 : 0);
+    const consumed = consumedCount === 1;
     const source = await finished(receipt.sourceRunId);
     assert.equal(
       source.state,
-      kind === "consumed" ? "cancelled" : "completed",
+      consumed ? "cancelled" : "completed",
       JSON.stringify(source.failure),
     );
-    const expectedControl = kind === "consumed" ? "completed" : "failed";
+    const expectedControl = consumed ? "completed" : "failed";
     await until(
       async () =>
         (
@@ -183,19 +189,21 @@ try {
         ).state === expectedControl,
       "Consumption disposition",
     );
-    assert.equal(await consumption(receipt), kind === "consumed" ? 1 : 0);
+    assert.equal(await consumption(receipt), consumedCount);
     const conversation = await api.getConversation(session.sessionId);
     const answered = conversation.turns.find(
-      (t) => t.runId === (kind === "consumed" ? target.runId : source.runId),
+      (t) => t.runId === (consumed ? target.runId : source.runId),
     );
-    assert(
-      answered.transcript.items
-        .filter((i) => i.kind === "text")
-        .map((i) => i.text)
-        .join("")
-        .includes(marker),
-      "Recovered instruction was not answered",
-    );
+    const answeredBeforeStop = kind !== "cancelled" || !consumed;
+    if (answeredBeforeStop)
+      assert(
+        answered.transcript.items
+          .filter((i) => i.kind === "text")
+          .map((i) => i.text)
+          .join("")
+          .includes(marker),
+        "Recovered instruction was not answered",
+      );
     assert.equal(
       Buffer.from((await api.readWorkspaceFile(session.sessionId, witness)).bytes).toString(),
       "once\n",
@@ -209,7 +217,7 @@ try {
       .select(["started_at", "lease_id"])
       .where("id", "=", receipt.sourceRunId)
       .executeTakeFirstOrThrow();
-    if (kind === "consumed") {
+    if (consumed) {
       assert.equal(sourceRow.started_at, null);
       assert.equal(sourceRow.lease_id, null);
     }
@@ -222,7 +230,9 @@ try {
       sourceRunId: source.runId,
       sourceState: source.state,
       acknowledgedBeforeFault: true,
-      instructionAnswered: true,
+      consumptionCount: consumedCount,
+      instructionRetained: true,
+      instructionAnswered: answeredBeforeStop,
       noToolReplay: true,
       replayAfterClosure: true,
     });
