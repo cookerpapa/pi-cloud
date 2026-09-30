@@ -25,8 +25,6 @@ release gate; final combined verification remains part of the repairs.
 - [ ] R30-04: bound Subagent inherited-history reads after Compaction and beyond
       10,000 messages. Paginate history or expose bounded inherited context
       without failing the entire child conversation detail.
-- [ ] R30-06: propagate truncated upstream HTTP responses and client disconnects
-      through the Cube egress proxy; ensure both directions terminate promptly.
 - [ ] D30-01: decide the shared elastic Workspace VM failure/cancellation domain.
       Current fail-closed provider cleanup can affect other bindings. Do not
       remove destruction without a proven process-scoped cancellation/fencing

@@ -110,3 +110,14 @@ result read performs exactly two SELECTs and no writes, compared with the review
 six business statements plus transaction control. Database tests pass (17 tests;
 21 real-PostgreSQL opt-ins deferred to final combined verification), including
 schema 155, removal of the unused pointer and a second idempotent migration pass.
+
+## R30-06: HTTP response interruption closes both sides
+
+HTTP response forwarding now uses Node's stream pipeline to propagate truncated
+upstream responses to the client. A client disconnect cancels the upstream
+request; a disconnect during DNS resolution prevents starting a new transfer.
+Errors before headers retain the bounded 502 response, while errors after
+headers terminate the incomplete response instead of ending it as success.
+
+Validation covers both Content-Length and chunked truncation, client-driven
+cancellation, normal forwarding and existing CONNECT/egress policy checks.

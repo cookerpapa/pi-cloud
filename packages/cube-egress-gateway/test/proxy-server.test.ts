@@ -82,6 +82,93 @@ async function throughConnect(gatewayPort: number, target: string): Promise<stri
 }
 
 describe("Cube egress gateway", () => {
+  it.each(["content-length", "chunked"])(
+    "terminates a truncated upstream %s response without hanging the client",
+    async (framing) => {
+      let truncate: (() => void) | undefined;
+      const proxy = createServer((_request, response) => {
+        response.writeHead(200, framing === "content-length" ? { "content-length": 10000 } : {});
+        response.write("partial");
+        truncate = () => response.destroy();
+      });
+      const proxyPort = await listen(proxy);
+      const gateway = createCubeEgressGateway({
+        poller: {
+          current: {
+            enabled: true,
+            revision: 1,
+            upstreamProxyUrl: new URL(`http://127.0.0.1:${proxyPort}`),
+          },
+        },
+      });
+      const gatewayPort = await listen(gateway);
+      const outcome = Promise.withResolvers<string>();
+      const outgoing = request(
+        { host: "127.0.0.1", port: gatewayPort, path: "http://8.8.8.8/test" },
+        (response) => {
+          response.on("data", () => truncate!());
+          response.once("error", () => outcome.resolve("truncated"));
+          response.once("end", () => outcome.resolve("incorrect-success"));
+        },
+      );
+      outgoing.once("error", outcome.reject);
+      const deadline = setTimeout(
+        () => outcome.reject(new Error("Downstream did not terminate")),
+        2000,
+      );
+      try {
+        outgoing.end();
+        expect(await outcome.promise).toBe("truncated");
+      } finally {
+        clearTimeout(deadline);
+        outgoing.destroy();
+        gateway.closeAllConnections();
+        proxy.closeAllConnections();
+      }
+    },
+  );
+
+  it("closes the upstream transfer when the downstream client disconnects", async () => {
+    const closed = Promise.withResolvers<void>();
+    const proxy = createServer((_request, response) => {
+      response.once("close", () => closed.resolve());
+      response.writeHead(200);
+      response.write("still streaming");
+    });
+    const proxyPort = await listen(proxy);
+    const gateway = createCubeEgressGateway({
+      poller: {
+        current: {
+          enabled: true,
+          revision: 1,
+          upstreamProxyUrl: new URL(`http://127.0.0.1:${proxyPort}`),
+        },
+      },
+    });
+    const gatewayPort = await listen(gateway);
+    const outgoing = request(
+      { host: "127.0.0.1", port: gatewayPort, path: "http://8.8.8.8/test" },
+      (response) => {
+        response.once("data", () => outgoing.destroy());
+        response.on("error", () => {});
+      },
+    );
+    outgoing.on("error", () => {});
+    const deadline = setTimeout(
+      () => closed.reject(new Error("Upstream transfer remained open")),
+      2000,
+    );
+    try {
+      outgoing.end();
+      await closed.promise;
+    } finally {
+      clearTimeout(deadline);
+      outgoing.destroy();
+      gateway.closeAllConnections();
+      proxy.closeAllConnections();
+    }
+  });
+
   it("stays live but unready before its first durable configuration", async () => {
     const gateway = createCubeEgressGateway({ poller: { current: undefined } });
     const gatewayPort = await listen(gateway);

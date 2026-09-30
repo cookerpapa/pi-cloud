@@ -10,7 +10,7 @@ import {
 import { request as requestHttps } from "node:https";
 import { connect as connectTcp, isIP, type Socket } from "node:net";
 import { connect as connectTls } from "node:tls";
-import type { Duplex } from "node:stream";
+import { pipeline, type Duplex } from "node:stream";
 import { isPublicAddress } from "./public-address-policy.ts";
 import type { CubeEgressRuntimeConfiguration } from "./configuration-poller.ts";
 
@@ -164,6 +164,7 @@ export function createCubeEgressGateway(options: {
         return;
       }
       const addresses = await publicAddresses(host).catch(() => []);
+      if (request.aborted || response.destroyed) return;
       if (addresses.length === 0) {
         audit({
           outcome: "denied",
@@ -191,11 +192,17 @@ export function createCubeEgressGateway(options: {
         timeout: CONNECTION_TIMEOUT_MS,
       });
       upstreamRequest.once("response", (upstreamResponse) => {
+        if (response.destroyed) {
+          upstreamResponse.destroy();
+          return;
+        }
         response.writeHead(
           upstreamResponse.statusCode ?? 502,
           withoutHopByHopHeaders(upstreamResponse.headers),
         );
-        upstreamResponse.pipe(response);
+        pipeline(upstreamResponse, response, (error) => {
+          if (error) upstreamRequest.destroy();
+        });
         audit({
           outcome: "allowed",
           reason: "http_forwarded",
@@ -205,8 +212,16 @@ export function createCubeEgressGateway(options: {
       });
       upstreamRequest.once("timeout", () => upstreamRequest.destroy());
       upstreamRequest.once("error", () => {
-        if (!response.headersSent) response.writeHead(502, { "content-length": "0" });
-        response.end();
+        if (response.destroyed) return;
+        if (!response.headersSent) {
+          response.writeHead(502, { "content-length": "0" });
+          response.end();
+        } else response.destroy();
+      });
+      request.once("aborted", () => upstreamRequest.destroy());
+      request.once("error", () => upstreamRequest.destroy());
+      response.once("close", () => {
+        if (!response.writableFinished) upstreamRequest.destroy();
       });
       request.pipe(upstreamRequest);
     })().catch(() => {
