@@ -31,6 +31,10 @@ release gate; final combined verification remains part of the repairs.
       Current fail-closed provider cleanup can affect other bindings. Do not
       remove destruction without a proven process-scoped cancellation/fencing
       contract; persistent development machines retain their protection.
+      The [Cube result-delivery study](reports/cube-result-delivery-study-20261001.md)
+      is complete: current upstream APIs do not provide the full trusted-host
+      handoff/Kafka delivery contract. A scoped protocol/prototype decision is
+      still required before changing boot ownership and cleanup semantics.
 - [ ] D30-02: distinguish active resource quotas from retained-history budgets,
       including logical child Sessions. Archiving currently retains the Session
       count; never delete native history simply to reclaim quota.

@@ -29,6 +29,12 @@ and reproducible boundary probes. Its full workspace check and dependency
 security audit have failures; the 104-case fault matrix passes. Findings are
 tracked in the backlog and have not been implemented by this review.
 
+The [October 1 repair record](reports/repository-review-repair-20261001.md)
+tracks implementation of that review and the subsequent owner decisions.
+The [Cube result-delivery study](reports/cube-result-delivery-study-20261001.md)
+compares current upstream execution APIs with Broker-independent completion
+delivery; it records the missing guarantees without changing the deployed runtime.
+
 The [chat attachment acceptance](reports/user-input-attachments-20260929.md) records
 Workspace uploads, native user ImageContent, queue promotion, browser preview and
 real Luna recovery after Workspace modification and Worker replacement.

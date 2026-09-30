@@ -1,0 +1,216 @@
+{
+  "format": "pi-cloud.cube-delivery-research.v1",
+  "date": "2026-10-01",
+  "deployedCubeRevision": "8721dd151971ce3c2966482bbd32904ad98f378e",
+  "researchOnly": true,
+  "liveFaultExperiments": false,
+  "latestReleases": {
+    "cube": {
+      "tag_name": "v0.7.2",
+      "published_at": "2026-09-24T06:20:45Z",
+      "html_url": "https://github.com/TencentCloud/CubeSandbox/releases/tag/v0.7.2"
+    },
+    "e2b": {
+      "tag_name": "2026.30",
+      "published_at": "2026-09-10T09:26:46Z",
+      "html_url": "https://github.com/e2b-dev/runtime/releases/tag/2026.30"
+    },
+    "opensandbox": {
+      "tag_name": "release-1.1.0",
+      "published_at": "2026-09-21T07:46:25Z",
+      "html_url": "https://github.com/opensandbox-group/OpenSandbox/releases/tag/release-1.1.0"
+    }
+  },
+  "sources": [
+    {
+      "repository": "TencentCloud/CubeSandbox",
+      "revision": "f1aaa737fb3862202b1731e0e0d844c28779f930",
+      "path": "CubeMaster/pkg/service/sandbox/envd_sidecar.go",
+      "url": "https://github.com/TencentCloud/CubeSandbox/blob/f1aaa737fb3862202b1731e0e0d844c28779f930/CubeMaster/pkg/service/sandbox/envd_sidecar.go",
+      "sha256": "f3f795708ce793fade61f97336aec59d3580e30b0a8c323c84f3262d028224ac",
+      "bytes": 2172
+    },
+    {
+      "repository": "TencentCloud/CubeSandbox",
+      "revision": "f1aaa737fb3862202b1731e0e0d844c28779f930",
+      "path": "CubeProxy/conf/includes/envd_streaming_host_route.inc",
+      "url": "https://github.com/TencentCloud/CubeSandbox/blob/f1aaa737fb3862202b1731e0e0d844c28779f930/CubeProxy/conf/includes/envd_streaming_host_route.inc",
+      "sha256": "f7b7eba741b01ba40e62468aaadb0e55d494f1548b356e1b832bc970af9b4980",
+      "bytes": 901
+    },
+    {
+      "repository": "TencentCloud/CubeSandbox",
+      "revision": "f1aaa737fb3862202b1731e0e0d844c28779f930",
+      "path": "CubeProxy/conf/includes/envd_streaming_path_route.inc",
+      "url": "https://github.com/TencentCloud/CubeSandbox/blob/f1aaa737fb3862202b1731e0e0d844c28779f930/CubeProxy/conf/includes/envd_streaming_path_route.inc",
+      "sha256": "801d85a13c6c92b6779658cbfe83ffdb997f0501b5cb39afd54a48b973b1006d",
+      "bytes": 1105
+    },
+    {
+      "repository": "TencentCloud/CubeSandbox",
+      "revision": "f1aaa737fb3862202b1731e0e0d844c28779f930",
+      "path": "LICENSE",
+      "url": "https://github.com/TencentCloud/CubeSandbox/blob/f1aaa737fb3862202b1731e0e0d844c28779f930/LICENSE",
+      "sha256": "ec4e72bcae6fbd76307517767f046f9c724fbf8aaee735b60310b21e46cd959a",
+      "bytes": 25798
+    },
+    {
+      "repository": "TencentCloud/CubeSandbox",
+      "revision": "f1aaa737fb3862202b1731e0e0d844c28779f930",
+      "path": "docs/architecture/overview.md",
+      "url": "https://github.com/TencentCloud/CubeSandbox/blob/f1aaa737fb3862202b1731e0e0d844c28779f930/docs/architecture/overview.md",
+      "sha256": "9758bc6d41363a676b673b330129c2f9b1f8e3882fb09069c5cbf3a3f783a724",
+      "bytes": 10915
+    },
+    {
+      "repository": "TencentCloud/CubeSandbox",
+      "revision": "f1aaa737fb3862202b1731e0e0d844c28779f930",
+      "path": "sdk/node/src/commands.ts",
+      "url": "https://github.com/TencentCloud/CubeSandbox/blob/f1aaa737fb3862202b1731e0e0d844c28779f930/sdk/node/src/commands.ts",
+      "sha256": "558dce426596af88a5cafafd62843b655f6bf4615cbdea52a053b848fe206e53",
+      "bytes": 11488
+    },
+    {
+      "repository": "TencentCloud/CubeSandbox",
+      "revision": "e02976ae54729fb1684c5b51535381e54df1aea2",
+      "path": "CubeMaster/pkg/service/sandbox/envd_sidecar.go",
+      "url": "https://github.com/TencentCloud/CubeSandbox/blob/e02976ae54729fb1684c5b51535381e54df1aea2/CubeMaster/pkg/service/sandbox/envd_sidecar.go",
+      "sha256": "f3f795708ce793fade61f97336aec59d3580e30b0a8c323c84f3262d028224ac",
+      "bytes": 2172
+    },
+    {
+      "repository": "TencentCloud/CubeSandbox",
+      "revision": "e02976ae54729fb1684c5b51535381e54df1aea2",
+      "path": "CubeProxy/conf/includes/envd_streaming_host_route.inc",
+      "url": "https://github.com/TencentCloud/CubeSandbox/blob/e02976ae54729fb1684c5b51535381e54df1aea2/CubeProxy/conf/includes/envd_streaming_host_route.inc",
+      "sha256": "f7b7eba741b01ba40e62468aaadb0e55d494f1548b356e1b832bc970af9b4980",
+      "bytes": 901
+    },
+    {
+      "repository": "TencentCloud/CubeSandbox",
+      "revision": "e02976ae54729fb1684c5b51535381e54df1aea2",
+      "path": "sdk/node/src/commands.ts",
+      "url": "https://github.com/TencentCloud/CubeSandbox/blob/e02976ae54729fb1684c5b51535381e54df1aea2/sdk/node/src/commands.ts",
+      "sha256": "558dce426596af88a5cafafd62843b655f6bf4615cbdea52a053b848fe206e53",
+      "bytes": 11488
+    },
+    {
+      "repository": "e2b-dev/infra",
+      "revision": "2026.30",
+      "path": "packages/envd/internal/services/process/connect.go",
+      "url": "https://github.com/e2b-dev/infra/blob/2026.30/packages/envd/internal/services/process/connect.go",
+      "sha256": "563f2cdac9bbe3d5895b24b9b46049820ef72bdc67bf6f3135475ed476709f87",
+      "bytes": 5483
+    },
+    {
+      "repository": "e2b-dev/infra",
+      "revision": "2026.30",
+      "path": "packages/envd/internal/services/process/handler/handler.go",
+      "url": "https://github.com/e2b-dev/infra/blob/2026.30/packages/envd/internal/services/process/handler/handler.go",
+      "sha256": "419a38972b71769f4706db7684bcc6f18dcc3076c6bec754ae476f15d3be59c5",
+      "bytes": 17556
+    },
+    {
+      "repository": "e2b-dev/infra",
+      "revision": "2026.30",
+      "path": "packages/envd/internal/services/process/service.go",
+      "url": "https://github.com/e2b-dev/infra/blob/2026.30/packages/envd/internal/services/process/service.go",
+      "sha256": "1d0b937d965052fde806ab057d5db0e5caabe10edebd69f76b399a9fa47054fa",
+      "bytes": 7705
+    },
+    {
+      "repository": "e2b-dev/infra",
+      "revision": "2026.30",
+      "path": "packages/envd/internal/services/process/start.go",
+      "url": "https://github.com/e2b-dev/infra/blob/2026.30/packages/envd/internal/services/process/start.go",
+      "sha256": "17f5138f0ba4a92b92ebbaa312aa43c418fad51eb83ead905104f469de2ebd4f",
+      "bytes": 6533
+    },
+    {
+      "repository": "e2b-dev/infra",
+      "revision": "75bd61fec0bcfe999652dcb2a4e7285f75821d92",
+      "path": "packages/envd/internal/services/process/handler/handler.go",
+      "url": "https://github.com/e2b-dev/infra/blob/75bd61fec0bcfe999652dcb2a4e7285f75821d92/packages/envd/internal/services/process/handler/handler.go",
+      "sha256": "419a38972b71769f4706db7684bcc6f18dcc3076c6bec754ae476f15d3be59c5",
+      "bytes": 17556
+    },
+    {
+      "repository": "e2b-dev/infra",
+      "revision": "75bd61fec0bcfe999652dcb2a4e7285f75821d92",
+      "path": "packages/envd/internal/services/process/service.go",
+      "url": "https://github.com/e2b-dev/infra/blob/75bd61fec0bcfe999652dcb2a4e7285f75821d92/packages/envd/internal/services/process/service.go",
+      "sha256": "1d0b937d965052fde806ab057d5db0e5caabe10edebd69f76b399a9fa47054fa",
+      "bytes": 7705
+    },
+    {
+      "repository": "e2b-dev/infra",
+      "revision": "75bd61fec0bcfe999652dcb2a4e7285f75821d92",
+      "path": "packages/envd/internal/services/process/start.go",
+      "url": "https://github.com/e2b-dev/infra/blob/75bd61fec0bcfe999652dcb2a4e7285f75821d92/packages/envd/internal/services/process/start.go",
+      "sha256": "17f5138f0ba4a92b92ebbaa312aa43c418fad51eb83ead905104f469de2ebd4f",
+      "bytes": 6533
+    },
+    {
+      "repository": "opensandbox-group/OpenSandbox",
+      "revision": "0b6acd5fd66fa885b875ad80674c69827343c26b",
+      "path": "LICENSE",
+      "url": "https://github.com/opensandbox-group/OpenSandbox/blob/0b6acd5fd66fa885b875ad80674c69827343c26b/LICENSE",
+      "sha256": "50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a",
+      "bytes": 11324
+    },
+    {
+      "repository": "opensandbox-group/OpenSandbox",
+      "revision": "0b6acd5fd66fa885b875ad80674c69827343c26b",
+      "path": "components/execd/pkg/runtime/command.go",
+      "url": "https://github.com/opensandbox-group/OpenSandbox/blob/0b6acd5fd66fa885b875ad80674c69827343c26b/components/execd/pkg/runtime/command.go",
+      "sha256": "df651aabc1a462f4a55e3b8e33be04c81248c333bfbcf01847aef91fe86c24f8",
+      "bytes": 14155
+    },
+    {
+      "repository": "opensandbox-group/OpenSandbox",
+      "revision": "0b6acd5fd66fa885b875ad80674c69827343c26b",
+      "path": "components/execd/pkg/runtime/command_common.go",
+      "url": "https://github.com/opensandbox-group/OpenSandbox/blob/0b6acd5fd66fa885b875ad80674c69827343c26b/components/execd/pkg/runtime/command_common.go",
+      "sha256": "39cc4538dbb2daa920ec2d98be49f8d8c4ace22b7764470fe8c2e98ed791511f",
+      "bytes": 8307
+    },
+    {
+      "repository": "opensandbox-group/OpenSandbox",
+      "revision": "0b6acd5fd66fa885b875ad80674c69827343c26b",
+      "path": "components/execd/pkg/runtime/command_status.go",
+      "url": "https://github.com/opensandbox-group/OpenSandbox/blob/0b6acd5fd66fa885b875ad80674c69827343c26b/components/execd/pkg/runtime/command_status.go",
+      "sha256": "20aef2987aa2637ebf3a7c213521c7f227e27ea3d9b9abdba53aad06761ac6d5",
+      "bytes": 4271
+    },
+    {
+      "repository": "opensandbox-group/OpenSandbox",
+      "revision": "0b6acd5fd66fa885b875ad80674c69827343c26b",
+      "path": "components/execd/pkg/runtime/managed_command.go",
+      "url": "https://github.com/opensandbox-group/OpenSandbox/blob/0b6acd5fd66fa885b875ad80674c69827343c26b/components/execd/pkg/runtime/managed_command.go",
+      "sha256": "e4ebf16e70782126392062476cd0760755e6f0bc1be0af4a9bf1621d57d95106",
+      "bytes": 1882
+    },
+    {
+      "repository": "opensandbox-group/OpenSandbox",
+      "revision": "0b6acd5fd66fa885b875ad80674c69827343c26b",
+      "path": "components/execd/pkg/web/controller/command.go",
+      "url": "https://github.com/opensandbox-group/OpenSandbox/blob/0b6acd5fd66fa885b875ad80674c69827343c26b/components/execd/pkg/web/controller/command.go",
+      "sha256": "02c777f85186bce133ef0deba6764363f7fd29d9497346679e17de4b1bb284c4",
+      "bytes": 5972
+    },
+    {
+      "repository": "opensandbox-group/OpenSandbox",
+      "revision": "0b6acd5fd66fa885b875ad80674c69827343c26b",
+      "path": "specs/execd-api.yaml",
+      "url": "https://github.com/opensandbox-group/OpenSandbox/blob/0b6acd5fd66fa885b875ad80674c69827343c26b/specs/execd-api.yaml",
+      "sha256": "1a74d77875f2bd81231a74415a376bc9c009654322c0eadcd4bdd9bd337d06f1",
+      "bytes": 117014
+    }
+  ],
+  "limits": [
+    "Selected execution/API/lifecycle sources, not a whole-repository upstream audit",
+    "One HEAD E2B connect source download failed; latest-release connect source was inspected",
+    "No upstream issue/comment sent and no Cube deployment changed",
+    "No candidate demonstrated the complete trusted-host Kafka handoff contract"
+  ]
+}

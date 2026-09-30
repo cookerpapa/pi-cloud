@@ -20,6 +20,10 @@ This record distinguishes completed changes from work still under validation.
   in subsequent model context, without replaying partial Tool calls or
   presenting unknown effects as successful execution.
 
+The [Cube execution/result-delivery research](cube-result-delivery-study-20261001.md)
+is complete. Its proposed handoff contract is not implemented; D30-01's physical
+failure-domain policy stays explicit pending that separate design decision.
+
 ## R30-07: direct-Steer runtime composition
 
 The composition test now admits a real Run through the existing test Worker,
