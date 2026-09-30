@@ -10,11 +10,57 @@ maintained-file review, paid combination tests, process faults, browser paths,
 latency analysis, isolated load gates and scoped cleanup. Its bounded measurements
 do not establish enterprise-scale capacity or physical multi-node HA.
 
-## Reliability and capacity
+The [September 30 review](reports/repository-review-20260930.md) is complete at
+`5fd6159f8a0ec0cc5d4ebc0dc24071c29b82028d`. It adds eight confirmed findings,
+three decisions to discuss and scoped cleanup candidates. It does not change
+the architecture or establish a passing release gate: the full workspace check
+has one failure and the current dependency security audit fails.
 
-- [ ] Review the two moderate development-test dependency findings (Vitest and
-      @vitest/mocker) retained by the September 15 and 27 audits. The high/critical
-      dependency gate passes; a test-tool upgrade needs its own contract checks.
+## September 30 review follow-up
+
+- [ ] R30-08: restore the dependency security gate. Installed brace-expansion
+      5.0.9 and undici 8.10.0/6.28.0 have high findings; fast-uri, Vitest and
+      @vitest/mocker retain moderate findings. Verify patched dependencies and
+      their reachable paths with Pi/HTTP contracts; do not suppress the new
+      findings or blindly upgrade pinned Pi to satisfy an aggregate advisory.
+- [ ] R30-07: migrate the obsolete direct-Steer runtime composition test to
+      ADR-0203's running target, held source, HTTP 202 and reconciler delivery.
+      Retain proof that an API replica without the local Worker connection uses
+      the injected remote transport. Re-run the full check after migration.
+- [ ] R30-01: route rejected Tool-reply waits through the existing infrastructure
+      failure latch, covering timeout, consumer closure and decode/identity
+      failure. Preserve cancellation and UNKNOWN; prove no next sampling or
+      automatic Tool replay after loss of the confirmed result.
+- [ ] R30-05: include timed_out in Subagent seal waiting; compare every terminal
+      Run state before and after output closure.
+- [ ] R30-02: preserve own JSON properties such as `__proto__` during message
+      normalization. Match native Pi storage without dropping opaque details
+      or restoring undefined values.
+- [ ] R30-03: align Subagent input admission with encoded native publication
+      budgets and public conversation schemas. Reject oversized work early,
+      accounting for Unicode, escaping and envelope overhead.
+- [ ] R30-04: bound Subagent inherited-history reads after Compaction and beyond
+      10,000 messages. Paginate history or expose bounded inherited context
+      without failing the entire child conversation detail.
+- [ ] R30-06: propagate truncated upstream HTTP responses and client disconnects
+      through the Cube egress proxy; ensure both directions terminate promptly.
+- [ ] D30-01: decide the shared elastic Workspace VM failure/cancellation domain.
+      Current fail-closed provider cleanup can affect other bindings. Do not
+      remove destruction without a proven process-scoped cancellation/fencing
+      contract; persistent development machines retain their protection.
+- [ ] D30-02: distinguish active resource quotas from retained-history budgets,
+      including logical child Sessions. Archiving currently retains the Session
+      count; never delete native history simply to reclaim quota.
+- [ ] D30-03: decide whether visible failed/aborted Assistant text should enter
+      the next model context as an explicitly incomplete fact. Preserve Pi's
+      rejection of invalid partial Tool calls and record any recovery change.
+- [ ] Evaluate the review's bounded cleanup candidates: merge stable terminal
+      Subagent reads, avoid the new-Steer receipt re-read, move the in-memory
+      Workspace runtime repository into test helpers, and reconcile the stale
+      Session state graph with atomic admission. Measure SQL improvements and
+      preserve lock rechecks, authorization and durable acknowledgements.
+
+## Reliability and capacity
 
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider

@@ -1,0 +1,180 @@
+{
+  "format": "pi-cloud.repository-review-probes.v1",
+  "baseline": "5fd6159f8a0ec0cc5d4ebc0dc24071c29b82028d",
+  "date": "2026-09-30",
+  "limitations": [
+    "Synthetic model; no new provider calls",
+    "Native adapter probe models the production capture guard rather than launching the full Worker",
+    "Storage probe uses current migrations and actual service methods; bulk native history is a PG fixture, not one Kafka publication",
+    "Input view parser probe uses the real admitted prompt and a synthetic active-turn resource",
+    "Seal probe uses minimal tables with production status SQL; not an end-to-end scheduling race",
+    "HTTP truncation probe uses only localhost",
+    "Opaque details case uses a fixture Tool; current remote Bash trigger is an Assistant tool-call argument with an own __proto__ property, rejected before Tool publication"
+  ],
+  "native": {
+    "piVersion": "0.84.1",
+    "model": "synthetic; no provider request or shell execution",
+    "toolFailures": [
+      {
+        "mode": "broker-error",
+        "requests": 1,
+        "unavailable": 1,
+        "publications": 1,
+        "outcome": "failed"
+      },
+      {
+        "mode": "reply-rejection",
+        "requests": 2,
+        "unavailable": 0,
+        "publications": 1,
+        "outcome": "completed"
+      }
+    ],
+    "interruptedPrefixes": [
+      {
+        "reason": "stop",
+        "firstOutcome": "completed",
+        "historyHasPrefix": true,
+        "rawHasPrefix": true,
+        "providerHasPrefix": true
+      },
+      {
+        "reason": "error",
+        "firstOutcome": "failed",
+        "historyHasPrefix": true,
+        "rawHasPrefix": true,
+        "providerHasPrefix": false
+      },
+      {
+        "reason": "aborted",
+        "firstOutcome": "aborted",
+        "historyHasPrefix": true,
+        "rawHasPrefix": true,
+        "providerHasPrefix": false
+      }
+    ],
+    "opaqueAssistantArguments": {
+      "mode": "assistant-own-proto",
+      "requests": 1,
+      "unavailable": 0,
+      "publications": 0,
+      "outcome": "failed",
+      "error": {
+        "code": "model_error",
+        "message": "Durable payload contains a non-plain object"
+      }
+    },
+    "opaqueDetails": {
+      "inputOwnProto": true,
+      "storedOwnProto": null,
+      "input": "{\"__proto__\":{\"marker\":\"must-survive\"},\"regular\":1}",
+      "outcome": "failed",
+      "error": {
+        "code": "model_error",
+        "message": "Durable payload contains a non-plain object"
+      },
+      "roles": ["custom", "assistant", "user"],
+      "nativeStorageOwnProto": true
+    },
+    "subagentInputBudgets": [
+      {
+        "characters": 200000,
+        "argumentsAccepted": true,
+        "startupOperationBytes": 600669,
+        "executionFactLimit": 921600,
+        "exceedsLimitBeforeEnvelope": false
+      },
+      {
+        "characters": 400000,
+        "argumentsAccepted": true,
+        "startupOperationBytes": 1200669,
+        "executionFactLimit": 921600,
+        "exceedsLimitBeforeEnvelope": true
+      }
+    ]
+  },
+  "storage": {
+    "method": "isolated PostgreSQL with current migrations and production service methods",
+    "inherited": [
+      {
+        "oldMessages": 10,
+        "latestAncestor": "compaction with empty retained tail",
+        "result": {
+          "ok": true,
+          "inheritedMessages": 10
+        }
+      },
+      {
+        "oldMessages": 10001,
+        "latestAncestor": "compaction with empty retained tail",
+        "result": {
+          "ok": false,
+          "code": "invalid_request",
+          "message": "Inherited conversation is too large"
+        }
+      }
+    ],
+    "quota": {
+      "maximumSessions": 1,
+      "visibleSessions": 0,
+      "newSession": "tenant_quota_exceeded"
+    },
+    "inheritedLimit": 10000,
+    "inputBudget": {
+      "method": "real admitted prompt, public response parser with synthetic active-turn state",
+      "admittedPromptCharacters": 200000,
+      "publicViewAccepted": false,
+      "publicViewError": "Invalid conversation detail resource at /turns/0/prompt: must not have more than 100000 characters"
+    }
+  },
+  "subagentSeal": {
+    "method": "minimal isolated PG rows exercising production status() SQL; reachable states also traced in RunExecutor",
+    "cases": [
+      {
+        "runState": "completed",
+        "sealed": false,
+        "reportedState": "running"
+      },
+      {
+        "runState": "failed",
+        "sealed": false,
+        "reportedState": "running"
+      },
+      {
+        "runState": "cancelled",
+        "sealed": false,
+        "reportedState": "running"
+      },
+      {
+        "runState": "timed_out",
+        "sealed": false,
+        "reportedState": "failed"
+      }
+    ]
+  },
+  "egress": {
+    "method": "localhost proxy stub; no external request",
+    "waitedMs": 11000,
+    "upstreamResetAfterMs": 25,
+    "alive": true,
+    "responseSettled": false
+  },
+  "scripts": [
+    {
+      "path": "scripts/probe-review-egress-reset-20260930.mjs",
+      "sha256": "a8011b520e03e1e377b1725db1d5e0a23f1d1394142294803b44bf75f82cf376"
+    },
+    {
+      "path": "scripts/probe-review-native-boundaries-20260930.mjs",
+      "sha256": "35b15a0b59f6bfb908d2faacaadd7271e8d4d5b5f2df28f788e24f76b26d4e72"
+    },
+    {
+      "path": "scripts/probe-review-storage-boundaries-20260930.mjs",
+      "sha256": "5eea79fa61c1f6786fe47c1e5e42efb25c7e741c492244d88cabc94d8e0b8b18"
+    },
+    {
+      "path": "scripts/probe-review-subagent-seal-20260930.mjs",
+      "sha256": "e656045538e15b01b4d8ee4b30b74ce47aed2acd1fab57fc49638fcdbed17af0"
+    }
+  ]
+}

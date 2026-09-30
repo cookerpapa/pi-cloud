@@ -1,0 +1,531 @@
+{
+  "format": "pi-cloud.repository-review-verification.v1",
+  "baseline": "5fd6159f8a0ec0cc5d4ebc0dc24071c29b82028d",
+  "date": "2026-09-30",
+  "baselineWorktreeDirty": false,
+  "productionImplementationRevision": "2659ba9c425123475b4e01e3845bd66aaf74e4fa",
+  "node": "v24.12.0",
+  "npm": "11.6.2",
+  "installedPackages": {
+    "@earendil-works/pi-agent-core": "0.84.1",
+    "@earendil-works/pi-coding-agent": "0.84.1",
+    "@earendil-works/pi-ai": "0.84.1",
+    "undici": "6.28.0",
+    "pi-security-undici": "8.10.0",
+    "pi-security-brace-expansion": "5.0.9",
+    "fast-uri": "3.1.7",
+    "vitest": "3.2.7"
+  },
+  "releaseGatesPassed": false,
+  "check": {
+    "command": "npm run check",
+    "exitCode": 1,
+    "typecheck": "all workspaces passed",
+    "tests": {
+      "passed": 1388,
+      "failed": 1,
+      "skipped": 3
+    },
+    "workspaceTestSummaries": [
+      "Tests  1 failed | 283 passed (284)",
+      "Tests  37 passed (37)",
+      "Tests  6 passed (6)",
+      "Tests  38 passed (38)",
+      "Tests  16 passed (16)",
+      "Tests  13 passed (13)",
+      "Tests  17 passed (17)",
+      "Tests  9 passed (9)",
+      "Tests  88 passed (88)",
+      "Tests  100 passed (100)",
+      "Tests  5 passed (5)",
+      "Tests  80 passed | 1 skipped (81)",
+      "Tests  218 passed (218)",
+      "Tests  14 passed (14)",
+      "Tests  4 passed (4)",
+      "Tests  11 passed (11)",
+      "Tests  88 passed (88)",
+      "Tests  169 passed | 2 skipped (171)",
+      "Tests  41 passed (41)",
+      "Tests  146 passed (146)",
+      "Tests  5 passed (5)"
+    ],
+    "failure": {
+      "path": "packages/control-plane/test/control-plane-runtime.test.ts:190",
+      "test": "preserves admission metrics and the supplied non-local Steer transport through composition",
+      "expectedStatus": 200,
+      "actualStatus": 409,
+      "finding": "R30-07"
+    },
+    "skips": [
+      "Kafka topic policy opt-in, supplemented by separate unique-topic real Kafka check",
+      "Two real Cube provider opt-in tests, not executed in this review"
+    ],
+    "acceptanceHelpersExecutedInsideCheck": false
+  },
+  "acceptanceHelpers": {
+    "command": "npm run test:acceptance-helpers",
+    "exitCode": 0,
+    "passed": 52
+  },
+  "build": {
+    "command": "npm run build",
+    "exitCode": 0,
+    "note": "Current build script builds Web UI; server code checked by workspace typechecks and image-closure gates. Vite chunk-size warning remains."
+  },
+  "faults": {
+    "format": "pi-cloud.fault-eval-report.v1",
+    "piCloudRevision": "5fd6159f8a0ec0cc5d4ebc0dc24071c29b82028d",
+    "dirtyWorktree": false,
+    "generatedAt": "2026-09-30T09:41:05.670Z",
+    "methodology": "deterministic_targeted_fault_injection",
+    "executionGroups": 43,
+    "executionDurationMs": 299084,
+    "durationMetric": "Vitest target assertion duration; shared file setup/process cost is groupDurationMs",
+    "liveChaosExperiment": false,
+    "caseCount": 104,
+    "successful": 104,
+    "successRate": 1,
+    "p50DurationMs": 65,
+    "p95DurationMs": 6305
+  },
+  "passedSupplementaryCommands": [
+    "npm run docs:check",
+    "npm run dependencies:check",
+    "npm run runtime-policy:check",
+    "npm run image:closure-check",
+    "npm run image:context-check",
+    "npm run observability:check",
+    "npm run helm:check",
+    "npm run production:install:check",
+    "npm run browser:presentation:check",
+    "node scripts/run-browser-queue-check.mjs"
+  ],
+  "browserPresentation": {
+    "accepted": true,
+    "directSteerRetryIdentity": true,
+    "directSteerPendingPresentation": true,
+    "machineWorkspaceRebind": true,
+    "rebindRetryUsesSameTargetAndKey": true,
+    "persistentRuntimeStatus": true,
+    "separateActivityAndPath": true,
+    "firstImageOnlyMessage": true,
+    "uploadIdentityOnRetry": true,
+    "debuggerDisconnect": true,
+    "strictModeAnimation": true,
+    "outputLimitVisible": true,
+    "reconnectSnapshotImmediate": true,
+    "initialPanelWidth": true,
+    "resizeUnmountCleanup": true,
+    "pointerCancellation": true,
+    "composerSessionSettings": true,
+    "providerSwitchClearsFast": true,
+    "compositionAndPendingDraft": true,
+    "inspectorSelectionAndTerminalLifetime": true,
+    "logoutLifecycle": true,
+    "branchSelectionAndManualJump": true,
+    "childHistoryReadOnlyAndParentActions": true,
+    "pendingInputNavigation": true,
+    "childWorkspaceReadOnly": true,
+    "unavailableIdentityRetry": true,
+    "staleConversationListAfterDelete": true,
+    "terminalSocketIsolation": true,
+    "directoryPickerLifecycle": true,
+    "responsivePageScrolling": true
+  },
+  "browserQueue": "browser_queue_check_passed edit order cancel edited_steer lost_reply draft_retention stale_read read_recovery viewer mobile",
+  "kafka": {
+    "method": "isolated topic names on existing RF3 Kafka, no application-topic writes",
+    "cases": [
+      {
+        "name": "valid",
+        "accepted": true,
+        "expected": true
+      },
+      {
+        "name": "replicas",
+        "accepted": false,
+        "expected": false
+      },
+      {
+        "name": "cleanup.policy",
+        "accepted": false,
+        "expected": false
+      },
+      {
+        "name": "retention.ms",
+        "accepted": false,
+        "expected": false
+      },
+      {
+        "name": "retention.bytes",
+        "accepted": false,
+        "expected": false
+      },
+      {
+        "name": "message.timestamp.type",
+        "accepted": false,
+        "expected": false
+      },
+      {
+        "name": "min.insync.replicas",
+        "accepted": false,
+        "expected": false
+      }
+    ],
+    "sampleRecordDurable": true,
+    "cleanupRequested": 7,
+    "accepted": true,
+    "remainingReviewTopics": [],
+    "cleanupConfirmed": true
+  },
+  "security": {
+    "securityAuditPassed": false,
+    "auditLevel": "high",
+    "remediatedShrinkwrapFindings": [
+      {
+        "name": "@earendil-works/pi-coding-agent",
+        "advisoryUrls": [
+          "https://github.com/advisories/GHSA-8xcm-r25x-g524",
+          "https://github.com/advisories/GHSA-4cwx-7wf7-3272",
+          "https://github.com/advisories/GHSA-m8rv-5g2x-5cg5",
+          "https://github.com/advisories/GHSA-jr45-8vmc-qm54",
+          "https://github.com/advisories/GHSA-v3r7-h72x-cjcm"
+        ],
+        "installedVersion": "0.84.1",
+        "reason": "The aggregate finding is caused only by undici, whose installed nested package is replaced and verified after npm ci"
+      }
+    ],
+    "remainingVulnerabilities": [
+      {
+        "name": "@vitest/mocker",
+        "severity": "moderate",
+        "nodes": ["node_modules/@vitest/mocker"]
+      },
+      {
+        "name": "brace-expansion",
+        "severity": "high",
+        "nodes": [
+          "node_modules/@earendil-works/pi-coding-agent/node_modules/brace-expansion",
+          "node_modules/pi-security-brace-expansion"
+        ]
+      },
+      {
+        "name": "fast-uri",
+        "severity": "moderate",
+        "nodes": ["node_modules/fast-json-stringify/node_modules/fast-uri", "node_modules/fast-uri"]
+      },
+      {
+        "name": "undici",
+        "severity": "high",
+        "nodes": [
+          "node_modules/@earendil-works/pi-coding-agent/node_modules/undici",
+          "node_modules/pi-security-undici",
+          "node_modules/undici"
+        ]
+      },
+      {
+        "name": "vitest",
+        "severity": "moderate",
+        "nodes": ["node_modules/vitest"]
+      }
+    ],
+    "command": "npm run security:audit",
+    "exitCode": 1,
+    "rawAuditMetadata": {
+      "info": 0,
+      "low": 0,
+      "moderate": 4,
+      "high": 2,
+      "critical": 0,
+      "total": 6
+    },
+    "reachability": "Affected versions and failing gate verified; no unauthenticated PiCloud exploit demonstrated",
+    "advisoriesByRemainingPackage": {
+      "brace-expansion": [
+        {
+          "url": "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+          "severity": "moderate",
+          "affectedRange": ">=4.0.0 <5.0.12"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+          "severity": "high",
+          "affectedRange": ">=4.0.0 <5.0.11"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p",
+          "severity": "high",
+          "affectedRange": ">=4.0.0 <5.0.10"
+        }
+      ],
+      "undici": [
+        {
+          "url": "https://github.com/advisories/GHSA-3wwx-pv8p-q78v",
+          "severity": "moderate",
+          "affectedRange": ">=8.1.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-3wwx-pv8p-q78v",
+          "severity": "moderate",
+          "affectedRange": ">=6.25.0 <6.28.1"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-pmjh-fq2x-6v4x",
+          "severity": "moderate",
+          "affectedRange": ">=8.0.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-r53p-7pc4-xj5r",
+          "severity": "low",
+          "affectedRange": ">=8.0.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-r53p-7pc4-xj5r",
+          "severity": "low",
+          "affectedRange": "<6.28.1"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-rfgv-xxqx-mfg5",
+          "severity": "high",
+          "affectedRange": ">=8.0.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-rfgv-xxqx-mfg5",
+          "severity": "high",
+          "affectedRange": ">=6.7.0 <6.28.1"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-3xpg-4rpp-hhhm",
+          "severity": "moderate",
+          "affectedRange": ">=8.0.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-2jfj-6hjv-fm6j",
+          "severity": "moderate",
+          "affectedRange": ">=8.0.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-2gqq-gqf2-x968",
+          "severity": "low",
+          "affectedRange": ">=8.0.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-w293-vg96-wgc3",
+          "severity": "high",
+          "affectedRange": ">=8.0.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-8436-99hf-9mmv",
+          "severity": "low",
+          "affectedRange": ">=8.0.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-vp8m-p9jh-q5pm",
+          "severity": "high",
+          "affectedRange": ">=8.10.0 <8.10.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-rx4f-c7p8-82vq",
+          "severity": "moderate",
+          "affectedRange": ">=8.0.0 <8.10.2"
+        }
+      ],
+      "fast-uri": [
+        {
+          "url": "https://github.com/advisories/GHSA-hrr3-gc8f-f4qj",
+          "severity": "moderate",
+          "affectedRange": ">=4.0.0 <4.1.5"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-hrr3-gc8f-f4qj",
+          "severity": "moderate",
+          "affectedRange": ">=3.0.0 <3.1.8"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-jvvf-x445-j334",
+          "severity": "moderate",
+          "affectedRange": ">=4.1.3 <4.1.5"
+        }
+      ],
+      "vitest": [
+        {
+          "url": "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+          "severity": "moderate",
+          "affectedRange": ">=2.1.0 <4.1.11"
+        }
+      ],
+      "@vitest/mocker": [
+        {
+          "url": "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+          "severity": "moderate",
+          "affectedRange": ">=2.1.0 <4.1.11"
+        }
+      ]
+    }
+  },
+  "reviewProbes": {
+    "scriptCount": 4,
+    "exitCodes": [0, 0, 0, 0],
+    "evidence": "repository-review-20260930-probes.json",
+    "notAdditiveWithWorkspaceTestCounts": true
+  },
+  "isolation": {
+    "postgres": "Own disposable PostgreSQL container; each probe creates/drops its own database",
+    "kafka": "Only unique audit-policy topics; one synthetic test fact, no application topic writes; cleanup confirmed",
+    "model": "synthetic, no new paid provider requests",
+    "cube": "No new real Cube process faults; prior same-code acceptance is referenced separately",
+    "productionAppChanges": false,
+    "secretsAndTranscriptsCommitted": false,
+    "postgresCleanupConfirmed": true,
+    "remainingReviewContainers": 0
+  },
+  "logs": [
+    {
+      "name": "check.log",
+      "sha256": "0061b822262df1eddcc60cc7a476d7c0442d3db0424794c70715280387b1290b",
+      "bytes": 149952,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "helpers.log",
+      "sha256": "d210e663c718180382ca22fbdc619596b529a130109377ac57ddbabd3afa10dd",
+      "bytes": 1234,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "faults.log",
+      "sha256": "5045ba785b274d50461cf9a5656d5ac5e603890819cb6c61aedc359c955ff2b1",
+      "bytes": 20937,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "docs.log",
+      "sha256": "9102b21e3e117c958ff328af8a4cbbee24450b089a43776758687bd00b0c68d6",
+      "bytes": 105,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "dependencies.log",
+      "sha256": "d5051d30cdc95db9b1e15936ac65bb9d8ed6c090ecf9a4c7aa8b26d363c8be7f",
+      "bytes": 208,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "runtime-policy.log",
+      "sha256": "ea80913d0ac920bed4b9c41e83a4297e66d7596bfd78e5e142d5dea42d2fbb0d",
+      "bytes": 220,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "closure.log",
+      "sha256": "3e3723a1196186f22ad04c2f3f960af3d3860c54471e62169e272cfdc07ed59d",
+      "bytes": 197,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "context.log",
+      "sha256": "62dd419dd4362e407f140703f4980e3cedeb1b029b0e4928ba9fde980da90ceb",
+      "bytes": 147,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "observability.log",
+      "sha256": "6e39a928488c0ed405ae32b2da12dadc15d4d3bf7e2d88c11cd5bf7819516404",
+      "bytes": 89,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "helm.log",
+      "sha256": "d1ae25a82bb905feb554ac34b321c2aee96a0521f76ec23dabc2eba49e371448",
+      "bytes": 953,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "install.log",
+      "sha256": "e7369f89f513b6f21976f64f37fdacc8361d0014deac66b2753b8d9c98402d4a",
+      "bytes": 173,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "security.log",
+      "sha256": "920444f25799a5551dcca51db817bb1f901703ac34a2535e3a2b5f44a37cec37",
+      "bytes": 1416,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "npm-audit.json",
+      "sha256": "8d8d5bbc91260eb8b84f0d93467b13dc767d573be8efd5e9239706b5dae8812d",
+      "bytes": 15338,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "browser.log",
+      "sha256": "7eab0fa00384351cd46df84f10a46a6a934544c17c2202ae2435e4dbcb721211",
+      "bytes": 941,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "browser-queue.log",
+      "sha256": "73cbe9e2b72823d2c7aba6c0f0e38f724e317eef7ddc90c101a84dcbf51763c6",
+      "bytes": 124,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "native-final.log",
+      "sha256": "7124b47cd231e455a4f8cd054dcdadd1534056d420d2b6c8f8a59d6ef363cfdd",
+      "bytes": 1472,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "storage-final.log",
+      "sha256": "76ebecaec2b923753efcbfd606198fa5c6e8d792f7966cdb9d7ca08ef9258c60",
+      "bytes": 1759,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "seal-final.log",
+      "sha256": "b6d8e0b928ffcc117e2b91d8ec8a349ae31119128ef67cd2a2c891e149750d76",
+      "bytes": 388,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "egress-final.log",
+      "sha256": "326cb266eb5e247d02d8326f60b01ad6c9260ffa5e49db4e8f73147179686127",
+      "bytes": 135,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "kafka-policy.log",
+      "sha256": "e808f60b9abfd494b95ab90048579da3c3612afe3bd59062d5d5caf6933c23b7",
+      "bytes": 574,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "build.log",
+      "sha256": "5dd69fa4604a19bb48fd0ff93a42ca37357cc679b5c5de71bb5bf09a697cd181",
+      "bytes": 1558,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "final-format.log",
+      "sha256": "ee3c89742afe6548f8d589fa2c2a122bb7b08c46d64d5690070ee3308fcf510c",
+      "bytes": 201,
+      "retainedAt": "private temporary review directory; not committed"
+    },
+    {
+      "name": "final-docs.log",
+      "sha256": "9102b21e3e117c958ff328af8a4cbbee24450b089a43776758687bd00b0c68d6",
+      "bytes": 105,
+      "retainedAt": "private temporary review directory; not committed"
+    }
+  ],
+  "artifactValidation": {
+    "fullFormatCheckExitCode": 0,
+    "documentationCheckExitCode": 0,
+    "diffWhitespaceCheckExitCode": 0,
+    "reportLocalLinksChecked": 29,
+    "baselineHashMismatches": ["docs/BACKLOG.md", "docs/README.md", "docs/ROADMAP.md"],
+    "probeScriptHashesMatch": true,
+    "note": "Full format check plus targeted checks after final evidence updates; production sources match the review baseline."
+  }
+}

@@ -44,6 +44,14 @@
 
 ## Current release gate
 
+- [x] Complete the [September 30 whole-repository review](reports/repository-review-20260930.md)
+      against pinned Pi, current ADRs and original design rationale; record
+      reproducible findings, coverage and verification limits.
+- [ ] Restore the full workspace and dependency security gates identified by
+      that review, then resolve its confirmed runtime/data-boundary findings
+      in individual vertical slices. Architecture discussion items remain
+      decisions to make, not approved semantic changes.
+
 - [x] ADR-0203: direct Steer uses the durable pending-input queue, canonical
       consumption and sealed-target restoration. [PG, browser and real Luna acceptance](reports/direct-steer-acceptance-20260930.md)
       covers lost replies, Worker loss, cancellation and preserved original history.
