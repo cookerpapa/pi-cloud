@@ -19,9 +19,6 @@ release gate; final combined verification remains part of the repairs.
 
 ## September 30 review follow-up
 
-- [ ] R30-04: bound Subagent inherited-history reads after Compaction and beyond
-      10,000 messages. Paginate history or expose bounded inherited context
-      without failing the entire child conversation detail.
 - [ ] D30-01: decide the shared elastic Workspace VM failure/cancellation domain.
       Current fail-closed provider cleanup can affect other bindings. Do not
       remove destruction without a proven process-scoped cancellation/fencing

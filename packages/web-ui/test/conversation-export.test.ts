@@ -98,6 +98,24 @@ const conversation: ConversationDetailResource = {
 };
 
 describe("canonical conversation Markdown export", () => {
+  it("labels inherited summaries and clipped context without pretending it is full history", () => {
+    const markdown = conversationExportMarkdown(
+      {
+        ...conversation,
+        turns: [],
+        inheritedContextSummary: {
+          entryId: "compact",
+          text: "Retained summary",
+          createdAt: conversation.session.createdAt,
+        },
+        inheritedMessagesTruncated: true,
+      },
+      new Date("2026-10-01T00:00:00.000Z"),
+    );
+    expect(markdown).toContain("### Context summary\n\nRetained summary");
+    expect(markdown).toContain("Only part of the inherited context is included");
+    expect(markdown).not.toContain("### Assistant");
+  });
   it("exports a large code payload without spreading every backtick run into function arguments", () => {
     const value = "`a` ".repeat(70_000);
     const withCode: ConversationDetailResource = {

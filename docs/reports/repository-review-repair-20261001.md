@@ -135,3 +135,21 @@ pass, with all three package typechecks. Boundary cases cover ASCII, Chinese,
 emoji and heavily escaped SOH text. The real native startup mutation for each
 maximum input fits below 900 KiB with an additional 64 KiB envelope reserve;
 oversized direct PG requests leave Session/Run/execution row counts unchanged.
+
+## R30-04: bounded inherited context preview
+
+[ADR-0205](../adr/0205-bounded-inherited-context-preview.md) replaces the lifetime
+ancestor scan and whole-detail rejection with a bounded read from the frozen
+child anchor. Native Compaction summary and retainedTail are respected. Anonymous
+retained messages reference their actual Compaction Entry plus messageIndex;
+no native Entry identity is invented. UI, reducer and export represent summary
+and clipping explicitly, including a child with no started Turns. The inherited
+display component is separated from ChatApp; model context and stored history
+remain under their original owners.
+
+Validation: two full-schema fixtures with 10,001 historical messages (compacted
+and uncompacted) open successfully and leave native row counts unchanged.
+Five preview boundary tests, 148 Web tests, 109 protocol tests and 18 Subagent
+tests pass, with Control Plane and Web typechecks. The empty retained tail,
+summary-only rendering, Unicode-safe clipping and clearing old preview metadata
+on a replacement snapshot are covered.

@@ -604,3 +604,8 @@ export {
   MAX_SUBAGENT_TASK_JSON_BYTES,
   assertSubagentTaskInputBudget,
 } from "./agent-input-budget.ts";
+export {
+  MAX_INHERITED_CONTEXT_ENTRIES,
+  MAX_INHERITED_CONTEXT_TEXT_CHARACTERS,
+  MAX_INHERITED_CONTEXT_TOTAL_CHARACTERS,
+} from "./inherited-context.ts";

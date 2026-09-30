@@ -306,7 +306,15 @@ describe("control-plane public API schemas", () => {
           updatedAt: createdAt,
           lastActiveAt: createdAt,
         },
-        inheritedMessages: [],
+        inheritedMessages: [
+          { entryId: "compact", messageIndex: 0, role: "user", text: "Kept question", createdAt },
+        ],
+        inheritedContextSummary: {
+          entryId: "compact",
+          text: "Earlier context summarized",
+          createdAt,
+        },
+        inheritedMessagesTruncated: true,
         turns: [
           {
             runId: "50000000-0000-4000-8000-000000000010",

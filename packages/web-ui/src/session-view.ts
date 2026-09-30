@@ -115,6 +115,8 @@ export type SessionViewState = {
   session: SessionResource | ConversationSessionResource | null;
   sessionState: SessionViewStatus;
   inheritedMessages: ConversationDetailResource["inheritedMessages"];
+  inheritedContextSummary?: ConversationDetailResource["inheritedContextSummary"];
+  inheritedMessagesTruncated?: ConversationDetailResource["inheritedMessagesTruncated"];
   turns: readonly TurnView[];
   historyTruncated: boolean;
   connection: ConnectionView;
@@ -651,6 +653,8 @@ export function sessionViewReducer(
       session: action.conversation.session,
       sessionState: action.conversation.session.state,
       inheritedMessages: action.conversation.inheritedMessages,
+      inheritedContextSummary: action.conversation.inheritedContextSummary,
+      inheritedMessagesTruncated: action.conversation.inheritedMessagesTruncated,
       turns: action.conversation.turns.map((turn): TurnView => ({
         ...(turn.transcript === undefined
           ? {

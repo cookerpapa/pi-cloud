@@ -1,4 +1,8 @@
 import { MAX_AGENT_INPUT_CHARACTERS } from "./agent-input-budget.ts";
+import {
+  MAX_INHERITED_CONTEXT_ENTRIES,
+  MAX_INHERITED_CONTEXT_TEXT_CHARACTERS,
+} from "./inherited-context.ts";
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { DEEPSEEK_MODEL_IDS, GPT_MODEL_IDS } from "./model-catalog.ts";
@@ -813,14 +817,26 @@ export const ConversationDetailResourceSchema = Type.Object(
       Type.Object(
         {
           entryId: Type.String({ minLength: 1, maxLength: 512 }),
+          messageIndex: Type.Optional(NonNegativeSafeIntegerSchema),
           role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
-          text: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
+          text: Type.String({ maxLength: MAX_INHERITED_CONTEXT_TEXT_CHARACTERS }),
           createdAt: UtcTimestampSchema,
         },
         { additionalProperties: false },
       ),
-      { maxItems: 10_000 },
+      { maxItems: MAX_INHERITED_CONTEXT_ENTRIES },
     ),
+    inheritedContextSummary: Type.Optional(
+      Type.Object(
+        {
+          entryId: PiEntryIdSchema,
+          text: Type.String({ maxLength: MAX_INHERITED_CONTEXT_TEXT_CHARACTERS }),
+          createdAt: UtcTimestampSchema,
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    inheritedMessagesTruncated: Type.Optional(Type.Literal(true)),
     turns: Type.Array(ConversationTurnResourceSchema, { maxItems: 200 }),
     historyTruncated: Type.Boolean(),
   },

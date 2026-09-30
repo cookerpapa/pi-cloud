@@ -186,7 +186,9 @@ const zhCN = {
   "chat.missingWorkspace": "这个对话的 Workspace 已被删除，但对话历史仍可查看。",
   "chat.chooseWorkspace": "选择新的 Workspace",
   "chat.inherited.title": "继承的对话上下文",
-  "chat.inherited.description": "以下内容来自这个 Session 中的父 Agent 分支",
+  "chat.inherited.description": "父 Agent 分支中的文本上下文概览",
+  "chat.inherited.summary": "继承的上下文摘要",
+  "chat.inherited.truncated": "这里只展示部分继承上下文，完整历史可在父会话中查看。",
   "chat.inherited.divider": "Subagent 独立执行从这里开始",
   "chat.latest": "回到最新 ↓",
   "chat.subagentReadOnly": "这是一次 Subagent 执行记录。后续消息请回到父会话发送。",
@@ -631,8 +633,10 @@ const enUS: Record<UiTextKey, string> = {
   "chat.missingWorkspace": "This chat's Workspace was deleted, but its history is still available.",
   "chat.chooseWorkspace": "Choose a new Workspace",
   "chat.inherited.title": "Inherited conversation context",
-  "chat.inherited.description":
-    "This context is inherited from the parent Agent branch in the same Session",
+  "chat.inherited.description": "Text context preview from the parent Agent branch",
+  "chat.inherited.summary": "Inherited context summary",
+  "chat.inherited.truncated":
+    "Only part of the inherited context is shown. Open the parent conversation for its full history.",
   "chat.inherited.divider": "Independent Subagent execution starts here",
   "chat.latest": "Jump to latest ↓",
   "chat.subagentReadOnly":

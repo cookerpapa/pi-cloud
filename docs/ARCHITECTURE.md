@@ -65,6 +65,12 @@ Human Fork copies preserve that binding in their self-contained log.
 Canonical Turn reads select its actual execution Session, excluding inherited
 copies in independent Fork logs.
 
+Delegated details expose a bounded text-context preview from their frozen anchor.
+The read stops at native Compaction or 65 ancestors; summary, retained messages
+and recent suffix are presented with explicit truncation when needed. The public
+preview references Compaction members by Entry ID plus messageIndex and is not
+used to construct Worker model context (ADR-0205).
+
 ## Durable input and scheduling
 
 PostgreSQL is the sole Run and execution authority. The public API authenticates

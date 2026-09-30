@@ -19,6 +19,12 @@ separate temporary Cube with the **same persistent Volume**. Optional absolute
 Run directory. Shared descendants keep the parent's compute scope. Context
 inheritance, compute placement and directory selection are independent.
 
+Child conversation views show an inherited text-context preview. After native
+Compaction, the summary is labelled separately from retained messages. Long
+previews are bounded and marked as partial, including in exports; the parent
+conversation retains its full history. This display budget does not trim the
+child's actual model context (ADR-0205).
+
 Task descriptions are limited to 100,000 characters and 256 KiB after JSON UTF-8
 encoding, including escaping. Oversized tasks fail before child admission;
 use inherited context or a Workspace file path for larger input. Task text must

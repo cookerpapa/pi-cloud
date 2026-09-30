@@ -74,8 +74,19 @@ export function conversationExportMarkdown(
     "",
   ];
 
-  if (conversation.inheritedMessages.length > 0) {
-    lines.push("## Inherited history", "");
+  if (
+    conversation.inheritedMessages.length > 0 ||
+    conversation.inheritedContextSummary ||
+    conversation.inheritedMessagesTruncated
+  ) {
+    lines.push("## Inherited context preview", "");
+    if (conversation.inheritedContextSummary)
+      lines.push("### Context summary", "", conversation.inheritedContextSummary.text, "");
+    if (conversation.inheritedMessagesTruncated)
+      lines.push(
+        "Only part of the inherited context is included; see the parent conversation for full history.",
+        "",
+      );
     for (const message of conversation.inheritedMessages) {
       lines.push(`### ${message.role === "user" ? "User" : "Assistant"}`, "", message.text, "");
     }

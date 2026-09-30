@@ -256,6 +256,12 @@ describe("session transcript reducer", () => {
     const conversation: ConversationDetailResource = {
       project,
       inheritedMessages: [],
+      inheritedContextSummary: {
+        entryId: "compact",
+        text: "Inherited summary",
+        createdAt: CREATED_AT,
+      },
+      inheritedMessagesTruncated: true,
       session: {
         ...session,
         state: "running",
@@ -281,6 +287,8 @@ describe("session transcript reducer", () => {
     expect(state).toMatchObject({
       sessionState: "running",
       historyTruncated: true,
+      inheritedContextSummary: { text: "Inherited summary" },
+      inheritedMessagesTruncated: true,
       turns: [{ prompt: "Historical private prompt", mailboxPosition: 8, status: "running" }],
     });
     state = sessionViewReducer(state, {
@@ -290,6 +298,18 @@ describe("session transcript reducer", () => {
     expect(state.turns[0]?.items).toEqual([
       expect.objectContaining({ kind: "text", text: "continued" }),
     ]);
+    state = sessionViewReducer(state, {
+      type: "conversation.loaded",
+      conversation: {
+        project,
+        session: conversation.session,
+        turns: conversation.turns,
+        inheritedMessages: [],
+        historyTruncated: false,
+      },
+    });
+    expect(state.inheritedContextSummary).toBeUndefined();
+    expect(state.inheritedMessagesTruncated).toBeUndefined();
   });
 
   it("hydrates an active durable snapshot before following later SSE events", () => {

@@ -5,13 +5,21 @@ import type {
   ConversationTurnState,
   ProjectEnvironmentResource,
 } from "@pi-cloud/protocol";
-import { parseEnvironmentValidationReport } from "@pi-cloud/protocol";
+import {
+  parseEnvironmentValidationReport,
+  MAX_INHERITED_CONTEXT_ENTRIES,
+} from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import { jsonObjectFrom } from "kysely/helpers/postgres";
 import { parseUserUploads } from "@pi-cloud/protocol";
 import { readCanonicalPiTurnTranscripts } from "@pi-cloud/runtime-core/canonical-pi-conversation";
 import { loadDelegatedSessionTreeSummaries } from "./delegated-session-projection.ts";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
+import {
+  inheritedContextPreview,
+  type InheritedContextPreview,
+  type InheritedContextEntry,
+} from "./inherited-context-preview.ts";
 import {
   environmentSnapshot,
   workspaceSourceResource,
@@ -41,7 +49,6 @@ type ConversationHistoryRow = {
 const MAX_CONVERSATION_SUMMARIES = 100;
 const MAX_DELEGATED_SESSION_SUMMARIES = 500;
 const MAX_CONVERSATION_TURNS = 40;
-const MAX_INHERITED_MESSAGES = 10_000;
 
 function listPosition(cursor: string | undefined): { at: string; id: string } | undefined {
   if (cursor === undefined) return;
@@ -408,10 +415,10 @@ export class ConversationReader {
         .map((row) => transcriptByTurnId.get(row.turnId)?.throughSequence ?? 0),
     );
     const environment = await this.#loadActiveProjectEnvironment(conversation.projectId);
-    const inheritedMessages =
+    const inheritedContext =
       conversation.sessionKind === "subagent" && beforeTurnId === undefined
         ? await this.#delegatedInheritedMessages(sessionId)
-        : [];
+        : { inheritedMessages: [] };
     return {
       canonicalThroughSequence,
       conversation: {
@@ -444,16 +451,14 @@ export class ConversationReader {
             ? {}
             : { parentSessionId: conversation.parentSessionId }),
         },
-        inheritedMessages,
+        ...inheritedContext,
         turns,
         historyTruncated,
       },
     };
   }
 
-  async #delegatedInheritedMessages(
-    sessionId: string,
-  ): Promise<ConversationDetailResource["inheritedMessages"]> {
+  async #delegatedInheritedMessages(sessionId: string): Promise<InheritedContextPreview> {
     const execution = await this.#database
       .selectFrom("subagent_executions as execution")
       .innerJoin("sessions as child", (join) =>
@@ -475,12 +480,12 @@ export class ConversationReader {
         "Delegated Session has no execution record",
       );
     }
-    if (execution.contextMode !== "branch") return [];
-    if (execution.contextBaseEntryId === null) return [];
+    if (execution.contextMode !== "branch" || execution.contextBaseEntryId === null)
+      return { inheritedMessages: [] };
     const rows = (
-      await sql<{ id: string; timestampMs: string; payload: Record<string, unknown> }>`
+      await sql<InheritedContextEntry>`
         with recursive branch as (
-          select id, parent_id, seq, type, timestamp_ms
+          select id, parent_id, seq, type, timestamp_ms, 0 as depth
             from pi_session_log
            where tenant_id = ${this.#tenantId}::uuid
              and session_id = ${execution.piSessionId}
@@ -490,66 +495,21 @@ export class ConversationReader {
                  parent.parent_id,
                  parent.seq,
                  parent.type,
-                 parent.timestamp_ms
+                 parent.timestamp_ms,
+                 child.depth + 1 as depth
             from pi_session_log parent
             join branch child on child.parent_id = parent.id and parent.seq < child.seq
            where parent.tenant_id = ${this.#tenantId}::uuid
              and parent.kind = 'entry' and parent.session_id = ${execution.piSessionId}
+             and child.type <> 'compaction' and child.depth < ${MAX_INHERITED_CONTEXT_ENTRIES}
         )
-        select branch.id, branch.timestamp_ms as "timestampMs", log.payload->'entry' as payload
+        select branch.id, branch.type, branch.timestamp_ms as "timestampMs", log.payload->'entry' as payload
          from branch join pi_session_log log on log.tenant_id=${this.#tenantId}::uuid
            and log.session_id=${execution.piSessionId} and log.seq=branch.seq
-         where branch.type = 'message'
-         order by branch.seq asc
-         limit ${MAX_INHERITED_MESSAGES + 1}
+         order by branch.seq desc
       `.execute(this.#database)
     ).rows;
-    if (rows.length > MAX_INHERITED_MESSAGES) {
-      throw new ControlPlaneStoreError("invalid_request", "Inherited conversation is too large");
-    }
-    return rows.flatMap((row) => {
-      const message = row.payload.message;
-      if (typeof message !== "object" || message === null || Array.isArray(message)) return [];
-      const candidate = message as Record<string, unknown>;
-      if (candidate.role !== "user" && candidate.role !== "assistant") return [];
-      if (
-        candidate.role === "assistant" &&
-        (typeof candidate.stopReason !== "string" ||
-          ["toolUse", "error", "aborted", "pending"].includes(candidate.stopReason))
-      ) {
-        return [];
-      }
-      const text =
-        typeof candidate.content === "string"
-          ? candidate.content
-          : Array.isArray(candidate.content)
-            ? candidate.content
-                .flatMap((part) => {
-                  if (typeof part !== "object" || part === null || Array.isArray(part)) return [];
-                  const content = part as Record<string, unknown>;
-                  return content.type === "text" && typeof content.text === "string"
-                    ? [content.text]
-                    : [];
-                })
-                .join("\n")
-            : "";
-      if (text.length === 0) return [];
-      const createdAt = new Date(Number(row.timestampMs));
-      if (Number.isNaN(createdAt.valueOf())) {
-        throw new ControlPlaneStoreError(
-          "control_plane_misconfigured",
-          "Inherited Pi message timestamp is invalid",
-        );
-      }
-      return [
-        {
-          entryId: row.id,
-          role: candidate.role,
-          text,
-          createdAt: createdAt.toISOString(),
-        },
-      ];
-    });
+    return inheritedContextPreview(rows);
   }
 
   async #conversationLineage(first: ConversationLineageNode): Promise<ConversationLineageNode[]> {

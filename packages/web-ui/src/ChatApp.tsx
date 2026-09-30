@@ -1,3 +1,4 @@
+import { InheritedContext } from "./InheritedContext.tsx";
 import { useComposerUploads } from "./useComposerUploads.ts";
 import { ComposerUploadCards } from "./UploadCards.tsx";
 import {
@@ -43,8 +44,6 @@ import {
   conversationExportMarkdown,
   downloadConversationMarkdown,
 } from "./conversation-export.ts";
-import { MessageCopyButton } from "./MessageCopyButton.tsx";
-import { Markdown } from "./Markdown.tsx";
 import {
   ModelSettingsMenu,
   defaultNewConversationSettings,
@@ -2117,7 +2116,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             }}
             ref={chatScrollerRef}
           >
-            {state.turns.length === 0 ? (
+            {state.turns.length === 0 &&
+            state.inheritedMessages.length === 0 &&
+            !state.inheritedContextSummary &&
+            !state.inheritedMessagesTruncated ? (
               <div className="product-chat-empty" aria-hidden="true" />
             ) : (
               <div className="product-transcript">
@@ -2131,50 +2133,11 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                     {historyLoading ? t("common.loading") : t("chat.loadEarlier")}
                   </button>
                 ) : null}
-                {state.inheritedMessages.length === 0 ? null : (
-                  <section className="product-inherited-context">
-                    <header>
-                      <strong>{t("chat.inherited.title")}</strong>
-                      <span>{t("chat.inherited.description")}</span>
-                    </header>
-                    {state.inheritedMessages.map((message) => (
-                      <div
-                        className={`product-inherited-message ${message.role}`}
-                        data-conversation-entry-id={message.entryId}
-                        key={message.entryId}
-                      >
-                        {message.role === "user" ? (
-                          <div className="product-user-message-body">
-                            <div className="product-user-bubble">{message.text}</div>
-                            <div className="product-user-message-actions">
-                              <MessageCopyButton
-                                copiedLabel={t("turn.copied")}
-                                label={t("turn.copyUserMessage")}
-                                text={message.text}
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="product-inherited-assistant">
-                            <div className="product-assistant-content">
-                              <Markdown>{message.text}</Markdown>
-                              <div className="product-answer-actions">
-                                <MessageCopyButton
-                                  copiedLabel={t("turn.copied")}
-                                  label={t("turn.copyAssistantMessage")}
-                                  text={message.text}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    <div className="product-inherited-divider">
-                      <span>{t("chat.inherited.divider")}</span>
-                    </div>
-                  </section>
-                )}
+                <InheritedContext
+                  messages={state.inheritedMessages}
+                  summary={state.inheritedContextSummary}
+                  truncated={state.inheritedMessagesTruncated === true}
+                />
                 {state.turns
                   .filter((turn) => turn.status !== "queued")
                   .map((turn) => {

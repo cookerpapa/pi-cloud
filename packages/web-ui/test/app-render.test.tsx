@@ -6,6 +6,7 @@ import ChatApp, { connectionPhaseDisplayDelayMs } from "../src/ChatApp.tsx";
 import { ConversationTreeNavigator } from "../src/ConversationTreeNavigator.tsx";
 import { ConversationTurn } from "../src/ConversationTurn.tsx";
 import { Markdown } from "../src/Markdown.tsx";
+import { InheritedContext } from "../src/InheritedContext.tsx";
 import { ToolActivity } from "../src/ToolActivity.tsx";
 import { PiCloudApi } from "../src/api.ts";
 import { ResourceManagementPage, resourceRefreshPending } from "../src/ResourceManagementPage.tsx";
@@ -25,6 +26,23 @@ const configuration: WebConfiguration = {
     jaeger: "",
   },
 };
+
+it("shows a bounded inherited summary even without ordinary inherited messages", () => {
+  const markup = renderToStaticMarkup(
+    <InheritedContext
+      messages={[]}
+      summary={{
+        entryId: "compact",
+        text: "Retained summary",
+        createdAt: "2026-10-01T00:00:00.000Z",
+      }}
+      truncated
+    />,
+  );
+  expect(markup).toContain("Retained summary");
+  expect(markup).toContain('data-conversation-entry-id="compact"');
+  expect(markup).toMatch(/部分继承上下文|part of the inherited context/);
+});
 
 function turn(turnId: string, prompt: string): TurnView {
   return {

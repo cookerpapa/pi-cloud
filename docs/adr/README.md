@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0205](0205-bounded-inherited-context-preview.md) — bounded delegated
+   context preview with native Compaction summary/tail and explicit truncation.
 1. [ADR-0204](0204-bounded-subagent-task-input.md) — delegated task character and
    encoded-byte budgets before native publication and PG admission.
 1. [ADR-0203](0203-consumption-confirmed-direct-steer.md) — durable direct Steer,
