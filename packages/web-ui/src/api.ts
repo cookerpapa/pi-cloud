@@ -589,12 +589,17 @@ export class PiCloudApi {
     sessionId: string,
     workspaceId: string,
     idempotencyKey: string,
+    workingDirectory?: string,
   ): Promise<ConversationWorkspaceBindingResource> {
     return parseConversationWorkspaceBindingResource(
       await request(
         this.#fetch,
         `/v1/conversations/${encodeURIComponent(sessionId)}/workspace`,
-        jsonRequest({ workspaceId }, idempotencyKey, "PUT"),
+        jsonRequest(
+          { workspaceId, ...(workingDirectory === undefined ? {} : { workingDirectory }) },
+          idempotencyKey,
+          "PUT",
+        ),
         this.#authorizationToken,
       ),
     );

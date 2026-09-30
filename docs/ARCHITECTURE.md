@@ -579,8 +579,14 @@ machine and its Volume, not conversation history.
 
 Deleting an environment/Workspace makes dependent Sessions require rebinding.
 Existing messages remain readable. Rebinding is allowed after resource deletion
-and only while no Run is active; a new Run freezes the new Workspace. A trusted
-deletion coordinator and Cube Volume Controller remove actual bytes, including
+and only while no Run is active; a new Run freezes the new Workspace.
+Rebinding can select an elastic Workspace or a running/paused development machine
+owned by the conversation creator and authenticated actor. Machine/profile/cwd
+binding commits together; pending machine release prevents admission. The dialog
+reuses machine directory browsing and keeps retry identity separate from new-chat
+selection. The next World State reports the different Workspace without assuming
+`/workspace` or empty files. See [ADR-0202](adr/0202-development-machine-workspace-rebinding.md).
+A trusted deletion coordinator and Cube Volume Controller remove actual bytes, including
 root-owned files, before committing purge completion. There is no Kopia/S3
 Workspace authority or platform-managed Git tree.
 

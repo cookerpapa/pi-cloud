@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0202](0202-development-machine-workspace-rebinding.md) — recover a missing
+   Workspace using a user-owned development machine and selected directory.
 1. [ADR-0201](0201-runtime-activity-and-path-probes.md) — runtime activity,
    Session path probes and independent PG-time lease sweeps.
 1. [ADR-0200](0200-workspace-uploads-and-user-image-input.md) — Workspace file uploads,

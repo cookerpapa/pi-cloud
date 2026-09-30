@@ -992,10 +992,26 @@ export class ControlPlaneStore {
     sessionId: string,
     workspaceId: string,
     idempotencyKey: string,
+    execution: Readonly<{ workingDirectory?: string; ownerUserId?: string }> = {},
   ): Promise<ConversationWorkspaceBindingResource> {
+    if (
+      execution.workingDirectory !== undefined &&
+      !validMachineDirectory(execution.workingDirectory)
+    )
+      throw new ControlPlaneStoreError(
+        "invalid_request",
+        "Conversation working directory is invalid",
+      );
     const requestSha256 = createHash("sha256")
-      .update("pi-cloud.conversation-workspace-rebind.v1\0", "utf8")
-      .update(workspaceId, "utf8")
+      .update("pi-cloud.conversation-workspace-rebind.v2\0", "utf8")
+      .update(
+        JSON.stringify({
+          workspaceId,
+          workingDirectory: execution.workingDirectory ?? null,
+          ownerUserId: execution.ownerUserId ?? null,
+        }),
+        "utf8",
+      )
       .digest("hex");
     const operationId = this.#idGenerator();
     return this.#database.transaction().execute(async (transaction) => {
@@ -1006,6 +1022,9 @@ export class ControlPlaneStore {
           "workspace_id as currentWorkspaceId",
           "session_kind as sessionKind",
           "archived_at as archivedAt",
+          "created_by_user_id as createdByUserId",
+          "pi_session_id as piSessionId",
+          "state",
         ])
         .where("tenant_id", "=", this.#tenantId)
         .where("id", "=", sessionId)
@@ -1058,7 +1077,11 @@ export class ControlPlaneStore {
         };
       }
 
-      if (session.sessionKind !== "conversation" || session.archivedAt !== null) {
+      if (
+        session.sessionKind !== "conversation" ||
+        session.archivedAt !== null ||
+        !["cold", "idle"].includes(session.state)
+      ) {
         throw new ControlPlaneStoreError("conflict", "Conversation cannot change Workspace");
       }
       const currentWorkspace = await transaction
@@ -1087,6 +1110,52 @@ export class ControlPlaneStore {
           "Wait for the active Run to settle before rebinding the Workspace",
         );
       }
+      const physicalSession = await transaction
+        .selectFrom("pi_sessions")
+        .select("unsealed_runs")
+        .where("tenant_id", "=", this.#tenantId)
+        .where("id", "=", session.piSessionId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      if (Number(physicalSession.unsealed_runs) !== 0)
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Wait for all Session work to settle before rebinding",
+        );
+
+      // Match machine lifecycle/admission: machine before Workspace. A release
+      // intent may leave the machine marked running until its external call ends.
+      const machine = await transaction
+        .selectFrom("development_environments")
+        .select(["id", "owner_user_id", "profile_key", "state"])
+        .where("tenant_id", "=", this.#tenantId)
+        .where("workspace_id", "=", workspaceId)
+        .where("state", "!=", "released")
+        .forShare()
+        .executeTakeFirst();
+      if (machine) {
+        if (
+          machine.owner_user_id !== execution.ownerUserId ||
+          session.createdByUserId !== execution.ownerUserId
+        )
+          throw new ControlPlaneStoreError("not_found", "Target development machine was not found");
+        if (!["running", "paused"].includes(machine.state))
+          throw new ControlPlaneStoreError("conflict", "Cloud development machine is not ready");
+        const releasing = await transaction
+          .selectFrom("development_environment_operations")
+          .select("id")
+          .where("tenant_id", "=", this.#tenantId)
+          .where("environment_id", "=", machine.id)
+          .where("action", "=", "release")
+          .where("result_state", "!=", "released")
+          .limit(1)
+          .executeTakeFirst();
+        if (releasing)
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Cloud development machine is being released",
+          );
+      }
       const target = await transaction
         .selectFrom("workspaces as workspace")
         .innerJoin("projects as project", (join) =>
@@ -1098,10 +1167,11 @@ export class ControlPlaneStore {
           "workspace.id",
           "workspace.project_id as projectId",
           "project.name as workspaceName",
+          "workspace.workspace_kind as workspaceKind",
         ])
         .where("workspace.tenant_id", "=", this.#tenantId)
         .where("workspace.id", "=", workspaceId)
-        .where("workspace.workspace_kind", "=", "user")
+        .where("workspace.workspace_kind", "in", ["user", "development_environment"])
         .where("workspace.deleted_at", "is", null)
         .where("project.deleted_at", "is", null)
         .forUpdate("workspace")
@@ -1109,21 +1179,24 @@ export class ControlPlaneStore {
       if (target === undefined) {
         throw new ControlPlaneStoreError("not_found", "Target Workspace was not found");
       }
-      const conflictingPersistentSession = await transaction
-        .selectFrom("sessions")
-        .select("id")
-        .where("tenant_id", "=", this.#tenantId)
-        .where("workspace_id", "=", workspaceId)
-        .where("archived_at", "is", null)
-        .where("execution_mode", "=", "development_environment")
-        .limit(1)
-        .executeTakeFirst();
-      if (conflictingPersistentSession !== undefined) {
+      const machineTarget = target.workspaceKind === "development_environment";
+      if (machineTarget !== (machine !== undefined))
         throw new ControlPlaneStoreError(
           "conflict",
-          "Target Workspace is reserved by an exclusive execution environment",
+          "Target Workspace execution resource is unavailable",
         );
-      }
+      const workingDirectory =
+        execution.workingDirectory ?? (machineTarget ? "/home/user" : "/workspace");
+      if (!machineTarget && workingDirectory !== "/workspace")
+        throw new ControlPlaneStoreError(
+          "invalid_request",
+          "Elastic Workspace requires /workspace",
+        );
+      if (machine && !["starter", "standard", "performance"].includes(machine.profile_key))
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Development machine profile is invalid",
+        );
 
       const boundAt = new Date();
       await transaction
@@ -1131,9 +1204,12 @@ export class ControlPlaneStore {
         .set({
           project_id: target.projectId,
           workspace_id: target.id,
-          execution_mode: "elastic",
-          development_environment_id: null,
-          working_directory: "/workspace",
+          execution_mode: machineTarget ? "development_environment" : "elastic",
+          development_environment_id: machine?.id ?? null,
+          ...(machine
+            ? { sandbox_profile_key: machine.profile_key as DevelopmentEnvironmentProfileKey }
+            : {}),
+          working_directory: workingDirectory,
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
           updated_at: boundAt,
         })

@@ -542,7 +542,10 @@ export const WorkspaceDeletionResourceSchema = Type.Object(
 );
 
 export const RebindConversationWorkspaceRequestSchema = Type.Object(
-  { workspaceId: UuidSchema },
+  {
+    workspaceId: UuidSchema,
+    workingDirectory: Type.Optional(Type.String({ minLength: 1, maxLength: 4096, pattern: "^/" })),
+  },
   { additionalProperties: false },
 );
 

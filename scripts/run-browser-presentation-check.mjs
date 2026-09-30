@@ -44,6 +44,7 @@ import { Markdown } from "/src/Markdown.tsx";
 import { WorkspaceInspector } from "/src/WorkspaceInspector.tsx";
 import { WorkspaceTerminal } from "/src/WorkspaceTerminal.tsx";
 import { WorkspaceDirectoryPicker } from "/src/WorkspaceDirectoryPicker.tsx";
+import { WorkspaceRebindDialog } from "/src/WorkspaceRebindDialog.tsx";
 import { ConversationTreeNavigator } from "/src/ConversationTreeNavigator.tsx";
 import { PiCloudApi, PiCloudApiError } from "/src/api.ts";
 import { I18nProvider } from "/src/i18n.tsx";
@@ -151,6 +152,23 @@ window.renderNavigation=()=>{
 window.renderInspector=(refreshSignal=0)=>root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},
   React.createElement(WorkspaceInspector,{api:inspectorApi,sessionId:"session-fixture",workspaceId:"workspace-fixture",
     workspaceName:"fixture",developmentEnvironmentId:null,workingDirectory:"/workspace",refreshSignal,onClose:()=>{},onError:()=>{}})));
+window.renderRebind = (withMachine=true) => {
+  window.rebindCalls=[];window.rebindResumes=[];window.rebindCreates=0;window.rebindBound=[];
+  window.rebindFailNext=!withMachine;
+  const machine={environmentId:'machine-fixture',projectId:'machine-project',workspaceId:'machine-workspace',
+    workspaceName:'Existing cloud machine',state:'paused',generation:1,profileKey:'starter',cpuCount:1,memoryMiB:2048,systemDiskGiB:8,
+    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const api={
+    developmentEnvironmentAction:async(id,action)=>{rebindResumes.push({id,action});machine.state='running';return machine;},
+    listDevelopmentEnvironmentDirectory:async(environmentId,path)=>({environmentId,path,entries:[{name:'repo',path:'/home/user/repo',kind:'directory'}]}),
+    createProject:async()=>{rebindCreates++;return {workspaceId:'created-workspace'};},
+    rebindConversationWorkspace:async(...args)=>{rebindCalls.push(args);if(rebindFailNext){rebindFailNext=false;throw Error('Lost binding reply');}return {};},
+  };
+  root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(WorkspaceRebindDialog,{
+    key:withMachine?'machine':'new',api,sessionId:'preserved-session',workspaces:[],environments:withMachine?[machine]:[],canMutate:true,
+    onRefresh:async()=>{},onBound:async(id)=>{rebindBound.push(id);},onClose:()=>{},onOpenResources:()=>{},
+  })));
+};
 window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   window.requestAnimationFrame = nativeRaf; window.cancelAnimationFrame = nativeCancelRaf;
   const sid = "10000000-0000-4000-8000-000000000001";
@@ -333,6 +351,67 @@ try {
   await withChromePage({}, async (page) => {
     await page.navigate(`http://127.0.0.1:${port}/review.html`);
     await page.waitFor("window.fixtureReady");
+    await page.evaluate("renderRebind(true)");
+    await page.waitFor(
+      "document.querySelector('.product-rebind-modal select') && !document.querySelector('.product-rebind-modal fieldset').disabled",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-rebind-modal select').value"),
+      "machine-fixture",
+    );
+    await page.evaluate(
+      "Array.from(document.querySelectorAll('.product-rebind-modal button')).find(b=>b.textContent.includes('Choose directory')).click()",
+    );
+    await page.waitFor("document.querySelector('.product-directory-entry-directory')");
+    await page.evaluate("document.querySelector('.product-directory-entry-directory').click()");
+    await page.waitFor(
+      "document.querySelector('.product-directory-selection code')?.textContent==='/home/user/repo'",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-directory-picker footer .product-primary-button').click()",
+    );
+    await page.waitFor(
+      "document.querySelector('.product-rebind-modal code')?.textContent==='/home/user/repo'",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-rebind-modal button[type=submit]').click()",
+    );
+    await page.waitFor("rebindBound.length===1");
+    assert.deepEqual(
+      await page.evaluate(
+        "rebindCalls.map(([session,workspace,key,cwd])=>({session,workspace,cwd}))",
+      ),
+      [{ session: "preserved-session", workspace: "machine-workspace", cwd: "/home/user/repo" }],
+    );
+    assert.equal(await page.evaluate("rebindCreates"), 0);
+    assert.deepEqual(await page.evaluate("rebindResumes"), [
+      { id: "machine-fixture", action: "resume" },
+    ]);
+    await page.evaluate("renderRebind(false)");
+    await page.waitFor(
+      "document.querySelector('.product-rebind-modal input[maxlength]') && !document.querySelector('.product-rebind-modal fieldset').disabled",
+    );
+    await page.evaluate(
+      "const e=document.querySelector('.product-rebind-modal input[maxlength]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Replacement');e.dispatchEvent(new Event('input',{bubbles:true}));",
+    );
+    await page.waitFor(
+      "!document.querySelector('.product-rebind-modal button[type=submit]').disabled",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-rebind-modal button[type=submit]').click()",
+    );
+    await page.waitFor(
+      "document.querySelector('.product-rebind-modal [role=alert]') && !document.querySelector('.product-rebind-modal button[type=submit]').disabled",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-rebind-modal button[type=submit]').click()",
+    );
+    await page.waitFor("rebindBound.length===1");
+    assert.equal(await page.evaluate("rebindCreates"), 1);
+    assert.equal(
+      await page.evaluate("rebindCalls.length===2 && rebindCalls[0][2]===rebindCalls[1][2]"),
+      true,
+    );
     await page.evaluate("localStorage.clear(); renderPanel()");
     await page.waitFor('document.querySelector("#panel")');
     assert.equal(await page.evaluate('document.querySelector("#panel").dataset.width'), "280");
@@ -943,6 +1022,8 @@ try {
   console.log(
     JSON.stringify({
       accepted: true,
+      machineWorkspaceRebind: true,
+      rebindRetryUsesSameTargetAndKey: true,
       persistentRuntimeStatus: true,
       separateActivityAndPath: true,
       firstImageOnlyMessage: true,

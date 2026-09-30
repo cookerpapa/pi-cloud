@@ -7,6 +7,7 @@ import {
   ControlPlaneStore,
   createPrivateTenant,
 } from "../src/index.ts";
+import { QueuedInputService } from "../src/queued-input-service.ts";
 
 const connectionString = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
@@ -17,7 +18,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
   let administrator: Kysely<Database>;
   let database: Kysely<Database>;
   let store: ControlPlaneStore;
-  let scope: { tenantId: string; defaultModelProfileId: string };
+  let scope: { tenantId: string; defaultModelProfileId: string; ownerUserId: string };
 
   beforeAll(async () => {
     administrator = createDatabase({ connectionString: connectionString!, maxConnections: 1 });
@@ -53,9 +54,282 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       project.workspaceId,
       name,
       "elastic",
+      { ownerUserId: scope.ownerUserId },
     );
     return { project, session };
   }
+
+  async function machineFixture(ownerUserId = scope.ownerUserId) {
+    const project = await store.createProject({
+      name: `machine-${randomUUID()}`,
+      source: { kind: "empty" },
+    });
+    const workspace = await database
+      .updateTable("workspaces")
+      .set({ workspace_kind: "development_environment" })
+      .where("id", "=", project.workspaceId)
+      .returning("sandbox_domain_id")
+      .executeTakeFirstOrThrow();
+    const instanceId = randomUUID(),
+      environmentId = randomUUID(),
+      baseUrl = `http://broker-${instanceId}:4000`;
+    await database
+      .insertInto("tool_broker_instances")
+      .values({
+        instance_id: instanceId,
+        sandbox_domain_id: workspace.sandbox_domain_id,
+        owner_base_url: baseUrl,
+        state: "ready",
+        lease_expires_at: new Date(Date.now() + 60000),
+        last_heartbeat_at: new Date(),
+      })
+      .execute();
+    await database
+      .insertInto("development_environments")
+      .values({
+        id: environmentId,
+        tenant_id: scope.tenantId,
+        owner_user_id: ownerUserId,
+        project_id: project.projectId,
+        workspace_id: project.workspaceId,
+        sandbox_domain_id: workspace.sandbox_domain_id,
+        environment_version_id: project.environment.environmentVersionId,
+        owner_instance_id: instanceId,
+        owner_base_url: baseUrl,
+        runtime_id: `runtime-${environmentId}`,
+        runtime_name: `runtime-${environmentId}`,
+        state: "running",
+        idempotency_key: environmentId,
+        request_sha256: "a".repeat(64),
+        profile_key: "starter",
+        cpu_count: 1,
+        memory_mib: 2048,
+        system_disk_gib: 8,
+      })
+      .execute();
+    return { ...project, environmentId };
+  }
+
+  it("binds a missing Workspace to its owner's machine without changing history identity or accepted Runs", async () => {
+    const { project, session } = await fixture("machine-rebind");
+    const accepted = await store.acceptTurn(session.sessionId, "old-workspace-input", {
+      prompt: "queued input",
+    });
+    const queue = new QueuedInputService({
+      database,
+      steering: {
+        async deliverQueued() {
+          throw new Error("No steer expected");
+        },
+      },
+    });
+    await queue.mutate(scope.tenantId, session.sessionId, accepted.turnId, "cancel-old-input", {
+      action: "cancel",
+      revision: (await queue.list(scope.tenantId, session.sessionId)).revision,
+    });
+    const before = await database
+      .selectFrom("sessions")
+      .selectAll()
+      .where("id", "=", session.sessionId)
+      .executeTakeFirstOrThrow();
+    await store.deleteWorkspace(project.workspaceId, "remove-for-machine");
+    const machine = await machineFixture();
+    const execution = {
+      ownerUserId: scope.ownerUserId,
+      workingDirectory: "/home/user/rebound-project",
+    };
+    const result = await store.rebindConversationWorkspace(
+      session.sessionId,
+      machine.workspaceId,
+      "bind-machine",
+      execution,
+    );
+    expect(
+      await store.rebindConversationWorkspace(
+        session.sessionId,
+        machine.workspaceId,
+        "bind-machine",
+        execution,
+      ),
+    ).toEqual({ ...result, replayed: true });
+    await expect(
+      store.rebindConversationWorkspace(session.sessionId, machine.workspaceId, "bind-machine", {
+        ...execution,
+        workingDirectory: "/home/user/another",
+      }),
+    ).rejects.toMatchObject({ code: "idempotency_conflict" });
+    const after = await database
+      .selectFrom("sessions")
+      .selectAll()
+      .where("id", "=", session.sessionId)
+      .executeTakeFirstOrThrow();
+    expect(after).toMatchObject({
+      execution_mode: "development_environment",
+      development_environment_id: machine.environmentId,
+      workspace_id: machine.workspaceId,
+      project_id: machine.projectId,
+      sandbox_profile_key: "starter",
+      working_directory: execution.workingDirectory,
+      pi_session_id: before.pi_session_id,
+      desired_model_profile_id: before.desired_model_profile_id,
+      desired_thinking_level: before.desired_thinking_level,
+      created_by_user_id: before.created_by_user_id,
+      agent_revision_id: before.agent_revision_id,
+    });
+    expect((await store.getRun(accepted.runId)).workspaceId).toBe(project.workspaceId);
+    const next = await store.acceptTurn(session.sessionId, "new-machine-input", {
+      prompt: "continue",
+    });
+    expect(
+      await database
+        .selectFrom("runs")
+        .select(["workspace_id", "working_directory", "sandbox_profile_key"])
+        .where("id", "=", next.runId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({
+      workspace_id: machine.workspaceId,
+      working_directory: execution.workingDirectory,
+      sandbox_profile_key: "starter",
+    });
+  });
+
+  it("rejects foreign machine owners, invalid directories, unavailable targets and live Workspace changes", async () => {
+    const { project, session } = await fixture("machine-rebind-guards");
+    const foreignUserId = randomUUID();
+    await database
+      .insertInto("users")
+      .values({ id: foreignUserId, tenant_id: scope.tenantId, display_name: "Other" })
+      .execute();
+    const machine = await machineFixture(foreignUserId);
+    const rebind = (ownerUserId = scope.ownerUserId, workingDirectory = "/home/user") =>
+      store.rebindConversationWorkspace(session.sessionId, machine.workspaceId, randomUUID(), {
+        ownerUserId,
+        workingDirectory,
+      });
+    await expect(rebind()).rejects.toMatchObject({ code: "conflict" });
+    await store.deleteWorkspace(project.workspaceId, "delete-rebind-guards");
+    await database
+      .updateTable("sessions")
+      .set({ state: "running" })
+      .where("id", "=", session.sessionId)
+      .execute();
+    await expect(rebind()).rejects.toMatchObject({ code: "conflict" });
+    await database
+      .updateTable("sessions")
+      .set({ state: "idle" })
+      .where("id", "=", session.sessionId)
+      .execute();
+    await expect(rebind()).rejects.toMatchObject({ code: "not_found" });
+    await expect(rebind(foreignUserId)).rejects.toMatchObject({ code: "not_found" });
+    await expect(rebind(scope.ownerUserId, "relative/path")).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    const foreign = await createPrivateTenant(database, {
+      slug: `foreign-${randomUUID()}`,
+      ownerDisplayName: "Foreign",
+    });
+    const foreignTarget = await new ControlPlaneStore({
+      database,
+      tenantId: foreign.tenantId,
+      defaultModelProfileId: foreign.defaultModelProfileId,
+    }).createProject({ name: "Foreign Workspace", source: { kind: "empty" } });
+    await expect(
+      store.rebindConversationWorkspace(
+        session.sessionId,
+        foreignTarget.workspaceId,
+        randomUUID(),
+        { ownerUserId: scope.ownerUserId },
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await database
+      .updateTable("development_environments")
+      .set({ owner_user_id: scope.ownerUserId, state: "unknown" })
+      .where("id", "=", machine.environmentId)
+      .execute();
+    await expect(rebind()).rejects.toMatchObject({ code: "conflict" });
+    await database
+      .updateTable("development_environments")
+      .set({
+        state: "released",
+        runtime_id: null,
+        runtime_name: null,
+        owner_instance_id: null,
+        owner_base_url: null,
+        released_at: new Date(),
+      })
+      .where("id", "=", machine.environmentId)
+      .execute();
+    await expect(rebind()).rejects.toMatchObject({ code: "conflict" });
+    expect((await store.getConversation(session.sessionId)).session.workspaceState).toBe("missing");
+  });
+
+  it("rejects a machine rebind if release intent commits while its row lock is awaited", async () => {
+    const { project, session } = await fixture("machine-rebind-release-race");
+    await store.deleteWorkspace(project.workspaceId, "delete-release-race");
+    const machine = await machineFixture();
+    const locked = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const lifecycle = database.transaction().execute(async (tx) => {
+      await tx
+        .selectFrom("development_environments")
+        .select("id")
+        .where("id", "=", machine.environmentId)
+        .forUpdate()
+        .execute();
+      locked.resolve();
+      await release.promise;
+      await tx
+        .insertInto("development_environment_operations")
+        .values({
+          id: randomUUID(),
+          tenant_id: scope.tenantId,
+          environment_id: machine.environmentId,
+          actor_user_id: scope.ownerUserId,
+          idempotency_key: "pending-release",
+          action: "release",
+          request_sha256: "b".repeat(64),
+          result_state: "running",
+        })
+        .execute();
+    });
+    await locked.promise;
+    const binding = store
+      .rebindConversationWorkspace(session.sessionId, machine.workspaceId, "racing-bind", {
+        ownerUserId: scope.ownerUserId,
+      })
+      .catch((error) => error);
+    try {
+      await waitForContender();
+    } finally {
+      release.resolve();
+    }
+    await lifecycle;
+    expect(await binding).toMatchObject({
+      code: "conflict",
+      message: "Cloud development machine is being released",
+    });
+    expect((await store.getConversation(session.sessionId)).session.workspaceState).toBe("missing");
+  });
+
+  it("allows paused owned targets but blocks new work until resume", async () => {
+    const { project, session } = await fixture("machine-rebind-paused");
+    await store.deleteWorkspace(project.workspaceId, "delete-paused");
+    const machine = await machineFixture();
+    await database
+      .updateTable("development_environments")
+      .set({ state: "paused" })
+      .where("id", "=", machine.environmentId)
+      .execute();
+    await store.rebindConversationWorkspace(session.sessionId, machine.workspaceId, "bind-paused", {
+      ownerUserId: scope.ownerUserId,
+    });
+    expect((await store.getConversation(session.sessionId)).session.workingDirectory).toBe(
+      "/home/user",
+    );
+    await expect(
+      store.acceptTurn(session.sessionId, "paused-input", { prompt: "wait" }),
+    ).rejects.toMatchObject({ code: "conflict" });
+  });
 
   function pauseAfterInsert(table: string) {
     let notifyWaiting!: () => void;

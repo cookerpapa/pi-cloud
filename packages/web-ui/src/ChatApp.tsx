@@ -37,6 +37,7 @@ import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
 import { copyMessageText } from "./MessageCopyButton.tsx";
 import { ConversationTurn } from "./ConversationTurn.tsx";
 import { PendingInputQueue } from "./PendingInputQueue.tsx";
+import { WorkspaceRebindDialog } from "./WorkspaceRebindDialog.tsx";
 import {
   conversationExportFilename,
   conversationExportMarkdown,
@@ -228,7 +229,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     | "forking"
     | "pruning"
     | "deleting-conversation"
-    | "rebinding-workspace"
     | "managing-environment"
     | "downloading"
     | "switching-model"
@@ -248,10 +248,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [resourcePageOpen, setResourcePageOpen] = useState(initialResourceTab === "source-control");
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [workspaceRebindOpen, setWorkspaceRebindOpen] = useState(false);
-  const [rebindWorkspaceChoice, setRebindWorkspaceChoice] = useState<"existing" | "new">(
-    "existing",
-  );
-  const [rebindWorkspaceName, setRebindWorkspaceName] = useState("");
   const [sshTicket, setSshTicket] = useState<SshAccessTicketResource | null>(null);
   const [followingConversationTail, setFollowingConversationTail] = useState(true);
   const [newConversationTitle, setNewConversationTitle] = useState("");
@@ -494,6 +490,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     );
   }, [api]);
 
+  const refreshBindingResources = useCallback(async (): Promise<void> => {
+    await Promise.all([refreshWorkspaces(), refreshDevelopmentEnvironments()]);
+  }, [refreshWorkspaces, refreshDevelopmentEnvironments]);
+
   const refreshModelCatalog = useCallback(async (): Promise<void> => {
     const catalog = await api.getModelCatalog();
     setModelCatalog(catalog);
@@ -669,10 +669,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     };
   }, [refreshConversationTree, authPhase, state.session?.sessionId, treeView, update]);
 
-  const streamPresentation = useRef({ treeView, t, elasticWorkspaces });
+  const streamPresentation = useRef({ treeView, t });
   const toolProgress = useMemo(() => new ToolProgressStore(), []);
   const runObservations = useMemo(() => new RunObservationStore(), []);
-  streamPresentation.current = { treeView, t, elasticWorkspaces };
+  streamPresentation.current = { treeView, t };
   useEffect(() => {
     const sessionId = streamSessionId;
     if (sessionId === null || authPhase !== "authenticated") return;
@@ -699,10 +699,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         });
         setConversationLoading(null);
         if (snapshot.conversation.session.workspaceState === "missing") {
-          const available = streamPresentation.current.elasticWorkspaces;
-          setSelectedWorkspaceId(available[0]?.workspaceId ?? "");
-          setRebindWorkspaceChoice(available.length === 0 ? "new" : "existing");
-          setRebindWorkspaceName("");
           setWorkspaceRebindOpen(true);
         }
       },
@@ -1136,38 +1132,17 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     }
   }
 
-  async function rebindCurrentConversation(): Promise<void> {
-    const sessionId = state.session?.sessionId;
-    if (sessionId === undefined || operation !== null) return;
-    setOperation("rebinding-workspace");
-    update({ type: "api.error.cleared" });
-    try {
-      let targetWorkspaceId = selectedWorkspaceId;
-      if (rebindWorkspaceChoice === "new") {
-        const name = rebindWorkspaceName.trim();
-        if (name.length === 0) return;
-        targetWorkspaceId = (await api.createProject(name)).workspaceId;
-      }
-      if (targetWorkspaceId === "") return;
-      await api.rebindConversationWorkspace(
-        sessionId,
-        targetWorkspaceId,
-        newIdempotencyKey("workspace-rebind"),
-      );
-      const loaded = await loadConversation(sessionId);
-      update({
-        type: "conversation.loaded",
-        conversation: loaded.conversation,
-      });
-      setWorkspaceRebindOpen(false);
-      setRebindWorkspaceName("");
-      await Promise.all([refreshConversations(), refreshWorkspaces()]);
-      focusComposer();
-    } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error, t) });
-    } finally {
-      setOperation(null);
-    }
+  async function refreshReboundConversation(sessionId: string): Promise<void> {
+    const [conversation, model] = await Promise.all([
+      api.getConversation(sessionId),
+      api.getSessionModel(sessionId),
+    ]);
+    if (currentStreamSession.current !== sessionId) return;
+    setSessionModel(model);
+    update({ type: "conversation.loaded", conversation });
+    setWorkspaceRebindOpen(false);
+    await Promise.all([refreshConversations(), refreshBindingResources()]);
+    focusComposer();
   }
 
   async function createSshTicket(): Promise<void> {
@@ -1969,90 +1944,21 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         {workspaceRebindOpen &&
         selectedDelegatedSession === null &&
         state.session?.workspaceState === "missing" ? (
-          <div className="product-modal-backdrop" role="presentation">
-            <form
-              className="product-workspace-modal product-rebind-modal"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void rebindCurrentConversation();
-              }}
-            >
-              <header>
-                <div>
-                  <h2>{t("chat.rebind.title")}</h2>
-                  <p>{t("chat.rebind.description")}</p>
-                </div>
-                <button onClick={() => setWorkspaceRebindOpen(false)} type="button">
-                  ×
-                </button>
-              </header>
-              <fieldset className="product-workspace-choice">
-                <legend>{t("chat.rebind.workspace")}</legend>
-                {elasticWorkspaces.length > 0 ? (
-                  <label className="product-choice-card">
-                    <input
-                      checked={rebindWorkspaceChoice === "existing"}
-                      onChange={() => setRebindWorkspaceChoice("existing")}
-                      type="radio"
-                    />
-                    <span>
-                      <strong>{t("chat.rebind.existing")}</strong>
-                      <small>{t("chat.rebind.existingDescription")}</small>
-                    </span>
-                  </label>
-                ) : null}
-                {rebindWorkspaceChoice === "existing" && elasticWorkspaces.length > 0 ? (
-                  <select
-                    onChange={(event) => setSelectedWorkspaceId(event.target.value)}
-                    value={selectedWorkspaceId}
-                  >
-                    {elasticWorkspaces.map((workspace) => (
-                      <option key={workspace.workspaceId} value={workspace.workspaceId}>
-                        {workspace.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
-                <label className="product-choice-card">
-                  <input
-                    checked={rebindWorkspaceChoice === "new"}
-                    onChange={() => setRebindWorkspaceChoice("new")}
-                    type="radio"
-                  />
-                  <span>
-                    <strong>{t("chat.rebind.new")}</strong>
-                    <small>{t("chat.rebind.newDescription")}</small>
-                  </span>
-                </label>
-                {rebindWorkspaceChoice === "new" ? (
-                  <input
-                    maxLength={256}
-                    onChange={(event) => setRebindWorkspaceName(event.target.value)}
-                    placeholder={t("chat.rebind.placeholder")}
-                    value={rebindWorkspaceName}
-                  />
-                ) : null}
-              </fieldset>
-              <footer>
-                <button onClick={() => setWorkspaceRebindOpen(false)} type="button">
-                  {t("common.cancel")}
-                </button>
-                <button
-                  className="product-primary-button"
-                  disabled={
-                    operation !== null ||
-                    (rebindWorkspaceChoice === "existing" && selectedWorkspaceId === "") ||
-                    (rebindWorkspaceChoice === "new" && rebindWorkspaceName.trim() === "")
-                  }
-                  type="submit"
-                >
-                  {operation === "rebinding-workspace"
-                    ? t("chat.rebind.binding")
-                    : t("chat.rebind.submit")}
-                </button>
-              </footer>
-            </form>
-          </div>
+          <WorkspaceRebindDialog
+            key={state.session.sessionId}
+            api={api}
+            sessionId={state.session.sessionId}
+            workspaces={elasticWorkspaces}
+            environments={developmentEnvironments}
+            canMutate={canMutate}
+            onRefresh={refreshBindingResources}
+            onBound={refreshReboundConversation}
+            onClose={() => setWorkspaceRebindOpen(false)}
+            onOpenResources={() => {
+              setWorkspaceRebindOpen(false);
+              setResourcePageOpen(true);
+            }}
+          />
         ) : null}
 
         {sshTicket === null ? null : (
@@ -2179,9 +2085,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             <button
               disabled={!canMutate || selectedDelegatedSession !== null}
               onClick={() => {
-                setSelectedWorkspaceId(elasticWorkspaces[0]?.workspaceId ?? "");
-                setRebindWorkspaceChoice(elasticWorkspaces.length === 0 ? "new" : "existing");
-                setRebindWorkspaceName("");
                 setWorkspaceRebindOpen(true);
               }}
               type="button"

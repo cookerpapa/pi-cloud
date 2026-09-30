@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted on 2026-08-23; amended on 2026-08-25.
+Accepted on 2026-08-23; amended on 2026-08-25. Machine rebinding and directory-neutral
+World State wording are specified by [ADR-0202](0202-development-machine-workspace-rebinding.md).
 
 ## Context
 
@@ -35,7 +36,7 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   separately from user file edits and the physical Cube identity. A
   rebind appends one hidden, model-visible `workspace_changed` fact before the
   next provider request. It states that the previous Workspace is unavailable
-  to the current Tool environment and that `/workspace` now represents another
+  to the current Tool environment and that the selected environment now has another
   binding; tenant, Workspace, Run and Activation identifiers never enter model
   context.
 - Renewing an Agent Tool lease on the same physical Cube does not emit a reset.

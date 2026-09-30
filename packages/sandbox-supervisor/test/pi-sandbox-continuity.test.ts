@@ -146,6 +146,8 @@ describe("PostgreSQL Pi runtime world-state harness", () => {
       buildSessionContext(entries, { entryProjectors: PI_WORLD_STATE_ENTRY_PROJECTORS }).messages,
     );
     expect(context).toContain("<workspace_changed>");
+    expect(context).toContain("do not assume the new workspace is empty");
+    expect(context).not.toContain("The current /workspace");
     expect(context).not.toContain(SECOND_WORKSPACE_SHA256);
   });
 

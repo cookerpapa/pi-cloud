@@ -20,7 +20,7 @@ export const PI_SANDBOX_RESET_MESSAGE = [
 
 export const PI_WORKSPACE_CHANGED_MESSAGE = [
   "<workspace_changed>",
-  "The previous workspace is not available to the current tool environment. The current /workspace is a different workspace; files, dependencies, Git state, running processes and in-memory environment state from the previous workspace are not present here.",
+  "The conversation is now attached to a different workspace. The previous workspace is not available to the current tool environment. No files or processes were transferred by this change. Inspect the current working directory and its existing files, dependencies and Git state before continuing; do not assume the new workspace is empty or that previous paths still apply.",
   "</workspace_changed>",
 ].join("\n");
 

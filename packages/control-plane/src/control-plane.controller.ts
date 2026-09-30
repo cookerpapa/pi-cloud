@@ -580,6 +580,12 @@ export class ControlPlaneController {
         parseUuidPathParameter(sessionIdValue, "sessionId"),
         binding.workspaceId,
         parseIdempotencyKey(idempotencyKeyValue),
+        {
+          ownerUserId: identity.userId,
+          ...(binding.workingDirectory === undefined
+            ? {}
+            : { workingDirectory: binding.workingDirectory }),
+        },
       );
   }
 

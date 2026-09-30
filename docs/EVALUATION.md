@@ -93,6 +93,12 @@ multi-region saturation claims.
 
 ## Cube and real-model acceptance
 
+For missing-Workspace recovery onto a development machine, run
+`PI_CLOUD_LIVE_WORKSPACE_REBIND_CHECK=1 node --import tsx scripts/run-live-workspace-rebind-check.mjs /tmp/workspace-rebind-live.json`.
+It creates its own tenant/Workspace/machine, rebinds through the browser's machine
+and directory picker, and uses Luna to verify retained conversation context and
+actual Tool cwd. Cleanup releases only its own machine and revokes its credential.
+
 ```bash
 npm run cubesandbox:live-check
 PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
