@@ -15,11 +15,6 @@ const piRoots = [
   ),
 ].filter((path) => existsSync(path));
 const checkOnly = process.argv.slice(2).includes("--check");
-const platformRoots = [
-  join(repositoryRoot, "node_modules", "@nestjs", "platform-fastify"),
-  join(repositoryRoot, "packages", "control-plane", "node_modules", "@nestjs", "platform-fastify"),
-].filter((path) => existsSync(join(path, "package.json")));
-
 // Preserve JSON.parse's own __proto__ keys when json-ext merges object chunks.
 // The fixed-version/source check keeps this one-line correction reproducible.
 const jsonRoot = join(repositoryRoot, "node_modules", "@discoveryjs", "json-ext");
@@ -43,13 +38,13 @@ const patchSpecs = [
   {
     name: "brace-expansion",
     sourcePackage: "pi-security-brace-expansion",
-    version: "5.0.9",
+    version: "5.0.12",
     packageName: "brace-expansion",
   },
   {
     name: "undici",
     sourcePackage: "pi-security-undici",
-    version: "8.10.0",
+    version: "8.10.2",
     packageName: "undici",
   },
   {
@@ -58,28 +53,13 @@ const patchSpecs = [
     version: "7.6.5",
     packageName: "protobufjs",
   },
-  {
-    name: "find-my-way",
-    sourcePackage: "platform-security-find-my-way",
-    version: "9.7.0",
-    ownerRoots: platformRoots,
-  },
 ];
-const securityPatches = [
-  ...piRoots.flatMap((piRoot) =>
-    patchSpecs
-      .filter((spec) => "packageName" in spec)
-      .map((spec) => ({ ...spec, targetRoot: join(piRoot, "node_modules", spec.packageName) })),
-  ),
-  ...patchSpecs
-    .filter((spec) => "ownerRoots" in spec)
-    .flatMap((spec) =>
-      spec.ownerRoots.map((owner) => ({
-        ...spec,
-        targetRoot: join(owner, "node_modules", spec.name),
-      })),
-    ),
-];
+const securityPatches = piRoots.flatMap((piRoot) =>
+  patchSpecs.map((spec) => ({
+    ...spec,
+    targetRoot: join(piRoot, "node_modules", spec.packageName),
+  })),
+);
 
 function readPackageVersion(packageRoot) {
   try {

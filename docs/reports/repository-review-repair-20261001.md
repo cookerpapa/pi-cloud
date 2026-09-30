@@ -33,3 +33,36 @@ input. No old `kind=steer` fixture or production compatibility branch remains.
 Validation: all four `control-plane-runtime.test.ts` tests and the Control Plane
 typecheck pass. The complete
 release check will be repeated after the remaining review repairs.
+
+## R30-08: installed dependency security
+
+Pi remains 0.84.1. Patched dependencies are pinned: brace-expansion 5.0.12,
+undici 6.28.1 / 8.10.2, fast-uri 3.1.8 / 4.1.5, Vitest/@vitest/mocker 4.1.11,
+and @nestjs/platform-fastify 12.0.3. Fastify is aligned to the adapter's 5.12.4.
+The October 1 audit also exposed the Nest middleware advisory indexed after the
+original review; the patch follows its maintainer recommendation. The obsolete
+find-my-way replacement is removed because the adapter now supplies 9.9.0.
+The guest image's npm brace-expansion preparation uses the same patched version.
+
+References: [Nest advisory](https://github.com/advisories/GHSA-9c5c-9qcx-q35q),
+[Vitest advisory](https://github.com/vitest-dev/vitest/security/advisories/GHSA-82fw-gwwq-j7x9),
+[brace advisory](https://github.com/juliangruber/brace-expansion/security/advisories/GHSA-q2hr-2g5m-vwhr),
+[undici 6 patch](https://github.com/nodejs/undici/releases/tag/v6.28.1) and
+[undici 8 patch](https://github.com/nodejs/undici/releases/tag/v8.10.2).
+
+The repository security gate passes with no remaining applicable findings.
+Raw npm audit still reports the published Pi shrinkwrap's old nested versions;
+it does not observe the installed preparation. The gate now compares each
+reported affected range with the verified installed version at the exact
+replacement node, using pinned node-semver. The static advisory URL allowlist
+is removed. A new advisory affecting the installed version, unknown ranges,
+another vulnerable installation, or an unprepared dependency stays visible;
+an aggregate Pi finding is exempt only after every underlying dependency passes.
+This is an installed-tree result, not a claim that raw npm audit exits zero.
+
+Validation: 61 helper tests, 87 Pi/remote-tool contracts, 13 API/composition tests,
+11 command-executor tests and 16 Projector handoff tests pass; Web build and image
+closure check pass. Workspace typechecks were run; the one Vitest-4 Mock typing
+change was corrected and runtime-core rechecked. New subprocess regressions
+exercise deep brace nesting and unsolicited WebSocket subprotocols against both
+installed undici lines. Future-advisory tests ensure audit exemptions fail closed.

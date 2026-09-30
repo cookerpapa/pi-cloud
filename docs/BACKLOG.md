@@ -19,11 +19,6 @@ release gate; final combined verification remains part of the repairs.
 
 ## September 30 review follow-up
 
-- [ ] R30-08: restore the dependency security gate. Installed brace-expansion
-      5.0.9 and undici 8.10.0/6.28.0 have high findings; fast-uri, Vitest and
-      @vitest/mocker retain moderate findings. Verify patched dependencies and
-      their reachable paths with Pi/HTTP contracts; do not suppress the new
-      findings or blindly upgrade pinned Pi to satisfy an aggregate advisory.
 - [ ] R30-01: route rejected Tool-reply waits through the existing infrastructure
       failure latch, covering timeout, consumer closure and decode/identity
       failure. Preserve cancellation and UNKNOWN; prove no next sampling or

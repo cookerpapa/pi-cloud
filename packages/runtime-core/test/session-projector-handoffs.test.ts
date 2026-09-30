@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import type { PiCloudEvent } from "@pi-cloud/protocol";
@@ -82,7 +82,8 @@ import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
 import { toolCommandForFact } from "../src/tool-invocation-fact.ts";
 
 let projector: SessionProjector;
-let route: ReturnType<typeof vi.fn>;
+type ToolDelivery = ConstructorParameters<typeof SessionProjector>[0]["toolCommands"]["consume"];
+let route: Mock<ToolDelivery>;
 let shutdownAsserted = false;
 beforeEach(() => {
   shutdownAsserted = false;
@@ -93,7 +94,7 @@ beforeEach(() => {
   f.applies.mockReset().mockResolvedValue(true);
   f.observes.mockReset().mockReturnValue(false);
   f.parse.mockReset().mockImplementation(JSON.parse);
-  route = vi.fn(async () => {});
+  route = vi.fn<ToolDelivery>(async () => {});
   projector = new SessionProjector({
     database: {} as Kysely<Database>,
     notificationConnectionString: "postgresql://unused/test",
