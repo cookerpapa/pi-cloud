@@ -44,6 +44,10 @@
 
 ## Current release gate
 
+- [x] ADR-0203: direct Steer uses the durable pending-input queue, canonical
+      consumption and sealed-target restoration. [PG, browser and real Luna acceptance](reports/direct-steer-acceptance-20260930.md)
+      covers lost replies, Worker loss, cancellation and preserved original history.
+
 - [x] ADR-0202: recover missing Workspaces using owned cloud development machines
       and selected directories. [PG, browser and real Luna acceptance](reports/workspace-rebind-acceptance-20260930.md)
       confirms preserved history/model settings and execution in the selected directory.

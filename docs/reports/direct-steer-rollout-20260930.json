@@ -1,0 +1,31 @@
+{
+  "checkedAt": "2026-09-30T07:55:14.849Z",
+  "containers": [
+    {
+      "name": "/pi-cloud-production-control-plane-1",
+      "revision": "2659ba9c425123475b4e01e3845bd66aaf74e4fa",
+      "health": "healthy"
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1",
+      "revision": "2659ba9c425123475b4e01e3845bd66aaf74e4fa",
+      "health": "healthy"
+    },
+    {
+      "name": "/pi-cloud-production-supervisor-host-1-1",
+      "revision": "2659ba9c425123475b4e01e3845bd66aaf74e4fa",
+      "health": "healthy"
+    },
+    {
+      "name": "/pi-cloud-production-web-1",
+      "revision": "2659ba9c425123475b4e01e3845bd66aaf74e4fa",
+      "health": "healthy"
+    }
+  ],
+  "preservedNativeRows": 1561,
+  "purged_workspaces": 2,
+  "live_credentials": 0,
+  "unarchived_sessions": 0,
+  "active_runs": 0,
+  "unsealed_runs": 0
+}

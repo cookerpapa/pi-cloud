@@ -1,0 +1,57 @@
+{
+  "checkedAt": "2026-09-30T07:53:04.981Z",
+  "revision": "a1349a1373143808c5eff673e55769f77755817a",
+  "scriptSha256": "c8efedfd1a820a3a394e5740fe76b0dffab979f940983ba39b5f83d34ee10406",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "cases": [
+    {
+      "kind": "consumed",
+      "sessionId": "2c309993-4768-4efe-91cc-a9712a52860c",
+      "controlRequestId": "a9bbbda1-7a88-44e0-b7ee-77e808b284a5",
+      "targetRunId": "a520d077-0d56-4e02-82ce-528b149ad5a9",
+      "targetState": "completed",
+      "sourceRunId": "ecc47859-3a08-4a72-9ac2-d32353ff64ac",
+      "sourceState": "cancelled",
+      "acknowledgedBeforeFault": true,
+      "consumptionCount": 1,
+      "instructionRetained": true,
+      "instructionAnswered": true,
+      "noToolReplay": true,
+      "replayAfterClosure": true
+    },
+    {
+      "kind": "worker-loss",
+      "sessionId": "84e8553e-d26e-46ed-91f0-b2dc26e257b6",
+      "controlRequestId": "4ecfa147-e355-4508-874b-e20987138c52",
+      "targetRunId": "21d5acdf-9e5d-40e6-b2c6-fc762bc5ff50",
+      "targetState": "failed",
+      "sourceRunId": "d22b9245-bfc7-439f-a54b-9e6c185b2b6c",
+      "sourceState": "completed",
+      "acknowledgedBeforeFault": true,
+      "consumptionCount": 0,
+      "instructionRetained": true,
+      "instructionAnswered": true,
+      "noToolReplay": true,
+      "replayAfterClosure": true
+    },
+    {
+      "kind": "cancelled",
+      "sessionId": "3bfe4d5a-24b3-4f5f-a3f3-a7385543f66d",
+      "controlRequestId": "237750a8-a13e-4e7d-b6f4-dbaa858bdb10",
+      "targetRunId": "2cd100c0-fafb-4d33-a061-ec68edc34283",
+      "targetState": "cancelled",
+      "sourceRunId": "51a03df4-8a53-48e8-a942-a56d9a569de7",
+      "sourceState": "cancelled",
+      "acknowledgedBeforeFault": true,
+      "consumptionCount": 1,
+      "instructionRetained": true,
+      "instructionAnswered": false,
+      "noToolReplay": true,
+      "replayAfterClosure": true
+    }
+  ],
+  "tenantId": "f738c9eb-ae7e-41e5-9e71-bba6e3cf38e8",
+  "workspaceId": "3bcdf404-c680-4afa-a12e-7397d227a53e",
+  "cleanupRequested": true
+}

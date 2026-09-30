@@ -41,6 +41,12 @@ The stream-independence and interrupted-prefix fault cases verify that a public
 stream outage cannot roll back a complete Pi message, while a visible failed
 prefix still survives Worker replacement.
 
+The [direct Steer acceptance](reports/direct-steer-acceptance-20260930.md) adds
+real-PG input races and a Luna/Cube process-fault script:
+`PI_CLOUD_LIVE_DIRECT_STEER_CHECK=1 node --import tsx scripts/run-live-direct-steer-check.mjs`.
+Canonical input consumption, including consumption during cancellation, decides
+retirement versus restoration; an HTTP acknowledgement alone never does.
+
 ## Live-event durability
 
 For focused real-browser reconnect diagnostics, see the

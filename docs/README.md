@@ -35,6 +35,10 @@ The [Workspace recovery acceptance](reports/workspace-rebind-acceptance-20260930
 adds owned development-machine/directory selection after Workspace deletion,
 with release-race, browser retry and real Luna history/Tool verification.
 
+The [direct Steer recovery acceptance](reports/direct-steer-acceptance-20260930.md)
+records durable acceptance, canonical consumption and unconsumed restoration,
+including real Luna Worker loss and cancellation without Tool replay.
+
 The [September 27 repository review](reports/repository-review-20260927.md) covers
 Pi alignment, component boundaries, duplicated IO and removal of obsolete paths;
 it tracks implemented repairs and subsequent approved architecture decisions.

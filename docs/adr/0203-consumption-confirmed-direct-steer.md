@@ -1,8 +1,8 @@
 # ADR-0203: Consumption-confirmed direct Steer
 
-Status: implemented and locally validated, 2026-09-30, after the owner approved
+Status: implemented, deployed and validated, 2026-09-30, after the owner approved
 closing the Worker-loss gap discussed while reviewing input and sandbox recovery.
-Matched deployment and real Luna process-fault acceptance remain the release gate.
+[PG, browser and real Luna process-fault acceptance](../reports/direct-steer-acceptance-20260930.md).
 
 ## Decision
 
