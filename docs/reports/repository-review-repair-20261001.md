@@ -2,7 +2,7 @@
 
 Date: 2026-10-01. Starting revision: `7c1f46ec`.
 Findings originate in the [September 30 review](repository-review-20260930.md).
-This record distinguishes completed changes from work still under validation.
+All eight confirmed findings and the accepted deletion/interruption changes are implemented and verified. Research and remaining architectural choices are identified separately.
 
 ## Scope authorized after the review
 
@@ -35,8 +35,7 @@ keeps the same source/control identity and does not redeliver an acknowledged
 input. No old `kind=steer` fixture or production compatibility branch remains.
 
 Validation: all four `control-plane-runtime.test.ts` tests and the Control Plane
-typecheck pass. The complete
-release check will be repeated after the remaining review repairs.
+typecheck pass. Combined verification is recorded at the end of this report.
 
 ## R30-08: installed dependency security
 
@@ -231,7 +230,7 @@ Unsupported stored states block migration atomically rather than being silently 
 Validation: 113 protocol and 16 domain tests, two schema/cutover tests, all 43 atomic
 admission cases (including the updated product-reference deletion guard), and three
 real-PG recovery orderings pass. Every workspace typecheck passes in the combined
-check. The combined full-test pass is recorded below when complete. Both browser
+check. The combined full-test pass is recorded below. Both browser
 presentation and queue-editing checks pass; the fault matrix passes 104/104 cases.
 
 Four one-off probes that asserted the old bugs are removed from current scripts.
@@ -263,3 +262,33 @@ image closure, dependency hardening and the installed-tree security gate pass;
 no remaining applicable vulnerabilities are reported. Raw npm audit still sees
 three old Pi shrinkwrap metadata findings, handled only through the exact
 installed-version/range verification described under R30-08.
+
+## Combined verification and deployment boundary
+
+The complete `npm run check` exits zero: all 21 workspace typechecks, 1,452
+workspace tests and the then-current 61 helper tests pass. Three explicitly
+external tests are skipped: one live Kafka policy case and two live Cube cases.
+Both PG integration opt-ins are enabled against dedicated PostgreSQL 17; suites
+create/drop their own databases. The later gRPC-only dependency update received
+the scoped 62-helper/nine-observability/build/security verification above; the
+entire workspace suite was not repeated for that one transitive patch.
+
+The [fault report](repository-review-repair-faults-20261001.json) records 104/104
+cases across 43 file groups. Both browser presentation and queue checks pass.
+Formatting, documentation, runtime budgets, Helm/distributed preflight, installation
+contracts, observability configuration and image closure/context checks pass.
+[Machine-readable verification](repository-review-repair-verification-20261001.json)
+records commands, counts, dependency timing and raw-report provenance without
+copying credentials or transcripts into Git.
+
+This is repository implementation and isolated verification. Production services
+were not rolled out, and migrations 155–157 were not applied to production.
+The migration and matching API/Worker/Broker/Web need one coordinated cutover;
+permanent deletion requires a matched backup for rollback. No paid model requests,
+real Cube process faults or live Kafka integration runs were added in this repair.
+The existing shared-VM fail-closed policy and Broker-mediated result path remain
+until the separate Cube handoff contract is decided and demonstrated. These tests
+do not establish enterprise-scale deployment or independent multi-node HA.
+
+All per-suite databases were gone before teardown. The dedicated PostgreSQL
+fixture container has been stopped and its automatic removal was confirmed.

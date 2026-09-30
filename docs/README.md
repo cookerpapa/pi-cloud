@@ -25,12 +25,13 @@ history instead of the maintained tree.
 
 The [September 30 repository review](reports/repository-review-20260930.md)
 records the complete scope, eight confirmed findings, three discussion items
-and reproducible boundary probes. Its full workspace check and dependency
-security audit have failures; the 104-case fault matrix passes. Findings are
-tracked in the backlog and have not been implemented by this review.
+and historical boundary probes at its recorded baseline. The baseline had
+workspace-test and security-gate failures.
 
 The [October 1 repair record](reports/repository-review-repair-20261001.md)
-tracks implementation of that review and the subsequent owner decisions.
+records all eight confirmed repairs, the accepted deletion/interruption decisions,
+code cleanup and passing combined verification. The remaining shared-VM failure
+boundary is explicit in the backlog.
 The [Cube result-delivery study](reports/cube-result-delivery-study-20261001.md)
 compares current upstream execution APIs with Broker-independent completion
 delivery; it records the missing guarantees without changing the deployed runtime.

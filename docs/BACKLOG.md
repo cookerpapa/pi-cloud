@@ -13,9 +13,10 @@ do not establish enterprise-scale capacity or physical multi-node HA.
 The [September 30 review](reports/repository-review-20260930.md) is complete at
 `5fd6159f8a0ec0cc5d4ebc0dc24071c29b82028d`. It adds eight confirmed findings,
 three decisions to discuss and scoped cleanup candidates. The subsequent
-[repair record](reports/repository-review-repair-20261001.md) tracks the owner's
-decisions and completed slices. The baseline review did not establish a passing
-release gate; final combined verification remains part of the repairs.
+[repair record](reports/repository-review-repair-20261001.md) records all eight
+confirmed repairs, the accepted deletion/interruption decisions, bounded cleanup
+and passing combined verification. Only the separately scoped shared-VM execution
+handoff/failure-boundary decision below remains open from that discussion.
 
 ## September 30 review follow-up
 

@@ -1,0 +1,241 @@
+{
+  "format": "pi-cloud.review-repair-verification.v1",
+  "generatedAt": "2026-09-30T20:18:52.401140+00:00",
+  "baselineReviewCommit": "7c1f46ec",
+  "functionalChangesCommit": "7a939a7cc1b1a04b13815bed1cd450739c7294e8",
+  "finalCodeCommit": "272af1c732442555df16b4619e1692826420afbb",
+  "fullWorkspaceCheck": {
+    "command": "npm run check",
+    "exitCode": 0,
+    "results": [
+      {
+        "package": "@pi-cloud/control-plane",
+        "passed": 293,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/cube-api-authorizer",
+        "passed": 37,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/cube-egress-gateway",
+        "passed": 9,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/database",
+        "passed": 40,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/domain",
+        "passed": 16,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/event-log",
+        "passed": 13,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/fake-model-server",
+        "passed": 17,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/observability",
+        "passed": 9,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/pi-session-postgres",
+        "passed": 88,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/protocol",
+        "passed": 113,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/provider-egress-relay",
+        "passed": 5,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/runtime-core",
+        "passed": 80,
+        "skipped": 1
+      },
+      {
+        "package": "@pi-cloud/sandbox-supervisor",
+        "passed": 238,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/session-attachments",
+        "passed": 14,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/ssh-gateway",
+        "passed": 4,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/subagent-control",
+        "passed": 18,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/supervisor-host",
+        "passed": 88,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/tool-broker",
+        "passed": 175,
+        "skipped": 2
+      },
+      {
+        "package": "@pi-cloud/tool-sandbox",
+        "passed": 41,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/web-ui",
+        "passed": 149,
+        "skipped": 0
+      },
+      {
+        "package": "@pi-cloud/workspace-runtime",
+        "passed": 5,
+        "skipped": 0
+      },
+      {
+        "package": "acceptance-helpers",
+        "passed": 61,
+        "skipped": 0
+      }
+    ],
+    "workspacePassed": 1452,
+    "helperPassed": 61,
+    "skipped": 3,
+    "enabledIntegrationVariables": [
+      "PI_CLOUD_POSTGRES_INTEGRATION_URL",
+      "PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL"
+    ],
+    "database": "Owned disposable PostgreSQL 17; each suite owns its own database",
+    "skippedScopes": [
+      "one live Kafka topic-policy integration test",
+      "two live Cube KVM/security integration cases"
+    ],
+    "dependencyTiming": "The complete check finished with grpc-js 1.14.4 installed, before the isolated final 1.14.5 dependency patch. All functional code matches the functionalChangesCommit."
+  },
+  "postDependencyPatch": {
+    "grpcVersion": "1.14.5",
+    "onlyChangedLockfilePackage": "node_modules/@grpc/grpc-js",
+    "helperTestsPassed": 62,
+    "observabilityTestsPassed": 9,
+    "observabilityTypecheck": "passed",
+    "build": "passed",
+    "imageClosure": "passed",
+    "dependencyHardening": "passed",
+    "securityAudit": {
+      "securityAuditPassed": true,
+      "auditLevel": "high",
+      "remediatedShrinkwrapFindings": [
+        {
+          "name": "brace-expansion",
+          "installedVersion": "5.0.12",
+          "advisoryUrls": [
+            "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+            "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+            "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p"
+          ],
+          "reason": "The exact shrinkwrapped node is replaced and verified; no reported affected range includes its installed version"
+        },
+        {
+          "name": "undici",
+          "installedVersion": "8.10.2",
+          "advisoryUrls": [
+            "https://github.com/advisories/GHSA-3wwx-pv8p-q78v",
+            "https://github.com/advisories/GHSA-pmjh-fq2x-6v4x",
+            "https://github.com/advisories/GHSA-r53p-7pc4-xj5r",
+            "https://github.com/advisories/GHSA-rfgv-xxqx-mfg5",
+            "https://github.com/advisories/GHSA-3xpg-4rpp-hhhm",
+            "https://github.com/advisories/GHSA-2jfj-6hjv-fm6j",
+            "https://github.com/advisories/GHSA-2gqq-gqf2-x968",
+            "https://github.com/advisories/GHSA-w293-vg96-wgc3",
+            "https://github.com/advisories/GHSA-8436-99hf-9mmv",
+            "https://github.com/advisories/GHSA-rx4f-c7p8-82vq"
+          ],
+          "reason": "The exact shrinkwrapped node is replaced and verified; no reported affected range includes its installed version"
+        },
+        {
+          "name": "@earendil-works/pi-coding-agent",
+          "installedVersion": "0.84.1",
+          "advisoryUrls": [
+            "https://github.com/advisories/GHSA-3wwx-pv8p-q78v",
+            "https://github.com/advisories/GHSA-pmjh-fq2x-6v4x",
+            "https://github.com/advisories/GHSA-r53p-7pc4-xj5r",
+            "https://github.com/advisories/GHSA-rfgv-xxqx-mfg5",
+            "https://github.com/advisories/GHSA-3xpg-4rpp-hhhm",
+            "https://github.com/advisories/GHSA-2jfj-6hjv-fm6j",
+            "https://github.com/advisories/GHSA-2gqq-gqf2-x968",
+            "https://github.com/advisories/GHSA-w293-vg96-wgc3",
+            "https://github.com/advisories/GHSA-8436-99hf-9mmv",
+            "https://github.com/advisories/GHSA-rx4f-c7p8-82vq"
+          ],
+          "reason": "Every dependency behind this aggregate finding was verified against its installed version and affected ranges"
+        }
+      ],
+      "remainingVulnerabilities": []
+    },
+    "fullWorkspaceCheckRepeated": false
+  },
+  "faultMatrix": {
+    "artifact": "repository-review-repair-faults-20261001.json",
+    "passed": 104,
+    "cases": 104,
+    "fileGroups": 43,
+    "provenance": "Raw report retains c8d50439/dirty=true at start. That working tree contained the subsequently committed Session lifecycle cleanup and corrected native deletion test; the later gRPC dependency update received scoped verification."
+  },
+  "browser": {
+    "presentation": "passed",
+    "queue": "passed"
+  },
+  "otherChecks": {
+    "format": "passed",
+    "docs": "passed",
+    "runtimePolicy": "passed",
+    "helmAndDistributedPreflight": "passed",
+    "selfHostedInstallContract": "passed",
+    "observabilityConfiguration": "passed",
+    "dockerBuildContext": "passed"
+  },
+  "limits": {
+    "productionDeployment": false,
+    "productionMigrations": false,
+    "paidModelCalls": 0,
+    "liveCubeFaultInjection": false,
+    "liveKafkaIntegrationInThisRepair": false,
+    "cubeHandoffImplemented": false
+  },
+  "privateLogSha256": {
+    "full-check.log": "b0b426ae8e10503a56c1f50f3e5754de20d35cb5993c5e2d1d89e94425274149",
+    "final-faults.log": "bcb178422d3d38c0eb7d7878e9e2869477b55eefb881d4c1a62a7cb58b16be48",
+    "final-browser.log": "8b6f5c49dde0eda9537bcc98ccc89e75e0dd268ce4b75aee44cd90c736e0a1b5",
+    "final-browser-queue.log": "73cbe9e2b72823d2c7aba6c0f0e38f724e317eef7ddc90c101a84dcbf51763c6",
+    "final-static.log": "34eac5157850f4ba17607dddf9d67c3be2e96e08ff3c434d1148ffd7d8eea0a5",
+    "final-deployment.log": "3602943f4ec52ae17f6f6118a8e85f3528bdd8eabf6c28c55dc865df1a2f032c",
+    "final-build-patched.log": "df2bfcacb7fdd26f84b07dbbd2c0ba43fc7ced7cb69b641ac721377a74dd81a5",
+    "final-security-patched.log": "0539ff69623d44c40bcf1414285a09b6ea0a3d5b81d723fbe00eab94b06e0610",
+    "grpc-final-contract.log": "98dc51dee13f48857448555cb9e6b39323110346894d6aa03decc7ee80969709"
+  },
+  "fixtureCleanup": {
+    "temporaryDatabasesRemaining": 0,
+    "ownedPostgresContainerRemoved": true
+  }
+}
