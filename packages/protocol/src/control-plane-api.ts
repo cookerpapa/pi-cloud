@@ -1,3 +1,4 @@
+import { MAX_AGENT_INPUT_CHARACTERS } from "./agent-input-budget.ts";
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { DEEPSEEK_MODEL_IDS, GPT_MODEL_IDS } from "./model-catalog.ts";
@@ -793,7 +794,7 @@ export const ConversationTurnResourceSchema = Type.Object(
     runId: UuidSchema,
     turnId: UuidSchema,
     mailboxPosition: PositiveSafeIntegerSchema,
-    prompt: Type.String({ maxLength: 100_000 }),
+    prompt: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
     uploads: Type.Optional(UserUploadsSchema),
     state: ConversationTurnStateSchema,
     transcript: Type.Optional(ConversationTurnTranscriptResourceSchema),
@@ -813,7 +814,7 @@ export const ConversationDetailResourceSchema = Type.Object(
         {
           entryId: Type.String({ minLength: 1, maxLength: 512 }),
           role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
-          text: Type.String({ maxLength: 100_000 }),
+          text: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
           createdAt: UtcTimestampSchema,
         },
         { additionalProperties: false },
@@ -842,7 +843,7 @@ export const ConversationTreeEntryResourceSchema = Type.Object(
     parentEntryId: Type.Union([PiEntryIdSchema, Type.Null()]),
     turnId: UuidSchema,
     role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
-    text: Type.String({ maxLength: 100_000 }),
+    text: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
     finalAssistant: Type.Boolean(),
     createdAt: UtcTimestampSchema,
   },
@@ -920,7 +921,7 @@ export const ConversationPruneResourceSchema = Type.Object(
 
 export const AcceptTurnRequestSchema = Type.Object(
   {
-    prompt: Type.String({ maxLength: 100_000 }),
+    prompt: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
     uploadIds: Type.Optional(UserUploadIdsSchema),
     thinkingLevel: Type.Optional(TurnThinkingLevelSchema),
   },
@@ -1047,7 +1048,7 @@ export const AcceptedTurnCancellationResourceSchema = Type.Object(
 
 export const CreateTurnSteerRequestSchema = Type.Object(
   {
-    text: Type.String({ maxLength: 100_000 }),
+    text: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
     uploadIds: Type.Optional(UserUploadIdsSchema),
   },
   { additionalProperties: false },

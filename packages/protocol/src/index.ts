@@ -599,3 +599,8 @@ export * from "./native-tool-event.ts";
 export * from "./tool-progress.ts";
 export * from "./run-observation.ts";
 export * from "./queued-inputs.ts";
+export {
+  MAX_AGENT_INPUT_CHARACTERS,
+  MAX_SUBAGENT_TASK_JSON_BYTES,
+  assertSubagentTaskInputBudget,
+} from "./agent-input-budget.ts";

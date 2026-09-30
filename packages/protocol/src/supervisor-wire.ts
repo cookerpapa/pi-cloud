@@ -1,3 +1,4 @@
+import { MAX_AGENT_INPUT_CHARACTERS } from "./agent-input-budget.ts";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createSchemaCheck } from "#schema-check";
@@ -60,7 +61,7 @@ const CapabilitySchema = Type.String({
 const PromptInputSchema = Type.Object(
   {
     kind: Type.Literal("prompt"),
-    text: Type.String({ maxLength: 1_000_000 }),
+    text: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
     uploads: Type.Optional(UserUploadsSchema),
   },
   { additionalProperties: false },
@@ -180,7 +181,9 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
           pattern: "^/",
         }),
         toolCapabilities: CloudToolCapabilitySnapshotSchema,
-        agentSystemPrompt: Type.Optional(Type.String({ minLength: 1, maxLength: 100_000 })),
+        agentSystemPrompt: Type.Optional(
+          Type.String({ minLength: 1, maxLength: MAX_AGENT_INPUT_CHARACTERS }),
+        ),
         model: TurnModelSnapshotSchema,
         environment: EnvironmentRuntimeSnapshotSchema,
         budgets: Type.Optional(TurnBudgetSnapshotSchema),
@@ -219,7 +222,7 @@ export const SteerTurnCommandMessageSchema = Type.Object(
         ...CommandIdentityProperties,
         controlRequestId: UuidSchema,
         targetRunId: UuidSchema,
-        text: Type.String({ maxLength: 100_000 }),
+        text: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
         uploads: Type.Optional(UserUploadsSchema),
       },
       { additionalProperties: false },

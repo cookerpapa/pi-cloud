@@ -1,3 +1,4 @@
+import { MAX_AGENT_INPUT_CHARACTERS } from "./agent-input-budget.ts";
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { ControlPlaneApiValidationError } from "./control-plane-api.ts";
@@ -10,7 +11,7 @@ import {
 } from "./protocol-primitives.ts";
 
 export const MAX_QUEUED_INPUTS = 64;
-const Text = Type.String({ maxLength: 100_000 });
+const Text = Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS });
 const Revision = NonNegativeSafeIntegerSchema;
 const options = { additionalProperties: false } as const;
 export const QueuedInputActionSchema = Type.Union([

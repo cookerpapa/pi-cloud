@@ -121,3 +121,17 @@ headers terminate the incomplete response instead of ending it as success.
 
 Validation covers both Content-Length and chunked truncation, client-driven
 cancellation, normal forwarding and existing CONNECT/egress policy checks.
+
+## R30-03: bounded delegated task input
+
+[ADR-0204](../adr/0204-bounded-subagent-task-input.md) aligns the public/Worker
+prompt character bound and adds a JSON-encoded byte budget specifically for
+delegated task descriptions. Native preparation, workflow task validation and
+PG admission all reject oversized work before creating a child. NUL and unpaired
+surrogates are rejected as unsupported PG text; accepted task text is preserved.
+
+Validation: 109 protocol tests, 82 Runtime/Tool tests and 18 Subagent PG tests
+pass, with all three package typechecks. Boundary cases cover ASCII, Chinese,
+emoji and heavily escaped SOH text. The real native startup mutation for each
+maximum input fits below 900 KiB with an additional 64 KiB envelope reserve;
+oversized direct PG requests leave Session/Run/execution row counts unchanged.

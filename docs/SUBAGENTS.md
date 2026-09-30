@@ -19,6 +19,12 @@ separate temporary Cube with the **same persistent Volume**. Optional absolute
 Run directory. Shared descendants keep the parent's compute scope. Context
 inheritance, compute placement and directory selection are independent.
 
+Task descriptions are limited to 100,000 characters and 256 KiB after JSON UTF-8
+encoding, including escaping. Oversized tasks fail before child admission;
+use inherited context or a Workspace file path for larger input. Task text must
+be nonempty, valid Unicode without NUL characters. The native startup record
+retains its original fields and the full admitted text (ADR-0204).
+
 The parent can run `git worktree add` through Bash, then pass that worktree's
 path as `cwd`. All Cubes mount the Volume at the same path, so Git's shared
 metadata remains valid and the parent can inspect or merge locally. PiCloud

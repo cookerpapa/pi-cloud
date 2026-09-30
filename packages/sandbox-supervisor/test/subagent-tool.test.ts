@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { Value } from "typebox/value";
-import { createCloudSubagentTool, type CloudSubagentToolRuntime } from "../src/subagent-tool.ts";
+import {
+  createCloudSubagentTool,
+  validateSubagentTask,
+  type CloudSubagentToolRuntime,
+} from "../src/subagent-tool.ts";
 import { SubagentControlClient } from "../src/subagent-control-client.ts";
 import { MAX_SUBAGENT_RESULT_BYTES, type CandidateSubagentCommand } from "@pi-cloud/protocol";
 
@@ -12,6 +16,17 @@ function runtime(): CloudSubagentToolRuntime {
   };
 }
 describe("role-free log-driven Subagent Tool", () => {
+  it.each(["x".repeat(100_001), "汉".repeat(100_000), "\u0001".repeat(50_000)])(
+    "rejects oversized task text before delegation and in workflow validation",
+    async (task) => {
+      const backend = runtime(),
+        tool = createCloudSubagentTool(backend);
+      expect(() => tool.prepareArguments!({ action: "run", task })).toThrow();
+      expect(() => validateSubagentTask({ key: "task", task })).toThrow();
+      await expect(tool.execute("invalid", { action: "run", task })).rejects.toThrow();
+      expect(backend.run).not.toHaveBeenCalled();
+    },
+  );
   it.each(["workflow", "run", "status"] as const)(
     "rejects an oversized %s result without repeating the action",
     async (action) => {

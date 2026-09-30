@@ -986,6 +986,43 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     }
   });
 
+  it.each(["x".repeat(100_001), "汉".repeat(100_000), "\u0001".repeat(50_000)])(
+    "rejects oversized delegated input before creating child rows",
+    async (prompt) => {
+      const counts = async () =>
+        Promise.all(
+          (["sessions", "runs", "subagent_executions"] as const).map(
+            async (table) =>
+              (
+                await database
+                  .selectFrom(table)
+                  .select(({ fn }) => fn.countAll<string>().as("count"))
+                  .where("tenant_id", "=", tenantId)
+                  .executeTakeFirstOrThrow()
+              ).count,
+          ),
+        );
+      const before = await counts();
+      const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
+      await expect(
+        provider.start({
+          tenantId,
+          parentSessionId,
+          parentRunId,
+          parentExecutionReference: parentExecutionReference(),
+          parentToolCallId: "oversized",
+          workflowRunId: "oversized",
+          stepIndex: 0,
+          agentName: "oversized",
+          prompt,
+          contextMode: "fresh",
+          sandboxMode: "none",
+        }),
+      ).rejects.toThrow("subagent_input_too_large");
+      expect(await counts()).toEqual(before);
+    },
+  );
+
   it.each(["completed", "failed", "cancelled", "timed_out"] as const)(
     "waits for the seal before reporting terminal Child state %s",
     async (state) => {

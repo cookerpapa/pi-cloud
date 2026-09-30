@@ -556,6 +556,12 @@ execution-fact limit. Guest completion, trusted receipt and the outer Pi Tool
 apply the same budget. Oversized values/errors become explicit bounded Tool
 errors, not truncated success or automatic effect retries (ADR-0196).
 
+Delegated task input is checked before Tool intent and again before PG child
+admission. It shares the public/Worker 100,000-character prompt bound and has a
+256 KiB JSON-encoded UTF-8 budget, leaving room for all three native startup
+copies without enlarging Kafka records. Unsupported NUL/unpaired-surrogate text
+is rejected before storage. Tasks are never silently truncated (ADR-0204).
+
 ## Workspaces and development machines
 
 An elastic Workspace owns one persistent Cube Volume and one default bounded-warm

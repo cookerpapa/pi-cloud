@@ -9,6 +9,7 @@ import type {
 import {
   parseCloudToolCapabilitySnapshot,
   parseExecutionReference,
+  assertSubagentTaskInputBudget,
   type CloudToolCapabilitySnapshot,
   type RunState,
 } from "@pi-cloud/protocol";
@@ -236,7 +237,7 @@ export class PostgresSubagentJobProvider {
     nonEmpty(input.parentToolCallId, "Parent Tool call", 256);
     nonEmpty(input.workflowRunId, "Subagent workflow Run", 256);
     nonEmpty(input.agentName, "Subagent name", 128);
-    nonEmpty(input.prompt, "Subagent prompt", 1_000_000);
+    assertSubagentTaskInputBudget(input.prompt);
     if (input.systemPrompt !== undefined) {
       nonEmpty(input.systemPrompt, "Subagent system prompt", 100_000);
     }

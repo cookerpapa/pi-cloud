@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0204](0204-bounded-subagent-task-input.md) — delegated task character and
+   encoded-byte budgets before native publication and PG admission.
 1. [ADR-0203](0203-consumption-confirmed-direct-steer.md) — durable direct Steer,
    consumption confirmation and restoration through the existing input queue.
 1. [ADR-0202](0202-development-machine-workspace-rebinding.md) — recover a missing

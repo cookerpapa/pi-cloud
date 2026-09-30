@@ -19,9 +19,6 @@ release gate; final combined verification remains part of the repairs.
 
 ## September 30 review follow-up
 
-- [ ] R30-03: align Subagent input admission with encoded native publication
-      budgets and public conversation schemas. Reject oversized work early,
-      accounting for Unicode, escaping and envelope overhead.
 - [ ] R30-04: bound Subagent inherited-history reads after Compaction and beyond
       10,000 messages. Paginate history or expose bounded inherited context
       without failing the entire child conversation detail.
@@ -33,12 +30,15 @@ release gate; final combined verification remains part of the repairs.
       is complete: current upstream APIs do not provide the full trusted-host
       handoff/Kafka delivery contract. A scoped protocol/prototype decision is
       still required before changing boot ownership and cleanup semantics.
-- [ ] D30-02: distinguish active resource quotas from retained-history budgets,
-      including logical child Sessions. Archiving currently retains the Session
-      count; never delete native history simply to reclaim quota.
-- [ ] D30-03: decide whether visible failed/aborted Assistant text should enter
-      the next model context as an explicitly incomplete fact. Preserve Pi's
-      rejection of invalid partial Tool calls and record any recovery change.
+- [ ] D30-02: implement the owner's requested permanent conversation deletion,
+      including database history and child Sessions, instead of archive/restore.
+      Reclaim elastic compute with no remaining conversation users, preserve
+      independent Workspace bytes and other users, and release physical quota
+      only after confirmed runtime cleanup. Between-Turn warm reuse is unchanged.
+- [ ] D30-03: implement the owner's requested preservation of visible
+      failed/aborted Assistant text plus confirmed interruption facts in the next
+      context. Preserve Pi's rejection of incomplete Tool calls and document
+      the recovery contract before changing it.
 - [ ] Evaluate the review's remaining bounded cleanup candidates: avoid the
       new-Steer receipt re-read, move the in-memory
       Workspace runtime repository into test helpers, and reconcile the stale

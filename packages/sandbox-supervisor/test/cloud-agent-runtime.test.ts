@@ -32,6 +32,9 @@ import { createCloudSubagentTool } from "../src/subagent-tool.ts";
 import {
   MAX_EXECUTION_FACT_BYTES,
   MAX_SUBAGENT_RESULT_BYTES,
+  MAX_AGENT_INPUT_CHARACTERS,
+  MAX_SUBAGENT_TASK_JSON_BYTES,
+  assertSubagentTaskInputBudget,
   createPiCloudEventFactory,
 } from "@pi-cloud/protocol";
 import { PiAgentEventAdapter } from "../src/pi-agent-event-adapter.ts";
@@ -135,6 +138,40 @@ function modelAdmissionProbe() {
     },
   };
 }
+
+it.each(["x", "汉", "😀", "\u0001"])(
+  "fits the maximum admitted %j task in the native startup budget",
+  async (unit) => {
+    const bytes = Buffer.byteLength(JSON.stringify(unit)) - 2;
+    const count = Math.min(
+      Math.floor(MAX_AGENT_INPUT_CHARACTERS / unit.length),
+      Math.floor((MAX_SUBAGENT_TASK_JSON_BYTES - 2) / bytes),
+    );
+    const task = unit.repeat(count);
+    assertSubagentTaskInputBudget(task);
+    let startup: PiSessionMutationOperation | undefined;
+    const storage = await createStorage();
+    const stream = vi.fn();
+    const runtime = new CloudAgentRuntime({
+      ...(await withNativeSession(storage)),
+      lane: "main",
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "Fixture",
+      streamFn: stream,
+      commitCheckpoint: async (operation) => {
+        startup ??= operation;
+        throw new Error("Captured startup only");
+      },
+    });
+    await expect(runtime.run(task)).rejects.toThrow("Captured startup only");
+    expect(startup).toBeDefined();
+    expect(Buffer.byteLength(JSON.stringify(startup)) + 64 * 1024).toBeLessThan(
+      MAX_EXECUTION_FACT_BYTES,
+    );
+    expect(stream).not.toHaveBeenCalled();
+  },
+);
 
 it.each(["Tool details", "invalid Tool arguments"])(
   "preserves opaque own JSON properties through native history: %s",

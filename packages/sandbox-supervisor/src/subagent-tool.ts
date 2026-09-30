@@ -3,6 +3,8 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import {
   MAX_TOOL_COMMAND_BYTES,
+  MAX_AGENT_INPUT_CHARACTERS,
+  assertSubagentTaskInputBudget,
   serializeSubagentResult,
   CloudToolCapabilitySnapshotSchema,
   type CloudToolCapabilitySnapshot,
@@ -43,7 +45,7 @@ const actions = Type.Union([
   Type.Object(
     {
       action: Type.Literal("run"),
-      task: Type.String({ minLength: 1 }),
+      task: Type.String({ minLength: 1, maxLength: MAX_AGENT_INPUT_CHARACTERS }),
       context: Type.Optional(context),
       sandbox: Type.Optional(sandbox),
       cwd: Type.Optional(cwd),
@@ -91,7 +93,7 @@ const schema = Type.Object(
       Type.Literal("cancel"),
       Type.Literal("send"),
     ]),
-    task: Type.Optional(Type.String({ minLength: 1 })),
+    task: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_AGENT_INPUT_CHARACTERS })),
     script: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES })),
     context: Type.Optional(context),
     sandbox: Type.Optional(sandbox),
@@ -108,6 +110,7 @@ const schema = Type.Object(
 function argumentsForAction(value: unknown): Static<typeof actions> {
   if (!Value.Check(actions, value))
     throw new Error("Invalid subagent arguments for the selected action");
+  if (value.action === "run") assertSubagentTaskInputBudget(value.task);
   return value;
 }
 export function validateSubagentTask(value: SubagentTask): void {
@@ -135,6 +138,7 @@ export function createCloudSubagentTool(
     prepareArguments: argumentsForAction,
     description: [
       "Delegate a concrete task to another Pi Agent. No persona/profile is required.",
+      "Task text is limited to 100,000 characters and 256 KiB after JSON encoding. Use shared context or Workspace paths for larger input.",
       "run waits for one child; fresh starts with the task only, branch inherits a frozen parent context.",
       "All children share the parent's persistent files. sandbox=shared reuses the parent's compute (default); sandbox=ephemeral lazily allocates separate temporary compute on the same Volume, without copying files.",
       "Ephemeral compute shares /workspace for elastic Workspaces or /home/user for cloud development machines; other system-disk directories are not copied.",
