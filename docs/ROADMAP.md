@@ -49,9 +49,9 @@
 [Publication acceptance](reports/publication-ingress-20261001.md) and the
 [Cube execution acceptance](reports/cube-execution-authority-20261001.md) cover
 PG/Kafka fencing, native execution, scoped stopping, image delivery, Worker
-canonicalization and matched image/deployment contracts. Shared production
-rollout and its browser acceptance remain in the backlog; implementation and
-single-host isolated tests do not establish independent-node availability.
+canonicalization and matched image/deployment contracts. The [production rollout](reports/cube-execution-rollout-20261001.md) is complete,
+including real Luna, browser, Worker replacement and control-plane SIGKILL tests.
+Single-host acceptance does not establish independent-node availability.
 
 ## Current release gate
 

@@ -1,6 +1,7 @@
 # Cube execution and control-plane authority acceptance — 2026-10-01
 
-Status: source implementation and isolated acceptance; shared production rollout is not performed.
+Status at this checkpoint: source implementation and isolated acceptance.
+The subsequent [production rollout](cube-execution-rollout-20261001.md) is complete.
 Companion publication commit: `2462e8b9f0e286161bdfb77611f977473358e92f`.
 Decisions: [ADR-0209](../adr/0209-control-plane-publication-and-sandbox-authority.md)
 and [ADR-0210](../adr/0210-cube-execution-handoff-and-scoped-stop.md).

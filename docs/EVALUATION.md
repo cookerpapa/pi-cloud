@@ -113,7 +113,7 @@ PI_CLOUD_LIVE_DIRECTORY_PICKER_CHECK=1 npm run production:directory-picker-check
 PI_CLOUD_LIVE_NATIVE_TOOL_CHECK=1 npm run production:native-tool-check
 ```
 
-The native Tool check explicitly uses GPT-6 Luna for two coding rounds. It
+The native Tool check explicitly uses GPT-6 Luna for three coding rounds. It
 requires real write/read/edit/bash calls, checks a 1.5MB command's bounded tail,
 records model time separately from Tool boundaries, and releases its test Session
 and Workspace through the product API. It never selects DeepSeek implicitly.
@@ -188,12 +188,14 @@ PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-env
 
 `eval:load` measures 10/50/100 concurrent cold-Session creates and reads; it
 does not claim equivalent active model/Cube concurrency. The multi-tenant gate
-uses real simultaneous model Runs across the shared Worker pool. Restart gates
-kill or replace one named process only after a visible stream boundary, then
-verify ordered completion/recovery from PostgreSQL and Kafka-backed snapshots.
+uses real simultaneous model Runs across the shared Worker pool. The Control Plane restart gate waits for a file marker proving native Bash
+execution, kills/restarts only Control Plane, then verifies the same Worker/Run
+and one shell execution. Kafka broker failure retains its separate streaming/ISR
+gate. Workers publish through ingress, so these tests do not assume continued
+publication while every ingress is offline. See the
+[matched cutover evidence](reports/cube-execution-rollout-20261001.md).
 
-The Subagent, machine-recovery and infrastructure-fault gates default to visible
-DeepSeek Pro. Select an explicit GPT-only repetition with
+General live gates default to GPT-6 Luna. Provider-specific diagnostic inputs use
 `PI_CLOUD_LIVE_SUBAGENT_PROVIDER=openai-codex`,
 `PI_CLOUD_LIVE_MACHINE_PROVIDER=openai-codex`, or
 `PI_CLOUD_LIVE_FAULT_PROVIDER=openai-codex`, respectively. These are test inputs,
@@ -205,8 +207,8 @@ Current evidence:
 
 - [Control Plane load](reports/control-plane-load-latest.md)
 - [Multi-tenant real-model load](reports/multi-tenant-model-load-latest.md)
-- [Control Plane restart](reports/control-plane-restart-acceptance-latest.md)
-- [Exclusive development environment recovery](reports/development-environment-acceptance-latest.json)
+- [Control Plane restart during Cube execution](reports/cube-cutover-handoff-restart-20261001.json)
+- [Exclusive development environment recovery](reports/cube-cutover-development-machine-20261001.json)
 
 ## Long-context compaction
 

@@ -1,0 +1,133 @@
+{
+  "checkedAt": "2026-10-01T14:33:03.391Z",
+  "allServicesHealthy": true,
+  "publicApiStatus": 200,
+  "webStatus": 200,
+  "independentBrokerRemoved": true,
+  "guestRevision": "7af590247250dd60839eae37ecc5baaa5ba596e5",
+  "services": [
+    {
+      "name": "pi-cloud-production-control-plane-1",
+      "image": "pi-cloud/control-plane:production",
+      "imageId": "sha256:e984015b7aff471d43c56b59c716235e93317e83812a38f5ca73faa1b156913c",
+      "revision": "b8b3493ba8b9260d3a022b47e437abb9e2dfdeb7",
+      "health": "healthy",
+      "pidsLimit": 1024
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1",
+      "image": "pi-cloud/supervisor-host:production",
+      "imageId": "sha256:7cd1a3e359642b03b9d1355f37255c06195d44a83b54e735bd74e5ca273bd6e1",
+      "revision": "d587ec947a2235e7dadcf234e73c5daa46fb0235",
+      "health": "healthy",
+      "pidsLimit": 256
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1-1",
+      "image": "pi-cloud/supervisor-host:production",
+      "imageId": "sha256:7cd1a3e359642b03b9d1355f37255c06195d44a83b54e735bd74e5ca273bd6e1",
+      "revision": "d587ec947a2235e7dadcf234e73c5daa46fb0235",
+      "health": "healthy",
+      "pidsLimit": 256
+    },
+    {
+      "name": "pi-cloud-production-ssh-gateway-1",
+      "image": "pi-cloud/ssh-gateway:production",
+      "imageId": "sha256:f551f79066d2d0227aabd554e6a1333e7733a165802e2f22de8e8fec277982b4",
+      "revision": "d587ec947a2235e7dadcf234e73c5daa46fb0235",
+      "health": "healthy",
+      "pidsLimit": 96
+    },
+    {
+      "name": "pi-cloud-production-web-1",
+      "image": "pi-cloud/web-ui:production",
+      "imageId": "sha256:05a69b3602df479ff1436d6184f61244178e4231128939506acf2641409c9223",
+      "revision": "d587ec947a2235e7dadcf234e73c5daa46fb0235",
+      "health": "healthy",
+      "pidsLimit": 128
+    },
+    {
+      "name": "pi-cloud-production-workspace-volume-gateway-1",
+      "image": "pi-cloud/workspace-volume-gateway:production",
+      "imageId": "sha256:57b9a70dbbe1990969042487c02cf510d2fa703481e3c7e30d84d962b76607ed",
+      "revision": "d587ec947a2235e7dadcf234e73c5daa46fb0235",
+      "health": "healthy",
+      "pidsLimit": 128
+    },
+    {
+      "name": "pi-cloud-production-provider-egress-relay-1",
+      "image": "pi-cloud/provider-egress-relay:production",
+      "imageId": "sha256:3ae629f1a1640e2206e95fd8d4ad73f214028f6b42f171f7a28c662609f18274",
+      "revision": "d587ec947a2235e7dadcf234e73c5daa46fb0235",
+      "health": "healthy",
+      "pidsLimit": 32
+    },
+    {
+      "name": "pi-cloud-production-provider-host-egress-relay-1",
+      "image": "pi-cloud/provider-egress-relay:production",
+      "imageId": "sha256:3ae629f1a1640e2206e95fd8d4ad73f214028f6b42f171f7a28c662609f18274",
+      "revision": "d587ec947a2235e7dadcf234e73c5daa46fb0235",
+      "health": "healthy",
+      "pidsLimit": 32
+    },
+    {
+      "name": "pi-cloud-production-cube-proxy-relay-1",
+      "image": "pi-cloud/workspace-volume-gateway:production",
+      "imageId": "sha256:57b9a70dbbe1990969042487c02cf510d2fa703481e3c7e30d84d962b76607ed",
+      "revision": "d587ec947a2235e7dadcf234e73c5daa46fb0235",
+      "health": "healthy",
+      "pidsLimit": 64
+    },
+    {
+      "name": "pi-cloud-production-cube-api-relay-1",
+      "image": "pi-cloud/workspace-volume-gateway:production",
+      "imageId": "sha256:57b9a70dbbe1990969042487c02cf510d2fa703481e3c7e30d84d962b76607ed",
+      "revision": "d587ec947a2235e7dadcf234e73c5daa46fb0235",
+      "health": "healthy",
+      "pidsLimit": 64
+    },
+    {
+      "name": "pi-cloud-production-cli-proxy-api-1",
+      "image": "pi-cloud/cli-proxy-api:production",
+      "imageId": "sha256:053139608bff3c04062f02950737703eee82f8188871efbf1675625ff6bd3474",
+      "health": "healthy",
+      "pidsLimit": 256
+    },
+    {
+      "name": "pi-cloud-production-session-images-1",
+      "image": "chrislusf/seaweedfs:4.47_full@sha256:1ed51b50d7586b42761b507b6ee3fc7f4b305ce2fca7590c438bb71c9c0813c9",
+      "imageId": "sha256:1ed51b50d7586b42761b507b6ee3fc7f4b305ce2fca7590c438bb71c9c0813c9",
+      "revision": "c5073360007d28385a33426a42ac3e4ec504c5a3",
+      "health": "healthy",
+      "pidsLimit": 128
+    },
+    {
+      "name": "pi-cloud-production-postgres-1",
+      "image": "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+      "imageId": "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+      "health": "healthy",
+      "pidsLimit": 256
+    },
+    {
+      "name": "pi-cloud-production-kafka-1-1",
+      "image": "apache/kafka@sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75",
+      "imageId": "sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75",
+      "health": "healthy",
+      "pidsLimit": null
+    },
+    {
+      "name": "pi-cloud-production-kafka-3-1",
+      "image": "apache/kafka@sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75",
+      "imageId": "sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75",
+      "health": "healthy",
+      "pidsLimit": null
+    },
+    {
+      "name": "pi-cloud-production-kafka-2-1",
+      "image": "apache/kafka@sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75",
+      "imageId": "sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75",
+      "health": "healthy",
+      "pidsLimit": null
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 # ADR-0209: control-plane publication and sandbox authority
 
-Status: implemented and isolated-verified, 2026-10-01; shared-cluster rollout pending.
+Status: deployed and verified, 2026-10-01.
+[Production acceptance](../reports/cube-execution-rollout-20261001.md).
 Accepted by the owner after the review.
 This supersedes ADR-0163's direct Worker producer and the independent Tool Broker
 responsibilities. It does not restore historical FactChannel leases, projection

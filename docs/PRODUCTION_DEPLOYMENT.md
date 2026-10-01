@@ -68,6 +68,12 @@ by newly provisioned machines. Coordinate the Cube update with every application
 sharing that cluster. This repository's implementation tests do not authorize
 restarting another application's shared Cube services.
 
+The installer records the Redis credential revision on Redis and its
+Master/Proxy/lifecycle consumers so their running configuration changes together.
+Projected Secret updates alone do not refresh process environment or subPath
+configuration. The October 1 [cutover record](reports/cube-execution-rollout-20261001.md)
+records real verification of the current deployment.
+
 `configure-cube-completion.mjs` waits for the Cubelet rollout after changing its
 host credentials/configuration. EndpointSlice address refreshes alone do not
 restart Cubelet. The installer requests a one-year namespace-scoped deployment

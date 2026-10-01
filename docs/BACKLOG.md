@@ -17,22 +17,9 @@ three decisions to discuss and scoped cleanup candidates. The subsequent
 confirmed repairs, the accepted deletion/interruption decisions, bounded cleanup
 and passing combined verification. The subsequent
 [authority and Cube execution implementation](reports/cube-execution-authority-20261001.md)
-has completed isolated acceptance; shared-cluster rollout remains below.
-
-## October 1 authority and execution cutover
-
-[ADR-0209](adr/0209-control-plane-publication-and-sandbox-authority.md) and
-[ADR-0210](adr/0210-cube-execution-handoff-and-scoped-stop.md) are implemented.
-[Publication](reports/publication-ingress-20261001.md) and
-[Cube execution](reports/cube-execution-authority-20261001.md) evidence record
-isolated acceptance, not a production rollout.
-
-- [ ] Coordinate the matched migration 158/159, Cube API/Master/Cubelet and guest
-      v2 cutover with every user of the shared Cube cluster (currently also
-      dsh-cloud). Drain/seal Runs, release old-contract VMs while preserving
-      Workspace Volumes, then run production browser/terminal/preview/upload and
-      machine-adoption acceptance. Do not claim independent-node recovery from
-      the single-host tests.
+and the [production cutover](reports/cube-execution-rollout-20261001.md) are
+complete. The owner confirmed dsh-cloud is retired; it no longer constrains
+PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 

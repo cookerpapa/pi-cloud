@@ -1,0 +1,10 @@
+{
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runId": "fed1d83c-902c-4473-9caa-f87a8dbb4c29",
+  "workerId": "ca60082e-ac7a-4dbf-ae8a-7ee346d3062c",
+  "executionCount": 1,
+  "workerUnchanged": true,
+  "cubeCompletedAcrossControlPlaneLoss": true,
+  "cleanupCompleted": true
+}

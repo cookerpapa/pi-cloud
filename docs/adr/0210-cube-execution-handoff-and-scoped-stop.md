@@ -1,8 +1,8 @@
 # ADR-0210: Cube execution handoff and scoped stopping
 
-Status: implemented and isolated-verified under the owner's accepted ADR-0209
-cutover, 2026-10-01. Not deployed. See the
-[acceptance record](../reports/cube-execution-authority-20261001.md).
+Status: deployed and verified under the owner's accepted ADR-0209 cutover,
+2026-10-01. See [isolated acceptance](../reports/cube-execution-authority-20261001.md)
+and [production acceptance](../reports/cube-execution-rollout-20261001.md).
 
 ## Decision and evidence
 

@@ -1,0 +1,134 @@
+[
+  {
+    "kind": "Deployment",
+    "name": "cube-api",
+    "ready": 1,
+    "desired": 1,
+    "images": [
+      {
+        "name": "cube-api",
+        "image": "pi-cloud/cube-api:d587ec947a2235e7dadcf234e73c5daa46fb0235"
+      }
+    ]
+  },
+  {
+    "kind": "Deployment",
+    "name": "cube-lifecycle-manager",
+    "ready": 1,
+    "desired": 1,
+    "images": [
+      {
+        "name": "cube-lifecycle-manager",
+        "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-lifecycle-manager:v0.6.0"
+      }
+    ]
+  },
+  {
+    "kind": "Deployment",
+    "name": "cube-master",
+    "ready": 1,
+    "desired": 1,
+    "images": [
+      {
+        "name": "cube-master",
+        "image": "pi-cloud/cube-master:d587ec947a2235e7dadcf234e73c5daa46fb0235"
+      }
+    ]
+  },
+  {
+    "kind": "Deployment",
+    "name": "cube-proxy",
+    "ready": 1,
+    "desired": 1,
+    "images": [
+      {
+        "name": "cube-proxy",
+        "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-proxy:v0.6.0"
+      }
+    ]
+  },
+  {
+    "kind": "Deployment",
+    "name": "pi-cloud-cube-api-authorizer",
+    "ready": 2,
+    "desired": 2,
+    "images": [
+      {
+        "name": "authorizer",
+        "image": "pi-cloud/cube-api-authorizer:0fc65826a9aae134360ad7cb3d710469301ba20d"
+      }
+    ]
+  },
+  {
+    "kind": "Deployment",
+    "name": "pi-cloud-cube-egress-gateway",
+    "ready": 1,
+    "desired": 1,
+    "images": [
+      {
+        "name": "gateway",
+        "image": "pi-cloud/cube-egress-gateway:d587ec947a2235e7dadcf234e73c5daa46fb0235"
+      }
+    ]
+  },
+  {
+    "kind": "Deployment",
+    "name": "pi-cloud-cube-template-registry",
+    "ready": 1,
+    "desired": 1,
+    "images": [
+      {
+        "name": "registry",
+        "image": "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+      }
+    ]
+  },
+  {
+    "kind": "StatefulSet",
+    "name": "cube-mysql",
+    "ready": 1,
+    "desired": 1,
+    "images": [
+      {
+        "name": "mysql",
+        "image": "mysql:8.0"
+      }
+    ]
+  },
+  {
+    "kind": "StatefulSet",
+    "name": "cube-redis",
+    "ready": 1,
+    "desired": 1,
+    "images": [
+      {
+        "name": "redis",
+        "image": "redis:7-alpine"
+      }
+    ]
+  },
+  {
+    "kind": "DaemonSet",
+    "name": "cube-node",
+    "ready": 1,
+    "desired": 1,
+    "images": [
+      {
+        "name": "network-agent",
+        "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/network-agent:v0.6.0"
+      },
+      {
+        "name": "cubelet",
+        "image": "pi-cloud/cubelet:b8b3493b"
+      },
+      {
+        "name": "cube-egress",
+        "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress:v0.6.0"
+      },
+      {
+        "name": "cube-egress-net",
+        "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0"
+      }
+    ]
+  }
+]

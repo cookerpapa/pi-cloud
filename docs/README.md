@@ -33,7 +33,8 @@ records all eight confirmed repairs, the accepted deletion/interruption decision
 code cleanup and passing combined verification. The
 [authority and Cube execution acceptance](reports/cube-execution-authority-20261001.md)
 records the implementation of [ADR-0210](adr/0210-cube-execution-handoff-and-scoped-stop.md);
-shared-cluster rollout remains tracked in the backlog.
+the [production cutover](reports/cube-execution-rollout-20261001.md) records the
+matched deployment, preserved user history and real-model/browser/failure acceptance.
 The [Cube result-delivery study](reports/cube-result-delivery-study-20261001.md)
 compares current upstream execution APIs with Broker-independent completion
 delivery; it records the missing guarantees without changing the deployed runtime.
