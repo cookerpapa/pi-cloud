@@ -7,6 +7,8 @@ const calls = vi.hoisted(() => ({
   observability: vi.fn(),
   subagents: vi.fn(),
   projector: vi.fn(),
+  sandbox: vi.fn(),
+  sandboxClose: vi.fn(),
 }));
 vi.mock("@pi-cloud/database", async (original) => ({
   ...(await original<typeof import("@pi-cloud/database")>()),
@@ -19,6 +21,7 @@ vi.mock("@pi-cloud/observability", async (original) => ({
 vi.mock("../src/production-config.ts", () => ({ loadProductionControlPlaneConfig: calls.config }));
 vi.mock("../src/subagent-controller.ts", () => ({ SubagentController: calls.subagents }));
 vi.mock("@pi-cloud/runtime-core/session-projector", () => ({ SessionProjector: calls.projector }));
+vi.mock("@pi-cloud/sandbox-control/runtime", () => ({ createSandboxControl: calls.sandbox }));
 import { startControlPlane } from "../src/main.ts";
 
 beforeEach(() => {
@@ -26,11 +29,13 @@ beforeEach(() => {
   calls.config.mockResolvedValue({
     databaseUrl: "postgresql://fixture",
     databaseNotificationUrl: "postgresql://direct-fixture",
-    toolDispatchToken: "fixture-dispatch-token".repeat(3),
-    toolBrokerBaseUrls: ["http://tool-broker.test"],
+    supervisorManagementToken: "fixture-management-token".repeat(3),
+    sandboxControlBaseUrls: ["http://sandbox-control.test"],
     workspaceServiceToken: "fixture-workspace-token".repeat(3),
     allowInsecureInternalHttp: true,
   });
+  calls.sandboxClose.mockResolvedValue(undefined);
+  calls.sandbox.mockResolvedValue({ close: calls.sandboxClose, dispatcher: {} });
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -69,6 +74,7 @@ it("cleans database and telemetry when Subagent construction fails before the Pr
   await expect(startControlPlane()).rejects.toBe(failure);
   expect(destroy).toHaveBeenCalledOnce();
   expect(close).toHaveBeenCalledOnce();
+  expect(calls.sandboxClose).toHaveBeenCalledOnce();
 });
 
 it("closes a constructed Subagent controller when Projector ownership was never established", async () => {
@@ -86,6 +92,7 @@ it("closes a constructed Subagent controller when Projector ownership was never 
   });
   await expect(startControlPlane()).rejects.toBe(failure);
   expect(subagentClose).toHaveBeenCalledOnce();
+  expect(calls.sandboxClose).toHaveBeenCalledOnce();
   expect(destroy).toHaveBeenCalledOnce();
   expect(close).toHaveBeenCalledOnce();
 });

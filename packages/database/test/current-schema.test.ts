@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(158);
+      expect(firstMigrationPass.rows).toHaveLength(159);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("158_control_plane_publication");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("159_cube_execution_binding");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -53,6 +53,9 @@ describe("current PiCloud schema", () => {
         "pi_session_records",
         "pi_session_entry_refs",
         "tool_broker_operations",
+        "tool_broker_binding_routes",
+        "tool_broker_instances",
+        "tool_broker_workspace_runtimes",
         "workspace_settlements",
         "runtime_objects",
         "artifacts",
@@ -74,8 +77,9 @@ describe("current PiCloud schema", () => {
         "pi_sessions",
         "pi_session_log",
         "pi_session_open_operations",
-        "tool_broker_workspace_runtimes",
-        "tool_broker_binding_routes",
+        "workspace_runtimes",
+        "sandbox_tool_bindings",
+        "sandbox_control_instances",
         "workspaces",
         "development_environments",
         "source_control_installations",

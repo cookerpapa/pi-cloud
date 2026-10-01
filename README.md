@@ -19,7 +19,7 @@ Pi Worker <-> CLIProxyAPI <-> Model
 Pi Worker -> Publication ingress -> Kafka -> Session Projector
                                             +-> PostgreSQL (conversation history)
                                             +-> Browser (SSE)
-                                            `-> Tool Broker -> CubeSandbox
+                                            `-> Cube native execution endpoint
 ```
 
 Whole file/shell Tools execute in Cube. Final results return through Kafka to
@@ -27,7 +27,9 @@ Pi Worker; optional temporary logs go directly through Projector to the browser.
 Workspace files live on persistent Cube Volumes.
 Images used by the Agent are immutable Session attachments in private S3 storage;
 Kafka carries their references and Pi receives ordinary image content.
-The API, publication ingress and Projector share the Control Plane process.
+The API, publication ingress, Projector and sandbox lifecycle controller share
+one Control Plane process. Cubelet owns accepted fixed Tool processes and their
+Kafka completion delivery. There is no separate Broker service.
 Ingress serializes Session writes and seals; its ordinary append path uses no SQL.
 Outputs are persisted
 before display, except disposable Tool log previews. Recovery never automatically

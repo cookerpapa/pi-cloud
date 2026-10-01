@@ -7,7 +7,7 @@ const valid = {
     kafka: { brokers: ["kafka.internal:9092"], acceptedFactRetentionMs: 7_200_000 },
   },
   images: Object.fromEntries(
-    ["controlPlane", "web", "toolBroker", "sshGateway"].map((name) => [
+    ["controlPlane", "web", "workspaceVolumeGateway", "sshGateway"].map((name) => [
       name,
       { repository: `registry.internal/pi-cloud/${name}`, tag: "release-1" },
     ]),
@@ -27,7 +27,7 @@ const valid = {
       modelConcurrency: 4,
       sessionModelConcurrency: 4,
       timeouts: {
-        toolBrokerRequestMs: 360_000,
+        sandboxControlRequestMs: 360_000,
         modelCapabilityTtlMs: 900_000,
         modelUpstreamConnectMs: 120_000,
         modelUpstreamIdleMs: 300_000,

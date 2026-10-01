@@ -1,11 +1,8 @@
-{{- if and .Values.globalPlaneEnabled (lt (int .Values.controlPlane.replicas) 2) -}}
+{{- if and (or .Values.globalPlaneEnabled .Values.sandboxPlaneEnabled) (lt (int .Values.controlPlane.replicas) 2) -}}
 {{- fail "controlPlane.replicas must be at least 2 for the distributed profile" -}}
 {{- end -}}
 {{- if and .Values.globalPlaneEnabled (lt (int .Values.web.replicas) 2) -}}
 {{- fail "web.replicas must be at least 2 for the distributed profile" -}}
-{{- end -}}
-{{- if and .Values.sandboxPlaneEnabled (lt (int .Values.sandboxPlane.toolBrokerReplicas) 3) -}}
-{{- fail "sandboxPlane.toolBrokerReplicas must be at least 3 for lease-based ownership failover" -}}
 {{- end -}}
 {{- if and .Values.controlPlane.autoscaling.enabled (lt (int .Values.controlPlane.autoscaling.maxReplicas) (int .Values.controlPlane.autoscaling.minReplicas)) -}}
 {{- fail "controlPlane.autoscaling.maxReplicas must be at least minReplicas" -}}

@@ -10,7 +10,7 @@ import {
 } from "@pi-cloud/runtime-core/run-executor";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
-import { PostgresWorkspaceRuntimeStateRepository } from "@pi-cloud/tool-broker";
+import { PostgresWorkspaceRuntimeStateRepository } from "@pi-cloud/sandbox-control";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 
@@ -429,7 +429,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       await broker.start();
       blocker = db.transaction().execute(async (tx) => {
         await tx
-          .selectFrom("tool_broker_instances")
+          .selectFrom("sandbox_control_instances")
           .select("instance_id")
           .where("instance_id", "=", instanceId)
           .forUpdate()
@@ -449,7 +449,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       await vi.waitFor(
         async () => {
           const row = await db
-            .selectFrom("tool_broker_instances")
+            .selectFrom("sandbox_control_instances")
             .select(sql<boolean>`lease_expires_at <= clock_timestamp()`.as("expired"))
             .where("instance_id", "=", instanceId)
             .executeTakeFirstOrThrow();
@@ -461,7 +461,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       await blocker;
       await vi.waitFor(async () => {
         const row = await db
-          .selectFrom("tool_broker_instances")
+          .selectFrom("sandbox_control_instances")
           .select("state")
           .where("instance_id", "=", instanceId)
           .executeTakeFirstOrThrow();

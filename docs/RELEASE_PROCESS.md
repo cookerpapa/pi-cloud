@@ -125,9 +125,9 @@ time-bounded exception is added with its reachable attack path documented.
 
 Migration 156 removes conversation archive/restore and permanently purges hidden
 ordinary conversation trees after checking quiescence. Back up the database and
-deploy the matching API, Worker, Broker and Web schema together. Rollback requires
+deploy the matching API, Worker, Cube runtime and Web schema together. Rollback requires
 a matched backup; do not run an older binary against the renamed `pruned_at` fields.
-Tool Broker uses `DATABASE_NOTIFICATION_URL_FILE` for its optional cleanup hint
+sandbox-management module uses `DATABASE_NOTIFICATION_URL_FILE` for its optional cleanup hint
 connection (direct PG or session pooling); without it the main database URL is used.
 Cleanup remains correct with missed notifications through its 30-second scan.
 

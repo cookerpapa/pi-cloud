@@ -81,8 +81,8 @@
     },
     {
       "id": "input-image-guest-cancel",
-      "workspace": "@pi-cloud/tool-broker",
-      "file": "test/tool-broker.test.ts",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
       "test": "prepares immutable input images without an Agent Tool and waits for guest cancellation (cancel=true)",
       "invariant": "Input preparation is fenced independently of Agent Tool execution and remains tracked until guest cancellation finishes."
     },
@@ -374,53 +374,53 @@
       "invariant": "A Control Plane failure before provisioning cannot leak a requested development machine."
     },
     {
-      "id": "tool-broker-owner-fence",
-      "workspace": "@pi-cloud/tool-broker",
+      "id": "sandbox-control-owner-fence",
+      "workspace": "@pi-cloud/sandbox-control",
       "file": "test/workspace-runtime-state-repository.test.ts",
       "test": "fences an expired replica before a surviving owner stays Ready",
-      "invariant": "A replacement Tool Broker fences the expired owner before serving its Workspace runtime."
+      "invariant": "A replacement Sandbox control fences the expired owner before serving its Workspace runtime."
     },
     {
       "id": "ambiguous-tool-transport",
-      "workspace": "@pi-cloud/tool-broker",
-      "file": "test/cubesandbox-provider.test.ts",
-      "test": "destroys an uncertain VM without replaying a disconnected Tool command",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/tool-command-routing.test.ts",
+      "test": "closes an uncertain handoff by operation ID without replaying it",
       "invariant": "An ambiguous Tool transport never blindly replays an arbitrary command."
     },
     {
       "id": "subagent-compute-scope-expiry",
-      "workspace": "@pi-cloud/tool-broker",
-      "file": "test/tool-broker.test.ts",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
       "test": "separates compute on one Workspace and keeps each binding's explicit cwd",
       "invariant": "Expiring a child's independent compute scope keeps the shared Volume and the active parent's runtime; each binding uses its own frozen cwd."
     },
     {
       "id": "cancel-stop-failure",
-      "workspace": "@pi-cloud/tool-broker",
-      "file": "test/tool-broker.test.ts",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
       "test": "revokes the Session lease before a provider stop failure escapes",
       "invariant": "Cancellation revokes Tool authority before uncertain process cleanup returns."
     },
     {
       "id": "shared-runtime-loss",
-      "workspace": "@pi-cloud/tool-broker",
-      "file": "test/tool-broker.test.ts",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
       "test": "fails every binding when the shared physical Workspace runtime is lost",
       "invariant": "Loss of one Workspace Cube cannot leave a surviving logical Tool binding."
     },
     {
       "id": "workspace-volume-delete-race",
-      "workspace": "@pi-cloud/tool-broker",
+      "workspace": "@pi-cloud/sandbox-control",
       "file": "test/workspace-volume-deletion-reaper.integration.test.ts",
       "test": "waits for the live Cube activation before purging POSIX Workspace data",
       "invariant": "Workspace bytes are not deleted while a live Cube still owns the Volume."
     },
     {
-      "id": "projector-owner-ack-loss",
+      "id": "projector-seal-replay",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/session-projector-handoffs.test.ts",
-      "test": "retries seal delivery after ACK loss without duplicating its live terminal",
-      "invariant": "A failed seal delivery retries its positioned control record without emitting the terminal twice; Tool command delivery is not retried."
+      "test": "replays seal projection without duplicating its live terminal or execution closure",
+      "invariant": "Seal projection replay cannot duplicate a terminal or repeat execution closure; closure precedes publication."
     },
     {
       "id": "projector-rebalance-after-pg",
@@ -431,8 +431,8 @@
     },
     {
       "id": "broker-shutdown-admission",
-      "workspace": "@pi-cloud/tool-broker",
-      "file": "test/tool-broker.test.ts",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
       "test": "closes queued materialization before shutdown releases physical capacity",
       "invariant": "Broker shutdown rejects pending VM creation before freeing existing capacity; it never launches the waiter during teardown."
     },
@@ -452,8 +452,8 @@
     },
     {
       "id": "tool-native-late-result",
-      "workspace": "@pi-cloud/tool-broker",
-      "file": "test/tool-command-executor.test.ts",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workflow-command-dispatcher.test.ts",
       "test": "does not publish a running command's late result after a seal",
       "invariant": "Completing guest work after closure cannot publish a usable native Tool result."
     },
@@ -494,7 +494,7 @@
     },
     {
       "id": "broker-adopted-capacity",
-      "workspace": "@pi-cloud/tool-broker",
+      "workspace": "@pi-cloud/sandbox-control",
       "file": "test/sandbox-admission.test.ts",
       "test": "accounts for adopted machines above a lowered limit before admitting new work",
       "invariant": "Existing adopted machines count against a lowered capacity; new work remains queued until a physical slot is free."
@@ -627,7 +627,7 @@
     },
     {
       "id": "workflow-result-budget",
-      "workspace": "@pi-cloud/tool-broker",
+      "workspace": "@pi-cloud/sandbox-control",
       "file": "test/workflow-channels.test.ts",
       "test": "fails a large return explicitly after one execution, preserving its prior effects",
       "invariant": "A completed oversized workflow return becomes an explicit bounded error without repeating effects."
@@ -757,6 +757,13 @@
       "file": "test/session-publication-ingress.test.ts",
       "test": "uses projected closure after a lost seal ACK without leaving the next writer blocked",
       "invariant": "PG canonical seal evidence releases a successor despite a lost producer ACK."
+    },
+    {
+      "id": "quarantined-binding-late-command",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/tool-command-routing.test.ts",
+      "test": "refuses queued commands after unconfirmed stopping, including dispatcher replacement",
+      "invariant": "Durable binding closure rejects late Tool handoffs even after stopping is unconfirmed and the dispatcher is replaced."
     }
   ]
 }

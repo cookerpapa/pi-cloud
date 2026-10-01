@@ -12,7 +12,7 @@ const storage = join(root, "storage"),
   bin = join(root, "bin");
 await mkdir(storage);
 await mkdir(bin);
-const image = process.env.PI_CLOUD_TEST_IMAGE ?? "pi-cloud/tool-broker:production";
+const image = process.env.PI_CLOUD_TEST_IMAGE ?? "pi-cloud/workspace-volume-gateway:production";
 const volumes = [];
 function volume(label) {
   const id = `pcw-${createHash("sha256").update(`${root}:${label}`).digest("hex").slice(0, 48)}`;

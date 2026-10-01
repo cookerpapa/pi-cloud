@@ -1,3 +1,4 @@
+import { withCubeExecutionCompletion } from "./lib/cube-execution-deployment.mjs";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -114,7 +115,7 @@ function run(command, args, options = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(command, args, {
       cwd: repositoryRoot,
-      env: environment,
+      env: { ...environment, ...(options.environment ?? {}) },
       stdio: options.input === undefined ? "inherit" : ["pipe", "inherit", "inherit"],
     });
     child.once("error", rejectPromise);
@@ -534,18 +535,20 @@ async function installPosixVolumePlugin() {
     "jsonpath={.items[0].metadata.name}",
   ]);
   if (pod.length < 1) throw new Error("Cubelet Pod was unavailable for plugin configuration");
-  const cubeletConfig = withCubeletPosixVolumePlugin(
-    await captureKubectl([
-      "-n",
-      "cube-system",
-      "exec",
-      pod,
-      "-c",
-      "cubelet",
-      "--",
-      "cat",
-      "/usr/local/services/cubetoolbox/Cubelet/config/config.toml",
-    ]),
+  const cubeletConfig = withCubeExecutionCompletion(
+    withCubeletPosixVolumePlugin(
+      await captureKubectl([
+        "-n",
+        "cube-system",
+        "exec",
+        pod,
+        "-c",
+        "cubelet",
+        "--",
+        "cat",
+        "/usr/local/services/cubetoolbox/Cubelet/config/config.toml",
+      ]),
+    ),
   );
   const masterSecret = JSON.parse(
     await captureKubectl([
@@ -1069,6 +1072,73 @@ async function installTemplateRegistry() {
   }
 }
 
+async function installCompletionDeploymentCredential() {
+  const namespace = "cube-system",
+    name = "pi-cloud-completion-deployer";
+  const objects = [
+    { apiVersion: "v1", kind: "ServiceAccount", metadata: { name, namespace } },
+    {
+      apiVersion: "rbac.authorization.k8s.io/v1",
+      kind: "Role",
+      metadata: { name, namespace },
+      rules: [
+        { apiGroups: [""], resources: ["services"], verbs: ["get", "create", "patch", "update"] },
+        {
+          apiGroups: ["discovery.k8s.io"],
+          resources: ["endpointslices"],
+          verbs: ["get", "create", "patch", "update"],
+        },
+        { apiGroups: [""], resources: ["secrets"], verbs: ["create"] },
+        {
+          apiGroups: [""],
+          resources: ["secrets"],
+          resourceNames: ["pi-cloud-cube-completion"],
+          verbs: ["get", "patch", "update"],
+        },
+        {
+          apiGroups: ["apps"],
+          resources: ["daemonsets"],
+          resourceNames: ["cube-node"],
+          verbs: ["get", "list", "watch", "patch"],
+        },
+      ],
+    },
+    {
+      apiVersion: "rbac.authorization.k8s.io/v1",
+      kind: "RoleBinding",
+      metadata: { name, namespace },
+      subjects: [{ kind: "ServiceAccount", name, namespace }],
+      roleRef: { apiGroup: "rbac.authorization.k8s.io", kind: "Role", name },
+    },
+  ];
+  for (const object of objects)
+    await runKubectl(["apply", "-f", "-"], { input: JSON.stringify(object) });
+  const current = JSON.parse(
+    await captureKubectl(["config", "view", "--raw", "--minify", "-o", "json"]),
+  );
+  const token = await captureKubectl([
+    "-n",
+    namespace,
+    "create",
+    "token",
+    name,
+    "--duration=8760h",
+  ]);
+  const config = {
+    apiVersion: "v1",
+    kind: "Config",
+    clusters: [{ name: "cube", cluster: current.clusters[0].cluster }],
+    users: [{ name, user: { token } }],
+    contexts: [{ name: "cube-completion", context: { cluster: "cube", user: name, namespace } }],
+    "current-context": "cube-completion",
+  };
+  const path = resolve(runtimeDirectory, "cubesandbox/completion-kubeconfig.json");
+  const owner = await stat(credentialPath);
+  await writeFile(path, JSON.stringify(config) + "\n", { mode: 0o600 });
+  await chmod(path, 0o600);
+  await chown(path, owner.uid, owner.gid);
+}
+
 if ((await repositoryHead(cubeRepository)) !== CUBE_COMMIT) {
   throw new Error(`CubeSandbox checkout must be pinned to ${CUBE_COMMIT}`);
 }
@@ -1132,9 +1202,16 @@ await run("docker", [
   ".",
 ]);
 
+await run(process.execPath, ["scripts/build-cubesandbox-runtime.mjs"], {
+  environment: {
+    PI_CLOUD_IMAGE_VERSION: piCloudRevision,
+    PI_CLOUD_CUBESANDBOX_REPOSITORY: cubeRepository,
+  },
+});
 await stagePinnedK3sImages("pi-cloud-cube-platform-local.tar", [
   authorizerImage,
   cubeEgressGatewayImage,
+  ...["cube-api", "cube-master", "cubelet"].map((name) => `pi-cloud/${name}:${piCloudRevision}`),
 ]);
 // `kubectl apply` owns the namespace declaratively without printing any
 // credential. Generate the Secret JSON in memory and stream it to apply.
@@ -1214,12 +1291,25 @@ await run("helm", [
   resolve(repositoryRoot, "deploy/cubesandbox/values-pi-cloud-single-node.yaml"),
   "--values",
   secretValuesPath,
+  "--set",
+  "images.api.repository=pi-cloud/cube-api",
+  "--set",
+  `images.api.tag=${piCloudRevision}`,
+  "--set",
+  "images.master.repository=pi-cloud/cube-master",
+  "--set",
+  `images.master.tag=${piCloudRevision}`,
+  "--set",
+  "images.cubelet.repository=pi-cloud/cubelet",
+  "--set",
+  `images.cubelet.tag=${piCloudRevision}`,
   "--wait",
   "--timeout",
   "90m",
 ]);
 await ensureCubeletLoopbackCapacity();
 await installPosixVolumePlugin();
+await installCompletionDeploymentCredential();
 if (nodeNetwork.changed) {
   await restartCubeWorkloadsAfterNetworkChange();
 }
@@ -1247,6 +1337,10 @@ const serviceAddress = (component, portName) => {
 const cluster = {
   formatVersion: 1,
   cubeCommit: CUBE_COMMIT,
+  executionProtocolVersion: 1,
+  runtimePatchSha256: createHash("sha256")
+    .update(await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json")))
+    .digest("hex"),
   nodeName,
   api: serviceAddress("api", "http-api"),
   master: serviceAddress("master", "cubemaster"),

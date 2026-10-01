@@ -1,6 +1,6 @@
 # Streaming durability and recovery
 
-The current path is Worker → Kafka → one partitioned Session Projector group.
+The current path is Worker → control-plane ingress → Kafka → one Session Projector group.
 Projector drives PG history, live views and Tool routing. Tool executors do not
 read Kafka, and the public SSE proxy never builds a second tail.
 
@@ -38,10 +38,11 @@ Tool effect is never inferred from output text or a Kafka ACK
 S requires no browser-provided cursor
 ```
 
-Kafka ACK is persistence, not automatic acceptance. An old Worker may still
-append a record after its seal; Projector rejects its application.
+Kafka ACK is persistence. The ingress closes stale Worker admission before
+publishing the seal; Kafka transactions also fence a replaced ingress producer.
+Projector retains historical position/closure checks for reconstruction.
 Publication scope is recorded once under the current ExecutionReference. Cached
-scope/closure checks replace remote per-record authority admission, not the sole PG
+scope/closure checks at ingress avoid per-record SQL, not the sole PG
 authority. Only the exact PG-requested seal is valid. Normal closure affects one
 Run/Lane; uncertain shared native-writer failure also fences its sibling Lanes.
 

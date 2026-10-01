@@ -1,0 +1,640 @@
+From 1a4b24ec44beb645b05cfc66f2d28791f48a1ba3 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Thu, 1 Oct 2026 14:13:11 +0800
+Subject: [PATCH] Observe recorded sandboxes on their owning node without
+ inferring absence
+
+Autonomously-by: Codex:GPT-6
+---
+ CubeAPI/src/cubemaster/mod.rs                 | 21 +++++
+ CubeAPI/src/handlers/sandboxes.rs             | 21 +++++
+ CubeAPI/src/models/mod.rs                     | 26 ++++++
+ CubeAPI/src/openapi.rs                        |  3 +
+ CubeAPI/src/routes.rs                         |  4 +
+ CubeAPI/src/services/sandboxes.rs             | 93 +++++++++++++++++++
+ .../pkg/service/sandbox/sandbox_info.go       | 10 +-
+ .../sandbox/sandbox_observation_test.go       | 57 ++++++++++++
+ .../plugins/cube/internals/cubes/observe.go   | 61 ++++++++++++
+ .../cube/internals/cubes/observe_test.go      | 55 +++++++++++
+ .../plugins/cube/internals/cubes/plugin.go    |  2 +
+ Cubelet/services/cubebox/observation_test.go  | 42 +++++++++
+ .../services/cubebox/resume_reconcile_test.go |  9 ++
+ Cubelet/services/cubebox/service.go           | 20 ++--
+ 14 files changed, 415 insertions(+), 9 deletions(-)
+ create mode 100644 CubeMaster/pkg/service/sandbox/sandbox_observation_test.go
+ create mode 100644 Cubelet/plugins/cube/internals/cubes/observe.go
+ create mode 100644 Cubelet/plugins/cube/internals/cubes/observe_test.go
+ create mode 100644 Cubelet/services/cubebox/observation_test.go
+
+diff --git a/CubeAPI/src/cubemaster/mod.rs b/CubeAPI/src/cubemaster/mod.rs
+index 747b759a770be0703c7b3e0589bf1d017615e1f6..95cd5367906ad8ca74683ac58630160fab976811 100644
+--- a/CubeAPI/src/cubemaster/mod.rs
++++ b/CubeAPI/src/cubemaster/mod.rs
+@@ -125,6 +125,27 @@ impl CubeMasterClient {
+         parse_response(resp).await
+     }
+ 
++    /// Exact observation on a recorded node, independent of master route aliases.
++    pub async fn observe_sandbox(
++        &self,
++        sandbox_id: &str,
++        host_id: &str,
++        instance_type: &str,
++    ) -> Result<GetSandboxResponse, CubeMasterError> {
++        let resp = self
++            .inner
++            .get(format!("{}/cube/sandbox/info", self.base_url))
++            .query(&[
++                ("sandbox_id", sandbox_id),
++                ("host_id", host_id),
++                ("instance_type", instance_type),
++            ])
++            .send()
++            .await
++            .map_err(CubeMasterError::Http)?;
++        parse_response(resp).await
++    }
++
+     /// POST /cube/sandbox/update — pause or resume a sandbox (action: "pause" | "resume").
+     pub async fn update_sandbox(
+         &self,
+diff --git a/CubeAPI/src/handlers/sandboxes.rs b/CubeAPI/src/handlers/sandboxes.rs
+index c17866cca803c0e879fe2cc81e6d3178f5023875..faeb5af5c50add2b133c199642c4097b1ce13042 100644
+--- a/CubeAPI/src/handlers/sandboxes.rs
++++ b/CubeAPI/src/handlers/sandboxes.rs
+@@ -23,6 +23,27 @@ use crate::{
+ 
+ // ─── GET /sandboxes ───────────────────────────────────────────────────────────
+ 
++#[utoipa::path(
++    get, path = "/sandboxes/{sandboxID}/observation",
++    params(("sandboxID" = String, Path, description = "Recorded full sandbox ID"),
++        ("nodeID" = String, Query, description = "Recorded Cube node identity")),
++    responses((status = 200, body = crate::models::SandboxObservation)),
++    tag = "sandboxes"
++)]
++pub async fn observe_sandbox(
++    State(state): State<AppState>,
++    Path(sandbox_id): Path<String>,
++    Query(query): Query<crate::models::SandboxObservationQuery>,
++) -> AppResult<impl IntoResponse> {
++    Ok(Json(
++        state
++            .services
++            .sandboxes
++            .observe_sandbox(&sandbox_id, &query.node_id)
++            .await?,
++    ))
++}
++
+ pub async fn list_sandboxes(
+     State(state): State<AppState>,
+     Query(params): Query<ListSandboxesQuery>,
+diff --git a/CubeAPI/src/models/mod.rs b/CubeAPI/src/models/mod.rs
+index 0e4812899a471467d3d0bd4b78a5018cbdf8f92b..6124616679b8330764b0fc454a67fd2c4bead930 100644
+--- a/CubeAPI/src/models/mod.rs
++++ b/CubeAPI/src/models/mod.rs
+@@ -42,6 +42,32 @@ pub enum SandboxState {
+     Unknown,
+ }
+ 
++#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
++#[serde(rename_all = "lowercase")]
++pub enum SandboxPresence {
++    Present,
++    Absent,
++    Unavailable,
++}
++
++/// Observation on one explicit node. A stopped container is still present;
++/// neither an unavailable node nor a missing route proves VM termination.
++#[derive(Debug, Serialize, Deserialize, ToSchema)]
++pub struct SandboxObservation {
++    #[serde(rename = "sandboxID")]
++    pub sandbox_id: String,
++    #[serde(rename = "nodeID")]
++    pub node_id: String,
++    pub presence: SandboxPresence,
++    pub state: SandboxState,
++}
++
++#[derive(Debug, Deserialize)]
++pub struct SandboxObservationQuery {
++    #[serde(rename = "nodeID")]
++    pub node_id: String,
++}
++
+ /// Network configuration for sandbox egress/ingress control.
+ #[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
+ pub struct SandboxNetworkConfig {
+diff --git a/CubeAPI/src/openapi.rs b/CubeAPI/src/openapi.rs
+index f8b9f966d08ee52fe5a57d778e2dca62ea3a0caf..a6350767b373db97c6f091aadce8690d77bc2dab 100644
+--- a/CubeAPI/src/openapi.rs
++++ b/CubeAPI/src/openapi.rs
+@@ -64,6 +64,7 @@ impl Modify for SecurityAddon {
+         handlers::templates::adopt_template_compat_baseline,
+         handlers::sandboxes::list_sandboxes_v2,
+         handlers::sandboxes::get_sandbox,
++        handlers::sandboxes::observe_sandbox,
+         handlers::sandboxes::kill_sandbox,
+         handlers::sandboxes::pause_sandbox,
+         handlers::sandboxes::resume_sandbox,
+@@ -85,6 +86,8 @@ impl Modify for SecurityAddon {
+         TemplateCompatMatrixView,
+         TemplateCompatAdoptResponseView,
+         SandboxState,
++        crate::models::SandboxPresence,
++        crate::models::SandboxObservation,
+         SandboxVolumeMount,
+         crate::models::ListedSandbox,
+         SandboxDetail,
+diff --git a/CubeAPI/src/routes.rs b/CubeAPI/src/routes.rs
+index c4550e5a236ccaa0c248079f649716640b0ffc4b..98c7aaff85d08b30a134707c1cdf263cad2dae2d 100644
+--- a/CubeAPI/src/routes.rs
++++ b/CubeAPI/src/routes.rs
+@@ -80,6 +80,10 @@ fn build_sandbox_routes(state: &AppState, auth_configured: bool) -> Router<AppSt
+         .route("/sandboxes", post(sandboxes::create_sandbox))
+         .route("/v2/sandboxes", get(sandboxes::list_sandboxes_v2))
+         .route("/sandboxes/:sandboxID", get(sandboxes::get_sandbox))
++        .route(
++            "/sandboxes/:sandboxID/observation",
++            get(sandboxes::observe_sandbox),
++        )
+         .route("/sandboxes/:sandboxID", delete(sandboxes::kill_sandbox))
+         .route(
+             "/sandboxes/:sandboxID/logs",
+diff --git a/CubeAPI/src/services/sandboxes.rs b/CubeAPI/src/services/sandboxes.rs
+index 463fcf33f113c25fcc82e016b5c29e9311c2b360..fbc2530945153f0def7e5228e811f00db84851c5 100644
+--- a/CubeAPI/src/services/sandboxes.rs
++++ b/CubeAPI/src/services/sandboxes.rs
+@@ -114,6 +114,55 @@ impl SandboxService {
+             .collect())
+     }
+ 
++    pub async fn observe_sandbox(
++        &self,
++        sandbox_id: &str,
++        node_id: &str,
++    ) -> AppResult<crate::models::SandboxObservation> {
++        use crate::models::{SandboxObservation, SandboxPresence};
++        if sandbox_id.len() != 32
++            || !sandbox_id.bytes().all(|b| b.is_ascii_hexdigit())
++            || node_id.is_empty()
++            || node_id.len() > 256
++        {
++            return Err(AppError::BadRequest(
++                "Exact sandbox and node identity are required".into(),
++            ));
++        }
++        let sandbox_id = sandbox_id.to_ascii_lowercase();
++        let mut observation = SandboxObservation {
++            sandbox_id: sandbox_id.clone(),
++            node_id: node_id.into(),
++            presence: SandboxPresence::Unavailable,
++            state: SandboxState::Unknown,
++        };
++        match self
++            .cubemaster
++            .observe_sandbox(&sandbox_id, node_id, &self.instance_type)
++            .await
++        {
++            Ok(response)
++                if is_success_ret_code(response.ret.ret_code)
++                    && response.data.len() == 1
++                    && response.data[0].sandbox_id == sandbox_id =>
++            {
++                observation.presence = SandboxPresence::Present;
++                observation.state = match response.data[0].status {
++                    1 => SandboxState::Running,
++                    2 => SandboxState::Stopped,
++                    4 => SandboxState::Pausing,
++                    5 => SandboxState::Paused,
++                    _ => SandboxState::Unknown,
++                };
++            }
++            Err(CubeMasterError::Api {
++                ret_code: 130406, ..
++            }) => observation.presence = SandboxPresence::Absent,
++            _ => {}
++        }
++        Ok(observation)
++    }
++
+     pub async fn get_sandbox(&self, sandbox_id: &str) -> AppResult<SandboxDetail> {
+         let d = self.fetch_sandbox_detail(sandbox_id).await?;
+         let summary = self.fetch_sandbox_summary(sandbox_id, &d.host_id).await?;
+@@ -1097,6 +1146,50 @@ mod tests {
+     use serde_json::Value;
+     use tokio::sync::Mutex;
+ 
++    #[tokio::test]
++    async fn exact_node_observation_distinguishes_absence_from_unavailability() {
++        use crate::models::SandboxPresence;
++        use axum::{extract::Query, routing::get};
++        let id = "aabbccddeeff00112233445566778899";
++        for (code, present, expected) in [
++            (200, true, SandboxPresence::Present),
++            (130406, false, SandboxPresence::Absent),
++            (130404, false, SandboxPresence::Unavailable),
++            (130408, false, SandboxPresence::Unavailable),
++            (130500, false, SandboxPresence::Unavailable),
++            (200, false, SandboxPresence::Unavailable),
++        ] {
++            let app = Router::new().route("/cube/sandbox/info", get(move |Query(query): Query<HashMap<String, String>>| async move {
++                assert_eq!(query.get("sandbox_id").map(String::as_str), Some(id));
++                assert_eq!(query.get("host_id").map(String::as_str), Some("node-1"));
++                Json(serde_json::json!({ "requestID": "observation", "ret": { "ret_code": code, "ret_msg": "fixture" },
++                    "data": if present { vec![serde_json::json!({"sandbox_id": id, "host_id": "node-1", "status": 2})] } else { vec![] } }))
++            }));
++            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let address = listener.local_addr().unwrap();
++            let server = tokio::spawn(async move {
++                axum::serve(listener, app).await.unwrap();
++            });
++            let service = SandboxService::new(
++                CubeMasterClient::new(format!("http://{address}"), reqwest::Client::new()),
++                "cubebox".into(),
++                "cube.app".into(),
++            );
++            let observed = service.observe_sandbox(id, "node-1").await.unwrap();
++            assert_eq!(observed.presence, expected);
++            assert_eq!(
++                observed.state,
++                if present {
++                    SandboxState::Stopped
++                } else {
++                    SandboxState::Unknown
++                }
++            );
++            assert!(service.observe_sandbox("aabbccdd", "node-1").await.is_err());
++            server.abort();
++        }
++    }
++
+     #[test]
+     fn observed_states_preserve_detail_and_list_failure_evidence() {
+         for (raw, typed, expected) in [
+diff --git a/CubeMaster/pkg/service/sandbox/sandbox_info.go b/CubeMaster/pkg/service/sandbox/sandbox_info.go
+index 5746ccc85ef68e9d091a289c2700f79a9f60d239..3317d083fd7d6a85fca4ce5a88bb3cb327a15fbb 100644
+--- a/CubeMaster/pkg/service/sandbox/sandbox_info.go
++++ b/CubeMaster/pkg/service/sandbox/sandbox_info.go
+@@ -6,6 +6,7 @@ package sandbox
+ 
+ import (
+ 	"context"
++	"strings"
+ 	"time"
+ 
+ 	"github.com/google/uuid"
+@@ -17,6 +18,7 @@ import (
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/errorcode"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/sandboxid"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox/types"
+ 	"github.com/tencentcloud/CubeSandbox/cubelog"
+ )
+@@ -33,12 +35,18 @@ func SandboxInfo(ctx context.Context, req *types.GetCubeSandboxReq) (rsp *types.
+ 		},
+ 	}
+ 	log.G(ctx).Infof("GetSandboxInfo:%+v", utils.InterfaceToString(req))
+-	if req.SandboxID != "" {
++	// A recorded node plus a full ID is an exact lookup, including when the
++	// master's routing cache is missing. Do not turn a partial cluster scan into
++	// an absence assertion for this node.
++	if req.SandboxID != "" && !(req.HostID != "" && sandboxid.IsFullID(req.SandboxID)) {
+ 		if ret := normalizeSandboxIDInReq(ctx, &req.SandboxID); ret != nil {
+ 			rsp.Ret = ret
+ 			return
+ 		}
+ 	}
++	if req.HostID != "" && sandboxid.IsFullID(req.SandboxID) {
++		req.SandboxID = strings.ToLower(req.SandboxID)
++	}
+ 	defer func() {
+ 		if log.IsDebug() {
+ 			log.G(ctx).Debugf("GetSandboxInfo_rsp:%+v", utils.InterfaceToString(rsp))
+diff --git a/CubeMaster/pkg/service/sandbox/sandbox_observation_test.go b/CubeMaster/pkg/service/sandbox/sandbox_observation_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..e395337c9f52b4a020d6036ed2ec6bbffbff283d
+--- /dev/null
++++ b/CubeMaster/pkg/service/sandbox/sandbox_observation_test.go
+@@ -0,0 +1,57 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++
++package sandbox
++
++import (
++	"context"
++	"errors"
++	"testing"
++
++	"github.com/agiledragon/gomonkey/v2"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/api/services/cubebox/v1"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/node"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/errorcode"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox/types"
++	"github.com/tencentcloud/CubeSandbox/cubelog"
++)
++
++func TestExactNodeObservationDoesNotDependOnMasterSandboxCache(t *testing.T) {
++	for _, condition := range []string{"absent", "unhealthy", "missing-node", "rpc-failure"} {
++		t.Run(condition, func(t *testing.T) {
++			patches := gomonkey.NewPatches()
++			defer patches.Reset()
++			patches.ApplyFunc(cubelet.GetCubeletAddr, func(host string) string { return host + ":9090" })
++			patches.ApplyFunc(ResolveSandboxID, func(context.Context, string) (string, error) {
++				t.Fatal("exact known-node observation must not scan master routing caches")
++				return "", errors.New("unexpected alias resolution")
++			})
++			patches.ApplyFunc(localcache.GetNode, func(id string) (*node.Node, bool) {
++				if id != "node-1" {
++					t.Fatalf("wrong node: %s", id)
++				}
++				return &node.Node{InsID: id, IP: "127.0.0.1", Healthy: condition != "unhealthy"}, condition != "missing-node"
++			})
++			patches.ApplyFunc(cubelet.List, func(_ context.Context, _ string, req *cubebox.ListCubeSandboxRequest) (*cubebox.ListCubeSandboxResponse, error) {
++				if req.GetId() != "aabbccddeeff00112233445566778899" {
++					t.Fatalf("wrong exact lookup: %s", req.GetId())
++				}
++				if condition == "rpc-failure" {
++					return nil, errors.New("node transport unavailable")
++				}
++				return &cubebox.ListCubeSandboxResponse{}, nil
++			})
++			ctx := CubeLog.WithRequestTrace(context.Background(), &CubeLog.RequestTrace{})
++			got := SandboxInfo(ctx, &types.GetCubeSandboxReq{SandboxID: "AABBCCDDEEFF00112233445566778899", HostID: "node-1"})
++			if condition == "absent" {
++				if got.Ret.RetCode != int(errorcode.ErrorCode_NotFoundAtCubelet) {
++					t.Fatalf("missing authoritative node result: %+v", got.Ret)
++				}
++			} else if got.Ret.RetCode == int(errorcode.ErrorCode_NotFoundAtCubelet) {
++				t.Fatalf("%s was misreported as runtime absence", condition)
++			}
++		})
++	}
++}
+diff --git a/Cubelet/plugins/cube/internals/cubes/observe.go b/Cubelet/plugins/cube/internals/cubes/observe.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..35f365b8e830386bb9bf32ea88caaf31632de2f5
+--- /dev/null
++++ b/Cubelet/plugins/cube/internals/cubes/observe.go
+@@ -0,0 +1,61 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++
++package cubes
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"strings"
++
++	"github.com/containerd/containerd/api/services/tasks/v1"
++	"github.com/containerd/containerd/v2/pkg/namespaces"
++	"github.com/containerd/errdefs"
++	"github.com/containerd/errdefs/pkg/errgrpc"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/sandboxid"
++	cubeboxstore "github.com/tencentcloud/CubeSandbox/Cubelet/pkg/store/cubebox"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
++)
++
++// Observe addresses one known runtime. Cache recovery and runtime transport
++// failures are unavailability, never evidence that allocation can be released.
++func (l *local) Observe(ctx context.Context, id string) (*cubeboxstore.CubeBox, error) {
++	box, err := l.Get(ctx, id)
++	if err == nil || !errors.Is(err, utils.ErrorKeyNotFound) {
++		return box, err
++	}
++	if !sandboxid.IsFullID(id) {
++		return nil, fmt.Errorf("absence observation requires a full sandbox ID")
++	}
++	id = strings.ToLower(id)
++	_, err = l.db.Get(cubeboxstore.DBBucketSandbox, id)
++	if err == nil {
++		return nil, fmt.Errorf("sandbox metadata exists but runtime recovery is incomplete")
++	}
++	if !errors.Is(err, utils.ErrorKeyNotFound) && !errors.Is(err, utils.ErrorBucketNotFound) {
++		return nil, fmt.Errorf("sandbox metadata observation failed: %w", err)
++	}
++	if l.client == nil {
++		return nil, fmt.Errorf("sandbox runtime observation is unavailable")
++	}
++	spaces, err := l.client.NamespaceService().List(ctx)
++	if err != nil {
++		return nil, fmt.Errorf("sandbox namespaces could not be observed: %w", err)
++	}
++	for _, space := range spaces {
++		ns := namespaces.WithNamespace(ctx, space)
++		if _, err = l.client.ContainerService().Get(ns, id); err == nil {
++			return nil, fmt.Errorf("sandbox container remains outside the recovered catalog")
++		} else if !errdefs.IsNotFound(err) {
++			return nil, fmt.Errorf("sandbox container observation failed: %w", err)
++		}
++		if _, err = l.client.TaskService().Get(ns, &tasks.GetRequest{ContainerID: id}); err == nil {
++			return nil, fmt.Errorf("sandbox task remains outside the recovered catalog")
++		} else if !errdefs.IsNotFound(errgrpc.ToNative(err)) {
++			return nil, fmt.Errorf("sandbox task observation failed: %w", err)
++		}
++	}
++	return nil, utils.ErrorKeyNotFound
++}
+diff --git a/Cubelet/plugins/cube/internals/cubes/observe_test.go b/Cubelet/plugins/cube/internals/cubes/observe_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..a58254e8ca246560d19eb20413af708424577df9
+--- /dev/null
++++ b/Cubelet/plugins/cube/internals/cubes/observe_test.go
+@@ -0,0 +1,55 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++
++package cubes
++
++import (
++	"context"
++	"errors"
++	"strings"
++	"testing"
++
++	cubeboxstore "github.com/tencentcloud/CubeSandbox/Cubelet/pkg/store/cubebox"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
++)
++
++const observedID = "aabbccddeeff00112233445566778899"
++
++func observationFixture(t *testing.T) *local {
++	t.Helper()
++	db, err := utils.NewCubeStoreExt(t.TempDir(), "observe.db", 1, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { _ = db.Close() })
++	return &local{db: db, cubeboxStore: cubeboxstore.NewStore(db)}
++}
++
++func TestObserveRetainedMetadataIsNotAbsence(t *testing.T) {
++	l := observationFixture(t)
++	if err := l.db.SetWithTx(cubeboxstore.DBBucketSandbox, observedID, []byte(`{"id":"retained"}`), nil); err != nil {
++		t.Fatal(err)
++	}
++	box, err := l.Observe(context.Background(), observedID)
++	if box != nil || err == nil || errors.Is(err, utils.ErrorKeyNotFound) || !strings.Contains(err.Error(), "recovery") {
++		t.Fatalf("unrecovered metadata must be unavailable, got box=%v error=%v", box, err)
++	}
++}
++
++func TestObserveRequiresRuntimeEvidenceOnCatalogMiss(t *testing.T) {
++	l := observationFixture(t)
++	_, err := l.Observe(context.Background(), observedID)
++	if err == nil || errors.Is(err, utils.ErrorKeyNotFound) || !strings.Contains(err.Error(), "unavailable") {
++		t.Fatalf("missing runtime inspector cannot prove absence: %v", err)
++	}
++}
++
++func TestObserveReturnsRecoveredIdentity(t *testing.T) {
++	l := observationFixture(t)
++	box := &cubeboxstore.CubeBox{Metadata: cubeboxstore.Metadata{ID: observedID, SandboxID: observedID}}
++	l.cubeboxStore.Add(box)
++	got, err := l.Observe(context.Background(), observedID)
++	if err != nil || got != box {
++		t.Fatalf("lost recovered identity: %v", err)
++	}
++}
+diff --git a/Cubelet/plugins/cube/internals/cubes/plugin.go b/Cubelet/plugins/cube/internals/cubes/plugin.go
+index 895a61d6d8a0f7e4e38d73c0c362c780fa93caaf..d9453c63943dca1705c683e54a91dc96dc56d18c 100644
+--- a/Cubelet/plugins/cube/internals/cubes/plugin.go
++++ b/Cubelet/plugins/cube/internals/cubes/plugin.go
+@@ -31,6 +31,8 @@ type CubeboxAPI interface {
+ 	Init(ctx context.Context) error
+ 
+ 	Get(ctx context.Context, id string) (*cubeboxstore.CubeBox, error)
++	// Observe never confuses an unrecovered runtime with confirmed absence.
++	Observe(ctx context.Context, id string) (*cubeboxstore.CubeBox, error)
+ 	FindContainerOfCubebox(ctx context.Context, ID string) (*cubeboxstore.Container, *cubeboxstore.CubeBox, error)
+ 	List() []*cubeboxstore.CubeBox
+ 	IsImageInUse(imageID string) (bool, error)
+diff --git a/Cubelet/services/cubebox/observation_test.go b/Cubelet/services/cubebox/observation_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..57cbda592260804e46ba913821b1ba43ebf944e7
+--- /dev/null
++++ b/Cubelet/services/cubebox/observation_test.go
+@@ -0,0 +1,42 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++
++package cubebox
++
++import (
++	"context"
++	"errors"
++	"testing"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/api/services/cubebox/v1"
++	cubeboxstore "github.com/tencentcloud/CubeSandbox/Cubelet/pkg/store/cubebox"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
++)
++
++type observationCatalog struct {
++	fakeCubeboxAPI
++	failure error
++}
++
++func (f *observationCatalog) Observe(context.Context, string) (*cubeboxstore.CubeBox, error) {
++	return nil, f.failure
++}
++
++func TestExactObservationDoesNotSwallowRecoveryFailure(t *testing.T) {
++	for _, absent := range []bool{false, true} {
++		failure := errors.New("runtime metadata recovery incomplete")
++		if absent {
++			failure = utils.ErrorKeyNotFound
++		}
++		s := &service{cubeboxMgr: &local{cubeboxManger: &observationCatalog{failure: failure}}}
++		id := "aabbccddeeff00112233445566778899"
++		response, err := s.List(context.Background(), &cubebox.ListCubeSandboxRequest{Id: &id})
++		if absent {
++			if err != nil || response == nil || len(response.Items) != 0 {
++				t.Fatalf("bad confirmed absence: %v %v", response, err)
++			}
++		} else if !errors.Is(err, failure) || response != nil {
++			t.Fatalf("recovery failure became a missing runtime: %v %v", response, err)
++		}
++	}
++}
+diff --git a/Cubelet/services/cubebox/resume_reconcile_test.go b/Cubelet/services/cubebox/resume_reconcile_test.go
+index f49e020407f255659e73026da048641ea3c45230..9071bbec7b58f86b0ed56431ba0bf5a2c0a1faef 100644
+--- a/Cubelet/services/cubebox/resume_reconcile_test.go
++++ b/Cubelet/services/cubebox/resume_reconcile_test.go
+@@ -14,6 +14,7 @@ import (
+ 	"github.com/stretchr/testify/require"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/constants"
+ 	cubeboxstore "github.com/tencentcloud/CubeSandbox/Cubelet/pkg/store/cubebox"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/cube/internals/cubes"
+ )
+ 
+@@ -48,6 +49,14 @@ func (f *fakeCubeboxAPI) Get(ctx context.Context, id string) (*cubeboxstore.Cube
+ 	return nil, nil
+ }
+ 
++func (f *fakeCubeboxAPI) Observe(ctx context.Context, id string) (*cubeboxstore.CubeBox, error) {
++	box, err := f.Get(ctx, id)
++	if box == nil && err == nil {
++		return nil, utils.ErrorKeyNotFound
++	}
++	return box, err
++}
++
+ func (f *fakeCubeboxAPI) FindContainerOfCubebox(ctx context.Context, id string) (*cubeboxstore.Container, *cubeboxstore.CubeBox, error) {
+ 	if f.cb == nil {
+ 		return nil, nil, nil
+diff --git a/Cubelet/services/cubebox/service.go b/Cubelet/services/cubebox/service.go
+index 93226d91cbe616f977ba81c8438150c5bd381fef..5da777c1e9af5a0f8908c98f2a87a860f8203da4 100644
+--- a/Cubelet/services/cubebox/service.go
++++ b/Cubelet/services/cubebox/service.go
+@@ -6,6 +6,7 @@ package cubebox
+ 
+ import (
+ 	"context"
++	"errors"
+ 	"fmt"
+ 	"maps"
+ 	"runtime/debug"
+@@ -768,6 +769,17 @@ func (s *service) List(ctx context.Context, req *cubebox.ListCubeSandboxRequest)
+ 		retErr = fmt.Errorf("internal error")
+ 	})
+ 	res = &cubebox.ListCubeSandboxResponse{}
++	if id := req.GetId(); id != "" {
++		box, err := s.cubeboxMgr.cubeboxManger.Observe(ctx, id)
++		if errors.Is(err, utils.ErrorKeyNotFound) {
++			return res, nil
++		}
++		if err != nil {
++			return nil, err
++		}
++		res.Items = []*cubebox.CubeSandbox{toGRPCCubeBox(box, req.GetOption())}
++		return res, nil
++	}
+ 
+ 	cubeboxInStore := s.cubeboxMgr.cubeboxManger.List()
+ 	if len(cubeboxInStore) > maxListCubebox {
+@@ -838,14 +850,6 @@ func (s *service) filterGRPCContainer(sbs []*cubebox.CubeSandbox, req *cubebox.L
+ 		return sbs
+ 	}
+ 
+-	if req.GetId() != "" {
+-		sb, err := s.cubeboxMgr.cubeboxManger.Get(context.Background(), req.GetId())
+-		if err != nil {
+-			return nil
+-		}
+-		return []*cubebox.CubeSandbox{toGRPCCubeBox(sb, req.GetOption())}
+-	}
+-
+ 	return applyCubeSandboxFilter(sbs, req.GetFilter())
+ }
+ 

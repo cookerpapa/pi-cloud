@@ -30,8 +30,10 @@ workspace-test and security-gate failures.
 
 The [October 1 repair record](reports/repository-review-repair-20261001.md)
 records all eight confirmed repairs, the accepted deletion/interruption decisions,
-code cleanup and passing combined verification. The remaining shared-VM failure
-boundary is explicit in the backlog.
+code cleanup and passing combined verification. The
+[authority and Cube execution acceptance](reports/cube-execution-authority-20261001.md)
+records the implementation of [ADR-0210](adr/0210-cube-execution-handoff-and-scoped-stop.md);
+shared-cluster rollout remains tracked in the backlog.
 The [Cube result-delivery study](reports/cube-result-delivery-study-20261001.md)
 compares current upstream execution APIs with Broker-independent completion
 delivery; it records the missing guarantees without changing the deployed runtime.

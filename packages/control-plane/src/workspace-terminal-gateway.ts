@@ -1,8 +1,8 @@
 import type { Database } from "@pi-cloud/database";
 import {
   MAX_WORKSPACE_TERMINAL_FRAME_BYTES,
-  TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
-  TOOL_BROKER_TERMINAL_PATH,
+  SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
+  SANDBOX_CONTROL_TERMINAL_PATH,
   parseEnvironmentRuntimeSnapshot,
   parseUuidPathParameter,
   parseWorkspaceTerminalClientFrame,
@@ -31,7 +31,7 @@ export type WorkspaceTerminalGatewayOptions = Readonly<{
 
 type TerminalDescriptor = Readonly<{
   domainId: string;
-  toolBrokerBaseUrl: string;
+  sandboxControlBaseUrl: string;
   internalPath: string;
   open: WorkspaceTerminalOpenRequest | DevelopmentEnvironmentTerminalOpenRequest;
 }>;
@@ -213,10 +213,10 @@ export class WorkspaceTerminalGateway {
     });
     const connect = async (baseUrl: string, redirects: number): Promise<void> => {
       if (closed) return;
-      if (redirects > MAXIMUM_REDIRECTS) throw new Error("too many Tool Broker redirects");
+      if (redirects > MAXIMUM_REDIRECTS) throw new Error("too many Sandbox control redirects");
       const target = new URL(baseUrl);
       if (target.protocol === "http:" && !this.#allowInsecureInternalHttp) {
-        throw new Error("insecure Tool Broker redirect rejected");
+        throw new Error("insecure Sandbox control redirect rejected");
       }
       const connected = new WebSocket(
         internalWebSocketUrl(target.toString(), descriptor.internalPath),
@@ -274,13 +274,13 @@ export class WorkspaceTerminalGateway {
     };
 
     try {
-      await connect(descriptor.toolBrokerBaseUrl, 0);
+      await connect(descriptor.sandboxControlBaseUrl, 0);
     } catch {
       await send(browser, {
         workspaceTerminalProtocolVersion: 1,
         type: "workspace_terminal.error",
         code: "workspace_terminal_proxy_failed",
-        message: "Workspace terminal could not reach the Tool Broker",
+        message: "Workspace terminal could not reach the Sandbox control",
         retryable: true,
       }).catch(() => undefined);
       close();
@@ -305,7 +305,7 @@ export class WorkspaceTerminalGateway {
           "development.id",
           "development.state",
           "development.sandbox_domain_id as domainId",
-          "domain.tool_broker_base_url as toolBrokerBaseUrl",
+          "domain.sandbox_control_base_url as sandboxControlBaseUrl",
         ])
         .where("development.tenant_id", "=", identity.tenantId)
         .where("development.owner_user_id", "=", identity.userId)
@@ -318,8 +318,8 @@ export class WorkspaceTerminalGateway {
       }
       return {
         domainId: environment.domainId,
-        toolBrokerBaseUrl: environment.toolBrokerBaseUrl,
-        internalPath: TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
+        sandboxControlBaseUrl: environment.sandboxControlBaseUrl,
+        internalPath: SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
         open: {
           developmentEnvironmentProtocolVersion: 1,
           type: "development_environment_terminal.open",
@@ -343,7 +343,7 @@ export class WorkspaceTerminalGateway {
       .select([
         "development.id",
         "development.sandbox_domain_id as domainId",
-        "domain.tool_broker_base_url as toolBrokerBaseUrl",
+        "domain.sandbox_control_base_url as sandboxControlBaseUrl",
       ])
       .where("session_row.tenant_id", "=", identity.tenantId)
       .where("session_row.id", "=", identity.sessionId)
@@ -356,8 +356,8 @@ export class WorkspaceTerminalGateway {
     if (dedicated !== undefined) {
       return {
         domainId: dedicated.domainId,
-        toolBrokerBaseUrl: dedicated.toolBrokerBaseUrl,
-        internalPath: TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
+        sandboxControlBaseUrl: dedicated.sandboxControlBaseUrl,
+        internalPath: SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
         open: {
           developmentEnvironmentProtocolVersion: 1,
           type: "development_environment_terminal.open",
@@ -388,7 +388,7 @@ export class WorkspaceTerminalGateway {
         "workspace.project_id as projectId",
         "workspace.id as workspaceId",
         "workspace.sandbox_domain_id as domainId",
-        "domain.tool_broker_base_url as toolBrokerBaseUrl",
+        "domain.sandbox_control_base_url as sandboxControlBaseUrl",
         "environment.id as environmentVersionId",
         "environment.version_number as environmentVersionNumber",
         "environment.profile_key as environmentProfileKey",
@@ -419,8 +419,8 @@ export class WorkspaceTerminalGateway {
     const workspace = createWorkspaceSeed([]);
     return {
       domainId: row.domainId,
-      toolBrokerBaseUrl: row.toolBrokerBaseUrl,
-      internalPath: TOOL_BROKER_TERMINAL_PATH,
+      sandboxControlBaseUrl: row.sandboxControlBaseUrl,
+      internalPath: SANDBOX_CONTROL_TERMINAL_PATH,
       open: {
         workspaceTerminalProtocolVersion: 1,
         type: "workspace_terminal.open",
@@ -449,14 +449,14 @@ export class WorkspaceTerminalGateway {
 
   async #validatedOwnerRedirect(domainId: string, ownerBaseUrl: string): Promise<string> {
     const row = await this.#database
-      .selectFrom("tool_broker_instances")
+      .selectFrom("sandbox_control_instances")
       .select("owner_base_url")
       .where("sandbox_domain_id", "=", domainId)
       .where("owner_base_url", "=", new URL(ownerBaseUrl).toString())
       .where("state", "=", "ready")
       .where("lease_expires_at", ">", new Date())
       .executeTakeFirst();
-    if (row === undefined) throw new Error("Tool Broker redirect owner was not current");
+    if (row === undefined) throw new Error("Sandbox control redirect owner was not current");
     return row.owner_base_url;
   }
 }

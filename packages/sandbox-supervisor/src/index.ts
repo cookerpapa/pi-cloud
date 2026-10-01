@@ -110,7 +110,7 @@ export {
 export {
   RemoteToolSandboxTurnRunner,
   type RemoteToolSandboxTurnRunnerOptions,
-  type ToolBrokerBoundary,
+  type SandboxControlBoundary,
 } from "./remote-tool-sandbox-turn-runner.ts";
 export { validateWorkspacePayload } from "./workspace-seed.ts";
 

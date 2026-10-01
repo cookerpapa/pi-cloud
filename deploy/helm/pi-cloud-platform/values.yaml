@@ -6,7 +6,7 @@ sandboxDomains:
   - id: sandbox-domain-0001
     displayName: Primary sandbox domain
     state: active
-    toolBrokerBaseUrl: http://tool-broker:4300
+    sandboxControlBaseUrl: http://control-plane:4300
     workspaceStorageKey: workspace-domain-0001
     maximumActiveSandboxes: 1024
 
@@ -38,8 +38,8 @@ images:
     repository: pi-cloud/web-ui
     tag: production
     pullPolicy: IfNotPresent
-  toolBroker:
-    repository: pi-cloud/tool-broker
+  workspaceVolumeGateway:
+    repository: pi-cloud/workspace-volume-gateway
     tag: production
     pullPolicy: IfNotPresent
   sshGateway:
@@ -150,8 +150,8 @@ networkPolicy:
   externalEgressCidrs: []
 
 sandboxPlane:
+  volumeGatewayUrl: http://workspace-volume-gateway:4500
   domainId: sandbox-domain-0001
-  toolBrokerReplicas: 3
   volumeGatewayReplicas: 2
   volumeGatewayMaximumConcurrentOperations: 2
   volumeGatewayMaximumQueuedOperations: 32
@@ -168,6 +168,8 @@ sandboxPlane:
   state:
     size: 2Gi
   cube:
+    # All Projector replicas need the endpoints of every served Cube cluster.
+    executionEndpoints: []
     apiUrl: https://cube-api.example.com
     templateId: pi-cloud-tool-v1
     developmentTemplateIds:
@@ -182,9 +184,6 @@ sandboxPlane:
     egressProxyPort: 3128
     directPrivateCidrs: []
     requestTimeoutMs: 120000
-  toolBrokerResources:
-    requests: { cpu: 250m, memory: 256Mi }
-    limits: { cpu: "2", memory: 1536Mi }
   volumeGatewayResources:
     requests: { cpu: 250m, memory: 256Mi }
     limits: { cpu: "2", memory: 1Gi }
@@ -213,8 +212,8 @@ pi-workers:
     pullPolicy: IfNotPresent
   services:
     controlPlaneUrl: http://control-plane:3000
-    toolBrokerUrls:
-      - http://tool-broker:4300
+    sandboxControlUrls:
+      - http://control-plane:4300
     providerProxyUrl: https://provider-proxy.example.com:3129
     providerGatewayUrl: https://provider-gateway.example.com
     otlpTracesEndpoint: ""
@@ -225,7 +224,7 @@ pi-workers:
   credentials:
     supervisorEnrollmentTokenKey: supervisor-enrollment-token
     supervisorManagementTokenKey: supervisor-management-token
-    toolBrokerTokenKey: tool-broker-token
+    sandboxControlTokenKey: sandbox-control-token
     providerGatewayApiKeyKey: cli-proxy-api-key
     metricsTokenKey: metrics-token
   runtime:
@@ -236,7 +235,7 @@ pi-workers:
       maximumDepth: 4
       maximumNodes: 32
     timeouts:
-      toolBrokerRequestMs: 360000
+      sandboxControlRequestMs: 360000
       modelCapabilityTtlMs: 900000
       modelUpstreamConnectMs: 120000
       modelUpstreamIdleMs: 300000

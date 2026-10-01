@@ -15,10 +15,6 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
 
 {{- define "pi-cloud-platform.secretMounts" -}}
 - name: platform-secrets
-  mountPath: /run/pi-cloud-secrets/tool-dispatch-token
-  subPath: tool-dispatch-token
-  readOnly: true
-- name: platform-secrets
   mountPath: /run/pi-cloud-secrets/database-url
   subPath: {{ .Values.external.database.secretKey }}
   readOnly: true
@@ -49,6 +45,22 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
 - name: platform-secrets
   mountPath: /run/pi-cloud-secrets/metrics-token
   subPath: metrics-token
+  readOnly: true
+- name: platform-secrets
+  mountPath: /run/pi-cloud-secrets/sandbox-control-token
+  subPath: sandbox-control-token
+  readOnly: true
+- name: platform-secrets
+  mountPath: /run/pi-cloud-secrets/cube-persistent-state-key
+  subPath: cube-persistent-state-key
+  readOnly: true
+- name: platform-secrets
+  mountPath: /run/pi-cloud-secrets/workspace-volume-gateway-token
+  subPath: workspace-volume-gateway-token
+  readOnly: true
+- name: platform-secrets
+  mountPath: /run/pi-cloud-secrets/cubesandbox-api-key
+  subPath: cubesandbox-api-key
   readOnly: true
 {{- if .Values.controlPlane.sourceControl.github.enabled }}
 - name: platform-secrets

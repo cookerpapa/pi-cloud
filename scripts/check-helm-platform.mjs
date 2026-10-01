@@ -141,7 +141,6 @@ const customDatabaseKeys = parseAllDocuments(
   .filter(Boolean);
 for (const [kind, name, key] of [
   ["Deployment", "pi-cloud-control-plane", "pooled-database"],
-  ["StatefulSet", "pi-cloud-tool-broker", "pooled-database"],
   ["Deployment", "pi-cloud-workspace-volume-gateway", "direct-database"],
 ]) {
   const workload = customDatabaseKeys.find(
@@ -193,7 +192,7 @@ const trusted = (peer) =>
   peer.namespaceSelector?.matchLabels?.["pi-cloud.io/trusted-plane"] === "true";
 for (const [name, port] of [
   ["pi-cloud-control-plane", 9092],
-  ["pi-cloud-tool-broker", 4500],
+  ["pi-cloud-control-plane", 4500],
   ["pi-cloud-pi-worker-primary-v1", 9092],
 ]) {
   contract(`${name} egress must admit its dependency on port ${port}`, () =>

@@ -1,3 +1,4 @@
+import { PostgresSandboxBindings } from "../../sandbox-control/src/sandbox-bindings.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
@@ -12,11 +13,11 @@ import {
 import {
   PostgresWorkspaceRuntimeStateRepository,
   CUBESANDBOX_TOOL_POLICY,
-  ToolBroker,
-  ToolBrokerServer,
+  SandboxController,
+  SandboxControlServer,
   type SandboxHandle,
   type SandboxProvider,
-} from "@pi-cloud/tool-broker";
+} from "@pi-cloud/sandbox-control";
 import { sql, type Kysely } from "kysely";
 import { Pool } from "pg";
 import * as undici from "undici";
@@ -39,7 +40,7 @@ const IMAGE_REVISION = "development-environment-test";
 let pglite: PGlite;
 let socket: PGLiteSocketServer;
 let database: Kysely<Database>;
-let server: ToolBrokerServer;
+let server: SandboxControlServer;
 let service: DevelopmentEnvironmentService;
 let stateRepository: PostgresWorkspaceRuntimeStateRepository;
 let store: ControlPlaneStore;
@@ -80,6 +81,7 @@ function provider(): SandboxProvider {
     async checkHealth() {},
     async create(spec) {
       return {
+        runtimeNodeId: "node-test",
         providerApiVersion: 1,
         providerId: "cubesandbox",
         activationId: spec.activationId,
@@ -92,9 +94,35 @@ function provider(): SandboxProvider {
         environmentValidation: validation,
       };
     },
-    async exec() {
-      throw new Error("not used");
+    async describeExecution(handle, bindingId, toolRoot) {
+      return {
+        version: 1,
+        target: {
+          apiUrl: "http://cube.test",
+          sandboxId: handle.runtimeName,
+          nodeId: "node-test",
+          bootId: "11111111-1111-4111-8111-111111111111",
+        },
+        initialization: {
+          toolWorkerProtocolVersion: 2,
+          type: "worker.initialize",
+          activationId: bindingId,
+          toolRoot,
+          environment: handle.environment,
+          workspaceSeed: { kind: "sample_java" },
+        },
+      };
     },
+    async stopExecutionScope() {},
+    async observeRuntime(handle) {
+      return {
+        runtimeName: handle.runtimeName,
+        nodeId: "node-test",
+        presence: "present",
+        state: "running",
+      };
+    },
+    async destroyPersistentCapsule() {},
     async openTerminal() {
       return {
         pid: 1,
@@ -138,19 +166,11 @@ function provider(): SandboxProvider {
       throw new Error("test provider has no detached development environment");
     },
     async detachPersistent() {},
-    async stop(handle) {
-      await destroys(handle);
-    },
     destroy: destroys,
     async inspect(handle) {
       return { providerApiVersion: 1, providerId: "cubesandbox", state: "absent", handle };
     },
     async destroyRuntime() {},
-    async listAssignments() {
-      return [];
-    },
-    async terminateAndConfirmAbsent() {},
-    async confirmAbsent() {},
     async close() {},
   };
 }
@@ -192,7 +212,7 @@ beforeAll(async () => {
       id: DOMAIN_ID,
       display_name: "Development",
       state: "active",
-      tool_broker_base_url: "http://127.0.0.1:1",
+      sandbox_control_base_url: "http://127.0.0.1:1",
       workspace_storage_key: "development-volume",
       maximum_active_sandboxes: 8,
     })
@@ -226,13 +246,19 @@ beforeAll(async () => {
     ownerBaseUrl,
   });
   await stateRepository.start();
-  server = new ToolBrokerServer({
+  server = new SandboxControlServer({
     host: "127.0.0.1",
     port: 0,
     serviceToken: `service-${"s".repeat(48)}`,
     terminalToken: TOKEN,
-    broker: new ToolBroker({
+    broker: new SandboxController({
       provider: provider(),
+      bindings: new PostgresSandboxBindings(
+        database,
+        DOMAIN_ID,
+        "99999999-9999-4999-8999-999999999999",
+        ownerBaseUrl,
+      ),
       stateRepository,
       ownerBaseUrl,
       maximumActiveSandboxes: 4,
@@ -242,7 +268,7 @@ beforeAll(async () => {
   const address = await server.listen();
   await database
     .updateTable("sandbox_domains")
-    .set({ tool_broker_base_url: address })
+    .set({ sandbox_control_base_url: address })
     .where("id", "=", DOMAIN_ID)
     .executeTakeFirstOrThrow();
   service = new DevelopmentEnvironmentService({
@@ -469,6 +495,7 @@ describe("user-owned development environments", () => {
     ).not.toContain(ticket.password);
     await expect(
       stateRepository.reserve({
+        sandboxProfileKey: "standard",
         activationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         assignment: {
           tenantId: identity.tenantId,

@@ -280,7 +280,7 @@ async function runEvidence(runId) {
        from runs run
        join sessions product_session on product_session.id = run.session_id
        join sandboxes sandbox on sandbox.id = run.sandbox_id
-       left join tool_broker_workspace_runtimes activation
+       left join workspace_runtimes activation
         on activation.tenant_id = run.tenant_id
         and activation.workspace_id = run.workspace_id
         and activation.state in ('reserved', 'materializing', 'active', 'warm', 'cleaning')

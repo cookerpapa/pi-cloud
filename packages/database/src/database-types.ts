@@ -217,7 +217,7 @@ export interface SandboxDomainTable {
   id: string;
   display_name: string;
   state: SandboxDomainState;
-  tool_broker_base_url: string;
+  sandbox_control_base_url: string;
   workspace_storage_key: string;
   assigned_workspaces: GeneratedInt8;
   maximum_active_sandboxes: GeneratedInteger;
@@ -225,8 +225,8 @@ export interface SandboxDomainTable {
   updated_at: GeneratedTimestamp;
 }
 
-export type ToolBrokerInstanceState = "ready" | "stopped" | "lost";
-export type ToolBrokerWorkspaceRuntimeState =
+export type SandboxControlInstanceState = "ready" | "stopped" | "lost";
+export type SandboxControlWorkspaceRuntimeState =
   "reserved" | "materializing" | "active" | "warm" | "cleaning" | "released" | "unknown";
 export type WorkspaceTerminalState =
   "reserved" | "materializing" | "active" | "cleaning" | "released" | "unknown";
@@ -241,18 +241,20 @@ export type DevelopmentEnvironmentState =
   | "unknown";
 export type DevelopmentEnvironmentAction = "pause" | "resume" | "release";
 
-export interface ToolBrokerInstanceTable {
+export interface SandboxControlInstanceTable {
   instance_id: string;
   sandbox_domain_id: string;
   owner_base_url: string;
-  state: ToolBrokerInstanceState;
+  state: SandboxControlInstanceState;
   lease_expires_at: Timestamp;
   last_heartbeat_at: Timestamp;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
 }
 
-export interface ToolBrokerWorkspaceRuntimeTable {
+export interface SandboxControlWorkspaceRuntimeTable {
+  sandbox_profile_key: Generated<SandboxProfileKey>;
+  runtime_capsule: GeneratedNullable<string>;
   compute_session_id: GeneratedNullable<string>;
   /** Stable physical identity while one elastic Cube exists. */
   workspace_runtime_id: string;
@@ -276,17 +278,22 @@ export interface ToolBrokerWorkspaceRuntimeTable {
   environment_sha256: string;
   runtime_id: string | null;
   runtime_name: string | null;
-  state: ToolBrokerWorkspaceRuntimeState;
+  state: SandboxControlWorkspaceRuntimeState;
   failure_code: string | null;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
 }
 
-export interface ToolBrokerBindingRouteTable {
+export interface SandboxToolBindingTable {
+  dispatch_closed: Generated<boolean>;
   binding_id: string;
   tenant_id: string;
   run_id: string;
+  writer_id: string;
+  sandbox_domain_id: string;
   owner_instance_id: string;
+  descriptor: JsonObject;
+  snapshot: JsonObject;
 }
 
 export type SandboxHttpServiceTargetKind = "conversation" | "development_environment";
@@ -1041,9 +1048,9 @@ export interface Database {
   source_control_issue_claims: SourceControlIssueClaimTable;
   source_control_credentials: SourceControlCredentialTable;
   sandbox_domains: SandboxDomainTable;
-  tool_broker_instances: ToolBrokerInstanceTable;
-  tool_broker_workspace_runtimes: ToolBrokerWorkspaceRuntimeTable;
-  tool_broker_binding_routes: ToolBrokerBindingRouteTable;
+  sandbox_control_instances: SandboxControlInstanceTable;
+  workspace_runtimes: SandboxControlWorkspaceRuntimeTable;
+  sandbox_tool_bindings: SandboxToolBindingTable;
   sandbox_http_services: SandboxHttpServiceTable;
   workspace_terminal_sessions: WorkspaceTerminalSessionTable;
   development_environments: DevelopmentEnvironmentTable;

@@ -34,7 +34,7 @@ describe("SSH gateway", () => {
               sessionId: "10000000-0000-4000-8000-000000000004",
               environmentId: "10000000-0000-4000-8000-000000000005",
               sandboxDomainId: "sandbox-domain-test",
-              toolBrokerBaseUrl: "http://tool-broker:4300",
+              sandboxControlBaseUrl: "http://sandbox-control:4300",
             }
           : undefined,
       ),

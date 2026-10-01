@@ -8,7 +8,7 @@ import { sql, type Kysely } from "kysely";
 import { Migrator } from "kysely/migration";
 import { migrationProvider } from "../../database/src/migrations/index.ts";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { ToolBrokerClient } from "@pi-cloud/tool-broker/client";
+import { SandboxControlClient } from "@pi-cloud/sandbox-control/client";
 import { GitLabIssueNoteReconciler } from "../src/gitlab-issue-note-reconciler.ts";
 import { SourceControlService, SourceControlServiceError } from "../src/source-control-service.ts";
 import { SourceControlIssueCoordinator } from "../src/source-control-issue-coordinator.ts";
@@ -385,7 +385,7 @@ it("HTTP releases the transaction: another replica skips its lease while claim a
     defaultModelProfileId: f.tenant.defaultModelProfileId,
   });
   const project = await store.createProject({ name: "Fixture", source: { kind: "empty" } });
-  vi.spyOn(ToolBrokerClient.prototype, "preflightSourceCredential").mockImplementation(
+  vi.spyOn(SandboxControlClient.prototype, "preflightSourceCredential").mockImplementation(
     async (request) => ({
       sourceControlProtocolVersion: 1,
       type: "source_control.workspace_credential_result",

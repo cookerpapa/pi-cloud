@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format, resolveConfig } from "prettier";
-import { workspaceVolumeId } from "../packages/tool-broker/src/index.ts";
+import { workspaceVolumeId } from "../packages/sandbox-control/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
@@ -213,8 +213,8 @@ async function executionEvidence(parentRunId, executionId) {
       'childWorkspaceId', child_run.workspace_id,
       'computeSessionId', child_run.compute_session_id,
       'cwd', child_run.working_directory,
-      'parentRuntimeId', (select runtime_id from tool_broker_workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=parent_run.workspace_id and compute_session_id is not distinct from parent_run.compute_session_id order by created_at desc limit 1),
-      'childRuntimeId', (select runtime_id from tool_broker_workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child_run.workspace_id and compute_session_id is not distinct from child_run.compute_session_id order by created_at desc limit 1),
+      'parentRuntimeId', (select runtime_id from workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=parent_run.workspace_id and compute_session_id is not distinct from parent_run.compute_session_id order by created_at desc limit 1),
+      'childRuntimeId', (select runtime_id from workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child_run.workspace_id and compute_session_id is not distinct from child_run.compute_session_id order by created_at desc limit 1),
       'childRunState', child_run.state,
       'parentWorker', parent_run.sandbox_id,
       'childWorker', child_run.sandbox_id,
@@ -283,7 +283,7 @@ async function recursiveTreeEvidence(rootRunId) {
       'rootWorker', root_run.sandbox_id,
       'computeSessionId', child_run.compute_session_id,
       'cwd', child_run.working_directory,
-      'runtimeId', (select runtime_id from tool_broker_workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child_run.workspace_id and compute_session_id is not distinct from child_run.compute_session_id order by created_at desc limit 1),
+      'runtimeId', (select runtime_id from workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child_run.workspace_id and compute_session_id is not distinct from child_run.compute_session_id order by created_at desc limit 1),
       'childWorker', child_run.sandbox_id,
       'sameWorker', root_run.sandbox_id = child_run.sandbox_id,
       'sameOwnerLease', root_run.lease_id = child_run.lease_id
@@ -483,7 +483,7 @@ try {
   );
   assert.equal(
     await psql(
-      `select count(*) from tool_broker_workspace_runtimes where workspace_id=${sqlLiteral(project.workspaceId)}`,
+      `select count(*) from workspace_runtimes where workspace_id=${sqlLiteral(project.workspaceId)}`,
     ),
     "0",
     "The first two research-only Turns eagerly activated Cube",
@@ -707,7 +707,7 @@ try {
     session.sessionId,
     [
       "Call subagent action:workflow with exactly this script and report the returned object:",
-      "return {cwd:process.cwd(), hostname:process.env.HOSTNAME||null, uid:process.getuid(), leakedKeys:Object.keys(process.env).filter(k=>/^(DATABASE_URL|KAFKA_BROKERS|OPENAI_API_KEY|DEEPSEEK_API_KEY|PI_CLOUD_TOOL_BROKER_TOKEN)$/.test(k))};",
+      "return {cwd:process.cwd(), hostname:process.env.HOSTNAME||null, uid:process.getuid(), leakedKeys:Object.keys(process.env).filter(k=>/^(DATABASE_URL|KAFKA_BROKERS|OPENAI_API_KEY|DEEPSEEK_API_KEY|PI_CLOUD_SANDBOX_CONTROL_TOKEN)$/.test(k))};",
     ].join(" "),
   );
   const boundaryEntries = JSON.parse(

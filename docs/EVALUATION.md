@@ -174,7 +174,7 @@ conversation/tree navigation, Workspace Terminal, Fork/Delete, resource
 lifecycle, directory selection and SSH. It does not mutate administrator model
 or proxy settings. The focused folder-chooser gate avoids model variability: it
 allocates a real exclusive Cube, creates a UID/GID 1000 directory through the
-tenant-bound Tool Broker path, selects it in the GNOME-style browser, verifies
+tenant-bound sandbox-management path, selects it in the GNOME-style browser, verifies
 the trusted listing API and releases the machine.
 
 ## Load and live restart acceptance

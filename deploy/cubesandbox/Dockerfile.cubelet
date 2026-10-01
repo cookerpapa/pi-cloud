@@ -1,0 +1,41 @@
+# Patched upstream Cubelet plus its fixed trusted-host completion adapter.
+# Native dependencies are built on the same Ubuntu ABI as the final Cube image.
+ARG CUBELET_BASE_IMAGE=pi-cloud/cubelet-base:production
+ARG NODE_IMAGE=node:24.18.0-bullseye-slim@sha256:aca89821b1f09df223227ff2abe075fc3161f05604d3b61309f46820a5938020
+FROM ${NODE_IMAGE} AS node-runtime
+FROM ${CUBELET_BASE_IMAGE} AS completion-dependencies
+COPY --from=node-runtime /usr/local /usr/local
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      python3 make g++ pkg-config libssl-dev zlib1g-dev libsasl2-dev libcurl4-openssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/pi-cloud
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
+COPY packages/cube-completion/package.json packages/cube-completion/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/domain/package.json packages/domain/package.json
+COPY packages/event-log/package.json packages/event-log/package.json
+COPY packages/observability/package.json packages/observability/package.json
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/session-attachments/package.json packages/session-attachments/package.json
+RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
+    && npm rebuild @confluentinc/kafka-javascript \
+    && npm cache clean --force
+
+FROM ${CUBELET_BASE_IMAGE}
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=completion-dependencies /opt/pi-cloud/node_modules /opt/pi-cloud/node_modules
+COPY --from=completion-dependencies /opt/pi-cloud/packages /opt/pi-cloud/packages
+COPY package.json tsconfig.base.json /opt/pi-cloud/
+COPY packages/cube-completion/src /opt/pi-cloud/packages/cube-completion/src
+COPY packages/database/src /opt/pi-cloud/packages/database/src
+COPY packages/domain/src /opt/pi-cloud/packages/domain/src
+COPY packages/event-log/src /opt/pi-cloud/packages/event-log/src
+COPY packages/observability/src /opt/pi-cloud/packages/observability/src
+COPY packages/protocol/src /opt/pi-cloud/packages/protocol/src
+COPY packages/session-attachments/src /opt/pi-cloud/packages/session-attachments/src
+RUN /usr/local/bin/node --version \
+    && cd /opt/pi-cloud && node --input-type=module --eval "await import('@confluentinc/kafka-javascript')" \
+    && node --import /opt/pi-cloud/node_modules/tsx/dist/loader.mjs --input-type=module --eval "await import('./packages/cube-completion/src/adapter.ts')"
+# Credentials and Kafka/PG/S3 addresses are mounted only into this trusted host
+# process by deployment; the inherited Cube entrypoint remains the PID 1 contract.

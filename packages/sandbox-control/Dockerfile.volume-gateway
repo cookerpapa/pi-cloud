@@ -1,0 +1,89 @@
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS os-base
+COPY scripts/install-node-os-security-updates.sh /tmp/install-node-os-security-updates.sh
+RUN sh /tmp/install-node-os-security-updates.sh && rm /tmp/install-node-os-security-updates.sh
+
+FROM os-base AS dependencies
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
+ENV npm_config_registry=${NPM_CONFIG_REGISTRY}
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY tsconfig.base.json ./
+COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
+COPY packages/session-attachments/package.json packages/session-attachments/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/domain/package.json packages/domain/package.json
+COPY packages/event-log/package.json packages/event-log/package.json
+COPY packages/observability/package.json packages/observability/package.json
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/sandbox-control/package.json packages/sandbox-control/package.json
+COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
+RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
+    && npm rebuild @confluentinc/kafka-javascript \
+    && npm cache clean --force
+
+FROM os-base
+ARG PI_CLOUD_VERSION=development
+ARG PI_CLOUD_REVISION=unknown
+LABEL org.opencontainers.image.title="PiCloud Workspace volume gateway" \
+      org.opencontainers.image.description="Workspace bytes, Git credentials and fixed private Cube relays" \
+      org.opencontainers.image.version="${PI_CLOUD_VERSION}" \
+      org.opencontainers.image.revision="${PI_CLOUD_REVISION}"
+ENV NODE_ENV=production
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    set -eu; \
+    rm -f /etc/apt/apt.conf.d/docker-clean; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+      sed -i \
+        -e 's|http://deb.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' \
+        -e 's|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g' \
+        /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    installed=0; \
+    attempt=1; \
+    while [ "$attempt" -le 3 ]; do \
+      if apt-get \
+          -o Acquire::Retries=3 \
+          -o Acquire::http::Timeout=30 \
+          update \
+        && apt-get \
+          -o Acquire::Retries=3 \
+          -o Acquire::http::Timeout=30 \
+          install --yes --no-install-recommends git; then \
+        installed=1; \
+        break; \
+      fi; \
+      dpkg --configure -a || true; \
+      sleep "$((attempt * 2))"; \
+      attempt="$((attempt + 1))"; \
+    done; \
+    test "$installed" = 1
+WORKDIR /app
+COPY --from=dependencies /app/node_modules /app/node_modules
+COPY package.json package-lock.json ./
+COPY tsconfig.base.json ./
+COPY packages/session-attachments/package.json packages/session-attachments/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/session-attachments/src packages/session-attachments/src
+COPY packages/database/src packages/database/src
+COPY packages/domain/package.json packages/domain/package.json
+COPY packages/domain/src packages/domain/src
+COPY packages/event-log/package.json packages/event-log/package.json
+COPY packages/event-log/src packages/event-log/src
+COPY packages/observability/package.json packages/observability/package.json
+COPY packages/observability/src packages/observability/src
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/protocol/src packages/protocol/src
+COPY packages/sandbox-control/package.json packages/sandbox-control/package.json
+COPY packages/sandbox-control/tsconfig.json packages/sandbox-control/tsconfig.json
+COPY packages/sandbox-control/src packages/sandbox-control/src
+COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
+COPY packages/workspace-runtime/src packages/workspace-runtime/src
+RUN cd /app/packages/sandbox-control \
+    && node --input-type=module --eval "await import('@pi-cloud/database'); await import('undici')" \
+    && rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+STOPSIGNAL SIGTERM
+USER 1000:1000
+ENTRYPOINT ["node", "/app/node_modules/tsx/dist/cli.mjs", "--tsconfig", "/app/packages/sandbox-control/tsconfig.json"]
+CMD ["/app/packages/sandbox-control/src/workspace-volume-gateway-main.ts"]

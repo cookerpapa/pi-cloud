@@ -81,7 +81,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       environmentId = randomUUID(),
       baseUrl = `http://broker-${instanceId}:4000`;
     await database
-      .insertInto("tool_broker_instances")
+      .insertInto("sandbox_control_instances")
       .values({
         instance_id: instanceId,
         sandbox_domain_id: workspace.sandbox_domain_id,

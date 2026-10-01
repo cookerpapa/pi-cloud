@@ -5,7 +5,7 @@ single-node k3d cluster while leaving the rest of the one-host topology in
 Compose.
 
 ```text
-k3d Pi Workers -> bridged PostgreSQL / Control Plane / Tool Broker
+k3d Pi Workers -> bridged PostgreSQL / Control Plane / Kafka
               -> Kafka / Provider Gateway / provider egress proxy
 ```
 
@@ -31,7 +31,8 @@ npm run kubernetes:pi-workers:down
 ```
 
 Each Worker receives a pooled database URL plus a direct notification URL.
-Workers append directly to Kafka; PostgreSQL owns execution authority and
+Workers append through the control-plane ingress and consume Kafka Tool replies;
+PostgreSQL owns execution authority and
 materialized native history. Local Worker PVCs contain only boot identity.
 The helper bridges every dependency and exposes the short Kafka hostnames
 returned by broker metadata in the Worker namespace. It carries the runtime's

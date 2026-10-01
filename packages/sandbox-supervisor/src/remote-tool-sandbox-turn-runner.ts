@@ -45,7 +45,7 @@ import {
   createCloudTurnContext,
 } from "./cloud-context.ts";
 
-export interface ToolBrokerBoundary {
+export interface SandboxControlBoundary {
   prepareInputImages?(
     activationId: string,
     assignment: ToolSandboxAssignment,
@@ -59,7 +59,10 @@ export interface ToolBrokerBoundary {
     }[]
   >;
   refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
-  create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse>;
+  create(
+    request: ToolSandboxCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolSandboxCreateResponse>;
   release(
     activationId: string,
     assignment: ToolSandboxAssignment,
@@ -79,7 +82,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     scope: { tenantId: string; runId: string },
     signal?: AbortSignal,
   ) => Promise<import("@earendil-works/pi-ai").ImageContent[]>;
-  broker: ToolBrokerBoundary;
+  broker: SandboxControlBoundary;
   runtimeIdentity: SandboxRuntimeIdentity;
   trustedWorkspaceDirectory: string;
   modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver;
@@ -143,7 +146,7 @@ async function releaseModelRuntimeLease(lease: TrustedModelRuntimeLease): Promis
 }
 
 export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
-  readonly #broker: ToolBrokerBoundary;
+  readonly #broker: SandboxControlBoundary;
   readonly #runtimeIdentity: SandboxRuntimeIdentity;
   readonly #trustedWorkspaceDirectory: string;
   readonly #modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver;
@@ -412,7 +415,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       activationPromise ??= (async () => {
         const createStartedAt = performance.now();
         try {
-          const created = await this.#broker.create(createRequest);
+          const created = await this.#broker.create(createRequest, signal);
           activation = created;
           this.#metrics?.sandboxDuration.observe(
             { operation: "reserve", outcome: "completed" },
@@ -602,6 +605,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           recordPreparedInput = () => stepWorldState.recordActive(activation);
           let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
+            observeToolDuration: (seconds, outcome) =>
+              this.#metrics?.toolDuration.observe({ tool: "tool.execute", outcome }, seconds),
             supportsImages: modelRuntimeLease.runtime.inputModalities.includes("image"),
             ...(this.#waitForToolReply
               ? {

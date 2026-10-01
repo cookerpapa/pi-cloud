@@ -5,7 +5,7 @@ import { createHmac, generateKeyPairSync, randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { ToolBrokerClient } from "@pi-cloud/tool-broker/client";
+import { SandboxControlClient } from "@pi-cloud/sandbox-control/client";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { GitHubAppClient } from "../src/github-app-client.ts";
 import { SourceControlService, SourceControlServiceError } from "../src/source-control-service.ts";
@@ -20,7 +20,7 @@ afterEach(() => vi.restoreAllMocks());
 
 function stubCredentialBroker() {
   return vi
-    .spyOn(ToolBrokerClient.prototype, "preflightSourceCredential")
+    .spyOn(SandboxControlClient.prototype, "preflightSourceCredential")
     .mockImplementation(async (request) => ({
       sourceControlProtocolVersion: 1,
       type: "source_control.workspace_credential_result",
@@ -320,7 +320,7 @@ describe.sequential("source-control App boundary", () => {
         id: "sandbox-domain-gitlab-workspace",
         display_name: "GitLab Workspace Test",
         state: "active",
-        tool_broker_base_url: "http://tool-broker.invalid:4301",
+        sandbox_control_base_url: "http://sandbox-control.invalid:4301",
         workspace_storage_key: "gitlab-workspace-test",
         maximum_active_sandboxes: 8,
       })
@@ -345,7 +345,7 @@ describe.sequential("source-control App boundary", () => {
     const machineId = randomUUID();
     const brokerId = randomUUID();
     await database
-      .insertInto("tool_broker_instances")
+      .insertInto("sandbox_control_instances")
       .values({
         instance_id: brokerId,
         sandbox_domain_id: "sandbox-domain-gitlab-workspace",
@@ -729,7 +729,7 @@ describe.sequential("source-control App boundary", () => {
         id: "sandbox-domain-source-control",
         display_name: "Source Control Test",
         state: "active",
-        tool_broker_base_url: "http://tool-broker.invalid:4300",
+        sandbox_control_base_url: "http://sandbox-control.invalid:4300",
         workspace_storage_key: "source-control-test",
         maximum_active_sandboxes: 8,
       })

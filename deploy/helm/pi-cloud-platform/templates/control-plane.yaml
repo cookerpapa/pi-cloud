@@ -1,8 +1,8 @@
-{{- if .Values.globalPlaneEnabled }}
+{{- if or .Values.globalPlaneEnabled .Values.sandboxPlaneEnabled }}
 {{- $name := include "pi-cloud-platform.name" . -}}
-{{- $toolBrokerUrls := list -}}
+{{- $sandboxControlUrls := list -}}
 {{- range .Values.sandboxDomains -}}
-{{- $toolBrokerUrls = append $toolBrokerUrls .toolBrokerBaseUrl -}}
+{{- $sandboxControlUrls = append $sandboxControlUrls .sandboxControlBaseUrl -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -32,7 +32,7 @@ spec:
       {{- end }}
       automountServiceAccountToken: false
       enableServiceLinks: false
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 720
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -59,6 +59,7 @@ spec:
             - { name: http, containerPort: 3000 }
             - { name: preview, containerPort: 3001 }
             - { name: metrics, containerPort: 9464 }
+            - { name: sandbox, containerPort: 4300 }
           env:
             {{- if .Values.imageAttachments.endpoint }}
             - { name: PI_CLOUD_IMAGE_S3_ENDPOINT, value: {{ .Values.imageAttachments.endpoint | quote }} }
@@ -70,7 +71,38 @@ spec:
             - { name: HOST, value: 0.0.0.0 }
             - name: POD_IP
               valueFrom: { fieldRef: { fieldPath: status.podIP } }
-            - { name: PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-dispatch-token }
+            - { name: PI_CLOUD_SANDBOX_DOMAIN_ID, value: {{ .Values.sandboxPlane.domainId | quote }} }
+            - name: PI_CLOUD_SANDBOX_CONTROL_ADVERTISED_URL
+              value: {{ printf "http://$(POD_IP):4300" | quote }}
+            - { name: PI_CLOUD_SANDBOX_CONTROL_HOST, value: 0.0.0.0 }
+            - { name: PI_CLOUD_SANDBOX_CONTROL_PORT, value: "4300" }
+            - { name: PI_CLOUD_SANDBOX_WARM_TTL_MS, value: {{ .Values.sandboxPlane.warmTtlMs | quote }} }
+            - { name: PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES, value: {{ .Values.sandboxPlane.maximumActivePerReplica | quote }} }
+            - { name: PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS, value: {{ .Values.sandboxPlane.maximumActiveCommands | quote }} }
+            - { name: PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES, value: {{ .Values.sandboxPlane.maximumWarmWorkspaceRuntimesPerReplica | quote }} }
+            - { name: PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE, value: /run/pi-cloud-secrets/sandbox-control-token }
+            - { name: PI_CLOUD_CONTROL_PLANE_URL, value: "http://control-plane:3000" }
+            - { name: PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE, value: /run/pi-cloud-secrets/cube-persistent-state-key }
+            - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL, value: {{ .Values.sandboxPlane.volumeGatewayUrl | quote }} }
+            - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-volume-gateway-token }
+            - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS, value: {{ .Values.sandboxPlane.volumeGatewayRequestTimeoutMs | quote }} }
+            - { name: PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS, value: {{ .Values.sandboxPlane.workspaceDeletionReaperIntervalMs | quote }} }
+            - { name: PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE, value: {{ .Values.sandboxPlane.workspaceDeletionReaperBatchSize | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_API_URL, value: {{ .Values.sandboxPlane.cube.apiUrl | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_API_KEY_FILE, value: /run/pi-cloud-secrets/cubesandbox-api-key }
+            - { name: PI_CLOUD_CUBESANDBOX_TEMPLATE_ID, value: {{ .Values.sandboxPlane.cube.templateId | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS, value: {{ .Values.sandboxPlane.cube.developmentTemplateIds | toJson | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP, value: {{ .Values.sandboxPlane.cube.proxyNodeIp | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_PROXY_PORT, value: {{ .Values.sandboxPlane.cube.proxyPort | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_PROXY_SCHEME, value: {{ .Values.sandboxPlane.cube.proxyScheme | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_DOMAIN, value: {{ .Values.sandboxPlane.cube.domain | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_HOST, value: {{ .Values.sandboxPlane.cube.egressProxyHost | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_PORT, value: {{ .Values.sandboxPlane.cube.egressProxyPort | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS, value: {{ join "," (.Values.sandboxPlane.cube.directPrivateCidrs | default (list)) | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS, value: {{ .Values.sandboxPlane.cube.requestTimeoutMs | quote }} }
+            {{- if .Values.sandboxPlane.cube.executionEndpoints }}
+            - { name: PI_CLOUD_CUBE_EXECUTION_ENDPOINTS_FILE, value: /run/pi-cloud-config/cube-execution-endpoints.json }
+            {{- end }}
             - { name: PORT, value: "3000" }
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
             - { name: DATABASE_NOTIFICATION_URL_FILE, value: /run/pi-cloud-secrets/database-notification-url }
@@ -112,8 +144,8 @@ spec:
             - { name: PI_CLOUD_SSH_ADVERTISED_HOST, value: {{ .Values.sshGateway.advertisedHost | quote }} }
             - { name: PI_CLOUD_SSH_ADVERTISED_PORT, value: {{ .Values.sshGateway.port | quote }} }
             - { name: PI_CLOUD_SSH_TICKET_TTL_MS, value: {{ .Values.sshGateway.ticketTtlMs | quote }} }
-            - name: PI_CLOUD_TOOL_BROKER_URLS
-              value: {{ join "," $toolBrokerUrls | quote }}
+            - name: PI_CLOUD_SANDBOX_CONTROL_URLS
+              value: {{ join "," $sandboxControlUrls | quote }}
             - { name: PI_CLOUD_IMAGE_REVISION, value: {{ .Values.global.imageRevision | quote }} }
             - { name: PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP, value: "true" }
             - { name: PI_CLOUD_SUPERVISOR_ID_PREFIX, value: {{ .Values.controlPlane.supervisorIdPrefix | quote }} }
@@ -147,12 +179,35 @@ spec:
             - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }
             {{- end }}
             {{- include "pi-cloud-platform.secretMounts" . | nindent 12 }}
+            {{- if .Values.sandboxPlane.cube.executionEndpoints }}
+            - { name: cube-execution-endpoints, mountPath: /run/pi-cloud-config, readOnly: true }
+            {{- range .Values.sandboxPlane.cube.executionEndpoints }}
+            - { name: platform-secrets, mountPath: {{ printf "/run/pi-cloud-secrets/%s" .apiKeySecretKey | quote }}, subPath: {{ .apiKeySecretKey }}, readOnly: true }
+            {{- end }}
+            {{- end }}
             - { name: tmp, mountPath: /tmp }
       volumes:
+        {{- if .Values.sandboxPlane.cube.executionEndpoints }}
+        - name: cube-execution-endpoints
+          configMap: { name: {{ $name }}-cube-execution-endpoints }
+        {{- end }}
         - name: platform-secrets
           secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
         - name: tmp
           emptyDir: { sizeLimit: 128Mi }
+{{- if .Values.sandboxPlane.cube.executionEndpoints }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: {{ $name }}-cube-execution-endpoints }
+data:
+  cube-execution-endpoints.json: |
+    {{- $endpoints := list }}
+    {{- range .Values.sandboxPlane.cube.executionEndpoints }}
+    {{- $endpoints = append $endpoints (dict "apiUrl" .apiUrl "apiKeyFile" (printf "/run/pi-cloud-secrets/%s" .apiKeySecretKey)) }}
+    {{- end }}
+    {{ $endpoints | toJson }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -166,6 +221,7 @@ spec:
     - { name: http, port: 3000, targetPort: http }
     - { name: preview, port: 3001, targetPort: preview }
     - { name: metrics, port: 9464, targetPort: metrics }
+    - { name: sandbox, port: 4300, targetPort: sandbox }
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

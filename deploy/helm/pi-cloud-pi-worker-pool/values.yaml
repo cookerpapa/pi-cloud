@@ -41,8 +41,8 @@ image:
 
 services:
   controlPlaneUrl: http://control-plane.pi-cloud-system.svc.cluster.local:3000
-  toolBrokerUrls:
-    - http://tool-broker.pi-cloud-system.svc.cluster.local:4300
+  sandboxControlUrls:
+    - http://sandbox-control.pi-cloud-system.svc.cluster.local:4300
   providerProxyUrl: http://provider-egress-relay.pi-cloud-system.svc.cluster.local:3129
   providerGatewayUrl: http://cli-proxy-api.pi-cloud-system.svc.cluster.local:8317
   otlpTracesEndpoint: ""
@@ -56,7 +56,7 @@ database:
 credentials:
   supervisorEnrollmentTokenKey: supervisor-enrollment-token
   supervisorManagementTokenKey: supervisor-management-token
-  toolBrokerTokenKey: tool-broker-token
+  sandboxControlTokenKey: sandbox-control-token
   providerGatewayApiKeyKey: cli-proxy-api-key
   metricsTokenKey: metrics-token
 
@@ -68,7 +68,7 @@ runtime:
     maximumDepth: 4
     maximumNodes: 32
   timeouts:
-    toolBrokerRequestMs: 360000
+    sandboxControlRequestMs: 360000
     modelCapabilityTtlMs: 900000
     modelUpstreamConnectMs: 120000
     modelUpstreamIdleMs: 300000

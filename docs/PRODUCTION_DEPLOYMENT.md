@@ -28,7 +28,7 @@ page; the PiCloud administrator page selects the platform model route, not its k
 ## Upgrade
 
 Use a maintenance window: stop new submissions, drain Runs and project all seals,
-then deploy matching Control Plane, Worker, Broker and Web revisions. Apply the
+then deploy matching Control Plane, Worker, Cube runtime and Web revisions. Apply the
 ordered database migrations and any required Cube plugin/template update from
 that revision's deployment instructions. Reload open browser pages. Do not mix
 incompatible publishers, change a live Kafka partition count or silently convert
@@ -50,6 +50,30 @@ transaction-state replication as three and its minimum ISR as two, alongside the
 existing RF3 log. A replacement ingress must initialize its fenced producer before
 opening Session scopes. Rollback requires a drained matched database/code backup;
 never point retired direct-producer binaries at the v12 topic.
+
+Migration 159 and ADR-0210 complete the sandbox cutover: there is no independent
+Broker deployment. Build the pinned patch set with
+`node scripts/build-cubesandbox-runtime.mjs`, deploy matched Cube API/Master/
+Cubelet images, and register the guest v2 template. The trusted Cubelet completion
+adapter needs reachable Kafka, PG and private S3 endpoints; guest images receive
+none of those credentials. The installer creates an owner-only, namespace-scoped
+completion deployment kubeconfig under `runtime/cubesandbox/`. The deployment
+script starts durable infrastructure, configures its Cube-side connections, then
+starts Control Plane and refreshes observation routing. Existing history and
+Workspace Volumes are preserved; old active execution bindings are drained.
+Before replacing the old Cubelet/guest contract, use the old control plane to
+release its warm elastic VMs and development machines. Their old capsules and
+guest helpers cannot be adopted as v2; retained Workspace Volumes can be mounted
+by newly provisioned machines. Coordinate the Cube update with every application
+sharing that cluster. This repository's implementation tests do not authorize
+restarting another application's shared Cube services.
+
+`configure-cube-completion.mjs` waits for the Cubelet rollout after changing its
+host credentials/configuration. EndpointSlice address refreshes alone do not
+restart Cubelet. The installer requests a one-year namespace-scoped deployment
+token; the API server controls its actual expiry. Rerun the root installer to
+renew that private kubeconfig before it expires. Never copy a cluster-admin
+kubeconfig or the completion credentials into a Tool VM.
 
 Historical v10→v11 Tool identity and combined-intent decisions remain in ADR-0185
 and ADR-0198. Current result Entry IDs remain distinct from native provider IDs;
@@ -132,8 +156,8 @@ before replacing the backend. Do not configure independent object-expiry rules.
 For a component-only replacement, after draining and applying its migrations,
 use Compose `up --no-deps` for the selected services when dependencies are already
 healthy. An ordinary `up` may recreate changed dependencies too. If PostgreSQL
-is unavailable beyond Broker's ownership lease, restart Broker and verify
-`/health/ready` before resuming Tools; an expired Broker must not revive its old
+is unavailable beyond the sandbox-management ownership lease, restart Control Plane
+and verify `/health/ready` before resuming Tools; an expired owner must not revive its old
 authority. A live process alone is not execution readiness.
 
 The pinned Confluent consumer uses a native addon: `dependencies:harden` and image
@@ -150,18 +174,18 @@ Runner. Reload/restart the gateway to apply a changed local configuration.
 The full deploy command recreates that gateway explicitly: a single-file bind
 mount can otherwise retain the old inode after an atomic host configuration update.
 
-Workers append directly and Control Plane's Session Projector is the sole execution-log
-consumer group. Brokers publish native Tool replies to separate Worker-boot topics;
-they do not consume the execution log. Kubernetes shares Kafka settings under
-`global.kafka`; allow Worker/Projector/Broker Kafka access and
-Projector-to-executor TCP/4300. The dispatch secret belongs only to Projectors
-and executors. Each Projector advertises a unique internal URL for SSE owner
-routing. Workers consume their boot's replies; there is no result GET endpoint.
+Workers publish through the control-plane ingress. Control Plane's Session Projector
+is the sole execution-log consumer group. Cubelet's trusted completion adapter
+publishes native Tool replies to separate Worker-boot topics. Kubernetes shares
+Kafka settings under `global.kafka`; allow Control Plane/Cubelet/Worker Kafka
+access, Projector-to-Cube API handoff, and internal sandbox-management TCP/4300.
+Each Projector advertises a unique internal URL for publication/SSE owner routing.
+Workers consume their boot's replies; there is no result GET endpoint.
 
 The safe default binds the Web/Preview entry to loopback. For a trusted LAN,
 set `PI_CLOUD_HTTP_BIND_ADDRESS=0.0.0.0` in the private production environment
 and access `http://<host-ip>:8080`. Internet publication should use a TLS
-reverse proxy and firewall; CubeAPI, Cube WebUI and Tool Broker remain private.
+reverse proxy and firewall; CubeAPI, Cube WebUI and sandbox-management endpoints remain private.
 
 The installer also creates private Workspace-terminal and SSH host credentials.
 Users open the browser terminal from the Workspace panel or request a one-time
@@ -175,7 +199,7 @@ consumed by the first successful login. No Cube credential is exposed.
 ## Services
 
 The default topology includes PostgreSQL, a three-node Kafka cluster, Control Plane, two trusted Pi
-Workers, Tool Broker, persistent Workspace Volume
+Workers, sandbox-management endpoints, persistent Workspace Volume
 gateway, Cube integration, provider proxy and Web. Observability is an optional
 profile. The trusted SSH gateway is enabled by
 default in the one-host profile.

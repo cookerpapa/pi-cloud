@@ -299,3 +299,38 @@ it("bounds cached writers across partitions and evicts only fully sealed state",
   ingress.installRun(first, permit());
   await ingress.close();
 });
+
+it("closes execution before sealing without blocking another Session's publication", async () => {
+  const f = fixture(),
+    stopped = deferred<void>(),
+    closing = seal(f.p),
+    closeExecution = vi.fn(() => stopped.promise);
+  const pending = f.ingress.seal(f.owner, closing, closeExecution);
+  expect(f.ingress.seal(f.owner, closing, closeExecution)).toBe(pending);
+  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toMatchObject({ reason: "closed" });
+  const other = permit();
+  f.ingress.installRun(f.owner, other);
+  await f.ingress.append(f.owner, entry(other));
+  expect(f.records.map((record) => JSON.parse(record.value).kind)).toEqual(["pi_session_append"]);
+  expect(closeExecution).toHaveBeenCalledOnce();
+  stopped.resolve();
+  await pending;
+  expect(f.records.map((record) => JSON.parse(record.value).kind)).toEqual([
+    "pi_session_append",
+    "execution_seal",
+  ]);
+});
+
+it("retains closed admission when execution closure fails before logging its seal", async () => {
+  const f = fixture(),
+    closing = seal(f.p);
+  await expect(
+    f.ingress.seal(f.owner, closing, async () => {
+      throw new Error("closure unconfirmed");
+    }),
+  ).rejects.toThrow("unconfirmed");
+  expect(f.records).toEqual([]);
+  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toMatchObject({ reason: "closed" });
+  await f.ingress.seal(f.owner, closing, async () => {});
+  expect(f.records).toHaveLength(1);
+});

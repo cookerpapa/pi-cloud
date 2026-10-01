@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import {
   PersistentVolumeWorkspaceVolumeGateway,
   workspaceVolumeId,
-} from "../packages/tool-broker/src/index.ts";
+} from "../packages/sandbox-control/src/index.ts";
 
 // No host-wide privileges: the root-owned fixture exists only in this private
 // temporary mount. The production plugin executes unchanged at its fixed path.
@@ -23,7 +23,7 @@ const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot: stor
 const local = join(storage, `picloud-posix-${input.volumeId}`);
 const remote = `/data/cube-shared/volume/picloud-posix-${input.volumeId}`;
 const marker = join(local, ".pi-cloud-runtime/delete-authorized");
-const image = process.env.PI_CLOUD_TEST_IMAGE ?? "pi-cloud/tool-broker:production";
+const image = process.env.PI_CLOUD_TEST_IMAGE ?? "pi-cloud/workspace-volume-gateway:production";
 const docker = (script) =>
   exec(
     "docker",

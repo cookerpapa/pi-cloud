@@ -19,7 +19,7 @@ COPY packages/observability/package.json packages/observability/package.json
 COPY packages/pi-session-postgres/package.json packages/pi-session-postgres/package.json
 COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/runtime-core/package.json packages/runtime-core/package.json
-COPY packages/tool-broker/package.json packages/tool-broker/package.json
+COPY packages/sandbox-control/package.json packages/sandbox-control/package.json
 COPY packages/subagent-control/package.json packages/subagent-control/package.json
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
@@ -40,7 +40,7 @@ LABEL org.opencontainers.image.title="PiCloud production control plane" \
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=dependencies /app/node_modules /app/node_modules
-COPY --from=dependencies /app/packages/control-plane/node_modules /app/packages/control-plane/node_modules
+COPY --from=dependencies /app/packages /app/packages
 COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
 COPY packages/control-plane/package.json packages/control-plane/package.json
@@ -62,15 +62,13 @@ COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/protocol/src packages/protocol/src
 COPY packages/runtime-core/package.json packages/runtime-core/package.json
 COPY packages/runtime-core/src packages/runtime-core/src
-COPY packages/tool-broker/package.json packages/tool-broker/package.json
-COPY packages/tool-broker/src/tool-broker-client.ts packages/tool-broker/src/tool-broker-client.ts
-COPY packages/tool-broker/src/tool-command-router.ts packages/tool-broker/src/tool-command-router.ts
-COPY packages/tool-broker/src/tool-command-routes.ts packages/tool-broker/src/tool-command-routes.ts
+COPY packages/sandbox-control/package.json packages/sandbox-control/package.json
+COPY packages/sandbox-control/src packages/sandbox-control/src
 COPY packages/subagent-control/package.json packages/subagent-control/package.json
 COPY packages/subagent-control/src packages/subagent-control/src
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 COPY packages/workspace-runtime/src packages/workspace-runtime/src
-RUN node --import tsx --input-type=module --eval "await import('@pi-cloud/tool-broker/command-router'); await import('@pi-cloud/tool-broker/command-routes'); await import('@pi-cloud/runtime-core/session-projector')" \
+RUN node --import tsx --input-type=module --eval "await import('@pi-cloud/sandbox-control/runtime'); await import('@pi-cloud/runtime-core/session-projector')" \
     && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 

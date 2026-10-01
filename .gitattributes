@@ -1,0 +1,2 @@
+# Unified diffs must preserve upstream context prefixes and tabs verbatim.
+deploy/cubesandbox/patches/*.patch -whitespace

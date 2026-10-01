@@ -1,9 +1,9 @@
 import type { Database } from "@pi-cloud/database";
 import type {
-  ToolBrokerListWorkspaceDirectoryRequest,
-  ToolBrokerListWorkspaceDirectoryResponse,
-  ToolBrokerReadWorkspaceFileRequest,
-  ToolBrokerReadWorkspaceFileResponse,
+  SandboxControlListWorkspaceDirectoryRequest,
+  SandboxControlListWorkspaceDirectoryResponse,
+  SandboxControlReadWorkspaceFileRequest,
+  SandboxControlReadWorkspaceFileResponse,
   WorkspaceDirectoryResource,
 } from "@pi-cloud/protocol";
 import { randomUUID } from "node:crypto";
@@ -11,13 +11,13 @@ import type { Kysely } from "kysely";
 
 export interface TrustedWorkspaceBrowser {
   listWorkspaceDirectory(
-    request: ToolBrokerListWorkspaceDirectoryRequest,
+    request: SandboxControlListWorkspaceDirectoryRequest,
     signal?: AbortSignal,
-  ): Promise<ToolBrokerListWorkspaceDirectoryResponse>;
+  ): Promise<SandboxControlListWorkspaceDirectoryResponse>;
   readWorkspaceFile(
-    request: ToolBrokerReadWorkspaceFileRequest,
+    request: SandboxControlReadWorkspaceFileRequest,
     signal?: AbortSignal,
-  ): Promise<ToolBrokerReadWorkspaceFileResponse>;
+  ): Promise<SandboxControlReadWorkspaceFileResponse>;
 }
 
 export type WorkspaceBrowserServiceOptions = Readonly<{
@@ -79,7 +79,7 @@ export class WorkspaceBrowserService {
     const path = browserPath(pathValue, true);
     const session = await this.#session(tenantId, sessionId);
     const machine = this.#machine(session, actorUserId);
-    let response: ToolBrokerListWorkspaceDirectoryResponse;
+    let response: SandboxControlListWorkspaceDirectoryResponse;
     try {
       response = await this.#browser.listWorkspaceDirectory({
         toolBrokerProtocolVersion: 1,
@@ -121,7 +121,7 @@ export class WorkspaceBrowserService {
     }
     const session = await this.#session(tenantId, sessionId);
     const machine = this.#machine(session, actorUserId);
-    let response: ToolBrokerReadWorkspaceFileResponse;
+    let response: SandboxControlReadWorkspaceFileResponse;
     try {
       response = await this.#browser.readWorkspaceFile({
         toolBrokerProtocolVersion: 1,

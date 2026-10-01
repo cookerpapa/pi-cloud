@@ -74,7 +74,7 @@ const customWorker = parseAllDocuments(
     "--set",
     "credentials.supervisorManagementTokenKey=custom-management",
     "--set",
-    "credentials.toolBrokerTokenKey=custom-broker",
+    "credentials.sandboxControlTokenKey=custom-broker",
     "--set",
     "credentials.providerGatewayApiKeyKey=custom-provider",
     "--set",
@@ -154,10 +154,10 @@ try {
     (resource) => resource.kind === "Service" && resource.metadata.namespace === "pi-cloud-workers",
   );
   assert.deepEqual(aliases.map((resource) => resource.metadata.name).sort(), [
+    "control-plane",
     "kafka-1",
     "kafka-2",
     "kafka-3",
-    "tool-broker",
   ]);
   for (const broker of localEnvironment.PI_CLOUD_KAFKA_BROKERS.split(",")) {
     const [name, port] = broker.split(":");

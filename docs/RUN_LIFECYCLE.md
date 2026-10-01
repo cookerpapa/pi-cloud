@@ -93,28 +93,27 @@ messages or modifications to the user's text. Repeated context hooks on the
 same binding do not append another fact, and Compaction retains the newest
 material fact for recovery after Session ownership moves to another Worker.
 
-For a Tool call, the Worker presents the task reference used by the
-execution publication. Tool Broker verifies the shared lease and active task together with the Tool
-binding, frozen Tool policy and Step context. The first binding lazily creates
-the Workspace-owned Cube; later bindings share it without provider rebind.
-Different Sessions may execute Tools concurrently in that Cube.
+For a Tool call, the Worker uses the execution's PG-issued publication identity.
+Its first lazy binding prepares the Workspace-owned Cube and records a bounded
+immutable execution descriptor; later bindings can share that VM. Different
+Sessions may execute Tools concurrently there. The control plane owns lifecycle
+and binding closure, while Cube enforces boot/operation/closed-scope identity.
 
-There are two native Session post-sampling commit boundaries in this flow.
-They are not the total number of transport/database acknowledgements before an
-effect: concrete operations additionally require Kafka command PubAck and Broker
-PostgreSQL execution admission. First, one AcceptedFact atomically carries the complete Pi
-Assistant Entry, its usage Record and `model.sampling.completed`. Pi then
-validates the Tool name and arguments. Second, one AcceptedFact carries the
-specific `tool_started` intent and public `tool.started`. Only after its
-Kafka acknowledgement returns does the bound Tool publish its concrete
-operation command for Projector routing to the owning Broker. A
-rejected Tool call never writes execution intent. This distinguishes a Tool
-that may have started from later calls that were merely present in the model
-message.
+There are two native post-sampling commits. First, an AcceptedFact carries the
+complete Pi Assistant Entry, its usage Record and `model.sampling.completed`.
+Pi validates the Tool name and arguments. Second, one combined invocation fact
+carries `tool_started`, the public `tool.started` and the concrete prepared
+command. This single commit replaces separate intent and command acknowledgements.
+A rejected Tool call never writes execution intent. The Projector materializes
+that intent, confirms its dispatch offset and issues the bounded Cube handoff.
+Cube owns execution and final Kafka delivery; Pi's Worker-side processing makes
+the returned Tool Result canonical.
 
-A Tool transport retry may reattach to the same operation identity. It must not
-start a second arbitrary shell operation. If start/result cannot be proven, the
-result is `UNKNOWN`.
+An ambiguous handoff closes its operation scope and is not replayed. Cube rejects
+a changed duplicate and recognizes an already accepted operation within its boot.
+If start/result or stopping cannot be proven, the outcome remains `UNKNOWN`;
+quarantine does not assert physical VM absence.
+
 
 ## Events and terminal commit
 

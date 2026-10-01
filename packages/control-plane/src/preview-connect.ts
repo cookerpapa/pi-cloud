@@ -4,7 +4,7 @@ import type { Socket } from "node:net";
 import {
   PREVIEW_SCOPE_HEADER,
   PREVIEW_FAILURE_HEADER,
-  TOOL_BROKER_SANDBOX_PREVIEW_PATH,
+  SANDBOX_CONTROL_SANDBOX_PREVIEW_PATH,
   type SandboxPreviewConnectionRequest,
 } from "@pi-cloud/protocol";
 
@@ -33,7 +33,7 @@ export function previewConnectionAgent(
   const agent = new Agent({ keepAlive: false });
   const open = (address: string, redirects = 0): Promise<Socket> =>
     new Promise((resolve, reject) => {
-      const target = new URL(TOOL_BROKER_SANDBOX_PREVIEW_PATH, address);
+      const target = new URL(SANDBOX_CONTROL_SANDBOX_PREVIEW_PATH, address);
       if (
         redirects > 3 ||
         (target.protocol !== "https:" && !(target.protocol === "http:" && allowHttp))

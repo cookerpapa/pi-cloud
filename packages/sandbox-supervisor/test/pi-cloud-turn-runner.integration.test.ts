@@ -63,7 +63,7 @@ import {
   type PiModelRuntimeConfig,
   type ProviderHostedActivity,
   applyProviderHostedTranscript,
-  type ToolBrokerBoundary,
+  type SandboxControlBoundary,
 } from "../src/index.ts";
 
 const command: ExecuteTurnCommandMessage = {
@@ -1050,9 +1050,9 @@ describe("PiCloudTurnRunner integration", () => {
       },
       async stop() {},
       workflowUrlFor() {
-        return "http://tool-broker.test/internal/v1/tool-operation";
+        return "http://sandbox-control.test/internal/v1/tool-operation";
       },
-    } as ToolBrokerBoundary;
+    } as SandboxControlBoundary;
     const runner = new RemoteToolSandboxTurnRunner({
       broker,
       runtimeIdentity: {
@@ -1088,7 +1088,7 @@ describe("PiCloudTurnRunner integration", () => {
     const prepare = vi.fn(async () => {
       throw new Error("Closed input must not start image decoding");
     });
-    const broker: ToolBrokerBoundary = {
+    const broker: SandboxControlBoundary = {
       async create(request) {
         reserving.resolve();
         await finishReserve.promise;
@@ -1098,7 +1098,7 @@ describe("PiCloudTurnRunner integration", () => {
           requestId: request.requestId,
           activationId: "99999999-9999-4999-8999-999999999999",
           executionReference: request.assignment.executionReference,
-          ownerBaseUrl: "http://tool-broker.test",
+          ownerBaseUrl: "http://sandbox-control.test",
           workspaceRoot: "/workspace",
           continuity: "cold_restore",
           continuityId: "late-image",
@@ -1109,7 +1109,7 @@ describe("PiCloudTurnRunner integration", () => {
       async refreshServices() {},
       async stop() {},
       workflowUrlFor() {
-        return "http://tool-broker.test/internal/v1/tool-operation";
+        return "http://sandbox-control.test/internal/v1/tool-operation";
       },
     };
     const runner = new RemoteToolSandboxTurnRunner({
@@ -1176,7 +1176,7 @@ describe("PiCloudTurnRunner integration", () => {
     }
   });
 
-  it("keeps owned-machine chat independent of Tool Broker without reporting a reset", async () => {
+  it("keeps owned-machine chat independent of Sandbox control without reporting a reset", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-cloud-development-continuity-"));
     const developmentCommand: ExecuteTurnCommandMessage = {
       ...command,
@@ -1202,13 +1202,13 @@ describe("PiCloudTurnRunner integration", () => {
       toolPolicySha256: turn.toolPolicySha256,
     });
     const authority = new TestAuthority();
-    const create = vi.fn(async (request: Parameters<ToolBrokerBoundary["create"]>[0]) => ({
+    const create = vi.fn(async (request: Parameters<SandboxControlBoundary["create"]>[0]) => ({
       toolBrokerProtocolVersion: 1 as const,
       type: "tool_sandbox.reserved" as const,
       requestId: request.requestId,
       activationId: "99999999-9999-4999-8999-999999999999",
       executionReference: request.assignment.executionReference,
-      ownerBaseUrl: "http://tool-broker.test",
+      ownerBaseUrl: "http://sandbox-control.test",
       workspaceRoot: "/home/user/project",
       continuity: "warm_reuse" as const,
       continuityId: "development-runtime-1",
@@ -1220,9 +1220,9 @@ describe("PiCloudTurnRunner integration", () => {
       release,
       async stop() {},
       workflowUrlFor() {
-        return "http://tool-broker.test/internal/v1/tool-operation";
+        return "http://sandbox-control.test/internal/v1/tool-operation";
       },
-    } as ToolBrokerBoundary;
+    } as SandboxControlBoundary;
     const runner = new RemoteToolSandboxTurnRunner({
       broker,
       runtimeIdentity: {
@@ -1296,13 +1296,13 @@ describe("PiCloudTurnRunner integration", () => {
       const authority = new TestAuthority();
       const checkpointEvents: PiCloudEvent[] = [];
       const checkpointOperations: PiSessionMutationOperation[] = [];
-      const create = vi.fn(async (request: Parameters<ToolBrokerBoundary["create"]>[0]) => ({
+      const create = vi.fn(async (request: Parameters<SandboxControlBoundary["create"]>[0]) => ({
         toolBrokerProtocolVersion: 1 as const,
         type: "tool_sandbox.reserved" as const,
         requestId: request.requestId,
         activationId: "99999999-9999-4999-8999-999999999998",
         executionReference: request.assignment.executionReference,
-        ownerBaseUrl: "http://tool-broker.test",
+        ownerBaseUrl: "http://sandbox-control.test",
         workspaceRoot: "/home/user/project",
         continuity: "warm_reuse" as const,
         continuityId: "development-runtime-1",
@@ -1319,9 +1319,9 @@ describe("PiCloudTurnRunner integration", () => {
         stop,
         async refreshServices() {},
         workflowUrlFor() {
-          return "http://tool-broker.test/internal/v1/tool-operation";
+          return "http://sandbox-control.test/internal/v1/tool-operation";
         },
-      } as ToolBrokerBoundary;
+      } as SandboxControlBoundary;
       const runner = new RemoteToolSandboxTurnRunner({
         publishToolCommand: async (command) => ({
           operationId: command.request.operationId,

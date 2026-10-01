@@ -1,0 +1,2182 @@
+import type { SandboxExecutionDescriptor, SandboxExecutionTarget } from "./sandbox-execution.ts";
+import { workflowGuestSource } from "./workflow-guest-source.ts";
+import type { Duplex } from "node:stream";
+import {
+  isExpectedDefaultToolchain,
+  MAX_TOOL_EXECUTION_TIMEOUT_MS,
+  MAX_IMAGE_GUEST_RESPONSE_BYTES,
+  MAX_USER_UPLOAD_BYTES,
+  validGuestDirectoryName,
+  parseEnvironmentToolchainReport,
+  parseExecutionReference,
+  parseSandboxControlListWorkspaceDirectoryResponse,
+  parseSandboxControlReadWorkspaceFileResponse,
+  parseToolWorkerOutput,
+  type EnvironmentValidationReport,
+  type EnvironmentToolchainReport,
+  type SandboxControlListWorkspaceDirectoryRequest,
+  type SandboxControlListWorkspaceDirectoryResponse,
+  type SandboxControlReadWorkspaceFileRequest,
+  type SandboxControlReadWorkspaceFileResponse,
+  type ToolSandboxAssignment,
+  type ToolWorkerInput,
+  type ToolWebProxyBootstrap,
+  type DevelopmentEnvironmentProfileKey,
+  type SourceControlWorkspaceCredentialAuthorizeRequest,
+  type SourceControlWorkspaceCredentialDisconnectRequest,
+  type SourceControlWorkspaceCredentialDisconnectResponse,
+  type SourceControlWorkspaceCredentialListRequest,
+  type SourceControlWorkspaceCredentialListResponse,
+  type SourceControlWorkspaceCredentialPreflightRequest,
+  type SourceControlWorkspaceCredentialResponse,
+} from "@pi-cloud/protocol";
+import { createHash, randomUUID } from "node:crypto";
+import { isIPv4 } from "node:net";
+import {
+  CubeRuntimeClientError,
+  CubeApplicationPortError,
+  OfficialCubeSandboxRuntimeClient,
+  CubeExecutionRejected,
+  type CubeSandboxInstance,
+  type CubeSandboxRuntimeClient,
+  type OfficialCubeSandboxRuntimeClientOptions,
+} from "./cubesandbox-runtime-client.ts";
+import { workspaceVolumeId, type WorkspaceVolumeGateway } from "./workspace-volume-gateway.ts";
+import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
+import {
+  SandboxControlError,
+  SandboxCreationError,
+  type SandboxCreateSpec,
+  type SandboxDirectoryListing,
+  type SandboxEffectiveIsolation,
+  type SandboxHandle,
+  type SandboxHttpServiceDiscovery,
+  type SandboxInspection,
+  type SandboxPolicy,
+  type SandboxProvider,
+  type SandboxTerminalSession,
+  type SandboxTerminalSize,
+} from "./sandbox-provider.ts";
+import { CubePersistentCapsuleCodec } from "./cube-persistent-capsule.ts";
+import { browseCubeWorkspace } from "./cubesandbox-workspace-browser.ts";
+
+const READY_TIMEOUT_MS = 60_000;
+const TOOL_RESPONSE_LIMIT_BYTES = 8 * 1_024 * 1_024;
+const HTTP_SERVICE_DISCOVERY_SCRIPT = Buffer.from(
+  String.raw`
+const fs = require("node:fs");
+const http = require("node:http");
+const reserved = new Set([49983, 49984, 50005]);
+const ports = new Set();
+for (const path of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+  let table = "";
+  try { table = fs.readFileSync(path, "utf8"); } catch {}
+  for (const line of table.split("\n").slice(1)) {
+    const fields = line.trim().split(/\s+/);
+    if (fields.length < 4 || fields[3] !== "0A") continue;
+    const encoded = fields[1]?.split(":").at(-1);
+    const port = encoded === undefined ? NaN : Number.parseInt(encoded, 16);
+    if (Number.isInteger(port) && port >= 1024 && port <= 65535 && !reserved.has(port)) ports.add(port);
+  }
+}
+const listeningPorts = [...ports].sort((a, b) => a - b).slice(0, 128);
+const probe = (port) => new Promise((resolve) => {
+  let settled = false;
+  const finish = (reachable) => { if (!settled) { settled = true; resolve({ port, reachable }); } };
+  const request = http.request({ hostname: "127.0.0.1", port, method: "HEAD", path: "/", headers: { host: "127.0.0.1:" + port, connection: "close" } }, (response) => { response.resume(); finish(true); });
+  request.setTimeout(750, () => { request.destroy(); finish(false); });
+  request.once("error", () => finish(false));
+  request.end();
+});
+Promise.all(listeningPorts.slice(0, 32).map(probe)).then((probes) => {
+  process.stdout.write(JSON.stringify({ listeningPorts, httpServices: probes.filter((item) => item.reachable).map((item) => ({ port: item.port, protocol: "http" })) }));
+});
+`,
+  "utf8",
+).toString("base64");
+
+export const CUBESANDBOX_PROVIDER_ID = "cubesandbox";
+export const CUBESANDBOX_RUNTIME_NAME = "cubesandbox-kvm";
+
+export const CUBESANDBOX_TOOL_POLICY: SandboxPolicy = Object.freeze({
+  policyVersion: 1,
+  network: Object.freeze({ mode: "public_web_proxy_private_denied" }),
+  resources: Object.freeze({
+    cpuNano: 1_000_000_000,
+    memoryBytes: 768 * 1_024 * 1_024,
+    pids: 128,
+    openFiles: 1_024,
+    // Cube v0.6 templates expose a bounded disposable CoW guest rootfs
+    // instead of separate Kubernetes emptyDir volumes.
+    temporaryBytes: 1 * 1_024 * 1_024 * 1_024,
+    workspaceBytes: 1 * 1_024 * 1_024 * 1_024,
+    maximumOutputBytes: 1 * 1_024 * 1_024,
+    maximumCommandTimeoutMs: MAX_TOOL_EXECUTION_TIMEOUT_MS,
+    turnWallClockTimeoutMs: 900_000,
+  }),
+  user: "1000:1000",
+  readOnlyRootFilesystem: false,
+  privileged: false,
+  dropAllCapabilities: true,
+  noNewPrivileges: true,
+  allowHostMounts: false,
+  allowDockerSocket: false,
+});
+
+const METADATA = Object.freeze({
+  managed: "picloud.managed",
+  provider: "picloud.provider",
+  workload: "picloud.workload",
+  workspaceRuntimeId: "picloud.workspace_runtime_id",
+  tenantId: "picloud.tenant_id",
+  projectId: "picloud.project_id",
+  workspaceId: "picloud.workspace_id",
+  supervisorId: "picloud.supervisor_id",
+  bootId: "picloud.boot_id",
+  sandboxId: "picloud.sandbox_id",
+  runId: "picloud.run_id",
+  sessionId: "picloud.session_id",
+  turnId: "picloud.turn_id",
+  leaseId: "picloud.lease_id",
+  fencingToken: "picloud.fencing_token",
+  bindingSha256: "picloud.binding_sha256",
+  imageRevision: "picloud.image_revision",
+} as const);
+
+const ASSIGNMENT_METADATA_PREFIX = "picloud.workspace-runtime.v1.";
+
+function fencingToken(assignment: ToolSandboxAssignment): number {
+  return parseExecutionReference(assignment.executionReference).fencingToken;
+}
+
+type CubeAssignmentMetadata = Readonly<{
+  workspaceRuntimeId: string;
+  tenantId: string;
+  projectId: string;
+  workspaceId: string;
+  supervisorId: string;
+  bootId: string;
+  sandboxId: string;
+  runId: string;
+  sessionId: string;
+  turnId: string;
+  leaseId: string;
+  fencingToken: number;
+  bindingSha256: string;
+  imageRevision: string;
+}>;
+
+type CubeRuntimeEvidence = Readonly<{
+  controlProtocolVersion: 2;
+  imageRevision: string;
+  kernelRelease: string;
+  cpuCount: number;
+  memoryBytes: number;
+  uid: number;
+  gid: number;
+  hypervisorFlag: boolean;
+  noNewPrivileges: boolean;
+  effectiveCapabilities: string;
+  readOnlyRootFilesystem: boolean;
+  supervisorUid: number;
+  supervisorGid: number;
+  ipAddress: string;
+}>;
+
+type CubeActivation = {
+  executionTarget: SandboxExecutionTarget;
+  instance: CubeSandboxInstance;
+  handle: SandboxHandle;
+  evidence: CubeRuntimeEvidence;
+  toolchain: EnvironmentToolchainReport;
+  bindingSha256: string;
+  authorityEpoch: number;
+  state: "running" | "quiesced" | "idle" | "paused";
+  volumeId: string;
+  lifetime: "elastic" | "development_environment";
+  toolRoot: string;
+  /** Observed lazily, including for machines adopted before their first probe. */
+  guestBootId?: string;
+  continuityId?: string;
+};
+
+export type CubeSandboxProviderOptions = Readonly<{
+  templateId: string;
+  developmentTemplateIds: Readonly<Record<DevelopmentEnvironmentProfileKey, string>>;
+  imageRevision: string;
+  runtimeClient?: CubeSandboxRuntimeClient;
+  runtime?: OfficialCubeSandboxRuntimeClientOptions;
+  readyTimeoutMs?: number;
+  webProxy: ToolWebProxyBootstrap;
+  workspaceVolumeGateway: WorkspaceVolumeGateway;
+  persistentStateKey?: Uint8Array;
+}>;
+
+function bounded(value: string, label: string, maximum = 1_024): string {
+  if (value.length < 1 || value.length > maximum || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new TypeError(`${label} is invalid`);
+  }
+  return value;
+}
+
+function positiveInteger(value: number | undefined, fallback: number, maximum: number): number {
+  const candidate = value ?? fallback;
+  if (!Number.isSafeInteger(candidate) || candidate < 1 || candidate > maximum) {
+    throw new TypeError("CubeSandbox Provider numeric configuration is invalid");
+  }
+  return candidate;
+}
+
+function record(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new SandboxControlError("cubesandbox_protocol_error", `${label} was invalid`, false);
+  }
+  return value as Record<string, unknown>;
+}
+
+function sandboxDirectoryListing(value: unknown): SandboxDirectoryListing {
+  const raw = record(value, "Cube guest directory");
+  if (
+    typeof raw.path !== "string" ||
+    !raw.path.startsWith("/") ||
+    /[\u0000-\u001f\u007f]/u.test(raw.path) ||
+    !Array.isArray(raw.entries) ||
+    raw.entries.length > 1_000
+  ) {
+    throw new SandboxControlError(
+      "development_environment_directory_invalid",
+      "Cube guest directory response was invalid",
+      false,
+    );
+  }
+  return {
+    path: raw.path,
+    entries: Object.freeze(
+      raw.entries.map((entry) => {
+        const candidate = record(entry, "Cube guest directory entry");
+        if (
+          typeof candidate.name !== "string" ||
+          candidate.name.length < 1 ||
+          candidate.name.includes("/") ||
+          /[\u0000-\u001f\u007f]/u.test(candidate.name) ||
+          typeof candidate.path !== "string" ||
+          !candidate.path.startsWith("/") ||
+          /[\u0000-\u001f\u007f]/u.test(candidate.path) ||
+          !new Set(["directory", "file", "symlink", "other"]).has(String(candidate.kind)) ||
+          (candidate.sizeBytes !== undefined &&
+            (!Number.isSafeInteger(candidate.sizeBytes) || (candidate.sizeBytes as number) < 0))
+        ) {
+          throw new SandboxControlError(
+            "development_environment_directory_invalid",
+            "Cube guest directory entry was invalid",
+            false,
+          );
+        }
+        return Object.freeze({
+          name: candidate.name,
+          path: candidate.path,
+          kind: candidate.kind as "directory" | "file" | "symlink" | "other",
+          ...(candidate.sizeBytes === undefined
+            ? {}
+            : { sizeBytes: candidate.sizeBytes as number }),
+        });
+      }),
+    ),
+  };
+}
+
+function stringField(value: Record<string, unknown>, name: string, maximum = 256): string {
+  const field = value[name];
+  if (
+    typeof field !== "string" ||
+    field.length < 1 ||
+    field.length > maximum ||
+    /[\u0000-\u001f\u007f]/.test(field)
+  ) {
+    throw new SandboxControlError(
+      "cubesandbox_protocol_error",
+      "CubeSandbox runtime evidence was invalid",
+      false,
+    );
+  }
+  return field;
+}
+
+function integerField(value: Record<string, unknown>, name: string): number {
+  const field = value[name];
+  if (!Number.isSafeInteger(field) || (field as number) < 0) {
+    throw new SandboxControlError(
+      "cubesandbox_protocol_error",
+      "CubeSandbox runtime evidence was invalid",
+      false,
+    );
+  }
+  return field as number;
+}
+
+function booleanField(value: Record<string, unknown>, name: string): boolean {
+  const field = value[name];
+  if (typeof field !== "boolean") {
+    throw new SandboxControlError(
+      "cubesandbox_protocol_error",
+      "CubeSandbox runtime evidence was invalid",
+      false,
+    );
+  }
+  return field;
+}
+
+function parseEvidence(value: unknown): CubeRuntimeEvidence {
+  const candidate = record(value, "CubeSandbox runtime evidence");
+  const controlProtocolVersion = integerField(candidate, "controlProtocolVersion");
+  if (controlProtocolVersion !== 2) {
+    throw new SandboxControlError(
+      "cubesandbox_protocol_error",
+      "CubeSandbox control protocol evidence was invalid",
+      false,
+    );
+  }
+  const capabilities = stringField(candidate, "effectiveCapabilities", 64).toLowerCase();
+  if (!/^[0-9a-f]+$/.test(capabilities)) {
+    throw new SandboxControlError(
+      "cubesandbox_protocol_error",
+      "CubeSandbox capability evidence was invalid",
+      false,
+    );
+  }
+  return Object.freeze({
+    controlProtocolVersion: 2,
+    imageRevision: stringField(candidate, "imageRevision", 128),
+    kernelRelease: stringField(candidate, "kernelRelease", 256),
+    cpuCount: integerField(candidate, "cpuCount"),
+    memoryBytes: integerField(candidate, "memoryBytes"),
+    uid: integerField(candidate, "uid"),
+    gid: integerField(candidate, "gid"),
+    hypervisorFlag: booleanField(candidate, "hypervisorFlag"),
+    noNewPrivileges: booleanField(candidate, "noNewPrivileges"),
+    effectiveCapabilities: capabilities,
+    readOnlyRootFilesystem: booleanField(candidate, "readOnlyRootFilesystem"),
+    supervisorUid: integerField(candidate, "supervisorUid"),
+    supervisorGid: integerField(candidate, "supervisorGid"),
+    ipAddress: stringField(candidate, "ipAddress", 45),
+  });
+}
+
+function physicalBindingSha256(
+  activationId: string,
+  assignment: ToolSandboxAssignment,
+  environment: SandboxCreateSpec["environment"],
+): string {
+  return createHash("sha256")
+    .update("pi-cloud.cubesandbox-workspace-runtime.v1\0")
+    .update(
+      JSON.stringify({
+        workspaceRuntimeId: activationId,
+        tenantId: assignment.tenantId,
+        projectId: assignment.projectId,
+        workspaceId: assignment.workspaceId,
+        environmentVersionId: environment.environmentVersionId,
+        specSha256: environment.specSha256,
+        recipeSha256: environment.recipeSha256,
+        imageRevision: environment.imageRevision,
+      }),
+    )
+    .digest("hex");
+}
+
+function assignmentMetadata(
+  activationId: string,
+  assignment: ToolSandboxAssignment,
+  imageRevision: string,
+  bindingSha256: string,
+): Readonly<Record<string, string>> {
+  const execution = parseExecutionReference(assignment.executionReference);
+  const current: CubeAssignmentMetadata = {
+    workspaceRuntimeId: activationId,
+    tenantId: assignment.tenantId,
+    projectId: assignment.projectId,
+    workspaceId: assignment.workspaceId,
+    supervisorId: assignment.supervisorId,
+    bootId: assignment.bootId,
+    sandboxId: assignment.sandboxId,
+    runId: assignment.runId,
+    sessionId: assignment.sessionId,
+    turnId: assignment.turnId,
+    leaseId: execution.leaseId,
+    fencingToken: execution.fencingToken,
+    bindingSha256,
+    imageRevision,
+  };
+  return Object.freeze({
+    [METADATA.managed]: "true",
+    [METADATA.provider]: CUBESANDBOX_PROVIDER_ID,
+    [METADATA.workload]: "workspace-runtime",
+    [METADATA.workspaceRuntimeId]: activationId,
+    [METADATA.tenantId]: assignment.tenantId,
+    [METADATA.projectId]: assignment.projectId,
+    [METADATA.workspaceId]: assignment.workspaceId,
+    [METADATA.supervisorId]: assignment.supervisorId,
+    [METADATA.bootId]: assignment.bootId,
+    [METADATA.sandboxId]: assignment.sandboxId,
+    [METADATA.runId]: assignment.runId,
+    [METADATA.sessionId]: assignment.sessionId,
+    [METADATA.turnId]: assignment.turnId,
+    [METADATA.leaseId]: execution.leaseId,
+    [METADATA.fencingToken]: String(execution.fencingToken),
+    [METADATA.bindingSha256]: bindingSha256,
+    [METADATA.imageRevision]: imageRevision,
+    // Keep a fence-qualified immutable create record for inventory and orphan
+    // reconciliation. Later Run ownership lives only in PostgreSQL and the
+    // Tool binding; generic envd carries no PiCloud authority.
+    [`${ASSIGNMENT_METADATA_PREFIX}${String(execution.fencingToken).padStart(16, "0")}`]:
+      JSON.stringify(current),
+  });
+}
+
+function sameWorkspace(left: ToolSandboxAssignment, right: ToolSandboxAssignment): boolean {
+  return (
+    left.tenantId === right.tenantId &&
+    left.projectId === right.projectId &&
+    left.workspaceId === right.workspaceId
+  );
+}
+
+function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignment): boolean {
+  return (
+    left.tenantId === right.tenantId &&
+    left.projectId === right.projectId &&
+    left.workspaceId === right.workspaceId &&
+    left.supervisorId === right.supervisorId &&
+    left.bootId === right.bootId &&
+    left.sandboxId === right.sandboxId &&
+    left.runId === right.runId &&
+    left.sessionId === right.sessionId &&
+    left.turnId === right.turnId &&
+    left.executionReference === right.executionReference
+  );
+}
+
+function metadataMatchesPhysicalBinding(
+  values: Readonly<Record<string, string>>,
+  activationId: string,
+  assignment: ToolSandboxAssignment,
+  bindingSha256: string,
+  imageRevision: string,
+): boolean {
+  const current = currentAssignmentMetadata(values);
+  return (
+    values[METADATA.managed] === "true" &&
+    values[METADATA.provider] === CUBESANDBOX_PROVIDER_ID &&
+    values[METADATA.workload] === "workspace-runtime" &&
+    current?.workspaceRuntimeId === activationId &&
+    current.tenantId === assignment.tenantId &&
+    current.projectId === assignment.projectId &&
+    current.workspaceId === assignment.workspaceId &&
+    current.bindingSha256 === bindingSha256 &&
+    current.imageRevision === imageRevision
+  );
+}
+
+function metadataMatchesOrphanIdentity(
+  values: Readonly<Record<string, string>>,
+  activationId: string,
+  assignment: ToolSandboxAssignment,
+): boolean {
+  return (
+    values[METADATA.managed] === "true" &&
+    values[METADATA.provider] === CUBESANDBOX_PROVIDER_ID &&
+    values[METADATA.workload] === "workspace-runtime" &&
+    values[METADATA.workspaceRuntimeId] === activationId &&
+    values[METADATA.tenantId] === assignment.tenantId &&
+    values[METADATA.projectId] === assignment.projectId &&
+    values[METADATA.workspaceId] === assignment.workspaceId
+  );
+}
+
+function currentAssignmentMetadata(
+  values: Readonly<Record<string, string>>,
+): CubeAssignmentMetadata | undefined {
+  const candidates: CubeAssignmentMetadata[] = [];
+  for (const [key, raw] of Object.entries(values)) {
+    if (!key.startsWith(ASSIGNMENT_METADATA_PREFIX)) continue;
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const fencingToken = parsed.fencingToken;
+      const required = [
+        "workspaceRuntimeId",
+        "tenantId",
+        "projectId",
+        "workspaceId",
+        "supervisorId",
+        "bootId",
+        "sandboxId",
+        "runId",
+        "sessionId",
+        "turnId",
+        "leaseId",
+        "bindingSha256",
+        "imageRevision",
+      ] as const;
+      if (
+        required.some(
+          (name) =>
+            typeof parsed[name] !== "string" ||
+            (parsed[name] as string).length < 1 ||
+            (parsed[name] as string).length > 512,
+        ) ||
+        !Number.isSafeInteger(fencingToken) ||
+        (fencingToken as number) < 1 ||
+        key !== `${ASSIGNMENT_METADATA_PREFIX}${String(fencingToken as number).padStart(16, "0")}`
+      ) {
+        throw new Error("invalid assignment metadata");
+      }
+      candidates.push(parsed as unknown as CubeAssignmentMetadata);
+    } catch {
+      throw new SandboxControlError(
+        "cubesandbox_inventory_invalid",
+        "CubeSandbox managed assignment metadata was invalid",
+        false,
+      );
+    }
+  }
+  const topFencingToken = Number(values[METADATA.fencingToken]);
+  const current = candidates.filter(
+    (candidate) =>
+      candidate.leaseId === values[METADATA.leaseId] &&
+      candidate.runId === values[METADATA.runId] &&
+      candidate.fencingToken === topFencingToken,
+  );
+  if (current.length !== 1) {
+    throw new SandboxControlError(
+      "cubesandbox_inventory_ambiguous",
+      "CubeSandbox current assignment metadata was missing or ambiguous",
+      false,
+    );
+  }
+  return current[0];
+}
+
+function runtimeUuid(sandboxId: string): string {
+  const bytes = createHash("sha256")
+    .update(`picloud:cubesandbox:${sandboxId}`)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function effectiveIsolation(
+  evidence: CubeRuntimeEvidence,
+  policy: SandboxPolicy,
+): SandboxEffectiveIsolation {
+  return {
+    isolationBoundary: "microvm",
+    runtime: CUBESANDBOX_RUNTIME_NAME,
+    user: `${evidence.uid}:${evidence.gid}`,
+    privileged: false,
+    readOnlyRootFilesystem: evidence.readOnlyRootFilesystem,
+    networkMode: "public_web_proxy_private_denied",
+    mountCount: 0,
+    hasDockerSocket: false,
+    pidLimit: policy.resources.pids,
+    processLimit: policy.resources.pids,
+    memoryBytes: evidence.memoryBytes,
+    cpuNano: evidence.cpuCount * 1_000_000_000,
+    droppedCapabilities: evidence.effectiveCapabilities === "0000000000000000" ? ["ALL"] : [],
+    securityOptions: evidence.noNewPrivileges ? ["no-new-privileges"] : [],
+    sandboxKernelRelease: evidence.kernelRelease,
+  };
+}
+
+export class CubeSandboxProvider implements SandboxProvider {
+  readonly providerId = CUBESANDBOX_PROVIDER_ID;
+  readonly defaultPolicy = CUBESANDBOX_TOOL_POLICY;
+  readonly #templateId: string;
+  readonly #developmentTemplateIds: ReadonlyMap<DevelopmentEnvironmentProfileKey, string>;
+  readonly #imageRevision: string;
+  readonly #client: CubeSandboxRuntimeClient;
+  readonly #readyTimeoutMs: number;
+  readonly #webProxy: ToolWebProxyBootstrap;
+  readonly #workspaceVolumeGateway: WorkspaceVolumeGateway;
+  readonly #persistentCapsules: CubePersistentCapsuleCodec | undefined;
+  readonly #activations = new Map<string, CubeActivation>();
+  #runtimeProbe: Promise<void> | undefined;
+
+  constructor(options: CubeSandboxProviderOptions) {
+    this.#templateId = bounded(options.templateId, "CubeSandbox template ID", 256);
+    this.#developmentTemplateIds = new Map(
+      (["starter", "standard", "performance"] as const).map((key) => [
+        key,
+        bounded(
+          options.developmentTemplateIds[key],
+          `CubeSandbox ${key} development template ID`,
+          256,
+        ),
+      ]),
+    );
+    this.#imageRevision = bounded(options.imageRevision, "CubeSandbox image revision", 128);
+    this.#readyTimeoutMs = positiveInteger(options.readyTimeoutMs, READY_TIMEOUT_MS, 300_000);
+    this.#workspaceVolumeGateway = options.workspaceVolumeGateway;
+    this.#persistentCapsules =
+      options.persistentStateKey === undefined
+        ? undefined
+        : new CubePersistentCapsuleCodec(options.persistentStateKey);
+    if (
+      !isIPv4(options.webProxy.host) ||
+      !Number.isSafeInteger(options.webProxy.port) ||
+      options.webProxy.port < 1 ||
+      options.webProxy.port > 65_535
+    ) {
+      throw new TypeError("CubeSandbox web proxy configuration is invalid");
+    }
+    this.#webProxy = Object.freeze({
+      ...options.webProxy,
+      ...(options.webProxy.directPrivateCidrs === undefined
+        ? {}
+        : { directPrivateCidrs: [...options.webProxy.directPrivateCidrs] }),
+    });
+    if (options.runtimeClient !== undefined) {
+      this.#client = options.runtimeClient;
+    } else {
+      if (options.runtime === undefined) {
+        throw new TypeError("CubeSandbox runtime configuration is missing");
+      }
+      this.#client = new OfficialCubeSandboxRuntimeClient(options.runtime);
+    }
+  }
+
+  async #guestJson(
+    instance: CubeSandboxInstance,
+    input: unknown,
+    options: Readonly<{
+      program: "tool" | "control" | "input";
+      runAsToolUser: boolean;
+      timeoutMs: number;
+      maximumOutputBytes?: number;
+      signal?: AbortSignal;
+    }>,
+  ): Promise<unknown> {
+    const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
+    const bytes = Buffer.from(JSON.stringify(input), "utf8");
+    const inputLimit =
+      options.program === "input"
+        ? Math.ceil(MAX_USER_UPLOAD_BYTES / 3) * 4 + 8192
+        : 16 * 1024 * 1024;
+    if (bytes.byteLength < 2 || bytes.byteLength > inputLimit) {
+      throw new SandboxControlError(
+        "cubesandbox_guest_request_invalid",
+        "CubeSandbox guest request exceeded its limit",
+        false,
+      );
+    }
+    const program = {
+      tool: "/opt/pi-cloud/bin/envd-tool-exec.mjs",
+      control: "/opt/pi-cloud/bin/envd-guest-control.mjs",
+      input: "/opt/pi-cloud/bin/envd-input-files.mjs",
+    }[options.program];
+    const maximumOutputBytes = options.maximumOutputBytes ?? TOOL_RESPONSE_LIMIT_BYTES;
+    if (
+      !Number.isSafeInteger(maximumOutputBytes) ||
+      maximumOutputBytes < 1 ||
+      maximumOutputBytes > MAX_IMAGE_GUEST_RESPONSE_BYTES
+    ) {
+      throw new SandboxControlError(
+        "cubesandbox_guest_request_invalid",
+        "CubeSandbox guest response limit was invalid",
+        false,
+      );
+    }
+    const prefix = options.runAsToolUser
+      ? "/usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs "
+      : "";
+    const prepareInput = options.runAsToolUser
+      ? `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && `
+      : `/bin/chmod 0400 ${path} && `;
+    options.signal?.throwIfAborted();
+    await this.#client.writeGuestFile(instance, path, bytes);
+    if (options.signal?.aborted) {
+      // The guest has not received the execution request, so its EXIT trap
+      // cannot own cleanup yet. Never use an already-cancelled signal here.
+      try {
+        const cleanup = await this.#client.runCommand(instance, {
+          command: `/bin/rm -f -- ${path}`,
+          cwd: "/",
+          user: "root",
+          timeoutMs: 5_000,
+          maximumOutputBytes: 1_024,
+        });
+        if (cleanup.exitCode !== 0)
+          throw new Error(`Guest request cleanup exited with code ${cleanup.exitCode}`);
+      } catch (error) {
+        throw new AggregateError(
+          [options.signal.reason, error],
+          "Cancelled guest request cleanup failed",
+        );
+      }
+      throw options.signal.reason;
+    }
+    const result = await this.#client.runCommand(instance, {
+      command: `trap '/bin/rm -f -- ${path}' EXIT; ${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
+      cwd: "/",
+      user: "root",
+      timeoutMs: options.timeoutMs,
+      maximumOutputBytes,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    if (result.exitCode !== 0) {
+      throw new SandboxControlError(
+        "cubesandbox_guest_execution_failed",
+        "CubeSandbox one-shot guest helper failed",
+        false,
+        new Error(
+          `Guest helper exited with code ${String(result.exitCode)}: ${result.stderr.slice(-1_024)}`,
+        ),
+      );
+    }
+    const output = result.stdout.trim();
+    if (output.length < 2 || output.length > maximumOutputBytes) {
+      throw new SandboxControlError(
+        "cubesandbox_guest_response_invalid",
+        "CubeSandbox guest response was invalid",
+        false,
+      );
+    }
+    try {
+      return JSON.parse(output) as unknown;
+    } catch {
+      throw new SandboxControlError(
+        "cubesandbox_guest_response_invalid",
+        "CubeSandbox guest response was invalid",
+        false,
+      );
+    }
+  }
+
+  #attachedInitialization(
+    activation: CubeActivation,
+    toolBindingId = activation.handle.activationId,
+    toolRoot = activation.toolRoot,
+  ): Extract<ToolWorkerInput, { type: "worker.initialize" }> {
+    return {
+      toolWorkerProtocolVersion: 2,
+      type: "worker.initialize",
+      activationId: toolBindingId,
+      toolRoot,
+      environment: activation.handle.environment,
+      workspaceSeed: { kind: "sample_java" },
+      webProxy: this.#webProxy,
+    };
+  }
+
+  async checkHealth(): Promise<void> {
+    await Promise.all([this.#client.checkHealth(), this.#workspaceVolumeGateway.checkHealth()]);
+    this.#runtimeProbe ??= this.#probeRuntime();
+    try {
+      await this.#runtimeProbe;
+    } catch (error: unknown) {
+      this.#runtimeProbe = undefined;
+      throw error;
+    }
+  }
+
+  async deleteWorkspaceVolume(volumeId: string): Promise<void> {
+    await this.#client.deleteVolume(volumeId);
+  }
+
+  async create(spec: SandboxCreateSpec): Promise<SandboxHandle> {
+    if (this.#activations.has(spec.activationId)) {
+      throw new SandboxControlError(
+        "tool_sandbox_identity_collision",
+        "CubeSandbox activation identity collided",
+        false,
+      );
+    }
+    if (
+      spec.policy.network.mode !== "public_web_proxy_private_denied" ||
+      spec.policy.allowHostMounts ||
+      spec.policy.allowDockerSocket ||
+      spec.policy.privileged
+    ) {
+      throw new SandboxCreationError(
+        new SandboxControlError(
+          "cubesandbox_policy_unsupported",
+          "CubeSandbox Provider does not support the requested policy",
+          false,
+        ),
+        true,
+      );
+    }
+    const exclusiveMachine = spec.lifetime === "development_environment";
+    const volumeMountPath =
+      spec.volumeMountPath ?? (exclusiveMachine ? "/home/user" : "/workspace");
+    const toolRoot = spec.toolRoot ?? (exclusiveMachine ? "/home/user" : "/workspace");
+    const bindingSha256 = physicalBindingSha256(
+      spec.activationId,
+      spec.assignment,
+      spec.environment,
+    );
+    const volumeId = workspaceVolumeId(spec.assignment);
+    try {
+      await this.#client.ensureVolume(volumeId, "picloud-posix");
+      await this.#workspaceVolumeGateway.verify({
+        tenantId: spec.assignment.tenantId,
+        workspaceId: spec.assignment.workspaceId,
+        sessionId: spec.assignment.sessionId,
+        volumeId,
+      });
+    } catch (error) {
+      throw new SandboxCreationError(error, true);
+    }
+    let instance: CubeSandboxInstance;
+    try {
+      instance = await this.#client.create({
+        templateId:
+          spec.sandboxProfileKey !== undefined
+            ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
+            : this.#templateId,
+        // Sandbox control owns both elastic idle expiry and exclusive machine
+        // lifecycle. A second absolute Cube timer would kill a continuously
+        // active multi-Turn Session even though its Broker lease is healthy.
+        timeoutSeconds: -1,
+        metadata: assignmentMetadata(
+          spec.activationId,
+          spec.assignment,
+          this.#imageRevision,
+          bindingSha256,
+        ),
+        allowInternetAccess: true,
+        allowPublicTraffic: false,
+        volumeMounts: [{ name: volumeId, path: volumeMountPath }],
+        ...(spec.lifetime === "development_environment"
+          ? { lifecycle: { onTimeout: "pause" as const, autoResume: true } }
+          : {}),
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof CubeRuntimeClientError &&
+        (error.statusCode === 409 || error.statusCode === 429)
+      ) {
+        throw new SandboxCreationError(
+          new SandboxControlError(
+            "sandbox_compute_capacity_exhausted",
+            "Selected Cube profile has no available compute capacity",
+            true,
+            error,
+          ),
+          true,
+        );
+      }
+      throw new SandboxCreationError(error, false);
+    }
+    let nodeId = instance.nodeId;
+    try {
+      nodeId ??= (await this.#client.read(instance.sandboxId))?.nodeId;
+      if (!nodeId) throw new Error("Cube runtime node identity was unavailable");
+      const executionTarget = await this.#client.executionTarget(instance.sandboxId, nodeId);
+      const evidence = await this.#waitForEvidence(instance);
+      this.#assertEvidence(evidence, spec.policy);
+      if (exclusiveMachine) {
+        const preparedMachine = record(
+          await this.#guestJson(
+            instance,
+            { mode: "prepare_exclusive_machine" },
+            { program: "control", runAsToolUser: false, timeoutMs: 15_000 },
+          ),
+          "Cube exclusive machine preparation",
+        );
+        if (preparedMachine.home !== "/home/user") {
+          throw new SandboxControlError(
+            "development_environment_home_invalid",
+            "Exclusive machine home directory could not be prepared",
+            false,
+          );
+        }
+      }
+      const ready = parseToolWorkerOutput(
+        await this.#guestJson(
+          instance,
+          {
+            mode: "initialize",
+            initialization: {
+              toolWorkerProtocolVersion: 2,
+              type: "worker.initialize",
+              activationId: spec.activationId,
+              toolRoot,
+              environment: spec.environment,
+              workspaceSeed: spec.workspaceSeed,
+              webProxy: this.#webProxy,
+            },
+          },
+          {
+            program: "tool",
+            runAsToolUser: true,
+            timeoutMs: this.#readyTimeoutMs,
+          },
+        ),
+      );
+      if (ready.type !== "worker.ready" || ready.activationId !== spec.activationId) {
+        throw new SandboxControlError(
+          "environment_preflight_mismatch",
+          "CubeSandbox environment initialization did not settle",
+          false,
+          ready.type === "worker.failed"
+            ? new SandboxControlError(ready.code, ready.message, ready.retryable)
+            : undefined,
+        );
+      }
+      const toolchain = parseEnvironmentToolchainReport(ready.environment);
+      if (
+        !isExpectedDefaultToolchain(toolchain) ||
+        toolchain.profileKey !== spec.environment.profileKey ||
+        toolchain.profileVersion !== spec.environment.profileVersion ||
+        toolchain.imageRevision !== spec.environment.imageRevision ||
+        toolchain.specSha256 !== spec.environment.specSha256 ||
+        toolchain.recipeSha256 !== spec.environment.recipeSha256
+      ) {
+        throw new SandboxControlError(
+          "environment_preflight_mismatch",
+          "CubeSandbox environment did not match the accepted Run",
+          false,
+        );
+      }
+      const environmentValidation: EnvironmentValidationReport = {
+        ...toolchain,
+        isolationBoundary: "microvm",
+        runtime: CUBESANDBOX_RUNTIME_NAME,
+        networkMode: "public_web_proxy_private_denied",
+        runAsUser: "1000:1000",
+        readOnlyRootFilesystem: false,
+      };
+      const handle: SandboxHandle = Object.freeze({
+        runtimeNodeId: nodeId,
+        providerApiVersion: 1,
+        providerId: this.providerId,
+        activationId: spec.activationId,
+        runtimeId: runtimeUuid(instance.sandboxId),
+        runtimeName: bounded(instance.sandboxId, "CubeSandbox runtime name", 128),
+        ipAddress: evidence.ipAddress,
+        workspaceRoot: toolRoot,
+        assignment: spec.assignment,
+        environment: spec.environment,
+        environmentValidation,
+      });
+      this.#activations.set(spec.activationId, {
+        executionTarget,
+        instance,
+        handle,
+        evidence,
+        toolchain,
+        bindingSha256,
+        authorityEpoch: fencingToken(spec.assignment),
+        state: "running",
+        volumeId,
+        lifetime: spec.lifetime ?? "elastic",
+        toolRoot,
+      });
+      return handle;
+    } catch (error: unknown) {
+      let absent = false;
+      try {
+        await this.#client.destroy(instance.sandboxId);
+        await this.#confirmInstanceAbsent(instance.sandboxId, nodeId);
+        absent = true;
+      } catch {
+        /* Keep the allocation uncertain and retain quota. */
+      }
+      throw new SandboxCreationError(error, absent);
+    }
+  }
+
+  async describeExecution(
+    handle: SandboxHandle,
+    bindingId: string,
+    toolRoot: string,
+  ): Promise<SandboxExecutionDescriptor> {
+    const activation = this.#dataOwned(handle);
+    return {
+      version: 1,
+      target: activation.executionTarget,
+      initialization: this.#attachedInitialization(activation, bindingId, toolRoot),
+    };
+  }
+
+  async stopExecutionScope(
+    target: SandboxExecutionTarget,
+    scope: { runId?: string; writerId?: string; operationId?: string },
+  ): Promise<void> {
+    await this.#client.stopExecutionScope(target, scope);
+  }
+
+  async observeRuntime(
+    handle: SandboxHandle,
+  ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation> {
+    const target = this.#localOwned(handle).executionTarget;
+    const observed = await this.#client.observe(target.sandboxId, target.nodeId);
+    if (observed.presence !== "present" || observed.state !== "running") return observed;
+    try {
+      const current = await this.#client.executionTarget(target.sandboxId, target.nodeId);
+      return { ...observed, execution: current.bootId === target.bootId ? "ready" : "unsafe" };
+    } catch (error) {
+      return {
+        ...observed,
+        execution:
+          error instanceof CubeExecutionRejected && error.code === "runtime_quarantined"
+            ? "unsafe"
+            : "unavailable",
+      };
+    }
+  }
+
+  async openTerminal(
+    handle: SandboxHandle,
+    size: SandboxTerminalSize,
+  ): Promise<SandboxTerminalSession> {
+    const activation = await this.#owned(handle);
+    if (activation.state !== "running") {
+      throw new SandboxControlError(
+        "workspace_terminal_runtime_unavailable",
+        "Workspace terminal runtime was not active",
+        true,
+      );
+    }
+    if (activation.lifetime === "development_environment") {
+      const connected = await this.#client.connect(activation.instance.sandboxId, -1);
+      if (connected.sandboxId !== activation.instance.sandboxId) {
+        throw new SandboxControlError(
+          "development_environment_connect_invalid",
+          "CubeSandbox did not return the expected development environment connection",
+          false,
+        );
+      }
+      // Cube intentionally omits trafficAccessToken and metadata from
+      // connect/resume responses. The create-time token remains the durable
+      // private-ingress authority; #owned() already revalidated physical
+      // metadata immediately before this refresh.
+      activation.instance = Object.freeze({
+        ...activation.instance,
+        ...connected,
+        metadata: activation.instance.metadata,
+        ...(activation.instance.trafficAccessToken === undefined
+          ? {}
+          : { trafficAccessToken: activation.instance.trafficAccessToken }),
+      });
+    }
+    const terminal = await this.#client.openTerminal(activation.instance, {
+      rows: size.rows,
+      cols: size.cols,
+      admin: activation.lifetime === "development_environment",
+    });
+    return Object.freeze({
+      pid: terminal.pid,
+      output: terminal.output,
+      sendInput: (data: Uint8Array) => terminal.sendInput(data),
+      resize: (next: SandboxTerminalSize) => terminal.resize(next),
+      kill: async () => {
+        await terminal.kill();
+      },
+      disconnect: () => terminal.disconnect(),
+    });
+  }
+
+  async openWorkflow(
+    handle: SandboxHandle,
+    input: { script: string; operationId: string; cwd: string },
+  ): Promise<Duplex> {
+    const activation = this.#dataOwned(handle);
+    if (!this.#client.openProgram)
+      throw new SandboxControlError(
+        "workflow_unavailable",
+        "Cube process transport is unavailable",
+        false,
+      );
+    return this.#client.openProgram(activation.instance, {
+      script: workflowGuestSource(input),
+      cwd: input.cwd,
+    });
+  }
+
+  async openPreviewConnection(
+    handle: SandboxHandle,
+    port: number,
+  ): Promise<import("node:stream").Duplex> {
+    const activation = this.#dataOwned(handle);
+    if (
+      (activation.state !== "running" && activation.state !== "idle") ||
+      this.#client.openTcp === undefined
+    ) {
+      throw new SandboxControlError(
+        "sandbox_preview_unavailable",
+        "Application runtime is unavailable",
+        true,
+      );
+    }
+    try {
+      return await this.#client.openTcp(activation.instance, port);
+    } catch (error) {
+      throw new SandboxControlError(
+        error instanceof CubeApplicationPortError
+          ? "sandbox_application_unavailable"
+          : "sandbox_execution_unavailable",
+        error instanceof CubeApplicationPortError
+          ? "The application port is not accepting connections"
+          : "The sandbox execution channel is unavailable",
+        true,
+        error,
+      );
+    }
+  }
+
+  async discoverHttpServices(
+    handle: SandboxHandle,
+    signal?: AbortSignal,
+  ): Promise<SandboxHttpServiceDiscovery> {
+    const activation = this.#dataOwned(handle);
+    if (activation.state !== "running" && activation.state !== "idle") {
+      throw new SandboxControlError(
+        "sandbox_service_discovery_unavailable",
+        "Sandbox HTTP service discovery was unavailable",
+        true,
+      );
+    }
+    const result = await this.#client.runCommand(activation.instance, {
+      command:
+        `/usr/local/bin/node -e ` +
+        `"eval(Buffer.from('${HTTP_SERVICE_DISCOVERY_SCRIPT}','base64').toString('utf8'))"`,
+      cwd: "/",
+      user: "root",
+      timeoutMs: 5_000,
+      maximumOutputBytes: 32 * 1_024,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (result.exitCode !== 0 || result.stderr.length > 0) {
+      throw new SandboxControlError(
+        "sandbox_service_discovery_failed",
+        "Sandbox HTTP service discovery failed",
+        true,
+      );
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(result.stdout);
+    } catch {
+      throw new SandboxControlError(
+        "sandbox_service_discovery_invalid",
+        "Sandbox HTTP service discovery returned invalid evidence",
+        false,
+      );
+    }
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new SandboxControlError(
+        "sandbox_service_discovery_invalid",
+        "Sandbox HTTP service discovery returned invalid evidence",
+        false,
+      );
+    }
+    const candidate = value as Record<string, unknown>;
+    const listeningPorts = candidate.listeningPorts;
+    const httpServices = candidate.httpServices;
+    if (
+      !Array.isArray(listeningPorts) ||
+      listeningPorts.length > 128 ||
+      listeningPorts.some(
+        (port) => !Number.isInteger(port) || Number(port) < 1_024 || Number(port) > 65_535,
+      ) ||
+      new Set(listeningPorts).size !== listeningPorts.length ||
+      !Array.isArray(httpServices) ||
+      httpServices.length > 32 ||
+      httpServices.some(
+        (service) =>
+          typeof service !== "object" ||
+          service === null ||
+          Array.isArray(service) ||
+          !Number.isInteger((service as Record<string, unknown>).port) ||
+          Number((service as Record<string, unknown>).port) < 1_024 ||
+          Number((service as Record<string, unknown>).port) > 65_535 ||
+          (service as Record<string, unknown>).protocol !== "http",
+      )
+    ) {
+      throw new SandboxControlError(
+        "sandbox_service_discovery_invalid",
+        "Sandbox HTTP service discovery returned invalid evidence",
+        false,
+      );
+    }
+    return {
+      listeningPorts: listeningPorts as number[],
+      httpServices: httpServices as Array<{ port: number; protocol: "http" }>,
+    };
+  }
+
+  async listDirectory(
+    handle: SandboxHandle,
+    path: string,
+  ): Promise<import("./sandbox-provider.ts").SandboxDirectoryListing> {
+    const activation = this.#dataOwned(handle);
+    if (activation.state !== "running" && activation.state !== "idle") {
+      throw new SandboxControlError(
+        "development_environment_directory_unavailable",
+        "Exclusive machine must be running before browsing its filesystem",
+        true,
+      );
+    }
+    return sandboxDirectoryListing(
+      await this.#guestJson(
+        activation.instance,
+        { mode: "list_directory", path },
+        { program: "control", runAsToolUser: false, timeoutMs: 15_000 },
+      ),
+    );
+  }
+
+  async createDirectory(
+    handle: SandboxHandle,
+    path: string,
+    name: string,
+  ): Promise<SandboxDirectoryListing> {
+    const activation = this.#dataOwned(handle);
+    if (activation.state !== "running" && activation.state !== "idle") {
+      throw new SandboxControlError(
+        "development_environment_directory_unavailable",
+        "Exclusive machine must be running before changing its filesystem",
+        true,
+      );
+    }
+    if (!validGuestDirectoryName(name)) {
+      throw new SandboxControlError(
+        "development_environment_directory_invalid",
+        "Cube guest directory name was invalid",
+        false,
+      );
+    }
+    return sandboxDirectoryListing(
+      await this.#guestJson(
+        activation.instance,
+        { mode: "create_directory", path, name },
+        { program: "control", runAsToolUser: false, timeoutMs: 15_000 },
+      ),
+    );
+  }
+
+  async pause(handle: SandboxHandle): Promise<void> {
+    const activation = await this.#owned(handle);
+    if (activation.state !== "running" && activation.state !== "idle") {
+      throw new SandboxControlError(
+        "development_environment_pause_invalid",
+        "CubeSandbox development environment cannot be paused from its current state",
+        false,
+      );
+    }
+    await this.#client.pause(activation.instance.sandboxId);
+    activation.state = "paused";
+  }
+
+  async resume(handle: SandboxHandle): Promise<SandboxHandle> {
+    this.#assertHandle(handle);
+    const activation = this.#activations.get(handle.activationId);
+    if (
+      activation === undefined ||
+      activation.handle.runtimeId !== handle.runtimeId ||
+      activation.state !== "paused"
+    ) {
+      throw new SandboxControlError(
+        "development_environment_resume_invalid",
+        "CubeSandbox development environment cannot be resumed from its current state",
+        false,
+      );
+    }
+    const instance = await this.#client.connect(activation.instance.sandboxId, -1);
+    if (instance.sandboxId !== activation.instance.sandboxId) {
+      throw new SandboxControlError(
+        "development_environment_identity_changed",
+        "CubeSandbox changed the development environment identity during resume",
+        false,
+      );
+    }
+    activation.instance = Object.freeze({
+      ...activation.instance,
+      ...instance,
+      metadata: activation.instance.metadata,
+      ...(activation.instance.trafficAccessToken === undefined
+        ? {}
+        : { trafficAccessToken: activation.instance.trafficAccessToken }),
+    });
+    activation.state = "running";
+    return activation.handle;
+  }
+
+  async persistentCapsule(
+    handle: SandboxHandle,
+  ): Promise<import("./sandbox-provider.ts").PersistentSandboxCapsule> {
+    const activation = this.#localOwned(handle);
+    if (this.#persistentCapsules === undefined) {
+      throw new SandboxControlError(
+        "persistent_capsule_key_missing",
+        "Exclusive machine recovery key was not configured",
+        false,
+      );
+    }
+    return {
+      handle: activation.handle,
+      capsule: this.#persistentCapsules.seal({
+        version: 2,
+        executionTarget: activation.executionTarget,
+        imageRevision: activation.evidence.imageRevision,
+        instance: activation.instance,
+        handle: activation.handle,
+        evidence: activation.evidence,
+        toolchain: activation.toolchain,
+        bindingSha256: activation.bindingSha256,
+        authorityEpoch: activation.authorityEpoch,
+        state: activation.state,
+        volumeId: activation.volumeId,
+        lifetime: activation.lifetime,
+        toolRoot: activation.toolRoot,
+        guestBootId: activation.guestBootId,
+        continuityId: activation.continuityId,
+      }),
+    };
+  }
+
+  async adoptPersistentCapsule(capsule: string): Promise<SandboxHandle> {
+    if (this.#persistentCapsules === undefined) {
+      throw new SandboxControlError(
+        "persistent_capsule_key_missing",
+        "Exclusive machine recovery key was not configured",
+        false,
+      );
+    }
+    const raw = record(this.#persistentCapsules.open(capsule), "Cube persistent machine capsule");
+    const instance = raw.instance as CubeSandboxInstance;
+    const handle = raw.handle as SandboxHandle;
+    const evidence = parseEvidence(raw.evidence);
+    const toolchain = raw.toolchain as EnvironmentToolchainReport;
+    if (
+      raw.version !== 2 ||
+      typeof raw.executionTarget !== "object" ||
+      raw.executionTarget === null ||
+      typeof raw.imageRevision !== "string" ||
+      !/^[0-9a-z._-]{1,128}$/.test(raw.imageRevision) ||
+      (raw.lifetime !== "development_environment" && raw.lifetime !== "elastic") ||
+      typeof raw.bindingSha256 !== "string" ||
+      !/^[0-9a-f]{64}$/.test(raw.bindingSha256) ||
+      !Number.isSafeInteger(raw.authorityEpoch) ||
+      (raw.authorityEpoch as number) < 1 ||
+      typeof raw.volumeId !== "string" ||
+      !/^pcw-[0-9a-f]{48}$/.test(raw.volumeId) ||
+      typeof raw.toolRoot !== "string" ||
+      !raw.toolRoot.startsWith("/") ||
+      typeof instance !== "object" ||
+      instance === null ||
+      typeof instance.sandboxId !== "string" ||
+      typeof instance.trafficAccessToken !== "string" ||
+      instance.trafficAccessToken.length < 16 ||
+      typeof handle !== "object" ||
+      handle === null ||
+      typeof evidence !== "object" ||
+      evidence === null ||
+      evidence.imageRevision !== raw.imageRevision ||
+      typeof toolchain !== "object" ||
+      toolchain === null ||
+      toolchain.imageRevision !== raw.imageRevision
+    ) {
+      throw new SandboxControlError(
+        "persistent_capsule_invalid",
+        "Exclusive machine recovery state was invalid",
+        false,
+      );
+    }
+    this.#assertHandle(handle);
+    if (handle.environment.imageRevision !== raw.imageRevision) {
+      throw new SandboxControlError(
+        "persistent_capsule_invalid",
+        "Exclusive machine recovery image identity was inconsistent",
+        false,
+      );
+    }
+    if (this.#activations.has(handle.activationId)) {
+      throw new SandboxControlError(
+        "persistent_capsule_replay",
+        "Exclusive machine was already adopted",
+        false,
+      );
+    }
+    const current = await this.#client.read(handle.runtimeName);
+    if (
+      current === undefined ||
+      runtimeUuid(current.sandboxId) !== handle.runtimeId ||
+      !metadataMatchesPhysicalBinding(
+        current.metadata,
+        handle.activationId,
+        handle.assignment,
+        raw.bindingSha256,
+        raw.imageRevision,
+      )
+    ) {
+      throw new SandboxControlError(
+        "persistent_machine_identity_mismatch",
+        "Exclusive machine physical identity did not match its recovery state",
+        false,
+      );
+    }
+    const recoveredInstance = Object.freeze({
+      ...instance,
+      ...current,
+      metadata: instance.metadata,
+      trafficAccessToken: instance.trafficAccessToken,
+    });
+    const state = current.state.toLowerCase();
+    if (state !== "paused" && state !== "running") {
+      throw new SandboxControlError(
+        "cubesandbox_tool_unavailable",
+        "Development machine is not ready for execution",
+        false,
+      );
+    }
+    const executionTarget = raw.executionTarget as SandboxExecutionTarget;
+    if (
+      executionTarget.sandboxId !== instance.sandboxId ||
+      typeof executionTarget.nodeId !== "string" ||
+      typeof executionTarget.bootId !== "string" ||
+      !/^[0-9a-f-]{36}$/.test(executionTarget.bootId)
+    )
+      throw new SandboxControlError(
+        "persistent_capsule_invalid",
+        "Runtime executor identity was invalid",
+        false,
+      );
+    this.#activations.set(handle.activationId, {
+      executionTarget,
+      instance: recoveredInstance,
+      handle,
+      evidence,
+      toolchain,
+      bindingSha256: raw.bindingSha256,
+      authorityEpoch: raw.authorityEpoch as number,
+      state,
+      volumeId: raw.volumeId,
+      lifetime: raw.lifetime,
+      toolRoot: raw.toolRoot,
+      ...(typeof raw.guestBootId === "string" ? { guestBootId: raw.guestBootId } : {}),
+      ...(typeof raw.continuityId === "string" ? { continuityId: raw.continuityId } : {}),
+    });
+    if (state === "running") {
+      try {
+        await this.probeExecution(handle);
+      } catch (error) {
+        this.#activations.delete(handle.activationId);
+        throw error;
+      }
+    }
+    return handle;
+  }
+
+  async probeExecution(handle: SandboxHandle): Promise<{ continuityId: string }> {
+    try {
+      const activation = await this.#owned(handle);
+      if (activation.instance.state.toLowerCase() !== "running") {
+        throw new Error("Guest is not running");
+      }
+      const executor = await this.#client.executionTarget(
+        activation.executionTarget.sandboxId,
+        activation.executionTarget.nodeId,
+      );
+      if (executor.bootId !== activation.executionTarget.bootId)
+        throw new Error("Cube executor changed; prior scope stopping is unconfirmed");
+      const result = await this.#client.runCommand(activation.instance, {
+        command: `/usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node -e 'const fs=require("node:fs");fs.accessSync("/opt/pi-cloud/bin/envd-tool-exec.mjs",fs.constants.R_OK);process.stdout.write(fs.readFileSync("/proc/sys/kernel/random/boot_id","utf8"));'`,
+        cwd: "/",
+        user: "root",
+        timeoutMs: 10_000,
+        maximumOutputBytes: 1024,
+      });
+      const bootId = result.stdout.trim();
+      if (result.exitCode !== 0 || !/^[0-9a-f-]{36}$/.test(bootId)) {
+        throw new Error("Guest execution probe did not complete successfully");
+      }
+      if (activation.guestBootId !== undefined && activation.guestBootId !== bootId) {
+        activation.continuityId = runtimeUuid(`${handle.runtimeName}:${bootId}`);
+      }
+      activation.guestBootId = bootId;
+      activation.state = "running";
+      return { continuityId: activation.continuityId ?? handle.runtimeId };
+    } catch (error) {
+      throw new SandboxControlError(
+        "cubesandbox_tool_unavailable",
+        "Development machine execution is unavailable; its state was retained for recovery",
+        false,
+        error,
+      );
+    }
+  }
+
+  async detachPersistent(handle: SandboxHandle): Promise<void> {
+    this.#localOwned(handle);
+    this.#activations.delete(handle.activationId);
+  }
+
+  async destroyPersistentCapsule(
+    capsule: string,
+    activationId: string,
+    assignment: ToolSandboxAssignment,
+  ): Promise<void> {
+    if (!this.#persistentCapsules) throw new Error("Runtime recovery key is unavailable");
+    const raw = record(this.#persistentCapsules.open(capsule), "Runtime recovery capsule");
+    const handle = raw.handle as SandboxHandle;
+    const target = raw.executionTarget as SandboxExecutionTarget;
+    this.#assertHandle(handle);
+    if (
+      raw.version !== 2 ||
+      handle.activationId !== activationId ||
+      !sameWorkspace(handle.assignment, assignment) ||
+      target?.sandboxId !== handle.runtimeName ||
+      typeof target.nodeId !== "string"
+    )
+      throw new SandboxControlError(
+        "tool_sandbox_identity_mismatch",
+        "Runtime recovery identity changed",
+        false,
+      );
+    await this.#client.destroy(target.sandboxId);
+    await this.#confirmInstanceAbsent(target.sandboxId, target.nodeId);
+    this.#activations.delete(activationId);
+  }
+
+  async destroy(handle: SandboxHandle): Promise<void> {
+    this.#assertHandle(handle);
+    const owned = this.#activations.get(handle.activationId);
+    if (owned) this.#localOwned(handle);
+    else {
+      const current = await this.#client.read(handle.runtimeName);
+      if (
+        current &&
+        !metadataMatchesPhysicalBinding(
+          current.metadata,
+          handle.activationId,
+          handle.assignment,
+          physicalBindingSha256(handle.activationId, handle.assignment, handle.environment),
+          handle.environment.imageRevision,
+        )
+      )
+        throw new SandboxControlError(
+          "tool_sandbox_identity_mismatch",
+          "Runtime cleanup identity changed",
+          false,
+        );
+    }
+    await this.#client.destroy(handle.runtimeName);
+    await this.#confirmInstanceAbsent(handle.runtimeName, handle.runtimeNodeId);
+    this.#activations.delete(handle.activationId);
+  }
+
+  async inspect(handle: SandboxHandle): Promise<SandboxInspection> {
+    this.#assertHandle(handle);
+    const instance = await this.#client.read(handle.runtimeName);
+    if (instance === undefined) {
+      await this.#confirmInstanceAbsent(handle.runtimeName, handle.runtimeNodeId);
+      return { providerApiVersion: 1, providerId: this.providerId, state: "absent", handle };
+    }
+    if (
+      runtimeUuid(instance.sandboxId) !== handle.runtimeId ||
+      !metadataMatchesPhysicalBinding(
+        instance.metadata,
+        handle.activationId,
+        handle.assignment,
+        physicalBindingSha256(handle.activationId, handle.assignment, handle.environment),
+        handle.environment.imageRevision,
+      )
+    ) {
+      throw new SandboxControlError(
+        "tool_sandbox_identity_mismatch",
+        "CubeSandbox inspection identity did not match",
+        false,
+      );
+    }
+    const activation = this.#activations.get(handle.activationId);
+    const evidence = activation?.evidence ?? (await this.#waitForEvidence(instance));
+    return {
+      providerApiVersion: 1,
+      providerId: this.providerId,
+      state: instance.state,
+      handle,
+      effectiveIsolation: effectiveIsolation(evidence, this.defaultPolicy),
+    };
+  }
+
+  async listWorkspaceDirectory(
+    request: SandboxControlListWorkspaceDirectoryRequest,
+  ): Promise<SandboxControlListWorkspaceDirectoryResponse> {
+    const volumeId = workspaceVolumeId(request);
+    const listed = await this.#workspaceVolumeGateway.listDirectory({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.sessionId,
+      volumeId,
+      rootPath: request.rootPath,
+      path: request.path,
+    });
+    return parseSandboxControlListWorkspaceDirectoryResponse({
+      toolBrokerProtocolVersion: 1,
+      type: "workspace.directory_listed",
+      requestId: request.requestId,
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      path: request.path,
+      entries: listed.entries,
+      truncated: listed.truncated,
+    });
+  }
+
+  async prepareInputImage(
+    handle: SandboxHandle,
+    bytes: Uint8Array,
+    mimeType: string,
+    signal?: AbortSignal,
+  ) {
+    const activation = this.#dataOwned(handle);
+    const envelope = record(
+      await this.#guestJson(
+        activation.instance,
+        { mode: "normalize_image", data: Buffer.from(bytes).toString("base64"), mimeType },
+        {
+          program: "input",
+          runAsToolUser: true,
+          timeoutMs: 30_000,
+          maximumOutputBytes: MAX_IMAGE_GUEST_RESPONSE_BYTES,
+          ...(signal ? { signal } : {}),
+        },
+      ),
+      "Input image result",
+    );
+    if (envelope.ok !== true)
+      throw new SandboxControlError(
+        "input_image_invalid",
+        "Uploaded image could not be decoded within its limits",
+        false,
+      );
+    const result = record(envelope.result, "Prepared input image");
+    if (
+      typeof result.data !== "string" ||
+      result.mimeType !== "image/png" ||
+      !Array.isArray(result.hints) ||
+      result.hints.length > 4 ||
+      result.hints.some((hint) => typeof hint !== "string" || hint.length > 1024)
+    )
+      throw new Error("Prepared image metadata is invalid");
+    return {
+      mimeType: "image/png" as const,
+      data: bounded(result.data, "Prepared image bytes", MAX_IMAGE_GUEST_RESPONSE_BYTES),
+      hints: result.hints as string[],
+    };
+  }
+
+  async uploadMachineWorkspaceFile(
+    handle: SandboxHandle,
+    request: WorkspaceUploadRequest,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ) {
+    const activation = this.#dataOwned(handle);
+    const envelope = record(
+      await this.#guestJson(
+        activation.instance,
+        {
+          mode: "upload_file",
+          directory: request.machine!.directory,
+          id: request.uploadId,
+          name: request.name,
+          sha256: request.sha256,
+          data: Buffer.from(bytes).toString("base64"),
+        },
+        { program: "input", runAsToolUser: true, timeoutMs: 30_000, ...(signal ? { signal } : {}) },
+      ),
+      "Upload result",
+    );
+    if (envelope.ok !== true)
+      throw new SandboxControlError(
+        "workspace_upload_failed",
+        "Workspace file could not be placed safely",
+        false,
+      );
+    const receipt =
+      envelope.result as import("./workspace-volume-gateway-contract.ts").WorkspaceUploadReceipt;
+    if (receipt.sha256 !== request.sha256 || receipt.byteLength !== bytes.length)
+      throw new Error("Upload receipt changed identity");
+    return receipt;
+  }
+
+  async uploadWorkspaceFile(
+    request: WorkspaceUploadRequest,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ) {
+    if (!this.#workspaceVolumeGateway.uploadFile)
+      throw new Error("Workspace uploads are unavailable");
+    signal?.throwIfAborted();
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    return this.#workspaceVolumeGateway.uploadFile(
+      {
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        sessionId: request.sessionId,
+        volumeId,
+        rootPath: request.rootPath,
+        uploadId: request.uploadId,
+        name: request.name,
+        sha256: request.sha256,
+        claimToken: request.claimToken,
+      },
+      bytes,
+      signal,
+    );
+  }
+
+  async readWorkspaceFile(
+    request: SandboxControlReadWorkspaceFileRequest,
+    signal?: AbortSignal,
+  ): Promise<SandboxControlReadWorkspaceFileResponse> {
+    if (signal?.aborted) {
+      throw new SandboxControlError(
+        "workspace_read_cancelled",
+        "Workspace file read was cancelled",
+        false,
+      );
+    }
+    const volumeId = workspaceVolumeId(request);
+    const file = await this.#workspaceVolumeGateway.readFile({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.sessionId,
+      volumeId,
+      rootPath: request.rootPath,
+      path: request.path,
+      maximumBytes: request.maximumBytes,
+    });
+    if (signal?.aborted) {
+      throw new SandboxControlError(
+        "workspace_read_cancelled",
+        "Workspace file read was cancelled",
+        false,
+      );
+    }
+    return parseSandboxControlReadWorkspaceFileResponse({
+      toolBrokerProtocolVersion: 1,
+      type: "workspace.file_read",
+      requestId: request.requestId,
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      path: request.path,
+      content: Buffer.from(file.bytes).toString("base64"),
+      sha256: file.sha256,
+      executable: file.executable,
+      sizeBytes: file.bytes.byteLength,
+    });
+  }
+
+  async listMachineWorkspaceDirectory(
+    handle: SandboxHandle,
+    request: SandboxControlListWorkspaceDirectoryRequest,
+  ): Promise<SandboxControlListWorkspaceDirectoryResponse> {
+    const activation = this.#dataOwned(handle);
+    const data = await browseCubeWorkspace(this.#client, activation.instance, request);
+    return parseSandboxControlListWorkspaceDirectoryResponse({
+      toolBrokerProtocolVersion: 1,
+      type: "workspace.directory_listed",
+      requestId: request.requestId,
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      path: request.path,
+      ...data,
+    });
+  }
+
+  async readMachineWorkspaceFile(
+    handle: SandboxHandle,
+    request: SandboxControlReadWorkspaceFileRequest,
+  ): Promise<SandboxControlReadWorkspaceFileResponse> {
+    const activation = this.#dataOwned(handle);
+    const data = await browseCubeWorkspace(this.#client, activation.instance, request);
+    return parseSandboxControlReadWorkspaceFileResponse({
+      toolBrokerProtocolVersion: 1,
+      type: "workspace.file_read",
+      requestId: request.requestId,
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      path: request.path,
+      ...data,
+    });
+  }
+
+  async authorizeSourceCredential(
+    request: SourceControlWorkspaceCredentialAuthorizeRequest,
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    const authorize = this.#workspaceVolumeGateway.authorizeSourceCredential;
+    if (authorize === undefined) {
+      throw new SandboxControlError(
+        "source_control_credential_unavailable",
+        "Workspace Git credential authorization is unavailable",
+        false,
+      );
+    }
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#workspaceVolumeGateway.verify({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+    });
+    await authorize.call(this.#workspaceVolumeGateway, {
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+      requestId: request.requestId,
+      provider: request.provider,
+      origin: request.origin,
+      credentialMountPath: request.credentialMountPath,
+      accessToken: request.accessToken,
+    });
+    return {
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_result",
+      requestId: request.requestId,
+      workspaceId: request.workspaceId,
+      origin: request.origin,
+      authorized: true,
+    };
+  }
+
+  async preflightSourceCredential(
+    request: SourceControlWorkspaceCredentialPreflightRequest,
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    const preflight = this.#workspaceVolumeGateway.preflightSourceCredential;
+    if (preflight === undefined) {
+      throw new SandboxControlError(
+        "source_control_credential_unavailable",
+        "Workspace Git credential preflight is unavailable",
+        false,
+      );
+    }
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#workspaceVolumeGateway.verify({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+    });
+    const result = await preflight.call(this.#workspaceVolumeGateway, {
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+      requestId: request.requestId,
+      provider: request.provider,
+      origin: request.origin,
+      verificationCloneUrl: request.verificationCloneUrl,
+      credentialMountPath: request.credentialMountPath,
+    });
+    return {
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_result",
+      requestId: request.requestId,
+      workspaceId: request.workspaceId,
+      origin: request.origin,
+      authorized: result.authorized,
+      ...(result.reason === undefined ? {} : { reason: result.reason }),
+    };
+  }
+
+  async listSourceCredentials(
+    request: SourceControlWorkspaceCredentialListRequest,
+  ): Promise<SourceControlWorkspaceCredentialListResponse> {
+    const list = this.#workspaceVolumeGateway.listSourceCredentials;
+    if (list === undefined) {
+      throw new SandboxControlError(
+        "source_control_credential_unavailable",
+        "Workspace Git credential listing is unavailable",
+        false,
+      );
+    }
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#workspaceVolumeGateway.verify({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+    });
+    const result = await list.call(this.#workspaceVolumeGateway, {
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+      requestId: request.requestId,
+      credentialMountPath: request.credentialMountPath,
+    });
+    return {
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_listed",
+      requestId: request.requestId,
+      workspaceId: request.workspaceId,
+      connections: [...result.connections],
+    };
+  }
+
+  async disconnectSourceCredential(
+    request: SourceControlWorkspaceCredentialDisconnectRequest,
+  ): Promise<SourceControlWorkspaceCredentialDisconnectResponse> {
+    const disconnect = this.#workspaceVolumeGateway.disconnectSourceCredential;
+    if (disconnect === undefined) {
+      throw new SandboxControlError(
+        "source_control_credential_unavailable",
+        "Workspace Git credential disconnection is unavailable",
+        false,
+      );
+    }
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#workspaceVolumeGateway.verify({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+    });
+    const result = await disconnect.call(this.#workspaceVolumeGateway, {
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+      requestId: request.requestId,
+      provider: request.provider,
+      origin: request.origin,
+      credentialMountPath: request.credentialMountPath,
+    });
+    return {
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_disconnected",
+      requestId: request.requestId,
+      workspaceId: request.workspaceId,
+      provider: request.provider,
+      origin: request.origin,
+      disconnected: result.disconnected,
+    };
+  }
+
+  async destroyRuntime(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
+    const activation = this.#activations.get(activationId);
+    if (activation !== undefined) {
+      if (!sameWorkspace(activation.handle.assignment, assignment)) {
+        throw new SandboxControlError(
+          "tool_sandbox_identity_mismatch",
+          "CubeSandbox assignment identity did not match",
+          false,
+        );
+      }
+      await this.destroy(activation.handle);
+      return;
+    }
+    const matches = (await this.#client.list()).filter((instance) =>
+      metadataMatchesOrphanIdentity(instance.metadata, activationId, assignment),
+    );
+    if (matches.length > 1) {
+      throw new SandboxControlError(
+        "cubesandbox_inventory_ambiguous",
+        "CubeSandbox activation inventory was ambiguous",
+        false,
+      );
+    }
+    if (matches[0] !== undefined) {
+      await this.#client.destroy(matches[0].sandboxId);
+      await this.#confirmInstanceAbsent(matches[0].sandboxId, matches[0].nodeId);
+    } else
+      throw new SandboxControlError(
+        "cubesandbox_absence_unconfirmed",
+        "Missing cluster inventory is not node-anchored absence",
+        false,
+      );
+  }
+
+  async #confirmInstanceAbsent(sandboxId: string, nodeId: string | undefined): Promise<void> {
+    if (!nodeId || (await this.#client.observe(sandboxId, nodeId)).presence !== "absent") {
+      throw new SandboxControlError(
+        "cubesandbox_assignment_still_alive",
+        "CubeSandbox absence could not be confirmed",
+        false,
+      );
+    }
+  }
+
+  async close(): Promise<void> {
+    // Resource release is an explicit controller action. Closing transports must
+    // not kill accepted Cube executions or a shared Workspace's background server.
+    this.#activations.clear();
+    const results = await Promise.allSettled([
+      this.#client.close(),
+      this.#workspaceVolumeGateway.close(),
+    ]);
+    const errors = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (errors.length) throw new AggregateError(errors, "Cube transport cleanup failed");
+  }
+
+  async #probeRuntime(): Promise<void> {
+    const instance = await this.#client.create({
+      templateId: this.#templateId,
+      timeoutSeconds: 60,
+      metadata: {
+        [METADATA.managed]: "true",
+        [METADATA.provider]: this.providerId,
+        [METADATA.workload]: "runtime-probe",
+        [METADATA.imageRevision]: this.#imageRevision,
+      },
+      allowInternetAccess: true,
+      allowPublicTraffic: false,
+    });
+    try {
+      this.#assertEvidence(await this.#waitForEvidence(instance), this.defaultPolicy);
+      const nodeId = instance.nodeId ?? (await this.#client.read(instance.sandboxId))?.nodeId;
+      if (!nodeId) throw new Error("Cube execution node identity is unavailable");
+      await this.#client.executionTarget(instance.sandboxId, nodeId);
+    } finally {
+      await this.#client.destroy(instance.sandboxId);
+    }
+  }
+
+  async #waitForEvidence(instance: CubeSandboxInstance): Promise<CubeRuntimeEvidence> {
+    const deadline = Date.now() + this.#readyTimeoutMs;
+    let lastError: unknown;
+    while (Date.now() < deadline) {
+      try {
+        const response = record(
+          await this.#guestJson(
+            instance,
+            { mode: "evidence" },
+            {
+              program: "control",
+              runAsToolUser: true,
+              timeoutMs: Math.min(5_000, this.#readyTimeoutMs),
+            },
+          ),
+          "CubeSandbox evidence",
+        );
+        return parseEvidence(response.evidence);
+      } catch (error: unknown) {
+        lastError = error;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+    throw new SandboxControlError(
+      "cubesandbox_data_plane_unavailable",
+      "CubeSandbox Tool data plane did not become ready",
+      true,
+      lastError,
+    );
+  }
+
+  #assertEvidence(evidence: CubeRuntimeEvidence, policy: SandboxPolicy): void {
+    if (
+      evidence.controlProtocolVersion !== 2 ||
+      evidence.imageRevision !== this.#imageRevision ||
+      evidence.uid !== 1_000 ||
+      evidence.gid !== 1_000 ||
+      evidence.supervisorUid !== 0 ||
+      evidence.supervisorGid !== 0 ||
+      evidence.cpuCount * 1_000_000_000 < policy.resources.cpuNano ||
+      evidence.memoryBytes < Math.floor(policy.resources.memoryBytes * 0.9) ||
+      !evidence.hypervisorFlag ||
+      !evidence.noNewPrivileges ||
+      !/^0+$/.test(evidence.effectiveCapabilities) ||
+      evidence.readOnlyRootFilesystem
+    ) {
+      throw new SandboxControlError(
+        "cubesandbox_isolation_mismatch",
+        "CubeSandbox runtime evidence did not satisfy the required policy",
+        false,
+      );
+    }
+  }
+
+  #localOwned(handle: SandboxHandle): CubeActivation {
+    this.#assertHandle(handle);
+    const activation = this.#activations.get(handle.activationId);
+    if (
+      activation === undefined ||
+      activation.handle.runtimeId !== handle.runtimeId ||
+      activation.handle.runtimeName !== handle.runtimeName ||
+      !sameAssignment(activation.handle.assignment, handle.assignment)
+    ) {
+      throw new SandboxControlError(
+        "tool_sandbox_identity_mismatch",
+        "CubeSandbox handle identity did not match",
+        false,
+      );
+    }
+    return activation;
+  }
+
+  #dataOwned(handle: SandboxHandle): CubeActivation {
+    const activation = this.#localOwned(handle);
+    // The verified create/recovery handle pins the private ingress token and
+    // Sandbox-ID host. Reusing an IP cannot authenticate as this Sandbox.
+    if (
+      !activation.instance.trafficAccessToken ||
+      (activation.state !== "running" && activation.state !== "idle")
+    )
+      throw new SandboxControlError(
+        "tool_sandbox_unavailable",
+        "Verified Sandbox data channel is unavailable",
+        false,
+      );
+    return activation;
+  }
+
+  async #owned(handle: SandboxHandle): Promise<CubeActivation> {
+    const activation = this.#localOwned(handle);
+    const current = await this.#client.read(handle.runtimeName);
+    if (
+      current === undefined ||
+      runtimeUuid(current.sandboxId) !== handle.runtimeId ||
+      !metadataMatchesPhysicalBinding(
+        current.metadata,
+        handle.activationId,
+        handle.assignment,
+        activation.bindingSha256,
+        activation.evidence.imageRevision,
+      )
+    ) {
+      throw new SandboxControlError(
+        "tool_sandbox_identity_mismatch",
+        "CubeSandbox runtime identity did not match",
+        false,
+      );
+    }
+    activation.instance = { ...activation.instance, ...current };
+    return activation;
+  }
+
+  #assertHandle(handle: SandboxHandle): void {
+    if (
+      handle.providerApiVersion !== 1 ||
+      handle.providerId !== this.providerId ||
+      typeof handle.runtimeNodeId !== "string" ||
+      handle.runtimeNodeId.length < 1 ||
+      handle.runtimeNodeId.length > 256 ||
+      handle.workspaceRoot.length < 1 ||
+      handle.workspaceRoot.length > 4_096 ||
+      !handle.workspaceRoot.startsWith("/") ||
+      /[\u0000-\u001f\u007f]/u.test(handle.workspaceRoot) ||
+      handle.runtimeId !== runtimeUuid(handle.runtimeName)
+    ) {
+      throw new SandboxControlError(
+        "tool_sandbox_identity_mismatch",
+        "CubeSandbox handle shape did not match",
+        false,
+      );
+    }
+  }
+}

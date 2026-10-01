@@ -90,19 +90,19 @@ assert(
   ),
   "Control Plane image must include the Session mutation projector dependency",
 );
-const [controlPlanePackage, toolBrokerPackage] = await Promise.all(
-  ["control-plane", "tool-broker"].map(async (name) =>
+const [controlPlanePackage, sandboxControlPackage] = await Promise.all(
+  ["control-plane", "sandbox-control"].map(async (name) =>
     JSON.parse(await readFile(resolve(packagesDirectory, name, "package.json"), "utf8")),
   ),
 );
 assert.equal(
   controlPlanePackage.dependencies.undici,
-  toolBrokerPackage.dependencies.undici,
-  "Control Plane and Tool Broker must share one root-resolvable trusted undici version",
+  sandboxControlPackage.dependencies.undici,
+  "Control Plane and Sandbox control must share one root-resolvable trusted undici version",
 );
 assert(
-  !dockerfile.includes("/app/packages/tool-broker/node_modules"),
-  "Supervisor image must not depend on an npm-hoisting-specific Tool Broker node_modules path",
+  !dockerfile.includes("/app/packages/sandbox-control/node_modules"),
+  "Supervisor image must not depend on an npm-hoisting-specific Sandbox control node_modules path",
 );
 assert(
   dockerfile.includes("await import('./src/subagent-tool.ts')") &&
@@ -112,6 +112,8 @@ assert(
 
 const dockerfileCandidates = [
   resolve(repositoryRoot, "deploy", "cubesandbox", "Dockerfile.tool"),
+  resolve(repositoryRoot, "deploy", "cubesandbox", "Dockerfile.cubelet"),
+  resolve(packagesDirectory, "sandbox-control", "Dockerfile.volume-gateway"),
   ...packageDirectories
     .filter((entry) => entry.isDirectory())
     .map((entry) => resolve(packagesDirectory, entry.name, "Dockerfile")),

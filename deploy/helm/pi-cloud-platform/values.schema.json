@@ -137,7 +137,7 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["controlPlane", "web", "toolBroker", "sshGateway"],
+      "required": ["controlPlane", "web", "workspaceVolumeGateway", "sshGateway"],
       "properties": {
         "controlPlane": {
           "$ref": "#/$defs/image"
@@ -145,10 +145,10 @@
         "web": {
           "$ref": "#/$defs/image"
         },
-        "toolBroker": {
+        "sshGateway": {
           "$ref": "#/$defs/image"
         },
-        "sshGateway": {
+        "workspaceVolumeGateway": {
           "$ref": "#/$defs/image"
         }
       }
@@ -408,7 +408,6 @@
       "additionalProperties": false,
       "required": [
         "domainId",
-        "toolBrokerReplicas",
         "volumeGatewayReplicas",
         "volumeGatewayMaximumConcurrentOperations",
         "volumeGatewayMaximumQueuedOperations",
@@ -422,17 +421,12 @@
         "workspace",
         "state",
         "cube",
-        "toolBrokerResources",
-        "volumeGatewayResources"
+        "volumeGatewayResources",
+        "volumeGatewayUrl"
       ],
       "properties": {
         "domainId": {
           "$ref": "#/$defs/boundedText"
-        },
-        "toolBrokerReplicas": {
-          "type": "integer",
-          "minimum": 3,
-          "maximum": 64
         },
         "volumeGatewayReplicas": {
           "type": "integer",
@@ -585,14 +579,36 @@
               "type": "integer",
               "minimum": 1000,
               "maximum": 300000
+            },
+            "executionEndpoints": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "type": "object",
+                "required": ["apiUrl", "apiKeySecretKey"],
+                "additionalProperties": false,
+                "properties": {
+                  "apiUrl": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 2048
+                  },
+                  "apiKeySecretKey": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9._-]{1,128}$"
+                  }
+                }
+              }
             }
           }
         },
-        "toolBrokerResources": {
-          "$ref": "#/$defs/resources"
-        },
         "volumeGatewayResources": {
           "$ref": "#/$defs/resources"
+        },
+        "volumeGatewayUrl": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 2048
         }
       }
     },
@@ -630,7 +646,7 @@
         "id",
         "displayName",
         "state",
-        "toolBrokerBaseUrl",
+        "sandboxControlBaseUrl",
         "workspaceStorageKey",
         "maximumActiveSandboxes"
       ],
@@ -648,7 +664,7 @@
           "type": "string",
           "enum": ["active", "draining", "disabled"]
         },
-        "toolBrokerBaseUrl": {
+        "sandboxControlBaseUrl": {
           "$ref": "#/$defs/httpUrl"
         },
         "workspaceStorageKey": {

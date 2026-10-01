@@ -77,7 +77,7 @@ describe("credential-free Tool Sandbox worker", () => {
 
   it("constructs a fixed subprocess environment without inheriting trusted credentials", () => {
     process.env.PI_CLOUD_RUNTIME_API_KEY = "pcmg_should-never-cross";
-    process.env.PI_CLOUD_TOOL_BROKER_TOKEN = "manager-should-never-cross";
+    process.env.PI_CLOUD_SANDBOX_CONTROL_TOKEN = "manager-should-never-cross";
     process.env.DATABASE_URL = "postgresql://should-never-cross";
     try {
       const environment = safeToolEnvironment();
@@ -102,7 +102,7 @@ describe("credential-free Tool Sandbox worker", () => {
       expect(JSON.stringify(environment)).not.toMatch(/pcmg_|manager-should|postgresql:/);
     } finally {
       delete process.env.PI_CLOUD_RUNTIME_API_KEY;
-      delete process.env.PI_CLOUD_TOOL_BROKER_TOKEN;
+      delete process.env.PI_CLOUD_SANDBOX_CONTROL_TOKEN;
       delete process.env.DATABASE_URL;
     }
   });
@@ -196,7 +196,7 @@ describe("credential-free Tool Sandbox worker", () => {
   it("attaches an existing persistent Volume independently of its original seed kind", async () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-volume-authority-"));
     const base = {
-      toolWorkerProtocolVersion: 1 as const,
+      toolWorkerProtocolVersion: 2 as const,
       type: "worker.initialize" as const,
       activationId: "10000000-0000-4000-8000-000000000001",
       toolRoot: workspace,
@@ -224,7 +224,7 @@ describe("credential-free Tool Sandbox worker", () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-seed-safe-"));
     try {
       await attachToolExecution({
-        toolWorkerProtocolVersion: 1,
+        toolWorkerProtocolVersion: 2,
         type: "worker.initialize",
         activationId: "10000000-0000-4000-8000-000000000001",
         toolRoot: workspace,

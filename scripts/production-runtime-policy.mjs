@@ -140,20 +140,20 @@ export function validateProductionRuntimeEnvironment(environment) {
 
   const ownershipLeaseMs = integer(
     environment,
-    "PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS",
+    "PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS",
     15_000,
     3_000,
     300_000,
   );
   const ownershipHeartbeatMs = integer(
     environment,
-    "PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS",
+    "PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS",
     5_000,
     1_000,
     60_000,
   );
   if (ownershipHeartbeatMs * 2 >= ownershipLeaseMs) {
-    throw new Error("Tool Broker heartbeat must leave lease failure margin");
+    throw new Error("Sandbox control heartbeat must leave lease failure margin");
   }
   integer(environment, "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES", 3, 1, 1_000);
   integer(environment, "PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES", 4, 1, 1_000);

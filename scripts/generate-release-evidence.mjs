@@ -24,12 +24,18 @@ const TRIVY_IGNORE_POLICY = resolve(repositoryRoot, ".trivyignore.yaml");
 const PRODUCTION_IMAGE_NAMES = [
   "control-plane",
   "supervisor-host",
-  "tool-broker",
+  "workspace-volume-gateway",
   "web-ui",
   "provider-egress-relay",
   "ssh-gateway",
 ];
-const CUBE_PLATFORM_IMAGES = ["cube-api-authorizer", "cube-egress-gateway"];
+const CUBE_PLATFORM_IMAGES = [
+  "cube-api-authorizer",
+  "cube-egress-gateway",
+  "cube-api",
+  "cube-master",
+  "cubelet",
+];
 const MAX_CAPTURE_BYTES = 64 * 1_024 * 1_024;
 
 function parseArguments(argv) {

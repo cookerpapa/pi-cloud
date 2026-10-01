@@ -1,5 +1,5 @@
 services:
-  tool-broker:
+  control-plane:
     depends_on:
       cube-api-relay:
         condition: service_healthy
@@ -28,9 +28,9 @@ services:
       - cube-control
 
   cube-api-relay:
-    image: pi-cloud/tool-broker:${PI_CLOUD_IMAGE_VERSION:-production}
+    image: pi-cloud/workspace-volume-gateway:${PI_CLOUD_IMAGE_VERSION:-production}
     restart: unless-stopped
-    command: [/app/packages/tool-broker/src/fixed-tcp-relay.ts]
+    command: [/app/packages/sandbox-control/src/fixed-tcp-relay.ts]
     environment:
       PI_CLOUD_FIXED_RELAY_LISTEN_PORT: "3000"
       PI_CLOUD_FIXED_RELAY_UPSTREAM_HOST: ${PI_CLOUD_CUBESANDBOX_API_NODE_IP:?set the private CubeAPI node IP}
@@ -65,9 +65,9 @@ services:
     stop_grace_period: 10s
 
   cube-proxy-relay:
-    image: pi-cloud/tool-broker:${PI_CLOUD_IMAGE_VERSION:-production}
+    image: pi-cloud/workspace-volume-gateway:${PI_CLOUD_IMAGE_VERSION:-production}
     restart: unless-stopped
-    command: [/app/packages/tool-broker/src/fixed-tcp-relay.ts]
+    command: [/app/packages/sandbox-control/src/fixed-tcp-relay.ts]
     environment:
       PI_CLOUD_FIXED_RELAY_LISTEN_PORT: "8080"
       PI_CLOUD_FIXED_RELAY_UPSTREAM_HOST: ${PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP:?set the private CubeProxy node IP}

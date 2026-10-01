@@ -124,7 +124,7 @@ beforeAll(async () => {
       id: "sandbox-domain-subagent",
       display_name: "test",
       state: "active",
-      tool_broker_base_url: "http://broker.internal",
+      sandbox_control_base_url: "http://broker.internal",
       workspace_storage_key: "test",
       maximum_active_sandboxes: 16,
     })

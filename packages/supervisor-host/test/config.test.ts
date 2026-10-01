@@ -28,10 +28,10 @@ async function validEnvironment(root: string): Promise<Record<string, string>> {
       "timing-management",
       `manage-${"m".repeat(48)}`,
     ),
-    PI_CLOUD_TOOL_BROKER_TOKEN_FILE: await secret(
+    PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE: await secret(
       root,
-      "timing-tool-broker",
-      `tool-broker-${"s".repeat(48)}`,
+      "timing-sandbox-control",
+      `sandbox-control-${"s".repeat(48)}`,
     ),
     PI_CLOUD_PROVIDER_GATEWAY_URL: "http://provider-gateway:8317",
     PI_CLOUD_PROVIDER_GATEWAY_API_KEY_FILE: await secret(
@@ -44,7 +44,7 @@ async function validEnvironment(root: string): Promise<Record<string, string>> {
       "timing-database",
       "postgresql://picloud:secret@postgres:5432/picloud",
     ),
-    PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
+    PI_CLOUD_SANDBOX_CONTROL_URLS: "http://sandbox-control:4300",
     PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: "/workspace",
     PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
     PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092,kafka-3:9092",
@@ -95,10 +95,10 @@ describe("Supervisor host production configuration", () => {
         "management",
         `manage-${"m".repeat(48)}`,
       ),
-      PI_CLOUD_TOOL_BROKER_TOKEN_FILE: await secret(
+      PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE: await secret(
         root,
-        "tool-broker",
-        `tool-broker-${"s".repeat(48)}`,
+        "sandbox-control",
+        `sandbox-control-${"s".repeat(48)}`,
       ),
       PI_CLOUD_PROVIDER_GATEWAY_URL: "http://provider-gateway:8317",
       PI_CLOUD_PROVIDER_GATEWAY_API_KEY_FILE: await secret(
@@ -111,7 +111,7 @@ describe("Supervisor host production configuration", () => {
         "database",
         "postgresql://picloud:secret@postgres:5432/picloud",
       ),
-      PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
+      PI_CLOUD_SANDBOX_CONTROL_URLS: "http://sandbox-control:4300",
       PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: "/workspace",
       PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
       PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092,kafka-3:9092",
@@ -131,7 +131,7 @@ describe("Supervisor host production configuration", () => {
       databaseNotificationUrl: "postgresql://picloud:secret@postgres:5432/picloud",
       managementPort: 4100,
       managementAdvertisedBaseUrl: "http://supervisor-production-1:4100/",
-      toolBrokerBaseUrls: ["http://tool-broker:4300/"],
+      sandboxControlBaseUrls: ["http://sandbox-control:4300/"],
       trustedWorkspaceDirectory: "/workspace",
       modelGatewayUpstreamConnectTimeoutMs: 120_000,
       modelGatewayUpstreamIdleTimeoutMs: 300_000,
@@ -146,7 +146,7 @@ describe("Supervisor host production configuration", () => {
     await expect(
       loadSupervisorHostConfig({
         ...environment,
-        PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS: "300000",
+        PI_CLOUD_SANDBOX_CONTROL_REQUEST_TIMEOUT_MS: "300000",
       }),
     ).rejects.toThrow("maximum Tool execution");
     await expect(
@@ -221,10 +221,10 @@ describe("Supervisor host production configuration", () => {
           "management",
           `manage-${"m".repeat(48)}`,
         ),
-        PI_CLOUD_TOOL_BROKER_TOKEN_FILE: await secret(
+        PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE: await secret(
           root,
-          "tool-broker",
-          `tool-broker-${"s".repeat(48)}`,
+          "sandbox-control",
+          `sandbox-control-${"s".repeat(48)}`,
         ),
         PI_CLOUD_PROVIDER_GATEWAY_URL: "http://provider-gateway:8317",
         PI_CLOUD_PROVIDER_GATEWAY_API_KEY_FILE: await secret(
@@ -237,7 +237,7 @@ describe("Supervisor host production configuration", () => {
           "database",
           "postgresql://picloud:secret@postgres:5432/picloud",
         ),
-        PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
+        PI_CLOUD_SANDBOX_CONTROL_URLS: "http://sandbox-control:4300",
         PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: "/workspace",
         PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
         PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092,kafka-3:9092",

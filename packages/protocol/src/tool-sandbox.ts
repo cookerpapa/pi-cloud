@@ -32,7 +32,7 @@ const ToolSandboxEnvelope = {
 };
 
 const WorkerEnvelope = {
-  toolWorkerProtocolVersion: Type.Literal(1),
+  toolWorkerProtocolVersion: Type.Literal(2),
 };
 
 const SafeCodeSchema = Type.String({
@@ -180,7 +180,7 @@ const MachineBrowserTargetSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ToolBrokerListWorkspaceDirectoryRequestSchema = Type.Object(
+export const SandboxControlListWorkspaceDirectoryRequestSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
     type: Type.Literal("workspace.list_directory"),
@@ -195,7 +195,7 @@ export const ToolBrokerListWorkspaceDirectoryRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ToolBrokerListWorkspaceDirectoryResponseSchema = Type.Object(
+export const SandboxControlListWorkspaceDirectoryResponseSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
     type: Type.Literal("workspace.directory_listed"),
@@ -225,7 +225,7 @@ export const ToolBrokerListWorkspaceDirectoryResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ToolBrokerReadWorkspaceFileRequestSchema = Type.Object(
+export const SandboxControlReadWorkspaceFileRequestSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
     type: Type.Literal("workspace.read_file"),
@@ -241,7 +241,7 @@ export const ToolBrokerReadWorkspaceFileRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ToolBrokerReadWorkspaceFileResponseSchema = Type.Object(
+export const SandboxControlReadWorkspaceFileResponseSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
     type: Type.Literal("workspace.file_read"),
@@ -257,7 +257,7 @@ export const ToolBrokerReadWorkspaceFileResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ToolBrokerRequestSchema = Type.Union([
+export const SandboxControlRequestSchema = Type.Union([
   Type.Object(
     {
       ...ToolSandboxEnvelope,
@@ -284,7 +284,7 @@ export const ToolBrokerRequestSchema = Type.Union([
   ToolSandboxStopRequestSchema,
 ]);
 
-export const ToolBrokerResponseSchema = Type.Union([
+export const SandboxControlResponseSchema = Type.Union([
   Type.Object(
     {
       ...ToolSandboxEnvelope,
@@ -447,6 +447,7 @@ export const ToolWorkerOutputSchema = Type.Union([
     {
       ...WorkerEnvelope,
       type: Type.Literal("worker.operation_result"),
+      scopeStopRequired: Type.Boolean(),
       response: ToolSandboxOperationResponseSchema,
     },
     { additionalProperties: false },
@@ -475,20 +476,20 @@ export type ToolSandboxReleaseRequest = Static<typeof ToolSandboxReleaseRequestS
 export type ToolSandboxReleaseResponse = Static<typeof ToolSandboxReleaseResponseSchema>;
 export type ToolSandboxStopRequest = Static<typeof ToolSandboxStopRequestSchema>;
 export type ToolSandboxStopResponse = Static<typeof ToolSandboxStopResponseSchema>;
-export type ToolBrokerListWorkspaceDirectoryRequest = Static<
-  typeof ToolBrokerListWorkspaceDirectoryRequestSchema
+export type SandboxControlListWorkspaceDirectoryRequest = Static<
+  typeof SandboxControlListWorkspaceDirectoryRequestSchema
 >;
-export type ToolBrokerListWorkspaceDirectoryResponse = Static<
-  typeof ToolBrokerListWorkspaceDirectoryResponseSchema
+export type SandboxControlListWorkspaceDirectoryResponse = Static<
+  typeof SandboxControlListWorkspaceDirectoryResponseSchema
 >;
-export type ToolBrokerReadWorkspaceFileRequest = Static<
-  typeof ToolBrokerReadWorkspaceFileRequestSchema
+export type SandboxControlReadWorkspaceFileRequest = Static<
+  typeof SandboxControlReadWorkspaceFileRequestSchema
 >;
-export type ToolBrokerReadWorkspaceFileResponse = Static<
-  typeof ToolBrokerReadWorkspaceFileResponseSchema
+export type SandboxControlReadWorkspaceFileResponse = Static<
+  typeof SandboxControlReadWorkspaceFileResponseSchema
 >;
-export type ToolBrokerRequest = Static<typeof ToolBrokerRequestSchema>;
-export type ToolBrokerResponse = Static<typeof ToolBrokerResponseSchema>;
+export type SandboxControlRequest = Static<typeof SandboxControlRequestSchema>;
+export type SandboxControlResponse = Static<typeof SandboxControlResponseSchema>;
 export type ToolSandboxOperationRequest = Static<typeof ToolSandboxOperationRequestSchema>;
 export type ToolSandboxOperationResponse = Static<typeof ToolSandboxOperationResponseSchema>;
 export type ToolWorkerInput = Static<typeof ToolWorkerInputSchema>;
@@ -513,51 +514,51 @@ function parse<T>(schema: TSchema, value: unknown, label: string): T {
   return value as T;
 }
 
-export function parseToolBrokerRequest(value: unknown): ToolBrokerRequest {
-  return parse(ToolBrokerRequestSchema, value, "Tool Broker request");
+export function parseSandboxControlRequest(value: unknown): SandboxControlRequest {
+  return parse(SandboxControlRequestSchema, value, "Sandbox control request");
 }
 
-export function parseToolBrokerResponse(value: unknown): ToolBrokerResponse {
-  return parse(ToolBrokerResponseSchema, value, "Tool Broker response");
+export function parseSandboxControlResponse(value: unknown): SandboxControlResponse {
+  return parse(SandboxControlResponseSchema, value, "Sandbox control response");
 }
 
-export function parseToolBrokerReadWorkspaceFileRequest(
+export function parseSandboxControlReadWorkspaceFileRequest(
   value: unknown,
-): ToolBrokerReadWorkspaceFileRequest {
+): SandboxControlReadWorkspaceFileRequest {
   return parse(
-    ToolBrokerReadWorkspaceFileRequestSchema,
+    SandboxControlReadWorkspaceFileRequestSchema,
     value,
-    "Tool Broker read Workspace file request",
+    "Sandbox control read Workspace file request",
   );
 }
 
-export function parseToolBrokerReadWorkspaceFileResponse(
+export function parseSandboxControlReadWorkspaceFileResponse(
   value: unknown,
-): ToolBrokerReadWorkspaceFileResponse {
+): SandboxControlReadWorkspaceFileResponse {
   return parse(
-    ToolBrokerReadWorkspaceFileResponseSchema,
+    SandboxControlReadWorkspaceFileResponseSchema,
     value,
-    "Tool Broker read Workspace file response",
+    "Sandbox control read Workspace file response",
   );
 }
 
-export function parseToolBrokerListWorkspaceDirectoryRequest(
+export function parseSandboxControlListWorkspaceDirectoryRequest(
   value: unknown,
-): ToolBrokerListWorkspaceDirectoryRequest {
+): SandboxControlListWorkspaceDirectoryRequest {
   return parse(
-    ToolBrokerListWorkspaceDirectoryRequestSchema,
+    SandboxControlListWorkspaceDirectoryRequestSchema,
     value,
-    "Tool Broker list Workspace directory request",
+    "Sandbox control list Workspace directory request",
   );
 }
 
-export function parseToolBrokerListWorkspaceDirectoryResponse(
+export function parseSandboxControlListWorkspaceDirectoryResponse(
   value: unknown,
-): ToolBrokerListWorkspaceDirectoryResponse {
+): SandboxControlListWorkspaceDirectoryResponse {
   return parse(
-    ToolBrokerListWorkspaceDirectoryResponseSchema,
+    SandboxControlListWorkspaceDirectoryResponseSchema,
     value,
-    "Tool Broker list Workspace directory response",
+    "Sandbox control list Workspace directory response",
   );
 }
 

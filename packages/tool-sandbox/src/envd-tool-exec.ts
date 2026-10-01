@@ -65,7 +65,7 @@ function envelope(value: unknown): {
     return { initialization };
   }
   const operation = parseToolWorkerInput({
-    toolWorkerProtocolVersion: 1,
+    toolWorkerProtocolVersion: 2,
     type: "worker.operation",
     request: input.operation,
   });
@@ -86,7 +86,7 @@ async function main(): Promise<ToolWorkerOutput> {
   if (input.operation === undefined) {
     const environment = await initializeToolExecution(input.initialization);
     return {
-      toolWorkerProtocolVersion: 1,
+      toolWorkerProtocolVersion: 2,
       type: "worker.ready",
       activationId: input.initialization.activationId,
       environment,
@@ -140,8 +140,9 @@ async function main(): Promise<ToolWorkerOutput> {
   const response = await execution.catch((error: unknown) => toolOperationFailure(request, error));
   while (draining) await draining;
   return {
-    toolWorkerProtocolVersion: 1,
+    toolWorkerProtocolVersion: 2,
     type: "worker.operation_result",
+    scopeStopRequired: signal.aborted,
     response,
   };
 }
@@ -154,7 +155,7 @@ try {
       ? error
       : new ToolWorkerError("tool_worker_failed", "Tool worker failed", true);
   const output: ToolWorkerOutput = {
-    toolWorkerProtocolVersion: 1,
+    toolWorkerProtocolVersion: 2,
     type: "worker.failed",
     code: failure.code,
     message: failure.message,

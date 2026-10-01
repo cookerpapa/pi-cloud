@@ -27,7 +27,7 @@ function durationMs(value, description) {
 }
 
 function validateWorkerPolicy(policy, description) {
-  const manager = integer(policy.toolBrokerRequestMs, `${description} Tool Broker timeout`);
+  const manager = integer(policy.sandboxControlRequestMs, `${description} Sandbox control timeout`);
   const capability = integer(policy.modelCapabilityTtlMs, `${description} model capability TTL`);
   const upstreamConnect = integer(
     policy.modelUpstreamConnectMs,
@@ -87,7 +87,7 @@ const composeStop = /stop_grace_period:\s*(\S+)/.exec(composeWorker)?.[1];
 assert.ok(composeStop, "Compose Pi Worker stop grace is missing");
 validateWorkerPolicy(
   {
-    toolBrokerRequestMs: composeInteger("PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS"),
+    sandboxControlRequestMs: composeInteger("PI_CLOUD_SANDBOX_CONTROL_REQUEST_TIMEOUT_MS"),
     modelCapabilityTtlMs: composeInteger("PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS"),
     modelUpstreamConnectMs: composeInteger("PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS"),
     modelUpstreamIdleMs: composeInteger("PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS"),
@@ -104,14 +104,14 @@ assert.ok(
 
 const composeVolumeGateway = composeText.slice(
   composeText.indexOf("\n  workspace-volume-gateway:"),
-  composeText.indexOf("\n  tool-broker:"),
-);
-const composeToolBroker = composeText.slice(
-  composeText.indexOf("\n  tool-broker:"),
   composeText.indexOf("\n  web:"),
 );
+const composeSandboxControl = composeText; // Module settings live in the Control Plane environment anchor.
 assert.ok(composeVolumeGateway.length > 0, "Compose Workspace Volume Gateway service is missing");
-assert.ok(composeToolBroker.length > 0, "Compose Tool Broker service is missing");
+assert.ok(
+  !composeText.includes("\n  sandbox-control:\n    image:"),
+  "Sandbox control must not be a separate service",
+);
 function composeDefaultInteger(section, name) {
   const match = new RegExp(`${name}: (?:\\$\\{[^}\\n]+:-)?(\\d+)(?:\\})?`).exec(section);
   assert.ok(match, `Compose ${name} default is missing`);
@@ -126,7 +126,7 @@ validateWorkspaceVolumeGatewayPolicy(
       "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS",
     ),
     requestMs: composeDefaultInteger(
-      composeToolBroker,
+      composeSandboxControl,
       "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS",
     ),
     terminationGraceMs: durationMs(
@@ -138,7 +138,7 @@ validateWorkspaceVolumeGatewayPolicy(
 );
 const cubeOverrideText = readFileSync("deploy/cubesandbox/compose.primary.yaml", "utf8");
 assert.ok(
-  composeDefaultInteger(composeToolBroker, "PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS") >=
+  composeDefaultInteger(composeSandboxControl, "PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS") >=
     CUBE_LIFECYCLE_REQUEST_MS,
   "Compose Cube lifecycle timeout is too short for a full-VM pause",
 );

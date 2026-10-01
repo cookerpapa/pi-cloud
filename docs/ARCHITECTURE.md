@@ -21,7 +21,7 @@ Browser → Control Plane → PostgreSQL accepted Run
                                              ├─ Subagent admission / delivery → Worker Lanes
                                              └─ Tool command routing
                                                        ↓
-                                             owning Tool executor → Cube
+                                             Cube native executor
                                                        ↓
                                                  native reply → Kafka reply topic → Worker/Pi
 
@@ -38,8 +38,8 @@ timeout rolls back without advancing offsets or admitting a Tool. Failed records
 retry in partition order. Phase metrics and payload-free slow-record diagnostics
 locate waits without introducing another consumer or a skip/dead-letter path
 ([ADR-0199](adr/0199-bounded-publication-and-projection.md)).
-Image bytes travel over Cube's existing HTTP transport and a private S3 attachment
-port. Broker externalizes image parts before Kafka replies; Worker restores them
+Image bytes travel over Cube's native execution transport and a private S3 attachment
+port. The trusted Cube completion adapter externalizes image parts before Kafka replies; Worker restores them
 before native Tool completion. The Session append codec externalizes the final
 after-hook content too. PG native-log rows retain references; public SessionStorage
 reads reconstruct the exact native images. PG plus retained attachments is the
@@ -191,7 +191,7 @@ Linux concurrency, not a scheduling lock or tenant concurrency quota.
 Lease decisions use primary PostgreSQL `clock_timestamp()` after authority-row
 locks, not application timestamps or transaction-start `now()` (ADR-0170).
 Renewal cannot revive an expired owner after a lock wait, and retirement checks
-the current locked lease again. Local Worker/Broker deadlines use a conservative
+the current locked lease again. Local Worker/control-plane deadlines use a conservative
 monotonic observation of the database's remaining lifetime. They trigger local
 cancellation; the database and ordered seals still decide authority. This adds
 no per-token or per-Step SQL check. Database clock/failover discipline remains an
@@ -202,7 +202,7 @@ all observed owners, retaining the one-second revocation observation interval.
 Committed direct-PG heartbeat renewals feed that same cache. Late reads cannot
 overwrite newer renewal evidence, late renewals cannot revive a revoked observer,
 and closing one Lane retains observation for its siblings. Expired cold-restore
-observations refresh from PG before rejection. Broker fencing remains independent.
+observations refresh from PG before rejection. Cube boot and closed-scope fencing remain at the external-effect boundary.
 
 Control Plane expiry sweeps and remote Worker retirement run in independent,
 non-overlapping loops. Retirement uses one concurrent claim and the existing
@@ -431,7 +431,7 @@ Complete model output/usage form one native boundary. After Pi validation and
 before-hooks, fixed remote Tools prepare their binding and reply callback; one
 `tool_invocation` record then carries native intent, display start and dispatch.
 The command reuses the intent's arguments and identities. One Kafka ACK covers
-that second boundary; Projector still commits dispatch before Broker admission
+that second boundary; Projector still commits dispatch before Cube handoff
 (ADR-0198). Invalid arguments never create execution intent. Native
 Compaction retains relevant interruption/World State facts and refuses truncated
 or empty summaries. Model retries do not replay completed Tools.
@@ -479,26 +479,43 @@ Workspace bytes. Deleting a parent includes its descendant transcript views.
 
 ## Tools and Cube
 
-Tool Broker is an execution/lifecycle service, not an execution-log consumer.
-Immutable PG Run/binding routes point to one Broker boot. Projector forwards
-commands and seals through an internal credential unavailable to the Worker.
-It confirms Kafka commit before dispatch and does not retry ambiguous command
-delivery. The receiver folds positions synchronously and acknowledges admission,
-not guest completion. Old bindings are never adopted by a replacement boot.
-There is no completed-result GET endpoint or PostgreSQL operation ledger.
+The Control Plane owns publication admission, the Session Projector and a
+sandbox lifecycle module. There is no independent Broker process. At the
+Worker's existing lazy binding hook, the controller materializes the chosen VM
+and stores bounded immutable transport metadata (Cube API/node/boot and guest
+initialization). Pure chat still allocates no VM. The Projector confirms its
+monotonic Kafka dispatch commit before handing a fixed Tool directly to Cube.
+It waits for bounded takeover, never the duration of Bash execution.
 
-Broker validates the existing Lease/fence, frozen Tool policy and Cloud Step,
-then the provider adapter calls Cube's native envd/vsock facilities. Pi cannot
-choose arbitrary Pod/VM identities, images, mounts or network policy. No platform
-controller or bearer credential is injected into the guest. `read/write/edit/bash`
-are the remote tools; Bash accepts only its declared command/timeout parameters.
+Cubelet owns native containerd process handles and operation-scoped guest cgroups.
+It rejects duplicate/closed scopes in memory, without querying PG Run leases.
+A trusted host completion adapter externalizes images and publishes one final
+reply to the original Worker boot. Pi Harness processing still creates the
+canonical Tool Result. No raw-result GET/cache or PG operation ledger exists.
+Uncertain execution never causes automatic shell replay.
 
-Physical capacity and FIFO allocation waiters belong to `SandboxAdmission`;
-Broker retains warm eviction and Cube lifecycle ownership. Shutdown closes
-admission before detaching machines, so freed slots cannot launch queued creates.
-Recovered machines count even above a newly lowered capacity; new allocation
-waits until usage falls below the limit. This is not a Workspace write lock or
-tenant scheduling quota.
+Authorized closure stops publication admission in memory, closes execution
+scopes and then writes the seal. Its execution wait is outside the producer queue
+and independent of Projector catch-up. The Projector materializes the already
+closed seal without another stop RPC. This prevents queued historical intents
+from starting after cancellation while other Sessions keep publishing.
+
+The controller chooses, observes, adopts, quarantines and destroys physical VMs.
+A normal Tool error does not destroy a VM. Cancellation joins its native main
+process before killing its cgroup and proving it empty; another completed Tool's
+background server survives. Unknown stopping or executor boot replacement makes
+the VM unavailable for recovery. User-owned machines keep explicit release
+semantics. Missing heartbeats/master routes are not proof of VM absence; quota
+release follows positive observation on the recorded node.
+
+`SandboxAdmission` owns local physical capacity and allocation waiters. Runtime
+capsules preserve elastic and development VMs across controller replacement;
+recorded execution boot identities cannot silently change during adoption.
+Closing control-plane transports does not destroy accepted Cube executions.
+Run bindings and terminal channels do not own the shared VM. Physical allocation
+counts do not double-count a machine borrowed by an Agent or a shared terminal.
+Interactive workflow hostcall channels retain their existing control-plane
+connection lifetime; they are separate from fixed Tool takeover.
 
 The guest executes the whole fixed Tool, with native edit/write logic and source
 output bounds. Internal reads/writes are not separate RPCs. The trusted Cube
@@ -511,7 +528,7 @@ no completed-result cache or per-result retirement notification.
 Kafka replies accept only the final result; guest updates use the separate HTTP
 observation path. The Worker observes its reply Promise before awaiting command
 publication and retires it on every exit, including image-decoding failure.
-The Projector expands a combined invocation into the existing Broker command
+The Projector expands a combined invocation into the native Cube handoff
 only after materializing its native intent. Cancellation before the invocation
 enters its publication queue prevents dispatch; later cancellation can race
 execution even before the producing Worker receives its ACK. Projection replay
@@ -533,7 +550,7 @@ file/shell grant; Pi owns the complete executable Tool registry. Preparing an
 empty file grant does not activate Cube.
 
 Pi source updates are disposable observations, not model context. Bash emits
-bounded snapshots at most once per second; Broker coalesces the newest text per
+bounded snapshots at most once per second; the Cube completion adapter coalesces the newest text per
 active operation (8,192 characters) and sends pooled HTTP to Projector. An internal
 credential protects ingress. Partition ownership redirects use existing Kafka
 membership, not a PG query. Failures drop snapshots and cannot fail the Tool.
@@ -604,7 +621,7 @@ refcount. See [ADR-0172](adr/0172-plugin-owned-volume-initialization.md).
 A user-owned development machine is allocated independently, with a selected
 CPU/memory/disk template. It retains node-affine full-VM state and has its own home
 Volume. Sessions select directories in it. Pause/resume uses Cube state; host
-shutdown is not an automatic snapshot. Broker replacement preserves a running
+shutdown is not an automatic snapshot. Control-plane replacement preserves a running
 machine's state and uses its encrypted reconnect capsule for validated adoption.
 Completing a Run detaches its temporary binding, not the VM. Release deletes the
 machine and its Volume, not conversation history.
@@ -623,7 +640,7 @@ root-owned files, before committing purge completion. There is no Kopia/S3
 Workspace authority or platform-managed Git tree.
 
 Preview is published by a trusted tool after an actual listening-service probe.
-Authenticated isolated origins proxy HTTP/WebSocket traffic through Broker's
+Authenticated isolated origins proxy HTTP/WebSocket traffic through the control plane's
 credential-free guest relay. There is no localhost replacement in model text or
 fixed application-port reservation. Human Web Terminal and one-use SSH tickets
 use independent product authority; they are not Agent execution commands.
@@ -643,7 +660,7 @@ The selectable DeepSeek model is V4.1 Flash; V4 Pro is hidden. Flash declares
 `web_search` on Responses at the owner's request, although the upstream currently
 ignores it. Search activity still requires actual provider events/results;
 a declaration alone is never recorded as a performed search (ADR-0191).
-Chat uploads place files in Workspace through the existing Broker/Volume Gateway
+Chat uploads place files in Workspace through the existing control-plane/Volume Gateway
 or fixed machine guest helper. PG stores bounded upload claims and accepted input
 references. Source images are retained in the existing S3 store; the current Run's
 Cube normalizes them before model admission. Pi receives ordinary user text and
@@ -759,7 +776,7 @@ references. `DELETE /v1/conversations/:sessionId` returns 204 after commit, incl
 an already absent tenant-scoped ID; no archive/restore receipt remains. Independent
 native Forks, shared image references and Workspace/Volume bytes retain their own
 lifetimes. Pruned logical views use `pruned_at` and do not consume usable-Session quota.
-An empty PG notification wakes the existing Broker cleanup scan after deletion.
+An empty PG notification wakes the existing control-plane cleanup scan after deletion.
 Missing hints fall back to periodic scanning. Unreferenced elastic compute is
 eligible immediately, while ordinary between-Turn warm reuse remains unchanged.
 The provider confirms Cube absence before physical quota release; uncertain cleanup

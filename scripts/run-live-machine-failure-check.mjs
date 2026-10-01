@@ -8,7 +8,7 @@ import { readPreviewDocument } from "./lib/preview-client.mjs";
 
 if (process.env.PI_CLOUD_LIVE_MACHINE_FAILURE_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_MACHINE_FAILURE_CHECK=1 to permit a disposable Cube, real models and a Tool Broker restart",
+    "Set PI_CLOUD_LIVE_MACHINE_FAILURE_CHECK=1 to permit a disposable Cube, real models and a Sandbox control restart",
   );
 const exec = promisify(execFile);
 const env = Object.fromEntries(
@@ -229,30 +229,22 @@ try {
       "select count(*) from runs where state not in ('completed','failed','cancelled','timed_out','superseded')",
     ),
   );
-  assert.equal(active, 0, "Refusing Broker restart while any user Run is active");
-  console.log(
-    "[machine-failure] restarting only Tool Broker; Guest and application must stay alive",
-  );
-  await compose("stop", "tool-broker");
-  try {
-    await run("本轮只聊天，绝对不要调用任何工具。请只回复：BROKER_OFFLINE_CHAT_OK。");
-    report.chatWhileBrokerOffline = true;
-  } finally {
-    await compose("start", "--wait", "tool-broker");
-  }
+  assert.equal(active, 0, "Refusing control-plane restart while any user Run is active");
+  console.log("[machine-failure] restarting control plane; Guest and application must stay alive");
+  await compose("restart", "control-plane");
   for (let n = 0; n < 120; n++) {
     try {
       await compose(
         "exec",
         "-T",
-        "tool-broker",
+        "control-plane",
         "node",
         "-e",
         "fetch('http://127.0.0.1:4300/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
       );
       break;
     } catch {
-      if (n === 119) throw new Error("Broker did not restart");
+      if (n === 119) throw new Error("Control plane did not restart");
       await sleep(500);
     }
   }
@@ -267,7 +259,7 @@ try {
     ),
     identity,
   );
-  report.brokerRestartPreservedRootFilesProcessAndPreview = true;
+  report.controlPlaneRestartPreservedRootFilesProcessAndPreview = true;
   console.log("[machine-failure] real coding round 2 after Broker replacement");
   await run(
     "先读取 insertion_sort.py，保留原实现和测试。新增 binary_search.py，实现二分查找并覆盖命中、不存在、空数组、重复值。执行 python3 insertion_sort.py && python3 binary_search.py。不要修改 index.html 或 HTTP 服务，不使用子代理或搜索。",

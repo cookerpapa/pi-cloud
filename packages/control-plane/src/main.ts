@@ -13,8 +13,7 @@ import {
 } from "./http-supervisor-management.ts";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
-import { ToolCommandRouter, httpToolLogDelivery } from "@pi-cloud/tool-broker/command-router";
-import { PostgresToolCommandRoutes } from "@pi-cloud/tool-broker/command-routes";
+import { createSandboxControl } from "@pi-cloud/sandbox-control/runtime";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -26,7 +25,7 @@ import { PostgresTenantApiAuthenticator } from "./tenant-identity.ts";
 import { resolvePlatformInitialModel } from "./platform-model-configuration.ts";
 import { WebAuthenticationService } from "./web-authentication.ts";
 import { createControlPlaneRuntime, type ControlPlaneRuntime } from "./control-plane-runtime.ts";
-import { ReplicatedToolBrokerClient } from "@pi-cloud/tool-broker/client";
+import { ReplicatedSandboxControlClient } from "@pi-cloud/sandbox-control/client";
 import { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
@@ -83,6 +82,7 @@ export async function startControlPlane(): Promise<void> {
   let unattachedSubagents: SubagentController | undefined;
   const controlPlaneInstanceId = randomUUID();
   let agentEvents: SessionProjector | undefined;
+  let sandboxControl: Awaited<ReturnType<typeof createSandboxControl>> | undefined;
   let runtime: ControlPlaneRuntime | undefined;
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
@@ -98,10 +98,12 @@ export async function startControlPlane(): Promise<void> {
       () => imageReaper?.close(),
       () => issueNoteReconciler?.close(),
       () => issueCoordinator?.close(),
+      // Relinquish log partitions before potentially long resource drains.
+      () => agentEvents?.close(),
       () => runtime?.close(),
       () => developmentEnvironmentService?.close(),
       () => operationalMetrics?.close(),
-      () => agentEvents?.close(),
+      () => sandboxControl?.close(),
       () => unattachedSubagents?.close(),
       () => sourceControlDispatcher?.close(),
       () => internalSourceControlDispatcher?.close(),
@@ -129,8 +131,15 @@ export async function startControlPlane(): Promise<void> {
         }),
       );
     }
-    const workspaceBrowserClient = new ReplicatedToolBrokerClient({
-      baseUrls: config.toolBrokerBaseUrls,
+    sandboxControl = await createSandboxControl({
+      database,
+      instanceId: controlPlaneInstanceId,
+      managementToken: config.supervisorManagementToken,
+      metrics: observability.metrics,
+      ...(images ? { images } : {}),
+    });
+    const workspaceBrowserClient = new ReplicatedSandboxControlClient({
+      baseUrls: config.sandboxControlBaseUrls,
       serviceToken: config.workspaceServiceToken,
       allowInsecureHttp: config.allowInsecureInternalHttp,
     });
@@ -186,11 +195,7 @@ export async function startControlPlane(): Promise<void> {
       clientId: controlPlaneInstanceId,
       advertisedBaseUrl: config.projectorAdvertisedBaseUrl,
       subagentCommands: subagents,
-      toolCommands: new ToolCommandRouter({
-        routes: new PostgresToolCommandRoutes(database),
-        deliver: httpToolLogDelivery(config.toolDispatchToken),
-        metrics: observability.metrics,
-      }),
+      toolCommands: sandboxControl.dispatcher,
       partitions: config.kafkaPartitions,
       replicas: config.kafkaReplicas,
       capacity: config.producerCapacity,
@@ -376,7 +381,7 @@ export async function startControlPlane(): Promise<void> {
         (delivery) => activeAgentEvents.observations.activity(delivery),
       ),
       toolProgressIngress: new ToolProgressIngress(
-        config.toolDispatchToken,
+        config.supervisorManagementToken,
         (partition) => activeAgentEvents.ownerForPartition(partition),
         ({ tenantId, progress }) => activeAgentEvents.eventHub.publishProgress(tenantId, progress),
       ),

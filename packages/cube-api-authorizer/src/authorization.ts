@@ -36,6 +36,24 @@ export function isAllowedCubeApiOperation(path: string, method: string): boolean
     return false;
   }
   if (parsed.origin !== "http://cube-api.internal" || parsed.hash !== "") return false;
+  if (
+    normalizedMethod === "POST" &&
+    /^\/sandboxes\/[a-f0-9]{32}\/execution\/(capabilities|submit|stop)$/i.test(parsed.pathname)
+  )
+    return parsed.search === "";
+  if (
+    normalizedMethod === "GET" &&
+    /^\/sandboxes\/[a-f0-9]{32}\/observation$/i.test(parsed.pathname)
+  ) {
+    const entries = [...parsed.searchParams.entries()];
+    return (
+      entries.length === 1 &&
+      entries[0]![0] === "nodeID" &&
+      entries[0]![1].length > 0 &&
+      entries[0]![1].length <= 256 &&
+      !/[\u0000-\u001f\u007f]/.test(entries[0]![1])
+    );
+  }
   if (normalizedMethod === "POST" && parsed.pathname === "/sandboxes" && parsed.search === "") {
     return true;
   }

@@ -7,8 +7,8 @@
 {{- fail "disruptionBudget.minAvailable must be lower than the minimum Worker replica count" -}}
 {{- end -}}
 {{- $timeouts := .Values.runtime.timeouts -}}
-{{- if lt (int $timeouts.toolBrokerRequestMs) 360000 -}}
-{{- fail "runtime.timeouts.toolBrokerRequestMs must outlive the maximum Tool execution" -}}
+{{- if lt (int $timeouts.sandboxControlRequestMs) 360000 -}}
+{{- fail "runtime.timeouts.sandboxControlRequestMs must outlive the maximum Tool execution" -}}
 {{- end -}}
 {{- if gt (int $timeouts.modelUpstreamConnectMs) (int $timeouts.modelRequestMs) -}}
 {{- fail "runtime.timeouts.modelUpstreamConnectMs cannot exceed modelRequestMs" -}}
@@ -22,7 +22,7 @@
 {{- if lt (int $timeouts.modelCapabilityTtlMs) (add (int $timeouts.turnMs) 60000) -}}
 {{- fail "runtime.timeouts.modelCapabilityTtlMs must outlive turnMs by one minute" -}}
 {{- end -}}
-{{- $requiredTerminationGraceMs := add (int $timeouts.turnMs) (int $timeouts.toolBrokerRequestMs) 360000 -}}
+{{- $requiredTerminationGraceMs := add (int $timeouts.turnMs) (int $timeouts.sandboxControlRequestMs) 360000 -}}
 {{- if lt (mul (int .Values.lifecycle.terminationGracePeriodSeconds) 1000) $requiredTerminationGraceMs -}}
 {{- fail "lifecycle.terminationGracePeriodSeconds cannot expire before Worker settlement" -}}
 {{- end -}}
@@ -134,7 +134,7 @@ spec:
               value: {{ .Values.services.providerProxyUrl | quote }}
             {{- end }}
             - name: NO_PROXY
-              value: {{ printf "127.0.0.1,localhost,tool-broker,.svc,.svc.%s" .Values.workerPool.clusterDomain | quote }}
+              value: {{ printf "127.0.0.1,localhost,sandbox-control,.svc,.svc.%s" .Values.workerPool.clusterDomain | quote }}
             - name: DATABASE_URL_FILE
               value: /run/pi-cloud-secrets/database-url
             - name: DATABASE_NOTIFICATION_URL_FILE
@@ -159,12 +159,12 @@ spec:
               value: /run/pi-cloud-secrets/supervisor-enrollment-token
             - name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE
               value: /run/pi-cloud-secrets/supervisor-management-token
-            - name: PI_CLOUD_TOOL_BROKER_TOKEN_FILE
-              value: /run/pi-cloud-secrets/tool-broker-token
-            - name: PI_CLOUD_TOOL_BROKER_URLS
-              value: {{ join "," .Values.services.toolBrokerUrls | quote }}
-            - name: PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS
-              value: {{ .Values.runtime.timeouts.toolBrokerRequestMs | quote }}
+            - name: PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE
+              value: /run/pi-cloud-secrets/sandbox-control-token
+            - name: PI_CLOUD_SANDBOX_CONTROL_URLS
+              value: {{ join "," .Values.services.sandboxControlUrls | quote }}
+            - name: PI_CLOUD_SANDBOX_CONTROL_REQUEST_TIMEOUT_MS
+              value: {{ .Values.runtime.timeouts.sandboxControlRequestMs | quote }}
             - name: PI_CLOUD_PROVIDER_GATEWAY_URL
               value: {{ .Values.services.providerGatewayUrl | quote }}
             - name: PI_CLOUD_PROVIDER_GATEWAY_API_KEY_FILE
@@ -284,8 +284,8 @@ spec:
               subPath: supervisor-management-token
               readOnly: true
             - name: secrets
-              mountPath: /run/pi-cloud-secrets/tool-broker-token
-              subPath: tool-broker-token
+              mountPath: /run/pi-cloud-secrets/sandbox-control-token
+              subPath: sandbox-control-token
               readOnly: true
             - name: secrets
               mountPath: /run/pi-cloud-secrets/provider-gateway-api-key
@@ -320,8 +320,8 @@ spec:
                 path: supervisor-enrollment-token
               - key: {{ .Values.credentials.supervisorManagementTokenKey }}
                 path: supervisor-management-token
-              - key: {{ .Values.credentials.toolBrokerTokenKey }}
-                path: tool-broker-token
+              - key: {{ .Values.credentials.sandboxControlTokenKey }}
+                path: sandbox-control-token
               - key: {{ .Values.credentials.providerGatewayApiKeyKey }}
                 path: provider-gateway-api-key
               - key: {{ .Values.credentials.metricsTokenKey }}

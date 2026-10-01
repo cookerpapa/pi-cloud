@@ -3,7 +3,7 @@
 ## Active-turn runtime status
 
 The browser's continuous status uses Runner lifecycle observations and shows
-last actual activity separately from last Worker → Kafka → Projector path
+last actual activity separately from last Worker → ingress → Kafka → Projector path
 confirmation. It remains visible after commentary and between Tool calls.
 Worker phase snapshots are lossy HTTP/SSE observations; dropped frames cannot
 affect execution. Actual Tool log updates also refresh browser activity.
@@ -76,7 +76,7 @@ user-visible Run:
 - Tool failures and Cube lifecycle/admission capacity;
 - Workspace Volume Gateway queue, latency, rejection and cleanup backlog;
 - Session Projector incomplete-tail sessions/events/bytes;
-- direct Kafka Producer queue occupancy/rejections and Session-owner lease failures;
+- publication-ingress Kafka Producer queue occupancy/rejections and Session-owner lease failures;
 - settled terminal events still waiting to reach Kafka.
 
 Each Control Plane samples PostgreSQL and its local Projector every ten seconds.
@@ -93,7 +93,7 @@ Prometheus scrapes four application endpoint groups:
 | --- | --- | --- |
 | Control Plane | `control-plane:9464/metrics` | queue, event/session projection, cleanup, admission, process |
 | Pi Workers | `*:9465/metrics` | active Session families/Lanes, model permits/wait, Run latency, tokens, process |
-| Tool Broker | `tool-broker:9466/metrics` | Cube lifecycle, Tool calls, admission, reply publication failures, process |
+| Sandbox control module | `control-plane:9464/metrics` | Cube lifecycle, handoff, admission and quarantine; fixed Tool duration is recorded by Worker |
 | Workspace Volume Gateway | `workspace-volume-gateway:9469/metrics` | storage queue, latency, rejection, process |
 
 `pi_cloud_active_session_families` counts occupied Worker slots;
@@ -141,7 +141,7 @@ Transport capacity signals are process-local and should be summed across replica
   Facts awaiting PubAck; `_rejected_total` counts rejection before enqueue.
 - `pi_cloud_tool_transport_rejected_total`: failed Tool reply publication and
   transport capacity rejection. Completed-result HTTP/cache gauges are removed;
-  replies use Kafka and are not a second Broker result store.
+  replies use Kafka and are not a second result store.
 - `pi_cloud_tool_log_consumed_total` counts each router's partition reads;
   `pi_cloud_tool_log_delivery_seconds{route="local"|"remote"}` measures owner
   admission, excluding guest execution. Its outcome distinguishes delivery,
@@ -192,7 +192,7 @@ email, webhook or on-call receiver before relying on unattended notification.
 
 The Control Plane assigns a W3C trace identity to each accepted Run. The
 trusted path propagates it through Worker execution, model requests, Kafka Tool commands,
-Tool Broker and Cube lifecycle operations. Prompts, Tool output and provider
+control-plane dispatch and Cube lifecycle operations. Prompts, Tool output and provider
 credentials are never span attributes. Jaeger is retained because it makes a
 single slow/failed Run explainable; it is not required for alert correctness.
 

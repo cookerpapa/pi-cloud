@@ -10,8 +10,11 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0210](0210-cube-execution-handoff-and-scoped-stop.md) — native Cube handoff,
+   scoped stopping and controller-owned VM recovery.
+
 1. [ADR-0209](0209-control-plane-publication-and-sandbox-authority.md) — owner-approved
-   control-plane publication and sandbox authority; implementation in progress.
+   control-plane publication and sandbox authority; implemented, rollout pending.
 
 1. [ADR-0208](0208-session-lifecycle-matches-atomic-admission.md) — Session states
    aligned with atomic admission and guarded recovery.

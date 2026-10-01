@@ -12,9 +12,9 @@ export {
   type DevelopmentEnvironmentProfileKey,
 } from "./development-environment-profile.ts";
 
-export const TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_PATH =
+export const SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_PATH =
   "/internal/v1/development-environments" as const;
-export const TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH =
+export const SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH =
   "/internal/v1/development-environment-terminal" as const;
 
 export function validMachineDirectory(path: string): boolean {

@@ -21,7 +21,7 @@ parsing or permanent archival of every uploaded file.
 ## Data flow and ownership
 
 1. The authenticated API creates a bounded PG upload claim and forwards raw bytes
-   through the Tool Broker. An elastic Workspace uses the existing Cube Volume
+   through the sandbox-management module. An elastic Workspace uses the existing Cube Volume
    Gateway; a dedicated machine uses a fixed guest helper under UID 1000. No
    Agent Run or shell command is fabricated to upload a file.
 2. Image sources also receive an immutable copy in the existing private S3 image
@@ -77,22 +77,22 @@ the public DTO; generated file descriptions belong to the native user input.
 
 ## Internal boundary and rollout
 
-The API/Broker upload endpoint is `/internal/v1/workspace-upload`; the Volume
+The API/sandbox-management upload endpoint is `/internal/v1/workspace-upload`; the Volume
 Gateway uses `/v1/workspaces/upload-file`. Both carry bounded JSON metadata in
 `x-pi-cloud-upload` (base64url), raw HTTP file bodies and the existing scoped
-service authentication. Broker validates a fresh PG claim; the Gateway repeats
+service authentication. Sandbox management validates a fresh PG claim; the Gateway repeats
 the grant check while holding the Volume lock. Workspace deletion revokes new
 file placement. Cube Volume initialization retains its existing late-create
 generation limitation; this does not establish physical exactly-once effects.
 
 Worker image preparation uses `tool_sandbox.prepare_input_images` with the
 current assignment and source references. Its reply contains normalized image
-references and dimension hints. One preparation executes at a time per Broker,
+references and dimension hints. One preparation executes at a time per control-plane process,
 with at most eight waiting requests and a 30-second queue wait. The existing
 Run/Cube authority, guest deadline and stop lifecycle apply. No result ledger,
 new event consumer, storage service or Pi loop patch is introduced.
 
-Deploy migration 154 and matched API, Worker, Broker, Volume Gateway, Web and Cube
+Deploy migration 154 and matched API, Worker, Cube runtime, Volume Gateway, Web and Cube
 guest builds. Preserve native history and existing image objects. The guest now
 contains `envd-input-files.mjs`; an old template is not a supported fallback.
 The decision and acceptance scope are in

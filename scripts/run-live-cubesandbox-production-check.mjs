@@ -11,7 +11,7 @@ import WebSocket from "ws";
 import {
   OfficialCubeSandboxRuntimeClient,
   workspaceVolumeId,
-} from "../packages/tool-broker/src/index.ts";
+} from "../packages/sandbox-control/src/index.ts";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
@@ -500,7 +500,7 @@ async function listLogicalSandboxAssignments(logicalSandboxId) {
   const source = `
     import { readFileSync } from "node:fs";
     import { randomUUID } from "node:crypto";
-    const token = readFileSync("/run/pi-cloud-secrets/tool-broker-token", "utf8").trim();
+    const token = readFileSync("/run/pi-cloud-secrets/sandbox-control-token", "utf8").trim();
     const response = await fetch("http://127.0.0.1:4300/internal/v1/sandbox-inventory", {
       method: "POST",
       headers: { authorization: "Bearer " + token, "content-type": "application/json" },
@@ -522,7 +522,7 @@ async function listLogicalSandboxAssignments(logicalSandboxId) {
         "scripts/production-compose.mjs",
         "exec",
         "-T",
-        "tool-broker",
+        "control-plane",
         "node",
         "--input-type=module",
         "--eval",
@@ -530,7 +530,7 @@ async function listLogicalSandboxAssignments(logicalSandboxId) {
       ],
       60_000,
     ),
-    "Tool Broker assignment inventory",
+    "Sandbox control assignment inventory",
   );
 }
 
@@ -550,7 +550,7 @@ async function workspaceFileEvidence(runId) {
 async function workspaceRuntimeEvidence(workspaceId) {
   const value = await psql(
     `select workspace_runtime_id::text || '|' || coalesce(runtime_id, '') || '|' || state
-       from tool_broker_workspace_runtimes
+       from workspace_runtimes
       where workspace_id = ${sqlLiteral(workspaceId)}
         and state in ('reserved', 'materializing', 'active', 'warm', 'cleaning', 'unknown')
       order by updated_at desc
@@ -564,7 +564,7 @@ async function workspaceRuntimeEvidence(workspaceId) {
 async function toolBindingForRun(runId) {
   const value = await psql(
     `select binding_id::text
-       from tool_broker_binding_routes
+       from sandbox_tool_bindings
       where run_id = ${sqlLiteral(runId)}
       order by binding_id
       limit 1`,
@@ -629,7 +629,7 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
               'executionReference', 'pcer2_' || replace(lease_id::text, '-', '') ||
                 '_' || replace(run_id::text, '-', '') || '_' || fencing_token::text
             )::text
-       from tool_broker_workspace_runtimes
+       from workspace_runtimes
       where workspace_id = (
               select workspace_id from sessions where id = ${sqlLiteral(sessionId)}
             )
@@ -640,13 +640,13 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
   const durableWarm =
     durableWarmJson.length === 0
       ? undefined
-      : parseJson(durableWarmJson, "Broker-owned warm assignment");
+      : parseJson(durableWarmJson, "Control-plane-owned warm assignment");
   const source = `
     import { readFileSync } from "node:fs";
     import { randomUUID } from "node:crypto";
     const sessionId = ${JSON.stringify(sessionId)};
     const token = readFileSync(
-      "/run/pi-cloud-secrets/tool-broker-token",
+      "/run/pi-cloud-secrets/sandbox-control-token",
       "utf8",
     ).trim();
     const endpoint = "http://127.0.0.1:4300/internal/v1/sandbox-inventory";
@@ -696,7 +696,7 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
       "scripts/production-compose.mjs",
       "exec",
       "-T",
-      "tool-broker",
+      "control-plane",
       "node",
       "--input-type=module",
       "--eval",
@@ -1031,7 +1031,7 @@ try {
   assert.deepEqual(
     await listLogicalSandboxAssignments(await logicalSandboxIdForRun(firstCoding.accepted.runId)),
     [],
-    "Broker-owned warm Cube leaked into expired Supervisor inventory",
+    "Control-plane-owned warm Cube leaked into expired Supervisor inventory",
   );
 
   const previewRun = await runTurn(

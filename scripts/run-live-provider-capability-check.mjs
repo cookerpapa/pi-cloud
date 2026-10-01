@@ -253,7 +253,7 @@ try {
   assert.equal(
     (first.transcript?.items ?? []).some((item) => item.kind === "tool"),
     false,
-    "Provider search was incorrectly projected as a Pi/Tool Broker Tool",
+    "Provider search was incorrectly projected as a Pi/Sandbox control Tool",
   );
 
   const nativeReplayStartedAt = performance.now();
@@ -338,7 +338,7 @@ try {
   assert.equal(
     (second.transcript?.items ?? []).some((item) => item.kind === "tool"),
     false,
-    "Codex Provider search was incorrectly projected as a Pi/Tool Broker Tool",
+    "Codex Provider search was incorrectly projected as a Pi/Sandbox control Tool",
   );
   durableHostedMessageCount = countPiSessionPayloads(session.sessionId, "providerHostedToolCall");
   durableCitationMessageCount = countPiSessionPayloads(session.sessionId, "providerAnnotations");
@@ -391,7 +391,7 @@ const report = {
   assertions: {
     deepSeekProviderSearchReachedFinalMessage: true,
     codexProviderSearchReachedFinalMessage: true,
-    bothProviderSearchesBypassedToolBroker: true,
+    bothProviderSearchesBypassedSandboxControl: true,
     bothProviderSearchesPublishedDurableProgress: true,
     priorAnswerRestoredWithoutAnotherSearch: true,
     hiddenProviderSearchResultNotClaimedAsDurable: true,

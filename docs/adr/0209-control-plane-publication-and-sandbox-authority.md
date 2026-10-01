@@ -1,6 +1,7 @@
 # ADR-0209: control-plane publication and sandbox authority
 
-Status: accepted for implementation, 2026-10-01, by the owner after the review.
+Status: implemented and isolated-verified, 2026-10-01; shared-cluster rollout pending.
+Accepted by the owner after the review.
 This supersedes ADR-0163's direct Worker producer and the independent Tool Broker
 responsibilities. It does not restore historical FactChannel leases, projection
 receipts, signatures or a second Run authority. Implementation proceeds in
@@ -62,6 +63,16 @@ modules in the existing service, not three new services or schedulers.
   Tool state are distinct. Correct or bypass the upstream CubeAPI mapping that
   labels unknown/stopped states as running through a pinned, explicit adapter.
   A missing heartbeat alone does not prove physical death or termination.
+  Upstream's `status` is the main execution container's state, not an assertion
+  that the VM process has disappeared. Preserve running/paused/pausing/stopped/
+  error/unknown and retain the reported Cube node identity. A stopped execution
+  container may require VM cleanup, but cannot itself release VM quota.
+- Observation of absence must address the recorded full Sandbox ID on its known
+  node. A missing master route, unhealthy/missing node, failed RPC or metadata
+  recovery gap means unavailable. Only a successful exact node lookup with no
+  retained runtime metadata can establish absence under Cube's deletion contract;
+  a partial cluster listing is never sufficient. VM cleanup still requires an
+  explicit control-plane lifecycle decision and confirmed completion.
 - Implement a Cube-side execution handoff before removing long execution ownership
   from the control plane. Fixed whole Tools remain in the guest; a trusted Cube-side
   completion adapter owns bounded final-result delivery to the original Worker boot.

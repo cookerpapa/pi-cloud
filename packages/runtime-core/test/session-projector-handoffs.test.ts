@@ -306,7 +306,7 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     expect(route.mock.calls[0]![0]).toBe(r);
   });
 
-  it("waits for seal projection before displaying the terminal or retiring executor state", async () => {
+  it("waits for seal projection before displaying the terminal without a second execution-stop RPC", async () => {
     const commit = deferred<ExecutionProjectionResult>();
     f.project.mockReturnValue(commit.promise);
     const display = vi.spyOn(projector.eventHub, "publish");
@@ -317,7 +317,7 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     commit.resolve({ terminal: event("session", "turn.completed"), canonicalThroughSequence: 1 });
     await handling;
     expect(display).toHaveBeenCalledOnce();
-    expect(route).toHaveBeenCalledOnce();
+    expect(route).not.toHaveBeenCalled();
     expect(projector.eventStore.statistics().cachedEvents).toBe(0);
   });
 
@@ -335,20 +335,18 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     expect(route).not.toHaveBeenCalled();
   });
 
-  it("retries seal delivery after ACK loss without duplicating its live terminal", async () => {
-    route.mockRejectedValueOnce(new Error("lost delivery ACK"));
+  it("replays seal projection without duplicating its live terminal or execution closure", async () => {
     f.project.mockResolvedValue({
       terminal: event("session", "turn.completed"),
       canonicalThroughSequence: 1,
     });
     const r = record("session", "execution_seal"),
       display = vi.spyOn(projector.eventHub, "publish");
-    await expect(f.handler!(r)).rejects.toThrow("lost delivery ACK");
+    await f.handler!(r);
     await f.handler!(r);
     expect(f.project).toHaveBeenCalledTimes(2); // PG idempotency is tested with real PG elsewhere.
-    expect(route).toHaveBeenCalledTimes(2);
+    expect(route).not.toHaveBeenCalled();
     expect(display).toHaveBeenCalledOnce();
-    expect(route.mock.calls[0]![0]).toEqual(route.mock.calls[1]![0]);
   });
 
   it("does not put unrelated partition handlers behind a pending owner-delivery ACK", async () => {

@@ -1,0 +1,28 @@
+{
+  "upstreamRepository": "https://github.com/TencentCloud/CubeSandbox.git",
+  "upstreamCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
+  "managedProtocolVersion": 1,
+  "guestProtocolVersion": 2,
+  "patches": [
+    {
+      "file": "0001-accurate-sandbox-state.patch",
+      "sha256": "79c2535b2159f17d5e70458fc02bdb101907b0c795b0c94510629dd93cb106b7"
+    },
+    {
+      "file": "0002-anchored-runtime-observation.patch",
+      "sha256": "94025db3d4503e44275b4edac570c75b7327267c9c7c40e3a159586da86e9633"
+    },
+    {
+      "file": "0003-native-tool-execution.patch",
+      "sha256": "935c30ab6a1f721d07fea3512f068a414e9429a76ff20974617b2063ff5b2745"
+    }
+  ],
+  "buildImages": {
+    "cubeletBuilder": "ghcr.io/tencentcloud/cubesandbox-builder@sha256:5848d94b222df1e0022638599a50a7680e48fcf744d4e2bd8cca60f7ba641aa5",
+    "go": "golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437",
+    "rust": "rust:1.85-alpine@sha256:4333721398de61f53ccbe53b0b855bcc4bb49e55828e8f652d7a8ac33dd0c118",
+    "ubuntu22": "ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02",
+    "ubuntu24": "ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+    "alpine": "alpine:3.21@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507"
+  }
+}

@@ -64,6 +64,7 @@ RUN node node_modules/esbuild/bin/esbuild \
       packages/tool-sandbox/src/envd-tool-exec.ts \
       packages/tool-sandbox/src/envd-guest-control.ts \
       packages/tool-sandbox/src/envd-input-files.ts \
+      packages/tool-sandbox/src/cube-tool-scope.ts \
       --bundle \
       --platform=node \
       --external:sharp \
@@ -169,6 +170,7 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
     && npm cache clean --force
 
 COPY --from=tool-worker-builder /out/envd-tool-exec.mjs /opt/pi-cloud/bin/envd-tool-exec.mjs
+COPY --from=tool-worker-builder /out/cube-tool-scope.mjs /opt/pi-cloud/bin/cube-tool-scope.mjs
 COPY --from=tool-worker-builder /out/envd-guest-control.mjs /opt/pi-cloud/bin/envd-guest-control.mjs
 COPY --from=tool-worker-builder /out/envd-input-files.mjs /opt/pi-cloud/bin/envd-input-files.mjs
 COPY --from=tool-worker-builder /src/node_modules/sharp /opt/pi-cloud/node_modules/sharp
@@ -194,6 +196,6 @@ ENV NODE_ENV=production \
 WORKDIR /workspace
 # Reuse Cube's standard guest contract. cube-agent reaches the inherited
 # entrypoint over vsock, which starts the credential-free envd data plane on
-# 49983. PiCloud has no persistent guest controller; Tool Broker launches a
-# uid-1000, no-new-privileges Tool Worker through envd only when work exists.
+# 49983 for lifecycle and interactive access. Cube's native executor launches
+# a scoped uid-1000, no-new-privileges fixed Tool Worker only when work exists.
 EXPOSE 49983

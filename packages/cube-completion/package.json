@@ -1,0 +1,17 @@
+{
+  "name": "@pi-cloud/cube-completion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run --maxWorkers=1"
+  },
+  "dependencies": {
+    "@pi-cloud/database": "0.1.0",
+    "@pi-cloud/event-log": "0.1.0",
+    "@pi-cloud/protocol": "0.1.0",
+    "@pi-cloud/session-attachments": "0.1.0",
+    "tsx": "4.23.1"
+  }
+}

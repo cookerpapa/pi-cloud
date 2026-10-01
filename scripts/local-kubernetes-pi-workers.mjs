@@ -574,7 +574,7 @@ async function applyWorkerSecret() {
     "database-notification-url": Buffer.from(`${databaseUrl.toString()}\n`).toString("base64"),
     "supervisor-enrollment-token": await source("supervisor-enrollment-token"),
     "supervisor-management-token": await source("supervisor-management-token"),
-    "tool-broker-token": await source("tool-broker-token"),
+    "sandbox-control-token": await source("sandbox-control-token"),
     "cli-proxy-api-key": await source("cli-proxy-api-key"),
     "session-image-s3-credentials.json": await source("session-image-s3-credentials.json"),
     "metrics-token": await source("metrics-token"),

@@ -308,7 +308,7 @@ export class PiCloudMetrics {
     });
     this.sandboxAdmissionLimit = new Gauge({
       name: "pi_cloud_sandbox_admission_limit",
-      help: "Maximum materialized Tool Sandboxes admitted by this Tool Broker",
+      help: "Maximum materialized Tool Sandboxes admitted by this Sandbox control",
       labelNames: ["provider"],
       registers: [this.registry],
     });

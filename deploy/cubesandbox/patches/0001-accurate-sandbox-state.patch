@@ -1,0 +1,116 @@
+From dfdb7689915680c338ab3581ee1917a8605e3240 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Thu, 1 Oct 2026 13:07:18 +0800
+Subject: [PATCH] Preserve stopped and unknown sandbox observations
+
+Autonomously-by: Codex:GPT-6
+---
+ CubeAPI/src/models/mod.rs         |  5 +++-
+ CubeAPI/src/services/sandboxes.rs | 41 +++++++++++++++++++++++++++----
+ 2 files changed, 40 insertions(+), 6 deletions(-)
+
+diff --git a/CubeAPI/src/models/mod.rs b/CubeAPI/src/models/mod.rs
+index b11d548f190c60dc28cc3932eeb884b29dc1ca51..0e4812899a471467d3d0bd4b78a5018cbdf8f92b 100644
+--- a/CubeAPI/src/models/mod.rs
++++ b/CubeAPI/src/models/mod.rs
+@@ -30,13 +30,16 @@ impl ApiError {
+ pub type SandboxMetadata = HashMap<String, String>;
+ pub type EnvVars = HashMap<String, String>;
+ 
+-/// State of the sandbox (running | paused)
++/// Observed sandbox state. Missing or unrecognized upstream evidence is unknown.
+ #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+ #[serde(rename_all = "lowercase")]
+ pub enum SandboxState {
+     Running,
+     Paused,
+     Pausing,
++    Stopped,
++    Error,
++    Unknown,
+ }
+ 
+ /// Network configuration for sandbox egress/ingress control.
+diff --git a/CubeAPI/src/services/sandboxes.rs b/CubeAPI/src/services/sandboxes.rs
+index 10842d4dfcdab5b62ed10d4e39030bb491971f57..463fcf33f113c25fcc82e016b5c29e9311c2b360 100644
+--- a/CubeAPI/src/services/sandboxes.rs
++++ b/CubeAPI/src/services/sandboxes.rs
+@@ -880,6 +880,10 @@ fn parse_state_filter(value: Option<&str>) -> Option<SandboxState> {
+     match value {
+         Some("running") => Some(SandboxState::Running),
+         Some("paused") => Some(SandboxState::Paused),
++        Some("pausing") => Some(SandboxState::Pausing),
++        Some("stopped") => Some(SandboxState::Stopped),
++        Some("error") => Some(SandboxState::Error),
++        Some("unknown") => Some(SandboxState::Unknown),
+         _ => None,
+     }
+ }
+@@ -892,15 +896,21 @@ fn sandbox_state_from_status(status: SandboxStatus) -> SandboxState {
+     match status {
+         SandboxStatus::Paused => SandboxState::Paused,
+         SandboxStatus::Running => SandboxState::Running,
+-        _ => SandboxState::Running,
++        SandboxStatus::Pausing => SandboxState::Pausing,
++        SandboxStatus::Stopped => SandboxState::Stopped,
++        SandboxStatus::Error => SandboxState::Error,
++        SandboxStatus::Unknown => SandboxState::Unknown,
+     }
+ }
+ 
+ fn sandbox_state_from_str(status: &str) -> SandboxState {
+-    match status.to_lowercase().as_str() {
++    match status.trim().to_lowercase().as_str() {
++        "running" => SandboxState::Running,
+         "paused" => SandboxState::Paused,
+         "pausing" => SandboxState::Pausing,
+-        _ => SandboxState::Running,
++        "stopped" => SandboxState::Stopped,
++        "error" => SandboxState::Error,
++        _ => SandboxState::Unknown,
+     }
+ }
+ 
+@@ -1064,12 +1074,13 @@ mod tests {
+ 
+     use super::{
+         build_cube_network_config, filter_by_metadata, from_cubemaster_info,
+-        map_delete_cubemaster_err, validate_mask_request_host, SandboxService, RET_CODE_CONFLICT,
++        map_delete_cubemaster_err, parse_state_filter, sandbox_state_from_status,
++        sandbox_state_from_str, validate_mask_request_host, SandboxService, RET_CODE_CONFLICT,
+         RET_CODE_NOT_FOUND, RET_CODE_TASK_RESUME_FAILED, RET_CODE_TASK_STATE_INVALID,
+     };
+     use crate::cubemaster::{
+         CreateSandboxRequest, CubeMasterClient, CubeMasterError, ListSandboxResponse, SandboxInfo,
+-        SandboxUpdateRequest,
++        SandboxStatus, SandboxUpdateRequest,
+     };
+     use crate::error::AppError;
+     use crate::models::{
+@@ -1086,6 +1097,26 @@ mod tests {
+     use serde_json::Value;
+     use tokio::sync::Mutex;
+ 
++    #[test]
++    fn observed_states_preserve_detail_and_list_failure_evidence() {
++        for (raw, typed, expected) in [
++            ("running", SandboxStatus::Running, SandboxState::Running),
++            ("paused", SandboxStatus::Paused, SandboxState::Paused),
++            ("pausing", SandboxStatus::Pausing, SandboxState::Pausing),
++            ("stopped", SandboxStatus::Stopped, SandboxState::Stopped),
++            ("error", SandboxStatus::Error, SandboxState::Error),
++            ("unknown", SandboxStatus::Unknown, SandboxState::Unknown),
++        ] {
++            assert_eq!(sandbox_state_from_status(typed), expected);
++            assert_eq!(sandbox_state_from_str(raw), expected);
++            assert_eq!(parse_state_filter(Some(raw)), Some(expected.clone()));
++            assert_eq!(serde_json::to_value(expected).unwrap(), raw);
++        }
++        for missing in ["", "future-state", "3"] {
++            assert_eq!(sandbox_state_from_str(missing), SandboxState::Unknown);
++        }
++    }
++
+     #[test]
+     fn metadata_filter_matches_all_pairs() {
+         let metadata = HashMap::from([

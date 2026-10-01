@@ -1,5 +1,6 @@
 import * as atomicSessionLifecycle from "./157_atomic_session_lifecycle.ts";
 import * as controlPlanePublication from "./158_control_plane_publication.ts";
+import * as cubeExecutionBinding from "./159_cube_execution_binding.ts";
 import * as permanentConversationDeletion from "./156_permanent_conversation_deletion.ts";
 import * as directWorkspaceStorage from "./138_direct_workspace_storage.ts";
 import * as removeUnusedSubagentResultPointer from "./155_remove_unused_subagent_result_pointer.ts";
@@ -51,12 +52,12 @@ import * as decouplePersistentSandboxLeases from "./041_decouple_persistent_sand
 import * as kafkaFirstWorkerEventLog from "./042_kafka_first_worker_event_log.ts";
 import * as sessionEventHotRetention from "./043_session_event_hot_retention.ts";
 import * as canonicalConversationsAndLiveStreams from "./044_canonical_conversations_and_live_streams.ts";
-import * as sandboxDomainsAndToolBroker from "./045_sandbox_domains_and_tool_broker.ts";
+import * as sandboxDomainsAndSandboxControl from "./045_sandbox_domains_and_tool_broker.ts";
 import * as temporalOutboxHandoff from "./046_temporal_outbox_handoff.ts";
 import * as removeTemporalWorkerAffinity from "./047_remove_temporal_worker_affinity.ts";
 import * as turnAdmissionIndex from "./048_turn_admission_index.ts";
 import * as tenantSandboxQuota from "./049_tenant_sandbox_quota.ts";
-import * as primaryToolBrokerRoute from "./050_primary_tool_broker_route.ts";
+import * as primarySandboxControlRoute from "./050_primary_tool_broker_route.ts";
 import * as bootstrapTenantSandboxQuota from "./051_bootstrap_tenant_sandbox_quota.ts";
 import * as postgresRunQueue from "./052_postgres_run_queue.ts";
 import * as piSessionStorage from "./053_pi_session_storage.ts";
@@ -205,12 +206,12 @@ export const migrationProvider: MigrationProvider = {
       "042_kafka_first_worker_event_log": kafkaFirstWorkerEventLog,
       "043_session_event_hot_retention": sessionEventHotRetention,
       "044_canonical_conversations_and_live_streams": canonicalConversationsAndLiveStreams,
-      "045_sandbox_domains_and_tool_broker": sandboxDomainsAndToolBroker,
+      "045_sandbox_domains_and_tool_broker": sandboxDomainsAndSandboxControl,
       "046_temporal_outbox_handoff": temporalOutboxHandoff,
       "047_remove_temporal_worker_affinity": removeTemporalWorkerAffinity,
       "048_turn_admission_index": turnAdmissionIndex,
       "049_tenant_sandbox_quota": tenantSandboxQuota,
-      "050_primary_tool_broker_route": primaryToolBrokerRoute,
+      "050_primary_tool_broker_route": primarySandboxControlRoute,
       "051_bootstrap_tenant_sandbox_quota": bootstrapTenantSandboxQuota,
       "052_postgres_run_queue": postgresRunQueue,
       "053_pi_session_storage": piSessionStorage,
@@ -319,6 +320,7 @@ export const migrationProvider: MigrationProvider = {
       "156_permanent_conversation_deletion": permanentConversationDeletion,
       "157_atomic_session_lifecycle": atomicSessionLifecycle,
       "158_control_plane_publication": controlPlanePublication,
+      "159_cube_execution_binding": cubeExecutionBinding,
     };
   },
 };

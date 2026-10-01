@@ -21,11 +21,10 @@ export type ProductionControlPlaneConfig = {
   producerCapacity: ProducerCapacity;
   acceptedFactRetentionMs: number;
   projectorAdvertisedBaseUrl: string;
-  toolDispatchToken: string;
   supervisorEnrollmentToken: string;
   supervisorManagementToken: string;
   cubeEgressConfigToken: string;
-  toolBrokerBaseUrls: readonly string[];
+  sandboxControlBaseUrls: readonly string[];
   workspaceServiceToken: string;
   workspaceTerminalToken: string;
   previewPublicOriginBaseUrl: string;
@@ -87,7 +86,7 @@ type ProductionSandboxDomainConfig = {
   id: string;
   displayName: string;
   state: "active" | "draining" | "disabled";
-  toolBrokerBaseUrl: string;
+  sandboxControlBaseUrl: string;
   workspaceStorageKey: string;
   maximumActiveSandboxes: number;
 };
@@ -124,11 +123,11 @@ function sandboxDomains(value: string): readonly ProductionSandboxDomainConfig[]
       throw new TypeError(`Sandbox Domain ${domain.id} has an invalid state`);
     }
     if (
-      typeof domain.toolBrokerBaseUrl !== "string" ||
-      !/^https?:\/\/[^\s]+$/u.test(domain.toolBrokerBaseUrl) ||
-      domain.toolBrokerBaseUrl.length > 2_048
+      typeof domain.sandboxControlBaseUrl !== "string" ||
+      !/^https?:\/\/[^\s]+$/u.test(domain.sandboxControlBaseUrl) ||
+      domain.sandboxControlBaseUrl.length > 2_048
     ) {
-      throw new TypeError(`Sandbox Domain ${domain.id} has an invalid Tool Broker URL`);
+      throw new TypeError(`Sandbox Domain ${domain.id} has an invalid Sandbox control URL`);
     }
     if (
       typeof domain.workspaceStorageKey !== "string" ||
@@ -148,7 +147,7 @@ function sandboxDomains(value: string): readonly ProductionSandboxDomainConfig[]
       id: domain.id,
       displayName: domain.displayName,
       state: domain.state,
-      toolBrokerBaseUrl: domain.toolBrokerBaseUrl,
+      sandboxControlBaseUrl: domain.sandboxControlBaseUrl,
       workspaceStorageKey: domain.workspaceStorageKey,
       maximumActiveSandboxes: domain.maximumActiveSandboxes,
     };
@@ -235,12 +234,12 @@ function managementUrls(value: string, allowInsecure: boolean): string[] {
   const values = value.split(",");
   if (values.length < 1 || values.length > 256 || values.some((entry) => entry.trim() !== entry)) {
     throw new TypeError(
-      "PI_CLOUD_TOOL_BROKER_URLS must contain 1-256 comma-separated URLs without whitespace",
+      "PI_CLOUD_SANDBOX_CONTROL_URLS must contain 1-256 comma-separated URLs without whitespace",
     );
   }
   const parsed = values.map((entry) => managementUrl(entry, allowInsecure));
   if (new Set(parsed).size !== parsed.length) {
-    throw new TypeError("PI_CLOUD_TOOL_BROKER_URLS must contain unique URLs");
+    throw new TypeError("PI_CLOUD_SANDBOX_CONTROL_URLS must contain unique URLs");
   }
   return parsed;
 }
@@ -423,11 +422,6 @@ export async function loadProductionControlPlaneConfig(
         `http://${required(environment, "POD_IP").includes(":") ? `[${environment.POD_IP}]` : environment.POD_IP}:${environment.PORT ?? "3000"}`,
       true,
     ),
-    toolDispatchToken: await secret(
-      environment,
-      "PI_CLOUD_TOOL_DISPATCH_TOKEN",
-      allowInlineSecrets,
-    ),
     kafkaBrokers: boundedList(
       required(environment, "PI_CLOUD_KAFKA_BROKERS"),
       "PI_CLOUD_KAFKA_BROKERS",
@@ -457,8 +451,8 @@ export async function loadProductionControlPlaneConfig(
       "PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN",
       allowInlineSecrets,
     ),
-    toolBrokerBaseUrls: managementUrls(
-      required(environment, "PI_CLOUD_TOOL_BROKER_URLS"),
+    sandboxControlBaseUrls: managementUrls(
+      required(environment, "PI_CLOUD_SANDBOX_CONTROL_URLS"),
       allowInsecureInternalHttp,
     ),
     workspaceServiceToken: await secret(

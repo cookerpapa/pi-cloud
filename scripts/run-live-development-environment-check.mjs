@@ -10,7 +10,7 @@ import ssh2 from "ssh2";
 import {
   OfficialCubeSandboxRuntimeClient,
   workspaceVolumeId,
-} from "../packages/tool-broker/src/index.ts";
+} from "../packages/sandbox-control/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -167,7 +167,7 @@ async function waitForWorkspacePurge(workspaceId) {
   throw new Error(`Development machine Workspace ${workspaceId} was not purged`);
 }
 
-async function waitForToolBrokerReady() {
+async function waitForSandboxControlReady() {
   const deadline = Date.now() + 2 * 60_000;
   while (Date.now() < deadline) {
     try {
@@ -175,7 +175,7 @@ async function waitForToolBrokerReady() {
         "scripts/production-compose.mjs",
         "exec",
         "-T",
-        "tool-broker",
+        "control-plane",
         "node",
         "-e",
         "fetch('http://127.0.0.1:4300/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
@@ -185,7 +185,7 @@ async function waitForToolBrokerReady() {
       await wait(250);
     }
   }
-  throw new Error("Tool Broker did not become ready after restart");
+  throw new Error("Sandbox control did not become ready after restart");
 }
 
 async function terminalCommand(path, command, marker) {
@@ -454,7 +454,7 @@ try {
     'childSessionId',e.child_session_id,'state',r.state,'computeSessionId',r.compute_session_id,
     'workspaceId',r.workspace_id,'cwd',r.working_directory,'runtimeName',a.runtime_name
   )::text from subagent_executions e join runs r on r.id=e.child_run_id
-    join tool_broker_workspace_runtimes a on a.tenant_id=e.tenant_id and a.workspace_id=r.workspace_id and a.compute_session_id=r.compute_session_id
+    join workspace_runtimes a on a.tenant_id=e.tenant_id and a.workspace_id=r.workspace_id and a.compute_session_id=r.compute_session_id
   where e.parent_run_id=${sqlLiteral(temporarySubagentRun.runId)} order by a.created_at desc limit 1`),
   );
   assert.equal(temporarySubagentEvidence.state, "completed");
@@ -522,11 +522,11 @@ try {
 
   await capture(
     process.execPath,
-    ["scripts/production-compose.mjs", "restart", "tool-broker"],
+    ["scripts/production-compose.mjs", "restart", "control-plane"],
     5 * 60_000,
   );
-  await waitForToolBrokerReady();
-  const recoveredAfterBrokerRestart = await waitForEnvironment(
+  await waitForSandboxControlReady();
+  const recoveredAfterControlPlaneRestart = await waitForEnvironment(
     development.environmentId,
     "running",
   );
@@ -539,18 +539,18 @@ try {
   assert.equal((await cube.read(runtimeName))?.state, "running");
   await terminalCommand(
     `/v1/development-environments/${development.environmentId}/terminal`,
-    'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_BROKER_RECOVERY_OK',
-    "EXCLUSIVE_BROKER_RECOVERY_OK",
+    'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_CONTROL_PLANE_RECOVERY_OK',
+    "EXCLUSIVE_CONTROL_PLANE_RECOVERY_OK",
   );
-  const previewAfterBrokerRestart = await fetchFromProduction(
+  const previewAfterControlPlaneRestart = await fetchFromProduction(
     `/v1/development-environments/${development.environmentId}/preview/${String(previewPort)}/`,
     { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
   );
-  assert.equal(previewAfterBrokerRestart.status, 200);
-  assert.match(await previewAfterBrokerRestart.text(), /PI_CLOUD_PREVIEW_OK/);
-  const sshAfterBrokerRestart = await api.issueSshAccessTicket(session.sessionId);
+  assert.equal(previewAfterControlPlaneRestart.status, 200);
+  assert.match(await previewAfterControlPlaneRestart.text(), /PI_CLOUD_PREVIEW_OK/);
+  const sshAfterControlPlaneRestart = await api.issueSshAccessTicket(session.sessionId);
   await sshCommand(
-    sshAfterBrokerRestart,
+    sshAfterControlPlaneRestart,
     'kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_BROKER_SSH_OK',
     "EXCLUSIVE_BROKER_SSH_OK",
   );
@@ -665,7 +665,7 @@ try {
     previewPort,
     rootFilesystemPreserved: true,
     elasticWorkspaceRootAbsent: true,
-    brokerRestartKeptMachineRunning: recoveredAfterBrokerRestart.state === "running",
+    brokerRestartKeptMachineRunning: recoveredAfterControlPlaneRestart.state === "running",
     emptyDirectoryBrowsePassed: true,
     deletedConversationDidNotReleaseMachine: true,
     oneTimeSshGatewayPassed: true,

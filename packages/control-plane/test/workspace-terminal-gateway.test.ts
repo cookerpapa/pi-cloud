@@ -60,7 +60,7 @@ function queuedFrames(socket: WebSocket): () => Promise<Record<string, unknown>>
   };
 }
 
-async function seed(database: Kysely<Database>, toolBrokerBaseUrl: string): Promise<void> {
+async function seed(database: Kysely<Database>, sandboxControlBaseUrl: string): Promise<void> {
   await database.insertInto("tenants").values({ id: IDS.tenant, slug: "terminal-test" }).execute();
   await database
     .insertInto("users")
@@ -141,7 +141,7 @@ async function seed(database: Kysely<Database>, toolBrokerBaseUrl: string): Prom
     .execute();
   await database
     .updateTable("sandbox_domains")
-    .set({ tool_broker_base_url: toolBrokerBaseUrl })
+    .set({ sandbox_control_base_url: sandboxControlBaseUrl })
     .where("id", "=", "sandbox-domain-0001")
     .executeTakeFirstOrThrow();
 }
@@ -278,7 +278,7 @@ describe("WorkspaceTerminalGateway", () => {
     });
 
     await database
-      .insertInto("tool_broker_instances")
+      .insertInto("sandbox_control_instances")
       .values({
         instance_id: IDS.broker,
         sandbox_domain_id: "sandbox-domain-0001",

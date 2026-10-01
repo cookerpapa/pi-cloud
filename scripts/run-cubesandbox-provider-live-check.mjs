@@ -87,7 +87,7 @@ const child = spawn(
   [
     "test",
     "--workspace",
-    "@pi-cloud/tool-broker",
+    "@pi-cloud/sandbox-control",
     "--",
     "cubesandbox-live-provider.integration.test.ts",
   ],

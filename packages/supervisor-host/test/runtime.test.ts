@@ -32,7 +32,7 @@ import {
   PiWorkerRuntime,
   TenantModelGateway,
   type SupervisorHostConfig,
-  type SupervisorToolBroker,
+  type SupervisorSandboxControl,
   type SupervisorRunWorker,
   type PostgresPiWorkerOptions,
 } from "../src/index.ts";
@@ -86,10 +86,10 @@ afterAll(async () => {
   await pglite?.close();
 });
 
-function toolBroker(): SupervisorToolBroker {
+function sandboxControl(): SupervisorSandboxControl {
   return {
     async refreshServices() {},
-    workflowUrlFor: () => "http://tool-broker.test/internal/v1/tool-operation",
+    workflowUrlFor: () => "http://sandbox-control.test/internal/v1/tool-operation",
     async checkHealth() {},
     async create() {
       throw new Error("unused");
@@ -180,12 +180,12 @@ describe("PiWorkerRuntime", () => {
       };
       return worker;
     };
-    let toolBrokerHealthy = true;
+    let sandboxControlHealthy = true;
     let publisherFailure: Error | undefined;
-    const runtimeToolBroker: SupervisorToolBroker = {
-      ...toolBroker(),
+    const runtimeSandboxControl: SupervisorSandboxControl = {
+      ...sandboxControl(),
       async checkHealth() {
-        if (!toolBrokerHealthy) throw new Error("Tool Broker unavailable");
+        if (!sandboxControlHealthy) throw new Error("Sandbox control unavailable");
       },
     };
     const baseConfig: SupervisorHostConfig = {
@@ -195,7 +195,7 @@ describe("PiWorkerRuntime", () => {
       allowInsecureInternalHttp: true,
       enrollmentToken: ENROLLMENT_TOKEN,
       managementToken: MANAGEMENT_TOKEN,
-      toolBrokerServiceToken: `tool-broker-${"s".repeat(48)}`,
+      sandboxControlServiceToken: `sandbox-control-${"s".repeat(48)}`,
       providerGatewayBaseUrl: address,
       providerGatewayApiKey: `provider-${"k".repeat(48)}`,
       databaseUrl: connectionString,
@@ -211,8 +211,8 @@ describe("PiWorkerRuntime", () => {
       subagentMaximumNodes: 32,
       modelConcurrency: 4,
       familyModelConcurrency: 4,
-      toolBrokerBaseUrls: ["http://tool-broker.test:4300/"],
-      toolBrokerRequestTimeoutMs: 300_000,
+      sandboxControlBaseUrls: ["http://sandbox-control.test:4300/"],
+      sandboxControlRequestTimeoutMs: 300_000,
       trustedWorkspaceDirectory: root,
       bootStateDirectory: join(root, "boot"),
       modelGatewayHost: "127.0.0.1",
@@ -234,7 +234,7 @@ describe("PiWorkerRuntime", () => {
           },
           database,
 
-          toolBroker: runtimeToolBroker,
+          sandboxControl: runtimeSandboxControl,
           runWorkerFactory,
         }),
     ).toThrow("Pi SDK Worker runtime capacity must be between 1 and 16");
@@ -247,7 +247,7 @@ describe("PiWorkerRuntime", () => {
           },
           database,
 
-          toolBroker: runtimeToolBroker,
+          sandboxControl: runtimeSandboxControl,
           runWorkerFactory,
         }),
     ).toThrow("Pi SDK Worker database pool must be between 2 and 64 connections");
@@ -263,7 +263,7 @@ describe("PiWorkerRuntime", () => {
         config: baseConfig,
         database,
 
-        toolBroker: runtimeToolBroker,
+        sandboxControl: runtimeSandboxControl,
         runWorkerFactory,
         executionLogs: {
           async open() {
@@ -339,7 +339,7 @@ describe("PiWorkerRuntime", () => {
         config: baseConfig,
         database,
 
-        toolBroker: runtimeToolBroker,
+        sandboxControl: runtimeSandboxControl,
         runWorkerFactory,
         executionLogs: {
           async open() {
@@ -383,7 +383,7 @@ describe("PiWorkerRuntime", () => {
       expect(runWorkerOptions.map((options) => options.maximumLanesPerFamily)).toEqual([33, 33]);
       expect(runWorkerOptions.map((options) => options.canClaimRuns?.())).toEqual([false, true]);
       await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
-      toolBrokerHealthy = false;
+      sandboxControlHealthy = false;
       await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 1_100));
       await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
 
@@ -437,7 +437,7 @@ describe("PiWorkerRuntime", () => {
           bootStateDirectory: join(root, "failed-boot"),
         },
         database,
-        toolBroker: runtimeToolBroker,
+        sandboxControl: runtimeSandboxControl,
         runWorkerFactory,
         // Startup fails at model health, before any queue/log connection starts.
         provisioningClient: {
@@ -469,7 +469,7 @@ describe("PiWorkerRuntime", () => {
           bootStateDirectory: join(root, "publisher-startup"),
         },
         database,
-        toolBroker: runtimeToolBroker,
+        sandboxControl: runtimeSandboxControl,
         runWorkerFactory,
         provisioningClient: {
           async provision() {
@@ -516,7 +516,7 @@ describe("PiWorkerRuntime", () => {
             bootStateDirectory: join(root, `startup-${outcome}`),
           },
           database,
-          toolBroker: runtimeToolBroker,
+          sandboxControl: runtimeSandboxControl,
           runWorkerFactory,
           provisioningClient: {
             async provision() {

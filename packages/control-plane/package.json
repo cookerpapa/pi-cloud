@@ -25,7 +25,7 @@
     "@pi-cloud/observability": "0.1.0",
     "@pi-cloud/protocol": "0.1.0",
     "@pi-cloud/runtime-core": "0.1.0",
-    "@pi-cloud/tool-broker": "0.1.0",
+    "@pi-cloud/sandbox-control": "0.1.0",
     "@pi-cloud/subagent-control": "0.1.0",
     "@pi-cloud/workspace-runtime": "0.1.0",
     "fastify": "5.12.4",

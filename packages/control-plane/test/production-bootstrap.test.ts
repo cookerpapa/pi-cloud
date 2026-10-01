@@ -30,7 +30,7 @@ const CONFIG: ProductionBootstrapConfig = {
       id: "sandbox-domain-bootstrap",
       displayName: "Bootstrap Sandbox Domain",
       state: "active",
-      toolBrokerBaseUrl: "http://tool-broker.pi-cloud-sandbox-bootstrap:4300",
+      sandboxControlBaseUrl: "http://sandbox-control.pi-cloud-sandbox-bootstrap:4300",
       workspaceStorageKey: "workspace-domain-bootstrap",
       maximumActiveSandboxes: 1_024,
     },
@@ -201,7 +201,7 @@ describe.sequential("production bootstrap and configuration", () => {
         "cube-egress-config-token",
         `cube-egress-${"c".repeat(48)}`,
       ),
-      PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
+      PI_CLOUD_SANDBOX_CONTROL_URLS: "http://sandbox-control:4300",
       PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE: await secret(
         root,
         "workspace-service-token",
@@ -222,11 +222,6 @@ describe.sequential("production bootstrap and configuration", () => {
       PI_CLOUD_PROJECTOR_ADVERTISED_URL: "http://control-plane:3000",
       PI_CLOUD_KAFKA_REPLICAS: "1",
       PI_CLOUD_PREVIEW_ORIGIN_BASE_URL: "http://preview.localhost:8080",
-      PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE: await secret(
-        root,
-        "tool-dispatch",
-        `event-ingest-${"i".repeat(48)}`,
-      ),
       PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true",
       HOST: "0.0.0.0",
     };
@@ -244,7 +239,7 @@ describe.sequential("production bootstrap and configuration", () => {
         "http://{supervisorId}:4100",
         "http://{supervisorId}.workers.example:4100",
       ],
-      toolBrokerBaseUrls: ["http://tool-broker:4300/"],
+      sandboxControlBaseUrls: ["http://sandbox-control:4300/"],
       host: "0.0.0.0",
       port: 3000,
       platformModelSourceTenantId: CONFIG.tenantId,

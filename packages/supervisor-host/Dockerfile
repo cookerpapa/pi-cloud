@@ -19,7 +19,7 @@ COPY packages/observability/package.json packages/observability/package.json
 COPY packages/pi-session-postgres/package.json packages/pi-session-postgres/package.json
 COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/runtime-core/package.json packages/runtime-core/package.json
-COPY packages/tool-broker/package.json packages/tool-broker/package.json
+COPY packages/sandbox-control/package.json packages/sandbox-control/package.json
 COPY packages/subagent-control/package.json packages/subagent-control/package.json
 COPY packages/sandbox-supervisor/package.json packages/sandbox-supervisor/package.json
 COPY packages/supervisor-host/package.json packages/supervisor-host/package.json
@@ -64,8 +64,8 @@ COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/protocol/src packages/protocol/src
 COPY packages/runtime-core/package.json packages/runtime-core/package.json
 COPY packages/runtime-core/src packages/runtime-core/src
-COPY packages/tool-broker/package.json packages/tool-broker/package.json
-COPY packages/tool-broker/src packages/tool-broker/src
+COPY packages/sandbox-control/package.json packages/sandbox-control/package.json
+COPY packages/sandbox-control/src packages/sandbox-control/src
 COPY packages/subagent-control/package.json packages/subagent-control/package.json
 COPY packages/subagent-control/src packages/subagent-control/src
 COPY packages/sandbox-supervisor/package.json packages/sandbox-supervisor/package.json
@@ -77,7 +77,7 @@ COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.
 COPY packages/workspace-runtime/src packages/workspace-runtime/src
 RUN cd /app/packages/sandbox-supervisor \
     && node --import tsx --input-type=module --eval "await import('./src/subagent-tool.ts'); await import('@earendil-works/pi-coding-agent')" \
-    && cd /app/packages/tool-broker \
+    && cd /app/packages/sandbox-control \
     && node --input-type=module --eval "await import('undici')" \
     && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack

@@ -14,7 +14,7 @@ import type {
   SourceControlIssueJobResource,
   StartSourceControlIssueJobRequest,
 } from "@pi-cloud/protocol";
-import { ToolBrokerClient } from "@pi-cloud/tool-broker/client";
+import { SandboxControlClient } from "@pi-cloud/sandbox-control/client";
 import { validMachineDirectory } from "@pi-cloud/protocol";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -1335,8 +1335,8 @@ export class SourceControlService {
     workspaceId: string,
   ) {
     const context = await this.#issueGitCredentialContext(identity, jobId, workspaceId);
-    const result = await this.#toolBroker(
-      await this.#workspaceToolBroker(identity.tenantId, workspaceId),
+    const result = await this.#sandboxControl(
+      await this.#workspaceSandboxControl(identity.tenantId, workspaceId),
     ).preflightSourceCredential({
       sourceControlProtocolVersion: 1,
       type: "source_control.workspace_credential_preflight",
@@ -1361,8 +1361,8 @@ export class SourceControlService {
     accessToken: string,
   ) {
     const context = await this.#issueGitCredentialContext(identity, jobId, workspaceId);
-    const broker = this.#toolBroker(
-      await this.#workspaceToolBroker(identity.tenantId, workspaceId),
+    const broker = this.#sandboxControl(
+      await this.#workspaceSandboxControl(identity.tenantId, workspaceId),
     );
     return broker.authorizeSourceCredential({
       sourceControlProtocolVersion: 1,
@@ -1382,7 +1382,9 @@ export class SourceControlService {
     workspaceId: string,
   ): Promise<CodeHostConnectionListResource> {
     const context = await this.#codeHostWorkspace(identity, workspaceId);
-    const response = await this.#toolBroker(context.toolBrokerBaseUrl).listSourceCredentials({
+    const response = await this.#sandboxControl(
+      context.sandboxControlBaseUrl,
+    ).listSourceCredentials({
       sourceControlProtocolVersion: 1,
       type: "source_control.workspace_credential_list",
       requestId: this.#idGenerator(),
@@ -1400,7 +1402,7 @@ export class SourceControlService {
   ): Promise<CodeHostConnectionListResource> {
     const context = await this.#codeHostWorkspace(identity, workspaceId);
     const origin = this.#codeHostOrigin(request.provider, request.origin);
-    await this.#toolBroker(context.toolBrokerBaseUrl).authorizeSourceCredential({
+    await this.#sandboxControl(context.sandboxControlBaseUrl).authorizeSourceCredential({
       sourceControlProtocolVersion: 1,
       type: "source_control.workspace_credential_authorize",
       requestId: this.#idGenerator(),
@@ -1422,7 +1424,7 @@ export class SourceControlService {
   ): Promise<CodeHostConnectionListResource> {
     const context = await this.#codeHostWorkspace(identity, workspaceId);
     const origin = this.#codeHostOrigin(provider, originValue);
-    await this.#toolBroker(context.toolBrokerBaseUrl).disconnectSourceCredential({
+    await this.#sandboxControl(context.sandboxControlBaseUrl).disconnectSourceCredential({
       sourceControlProtocolVersion: 1,
       type: "source_control.workspace_credential_disconnect",
       requestId: this.#idGenerator(),
@@ -1539,31 +1541,31 @@ export class SourceControlService {
     };
   }
 
-  async #workspaceToolBroker(tenantId: string, workspaceId: string): Promise<string> {
+  async #workspaceSandboxControl(tenantId: string, workspaceId: string): Promise<string> {
     const activationOwner = await this.#database
-      .selectFrom("tool_broker_workspace_runtimes")
-      .select("owner_base_url as toolBrokerBaseUrl")
+      .selectFrom("workspace_runtimes")
+      .select("owner_base_url as sandboxControlBaseUrl")
       .where("tenant_id", "=", tenantId)
       .where("workspace_id", "=", workspaceId)
       .where("state", "in", ["reserved", "materializing", "active", "warm", "cleaning", "unknown"])
       .orderBy("updated_at", "desc")
       .limit(1)
       .executeTakeFirst();
-    if (activationOwner !== undefined) return activationOwner.toolBrokerBaseUrl;
+    if (activationOwner !== undefined) return activationOwner.sandboxControlBaseUrl;
     const terminalOwner = await this.#database
       .selectFrom("workspace_terminal_sessions")
-      .select("owner_base_url as toolBrokerBaseUrl")
+      .select("owner_base_url as sandboxControlBaseUrl")
       .where("tenant_id", "=", tenantId)
       .where("workspace_id", "=", workspaceId)
       .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
       .orderBy("updated_at", "desc")
       .limit(1)
       .executeTakeFirst();
-    if (terminalOwner !== undefined) return terminalOwner.toolBrokerBaseUrl;
+    if (terminalOwner !== undefined) return terminalOwner.sandboxControlBaseUrl;
     const route = await this.#database
       .selectFrom("workspaces as workspace")
       .innerJoin("sandbox_domains as domain", "domain.id", "workspace.sandbox_domain_id")
-      .select("domain.tool_broker_base_url as toolBrokerBaseUrl")
+      .select("domain.sandbox_control_base_url as sandboxControlBaseUrl")
       .where("workspace.tenant_id", "=", tenantId)
       .where("workspace.id", "=", workspaceId)
       .where("workspace.deleted_at", "is", null)
@@ -1574,17 +1576,17 @@ export class SourceControlService {
         "Workspace source-control route was not found",
       );
     }
-    return route.toolBrokerBaseUrl;
+    return route.sandboxControlBaseUrl;
   }
 
-  #toolBroker(baseUrl: string): ToolBrokerClient {
+  #sandboxControl(baseUrl: string): SandboxControlClient {
     if (this.#workspaceServiceToken === undefined) {
       throw new SourceControlServiceError(
         "source_control_unavailable",
         "Workspace credential service is not configured",
       );
     }
-    return new ToolBrokerClient({
+    return new SandboxControlClient({
       baseUrl,
       serviceToken: this.#workspaceServiceToken,
       allowInsecureHttp: this.#allowInsecureInternalHttp,
@@ -1610,7 +1612,7 @@ export class SourceControlService {
       await this.#assertMachineOwner(identity, workspaceId);
     }
     return {
-      toolBrokerBaseUrl: await this.#workspaceToolBroker(identity.tenantId, workspaceId),
+      sandboxControlBaseUrl: await this.#workspaceSandboxControl(identity.tenantId, workspaceId),
       credentialMountPath:
         workspace.workspaceKind === "development_environment"
           ? ("/home/user" as const)

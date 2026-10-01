@@ -27,8 +27,8 @@ images:
     repository: registry.example.com/pi-cloud/web-ui
     tag: git-sha-0123456789abcdef
     pullPolicy: IfNotPresent
-  toolBroker:
-    repository: registry.example.com/pi-cloud/tool-broker
+  workspaceVolumeGateway:
+    repository: registry.example.com/pi-cloud/sandbox-control
     tag: git-sha-0123456789abcdef
     pullPolicy: IfNotPresent
   sshGateway:
@@ -76,14 +76,16 @@ networkPolicy:
     - 198.51.100.32/28
 
 sandboxPlane:
+  volumeGatewayUrl: http://workspace-volume-gateway:4500
   # Replicas share durable activation ownership in PostgreSQL. The Service may
   # route a create to any healthy replica; the owner URL pins later operations.
   domainId: sandbox-domain-0001
-  toolBrokerReplicas: 3
   volumeGatewayReplicas: 2
   workspace:
     existingClaim: pi-cloud-workspaces-rwx
   cube:
+    # All Projector replicas need the endpoints of every served Cube cluster.
+    executionEndpoints: []
     apiUrl: https://cube-api.example.com
     templateId: pi-cloud-tool-v1
     developmentTemplateIds:
@@ -107,8 +109,8 @@ pi-workers:
     pullPolicy: IfNotPresent
   services:
     controlPlaneUrl: http://control-plane:3000
-    toolBrokerUrls:
-      - http://tool-broker:4300
+    sandboxControlUrls:
+      - http://control-plane:4300
     providerProxyUrl: https://provider-proxy.example.com:3129
     otlpTracesEndpoint: ""
   database:

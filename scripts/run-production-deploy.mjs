@@ -40,7 +40,19 @@ await run("scripts/configure-deepseek-native-responses.mjs");
 await run("scripts/init-cubesandbox-runtime.mjs");
 await run("scripts/register-cubesandbox-tool-template.mjs");
 await run("scripts/production-compose.mjs", ["build"]);
+await run("scripts/production-compose.mjs", [
+  "up",
+  "--detach",
+  "--wait",
+  "postgres",
+  "kafka-1",
+  "kafka-2",
+  "kafka-3",
+  "session-images-init",
+]);
+await run("scripts/configure-cube-completion.mjs");
 await run("scripts/production-compose.mjs", ["up", "--detach", "--wait", "--remove-orphans"]);
+await run("scripts/configure-cube-completion.mjs");
 // A single-file bind mount can retain the old inode after an atomic host-side
 // configuration replacement. Recreate the gateway to mount the governed file.
 await run("scripts/production-compose.mjs", [

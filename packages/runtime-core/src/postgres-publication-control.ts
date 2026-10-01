@@ -13,6 +13,7 @@ export class PostgresPublicationControl {
   constructor(
     readonly database: Kysely<Database>,
     readonly ingress: SessionPublicationIngress,
+    readonly beforeSeal?: (fact: AcceptedExecutionSealFact) => Promise<void>,
   ) {}
 
   async open(owner: PublicationOwnership, permit: ExecutionPublication): Promise<void> {
@@ -61,6 +62,6 @@ export class PostgresPublicationControl {
       this.ingress.confirmSealed(owner, fact);
       return { factId: fact.factId, durable: true as const };
     }
-    return this.ingress.seal(owner, fact);
+    return this.ingress.seal(owner, fact, this.beforeSeal && (() => this.beforeSeal!(fact)));
   }
 }

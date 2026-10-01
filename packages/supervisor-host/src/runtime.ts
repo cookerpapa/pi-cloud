@@ -17,7 +17,7 @@ import {
   PostgresNativeSessionHost,
 } from "@pi-cloud/pi-session-postgres";
 import type { SupervisorBootProvisionRequest } from "@pi-cloud/protocol";
-import { ReplicatedToolBrokerClient } from "@pi-cloud/tool-broker";
+import { ReplicatedSandboxControlClient } from "@pi-cloud/sandbox-control";
 import {
   AgentRunSupervisor,
   RemoteToolSandboxTurnRunner,
@@ -54,7 +54,7 @@ export type PiWorkerRuntimeOptions = {
   config: SupervisorHostConfig;
   database?: Kysely<Database>;
   provisioningClient?: Pick<SupervisorProvisioningClient, "provision">;
-  toolBroker?: SupervisorToolBroker;
+  sandboxControl?: SupervisorSandboxControl;
   idGenerator?: () => string;
   connectionSecretGenerator?: () => string;
   metrics?: PiCloudMetrics;
@@ -81,8 +81,8 @@ function executionLogResolver(value: ExecutionLogFactory): ActiveExecutionLogRes
   return candidate as ActiveExecutionLogResolver;
 }
 
-export type SupervisorToolBroker = Pick<
-  ReplicatedToolBrokerClient,
+export type SupervisorSandboxControl = Pick<
+  ReplicatedSandboxControlClient,
   | "workflowUrlFor"
   | "checkHealth"
   | "create"
@@ -120,7 +120,7 @@ export class PiWorkerRuntime {
   readonly #database: Kysely<Database>;
   readonly #ownsDatabase: boolean;
   readonly #provisioningClient: Pick<SupervisorProvisioningClient, "provision">;
-  readonly #toolBroker: SupervisorToolBroker;
+  readonly #sandboxControl: SupervisorSandboxControl;
   readonly #idGenerator: () => string;
   readonly #connectionSecretGenerator: () => string;
   readonly #metrics: PiCloudMetrics | undefined;
@@ -194,13 +194,13 @@ export class PiWorkerRuntime {
         enrollmentToken: options.config.enrollmentToken,
         allowInsecureHttp: options.config.allowInsecureInternalHttp,
       });
-    this.#toolBroker =
-      options.toolBroker ??
-      new ReplicatedToolBrokerClient({
-        baseUrls: options.config.toolBrokerBaseUrls,
-        serviceToken: options.config.toolBrokerServiceToken,
+    this.#sandboxControl =
+      options.sandboxControl ??
+      new ReplicatedSandboxControlClient({
+        baseUrls: options.config.sandboxControlBaseUrls,
+        serviceToken: options.config.sandboxControlServiceToken,
         allowInsecureHttp: options.config.allowInsecureInternalHttp,
-        requestTimeoutMs: options.config.toolBrokerRequestTimeoutMs,
+        requestTimeoutMs: options.config.sandboxControlRequestTimeoutMs,
       });
     this.#idGenerator = options.idGenerator ?? randomUUID;
     this.#connectionSecretGenerator =
@@ -305,7 +305,7 @@ export class PiWorkerRuntime {
         this.#runWorker?.state === "running" &&
         this.#runClaimReadiness?.ready === true,
       stopCurrentBoot: () => this.#stopCurrentBoot(),
-      assignmentInventory: this.#toolBroker,
+      assignmentInventory: this.#sandboxControl,
       subagentCommand: async (command) => {
         if (!this.#nativeSessions || !this.#subagentControl)
           throw new Error("Subagent runtime is not ready");
@@ -534,7 +534,7 @@ export class PiWorkerRuntime {
         if (!imageScope) throw new Error("Tool image scope is unavailable");
         return decodeSessionImages<NativeToolEnd>(images?.codec, imageScope, event, signal);
       },
-      broker: this.#toolBroker,
+      broker: this.#sandboxControl,
       runtimeIdentity: identity,
       trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
       openAgentSession: (command, readSignal) =>

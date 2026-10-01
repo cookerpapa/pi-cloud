@@ -172,7 +172,7 @@
       "additionalProperties": false,
       "required": [
         "controlPlaneUrl",
-        "toolBrokerUrls",
+        "sandboxControlUrls",
         "providerProxyUrl",
         "providerGatewayUrl",
         "otlpTracesEndpoint"
@@ -181,7 +181,7 @@
         "controlPlaneUrl": {
           "$ref": "#/$defs/httpUrl"
         },
-        "toolBrokerUrls": {
+        "sandboxControlUrls": {
           "type": "array",
           "minItems": 1,
           "maxItems": 256,
@@ -228,7 +228,7 @@
       "required": [
         "supervisorEnrollmentTokenKey",
         "supervisorManagementTokenKey",
-        "toolBrokerTokenKey",
+        "sandboxControlTokenKey",
         "providerGatewayApiKeyKey",
         "metricsTokenKey"
       ],
@@ -239,7 +239,7 @@
         "supervisorManagementTokenKey": {
           "$ref": "#/$defs/secretKey"
         },
-        "toolBrokerTokenKey": {
+        "sandboxControlTokenKey": {
           "$ref": "#/$defs/secretKey"
         },
         "providerGatewayApiKeyKey": {
@@ -295,7 +295,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "toolBrokerRequestMs",
+            "sandboxControlRequestMs",
             "modelCapabilityTtlMs",
             "modelUpstreamConnectMs",
             "modelUpstreamIdleMs",
@@ -303,7 +303,7 @@
             "turnMs"
           ],
           "properties": {
-            "toolBrokerRequestMs": {
+            "sandboxControlRequestMs": {
               "$ref": "#/$defs/positiveMs"
             },
             "modelCapabilityTtlMs": {

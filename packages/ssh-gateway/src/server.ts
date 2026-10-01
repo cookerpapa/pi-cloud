@@ -1,7 +1,7 @@
 import ssh2, { type ServerChannel, type Session, type Connection, type Server } from "ssh2";
 import type { SshGatewayConfig } from "./config.ts";
 import { SshTicketAuthority, type SshTerminalGrant } from "./ticket-authority.ts";
-import { openToolBrokerTerminal } from "./tool-broker-terminal.ts";
+import { openSandboxControlTerminal } from "./sandbox-control-terminal.ts";
 import { once } from "node:events";
 
 function boundedDimension(value: number | undefined, fallback: number, maximum: number): number {
@@ -13,9 +13,9 @@ function boundedDimension(value: number | undefined, fallback: number, maximum: 
 export function createSshGateway(options: {
   config: SshGatewayConfig;
   authority: SshTicketAuthority;
-  openTerminal?: typeof openToolBrokerTerminal;
+  openTerminal?: typeof openSandboxControlTerminal;
 }): Server {
-  const openTerminal = options.openTerminal ?? openToolBrokerTerminal;
+  const openTerminal = options.openTerminal ?? openSandboxControlTerminal;
   return new ssh2.Server({ hostKeys: [options.config.hostKey] }, (client: Connection) => {
     client.on("error", () => client.end());
     let grant: SshTerminalGrant | undefined;
@@ -40,7 +40,7 @@ export function createSshGateway(options: {
         const session: Session = accept();
         let rows = 24;
         let cols = 100;
-        let terminal: Awaited<ReturnType<typeof openToolBrokerTerminal>> | undefined;
+        let terminal: Awaited<ReturnType<typeof openSandboxControlTerminal>> | undefined;
         session.on("pty", (acceptPty, _reject, info) => {
           rows = boundedDimension(info.rows, 24, 500);
           cols = boundedDimension(info.cols, 100, 1_000);

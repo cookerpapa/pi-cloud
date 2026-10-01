@@ -27,10 +27,6 @@ scrape_configs:
       - targets:
           - supervisor-host:9465
           - supervisor-host-1:9465
-  - job_name: pi-cloud-tool-broker
-    bearer_token_file: /run/pi-cloud-secrets/metrics-token
-    static_configs:
-      - targets: [tool-broker:9466]
   - job_name: pi-cloud-workspace-volume-gateway
     bearer_token_file: /run/pi-cloud-secrets/metrics-token
     static_configs:

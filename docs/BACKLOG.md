@@ -15,24 +15,24 @@ The [September 30 review](reports/repository-review-20260930.md) is complete at
 three decisions to discuss and scoped cleanup candidates. The subsequent
 [repair record](reports/repository-review-repair-20261001.md) records all eight
 confirmed repairs, the accepted deletion/interruption decisions, bounded cleanup
-and passing combined verification. The accepted shared-VM execution
-handoff and lifecycle changes below remain in progress from that discussion.
+and passing combined verification. The subsequent
+[authority and Cube execution implementation](reports/cube-execution-authority-20261001.md)
+has completed isolated acceptance; shared-cluster rollout remains below.
 
 ## October 1 authority and execution cutover
 
-[ADR-0209](adr/0209-control-plane-publication-and-sandbox-authority.md) records the
-owner's subsequent decision. These slices are not deployed yet.
+[ADR-0209](adr/0209-control-plane-publication-and-sandbox-authority.md) and
+[ADR-0210](adr/0210-cube-execution-handoff-and-scoped-stop.md) are implemented.
+[Publication](reports/publication-ingress-20261001.md) and
+[Cube execution](reports/cube-execution-authority-20261001.md) evidence record
+isolated acceptance, not a production rollout.
 
-- [x] Control-plane publication ingress: memory-only hot-path scope checks,
-      serialized seals and Kafka producer fencing across ingress replacement.
-      [Isolated acceptance](reports/publication-ingress-20261001.md); not deployed.
-- [ ] Control-plane-owned Cube lifecycle and accurate physical/node/guest status.
-- [ ] Cube-side fixed Tool handoff, scoped cancellation and independent final
-      result delivery, including existing attachment handling.
-- [ ] Projector-local dispatch and migration of Broker terminal/preview/upload/
-      workflow/machine interfaces, followed by removal of the independent Broker.
-- [ ] Shared-VM failure policy, complete recovery/latency/browser acceptance and
-      matched deployment contracts; keep one execution per Run.
+- [ ] Coordinate the matched migration 158/159, Cube API/Master/Cubelet and guest
+      v2 cutover with every user of the shared Cube cluster (currently also
+      dsh-cloud). Drain/seal Runs, release old-contract VMs while preserving
+      Workspace Volumes, then run production browser/terminal/preview/upload and
+      machine-adoption acceptance. Do not claim independent-node recovery from
+      the single-host tests.
 
 ## Reliability and capacity
 

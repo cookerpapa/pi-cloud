@@ -23,7 +23,7 @@ export function validateDistributedDeploymentValues(values) {
   if (!/^[0-9a-f]{40}$/u.test(revision)) {
     throw new Error("global.imageRevision must be a 40-hex guest build identity");
   }
-  for (const name of ["controlPlane", "web", "toolBroker", "sshGateway"]) {
+  for (const name of ["controlPlane", "web", "workspaceVolumeGateway", "sshGateway"]) {
     deploymentString(values.images?.[name]?.repository, `images.${name}.repository`);
     deploymentString(values.images?.[name]?.tag, `images.${name}.tag`);
   }
@@ -46,9 +46,9 @@ export function validateDistributedDeploymentValues(values) {
 
   const runtime = values["pi-workers"]?.runtime;
   const turnMs = integer(runtime?.timeouts?.turnMs, "Pi Worker Turn timeout");
-  const toolBrokerRequestMs = integer(
-    runtime?.timeouts?.toolBrokerRequestMs,
-    "Pi Worker Tool Broker timeout",
+  const sandboxControlRequestMs = integer(
+    runtime?.timeouts?.sandboxControlRequestMs,
+    "Pi Worker Sandbox control timeout",
   );
   const modelRequestMs = integer(runtime?.timeouts?.modelRequestMs, "Pi Worker model timeout");
   const upstreamConnectMs = integer(
@@ -76,7 +76,7 @@ export function validateDistributedDeploymentValues(values) {
       values["pi-workers"]?.lifecycle?.terminationGracePeriodSeconds,
       "Pi Worker termination grace",
     ) * 1_000;
-  if (terminationMs < turnMs + toolBrokerRequestMs + 6 * 60_000) {
+  if (terminationMs < turnMs + sandboxControlRequestMs + 6 * 60_000) {
     throw new Error("Pi Worker termination grace is shorter than the Run drain budget");
   }
   const retentionMs = integer(

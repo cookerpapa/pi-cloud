@@ -75,9 +75,13 @@ protocol, record the decision under `docs/adr/` before implementation.
   requirements and a new ADR.
 - Do not claim exactly-once semantics for arbitrary shell commands or external side effects.
 - Do not run untrusted tools in the control-plane or trusted Agent Runner process.
-- Keep activation authorization and identity fencing in Tool Broker; the
-  `SandboxProvider` adapter owns Cube mechanics but must not receive Broker
-  bearer credentials or expose its native SDK to the Worker.
+- Control Plane owns VM lifecycle, binding admission and recovery. Cubelet owns
+  accepted fixed Tool lifetimes and boot/scope fencing; do not add per-Tool PG
+  Run-lease checks. Close publication admission and execution scopes before
+  appending a seal. `SandboxProvider` owns Cube mechanics and exposes no native
+  SDK or management credentials to the Worker. There is no independent Broker.
+  Quota release requires confirmed absence on the recorded node, not a missing
+  heartbeat or master route. A normal Tool error never authorizes whole-VM deletion.
 - CubeSandbox KVM is the only supported Tool runtime. Adding an alternate
   runtime requires a new current ADR and the same security/recovery acceptance
   suite; it must not enter as a silent fallback.

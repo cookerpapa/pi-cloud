@@ -73,6 +73,7 @@ class RemoteToolError extends Error {
 }
 
 export type TrustedRemoteToolsRuntimeConfiguration = {
+  observeToolDuration?: (seconds: number, outcome: "completed" | "failed") => void;
   publishToolCommand: ToolCommandPublisher["publishToolCommand"];
   waitForToolReply?: (
     request: ToolSandboxOperationRequest,
@@ -205,6 +206,9 @@ function validateRuntimeConfiguration(
   }
   return {
     publishToolCommand: candidate.publishToolCommand,
+    ...(candidate.observeToolDuration
+      ? { observeToolDuration: candidate.observeToolDuration }
+      : {}),
     ...(candidate.waitForToolReply ? { waitForToolReply: candidate.waitForToolReply } : {}),
     resolveOperationTarget,
     executionReference,
@@ -458,32 +462,43 @@ export function createTrustedRemoteAgentTools(
           command: prepared.command,
           dispose: prepared.dispose,
           result: async () => {
-            const response = await prepared.result();
-            if (
-              response.type !== "tool_sandbox.operation_result" ||
-              response.operation !== "tool.execute" ||
-              response.event.type !== "tool_execution_end"
-            )
-              throw new Error("Tool ended without a native result");
-            const event = response.event;
-            if (
-              !runtime.supportsImages &&
-              event.result.content.some((part) => part.type === "image")
-            )
-              throw new Error(
-                "The selected model does not support image input. Select an image-capable model to read this image.",
-              );
-            if (event.isError) {
-              const message = event.result.content
-                .filter((part) => part.type === "text")
-                .map((part) => part.text)
-                .join("\n");
-              const code = message.split(":", 1)[0]!;
-              if (UNAVAILABLE_TOOL_CODES.has(code))
-                await runtime.onToolOperationUnavailable?.({ code, message, retryable: false });
-              throw new Error(message);
+            const started = performance.now();
+            let outcome: "completed" | "failed" = "failed";
+            try {
+              const response = await prepared.result();
+              if (
+                response.type !== "tool_sandbox.operation_result" ||
+                response.operation !== "tool.execute" ||
+                response.event.type !== "tool_execution_end"
+              )
+                throw new Error("Tool ended without a native result");
+              const event = response.event;
+              if (
+                !runtime.supportsImages &&
+                event.result.content.some((part) => part.type === "image")
+              )
+                throw new Error(
+                  "The selected model does not support image input. Select an image-capable model to read this image.",
+                );
+              if (event.isError) {
+                const message = event.result.content
+                  .filter((part) => part.type === "text")
+                  .map((part) => part.text)
+                  .join("\n");
+                const code = message.split(":", 1)[0]!;
+                if (UNAVAILABLE_TOOL_CODES.has(code))
+                  await runtime.onToolOperationUnavailable?.({ code, message, retryable: false });
+                throw new Error(message);
+              }
+              outcome = "completed";
+              return event.result;
+            } finally {
+              try {
+                runtime.observeToolDuration?.((performance.now() - started) / 1000, outcome);
+              } catch {
+                /* Observation failure cannot change the native Tool result. */
+              }
             }
-            return event.result;
           },
         };
       },

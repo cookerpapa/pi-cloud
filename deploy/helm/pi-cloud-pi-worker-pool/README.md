@@ -5,7 +5,7 @@ replicas consume the same PostgreSQL-backed Run queue. `LISTEN/NOTIFY` is only a
 latency hint; PostgreSQL remains the queue and Run authority.
 
 Workers never execute model-generated code. `read/write/edit/bash` cross the
-Tool Broker and execute in CubeSandbox. A Worker PVC contains only its boot
+control-plane publication ingress and Projector; fixed Tools execute in CubeSandbox. A Worker PVC contains only its boot
 ledger. Pi SessionStorage is durable PostgreSQL state. Workers publish both
 browser-visible events and complete Session mutations through the control-plane
 publication ingress. Its ordinary append path checks installed memory state and
@@ -22,7 +22,7 @@ kubectl -n pi-cloud-workers create secret generic pi-cloud-pi-worker-secrets \
   --from-file=database-notification-url=/private/direct-postgresql-url \
   --from-file=supervisor-enrollment-token=/private/supervisor-enrollment-token \
   --from-file=supervisor-management-token=/private/supervisor-management-token \
-  --from-file=tool-broker-token=/private/tool-broker-token \
+  --from-file=sandbox-control-token=/private/sandbox-control-token \
   --from-file=cli-proxy-api-key=/private/cli-proxy-api-key \
   --from-file=metrics-token=/private/metrics-token
 ```

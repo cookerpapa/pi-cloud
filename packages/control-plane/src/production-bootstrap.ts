@@ -46,7 +46,7 @@ export async function bootstrapProductionDatabase(
           id: domain.id,
           display_name: domain.displayName,
           state: domain.state,
-          tool_broker_base_url: domain.toolBrokerBaseUrl,
+          sandbox_control_base_url: domain.sandboxControlBaseUrl,
           workspace_storage_key: domain.workspaceStorageKey,
           maximum_active_sandboxes: domain.maximumActiveSandboxes,
         })
@@ -54,13 +54,9 @@ export async function bootstrapProductionDatabase(
         .executeTakeFirst();
       const existing = await transaction
         .selectFrom("sandbox_domains")
-        .select(["tool_broker_base_url", "workspace_storage_key"])
+        .select(["sandbox_control_base_url", "workspace_storage_key"])
         .where("id", "=", domain.id)
         .executeTakeFirstOrThrow();
-      exact(
-        existing.tool_broker_base_url === domain.toolBrokerBaseUrl,
-        `Domain ${domain.id} route`,
-      );
       exact(
         existing.workspace_storage_key === domain.workspaceStorageKey,
         `Domain ${domain.id} Workspace storage route`,
@@ -70,6 +66,7 @@ export async function bootstrapProductionDatabase(
         .set({
           display_name: domain.displayName,
           state: domain.state,
+          sandbox_control_base_url: domain.sandboxControlBaseUrl,
           maximum_active_sandboxes: domain.maximumActiveSandboxes,
           updated_at: new Date(),
         })

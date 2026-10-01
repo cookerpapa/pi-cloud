@@ -6,8 +6,8 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
   createExecutionReference,
-  parseToolBrokerRequest,
-  parseToolBrokerResponse,
+  parseSandboxControlRequest,
+  parseSandboxControlResponse,
   parseToolSandboxOperationRequest,
   parseToolWorkerInput,
   parseToolWorkerOutput,
@@ -45,7 +45,7 @@ const assignment = {
 describe("Tool Sandbox protocol", () => {
   it("parses a closed, fully fenced create request", () => {
     expect(
-      parseToolBrokerRequest({
+      parseSandboxControlRequest({
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.create",
         requestId: "10000000-0000-4000-8000-000000000004",
@@ -68,18 +68,18 @@ describe("Tool Sandbox protocol", () => {
       type: "tool_sandbox.reserved",
       requestId: "10000000-0000-4000-8000-000000000004",
       activationId: "10000000-0000-4000-8000-000000000005",
-      ownerBaseUrl: "http://tool-broker-0:4300",
+      ownerBaseUrl: "http://sandbox-control-0:4300",
       executionReference: assignment.executionReference,
       workspaceRoot: "/workspace",
       continuity: "cold_restore",
       continuityId: "10000000-0000-4000-8000-000000000005",
     } as const;
-    expect(parseToolBrokerResponse(response)).toMatchObject({
+    expect(parseSandboxControlResponse(response)).toMatchObject({
       type: "tool_sandbox.reserved",
       continuity: "cold_restore",
     });
     expect(() =>
-      parseToolBrokerResponse({
+      parseSandboxControlResponse({
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.reserved",
         requestId: response.requestId,
@@ -94,7 +94,7 @@ describe("Tool Sandbox protocol", () => {
   it("carries deployment-owned direct private CIDRs into the Tool process environment", () => {
     expect(
       parseToolWorkerInput({
-        toolWorkerProtocolVersion: 1,
+        toolWorkerProtocolVersion: 2,
         type: "worker.initialize",
         activationId: "10000000-0000-4000-8000-000000000005",
         toolRoot: "/workspace",
@@ -131,7 +131,7 @@ describe("Tool Sandbox protocol", () => {
       }),
     ).toThrow(ToolSandboxProtocolError);
     expect(() =>
-      parseToolBrokerRequest({
+      parseSandboxControlRequest({
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.create",
         requestId: "10000000-0000-4000-8000-000000000007",
@@ -150,8 +150,9 @@ describe("Tool Sandbox protocol", () => {
   it("binds every worker result to activation and operation identities", () => {
     expect(
       parseToolWorkerOutput({
-        toolWorkerProtocolVersion: 1,
+        toolWorkerProtocolVersion: 2,
         type: "worker.operation_result",
+        scopeStopRequired: false,
         response: {
           toolBrokerProtocolVersion: 1,
           type: "tool_sandbox.operation_result",
@@ -169,6 +170,7 @@ describe("Tool Sandbox protocol", () => {
       }),
     ).toMatchObject({
       type: "worker.operation_result",
+      scopeStopRequired: false,
       response: { operation: "tool.execute" },
     });
   });
@@ -207,7 +209,7 @@ describe("Tool Sandbox protocol", () => {
     (type) => {
       expect(() =>
         parseToolWorkerInput({
-          toolWorkerProtocolVersion: 1,
+          toolWorkerProtocolVersion: 2,
           type,
           activationId: "10000000-0000-4000-8000-000000000008",
           ...(type === "worker.cancel"

@@ -269,7 +269,7 @@ beforeAll(async () => {
       id: "sandbox-domain-test",
       display_name: "test",
       state: "active",
-      tool_broker_base_url: "http://tool-broker.internal",
+      sandbox_control_base_url: "http://sandbox-control.internal",
       workspace_storage_key: "test-volume",
       maximum_active_sandboxes: 16,
     })

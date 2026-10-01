@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { access, lstat, open, readFile } from "node:fs/promises";
 import { isIP } from "node:net";
@@ -29,6 +30,14 @@ const recreatesOnlyControlPlane =
   positionalCommandArguments.length === 1 &&
   positionalCommandArguments[0] === "control-plane";
 const runsDatabaseBootstrap = command === "run" && commandArguments.includes("database-bootstrap");
+const startsOnlyInfrastructure =
+  command === "up" &&
+  positionalCommandArguments.length > 0 &&
+  positionalCommandArguments.every((name) =>
+    ["postgres", "kafka-1", "kafka-2", "kafka-3", "session-images", "session-images-init"].includes(
+      name,
+    ),
+  );
 const runtimeEnvironment = Object.fromEntries(
   (await readFile(environmentFile, "utf8"))
     .split(/\r?\n/u)
@@ -67,6 +76,7 @@ if (unsupportedOptionalProfiles.length > 0) {
   );
 }
 const allowsStaleCubeTemplate =
+  startsOnlyInfrastructure ||
   recreatesOnlyControlPlane ||
   runsDatabaseBootstrap ||
   new Set(["build", "down", "start", "stop", "kill", "rm", "ps", "logs", "exec"]).has(command);
@@ -84,8 +94,7 @@ const applicationSecretNames = [
   "grafana-admin-password",
   "metrics-token",
   "source-control-credential-master-key",
-  "tool-broker-token",
-  "tool-dispatch-token",
+  "sandbox-control-token",
   "workspace-service-token",
   "workspace-terminal-token",
   "cube-persistent-state-key",
@@ -165,6 +174,9 @@ async function readPrivateRuntimeJson(path, label) {
 
 const clusterPath = resolve(runtimeDirectory, "cubesandbox/cluster.json");
 const templatePath = resolve(runtimeDirectory, "cubesandbox/template.json");
+const runtimePatchSha256 = createHash("sha256")
+  .update(await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json")))
+  .digest("hex");
 const cluster = allowsStaleCubeTemplate
   ? await readPrivateRuntimeJson(clusterPath, "CubeSandbox cluster evidence").catch(() => undefined)
   : await readPrivateRuntimeJson(clusterPath, "CubeSandbox cluster evidence");
@@ -176,6 +188,8 @@ const template = allowsStaleCubeTemplate
 const invalidClusterEvidence =
   cluster?.formatVersion !== 1 ||
   cluster?.cubeCommit !== "8721dd151971ce3c2966482bbd32904ad98f378e" ||
+  cluster?.executionProtocolVersion !== 1 ||
+  cluster?.runtimePatchSha256 !== runtimePatchSha256 ||
   cluster?.podNetworkMtu !== 1_450 ||
   isIP(cluster?.master?.host ?? "") !== 4 ||
   !Number.isSafeInteger(cluster?.master?.port) ||
@@ -285,7 +299,7 @@ const serviceArguments =
     ? [
         "control-plane",
         "supervisor-host",
-        "tool-broker",
+        "workspace-volume-gateway",
         "ssh-gateway",
         "web",
         "provider-egress-relay-image",

@@ -160,13 +160,13 @@ Do not commit proxy credentials or expose a local proxy publicly.
 | `PI_CLOUD_SUBAGENT_MAXIMUM_NODES` | `32` | total descendants per root Run |
 | `PI_CLOUD_WORKER_MODEL_CONCURRENCY` | `4` | simultaneous provider requests across the Worker, including Compaction |
 | `PI_CLOUD_SESSION_MODEL_CONCURRENCY` | `4` | simultaneous provider requests per physical Session; cannot exceed the Worker limit |
-| `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes owned by the one-host Broker; leaves two elastic slots beside one starter development machine |
-| `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous executing operations per one-host Broker (standalone/Helm default 32); distinct from physical Cube allocations |
-| `PI_CLOUD_TOOL_BROKER_MEMORY_LIMIT` / `PI_CLOUD_TOOL_BROKER_CPUS` | `1536m` / `1.0` | one-host Broker resources; raise together with measured operation/delivery capacity; Helm uses workload resources |
+| `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes managed by the one-host control plane; leaves two elastic slots beside one starter development machine |
+| `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous interactive workflows per control plane (Helm default 32); fixed Tools have a Cubelet-local limit of 32 |
+| `PI_CLOUD_CONTROL_PLANE_MEMORY_LIMIT` / `PI_CLOUD_CONTROL_PLANE_CPUS` | `1536m` / `2.0` | combined control-plane resources; raise together with measured operation/delivery capacity; Helm uses workload resources |
 | `PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES` | `4` | idle warm Cube limit |
 | `PI_CLOUD_SANDBOX_WARM_TTL_MS` | `900000` | idle warm lifetime (15 minutes) |
-| `PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS` | `15000` | Broker replica ownership lease |
-| `PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS` | `5000` | Broker ownership heartbeat |
+| `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS` | `15000` | control-plane sandbox-management ownership lease |
+| `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS` | `5000` | sandbox-management ownership heartbeat |
 
 Session capacity and model concurrency are separate. Subagent depth/node settings
 apply to both Projector admission and Worker bounds; Compose shares the variables,
@@ -176,7 +176,7 @@ RPC uses a dedicated direct connection pool, not the Provider HTTP proxy.
 The Worker database pool is intentionally not proportional to slots:
 one connection can serve many model-waiting Runs. Start with four per Worker,
 observe pool wait time under the configured model/Lane concurrency, and use a
-connection proxy before multiplying connections across many replicas. Broker
+connection proxy before multiplying connections across many replicas. Sandbox-management
 heartbeat must leave more than one missed interval before lease expiry.
 
 The shared database adapter retains at most 128 named, parameterized SELECT/WITH
@@ -191,7 +191,7 @@ The bound lives in `packages/database/src/client.ts`; schema-changing deployment
 still requires draining/restarting the affected processes.
 
 Lease/startup-claim deadlines and final expiry decisions use primary PostgreSQL
-time after authority locks (ADR-0170). Worker/Broker local timers use conservative
+time after authority locks (ADR-0170). Worker/control-plane local timers use conservative
 monotonic observations, not application wall clocks. There is no legacy-clock
 switch. Keep the database host clock disciplined; this does not certify clock
 continuity across an untested database failover.
@@ -226,7 +226,7 @@ interpreted as a new limit. Several Worker processes may share a host.
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS` | `2` | trusted Volume operations in flight |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_QUEUED_OPERATIONS` | `32` | bounded Volume wait queue |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS` | `30000` | maximum queue wait |
-| `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS` | `660000` | Broker-to-Volume request timeout |
+| `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS` | `660000` | Control-plane-to-Volume request timeout |
 | `PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS` | `30000` | deleted-Workspace scan interval |
 | `PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE` | `16` | deletions considered per scan |
 | `PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS` | empty | up to eight comma-separated RFC1918 `/24`–`/32` CIDRs that Cube guests may reach directly |
@@ -268,24 +268,33 @@ is required for native allocations and Linux page cache; the container limit
 must never be lower than `-Xmx`.
 
 One Projector group consumes the execution log, using partition pause/seek, a
-32 MiB native queue and a 5 ms fetch-queue backoff. Tool Broker publishes native
+32 MiB native queue and a 5 ms fetch-queue backoff. The trusted Cube completion adapter publishes native
 Tool replies to a separate Worker-boot Kafka topic; it does not consume the
 execution log. The reply producer caps in-flight bytes at 16 MiB and delivery
 at 30 seconds. Replies expire after 11 minutes; positively retired boot topics
 and groups are reaped after that grace. Active commands remain separately bounded.
-Only final results use that topic. Temporary progress uses Broker's
+Only final results use that topic. Temporary progress uses the completion adapter's
 `PI_CLOUD_CONTROL_PLANE_URL` (the internal Control Plane Service URL), the existing
-dispatch credential and TCP/3000. Compose/Helm supply it. HTTP connections are
+Supervisor management credential and TCP/3000. Compose/Helm supply it. HTTP connections are
 pooled; snapshots are bounded to 8,192 characters with a one-second send cadence
 and one-second deadline. Progress failure never changes execution status.
 
-`PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE` points to `tool-dispatch-token`, shared by
-Projectors and executors, never Workers or Cube. Internal TCP/4300 must be
-reachable. Projector confirms Kafka consumption progress before dispatching a
-Tool. A five-second ambiguous command delivery is not retried; missed execution
-is UNKNOWN. Seal delivery can retry the same positioned control record. A vanished
-boot does not cause execution on another machine. The seal Outbox polls every
-50 ms. There is no completed-result GET/cache or commit-notification RPC.
+Fixed Tools are handed directly from Projector to the recorded Cube API/node/boot.
+The native handoff is bounded to five seconds; ambiguous acceptance closes that
+operation scope and is not replayed. Closure blocks publication admission, joins
+Cube/workflow scopes, then publishes the ordered seal. The seal Outbox polls every
+50 ms. Interactive workflows use the private control-plane TCP/4300 endpoint and
+the Supervisor management credential. There is no completed-result GET/cache or
+commit-notification RPC.
+
+Every Projector needs credentials for all Cube API endpoints it may route to.
+`PI_CLOUD_CUBE_EXECUTION_ENDPOINTS_FILE` is an optional private JSON array of
+`{ "apiUrl": "https://cube.example", "apiKeyFile": "/run/secrets/cube-key" }`;
+the primary configured Cube endpoint is included automatically. Helm exposes
+`sandboxPlane.cube.executionEndpoints` with corresponding Secret keys. An unknown
+endpoint is rejected before sending credentials; dispatch never falls back to
+another cluster. Self-hosted installation builds the pinned Cube patch set and
+mounts completion PG/S3/management credentials only into the trusted Cubelet.
 
 Kafka retention must cover a maximum Turn plus settlement grace. Browser
 reconnect always receives a replacement PostgreSQL + Gateway-tail snapshot;
@@ -396,7 +405,7 @@ make another service kill a still-valid operation. Current defaults are:
 ```text
 model upstream connect 120 s <= Pi response-header wait 150 s <= Pi Turn 600 s
 model upstream stream idle 300 s <= Pi Turn 600 s
-Tool Broker request 360 s
+Sandbox management/workflow request 360 s; fixed Tool handoff 5 s
 model capability TTL 900 s
 Worker termination grace 1320 s
 Workspace Volume request 660 s < Volume gateway termination grace 720 s
@@ -412,7 +421,7 @@ Kubernetes Secret for credentials. Important value groups are:
 
 - `external.database`, `global.kafka` and `external.providerProxyUrl`;
 - `pi-workers.services.providerGatewayUrl` and its API-key Secret entry;
-- `sandboxPlane` for Cube, Workspace storage and Broker/Volume capacity;
+- `sandboxPlane` for Cube, Workspace storage and sandbox-management/Volume capacity;
 - `pi-workers.workerPool`, `autoscaling`, `runtime` and `lifecycle`;
 - `networkPolicy.externalEgressCidrs`;
 - `images` and `global.imageRevision`.
@@ -455,16 +464,17 @@ not process RSS or all upstream objects. Capacity overflow rejects before enqueu
 it can fail the current Run but never acknowledges missing data. Per-lane `drain`
 adds no fixed batching delay. The 10-second Producer close budget fits inside the
 process shutdown grace and reports failure if admitted data cannot drain.
-Broker limits must leave headroom for V8 objects, request decoding, native buffers
+Control-plane and Cubelet limits must leave headroom for V8 objects, request decoding, native buffers
 and lightweight operation metadata. They are not tenant quotas or Workspace locks.
 
 ## Secrets
 
 Keep database URLs, Provider Gateway API/management keys and OAuth Volume,
 Worker enrollment/management tokens,
-Tool Broker service/dispatch tokens, Cube API key, SSH host key and
+Sandbox management service tokens, Cube API key, SSH host key and
 source-control credential master key in the
-generated private files or Kubernetes Secrets. Cube receives none of them.
+generated private files or Kubernetes Secrets. The Tool guest receives none of them;
+the trusted Cubelet completion adapter receives only its PG/S3/management credentials.
 When GitHub integration is enabled, the App private key and Webhook secret are
 also deployment Secrets; installation access tokens are generated at runtime
 and must never be copied into configuration. GitLab project tokens stay
@@ -479,7 +489,7 @@ enable authenticated Kafka. Keep those listeners restricted to trusted services.
 
 ## Session image attachments
 
-Trusted Control Plane, Broker and Workers use the same private S3 bucket:
+Trusted Control Plane, Cube completion adapter and Workers use the same private S3 bucket:
 
 | Setting | Meaning |
 | --- | --- |

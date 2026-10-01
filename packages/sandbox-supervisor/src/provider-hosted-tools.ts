@@ -16,7 +16,7 @@ function hostedToolDeclaration(tool: AgentModelHostedTool): ProviderPayload {
 /**
  * Add only deployment-approved Provider-hosted Tools to a Provider-native
  * Responses payload. Pi function Tools remain untouched and continue through
- * Tool Broker; the Provider executes these declarations itself.
+ * Sandbox control; the Provider executes these declarations itself.
  */
 export function mergeProviderHostedTools(
   payload: unknown,

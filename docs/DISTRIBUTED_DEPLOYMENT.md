@@ -1,7 +1,8 @@
 # Distributed Kubernetes deployment
 
 The chart deploys replaceable Web, Control Plane, Pi Worker,
-Tool Broker and persistent Volume gateway replicas. It does not install the
+and persistent Volume gateway replicas. Sandbox lifecycle and Tool dispatch
+are modules of each Control Plane replica. It does not install the
 external durable authorities.
 
 ## External requirements
@@ -27,9 +28,9 @@ Ingress -> Web / Control Plane
                          │
                 shared Pi Worker replicas
                          │
-               replicated Tool Broker
+               Control Plane / Projector
                          │
-                     Cube API
+                 Cube native execution API
                          │
                  Cube KVM compute nodes
                          │
@@ -40,7 +41,7 @@ PG-issued scope -> Worker -> control-plane ingress -> Kafka keyed by physical Se
                                               Session Projector group
                                               ├-> PG SessionStorage
                                               ├-> live view / SSE
-                                              └-> owner Tool executor -> Cube
+                                              └-> Cube native executor
 ```
 
 There are no execution Cells, private Worker queues or persistent cold-Session
@@ -49,6 +50,14 @@ locality. Any Pi Worker may acquire a cold physical Pi Session, but every
 active Run on that Session's main and delegated Lanes must use the same
 Worker boot identity under one physical-Session lease. Child tasks do not acquire
 independent leases; cold ownership is acquired under a brief `pi_sessions` row lock.
+
+Each domain release runs the Control Plane composition; a domain is no longer
+a separate Broker service. `sandboxPlaneEnabled` controls the Volume-gateway
+workload, while the controller's Cube and gateway endpoints remain configured
+for every Control Plane deployment. All Projector replicas must be able to reach
+every served Cube API. Configure `sandboxPlane.cube.executionEndpoints` with
+allowed API URLs and Secret keys for additional clusters. The recorded endpoint
+never chooses a new unconfigured credential destination.
 
 ## Deploy
 
@@ -84,7 +93,7 @@ must include every configured endpoint, including Kafka and provider gateways.
 
 - Control Plane/Web scale by CPU; projection lag is monitored, not an HPA input;
 - Pi Workers scale by PostgreSQL ready Run backlog;
-- Tool Broker and Volume gateway have independently configured replica counts;
+- Sandbox management runs in each Control Plane; Volume gateway replicas are configured separately;
 - Cube compute/node elasticity is configured in the external Cube infrastructure.
 
 KEDA is not a queue authority. If it or its metric is unavailable, the
@@ -105,7 +114,7 @@ Before claiming high availability, test on the actual storage/network stack:
 - Worker and node loss during model and Tool calls;
 - PostgreSQL/PgBouncer failover and notification reconnect;
 - Kafka retention/consumer lag and snapshot-first SSE reconnect;
-- Tool Broker/Volume gateway owner loss;
+- Control Plane/Volume gateway owner loss;
 - Cube compute-node drain and persistent Volume reattachment;
 - KEDA and node-autoscaler scale-up/down under real backlog.
 

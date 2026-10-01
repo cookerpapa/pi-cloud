@@ -1,0 +1,920 @@
+import type {
+  SupervisorRuntimeAssignment,
+  ToolSandboxAssignment,
+  ToolSandboxCreateRequest,
+} from "@pi-cloud/protocol";
+import {
+  createExecutionReference,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+} from "@pi-cloud/protocol";
+import {
+  PiCloudMetrics,
+  activeTraceCarrier,
+  initializeTelemetry,
+  virtualRunTraceCarrier,
+  withSpan,
+  type TelemetryRuntime,
+  type TraceCarrier,
+} from "@pi-cloud/observability";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import WebSocket, { type RawData } from "ws";
+import {
+  SANDBOX_CONTROL_TERMINAL_PATH,
+  SANDBOX_CONTROL_SERVICE_PATH,
+  ReplicatedSandboxControlClient,
+  SandboxControlClient,
+  SandboxOwnerRedirectError,
+  SandboxControlServer,
+  WorkspaceVolumeGatewayError,
+  type SandboxControlBackend,
+} from "../src/index.ts";
+
+const SERVICE_TOKEN = `service-${"s".repeat(48)}`;
+const WORKSPACE_SERVICE_TOKEN = `workspace-service-${"m".repeat(48)}`;
+const TERMINAL_TOKEN = `terminal-${"t".repeat(48)}`;
+const CAPABILITY = `pcer2_${"1".repeat(32)}_${"2".repeat(32)}_1`;
+const STEP_CONTEXT_SHA256 = "a".repeat(64);
+const ACTIVATION_ID = "10000000-0000-4000-8000-000000000010";
+const assignment: ToolSandboxAssignment = {
+  tenantId: "tenant-manager-test",
+  projectId: "project-manager-test",
+  workspaceId: "workspace-manager-test",
+  supervisorId: "supervisor-manager-test",
+  bootId: "10000000-0000-4000-8000-000000000001",
+  sandboxId: "10000000-0000-4000-8000-000000000002",
+  runId: "command-manager-test",
+  sessionId: "session-manager-test",
+  turnId: "turn-manager-test",
+  executionReference: createExecutionReference(
+    "10000000-0000-4000-8000-000000000003",
+    "10000000-0000-4000-8000-000000000003",
+    4,
+  ),
+};
+const runtimeAssignment: SupervisorRuntimeAssignment = {
+  containerId: "10000000-0000-4000-8000-000000000020",
+  containerName: "pi-cloud-tool-manager-test",
+  supervisorId: assignment.supervisorId,
+  bootId: assignment.bootId,
+  sandboxId: assignment.sandboxId,
+  runId: assignment.runId,
+  workspaceId: assignment.workspaceId,
+  sessionId: assignment.sessionId,
+  turnId: assignment.turnId,
+  executionReference: assignment.executionReference,
+};
+
+const servers: SandboxControlServer[] = [];
+let telemetry: TelemetryRuntime;
+let observedServerTrace: TraceCarrier | undefined;
+
+beforeAll(async () => {
+  telemetry = await initializeTelemetry({ serviceName: "sandbox-control-rpc-test" });
+});
+
+afterAll(async () => {
+  await telemetry.shutdown();
+});
+
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => server.close()));
+});
+
+function backend(ownerBaseUrl = "http://sandbox-control.invalid"): SandboxControlBackend {
+  return {
+    providerId: "test-provider",
+    async refreshServices() {},
+    async checkHealth() {},
+    async create(request) {
+      observedServerTrace = activeTraceCarrier();
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.reserved",
+        requestId: request.requestId,
+        activationId: ACTIVATION_ID,
+        ownerBaseUrl,
+        executionReference: CAPABILITY,
+        workspaceRoot: "/workspace",
+        continuity: "cold_restore",
+        continuityId: ACTIVATION_ID,
+      };
+    },
+    async release(request) {
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.released",
+        requestId: request.requestId,
+        activationId: request.activationId,
+        retained: false,
+      };
+    },
+    activeCount: 0,
+    admittedCount: 0,
+    admissionWaitingCount: 0,
+    maximumActiveSandboxes: 2,
+    cleanPrewarmCount: 0,
+    async stop() {},
+    async listWorkspaceDirectory(request) {
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "workspace.directory_listed",
+        requestId: request.requestId,
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        path: request.path,
+        entries: [
+          { name: "README.md", path: "README.md", kind: "file", sizeBytes: 8, executable: false },
+        ],
+        truncated: false,
+      };
+    },
+    async readWorkspaceFile(request) {
+      const content = Buffer.from("current\n");
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "workspace.file_read",
+        requestId: request.requestId,
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        path: request.path,
+        content: content.toString("base64"),
+        sha256: createHash("sha256").update(content).digest("hex"),
+        executable: false,
+        sizeBytes: content.byteLength,
+      };
+    },
+    async authorizeSourceCredential(request) {
+      return {
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_result",
+        requestId: request.requestId,
+        workspaceId: request.workspaceId,
+        origin: request.origin,
+        authorized: true,
+      };
+    },
+    async preflightSourceCredential(request) {
+      return {
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_result",
+        requestId: request.requestId,
+        workspaceId: request.workspaceId,
+        origin: request.origin,
+        authorized: true,
+      };
+    },
+    async listSourceCredentials(request) {
+      return {
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_listed",
+        requestId: request.requestId,
+        workspaceId: request.workspaceId,
+        connections: [{ provider: "github", origin: "https://github.com" }],
+      };
+    },
+    async disconnectSourceCredential(request) {
+      return {
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_disconnected",
+        requestId: request.requestId,
+        workspaceId: request.workspaceId,
+        provider: request.provider,
+        origin: request.origin,
+        disconnected: true,
+      };
+    },
+    async listAssignments(sandboxId) {
+      return sandboxId === runtimeAssignment.sandboxId ? [runtimeAssignment] : [];
+    },
+    async terminateAndConfirmAbsent() {},
+    async confirmAbsent() {},
+    async close() {},
+  };
+}
+
+describe("Sandbox control authenticated RPC", () => {
+  it.each([false, true])(
+    "preserves a Volume error's retryability across Broker RPC: %s",
+    async (retryable) => {
+      const broker = backend();
+      vi.spyOn(broker, "listWorkspaceDirectory").mockRejectedValueOnce(
+        new WorkspaceVolumeGatewayError(
+          "workspace_path_unavailable",
+          "Workspace path is unavailable",
+          retryable,
+        ),
+      );
+      const server = new SandboxControlServer({
+        host: "127.0.0.1",
+        port: 0,
+        serviceToken: SERVICE_TOKEN,
+        workspaceServiceToken: WORKSPACE_SERVICE_TOKEN,
+        broker,
+      });
+      servers.push(server);
+      const client = new SandboxControlClient({
+        baseUrl: await server.listen(),
+        serviceToken: WORKSPACE_SERVICE_TOKEN,
+        allowInsecureHttp: true,
+      });
+      await expect(
+        client.listWorkspaceDirectory({
+          toolBrokerProtocolVersion: 1,
+          type: "workspace.list_directory",
+          requestId: crypto.randomUUID(),
+          tenantId: assignment.tenantId,
+          workspaceId: assignment.workspaceId,
+          sessionId: assignment.sessionId,
+          rootPath: "",
+          path: "missing",
+        }),
+      ).rejects.toMatchObject({ code: "workspace_path_unavailable", retryable });
+    },
+  );
+  it("closes its HTTP listener even when the provider teardown fails", async () => {
+    const broker = backend();
+    const failure = new Error("provider cleanup failed");
+    const close = vi.spyOn(broker, "close").mockRejectedValueOnce(failure);
+    const server = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      broker,
+    });
+    servers.push(server);
+    const address = await server.listen();
+    try {
+      await expect(server.close()).rejects.toBe(failure);
+      expect.soft(server.address).toBeUndefined();
+      await expect(
+        fetch(`${address}/health/live`, { signal: AbortSignal.timeout(1000) }),
+      ).rejects.toThrow();
+    } finally {
+      close.mockRestore();
+    }
+  });
+
+  it("routes Workspace-owned Git credential authorization without cloning", async () => {
+    const server = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      workspaceServiceToken: WORKSPACE_SERVICE_TOKEN,
+      broker: backend(),
+    });
+    servers.push(server);
+    const address = await server.listen();
+    const client = new SandboxControlClient({
+      baseUrl: address,
+      serviceToken: WORKSPACE_SERVICE_TOKEN,
+      allowInsecureHttp: true,
+    });
+    const common = {
+      sourceControlProtocolVersion: 1 as const,
+      requestId: "30000000-0000-4000-8000-000000000001",
+      tenantId: "tenant-source-control",
+      workspaceId: "30000000-0000-4000-8000-000000000002",
+      provider: "github" as const,
+      origin: "https://github.com",
+      credentialMountPath: "/workspace" as const,
+      accessToken: "ghs_process_scoped_test_token",
+    };
+    await expect(
+      client.authorizeSourceCredential({
+        ...common,
+        type: "source_control.workspace_credential_authorize",
+      }),
+    ).resolves.toMatchObject({ authorized: true });
+    await expect(
+      client.listSourceCredentials({
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_list",
+        requestId: "30000000-0000-4000-8000-000000000004",
+        tenantId: common.tenantId,
+        workspaceId: common.workspaceId,
+        credentialMountPath: "/workspace",
+      }),
+    ).resolves.toMatchObject({
+      connections: [{ provider: "github", origin: "https://github.com" }],
+    });
+    const { accessToken: _accessToken, ...preflight } = common;
+    await expect(
+      client.preflightSourceCredential({
+        ...preflight,
+        type: "source_control.workspace_credential_preflight",
+        verificationCloneUrl: "https://github.com/example/private-repo.git",
+      }),
+    ).resolves.toMatchObject({ authorized: true });
+  });
+
+  it.each(["graceful", "disconnect-with-queued-input", "overloaded-input", "overloaded-frames"])(
+    "bridges one human PTY and retires input on %s",
+    async (ending) => {
+      const terminalId = "10000000-0000-4000-8000-000000000080";
+      const heldInput = Promise.withResolvers<void>();
+      const sendInput = vi.fn(async (data: Uint8Array) => {
+        if (Buffer.from(data).toString() === "blocked") await heldInput.promise;
+      });
+      const resize = vi.fn(async () => undefined);
+      const closeTerminal = vi.fn(async () => undefined);
+      let finishOutput!: () => void;
+      const outputFinished = new Promise<void>((resolve) => {
+        finishOutput = resolve;
+      });
+      const terminalBackend: SandboxControlBackend = {
+        ...backend(),
+        async openTerminal(input) {
+          expect(input).toMatchObject({
+            tenantId: "10000000-0000-4000-8000-000000000081",
+            workspaceId: "10000000-0000-4000-8000-000000000084",
+            size: { rows: 24, cols: 100 },
+          });
+          return {
+            terminalId,
+            pid: 73,
+            workspaceRoot: "/workspace",
+            output: {
+              async *[Symbol.asyncIterator]() {
+                yield Buffer.from("shell ready\r\n");
+                await outputFinished;
+              },
+            },
+            sendInput,
+            resize,
+            close: closeTerminal,
+          };
+        },
+      };
+      const server = new SandboxControlServer({
+        host: "127.0.0.1",
+        port: 0,
+        serviceToken: SERVICE_TOKEN,
+        terminalToken: TERMINAL_TOKEN,
+        broker: terminalBackend,
+      });
+      servers.push(server);
+      const address = await server.listen();
+      const url = new URL(SANDBOX_CONTROL_TERMINAL_PATH, address);
+      url.protocol = "ws:";
+      const socket = new WebSocket(url, {
+        headers: { authorization: `Bearer ${TERMINAL_TOKEN}` },
+      });
+      const frames: unknown[] = [];
+      const waiters: Array<(value: unknown) => void> = [];
+      socket.on("message", (data: RawData) => {
+        const frame = JSON.parse(data.toString("utf8")) as unknown;
+        const waiter = waiters.shift();
+        if (waiter === undefined) frames.push(frame);
+        else waiter(frame);
+      });
+      const nextFrame = (): Promise<unknown> => {
+        const frame = frames.shift();
+        return frame === undefined
+          ? new Promise<unknown>((resolve) => waiters.push(resolve))
+          : Promise.resolve(frame);
+      };
+      await new Promise<void>((resolve, reject) => {
+        socket.once("open", resolve);
+        socket.once("error", reject);
+      });
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.open",
+          requestId: "10000000-0000-4000-8000-000000000088",
+          tenantId: "10000000-0000-4000-8000-000000000081",
+          userId: "10000000-0000-4000-8000-000000000082",
+          projectId: "10000000-0000-4000-8000-000000000083",
+          workspaceId: "10000000-0000-4000-8000-000000000084",
+          sessionId: "10000000-0000-4000-8000-000000000085",
+          environment: {
+            environmentVersionId: "10000000-0000-4000-8000-000000000086",
+            versionNumber: 1,
+            profileKey: "pi-cloud-fullstack",
+            profileVersion: "1",
+            imageRevision: "development",
+            specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+            recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+            recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+          },
+          workspaceSeed: { kind: "sample_java" },
+          rows: 24,
+          cols: 100,
+        }),
+      );
+      await expect(nextFrame()).resolves.toMatchObject({
+        type: "workspace_terminal.ready",
+        terminalId,
+        pid: 73,
+      });
+      await expect(nextFrame()).resolves.toEqual({
+        workspaceTerminalProtocolVersion: 1,
+        type: "workspace_terminal.output",
+        data: Buffer.from("shell ready\r\n").toString("base64"),
+      });
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.input",
+          data: Buffer.from("pwd\r").toString("base64"),
+        }),
+      );
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.resize",
+          rows: 40,
+          cols: 120,
+        }),
+      );
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.ping",
+        }),
+      );
+      await expect(nextFrame()).resolves.toMatchObject({ type: "workspace_terminal.pong" });
+      expect(sendInput).toHaveBeenCalledWith(Buffer.from("pwd\r"));
+      expect(resize).toHaveBeenCalledWith({ rows: 40, cols: 120 });
+      if (ending !== "graceful") {
+        let closeCode: number | undefined;
+        const terminate = vi.spyOn(WebSocket.prototype, "terminate");
+        socket.once("close", (code) => {
+          closeCode = code;
+        });
+        try {
+          socket.send(
+            JSON.stringify({
+              workspaceTerminalProtocolVersion: 1,
+              type: "workspace_terminal.input",
+              data: Buffer.from("blocked").toString("base64"),
+            }),
+          );
+          await vi.waitFor(() => expect(sendInput).toHaveBeenCalledWith(Buffer.from("blocked")));
+          const payload =
+            ending === "overloaded-input" ? "x".repeat(24 * 1024) : "must-not-reach-guest";
+          const frames =
+            ending === "overloaded-input" ? 64 : ending === "overloaded-frames" ? 160 : 1;
+          for (let index = 0; index < frames; index++)
+            socket.send(
+              JSON.stringify({
+                workspaceTerminalProtocolVersion: 1,
+                type: "workspace_terminal.input",
+                data: Buffer.from(payload).toString("base64"),
+              }),
+            );
+          if (ending === "disconnect-with-queued-input") socket.close();
+          await vi.waitFor(() => expect(closeCode).toBeDefined(), { timeout: 1000 });
+          await vi.waitFor(() => expect(closeTerminal).toHaveBeenCalledOnce());
+          expect(terminate).not.toHaveBeenCalled();
+          if (ending.startsWith("overloaded-")) expect(closeCode).toBe(1009);
+          heldInput.resolve();
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          expect(sendInput).toHaveBeenCalledTimes(2);
+          return;
+        } finally {
+          terminate.mockRestore();
+          heldInput.resolve();
+          finishOutput();
+          socket.terminate();
+        }
+      }
+      socket.send(
+        JSON.stringify({
+          workspaceTerminalProtocolVersion: 1,
+          type: "workspace_terminal.close",
+        }),
+      );
+      await new Promise<void>((resolve) => socket.once("close", () => resolve()));
+      finishOutput();
+      expect(closeTerminal).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("stays ready while at least one Sandbox control replica is healthy", async () => {
+    const server = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      broker: backend(),
+    });
+    servers.push(server);
+    const address = await server.listen();
+    const client = new ReplicatedSandboxControlClient({
+      baseUrls: ["http://127.0.0.1:1", address],
+      serviceToken: SERVICE_TOKEN,
+      allowInsecureHttp: true,
+      requestTimeoutMs: 1_000,
+    });
+
+    await expect(client.checkHealth()).resolves.toBeUndefined();
+  });
+
+  it("balances creates and pins every activation to its returned owner", async () => {
+    const calls = [0, 0];
+    const activationIds = [
+      "10000000-0000-4000-8000-000000000021",
+      "10000000-0000-4000-8000-000000000022",
+    ];
+    const addresses: string[] = [];
+    for (const replica of [0, 1]) {
+      let ownerBaseUrl = "http://sandbox-control.invalid";
+      const delegate = backend();
+      const broker: SandboxControlBackend = {
+        ...delegate,
+        async create(request) {
+          calls[replica]! += 1;
+          return {
+            toolBrokerProtocolVersion: 1,
+            type: "tool_sandbox.reserved",
+            requestId: request.requestId,
+            activationId: activationIds[replica]!,
+            ownerBaseUrl,
+            executionReference: CAPABILITY,
+            workspaceRoot: "/workspace",
+            continuity: "cold_restore",
+            continuityId: activationIds[replica]!,
+          };
+        },
+      };
+      const server = new SandboxControlServer({
+        host: "127.0.0.1",
+        port: 0,
+        serviceToken: SERVICE_TOKEN,
+        broker,
+      });
+      servers.push(server);
+      ownerBaseUrl = await server.listen();
+      addresses.push(ownerBaseUrl);
+    }
+    const client = new ReplicatedSandboxControlClient({
+      baseUrls: addresses,
+      serviceToken: SERVICE_TOKEN,
+      allowInsecureHttp: true,
+    });
+    await expect(client.checkHealth()).resolves.toBeUndefined();
+
+    for (const replica of [0, 1]) {
+      const request: ToolSandboxCreateRequest = {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.create",
+        requestId: `10000000-0000-4000-8000-00000000003${String(replica)}`,
+        sandboxProfileKey: "standard",
+        toolRoot: "/workspace",
+        assignment: { ...assignment, workspaceId: `workspace-replica-${String(replica)}` },
+        turnContextSha256: STEP_CONTEXT_SHA256,
+        executionContextSha256: STEP_CONTEXT_SHA256,
+        allowedTools: ["read", "write", "edit", "bash"],
+        executionMode: "elastic",
+        environment: {
+          environmentVersionId: "10000000-0000-4000-8000-000000000013",
+          versionNumber: 1,
+          profileKey: "pi-cloud-fullstack",
+          profileVersion: "1",
+          imageRevision: "development",
+          specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+          recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+          recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+        },
+        workspaceSeed: { kind: "sample_java" },
+      };
+      const reserved = await client.create(request);
+      expect(reserved.activationId).toBe(activationIds[0]);
+      expect(client.workflowUrlFor(reserved.activationId)).toBe(
+        new URL("/internal/v1/tool-workflow", addresses[0]).toString(),
+      );
+      await expect(client.stop(reserved.activationId, request.assignment)).resolves.toBeUndefined();
+      const siblingSessionRequest: ToolSandboxCreateRequest = {
+        ...request,
+        requestId: `10000000-0000-4000-8000-00000000004${String(replica)}`,
+        assignment: {
+          ...request.assignment,
+          sessionId: `sibling-session-${String(replica)}`,
+        },
+      };
+      const sibling = await client.create(siblingSessionRequest);
+      expect(sibling.activationId).toBe(activationIds[1]);
+      expect(client.workflowUrlFor(sibling.activationId)).toBe(
+        new URL("/internal/v1/tool-workflow", addresses[1]).toString(),
+      );
+      await expect(
+        client.stop(sibling.activationId, siblingSessionRequest.assignment),
+      ).resolves.toBeUndefined();
+    }
+    expect(calls).toEqual([2, 2]);
+  });
+
+  it("keeps each colocated Tool binding owner independent", async () => {
+    let ownerBaseUrl = "http://sandbox-control.invalid";
+    const server = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      broker: {
+        ...backend(),
+        async create(request) {
+          return {
+            toolBrokerProtocolVersion: 1,
+            type: "tool_sandbox.reserved",
+            requestId: request.requestId,
+            activationId: ACTIVATION_ID,
+            ownerBaseUrl,
+            executionReference: CAPABILITY,
+            workspaceRoot: "/workspace",
+            continuity: "warm_reuse",
+            continuityId: ACTIVATION_ID,
+          };
+        },
+      },
+    });
+    servers.push(server);
+    ownerBaseUrl = await server.listen();
+    const client = new ReplicatedSandboxControlClient({
+      baseUrls: [ownerBaseUrl],
+      serviceToken: SERVICE_TOKEN,
+      allowInsecureHttp: true,
+    });
+    const parentRequest: ToolSandboxCreateRequest = {
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.create",
+      requestId: "10000000-0000-4000-8000-000000000081",
+      sandboxProfileKey: "standard",
+      toolRoot: "/workspace",
+      assignment,
+      turnContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
+      allowedTools: ["read", "write", "edit", "bash"],
+      executionMode: "elastic",
+      environment: {
+        environmentVersionId: "10000000-0000-4000-8000-000000000013",
+        versionNumber: 1,
+        profileKey: "pi-cloud-fullstack",
+        profileVersion: "1",
+        imageRevision: "development",
+        specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+        recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+        recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+      },
+      workspaceSeed: { kind: "sample_java" },
+    };
+    const childAssignment: ToolSandboxAssignment = {
+      ...assignment,
+      runId: "delegated-command",
+      sessionId: "delegated-session",
+      turnId: "delegated-turn",
+      executionReference: createExecutionReference(
+        "20000000-0000-4000-8000-000000000084",
+        "20000000-0000-4000-8000-000000000083",
+        5,
+      ),
+    };
+    const parent = await client.create(parentRequest);
+    const child = await client.create({
+      ...parentRequest,
+      requestId: "20000000-0000-4000-8000-000000000082",
+      assignment: childAssignment,
+    });
+    expect(child.activationId).toBe(parent.activationId);
+
+    await client.release(child.activationId, childAssignment, {
+      kind: "keep_warm",
+    });
+    expect(client.workflowUrlFor(parent.activationId)).toBe(
+      new URL("/internal/v1/tool-workflow", ownerBaseUrl).toString(),
+    );
+    await expect(
+      client.release(parent.activationId, assignment, {
+        kind: "keep_warm",
+      }),
+    ).resolves.toMatchObject({ activationId: parent.activationId });
+    expect(() => client.workflowUrlFor(parent.activationId)).toThrow(
+      "Tool binding owner is unavailable",
+    );
+  });
+
+  it("closes an existing scope through the stable endpoint after its owner Pod disappears", async () => {
+    const closed = vi.fn(async () => {});
+    const server = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      broker: { ...backend("http://127.0.0.1:1"), stop: closed },
+    });
+    servers.push(server);
+    const address = await server.listen();
+    const client = new ReplicatedSandboxControlClient({
+      baseUrls: [address],
+      serviceToken: SERVICE_TOKEN,
+      allowInsecureHttp: true,
+      requestTimeoutMs: 1000,
+    });
+    const reserved = await client.create({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.create",
+      requestId: "10000000-0000-4000-8000-000000000071",
+      sandboxProfileKey: "standard",
+      toolRoot: "/workspace",
+      assignment,
+      turnContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
+      allowedTools: ["bash"],
+      executionMode: "elastic",
+      environment: {
+        environmentVersionId: "10000000-0000-4000-8000-000000000013",
+        versionNumber: 1,
+        profileKey: "pi-cloud-fullstack",
+        profileVersion: "1",
+        imageRevision: "development",
+        specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+        recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+        recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+      },
+      workspaceSeed: { kind: "sample_java" },
+    });
+    await client.stop(reserved.activationId, assignment);
+    expect(closed).toHaveBeenCalledExactlyOnceWith(reserved.activationId, assignment);
+  });
+
+  it("follows the durable activation owner instead of replaying create elsewhere", async () => {
+    const owner = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      broker: backend(),
+    });
+    servers.push(owner);
+    const ownerAddress = await owner.listen();
+    const redirect = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      broker: {
+        ...backend(),
+        async create() {
+          throw new SandboxOwnerRedirectError(ownerAddress);
+        },
+      },
+    });
+    servers.push(redirect);
+    const redirectAddress = await redirect.listen();
+    const client = new SandboxControlClient({
+      baseUrl: redirectAddress,
+      serviceToken: SERVICE_TOKEN,
+      allowInsecureHttp: true,
+    });
+
+    const reserved = await client.create({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.create",
+      requestId: "10000000-0000-4000-8000-000000000071",
+      sandboxProfileKey: "standard",
+      toolRoot: "/workspace",
+      assignment,
+      turnContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
+      allowedTools: ["read", "write", "edit", "bash"],
+      executionMode: "elastic",
+      environment: {
+        environmentVersionId: "10000000-0000-4000-8000-000000000013",
+        versionNumber: 1,
+        profileKey: "pi-cloud-fullstack",
+        profileVersion: "1",
+        imageRevision: "development",
+        specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+        recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+        recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+      },
+      workspaceSeed: { kind: "sample_java" },
+    });
+    expect(reserved.activationId).toBe(ACTIVATION_ID);
+  });
+
+  it("uses the Session lease for Tool effects and the service credential for management", async () => {
+    const metrics = new PiCloudMetrics("sandbox-control-test");
+    const server = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      workspaceServiceToken: WORKSPACE_SERVICE_TOKEN,
+      broker: backend(),
+      metrics,
+    });
+    servers.push(server);
+    const address = await server.listen();
+    const client = new SandboxControlClient({
+      baseUrl: address,
+      serviceToken: SERVICE_TOKEN,
+      allowInsecureHttp: true,
+    });
+    await expect(client.checkHealth()).resolves.toBeUndefined();
+
+    const request: ToolSandboxCreateRequest = {
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.create",
+      requestId: "10000000-0000-4000-8000-000000000011",
+      sandboxProfileKey: "standard",
+      toolRoot: "/workspace",
+      assignment,
+      turnContextSha256: STEP_CONTEXT_SHA256,
+      executionContextSha256: STEP_CONTEXT_SHA256,
+      allowedTools: ["read", "write", "edit", "bash"],
+      executionMode: "elastic",
+      environment: {
+        environmentVersionId: "10000000-0000-4000-8000-000000000013",
+        versionNumber: 1,
+        profileKey: "pi-cloud-fullstack",
+        profileVersion: "1",
+        imageRevision: "development",
+        specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+        recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+        recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+      },
+      workspaceSeed: { kind: "sample_java" },
+    };
+    await withSpan({
+      serviceName: "trusted-runner-test",
+      name: "run.execute",
+      parent: virtualRunTraceCarrier("1".repeat(32), "2".repeat(16)),
+      run: async () => {
+        await expect(client.create(request)).resolves.toMatchObject({
+          activationId: ACTIVATION_ID,
+          executionReference: CAPABILITY,
+        });
+      },
+    });
+    expect(observedServerTrace?.traceparent).toContain("1".repeat(32));
+
+    await expect(client.listAssignments(runtimeAssignment.sandboxId)).resolves.toEqual([
+      runtimeAssignment,
+    ]);
+    await expect(client.terminateAndConfirmAbsent(runtimeAssignment)).resolves.toBeUndefined();
+
+    const browser = new SandboxControlClient({
+      baseUrl: address,
+      serviceToken: WORKSPACE_SERVICE_TOKEN,
+      allowInsecureHttp: true,
+    });
+    await expect(
+      browser.listWorkspaceDirectory({
+        toolBrokerProtocolVersion: 1,
+        type: "workspace.list_directory",
+        requestId: "10000000-0000-4000-8000-000000000098",
+        tenantId: assignment.tenantId,
+        workspaceId: assignment.workspaceId,
+        sessionId: assignment.sessionId,
+        rootPath: "",
+        path: "",
+      }),
+    ).resolves.toMatchObject({ entries: [{ path: "README.md" }] });
+    await expect(
+      browser.readWorkspaceFile({
+        toolBrokerProtocolVersion: 1,
+        type: "workspace.read_file",
+        requestId: "10000000-0000-4000-8000-000000000099",
+        tenantId: assignment.tenantId,
+        workspaceId: assignment.workspaceId,
+        sessionId: assignment.sessionId,
+        rootPath: "",
+        path: "README.md",
+        maximumBytes: 512 * 1_024,
+      }),
+    ).resolves.toMatchObject({
+      tenantId: assignment.tenantId,
+      workspaceId: assignment.workspaceId,
+      path: "README.md",
+      content: Buffer.from("current\n").toString("base64"),
+    });
+
+    const overPrivileged = await fetch(new URL(SANDBOX_CONTROL_SERVICE_PATH, address), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${WORKSPACE_SERVICE_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+    expect(overPrivileged.status).toBe(401);
+
+    const unauthorized = await fetch(new URL(SANDBOX_CONTROL_SERVICE_PATH, address), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    expect(unauthorized.status).toBe(401);
+    const exportedMetrics = await metrics.registry.metrics();
+    expect(exportedMetrics).toContain(
+      'pi_cloud_sandbox_operation_seconds_count{service="sandbox-control-test",operation="reserve",outcome="completed"} 1',
+    );
+    expect(exportedMetrics).toContain(
+      'pi_cloud_sandbox_admission_active{provider="test-provider",service="sandbox-control-test"} 0',
+    );
+    expect(exportedMetrics).toContain(
+      'pi_cloud_sandbox_admission_limit{provider="test-provider",service="sandbox-control-test"} 2',
+    );
+    expect(exportedMetrics).toContain(
+      'pi_cloud_sandbox_admission_waiting{provider="test-provider",service="sandbox-control-test"} 0',
+    );
+  });
+});

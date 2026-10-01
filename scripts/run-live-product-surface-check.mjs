@@ -643,8 +643,8 @@ try {
   const concurrentRuntimeEvidence = await psql(
     `select count(distinct runtime.workspace_runtime_id)::text || '|' || count(distinct route.binding_id)::text
        from runs run
-       join tool_broker_binding_routes route on route.run_id=run.id and route.tenant_id=run.tenant_id
-       join tool_broker_workspace_runtimes runtime on runtime.workspace_id=run.workspace_id and runtime.tenant_id=run.tenant_id
+       join sandbox_tool_bindings route on route.run_id=run.id and route.tenant_id=run.tenant_id
+       join workspace_runtimes runtime on runtime.workspace_id=run.workspace_id and runtime.tenant_id=run.tenant_id
       where run.id in ('${concurrentRuns[0].accepted.runId}', '${concurrentRuns[1].accepted.runId}')
         and runtime.state in ('reserved','materializing','active','warm')`,
   );

@@ -11,7 +11,7 @@ export type SshTerminalGrant = Readonly<{
   sessionId: string;
   environmentId: string;
   sandboxDomainId: string;
-  toolBrokerBaseUrl: string;
+  sandboxControlBaseUrl: string;
 }>;
 
 export class SshTicketAuthority {
@@ -46,7 +46,7 @@ export class SshTicketAuthority {
           "ticket.environment_id as environmentId",
           "development.sandbox_domain_id as sandboxDomainId",
           "development.owner_base_url as ownerBaseUrl",
-          "domain.tool_broker_base_url as fallbackBaseUrl",
+          "domain.sandbox_control_base_url as fallbackBaseUrl",
         ])
         .where("ticket.ticket_id", "=", ticketId)
         .where("ticket.secret_sha256", "=", digest)
@@ -73,7 +73,7 @@ export class SshTicketAuthority {
         sessionId: ticket.sessionId,
         environmentId: ticket.environmentId,
         sandboxDomainId: ticket.sandboxDomainId,
-        toolBrokerBaseUrl: ticket.ownerBaseUrl ?? ticket.fallbackBaseUrl,
+        sandboxControlBaseUrl: ticket.ownerBaseUrl ?? ticket.fallbackBaseUrl,
       };
     });
   }

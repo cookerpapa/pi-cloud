@@ -67,7 +67,18 @@ export class SessionProjector {
     const topic = options.topic ?? ACCEPTED_FACT_TOPIC;
     this.#topic = new ExecutionLogTopic(options);
     this.publication = new SessionPublicationIngress(options.capacity, 65_536, options.metrics);
-    this.#publicationControl = new PostgresPublicationControl(options.database, this.publication);
+    this.#publicationControl = new PostgresPublicationControl(
+      options.database,
+      this.publication,
+      async (fact) => {
+        const partition = this.publicationPartition(fact.scope.piSessionId);
+        // The immutable Outbox fact was authorized before this hook. Stop effects
+        // before logging the seal, independently of Projector catch-up latency.
+        await options.toolCommands.consume({ topic, partition, offset: 0n, fact }, () =>
+          this.#consumer.ownsPartition(partition),
+        );
+      },
+    );
     this.#publicationClient = new HttpPublicationClient({
       baseUrl: options.advertisedBaseUrl,
       token: options.publicationToken,
@@ -156,7 +167,7 @@ export class SessionProjector {
                 await timing.measure("tool_route", () =>
                   options.toolCommands.consume({ ...record, fact: command }, current),
                 );
-            } else {
+            } else if (fact.kind !== "execution_seal") {
               await timing.measure("tool_route", () =>
                 options.toolCommands.consume(record, current),
               );

@@ -5,11 +5,11 @@ the conversation product:
 
 ```text
 Web → Control Plane → PostgreSQL queue → Pi Worker
-Worker → Kafka acks=all → Session Projector
+Worker → publication ingress → Kafka acks=all → Session Projector
                            ├→ PostgreSQL Session storage
                            ├→ snapshot-first SSE
-                           └→ Tool executor → Cube
-Worker ← read-only Tool result wait ← Tool Broker
+                           └→ Cube native executor
+Worker ← Kafka boot mailbox ← Cube host completion adapter
 ```
 
 The Control Plane exposes authentication, model/proxy settings, projects,

@@ -17,21 +17,24 @@ identity recovery, billing and incident-response controls.
 Pi, PostgreSQL access and short-lived Tool/model capabilities remain in the
 trusted Worker. CubeSandbox KVM executes `read/write/edit/bash` and receives no
 platform credential. Upstream OAuth/API credentials remain in CLIProxyAPI's
-private deployment Volume. The Worker has no Cube API credential; the Tool
-Broker has no model credential.
+private deployment Volume. The Worker has no Cube API credential; sandbox
+management and the Cube host completion adapter have no model credential.
 
 ### Tenant and stale-Worker isolation
 
 Every product read/write includes tenant ownership. PG issues one immutable
 publication scope under the current ExecutionReference. Records are not signed:
-trusted Workers publish directly on private Kafka. Projector checks scope and ordered
-opening/seal boundaries before native state, UI or command dispatch. There is no
-second channel lease or per-token authority query. Old data can reach Kafka after
-retirement but cannot take effect after its seal. Tool Broker retains current
-Lease/fence and operation-ID admission; an already-issued Cube operation can
-continue and remains UNKNOWN when its result is unavailable.
+trusted Workers publish through the control-plane ingress. Its cached PG-issued
+scope closes before ordered seal publication. Projector preserves historical
+scope/position checks and commits dispatch before issuing effects. Cube checks
+executor boot, operation identity and closed scopes. The control plane closes
+binding eligibility durably before remote stopping; no per-Tool lease/fence SQL
+check or second channel lease is introduced. An already-issued Cube operation
+can continue and remains UNKNOWN when stopping or its result is unavailable.
 
-Workers now have private Kafka producer connectivity; Cube/browser never do.
+Workers consume their boot's Kafka replies. Control Plane publishes execution
+records; the trusted Cubelet host publishes Tool replies. The Tool guest and
+browser never receive Kafka connectivity or credentials.
 The deployment must restrict Kafka network/ACL access to trusted roles, especially
 Projector consumer-group membership used for internal SSE owner discovery.
 Compromised trusted Worker/PG credentials or a malicious Kafka producer are
@@ -46,13 +49,13 @@ Gateway caches are rebuildable. There is no competing workflow or checkpoint
 head.
 
 Private S3 owns immutable Session image bytes; PG owns their tenant-scoped
-inventory and native-log reachability. Broker/Worker/Control Plane receive bucket
-credentials, never Cube or the browser. References cannot name arbitrary URLs or
+inventory and native-log reachability. Cube host completion adapter/Worker/Control Plane receive bucket
+credentials, never the Tool guest or browser. References cannot name arbitrary URLs or
 paths. Guest-supplied references, cross-tenant lookups, mismatched hashes and
 oversized bodies are rejected. The native loop receives decoded images only at
 the trusted Tool/SessionStorage adapters. Image decoders run inside Cube.
 Chat upload bodies have pre-buffer concurrency and size limits, scoped PG claims
-and fresh Broker/Gateway authorization. Workspace writes use confined directory
+and fresh sandbox-management/Gateway authorization. Workspace writes use confined directory
 descriptors, no-follow opens and exclusive publication. The API retains immutable
 image sources without decoding them; the admitted Run normalizes sources in Cube
 before requesting model capacity. A PG row lock serializes image pinning with GC.
@@ -63,18 +66,18 @@ File metadata remains escaped user data, never a system instruction.
 | Threat | Control |
 | --- | --- |
 | shell escapes container boundary | Cube KVM hardware boundary and hardened template |
-| Cube reads platform secrets | no secret mounts/service account/platform route |
-| cross-tenant Workspace access | stable tenant/Workspace Volume identity and broker checks |
+| Tool guest reads platform secrets | no secret mounts/service account/platform route |
+| cross-tenant Workspace access | stable tenant/Workspace Volume identity and control-plane checks |
 | browser forges terminal identity | Control Plane derives tenant/Workspace/Session; browser frames carry only input/resize/control |
 | user enumerates another user's development environment | every list, lifecycle and Terminal lookup binds tenant plus authenticated owner user; no Cube ID is public |
 | terminal and Agent race on user files | explicitly user-managed POSIX concurrency; each external authority remains scoped and cross-tenant mounts stay impossible |
 | Agents intentionally share one exclusive environment | independently authorized Tool bindings share the owner's VM; files and processes use user-managed concurrency, while pause/release wait for active bindings and the terminal |
 | two Sessions intentionally share one elastic Workspace | independently fenced Tool bindings enter one unprivileged Cube; files, processes and ports use ordinary Linux semantics and are not isolated from each other |
-| exclusive owner has root inside its own VM | KVM is the tenant boundary; the guest contains no platform/model/database credentials and the external Tool Broker still validates every Run fence |
+| exclusive owner has root inside its own VM | KVM is the tenant boundary; the guest contains no platform/model/database credentials and the trusted external executor enforces boot/operation/scope admission |
 | user invokes or tampers with envd inside their own VM | envd is credential-free tenant-local transport; Cube traffic/envd tokens, operation admission and every cross-resource authority remain outside the VM |
-| Broker replacement loses, pauses or swaps an exclusive VM | shutdown leaves physical state unchanged; encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |
-| directory picker exposes another runtime | tenant/user/environment authorization at Control Plane and Tool Broker; listing is read from the selected live Cube only |
-| stale Worker mutation | PG-issued publication scope, same-partition opening/seal cutoff and executor Lease/fence checks |
+| Control-plane replacement loses, pauses or swaps an exclusive VM | shutdown leaves physical state unchanged; encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |
+| directory picker exposes another runtime | tenant/user/environment authorization at Control Plane and sandbox management; listing is read from the selected live Cube only |
+| stale Worker mutation | PG-issued publication scope, same-partition opening/seal cutoff and Cube boot/closed-scope checks |
 | duplicate queue delivery | idempotent input plus transactional single-Run admission |
 | ambiguous shell result | `UNKNOWN`; no automatic replay |
 | SSRF/data exfiltration to internal network | private access denied except deployment-owned direct CIDRs; public HTTP uses governed egress proxy |
@@ -93,7 +96,7 @@ Workspace terminal access does not expose Cube envd credentials or Sandbox port
 22. The browser path uses the logged-in user's tenant role and bounded WebSocket
 frames. Standard SSH terminates at a trusted gateway using a one-use,
 short-lived password whose hash is consumed atomically from PostgreSQL; it then
-bridges to the same Broker-admitted envd PTY. Neither path receives
+bridges to the same control-plane-admitted envd PTY. Neither path receives
 CubeAPI/envd/model credentials.
 Terminal output is intentionally not a durable conversation record; Workspace
 files and platform audit metadata remain authoritative.

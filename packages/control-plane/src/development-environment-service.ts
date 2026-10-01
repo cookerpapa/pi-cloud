@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import {
-  TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_PATH,
+  SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_PATH,
   DEVELOPMENT_ENVIRONMENT_PROFILES,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
@@ -303,7 +303,7 @@ export class DevelopmentEnvironmentService {
       );
     }
     const descriptor = await this.#machineRoute(identity, environmentId);
-    const result = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
+    const result = await this.#send(descriptor.domainId, descriptor.sandboxControlBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.directory",
       requestId: this.#id(),
@@ -315,7 +315,7 @@ export class DevelopmentEnvironmentService {
     if (result.type !== "development_environment.directory") {
       throw new ControlPlaneStoreError(
         "control_plane_misconfigured",
-        "Tool Broker returned the wrong machine directory response",
+        "Sandbox control returned the wrong machine directory response",
       );
     }
     return { environmentId, path: result.path, entries: result.entries };
@@ -335,7 +335,7 @@ export class DevelopmentEnvironmentService {
       );
     }
     const descriptor = await this.#machineRoute(identity, environmentId);
-    const result = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
+    const result = await this.#send(descriptor.domainId, descriptor.sandboxControlBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.create_directory",
       requestId: this.#id(),
@@ -348,7 +348,7 @@ export class DevelopmentEnvironmentService {
     if (result.type !== "development_environment.directory") {
       throw new ControlPlaneStoreError(
         "control_plane_misconfigured",
-        "Tool Broker returned the wrong machine directory response",
+        "Sandbox control returned the wrong machine directory response",
       );
     }
     return { environmentId, path: result.path, entries: result.entries };
@@ -859,7 +859,7 @@ export class DevelopmentEnvironmentService {
 
   async #provision(identity: TenantRequestIdentity, environmentId: string): Promise<void> {
     const descriptor = await this.#provisionDescriptor(identity, environmentId);
-    const result = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
+    const result = await this.#send(descriptor.domainId, descriptor.sandboxControlBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.provision",
       requestId: this.#id(),
@@ -890,7 +890,7 @@ export class DevelopmentEnvironmentService {
     action: "pause" | "resume" | "release",
   ) {
     const descriptor = await this.#machineRoute(identity, environmentId);
-    const response = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
+    const response = await this.#send(descriptor.domainId, descriptor.sandboxControlBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.lifecycle",
       requestId: this.#id(),
@@ -907,7 +907,7 @@ export class DevelopmentEnvironmentService {
     )
       throw new ControlPlaneStoreError(
         "conflict",
-        "Tool Broker did not confirm the requested environment state",
+        "Sandbox control did not confirm the requested environment state",
       );
     return response.state;
   }
@@ -918,7 +918,7 @@ export class DevelopmentEnvironmentService {
     const route = await this.#database
       .selectFrom("development_environments as machine")
       .innerJoin("sandbox_domains as domain", "domain.id", "machine.sandbox_domain_id")
-      .select(["domain.id as domainId", "domain.tool_broker_base_url as toolBrokerBaseUrl"])
+      .select(["domain.id as domainId", "domain.sandbox_control_base_url as sandboxControlBaseUrl"])
       .where("machine.tenant_id", "=", identity.tenantId)
       .where("machine.owner_user_id", "=", identity.userId)
       .where("machine.id", "=", environmentId)
@@ -947,7 +947,7 @@ export class DevelopmentEnvironmentService {
         "workspace.project_id as projectId",
         "workspace.id as workspaceId",
         "domain.id as domainId",
-        "domain.tool_broker_base_url as toolBrokerBaseUrl",
+        "domain.sandbox_control_base_url as sandboxControlBaseUrl",
         "development.generation",
         "development.profile_key as profileKey",
         "environment.id as environmentVersionId",
@@ -979,7 +979,7 @@ export class DevelopmentEnvironmentService {
       projectId: row.projectId,
       workspaceId: row.workspaceId,
       domainId: row.domainId,
-      toolBrokerBaseUrl: row.toolBrokerBaseUrl,
+      sandboxControlBaseUrl: row.sandboxControlBaseUrl,
       generation,
       profileKey: selectedProfile.key,
       environment: parseEnvironmentRuntimeSnapshot({
@@ -1006,9 +1006,9 @@ export class DevelopmentEnvironmentService {
   ): Promise<import("@pi-cloud/protocol").DevelopmentEnvironmentBrokerResponse> {
     let baseUrl = initialBaseUrl;
     for (let redirects = 0; redirects <= MAXIMUM_REDIRECTS; redirects += 1) {
-      const target = new URL(TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_PATH, baseUrl);
+      const target = new URL(SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_PATH, baseUrl);
       if (target.protocol === "http:" && !this.#allowInsecureInternalHttp) {
-        throw new Error("Insecure Tool Broker development environment URL was rejected");
+        throw new Error("Insecure Sandbox control development environment URL was rejected");
       }
       const response = await internalFetch(target, {
         dispatcher: internalDispatcher,
@@ -1034,7 +1034,7 @@ export class DevelopmentEnvironmentService {
         const message =
           typeof safeError?.message === "string" && safeError.message.length <= 1_024
             ? safeError.message
-            : "Development environment operation was rejected by Tool Broker";
+            : "Development environment operation was rejected by Sandbox control";
         const code =
           safeError?.code === "sandbox_domain_capacity_exhausted" ||
           safeError?.code === "sandbox_compute_capacity_exhausted"
@@ -1053,14 +1053,14 @@ export class DevelopmentEnvironmentService {
     }
     throw new ControlPlaneStoreError(
       "control_plane_misconfigured",
-      "Development environment exceeded the Tool Broker redirect limit",
+      "Development environment exceeded the Sandbox control redirect limit",
     );
   }
 
   async #validatedOwnerRedirect(domainId: string, ownerBaseUrl: string): Promise<string> {
     const normalized = new URL(ownerBaseUrl).toString();
     const owner = await this.#database
-      .selectFrom("tool_broker_instances")
+      .selectFrom("sandbox_control_instances")
       .select("owner_base_url")
       .where("sandbox_domain_id", "=", domainId)
       .where("owner_base_url", "=", normalized)
@@ -1070,7 +1070,7 @@ export class DevelopmentEnvironmentService {
     if (owner === undefined) {
       throw new ControlPlaneStoreError(
         "control_plane_misconfigured",
-        "Development environment Tool Broker redirect was stale",
+        "Development environment Sandbox control redirect was stale",
       );
     }
     return owner.owner_base_url;

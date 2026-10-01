@@ -29,7 +29,7 @@ export {
   type PiWorkerRuntimeOptions,
   type PiWorkerRuntimeState,
   type SupervisorHostTerminalReason,
-  type SupervisorToolBroker,
+  type SupervisorSandboxControl,
   type SupervisorRunWorker,
 } from "./runtime.ts";
 export {

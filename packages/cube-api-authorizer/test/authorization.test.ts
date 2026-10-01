@@ -8,6 +8,10 @@ describe("Cube API authorizer", () => {
   it.each([
     ["POST", "/sandboxes"],
     ["GET", `/sandboxes/${SANDBOX}`],
+    ["GET", `/sandboxes/${"a".repeat(32)}/observation?nodeID=node-1`],
+    ["POST", `/sandboxes/${"a".repeat(32)}/execution/capabilities`],
+    ["POST", `/sandboxes/${"a".repeat(32)}/execution/submit`],
+    ["POST", `/sandboxes/${"a".repeat(32)}/execution/stop`],
     ["DELETE", `/sandboxes/${SANDBOX}`],
     ["POST", `/sandboxes/${SANDBOX}/pause`],
     ["POST", `/sandboxes/${SANDBOX}/connect`],
@@ -34,6 +38,10 @@ describe("Cube API authorizer", () => {
 
   it.each([
     ["GET", "/templates"],
+    ["GET", `/sandboxes/${"a".repeat(32)}/observation`],
+    ["GET", `/sandboxes/${"a".repeat(32)}/observation?nodeID=`],
+    ["GET", `/sandboxes/${"a".repeat(32)}/observation?nodeID=a&nodeID=b`],
+    ["GET", `/sandboxes/${SANDBOX}/observation?nodeID=node-1`],
     ["DELETE", "/templates/tpl-owned"],
     ["DELETE", "/templates/snap-owned"],
     ["DELETE", "/templates/snap-0123456789abcdef0123456g"],

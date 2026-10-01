@@ -477,7 +477,7 @@ export class SandboxPreviewGateway {
         .innerJoin("sandbox_domains as domain", "domain.id", "development.sandbox_domain_id")
         .select([
           "development.owner_base_url as ownerBaseUrl",
-          "domain.tool_broker_base_url as fallbackBaseUrl",
+          "domain.sandbox_control_base_url as fallbackBaseUrl",
         ])
         .where("development.tenant_id", "=", tenantId)
         .where("development.owner_user_id", "=", userId)
@@ -502,7 +502,7 @@ export class SandboxPreviewGateway {
           .on("service.target_kind", "=", "conversation")
           .on("service.state", "=", "active"),
       )
-      .leftJoin("tool_broker_workspace_runtimes as runtime", (join) =>
+      .leftJoin("workspace_runtimes as runtime", (join) =>
         join
           .onRef("runtime.tenant_id", "=", "service.tenant_id")
           .onRef("runtime.workspace_id", "=", "service.workspace_id")
@@ -511,7 +511,7 @@ export class SandboxPreviewGateway {
       )
       .select([
         "runtime.owner_base_url as ownerBaseUrl",
-        "domain.tool_broker_base_url as fallbackBaseUrl",
+        "domain.sandbox_control_base_url as fallbackBaseUrl",
       ])
       .where("session_row.tenant_id", "=", tenantId)
       .where("session_row.id", "=", target.sessionId)

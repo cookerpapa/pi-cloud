@@ -9,8 +9,13 @@ export const composeNetworks = {
 };
 
 export const bridgeTargets = [
-  { name: "control-plane", network: composeNetworks.management, port: 3000 },
-  { name: "tool-broker", network: composeNetworks.sandboxControl, port: 4300, workerAlias: true },
+  {
+    name: "control-plane",
+    network: composeNetworks.management,
+    port: 3000,
+    additionalPorts: [4300],
+    workerAlias: true,
+  },
   { name: "provider-egress-relay", network: composeNetworks.modelEgress, port: 3129 },
   { name: "cli-proxy-api", network: composeNetworks.modelEgress, port: 8317 },
   { name: "session-images", network: composeNetworks.database, port: 8333 },
@@ -34,7 +39,12 @@ export function composeBridgeResources(targets, systemNamespace, workerNamespace
         labels: { "pi-cloud.io/bridge": "compose" },
       },
       spec: {
-        ports: [{ name: "tcp", protocol: "TCP", port: target.port, targetPort: target.port }],
+        ports: [target.port, ...(target.additionalPorts ?? [])].map((port) => ({
+          name: `tcp-${port}`,
+          protocol: "TCP",
+          port,
+          targetPort: port,
+        })),
       },
     },
     {
@@ -50,7 +60,11 @@ export function composeBridgeResources(targets, systemNamespace, workerNamespace
       },
       addressType: "IPv4",
       endpoints: [{ addresses: [target.address], conditions: { ready: true } }],
-      ports: [{ name: "tcp", protocol: "TCP", port: target.port }],
+      ports: [target.port, ...(target.additionalPorts ?? [])].map((port) => ({
+        name: `tcp-${port}`,
+        protocol: "TCP",
+        port,
+      })),
     },
     // Kafka returns these short hostnames in metadata after bootstrap. Broker
     // owner URLs also use the Compose name, so both must resolve in Worker Pods.
@@ -90,7 +104,7 @@ export function localWorkerValues(environment, systemNamespace) {
     },
     services: {
       controlPlaneUrl: service("control-plane", 3000),
-      toolBrokerUrls: [service("tool-broker", 4300)],
+      sandboxControlUrls: [service("control-plane", 4300)],
       providerProxyUrl: service("provider-egress-relay", 3129),
       providerGatewayUrl: service("cli-proxy-api", 8317),
     },

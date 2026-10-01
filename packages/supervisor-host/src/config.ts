@@ -20,7 +20,7 @@ export type SupervisorHostConfig = {
   allowInsecureInternalHttp: boolean;
   enrollmentToken: string;
   managementToken: string;
-  toolBrokerServiceToken: string;
+  sandboxControlServiceToken: string;
   providerGatewayBaseUrl: string;
   providerGatewayApiKey: string;
   databaseUrl: string;
@@ -36,8 +36,8 @@ export type SupervisorHostConfig = {
   subagentMaximumNodes: number;
   modelConcurrency: number;
   familyModelConcurrency: number;
-  toolBrokerBaseUrls: readonly string[];
-  toolBrokerRequestTimeoutMs: number;
+  sandboxControlBaseUrls: readonly string[];
+  sandboxControlRequestTimeoutMs: number;
   trustedWorkspaceDirectory: string;
   bootStateDirectory: string;
   modelGatewayHost: string;
@@ -240,9 +240,9 @@ export async function loadSupervisorHostConfig(
     required(environment, "PI_CLOUD_CONTROL_PLANE_URL"),
     allowInsecureInternalHttp,
   );
-  const toolBrokerRequestTimeoutMs = integerValue(
+  const sandboxControlRequestTimeoutMs = integerValue(
     environment,
-    "PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS",
+    "PI_CLOUD_SANDBOX_CONTROL_REQUEST_TIMEOUT_MS",
     MAX_TOOL_EXECUTION_TIMEOUT_MS + REMOTE_TOOL_TRANSPORT_MARGIN_MS,
     1_000,
     900_000,
@@ -283,11 +283,11 @@ export async function loadSupervisorHostConfig(
     300_000,
   );
   if (
-    toolBrokerRequestTimeoutMs <
+    sandboxControlRequestTimeoutMs <
     MAX_TOOL_EXECUTION_TIMEOUT_MS + REMOTE_TOOL_TRANSPORT_MARGIN_MS
   ) {
     throw new TypeError(
-      "Tool Broker timeout must outlive the maximum Tool execution and transport margin",
+      "Sandbox control timeout must outlive the maximum Tool execution and transport margin",
     );
   }
   if (modelGatewayUpstreamConnectTimeoutMs > piModelRequestTimeoutMs) {
@@ -367,9 +367,9 @@ export async function loadSupervisorHostConfig(
       "PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN",
       allowInlineSecrets,
     ),
-    toolBrokerServiceToken: await secret(
+    sandboxControlServiceToken: await secret(
       environment,
-      "PI_CLOUD_TOOL_BROKER_TOKEN",
+      "PI_CLOUD_SANDBOX_CONTROL_TOKEN",
       allowInlineSecrets,
     ),
     providerGatewayBaseUrl: internalServiceBaseUrl(
@@ -415,12 +415,12 @@ export async function loadSupervisorHostConfig(
     subagentMaximumNodes,
     modelConcurrency,
     familyModelConcurrency,
-    toolBrokerBaseUrls: internalServiceBaseUrls(
-      required(environment, "PI_CLOUD_TOOL_BROKER_URLS"),
+    sandboxControlBaseUrls: internalServiceBaseUrls(
+      required(environment, "PI_CLOUD_SANDBOX_CONTROL_URLS"),
       allowInsecureInternalHttp,
-      "PI_CLOUD_TOOL_BROKER_URLS",
+      "PI_CLOUD_SANDBOX_CONTROL_URLS",
     ),
-    toolBrokerRequestTimeoutMs,
+    sandboxControlRequestTimeoutMs,
     trustedWorkspaceDirectory: required(environment, "PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY"),
     bootStateDirectory: required(environment, "PI_CLOUD_BOOT_STATE_DIRECTORY"),
     modelGatewayHost: bounded(

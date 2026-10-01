@@ -20,7 +20,7 @@
 - bounded-warm elastic Cubes and user-owned development machines with SSH;
 - same-Session FIFO, concurrent cross-Session Agent Loops and one Workspace-owned
   Cube with independently fenced concurrent Tool bindings;
-- Broker-independent development-machine runtime with running-state-preserving takeover;
+- Control-plane-independent development-machine runtime with running-state-preserving takeover;
 - conversation trees, Fork, Steer, recursive Subagents and Workspace rebinding;
 - Compose one-host deployment and Kubernetes/KEDA manifests;
 - non-exclusive GitLab Issue claims and private-project
@@ -30,7 +30,7 @@
 - versioned Agent definitions with Run/Worker routing and Runtime-native Session Storage.
 - Provider-native Web Search on the verified OpenAI Codex and DeepSeek Responses routes,
   frozen with each issued model runtime, retained as Codex-shaped Pi transcript
-  items and kept outside Tool Broker.
+  items and kept outside sandbox management.
 - Provider → model → reasoning selection with GPT request-scoped Fast mode,
   Session desired settings and immutable Turn snapshots.
 - composer-level cascading Provider/model/reasoning selection, with new Web
@@ -42,13 +42,16 @@
 - Codex-style per-call Hosted Web Search activity for GPT and DeepSeek, plus
   stable-region Markdown rendering for citation-heavy streams.
 
-## In progress: publication and sandbox authority
+## Implemented: publication and sandbox authority
 
-Implement [ADR-0209](adr/0209-control-plane-publication-and-sandbox-authority.md)
-under the owner's October 1 instruction. The publication/seal slice is implemented
-and [verified in isolation](reports/publication-ingress-20261001.md). Next centralize
-sandbox lifecycle, prove Cube execution handoff and remove the independent Broker.
-The deployed topology changes only at the matched cutover.
+[ADR-0209](adr/0209-control-plane-publication-and-sandbox-authority.md) and
+[ADR-0210](adr/0210-cube-execution-handoff-and-scoped-stop.md) are implemented.
+[Publication acceptance](reports/publication-ingress-20261001.md) and the
+[Cube execution acceptance](reports/cube-execution-authority-20261001.md) cover
+PG/Kafka fencing, native execution, scoped stopping, image delivery, Worker
+canonicalization and matched image/deployment contracts. Shared production
+rollout and its browser acceptance remain in the backlog; implementation and
+single-host isolated tests do not establish independent-node availability.
 
 ## Current release gate
 
@@ -119,7 +122,7 @@ The deployed topology changes only at the matched cutover.
       sampling/retry boundaries, conversation discovery and guest build identity.
       The subsequently approved image slice is tracked under ADR-0192.
 
-- [x] Ephemeral Tool log preview via Broker HTTP → Projector SSE; final-only
+- [x] Ephemeral Tool log preview via Cube completion HTTP → Projector SSE; final-only
       Kafka replies, no observation history or background-service log follower.
       [Luna/Cube/browser and process-restart acceptance](reports/tool-progress-acceptance-20260925.md).
 
@@ -190,14 +193,14 @@ The deployed topology changes only at the matched cutover.
 - [x] Complete paid model/Cube, interrupted-prefix and process-fault acceptance
       for the native append cutover. Current repetitions follow the
       [validation matrix](EVALUATION.md).
-- [x] Bound Producer/Broker transport under slow downstreams, align capacity
+- [x] Bound publication/handoff transport under slow downstreams, align capacity
       configuration and measure native publication independently from model time.
 
 - [x] Whole native Tools execute in Cube; Pi callbacks receive bounded native
       final results through Kafka, without completed-result caches or GET.
       Dispatch commits precede effects; projection replay never re-executes Tools.
 
-- [x] Route Agent Tool commands from the Kafka Projector to Broker; retain native Session
+- [x] Route Agent Tool commands from the Kafka Projector to Cube; retain native Session
       checkpoints, result redaction, duplicate protection and explicit UNKNOWN.
 - [x] Commit the seal/terminal once and update the local view directly;
       preserve successor ordering without a second Kafka notification.

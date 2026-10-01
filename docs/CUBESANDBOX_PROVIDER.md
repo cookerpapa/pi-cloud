@@ -2,57 +2,54 @@
 
 ## Current role
 
-CubeSandbox KVM is Pi Cloud's only untrusted Tool runtime. The trusted Pi
-Worker owns the Agent Loop and a short-lived model capability; CLIProxyAPI owns
-the upstream model credential, while the Tool Broker owns execution admission
-and Cube lifecycle. The guest owns neither.
+CubeSandbox KVM is the only untrusted Tool runtime. Pi and provider credentials
+stay in the trusted Worker. The Control Plane owns VM lifecycle and immutable
+Run bindings; Cubelet owns native execution and final delivery.
 
 ```text
-Pi Tool call
-  -> trusted Tool adapter
-  -> Session-keyed Kafka command
-  -> Session Projector -> owning executor
-  -> Tool Broker (Run/lease/fence/Step validation)
-  -> Cube API
-  -> CubeProxy -> cube-agent/vsock/envd
-  -> credential-free one-shot Tool Worker
-  -> trusted adapter -> Worker-boot Kafka reply topic
-  -> native execute completion in Worker
-  -> Pi Agent Loop
+Pi Tool -> validation/prepare in Worker -> publication ingress -> Kafka
+  -> Projector dispatch commit -> Cube API/Master -> Cubelet native exec
+  -> fixed guest Tool -> trusted Cube completion adapter -> Kafka reply
+  -> original Worker callback -> Pi after-Tool hooks -> canonical Session append
 ```
 
-There is no Docker, gVisor, local-process or model-selectable runtime fallback.
-The `SandboxProvider` interface in code is a narrow Cube adapter boundary, not
-a supported production runtime menu.
+The Projector waits for bounded takeover. It does not relay Tool duration or
+large results. The guest runs the complete pinned Pi Tool under UID 1000 inside
+an operation cgroup; no user extension or Agent Loop enters that boundary.
+The native raw-PTY transport has ready and byte-receipt frames because upstream
+non-terminal exec does not expose pipes. It is the single fixed transport, not
+an alternate runtime or fallback.
 
 ## Identity and authority
 
-The Tool Broker derives tenant, Workspace, Session, Run, fence, Tool
-binding and Cloud Step identity from trusted state. The browser, model and
-Tool arguments cannot choose a Sandbox ID, image, mount, resource limit or
-network policy.
+PG is Run/control authority. Source admission uses installed memory and closes
+before seals. A Cube request carries immutable physical endpoint/node/boot,
+Run/writer and operation identity. Cube checks local closed scopes/dedup state,
+without a per-command PG lease query. Domain-independent Projector ownership
+uses a deployment-owned Cube endpoint registry; metadata cannot select an
+unconfigured credential destination.
 
-Each whole Tool has one immutable operation ID. Projector commits its dispatch
-position before issuing the command; text recovery never reissues that prefix.
-Broker keeps only active executions, not completed result bodies or a PG Tool ledger. A
-transport break after dispatch is `UNKNOWN` and is never reattached or replayed,
-because envd is deliberately not a durable PiCloud operation ledger. A stale
-Run cannot start another authorized Tool. Previously admitted guest work may
-continue with an unknown result; fencing does not undo its file/process effects.
+Cancellation stops and joins the native main process before killing its entire
+cgroup. Normal completed Bash may leave a background server running. A failed
+scoped stop makes the VM unavailable for explicit control-plane recovery; a
+normal Tool error has no VM-destruction power. Controller replacement adopts
+persisted VM capsules and active binding descriptors. Cubelet boot replacement
+is different: old execution outcomes are unknown and are never replayed.
 
-The Worker never receives Cube management credentials. Cube receives no model,
-PostgreSQL, Kubernetes, Volume-gateway or Cube-control
-credential.
+There is no completed-result GET/cache or PG Tool operation ledger. The bounded
+host adapter may retry final delivery, never execution. The Worker boot mailbox
+resolves the original callback; a new Worker does not revive old promises.
 
-S3 image credentials also remain outside Cube. The trusted Broker stores images
-received over envd HTTP and sends opaque references through Kafka. The Worker
-verifies tenant, length and SHA-256 before returning native ImageContent to Pi.
-Two concurrent read materializations bound large guest replies; other Tool and
-command admission limits still apply. No completed Tool result is fetched by GET.
+The guest receives no model, PG, S3, Kubernetes or control-plane credential.
+The trusted Cube host completion adapter holds only its required PG/S3/Kafka
+and observation credentials. It stores images in S3 before sending references;
+the Worker verifies tenant/length/hash and restores ordinary Pi ImageContent.
+Two large-read permits bound image materialization independently of ordinary
+execution capacity.
 
 Chat image preparation uses the same processor through fixed `envd-input-files.mjs`
 under the current Run binding. It reads immutable source references, normalizes in
-Cube and returns references through Broker HTTP, without fabricating an Agent Tool
+Cube and returns references through the control-plane management API, without fabricating an Agent Tool
 or changing Kafka dispatch semantics. The same fixed helper writes dedicated-machine
 uploads under UID 1000; elastic uploads use the existing Volume Gateway. See
 [chat uploads](CHAT_ATTACHMENTS.md) for limits and claims.
@@ -69,7 +66,7 @@ The guest helper reuses fixed Pi edit/write logic locally and emits native
 `tool_execution_update`/`tool_execution_end` payloads. Source-side bounded output
 does not kill a command just because its preview is full. No full-output archive
 is created. Kafka credentials remain in the trusted adapter, never in Cube.
-Updates take a separate best-effort Broker HTTP → Projector SSE path, not Kafka
+Updates take a separate best-effort host HTTP → Projector SSE path, not Kafka
 or Worker. They are collapsed temporary log previews, not durable Tool results.
 
 ## Workspace and process lifetime
@@ -97,25 +94,24 @@ never a conversation or Workspace durability dependency. User-owned development
 machines use the separate pause/resume/release lifecycle and never enter the
 elastic warm pool.
 
-Cube's absolute timeout is disabled for every Broker-managed runtime. The
-Broker owns elastic lifecycle: active Tool bindings keep their Workspace Cube;
+Cube's absolute timeout is disabled for controller-managed runtimes. The
+Control Plane owns elastic lifecycle: active Tool bindings keep their Workspace Cube;
 an idle elastic runtime is destroyed
 after `PI_CLOUD_SANDBOX_WARM_TTL_MS`. A user owns an exclusive machine's
-lifecycle through authenticated pause/resume/release operations. Broker restart
-reconciliation detaches and adopts that VM without changing its physical state;
-it retires recorded orphaned elastic runtimes instead of depending on a
-competing VM timer.
+lifecycle through authenticated pause/resume/release operations. Controller
+restart adopts both elastic and user-owned VMs without changing their physical
+state. Destruction is an explicit lifecycle action and is followed by an exact
+node observation before quota is released.
 
 ## Tool and terminal channels
 
-Agent file and shell Tools use Cube's private envd data plane. The Web Terminal
-uses a separate short-lived human reservation through the same external Tool
-Broker:
+Fixed Agent Tools use native Cubelet execution. The Web Terminal keeps its
+separate human reservation and envd PTY through the control-plane module:
 
 ```text
 authenticated browser WebSocket
   -> Control Plane
-  -> Tool Broker
+  -> sandbox lifecycle module
   -> CubeProxy -> envd
   -> unprivileged PTY in /workspace
 ```
@@ -146,7 +142,7 @@ Cube's envd and the one-shot Tool Worker code. Elastic Agent Tools use the fixed
 exclusive machine's authenticated human terminal/SSH channel may start as guest
 root; KVM and the absence of platform credentials are then the tenant boundary.
 Users cannot submit a template,
-kernel, device, host mount, privileged flag or network policy. Cube, Tool Broker
+kernel, device, host mount, privileged flag or network policy. Cube, Control Plane
 and the short-lived Worker enforce bounded CPU, memory, process count, open
 files, output and execution time.
 
@@ -156,9 +152,9 @@ Pi Session records.
 
 ## Reconciliation and evidence
 
-PostgreSQL records physical Workspace runtime identity and Broker ownership.
+PostgreSQL records physical Workspace runtime identity and control-plane ownership.
 Run Tool bindings are independently fenced and never masquerade as Cube
-identity. Tool Broker periodically reconciles physical runtime state with Cube
+identity. The controller periodically reconciles physical runtime state with Cube
 inventory, so an old binding cleanup cannot delete a shared or newer KVM.
 
 Verification includes:

@@ -970,7 +970,7 @@ const report = {
           "inspect",
           "pi-cloud-production-web-1",
           "pi-cloud-production-control-plane-1",
-          "pi-cloud-production-tool-broker-1",
+          "pi-cloud-production-control-plane-1",
         ],
         { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 },
       ),

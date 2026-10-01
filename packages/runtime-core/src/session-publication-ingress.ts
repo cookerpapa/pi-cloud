@@ -68,6 +68,7 @@ export class PublicationIngressRejected extends PublicationNotSentError {
 
 /** Control-plane-installed soft state. No database, lease renewal or native stamping. */
 export class SessionPublicationIngress {
+  readonly #closures = new Set<Promise<AcceptedFactReceipt>>();
   readonly #partitions = new Map<number, Partition>();
   #pendingBytes = 0;
   #pendingFacts = 0;
@@ -258,7 +259,11 @@ export class SessionPublicationIngress {
   }
 
   /** PG has verified this exact immutable Outbox fact before calling here. */
-  seal(owner: PublicationOwnership, fact: AcceptedExecutionSealFact): Promise<AcceptedFactReceipt> {
+  seal(
+    owner: PublicationOwnership,
+    fact: AcceptedExecutionSealFact,
+    beforePublish?: () => Promise<void>,
+  ): Promise<AcceptedFactReceipt> {
     try {
       const partition = this.#owned(owner);
       const key = `${fact.scope.tenantId}:${fact.scope.piSessionId}`;
@@ -294,11 +299,25 @@ export class SessionPublicationIngress {
       run.sealId = fact.factId;
       if (fact.closesWriter) writer.closing = true;
       const target = run;
-      const pending = this.#enqueue(partition, writer, fact).then((receipt) => {
+      const closingWriter = writer;
+      // External execution closure runs after in-memory admission closes, and
+      // outside the Kafka writer queue so unrelated Sessions keep publishing.
+      const pending = (
+        beforePublish
+          ? Promise.resolve()
+              .then(beforePublish)
+              .then(() => this.#enqueue(partition, closingWriter, fact))
+          : this.#enqueue(partition, writer, fact)
+      ).then((receipt) => {
         target.sealed = true;
         return receipt;
       });
       run.seal = pending;
+      this.#closures.add(pending);
+      void pending.then(
+        () => this.#closures.delete(pending),
+        () => this.#closures.delete(pending),
+      );
       void pending.catch(() => {
         if (target.seal === pending) delete target.seal;
       });
@@ -440,6 +459,7 @@ export class SessionPublicationIngress {
 
   async close(): Promise<void> {
     await Promise.allSettled([...this.#partitions.keys()].map((p) => this.revoke(p)));
+    await Promise.allSettled(this.#closures);
     this.#partitions.clear();
   }
 }

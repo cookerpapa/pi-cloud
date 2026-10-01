@@ -6,17 +6,16 @@ firewall denial. Enforce deployment isolation with the configured networks/CNI.
 | Source | Destination | Runtime access / policy | Purpose |
 | --- | --- | --- | --- |
 | Browser | Web/Control Plane | yes | product API and SSE |
-| Control Plane | PostgreSQL | yes | product/Run authority |
-| Control Plane / Session Projector | Tool Broker | yes | ordered Tool/control delivery, lifecycle and authenticated Terminal/Preview proxy |
+| Control Plane | PostgreSQL | yes | product/Run authority, resource ownership and bounded binding metadata |
 | Pi Worker | PostgreSQL | yes | queue, Session and lifecycle state |
-| Pi Worker | Control Plane | yes | boot registration, heartbeats and Steer control channel; not Agent output |
-| Pi Worker | Tool Broker | yes | binding/lifecycle APIs and read-only Tool-result waits |
-| Pi Worker | Kafka | yes | direct accepted-fact, native Session mutation and Tool-command publication |
+| Pi Worker | Control Plane | yes | publication ingress, binding APIs, boot registration, heartbeats and Steer control channel |
+| Pi Worker | Kafka | yes | consume its boot's Tool replies |
 | Pi Worker | provider proxy/model provider | yes | model requests |
-| Tool Broker | PostgreSQL | yes | Workspace runtime ownership and Tool authority state |
-| Tool Broker | Kafka | not used | Projector routes positioned commands/seals; Broker does not consume Kafka |
-| Control Plane / Session Projector | Kafka | yes | authority-requested seals and one consumer group for native history, live views and Tool routing |
-| Tool Broker | Cube API | yes | KVM lifecycle |
+| Control Plane / Session Projector | Kafka | yes | ordered data/seal publication and one consumer group for native history, live views and Tool routing |
+| Control Plane | Cube API | yes | bounded native Tool handoff, scoped stopping, VM lifecycle and interactive transport |
+| Cubelet trusted completion adapter | Kafka | yes | native final replies to original Worker boot |
+| Cubelet trusted completion adapter | PostgreSQL / private S3 | yes | image inventory and immutable bytes |
+| Cubelet trusted completion adapter | Control Plane | yes | disposable progress HTTP observations |
 | Volume gateway | PostgreSQL/RWX Workspace storage | yes | revision/Volume coordination |
 | Cube guest | egress proxy | optional | governed public HTTP/HTTPS |
 | Cube guest | configured company CIDRs | optional | direct debugging/service access |

@@ -116,12 +116,12 @@ async function ensureCubePersistentStateKey(runtimeDirectory) {
   return true;
 }
 
-async function ensureToolBrokerToken(runtimeDirectory, name = "tool-broker-token") {
+async function ensureSandboxControlToken(runtimeDirectory, name = "sandbox-control-token") {
   const path = resolve(runtimeDirectory, "secrets", name);
   try {
     const existing = (await readPrivateFile(path)).trim();
     if (!/^[A-Za-z0-9_-]{64}$/.test(existing)) {
-      throw new Error("Production Tool Broker token is invalid");
+      throw new Error("Production Sandbox control token is invalid");
     }
     return false;
   } catch (error) {
@@ -538,8 +538,7 @@ if (await validateExisting(runtimeDirectory)) {
   const sourceControlCredentialMasterKeyCreated =
     await ensureSourceControlCredentialMasterKey(runtimeDirectory);
   const cubePersistentStateKeyCreated = await ensureCubePersistentStateKey(runtimeDirectory);
-  const toolBrokerTokenCreated = await ensureToolBrokerToken(runtimeDirectory);
-  await ensureToolBrokerToken(runtimeDirectory, "tool-dispatch-token");
+  const sandboxControlTokenCreated = await ensureSandboxControlToken(runtimeDirectory);
   const workspaceServiceTokenCreated = await ensureWorkspaceServiceToken(runtimeDirectory);
   const workspaceTerminalTokenCreated = await ensureWorkspaceTerminalToken(runtimeDirectory);
   const sshHostKeyCreated = await ensureSshHostKey(runtimeDirectory);
@@ -560,7 +559,7 @@ if (await validateExisting(runtimeDirectory)) {
       reused: true,
       sourceControlCredentialMasterKeyCreated,
       cubePersistentStateKeyCreated,
-      toolBrokerTokenCreated,
+      sandboxControlTokenCreated,
       workspaceServiceTokenCreated,
       workspaceTerminalTokenCreated,
       sshHostKeyCreated,
@@ -663,8 +662,7 @@ await writePrivateFile(
   resolve(secretsDirectory, "supervisor-management-token"),
   `${randomSecret()}\n`,
 );
-await writePrivateFile(resolve(secretsDirectory, "tool-broker-token"), `${randomSecret()}\n`);
-await writePrivateFile(resolve(secretsDirectory, "tool-dispatch-token"), `${randomSecret()}\n`);
+await writePrivateFile(resolve(secretsDirectory, "sandbox-control-token"), `${randomSecret()}\n`);
 await writePrivateFile(resolve(secretsDirectory, "workspace-service-token"), `${randomSecret()}\n`);
 await writePrivateFile(
   resolve(secretsDirectory, "workspace-terminal-token"),
@@ -751,8 +749,8 @@ const environment = [
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS=${publicTenantMaximumSessions}`,
   "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS=7200000",
   "PI_CLOUD_KAFKA_PARTITIONS=32",
-  "PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS=15000",
-  "PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS=5000",
+  "PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS=15000",
+  "PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS=5000",
   "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES=3",
   "PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES=4",
   "PI_CLOUD_SANDBOX_WARM_TTL_MS=900000",

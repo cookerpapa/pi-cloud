@@ -2,7 +2,7 @@ import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { UuidSchema } from "./protocol-primitives.ts";
 
-export const TOOL_BROKER_SANDBOX_PREVIEW_PATH = "/internal/v1/sandbox-preview" as const;
+export const SANDBOX_CONTROL_SANDBOX_PREVIEW_PATH = "/internal/v1/sandbox-preview" as const;
 export const PREVIEW_ACCESS_TTL_MS = 15 * 60_000;
 export const PREVIEW_SCOPE_HEADER = "x-pi-cloud-preview-scope";
 export const PREVIEW_FAILURE_HEADER = "x-pi-cloud-preview-failure";

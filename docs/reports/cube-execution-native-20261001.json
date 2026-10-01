@@ -1,0 +1,21 @@
+{
+  "format": "pi-cloud.cube-native-acceptance.v1",
+  "startedAt": "2026-10-01T11:36:24.784Z",
+  "model": "deterministic fixture; no provider requests",
+  "checks": {
+    "fixedWriteEditRead": true,
+    "nativeExecutionAfterHandoff": true,
+    "largeImageS3ClaimCheck": true,
+    "sharedVmScopedCancel": true,
+    "oldBootRejected": true,
+    "requesterProcessExitAfterHandoff": true,
+    "completionRestartWithoutReplay": true,
+    "workerNativeAfterHookCanonical": true
+  },
+  "maximumHandoffMs": 39.788587000002735,
+  "imageBytes": 27050893,
+  "kafkaReplyBytes": 449,
+  "success": true,
+  "vmDeleted": true,
+  "finishedAt": "2026-10-01T11:37:52.252Z"
+}
