@@ -528,7 +528,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
               operation(first.activationId, `printf '%s' '${firstCanary}' > tenant-canary`),
             ),
           ),
-        ).toBe("");
+        ).toBe("(no output)");
         firstToolMs = Math.round(performance.now() - firstStartedAt);
 
         const secondStartedAt = performance.now();
@@ -539,7 +539,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
               operation(second.activationId, `printf '%s' '${secondCanary}' > tenant-canary`),
             ),
           ),
-        ).toBe("");
+        ).toBe("(no output)");
         secondToolMs = Math.round(performance.now() - secondStartedAt);
 
         expect(
@@ -560,7 +560,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
               ),
             ),
           ),
-        ).toBe("");
+        ).toBe("(no output)");
         expect(
           output(
             await execution.executeTool(
@@ -603,7 +603,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
               ),
             ),
           ),
-        ).toBe("");
+        ).toBe("(no output)");
         expect(
           output(
             await execution.executeTool(
