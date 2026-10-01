@@ -40,20 +40,21 @@ function apply(value, patch = false) {
         "daemonset",
         "cube-node",
         "--type=strategic",
-        "--patch-file=/dev/stdin",
+        "--patch",
+        JSON.stringify(value),
       ]
     : ["apply", "-f", "-"];
   return new Promise((resolvePromise, reject) => {
     const child = spawn(kubectl, [...prefix, ...args], {
       cwd: root,
       env,
-      stdio: ["pipe", "inherit", "inherit"],
+      stdio: [patch ? "ignore" : "pipe", "inherit", "inherit"],
     });
     child.on("error", reject);
     child.on("exit", (code) =>
       code === 0 ? resolvePromise() : reject(new Error("Cube completion configuration failed")),
     );
-    child.stdin.end(JSON.stringify(value));
+    if (!patch) child.stdin.end(JSON.stringify(value));
   });
 }
 const targets = [];
