@@ -2,9 +2,11 @@ import { Admin } from "@platformatic/kafka";
 import { randomUUID } from "node:crypto";
 import { cpus, totalmem } from "node:os";
 import { performance } from "node:perf_hooks";
-import { KafkaAcceptedFactBus } from "../packages/runtime-core/src/kafka-accepted-fact.ts";
+import { PublicationHarness } from "./lib/publication-harness.ts";
 
-const brokers = ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"];
+const brokers = (
+  process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS ?? "kafka-1:9092,kafka-2:9092,kafka-3:9092"
+).split(",");
 const topic = `pi-cloud.accepted-fact-benchmark-${randomUUID()}`;
 const clientId = `pi-cloud-kafka-load-${randomUUID()}`;
 const durationMs = Number(process.env.PI_CLOUD_KAFKA_LOAD_DURATION_MS ?? 0);
@@ -78,7 +80,7 @@ function fact(seed, sequence, payloadBytes) {
   };
 }
 
-const bus = new KafkaAcceptedFactBus({
+const bus = new PublicationHarness({
   brokers,
   clientId,
   topic,
@@ -142,7 +144,7 @@ try {
       kafka: { topic, brokers: 3, partitions: 32, replicas: 3, acknowledgements: "all" },
       applicationMicrobatch: false,
       producerDeliveryReportMode: "batch",
-      producerLanes: 4,
+      transactionalPartitions: 32,
       recordAuthentication: "trusted-private-producer",
       scope:
         "unsigned Worker record -> Kafka ACK; excludes publication opening, Projector, PostgreSQL, model and Cube",

@@ -53,10 +53,11 @@ if (process.argv[2] !== "inside") {
     { PGLiteSocketServer } = await import("@electric-sql/pglite-socket");
   const { createDatabase } = await import("@pi-cloud/database"),
     { sql } = await import("kysely");
-  const { KafkaAcceptedFactBus } =
-      await import("../packages/runtime-core/src/kafka-accepted-fact.ts"),
+  const { PublicationHarness } = await import("./lib/publication-harness.ts"),
     { KafkaSafeRetention } = await import("../packages/runtime-core/src/kafka-safe-retention.ts");
-  const brokers = ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"],
+  const brokers = (
+      process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS ?? "kafka-1:9092,kafka-2:9092,kafka-3:9092"
+    ).split(","),
     topic = `pi-cloud.native-gc.${randomUUID()}`;
   const pg = await PGlite.create(),
     socket = new PGLiteSocketServer({ db: pg, host: "127.0.0.1", port: 0 });
@@ -66,7 +67,7 @@ if (process.argv[2] !== "inside") {
     maxConnections: 1,
   });
   const admin = new Admin({ bootstrapBrokers: brokers, clientId: randomUUID() });
-  const bus = new KafkaAcceptedFactBus({
+  const bus = new PublicationHarness({
     brokers,
     topic,
     partitions: 1,
@@ -119,30 +120,36 @@ if (process.argv[2] !== "inside") {
         },
       });
     };
-    const low = async () => {
+    const offset = async (timestamp) => {
       const result = await admin.listOffsets({
-        topics: [{ name: topic, partitions: [{ partitionIndex: 0, timestamp: -2n }] }],
+        topics: [{ name: topic, partitions: [{ partitionIndex: 0, timestamp }] }],
       });
       return result[0].partitions[0].offset;
     };
+    const low = () => offset(-2n);
     for (let n = 1; n <= 20; n++) await append(n);
+    const oldEnd = await offset(-1n);
     await new Promise((r) => setTimeout(r, 1200));
     await gc.sweep();
     assert.equal(await low(), 0n);
-    await sql`insert into accepted_fact_projection_offsets values(${topic},0,20)`.execute(db);
+    await sql`insert into accepted_fact_projection_offsets values(${topic},0,${oldEnd})`.execute(
+      db,
+    );
     await sql`insert into runs values(${topic},0,5,null)`.execute(db);
     await gc.sweep();
     assert.equal(await low(), 5n);
     await sql`update runs set output_sealed_at=now()`.execute(db);
     await append(21);
-    await sql`update accepted_fact_projection_offsets set next_offset=21`.execute(db);
+    await sql`update accepted_fact_projection_offsets set next_offset=${await offset(-1n)}`.execute(
+      db,
+    );
     await gc.sweep();
-    assert.equal(await low(), 20n);
+    assert.equal(await low(), oldEnd);
     await db.destroy();
     destroyed = true;
     await new Promise((r) => setTimeout(r, 1200));
     await assert.rejects(gc.sweep());
-    assert.equal(await low(), 20n);
+    assert.equal(await low(), oldEnd);
     console.log(
       JSON.stringify({
         format: "pi-cloud.native-retention.v1",
@@ -154,7 +161,7 @@ if (process.argv[2] !== "inside") {
         unsealedPrefixPreserved: true,
         gracePreservesRecent: true,
         databaseFailureStopsDeletion: true,
-        lowWatermarks: [0, 5, 20, 20],
+        lowWatermarks: [0, 5, Number(oldEnd), Number(oldEnd)],
       }),
     );
   } finally {

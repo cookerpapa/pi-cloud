@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0209](0209-control-plane-publication-and-sandbox-authority.md) — owner-approved
+   control-plane publication and sandbox authority; implementation in progress.
+
 1. [ADR-0208](0208-session-lifecycle-matches-atomic-admission.md) — Session states
    aligned with atomic admission and guarded recovery.
 1. [ADR-0207](0207-permanent-conversation-deletion.md) — permanent conversation

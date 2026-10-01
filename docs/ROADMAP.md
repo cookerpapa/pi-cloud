@@ -12,7 +12,7 @@
   Worker ownership and shared Worker queue;
 - Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with one self-contained
   append-only semantic log per physical Session and native Compaction;
-- direct Worker append under a PG-issued publication identity;
+- control-plane publication ingress under a PG-issued identity, ordered seals and producer fencing;
 - lossless PostgreSQL queue wake-up and background fail-closed execution-plane readiness;
 - Kafka `acks=all` AcceptedFact log keyed by Session;
 - one partitioned Session Projector group and cursor-free snapshot-first SSE;
@@ -42,15 +42,22 @@
 - Codex-style per-call Hosted Web Search activity for GPT and DeepSeek, plus
   stable-region Markdown rendering for citation-heavy streams.
 
+## In progress: publication and sandbox authority
+
+Implement [ADR-0209](adr/0209-control-plane-publication-and-sandbox-authority.md)
+under the owner's October 1 instruction. The publication/seal slice is implemented
+and [verified in isolation](reports/publication-ingress-20261001.md). Next centralize
+sandbox lifecycle, prove Cube execution handoff and remove the independent Broker.
+The deployed topology changes only at the matched cutover.
+
 ## Current release gate
 
 - [x] Complete the [September 30 whole-repository review](reports/repository-review-20260930.md)
       against pinned Pi, current ADRs and original design rationale; record
       reproducible findings, coverage and verification limits.
-- [ ] Restore the full workspace and dependency security gates identified by
-      that review, then resolve its confirmed runtime/data-boundary findings
-      in individual vertical slices. Architecture discussion items remain
-      decisions to make, not approved semantic changes.
+- [x] Restore the workspace/dependency gates and repair the review's confirmed
+      runtime/data-boundary findings. The separately approved architecture
+      cutover is tracked above.
 
 - [x] ADR-0203: direct Steer uses the durable pending-input queue, canonical
       consumption and sealed-target restoration. [PG, browser and real Luna acceptance](reports/direct-steer-acceptance-20260930.md)

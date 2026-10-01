@@ -1,3 +1,4 @@
+import { SessionPublicationService } from "./session-publication-service.ts";
 import { SubagentController } from "./subagent-controller.ts";
 import { createDatabase } from "@pi-cloud/database";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
@@ -178,6 +179,7 @@ export async function startControlPlane(): Promise<void> {
     });
     unattachedSubagents = subagents;
     agentEvents = new SessionProjector({
+      publicationToken: config.supervisorManagementToken,
       database,
       notificationConnectionString: config.databaseNotificationUrl,
       brokers: config.kafkaBrokers,
@@ -364,6 +366,10 @@ export async function startControlPlane(): Promise<void> {
       ...(gitlabRuntime === undefined ? {} : { gitlab: gitlabRuntime }),
     });
     runtime = await createControlPlaneRuntime({
+      sessionPublicationService: new SessionPublicationService(
+        config.supervisorManagementToken,
+        activeAgentEvents,
+      ),
       runActivityIngress: new RunActivityIngress(
         config.supervisorManagementToken,
         (partition) => activeAgentEvents.ownerForPartition(partition),

@@ -56,10 +56,12 @@ protocol, record the decision under `docs/adr/` before implementation.
   history. Do not restore per-Step projection receipts or allocate sequence from
   a second active writer. Cold administrative mutations require Session quiescence.
   Bootstrap only the latest Compaction and active suffix, never lifetime JSONL.
-- Workers append directly to Kafka under a PG-issued publication identity. One
-  Session Projector consumer group checks recorded scope/first positions/seals and drives native
-  history, live views and Tool routing. Do not restore a Fact Gateway, another
-  channel lease, separate live/Tool consumers or a commit-notification round trip.
+- Workers publish through the control-plane ingress under a PG-issued identity
+  (ADR-0209). One Session Projector group owns ingress partitions, native history,
+  live views and Tool routing. Ordinary append scope checks use installed memory;
+  data and seals share the Session queue. Kafka transactions fence replaced ingress
+  owners and preserve dispatch offsets. Do not add another channel lease, separate
+  live/Tool consumer or per-Step projection receipt.
   Tool executors remain independently authorized external-effect endpoints;
   replaying a projection must never imply replaying arbitrary shell work.
   Projector confirms its monotonic Kafka dispatch commit before issuing a Tool

@@ -16,10 +16,10 @@ Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 Browser -> Control Plane -> PostgreSQL queue -> Pi Worker
 Pi Worker <-> CLIProxyAPI <-> Model
 
-Pi Worker -> Kafka -> Session Projector
-                      +-> PostgreSQL (conversation history)
-                      +-> Browser (SSE)
-                      `-> Tool Broker -> CubeSandbox
+Pi Worker -> Publication ingress -> Kafka -> Session Projector
+                                            +-> PostgreSQL (conversation history)
+                                            +-> Browser (SSE)
+                                            `-> Tool Broker -> CubeSandbox
 ```
 
 Whole file/shell Tools execute in Cube. Final results return through Kafka to
@@ -27,7 +27,9 @@ Pi Worker; optional temporary logs go directly through Projector to the browser.
 Workspace files live on persistent Cube Volumes.
 Images used by the Agent are immutable Session attachments in private S3 storage;
 Kafka carries their references and Pi receives ordinary image content.
-The API and Projector share the Control Plane process. Outputs are persisted
+The API, publication ingress and Projector share the Control Plane process.
+Ingress serializes Session writes and seals; its ordinary append path uses no SQL.
+Outputs are persisted
 before display, except disposable Tool log previews. Recovery never automatically
 replays uncertain commands.
 

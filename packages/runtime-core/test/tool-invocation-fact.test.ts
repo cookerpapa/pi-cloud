@@ -3,15 +3,15 @@ import { MAX_EXECUTION_FACT_BYTES } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import type { AcceptedFact, AcceptedFactReceipt } from "../src/accepted-fact.ts";
-import { DirectExecutionLog } from "../src/direct-execution-log.ts";
+import { WorkerExecutionLog } from "../src/worker-execution-log.ts";
 import { NativeSessionLogPublisher } from "../src/native-session-log-publisher.ts";
 import { prepareExecutionFact } from "../src/prepare-execution-fact.ts";
 import { parseKafkaAcceptedFact } from "../src/kafka-accepted-fact.ts";
 import { toolCommandForFact } from "../src/tool-invocation-fact.ts";
-import { ExecutionPublicationBoundary } from "../src/execution-publication.ts";
+import { SessionPublicationIngress } from "../src/session-publication-ingress.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
 
-const logs: DirectExecutionLog[] = [];
+const logs: WorkerExecutionLog[] = [];
 afterEach(async () => {
   await Promise.all(logs.splice(0).map((log) => log.close()));
 });
@@ -67,42 +67,27 @@ it("rejects duplicate command arguments rather than giving them another authorit
 
 it("checks the enclosing tenant, Session, Run, writer and Lane before dispatch", async () => {
   const { scope, fact } = toolInvocationFixture();
-  const query = {
-    select() {
-      return this;
-    },
-    where() {
-      return this;
-    },
-    async executeTakeFirst() {
-      return { output_publication: { scope } };
-    },
-  };
-  const boundary = new ExecutionPublicationBoundary({
-    selectFrom: () => query,
-  } as unknown as Kysely<Database>);
-  const record = { fact, topic: "test", partition: 0, offset: 12n };
-  expect(await boundary.accept(record)).toBe(true);
+  const ingress = new SessionPublicationIngress();
+  const owner = ingress.installPartition(0, {
+    append: async (record) => ({ factId: record.factId, durable: true }),
+    close: async () => {},
+  });
+  ingress.installRun(owner, { scope });
+  await expect(ingress.append(owner, fact)).resolves.toMatchObject({ durable: true });
   for (const key of ["tenantId", "sessionId", "runId", "writerId", "piSessionId"] as const)
-    expect(
-      await boundary.accept({
-        ...record,
-        fact: { ...fact, scope: { ...fact.scope, [key]: "other" } },
-      }),
-    ).toBe(false);
-  expect(
-    await boundary.accept({
-      ...record,
-      fact: { ...fact, piSession: { ...fact.piSession, lane: "other" } },
-    }),
-  ).toBe(false);
+    await expect(
+      ingress.append(owner, { ...fact, scope: { ...fact.scope, [key]: "other" } }),
+    ).rejects.toBeInstanceOf(Error);
+  await expect(
+    ingress.append(owner, { ...fact, piSession: { ...fact.piSession, lane: "other" } }),
+  ).rejects.toBeInstanceOf(Error);
 });
 
 async function publisherFixture() {
   const f = toolInvocationFixture();
   const ack = Promise.withResolvers<AcceptedFactReceipt>();
   const append = vi.fn((_fact: AcceptedFact) => ack.promise);
-  const log = new DirectExecutionLog({} as Kysely<Database>, {
+  const log = new WorkerExecutionLog({} as Kysely<Database>, {
     append,
     checkHealth: async () => {},
   });

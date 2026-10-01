@@ -129,25 +129,9 @@ export class AcceptedFactCapacityError extends PublicationNotSentError {
   }
 }
 
-export class AcceptedFactTooLargeError extends PublicationNotSentError {
-  readonly code = "event_payload_too_large";
-  readonly retryable = false;
-  constructor() {
-    super("AcceptedFact exceeds the record size limit; the Fact was not enqueued");
-    this.name = "AcceptedFactTooLargeError";
-  }
-}
-
-export class AcceptedFactPublisherFailedError extends Error {
-  readonly code = "event_publisher_failed";
-  readonly retryable = false;
-  constructor(cause: Error) {
-    super("AcceptedFact publisher cannot be reused", { cause });
-    this.name = "AcceptedFactPublisherFailedError";
-  }
-}
-
 export interface AcceptedFactBus {
+  open?(publication: ExecutionPublication, signal?: AbortSignal): Promise<void>;
+  forget?(runId: string): void;
   append(fact: AcceptedFact): Promise<AcceptedFactReceipt>;
   checkHealth(): Promise<void>;
 }

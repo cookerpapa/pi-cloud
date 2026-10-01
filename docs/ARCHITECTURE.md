@@ -13,7 +13,7 @@ Browser → Control Plane → PostgreSQL accepted Run
                          Pi Worker
                          ├─ native Session Host / concurrent Lanes
                          ├─ Model Gateway → CLIProxyAPI → Provider
-                         └─ direct log append → Kafka ACK
+                         └─ publication ingress → Kafka transaction ACK
                                                         ↓
                                              Session Projector group
                                              ├─ PG semantic projection
@@ -25,7 +25,7 @@ Browser → Control Plane → PostgreSQL accepted Run
                                                        ↓
                                                  native reply → Kafka reply topic → Worker/Pi
 
-Control authority → PG seal Outbox → Kafka seal → PG terminal + closure
+Control authority → PG seal Outbox → publication ingress → Kafka seal → PG closure
                                                     ↓
                                                next Run eligible
 ```
@@ -211,35 +211,41 @@ lease sweep. The initial expiry query takes one PG-time cutoff, and final
 decisions still recheck authority after locks. The one-second interval is a
 delay between completed scans, not a one-second failure-detection guarantee.
 
-## Direct execution log
+## Publication and execution log
 
-During atomic execution admission the PG authority freezes publication scope against the exact
-Run, Session lease and Lane. The trusted Worker appends semantic
-records, display events and concrete Tool commands directly to private Kafka.
-There is no standalone opening record, signing key or per-record signature.
+Atomic PG admission freezes one Run's physical-Session lease, epoch and Lane.
+The Worker stamps native records and sends them to the control-plane publication
+module. The existing Projector group assignment selects one ingress owner per
+partition; private HTTP requests redirect to that owner. Installing a scope reads
+its committed PG grant once. Ordinary appends check only installed memory state,
+with bounded pending bytes/records and no PG query. Opening creates no log record.
+A closure or ownership change invalidates admission reads already in flight.
 
-The Projector caches the recorded scope. The first native append co-commits its
-recovery floor with semantic state; a first display/control record persists that
-floor before visibility or routing. The exact seal payload must match the PG Outbox request.
-These checks catch misattributed/stale records; they do not authenticate a hostile
-producer. Workers, PG and Kafka are trusted deployment services, inaccessible to
-guests and browsers. No token requires a remote authority RPC or a fresh
-Lease-expiry SELECT. Expiry triggers retirement; the precise output cutoff is
-the seal's log position, not wall-clock expiry.
+All Lanes of a physical Session share one publication queue. A seal first closes
+admission, drains earlier accepted records, then enters that same queue. A normal
+Run seal leaves sibling Lanes open. Uncertain semantic publication retires the
+writer and prevents queued semantic records from starting; its closing seals can
+still drain. A replacement execution uses a new Run and waits for projected
+closure. The HTTP success receipt is Kafka durable commit, not volatile acceptance.
+Lost commit responses never trigger automatic semantic publication replay.
 
-Kafka ACK means durable append, not guaranteed application of a stale record.
-Records physically after their seal cannot alter PG context, live output or
-Tool dispatch, even if an old producer finally receives its ACK. The Worker
-still stops on lease loss to avoid wasted work. A normally drained Run closes
-only its execution; uncertain native publication also closes its shared writer
-incarnation. Unrelated Sessions and later writer incarnations stay independent.
+The code-owned topic is `pi-cloud.execution-log.v12`. Physical Session ID remains
+the immutable key and fixes the partition; do not change the partition count in
+place. One Kafka transactional producer identity per partition fences replaced
+ingress processes. Transactions use RF3/acks-all and include current consumer-group
+metadata under the same commit guard as dispatch offsets, preserving that offset
+without advancing or regressing it. Consumers read committed records and account
+for transaction-control/aborted offsets during catch-up. This is transport fencing;
+PG remains the sole Run/lease authority.
 
-The code-owned topic is `pi-cloud.execution-log.v11`. Physical Pi Session ID is
-the immutable partition key, shared by all Lanes and control boundaries. Do not
-change its partition count in place. Producers use RF3/acks-all and bounded
-pending bytes/records, respecting transport backpressure. Worker admission/drain
-are one-time authority operations; its ordinary append path only produces.
-Provider/guest credentials never enter these records.
+Worker admission, ingress scope installation and ordered closure are control
+operations. Source scope validation replaces the former per-record Projector
+ownership decision. Native first positions, exact Outbox seals and canonical
+closure remain necessary for idempotent replay. No per-Step projection receipt,
+second channel lease, signing key, or provider/guest credential enters the log.
+The first native append co-commits its recovery floor with semantic state; a first
+display/control record persists that floor before visibility or Tool routing.
+Lease loss still stops the Worker; ordered closure defines the output cutoff.
 
 Hot event and Worker-envelope schemas compile once per server process. Browser
 bundles select the same schemas' non-code-generating checker through package
@@ -248,8 +254,8 @@ unchanged; this introduces no authority cache or additional durability boundary.
 
 ## Unified projection and recovery
 
-One `pi-cloud-session-projector-v1` consumer group assigns disjoint partitions.
-After scope/closure checks, a record updates native PG state, its disposable
+One `pi-cloud-session-projector-v2` consumer group assigns disjoint partitions.
+After canonical replay/closure checks, a record updates native PG state, its disposable
 live view and the Tool routing module as applicable. Guest execution itself is
 never awaited by the partition handler. PG or live-owner delivery failure stalls
 that partition; it does not serialize unrelated partitions.
@@ -366,7 +372,7 @@ Only active turns may display them, and terminal state wins over late frames.
 
 Ordinary successfully processed execution records provide path evidence. After
 publication silence, one physical Session emits at most one `path_probe` every
-15 seconds through its existing direct writer and Kafka partition. There is at
+15 seconds through its existing publication writer and Kafka partition. There is at
 most one outstanding probe per family, and an acknowledged ordinary record must
 precede it. The probe is the explicit observation-transport exception: it enters
 Kafka to measure that path, but never native Pi history, PG projection, display

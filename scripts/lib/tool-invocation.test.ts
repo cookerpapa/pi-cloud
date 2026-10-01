@@ -13,7 +13,7 @@ import type { Kysely } from "kysely";
 import { NativeSessionWriter } from "../../packages/pi-session-postgres/src/native-session-writer.ts";
 import { CloudAgentRuntime } from "../../packages/sandbox-supervisor/src/cloud-agent-runtime.ts";
 import { createTrustedRemoteAgentTools } from "../../packages/sandbox-supervisor/src/trusted-remote-tools.ts";
-import { DirectExecutionLog } from "../../packages/runtime-core/src/direct-execution-log.ts";
+import { WorkerExecutionLog } from "../../packages/runtime-core/src/worker-execution-log.ts";
 import { NativeSessionLogPublisher } from "../../packages/runtime-core/src/native-session-log-publisher.ts";
 import {
   isNativeAppendFact,
@@ -33,7 +33,7 @@ const read = (id: string): Call => ({ id, name: "read", arguments: { path: `${id
 it("keeps both Lanes writable when the real publication path rejects before the bus", async () => {
   const f = toolInvocationFixture();
   const sent: AcceptedFact[] = [];
-  const channels = new DirectExecutionLog(
+  const channels = new WorkerExecutionLog(
     {} as Kysely<Database>,
     {
       checkHealth: async () => {},
@@ -173,7 +173,7 @@ async function fixture(
       return { factId: fact.factId, durable: true as const };
     }),
   };
-  const log = new DirectExecutionLog({} as Kysely<Database>, bus);
+  const log = new WorkerExecutionLog({} as Kysely<Database>, bus);
   await log.open({
     publication: { scope: f.scope },
     executionReference: f.executionReference,

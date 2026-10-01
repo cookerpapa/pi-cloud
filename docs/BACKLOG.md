@@ -15,19 +15,24 @@ The [September 30 review](reports/repository-review-20260930.md) is complete at
 three decisions to discuss and scoped cleanup candidates. The subsequent
 [repair record](reports/repository-review-repair-20261001.md) records all eight
 confirmed repairs, the accepted deletion/interruption decisions, bounded cleanup
-and passing combined verification. Only the separately scoped shared-VM execution
-handoff/failure-boundary decision below remains open from that discussion.
+and passing combined verification. The accepted shared-VM execution
+handoff and lifecycle changes below remain in progress from that discussion.
 
-## September 30 review follow-up
+## October 1 authority and execution cutover
 
-- [ ] D30-01: decide the shared elastic Workspace VM failure/cancellation domain.
-      Current fail-closed provider cleanup can affect other bindings. Do not
-      remove destruction without a proven process-scoped cancellation/fencing
-      contract; persistent development machines retain their protection.
-      The [Cube result-delivery study](reports/cube-result-delivery-study-20261001.md)
-      is complete: current upstream APIs do not provide the full trusted-host
-      handoff/Kafka delivery contract. A scoped protocol/prototype decision is
-      still required before changing boot ownership and cleanup semantics.
+[ADR-0209](adr/0209-control-plane-publication-and-sandbox-authority.md) records the
+owner's subsequent decision. These slices are not deployed yet.
+
+- [x] Control-plane publication ingress: memory-only hot-path scope checks,
+      serialized seals and Kafka producer fencing across ingress replacement.
+      [Isolated acceptance](reports/publication-ingress-20261001.md); not deployed.
+- [ ] Control-plane-owned Cube lifecycle and accurate physical/node/guest status.
+- [ ] Cube-side fixed Tool handoff, scoped cancellation and independent final
+      result delivery, including existing attachment handling.
+- [ ] Projector-local dispatch and migration of Broker terminal/preview/upload/
+      workflow/machine interfaces, followed by removal of the independent Broker.
+- [ ] Shared-VM failure policy, complete recovery/latency/browser acceptance and
+      matched deployment contracts; keep one execution per Run.
 
 ## Reliability and capacity
 

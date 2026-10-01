@@ -1,3 +1,4 @@
+import type { SessionPublicationService } from "./session-publication-service.ts";
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
@@ -50,6 +51,7 @@ export type ControlPlaneApplicationOptions = Omit<
   sourceControlService?: SourceControlService;
   toolProgressIngress?: ToolProgressIngress;
   runActivityIngress?: RunActivityIngress;
+  sessionPublicationService?: SessionPublicationService;
 };
 
 export async function createControlPlaneApplication(
@@ -95,6 +97,7 @@ export async function createControlPlaneApplication(
   options.productionHttpGateway?.install(adapter.getInstance());
   options.toolProgressIngress?.install(adapter.getInstance());
   options.runActivityIngress?.install(adapter.getInstance());
+  options.sessionPublicationService?.install(adapter.getInstance());
   options.supervisorProvisioningGateway?.install(adapter.getInstance());
   options.supervisorWebSocketGateway?.install(adapter.getInstance());
   options.workspaceTerminalGateway?.install(adapter.getInstance());

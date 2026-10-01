@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql } from "kysely";
 import { expect, it } from "vitest";
-import { createDatabase, runMigrations } from "../src/index.ts";
+import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
@@ -187,14 +187,22 @@ it.skipIf(!endpoint)(
           .orderBy("seq")
           .execute();
       const before = await snapshot();
+      // This fixture deliberately retains queued historical input. Test the
+      // indexed-log migration itself, independently of later drained wire cuts.
+      const migrateIndexedLog = async () => {
+        const result = await new Migrator({
+          db,
+          provider: migrationProvider,
+          allowUnorderedMigrations: true,
+        }).migrateTo("153_indexed_native_session_log");
+        if (result.error) throw result.error;
+      };
       await db
         .updateTable("pi_sessions")
         .set({ unsealed_runs: 1 })
         .where("id", "=", sessionId)
         .execute();
-      await expect(runMigrations(db, "up")).rejects.toThrow(
-        "must settle before indexed-log cutover",
-      );
+      await expect(migrateIndexedLog()).rejects.toThrow("must settle before indexed-log cutover");
       expect(await snapshot()).toEqual(before);
       expect(
         (
@@ -208,7 +216,7 @@ it.skipIf(!endpoint)(
         .set({ unsealed_runs: 0 })
         .where("id", "=", sessionId)
         .execute();
-      await runMigrations(db, "up");
+      await migrateIndexedLog();
       expect(await snapshot()).toEqual(before);
       for (const table of [
         "pi_session_entries",

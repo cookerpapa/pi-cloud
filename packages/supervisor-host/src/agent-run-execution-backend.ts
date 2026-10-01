@@ -251,6 +251,14 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #onLeaseRenewal: AgentRunExecutionBackendOptions["onLeaseRenewal"];
   readonly #trackedExecutions = new Map<string, TrackedExecution>();
+  readonly #openingExecutions = new Map<
+    string,
+    {
+      executionReference: string;
+      abort: AbortController;
+      done: Promise<void>;
+    }
+  >();
   #heartbeatAbort: AbortController | undefined;
   #heartbeatTask: Promise<void> | undefined;
   #heartbeatFailure: TurnExecutionBackendError | undefined;
@@ -308,6 +316,17 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     let executionLog: ExecutionLogWriter | undefined;
     let prepared: ReturnType<AgentRunSupervisor["prepare"]> | undefined;
     let tracked: TrackedExecution | undefined;
+    const opening = {
+      executionReference: admission.executionReference,
+      abort: new AbortController(),
+      ...Promise.withResolvers<void>(),
+    };
+    if (this.#openingExecutions.has(request.runId))
+      throw new TurnExecutionBackendError("invalid_state", "Run is already opening", false);
+    this.#openingExecutions.set(request.runId, {
+      ...opening,
+      done: opening.promise,
+    });
 
     try {
       executionLog = await measureRunPreparation(
@@ -317,6 +336,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         () =>
           this.#executionLogs.open({
             ...admission,
+            signal: opening.abort.signal,
             sessionId: request.sessionId,
             piSession: {
               id: request.piSessionId,
@@ -327,6 +347,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
             nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
           }),
       );
+      opening.abort.signal.throwIfAborted();
+      if (this.#heartbeatFailure) throw this.#heartbeatFailure;
       const parsed = parseControlToSupervisorMessage({
         protocolVersion: 1,
         messageId: this.#idGenerator(),
@@ -423,6 +445,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         );
       }
 
+      this.#openingExecutions.delete(request.runId);
       const execution = prepared.run();
       tracked = this.#registerExecution(request.sessionId, prepared, execution, executionLog);
       try {
@@ -444,7 +467,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         }
       }
     } catch (error: unknown) {
-      const normalized = normalizeBackendError(error);
+      const normalized = normalizeBackendError(opening.abort.signal.reason ?? error);
       normalized.lastEventSeq ??= prepared?.lastAcknowledgedEventSeq();
       if (normalized.code === "agent_runner_error") {
         try {
@@ -455,11 +478,16 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       }
       throw normalized;
     } finally {
-      if (!tracked) {
-        prepared?.releaseBeforeStart();
-        lifecycle.executionExited();
+      try {
+        if (!tracked) {
+          prepared?.releaseBeforeStart();
+          lifecycle.executionExited();
+        }
+        if (executionLog !== undefined && tracked === undefined) await executionLog.close();
+      } finally {
+        this.#openingExecutions.delete(request.runId);
+        opening.resolve();
       }
-      if (executionLog !== undefined && tracked === undefined) await executionLog.close();
     }
   }
 
@@ -469,6 +497,19 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   ): Promise<TurnCancellationResult> {
     try {
       const acknowledgement = await this.#leaseCoordinator.currentAssignment(request.target);
+      const opening = this.#openingExecutions.get(request.target.runId);
+      if (opening?.executionReference === acknowledgement.executionReference) {
+        // No runner or Tool exists yet. Abort the control handshake and join its
+        // cleanup before confirming cancellation; never launch a cancelled Run.
+        opening.abort.abort(new TurnExecutionCancelledError(request.reason, false));
+        await lifecycle.started(acknowledgement);
+        await opening.done;
+        return {
+          reason: request.reason,
+          forced: false,
+          lastEventSeq: positiveSafeInteger(request.target.nextEventSeq, "next event sequence") - 1,
+        };
+      }
       const parsed = parseControlToSupervisorMessage({
         protocolVersion: 1,
         messageId: this.#idGenerator(),

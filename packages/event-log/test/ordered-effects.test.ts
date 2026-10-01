@@ -28,33 +28,34 @@ vi.mock("@confluentinc/kafka-javascript", () => ({
             },
           };
         }
-        consumer(options: {
-          kafkaJS: { autoCommit: boolean; logger: KafkaJS.Logger };
-          rebalance_cb: (...args: unknown[]) => Promise<void>;
-        }) {
-          expect(options.kafkaJS.autoCommit).toBe(false);
-          f.consumers++;
-          f.logger = options.kafkaJS.logger;
-          return {
-            async connect() {
-              await options.rebalance_cb({ code: 1 }, [{ topic: "log", partition: 0 }], {
-                assign() {},
-                unassign() {},
-              });
-            },
-            async subscribe() {},
-            async disconnect() {},
-            pause() {},
-            seek() {},
-            resume() {},
-            async run(options: { eachBatch: typeof f.batch }) {
-              f.batch = options.eachBatch;
-            },
-            commitOffsets: f.commit,
-          };
-        }
       },
     },
+  },
+}));
+vi.mock("../src/kafka-partition-reader.ts", () => ({
+  KafkaPartitionReader: class {
+    constructor(
+      readonly options: import("../src/kafka-partition-reader.ts").PartitionReaderOptions,
+    ) {
+      f.consumers++;
+      f.logger = options.logger;
+    }
+    async connect() {
+      await this.options.rebalance({ code: 1 }, [{ topic: "log", partition: 0 }], {
+        assign() {},
+        unassign() {},
+      });
+    }
+    async subscribe() {}
+    async disconnect() {}
+    pause() {}
+    seek() {}
+    resume() {}
+    seedCommitted() {}
+    async run(options: { eachBatch: typeof f.batch }) {
+      f.batch = options.eachBatch;
+    }
+    commitOffsets = f.commit;
   },
 }));
 import { KafkaLogConsumer } from "../src/kafka-log-consumer.ts";

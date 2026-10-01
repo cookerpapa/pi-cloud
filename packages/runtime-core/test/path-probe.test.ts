@@ -7,7 +7,7 @@ import type {
   AcceptedFactReceipt,
   ExecutionPublication,
 } from "../src/accepted-fact.ts";
-import { DirectExecutionLog } from "../src/direct-execution-log.ts";
+import { WorkerExecutionLog } from "../src/worker-execution-log.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
 import { parseKafkaAcceptedFact } from "../src/kafka-accepted-fact.ts";
 
@@ -40,7 +40,7 @@ function fixture(append: (fact: AcceptedFact) => Promise<AcceptedFactReceipt>) {
     },
     execute: writes,
   };
-  const log = new DirectExecutionLog(
+  const log = new WorkerExecutionLog(
     { updateTable: () => query } as unknown as Kysely<Database>,
     { append, checkHealth: async () => {} },
     undefined,

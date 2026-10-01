@@ -63,14 +63,14 @@ The production stream is:
 
 ```text
 Pi event / native Entry / Tool command
-    -> trusted Worker direct Kafka append
+    -> trusted Worker -> control-plane ingress -> Kafka transaction commit
     -> one Session Projector group
          ├-> PostgreSQL SessionStorage
          ├-> live view -> snapshot-first SSE
          └-> owning Tool executor -> Cube
 ```
 
-Kafka `acks=all` precedes visibility. Kafka retains a bounded
+Kafka RF3/transaction commit precedes visibility. Kafka retains a bounded
 log of Assistant text deltas, complete Tool/lifecycle Items and Pi mutations;
 PostgreSQL stores Pi-native complete messages once. The two checks separately
 measure Kafka/Gateway ordering and PostgreSQL complete-message projection

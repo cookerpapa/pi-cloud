@@ -25,14 +25,11 @@ import {
 } from "../../runtime-core/src/run-executor.ts";
 import { RunCancellationExecutor } from "../../runtime-core/src/run-cancellation-executor.ts";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
-import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
+import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import { PostgresPiSessionAppendProjector } from "../../runtime-core/src/postgres-pi-session-append-projector.ts";
-import {
-  ExecutionPublicationBoundary,
-  createExecutionPublication,
-} from "../../runtime-core/src/execution-publication.ts";
-import type { AcceptedFact } from "../../runtime-core/src/accepted-fact.ts";
+import { createExecutionPublication } from "../../runtime-core/src/execution-publication.ts";
+import type { AcceptedFact, AcceptedFactBus } from "../../runtime-core/src/accepted-fact.ts";
 import {
   loadFactReplayOffsets,
   recordFactProjection,
@@ -79,7 +76,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       }
     }
   });
-  async function fixture(capacity = 2) {
+  async function fixture(capacity = 2, open?: AcceptedFactBus["open"]) {
     const tenant = await createPrivateTenant(db, {
       slug: `atomic-${randomUUID()}`,
       ownerDisplayName: "Admission test",
@@ -117,7 +114,11 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       facts.push(fact);
       return { factId: fact.factId, durable: true as const };
     });
-    const logs = new DirectExecutionLog(db, { append, checkHealth: async () => {} });
+    const logs = new WorkerExecutionLog(db, {
+      append,
+      ...(open ? { open } : {}),
+      checkHealth: async () => {},
+    });
     const runner = vi.fn(
       async (
         command: ExecuteTurnCommandMessage,
@@ -195,8 +196,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         .execute(),
     });
     async function project() {
-      const boundary = new ExecutionPublicationBoundary(db),
-        projector = new ExecutionStreamProjector(db);
+      const projector = new ExecutionStreamProjector(db);
       const seals = await db
         .selectFrom("outbox")
         .select("payload")
@@ -205,7 +205,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       let offset = 0n;
       for (const fact of [...facts, ...seals.map((s) => s.payload as unknown as AcceptedFact)]) {
         const record = { fact, topic: `test-${worker}`, partition: 0, offset: offset++ };
-        if (await boundary.accept(record)) await projector.project(record);
+        await projector.project(record);
       }
     }
     return {
@@ -1310,6 +1310,38 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(f.runner).toHaveBeenCalledOnce();
     expect((await f.state()).admittedRuns).toHaveLength(1);
   });
+  it("cancels a pending publication admission without ever starting the Runner", async () => {
+    const entered = Promise.withResolvers<void>();
+    const f = await fixture(2, async (_permit, signal) => {
+      entered.resolve();
+      await new Promise<void>((_resolve, reject) => {
+        signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+      });
+    });
+    const executing = f.executor().dispatchRun(f.accepted.runId);
+    await entered.promise;
+    await f.store.acceptTurnCancellation(f.session.sessionId, f.accepted.turnId, randomUUID(), {});
+    const cancellation = new RunCancellationExecutor({
+      database: db,
+      executionAuthority: f.coordinator,
+      backend: f.backend,
+    });
+    expect(await cancellation.dispatchTargetRun(f.accepted.runId)).toMatchObject({
+      status: "cancelled",
+      forced: false,
+    });
+    await executing;
+    expect(f.runner).not.toHaveBeenCalled();
+    expect(f.facts).toEqual([]);
+    expect((await f.state()).run.state).toBe("cancelled");
+    const seal = await db
+      .selectFrom("outbox")
+      .select("payload")
+      .where("tenant_id", "=", f.tenant.tenantId)
+      .executeTakeFirstOrThrow();
+    expect(seal.payload).toMatchObject({ closesWriter: false });
+  });
+
   it("cancellation after admission owns settlement even before the local Runner is prepared", async () => {
     const f = await fixture();
     const cancelling = Promise.withResolvers<void>(),

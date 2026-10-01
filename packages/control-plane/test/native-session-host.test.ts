@@ -13,8 +13,7 @@ import { getModel } from "@earendil-works/pi-ai/compat";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { RunExecutor, TurnExecutionBackendError } from "../../runtime-core/src/run-executor.ts";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
-import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
-import { ExecutionPublicationBoundary } from "../../runtime-core/src/execution-publication.ts";
+import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
 import { NativeSessionLogPublisher } from "../../runtime-core/src/native-session-log-publisher.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import type { AcceptedFact, AcceptedFactWriter } from "../../runtime-core/src/accepted-fact.ts";
@@ -42,7 +41,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
   let host = new PostgresNativeSessionHost({ database: hostDatabase });
   const facts: AcceptedFact[] = [],
     channels = new Map<string, AcceptedFactWriter>();
-  const service = new DirectExecutionLog(db, {
+  const service = new WorkerExecutionLog(db, {
     append: async (fact) => {
       facts.push(fact);
       return { factId: fact.factId, durable: true };
@@ -385,26 +384,12 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
     );
     expect(new Set(facts.map((f) => f.scope.writerId))).toEqual(new Set([parentWriterId]));
     const projector = new ExecutionStreamProjector(db);
-    const boundary = new ExecutionPublicationBoundary(db);
     let offset = 0n;
     const projectReady = async () => {
       const pending = facts.splice(0);
       for (const fact of pending) {
         const record = { fact, topic: "native-host", partition: 0, offset: offset++ };
         expect(fact).not.toHaveProperty("signature");
-        expect(
-          await boundary.accept({
-            ...record,
-            fact: {
-              ...fact,
-              scope: { ...fact.scope, fencingToken: fact.scope.fencingToken + 1 },
-            } as AcceptedFact,
-          }),
-        ).toBe(false);
-        expect(await boundary.accept(record)).toBe(true);
-        expect(await boundary.accept({ ...record, partition: 1 })).toBe(false);
-        boundary.reset();
-        expect(await boundary.accept(record)).toBe(true);
         await projector.project(record);
       }
       const terminals = await db
@@ -420,20 +405,11 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
           partition: 0,
           offset: offset++,
         };
-        expect(await boundary.accept(record)).toBe(true);
-        expect(
-          await boundary.accept({
-            ...record,
-            fact: { ...record.fact, occurredAt: "2000-01-01T00:00:00.000Z" },
-          }),
-        ).toBe(false);
         await projector.project(record);
       }
       const late = pending.find((f) => f.kind === "pi_session_append")!;
       const lateRecord = { fact: late, topic: "native-host", partition: 0, offset: offset++ };
-      // A genuine old identity is not sufficient after its seal, with or without signatures.
-      boundary.reset();
-      expect(await boundary.accept(lateRecord)).toBe(true);
+      // Recovery still honors canonical closure even for a genuine old identity.
       expect(await projector.accepts(lateRecord)).toBe(false);
       expect(await projector.project(lateRecord)).toBeUndefined();
     };

@@ -9,8 +9,7 @@ import { AgentRunExecutionBackend } from "../../supervisor-host/src/agent-run-ex
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import type { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
-import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
-import { ExecutionPublicationBoundary } from "../../runtime-core/src/execution-publication.ts";
+import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import type { AcceptedFact } from "../../runtime-core/src/accepted-fact.ts";
 import { PostgresPiWorker } from "../../supervisor-host/src/postgres-pi-worker.ts";
@@ -99,7 +98,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
     const backend = new AgentRunExecutionBackend({
       supervisor,
       leaseCoordinator: coordinator,
-      executionLogs: new DirectExecutionLog(db, {
+      executionLogs: new WorkerExecutionLog(db, {
         checkHealth: async () => {},
         append: async (fact) => {
           facts.push(fact);
@@ -145,7 +144,6 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
     const capacity = () => localFamilies;
     let offset = 0n;
     const projected = new Set<string>(),
-      boundary = new ExecutionPublicationBoundary(db),
       projector = new ExecutionStreamProjector(db);
     async function project() {
       const outbox = await db
@@ -156,7 +154,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
       for (const fact of [...facts, ...outbox.map((r) => r.payload as unknown as AcceptedFact)]) {
         if (projected.has(fact.factId)) continue;
         const record = { fact, topic: `parallel-${workerId}`, partition: 0, offset: offset++ };
-        if (await boundary.accept(record)) await projector.project(record);
+        await projector.project(record);
         projected.add(fact.factId);
       }
     }

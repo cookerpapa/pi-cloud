@@ -292,9 +292,9 @@
     {
       "id": "stale-accepted-fact-authority",
       "workspace": "@pi-cloud/runtime-core",
-      "file": "test/execution-publication.test.ts",
-      "test": "retains tenant, writer, event identity and partition checks",
-      "invariant": "Only the recorded execution scope is projectable; no standalone opening is required."
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "does not admit a larger epoch or an unknown Run directly from an append",
+      "invariant": "A record cannot install its own authority or bypass the PG-issued publication scope."
     },
     {
       "id": "session-mutation-redelivery",
@@ -565,9 +565,9 @@
     {
       "id": "native-record-oversize-isolation",
       "workspace": "@pi-cloud/runtime-core",
-      "file": "test/kafka-producer-backpressure.test.ts",
-      "test": "rejects an oversized record without poisoning another Session's Producer callback",
-      "invariant": "Oversized individual publications fail before entering the shared Kafka Producer stream."
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "rejects an oversized record without poisoning another Session's publication",
+      "invariant": "Oversized individual publications fail before entering the bounded publication queue."
     },
     {
       "id": "queued-edit-claim-race",
@@ -729,6 +729,34 @@
       "file": "test/steer-admission.postgres.test.ts",
       "test": "Steer admission remains compatible with concurrent Tool binding foreign keys",
       "invariant": "Input acceptance does not deadlock with active Tool binding foreign-key checks."
+    },
+    {
+      "id": "publication-seal-order",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "closes admission before draining and emits the seal before opening a new writer",
+      "invariant": "Ingress closes old admission before draining and a successor cannot pass the ordered seal."
+    },
+    {
+      "id": "publication-stale-admission",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "rejects a PG admission snapshot overtaken by a projected seal even without cached Run state",
+      "invariant": "A delayed PG grant cannot reopen a scope after its closure completed."
+    },
+    {
+      "id": "publication-uncertain-queued-data",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "stops queued data after an uncertain append but still permits the closing seal",
+      "invariant": "Unknown semantic commit stops queued data while preserving ordered closure."
+    },
+    {
+      "id": "publication-lost-seal-ack",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "uses projected closure after a lost seal ACK without leaving the next writer blocked",
+      "invariant": "PG canonical seal evidence releases a successor despite a lost producer ACK."
     }
   ]
 }

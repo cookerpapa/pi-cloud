@@ -2,14 +2,21 @@ import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { KafkaLogConsumer } from "@pi-cloud/event-log";
 import {
-  KafkaAcceptedFactBus,
   ACCEPTED_FACT_TOPIC,
   kafkaProducerLane,
   parseKafkaAcceptedFact,
-  type KafkaAcceptedFactConfiguration,
 } from "./kafka-accepted-fact.ts";
 import { ExecutionStreamProjector, factEvents } from "./execution-stream-projection.ts";
-import { ExecutionPublicationBoundary } from "./execution-publication.ts";
+import type { AcceptedExecutionSealFact, ExecutionPublication } from "./accepted-fact.ts";
+import type { ProducerCapacity } from "@pi-cloud/event-log";
+import type { PiCloudMetrics } from "@pi-cloud/observability";
+import { ExecutionLogTopic, type ExecutionLogTopicOptions } from "./execution-log-topic.ts";
+import {
+  SessionPublicationIngress,
+  PublicationIngressRejected,
+} from "./session-publication-ingress.ts";
+import { PostgresPublicationControl } from "./postgres-publication-control.ts";
+import { HttpPublicationClient } from "./http-publication-client.ts";
 import { SessionLiveView } from "./session-live-view.ts";
 import { AcceptedFactTerminalOutboxRelay } from "./accepted-fact-terminal-outbox-relay.ts";
 import { KafkaSafeRetention } from "./kafka-safe-retention.ts";
@@ -27,20 +34,26 @@ export class SessionProjector {
   readonly observations: RunObservations;
   readonly #observationSweep: NodeJS.Timeout;
   readonly #consumer: KafkaLogConsumer<AcceptedFact>;
-  readonly #bus: KafkaAcceptedFactBus;
+  readonly #topic: ExecutionLogTopic;
   readonly #relay: AcceptedFactTerminalOutboxRelay;
   readonly #retention: KafkaSafeRetention;
   readonly #projection: ExecutionStreamProjector;
-  readonly #publication: ExecutionPublicationBoundary;
+  readonly publication: SessionPublicationIngress;
+  readonly #publicationControl: PostgresPublicationControl;
+  readonly #publicationClient: HttpPublicationClient;
+  #publicationRetirement: Promise<unknown> = Promise.resolve();
   #partitions = 0;
   #ready = false;
   #closing: Promise<void> | undefined;
   constructor(
-    readonly options: KafkaAcceptedFactConfiguration & {
+    readonly options: ExecutionLogTopicOptions & {
+      capacity?: ProducerCapacity;
+      metrics?: PiCloudMetrics;
       retentionMs: number;
       database: Kysely<Database>;
       notificationConnectionString: string;
       advertisedBaseUrl: string;
+      publicationToken: string;
       toolCommands: {
         consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
         close?(): Promise<void>;
@@ -52,7 +65,13 @@ export class SessionProjector {
     },
   ) {
     const topic = options.topic ?? ACCEPTED_FACT_TOPIC;
-    this.#bus = new KafkaAcceptedFactBus(options);
+    this.#topic = new ExecutionLogTopic(options);
+    this.publication = new SessionPublicationIngress(options.capacity, 65_536, options.metrics);
+    this.#publicationControl = new PostgresPublicationControl(options.database, this.publication);
+    this.#publicationClient = new HttpPublicationClient({
+      baseUrl: options.advertisedBaseUrl,
+      token: options.publicationToken,
+    });
     this.eventStore = new SessionLiveView(async (tenant, session) => {
       const p = await this.#partition(tenant, session);
       if (!this.#consumer.ownsPartition(p))
@@ -63,12 +82,11 @@ export class SessionProjector {
     this.observations = new RunObservations(this.eventHub);
     this.#observationSweep = setInterval(() => this.observations.sweep(), 60_000);
     this.#observationSweep.unref();
-    this.#publication = new ExecutionPublicationBoundary(options.database);
     this.#projection = new ExecutionStreamProjector(options.database);
     this.#consumer = new KafkaLogConsumer({
       brokers: options.brokers,
       topic,
-      groupId: "pi-cloud-session-projector-v1",
+      groupId: "pi-cloud-session-projector-v2",
       clientId:
         PREFIX + Buffer.from(new URL(options.advertisedBaseUrl).toString()).toString("base64url"),
       groupRecovery: true,
@@ -77,19 +95,31 @@ export class SessionProjector {
       replayOffsets: (bounds) => loadFactReplayOffsets(options.database, topic, bounds),
       onReset: () => {
         this.#projection.reset();
-        this.#publication.reset();
         this.eventStore.reset();
         this.observations.reset();
+      },
+      onRevoked: () => {
+        const closing: Promise<void>[] = [];
+        for (let p = 0; p < options.partitions; p++) closing.push(this.publication.revoke(p));
+        this.#publicationRetirement = Promise.allSettled(closing);
+      },
+      onAssigned: async (partitions, current) => {
+        await this.#publicationRetirement;
+        for (const partition of partitions) {
+          if (!current()) return;
+          const writer = await this.#consumer.openPublicationWriter(partition, current);
+          if (!current()) {
+            await writer.close();
+            return;
+          }
+          this.publication.installPartition(partition, writer);
+        }
       },
       handler: async (record, current, commitBeforeEffect) => {
         const timing = new ProjectionTiming(options.metrics);
         let failure: unknown;
         try {
-          if (
-            !(await timing.measure("publication", () => this.#publication.accept(record))) ||
-            current?.() === false
-          )
-            return;
+          if (current?.() === false) return;
           const { fact } = record;
           if (fact.kind === "path_probe") {
             this.observations.record(record, this.#projection.observes(record));
@@ -99,6 +129,10 @@ export class SessionProjector {
             this.#projection.project(record),
           );
           if (current?.() === false) return;
+          if (fact.kind === "execution_seal") {
+            const owner = this.publication.ownership(record.partition);
+            if (owner) this.publication.confirmSealed(owner, fact);
+          }
           const applicable =
             fact.kind === "execution_seal" ||
             (await timing.measure("boundary", () => this.#projection.accepts(record)));
@@ -145,7 +179,13 @@ export class SessionProjector {
     this.#relay = new AcceptedFactTerminalOutboxRelay({
       database: options.database,
       notificationConnectionString: options.notificationConnectionString,
-      bus: this.#bus,
+      bus: {
+        append: (fact) => {
+          if (fact.kind !== "execution_seal") throw new Error("Control Outbox must contain a seal");
+          return this.publishSeal(fact);
+        },
+        checkHealth: () => this.#topic.checkHealth(),
+      },
     });
     this.#retention = new KafkaSafeRetention({ ...options, topic, graceMs: options.retentionMs });
     this.eventStore.owner = (tenant, session) => this.owner(tenant, session);
@@ -179,8 +219,39 @@ export class SessionProjector {
   ownsPartition(partition: number): boolean {
     return this.#consumer.ownsPartition(partition);
   }
+  publicationPartition(sessionId: string): number {
+    return kafkaProducerLane(sessionId, this.options.partitions);
+  }
+  async openPublication(permit: ExecutionPublication): Promise<void> {
+    const partition = this.publicationPartition(permit.scope.piSessionId);
+    const owner = this.publication.ownership(partition);
+    if (!owner || !this.#consumer.ownsPartition(partition))
+      throw new PublicationIngressRejected("not_owner");
+    await this.#publicationControl.open(owner, permit);
+  }
+  appendPublication(fact: Exclude<AcceptedFact, AcceptedExecutionSealFact>) {
+    const partition = this.publicationPartition(fact.scope.piSessionId);
+    const owner = this.publication.ownership(partition);
+    if (!owner || !this.#consumer.ownsPartition(partition))
+      throw new PublicationIngressRejected("not_owner");
+    return this.publication.append(owner, fact);
+  }
+  async publishSeal(fact: AcceptedExecutionSealFact) {
+    const partition = this.publicationPartition(fact.scope.piSessionId);
+    const owner = this.publication.ownership(partition);
+    if (!owner || !this.#consumer.ownsPartition(partition))
+      return this.#publicationClient.append(fact);
+    return this.#publicationControl.seal(owner, fact);
+  }
+  async acceptSeal(fact: AcceptedExecutionSealFact) {
+    const partition = this.publicationPartition(fact.scope.piSessionId);
+    const owner = this.publication.ownership(partition);
+    if (!owner || !this.#consumer.ownsPartition(partition))
+      throw new PublicationIngressRejected("not_owner");
+    return this.#publicationControl.seal(owner, fact);
+  }
   async start(): Promise<void> {
-    await this.#bus.start();
+    await this.#topic.start();
     // Producer startup already verified this against broker metadata. Asking
     // another client's offset cache merely to count partitions races fresh Topics.
     this.#partitions = this.options.partitions;
@@ -197,7 +268,7 @@ export class SessionProjector {
   }
   async checkIngestHealth(): Promise<void> {
     if (!this.#ready) throw new Error("Projector not started");
-    await this.#bus.checkHealth();
+    await this.#topic.checkHealth();
   }
   statistics() {
     return { liveTail: this.eventStore.statistics() };
@@ -212,12 +283,14 @@ export class SessionProjector {
     const errors: unknown[] = [];
     for (const close of [
       () => this.#relay.close(),
+      () => this.#publicationClient.close(),
+      () => this.publication.close(),
       () => this.#consumer.close(),
       () => this.options.toolCommands.close?.(),
       () => this.options.subagentCommands?.close?.(),
       () => this.#retention.close(),
       () => this.eventStore.close(),
-      () => this.#bus.close(),
+      () => this.#topic.close(),
     ]) {
       try {
         await close();

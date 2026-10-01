@@ -2,14 +2,15 @@
 
 This chart deploys a stateless, horizontally scalable Pi SDK Worker pool. All
 replicas consume the same PostgreSQL-backed Run queue. `LISTEN/NOTIFY` is only a
-latency hint; PostgreSQL remains the queue and Run/Attempt authority.
+latency hint; PostgreSQL remains the queue and Run authority.
 
 Workers never execute model-generated code. `read/write/edit/bash` cross the
 Tool Broker and execute in CubeSandbox. A Worker PVC contains only its boot
 ledger. Pi SessionStorage is durable PostgreSQL state. Workers publish both
-browser-visible events and complete Session mutations directly to private Kafka.
-One Projector group drives PG history, live views and Tool routing. There is no
-Control Plane Ingest relay in this path.
+browser-visible events and complete Session mutations through the control-plane
+publication ingress. Its ordinary append path checks installed memory state and
+returns Kafka transaction commit ACKs. One Projector group owns publication
+partitions and drives PG history, live views and Tool routing.
 
 ## Required Secret
 

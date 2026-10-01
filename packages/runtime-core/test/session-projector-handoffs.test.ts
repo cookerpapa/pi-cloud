@@ -5,7 +5,6 @@ import type { PiCloudEvent } from "@pi-cloud/protocol";
 import type { ExecutionProjectionResult } from "../src/execution-stream-projection.ts";
 
 const f = vi.hoisted(() => ({
-  accept: vi.fn(),
   project: vi.fn(),
   applies: vi.fn(),
   observes: vi.fn(),
@@ -17,7 +16,8 @@ const f = vi.hoisted(() => ({
     | undefined
     | ((record: any, current?: () => boolean, commit?: () => Promise<boolean>) => Promise<void>),
 }));
-vi.mock("@pi-cloud/event-log", () => ({
+vi.mock("@pi-cloud/event-log", async (original) => ({
+  ...(await original<typeof import("@pi-cloud/event-log")>()),
   KafkaLogConsumer: class {
     constructor(options: { handler: typeof f.handler; decode: typeof f.decode }) {
       f.handler = options.handler;
@@ -33,20 +33,17 @@ vi.mock("@pi-cloud/event-log", () => ({
 }));
 vi.mock("../src/kafka-accepted-fact.ts", () => ({
   ACCEPTED_FACT_TOPIC: "test",
-  KafkaAcceptedFactBus: class {
+  kafkaProducerLane: () => 0,
+  parseKafkaAcceptedFact: f.parse,
+}));
+vi.mock("../src/execution-log-topic.ts", () => ({
+  ExecutionLogTopic: class {
     async start() {
       f.start("producer");
     }
     async close() {
       await f.close("producer");
     }
-  },
-  kafkaProducerLane: () => 0,
-  parseKafkaAcceptedFact: f.parse,
-}));
-vi.mock("../src/execution-publication.ts", () => ({
-  ExecutionPublicationBoundary: class {
-    accept = f.accept;
   },
 }));
 vi.mock("../src/execution-stream-projection.ts", async (original) => ({
@@ -89,7 +86,6 @@ beforeEach(() => {
   shutdownAsserted = false;
   f.close.mockReset().mockResolvedValue(undefined);
   f.start.mockReset();
-  f.accept.mockReset().mockResolvedValue(true);
   f.project.mockReset().mockResolvedValue(undefined);
   f.applies.mockReset().mockResolvedValue(true);
   f.observes.mockReset().mockReturnValue(false);
@@ -100,6 +96,7 @@ beforeEach(() => {
     notificationConnectionString: "postgresql://unused/test",
     brokers: ["unused"],
     clientId: "test",
+    publicationToken: "test-publication-token",
     partitions: 2,
     replicas: 3,
     retentionMs: 7_200_000,
@@ -169,7 +166,6 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
       },
     };
     await f.handler!(probe, () => true, commit);
-    expect(f.accept).toHaveBeenLastCalledWith(probe);
     expect(f.project).not.toHaveBeenCalled();
     expect(route).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
@@ -308,14 +304,6 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     expect(f.parse).toHaveBeenCalledOnce();
     expect(f.project.mock.calls[0]![0]).toBe(r);
     expect(route.mock.calls[0]![0]).toBe(r);
-  });
-  it("does not expose or route a rejected publication", async () => {
-    const display = vi.spyOn(projector.eventHub, "publish");
-    f.accept.mockResolvedValue(false);
-    await f.handler!(record());
-    expect(f.project).not.toHaveBeenCalled();
-    expect(display).not.toHaveBeenCalled();
-    expect(route).not.toHaveBeenCalled();
   });
 
   it("waits for seal projection before displaying the terminal or retiring executor state", async () => {

@@ -8,6 +8,7 @@ export type ExecutionLogOpenRequest = Readonly<{
   turnId: string;
   nextEventSeq: number;
   publication: ExecutionPublication;
+  signal?: AbortSignal;
 }>;
 
 export interface ExecutionLogWriter extends AcceptedFactWriter {

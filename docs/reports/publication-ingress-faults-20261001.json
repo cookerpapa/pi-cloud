@@ -1,0 +1,774 @@
+{
+  "format": "pi-cloud.fault-eval-report.v1",
+  "piCloudRevision": "7ad3bc351623b2d0daf65072a2db1d9f60c8f81d",
+  "dirtyWorktree": true,
+  "generatedAt": "2026-10-01T04:13:23.276Z",
+  "methodology": "deterministic_targeted_fault_injection",
+  "executionGroups": 42,
+  "executionDurationMs": 315100,
+  "durationMetric": "Vitest target assertion duration; shared file setup/process cost is groupDurationMs",
+  "liveChaosExperiment": false,
+  "caseCount": 108,
+  "successful": 108,
+  "successRate": 1,
+  "p50DurationMs": 57,
+  "p95DurationMs": 6897,
+  "results": [
+    {
+      "id": "machine-rebind-release-race",
+      "success": true,
+      "invariant": "A pending machine release wins over a stale target lookup; rebinding checks a fresh snapshot after the machine lock.",
+      "durationMs": 192,
+      "groupDurationMs": 17890
+    },
+    {
+      "id": "machine-rebind-identity-and-retry",
+      "success": true,
+      "invariant": "Binding replay cannot duplicate or retarget the operation; native Session/model identity and previously accepted Run snapshots remain unchanged.",
+      "durationMs": 322,
+      "groupDurationMs": 17890
+    },
+    {
+      "id": "lease-sweep-independent-of-retirement",
+      "success": true,
+      "invariant": "A stalled remote stop cannot stall lease scanning; drain prevents another cleanup claim.",
+      "durationMs": 38,
+      "groupDurationMs": 13594
+    },
+    {
+      "id": "lease-sweep-pg-time",
+      "success": true,
+      "invariant": "Both initial expiry selection and final retirement use PG time, independent of API clock skew.",
+      "durationMs": 6897,
+      "groupDurationMs": 13326
+    },
+    {
+      "id": "path-probe-stalled-ack",
+      "success": true,
+      "invariant": "At most one probe is outstanding per physical Session; a probe has no semantic commit to recover.",
+      "durationMs": 13,
+      "groupDurationMs": 1948
+    },
+    {
+      "id": "path-probe-stale-replay",
+      "success": true,
+      "invariant": "A replay or stale probe cannot refresh liveness or create an active execution scope.",
+      "durationMs": 10,
+      "groupDurationMs": 3903
+    },
+    {
+      "id": "activity-writer-seal",
+      "success": true,
+      "invariant": "Tenant, partition and owner checks fence phase observations; a writer seal closes all sibling observations.",
+      "durationMs": 6,
+      "groupDurationMs": 3903
+    },
+    {
+      "id": "activity-terminal-sse",
+      "success": true,
+      "invariant": "Transient activity cannot alter transcript sequence or reopen a terminal turn.",
+      "durationMs": 7,
+      "groupDurationMs": 1494
+    },
+    {
+      "id": "upload-expiry-late-completion",
+      "success": true,
+      "invariant": "Expired drafts release image pins; a revoked upload cannot become a ready input after a late external reply.",
+      "durationMs": 253,
+      "groupDurationMs": 15046
+    },
+    {
+      "id": "upload-capacity-gc-race",
+      "success": true,
+      "invariant": "Binary upload admission is bounded before buffering; image pinning cannot acknowledge a GC-deleted source.",
+      "durationMs": 193,
+      "groupDurationMs": 15046
+    },
+    {
+      "id": "upload-symlink-confinement",
+      "success": true,
+      "invariant": "Upload placement cannot follow a substituted directory or destination link outside the authorized root.",
+      "durationMs": 70,
+      "groupDurationMs": 1062
+    },
+    {
+      "id": "input-image-guest-cancel",
+      "success": true,
+      "invariant": "Input preparation is fenced independently of Agent Tool execution and remains tracked until guest cancellation finishes.",
+      "durationMs": 39,
+      "groupDurationMs": 3895
+    },
+    {
+      "id": "subagent-compute-scope-expiry",
+      "success": true,
+      "invariant": "Expiring a child's independent compute scope keeps the shared Volume and the active parent's runtime; each binding uses its own frozen cwd.",
+      "durationMs": 10,
+      "groupDurationMs": 3895
+    },
+    {
+      "id": "cancel-stop-failure",
+      "success": true,
+      "invariant": "Cancellation revokes Tool authority before uncertain process cleanup returns.",
+      "durationMs": 3,
+      "groupDurationMs": 3895
+    },
+    {
+      "id": "shared-runtime-loss",
+      "success": true,
+      "invariant": "Loss of one Workspace Cube cannot leave a surviving logical Tool binding.",
+      "durationMs": 5,
+      "groupDurationMs": 3895
+    },
+    {
+      "id": "broker-shutdown-admission",
+      "success": true,
+      "invariant": "Broker shutdown rejects pending VM creation before freeing existing capacity; it never launches the waiter during teardown.",
+      "durationMs": 57,
+      "groupDurationMs": 3895
+    },
+    {
+      "id": "native-proved-rejection",
+      "success": true,
+      "invariant": "A proved pre-enqueue rejection restores committed state and preserves sibling publication and contiguous sequence.",
+      "durationMs": 10,
+      "groupDurationMs": 1341
+    },
+    {
+      "id": "cancel-queued-native-publication",
+      "success": true,
+      "invariant": "Cancellation while waiting for the Session writer neither publishes the invocation nor consumes a native sequence.",
+      "durationMs": 2,
+      "groupDurationMs": 1341
+    },
+    {
+      "id": "projection-independent-cancel",
+      "success": true,
+      "invariant": "Cancelling a cold history waiter does not cancel the shared progress read or a sibling.",
+      "durationMs": 56,
+      "groupDurationMs": 787
+    },
+    {
+      "id": "projection-owner-cache-fence",
+      "success": true,
+      "invariant": "Previously observed progress cannot authorize a retired owner or cache a failed read.",
+      "durationMs": 25,
+      "groupDurationMs": 787
+    },
+    {
+      "id": "projection-lock-timeout-replay",
+      "success": true,
+      "invariant": "Server lock timeout leaves native history and projection positions unchanged; redelivery after release applies once.",
+      "durationMs": 576,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "projection-statement-timeout",
+      "success": true,
+      "invariant": "A timed-out SQL statement rolls back preceding writes and transaction-local timeout settings.",
+      "durationMs": 173,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "expired-owner-at-run-admission",
+      "success": true,
+      "invariant": "Final admission checks current PG time after locks; an expired lease cannot start the Agent or leave partial owner state.",
+      "durationMs": 95,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "cancel-native-projection-locks",
+      "success": true,
+      "invariant": "Cancellation lifecycle locks remain compatible with the native Record's Turn foreign key, so neither side deadlocks.",
+      "durationMs": 363,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "cancel-settlement-sql-abort",
+      "success": true,
+      "invariant": "A certified cancellation-settlement SQL abort retries only that transaction, never the external stop or Agent Loop.",
+      "durationMs": 381,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "ready-seal-atomicity",
+      "success": true,
+      "invariant": "A failed seal commit cannot release the next Lane task or decrement the family count; replay decrements once.",
+      "durationMs": 188,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "ready-input-before-seal",
+      "success": true,
+      "invariant": "Input acceptance and seal projection serialize on the Lane row and cannot leave a committed follow-up permanently waiting.",
+      "durationMs": 376,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "ready-seal-before-input",
+      "success": true,
+      "invariant": "Input waiting behind a seal transaction observes the committed closure and becomes ready without another notification.",
+      "durationMs": 340,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "first-record-commit-reply-loss",
+      "success": true,
+      "invariant": "A lost PG COMMIT reply preserves the first recovery floor and idempotent native projection.",
+      "durationMs": 205,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "first-record-rollback",
+      "success": true,
+      "invariant": "First native data and its recovery floor roll back together, and retry cannot skip the prefix.",
+      "durationMs": 210,
+      "groupDurationMs": 19398
+    },
+    {
+      "id": "projection-other-partition-progress",
+      "success": true,
+      "invariant": "A blocked delivery in one partition does not serialize unrelated partition handlers.",
+      "durationMs": 52,
+      "groupDurationMs": 4783
+    },
+    {
+      "id": "atomic-tool-replay",
+      "success": true,
+      "invariant": "Native intent projects before effect admission; replay never reissues the combined command.",
+      "durationMs": 65,
+      "groupDurationMs": 4783
+    },
+    {
+      "id": "atomic-tool-projection-failure",
+      "success": true,
+      "invariant": "Failed native projection cannot commit or dispatch its Tool command.",
+      "durationMs": 5,
+      "groupDurationMs": 4783
+    },
+    {
+      "id": "atomic-tool-commit-failure",
+      "success": true,
+      "invariant": "An unconfirmed Kafka dispatch commit cannot issue a Tool effect.",
+      "durationMs": 2,
+      "groupDurationMs": 4783
+    },
+    {
+      "id": "atomic-tool-rebalance",
+      "success": true,
+      "invariant": "Lost partition ownership after commit does not dispatch a new effect.",
+      "durationMs": 2,
+      "groupDurationMs": 4783
+    },
+    {
+      "id": "atomic-tool-seal",
+      "success": true,
+      "invariant": "An invocation after its scope seal cannot dispatch a Tool command.",
+      "durationMs": 1,
+      "groupDurationMs": 4783
+    },
+    {
+      "id": "projector-owner-ack-loss",
+      "success": true,
+      "invariant": "A failed seal delivery retries its positioned control record without emitting the terminal twice; Tool command delivery is not retried.",
+      "durationMs": 2,
+      "groupDurationMs": 4783
+    },
+    {
+      "id": "projector-rebalance-after-pg",
+      "success": true,
+      "invariant": "A no-longer-current consumer handler cannot continue live or Tool delivery after its pending PG operation completes.",
+      "durationMs": 1,
+      "groupDurationMs": 4783
+    },
+    {
+      "id": "native-late-input-drain",
+      "success": true,
+      "invariant": "Accepted late native input continues within the same operation before successful Run closure.",
+      "durationMs": 12,
+      "groupDurationMs": 1806
+    },
+    {
+      "id": "native-final-append-input-fence",
+      "success": true,
+      "invariant": "Waiting for final durable append cannot reopen control-input admission.",
+      "durationMs": 3,
+      "groupDurationMs": 1806
+    },
+    {
+      "id": "native-followup-retry-reset",
+      "success": true,
+      "invariant": "A successful sampling response resets retry state before a subsequent input's sampling.",
+      "durationMs": 11,
+      "groupDurationMs": 1806
+    },
+    {
+      "id": "native-compaction-usage-freshness",
+      "success": true,
+      "invariant": "A retained pre-compaction usage value cannot force another threshold compaction.",
+      "durationMs": 2,
+      "groupDurationMs": 1806
+    },
+    {
+      "id": "native-cancel-retry-backoff",
+      "success": true,
+      "invariant": "Run cancellation interrupts retry backoff without another model call or shared-authority revocation.",
+      "durationMs": 5,
+      "groupDurationMs": 1806
+    },
+    {
+      "id": "worker-local-pending-capacity",
+      "success": true,
+      "invariant": "Local pending reservations bound overlapping claims without a PG slot counter; successors still wait for closure.",
+      "durationMs": 747,
+      "groupDurationMs": 15415
+    },
+    {
+      "id": "ready-family-owner-handoff",
+      "success": true,
+      "invariant": "A ready main Lane cannot acquire a new owner until the old sibling's final seal commits.",
+      "durationMs": 9022,
+      "groupDurationMs": 15126
+    },
+    {
+      "id": "message-level-display-recovery",
+      "success": true,
+      "invariant": "Committed text leaves live memory before the Run ends; an unfinished suffix remains exact after failure.",
+      "durationMs": 411,
+      "groupDurationMs": 13234
+    },
+    {
+      "id": "session-mutation-redelivery",
+      "success": true,
+      "invariant": "Kafka redelivery creates one canonical Pi Session mutation.",
+      "durationMs": 188,
+      "groupDurationMs": 13234
+    },
+    {
+      "id": "seal-before-successor-read",
+      "success": true,
+      "invariant": "A replacement Worker observes every older accepted Session mutation before reading context.",
+      "durationMs": 341,
+      "groupDurationMs": 13234
+    },
+    {
+      "id": "projector-prefix-rebuild",
+      "success": true,
+      "invariant": "A replacement Projector reconstructs the unsealed prefix without repeating native mutations.",
+      "durationMs": 204,
+      "groupDurationMs": 13234
+    },
+    {
+      "id": "interrupted-framed-snapshot",
+      "success": true,
+      "invariant": "A partial snapshot never appears in the browser or leaks into the replacement snapshot.",
+      "durationMs": 35,
+      "groupDurationMs": 1518
+    },
+    {
+      "id": "duplicate-command",
+      "success": true,
+      "invariant": "Duplicate delivery does not execute one Agent command twice.",
+      "durationMs": 8,
+      "groupDurationMs": 3564
+    },
+    {
+      "id": "stale-execution-reference",
+      "success": true,
+      "invariant": "A released task cannot reuse its execution reference under a retired Session owner.",
+      "durationMs": 2,
+      "groupDurationMs": 3564
+    },
+    {
+      "id": "stale-accepted-fact-authority",
+      "success": true,
+      "invariant": "A record cannot install its own authority or bypass the PG-issued publication scope.",
+      "durationMs": 1,
+      "groupDurationMs": 2082
+    },
+    {
+      "id": "native-record-oversize-isolation",
+      "success": true,
+      "invariant": "Oversized individual publications fail before entering the bounded publication queue.",
+      "durationMs": 6,
+      "groupDurationMs": 2082
+    },
+    {
+      "id": "publication-seal-order",
+      "success": true,
+      "invariant": "Ingress closes old admission before draining and a successor cannot pass the ordered seal.",
+      "durationMs": 115,
+      "groupDurationMs": 2082
+    },
+    {
+      "id": "publication-stale-admission",
+      "success": true,
+      "invariant": "A delayed PG grant cannot reopen a scope after its closure completed.",
+      "durationMs": 1,
+      "groupDurationMs": 2082
+    },
+    {
+      "id": "publication-uncertain-queued-data",
+      "success": true,
+      "invariant": "Unknown semantic commit stops queued data while preserving ordered closure.",
+      "durationMs": 1,
+      "groupDurationMs": 2082
+    },
+    {
+      "id": "publication-lost-seal-ack",
+      "success": true,
+      "invariant": "PG canonical seal evidence releases a successor despite a lost producer ACK.",
+      "durationMs": 2,
+      "groupDurationMs": 2082
+    },
+    {
+      "id": "message-stream-independence",
+      "success": true,
+      "invariant": "A live-stream failure cannot roll back a complete native Pi message.",
+      "durationMs": 82,
+      "groupDurationMs": 10582
+    },
+    {
+      "id": "native-subagent-result-budget",
+      "success": true,
+      "invariant": "The native Harness persists a result-size Tool error and can finish the next model Step normally.",
+      "durationMs": 116,
+      "groupDurationMs": 10582
+    },
+    {
+      "id": "interrupted-visible-prefix",
+      "success": true,
+      "invariant": "A browser-visible interrupted prefix remains model-visible after Worker replacement.",
+      "durationMs": 8367,
+      "groupDurationMs": 15654
+    },
+    {
+      "id": "terminal-tail-unload",
+      "success": true,
+      "invariant": "Terminal projection unloads shared live-tail memory without invalidating an in-flight browser snapshot.",
+      "durationMs": 7,
+      "groupDurationMs": 698
+    },
+    {
+      "id": "control-plane-process-sigkill",
+      "success": true,
+      "invariant": "Control Plane process replacement does not revoke a healthy Agent Loop.",
+      "durationMs": 322,
+      "groupDurationMs": 4002
+    },
+    {
+      "id": "stale-worker-socket",
+      "success": true,
+      "invariant": "A stale Worker Control Channel cannot reclaim current ownership.",
+      "durationMs": 403,
+      "groupDurationMs": 13566
+    },
+    {
+      "id": "abandoned-development-environment",
+      "success": true,
+      "invariant": "A Control Plane failure before provisioning cannot leak a requested development machine.",
+      "durationMs": 71,
+      "groupDurationMs": 11783
+    },
+    {
+      "id": "tool-broker-owner-fence",
+      "success": true,
+      "invariant": "A replacement Tool Broker fences the expired owner before serving its Workspace runtime.",
+      "durationMs": 7361,
+      "groupDurationMs": 11326
+    },
+    {
+      "id": "ambiguous-tool-transport",
+      "success": true,
+      "invariant": "An ambiguous Tool transport never blindly replays an arbitrary command.",
+      "durationMs": 14,
+      "groupDurationMs": 3788
+    },
+    {
+      "id": "workspace-volume-delete-race",
+      "success": true,
+      "invariant": "Workspace bytes are not deleted while a live Cube still owns the Volume.",
+      "durationMs": 6729,
+      "groupDurationMs": 10652
+    },
+    {
+      "id": "tool-commit-before-effect",
+      "success": true,
+      "invariant": "A Tool command cannot dispatch until Kafka confirms its monotonic commit boundary.",
+      "durationMs": 13,
+      "groupDurationMs": 1116
+    },
+    {
+      "id": "tool-replay-without-effect",
+      "success": true,
+      "invariant": "Rebuilding volatile display state does not replay already committed Tool commands.",
+      "durationMs": 16,
+      "groupDurationMs": 1116
+    },
+    {
+      "id": "tool-native-late-result",
+      "success": true,
+      "invariant": "Completing guest work after closure cannot publish a usable native Tool result.",
+      "durationMs": 10,
+      "groupDurationMs": 1855
+    },
+    {
+      "id": "image-cleanup-composite-identity",
+      "success": true,
+      "invariant": "Image cleanup mutates only the tenant/object identities it locked, preserving another tenant's unexpired object.",
+      "durationMs": 34,
+      "groupDurationMs": 12163
+    },
+    {
+      "id": "image-upload-and-cleanup-failure",
+      "success": true,
+      "invariant": "Failed uploads cannot be retained; cleanup claims survive remote deletion failure.",
+      "durationMs": 55,
+      "groupDurationMs": 12163
+    },
+    {
+      "id": "image-unprojected-retention",
+      "success": true,
+      "invariant": "Kafka-acknowledged but unprojected images remain protected by their unsealed source Run.",
+      "durationMs": 124,
+      "groupDurationMs": 12163
+    },
+    {
+      "id": "image-cleanup-reference-race",
+      "success": true,
+      "invariant": "A deleting attachment cannot gain a canonical native reference.",
+      "durationMs": 30,
+      "groupDurationMs": 12163
+    },
+    {
+      "id": "image-cross-tenant-integrity",
+      "success": true,
+      "invariant": "A hash or tenant mismatch never becomes a successful native image.",
+      "durationMs": 13,
+      "groupDurationMs": 12163
+    },
+    {
+      "id": "image-native-fork-retention",
+      "success": true,
+      "invariant": "Cold reads and independent native Fork history retain the exact image bytes.",
+      "durationMs": 317,
+      "groupDurationMs": 12163
+    },
+    {
+      "id": "tool-reply-publication-failure",
+      "success": true,
+      "invariant": "Failed publication retires the pending image-adapter callback without crashing unrelated Worker families.",
+      "durationMs": 9,
+      "groupDurationMs": 2424
+    },
+    {
+      "id": "tool-reply-before-publication-ack",
+      "success": true,
+      "invariant": "Early reply rejection stays observed until command publication settles and never triggers an effect replay.",
+      "durationMs": 2,
+      "groupDurationMs": 2424
+    },
+    {
+      "id": "tool-reply-progress-rejected",
+      "success": true,
+      "invariant": "Observation-only progress cannot enter the final-result Kafka transport.",
+      "durationMs": 3,
+      "groupDurationMs": 1647
+    },
+    {
+      "id": "tool-reply-worker-loss",
+      "success": true,
+      "invariant": "A replacement Worker cannot attach an old operation's replies to a new Tool call.",
+      "durationMs": 1,
+      "groupDurationMs": 1647
+    },
+    {
+      "id": "broker-adopted-capacity",
+      "success": true,
+      "invariant": "Existing adopted machines count against a lowered capacity; new work remains queued until a physical slot is free.",
+      "durationMs": 53,
+      "groupDurationMs": 592
+    },
+    {
+      "id": "gitlab-note-business-lock-release",
+      "success": true,
+      "invariant": "Provider HTTP holds no business transaction or row lock; one current note-sync claim does not block claim changes or ordinary Run admission.",
+      "durationMs": 407,
+      "groupDurationMs": 11946
+    },
+    {
+      "id": "gitlab-note-uncertain-create",
+      "success": true,
+      "invariant": "An uncertain remote create remains pending; marker readback recovers the applied note without repeating its creation in the tested lost-reply case.",
+      "durationMs": 147,
+      "groupDurationMs": 11946
+    },
+    {
+      "id": "gitlab-note-late-write",
+      "success": true,
+      "invariant": "Local claim fencing rejects a stale acknowledgement, and periodic remote verification repairs its late external write even after PG considered the latest version synced.",
+      "durationMs": 177,
+      "groupDurationMs": 11946
+    },
+    {
+      "id": "gitlab-note-ack-expiry",
+      "success": true,
+      "invariant": "Synchronization acknowledgement uses PG decision time after locking; a lease that expires while waiting cannot confirm remote output.",
+      "durationMs": 615,
+      "groupDurationMs": 11946
+    },
+    {
+      "id": "queued-edit-claim-race",
+      "success": true,
+      "invariant": "An admitted/locked Run cannot have its input rewritten by a pending edit.",
+      "durationMs": 140,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "queued-cancel-claim-race",
+      "success": true,
+      "invariant": "Pending cancellation cannot retire a Run whose admission already won.",
+      "durationMs": 130,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "queued-reorder-claim-race",
+      "success": true,
+      "invariant": "A locked queue neighbor cannot be reordered under an active admission.",
+      "durationMs": 137,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "queued-steer-lost-reply",
+      "success": true,
+      "invariant": "Canonical input consumption resolves a lost HTTP reply without executing the queued source.",
+      "durationMs": 210,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "queued-steer-seal-restore",
+      "success": true,
+      "invariant": "A missing reply alone cannot restore a queued source; an absent input plus projected seal can.",
+      "durationMs": 268,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "queued-steer-order",
+      "success": true,
+      "invariant": "Promotions to the same target preserve accepted delivery order across replicas.",
+      "durationMs": 262,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "queued-steer-shutdown",
+      "success": true,
+      "invariant": "Shutdown starts no further deliveries and restart finds the remaining durable controls.",
+      "durationMs": 579,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "queued-mutation-idempotency",
+      "success": true,
+      "invariant": "Concurrent API replicas cannot repeat a queue operation or silently overwrite a stale edit.",
+      "durationMs": 87,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "direct-steer-unconsumed-recovery",
+      "success": true,
+      "invariant": "A Worker acknowledgement never retires input; target closure restores unconsumed input without replaying its Run.",
+      "durationMs": 618,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "direct-steer-canonical-consumption",
+      "success": true,
+      "invariant": "Canonical input evidence wins over missing transport acknowledgement and prevents fallback execution.",
+      "durationMs": 232,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "direct-steer-late-reply",
+      "success": true,
+      "invariant": "A late Worker reply cannot overwrite a sealed-target restoration decision.",
+      "durationMs": 191,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "direct-steer-cancel-recovery",
+      "success": true,
+      "invariant": "Stopping the active Run retains unconsumed direct input and leaves its restored queue entry removable.",
+      "durationMs": 426,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "direct-steer-acceptance-race",
+      "success": true,
+      "invariant": "Direct Steer acceptance is atomic and idempotent under target locks and concurrent API replicas.",
+      "durationMs": 352,
+      "groupDurationMs": 15578
+    },
+    {
+      "id": "workflow-result-budget",
+      "success": true,
+      "invariant": "A completed oversized workflow return becomes an explicit bounded error without repeating effects.",
+      "durationMs": 56,
+      "groupDurationMs": 1211
+    },
+    {
+      "id": "lease-batch-renewal-race",
+      "success": true,
+      "invariant": "An older lookup cannot revoke ownership confirmed by a newer committed renewal.",
+      "durationMs": 0,
+      "groupDurationMs": 900
+    },
+    {
+      "id": "lease-batch-one-second-revocation",
+      "success": true,
+      "invariant": "Sharing heartbeat evidence does not slow periodic PG revocation observation.",
+      "durationMs": 7,
+      "groupDurationMs": 900
+    },
+    {
+      "id": "lease-batch-no-revival",
+      "success": true,
+      "invariant": "Missing renewal retires the reported family while retaining other families; later replies cannot revive it.",
+      "durationMs": 2,
+      "groupDurationMs": 900
+    },
+    {
+      "id": "lease-batch-read-failure",
+      "success": true,
+      "invariant": "A failed batch read fails closed for every owner in that observation.",
+      "durationMs": 1,
+      "groupDurationMs": 900
+    },
+    {
+      "id": "lease-batch-incarnation",
+      "success": true,
+      "invariant": "Closing a lease observer prevents stale reads from affecting a later local incarnation.",
+      "durationMs": 1,
+      "groupDurationMs": 900
+    },
+    {
+      "id": "indexed-log-quiescent-cutover",
+      "success": true,
+      "invariant": "An unsettled Session prevents schema cutover; settled cutover retains immutable bodies and never resurrects deleted Turn bindings.",
+      "durationMs": 7615,
+      "groupDurationMs": 10907
+    },
+    {
+      "id": "native-open-operation-rollback",
+      "success": true,
+      "invariant": "Native open-operation references share the log transaction, preserve Lane/tenant scope and rebuild without re-executing effects.",
+      "durationMs": 92,
+      "groupDurationMs": 10342
+    },
+    {
+      "id": "direct-steer-fk-locks",
+      "success": true,
+      "invariant": "Input acceptance does not deadlock with active Tool binding foreign-key checks.",
+      "durationMs": 7748,
+      "groupDurationMs": 11044
+    }
+  ]
+}

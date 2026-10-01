@@ -499,7 +499,7 @@ Per-image input/output bounds are 64/42 MiB; guest image replies are capped at
 context memory. Model requests permit 128 MiB raw/decompressed bodies with a
 256 MiB aggregate in-flight payload budget; buffers and parsed JSON add memory
 beyond these byte counters. Kafka execution records stay below 900 KiB and reject
-oversized individual publications before entering a shared Producer stream.
+oversized individual publications before entering the bounded control-plane ingress.
 Orphan inventory is eligible after 24 hours and source Run closure; retained
 native history pins attachments through Compaction, Fork and Lane pruning.
 

@@ -1,17 +1,12 @@
+import { HttpPublicationClient } from "@pi-cloud/runtime-core/http-publication-client";
 import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
 import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
-import { DirectExecutionLog } from "@pi-cloud/runtime-core/direct-execution-log";
-import {
-  KafkaAcceptedFactBus,
-  kafkaProducerLane,
-} from "@pi-cloud/runtime-core/kafka-accepted-fact";
+import { WorkerExecutionLog } from "@pi-cloud/runtime-core/worker-execution-log";
+import { kafkaProducerLane } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { KafkaToolReplyMailbox } from "@pi-cloud/event-log";
 import { NativeSessionLogPublisher } from "@pi-cloud/runtime-core/native-session-log-publisher";
-import {
-  AcceptedFactPublisherFailedError,
-  type ActiveExecutionLogResolver,
-} from "@pi-cloud/runtime-core/accepted-fact";
+import { type ActiveExecutionLogResolver } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "./agent-run-execution-backend.ts";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
@@ -402,20 +397,13 @@ export class PiWorkerRuntime {
     const runWorkerIdentity = identity.sandboxId;
     let executionLogs = this.#executionLogs;
     if (!executionLogs) {
-      const bus = new KafkaAcceptedFactBus({
-        manageTopic: false,
-        brokers: this.#config.kafka.brokers,
-        partitions: this.#config.kafka.partitions,
-        replicas: this.#config.kafka.replicas,
-        clientId: runWorkerIdentity,
-        capacity: this.#config.producerCapacity,
-        ...(this.#metrics ? { metrics: this.#metrics } : {}),
+      const bus = new HttpPublicationClient({
+        baseUrl: this.#config.controlPlaneBaseUrl,
+        token: this.#config.managementToken,
       });
-      executionLogs = new DirectExecutionLog(this.#database!, bus, this.#config.producerCapacity);
+      executionLogs = new WorkerExecutionLog(this.#database!, bus, this.#config.producerCapacity);
       this.#activeExecutionLogs = executionLogs;
       this.#ownsExecutionLogs = true;
-      await bus.start();
-      this.#assertStarting();
     }
     this.#activeExecutionLogs = executionLogs;
     this.#ownsExecutionLogs = this.#executionLogs === undefined;
@@ -446,24 +434,7 @@ export class PiWorkerRuntime {
     this.#assertStarting();
     const runClaimReadiness = new RunClaimReadinessMonitor({
       check: async () => {
-        try {
-          await Promise.all([executionLogs.checkHealth?.(), modelGateway.checkProviderHealth()]);
-        } catch (error) {
-          if (error instanceof AcceptedFactPublisherFailedError && this.#state === "ready") {
-            operationalLog({
-              service: "pi-cloud-pi-worker",
-              level: "error",
-              event: "execution-log.failed",
-              attributes: { failureCode: error.code },
-            });
-            this.#terminalFailureCode = error.code;
-            this.#state = "failed";
-            this.#client?.setAcceptingAssignments(false);
-            this.#runSupervisor?.revokeAllAssignments();
-            this.#settleTerminal("connection_failed");
-          }
-          throw error;
-        }
+        await Promise.all([executionLogs.checkHealth?.(), modelGateway.checkProviderHealth()]);
       },
     });
     this.#runClaimReadiness = runClaimReadiness;

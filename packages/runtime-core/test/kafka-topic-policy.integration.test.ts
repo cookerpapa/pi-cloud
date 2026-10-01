@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Admin } from "@platformatic/kafka";
 import { expect, it } from "vitest";
-import { KafkaAcceptedFactBus } from "../src/kafka-accepted-fact.ts";
+import { ExecutionLogTopic } from "../src/execution-log-topic.ts";
 
 const brokers = process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS?.split(",");
 it.skipIf(!brokers)(
@@ -42,13 +42,12 @@ it.skipIf(!brokers)(
           }).map(([name, value]) => ({ name, value })),
         });
         created.push(topic);
-        const bus = new KafkaAcceptedFactBus({
+        const bus = new ExecutionLogTopic({
           brokers: brokers!,
           clientId: `${prefix}-${index}`,
           topic,
           partitions: 1,
           replicas: 3,
-          producerLanes: 1,
           manageTopic: false,
         });
         try {

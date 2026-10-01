@@ -83,7 +83,7 @@ try {
       "kafka-1:9092",
       "--describe",
       "--group",
-      "pi-cloud-session-projector-v1",
+      "pi-cloud-session-projector-v2",
       "--members",
       "--verbose",
     ])

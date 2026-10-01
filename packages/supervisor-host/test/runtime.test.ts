@@ -2,8 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
-import { AcceptedFactPublisherFailedError } from "@pi-cloud/runtime-core/accepted-fact";
-import { KafkaAcceptedFactBus } from "@pi-cloud/runtime-core/kafka-accepted-fact";
+import { HttpPublicationClient } from "@pi-cloud/runtime-core/http-publication-client";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -410,20 +409,6 @@ describe("PiWorkerRuntime", () => {
         },
         { timeout: 2_000, interval: 25 },
       );
-      let terminal: string | undefined;
-      void second.waitUntilTerminal().then((reason) => {
-        terminal = reason;
-      });
-      publisherFailure = new AcceptedFactPublisherFailedError(
-        new Error("producer stream destroyed"),
-      );
-      await vi.waitFor(() => expect(terminal).toBe("connection_failed"), {
-        timeout: 2_000,
-        interval: 25,
-      });
-      expect(second.state).toBe("failed");
-      expect(second.terminalFailureCode).toBe("event_publisher_failed");
-      publisherFailure = undefined;
 
       stopFailure = new Error("Worker drain failed after stopping claims");
       const closedGateway = vi.spyOn(TenantModelGateway.prototype, "close");
@@ -471,11 +456,11 @@ describe("PiWorkerRuntime", () => {
         health.mockRestore();
         for (const gateway of gateways) await gateway.close();
       }
-      const publisherStartupFailure = new Error("Kafka startup failed after acquisition");
+      const publisherStartupFailure = new Error("Publication health failed after acquisition");
       const startingPublisher = vi
-        .spyOn(KafkaAcceptedFactBus.prototype, "start")
+        .spyOn(HttpPublicationClient.prototype, "checkHealth")
         .mockRejectedValueOnce(publisherStartupFailure);
-      const closingPublisher = vi.spyOn(KafkaAcceptedFactBus.prototype, "close");
+      const closingPublisher = vi.spyOn(HttpPublicationClient.prototype, "close");
       const closingModelGateway = vi.spyOn(TenantModelGateway.prototype, "close");
       const failedPublisher = new PiWorkerRuntime({
         config: {

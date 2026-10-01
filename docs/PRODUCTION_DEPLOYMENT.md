@@ -34,21 +34,26 @@ that revision's deployment instructions. Reload open browser pages. Do not mix
 incompatible publishers, change a live Kafka partition count or silently convert
 an unsupported Volume layout. Back up user data before a storage/protocol cutover.
 
-The current pre-release uses Kafka v11 and `pcer2_` Run references, without an
-old-wire decoder; this is not a rolling upgrade. The v10→v11 cutover (ADR-0185)
-requires all admitted Runs to finish and all their seals to project before old
-Workers, Projectors and Brokers stop. The new generation uses result Entry IDs
-for cloud Tool identity, while native provider IDs and the Kafka reply wire stay
-unchanged. Do not start the new Projector against an unfinished v10 prefix.
-Development-only discarded resources may be explicitly retired/reset; no old-ID
-compatibility reader is provided.
+The current pre-release uses Kafka v12 and `pcer2_` Run references. ADR-0209 and
+migration 158 move publication from direct Worker producers to the control-plane
+ingress. Drain all accepted Runs, release their Session leases and project/publish
+all seals on v11 before stopping old services. Migration 158 refuses an unfinished
+cutover. Start matching Control Plane and Worker binaries on the new topic and
+`pi-cloud-session-projector-v2` group. There is no mixed-writer fallback or old-wire
+consumer; native PG history and Cube Volume bytes remain intact. The existing
+Supervisor management credential authenticates the new private publication route.
+Do not expose that route through the browser gateway.
 
-ADR-0198 adds the `tool_invocation` record on the existing v11 topic. Drain and
-seal Runs before replacing Workers and Projector together. Old decoders reject
-this kind; do not mix those versions. Native history, PG schema and Guest wire
-are unchanged. Broker still receives the expanded command through its existing
-dispatch port. Before rollback, finish projecting the combined records so old
-binaries never need to consume a new-format unfinished prefix.
+The v12 consumer reads committed transactions; ingress producer IDs are stable per
+topic/partition and coupled to the current Projector group. Configure Kafka's
+transaction-state replication as three and its minimum ISR as two, alongside the
+existing RF3 log. A replacement ingress must initialize its fenced producer before
+opening Session scopes. Rollback requires a drained matched database/code backup;
+never point retired direct-producer binaries at the v12 topic.
+
+Historical v10→v11 Tool identity and combined-intent decisions remain in ADR-0185
+and ADR-0198. Current result Entry IDs remain distinct from native provider IDs;
+this publication cutover does not reintroduce RunAttempt or change Tool reply IDs.
 
 Migration 145 originally introduced v10 and requires all
 accepted/queued Runs, current owners, publications and terminal Outbox rows to

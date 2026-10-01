@@ -1,3 +1,5 @@
+import { KafkaPartitionReader } from "./kafka-partition-reader.ts";
+import { KafkaPublicationWriter } from "./kafka-publication-writer.ts";
 import kafkaNative from "@confluentinc/kafka-javascript";
 import type { KafkaJS as KafkaTypes } from "@confluentinc/kafka-javascript";
 import { operationalLog } from "@pi-cloud/observability";
@@ -24,6 +26,8 @@ export type KafkaLogConsumerOptions<T> = {
   /** Preserve a monotonic effect-dispatch boundary even when projection replay rewinds. */
   orderedEffects?: boolean;
   onReset?(): void;
+  onRevoked?(): void;
+  onAssigned?(partitions: readonly number[], current: () => boolean): Promise<void>;
   replayOffsets?(
     bounds: readonly KafkaPartitionBounds[],
     partitionCount: number,
@@ -57,6 +61,8 @@ export class KafkaLogConsumer<T> {
   readonly #assigned = new Set<number>();
   readonly #blocked = new Map<number, Error>();
   #memberCache: { until: number; owners: Map<number, string> } | undefined;
+  #reader: KafkaPartitionReader | undefined;
+  readonly #publicationWriters = new Set<KafkaPublicationWriter>();
 
   constructor(options: KafkaLogConsumerOptions<T>) {
     if (options.orderedEffects && !options.groupRecovery)
@@ -89,7 +95,7 @@ export class KafkaLogConsumer<T> {
     let offsets: Awaited<ReturnType<KafkaTypes.Admin["fetchTopicOffsets"]>>;
     for (;;) {
       try {
-        offsets = await this.#admin.fetchTopicOffsets(this.#options.topic);
+        offsets = await this.#admin.fetchTopicOffsets(this.#options.topic, { isolationLevel: 1 });
         // librdkafka can return -1 sentinels while a newly created Topic is
         // propagating. They are not offsets: assigning -1 would mean END and
         // could silently skip accepted records.
@@ -148,10 +154,8 @@ export class KafkaLogConsumer<T> {
         this.#wake = resolve;
       });
       let retired = false;
-      // The pinned KafkaJS-compatible client reports background consume errors
-      // only through its public logger (#497 upstream); run() does not reject.
-      // Surface that failure to the existing lifecycle rather than keep serving
-      // a connected but stopped consumer. No message text is logged here.
+      // The bounded reader reports background failure through this port. Never
+      // leave an apparently connected consumer serving after its poller exits.
       const logger: KafkaTypes.Logger = {
         info() {},
         warn() {},
@@ -173,27 +177,26 @@ export class KafkaLogConsumer<T> {
           restart();
         },
       };
-      const consumer = this.#kafka.consumer({
-        // PG owns projection recovery. Tool dispatch additionally requires a
-        // confirmed group commit; ordinary progress keeps its one-second cadence.
-        kafkaJS: {
-          groupId: this.#options.groupId,
-          logger,
-          logLevel: KafkaJS.logLevel.ERROR,
-          fromBeginning: true,
-          autoCommit: !this.#options.orderedEffects && this.#options.commitMessages !== false,
-          autoCommitInterval: 1000,
+      const consumer = new KafkaPartitionReader({
+        brokers: this.#options.brokers,
+        clientId: this.#options.clientId,
+        groupId: this.#options.groupId,
+        topic: this.#options.topic,
+        logger,
+        onPosition: (partition, offset) => {
+          if (
+            retired ||
+            this.#closing ||
+            !this.#ready ||
+            !this.#assigned.has(partition) ||
+            this.#blocked.has(partition) ||
+            this.#retries.has(partition)
+          )
+            return;
+          if (offset > (this.#processedOffsets.get(partition) ?? -1n))
+            this.#processedOffsets.set(partition, offset);
         },
-        "partition.assignment.strategy": "range",
-        "allow.auto.create.topics": false,
-        "session.timeout.ms": 10_000,
-        "heartbeat.interval.ms": 1_000,
-        "queued.max.messages.kbytes": 32 * 1024,
-        "queued.min.messages": 1,
-        "fetch.queue.backoff.ms": 5,
-        "fetch.wait.max.ms": 25,
-        "fetch.max.bytes": 1024 * 1024,
-        rebalance_cb: async (
+        rebalance: async (
           error: { code: number },
           assignments: Array<{ topic: string; partition: number; offset?: number }>,
           functions: {
@@ -205,7 +208,9 @@ export class KafkaLogConsumer<T> {
             functions.unassign(assignments);
             return;
           }
-          this.#epoch++;
+          const assignmentEpoch = ++this.#epoch;
+          this.#options.onRevoked?.();
+          const publicationRetirement = this.#retirePublicationWriters();
           this.#ready = false;
           this.#assigned.clear();
           this.#blocked.clear();
@@ -214,12 +219,23 @@ export class KafkaLogConsumer<T> {
           if (error.code !== CODES.ERRORS.ERR__ASSIGN_PARTITIONS) {
             this.#options.onReset?.();
             functions.unassign(assignments);
+            await publicationRetirement;
             return;
           }
           try {
+            const currentAssignment = () =>
+              !retired && !this.#closing && assignmentEpoch === this.#epoch;
+            await publicationRetirement;
             await Promise.allSettled([...this.#inflight]);
+            if (!currentAssignment()) return;
             this.#options.onReset?.();
+            await this.#options.onAssigned?.(
+              assignments.map((a) => a.partition),
+              currentAssignment,
+            );
+            if (!currentAssignment()) return;
             const allBounds = await this.#bounds();
+            if (!currentAssignment()) return;
             const bounds = allBounds.filter((b) =>
               assignments.some((a) => a.partition === b.partition),
             );
@@ -227,8 +243,10 @@ export class KafkaLogConsumer<T> {
               ? await this.#admin.fetchOffsets({
                   groupId: this.#options.groupId,
                   topics: [this.#options.topic],
+                  requireStableOffsets: true,
                 })
               : [];
+            if (!currentAssignment()) return;
             const groupOffsets = new Map(
               committed.flatMap((t) =>
                 t.partitions.map((p) => [p.partition, BigInt(p.offset)] as const),
@@ -236,6 +254,16 @@ export class KafkaLogConsumer<T> {
             );
             for (const bound of bounds)
               this.#committedOffsets.set(bound.partition, groupOffsets.get(bound.partition) ?? -1n);
+            consumer.seedCommitted(
+              new Map(
+                bounds.map((b) => [
+                  b.partition,
+                  (groupOffsets.get(b.partition) ?? -1n) < b.low
+                    ? b.low
+                    : groupOffsets.get(b.partition)!,
+                ]),
+              ),
+            );
             const offsets: Map<number, bigint | Error> = this.#options.groupRecovery
               ? new Map(
                   bounds.map((b) => {
@@ -256,6 +284,7 @@ export class KafkaLogConsumer<T> {
                 : new Map(bounds.map((b) => [b.partition, b.low]));
             if (this.#options.groupRecovery && this.#options.replayOffsets) {
               const recovery = await this.#options.replayOffsets(bounds, allBounds.length);
+              if (!currentAssignment()) return;
               for (const [partition, floor] of recovery) {
                 const delivery = offsets.get(partition)!;
                 offsets.set(
@@ -276,10 +305,7 @@ export class KafkaLogConsumer<T> {
               this.#processedOffsets.set(b.partition, offset instanceof Error ? b.low : offset);
               this.#initialTargets.set(b.partition, b.high);
             }
-            if (retired || this.#closing) {
-              functions.assign([]);
-              return;
-            }
+            if (!currentAssignment()) return;
             functions.assign(
               assignments.map((a) => ({
                 ...a,
@@ -300,6 +326,7 @@ export class KafkaLogConsumer<T> {
             this.#failure = undefined;
             this.#ready = true;
           } catch (failure) {
+            if (retired || this.#closing || assignmentEpoch !== this.#epoch) return;
             // The native callback otherwise falls back to default assignment.
             // Never consume from an unverified recovery position after an error.
             functions.assign([]);
@@ -308,6 +335,28 @@ export class KafkaLogConsumer<T> {
           }
         },
       });
+      let progressing: Promise<void> | undefined;
+      const progressTimer = setInterval(() => {
+        if (
+          progressing ||
+          !this.#ready ||
+          retired ||
+          this.#closing ||
+          this.#options.commitMessages === false
+        )
+          return;
+        const epoch = this.#epoch;
+        progressing = this.#commitProgress(consumer, epoch)
+          .catch(() => {
+            if (epoch === this.#epoch && !retired && !this.#closing)
+              logger.error("Kafka progress commit failed");
+          })
+          .finally(() => {
+            progressing = undefined;
+          });
+      }, 1000);
+      progressTimer.unref();
+      this.#reader = consumer;
       try {
         const partitions = (await this.#bounds()).length;
         await consumer.connect();
@@ -326,20 +375,46 @@ export class KafkaLogConsumer<T> {
       } catch (error) {
         this.#failure = error;
       } finally {
+        clearInterval(progressTimer);
         retired = true;
         this.#ready = false;
         this.#epoch++;
+        this.#options.onRevoked?.();
         this.#options.onReset?.();
         for (const retry of this.#retries.values()) clearTimeout(retry.timer);
         this.#retries.clear();
+        // sendOffsetsToTransaction borrows this native consumer's group
+        // metadata. Join every producer, including initialization, before
+        // disconnecting that consumer object.
+        await this.#retirePublicationWriters();
         await consumer.disconnect().catch(() => undefined);
+        await progressing;
+        if (this.#reader === consumer) this.#reader = undefined;
       }
       if (!this.#closing) await new Promise((resolve) => setTimeout(resolve, 250));
     }
   }
 
+  async #commitProgress(consumer: KafkaPartitionReader, epoch: number): Promise<void> {
+    const offsets = [...this.#assigned].flatMap((partition) => {
+      const offset = this.#processedOffsets.get(partition);
+      return offset !== undefined && offset > (this.#committedOffsets.get(partition) ?? -1n)
+        ? [{ topic: this.#options.topic, partition, offset: offset.toString() }]
+        : [];
+    });
+    if (!offsets.length) return;
+    await consumer.commitOffsets(offsets);
+    if (epoch !== this.#epoch || this.#closing) return;
+    for (const p of offsets) {
+      const offset = BigInt(p.offset);
+      if (offset > (this.#committedOffsets.get(p.partition) ?? -1n))
+        this.#committedOffsets.set(p.partition, offset);
+      this.#lastCommitAt.set(p.partition, performance.now());
+    }
+  }
+
   async #batch(
-    consumer: KafkaTypes.Consumer,
+    consumer: KafkaPartitionReader,
     payload: KafkaTypes.EachBatchPayload,
     epoch: number,
   ): Promise<void> {
@@ -417,7 +492,7 @@ export class KafkaLogConsumer<T> {
       }
     }
     if (
-      this.#options.orderedEffects &&
+      (this.#options.orderedEffects || this.#options.commitMessages !== false) &&
       epoch === this.#epoch &&
       !payload.isStale() &&
       !this.#closing
@@ -432,7 +507,8 @@ export class KafkaLogConsumer<T> {
           { topic: batch.topic, partition: batch.partition, offset: next.toString() },
         ]);
         if (epoch === this.#epoch && !payload.isStale()) {
-          this.#committedOffsets.set(batch.partition, next);
+          if (next > (this.#committedOffsets.get(batch.partition) ?? -1n))
+            this.#committedOffsets.set(batch.partition, next);
           this.#lastCommitAt.set(batch.partition, performance.now());
         }
       }
@@ -490,6 +566,37 @@ export class KafkaLogConsumer<T> {
 
   ownsPartition(partition: number): boolean {
     return this.#ready && this.#assigned.has(partition);
+  }
+
+  async openPublicationWriter(
+    partition: number,
+    current: () => boolean,
+  ): Promise<KafkaPublicationWriter> {
+    const reader = this.#reader;
+    if (!reader || !current()) throw new Error("Publication consumer assignment is unavailable");
+    const writer = new KafkaPublicationWriter({
+      brokers: this.#options.brokers,
+      clientId: this.#options.clientId,
+      topic: this.#options.topic,
+      partition,
+      reader,
+      current: () => current() && this.#reader === reader,
+    });
+    this.#publicationWriters.add(writer);
+    try {
+      await writer.start();
+      return writer;
+    } catch (error) {
+      await writer.close();
+      this.#publicationWriters.delete(writer);
+      throw error;
+    }
+  }
+
+  async #retirePublicationWriters(): Promise<void> {
+    const writers = [...this.#publicationWriters];
+    await Promise.allSettled(writers.map((writer) => writer.close()));
+    for (const writer of writers) this.#publicationWriters.delete(writer);
   }
 
   async ownerClientId(partition: number): Promise<string | undefined> {

@@ -19,5 +19,5 @@ export {
   readInterruptedAssistantPrefix,
   readCanonicalPiTurnTranscripts,
 } from "./canonical-pi-conversation.ts";
-export * from "./direct-execution-log.ts";
+export * from "./worker-execution-log.ts";
 export * from "./session-projector.ts";

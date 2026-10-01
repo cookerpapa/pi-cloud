@@ -55,14 +55,16 @@ if (process.argv[2] !== "inside") {
 } else {
   const { Admin } = await import("@platformatic/kafka");
   const { default: native } = await import("@confluentinc/kafka-javascript");
-  const { KafkaAcceptedFactBus, kafkaProducerLane } =
-    await import("../packages/runtime-core/src/kafka-accepted-fact.ts");
+  const { PublicationHarness } = await import("./lib/publication-harness.ts");
+  const { kafkaProducerLane } = await import("../packages/runtime-core/src/kafka-accepted-fact.ts");
   const { KafkaAcceptedFactConsumer } =
     await import("../packages/runtime-core/src/kafka-accepted-fact-consumer.ts");
-  const brokers = ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"],
+  const brokers = (
+      process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS ?? "kafka-1:9092,kafka-2:9092,kafka-3:9092"
+    ).split(","),
     topic = `pi-cloud.consumer-check.${randomUUID()}`;
   const groupId = `consumer-check-${randomUUID()}`;
-  const bus = new KafkaAcceptedFactBus({
+  const bus = new PublicationHarness({
     brokers,
     topic,
     partitions: 2,
@@ -123,6 +125,7 @@ if (process.argv[2] !== "inside") {
     peer,
     unblock = false;
   const seen = [new Set(), new Set()];
+  const lastDataOffsets = [0n, 0n];
   try {
     await bus.start();
     await offsetsAdmin.connect();
@@ -134,6 +137,7 @@ if (process.argv[2] !== "inside") {
       handler: async (record) => {
         if (record.partition === 0 && !unblock) throw new Error("controlled partition stall");
         seen[record.partition].add(record.fact.event.seq);
+        lastDataOffsets[record.partition] = record.offset;
       },
     });
     await consumer.start();
@@ -160,6 +164,7 @@ if (process.argv[2] !== "inside") {
       clientId: randomUUID(),
       handler: async (record) => {
         seen[record.partition].add(record.fact.event.seq);
+        lastDataOffsets[record.partition] = record.offset;
       },
     });
     await peer.start();
@@ -179,7 +184,7 @@ if (process.argv[2] !== "inside") {
       const saved = await offsetsAdmin.fetchOffsets({ groupId, topics: [topic] });
       return (
         saved[0]?.partitions.length === 2 &&
-        saved[0].partitions.every((p) => BigInt(p.offset) === ends[p.partition])
+        saved[0].partitions.every((p) => BigInt(p.offset) >= lastDataOffsets[p.partition] + 1n)
       );
     }, "completed delivery offsets committed");
     await peer.close();
@@ -193,7 +198,8 @@ if (process.argv[2] !== "inside") {
       groupId,
       clientId: randomUUID(),
       groupRecovery: true,
-      replayOffsets: async (bounds) => new Map(bounds.map((b) => [b.partition, b.high - 1n])),
+      replayOffsets: async (bounds) =>
+        new Map(bounds.map((b) => [b.partition, lastDataOffsets[b.partition]])),
       handler: async (record) => {
         replayed.push(record);
       },

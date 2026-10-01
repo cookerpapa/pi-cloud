@@ -18,9 +18,10 @@ import { AcceptedFactCapacityError } from "./accepted-fact.ts";
 import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
 import type { AcceptedFact } from "./accepted-fact.ts";
 
-/** Worker-owned producer port. No remote data gateway or second lease renewer. */
-export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionLogResolver {
+/** Worker-local ordering over control-plane publication; no second lease renewer. */
+export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionLogResolver {
   readonly #writers = new Map<string, ExecutionLogWriter>();
+  readonly #opening = new Set<string>();
   readonly #families = new Map<
     string,
     {
@@ -64,8 +65,30 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     await this.bus.checkHealth();
   }
   async open(request: ExecutionLogOpenRequest): Promise<ExecutionLogWriter> {
-    if (this.#writers.has(request.executionReference))
+    if (
+      this.#writers.has(request.executionReference) ||
+      this.#opening.has(request.executionReference)
+    )
       throw new Error("Execution writer already open");
+    this.#opening.add(request.executionReference);
+    try {
+      request.signal?.throwIfAborted();
+      await this.bus.open?.(request.publication, request.signal);
+      request.signal?.throwIfAborted();
+    } catch (error) {
+      this.bus.forget?.(request.publication.scope.runId);
+      // Opening installs control state only: no native message or external
+      // effect could have been submitted by this not-yet-created writer.
+      await this.database
+        .updateTable("runs")
+        .set({ native_output_drained: true })
+        .where("id", "=", request.publication.scope.runId)
+        .where("output_sealed_at", "is", null)
+        .execute();
+      throw error;
+    } finally {
+      this.#opening.delete(request.executionReference);
+    }
     const permit = request.publication;
     let family = this.#families.get(permit.scope.writerId);
     if (!family)
@@ -78,8 +101,8 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         }),
       );
     const activeFamily = family;
-    // Local writer construction only. The first real append establishes the
-    // Projector's recovery floor; there is no standalone opening handshake.
+    // Admission installs soft state only. The first real append establishes
+    // the Projector's recovery floor; opening adds no native/Kafka record.
     let closing = false,
       failure: unknown,
       tail = Promise.resolve(),
@@ -176,6 +199,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         if (!activeFamily.writers.size) this.#families.delete(permit.scope.writerId);
         await tail;
         this.#writers.delete(request.executionReference);
+        this.bus.forget?.(permit.scope.runId);
         if (failure) throw failure;
         await this.database
           .updateTable("runs")

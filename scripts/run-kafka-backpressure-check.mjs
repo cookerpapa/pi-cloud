@@ -56,23 +56,23 @@ if (process.argv[2] !== "inside") {
   }
 } else {
   const { Admin } = await import("@platformatic/kafka");
-  const { KafkaAcceptedFactBus } =
-    await import("../packages/runtime-core/src/kafka-accepted-fact.ts");
+  const { PublicationHarness } = await import("./lib/publication-harness.ts");
   const { KafkaLogConsumer } = await import("@pi-cloud/event-log");
-  const brokers = ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"],
+  const brokers = (
+      process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS ?? "kafka-1:9092,kafka-2:9092,kafka-3:9092"
+    ).split(","),
     id = randomUUID();
   const topic = `pi-cloud.backpressure-check.${id}`,
     clientId = `backpressure-${id}`;
-  const producerId = `${clientId}-accepted-fact-producer-1`;
+  const producerId = `${clientId}-publication-0`;
   const admin = new Admin({ bootstrapBrokers: brokers, clientId: `capacity-admin-${id}` });
-  const capacity = { maximumPendingBytes: 4 * 1024 * 1024, maximumPendingFacts: 4096 };
-  const bus = new KafkaAcceptedFactBus({
+  const capacity = { maximumPendingBytes: 64 * 1024, maximumPendingFacts: 128 };
+  const bus = new PublicationHarness({
     brokers,
     clientId,
     topic,
     partitions: 1,
     replicas: 3,
-    producerLanes: 1,
     capacity,
   });
   const seen = new Set();
@@ -132,6 +132,10 @@ if (process.argv[2] !== "inside") {
       turnId: randomUUID(),
       fencingToken: 1,
     };
+    let peakPendingBytes = 0;
+    const sample = setInterval(() => {
+      peakPendingBytes = Math.max(peakPendingBytes, bus.statistics().pendingBytes);
+    }, 5);
     const results = await Promise.all(
       Array.from({ length: 6000 }, (_, i) => {
         const factId = randomUUID(),
@@ -160,29 +164,28 @@ if (process.argv[2] !== "inside") {
               return true;
             },
             (error) => {
-              assert.equal(error.code, "event_capacity_exhausted");
+              assert.equal(error.reason, "capacity");
               rejected.add(factId);
               return false;
             },
           );
       }),
     );
+    clearInterval(sample);
     await quotaRemoval;
     await wait(() => seen.size === accepted.size);
     for (const factId of rejected) assert(!seen.has(factId), "Rejected Fact was published");
     const stats = bus.statistics();
-    assert(stats.drainWaits > 0, "Real Writable backpressure was not exercised");
-    assert(stats.capacityRejections > 0);
-    assert(stats.peakPendingBytes <= capacity.maximumPendingBytes);
+    assert(rejected.size > 0);
+    assert(peakPendingBytes <= capacity.maximumPendingBytes);
     assert.equal(stats.pendingBytes, 0);
     assert.equal(stats.pendingFacts, 0);
     assert.equal(results.filter(Boolean).length, accepted.size);
     console.log(
       JSON.stringify({
-        format: "pi-cloud.transport-backpressure.v1",
+        format: "pi-cloud.transport-backpressure.v2",
         checkedAt: new Date().toISOString(),
-        topology:
-          "R=3 private one-partition topic; quota only on one unique test producer ID; 2 CPU/1 GiB runner",
+        topology: "R=3 private one-partition topic; quota only on one unique test producer ID",
         offered: results.length,
         accepted: accepted.size,
         rejected: rejected.size,
