@@ -168,6 +168,12 @@ Do not commit proxy credentials or expose a local proxy publicly.
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS` | `15000` | control-plane sandbox-management ownership lease |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS` | `5000` | sandbox-management ownership heartbeat |
 
+The Compose control plane allows 1,024 processes/threads. Its native Kafka
+transactional producers scale with owned partitions; the 32-partition rollout
+observed 251 threads, so the former 256 limit could prevent health probes from
+starting. Size the PID budget with partition ownership and retain probe headroom;
+Session count alone does not describe this overhead.
+
 Session capacity and model concurrency are separate. Subagent depth/node settings
 apply to both Projector admission and Worker bounds; Compose shares the variables,
 and Helm reads the same `pi-workers.runtime.subagents` values. Model limits are

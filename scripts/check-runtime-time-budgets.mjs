@@ -73,6 +73,14 @@ function validateWorkspaceVolumeGatewayPolicy(policy, description) {
 }
 
 const composeText = readFileSync("deploy/production/compose.yaml", "utf8");
+const composeControl = composeText.slice(
+  composeText.indexOf("\n  control-plane:"),
+  composeText.indexOf("\n  ssh-gateway:"),
+);
+assert.ok(
+  Number(/pids_limit:\s*(\d+)/.exec(composeControl)?.[1]) >= 512,
+  "Control Plane needs native Kafka thread and health-probe headroom for the 32-partition profile",
+);
 const composeWorker = composeText.slice(
   composeText.indexOf("\n  supervisor-host:"),
   composeText.indexOf("\n  supervisor-host-1:"),
