@@ -4,7 +4,20 @@ import {
   cubeCompletionBridge,
   cubeCompletionPatch,
   cubeCompletionSecret,
+  readyCubeletPod,
 } from "./cube-execution-deployment.mjs";
+
+it("selects a live Cubelet container during a DaemonSet replacement", () => {
+  const pod = (name, deletionTimestamp, ready, state, container = "cubelet") => ({
+    metadata: { name, deletionTimestamp },
+    status: { phase: "Running", containerStatuses: [{ name: container, ready, state }] },
+  });
+  const stale = pod("old", "2026-10-01T00:00:00Z", true, { running: {} });
+  const restarting = pod("new", undefined, false, { waiting: {} });
+  const sidecar = pod("sidecar-only", undefined, true, { running: {} }, "network-agent");
+  expect(readyCubeletPod([stale, restarting, sidecar])).toBeUndefined();
+  expect(readyCubeletPod([stale, pod("ready", undefined, true, { running: {} })])).toBe("ready");
+});
 
 it("installs one fixed completion command in the Cubelet service section", () => {
   const text =

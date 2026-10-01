@@ -1,5 +1,15 @@
 import { createHash } from "node:crypto";
 
+export function readyCubeletPod(pods) {
+  return pods?.find(
+    (pod) =>
+      !pod.metadata?.deletionTimestamp &&
+      pod.status?.containerStatuses?.some(
+        (container) => container.name === "cubelet" && container.ready && container.state?.running,
+      ),
+  )?.metadata?.name;
+}
+
 export const CUBE_COMPLETION_COMMAND = [
   "/usr/local/bin/node",
   "/opt/pi-cloud/node_modules/tsx/dist/cli.mjs",

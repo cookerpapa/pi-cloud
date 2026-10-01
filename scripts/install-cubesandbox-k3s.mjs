@@ -1,4 +1,4 @@
-import { withCubeExecutionCompletion } from "./lib/cube-execution-deployment.mjs";
+import { readyCubeletPod, withCubeExecutionCompletion } from "./lib/cube-execution-deployment.mjs";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -524,32 +524,52 @@ async function installPosixVolumePlugin() {
     .update(await readFile(posixVolumePluginSource))
     .digest("hex");
   await chmod(posixVolumeRoot, 0o750);
-  const pod = await captureKubectl([
+  await runKubectl([
     "-n",
     "cube-system",
-    "get",
-    "pod",
-    "-l",
-    "app.kubernetes.io/component=cube-node",
-    "-o",
-    "jsonpath={.items[0].metadata.name}",
+    "rollout",
+    "status",
+    "daemonset/cube-node",
+    "--timeout=180s",
   ]);
-  if (pod.length < 1) throw new Error("Cubelet Pod was unavailable for plugin configuration");
-  const cubeletConfig = withCubeExecutionCompletion(
-    withCubeletPosixVolumePlugin(
+  const deadline = Date.now() + 180_000;
+  let currentConfig;
+  while (Date.now() < deadline) {
+    const pods = JSON.parse(
       await captureKubectl([
         "-n",
         "cube-system",
-        "exec",
-        pod,
-        "-c",
-        "cubelet",
-        "--",
-        "cat",
-        "/usr/local/services/cubetoolbox/Cubelet/config/config.toml",
+        "get",
+        "pods",
+        "-l",
+        "app.kubernetes.io/component=cube-node",
+        "-o",
+        "json",
       ]),
-    ),
-  );
+    );
+    const pod = readyCubeletPod(pods.items);
+    if (pod) {
+      try {
+        currentConfig = await captureKubectl([
+          "-n",
+          "cube-system",
+          "exec",
+          pod,
+          "-c",
+          "cubelet",
+          "--",
+          "cat",
+          "/usr/local/services/cubetoolbox/Cubelet/config/config.toml",
+        ]);
+        break;
+      } catch {
+        // A container can be replaced between observation and this read-only exec.
+      }
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1000));
+  }
+  if (!currentConfig) throw new Error("Ready Cubelet configuration was unavailable after rollout");
+  const cubeletConfig = withCubeExecutionCompletion(withCubeletPosixVolumePlugin(currentConfig));
   const masterSecret = JSON.parse(
     await captureKubectl([
       "-n",
