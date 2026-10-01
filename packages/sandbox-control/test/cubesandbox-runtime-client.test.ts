@@ -196,6 +196,7 @@ beforeAll(async () => {
         response.end(
           JSON.stringify({
             sandboxID: "cube-runtime-1",
+            clientID: "20000000-0000-4000-8000-000000000001",
             templateID: "pi-cloud-tool-v1",
             state: runtimeState,
             domain: "cube.test",
@@ -230,6 +231,7 @@ beforeAll(async () => {
         response.end(
           JSON.stringify({
             sandboxID: "cube-runtime-1",
+            clientID: "20000000-0000-4000-8000-000000000002",
             templateID: "pi-cloud-tool-v1",
             state: runtimeState,
             domain: "cube.test",
@@ -290,6 +292,23 @@ afterAll(async () => {
 });
 
 describe("official CubeSandbox HTTP compatibility client", () => {
+  it("resolves node identity from details rather than create/connect client UUIDs", async () => {
+    const client = executionClient();
+    try {
+      const created = await client.create({
+        templateId: "pi-cloud-tool-v1",
+        timeoutSeconds: 60,
+        metadata: {},
+        allowInternetAccess: true,
+        allowPublicTraffic: false,
+      });
+      expect(created.nodeId).toBeUndefined();
+      expect((await client.read(created.sandboxId))?.nodeId).toBe("cube-node-1");
+      expect((await client.connect(created.sandboxId, -1)).nodeId).toBeUndefined();
+    } finally {
+      await client.close();
+    }
+  });
   it.each(["present", "absent", "unavailable", "missing-endpoint", "wrong-node"] as const)(
     "requires exact node evidence before accepting absence (%s)",
     async (mode) => {

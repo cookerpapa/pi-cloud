@@ -215,7 +215,11 @@ function observedState(value: unknown): CubeSandboxInstance["state"] {
   }
 }
 
-function parseInstance(value: unknown, fallbackDomain: string): CubeSandboxInstance {
+function parseInstance(
+  value: unknown,
+  fallbackDomain: string,
+  nodeReported: boolean,
+): CubeSandboxInstance {
   const candidate = record(value, "CubeSandbox");
   const sandboxId = bounded(candidate.sandboxID, "CubeSandbox ID", 128);
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,126}[A-Za-z0-9])?$/.test(sandboxId)) {
@@ -233,7 +237,9 @@ function parseInstance(value: unknown, fallbackDomain: string): CubeSandboxInsta
     sandboxId,
     templateId: bounded(candidate.templateID, "CubeSandbox template ID", 256),
     state: observedState(candidate.state),
-    ...(typeof candidate.clientID === "string" && candidate.clientID.length
+    // Cube's create/connect clientID is a connection UUID. Only detail/list
+    // responses define this field as the CubeMaster host identity.
+    ...(nodeReported && typeof candidate.clientID === "string" && candidate.clientID.length
       ? { nodeId: bounded(candidate.clientID, "Cube node identity", 256) }
       : {}),
     domain: validateHost(
@@ -628,6 +634,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const instance = parseInstance(
       parseJson(await readBoundedResponse(response, 256 * 1_024), "CubeSandbox create"),
       this.#sandboxDomain,
+      false,
     );
     if (instance.trafficAccessToken === undefined) {
       await this.destroy(instance.sandboxId).catch(() => undefined);
@@ -648,6 +655,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     return parseInstance(
       parseJson(await readBoundedResponse(response, 256 * 1_024), "CubeSandbox inspect"),
       this.#sandboxDomain,
+      true,
     );
   }
 
@@ -799,6 +807,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     return parseInstance(
       parseJson(await readBoundedResponse(response, 256 * 1_024), "CubeSandbox connect"),
       this.#sandboxDomain,
+      false,
     );
   }
 
@@ -816,7 +825,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (values === undefined || values.length > 1_000) {
       throw new CubeRuntimeClientError("CubeSandbox inventory response was invalid");
     }
-    return values.map((value) => parseInstance(value, this.#sandboxDomain));
+    return values.map((value) => parseInstance(value, this.#sandboxDomain, true));
   }
 
   async destroy(sandboxId: string): Promise<void> {
