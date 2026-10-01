@@ -137,6 +137,7 @@ export class ToolCommandDispatcher {
             scope: command.scope,
             replyTopic: command.replyTopic,
             toolCallId: command.toolCallId,
+            nativeToolCallId: command.request.toolCallId,
             toolName: command.request.toolName,
             partition: record.partition,
           },
@@ -197,7 +198,10 @@ export class ToolCommandDispatcher {
           sequence: 1,
           event: {
             type: "tool_execution_end",
-            toolCallId: command.toolCallId,
+            toolCallId:
+              command.request.operation === "tool.execute"
+                ? command.request.toolCallId
+                : command.toolCallId,
             toolName: command.request.toolName,
             isError: true,
             result: { content: [{ type: "text", text: `${code}: ${text}` }], details: undefined },

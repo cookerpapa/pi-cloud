@@ -118,6 +118,12 @@ outside the guest. The original Worker boot's mailbox receives the result and Pi
 Harness processing still creates the canonical Tool Result. Progress is lossy
 HTTP/SSE and never becomes history.
 
+Completion context carries the native provider Tool call ID separately from the
+Pi result Entry ID. Native final/error replies retain the provider ID; temporary
+progress addresses the result Entry ID. The unique operation ID matches the
+mailbox. These identities must remain distinct even if fixtures happen to use
+the same string. Publisher and host-adapter changes require a drained cutover.
+
 The self-hosted installer uses Kubernetes' existing Service/EndpointSlice and
 Secret resources for host-adapter connectivity. It creates a namespace-scoped
 deployment credential for refreshing those connections and the Cubelet template;

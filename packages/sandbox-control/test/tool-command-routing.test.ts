@@ -27,7 +27,7 @@ function fixture() {
   const command: AcceptedToolCommand = {
     kind: "tool_command",
     factId: randomUUID(),
-    toolCallId: "native",
+    toolCallId: "result-entry",
     replyTopic: "pi-cloud.tool-replies.v1." + randomUUID(),
     occurredAt: new Date().toISOString(),
     scope,
@@ -148,6 +148,10 @@ describe("Projector native Cube handoff", () => {
           initialization: f.route.descriptor.initialization,
           operation: f.command.request,
         },
+        completionContext: expect.objectContaining({
+          toolCallId: "result-entry",
+          nativeToolCallId: "native",
+        }),
       }),
     );
     expect(f.workflow).not.toHaveBeenCalled();

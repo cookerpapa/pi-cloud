@@ -395,7 +395,8 @@ services:
     <<: *application-security
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777,uid=${PI_CLOUD_APPLICATION_UID:-1000},gid=${PI_CLOUD_APPLICATION_GID:-1000}
-    pids_limit: 256
+    # librdkafka owns several native threads per publication partition.
+    pids_limit: 1024
     mem_limit: ${PI_CLOUD_CONTROL_PLANE_MEMORY_LIMIT:-1536m}
     cpus: ${PI_CLOUD_CONTROL_PLANE_CPUS:-2.0}
     stop_grace_period: 12m

@@ -18,7 +18,8 @@ function fixture() {
       fencingToken: 1,
     },
     replyTopic: `pi-cloud.tool-replies.v1.${randomUUID()}`,
-    toolCallId: "native-call",
+    toolCallId: "result-entry",
+    nativeToolCallId: "native-call",
     toolName: "read",
     partition: 0,
   };
@@ -135,6 +136,9 @@ it("keeps progress lossy and outside the final-result channel", async () => {
     },
   });
   expect(f.progress.update).toHaveBeenCalledOnce();
+  expect(f.progress.update).toHaveBeenCalledWith(
+    expect.objectContaining({ progress: expect.objectContaining({ toolCallId: "result-entry" }) }),
+  );
   expect(f.publish).not.toHaveBeenCalled();
   expect(f.put).not.toHaveBeenCalled();
 });

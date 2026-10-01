@@ -13,6 +13,7 @@ type CompletionContext = {
   scope: AcceptedToolCommand["scope"];
   replyTopic: string;
   toolCallId: string;
+  nativeToolCallId: string;
   toolName: string;
   partition: number;
 };
@@ -45,13 +46,14 @@ export class CubeCompletionAdapter {
       !context.scope.runId ||
       !context.replyTopic ||
       !context.toolCallId ||
+      !context.nativeToolCallId ||
       !context.toolName ||
       !Number.isSafeInteger(context.partition)
     )
       throw new Error("Invalid completion context");
     const errorEvent = (code: string, message: string): NativeToolEnd => ({
       type: "tool_execution_end",
-      toolCallId: context.toolCallId,
+      toolCallId: context.nativeToolCallId,
       toolName: context.toolName,
       isError: true,
       result: { content: [{ type: "text", text: `${code}: ${message}` }], details: undefined },
@@ -62,7 +64,7 @@ export class CubeCompletionAdapter {
       if (
         raw.operationId !== packet.operationId ||
         event.type !== "tool_execution_update" ||
-        event.toolCallId !== context.toolCallId ||
+        event.toolCallId !== context.nativeToolCallId ||
         event.toolName !== context.toolName ||
         !Number.isSafeInteger(raw.sequence) ||
         raw.sequence < 1
@@ -126,7 +128,7 @@ export class CubeCompletionAdapter {
         }
       }
     }
-    if (event.toolCallId !== context.toolCallId || event.toolName !== context.toolName)
+    if (event.toolCallId !== context.nativeToolCallId || event.toolName !== context.toolName)
       throw new Error("Native completion identity changed");
     const images = event.result.content.filter((p) => p.type === "image");
     const encoded = await (

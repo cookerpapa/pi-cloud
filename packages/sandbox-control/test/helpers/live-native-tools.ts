@@ -95,6 +95,7 @@ export async function liveNativeTools(
             },
             replyTopic: mailbox.topic,
             toolCallId: request.toolCallId,
+            nativeToolCallId: request.toolCallId,
             toolName: request.toolName,
             partition: 0,
           },
