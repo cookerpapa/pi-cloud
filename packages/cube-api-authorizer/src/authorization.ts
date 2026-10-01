@@ -45,14 +45,9 @@ export function isAllowedCubeApiOperation(path: string, method: string): boolean
     normalizedMethod === "GET" &&
     /^\/sandboxes\/[a-f0-9]{32}\/observation$/i.test(parsed.pathname)
   ) {
-    const entries = [...parsed.searchParams.entries()];
-    return (
-      entries.length === 1 &&
-      entries[0]![0] === "nodeID" &&
-      entries[0]![1].length > 0 &&
-      entries[0]![1].length <= 256 &&
-      !/[\u0000-\u001f\u007f]/.test(entries[0]![1])
-    );
+    // CubeAPI's callback sends URI.path(), without the query string. The API
+    // handler validates the required nodeID before its anchored observation.
+    return parsed.search === "";
   }
   if (normalizedMethod === "POST" && parsed.pathname === "/sandboxes" && parsed.search === "") {
     return true;
