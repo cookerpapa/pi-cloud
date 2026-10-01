@@ -856,11 +856,25 @@ export class SandboxController {
         ...(handle.ipAddress === undefined ? {} : { ipAddress: handle.ipAddress }),
       };
     } catch (error: unknown) {
-      if (handle !== undefined) await this.#provider.destroy(handle).catch(() => undefined);
-      if (admitted) this.#admission.release(request.environmentId);
+      let absent = !admitted || (error instanceof SandboxCreationError && error.absenceConfirmed);
+      if (handle !== undefined) {
+        try {
+          await this.#provider.destroy(handle);
+          absent = true;
+        } catch {
+          absent = false;
+        }
+      }
+      if (admitted && absent) this.#admission.release(request.environmentId);
+      const capsule =
+        !absent && handle
+          ? await this.#persistentCapsule(handle).catch(() => undefined)
+          : undefined;
       await this.#stateRepository
-        .setDevelopmentEnvironmentState(request.environmentId, "failed", {
+        .setDevelopmentEnvironmentState(request.environmentId, absent ? "failed" : "unknown", {
           failureCode: operationFailureCode(error),
+          ...(!absent && handle ? { handle } : {}),
+          ...(capsule ? { runtimeCapsule: capsule } : {}),
         })
         .catch(() => undefined);
       throw error;

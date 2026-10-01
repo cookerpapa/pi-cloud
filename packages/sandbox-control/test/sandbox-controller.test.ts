@@ -1,4 +1,5 @@
 import { InMemorySandboxBindings } from "./helpers/in-memory-sandbox-bindings.ts";
+import { SandboxCreationError } from "../src/sandbox-provider.ts";
 import { InMemoryWorkspaceRuntimeStateRepository } from "./helpers/in-memory-workspace-runtime-state-repository.ts";
 import type { ToolSandboxAssignment, ToolSandboxCreateRequest } from "@pi-cloud/protocol";
 import {
@@ -616,6 +617,84 @@ describe("provider-backed Sandbox controller", () => {
       expect(fixture.destroyed).toBe(true);
       expect(manager.admittedCount).toBe(0);
       expect(manager.activeCount).toBe(0);
+    } finally {
+      await manager.close();
+    }
+  });
+
+  it.each([true, false])(
+    "keeps development-machine quota until failed creation proves absence (%s)",
+    async (absenceConfirmed) => {
+      const fixture = providerFixture();
+      const repository = new InMemoryWorkspaceRuntimeStateRepository();
+      const state = vi.spyOn(repository, "setDevelopmentEnvironmentState");
+      vi.spyOn(fixture.provider, "create").mockRejectedValue(
+        new SandboxCreationError(new Error("creation response lost"), absenceConfirmed),
+      );
+      const manager = testBroker({ provider: fixture.provider, stateRepository: repository });
+      try {
+        await expect(
+          manager.provisionDevelopmentEnvironment({
+            developmentEnvironmentProtocolVersion: 1,
+            type: "development_environment.provision",
+            requestId: crypto.randomUUID(),
+            environmentId: ACTIVATION_ID,
+            tenantId: assignment.tenantId,
+            userId: "fixture-user",
+            projectId: assignment.projectId,
+            workspaceId: assignment.workspaceId,
+            generation: 1,
+            profileKey: "standard",
+            environment,
+            workspaceSeed: { kind: "sample_java" },
+          }),
+        ).rejects.toThrow();
+        expect(manager.admittedCount).toBe(absenceConfirmed ? 0 : 1);
+        expect(state).toHaveBeenLastCalledWith(
+          ACTIVATION_ID,
+          absenceConfirmed ? "failed" : "unknown",
+          expect.any(Object),
+        );
+      } finally {
+        await manager.close();
+      }
+    },
+  );
+
+  it("retains the machine handle and quota when failure cleanup cannot confirm destruction", async () => {
+    const fixture = providerFixture();
+    const repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const state = vi
+      .spyOn(repository, "setDevelopmentEnvironmentState")
+      .mockRejectedValueOnce(new Error("PG failed"));
+    vi.spyOn(fixture.provider, "destroy").mockRejectedValue(new Error("stop unknown"));
+    const manager = testBroker({ provider: fixture.provider, stateRepository: repository });
+    try {
+      await expect(
+        manager.provisionDevelopmentEnvironment({
+          developmentEnvironmentProtocolVersion: 1,
+          type: "development_environment.provision",
+          requestId: crypto.randomUUID(),
+          environmentId: ACTIVATION_ID,
+          tenantId: assignment.tenantId,
+          userId: "fixture-user",
+          projectId: assignment.projectId,
+          workspaceId: assignment.workspaceId,
+          generation: 1,
+          profileKey: "standard",
+          environment,
+          workspaceSeed: { kind: "sample_java" },
+        }),
+      ).rejects.toThrow("PG failed");
+      expect(manager.admittedCount).toBe(1);
+      expect(state).toHaveBeenLastCalledWith(
+        ACTIVATION_ID,
+        "unknown",
+        expect.objectContaining({
+          handle: expect.objectContaining({ activationId: ACTIVATION_ID }),
+          runtimeCapsule: expect.any(String),
+        }),
+      );
     } finally {
       await manager.close();
     }

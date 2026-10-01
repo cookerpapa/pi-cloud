@@ -1159,6 +1159,33 @@ async function installCompletionDeploymentCredential() {
   await chown(path, owner.uid, owner.gid);
 }
 
+async function reconcileRedisCredentialRevision() {
+  // Projected Secret files and environment variables do not reload Redis or
+  // subPath-mounted consumer configuration in already-running containers.
+  const secret = JSON.parse(
+    await captureKubectl(["-n", "cube-system", "get", "secret", "cube-secret", "-o", "json"]),
+  );
+  const password = secret.data?.["redis-password"];
+  if (typeof password !== "string") throw new Error("Cube Redis credential is missing");
+  const revision = createHash("sha256").update(Buffer.from(password, "base64")).digest("hex");
+  const patch = JSON.stringify({
+    spec: {
+      template: {
+        metadata: { annotations: { "pi-cloud.io/redis-credential-revision": revision } },
+      },
+    },
+  });
+  for (const resource of [
+    "statefulset/cube-redis",
+    "deployment/cube-master",
+    "deployment/cube-proxy",
+    "deployment/cube-lifecycle-manager",
+  ]) {
+    await runKubectl(["-n", "cube-system", "patch", resource, "--type=merge", "--patch", patch]);
+    await runKubectl(["-n", "cube-system", "rollout", "status", resource, "--timeout=180s"]);
+  }
+}
+
 if ((await repositoryHead(cubeRepository)) !== CUBE_COMMIT) {
   throw new Error(`CubeSandbox checkout must be pinned to ${CUBE_COMMIT}`);
 }
@@ -1328,6 +1355,7 @@ await run("helm", [
   "90m",
 ]);
 await ensureCubeletLoopbackCapacity();
+await reconcileRedisCredentialRevision();
 await installPosixVolumePlugin();
 await installCompletionDeploymentCredential();
 if (nodeNetwork.changed) {
