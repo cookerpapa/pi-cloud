@@ -241,12 +241,10 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(await f.executor().dispatchNext(denied)).toEqual({ status: "idle" });
     expect(await f.state()).toEqual(before);
     expect(f.runner).not.toHaveBeenCalled();
-    await f
-      .executor()
-      .dispatchRun(f.accepted.runId, {
-        ...denied,
-        publication: { partitionCount: 4, partitions: [own] },
-      });
+    await f.executor().dispatchRun(f.accepted.runId, {
+      ...denied,
+      publication: { partitionCount: 4, partitions: [own] },
+    });
     expect(f.runner).toHaveBeenCalledOnce();
     await f.project();
   });

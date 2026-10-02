@@ -266,3 +266,29 @@ endpoint for `packages/session-attachments/test/storage.postgres.test.ts`; it
 creates/drops its own database. This exercises real row locks, unprojected-upload
 protection, native Fork retention and cleanup races rather than treating PGlite
 socket error handling as PostgreSQL fault evidence.
+
+
+## Native Turn control budget
+
+`measure-native-turn-control-budget.ts` runs a complete no-Tool Pi Turn through
+real PG, private publication HTTP, RF3 Kafka and watched queue projection, with a
+deterministic GPT-6 Luna-labelled stream fixture (no model-service request).
+It counts PG client requests including transaction commands, Outbox references,
+logical Kafka bytes/producer commits, native rows, fixture WAL and owner recovery.
+Use an otherwise idle, separate PG fixture for WAL; never production brokers.
+Only one Session Projector test/benchmark may use a fixture cluster at a time.
+
+```bash
+PI_CLOUD_REVIEW_DATABASE_URL=postgresql://pi_cloud@127.0.0.1:55460/pi_cloud \
+PI_CLOUD_KAFKA_INTEGRATION_BROKERS=127.0.0.1:19091,127.0.0.1:19092,127.0.0.1:19093 \
+node --import tsx scripts/measure-native-turn-control-budget.ts /tmp/turn-budget.json
+```
+
+For a prior-revision comparison, copy this measurement script into that checkout.
+When sharing third-party `node_modules`, also preload
+`./scripts/lib/workspace-source-loader.mjs` from the current checkout and set
+`PI_CLOUD_REVIEW_SOURCE_ROOT` to the prior checkout. The loader resolves every
+`@pi-cloud` import from the selected source root; a plain node_modules symlink
+would silently use current workspace code. `PI_CLOUD_REVIEW_SOURCE_AUDIT` writes
+its import map. Report fixed-workload limits and memory/latency variability with
+the measurements; this is not fleet capacity or live provider latency evidence.

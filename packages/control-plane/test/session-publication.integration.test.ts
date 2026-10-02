@@ -117,7 +117,10 @@ it.skipIf(!postgres || !brokers)(
         "elastic",
       );
       client = new HttpPublicationClient({ baseUrl: url, token });
-      expect(await client.publicationAvailability()).toEqual({ partitionCount: 1, partitions: [0] });
+      expect(await client.publicationAvailability()).toEqual({
+        partitionCount: 1,
+        partitions: [0],
+      });
       logs = new WorkerExecutionLog(database, client);
       async function admit(key: string) {
         const accepted = await store.acceptTurn(session.sessionId, key, { prompt: key });

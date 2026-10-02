@@ -1,0 +1,409 @@
+{
+  "format": "pi-cloud.control-repair-budget-comparison.v1",
+  "baseline": "71e3964c",
+  "implementation": "f19eede6",
+  "isolatedPgPort": 55460,
+  "sourceAudits": [
+    {
+      "case": "before",
+      "workspaceImports": 15,
+      "allResolvedFromSelectedCheckout": true
+    },
+    {
+      "case": "after",
+      "workspaceImports": 15,
+      "allResolvedFromSelectedCheckout": true
+    }
+  ],
+  "medians": {
+    "sql": {
+      "beforeMedian": 367.0,
+      "afterMedian": 143.0
+    },
+    "transactions": {
+      "beforeMedian": 17.0,
+      "afterMedian": 12.0
+    },
+    "nativeRows": {
+      "beforeMedian": 6.0,
+      "afterMedian": 6.0
+    },
+    "queueReferences": {
+      "beforeMedian": 9.0,
+      "afterMedian": 4.0
+    },
+    "outboxRows": {
+      "beforeMedian": 10.0,
+      "afterMedian": 5.0
+    },
+    "kafkaRecords": {
+      "beforeMedian": 14.0,
+      "afterMedian": 9.0
+    },
+    "kafkaBytes": {
+      "beforeMedian": 8442.0,
+      "afterMedian": 6831.0
+    },
+    "kafkaTransactions": {
+      "beforeMedian": 14.0,
+      "afterMedian": 9.0
+    },
+    "walBytes": {
+      "beforeMedian": 53044.0,
+      "afterMedian": 47172.0
+    },
+    "durationMs": {
+      "beforeMedian": 10234.1040805,
+      "afterMedian": 7732.774641499998
+    }
+  },
+  "before": {
+    "format": "pi-cloud.native-turn-budget.v1",
+    "revision": "71e3964c",
+    "scope": "complete no-Tool Pi Turns with deterministic provider, actual PG/HTTP/RF3/control projection; no VM or provider latency",
+    "samples": [
+      {
+        "sql": 375,
+        "transactions": 17,
+        "nativeRows": 6,
+        "kafkaRecords": 14,
+        "kafkaBytes": 8431,
+        "kafkaTransactions": 14,
+        "kinds": {
+          "control_change": 9,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 17,
+          "select": 85,
+          "with": 222,
+          "commit": 17,
+          "update": 19,
+          "insert": 15
+        },
+        "outboxRows": 10,
+        "queueReferences": 9,
+        "walBytes": 58144,
+        "durationMs": 10774.797878,
+        "heapDeltaBytes": 1607120
+      },
+      {
+        "sql": 341,
+        "transactions": 17,
+        "nativeRows": 6,
+        "kafkaRecords": 14,
+        "kafkaBytes": 8442,
+        "kafkaTransactions": 14,
+        "kinds": {
+          "control_change": 9,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 17,
+          "select": 86,
+          "with": 187,
+          "commit": 17,
+          "update": 19,
+          "insert": 15
+        },
+        "outboxRows": 10,
+        "queueReferences": 9,
+        "walBytes": 52600,
+        "durationMs": 8750.979937,
+        "heapDeltaBytes": -25896480
+      },
+      {
+        "sql": 359,
+        "transactions": 17,
+        "nativeRows": 6,
+        "kafkaRecords": 14,
+        "kafkaBytes": 8442,
+        "kafkaTransactions": 14,
+        "kinds": {
+          "control_change": 9,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 17,
+          "select": 85,
+          "with": 206,
+          "commit": 17,
+          "update": 19,
+          "insert": 15
+        },
+        "outboxRows": 10,
+        "queueReferences": 9,
+        "walBytes": 53064,
+        "durationMs": 9730.061495999998,
+        "heapDeltaBytes": 934936
+      },
+      {
+        "sql": 320,
+        "transactions": 17,
+        "nativeRows": 6,
+        "kafkaRecords": 14,
+        "kafkaBytes": 8442,
+        "kafkaTransactions": 14,
+        "kinds": {
+          "control_change": 9,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 17,
+          "select": 85,
+          "with": 167,
+          "commit": 17,
+          "update": 19,
+          "insert": 15
+        },
+        "outboxRows": 10,
+        "queueReferences": 9,
+        "walBytes": 53024,
+        "durationMs": 7756.433928000006,
+        "heapDeltaBytes": 1433472
+      },
+      {
+        "sql": 375,
+        "transactions": 17,
+        "nativeRows": 6,
+        "kafkaRecords": 14,
+        "kafkaBytes": 8441,
+        "kafkaTransactions": 14,
+        "kinds": {
+          "control_change": 9,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 17,
+          "select": 85,
+          "with": 221,
+          "commit": 17,
+          "update": 19,
+          "insert": 15,
+          "delete": 1
+        },
+        "outboxRows": 10,
+        "queueReferences": 9,
+        "walBytes": 75128,
+        "durationMs": 10738.146665,
+        "heapDeltaBytes": 1339072
+      },
+      {
+        "sql": 385,
+        "transactions": 17,
+        "nativeRows": 6,
+        "kafkaRecords": 14,
+        "kafkaBytes": 8442,
+        "kafkaTransactions": 14,
+        "kinds": {
+          "control_change": 9,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 17,
+          "select": 92,
+          "with": 225,
+          "commit": 17,
+          "update": 19,
+          "insert": 15
+        },
+        "outboxRows": 10,
+        "queueReferences": 9,
+        "walBytes": 52184,
+        "durationMs": 10742.308314000002,
+        "heapDeltaBytes": -13377984
+      }
+    ],
+    "ownerRecovery": {
+      "durationMs": 210.31850999999733,
+      "heapDeltaBytes": 1254656
+    },
+    "measurementLimits": [
+      "No Tool/VM or live provider cost; actual Pi loop and durable native lifecycle are included.",
+      "SQL counts pg Client requests including transaction commands; trigger-internal statements are represented in WAL, not separately counted.",
+      "Kafka bytes are produced JSON payloads, not replication/network bytes; transactions count native producer commit calls.",
+      "WAL is a cluster LSN delta; run in the otherwise idle isolated PG fixture. Heap deltas include GC noise.",
+      "Recovery includes producer/group ownership and view bootstrap, not replay of arbitrary effects."
+    ]
+  },
+  "after": {
+    "format": "pi-cloud.native-turn-budget.v1",
+    "revision": "f19eede6",
+    "scope": "complete no-Tool Pi Turns with deterministic provider, actual PG/HTTP/RF3/control projection; no VM or provider latency",
+    "samples": [
+      {
+        "sql": 144,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6828,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 61,
+          "with": 35,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 52208,
+        "durationMs": 7777.664389,
+        "heapDeltaBytes": -7796264
+      },
+      {
+        "sql": 143,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6831,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 60,
+          "with": 35,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 51072,
+        "durationMs": 7713.821317999998,
+        "heapDeltaBytes": 30324440
+      },
+      {
+        "sql": 143,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6832,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 60,
+          "with": 35,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 46488,
+        "durationMs": 7751.727964999998,
+        "heapDeltaBytes": -47809816
+      },
+      {
+        "sql": 141,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6832,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 60,
+          "with": 33,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 47184,
+        "durationMs": 5731.941688999999,
+        "heapDeltaBytes": -1537192
+      },
+      {
+        "sql": 143,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6831,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 60,
+          "with": 35,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 47160,
+        "durationMs": 7754.131563000003,
+        "heapDeltaBytes": -1279808
+      },
+      {
+        "sql": 142,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6831,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 60,
+          "with": 34,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 45976,
+        "durationMs": 6747.406042999995,
+        "heapDeltaBytes": -1391528
+      }
+    ],
+    "ownerRecovery": {
+      "durationMs": 665.4465070000006,
+      "heapDeltaBytes": 1252936
+    },
+    "measurementLimits": [
+      "No Tool/VM or live provider cost; actual Pi loop and durable native lifecycle are included.",
+      "SQL counts pg Client requests including transaction commands; trigger-internal statements are represented in WAL, not separately counted.",
+      "Kafka bytes are produced JSON payloads, not replication/network bytes; transactions count native producer commit calls.",
+      "WAL is a cluster LSN delta; run in the otherwise idle isolated PG fixture. Heap deltas include GC noise.",
+      "Recovery includes producer/group ownership and view bootstrap, not replay of arbitrary effects."
+    ]
+  }
+}

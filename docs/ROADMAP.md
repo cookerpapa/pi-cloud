@@ -58,7 +58,8 @@ Single-host acceptance does not establish independent-node availability.
 - [x] Complete the [October 2 whole-repository review](reports/repository-review-20261002.md)
       at `6c74c653`, including README/current-topology corrections, isolated PG
       measurements and recovery/ownership characterization. Confirmed repairs
-      and optimization decisions remain open in BACKLOG.
+      and optimization decisions are implemented under ADR-0213; matched release
+      verification and deployment are in progress.
 
 - [x] [ADR-0212](adr/0212-ordered-control-read-models.md): remove hot binding reads,
       replace queued-input polling with owner views, and drive Session-local

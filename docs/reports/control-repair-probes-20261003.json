@@ -1,0 +1,78 @@
+{
+  "control": {
+    "queueReferences": {
+      "accept": 1,
+      "admit": 1,
+      "complete": 1,
+      "total": 3
+    },
+    "emptySteerWake": {
+      "heldInputs": 0,
+      "sqlQueries": 0
+    },
+    "noopReplay": {
+      "sourceRevisionUnchanged": true,
+      "newOutboxReferences": 0
+    },
+    "relayBatchBlocking": {
+      "sessions": 20,
+      "distinctHashPartitions": 20,
+      "publicationTransport": "simulated",
+      "onePublicationHeld": true,
+      "attemptedBeforeRelease": 20,
+      "healthyNotAttempted": 0
+    },
+    "idleRelay": {
+      "observedWindowMs": 1000,
+      "sqlQueries": 1,
+      "defaultPollIntervalMs": 1000
+    }
+  },
+  "views": {
+    "readiness": {
+      "transportAndDatabase": "simulated; actual Projector and HTTP service",
+      "healthStatus": 503,
+      "publicationStatus": 409,
+      "reason": "not_owner"
+    },
+    "bindingBootstrap": {
+      "rowSource": "simulated SQL results; predicate checked separately on PG",
+      "requestedPartitions": [
+        1
+      ],
+      "sqlPageLimit": 256,
+      "rejected": false
+    },
+    "subagentEcho": {
+      "database": "simulated; actual controller",
+      "knownRevision": "9",
+      "duplicateNotifications": 5,
+      "fullRowSelects": 0
+    },
+    "imageDecode": {
+      "references": 2,
+      "distinctObjects": 1,
+      "storeGetCalls": 1,
+      "byteSource": "simulated; no image-model claim"
+    },
+    "quarantine": {
+      "dependencies": "provider, binding publication and PG repository simulated; actual health monitor/controller",
+      "outcomes": [
+        {
+          "publicationFails": false,
+          "resourceState": "unknown",
+          "bindingClosed": true,
+          "errors": 0,
+          "destroyCalls": 0
+        },
+        {
+          "publicationFails": true,
+          "resourceState": "unknown",
+          "bindingClosed": true,
+          "errors": 1,
+          "destroyCalls": 0
+        }
+      ]
+    }
+  }
+}

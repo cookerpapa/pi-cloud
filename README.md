@@ -36,13 +36,17 @@ Ingress serializes Session writes, control changes and seals; its ordinary Worke
 append path uses no SQL. PG remains the Run/control authority. Committed control
 references refresh bounded binding, queued-input and Subagent views. Tool/probe
 routes read owner memory; pending inputs use SSE and relevant work wakes on changes
-or known deadlines. Lifecycle mutations and recovery retain PG checks.
+or known deadlines. Worker admission uses the available publication partitions;
+binding bootstrap pages only the owner’s state. Transaction-local queue/state
+notifications are coalesced, and independent Outbox sends prevent a slow request
+from holding an entire batch. Lifecycle mutations and recovery retain PG checks.
 
 Canonical conversation output is durable before display. Runtime activity, Tool
 previews and health observations are disposable. Control Plane probes existing
 VMs directly and reuses confirmed execution-path evidence; missing probes do not
 authorize VM destruction or quota release. Recovery never automatically replays
-uncertain commands.
+uncertain commands. Quarantine closes PG bindings before confirming propagation,
+so a publication outage cannot leave a failed VM eligible for new work.
 
 ## Quick start
 

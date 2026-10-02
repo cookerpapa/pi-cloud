@@ -720,7 +720,9 @@ Workspace authority or platform-managed Git tree.
 
 Preview is published by a trusted tool after an actual listening-service probe.
 Authenticated isolated origins proxy HTTP/WebSocket traffic through the control plane's
-credential-free guest relay. There is no localhost replacement in model text or
+credential-free guest relay. Each content request resolves current authorization,
+Workspace and owner in one PG query; permission and cross-resource tunnel caches
+are not used. There is no localhost replacement in model text or
 fixed application-port reservation. Human Web Terminal and one-use SSH tickets
 use independent product authority; they are not Agent execution commands.
 

@@ -454,7 +454,7 @@
       "id": "shared-runtime-loss",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/sandbox-controller.test.ts",
-      "test": "fails every shared binding even when quarantine publication fails",
+      "test": "fails every shared binding even when quarantine publication fails (true)",
       "invariant": "A lost shared VM closes every binding and local admission even when closure publication is unavailable."
     },
     {
