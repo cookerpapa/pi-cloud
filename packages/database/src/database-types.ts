@@ -285,6 +285,8 @@ export interface SandboxControlWorkspaceRuntimeTable {
 }
 
 export interface SandboxToolBindingTable {
+  pi_session_id: Generated<string>;
+  revision: GeneratedInt8;
   dispatch_closed: Generated<boolean>;
   binding_id: string;
   tenant_id: string;

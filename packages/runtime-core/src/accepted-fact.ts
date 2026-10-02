@@ -105,6 +105,9 @@ export type AcceptedFact =
   | AcceptedPiSessionAppendFact
   | AcceptedSubagentCommand;
 
+/** Session control references share transport/order, but never native history. */
+export type SessionLogFact = AcceptedFact | import("@pi-cloud/protocol").SessionControlChange;
+
 export type AcceptedSubagentCommand = Readonly<{
   kind: "subagent_command";
   factId: string;

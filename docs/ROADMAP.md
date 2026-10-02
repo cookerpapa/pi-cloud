@@ -55,6 +55,10 @@ Single-host acceptance does not establish independent-node availability.
 
 ## Current release gate
 
+- [ ] [ADR-0212](adr/0212-ordered-control-read-models.md): remove hot binding reads,
+      replace queued-input polling with owner views, and drive Session-local
+      Subagent read/pending state from ordered changes with recovery acceptance.
+
 - [x] [ADR-0211](adr/0211-execution-path-and-runtime-probes.md): extend existing
       Session probes through active Cube bindings and the Worker reply mailbox;
       unify direct VM execution probes, bounded health scheduling and lifecycle

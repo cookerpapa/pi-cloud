@@ -12,6 +12,14 @@ export type SandboxBinding = Readonly<{
   descriptor: SandboxExecutionDescriptor;
   snapshot: SandboxBindingSnapshot;
 }>;
+export type SandboxBindingRecord = SandboxBinding &
+  Readonly<{
+    tenantId: string;
+    runId: string;
+    writerId: string;
+    piSessionId: string;
+    revision: string;
+  }>;
 export interface SandboxBindingReader {
   find(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<readonly SandboxBinding[]>;
   closeScope(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<void>;
@@ -37,6 +45,7 @@ export class PostgresSandboxBindings implements SandboxBindings {
     readonly sandboxDomainId: string,
     readonly instanceId: string,
     readonly baseUrl: string,
+    readonly publishChanges: (ids: readonly string[]) => Promise<void>,
   ) {}
 
   async register(
@@ -58,6 +67,7 @@ export class PostgresSandboxBindings implements SandboxBindings {
         snapshot,
       })
       .executeTakeFirstOrThrow();
+    await this.publishChanges([bindingId]);
   }
   async release(bindingId: string, assignment: ToolSandboxAssignment): Promise<void> {
     await this.database
@@ -66,6 +76,7 @@ export class PostgresSandboxBindings implements SandboxBindings {
       .where("run_id", "=", parseExecutionReference(assignment.executionReference).runId)
       .where("binding_id", "=", bindingId)
       .execute();
+    await this.publishChanges([bindingId]);
   }
   #query() {
     return this.database
@@ -82,6 +93,11 @@ export class PostgresSandboxBindings implements SandboxBindings {
         "binding.dispatch_closed as dispatchClosed",
         "binding.descriptor",
         "binding.snapshot",
+        "binding.tenant_id as tenantId",
+        "binding.run_id as runId",
+        "binding.writer_id as writerId",
+        "binding.pi_session_id as piSessionId",
+        "binding.revision",
       ]);
   }
   async find(
@@ -100,38 +116,47 @@ export class PostgresSandboxBindings implements SandboxBindings {
       .updateTable("sandbox_tool_bindings")
       .set({ dispatch_closed: true })
       .where("tenant_id", "=", scope.tenantId!);
-    await (
+    const closed = await (
       wholeWriter
         ? query.where("writer_id", "=", scope.writerId)
         : query.where("run_id", "=", scope.runId)
-    ).execute();
+    )
+      .returning("binding_id")
+      .execute();
+    await this.publishChanges(closed.map((r) => r.binding_id));
   }
   async closeTarget(target: SandboxExecutionDescriptor["target"]): Promise<void> {
-    await this.database
+    const closed = await this.database
       .updateTable("sandbox_tool_bindings")
       .set({ dispatch_closed: true })
       .where(sql<string>`descriptor->'target'->>'sandboxId'`, "=", target.sandboxId)
       .where(sql<string>`descriptor->'target'->>'apiUrl'`, "=", target.apiUrl)
       .where(sql<string>`descriptor->'target'->>'bootId'`, "=", target.bootId)
+      .returning("binding_id")
       .execute();
+    await this.publishChanges(closed.map((r) => r.binding_id));
   }
   async closePhysical(physicalActivationId: string): Promise<void> {
-    await this.database
+    const closed = await this.database
       .updateTable("sandbox_tool_bindings")
       .set({ dispatch_closed: true })
       .where("owner_instance_id", "=", this.instanceId)
       .where(sql<string>`snapshot->>'physicalActivationId'`, "=", physicalActivationId)
+      .returning("binding_id")
       .execute();
+    await this.publishChanges(closed.map((r) => r.binding_id));
   }
   async adopt(
     physicalActivationId: string,
   ): Promise<readonly (SandboxBinding & { closed: boolean })[]> {
-    await this.database
+    const adopted = await this.database
       .updateTable("sandbox_tool_bindings")
       .set({ owner_instance_id: this.instanceId })
       .where("sandbox_domain_id", "=", this.sandboxDomainId)
       .where(sql<string>`snapshot->>'physicalActivationId'`, "=", physicalActivationId)
+      .returning("binding_id")
       .execute();
+    await this.publishChanges(adopted.map((r) => r.binding_id));
     return (await this.#query()
       .where("binding.sandbox_domain_id", "=", this.sandboxDomainId)
       .leftJoin("runs as run", "run.id", "binding.run_id")
@@ -158,5 +183,21 @@ export class PostgresSandboxBindings implements SandboxBindings {
       .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
       .executeTakeFirst();
     return row !== undefined;
+  }
+
+  async loadView(): Promise<readonly SandboxBindingRecord[]> {
+    const rows = await this.#query().limit(65_537).execute();
+    if (rows.length > 65_536) throw new Error("Sandbox binding view capacity exceeded");
+    return rows as unknown as SandboxBindingRecord[];
+  }
+  async readChange(
+    change: import("@pi-cloud/protocol").SessionControlChange,
+  ): Promise<SandboxBindingRecord | undefined> {
+    return (await this.#query()
+      .where("binding.tenant_id", "=", change.scope.tenantId)
+      .where("binding.pi_session_id", "=", change.scope.piSessionId)
+      .where("binding.run_id", "=", change.runId)
+      .where("binding.binding_id", "=", change.entityId)
+      .executeTakeFirst()) as unknown as SandboxBindingRecord | undefined;
   }
 }

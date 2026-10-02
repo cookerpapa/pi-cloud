@@ -589,6 +589,14 @@ export {
 } from "./supervisor-management.ts";
 
 export { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "./terminal-event-outbox.ts";
+export {
+  SESSION_CONTROL_OUTBOX_TOPIC,
+  SESSION_CONTROL_NOTIFICATION_CHANNEL,
+  SessionControlChangeSchema,
+  parseSessionControlChange,
+  type SessionControlChange,
+  type SessionControlPublisher,
+} from "./session-control-change.ts";
 export { normalizeProviderHostedWebSearchAction } from "./hosted-search-action.ts";
 export * from "./tool-command.ts";
 export * from "./subagent-command.ts";

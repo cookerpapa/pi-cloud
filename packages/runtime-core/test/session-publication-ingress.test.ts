@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { MAX_EXECUTION_FACT_BYTES } from "@pi-cloud/protocol";
+import { MAX_EXECUTION_FACT_BYTES, type SessionControlChange } from "@pi-cloud/protocol";
 import { expect, it, vi } from "vitest";
 import type {
   AcceptedExecutionSealFact,
@@ -92,6 +92,58 @@ function fixture(capacity?: { maximumPendingBytes: number; maximumPendingFacts: 
   ingress.installRun(owner, p);
   return { ingress, owner, writer, p, records, gates };
 }
+
+function controlChange(p: ExecutionPublication, version: string): SessionControlChange {
+  return {
+    kind: "control_change",
+    factId: randomUUID(),
+    entity: "sandbox_binding",
+    scope: { tenantId: p.scope.tenantId, piSessionId: p.scope.piSessionId },
+    entityId: randomUUID(),
+    runId: p.scope.runId,
+    version,
+    closed: false,
+    occurredAt: new Date().toISOString(),
+  };
+}
+
+it("orders control changes with native publications on the physical Session queue", async () => {
+  const f = fixture(),
+    gate = deferred<void>();
+  f.gates.push(gate);
+  const first = f.ingress.control(f.owner, controlChange(f.p, "1"));
+  const native = f.ingress.append(f.owner, entry(f.p));
+  const next = f.ingress.control(f.owner, controlChange(f.p, "2"));
+  await vi.waitFor(() => expect(f.records).toHaveLength(1));
+  gate.resolve();
+  await Promise.all([first, native, next]);
+  expect(f.records.map((r) => JSON.parse(r.value).kind)).toEqual([
+    "control_change",
+    "pi_session_append",
+    "control_change",
+  ]);
+  expect(new Set(f.records.map((r) => r.sessionId))).toEqual(new Set([f.p.scope.piSessionId]));
+  expect(f.ingress.statistics()).toEqual({ pendingBytes: 0, pendingFacts: 0 });
+});
+
+it("accepts an authorized cold control change without opening a native writer", async () => {
+  const f = fixture(),
+    cold = permit();
+  await f.ingress.control(f.owner, controlChange(cold, "1"));
+  await expect(f.ingress.append(f.owner, entry(cold))).rejects.toMatchObject({
+    reason: "not_open",
+  });
+  f.ingress.installRun(f.owner, cold);
+  await f.ingress.append(f.owner, entry(cold));
+  expect(f.records).toHaveLength(2);
+});
+
+it("keeps native publication independent of an uncertain idempotent control change", async () => {
+  const f = fixture();
+  vi.mocked(f.writer.append).mockRejectedValueOnce(new Error("Control ACK lost"));
+  await expect(f.ingress.control(f.owner, controlChange(f.p, "1"))).rejects.toThrow("ACK lost");
+  await expect(f.ingress.append(f.owner, entry(f.p))).resolves.toMatchObject({ durable: true });
+});
 
 it("closes admission before draining and emits the seal before opening a new writer", async () => {
   const f = fixture(),

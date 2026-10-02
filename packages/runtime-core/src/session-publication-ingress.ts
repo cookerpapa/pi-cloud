@@ -12,7 +12,9 @@ import type {
   AcceptedFact,
   AcceptedFactReceipt,
   ExecutionPublication,
+  SessionLogFact,
 } from "./accepted-fact.ts";
+import type { SessionControlChange } from "@pi-cloud/protocol";
 import { isNativeAppendFact, toolCommandForFact } from "./tool-invocation-fact.ts";
 
 export type PublicationRecord = Readonly<{
@@ -40,7 +42,6 @@ type Writer = {
   closing: boolean;
   failure?: unknown;
   runs: Map<string, Run>;
-  tail: Promise<void>;
 };
 export type PublicationOwnership = Readonly<{ partition: number; generation: symbol }>;
 export type PublicationAdmission = Readonly<{
@@ -55,6 +56,7 @@ type Partition = {
   writers: Map<string, Writer>;
   current: boolean;
   admissions: Map<string, Set<{ current: boolean }>>;
+  queues: Map<string, { tail: Promise<void>; pending: number }>;
 };
 
 export class PublicationIngressRejected extends PublicationNotSentError {
@@ -100,6 +102,7 @@ export class SessionPublicationIngress {
       writers: new Map(),
       current: true,
       admissions: new Map(),
+      queues: new Map(),
     });
     return owner;
   }
@@ -217,7 +220,6 @@ export class SessionPublicationIngress {
         epoch: scope.fencingToken,
         closing: false,
         runs: new Map(),
-        tail: Promise.resolve(),
       };
       partition.writers.set(key, writer);
       this.#invalidateAdmissions(partition, key);
@@ -277,7 +279,6 @@ export class SessionPublicationIngress {
           epoch: fact.scope.fencingToken,
           closing: false,
           runs: new Map(),
-          tail: Promise.resolve(),
         };
         partition.writers.set(key, writer);
       }
@@ -345,6 +346,11 @@ export class SessionPublicationIngress {
     if (fact.closesWriter) writer.closing = true;
   }
 
+  /** Only the PG Outbox-authorized control port may call this. No Run is required. */
+  control(owner: PublicationOwnership, fact: SessionControlChange): Promise<AcceptedFactReceipt> {
+    return this.#enqueue(this.#owned(owner), undefined, fact);
+  }
+
   #validate(permit: ExecutionPublication, fact: AcceptedFact): void {
     const { leaseId, piSessionLane, ...scope } = permit.scope;
     if (
@@ -395,13 +401,17 @@ export class SessionPublicationIngress {
     }
   }
 
-  #enqueue(partition: Partition, writer: Writer, fact: AcceptedFact): Promise<AcceptedFactReceipt> {
+  #enqueue(
+    partition: Partition,
+    writer: Writer | undefined,
+    fact: SessionLogFact,
+  ): Promise<AcceptedFactReceipt> {
     const record = {
       factId: fact.factId,
       sessionId: fact.scope.piSessionId,
       value: JSON.stringify(fact),
     };
-    const semantic = fact.kind !== "path_probe";
+    const semantic = fact.kind !== "path_probe" && fact.kind !== "control_change";
     const bytes = Buffer.byteLength(record.value);
     if (bytes > MAX_EXECUTION_FACT_BYTES) throw new PublicationIngressRejected("size");
     if (
@@ -415,10 +425,15 @@ export class SessionPublicationIngress {
     this.#pendingBytes += bytes;
     this.#observe();
     const enqueuedAt = performance.now();
-    const pending = writer.tail
+    const key = `${fact.scope.tenantId}:${fact.scope.piSessionId}`;
+    let queue = partition.queues.get(key);
+    if (!queue) partition.queues.set(key, (queue = { tail: Promise.resolve(), pending: 0 }));
+    const activeQueue = queue;
+    activeQueue.pending++;
+    const pending = activeQueue.tail
       .then(async () => {
         this.#owned(partition.owner);
-        if (writer.failure && fact.kind !== "execution_seal")
+        if (writer?.failure && fact.kind !== "execution_seal")
           throw new PublicationNotSentError("Writer stopped before queued publication was sent");
         try {
           const submittedAt = performance.now();
@@ -429,7 +444,7 @@ export class SessionPublicationIngress {
           this.metrics?.observeSessionMutation("producer_ack", performance.now() - submittedAt);
           return receipt;
         } catch (error) {
-          if (semantic && !(error instanceof PublicationNotSentError)) {
+          if (writer && semantic && !(error instanceof PublicationNotSentError)) {
             writer.closing = true;
             writer.failure = error;
           }
@@ -439,9 +454,12 @@ export class SessionPublicationIngress {
       .finally(() => {
         this.#pendingFacts--;
         this.#pendingBytes -= bytes;
+        activeQueue.pending--;
+        if (!activeQueue.pending && partition.queues.get(key) === activeQueue)
+          partition.queues.delete(key);
         this.#observe();
       });
-    writer.tail = pending.then(
+    activeQueue.tail = pending.then(
       () => undefined,
       () => undefined,
     );

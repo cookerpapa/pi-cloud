@@ -63,8 +63,8 @@ export class ToolCommandDispatcher {
     if (!fact) return;
     const seal = fact.kind === "execution_seal";
     if (seal) await this.options.routes.closeScope(fact.scope, fact.closesWriter === true);
-    // Eligibility can close on another control-plane replica. Read it together
-    // with the bounded descriptor; never cache permission to start an effect.
+    // The partition view receives current closure at control publication
+    // admission. Normal routing is in memory; Cube still fences in-flight work.
     const routes = await this.options.routes.find(fact.scope, seal && fact.closesWriter === true);
     if (current?.() === false) return;
     if (seal) {

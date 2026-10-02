@@ -6,7 +6,7 @@ export * from "./postgres-pi-session-append-projector.ts";
 export * from "./kafka-accepted-fact.ts";
 export * from "./kafka-accepted-fact-consumer.ts";
 export * from "./native-session-log-publisher.ts";
-export * from "./accepted-fact-terminal-outbox-relay.ts";
+export * from "./session-outbox-relay.ts";
 export * from "./run-state.ts";
 export * from "./run-cancellation-executor.ts";
 export * from "./run-executor.ts";

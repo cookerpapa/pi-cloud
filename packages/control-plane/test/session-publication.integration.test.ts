@@ -73,6 +73,7 @@ it.skipIf(!postgres || !brokers)(
         return projector.appendPublication(f);
       },
       acceptSeal: (f) => projector.acceptSeal(f),
+      acceptControl: (f) => projector.acceptControl(f),
     }).install(server);
     let client: HttpPublicationClient | undefined, logs: WorkerExecutionLog | undefined;
     const pending: Array<{

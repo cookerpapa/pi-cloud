@@ -1,16 +1,24 @@
 import { PostgresNotificationWake, type Database } from "@pi-cloud/database";
-import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "@pi-cloud/protocol";
+import {
+  SESSION_TERMINAL_EVENT_OUTBOX_TOPIC,
+  SESSION_CONTROL_OUTBOX_TOPIC,
+  SESSION_CONTROL_NOTIFICATION_CHANNEL,
+  type SessionControlChange,
+} from "@pi-cloud/protocol";
 import { setTimeout as delay } from "node:timers/promises";
 import { sql, type Kysely } from "kysely";
-import type { AcceptedFactBus } from "./accepted-fact.ts";
-import { parseKafkaAcceptedFact } from "./kafka-accepted-fact.ts";
-import { TERMINAL_OUTBOX_NOTIFICATION_CHANNEL } from "./execution-stream-seal.ts";
+import type { AcceptedExecutionSealFact, AcceptedFactReceipt } from "./accepted-fact.ts";
+import { parseSessionLogFact } from "./kafka-accepted-fact.ts";
 
-type ClaimedTerminal = { id: string; payload: Record<string, unknown>; attempts: number };
+type ClaimedControl = { id: string; payload: Record<string, unknown>; attempts: number };
+type ControlOutboxBus = {
+  append(fact: AcceptedExecutionSealFact | SessionControlChange): Promise<AcceptedFactReceipt>;
+  checkHealth(): Promise<void>;
+};
 
-export class AcceptedFactTerminalOutboxRelay {
+export class SessionOutboxRelay {
   readonly #database: Kysely<Database>;
-  readonly #bus: AcceptedFactBus;
+  readonly #bus: ControlOutboxBus;
   readonly #pollIntervalMs: number;
   readonly #claimLeaseMs: number;
   readonly #batchSize: number;
@@ -22,7 +30,7 @@ export class AcceptedFactTerminalOutboxRelay {
   constructor(options: {
     database: Kysely<Database>;
     notificationConnectionString: string;
-    bus: AcceptedFactBus;
+    bus: ControlOutboxBus;
     pollIntervalMs?: number;
     claimLeaseMs?: number;
     batchSize?: number;
@@ -31,26 +39,26 @@ export class AcceptedFactTerminalOutboxRelay {
     this.#bus = options.bus;
     this.#wake = new PostgresNotificationWake(
       options.notificationConnectionString,
-      TERMINAL_OUTBOX_NOTIFICATION_CHANNEL,
+      SESSION_CONTROL_NOTIFICATION_CHANNEL,
     );
     this.#pollIntervalMs = options.pollIntervalMs ?? 50;
     this.#claimLeaseMs = options.claimLeaseMs ?? 30_000;
     this.#batchSize = options.batchSize ?? 16;
     for (const value of [this.#pollIntervalMs, this.#claimLeaseMs, this.#batchSize]) {
       if (!Number.isSafeInteger(value) || value < 1)
-        throw new TypeError("Terminal relay limits must be positive integers");
+        throw new TypeError("Session Outbox relay limits must be positive integers");
     }
   }
 
   start(): void {
-    if (this.#task !== undefined) throw new Error("Terminal relay is already started");
+    if (this.#task !== undefined) throw new Error("Session Outbox relay is already started");
     this.#abort = new AbortController();
     this.#task = this.#run(this.#abort.signal);
   }
 
   checkHealth(): void {
     if (this.#task === undefined || this.#failure !== undefined) {
-      throw new Error("AcceptedFact terminal outbox relay is unhealthy");
+      throw new Error("Session Outbox relay is unhealthy");
     }
   }
 
@@ -71,19 +79,22 @@ export class AcceptedFactTerminalOutboxRelay {
   async #dispatch(limit: number): Promise<number> {
     // available_at is the retry/claim deadline; attempts is a CAS token.
     // No transaction or database connection spans Kafka delivery.
-    // Only the oldest unpublished terminal of each Session is eligible.
-    const claimed = await sql<ClaimedTerminal>`
+    // Keep terminal Session heads and control-entity heads ordered. Synchronous
+    // lifecycle publication uses the same idempotent records and ingress.
+    const claimed = await sql<ClaimedControl>`
       with selected as (
         select candidate.id from outbox candidate
-         where candidate.topic = ${SESSION_TERMINAL_EVENT_OUTBOX_TOPIC}
-           and candidate.aggregate_type = 'session_terminal_event'
+         where candidate.topic in (${SESSION_TERMINAL_EVENT_OUTBOX_TOPIC},${SESSION_CONTROL_OUTBOX_TOPIC})
+           and candidate.aggregate_type in ('session_terminal_event','session_control_change')
            and candidate.published_at is null and candidate.available_at <= now()
            and not exists (
              select 1 from outbox predecessor
               where predecessor.topic = candidate.topic
-                and predecessor.aggregate_type = 'session_terminal_event'
+                and predecessor.aggregate_type = candidate.aggregate_type
                 and predecessor.tenant_id = candidate.tenant_id
-                and predecessor.payload #>> '{scope,sessionId}' = candidate.payload #>> '{scope,sessionId}'
+                and (case when candidate.aggregate_type='session_terminal_event'
+                  then predecessor.payload #>> '{scope,sessionId}' = candidate.payload #>> '{scope,sessionId}'
+                  else predecessor.aggregate_id=candidate.aggregate_id end)
                 and predecessor.published_at is null
                 and (predecessor.created_at, predecessor.id) < (candidate.created_at, candidate.id)
            )
@@ -103,19 +114,19 @@ export class AcceptedFactTerminalOutboxRelay {
     if (failures.length)
       throw new AggregateError(
         failures.map((failure) => failure.reason),
-        "Terminal publication failed",
+        "Session control publication failed",
       );
     return claimed.rows.length;
   }
 
-  async #publish(row: ClaimedTerminal): Promise<void> {
+  async #publish(row: ClaimedControl): Promise<void> {
     try {
-      const fact = parseKafkaAcceptedFact(JSON.stringify(row.payload));
-      if (fact.kind !== "execution_seal")
-        throw new Error("Terminal Outbox contains a non-terminal Fact");
+      const fact = parseSessionLogFact(JSON.stringify(row.payload));
+      if (fact.kind !== "execution_seal" && fact.kind !== "control_change")
+        throw new Error("Session Outbox contains a non-control Fact");
       const receipt = await this.#bus.append(fact);
       if (!receipt.durable || receipt.factId !== fact.factId)
-        throw new Error("Terminal receipt did not match its Fact");
+        throw new Error("Session control receipt did not match its Fact");
       await this.#database
         .updateTable("outbox")
         .set({ published_at: new Date(), last_error: null })
@@ -131,7 +142,7 @@ export class AcceptedFactTerminalOutboxRelay {
         .updateTable("outbox")
         .set({
           available_at: new Date(Date.now() + retryMs),
-          last_error: "terminal_publish_failed",
+          last_error: "session_control_publish_failed",
         })
         .where("id", "=", row.id)
         .where("attempts", "=", row.attempts)

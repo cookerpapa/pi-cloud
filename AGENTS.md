@@ -72,6 +72,10 @@ protocol, record the decision under `docs/adr/` before implementation.
   original Worker's callbacks. No raw-result GET/cache or PG operation ledger.
   Workers/Kafka/PG are trusted private infrastructure; do not reintroduce per-record
   signatures or key management. This does not remove tenant checks or Tool fencing.
+  ADR-0212 carries PG-authorized control references through the same Session
+  ingress. Tool/probe binding lookups use the partition owner's memory view;
+  lifecycle mutations, closure admission and bootstrap retain PG checks. Never
+  rely on a delayed Kafka close event alone to revoke external-effect admission.
 - Treat the persistent Cube Volume as the sole Workspace byte authority. Do
   not add a second per-Run archive/checkpoint head without measured recovery
   requirements and a new ADR.

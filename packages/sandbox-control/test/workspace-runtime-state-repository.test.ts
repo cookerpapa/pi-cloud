@@ -728,6 +728,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       "sandbox-domain-0001",
       "20000000-0000-4000-8000-000000000004",
       "http://owner.test",
+      async () => {},
     );
     const descriptor = {
       version: 1 as const,
@@ -795,6 +796,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       "sandbox-domain-0001",
       crypto.randomUUID(),
       "http://retired-owner.test",
+      async () => {},
     ).closePhysical(activation.activationId);
     expect((await routes.find(routeScope, true)).filter((r) => !r.dispatchClosed)).toHaveLength(1);
     await routes.closePhysical(activation.activationId);

@@ -14,7 +14,7 @@
     "./kafka-accepted-fact": "./src/kafka-accepted-fact.ts",
     "./kafka-accepted-fact-consumer": "./src/kafka-accepted-fact-consumer.ts",
     "./native-session-log-publisher": "./src/native-session-log-publisher.ts",
-    "./accepted-fact-terminal-outbox-relay": "./src/accepted-fact-terminal-outbox-relay.ts",
+    "./session-outbox-relay": "./src/session-outbox-relay.ts",
     "./run-state": "./src/run-state.ts",
     "./run-cancellation-executor": "./src/run-cancellation-executor.ts",
     "./run-executor": "./src/run-executor.ts",
@@ -26,6 +26,7 @@
     "./execution-stream-seal": "./src/execution-stream-seal.ts",
     "./quarantined-session-recovery": "./src/quarantined-session-recovery.ts",
     "./http-publication-client": "./src/http-publication-client.ts",
+    "./session-control-outbox": "./src/session-control-outbox.ts",
     "./session-publication-ingress": "./src/session-publication-ingress.ts",
     "./worker-execution-log": "./src/worker-execution-log.ts"
   },

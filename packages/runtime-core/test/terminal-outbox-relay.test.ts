@@ -3,8 +3,8 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "@pi-cloud/protocol";
 import { expect, it, vi } from "vitest";
-import { AcceptedFactTerminalOutboxRelay } from "../src/accepted-fact-terminal-outbox-relay.ts";
-import type { AcceptedFact } from "../src/accepted-fact.ts";
+import { SessionOutboxRelay } from "../src/session-outbox-relay.ts";
+import type { SessionLogFact } from "../src/accepted-fact.ts";
 
 it("claims bounded Session heads without holding a connection during delivery and retries stable Facts", async () => {
   const pg = await PGlite.create();
@@ -76,18 +76,18 @@ it("claims bounded Session heads without holding a connection during delivery an
     const delivered: string[] = [];
     const bus = {
       checkHealth: async () => {},
-      append: async (fact: AcceptedFact) => {
+      append: async (fact: SessionLogFact) => {
         delivered.push(fact.factId);
         if (fact.factId === a1) await hold;
         return { factId: fact.factId, durable: true as const };
       },
     };
-    const first = new AcceptedFactTerminalOutboxRelay({
+    const first = new SessionOutboxRelay({
       database: db,
       notificationConnectionString,
       bus,
     });
-    const second = new AcceptedFactTerminalOutboxRelay({
+    const second = new SessionOutboxRelay({
       database: db,
       notificationConnectionString,
       bus,
@@ -106,12 +106,12 @@ it("claims bounded Session heads without holding a connection during delivery an
     let fail = true;
     const retryBus = {
       checkHealth: async () => {},
-      append: vi.fn(async (fact: AcceptedFact) => {
+      append: vi.fn(async (fact: SessionLogFact) => {
         if (fail) throw new Error("ACK lost");
         return { factId: fact.factId, durable: true as const };
       }),
     };
-    const retry = new AcceptedFactTerminalOutboxRelay({
+    const retry = new SessionOutboxRelay({
       database: db,
       notificationConnectionString,
       bus: retryBus,
@@ -139,7 +139,7 @@ it("claims bounded Session heads without holding a connection during delivery an
       failStale = reject;
     });
     const staleBus = { checkHealth: async () => {}, append: vi.fn(async () => stalled) };
-    const staleRelay = new AcceptedFactTerminalOutboxRelay({
+    const staleRelay = new SessionOutboxRelay({
       database: db,
       notificationConnectionString,
       bus: staleBus,
@@ -183,7 +183,7 @@ it("recovers relay health after a transient PG error even when the Outbox is emp
     maxConnections: 1,
   });
   const append = vi.fn();
-  const relay = new AcceptedFactTerminalOutboxRelay({
+  const relay = new SessionOutboxRelay({
     database: db,
     notificationConnectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
     bus: { checkHealth: async () => {}, append },

@@ -1,5 +1,5 @@
-import { parsePiCloudEvent, parsePathProbe } from "@pi-cloud/protocol";
-import type { AcceptedFact } from "./accepted-fact.ts";
+import { parsePiCloudEvent, parsePathProbe, parseSessionControlChange } from "@pi-cloud/protocol";
+import type { AcceptedFact, SessionLogFact } from "./accepted-fact.ts";
 import { isNativeAppendFact, toolCommandForFact } from "./tool-invocation-fact.ts";
 export {
   ACCEPTED_FACT_TOPIC,
@@ -20,6 +20,13 @@ export function kafkaProducerLane(sessionId: string, lanes: number): number {
 
 export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
   return parseAcceptedFact(JSON.parse(Buffer.isBuffer(value) ? value.toString("utf8") : value));
+}
+
+export function parseSessionLogFact(value: string | Buffer): SessionLogFact {
+  const parsed = JSON.parse(value.toString());
+  return parsed?.kind === "control_change"
+    ? parseSessionControlChange(parsed)
+    : parseAcceptedFact(parsed);
 }
 
 export function parseAcceptedFact(value: unknown): AcceptedFact {

@@ -88,6 +88,7 @@ import type {
 } from "./sandbox-http-service-registry.ts";
 
 export type SandboxControllerOptions = {
+  controlReady?: () => boolean;
   bindings: SandboxBindings;
   workspaceCleanupWake?: WorkspaceCleanupWake;
   inputImages?: ImageAttachmentStore;
@@ -378,6 +379,7 @@ export class SandboxController {
   #workspaceCleanup: Promise<void> | undefined;
   #closing: Promise<void> | undefined;
   readonly #runtimeHealth: RuntimeHealthMonitor;
+  readonly #controlReady: () => boolean;
   #developmentEnvironmentRecovery: Promise<number> | undefined;
 
   constructor(options: SandboxControllerOptions) {
@@ -414,24 +416,24 @@ export class SandboxController {
     );
     this.#clock = options.clock ?? Date.now;
     this.#imageRevision = options.imageRevision;
+    this.#controlReady = options.controlReady ?? (() => true);
     this.#onMaintenanceError = options.onMaintenanceError;
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(this.#imageRevision)) {
       throw new TypeError("Workspace runtime image revision is invalid");
     }
-    this.#reaper = setInterval(
-      () =>
-        void Promise.all([
-          this.recoverPersistentDevelopmentEnvironments(),
-          this.#reapOrphanedTerminals(),
-          this.#markUnrecoverableDevelopmentEnvironments(),
-        ]).catch((error: unknown) => this.#onMaintenanceError?.(error)),
-      30_000,
-    );
+    this.#reaper = setInterval(() => {
+      if (!this.#controlReady()) return;
+      void Promise.all([
+        this.recoverPersistentDevelopmentEnvironments(),
+        this.#reapOrphanedTerminals(),
+        this.#markUnrecoverableDevelopmentEnvironments(),
+      ]).catch((error: unknown) => this.#onMaintenanceError?.(error));
+    }, 30_000);
     this.#reaper.unref();
     this.#cleanupLoop = runWorkspaceRuntimeCleanup(
       options.workspaceCleanupWake ?? new PostgresQueueWake(),
       this.#cleanupController.signal,
-      () => this.reapWorkspaceRuntimes(),
+      () => (this.#controlReady() ? this.reapWorkspaceRuntimes() : Promise.resolve()),
       (error) => this.#onMaintenanceError?.(error),
     );
     this.#runtimeHealth = new RuntimeHealthMonitor({
@@ -1437,6 +1439,12 @@ export class SandboxController {
     request: ToolSandboxCreateRequest,
     signal?: AbortSignal,
   ): Promise<ToolSandboxCreateResponse> {
+    if (!this.#controlReady())
+      throw new SandboxControlError(
+        "workspace_runtime_unavailable",
+        "Sandbox control is starting",
+        true,
+      );
     this.#stateRepository.assertLocalOwnership();
     this.#assertCreateEnvironment(request);
     return this.#serializeWorkspaceRuntimeProvisioning(request.assignment, async () => {

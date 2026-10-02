@@ -16,6 +16,7 @@ import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-regis
 import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
 import { WorkflowCommandDispatcher } from "./workflow-command-dispatcher.ts";
 import { PostgresSandboxBindings } from "./sandbox-bindings.ts";
+import { SandboxBindingView } from "./sandbox-binding-view.ts";
 import { ToolCommandDispatcher, httpToolLogDelivery } from "./tool-command-dispatcher.ts";
 import { loadSandboxControlConfig } from "./sandbox-control-config.ts";
 import { ExecutionPathProbes } from "./execution-path-probes.ts";
@@ -30,6 +31,8 @@ export async function createSandboxControl(options: {
   managementToken: string;
   metrics: PiCloudMetrics;
   images?: ConfiguredImageAttachments;
+  publishBindingChanges(ids: readonly string[]): Promise<void>;
+  partitionFor(sessionId: string): number;
 }) {
   const config = await loadSandboxControlConfig();
   const { database, instanceId, metrics } = options;
@@ -38,6 +41,8 @@ export async function createSandboxControl(options: {
     controllerOwns = false,
     serverOwns = false;
   let closing: Promise<void> | undefined;
+  let started = false;
+  let starting = false;
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       const errors: unknown[] = [];
@@ -107,9 +112,15 @@ export async function createSandboxControl(options: {
       config.sandboxDomainId,
       instanceId,
       config.advertisedBaseUrl,
+      options.publishBindingChanges,
     );
+    const bindingView = new SandboxBindingView({
+      source: bindings,
+      partitionFor: options.partitionFor,
+    });
     const controller = new SandboxController({
       bindings,
+      controlReady: () => started,
       workspaceCleanupWake: wake,
       ...(options.images ? { inputImages: options.images.store } : {}),
       provider,
@@ -178,14 +189,17 @@ export async function createSandboxControl(options: {
         instanceId,
         token: options.managementToken,
         receive,
-        checkHealth: () => workflows.checkHealth(),
+        checkHealth: () => {
+          if (!started) throw new Error("Sandbox control publication is not ready");
+          return workflows.checkHealth();
+        },
       },
     });
     serverOwns = true;
     cleanup.push(() => server.close());
     const remoteWorkflow = httpToolLogDelivery(options.managementToken);
     const probes = new ExecutionPathProbes({
-      routes: bindings,
+      routes: bindingView,
       cube: client,
       sample: (stage, ms, outcome) =>
         metrics.sandboxDuration.observe({ operation: `path_${stage}`, outcome }, ms / 1000),
@@ -221,7 +235,7 @@ export async function createSandboxControl(options: {
     cleanup.push(() => probes.close());
     const dispatcher = new ToolCommandDispatcher({
       onDispatch: (command, route) => probes.rememberTool(command, route),
-      routes: bindings,
+      routes: bindingView,
       cube: client,
       metrics,
       workflow: Object.assign(
@@ -240,11 +254,11 @@ export async function createSandboxControl(options: {
       quarantine: async (target) => {
         // Failed scoped stopping is a control-plane resource decision. Preserve
         // identity/capsule and quota until explicit recovery confirms absence.
-        await database.transaction().execute(async (trx) => {
+        const affectedBindings = await database.transaction().execute(async (trx) => {
           const affected = await trx
             .updateTable("sandbox_tool_bindings")
             .set({ dispatch_closed: true })
-            .returning("snapshot")
+            .returning(["binding_id", "snapshot"])
             .where(sql<string>`descriptor->'target'->>'sandboxId'`, "=", target.sandboxId)
             .where(sql<string>`descriptor->'target'->>'apiUrl'`, "=", target.apiUrl)
             .where(sql<string>`descriptor->'target'->>'bootId'`, "=", target.bootId)
@@ -256,7 +270,7 @@ export async function createSandboxControl(options: {
                 .filter((id): id is string => typeof id === "string"),
             ),
           ];
-          if (!ids.length) return;
+          if (!ids.length) return [];
           await trx
             .updateTable("workspace_runtimes")
             .set({
@@ -277,7 +291,9 @@ export async function createSandboxControl(options: {
             .where("id", "in", ids)
             .where("state", "not in", ["released", "releasing", "failed"])
             .execute();
+          return affected.map((row) => row.binding_id);
         });
+        await options.publishBindingChanges(affectedBindings);
         await controller.quarantineExecutionTarget(target);
       },
     });
@@ -291,10 +307,21 @@ export async function createSandboxControl(options: {
       batchSize: config.workspaceDeletionReaperBatchSize,
     });
     cleanup.push(() => reaper.close());
-    await controller.recoverPersistentDevelopmentEnvironments();
     await server.listen();
-    reaper.start();
-    return { controller, dispatcher, probes, close };
+    return {
+      controller,
+      dispatcher,
+      probes,
+      bindingView,
+      close,
+      start: async () => {
+        if (starting) throw new Error("Sandbox control already started");
+        starting = true;
+        await controller.recoverPersistentDevelopmentEnvironments();
+        started = true;
+        reaper.start();
+      },
+    };
   } catch (error) {
     try {
       await close();

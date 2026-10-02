@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { MAX_EXECUTION_FACT_BYTES } from "@pi-cloud/protocol";
+import { MAX_EXECUTION_FACT_BYTES, parseSessionControlChange } from "@pi-cloud/protocol";
 import type { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
 import { parseAcceptedFact } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import type { ExecutionPublication } from "@pi-cloud/runtime-core/accepted-fact";
@@ -20,6 +20,7 @@ export class SessionPublicationService {
       | "openPublication"
       | "acceptSeal"
       | "appendPublication"
+      | "acceptControl"
     >,
   ) {}
 
@@ -47,7 +48,7 @@ export class SessionPublicationService {
         return reply.code(503).send({ ready: false });
       }
     });
-    for (const action of ["open", "append", "seal"] as const) {
+    for (const action of ["open", "append", "seal", "control"] as const) {
       server.post(
         `${PUBLICATION_PATH}/${action}`,
         { bodyLimit: action === "open" ? 8192 : MAX_EXECUTION_FACT_BYTES },
@@ -81,6 +82,8 @@ export class SessionPublicationService {
               await this.projector.openPublication(value as ExecutionPublication);
               return { installed: true };
             }
+            if (action === "control")
+              return await this.projector.acceptControl(parseSessionControlChange(value));
             let fact;
             try {
               fact = parseAcceptedFact(value);

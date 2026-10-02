@@ -1,6 +1,10 @@
 import { Agent, fetch as internalFetch } from "undici";
 import { setTimeout as delay } from "node:timers/promises";
-import { MAX_EXECUTION_FACT_BYTES } from "@pi-cloud/protocol";
+import {
+  MAX_EXECUTION_FACT_BYTES,
+  type SessionControlChange,
+  type SessionControlPublisher,
+} from "@pi-cloud/protocol";
 import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
 import type {
   AcceptedFact,
@@ -12,7 +16,7 @@ import type {
 export const PUBLICATION_PATH = "/internal/v1/session-publication";
 
 /** A pooled private HTTP hop; a successful response is the Kafka commit ACK. */
-export class HttpPublicationClient implements AcceptedFactBus {
+export class HttpPublicationClient implements AcceptedFactBus, SessionControlPublisher {
   readonly #dispatcher = new Agent({ connections: 16 });
   readonly #owners = new Map<string, string>();
   readonly #scopes = new Map<string, ExecutionPublication>();
@@ -24,6 +28,15 @@ export class HttpPublicationClient implements AcceptedFactBus {
     await this.#request("open", publication.scope.piSessionId, publication, true, signal);
     signal?.throwIfAborted();
     this.#scopes.set(publication.scope.runId, structuredClone(publication));
+  }
+
+  async publishControl(change: SessionControlChange): Promise<AcceptedFactReceipt> {
+    return (await this.#request(
+      "control",
+      change.scope.piSessionId,
+      change,
+      false,
+    )) as AcceptedFactReceipt;
   }
 
   async append(fact: AcceptedFact): Promise<AcceptedFactReceipt> {
@@ -53,7 +66,7 @@ export class HttpPublicationClient implements AcceptedFactBus {
   }
 
   async #request(
-    action: "open" | "append" | "seal",
+    action: "open" | "append" | "seal" | "control",
     sessionId: string,
     value: unknown,
     opening: boolean,

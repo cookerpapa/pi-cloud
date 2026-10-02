@@ -34,7 +34,7 @@ vi.mock("@pi-cloud/event-log", async (original) => ({
 vi.mock("../src/kafka-accepted-fact.ts", () => ({
   ACCEPTED_FACT_TOPIC: "test",
   kafkaProducerLane: () => 0,
-  parseKafkaAcceptedFact: f.parse,
+  parseSessionLogFact: f.parse,
 }));
 vi.mock("../src/execution-log-topic.ts", () => ({
   ExecutionLogTopic: class {
@@ -54,8 +54,8 @@ vi.mock("../src/execution-stream-projection.ts", async (original) => ({
     observes = f.observes;
   },
 }));
-vi.mock("../src/accepted-fact-terminal-outbox-relay.ts", () => ({
-  AcceptedFactTerminalOutboxRelay: class {
+vi.mock("../src/session-outbox-relay.ts", () => ({
+  SessionOutboxRelay: class {
     start() {
       f.start("relay");
     }

@@ -10,6 +10,7 @@ import { toolReplyTopic } from "@pi-cloud/event-log";
 import { ExecutionPathProbes } from "../src/execution-path-probes.ts";
 import { executionTargetId } from "../src/sandbox-execution.ts";
 import type { SandboxBinding, SandboxBindingReader } from "../src/sandbox-bindings.ts";
+import { SandboxBindingView } from "../src/sandbox-binding-view.ts";
 
 function fixture() {
   let now = Date.now();
@@ -142,6 +143,32 @@ it("publishes Projector status immediately and shares one guest probe across VM 
       2,
     );
   } finally {
+    await f.probes.close();
+  }
+});
+
+it("forwards a guest probe from the same memory view without a binding SELECT", async () => {
+  const f = fixture();
+  const source = {
+    loadView: vi.fn(async () => [
+      { ...f.first, ...f.scope, revision: "1" },
+      { ...f.second, ...f.sibling, revision: "2" },
+    ]),
+    readChange: vi.fn(async () => undefined),
+    closeScope: async () => {},
+    isAlive: async () => true,
+  };
+  const routes = new SandboxBindingView({ source, partitionFor: () => 0 });
+  await routes.load([0], () => true);
+  const probes = new ExecutionPathProbes({ ...f.probes.options, routes });
+  probes.observeWith(f.observer);
+  try {
+    probes.consume(f.fact);
+    await vi.waitFor(() => expect(f.submitProbe).toHaveBeenCalledOnce());
+    expect(f.find).not.toHaveBeenCalled();
+    expect(source.readChange).not.toHaveBeenCalled();
+  } finally {
+    await probes.close();
     await f.probes.close();
   }
 });

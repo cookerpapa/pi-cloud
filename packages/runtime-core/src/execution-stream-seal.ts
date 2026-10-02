@@ -1,9 +1,11 @@
 import type { Database } from "@pi-cloud/database";
-import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC, type PiCloudEventBody } from "@pi-cloud/protocol";
+import {
+  SESSION_TERMINAL_EVENT_OUTBOX_TOPIC,
+  SESSION_CONTROL_NOTIFICATION_CHANNEL,
+  type PiCloudEventBody,
+} from "@pi-cloud/protocol";
 import { sql, type Transaction } from "kysely";
 import type { AcceptedExecutionSealFact } from "./accepted-fact.ts";
-
-export const TERMINAL_OUTBOX_NOTIFICATION_CHANNEL = "pi_cloud_terminal_outbox";
 
 export type RequestExecutionStreamSealInput = {
   tenantId: string;
@@ -94,6 +96,6 @@ export async function requestExecutionStreamSeal(
   await transaction
     .with("queued_seal", () => queuedSeal)
     .selectFrom("queued_seal")
-    .select(sql`pg_notify(${TERMINAL_OUTBOX_NOTIFICATION_CHANNEL}, '')`.as("notification"))
+    .select(sql`pg_notify(${SESSION_CONTROL_NOTIFICATION_CHANNEL}, '')`.as("notification"))
     .executeTakeFirstOrThrow();
 }

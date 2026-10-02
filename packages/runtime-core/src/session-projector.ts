@@ -4,10 +4,16 @@ import { KafkaLogConsumer } from "@pi-cloud/event-log";
 import {
   ACCEPTED_FACT_TOPIC,
   kafkaProducerLane,
-  parseKafkaAcceptedFact,
+  parseSessionLogFact,
 } from "./kafka-accepted-fact.ts";
 import { ExecutionStreamProjector, factEvents } from "./execution-stream-projection.ts";
-import type { AcceptedExecutionSealFact, ExecutionPublication } from "./accepted-fact.ts";
+import type {
+  AcceptedExecutionSealFact,
+  ExecutionPublication,
+  SessionLogFact,
+} from "./accepted-fact.ts";
+import type { SessionControlChange } from "@pi-cloud/protocol";
+import { assertCommittedControlChange } from "./session-control-outbox.ts";
 import type { ProducerCapacity } from "@pi-cloud/event-log";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { ExecutionLogTopic, type ExecutionLogTopicOptions } from "./execution-log-topic.ts";
@@ -18,9 +24,9 @@ import {
 import { PostgresPublicationControl } from "./postgres-publication-control.ts";
 import { HttpPublicationClient } from "./http-publication-client.ts";
 import { SessionLiveView } from "./session-live-view.ts";
-import { AcceptedFactTerminalOutboxRelay } from "./accepted-fact-terminal-outbox-relay.ts";
+import { SessionOutboxRelay } from "./session-outbox-relay.ts";
 import { KafkaSafeRetention } from "./kafka-safe-retention.ts";
-import { loadFactReplayOffsets } from "./accepted-fact-recovery.ts";
+import { loadFactReplayOffsets, recordFactProjection } from "./accepted-fact-recovery.ts";
 import type { AcceptedFact } from "./accepted-fact.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { toolCommandForFact } from "./tool-invocation-fact.ts";
@@ -33,9 +39,9 @@ export class SessionProjector {
   readonly eventHub;
   readonly observations: RunObservations;
   readonly #observationSweep: NodeJS.Timeout;
-  readonly #consumer: KafkaLogConsumer<AcceptedFact>;
+  readonly #consumer: KafkaLogConsumer<SessionLogFact>;
   readonly #topic: ExecutionLogTopic;
-  readonly #relay: AcceptedFactTerminalOutboxRelay;
+  readonly #relay: SessionOutboxRelay;
   readonly #retention: KafkaSafeRetention;
   readonly #projection: ExecutionStreamProjector;
   readonly publication: SessionPublicationIngress;
@@ -54,6 +60,12 @@ export class SessionProjector {
       notificationConnectionString: string;
       advertisedBaseUrl: string;
       publicationToken: string;
+      controlChanges?: {
+        load(partitions: readonly number[], current: () => boolean): Promise<void>;
+        reset(): void;
+        prepare(change: SessionControlChange, current: () => boolean): Promise<void>;
+        consume(change: SessionControlChange, current: () => boolean): Promise<void>;
+      };
       executionProbes?: {
         consume(fact: import("@pi-cloud/protocol").PathProbe, current?: () => boolean): void;
         reset(): void;
@@ -98,6 +110,7 @@ export class SessionProjector {
     this.#observationSweep = setInterval(() => this.observations.sweep(), 60_000);
     this.#observationSweep.unref();
     this.#projection = new ExecutionStreamProjector(options.database);
+    let currentControlAssignment: () => boolean = () => false;
     this.#consumer = new KafkaLogConsumer({
       brokers: options.brokers,
       topic,
@@ -106,20 +119,36 @@ export class SessionProjector {
         PREFIX + Buffer.from(new URL(options.advertisedBaseUrl).toString()).toString("base64url"),
       groupRecovery: true,
       orderedEffects: true,
-      decode: parseKafkaAcceptedFact,
-      replayOffsets: (bounds) => loadFactReplayOffsets(options.database, topic, bounds),
+      decode: parseSessionLogFact,
+      replayOffsets: async (bounds) => {
+        // Kafka bounds were captured before PG. Read the routing snapshot AFTER
+        // choosing the recovery floor: later changes are necessarily replayed.
+        // Loading before bounds could skip a change committed during handoff.
+        const current = currentControlAssignment;
+        const offsets = await loadFactReplayOffsets(options.database, topic, bounds);
+        if (current())
+          await options.controlChanges?.load(
+            bounds.map((b) => b.partition),
+            current,
+          );
+        return offsets;
+      },
       onReset: () => {
         this.#projection.reset();
         this.eventStore.reset();
         this.observations.reset();
         options.executionProbes?.reset();
+        options.controlChanges?.reset();
       },
       onRevoked: () => {
+        currentControlAssignment = () => false;
+        options.controlChanges?.reset();
         const closing: Promise<void>[] = [];
         for (let p = 0; p < options.partitions; p++) closing.push(this.publication.revoke(p));
         this.#publicationRetirement = Promise.allSettled(closing);
       },
       onAssigned: async (partitions, current) => {
+        currentControlAssignment = current;
         await this.#publicationRetirement;
         for (const partition of partitions) {
           if (!current()) return;
@@ -131,7 +160,16 @@ export class SessionProjector {
           this.publication.installPartition(partition, writer);
         }
       },
-      handler: async (record, current, commitBeforeEffect) => {
+      handler: async (raw, current, commitBeforeEffect) => {
+        if (raw.fact.kind === "control_change") {
+          if (current?.() === false) return;
+          if (!options.controlChanges) throw new Error("Session control views are not installed");
+          await options.controlChanges.consume(raw.fact, current ?? (() => true));
+          if (current?.() !== false)
+            await options.database.transaction().execute((tx) => recordFactProjection(tx, raw));
+          return;
+        }
+        const record = raw as KafkaAcceptedFactRecord;
         const timing = new ProjectionTiming(options.metrics);
         let failure: unknown;
         try {
@@ -194,13 +232,14 @@ export class SessionProjector {
         }
       },
     });
-    this.#relay = new AcceptedFactTerminalOutboxRelay({
+    this.#relay = new SessionOutboxRelay({
       database: options.database,
       notificationConnectionString: options.notificationConnectionString,
       bus: {
         append: (fact) => {
-          if (fact.kind !== "execution_seal") throw new Error("Control Outbox must contain a seal");
-          return this.publishSeal(fact);
+          return fact.kind === "control_change"
+            ? this.publishControl(fact)
+            : this.publishSeal(fact);
         },
         checkHealth: () => this.#topic.checkHealth(),
       },
@@ -267,6 +306,25 @@ export class SessionProjector {
     if (!owner || !this.#consumer.ownsPartition(partition))
       throw new PublicationIngressRejected("not_owner");
     return this.#publicationControl.seal(owner, fact);
+  }
+  async publishControl(change: SessionControlChange) {
+    const partition = this.publicationPartition(change.scope.piSessionId);
+    if (!this.publication.ownership(partition) || !this.#consumer.ownsPartition(partition))
+      return this.#publicationClient.publishControl(change);
+    return this.acceptControl(change);
+  }
+  async acceptControl(change: SessionControlChange) {
+    const partition = this.publicationPartition(change.scope.piSessionId);
+    const owner = this.publication.ownership(partition);
+    if (!owner || !this.#consumer.ownsPartition(partition))
+      throw new PublicationIngressRejected("not_owner");
+    const current = () =>
+      this.publication.ownership(partition) === owner && this.#consumer.ownsPartition(partition);
+    await assertCommittedControlChange(this.options.database, change);
+    if (!this.options.controlChanges) throw new Error("Session control views are not installed");
+    await this.options.controlChanges.prepare(change, current);
+    if (!current()) throw new PublicationIngressRejected("not_owner");
+    return this.publication.control(owner, change);
   }
   async start(): Promise<void> {
     await this.#topic.start();

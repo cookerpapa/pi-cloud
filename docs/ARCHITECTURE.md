@@ -229,7 +229,7 @@ still drain. A replacement execution uses a new Run and waits for projected
 closure. The HTTP success receipt is Kafka durable commit, not volatile acceptance.
 Lost commit responses never trigger automatic semantic publication replay.
 
-The code-owned topic is `pi-cloud.execution-log.v12`. Physical Session ID remains
+The code-owned topic is `pi-cloud.execution-log.v13`. Physical Session ID remains
 the immutable key and fixes the partition; do not change the partition count in
 place. One Kafka transactional producer identity per partition fences replaced
 ingress processes. Transactions use RF3/acks-all and include current consumer-group
@@ -495,6 +495,17 @@ and stores bounded immutable transport metadata (Cube API/node/boot and guest
 initialization). Pure chat still allocates no VM. The Projector confirms its
 monotonic Kafka dispatch commit before handing a fixed Tool directly to Cube.
 It waits for bounded takeover, never the duration of Bash execution.
+
+Binding creation, closure, deletion and controller adoption co-commit bounded
+control-change references with PG state. They publish through the same Session
+ingress and partition producer. Projector maintains an indexed binding view;
+ordinary Tool/probe routing reads memory. PG reads belong to control publication
+admission, consumed changes and bootstrap. A closure installs current closed
+state at the partition owner before its Kafka publication, so a delayed close
+event cannot permit more queued dispatch after acknowledged revocation.
+Bootstrap captures Kafka bounds before reading PG routes. Binding identities
+never reopen or silently retarget a replacement VM. These facts do not become
+Pi Entries or model context. See [ADR-0212](adr/0212-ordered-control-read-models.md).
 
 Cubelet owns native containerd process handles and operation-scoped guest cgroups.
 It rejects duplicate/closed scopes in memory, without querying PG Run leases.

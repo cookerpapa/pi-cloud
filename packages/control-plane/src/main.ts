@@ -13,6 +13,8 @@ import {
 } from "./http-supervisor-management.ts";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
+import { kafkaProducerLane } from "@pi-cloud/runtime-core/kafka-accepted-fact";
+import { SessionControlOutbox } from "@pi-cloud/runtime-core/session-control-outbox";
 import { createSandboxControl } from "@pi-cloud/sandbox-control/runtime";
 import {
   PostgresSupervisorCredentialAuthorizer,
@@ -131,11 +133,19 @@ export async function startControlPlane(): Promise<void> {
         }),
       );
     }
+    const controlChanges = new SessionControlOutbox(database, {
+      publishControl: async (change) => {
+        if (!agentEvents) throw new Error("Session publication is not ready");
+        return agentEvents.publishControl(change);
+      },
+    });
     sandboxControl = await createSandboxControl({
       database,
       instanceId: controlPlaneInstanceId,
       managementToken: config.supervisorManagementToken,
       metrics: observability.metrics,
+      publishBindingChanges: (ids) => controlChanges.flushEntities("sandbox_binding", ids),
+      partitionFor: (sessionId) => kafkaProducerLane(sessionId, config.kafkaPartitions),
       ...(images ? { images } : {}),
     });
     const workspaceBrowserClient = new ReplicatedSandboxControlClient({
@@ -197,6 +207,7 @@ export async function startControlPlane(): Promise<void> {
       subagentCommands: subagents,
       toolCommands: sandboxControl.dispatcher,
       executionProbes: sandboxControl.probes,
+      controlChanges: sandboxControl.bindingView,
       partitions: config.kafkaPartitions,
       replicas: config.kafkaReplicas,
       capacity: config.producerCapacity,
@@ -441,6 +452,7 @@ export async function startControlPlane(): Promise<void> {
       },
     });
     await runtime.listen(config.port, config.host);
+    await sandboxControl.start();
     const sourceControlFailure = (source: string, error: unknown): void =>
       operationalLog({
         service: "pi-cloud-control-plane",

@@ -12,6 +12,7 @@ import {
   type CubeSandboxRuntimeClient,
 } from "../src/cubesandbox-runtime-client.ts";
 import type { SandboxBinding } from "../src/sandbox-bindings.ts";
+import { SandboxBindingView } from "../src/sandbox-binding-view.ts";
 
 function fixture() {
   const scope = {
@@ -130,6 +131,35 @@ function fixture() {
 const record = (fact: any, offset = 0n) => ({ fact, topic: "session-log", partition: 0, offset });
 
 describe("Projector native Cube handoff", () => {
+  it("dispatches repeated fixed Tools from the binding view without a per-Tool lookup", async () => {
+    const f = fixture();
+    const source = {
+      loadView: vi.fn(async () => [
+        {
+          ...f.route,
+          tenantId: f.command.scope.tenantId,
+          runId: f.command.scope.runId,
+          writerId: f.command.scope.writerId,
+          piSessionId: f.command.scope.piSessionId,
+          revision: "1",
+        },
+      ]),
+      readChange: vi.fn(async () => undefined),
+      closeScope: f.closeScope,
+      isAlive: async () => true,
+    };
+    const routes = new SandboxBindingView({ source, partitionFor: () => 0 });
+    await routes.load([0], () => true);
+    const router = new ToolCommandDispatcher({ ...f.options, routes });
+    for (let i = 0; i < 100; i++)
+      await router.consume(
+        record({ ...f.command, request: { ...f.command.request, operationId: randomUUID() } }),
+      );
+    expect(f.cube.submitTool).toHaveBeenCalledTimes(100);
+    expect(f.find).not.toHaveBeenCalled();
+    expect(source.readChange).not.toHaveBeenCalled();
+    expect(source.loadView).toHaveBeenCalledOnce();
+  });
   it("ignores display/results without SQL and hands fixed Tools directly to Cube", async () => {
     const f = fixture();
     const observation = { kind: "agent_event", scope: f.command.scope };

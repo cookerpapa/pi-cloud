@@ -6,8 +6,8 @@ import {
   PostgresNotificationWake,
   type Database,
 } from "@pi-cloud/database";
-import { AcceptedFactTerminalOutboxRelay } from "../../runtime-core/src/accepted-fact-terminal-outbox-relay.ts";
-import { TERMINAL_OUTBOX_NOTIFICATION_CHANNEL } from "../../runtime-core/src/execution-stream-seal.ts";
+import { SessionOutboxRelay } from "../../runtime-core/src/session-outbox-relay.ts";
+import { SESSION_CONTROL_NOTIFICATION_CHANNEL } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
@@ -807,7 +807,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       const f = await fixture(),
         wake = new PostgresNotificationWake(
           notificationConnectionString,
-          TERMINAL_OUTBOX_NOTIFICATION_CHANNEL,
+          SESSION_CONTROL_NOTIFICATION_CHANNEL,
         );
       wake.refresh();
       await vi.waitFor(() => expect(wake.generation).toBeGreaterThan(0));
@@ -1008,7 +1008,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       original = executor.executeQuery.bind(executor);
     let held = false;
     const notify = vi.spyOn(PostgresNotificationWake.prototype, "notify");
-    const relay = new AcceptedFactTerminalOutboxRelay({
+    const relay = new SessionOutboxRelay({
       database: db,
       notificationConnectionString,
       pollIntervalMs: 5000,
@@ -1059,7 +1059,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
   it("keeps polling during listener loss and reconnects before shutdown", async () => {
     const f = await fixture(),
       appended: string[] = [];
-    const relay = new AcceptedFactTerminalOutboxRelay({
+    const relay = new SessionOutboxRelay({
       database: db,
       notificationConnectionString,
       pollIntervalMs: 20,
@@ -1074,7 +1074,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const listeners = () =>
       sql<{
         pid: number;
-      }>`select pid from pg_stat_activity where datname=${name} and application_name=${TERMINAL_OUTBOX_NOTIFICATION_CHANNEL}`.execute(
+      }>`select pid from pg_stat_activity where datname=${name} and application_name=${SESSION_CONTROL_NOTIFICATION_CHANNEL}`.execute(
         db,
       );
     try {

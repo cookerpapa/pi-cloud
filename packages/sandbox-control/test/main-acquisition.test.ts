@@ -165,6 +165,8 @@ async function start() {
     database: database as any,
     instanceId: "test-controller",
     managementToken: "m".repeat(64),
+    publishBindingChanges: async () => {},
+    partitionFor: () => 0,
     metrics: {} as any,
   });
 }
