@@ -102,6 +102,7 @@ export class OpenSessionEventStream {
 
   async pipe(response: ServerResponse): Promise<void> {
     let lastSentSequence = this.#highWaterMark;
+    let lastQueueVersion = -1n;
     const close = (): void => this.#subscription.close();
     response.once("close", close);
     try {
@@ -113,6 +114,21 @@ export class OpenSessionEventStream {
           continue;
         }
         if (item === undefined) return;
+        if (item.inputQueue) {
+          const version = BigInt(item.inputQueue.viewVersion);
+          if (version <= lastQueueVersion) continue;
+          if (
+            !(await this.#sendValue(
+              response,
+              { type: "input.queue", queue: item.inputQueue },
+              "event",
+              "input.queue",
+            ))
+          )
+            return;
+          lastQueueVersion = version;
+          continue;
+        }
         if (item.observation) {
           if (
             this.#observations.accept(item.observation) &&

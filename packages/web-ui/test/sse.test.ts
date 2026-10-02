@@ -14,6 +14,51 @@ const SESSION_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "20000000-0000-4000-8000-000000000001";
 const CREATED_AT = "2026-07-19T00:00:00.000Z";
 
+it("parses a large pushed input queue without consuming transcript sequence", async () => {
+  const controller = new AbortController(),
+    onInputQueue = vi.fn(),
+    onEvent = vi.fn();
+  const queue = {
+    sessionId: SESSION_ID,
+    revision: 1,
+    viewVersion: "19",
+    activeTurnId: null,
+    items: [
+      {
+        turnId: TURN_ID,
+        runId: TURN_ID,
+        text: "x".repeat(90000),
+        mailboxPosition: 1,
+        acceptedAt: CREATED_AT,
+        status: "queued" as const,
+      },
+    ],
+  };
+  const frames: string[] = [];
+  for await (const frame of sessionJsonFrames(snapshot(), "snapshot")) frames.push(frame);
+  for await (const frame of sessionJsonFrames(
+    { type: "input.queue", queue },
+    "event",
+    "input.queue",
+  ))
+    frames.push(frame);
+  frames.push(`event: assistant.text.delta\ndata: ${JSON.stringify(event(1, "formal"))}\n\n`);
+  await streamSessionEvents({
+    sessionId: SESSION_ID,
+    signal: controller.signal,
+    fetchImplementation: async () => new Response(frames.join("")),
+    onSnapshot() {},
+    onStatus() {},
+    onInputQueue,
+    onEvent(value) {
+      onEvent(value);
+      controller.abort();
+    },
+  });
+  expect(onInputQueue).toHaveBeenCalledExactlyOnceWith(queue);
+  expect(onEvent).toHaveBeenCalledExactlyOnceWith(event(1, "formal"));
+});
+
 it("parses activity and path frames separately from sequenced transcript events", async () => {
   const controller = new AbortController(),
     onRunObservation = vi.fn(),

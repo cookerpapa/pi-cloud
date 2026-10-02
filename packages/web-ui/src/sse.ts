@@ -3,6 +3,8 @@ import {
   parseSessionViewSnapshotResource,
   type PiCloudEvent,
   type SessionViewSnapshotResource,
+  parseInputQueueObservation,
+  type InputQueueResource,
 } from "@pi-cloud/protocol";
 import { SESSION_STREAM_MAX_FRAME_BYTES } from "@pi-cloud/protocol";
 import { parseChunked } from "@discoveryjs/json-ext";
@@ -99,6 +101,7 @@ export type StreamSessionEventsOptions = {
   onEvent(event: PiCloudEvent): void;
   onToolProgress?(progress: ToolProgress): void;
   onRunObservation?(observation: RunObservation): void;
+  onInputQueue?(queue: InputQueueResource): void;
   onStatus(status: SessionStreamStatus): void;
   fetchImplementation?: FetchImplementation;
   retryDelayMs?: number;
@@ -191,6 +194,16 @@ async function consumeResponse(
       }
       if (!snapshotReceived) {
         throw new SessionStreamError("SSE live event arrived before its Session snapshot", false);
+      }
+      if (
+        frame.event === "input.queue" ||
+        (framed && (value as { type?: unknown })?.type === "input.queue")
+      ) {
+        const observation = parseInputQueueObservation(value);
+        if (observation.queue.sessionId !== options.sessionId)
+          throw new SessionStreamError("Input queue belongs to another Session", false);
+        options.onInputQueue?.(observation.queue);
+        continue;
       }
       if (frame.event === "tool.progress") {
         const progress = parseToolProgress(value);

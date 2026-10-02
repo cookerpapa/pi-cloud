@@ -1,10 +1,16 @@
-import type { PiCloudEvent, ToolProgress, RunObservation } from "@pi-cloud/protocol";
+import type {
+  PiCloudEvent,
+  ToolProgress,
+  RunObservation,
+  InputQueueResource,
+} from "@pi-cloud/protocol";
 
 export type SessionEventWake = {
   throughSequence: number | null;
   event?: PiCloudEvent;
   progress?: ToolProgress;
   observation?: RunObservation;
+  inputQueue?: InputQueueResource;
 };
 
 type PendingRead = {
@@ -20,6 +26,7 @@ export class SessionEventSubscription {
   #closed = false;
   readonly #progress = new Map<string, ToolProgress>();
   readonly #observations = new Map<string, RunObservation>();
+  #inputQueue: InputQueueResource | undefined;
 
   constructor(
     tenantId: string,
@@ -85,6 +92,7 @@ export class SessionEventSubscription {
     if (this.#closed) return;
     this.#progress.clear();
     this.#observations.clear();
+    this.#inputQueue = undefined;
     this.#push({ throughSequence: null });
   }
 
@@ -112,6 +120,11 @@ export class SessionEventSubscription {
   next(heartbeatMs?: number): Promise<SessionEventWake | "heartbeat" | undefined> {
     const wake = this.#queuedWakes.shift();
     if (wake !== undefined) return Promise.resolve(wake);
+    if (this.#inputQueue) {
+      const inputQueue = this.#inputQueue;
+      this.#inputQueue = undefined;
+      return Promise.resolve({ throughSequence: null, inputQueue });
+    }
     const observation = this.#observations.entries().next().value;
     if (observation) {
       this.#observations.delete(observation[0]);
@@ -148,6 +161,7 @@ export class SessionEventSubscription {
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
+    this.#inputQueue = undefined;
     this.#queuedWakes = [];
     this.#progress.clear();
     this.#observations.clear();
@@ -155,6 +169,19 @@ export class SessionEventSubscription {
     this.#pendingRead = undefined;
     pending?.resolve(undefined);
     this.#onClose(this);
+  }
+
+  notifyInputQueue(inputQueue: InputQueueResource): void {
+    if (this.#closed || this.#queuedWakes.some((w) => w.throughSequence === null)) return;
+    if (inputQueue.sessionId !== this.#sessionId)
+      throw new Error("Input queue belongs to another Session");
+    if (this.#inputQueue && BigInt(this.#inputQueue.viewVersion) > BigInt(inputQueue.viewVersion))
+      return;
+    if (this.#pendingRead) {
+      const pending = this.#pendingRead;
+      this.#pendingRead = undefined;
+      pending.resolve({ throughSequence: null, inputQueue });
+    } else this.#inputQueue = inputQueue;
   }
 }
 
@@ -192,6 +219,17 @@ export class SessionEventHub {
       this.#key(tenantId, observation.sessionId),
     ) ?? [])
       subscription.notifyObservation(observation);
+  }
+  hasSubscribers(tenant: string, session: string): boolean {
+    return (this.#subscriptions.get(this.#key(tenant, session))?.size ?? 0) > 0;
+  }
+  publishInputQueue(tenant: string, queue: InputQueueResource): void {
+    for (const subscriber of this.#subscriptions.get(this.#key(tenant, queue.sessionId)) ?? [])
+      subscriber.notifyInputQueue(queue);
+  }
+  resyncSession(tenant: string, session: string): void {
+    for (const subscriber of this.#subscriptions.get(this.#key(tenant, session)) ?? [])
+      subscriber.resync();
   }
 
   resyncAll(): void {

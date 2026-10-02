@@ -596,6 +596,8 @@ export {
   parseSessionControlChange,
   type SessionControlChange,
   type SessionControlPublisher,
+  type SandboxBindingChange,
+  type InputQueueChange,
 } from "./session-control-change.ts";
 export { normalizeProviderHostedWebSearchAction } from "./hosted-search-action.ts";
 export * from "./tool-command.ts";

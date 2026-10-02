@@ -325,9 +325,20 @@ immediate. The browser does not submit Kafka offsets or Last-Event-ID. A local
 POST which raced with an older snapshot invalidates that UI request, not the Run.
 History opens on the latest 40 Turns; earlier pages use an owned Turn identity.
 Queued inputs and unstarted cancellations do not occupy history pages or Turn
-counts. The composer owns a separate pending-input view, refreshed every two
-seconds while visible, on focus and after input actions. Queue changes do not
-restart the execution SSE stream. Optimistic conflicts preserve the editing draft.
+counts. The composer owns a separate pending-input view. Initial, focus and
+reconnect reads use a current PG snapshot; successful edits reuse their returned
+snapshot. Committed queue changes reach the Session owner through the existing
+Outbox/Kafka path and update watched memory views and unsequenced `input.queue`
+SSE frames. There is no two-second polling. `viewVersion` orders presentation
+snapshots independently of the existing optimistic edit `revision`, including
+Run transitions that change queue membership. Queue changes do not restart the
+execution SSE stream. Optimistic conflicts preserve the editing draft.
+
+Steer reconciliation wakes only the affected Session on control changes,
+canonical input consumption and seals, or a known PG retry deadline. Startup,
+reassignment and bounded-capacity recovery reload durable pending references;
+idle timer ticks do not scan PG. The existing PG claim/backoff and consumption
+transactions still decide delivery, restoration and cancellation.
 Tree jumps load missing pages, and export traverses them. These history anchors
 are not stream recovery cursors.
 

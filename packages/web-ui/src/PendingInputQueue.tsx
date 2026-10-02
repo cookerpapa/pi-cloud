@@ -16,6 +16,7 @@ export function PendingInputQueue({
   sessionId,
   canMutate,
   refreshSignal,
+  streamQueue,
   onSnapshot,
   onRestoreDraft,
 }: {
@@ -23,6 +24,7 @@ export function PendingInputQueue({
   sessionId: string;
   canMutate: boolean;
   refreshSignal: string;
+  streamQueue: InputQueueResource | null;
   onSnapshot: (queue: InputQueueResource) => void;
   onRestoreDraft: (text: string, uploads: UserUpload[]) => boolean | void;
 }) {
@@ -49,7 +51,7 @@ export function PendingInputQueue({
       if (
         !mounted.current ||
         next.sessionId !== sessionId ||
-        (current.current && next.revision < current.current.revision)
+        (current.current && BigInt(next.viewVersion) < BigInt(current.current.viewVersion))
       )
         return;
       const same =
@@ -97,23 +99,19 @@ export function PendingInputQueue({
   );
   useEffect(() => {
     mounted.current = true;
-    const controller = new AbortController();
-    const tick = () => {
-      if (!document.hidden) void refresh(controller.signal);
-    };
-    const timer = setInterval(tick, 2000);
     const focus = () => {
-      void refresh(controller.signal, true);
+      void refresh(undefined, true);
     };
     window.addEventListener("focus", focus);
     return () => {
       mounted.current = false;
-      controller.abort();
       readAbort.current?.abort();
-      clearInterval(timer);
       window.removeEventListener("focus", focus);
     };
   }, [refresh]);
+  useEffect(() => {
+    if (streamQueue) apply(streamQueue);
+  }, [streamQueue, apply]);
   useEffect(() => {
     void refresh(undefined, true);
   }, [refresh, refreshSignal]);
@@ -135,6 +133,7 @@ export function PendingInputQueue({
     readAbort.current?.abort();
     setBusy(turnId);
     setError(null);
+    let succeeded = false;
     try {
       let result;
       try {
@@ -145,6 +144,7 @@ export function PendingInputQueue({
         result = await api.mutateQueuedInput(sessionId, turnId, request, key);
       }
       apply(result.queue);
+      succeeded = true;
       return mounted.current;
     } catch (cause) {
       if (mounted.current)
@@ -158,7 +158,7 @@ export function PendingInputQueue({
       inFlight.current = false;
       if (mounted.current) {
         setBusy(null);
-        void refresh(undefined, true);
+        if (!succeeded) void refresh(undefined, true);
       }
     }
   }

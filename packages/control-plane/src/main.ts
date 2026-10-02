@@ -15,6 +15,9 @@ import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-co
 import { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
 import { kafkaProducerLane } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { SessionControlOutbox } from "@pi-cloud/runtime-core/session-control-outbox";
+import { InputQueueView } from "./input-queue-view.ts";
+import { readInputQueue } from "./input-queue-snapshot.ts";
+import { QueuedInputService } from "./queued-input-service.ts";
 import { createSandboxControl } from "@pi-cloud/sandbox-control/runtime";
 import {
   PostgresSupervisorCredentialAuthorizer,
@@ -86,6 +89,7 @@ export async function startControlPlane(): Promise<void> {
   let agentEvents: SessionProjector | undefined;
   let sandboxControl: Awaited<ReturnType<typeof createSandboxControl>> | undefined;
   let runtime: ControlPlaneRuntime | undefined;
+  let queuedInputs: QueuedInputService | undefined;
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
@@ -197,6 +201,13 @@ export async function startControlPlane(): Promise<void> {
         }),
     });
     unattachedSubagents = subagents;
+    const inputQueues = new InputQueueView({
+      read: (tenant, session) => readInputQueue(database, tenant, session),
+      watched: (tenant, session) => agentEvents?.eventHub.hasSubscribers(tenant, session) === true,
+      publish: (tenant, queue) => agentEvents?.eventHub.publishInputQueue(tenant, queue),
+      unavailable: (tenant, session) => agentEvents?.eventHub.resyncSession(tenant, session),
+    });
+    const bindingView = sandboxControl.bindingView;
     agentEvents = new SessionProjector({
       publicationToken: config.supervisorManagementToken,
       database,
@@ -204,10 +215,57 @@ export async function startControlPlane(): Promise<void> {
       brokers: config.kafkaBrokers,
       clientId: controlPlaneInstanceId,
       advertisedBaseUrl: config.projectorAdvertisedBaseUrl,
-      subagentCommands: subagents,
+      subagentCommands: {
+        consume: async (record, current) => {
+          await subagents.consume(record, current);
+          if (current?.() === false) return;
+          const fact = record.fact;
+          if (
+            fact.kind === "execution_seal" ||
+            ((fact.kind === "pi_session_append" || fact.kind === "tool_invocation") &&
+              fact.piSession.lane === "main" &&
+              fact.items.some(
+                (item) =>
+                  item.kind === "entry" &&
+                  item.entry.type === "message" &&
+                  item.entry.message.role === "user" &&
+                  item.entry.id.startsWith("pc-agent-input-"),
+              ))
+          )
+            queuedInputs?.notifySession(fact.scope.tenantId, fact.scope.sessionId);
+        },
+        close: () => subagents.close(),
+      },
       toolCommands: sandboxControl.dispatcher,
       executionProbes: sandboxControl.probes,
-      controlChanges: sandboxControl.bindingView,
+      controlChanges: {
+        load: async (partitions, current) => {
+          await bindingView.load(partitions, current);
+          if (current()) queuedInputs?.recoverPending();
+        },
+        reset: () => {
+          bindingView.reset();
+          inputQueues.reset();
+        },
+        prepare: (change, current) => bindingView.prepare(change, current),
+        consume: async (change, current) => {
+          await bindingView.consume(change, current);
+          if (current() && change.entity === "input_queue")
+            queuedInputs?.notifySession(change.scope.tenantId, change.entityId);
+          try {
+            await inputQueues.consume(change, current);
+          } catch {
+            // Queue presentation is disposable. A failed snapshot must not
+            // stop unrelated native projection or durable input reconciliation.
+            agentEvents?.eventHub.resyncSession(change.scope.tenantId, change.entityId);
+            operationalLog({
+              service: "pi-cloud-control-plane",
+              level: "warn",
+              event: "input_queue.observation_unavailable",
+            });
+          }
+        },
+      },
       partitions: config.kafkaPartitions,
       replicas: config.kafkaReplicas,
       capacity: config.producerCapacity,
@@ -452,6 +510,10 @@ export async function startControlPlane(): Promise<void> {
       },
     });
     await runtime.listen(config.port, config.host);
+    const activeQueuedInputs = runtime.application.get<QueuedInputService>(QueuedInputService);
+    queuedInputs = activeQueuedInputs;
+    // Cover changes committed/consumed before the application's handler was attached.
+    activeQueuedInputs.recoverPending();
     await sandboxControl.start();
     const sourceControlFailure = (source: string, error: unknown): void =>
       operationalLog({

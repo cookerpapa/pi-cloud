@@ -71,6 +71,14 @@ transactions. Initial/reconnect reads recover a current snapshot; a lagging
 notification cannot regress its revision. Mutations remain possible without a
 Worker. Input payloads stay in their existing durable storage.
 
+The existing edit revision is not a complete queue-content version. A separate
+`viewVersion` reads the newest queue-change version with the queue in one PG
+statement. It is not a native cursor or a new lease. The Outbox retains the
+reference; no large queue snapshot is copied into its payload. Only watched queues
+are cached, bounded by count and bytes. Initial/explicit refresh reads stay in PG;
+steady display uses memory/SSE and successful mutation responses. Publication and
+consumption tolerate coalescing to a newer committed snapshot.
+
 Session-local Subagent directories and Worker routes are read views. Parent/main
 resolution, invocation completion and sealed results can reuse already consumed
 facts. Preparation failure and cancellation before execution need PG-originated

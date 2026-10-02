@@ -24,6 +24,14 @@ them, so reconnect can briefly show unknown freshness. No per-Run Prometheus
 labels or durable health table is introduced. See
 [ADR-0201](adr/0201-runtime-activity-and-path-probes.md) for bounds and deployment.
 
+`input.queue` is a separate, coalesced presentation update for durable pending
+input. Its `queue` payload uses the ordinary input-queue resource plus a bigint
+string `viewVersion`, read with its contents in one PG snapshot. It is not Agent
+activity or proof of VM health. Large snapshots use existing bounded SSE framing.
+The browser reads a fresh snapshot after subscription/reconnect and applies only
+non-regressing versions. Queue presentation failure resynchronizes its viewers
+without changing Run/input authority. See [ADR-0212](adr/0212-ordered-control-read-models.md).
+
 Runtime observations carry `sessionId`, `turnId` and `runId`. `run.activity`
 also carries `phase`, monotonic `revision`, `observedAt` and `lastActivityAt`;
 `run.path` carries original `sentAt` and Projector `observedAt`. Times are Unix

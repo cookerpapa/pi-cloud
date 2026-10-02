@@ -192,7 +192,7 @@ describe.sequential("remote control-plane runtime composition", () => {
           .where("id", "=", receipt.sourceRunId)
           .executeTakeFirstOrThrow(),
       ).toEqual({ state: "queued", queued_steer_id: receipt.controlRequestId });
-      runtime.application.get(QueuedInputService).wake();
+      runtime.application.get(QueuedInputService).recoverPending();
       await waitFor(() => steer.mock.calls.length === 1);
       expect(backendFactory).toHaveBeenCalledWith(worker.workerId);
       expect(steer).toHaveBeenCalledWith(

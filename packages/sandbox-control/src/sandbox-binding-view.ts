@@ -1,4 +1,4 @@
-import type { SessionControlChange } from "@pi-cloud/protocol";
+import type { SessionControlChange, SandboxBindingChange } from "@pi-cloud/protocol";
 import type {
   SandboxBinding,
   SandboxBindingReader,
@@ -22,7 +22,7 @@ export class SandboxBindingView implements SandboxBindingReader {
     readonly options: {
       source: Pick<SandboxBindingReader, "closeScope" | "isAlive"> & {
         loadView(): Promise<readonly SandboxBindingRecord[]>;
-        readChange(change: SessionControlChange): Promise<SandboxBindingRecord | undefined>;
+        readChange(change: SandboxBindingChange): Promise<SandboxBindingRecord | undefined>;
       };
       partitionFor(session: string): number;
       maximumEntries?: number;
@@ -95,7 +95,7 @@ export class SandboxBindingView implements SandboxBindingReader {
     if (entry.route) this.#index(entry.route, true);
   }
   async #change(
-    change: SessionControlChange,
+    change: SandboxBindingChange,
     current: () => boolean,
     closureOnly: boolean,
   ): Promise<void> {
@@ -123,10 +123,14 @@ export class SandboxBindingView implements SandboxBindingReader {
     }
   }
   prepare(change: SessionControlChange, current: () => boolean): Promise<void> {
-    return this.#change(change, current, true);
+    return change.entity === "sandbox_binding"
+      ? this.#change(change, current, true)
+      : Promise.resolve();
   }
   consume(change: SessionControlChange, current: () => boolean): Promise<void> {
-    return this.#change(change, current, false);
+    return change.entity === "sandbox_binding"
+      ? this.#change(change, current, false)
+      : Promise.resolve();
   }
   async find(
     scope: Parameters<SandboxBindingReader["find"]>[0],

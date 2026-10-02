@@ -19,6 +19,9 @@ import { SandboxBindingView } from "../../sandbox-control/src/sandbox-binding-vi
 import type { SandboxExecutionDescriptor } from "../../sandbox-control/src/sandbox-execution.ts";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { SessionPublicationService } from "../src/session-publication-service.ts";
+import { InputQueueView } from "../src/input-queue-view.ts";
+import { readInputQueue } from "../src/input-queue-snapshot.ts";
+import { QueuedInputService } from "../src/queued-input-service.ts";
 
 const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 const brokers = process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS?.split(",");
@@ -125,8 +128,16 @@ it.skipIf(!postgres || !brokers)(
         (ids) => outbox.flushEntities("sandbox_binding", ids),
       );
       let view: SandboxBindingView;
+      let inputView: InputQueueView;
       const create = () => {
         view = new SandboxBindingView({ source: bindings, partitionFor: () => 0 });
+        inputView = new InputQueueView({
+          read: (tenant, session) => readInputQueue(measured, tenant, session),
+          watched: (tenant, session) =>
+            projector?.eventHub.hasSubscribers(tenant, session) === true,
+          publish: (tenant, queue) => projector?.eventHub.publishInputQueue(tenant, queue),
+          unavailable: (tenant, session) => projector?.eventHub.resyncSession(tenant, session),
+        });
         return new SessionProjector({
           database: measured,
           notificationConnectionString: endpoint.toString(),
@@ -140,12 +151,19 @@ it.skipIf(!postgres || !brokers)(
           publicationToken: token,
           controlChanges: {
             load: (partitions, current) => view.load(partitions, current),
-            reset: () => view.reset(),
+            reset: () => {
+              view.reset();
+              inputView.reset();
+            },
             prepare: async (change, current) => {
               await view.prepare(change, current);
-              if (change.closed) await closedAdmissionGate?.promise;
+              if (change.entity === "sandbox_binding" && change.closed)
+                await closedAdmissionGate?.promise;
             },
-            consume: (change, current) => view.consume(change, current),
+            consume: async (change, current) => {
+              await view.consume(change, current);
+              await inputView.consume(change, current);
+            },
           },
           toolCommands: { consume: async () => {} },
         });
@@ -200,6 +218,7 @@ it.skipIf(!postgres || !brokers)(
         .where("aggregate_id", "=", binding)
         .executeTakeFirstOrThrow();
       const change = parseSessionControlChange(changeRow.payload);
+      if (change.entity !== "sandbox_binding") throw new Error("Expected binding change");
       await expect(client.publishControl({ ...change, closed: true })).rejects.toThrow();
       await expect(client.append(change as unknown as AcceptedFact)).rejects.toThrow();
       expect((await view!.find(scope, false))[0]?.dispatchClosed).toBe(false);
@@ -207,6 +226,40 @@ it.skipIf(!postgres || !brokers)(
         for (let i = 0; i < 100; i++) expect(await view!.find(scope, false)).toHaveLength(1);
       });
       expect(queries).toEqual([]);
+      const subscription = projector.eventHub.subscribe(tenant.tenantId, session.sessionId);
+      const queueService = new QueuedInputService({
+        database,
+        steering: { deliverQueued: async () => {} },
+      });
+      const initialQueue = await queueService.list(tenant.tenantId, session.sessionId);
+      await queueService.mutate(
+        tenant.tenantId,
+        session.sessionId,
+        run.turnId,
+        "edit-without-worker",
+        {
+          action: "edit",
+          revision: initialQueue.revision,
+          text: "Edited queue from another tab",
+        },
+      );
+      await vi.waitFor(
+        () =>
+          expect(inputView!.current(tenant.tenantId, session.sessionId)?.items[0]?.text).toBe(
+            "Edited queue from another tab",
+          ),
+        { timeout: 10000 },
+      );
+      const wake = await subscription.next(1000);
+      expect(wake).toMatchObject({
+        inputQueue: { items: [{ text: "Edited queue from another tab" }] },
+      });
+      await context.run(true, async () => {
+        for (let i = 0; i < 100; i++)
+          expect(inputView!.current(tenant.tenantId, session.sessionId)?.items).toHaveLength(1);
+      });
+      expect(queries).toEqual([]);
+      subscription.close();
       await expect(
         database.transaction().execute(async (tx) => {
           await tx
@@ -223,6 +276,7 @@ it.skipIf(!postgres || !brokers)(
           .selectFrom("outbox")
           .select("id")
           .where("topic", "=", SESSION_CONTROL_OUTBOX_TOPIC)
+          .where(sql<string>`payload->>'entity'`, "=", "sandbox_binding")
           .execute(),
       ).toHaveLength(1);
       loseControlAck = true;
@@ -258,6 +312,7 @@ it.skipIf(!postgres || !brokers)(
           lostAckClosure: true,
           restoredClosed: true,
           noNativeHistory: true,
+          queuePushedWithoutWorker: true,
         }) + "\n",
       );
     } finally {

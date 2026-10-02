@@ -172,6 +172,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   renderedState.current = state;
   const inputRevision = useRef(0);
   const [queueRefreshGeneration, setQueueRefreshGeneration] = useState(0);
+  const [streamQueue, setStreamQueue] = useState<
+    import("@pi-cloud/protocol").InputQueueResource | null
+  >(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const historyRequest = useRef(false);
   const historyScroll = useRef<{ sessionId: string; anchor: HTMLElement; top: number } | null>(
@@ -746,12 +749,20 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         if (!controller.signal.aborted && currentStreamSession.current === sessionId)
           runObservations.receive(observation);
       },
+      onInputQueue(queue) {
+        if (!controller.signal.aborted && currentStreamSession.current === sessionId)
+          setStreamQueue(queue);
+      },
       onStatus(status) {
         if (controller.signal.aborted) return;
         if (status.phase !== "live") toolProgress.reset();
         if (status.phase !== "live") runObservations.reset();
+        if (status.phase !== "live") setStreamQueue(null);
         if (status.phase === "connecting" || status.phase === "reconnecting")
           snapshotInputRevision = inputRevision.current;
+        // Read once after subscription is established, covering changes between
+        // the initial HTTP snapshot and SSE opening. Later updates are pushed.
+        if (status.phase === "live") setQueueRefreshGeneration((value) => value + 1);
         update({ type: "stream.status", status });
       },
     }).catch(() => {
@@ -2219,7 +2230,8 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               api={api}
               sessionId={state.session.sessionId}
               canMutate={canMutate}
-              refreshSignal={`${queueRefreshGeneration}:${currentTurn?.turnId ?? ""}:${currentTurn?.status ?? ""}`}
+              streamQueue={streamQueue}
+              refreshSignal={String(queueRefreshGeneration)}
               onSnapshot={(queue) => update({ type: "queue.updated", queue })}
               onRestoreDraft={(text, attached) => {
                 if (!uploads.restore(attached)) return false;

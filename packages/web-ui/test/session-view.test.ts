@@ -955,7 +955,13 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
     acceptedAt: CREATED_AT,
     status: "queued" as const,
   };
-  const snapshot = { sessionId: SESSION_ID, revision: 1, activeTurnId: null, items: [item] };
+  const snapshot = {
+    sessionId: SESSION_ID,
+    revision: 1,
+    viewVersion: "1",
+    activeTurnId: null,
+    items: [item],
+  };
   state = sessionViewReducer(state, { type: "queue.updated", queue: snapshot });
   expect(state.turns[0]?.prompt).toBe("edited draft");
   expect(sessionViewReducer(state, { type: "queue.updated", queue: snapshot })).toBe(state);

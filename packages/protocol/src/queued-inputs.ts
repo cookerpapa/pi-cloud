@@ -60,6 +60,7 @@ export const InputQueueResourceSchema = Type.Object(
     sessionId: UuidSchema,
     revision: Revision,
     activeTurnId: Type.Union([UuidSchema, Type.Null()]),
+    viewVersion: Type.String({ pattern: "^(0|[1-9][0-9]{0,18})$" }),
     items: Type.Array(QueuedInputResourceSchema, { maxItems: MAX_QUEUED_INPUTS }),
   },
   options,
@@ -71,6 +72,11 @@ export const QueuedInputActionResultSchema = Type.Object(
 export type QueuedInputAction = Static<typeof QueuedInputActionSchema>;
 export type QueuedInputResource = Static<typeof QueuedInputResourceSchema>;
 export type InputQueueResource = Static<typeof InputQueueResourceSchema>;
+export const InputQueueObservationSchema = Type.Object(
+  { type: Type.Literal("input.queue"), queue: InputQueueResourceSchema },
+  options,
+);
+export type InputQueueObservation = Static<typeof InputQueueObservationSchema>;
 export type QueuedInputActionResult = Static<typeof QueuedInputActionResultSchema>;
 function parse<T extends TSchema>(schema: T, value: unknown): Static<T> {
   if (!Value.Check(schema, value))
@@ -81,5 +87,7 @@ export const parseQueuedInputAction = (value: unknown): QueuedInputAction =>
   parse(QueuedInputActionSchema, value);
 export const parseInputQueueResource = (value: unknown): InputQueueResource =>
   parse(InputQueueResourceSchema, value);
+export const parseInputQueueObservation = (value: unknown): InputQueueObservation =>
+  parse(InputQueueObservationSchema, value);
 export const parseQueuedInputActionResult = (value: unknown): QueuedInputActionResult =>
   parse(QueuedInputActionResultSchema, value);

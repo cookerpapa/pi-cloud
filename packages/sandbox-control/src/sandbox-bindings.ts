@@ -191,7 +191,7 @@ export class PostgresSandboxBindings implements SandboxBindings {
     return rows as unknown as SandboxBindingRecord[];
   }
   async readChange(
-    change: import("@pi-cloud/protocol").SessionControlChange,
+    change: import("@pi-cloud/protocol").SandboxBindingChange,
   ): Promise<SandboxBindingRecord | undefined> {
     return (await this.#query()
       .where("binding.tenant_id", "=", change.scope.tenantId)

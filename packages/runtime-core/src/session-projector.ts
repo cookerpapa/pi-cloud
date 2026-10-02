@@ -163,8 +163,9 @@ export class SessionProjector {
       handler: async (raw, current, commitBeforeEffect) => {
         if (raw.fact.kind === "control_change") {
           if (current?.() === false) return;
-          if (!options.controlChanges) throw new Error("Session control views are not installed");
-          await options.controlChanges.consume(raw.fact, current ?? (() => true));
+          if (!options.controlChanges && raw.fact.entity === "sandbox_binding")
+            throw new Error("Sandbox control view is not installed");
+          await options.controlChanges?.consume(raw.fact, current ?? (() => true));
           if (current?.() !== false)
             await options.database.transaction().execute((tx) => recordFactProjection(tx, raw));
           return;
@@ -321,8 +322,9 @@ export class SessionProjector {
     const current = () =>
       this.publication.ownership(partition) === owner && this.#consumer.ownsPartition(partition);
     await assertCommittedControlChange(this.options.database, change);
-    if (!this.options.controlChanges) throw new Error("Session control views are not installed");
-    await this.options.controlChanges.prepare(change, current);
+    if (!this.options.controlChanges && change.entity === "sandbox_binding")
+      throw new Error("Sandbox control view is not installed");
+    await this.options.controlChanges?.prepare(change, current);
     if (!current()) throw new PublicationIngressRejected("not_owner");
     return this.publication.control(owner, change);
   }
