@@ -242,7 +242,9 @@ try {
       record("conversation.defaultModelHidden");
       await setValue('input[placeholder*="order-service"]', `ui-workspace-${suffix}`);
       await click(
-        ".product-resource-profiles button:last-child",
+        process.argv.includes("--execution-probe-only")
+          ? ".product-resource-profiles button:first-child"
+          : ".product-resource-profiles button:last-child",
         "conversation.performanceProfile",
       );
       await click(".product-workspace-modal footer .product-primary-button", "conversation.create");
@@ -397,6 +399,30 @@ try {
         0,
         "Opening a Session redundantly downloaded REST history",
       );
+      if (process.argv.includes("--execution-probe-only")) {
+        await setValue(
+          ".product-composer textarea",
+          "只调用一次 bash，运行 sleep 35; printf BROWSER_PROBE_OK。不要调用其他工具，不要搜索。完成后只回复 BROWSER_PROBE_OK。",
+        );
+        await click(".product-send-button", "probe.sendLongBash");
+        await page.waitFor(
+          `(()=>{const status=document.querySelector('.product-run-status[data-run-phase="executing_tool"]');return status && /沙箱往返\\s*\\d+\\s*秒前确认/.test(status.textContent)})()`,
+          180_000,
+        );
+        record("probe.roundTripVisibleDuringBash");
+        await page.screenshot("/tmp/pi-cloud-probe-browser.png");
+        await waitFor(
+          async () => {
+            const current = (await api.getConversation(elasticConversation.sessionId)).turns.at(-1);
+            if (current?.state === "failed") throw new Error("Browser probe Run failed");
+            return current?.state === "completed";
+          },
+          "browser probe completion",
+          180_000,
+        );
+        record("probe.completed");
+        return;
+      }
       if (process.argv.includes("--reopen-only")) {
         for (let iteration = 0; iteration < 10; iteration++) {
           await setValue(
@@ -1002,11 +1028,15 @@ const report = {
   },
   browserFirstText,
   firstModelTiming,
-  testMode: process.argv.includes("--reopen-only") ? "reopen" : "full",
+  testMode: process.argv.includes("--execution-probe-only")
+    ? "execution-probe"
+    : process.argv.includes("--reopen-only")
+      ? "reopen"
+      : "full",
   screenshotCaptured: !process.argv.includes("--reopen-only"),
   cleanupCompleted: true,
 };
-if (!process.argv.includes("--reopen-only"))
+if (!process.argv.includes("--reopen-only") && !process.argv.includes("--execution-probe-only"))
   await writeFile(
     resolve(repositoryRoot, "docs/reports/browser-ui-acceptance-latest.json"),
     `${JSON.stringify(report, null, 2)}\n`,
