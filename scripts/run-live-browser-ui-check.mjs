@@ -264,10 +264,19 @@ try {
         "conversation.testProvider",
       );
       await clickText(".product-model-menu-subpanel button", "GPT-6 Luna", "conversation.testLuna");
-      await click(
-        ".product-composer .product-model-menu-trigger",
-        "conversation.testModelMenuClose",
-      );
+      await clickText(".product-model-menu-subpanel button", "中", "conversation.testMedium");
+      await waitFor(async () => {
+        const conversation = (await api.listConversations()).conversations.find(
+          (candidate) => candidate.title === `UI acceptance ${suffix}`,
+        );
+        if (!conversation) return false;
+        const selected = await api.getSessionModel(conversation.sessionId);
+        return (
+          selected.modelId === "gpt-6-luna" &&
+          selected.thinkingLevel === "medium" &&
+          selected.fastMode === false
+        );
+      }, "Luna selection committed before paid browser request");
 
       await setValue(
         ".product-composer textarea",
@@ -925,6 +934,7 @@ try {
     );
   }
   for (const workspace of (await api.listWorkspaces()).workspaces) {
+    const key = newIdempotencyKey("workspace");
     await releaseFixture(
       () => api.deleteWorkspace(workspace.workspaceId, key),
       "workspace cleanup",
