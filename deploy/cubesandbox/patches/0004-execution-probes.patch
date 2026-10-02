@@ -1259,7 +1259,7 @@ index 32e378f..26a56f6 100644
  			MethodName: "ExecutionCapabilities",
  			Handler:    _CubeboxMgr_ExecutionCapabilities_Handler,
 diff --git a/Cubelet/pkg/execution/containerd.go b/Cubelet/pkg/execution/containerd.go
-index 5be2e49..2a2963c 100644
+index 5be2e49..9fb990e 100644
 --- a/Cubelet/pkg/execution/containerd.go
 +++ b/Cubelet/pkg/execution/containerd.go
 @@ -71,7 +71,7 @@ func (o *toolOutput) Write(p []byte) (int, error) {
@@ -1300,16 +1300,20 @@ index 5be2e49..2a2963c 100644
  	processSpec.Terminal = true
  	processSpec.Cwd = "/"
  	output := newToolOutput(r.MaximumOutputBytes, progress)
-@@ -157,7 +170,7 @@ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(jso
+@@ -157,7 +170,11 @@ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(jso
  	if err != nil {
  		return Result{Failure: "tool_wait_unavailable", Quarantine: true}
  	}
 -	start, endStart := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-+	start, endStart := context.WithTimeout(setupParent, 10*time.Second)
++	startParent := context.WithoutCancel(ctx)
++	if r.Probe {
++		startParent = ctx
++	}
++	start, endStart := context.WithTimeout(startParent, 10*time.Second)
  	err = process.Start(start)
  	endStart()
  	interrupted := err != nil || ctx.Err() != nil
-@@ -209,7 +222,7 @@ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(jso
+@@ -209,7 +226,7 @@ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(jso
  	if len(data) > 0 {
  		_ = json.Unmarshal(data, &marker)
  	}
@@ -1383,6 +1387,95 @@ index 0b1718e..acf9778 100644
  	for _, op := range m.operations {
  		if !op.finished {
  			op.cancel()
+diff --git a/Cubelet/pkg/execution/namespace_test.go b/Cubelet/pkg/execution/namespace_test.go
+new file mode 100644
+index 0000000..f03e526
+--- /dev/null
++++ b/Cubelet/pkg/execution/namespace_test.go
+@@ -0,0 +1,83 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package execution
++
++import (
++	"context"
++	"encoding/json"
++	containerd "github.com/containerd/containerd/v2/client"
++	"github.com/containerd/containerd/v2/pkg/cio"
++	"github.com/containerd/containerd/v2/pkg/namespaces"
++	"github.com/opencontainers/runtime-spec/specs-go"
++	"syscall"
++	"testing"
++	"time"
++)
++
++type namespaceIO struct{}
++
++func (namespaceIO) Config() cio.Config { return cio.Config{} }
++func (namespaceIO) Cancel()            {}
++func (namespaceIO) Wait()              {}
++func (namespaceIO) Close() error       { return nil }
++
++type namespaceProcess struct {
++	containerd.Process
++	t      *testing.T
++	starts *int
++}
++
++func (p namespaceProcess) Start(ctx context.Context) error {
++	if ns, ok := namespaces.Namespace(ctx); !ok || ns != "owned-runtime" {
++		p.t.Errorf("native start lost its namespace: %q", ns)
++	}
++	*p.starts++
++	return nil
++}
++func (p namespaceProcess) Wait(context.Context) (<-chan containerd.ExitStatus, error) {
++	ch := make(chan containerd.ExitStatus, 1)
++	ch <- *containerd.NewExitStatus(1, time.Now(), nil)
++	return ch, nil
++}
++func (p namespaceProcess) Kill(context.Context, syscall.Signal, ...containerd.KillOpts) error {
++	return nil
++}
++func (p namespaceProcess) Delete(context.Context, ...containerd.ProcessDeleteOpts) (*containerd.ExitStatus, error) {
++	return containerd.NewExitStatus(1, time.Now(), nil), nil
++}
++func (p namespaceProcess) IO() cio.IO { return namespaceIO{} }
++
++type namespaceTask struct {
++	containerd.Task
++	t      *testing.T
++	starts *int
++}
++
++func (t namespaceTask) Spec(context.Context) (*specs.Spec, error) {
++	return &specs.Spec{Process: &specs.Process{}}, nil
++}
++func (t namespaceTask) Status(context.Context) (containerd.Status, error) {
++	return containerd.Status{Status: containerd.Running}, nil
++}
++func (t namespaceTask) Exec(ctx context.Context, _ string, _ *specs.Process, _ cio.Creator) (containerd.Process, error) {
++	if ns, ok := namespaces.Namespace(ctx); !ok || ns != "owned-runtime" {
++		t.t.Errorf("native exec lost its namespace: %q", ns)
++	}
++	return namespaceProcess{t: t.t, starts: t.starts}, nil
++}
++func TestNativeToolAndProbeKeepResolvedNamespaceThroughStart(t *testing.T) {
++	for _, probe := range []bool{false, true} {
++		t.Run(map[bool]string{false: "tool", true: "probe"}[probe], func(t *testing.T) {
++			starts := 0
++			driver := ContainerdDriver{Resolve: func(context.Context, Request) (ResolvedTask, error) {
++				return ResolvedTask{Task: namespaceTask{t: t, starts: &starts}, Namespace: "owned-runtime"}, nil
++			}}
++			r := request()
++			r.Probe = probe
++			driver.Run(context.Background(), r, func(json.RawMessage) {})
++			if starts == 0 {
++				t.Fatal("fixture did not reach native process start")
++			}
++		})
++	}
++}
 diff --git a/Cubelet/pkg/execution/probe.go b/Cubelet/pkg/execution/probe.go
 new file mode 100644
 index 0000000..b01126d

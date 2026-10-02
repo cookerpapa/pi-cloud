@@ -18,7 +18,7 @@
     },
     {
       "file": "0004-execution-probes.patch",
-      "sha256": "9a23ee502416649aaf22fe262cf197bb96ce93026e84bf77d833c8ee6ec3763f"
+      "sha256": "296c34a26383669345762472ae1bdb52facf7f56d211ccbc225c08ccc6af36db"
     }
   ],
   "buildImages": {

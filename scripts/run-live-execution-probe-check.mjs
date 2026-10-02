@@ -175,7 +175,12 @@ try {
   report.runId = turn.runId;
   await waitFor(async () => {
     const r = await api.getRun(turn.runId);
-    if (terminal(r)) throw new Error(`Run ended before live probe confirmation: ${r.state}`);
+    if (terminal(r)) {
+      report.runFailure = r.failure;
+      throw new Error(
+        `Run ended before live probe confirmation: ${r.state} ${JSON.stringify(r.failure)}`,
+      );
+    }
     const confirmed = observations.find(
       (v) => v.runId === turn.runId && v.type === "run.execution" && v.execution.confirmedAt,
     );
