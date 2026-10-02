@@ -266,6 +266,10 @@ describe("PiWorkerRuntime", () => {
         sandboxControl: runtimeSandboxControl,
         runWorkerFactory,
         executionLogs: {
+          publicationAvailability: async () => {
+            if (publisherFailure) throw publisherFailure;
+            return { partitionCount: 1, partitions: [0] };
+          },
           async open() {
             throw new Error("unused");
           },
@@ -342,6 +346,10 @@ describe("PiWorkerRuntime", () => {
         sandboxControl: runtimeSandboxControl,
         runWorkerFactory,
         executionLogs: {
+          publicationAvailability: async () => {
+            if (publisherFailure) throw publisherFailure;
+            return { partitionCount: 1, partitions: [0] };
+          },
           async open() {
             throw new Error("unused");
           },
@@ -382,10 +390,16 @@ describe("PiWorkerRuntime", () => {
       expect(runWorkerOptions.map((options) => options.maximumActiveFamilies)).toEqual([4, 4]);
       expect(runWorkerOptions.map((options) => options.maximumLanesPerFamily)).toEqual([33, 33]);
       expect(runWorkerOptions.map((options) => options.canClaimRuns?.())).toEqual([false, true]);
-      await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
+      await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toEqual({
+        partitionCount: 1,
+        partitions: [0],
+      });
       sandboxControlHealthy = false;
       await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 1_100));
-      await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
+      await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toEqual({
+        partitionCount: 1,
+        partitions: [0],
+      });
 
       const ledger = JSON.parse(await readFile(join(root, "boot", "boot-ledger.json"), "utf8")) as {
         state: { history: Array<{ bootId: string; status: string }> };
@@ -397,7 +411,7 @@ describe("PiWorkerRuntime", () => {
       publisherFailure = new Error("temporary metadata outage");
       await vi.waitFor(
         async () => {
-          await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(false);
+          await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBeUndefined();
         },
         { timeout: 2_000, interval: 25 },
       );
@@ -405,7 +419,10 @@ describe("PiWorkerRuntime", () => {
       publisherFailure = undefined;
       await vi.waitFor(
         async () => {
-          await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
+          await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toEqual({
+            partitionCount: 1,
+            partitions: [0],
+          });
         },
         { timeout: 2_000, interval: 25 },
       );
@@ -524,6 +541,7 @@ describe("PiWorkerRuntime", () => {
             },
           },
           executionLogs: {
+            publicationAvailability: async () => ({ partitionCount: 1, partitions: [0] }),
             async open() {
               throw new Error("unused");
             },

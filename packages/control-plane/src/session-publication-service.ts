@@ -14,7 +14,8 @@ export class SessionPublicationService {
     readonly token: string,
     readonly projector: Pick<
       SessionProjector,
-      | "checkIngestHealth"
+      | "publicationAvailability"
+      | "localPublicationAvailability"
       | "publicationPartition"
       | "ownerForPartition"
       | "openPublication"
@@ -42,12 +43,15 @@ export class SessionPublicationService {
     });
     server.get(`${PUBLICATION_PATH}/health`, async (_request, reply) => {
       try {
-        await this.projector.checkIngestHealth();
-        return { ready: true };
+        const availability = await this.projector.publicationAvailability();
+        return reply.code(availability.partitions.length ? 200 : 503).send(availability);
       } catch {
         return reply.code(503).send({ ready: false });
       }
     });
+    server.get(`${PUBLICATION_PATH}/health/local`, async () =>
+      this.projector.localPublicationAvailability(),
+    );
     for (const action of ["open", "append", "seal", "control"] as const) {
       server.post(
         `${PUBLICATION_PATH}/${action}`,

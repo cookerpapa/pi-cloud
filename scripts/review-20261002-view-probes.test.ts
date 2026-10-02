@@ -18,6 +18,9 @@ vi.mock("@pi-cloud/event-log", async (original) => ({
     ownsPartition() {
       return false;
     }
+    async partitionOwners() {
+      return new Map();
+    }
     async ownerClientId() {
       return undefined;
     }
@@ -68,7 +71,7 @@ afterAll(async () => {
     );
 });
 
-it("records ready ingress while its consumer cannot recover or own a partition", async () => {
+it("rejects Run admission while the listener is up but no partition can publish", async () => {
   const projector = new SessionProjector({
     database: {} as Kysely<Database>,
     notificationConnectionString: "postgresql://unused/test",
@@ -102,7 +105,7 @@ it("records ready ingress while its consumer cannot recover or own a partition",
       headers,
       payload: Buffer.from(JSON.stringify({ scope: { piSessionId: randomUUID() } })),
     });
-    expect(health.statusCode).toBe(200);
+    expect(health.statusCode).toBe(503);
     expect(open.statusCode).toBe(409);
     expect(open.json().error.reason).toBe("not_owner");
     evidence.readiness = {
@@ -117,35 +120,42 @@ it("records ready ingress while its consumer cannot recover or own a partition",
   }
 });
 
-it("records that the global binding snapshot fails before filtering an empty owned partition", async () => {
-  let limit = 0;
+it("filters binding snapshots at PG before loading bounded pages", async () => {
+  let limit = 0,
+    filtered = false;
   const chain: any = {
     innerJoin: () => chain,
     select: () => chain,
+    orderBy: () => chain,
+    where: () => {
+      filtered = true;
+      return chain;
+    },
+    $if: () => chain,
     limit: (n: number) => {
       limit = n;
       return chain;
     },
-    execute: async () =>
-      Array.from({ length: 65537 }, () => ({ piSessionId: "belongs-to-partition-zero" })),
+    execute: async () => {
+      expect(filtered).toBe(true);
+      return [];
+    },
   };
-  const db = { selectFrom: () => chain } as unknown as Kysely<Database>;
   const source = new PostgresSandboxBindings(
-    db,
+    { selectFrom: () => chain } as unknown as Kysely<Database>,
     randomUUID(),
     randomUUID(),
     "http://fixture",
     async () => {},
   );
-  const view = new SandboxBindingView({ source, partitionFor: () => 0 });
-  await expect(view.load([1], () => true)).rejects.toThrow("capacity exceeded");
+  const view = new SandboxBindingView({ source, partitionCount: 2, partitionFor: () => 0 });
+  await view.load([1], () => true);
+  expect(limit).toBe(256);
   evidence.bindingBootstrap = {
-    rowSource: "simulated SQL results",
-    rows: 65537,
+    rowSource: "simulated SQL results; predicate checked separately on PG",
     requestedPartitions: [1],
-    rowsBelongingToRequestedPartitions: 0,
-    globalSqlLimit: limit,
-    rejected: true,
+    sqlPageLimit: limit,
+    rejected: false,
   };
 });
 

@@ -36,6 +36,15 @@ and initialized views, without requiring unrelated partitions' projection to
 catch up. Readiness remains a disposable admission hint; PG and fences still
 decide ownership, and failures racing the hint retain the existing no-replay rule.
 
+The private publication health response carries a bounded partition mask. A local
+endpoint reports initialized owned partitions; the aggregate endpoint intersects
+peer reports with Kafka group ownership. Peer calls are coalesced and cached for
+at most one second. Worker hints expire and filter the existing PG claim query;
+no network call runs inside admission. A generated full Session hash in PG matches
+the existing UTF-16 FNV partition function; partition count/ownership stay outside
+durable domain state. Binding bootstrap filters that hash by assignment before
+fetching payloads, pages on its primary key, and caps retained rows and bytes.
+
 Replace whole-batch relay waits with a bounded number of independent send slots.
 Keep entity-head ordering and PG claims; completion frees one slot immediately.
 Cleanup has a separate bounded work budget. Use commit hints and known retry

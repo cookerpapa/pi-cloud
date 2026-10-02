@@ -1,3 +1,4 @@
+import type { PublicationAvailability } from "@pi-cloud/protocol";
 import { HttpPublicationClient } from "@pi-cloud/runtime-core/http-publication-client";
 import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
@@ -60,6 +61,7 @@ export type PiWorkerRuntimeOptions = {
   metrics?: PiCloudMetrics;
   runWorkerFactory?: (options: PostgresPiWorkerOptions) => SupervisorRunWorker;
   executionLogs?: ExecutionLogFactory & {
+    publicationAvailability(): Promise<PublicationAvailability>;
     checkHealth?(): Promise<void>;
     close?(): Promise<void>;
   };
@@ -126,7 +128,12 @@ export class PiWorkerRuntime {
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #runWorkerFactory: (options: PostgresPiWorkerOptions) => SupervisorRunWorker;
   readonly #executionLogs:
-    (ExecutionLogFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
+    | (ExecutionLogFactory & {
+        publicationAvailability(): Promise<PublicationAvailability>;
+        checkHealth?(): Promise<void>;
+        close?(): Promise<void>;
+      })
+    | undefined;
   readonly #configuredSessionMutationProducer:
     Pick<NativeSessionLogPublisher, "scoped" | "checkHealth" | "close"> | undefined;
   #sessionMutationProducer:
@@ -138,7 +145,12 @@ export class PiWorkerRuntime {
   #images: ConfiguredImageAttachments | undefined;
   #toolReplies: KafkaToolReplyMailbox | undefined;
   #activeExecutionLogs:
-    (ExecutionLogFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
+    | (ExecutionLogFactory & {
+        publicationAvailability(): Promise<PublicationAvailability>;
+        checkHealth?(): Promise<void>;
+        close?(): Promise<void>;
+      })
+    | undefined;
   #ownsExecutionLogs = false;
   readonly #ownerStoppedPromise: Promise<void>;
   readonly #resolveOwnerStopped: () => void;
@@ -434,7 +446,11 @@ export class PiWorkerRuntime {
     this.#assertStarting();
     const runClaimReadiness = new RunClaimReadinessMonitor({
       check: async () => {
-        await Promise.all([executionLogs.checkHealth?.(), modelGateway.checkProviderHealth()]);
+        const [availability] = await Promise.all([
+          executionLogs.publicationAvailability(),
+          modelGateway.checkProviderHealth(),
+        ]);
+        return availability;
       },
     });
     this.#runClaimReadiness = runClaimReadiness;
@@ -632,7 +648,7 @@ export class PiWorkerRuntime {
       onCapacity: (sample) => this.#metrics?.activeSessionFamilies.set(sample.families),
       canClaimRuns: () =>
         (this.#state === "ready" || this.#state === "draining") && client?.state === "connected",
-      admitRunClaims: async () => runClaimReadiness.ready,
+      admitRunClaims: async () => runClaimReadiness.publicationAvailability,
       runExecutor: new RunExecutor({
         database: this.#database,
         backend: runBackend,

@@ -300,6 +300,13 @@ the private control-plane TCP/4300 endpoint and
 the Supervisor management credential. There is no completed-result GET/cache or
 commit-notification RPC.
 
+Worker Run admission refreshes the private publication partition mask every second;
+success expires after three seconds even if a later request hangs. Projector peer
+readiness is coalesced, cached for 500 ms and intersected with group ownership
+(cached up to one second). Local health does not recursively query peers.
+Binding bootstrap pages contain at most 256 rows, filtered by owned partitions;
+retained views are capped at 65,536 entries and 64 MiB serialized metadata per owner.
+
 Every Projector needs credentials for all Cube API endpoints it may route to.
 `PI_CLOUD_CUBE_EXECUTION_ENDPOINTS_FILE` is an optional private JSON array of
 `{ "apiUrl": "https://cube.example", "apiKeyFile": "/run/secrets/cube-key" }`;

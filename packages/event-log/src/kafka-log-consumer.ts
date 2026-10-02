@@ -61,6 +61,7 @@ export class KafkaLogConsumer<T> {
   readonly #assigned = new Set<number>();
   readonly #blocked = new Map<number, Error>();
   #memberCache: { until: number; owners: Map<number, string> } | undefined;
+  #membersLoading: Promise<ReadonlyMap<number, string>> | undefined;
   #reader: KafkaPartitionReader | undefined;
   readonly #publicationWriters = new Set<KafkaPublicationWriter>();
 
@@ -209,6 +210,7 @@ export class KafkaLogConsumer<T> {
             return;
           }
           const assignmentEpoch = ++this.#epoch;
+          this.#memberCache = undefined;
           this.#options.onRevoked?.();
           const publicationRetirement = this.#retirePublicationWriters();
           this.#ready = false;
@@ -379,6 +381,7 @@ export class KafkaLogConsumer<T> {
         retired = true;
         this.#ready = false;
         this.#epoch++;
+        this.#memberCache = undefined;
         this.#options.onRevoked?.();
         this.#options.onReset?.();
         for (const retry of this.#retries.values()) clearTimeout(retry.timer);
@@ -599,17 +602,30 @@ export class KafkaLogConsumer<T> {
     for (const writer of writers) this.#publicationWriters.delete(writer);
   }
 
-  async ownerClientId(partition: number): Promise<string | undefined> {
-    if (!this.#memberCache || this.#memberCache.until < Date.now()) {
-      await this.#bounds();
-      const description = await this.#admin.describeGroups([this.#options.groupId]);
-      const owners = new Map<number, string>();
-      for (const member of description.groups[0]?.members ?? [])
-        for (const p of member.assignment.topicPartitions)
-          if (p.topic === this.#options.topic) owners.set(p.partition, member.clientId);
-      this.#memberCache = { owners, until: Date.now() + 1000 };
+  async partitionOwners(): Promise<ReadonlyMap<number, string>> {
+    if (this.#closing) throw new Error("Session Projector is closing");
+    if (this.#memberCache && this.#memberCache.until >= Date.now()) return this.#memberCache.owners;
+    if (!this.#membersLoading) {
+      const epoch = this.#epoch;
+      const loading = (async () => {
+        await this.#bounds();
+        const description = await this.#admin.describeGroups([this.#options.groupId]);
+        if (epoch !== this.#epoch || this.#closing) throw new Error("Projector ownership changed");
+        const owners = new Map<number, string>();
+        for (const member of description.groups[0]?.members ?? [])
+          for (const p of member.assignment.topicPartitions)
+            if (p.topic === this.#options.topic) owners.set(p.partition, member.clientId);
+        this.#memberCache = { owners, until: Date.now() + 1000 };
+        return owners;
+      })().finally(() => {
+        if (this.#membersLoading === loading) this.#membersLoading = undefined;
+      });
+      this.#membersLoading = loading;
     }
-    return this.#memberCache.owners.get(partition);
+    return this.#membersLoading;
+  }
+  async ownerClientId(partition: number): Promise<string | undefined> {
+    return (await this.partitionOwners()).get(partition);
   }
 
   async close(): Promise<void> {

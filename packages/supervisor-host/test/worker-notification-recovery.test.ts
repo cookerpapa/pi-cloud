@@ -44,6 +44,7 @@ beforeEach(() => {
 function fixture() {
   const scan = vi.fn(async () => ({ status: "idle" }));
   const worker = new PostgresPiWorker({
+    admitRunClaims: async () => ({ partitionCount: 1, partitions: [0] }),
     database: {} as Kysely<Database>,
     notificationConnectionString: "test",
     identity: "worker",

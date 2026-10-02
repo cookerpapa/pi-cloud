@@ -1,3 +1,4 @@
+import type { PublicationAvailability } from "@pi-cloud/protocol";
 import { PostgresQueueWake, type Database } from "@pi-cloud/database";
 import {
   type RunCancellationExecutionResult,
@@ -62,7 +63,7 @@ export type PostgresPiWorkerOptions = {
    */
   canClaimRuns?: () => boolean;
   /** Checks external execution-plane readiness only when claimable work exists. */
-  admitRunClaims?: () => Promise<boolean>;
+  admitRunClaims: () => Promise<PublicationAvailability | undefined>;
   onFailure?: (operation: "listen" | "claim" | "execute" | "cancel", error: unknown) => void;
 };
 
@@ -103,7 +104,7 @@ export class PostgresPiWorker {
   readonly #runExecutor: RunExecutor;
   readonly #cancellationExecutor: RunCancellationExecutor;
   readonly #canClaimRuns: () => boolean;
-  readonly #admitRunClaims: () => Promise<boolean>;
+  readonly #admitRunClaims: () => Promise<PublicationAvailability | undefined>;
   readonly #onFailure:
     ((operation: "listen" | "claim" | "execute" | "cancel", error: unknown) => void) | undefined;
   readonly #activeRuns = new Map<
@@ -148,7 +149,7 @@ export class PostgresPiWorker {
     this.#runExecutor = options.runExecutor;
     this.#cancellationExecutor = options.cancellationExecutor;
     this.#canClaimRuns = options.canClaimRuns ?? (() => true);
-    this.#admitRunClaims = options.admitRunClaims ?? (() => Promise.resolve(true));
+    this.#admitRunClaims = options.admitRunClaims;
     this.#onFailure = options.onFailure;
   }
 
@@ -292,7 +293,8 @@ export class PostgresPiWorker {
   }
   async #fillCapacity(): Promise<void> {
     if (this.#pendingClaims >= MAXIMUM_PENDING_CLAIMS || !this.#canClaimRuns()) return;
-    if (!(await this.#admitRunClaims()) || !this.#canClaimRuns()) return;
+    const publication = await this.#admitRunClaims();
+    if (!publication?.partitions.length || !this.#canClaimRuns()) return;
     while (this.#pendingClaims < MAXIMUM_PENDING_CLAIMS && this.#canClaimRuns()) {
       const admission = familyAdmission(
         this.#activeReferences(),
@@ -303,7 +305,7 @@ export class PostgresPiWorker {
       );
       if (admission.allowedFamilyKeys?.every((key) => admission.blockedFamilyKeys.includes(key)))
         return;
-      this.#launchClaim(admission);
+      this.#launchClaim({ ...admission, publication });
     }
   }
 

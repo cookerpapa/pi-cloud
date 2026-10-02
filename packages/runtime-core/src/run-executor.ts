@@ -1,3 +1,4 @@
+import type { PublicationAvailability } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
 import {
   transitionSession,
@@ -89,6 +90,7 @@ export type RunClaimAdmission = Readonly<{
   /** Undefined admits a new family; an empty array admits none. */
   allowedFamilyKeys?: readonly string[];
   blockedFamilyKeys: readonly string[];
+  publication?: PublicationAvailability;
 }>;
 
 export type TurnExecutionLifecycle = {
@@ -518,7 +520,15 @@ export class RunExecutor {
     if (!admission) return sql<boolean>`true`;
     const key = sql<string>`concat(${sql.ref(`${alias}.tenant_id`)}::text, ':', ${sql.ref(`${alias}.pi_session_id`)})`;
     return sql<boolean>`(${admission.allowedFamilyKeys === undefined ? sql`true` : sql`${key} = any(${[...admission.allowedFamilyKeys]}::text[])`})
-      and not (${key} = any(${[...admission.blockedFamilyKeys]}::text[]))`;
+      and not (${key} = any(${[...admission.blockedFamilyKeys]}::text[]))
+      and (${
+        admission.publication
+          ? sql`exists(select 1 from pi_sessions publication_session
+        where publication_session.tenant_id=${sql.ref(`${alias}.tenant_id`)}
+          and publication_session.id=${sql.ref(`${alias}.pi_session_id`)}
+          and publication_session.session_hash % ${admission.publication.partitionCount} = any(${[...admission.publication.partitions]}::int[]))`
+          : sql`true`
+      })`;
   }
 
   #taskOwnerAvailable(runAlias: string) {

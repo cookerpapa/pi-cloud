@@ -72,7 +72,8 @@ it.skipIf(!postgres || !brokers)(
       done(null, payload);
     });
     new SessionPublicationService(token, {
-      checkIngestHealth: () => projector!.checkIngestHealth(),
+      publicationAvailability: () => projector!.publicationAvailability(),
+      localPublicationAvailability: () => projector!.localPublicationAvailability(),
       publicationPartition: (id) => projector!.publicationPartition(id),
       ownerForPartition: (p) => projector!.ownerForPartition(p),
       openPublication: (p) => projector!.openPublication(p),
@@ -130,7 +131,11 @@ it.skipIf(!postgres || !brokers)(
       let view: SandboxBindingView;
       let inputView: InputQueueView;
       const create = () => {
-        view = new SandboxBindingView({ source: bindings, partitionFor: () => 0 });
+        view = new SandboxBindingView({
+          source: bindings,
+          partitionCount: 1,
+          partitionFor: () => 0,
+        });
         inputView = new InputQueueView({
           read: (tenant, session) => readInputQueue(measured, tenant, session),
           watched: (tenant, session) =>

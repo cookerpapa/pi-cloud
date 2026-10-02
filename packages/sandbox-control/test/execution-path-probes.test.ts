@@ -158,7 +158,7 @@ it("forwards a guest probe from the same memory view without a binding SELECT", 
     closeScope: async () => {},
     isAlive: async () => true,
   };
-  const routes = new SandboxBindingView({ source, partitionFor: () => 0 });
+  const routes = new SandboxBindingView({ source, partitionCount: 2, partitionFor: () => 0 });
   await routes.load([0], () => true);
   const probes = new ExecutionPathProbes({ ...f.probes.options, routes });
   probes.observeWith(f.observer);

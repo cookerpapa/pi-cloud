@@ -72,6 +72,7 @@ it("drains owned families by admitting their children, without admitting another
     },
   } as unknown as RunExecutor;
   const worker = new PostgresPiWorker({
+    admitRunClaims: async () => ({ partitionCount: 1, partitions: [0] }),
     database,
     notificationConnectionString: "test",
     identity: "worker",

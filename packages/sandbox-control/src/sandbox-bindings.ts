@@ -20,6 +20,12 @@ export type SandboxBindingRecord = SandboxBinding &
     piSessionId: string;
     revision: string;
   }>;
+export type BindingViewPage = Readonly<{
+  partitions: readonly number[];
+  partitionCount: number;
+  after?: Pick<SandboxBindingRecord, "runId" | "bindingId">;
+}>;
+export const BINDING_VIEW_PAGE_SIZE = 256;
 export interface SandboxBindingReader {
   find(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<readonly SandboxBinding[]>;
   closeScope(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<void>;
@@ -176,9 +182,26 @@ export class PostgresSandboxBindings implements SandboxBindings {
     return row !== undefined;
   }
 
-  async loadView(): Promise<readonly SandboxBindingRecord[]> {
-    const rows = await this.#query().limit(65_537).execute();
-    if (rows.length > 65_536) throw new Error("Sandbox binding view capacity exceeded");
+  async loadView(page: BindingViewPage): Promise<readonly SandboxBindingRecord[]> {
+    if (!page.partitions.length) return [];
+    const rows = await this.#query()
+      .innerJoin("pi_sessions as session", (join) =>
+        join
+          .onRef("session.tenant_id", "=", "binding.tenant_id")
+          .onRef("session.id", "=", "binding.pi_session_id"),
+      )
+      .where(
+        sql<boolean>`session.session_hash % ${page.partitionCount} = any(${[...page.partitions]}::int[])`,
+      )
+      .$if(page.after !== undefined, (q) =>
+        q.where(
+          sql<boolean>`(binding.run_id,binding.binding_id) > (${page.after!.runId}::uuid,${page.after!.bindingId}::uuid)`,
+        ),
+      )
+      .orderBy("binding.run_id")
+      .orderBy("binding.binding_id")
+      .limit(BINDING_VIEW_PAGE_SIZE)
+      .execute();
     return rows as unknown as SandboxBindingRecord[];
   }
   async readChange(

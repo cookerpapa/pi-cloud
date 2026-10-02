@@ -883,6 +883,27 @@
       "file": "test/terminal-outbox-relay.test.ts",
       "test": "keeps send slots independent from a slow publication and a slow cleanup, then drains cleanup batches",
       "invariant": "One slow Session publication or cleanup cannot block other send slots, expired local claims are not duplicated, and cleanup drains multiple bounded batches."
+    },
+    {
+      "id": "publication-readiness-assignment-replacement",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-readiness.test.ts",
+      "test": "discards delayed peer success across assignment replacement",
+      "invariant": "Old readiness replies cannot survive local ownership replacement; unready partitions remain queued."
+    },
+    {
+      "id": "publication-readiness-expiry",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/run-claim-readiness.test.ts",
+      "test": "expires old success during a hung check and discards success after close",
+      "invariant": "A stalled readiness check cannot indefinitely authorize new Run admission."
+    },
+    {
+      "id": "binding-view-owned-capacity",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "loads only owned binding pages before applying capacity limits",
+      "invariant": "Foreign partition payloads do not consume owner bootstrap row or byte budgets."
     }
   ]
 }

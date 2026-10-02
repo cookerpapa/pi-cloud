@@ -1,3 +1,4 @@
+import { BINDING_VIEW_PAGE_SIZE, type BindingViewPage } from "./sandbox-bindings.ts";
 import type { SessionControlChange, SandboxBindingChange } from "@pi-cloud/protocol";
 import type {
   SandboxBinding,
@@ -5,7 +6,13 @@ import type {
   SandboxBindingRecord,
 } from "./sandbox-bindings.ts";
 
-type Entry = { version: bigint; route?: SandboxBindingRecord; readers: number; closed: boolean };
+type Entry = {
+  bytes: number;
+  version: bigint;
+  route?: SandboxBindingRecord;
+  readers: number;
+  closed: boolean;
+};
 const key = (tenant: string, id: string) => `${tenant}:${id}`;
 const routeKey = (tenant: string, run: string, binding: string) => `${tenant}:${run}:${binding}`;
 
@@ -18,13 +25,16 @@ export class SandboxBindingView implements SandboxBindingReader {
   #partitions = new Set<number>();
   #generation = 0;
   #ready = false;
+  #bytes = 0;
   constructor(
     readonly options: {
       source: Pick<SandboxBindingReader, "closeScope" | "isAlive"> & {
-        loadView(): Promise<readonly SandboxBindingRecord[]>;
+        loadView(page: BindingViewPage): Promise<readonly SandboxBindingRecord[]>;
         readChange(change: SandboxBindingChange): Promise<SandboxBindingRecord | undefined>;
       };
       partitionFor(session: string): number;
+      partitionCount: number;
+      maximumBytes?: number;
       maximumEntries?: number;
     },
   ) {}
@@ -34,22 +44,33 @@ export class SandboxBindingView implements SandboxBindingReader {
     this.#ready = false;
     this.#partitions.clear();
     this.#entries.clear();
+    this.#bytes = 0;
     this.#runs.clear();
     this.#writers.clear();
   }
   async load(partitions: readonly number[], current: () => boolean): Promise<void> {
     this.reset();
     const generation = this.#generation;
-    const rows = await this.options.source.loadView();
-    if (!current() || generation !== this.#generation) return;
     this.#partitions = new Set(partitions);
-    for (const row of rows)
-      if (this.#partitions.has(this.options.partitionFor(row.piSessionId)))
-        this.#apply(
-          this.#entry(routeKey(row.tenantId, row.runId, row.bindingId)),
-          row,
-          BigInt(row.revision),
-        );
+    let after: BindingViewPage["after"];
+    for (;;) {
+      const rows = await this.options.source.loadView({
+        partitions,
+        partitionCount: this.options.partitionCount,
+        ...(after ? { after } : {}),
+      });
+      if (!current() || generation !== this.#generation) return;
+      for (const row of rows)
+        if (this.#partitions.has(this.options.partitionFor(row.piSessionId)))
+          this.#apply(
+            this.#entry(routeKey(row.tenantId, row.runId, row.bindingId)),
+            row,
+            BigInt(row.revision),
+          );
+      if (rows.length < BINDING_VIEW_PAGE_SIZE) break;
+      const last = rows.at(-1)!;
+      after = { runId: last.runId, bindingId: last.bindingId };
+    }
     this.#ready = true;
   }
   #entry(id: string): Entry {
@@ -60,7 +81,7 @@ export class SandboxBindingView implements SandboxBindingReader {
       if (!disposable) throw new Error("Sandbox binding view capacity exceeded");
       this.#entries.delete(disposable[0]);
     }
-    const entry: Entry = { version: -1n, readers: 0, closed: false };
+    const entry: Entry = { bytes: 0, version: -1n, readers: 0, closed: false };
     this.#entries.set(id, entry);
     return entry;
   }
@@ -87,6 +108,12 @@ export class SandboxBindingView implements SandboxBindingReader {
     // when the triggering Outbox retry predates the deleted row's last version.
     if (entry.closed && route && !route.dispatchClosed) return;
     if (route && version < entry.version) return;
+    const routeBytes = route ? Buffer.byteLength(JSON.stringify(route)) : 0;
+    const bytes = this.#bytes - entry.bytes + routeBytes;
+    if (bytes > (this.options.maximumBytes ?? 64 * 1024 * 1024))
+      throw new Error("Sandbox binding view byte capacity exceeded");
+    this.#bytes = bytes;
+    entry.bytes = routeBytes;
     if (entry.route) this.#index(entry.route, false);
     entry.version = version > entry.version ? version : entry.version;
     entry.closed ||= !route || route.dispatchClosed;

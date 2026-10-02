@@ -1,3 +1,4 @@
+import { kafkaProducerLane } from "../../runtime-core/src/kafka-accepted-fact.ts";
 import { ConversationDeletionService } from "../src/conversation-deletion-service.ts";
 import { randomUUID } from "node:crypto";
 import {
@@ -227,6 +228,39 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       facts,
     };
   }
+
+  it("leaves unavailable partitions queued without claiming a lease and admits a ready partition", async () => {
+    const f = await fixture();
+    const own = kafkaProducerLane(f.session.sessionId, 4);
+    const before = await f.state();
+    const denied = {
+      blockedFamilyKeys: [],
+      publication: { partitionCount: 4, partitions: [(own + 1) % 4] },
+    };
+    expect(await f.executor().dispatchRun(f.accepted.runId, denied)).toEqual({ status: "idle" });
+    expect(await f.executor().dispatchNext(denied)).toEqual({ status: "idle" });
+    expect(await f.state()).toEqual(before);
+    expect(f.runner).not.toHaveBeenCalled();
+    await f
+      .executor()
+      .dispatchRun(f.accepted.runId, {
+        ...denied,
+        publication: { partitionCount: 4, partitions: [own] },
+      });
+    expect(f.runner).toHaveBeenCalledOnce();
+    await f.project();
+  });
+
+  it("matches the Session partition hash for Unicode and every supported partition count", async () => {
+    const ids = ["", "a", "会话", "a😀𐐀z", ...Array.from({ length: 32 }, () => randomUUID())];
+    for (const id of ids) {
+      const { rows } = await sql<{
+        hash: string;
+      }>`select pi_cloud_session_hash(${id})::text hash`.execute(db);
+      for (const count of [1, 2, 3, 32, 63, 1024])
+        expect(Number(BigInt(rows[0]!.hash) % BigInt(count))).toBe(kafkaProducerLane(id, count));
+    }
+  });
 
   it("bounds native projection and conversation SQL while retaining indexed history branches", async () => {
     const f = await fixture();

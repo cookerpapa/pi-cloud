@@ -148,7 +148,7 @@ describe("Projector native Cube handoff", () => {
       closeScope: f.closeScope,
       isAlive: async () => true,
     };
-    const routes = new SandboxBindingView({ source, partitionFor: () => 0 });
+    const routes = new SandboxBindingView({ source, partitionCount: 2, partitionFor: () => 0 });
     await routes.load([0], () => true);
     const router = new ToolCommandDispatcher({ ...f.options, routes });
     for (let i = 0; i < 100; i++)

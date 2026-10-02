@@ -2,6 +2,8 @@ import { Agent, fetch as internalFetch } from "undici";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   MAX_EXECUTION_FACT_BYTES,
+  parsePublicationAvailability,
+  type PublicationAvailability,
   type SessionControlChange,
   type SessionControlPublisher,
 } from "@pi-cloud/protocol";
@@ -146,18 +148,28 @@ export class HttpPublicationClient implements AcceptedFactBus, SessionControlPub
     this.#scopes.delete(runId);
   }
 
-  async checkHealth(): Promise<void> {
+  async publicationAvailability(
+    baseUrl = this.options.baseUrl,
+    local = false,
+  ): Promise<PublicationAvailability> {
     if (this.#closed) throw new Error("Publication client is closed");
     const response = await internalFetch(
-      new URL(`${PUBLICATION_PATH}/health`, this.options.baseUrl),
+      new URL(`${PUBLICATION_PATH}/health${local ? "/local" : ""}`, baseUrl),
       {
         dispatcher: this.#dispatcher,
         headers: { authorization: `Bearer ${this.options.token}` },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(2000),
       },
     );
-    await response.body?.cancel();
-    if (!response.ok) throw new Error("Publication ingress is unavailable");
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error("Publication ingress is unavailable");
+    }
+    return parsePublicationAvailability(await response.json());
+  }
+  async checkHealth(): Promise<void> {
+    if (!(await this.publicationAvailability()).partitions.length)
+      throw new Error("Publication ingress has no available partitions");
   }
 
   async close(): Promise<void> {

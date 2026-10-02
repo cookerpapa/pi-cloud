@@ -167,6 +167,7 @@ async function start() {
     managementToken: "m".repeat(64),
     publishBindingChanges: async () => {},
     partitionFor: () => 0,
+    partitionCount: 1,
     metrics: {} as any,
   });
 }

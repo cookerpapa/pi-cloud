@@ -29,12 +29,16 @@ function fixture() {
   };
   const original = row;
   const source = {
-    loadView: vi.fn(async (): Promise<readonly SandboxBindingRecord[]> => (row ? [row] : [])),
+    loadView: vi.fn(
+      async (
+        _page: import("../src/sandbox-bindings.ts").BindingViewPage,
+      ): Promise<readonly SandboxBindingRecord[]> => (row ? [row] : []),
+    ),
     readChange: vi.fn(async () => row),
     closeScope: vi.fn(async () => {}),
     isAlive: vi.fn(async () => true),
   };
-  const view = new SandboxBindingView({ source, partitionFor: () => 0 });
+  const view = new SandboxBindingView({ source, partitionCount: 2, partitionFor: () => 0 });
   const scope = { tenantId: original.tenantId, runId: original.runId, writerId: original.writerId };
   const change = (version: string, closed = false): SessionControlChange => ({
     kind: "control_change",
@@ -169,4 +173,35 @@ it("does not serve routes for another partition or replace missing state with an
   f.set(undefined);
   await f.view.consume(f.change("2", true), () => true);
   expect(await f.view.find(f.scope, true)).toEqual([]);
+});
+
+it("pages one owner's snapshot and enforces retained row/byte budgets before readiness", async () => {
+  const f = fixture();
+  const rows = Array.from({ length: 257 }, (_, n) => ({ ...f.original, bindingId: String(n) }));
+  f.source.loadView
+    .mockResolvedValueOnce(rows.slice(0, 256))
+    .mockResolvedValueOnce(rows.slice(256));
+  await f.view.load([0], () => true);
+  expect(f.source.loadView.mock.calls[1]?.[0]).toMatchObject({
+    after: { bindingId: "255" },
+    partitionCount: 2,
+    partitions: [0],
+  });
+  expect(await f.view.find(f.scope, true)).toHaveLength(257);
+  const bounded = new SandboxBindingView({
+    source: f.source,
+    partitionCount: 2,
+    partitionFor: () => 0,
+    maximumBytes: 1,
+  });
+  await expect(bounded.load([0], () => true)).rejects.toThrow("byte capacity");
+  await expect(bounded.find(f.scope, false)).rejects.toThrow("not recovered");
+  const limited = new SandboxBindingView({
+    source: f.source,
+    partitionCount: 2,
+    partitionFor: () => 0,
+    maximumEntries: 1,
+  });
+  f.source.loadView.mockResolvedValueOnce(rows.slice(0, 2));
+  await expect(limited.load([0], () => true)).rejects.toThrow("capacity");
 });

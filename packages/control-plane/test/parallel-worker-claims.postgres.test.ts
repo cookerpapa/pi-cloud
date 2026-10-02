@@ -127,6 +127,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
     const failures: unknown[] = [];
     let localFamilies = 0;
     const worker = new PostgresPiWorker({
+      admitRunClaims: async () => ({ partitionCount: 1, partitions: [0] }),
       database: db,
       notificationConnectionString: url.toString(),
       identity: workerId,

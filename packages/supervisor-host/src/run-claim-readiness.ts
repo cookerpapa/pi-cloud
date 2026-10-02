@@ -1,14 +1,16 @@
+import type { PublicationAvailability } from "@pi-cloud/protocol";
 export type RunClaimReadinessMonitorOptions = Readonly<{
-  check: () => Promise<void>;
+  check: () => Promise<PublicationAvailability>;
   intervalMs?: number;
 }>;
 
 export class RunClaimReadinessMonitor {
-  readonly #check: () => Promise<void>;
+  readonly #check: () => Promise<PublicationAvailability>;
   readonly #intervalMs: number;
   #timer: NodeJS.Timeout | undefined;
   #refreshing: Promise<void> | undefined;
-  #ready = false;
+  #availability: PublicationAvailability | undefined;
+  #freshUntil = 0;
   #closed = false;
 
   constructor(options: RunClaimReadinessMonitorOptions) {
@@ -20,7 +22,15 @@ export class RunClaimReadinessMonitor {
   }
 
   get ready(): boolean {
-    return !this.#closed && this.#ready;
+    return this.publicationAvailability !== undefined;
+  }
+
+  get publicationAvailability(): PublicationAvailability | undefined {
+    return !this.#closed &&
+      performance.now() < this.#freshUntil &&
+      this.#availability?.partitions.length
+      ? this.#availability
+      : undefined;
   }
 
   async start(): Promise<void> {
@@ -28,6 +38,7 @@ export class RunClaimReadinessMonitor {
       throw new Error("Run claim readiness monitor cannot be started");
     }
     await this.#refresh();
+    if (this.#closed) return;
     this.#timer = setInterval(() => void this.#refresh(), this.#intervalMs);
     this.#timer.unref();
   }
@@ -35,7 +46,7 @@ export class RunClaimReadinessMonitor {
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
-    this.#ready = false;
+    this.#availability = undefined;
     if (this.#timer !== undefined) clearInterval(this.#timer);
     this.#timer = undefined;
   }
@@ -44,11 +55,14 @@ export class RunClaimReadinessMonitor {
     if (this.#closed) return;
     if (this.#refreshing === undefined) {
       const refreshing = this.#check()
-        .then(() => {
-          if (!this.#closed) this.#ready = true;
+        .then((availability) => {
+          if (!this.#closed) {
+            this.#availability = availability;
+            this.#freshUntil = performance.now() + this.#intervalMs * 3;
+          }
         })
         .catch(() => {
-          this.#ready = false;
+          this.#availability = undefined;
         })
         .finally(() => {
           if (this.#refreshing === refreshing) this.#refreshing = undefined;

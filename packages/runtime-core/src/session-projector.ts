@@ -12,7 +12,7 @@ import type {
   ExecutionPublication,
   SessionLogFact,
 } from "./accepted-fact.ts";
-import type { SessionControlChange } from "@pi-cloud/protocol";
+import type { PublicationAvailability, SessionControlChange } from "@pi-cloud/protocol";
 import { assertCommittedControlChange } from "./session-control-outbox.ts";
 import type { ProducerCapacity } from "@pi-cloud/event-log";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
@@ -48,6 +48,9 @@ export class SessionProjector {
   readonly #publicationControl: PostgresPublicationControl;
   readonly #publicationClient: HttpPublicationClient;
   #publicationRetirement: Promise<unknown> = Promise.resolve();
+  #availabilityEpoch = 0;
+  #availabilityCache: { until: number; value: PublicationAvailability } | undefined;
+  #availabilityLoading: Promise<PublicationAvailability> | undefined;
   #partitions = 0;
   #ready = false;
   #closing: Promise<void> | undefined;
@@ -141,6 +144,8 @@ export class SessionProjector {
         options.controlChanges?.reset();
       },
       onRevoked: () => {
+        this.#availabilityEpoch++;
+        this.#availabilityCache = undefined;
         currentControlAssignment = () => false;
         options.controlChanges?.reset();
         const closing: Promise<void>[] = [];
@@ -337,6 +342,62 @@ export class SessionProjector {
     this.#relay.start();
     this.#retention.start(this.#partitions);
     this.#ready = true;
+  }
+  localPublicationAvailability(): PublicationAvailability {
+    const partitions: number[] = [];
+    if (this.#ready)
+      for (let p = 0; p < this.#partitions; p++)
+        if (this.#consumer.ownsPartition(p) && this.publication.ownership(p)) partitions.push(p);
+    return { partitionCount: this.options.partitions, partitions };
+  }
+  async publicationAvailability(): Promise<PublicationAvailability> {
+    if (!this.#ready) throw new Error("Projector not started");
+    if (this.#availabilityCache && this.#availabilityCache.until > Date.now())
+      return this.#availabilityCache.value;
+    if (!this.#availabilityLoading) {
+      const epoch = this.#availabilityEpoch;
+      const loading = (async () => {
+        const owners = await this.#consumer.partitionOwners();
+        const reports = new Map<string, number[]>();
+        for (const [p, client] of owners) {
+          if (!client.startsWith(PREFIX) || p < 0 || p >= this.#partitions) continue;
+          const owner = new URL(
+            Buffer.from(client.slice(PREFIX.length), "base64url").toString(),
+          ).toString();
+          const partitions = reports.get(owner) ?? [];
+          partitions.push(p);
+          reports.set(owner, partitions);
+        }
+        const local = new URL(this.options.advertisedBaseUrl).toString();
+        const usable = await Promise.all(
+          [...reports].map(async ([owner, assigned]) => {
+            try {
+              const report =
+                owner === local
+                  ? this.localPublicationAvailability()
+                  : await this.#publicationClient.publicationAvailability(owner, true);
+              return report.partitionCount === this.#partitions
+                ? assigned.filter((p) => report.partitions.includes(p))
+                : [];
+            } catch {
+              return [];
+            }
+          }),
+        );
+        if (!this.#ready || epoch !== this.#availabilityEpoch)
+          throw new Error("Projector ownership changed");
+        const value = {
+          partitionCount: this.#partitions,
+          partitions: usable.flat().sort((a, b) => a - b),
+        };
+        this.#availabilityCache = { value, until: Date.now() + 500 };
+        return value;
+      })().finally(() => {
+        if (this.#availabilityLoading === loading) this.#availabilityLoading = undefined;
+      });
+      this.#availabilityLoading = loading;
+    }
+    return this.#availabilityLoading;
   }
   async checkHealth(): Promise<void> {
     await this.checkIngestHealth();

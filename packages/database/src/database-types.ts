@@ -965,6 +965,7 @@ export interface PlatformRuntimeSettingChangeTable {
 }
 
 export interface PiSessionTable {
+  session_hash: GeneratedInt8;
   tenant_id: string;
   id: string;
   created_at_ms: Int8;

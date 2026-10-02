@@ -184,6 +184,11 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
   resolve(lease: string) {
     return this.#writers.get(lease);
   }
+  async publicationAvailability() {
+    if (!this.bus.publicationAvailability)
+      throw new Error("Execution transport has no publication availability");
+    return this.bus.publicationAvailability();
+  }
   async checkHealth() {
     await this.bus.checkHealth();
   }

@@ -64,7 +64,8 @@ it.skipIf(!postgres || !brokers)(
       done(null, payload);
     });
     new SessionPublicationService(token, {
-      checkIngestHealth: () => projector.checkIngestHealth(),
+      publicationAvailability: () => projector.publicationAvailability(),
+      localPublicationAvailability: () => projector.localPublicationAvailability(),
       publicationPartition: (id) => projector.publicationPartition(id),
       ownerForPartition: (p) => projector.ownerForPartition(p),
       openPublication: (p) => projector.openPublication(p),
@@ -116,6 +117,7 @@ it.skipIf(!postgres || !brokers)(
         "elastic",
       );
       client = new HttpPublicationClient({ baseUrl: url, token });
+      expect(await client.publicationAvailability()).toEqual({ partitionCount: 1, partitions: [0] });
       logs = new WorkerExecutionLog(database, client);
       async function admit(key: string) {
         const accepted = await store.acceptTurn(session.sessionId, key, { prompt: key });

@@ -29,7 +29,8 @@ PiCloud deployment. Remaining operational limits are listed below.
       scope and confirmed-absence quota release. [October 2 review](reports/repository-review-20261002.md).
 - [ ] R02-02: distinguish listener/topic health from usable publication-owner and
       control-view readiness before Worker Run admission, without globally gating
-      healthy partitions on unrelated projection lag.
+      healthy partitions on unrelated projection lag. Source repair and targeted
+      admission/readiness checks are complete; matched rollout remains pending.
 - [ ] R02-03: remove whole-batch Outbox waiting across independent partitions;
       keep bounded concurrency, entity-head order and PG claim/retry guards. Source
       repair and isolated-PG progress/cleanup checks are complete; rollout remains pending.
@@ -39,7 +40,8 @@ PiCloud deployment. Remaining operational limits are listed below.
       reconciliation, known-version echo reads, idle relay scans and cleanup backlog.
       Report whole-Turn SQL/WAL/Kafka/recovery costs alongside cache-hit counts.
 - [ ] O02-03: scope binding bootstrap to owned partitions before applying capacity
-      limits; the current global 65,536-row cap does not grow with Projector replicas.
+      limits. Owner-filtered PK paging and per-owner row/byte budgets are implemented;
+      matched cold-recovery acceptance remains pending.
 - [ ] Discuss O02-04/05: merge Preview target reads and validate scoped connection
       reuse; deduplicate identical immutable-image reads within one decode operation.
       Shared-resource invalidation is not implicitly covered by Session control facts.

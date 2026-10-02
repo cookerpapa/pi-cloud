@@ -84,6 +84,7 @@ it.each([false, true])(
     });
     const onFailure = vi.fn();
     const worker = new PostgresPiWorker({
+      admitRunClaims: async () => ({ partitionCount: 1, partitions: [0] }),
       database: { selectFrom: () => query } as unknown as Kysely<Database>,
       notificationConnectionString: "test",
       identity: "worker",

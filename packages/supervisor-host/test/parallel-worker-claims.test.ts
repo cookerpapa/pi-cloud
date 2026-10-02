@@ -36,7 +36,13 @@ afterEach(async () => {
   for (const close of closing.splice(0)) await close();
 });
 
-function fixture(capacity = 4, lanes = 4, readiness = async () => true) {
+function fixture(
+  capacity = 4,
+  lanes = 4,
+  readiness: () => Promise<
+    import("@pi-cloud/protocol").PublicationAvailability | undefined
+  > = async () => ({ partitionCount: 1, partitions: [0] }),
+) {
   const tickets: Ticket[] = [];
   let accepting = true;
   const empty = {
@@ -185,13 +191,13 @@ it("shutdown joins already-issued claims and limits later probes to owned famili
 });
 
 it("does not start claims after shutdown while readiness was pending", async () => {
-  const ready = Promise.withResolvers<boolean>();
+  const ready = Promise.withResolvers<import("@pi-cloud/protocol").PublicationAvailability>();
   const entered = vi.fn(() => ready.promise);
   const f = fixture(4, 4, entered);
   await f.worker.start();
   await vi.waitFor(() => expect(entered).toHaveBeenCalledOnce());
   const stop = f.worker.stop();
-  ready.resolve(true);
+  ready.resolve({ partitionCount: 1, partitions: [0] });
   await stop;
   expect(f.tickets).toHaveLength(0);
 });

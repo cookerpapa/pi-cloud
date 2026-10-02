@@ -34,6 +34,7 @@ export async function createSandboxControl(options: {
   images?: ConfiguredImageAttachments;
   publishBindingChanges(ids: readonly string[]): Promise<void>;
   partitionFor(sessionId: string): number;
+  partitionCount: number;
 }) {
   const config = await loadSandboxControlConfig();
   const { database, instanceId, metrics } = options;
@@ -118,6 +119,7 @@ export async function createSandboxControl(options: {
     const bindingView = new SandboxBindingView({
       source: bindings,
       partitionFor: options.partitionFor,
+      partitionCount: options.partitionCount,
     });
     const controller = new SandboxController({
       bindings,

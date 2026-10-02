@@ -1,3 +1,5 @@
+import { SandboxBindingView } from "../src/sandbox-binding-view.ts";
+import { kafkaProducerLane } from "../../runtime-core/src/kafka-accepted-fact.ts";
 import { ConversationDeletionService } from "../../control-plane/src/conversation-deletion-service.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { randomUUID } from "node:crypto";
@@ -68,6 +70,87 @@ async function fixtureDatabase() {
 }
 
 describe("PostgreSQL Sandbox control ownership", () => {
+  it("loads only owned binding pages before applying capacity limits", async () => {
+    const database = await fixtureDatabase(),
+      instanceId = randomUUID();
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
+      database,
+      sandboxDomainId: "sandbox-domain-0001",
+      instanceId,
+      ownerBaseUrl: "http://bindings.test",
+    });
+    resources.push(() => repository.close());
+    await repository.start();
+    const tenant = await createPrivateTenant(database, {
+      slug: randomUUID(),
+      ownerDisplayName: "Bindings",
+    });
+    const store = new ControlPlaneStore({ database, ...tenant });
+    const project = await store.createProject({ name: "Bindings", source: { kind: "empty" } });
+    const sessions: string[] = [];
+    while (sessions.length < 2) {
+      const s = await store.createSession(
+        project.projectId,
+        project.workspaceId,
+        "snapshot",
+        "elastic",
+      );
+      if (
+        !sessions.length ||
+        kafkaProducerLane(s.sessionId, 2) !== kafkaProducerLane(sessions[0]!, 2)
+      )
+        sessions.push(s.sessionId);
+    }
+    const runs: string[] = [];
+    for (const [i, sessionId] of sessions.entries()) {
+      const run = await store.acceptTurn(sessionId, randomUUID(), { prompt: "snapshot" });
+      runs.push(run.runId);
+      await sql`insert into sandbox_tool_bindings(binding_id,tenant_id,run_id,writer_id,sandbox_domain_id,owner_instance_id,descriptor,snapshot)
+        select gen_random_uuid(),${tenant.tenantId}::uuid,${run.runId}::uuid,gen_random_uuid(),'sandbox-domain-0001',${instanceId}::uuid,
+          '{"version":1}'::jsonb,'{}'::jsonb from generate_series(1,${i === 0 ? 257 : 300})`.execute(
+        database,
+      );
+    }
+    const reads: string[] = [];
+    const measured = database.withPlugin({
+      transformQuery({ node, queryId }) {
+        reads.push(database.getExecutor().compileQuery(node, queryId).sql);
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    });
+    const source = new PostgresSandboxBindings(
+      measured,
+      "sandbox-domain-0001",
+      instanceId,
+      "http://bindings.test",
+      async () => {},
+    );
+    const view = new SandboxBindingView({
+      source,
+      partitionCount: 2,
+      partitionFor: (id) => kafkaProducerLane(id, 2),
+      maximumEntries: 257,
+    });
+    await view.load([kafkaProducerLane(sessions[0]!, 2)], () => true);
+    expect(reads).toHaveLength(2);
+    expect(reads.every((q) => q.includes("session_hash") && q.includes("limit"))).toBe(true);
+    expect(
+      await view.find(
+        { tenantId: tenant.tenantId, runId: runs[0]!, writerId: randomUUID() },
+        false,
+      ),
+    ).toHaveLength(257);
+    expect(
+      await view.find(
+        { tenantId: tenant.tenantId, runId: runs[1]!, writerId: randomUUID() },
+        false,
+      ),
+    ).toHaveLength(0);
+  });
+
   it("pins quarantine to the physical target and rejects late identity rewrites", async () => {
     const database = await fixtureDatabase(),
       instanceId = randomUUID(),

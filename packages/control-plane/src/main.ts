@@ -150,6 +150,7 @@ export async function startControlPlane(): Promise<void> {
       metrics: observability.metrics,
       publishBindingChanges: (ids) => controlChanges.flushEntities("sandbox_binding", ids),
       partitionFor: (sessionId) => kafkaProducerLane(sessionId, config.kafkaPartitions),
+      partitionCount: config.kafkaPartitions,
       ...(images ? { images } : {}),
     });
     const workspaceBrowserClient = new ReplicatedSandboxControlClient({

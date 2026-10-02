@@ -38,6 +38,21 @@ timeout rolls back without advancing offsets or admitting a Tool. Failed records
 retry in partition order. Phase metrics and payload-free slow-record diagnostics
 locate waits without introducing another consumer or a skip/dead-letter path
 ([ADR-0199](adr/0199-bounded-publication-and-projection.md)).
+Worker admission uses a short-lived mask of usable Session publication partitions.
+An open HTTP listener or existing Kafka topic alone is insufficient: a partition
+needs its producer, assignment and control views installed. The mask filters the
+existing PG claim query before a Run/lease is admitted; unrelated projection lag
+does not close healthy partitions. Peer reports are intersected with Kafka group
+ownership, and Worker snapshots expire after three seconds. This is an admission
+hint, not an additional lease or execution authority (ADR-0213).
+
+Binding bootstrap loads assigned partitions in primary-key pages of 256. Each
+owner retains at most 65,536 entries and 64 MiB of serialized binding metadata;
+other owners' payloads do not count against that budget. The generated PG Session
+hash matches the existing Kafka function; ownership and partition count are not
+stored as another authority. PG may scan hashed metadata to filter an assignment;
+this bounds transferred payloads and memory, not all database work.
+
 Image bytes travel over Cube's native execution transport and a private S3 attachment
 port. The trusted Cube completion adapter externalizes image parts before Kafka replies; Worker restores them
 before native Tool completion. The Session append codec externalizes the final
