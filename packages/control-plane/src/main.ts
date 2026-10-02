@@ -365,7 +365,7 @@ export async function startControlPlane(): Promise<void> {
       publicRegistrationEnabled: config.publicRegistration.enabled,
       webSessionAuthenticator: webAuthentication,
       readiness: async () => {
-        if (runtime?.state !== "running") return false;
+        if (runtime?.state !== "running" || sandboxControl?.ready !== true) return false;
         await Promise.all([activeAgentEvents.checkIngestHealth(), sql`select 1`.execute(database)]);
         return true;
       },

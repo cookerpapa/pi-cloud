@@ -314,6 +314,9 @@ export async function createSandboxControl(options: {
       probes,
       bindingView,
       close,
+      get ready() {
+        return started && closing === undefined;
+      },
       start: async () => {
         if (starting) throw new Error("Sandbox control already started");
         starting = true;

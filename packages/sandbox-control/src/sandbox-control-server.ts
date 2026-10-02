@@ -314,7 +314,8 @@ export class SandboxControlServer {
   async listen(): Promise<string> {
     if (this.#address !== undefined) throw new Error("Sandbox control is already listening");
     await this.#broker.checkHealth();
-    this.#logDelivery?.checkHealth();
+    // Publication recovery needs reachable control listeners. Its readiness
+    // belongs to /health/ready, not the act of binding this listener.
     this.#recordCapacityMetrics();
     this.#address = await this.#server.listen({ host: this.#host, port: this.#port });
     this.#ready = true;

@@ -195,6 +195,29 @@ function backend(ownerBaseUrl = "http://sandbox-control.invalid"): SandboxContro
 }
 
 describe("Sandbox control authenticated RPC", () => {
+  it("binds its listener before publication recovery while readiness stays closed", async () => {
+    let recovered = false;
+    const server = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      broker: backend(),
+      logDelivery: {
+        instanceId: "recovering-control",
+        token: SERVICE_TOKEN,
+        receive: vi.fn(),
+        checkHealth() {
+          if (!recovered) throw new Error("Publication not ready");
+        },
+      },
+    });
+    servers.push(server);
+    const address = await server.listen();
+    expect((await fetch(`${address}/health/live`)).status).toBe(200);
+    expect((await fetch(`${address}/health/ready`)).status).toBe(503);
+    recovered = true;
+    expect((await fetch(`${address}/health/ready`)).status).toBe(200);
+  });
   it.each([false, true])(
     "preserves a Volume error's retryability across Broker RPC: %s",
     async (retryable) => {
