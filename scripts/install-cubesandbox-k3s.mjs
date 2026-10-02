@@ -1382,13 +1382,17 @@ const serviceAddress = (component, portName) => {
   }
   return { host, port };
 };
+const runtimeBuild = await readFile(
+  resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json"),
+);
+const executionProtocolVersion = JSON.parse(runtimeBuild.toString("utf8")).managedProtocolVersion;
+if (!Number.isSafeInteger(executionProtocolVersion) || executionProtocolVersion < 1)
+  throw new Error("Managed Cube execution protocol version is invalid");
 const cluster = {
   formatVersion: 1,
   cubeCommit: CUBE_COMMIT,
-  executionProtocolVersion: 1,
-  runtimePatchSha256: createHash("sha256")
-    .update(await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json")))
-    .digest("hex"),
+  executionProtocolVersion,
+  runtimePatchSha256: createHash("sha256").update(runtimeBuild).digest("hex"),
   nodeName,
   api: serviceAddress("api", "http-api"),
   master: serviceAddress("master", "cubemaster"),
