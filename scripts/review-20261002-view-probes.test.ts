@@ -231,7 +231,7 @@ it("skips full-row PG reads for duplicate already-known Subagent command notific
   }
 });
 
-it("records duplicate immutable-image reads within one decode call", async () => {
+it("deduplicates immutable-image reads within one decode call", async () => {
   const bytes = Buffer.from("image-byte-fixture"),
     tenantId = randomUUID();
   const get = vi.fn(async () => bytes);
@@ -246,11 +246,11 @@ it("records duplicate immutable-image reads within one decode call", async () =>
     },
   };
   await codec.unpack({ tenantId }, [image, image] as any);
-  expect(get).toHaveBeenCalledTimes(2);
+  expect(get).toHaveBeenCalledTimes(1);
   evidence.imageDecode = {
     references: 2,
     distinctObjects: 1,
-    storeGetCalls: 2,
+    storeGetCalls: 1,
     byteSource: "simulated; no image-model claim",
   };
 });

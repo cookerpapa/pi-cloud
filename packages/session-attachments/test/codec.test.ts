@@ -74,6 +74,37 @@ it("upload failure never produces an image reference", async () => {
   vi.mocked(f.store.put).mockRejectedValue(new Error("upload failed"));
   await expect(f.codec.pack(f.scope, f.image)).rejects.toThrow("upload failed");
 });
+it("fetches repeated immutable images once per decode and does not retain a cross-request byte cache", async () => {
+  const f = fixture();
+  const packed = await f.codec.pack(f.scope, [f.image, { ...f.image, label: "again" }]);
+  expect(await f.codec.unpack(f.scope, packed)).toEqual([f.image, { ...f.image, label: "again" }]);
+  expect(f.store.get).toHaveBeenCalledTimes(1);
+  await f.codec.unpack(f.scope, packed);
+  expect(f.store.get).toHaveBeenCalledTimes(2);
+  await expect(f.codec.unpack({ tenantId: randomUUID() }, packed)).rejects.toThrow("missing");
+});
+it("does not let repeated identities bypass changed metadata or cancellation during a read", async () => {
+  const f = fixture(),
+    packed = await f.codec.pack(f.scope, f.image);
+  await expect(
+    f.codec.unpack(f.scope, [
+      packed,
+      {
+        ...packed,
+        attachment: { ...packed.attachment, byteLength: packed.attachment.byteLength + 1 },
+      },
+    ]),
+  ).rejects.toThrow("integrity");
+  expect(f.store.get).toHaveBeenCalledTimes(2);
+  const abort = new AbortController();
+  vi.mocked(f.store.get).mockImplementationOnce(async () => {
+    abort.abort(new Error("cancelled during fetch"));
+    return Buffer.from(f.image.data, "base64");
+  });
+  await expect(f.codec.unpack(f.scope, packed, abort.signal)).rejects.toThrow(
+    "cancelled during fetch",
+  );
+});
 it("preserves image-shaped opaque Tool details and arguments without uploading them", async () => {
   const f = fixture();
   const value = {

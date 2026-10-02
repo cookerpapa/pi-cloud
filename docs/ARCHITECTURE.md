@@ -59,6 +59,8 @@ before native Tool completion. The Session append codec externalizes the final
 after-hook content too. PG native-log rows retain references; public SessionStorage
 reads reconstruct the exact native images. PG plus retained attachments is the
 lossless native history (ADR-0192), while Cube Volume remains Workspace authority.
+Each decode fetches an identical immutable image reference once, preserving
+tenant/metadata/integrity checks; bytes are not cached between decode operations.
 The old Fact Gateway, Fact WebSocket, secondary channel lease/progress store,
 independent projection service and execution-committed notification are removed.
 Historical migrations/reports describe their named revisions, not alternate modes.

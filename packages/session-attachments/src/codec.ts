@@ -87,6 +87,8 @@ export class ImageAttachmentCodec {
     return (await visit(value)) as ImagePacked<T>;
   }
   async unpack<T>(scope: ImageScope, value: ImagePacked<T>, signal?: AbortSignal): Promise<T> {
+    // Only this decode owns the bytes. A later request must revalidate storage.
+    const images = new Map<string, Promise<string>>();
     const visit = async (part: unknown): Promise<unknown> => {
       signal?.throwIfAborted();
       if (Array.isArray(part)) {
@@ -97,16 +99,33 @@ export class ImageAttachmentCodec {
       if (!object(part)) return part;
       if (part.type === "pi_cloud_image_v1") {
         const ref = parseImageAttachmentReference(part.attachment);
-        const bytes = await this.store.get(scope.tenantId, ref, signal);
-        if (
-          bytes.length !== ref.byteLength ||
-          createHash("sha256").update(bytes).digest("hex") !== ref.sha256
-        )
-          throw new Error("Image attachment integrity check failed");
+        const key = JSON.stringify([
+          scope.tenantId,
+          ref.id,
+          ref.sha256,
+          ref.mimeType,
+          ref.byteLength,
+        ]);
+        let pending = images.get(key);
+        if (!pending) {
+          pending = (async () => {
+            const bytes = await this.store.get(scope.tenantId, ref, signal);
+            signal?.throwIfAborted();
+            if (
+              bytes.length !== ref.byteLength ||
+              createHash("sha256").update(bytes).digest("hex") !== ref.sha256
+            )
+              throw new Error("Image attachment integrity check failed");
+            return bytes.toString("base64");
+          })();
+          images.set(key, pending);
+        }
+        const data = await pending;
+        signal?.throwIfAborted();
         if (scope.runId)
           this.#remember(`${scope.tenantId}:${scope.runId}:${ref.mimeType}:${ref.sha256}`, ref);
         const { type: _type, attachment: _attachment, ...rest } = part;
-        return { ...rest, type: "image", data: bytes.toString("base64"), mimeType: ref.mimeType };
+        return { ...rest, type: "image", data, mimeType: ref.mimeType };
       }
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(part))
