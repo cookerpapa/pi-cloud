@@ -50,7 +50,10 @@ Historical migrations/reports describe their named revisions, not alternate mode
 
 Seal/control-reference insertion emits an empty commit-time PG notification. One session-affine
 LISTEN connection per Projector wakes the shared Session Outbox claimant;
-50ms polling still covers missing hints and reconnects. Hints delivered during
+A one-second idle fallback still covers missing hints and reconnects; known retries
+retain their earlier deadline. Sixteen independent sends preserve entity-head
+ordering without waiting for an entire batch. Control-reference cleanup has its
+own bounded drain loop and does not block publication. Hints delivered during
 an empty scan are retained by generation, and cannot bypass publication backoff.
 No browser payload or authority moves through NOTIFY. Drain proof and completion
 remain separate durable boundaries (ADR-0177).

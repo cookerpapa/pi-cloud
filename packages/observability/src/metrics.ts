@@ -36,6 +36,8 @@ export class PiCloudMetrics {
   readonly modelPermitWait: Histogram;
   readonly queuedRuns: Gauge;
   readonly terminalEventOutboxPending: Gauge;
+  readonly controlOutboxPending: Gauge<"entity">;
+  readonly controlOutboxOldestAge: Gauge<"entity">;
   readonly workspaceStoragePurgePending: Gauge;
   readonly kafkaLiveTailSessions: Gauge;
   readonly kafkaLiveTailEvents: Gauge;
@@ -260,6 +262,18 @@ export class PiCloudMetrics {
     this.terminalEventOutboxPending = new Gauge({
       name: "pi_cloud_terminal_event_outbox_pending",
       help: "Settled terminal events waiting to be published to Kafka",
+      registers: [this.registry],
+    });
+    this.controlOutboxPending = new Gauge({
+      name: "pi_cloud_session_control_outbox_pending",
+      help: "Committed control references awaiting publication",
+      labelNames: ["entity"],
+      registers: [this.registry],
+    });
+    this.controlOutboxOldestAge = new Gauge({
+      name: "pi_cloud_session_control_outbox_oldest_seconds",
+      help: "Age of the oldest unpublished control reference, measured by PostgreSQL",
+      labelNames: ["entity"],
       registers: [this.registry],
     });
     this.workspaceStoragePurgePending = new Gauge({

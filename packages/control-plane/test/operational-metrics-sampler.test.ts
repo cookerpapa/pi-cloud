@@ -33,6 +33,72 @@ afterAll(async () => {
 });
 
 describe("operational metrics sampler", () => {
+  it("samples bounded control backlog and age with one database statement", async () => {
+    const tenantId = crypto.randomUUID(),
+      id = crypto.randomUUID();
+    await database
+      .insertInto("tenants")
+      .values({ id: tenantId, slug: "metrics-controls" })
+      .execute();
+    await database
+      .insertInto("outbox")
+      .values({
+        id,
+        tenant_id: tenantId,
+        aggregate_type: "session_control_change",
+        aggregate_id: id,
+        topic: "session.control.changed.v1",
+        payload: {
+          kind: "control_change",
+          entity: "input_queue",
+          entityId: id,
+          factId: id,
+          version: "1",
+          scope: { tenantId, piSessionId: id },
+          occurredAt: new Date().toISOString(),
+        },
+        created_at: new Date(Date.now() - 10000),
+        last_error: null,
+      })
+      .execute();
+    let queries = 0;
+    const measured = database.withPlugin({
+      transformQuery({ node }) {
+        return node;
+      },
+      async transformResult({ result }) {
+        queries++;
+        return result;
+      },
+    });
+    const metrics = new PiCloudMetrics("control-backlog"),
+      errors: unknown[] = [];
+    const sampler = new OperationalMetricsSampler({
+      database: measured,
+      events: {
+        statistics: () => ({
+          liveTail: { activeSessionTails: 0, cachedEvents: 0, cachedBytes: 0 },
+        }),
+      } as never,
+      metrics,
+      onError: (_source, error) => errors.push(error),
+    });
+    await sampler.sample();
+    expect(errors).toEqual([]);
+    expect(queries).toBe(1);
+    const backlog = await metrics.controlOutboxPending.get(),
+      ages = await metrics.controlOutboxOldestAge.get();
+    expect(backlog.values.find((v) => v.labels.entity === "input_queue")?.value).toBe(1);
+    expect(
+      ages.values.find((v) => v.labels.entity === "input_queue")!.value,
+    ).toBeGreaterThanOrEqual(9);
+    expect(backlog.values).toHaveLength(4);
+    await database.deleteFrom("outbox").where("id", "=", id).execute();
+    await sampler.sample();
+    expect((await metrics.controlOutboxPending.get()).values.every((v) => v.value === 0)).toBe(
+      true,
+    );
+  });
   it("publishes PostgreSQL backlog and local Session Projector gauges", async () => {
     const metrics = new PiCloudMetrics("control-plane-test");
     const errors: unknown[] = [];

@@ -22,12 +22,16 @@ export class SessionOutboxRelay {
   readonly #bus: ControlOutboxBus;
   readonly #pollIntervalMs: number;
   readonly #claimLeaseMs: number;
-  readonly #batchSize: number;
+  readonly #concurrency: number;
   readonly #wake: PostgresNotificationWake;
+  readonly #active = new Map<string, Promise<void>>();
   #abort: AbortController | undefined;
   #task: Promise<void> | undefined;
   #failure: unknown;
-  #lastPrune = 0;
+  #retryAt = Infinity;
+  #cleanupTimer: NodeJS.Timeout | undefined;
+  #cleanup: Promise<void> | undefined;
+  #cleanupDue = 0;
 
   constructor(options: {
     database: Kysely<Database>;
@@ -35,7 +39,7 @@ export class SessionOutboxRelay {
     bus: ControlOutboxBus;
     pollIntervalMs?: number;
     claimLeaseMs?: number;
-    batchSize?: number;
+    concurrency?: number;
   }) {
     this.#database = options.database;
     this.#bus = options.bus;
@@ -43,10 +47,10 @@ export class SessionOutboxRelay {
       options.notificationConnectionString,
       SESSION_CONTROL_NOTIFICATION_CHANNEL,
     );
-    this.#pollIntervalMs = options.pollIntervalMs ?? 50;
+    this.#pollIntervalMs = options.pollIntervalMs ?? 1000;
     this.#claimLeaseMs = options.claimLeaseMs ?? 30_000;
-    this.#batchSize = options.batchSize ?? 16;
-    for (const value of [this.#pollIntervalMs, this.#claimLeaseMs, this.#batchSize]) {
+    this.#concurrency = options.concurrency ?? 16;
+    for (const value of [this.#pollIntervalMs, this.#claimLeaseMs, this.#concurrency]) {
       if (!Number.isSafeInteger(value) || value < 1)
         throw new TypeError("Session Outbox relay limits must be positive integers");
     }
@@ -56,6 +60,8 @@ export class SessionOutboxRelay {
     if (this.#task !== undefined) throw new Error("Session Outbox relay is already started");
     this.#abort = new AbortController();
     this.#task = this.#run(this.#abort.signal);
+    this.#cleanupTimer = setInterval(() => this.#clean(), 1000);
+    this.#cleanupTimer.unref();
   }
 
   checkHealth(): void {
@@ -66,8 +72,11 @@ export class SessionOutboxRelay {
 
   async close(): Promise<void> {
     this.#abort?.abort();
+    clearInterval(this.#cleanupTimer);
     try {
       await this.#task;
+      await Promise.allSettled(this.#active.values());
+      await this.#cleanup;
     } finally {
       await this.#wake.close();
     }
@@ -75,17 +84,25 @@ export class SessionOutboxRelay {
   }
 
   async dispatchOne(): Promise<boolean> {
-    return (await this.#dispatch(1)) > 0;
+    const [row] = await this.#claim(1);
+    if (!row) return false;
+    try {
+      await this.#publish(row);
+    } catch (error) {
+      throw new AggregateError([error], "Session control publication failed");
+    }
+    return true;
   }
 
   /** Keep current view versions and unsettled publication; obsolete references
    * are not a second control history. Native seals retain their existing rules. */
-  async prunePublishedControls(): Promise<void> {
-    await sql`delete from outbox where id in (
+  async prunePublishedControls(): Promise<number> {
+    const deleted = await sql<{ id: string }>`delete from outbox where id in (
       select old.id from outbox old
       where old.aggregate_type='session_control_change' and old.published_at < clock_timestamp()-interval '5 minutes'
         and (
-          exists(select 1 from outbox newer where newer.aggregate_type='session_control_change'
+          old.payload->>'entity'<>'input_queue'
+          or exists(select 1 from outbox newer where newer.aggregate_type='session_control_change'
             and newer.tenant_id=old.tenant_id and newer.aggregate_id=old.aggregate_id
             and newer.payload->>'entity'=old.payload->>'entity'
             and newer.payload->>'runId' is not distinct from old.payload->>'runId'
@@ -93,18 +110,12 @@ export class SessionOutboxRelay {
             and newer.published_at is not null)
           or (old.payload->>'entity'='input_queue' and not exists(
             select 1 from sessions s where s.tenant_id=old.tenant_id and s.id=old.aggregate_id))
-          or (old.payload->>'entity'='sandbox_binding' and not exists(
-            select 1 from sandbox_tool_bindings b where b.tenant_id=old.tenant_id
-              and b.binding_id=old.aggregate_id and b.run_id=(old.payload->>'runId')::uuid))
-          or (old.payload->>'entity'='subagent_command' and not exists(
-            select 1 from subagent_control_commands c where c.tenant_id=old.tenant_id and c.id=old.aggregate_id))
-          or (old.payload->>'entity'='subagent_state' and not exists(
-            select 1 from pi_sessions s where s.tenant_id=old.tenant_id and s.id=old.payload#>>'{scope,piSessionId}'))
         ) order by old.created_at,old.id limit 512
-    )`.execute(this.#database);
+    ) returning id`.execute(this.#database);
+    return deleted.rows.length;
   }
 
-  async #dispatch(limit: number): Promise<number> {
+  async #claim(limit: number): Promise<readonly ClaimedControl[]> {
     // available_at is the retry/claim deadline; attempts is a CAS token.
     // No transaction or database connection spans Kafka delivery.
     // Keep terminal Session heads and control-entity heads ordered. Synchronous
@@ -115,6 +126,7 @@ export class SessionOutboxRelay {
          where candidate.topic in (${SESSION_TERMINAL_EVENT_OUTBOX_TOPIC},${SESSION_CONTROL_OUTBOX_TOPIC})
            and candidate.aggregate_type in ('session_terminal_event','session_control_change')
            and candidate.published_at is null and candidate.available_at <= now()
+           and not(candidate.id=any(${[...this.#active.keys()]}::uuid[]))
            and not exists (
              select 1 from outbox predecessor
               where predecessor.topic = candidate.topic
@@ -135,16 +147,7 @@ export class SessionOutboxRelay {
         from selected where claimed.id = selected.id
       returning claimed.id, claimed.payload, claimed.attempts
     `.execute(this.#database);
-    const results = await Promise.allSettled(claimed.rows.map((row) => this.#publish(row)));
-    const failures = results.filter(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    );
-    if (failures.length)
-      throw new AggregateError(
-        failures.map((failure) => failure.reason),
-        "Session control publication failed",
-      );
-    return claimed.rows.length;
+    return claimed.rows;
   }
 
   async #publish(row: ClaimedControl): Promise<void> {
@@ -169,47 +172,78 @@ export class SessionOutboxRelay {
       await this.#database
         .updateTable("outbox")
         .set({
-          available_at: new Date(Date.now() + retryMs),
+          available_at: sql<Date>`clock_timestamp() + ${retryMs} * interval '1 millisecond'`,
           last_error: "session_control_publish_failed",
         })
         .where("id", "=", row.id)
         .where("attempts", "=", row.attempts)
         .where("published_at", "is", null)
         .executeTakeFirst();
+      this.#retryAt = Math.min(this.#retryAt, performance.now() + retryMs);
       throw error;
     }
   }
 
+  #clean(): void {
+    if (this.#abort?.signal.aborted || this.#cleanup || performance.now() < this.#cleanupDue)
+      return;
+    this.#cleanup = (async () => {
+      const started = performance.now();
+      let more = false;
+      for (let batch = 0; batch < 8 && !this.#abort?.signal.aborted; batch++) {
+        more = (await this.prunePublishedControls()) === 512;
+        if (!more || performance.now() - started >= 1000) break;
+      }
+      this.#cleanupDue = performance.now() + (more ? 1000 : 60000);
+    })()
+      .catch(() => {
+        this.#cleanupDue = performance.now() + 30000;
+        operationalLog({
+          service: "pi-cloud-control-plane",
+          level: "warn",
+          event: "control_outbox.cleanup_failed",
+        });
+      })
+      .finally(() => {
+        this.#cleanup = undefined;
+      });
+  }
+
   async #run(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
-      if (performance.now() - this.#lastPrune >= 60_000) {
-        this.#lastPrune = performance.now();
-        await this.prunePublishedControls().catch(() =>
-          operationalLog({
-            service: "pi-cloud-control-plane",
-            level: "warn",
-            event: "control_outbox.cleanup_failed",
-          }),
-        );
-      }
       this.#wake.refresh();
       const generation = this.#wake.generation;
-      let waitMs = this.#pollIntervalMs;
       let failed = false;
-      try {
-        const count = await this.#dispatch(this.#batchSize);
-        this.#failure = undefined;
-        if (count > 0) {
-          continue;
+      if (this.#active.size < this.#concurrency) {
+        if (this.#retryAt <= performance.now()) this.#retryAt = Infinity;
+        try {
+          const rows = await this.#claim(this.#concurrency - this.#active.size);
+          this.#failure = undefined;
+          for (const row of rows) {
+            const task = this.#publish(row)
+              .catch((error) => {
+                this.#failure = error;
+              })
+              .finally(() => {
+                this.#active.delete(row.id);
+                this.#wake.notify();
+              });
+            this.#active.set(row.id, task);
+          }
+          if (rows.length) continue;
+        } catch (error) {
+          this.#failure = error;
+          failed = true;
         }
-      } catch (error: unknown) {
-        this.#failure = error;
-        failed = true;
-        waitMs = Math.max(waitMs, 100);
       }
+      const waitMs =
+        this.#active.size >= this.#concurrency
+          ? this.#pollIntervalMs
+          : Math.max(1, Math.min(this.#pollIntervalMs, this.#retryAt - performance.now()));
       try {
-        // Hints must not bypass the existing backoff after a failed claim/send.
-        if (failed) await delay(waitMs, undefined, { signal, ref: false });
+        // A failed claim backs off independently of frequent notification hints.
+        if (failed)
+          await delay(Math.max(100, this.#pollIntervalMs), undefined, { signal, ref: false });
         else await this.#wake.wait(generation, waitMs, signal);
       } catch (error) {
         if (!signal.aborted) throw error;

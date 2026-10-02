@@ -294,7 +294,8 @@ Fixed Tools are handed directly from Projector to the recorded Cube API/node/boo
 The native handoff is bounded to five seconds; ambiguous acceptance closes that
 operation scope and is not replayed. Closure blocks publication admission, joins
 Cube/workflow scopes, then publishes the ordered seal. The shared seal/control
-Outbox uses LISTEN hints with a 50 ms fallback poll. Interactive workflows use
+Outbox uses LISTEN hints, known retry deadlines and a one-second idle fallback.
+Its 16 send slots progress independently; cleanup drains bounded batches separately. Interactive workflows use
 the private control-plane TCP/4300 endpoint and
 the Supervisor management credential. There is no completed-result GET/cache or
 commit-notification RPC.

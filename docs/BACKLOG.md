@@ -31,7 +31,8 @@ PiCloud deployment. Remaining operational limits are listed below.
       control-view readiness before Worker Run admission, without globally gating
       healthy partitions on unrelated projection lag.
 - [ ] R02-03: remove whole-batch Outbox waiting across independent partitions;
-      keep bounded concurrency, entity-head order and PG claim/retry guards.
+      keep bounded concurrency, entity-head order and PG claim/retry guards. Source
+      repair and isolated-PG progress/cleanup checks are complete; rollout remains pending.
 - [ ] R02-04: make duplicate Subagent command admission produce no new control
       notification when its source state/revision did not change.
 - [ ] Measure and reduce O02-01/02's control-reference amplification, empty Steer

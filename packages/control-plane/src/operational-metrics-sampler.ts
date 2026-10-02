@@ -1,8 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
-import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "@pi-cloud/protocol";
 import type { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 
 const DEFAULT_SAMPLE_INTERVAL_MS = 10_000;
 
@@ -69,28 +68,37 @@ export class OperationalMetricsSampler {
 
   async #sampleDatabase(): Promise<void> {
     try {
-      const now = new Date();
-      const queued = await this.#database
-        .selectFrom("runs")
-        .select((expression) => expression.fn.countAll<string>().as("count"))
-        .where("available_at", "<=", now)
-        .where("state", "=", "queued")
-        .executeTakeFirstOrThrow();
-      const terminalEvents = await this.#database
-        .selectFrom("outbox")
-        .select((expression) => expression.fn.countAll<string>().as("count"))
-        .where("topic", "=", SESSION_TERMINAL_EVENT_OUTBOX_TOPIC)
-        .where("published_at", "is", null)
-        .executeTakeFirstOrThrow();
-      const workspacePurges = await this.#database
-        .selectFrom("workspaces")
-        .select((expression) => expression.fn.countAll<string>().as("count"))
-        .where("deleted_at", "is not", null)
-        .where("storage_purged_at", "is", null)
-        .executeTakeFirstOrThrow();
-      this.#metrics.queuedRuns.set(count(queued.count));
-      this.#metrics.terminalEventOutboxPending.set(count(terminalEvents.count));
-      this.#metrics.workspaceStoragePurgePending.set(count(workspacePurges.count));
+      const {
+        rows: [snapshot],
+      } = await sql<{
+        queued: string;
+        purges: string;
+        outbox: Array<{ kind: string; count: string; age: number }>;
+      }>`select
+        (select count(*)::text from runs where state='queued' and available_at<=clock_timestamp()) queued,
+        (select count(*)::text from workspaces where deleted_at is not null and storage_purged_at is null) purges,
+        coalesce((select jsonb_agg(jsonb_build_object('kind',kind,'count',n::text,'age',age)) from (
+          select case when aggregate_type='session_terminal_event' then 'terminal' else payload->>'entity' end kind,
+            count(*) n, greatest(0,extract(epoch from clock_timestamp()-min(created_at))) age
+          from outbox where published_at is null and aggregate_type in ('session_terminal_event','session_control_change')
+          group by 1
+        ) pending),'[]'::jsonb) outbox`.execute(this.#database);
+      if (!snapshot) throw new Error("Operational snapshot missing");
+      this.#metrics.queuedRuns.set(count(snapshot.queued));
+      this.#metrics.workspaceStoragePurgePending.set(count(snapshot.purges));
+      this.#metrics.terminalEventOutboxPending.set(
+        count(snapshot.outbox.find((row) => row.kind === "terminal")?.count ?? "0"),
+      );
+      for (const entity of [
+        "sandbox_binding",
+        "input_queue",
+        "subagent_state",
+        "subagent_command",
+      ]) {
+        const row = snapshot.outbox.find((row) => row.kind === entity);
+        this.#metrics.controlOutboxPending.set({ entity }, count(row?.count ?? "0"));
+        this.#metrics.controlOutboxOldestAge.set({ entity }, Number(row?.age ?? 0));
+      }
       this.#metrics.operationalSampleTimestamp.set({ source: "postgresql" }, Date.now() / 1_000);
     } catch (error: unknown) {
       this.#metrics.operationalSampleFailures.inc({ source: "postgresql" });

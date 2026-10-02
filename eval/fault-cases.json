@@ -876,6 +876,13 @@
       "file": "test/workspace-runtime-state-repository.test.ts",
       "test": "pins quarantine to the physical target and rejects late identity rewrites",
       "invariant": "A delayed old VM quarantine cannot rewrite its replacement identity or close replacement bindings."
+    },
+    {
+      "id": "outbox-independent-send-and-cleanup",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/terminal-outbox-relay.test.ts",
+      "test": "keeps send slots independent from a slow publication and a slow cleanup, then drains cleanup batches",
+      "invariant": "One slow Session publication or cleanup cannot block other send slots, expired local claims are not duplicated, and cleanup drains multiple bounded batches."
     }
   ]
 }

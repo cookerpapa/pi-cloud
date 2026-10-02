@@ -274,3 +274,9 @@ curl -fsS http://127.0.0.1:16686/api/services
 In Prometheus, check **Status -> Targets** and **Alerts**. The normal idle
 baseline has all application targets up, bounded Projector live-tail memory,
 zero persistent projection/terminal/cleanup backlog, and no firing alert.
+
+Session control propagation exposes `pi_cloud_session_control_outbox_pending` and
+`pi_cloud_session_control_outbox_oldest_seconds`, with four code-owned entity
+labels. The existing terminal gauge remains specific to seals. Queue, Outbox
+and Workspace-cleanup counts share one PG sampling statement; these metrics
+are observations, not publication or VM recovery authority.

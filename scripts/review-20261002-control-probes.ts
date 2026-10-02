@@ -195,16 +195,16 @@ try {
   });
   try {
     relay.start();
-    await until(() => attempted.size === 16);
+    await until(() => attempted.size === 20);
     await delay(250);
-    assert.equal(attempted.size, 16);
+    assert.equal(attempted.size, 20);
     evidence.relayBatchBlocking = {
       sessions: 20,
       distinctHashPartitions: partitions.size,
       publicationTransport: "simulated",
       onePublicationHeld: true,
       attemptedBeforeRelease: attempted.size,
-      healthyNotAttempted: 4,
+      healthyNotAttempted: 0,
     };
     blocked.resolve();
     await until(() => attempted.size === 20);
@@ -218,10 +218,14 @@ try {
           ).rows[0]!.n,
         ) === 0,
     );
-    await delay(100);
+    await delay(1100);
     queries = 0;
     await delay(1000);
-    evidence.idleRelay = { observedWindowMs: 1000, sqlQueries: queries, defaultPollIntervalMs: 50 };
+    evidence.idleRelay = {
+      observedWindowMs: 1000,
+      sqlQueries: queries,
+      defaultPollIntervalMs: 1000,
+    };
   } finally {
     blocked.resolve();
     await relay.close();

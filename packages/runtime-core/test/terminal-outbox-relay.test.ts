@@ -1,12 +1,15 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
+import { sql } from "kysely";
 import {
   SESSION_TERMINAL_EVENT_OUTBOX_TOPIC,
   SESSION_CONTROL_OUTBOX_TOPIC,
 } from "@pi-cloud/protocol";
 import { expect, it, vi } from "vitest";
 import { SessionOutboxRelay } from "../src/session-outbox-relay.ts";
+import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
+import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 import type { SessionLogFact } from "../src/accepted-fact.ts";
 
 it("claims bounded Session heads without holding a connection during delivery and retries stable Facts", async () => {
@@ -218,7 +221,7 @@ it("claims bounded Session heads without holding a connection during delivery an
       .select("id")
       .where("topic", "=", SESSION_CONTROL_OUTBOX_TOPIC)
       .execute();
-    expect(retained.map((r) => r.id).sort()).toEqual(controlIds.slice(1).sort());
+    expect(retained.map((r) => r.id).sort()).toEqual(controlIds.slice(2).sort());
     await db
       .deleteFrom("pi_sessions")
       .where("tenant_id", "=", tenant)
@@ -243,6 +246,176 @@ it("claims bounded Session heads without holding a connection during delivery an
     ).toEqual(sealsBefore);
   } finally {
     release();
+    await db.destroy();
+    await socket.stop();
+    await pg.close();
+  }
+}, 30000);
+
+it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
+  "keeps send slots independent from a slow publication and a slow cleanup, then drains cleanup batches",
+  async () => {
+    const url = new URL(process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL!);
+    const admin = createDatabase({ connectionString: url.toString(), maxConnections: 1 });
+    const name = `outbox_slots_${crypto.randomUUID().replaceAll("-", "")}`;
+    await sql`create database ${sql.id(name)}`.execute(admin);
+    url.pathname = `/${name}`;
+    const endpoint = url.toString(),
+      db = createDatabase({ connectionString: endpoint, maxConnections: 4 });
+    const held = Promise.withResolvers<void>(),
+      cleanupHeld = Promise.withResolvers<void>();
+    let relay: SessionOutboxRelay | undefined;
+    try {
+      await runMigrations(db, "up");
+      const tenant = crypto.randomUUID();
+      await db.insertInto("tenants").values({ id: tenant, slug: "relay-slots" }).execute();
+      const control = (id: string, published: boolean) => ({
+        id,
+        tenant_id: tenant,
+        aggregate_type: "session_control_change",
+        aggregate_id: id,
+        topic: SESSION_CONTROL_OUTBOX_TOPIC,
+        payload: {
+          kind: "control_change",
+          factId: id,
+          scope: { tenantId: tenant, piSessionId: id },
+          entity: "subagent_state",
+          entityId: id,
+          version: "1",
+          occurredAt: new Date().toISOString(),
+        },
+        published_at: published ? new Date(Date.now() - 600000) : null,
+        available_at: new Date(0),
+        last_error: null,
+      });
+      const ids = Array.from({ length: 20 }, () => crypto.randomUUID());
+      await db
+        .insertInto("outbox")
+        .values(
+          ids.map((id, i) => ({
+            ...control(id, false),
+            created_at: new Date(Date.now() - 20000 + i),
+          })),
+        )
+        .execute();
+      const calls = new Map<string, number>();
+      let concurrent = 0,
+        maximum = 0;
+      relay = new SessionOutboxRelay({
+        database: db,
+        notificationConnectionString: endpoint,
+        claimLeaseMs: 150,
+        bus: {
+          checkHealth: async () => {},
+          append: async (fact) => {
+            calls.set(fact.factId, (calls.get(fact.factId) ?? 0) + 1);
+            concurrent++;
+            maximum = Math.max(maximum, concurrent);
+            try {
+              if (fact.factId === ids[0]) await held.promise;
+              return { factId: fact.factId, durable: true };
+            } finally {
+              concurrent--;
+            }
+          },
+        },
+      });
+      const prune = relay.prunePublishedControls.bind(relay);
+      const cleanup = vi.spyOn(relay, "prunePublishedControls").mockImplementationOnce(async () => {
+        await cleanupHeld.promise;
+        return prune();
+      });
+      relay.start();
+      await vi.waitFor(() => expect(calls.size).toBe(20), { timeout: 10000 });
+      expect(maximum).toBeLessThanOrEqual(16);
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalled(), { timeout: 5000 });
+      const extra = crypto.randomUUID();
+      await db.insertInto("outbox").values(control(extra, false)).execute();
+      await vi.waitFor(() => expect(calls.has(extra)).toBe(true), { timeout: 5000 });
+      expect(calls.get(ids[0]!)).toBe(1); // Its expired PG claim cannot occupy another local slot.
+      const old = Array.from({ length: 1025 }, () => control(crypto.randomUUID(), true));
+      await db.insertInto("outbox").values(old).execute();
+      cleanupHeld.resolve();
+      await vi.waitFor(
+        async () =>
+          expect(
+            (
+              await db
+                .selectFrom("outbox")
+                .select("id")
+                .where(
+                  "id",
+                  "in",
+                  old.map((row) => row.id),
+                )
+                .execute()
+            ).length,
+          ).toBe(0),
+        { timeout: 10000 },
+      );
+      expect(calls.get(ids[0]!)).toBe(1);
+    } finally {
+      held.resolve();
+      cleanupHeld.resolve();
+      await relay?.close();
+      await db.destroy();
+      await sql`drop database ${sql.id(name)}`.execute(admin);
+      await admin.destroy();
+    }
+  },
+  30000,
+);
+
+it("retains the queue version head and every unpublished reference while pruning disposable control heads", async () => {
+  const pg = await PGlite.create(),
+    socket = new PGLiteSocketServer({ db: pg, host: "127.0.0.1", port: 0 });
+  await socket.start();
+  const endpoint = `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
+    db = createDatabase({ connectionString: endpoint, maxConnections: 2 });
+  try {
+    await runMigrations(db, "up");
+    const tenant = await createPrivateTenant(db, {
+      slug: "queue-head",
+      ownerDisplayName: "Queue head",
+    });
+    const store = new ControlPlaneStore({ database: db, ...tenant });
+    const project = await store.createProject({ name: "Queue head", source: { kind: "empty" } });
+    const session = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "Queue head",
+      "elastic",
+    );
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const result = await sql<{
+        id: string;
+      }>`select pi_cloud_control_change(${tenant.tenantId}::uuid,${session.sessionId},'input_queue',
+        ${session.sessionId}::uuid,nextval('session_control_change_version'),'{}'::jsonb) id`.execute(
+        db,
+      );
+      const id = result.rows[0]!.id;
+      ids.push(id);
+      if (i < 2)
+        await db
+          .updateTable("outbox")
+          .set({ published_at: new Date(Date.now() - 600000) })
+          .where("id", "=", id)
+          .execute();
+    }
+    const relay = new SessionOutboxRelay({
+      database: db,
+      notificationConnectionString: endpoint,
+      bus: { checkHealth: async () => {}, append: vi.fn() },
+    });
+    await relay.prunePublishedControls();
+    const retained = () => db.selectFrom("outbox").select("id").where("id", "in", ids).execute();
+    expect((await retained()).map((r) => r.id).sort()).toEqual(ids.slice(1).sort());
+    await db.deleteFrom("sessions").where("id", "=", session.sessionId).execute();
+    await relay.prunePublishedControls();
+    expect((await retained()).map((r) => r.id)).toEqual(ids.slice(2));
+    await relay.close();
+  } finally {
     await db.destroy();
     await socket.stop();
     await pg.close();
