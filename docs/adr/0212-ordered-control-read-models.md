@@ -1,6 +1,7 @@
 # ADR-0212: ordered control changes and bounded memory views
 
-Status: accepted by the owner, implementation in progress, 2026-10-02.
+Status: accepted, implemented and deployed, 2026-10-02.
+Validation: [ordered control views acceptance](../reports/ordered-control-views-20261002.md).
 
 ## Scope and adoption
 

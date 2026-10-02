@@ -1,0 +1,84 @@
+{
+  "nativeRows": 174,
+  "nativeDigest": "3d5d7c8afb87d46da35e9b88714128d0",
+  "activeRuns": 0,
+  "leases": 0,
+  "unsealed": 0,
+  "unpublishedOutbox": 0,
+  "migrations": 162,
+  "originalMachine": {
+    "state": "running",
+    "generation": 5,
+    "vm": "f6b00c1230274effbf9fec93761acaa7"
+  },
+  "services": [
+    {
+      "name": "pi-cloud-production-supervisor-host-1-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-supervisor-host-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-web-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-control-plane-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-ssh-gateway-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-workspace-volume-gateway-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-provider-egress-relay-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-provider-host-egress-relay-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-cube-proxy-relay-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-cube-api-relay-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-cli-proxy-api-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-session-images-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-postgres-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-kafka-1-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-kafka-3-1",
+      "health": "healthy"
+    },
+    {
+      "name": "pi-cloud-production-kafka-2-1",
+      "health": "healthy"
+    }
+  ],
+  "originalNativeRowsUnchanged": true,
+  "originalVmUnchanged": true,
+  "isolatedTestInfrastructureRemoved": true,
+  "guestBuildIdentity": "e661c7d9d5798d4ef1f0761df29594163cb6da13"
+}

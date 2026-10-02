@@ -23,10 +23,12 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] Implement and validate [ADR-0212](adr/0212-ordered-control-read-models.md)
+- [x] Implement and validate [ADR-0212](adr/0212-ordered-control-read-models.md)
       in complete slices: binding publication/revocation, queued-input views,
       then Subagent directory and pending-work reconciliation. Preserve PG
       authority, owner takeover and shared-VM stopping boundaries.
+      [Deployed acceptance](reports/ordered-control-views-20261002.md) records
+      measured read counts, real-model/browser/failure checks and preserved assets.
 
 - [ ] Measure ADR-0211 probe scheduling lag and false-unconfirmed rate on actual
       multi-node fleets before raising concurrency or claiming fleet-wide detection

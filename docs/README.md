@@ -23,6 +23,11 @@ Use documentation in this order:
 research, conversations and superseded implementation logs remain in Git
 history instead of the maintained tree.
 
+The [October 2 ordered control views acceptance](reports/ordered-control-views-20261002.md)
+records PG/Outbox/Kafka propagation into binding, queue and Subagent memory views,
+measured query reductions, real Luna/browser/restart acceptance and the matched
+v13 deployment with preserved original VM and native history.
+
 The [October 2 execution-probe acceptance](reports/execution-probes-20261002.md)
 records independent Projector/guest-return observations, direct physical-VM
 probing, real Luna/browser/process-fault checks, and the deployment repairs and

@@ -1,0 +1,59 @@
+{
+  "applicationRevision": "07729c7345fe4aa6c50f3294d9f0dd3f597140aa",
+  "schemaMigration": 162,
+  "executionLog": "pi-cloud.execution-log.v13",
+  "workspaceVerification": {
+    "passed": 1562,
+    "skipped": 8,
+    "method": "Full workspace run against isolated PostgreSQL, followed by all 151 Web tests after correcting the final queue API fixture; all workspace typechecks passed. The full command initially returned failure for that old fixture.",
+    "acceptanceHelpersPassed": 66
+  },
+  "faultVerification": {
+    "passed": 124,
+    "total": 124,
+    "method": "deterministic_targeted_fault_injection",
+    "liveChaosExperiment": false,
+    "sourceRevisionAtLaunch": "90ab0438a2ad9c196088d9c3bdc2187e99841723",
+    "dirtyWorktreeAtLaunch": true
+  },
+  "dedicatedPostgresKafkaIntegration": {
+    "passed": 3,
+    "replicationFactor": 3,
+    "isolatedFromProduction": true,
+    "testFiles": [
+      "ordered-binding-views.integration.test.ts",
+      "subagent-views.integration.test.ts",
+      "session-publication.integration.test.ts"
+    ]
+  },
+  "queryAssertions": {
+    "bindingViewWarmLookups": 100,
+    "bindingViewWarmSqlQueries": 0,
+    "subagentRepeatedStatusCalls": 10,
+    "subagentRepeatedStatusSelects": 0,
+    "subagentIdleSqlQueries": 0,
+    "queueAndSteerIdleScanQueries": 0,
+    "browserIdleQueueGets": 0,
+    "browserIdleWindowMs": 4500,
+    "scope": "Counts apply only to the named read/wake path. Admission, mutation, delivery eligibility, history, leases and Outbox still use PG."
+  },
+  "checksPassed": [
+    "application-build",
+    "dependency-hardening",
+    "format",
+    "documentation",
+    "installer-contracts",
+    "runtime-policy",
+    "Helm-and-distributed-policy",
+    "observability-config",
+    "image-closure",
+    "security-high-gate",
+    "browser-queue-actions"
+  ],
+  "securityGate": "High severity threshold passed; two pre-existing moderate package findings remain.",
+  "startupRepair": {
+    "serverClientTestsPassed": 15,
+    "listenersBeforePublicationReady": true,
+    "readinessClosedUntilRecovered": true
+  }
+}
