@@ -89,6 +89,7 @@ export async function startControlPlane(): Promise<void> {
   let agentEvents: SessionProjector | undefined;
   let sandboxControl: Awaited<ReturnType<typeof createSandboxControl>> | undefined;
   let runtime: ControlPlaneRuntime | undefined;
+  let queuedInputOwner: import("./queued-input-service.ts").QueuedInputOwnership | undefined;
   let queuedInputs: QueuedInputService | undefined;
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
@@ -243,10 +244,15 @@ export async function startControlPlane(): Promise<void> {
         load: async (partitions, current) => {
           await bindingView.load(partitions, current);
           if (current()) await subagents.recover(partitions, current);
-          if (current()) queuedInputs?.recoverPending();
+          if (current()) {
+            queuedInputOwner = { partitions, partitionCount: config.kafkaPartitions, current };
+            await queuedInputs?.recoverPending(queuedInputOwner);
+          }
         },
         reset: () => {
           bindingView.reset();
+          queuedInputOwner = undefined;
+          queuedInputs?.reset();
           inputQueues.reset();
           subagents.reset();
         },
@@ -255,7 +261,11 @@ export async function startControlPlane(): Promise<void> {
           await bindingView.consume(change, current);
           await subagents.changed(change, current);
           if (current() && change.entity === "input_queue")
-            queuedInputs?.notifySession(change.scope.tenantId, change.entityId);
+            queuedInputs?.notifySession(
+              change.scope.tenantId,
+              change.entityId,
+              change.steerPending === true,
+            );
           try {
             await inputQueues.consume(change, current);
           } catch {
@@ -517,7 +527,7 @@ export async function startControlPlane(): Promise<void> {
     const activeQueuedInputs = runtime.application.get<QueuedInputService>(QueuedInputService);
     queuedInputs = activeQueuedInputs;
     // Cover changes committed/consumed before the application's handler was attached.
-    activeQueuedInputs.recoverPending();
+    if (queuedInputOwner) await activeQueuedInputs.recoverPending(queuedInputOwner);
     await sandboxControl.start();
     const sourceControlFailure = (source: string, error: unknown): void =>
       operationalLog({

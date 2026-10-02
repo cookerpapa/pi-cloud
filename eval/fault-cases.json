@@ -904,6 +904,27 @@
       "file": "test/workspace-runtime-state-repository.test.ts",
       "test": "loads only owned binding pages before applying capacity limits",
       "invariant": "Foreign partition payloads do not consume owner bootstrap row or byte budgets."
+    },
+    {
+      "id": "control-change-concurrent-revision",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-change-transactions.postgres.test.ts",
+      "test": "keeps the last revision after waiting behind a concurrent Session mutation",
+      "invariant": "Transaction coalescing retains the post-lock revision so concurrent input invalidations cannot hide the final state."
+    },
+    {
+      "id": "subagent-noop-notification",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-change-transactions.postgres.test.ts",
+      "test": "does not notify duplicate Subagent upserts, but emits actual update and deletion",
+      "invariant": "A conflicting no-op INSERT never publishes an imaginary source mutation."
+    },
+    {
+      "id": "steer-acked-scope-recovery",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "recovers acknowledged Steer scopes and wakes them for canonical consumption without idle reads",
+      "invariant": "An HTTP ACK cannot retire pending native input; cold recovery and canonical wakes still reconcile it."
     }
   ]
 }

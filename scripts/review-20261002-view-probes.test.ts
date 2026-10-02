@@ -159,7 +159,7 @@ it("filters binding snapshots at PG before loading bounded pages", async () => {
   };
 });
 
-it("records full-row PG reads for duplicate already-known Subagent command notifications", async () => {
+it("skips full-row PG reads for duplicate already-known Subagent command notifications", async () => {
   const tenantId = randomUUID(),
     piSessionId = randomUUID(),
     runId = randomUUID(),
@@ -219,7 +219,7 @@ it("records full-row PG reads for duplicate already-known Subagent command notif
         },
         () => true,
       );
-    expect(reads).toBe(5);
+    expect(reads).toBe(0);
     evidence.subagentEcho = {
       database: "simulated; actual controller",
       knownRevision: "9",

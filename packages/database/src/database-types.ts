@@ -931,6 +931,7 @@ export interface GitLabIssueNoteSyncTable {
 }
 
 export interface OutboxTable {
+  control_transaction: NullableInt8;
   id: string;
   tenant_id: string;
   aggregate_type: string;

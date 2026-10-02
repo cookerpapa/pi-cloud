@@ -35,10 +35,13 @@ PiCloud deployment. Remaining operational limits are listed below.
       keep bounded concurrency, entity-head order and PG claim/retry guards. Source
       repair and isolated-PG progress/cleanup checks are complete; rollout remains pending.
 - [ ] R02-04: make duplicate Subagent command admission produce no new control
-      notification when its source state/revision did not change.
+      notification when its source state/revision did not change. Source repair and
+      transactional PG checks pass; matched rollout remains pending.
 - [ ] Measure and reduce O02-01/02's control-reference amplification, empty Steer
       reconciliation, known-version echo reads, idle relay scans and cleanup backlog.
-      Report whole-Turn SQL/WAL/Kafka/recovery costs alongside cache-hit counts.
+      Transaction-local references, known-version guards and retained Steer scopes
+      are implemented. Report whole-Turn SQL/WAL/Kafka/recovery costs alongside
+      cache-hit counts at final acceptance.
 - [ ] O02-03: scope binding bootstrap to owned partitions before applying capacity
       limits. Owner-filtered PK paging and per-owner row/byte budgets are implemented;
       matched cold-recovery acceptance remains pending.

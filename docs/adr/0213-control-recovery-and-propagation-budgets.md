@@ -57,6 +57,21 @@ remain immutable. Skip installed versions and irrelevant Steer wakes. Binding
 creation/closure keeps its stronger synchronous contract. Recover only owner
 state, with paging and row/byte bounds after ownership filtering.
 
+Coalescing keys include the PG transaction, tenant, entity and logical Session;
+the retained reference takes the last allocated revision while preserving its
+Fact ID. This matters when a transaction waits for a Session lock after an earlier
+trigger. Bindings and commands are not coalesced. Subagent revision assignment is
+a BEFORE trigger; notification is AFTER successful mutation, so a conflicting
+INSERT cannot emit a phantom notification.
+
+An input-queue reference may carry `steerPending: true` when its transaction added
+held Steer work. It is an additive wake hint, not proof of absence when omitted;
+coalescing retains it with OR. Projector bootstrap recovers owned held scopes and
+retains them through HTTP acknowledgement until PG confirms no held source remains.
+Canonical input/seal events wake only those scopes; capacity overflow falls back
+to scoped PG reconciliation, never to dropping input. Assignment replacement
+discards this index. Current PG eligibility still decides delivery and consumption.
+
 ### Other bounded reads
 
 Preview may resolve authorization, Workspace and owner in one current PG query;

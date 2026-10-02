@@ -261,6 +261,7 @@ export class SubagentController {
     const generation = this.#generation,
       family = subagentFamily(change.scope.tenantId, change.scope.piSessionId);
     if (change.entity === "subagent_command") {
+      if (this.#pending.knows(change.entityId, BigInt(change.version))) return;
       const row = await this.options.database
         .selectFrom("subagent_control_commands")
         .selectAll()

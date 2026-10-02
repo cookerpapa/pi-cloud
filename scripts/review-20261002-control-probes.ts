@@ -92,6 +92,7 @@ try {
     },
   });
   const queue = new QueuedInputService({
+    autoStart: true,
     database: steerDb,
     steering: {
       deliverQueued: async () => {
@@ -99,8 +100,10 @@ try {
       },
     },
   });
-  await queue.reconcileOnce({ tenantId: tenant.tenantId, sessionId: session.sessionId });
-  assert.equal(emptySteerQueries, 2);
+  queue.notifySession(tenant.tenantId, session.sessionId);
+  await delay(100);
+  await queue.onApplicationShutdown();
+  assert.equal(emptySteerQueries, 0);
   evidence.emptySteerWake = { heldInputs: 0, sqlQueries: emptySteerQueries };
 
   const commandId = randomUUID();
@@ -127,7 +130,7 @@ try {
     .executeTakeFirstOrThrow();
   const after = await count("subagent_command");
   assert.equal(replay.revision, first.revision);
-  assert.equal(after - before, 1);
+  assert.equal(after - before, 0);
   evidence.noopReplay = { sourceRevisionUnchanged: true, newOutboxReferences: after - before };
 
   // Isolate relay references from the lifecycle fixture's already measured rows.

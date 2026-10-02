@@ -40,6 +40,11 @@ const earlierDeliveryPending = sql<boolean>`exists(select 1 from turn_control_re
     and prior.target_run_id=c.target_run_id and prior.kind='queue'
     and prior.state in ('pending','dispatched')
     and (prior.payload->>'queueOrder')::bigint < (c.payload->>'queueOrder')::bigint)`;
+export type QueuedInputOwnership = {
+  partitions: readonly number[];
+  partitionCount: number;
+  current(): boolean;
+};
 type QueueScope = { tenantId: string; sessionId: string };
 
 /** Mutable input intents in the existing Run queue, not another scheduler. */
@@ -52,6 +57,12 @@ export class QueuedInputService {
   #recovering: Promise<void> | undefined;
   #recoveryNeeded = false;
   readonly #pending = new Map<string, QueueScope & { due: number }>();
+  readonly #held = new Map<string, number>();
+  #heldOverflow = false;
+  #generation = 0;
+  #wakeVersion = 0;
+  #owner: QueuedInputOwnership | undefined;
+  #recoveryAfter: string | undefined;
   #closed = false;
   #lastFailureLog = 0;
 
@@ -85,20 +96,38 @@ export class QueuedInputService {
     this.#timer = setInterval(() => {
       this.#pump();
       if (this.#recoveryNeeded && !this.#recovering && this.#pending.size < 2048)
-        this.recoverPending();
+        void this.recoverPending();
     }, 1000);
     this.#timer.unref();
-    this.recoverPending();
   }
   async onApplicationShutdown(): Promise<void> {
     this.#closed = true;
     clearInterval(this.#timer);
     await this.#recovering;
     await this.#working;
-    this.#pending.clear();
+    this.reset();
   }
-  notifySession(tenantId: string, sessionId: string): void {
-    this.#schedule({ tenantId, sessionId }, 0);
+  reset(): void {
+    this.#generation++;
+    this.#held.clear();
+    this.#pending.clear();
+    this.#heldOverflow = false;
+    this.#owner = undefined;
+    this.#recoveryAfter = undefined;
+    this.#recoveryNeeded = false;
+  }
+  #rememberHeld(scope: QueueScope): void {
+    const key = `${scope.tenantId}:${scope.sessionId}`;
+    if (this.#held.size < 4096 || this.#held.has(key)) this.#held.set(key, ++this.#wakeVersion);
+    else this.#heldOverflow = true;
+  }
+  notifySession(tenantId: string, sessionId: string, discoverHeld = false): void {
+    if (this.#closed) return;
+    const scope = { tenantId, sessionId },
+      key = `${tenantId}:${sessionId}`;
+    if (!discoverHeld && !this.#held.has(key) && !this.#heldOverflow) return;
+    this.#rememberHeld(scope);
+    this.#schedule(scope, 0);
     this.#pump();
   }
   #schedule(scope: QueueScope, delayMs: number): void {
@@ -113,42 +142,84 @@ export class QueuedInputService {
       due: Math.min(this.#pending.get(key)?.due ?? Infinity, performance.now() + delayMs),
     });
   }
-  recoverPending(): void {
-    if (this.#closed || !this.#autoStart) return;
+  async recoverPending(owner?: QueuedInputOwnership): Promise<void> {
+    if (owner) {
+      this.reset();
+      this.#owner = owner;
+    }
+    if (this.#closed || !this.#autoStart || !this.#owner?.current()) return;
     this.#recoveryNeeded = true;
-    if (this.#recovering) return;
+    if (this.#recovering) {
+      await this.#recovering;
+      if (this.#recoveryNeeded) return this.recoverPending();
+      return;
+    }
+    const generation = this.#generation,
+      assignment = this.#owner;
+    const current = () => !this.#closed && generation === this.#generation && assignment.current();
     this.#recovering = (async () => {
       this.#recoveryNeeded = false;
-      let after: string | undefined;
-      while (!this.#closed) {
+      if (!assignment.partitions.length) return;
+      while (current()) {
         let query = this.#database
-          .selectFrom("runs")
-          .select(["tenant_id", "session_id"])
-          .where("state", "=", sql.lit("queued"))
-          .where("queued_steer_id", "is not", null)
+          .selectFrom("runs as held")
+          .innerJoin("sessions as hs", "hs.id", "held.session_id")
+          .innerJoin("pi_sessions as physical", (join) =>
+            join
+              .onRef("physical.tenant_id", "=", "hs.tenant_id")
+              .onRef("physical.id", "=", "hs.pi_session_id"),
+          )
+          .select(["held.tenant_id", "held.session_id"])
+          .where("held.state", "=", sql.lit("queued"))
+          .where("held.queued_steer_id", "is not", null)
+          .where(
+            sql<boolean>`physical.session_hash % ${assignment.partitionCount} = any(${[...assignment.partitions]}::int[])`,
+          )
           .distinct()
-          .orderBy("session_id")
+          .orderBy("held.session_id")
           .limit(256);
-        if (after) query = query.where("session_id", ">", after);
+        if (this.#recoveryAfter) query = query.where("held.session_id", ">", this.#recoveryAfter);
         const rows = await query.execute();
-        for (const row of rows)
-          this.#schedule({ tenantId: row.tenant_id, sessionId: row.session_id }, 0);
+        if (!current()) return;
+        let overflow = false;
+        for (const row of rows) {
+          if (
+            this.#pending.size >= 4096 &&
+            !this.#pending.has(`${row.tenant_id}:${row.session_id}`)
+          )
+            overflow = true;
+          const scope = { tenantId: row.tenant_id, sessionId: row.session_id };
+          this.#rememberHeld(scope);
+          this.#schedule(scope, 0);
+        }
         this.#pump();
-        if (this.#pending.size >= 4096 && rows.length === 256) this.#recoveryNeeded = true;
-        if (rows.length < 256 || this.#pending.size >= 4096) break;
-        after = rows.at(-1)!.session_id;
+        if (overflow) {
+          this.#recoveryNeeded = true;
+          break;
+        }
+        this.#recoveryAfter = rows.length === 256 ? rows.at(-1)!.session_id : undefined;
+        if (rows.length < 256) break;
+        if (this.#pending.size >= 3840) {
+          this.#recoveryNeeded = true;
+          break;
+        }
       }
     })()
       .catch(() => {
-        this.#recoveryNeeded = true;
-        this.#recordFailure();
+        if (current()) {
+          this.#recoveryNeeded = true;
+          this.#recordFailure();
+        }
       })
       .finally(() => {
         this.#recovering = undefined;
       });
+    await this.#recovering;
   }
   #pump(): void {
     if (this.#closed || this.#working || !this.#autoStart) return;
+    const generation = this.#generation;
+    const current = () => generation === this.#generation;
     const ready = [...this.#pending.entries()]
       .filter(([, s]) => s.due <= performance.now())
       .slice(0, 32);
@@ -156,13 +227,13 @@ export class QueuedInputService {
     for (const [id] of ready) this.#pending.delete(id);
     let next = 0;
     const work = async () => {
-      while (!this.#closed && next < ready.length) {
+      while (!this.#closed && current() && next < ready.length) {
         const scope = ready[next++]![1];
         try {
-          await this.reconcileOnce(scope);
+          await this.reconcileOnce(scope, current);
         } catch {
           this.#recordFailure();
-          this.#schedule(scope, 1000);
+          if (current()) this.#schedule(scope, 1000);
         }
       }
     };
@@ -482,13 +553,16 @@ export class QueuedInputService {
       if (busy(error)) conflict();
       throw error;
     }
-    this.notifySession(tenantId, sessionId);
+    this.notifySession(tenantId, sessionId, action.action === "steer");
     return { queue: await this.list(tenantId, sessionId), replayed };
   }
 
   /** An explicit global pass remains useful for recovery tests. Runtime work is
    * Session-scoped and wakes on committed changes or a known retry deadline. */
-  async reconcileOnce(scope?: QueueScope): Promise<void> {
+  async reconcileOnce(scope?: QueueScope, current: () => boolean = () => true): Promise<void> {
+    if (!current()) return;
+    const heldKey = scope ? `${scope.tenantId}:${scope.sessionId}` : undefined;
+    const knownWake = heldKey ? this.#held.get(heldKey) : undefined;
     let query = this.#database
       .selectFrom("runs as r")
       .innerJoin("turn_control_requests as c", "c.id", "r.queued_steer_id")
@@ -518,13 +592,14 @@ export class QueuedInputService {
         .where("r.tenant_id", "=", scope.tenantId)
         .where("r.session_id", "=", scope.sessionId);
     const rows = await query.execute();
+    if (!current()) return;
     let failed = false;
     let index = 0;
     const work = async () => {
-      while (!this.#closed && index < rows.length) {
+      while (!this.#closed && current() && index < rows.length) {
         const row = rows[index++]!;
         try {
-          await this.#reconcile(row);
+          await this.#reconcile(row, current);
         } catch (error) {
           failed = true;
           /* Durable row remains pending for the next cycle. */
@@ -533,7 +608,7 @@ export class QueuedInputService {
       }
     };
     await Promise.all([work(), work()]);
-    if (!scope || this.#closed) return;
+    if (!scope || this.#closed || !current()) return;
     if (failed || rows.length === 32) {
       this.#schedule(scope, failed ? 1000 : 0);
       return;
@@ -543,11 +618,12 @@ export class QueuedInputService {
       .innerJoin("turn_control_requests as c", "c.id", "r.queued_steer_id")
       .innerJoin("runs as target", "target.id", "c.target_run_id")
       .innerJoin("sessions as s", "s.id", "r.session_id")
-      .select(
-        sql<string | null>`extract(epoch from (min(c.available_at)-clock_timestamp()))*1000`.as(
-          "delay",
-        ),
-      )
+      .select([
+        sql<number>`count(*)::int`.as("held"),
+        sql<string | null>`extract(epoch from (min(c.available_at) filter (
+          where target.state='running' and c.state in ('pending','dispatched') and not (${earlierDeliveryPending})
+        )-clock_timestamp()))*1000`.as("delay"),
+      ])
       .where("r.tenant_id", "=", scope.tenantId)
       .where("r.session_id", "=", scope.sessionId)
       .whereRef("c.tenant_id", "=", "r.tenant_id")
@@ -555,21 +631,23 @@ export class QueuedInputService {
       .whereRef("target.session_id", "=", "r.session_id")
       .where("r.state", "=", sql.lit("queued"))
       .where("s.pruned_at", "is", null)
-      .where("target.state", "=", "running")
       .where("c.kind", "=", "queue")
-      .where("c.state", "in", ["pending", "dispatched"])
-      .where(sql<boolean>`not (${earlierDeliveryPending})`)
       .executeTakeFirstOrThrow();
+    if (!current()) return;
+    if (!next.held && heldKey && this.#held.get(heldKey) === knownWake) this.#held.delete(heldKey);
     if (next.delay !== null) this.#schedule(scope, Math.max(0, Number(next.delay)));
   }
 
-  async #reconcile(source: {
-    id: string;
-    tenant_id: string;
-    session_id: string;
-    turn_id: string;
-    queued_steer_id: string | null;
-  }): Promise<void> {
+  async #reconcile(
+    source: {
+      id: string;
+      tenant_id: string;
+      session_id: string;
+      turn_id: string;
+      queued_steer_id: string | null;
+    },
+    current: () => boolean,
+  ): Promise<void> {
     const controlId = source.queued_steer_id!;
     const send = await this.#database.transaction().execute(async (tx) => {
       const session = await tx
@@ -661,7 +739,7 @@ export class QueuedInputService {
         .executeTakeFirst();
       return attempt !== undefined;
     });
-    if (!send || this.#closed) return;
+    if (!send || this.#closed || !current()) return;
     try {
       await this.#steering.deliverQueued(controlId);
     } catch {

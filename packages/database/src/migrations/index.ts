@@ -1,3 +1,4 @@
+import * as coalescedControlChanges from "./165_coalesced_control_changes.ts";
 import * as sessionPartitionFilter from "./164_session_partition_filter.ts";
 import * as atomicSessionLifecycle from "./157_atomic_session_lifecycle.ts";
 import * as controlPlanePublication from "./158_control_plane_publication.ts";
@@ -331,6 +332,7 @@ export const migrationProvider: MigrationProvider = {
       "162_subagent_control_changes": subagentControlChanges,
       "163_atomic_runtime_quarantine": atomicRuntimeQuarantine,
       "164_session_partition_filter": sessionPartitionFilter,
+      "165_coalesced_control_changes": coalescedControlChanges,
     };
   },
 };

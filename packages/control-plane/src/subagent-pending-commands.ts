@@ -29,6 +29,9 @@ export class SubagentPendingCommands {
     readonly maximum = 16384,
     readonly maximumBytes = 32 * 1024 * 1024,
   ) {}
+  knows(id: string, version: bigint): boolean {
+    return (this.#versions.get(id) ?? -1n) >= version;
+  }
   get size(): number {
     return this.#refs.size;
   }

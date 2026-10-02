@@ -861,7 +861,7 @@ export class ControlPlaneController {
     const accepted = await this.controlPlaneStores
       .forIdentity(identity)
       .acceptTurnSteer(sessionId, turnId, idempotencyKey, request);
-    this.queuedInputs.notifySession(identity.tenantId, sessionId);
+    this.queuedInputs.notifySession(identity.tenantId, sessionId, true);
     return accepted;
   }
 

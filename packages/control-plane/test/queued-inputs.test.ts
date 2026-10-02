@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { Pool } from "pg";
 import { sql, type Kysely, type QueryId } from "kysely";
-import { beforeAll, afterAll, describe, it, expect } from "vitest";
+import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { MAX_QUEUED_INPUTS } from "@pi-cloud/protocol";
 import { parseKafkaAcceptedFact } from "@pi-cloud/runtime-core/kafka-accepted-fact";
@@ -338,6 +338,56 @@ describe.sequential("pending conversation inputs", () => {
       }
     },
   );
+
+  it("recovers acknowledged Steer scopes and wakes them for canonical consumption without idle reads", async () => {
+    let delivered: TurnSteerRequest | undefined;
+    const f = await fixture(async (request) => {
+      delivered = request;
+    });
+    const run = await active(f);
+    let reads = 0;
+    const measured = database.withPlugin({
+      transformQuery({ node }) {
+        reads++;
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    });
+    const service = new QueuedInputService({
+      database: measured,
+      steering: f.steering,
+      autoStart: true,
+    });
+    try {
+      const accepted = await f.store.acceptTurnSteer(
+        f.session.sessionId,
+        run.first.turnId,
+        "indexed",
+        { text: "keep me through ACK" },
+      );
+      await f.queue.reconcileOnce();
+      expect(delivered).toBeDefined();
+      service.onModuleInit();
+      await service.recoverPending({ partitionCount: 1, partitions: [0], current: () => true });
+      await vi.waitFor(() => expect(reads).toBe(3));
+      reads = 0;
+      service.notifySession(f.tenant.tenantId, randomUUID());
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect(reads).toBe(0);
+      await recordInput(delivered!);
+      service.notifySession(f.tenant.tenantId, f.session.sessionId);
+      await vi.waitFor(async () =>
+        expect((await f.list()).items.some((i) => i.turnId === accepted.sourceTurnId)).toBe(false),
+      );
+    } finally {
+      await service.onApplicationShutdown();
+      run.finish.resolve();
+      await run.execution;
+      await seal(run.first.runId);
+    }
+  });
 
   it("retires direct Steer only after canonical consumption even when its HTTP reply is lost", async () => {
     let delivered: TurnSteerRequest | undefined;
@@ -1062,6 +1112,7 @@ describe.sequential("pending conversation inputs", () => {
         autoStart: true,
       });
       service.onModuleInit();
+      void service.recoverPending({ partitionCount: 1, partitions: [0], current: () => true });
       await entered.promise;
       let stopped = false;
       const stop = service.onApplicationShutdown().then(() => {

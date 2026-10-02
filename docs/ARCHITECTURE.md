@@ -70,6 +70,13 @@ retain their earlier deadline. Sixteen independent sends preserve entity-head
 ordering without waiting for an entire batch. Control-reference cleanup has its
 own bounded drain loop and does not block publication. Hints delivered during
 an empty scan are retained by generation, and cannot bypass publication backoff.
+Repeatable input-queue/Subagent directory references coalesce within one PG
+transaction, retaining the last version and stable Fact ID. Command notifications
+follow successful mutation, so duplicate upserts emit none. Published facts stay
+immutable. Input references that add held Steer work carry an additive wake hint;
+owned-scope recovery retains ACKed inputs until canonical consumption or sealed
+restoration. Other Session events do not issue empty reconciliation reads. A
+bounded held-scope index falls back to scoped reconciliation on overflow.
 No browser payload or authority moves through NOTIFY. Drain proof and completion
 remain separate durable boundaries (ADR-0177).
 

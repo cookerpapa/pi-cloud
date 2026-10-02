@@ -30,7 +30,11 @@ export const SessionControlChangeSchema = Type.Union([
     { additionalProperties: false },
   ),
   Type.Object(
-    { ...CommonChange, entity: Type.Literal("input_queue") },
+    {
+      ...CommonChange,
+      entity: Type.Literal("input_queue"),
+      steerPending: Type.Optional(Type.Literal(true)),
+    },
     { additionalProperties: false },
   ),
   Type.Object(
