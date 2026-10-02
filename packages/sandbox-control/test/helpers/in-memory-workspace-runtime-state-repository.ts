@@ -27,6 +27,7 @@ import type {
 
 /** Test fixture only. Production effects always use PostgreSQL ownership. */
 export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntimeStateRepository {
+  onQuarantine?: (physicalActivationId: string) => void;
   readonly #terminals = new Map<string, OrphanedWorkspaceTerminal>();
   readonly #activations = new Map<string, WorkspaceRuntimeReservation>();
   readonly #developmentEnvironments = new Map<
@@ -193,6 +194,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     environmentId: string,
     state: Exclude<DevelopmentEnvironmentState, "requested">,
   ): Promise<void> {
+    if (state === "unknown") this.onQuarantine?.(environmentId);
     const environment = this.#developmentEnvironments.get(environmentId);
     if (state === "released" || state === "failed") {
       this.#developmentEnvironments.delete(environmentId);
@@ -221,6 +223,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     state: SandboxControlWorkspaceRuntimeState,
     _detail?: { handle?: SandboxHandle; failureCode?: string },
   ): Promise<void> {
+    if (state === "unknown") this.onQuarantine?.(activationId);
     if (state === "released") this.#activations.delete(activationId);
   }
   async claimOrphanedWorkspaceRuntimes(): Promise<readonly OrphanedWorkspaceRuntime[]> {

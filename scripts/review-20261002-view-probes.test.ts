@@ -245,7 +245,7 @@ it("records duplicate immutable-image reads within one decode call", async () =>
   };
 });
 
-it("records health quarantine stopped before resource-state persistence when close publication fails", async () => {
+it("keeps resource quarantine committed when close publication fails", async () => {
   const outcomes = [];
   for (const publicationFails of [false, true]) {
     const repository = new InMemoryWorkspaceRuntimeStateRepository(),
@@ -322,8 +322,9 @@ it("records health quarantine stopped before resource-state persistence when clo
       imageRevision: "development",
       onMaintenanceError: (error) => errors.push(error),
     });
-    const close = bindings.closePhysical.bind(bindings);
-    vi.spyOn(bindings, "closePhysical").mockImplementation(async (id) => {
+    repository.onQuarantine = (id) => bindings.commitPhysicalClosure(id);
+    const close = bindings.confirmPhysicalClosure.bind(bindings);
+    vi.spyOn(bindings, "confirmPhysicalClosure").mockImplementation(async (id) => {
       await close(id);
       if (publicationFails) throw new Error("Publication unavailable after binding closure commit");
     });
@@ -367,7 +368,7 @@ it("records health quarantine stopped before resource-state persistence when clo
       await manager.close();
     }
   }
-  expect(outcomes.map((v) => v.resourceState)).toEqual(["unknown", "running"]);
+  expect(outcomes.map((v) => v.resourceState)).toEqual(["unknown", "unknown"]);
   evidence.quarantine = {
     dependencies:
       "provider, binding publication and PG repository simulated; actual health monitor/controller",

@@ -35,19 +35,18 @@ export class InMemorySandboxBindings implements SandboxBindings {
     for (const row of await this.find(...args))
       this.rows.set(row.bindingId, { ...row, dispatchClosed: true });
   }
-  async closeTarget(target: Parameters<SandboxBindings["closeTarget"]>[0]) {
-    for (const row of this.rows.values())
-      if (
-        row.descriptor.target.sandboxId === target.sandboxId &&
-        row.descriptor.target.apiUrl === target.apiUrl &&
-        row.descriptor.target.bootId === target.bootId
-      )
-        this.rows.set(row.bindingId, { ...row, dispatchClosed: true });
-  }
-  async closePhysical(physicalActivationId: string) {
+  commitPhysicalClosure(physicalActivationId: string): void {
     for (const row of this.rows.values())
       if (row.snapshot.physicalActivationId === physicalActivationId)
         this.rows.set(row.bindingId, { ...row, dispatchClosed: true });
+  }
+  async confirmPhysicalClosure(physicalActivationId: string): Promise<void> {
+    if (
+      [...this.rows.values()].some(
+        (row) => row.snapshot.physicalActivationId === physicalActivationId && !row.dispatchClosed,
+      )
+    )
+      throw new Error("Physical binding closure has not committed");
   }
   async inventory(sandboxId: string) {
     return [...this.rows.values()].filter((row) => row.snapshot.assignment.sandboxId === sandboxId);

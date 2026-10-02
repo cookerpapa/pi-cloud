@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0213](0213-control-recovery-and-propagation-budgets.md) — approved control
+   recovery repairs and bounded propagation/read improvements; implementation in progress.
+
 1. [ADR-0212](0212-ordered-control-read-models.md) — deployed ordered control
    changes and bounded binding, queue and Subagent read views.
 

@@ -198,6 +198,8 @@ type ManagedDevelopmentEnvironment = {
   terminal?: SandboxTerminalSession;
   bindingIds: Set<string>;
   failure?: SandboxControlError;
+  failureRecorded?: boolean;
+  closureConfirmed?: boolean;
 };
 
 const DEFAULT_WARM_TTL_MS = 15 * 60_000;
@@ -505,6 +507,14 @@ export class SandboxController {
   async #recoverPersistentDevelopmentEnvironments(): Promise<number> {
     if (this.#provider.adoptPersistentCapsule === undefined) return 0;
     for (const environment of this.#developmentEnvironments.values()) {
+      if (environment.failure && !environment.closureConfirmed) {
+        try {
+          await this.#quarantineDevelopmentEnvironment(environment, environment.failure);
+        } catch (error) {
+          this.#onMaintenanceError?.(error);
+          continue;
+        }
+      }
       if (
         environment.failure === undefined ||
         environment.bindingIds.size > 0 ||
@@ -2098,7 +2108,6 @@ export class SandboxController {
   }
 
   async quarantineExecutionTarget(target: SandboxExecutionTarget): Promise<void> {
-    await this.#bindings.closeTarget(target);
     const failure = new SandboxControlError(
       "cubesandbox_tool_unavailable",
       "Execution stopping was not confirmed; control-plane recovery is required",
@@ -3091,7 +3100,6 @@ export class SandboxController {
   }
 
   async #markElasticRuntimeLost(runtime: ManagedElasticRuntime, error: unknown): Promise<void> {
-    await this.#bindings.closePhysical(runtime.physicalActivationId);
     const failure =
       error instanceof SandboxControlError
         ? error
@@ -3102,6 +3110,17 @@ export class SandboxController {
             error,
           );
     runtime.failure ??= failure;
+    if (!runtime.failureRecorded) {
+      await this.#stateRepository.setWorkspaceRuntimeState(
+        runtime.physicalActivationId,
+        "unknown",
+        {
+          failureCode: runtime.failure.code,
+          ...(runtime.handle ? { handle: runtime.handle } : {}),
+        },
+      );
+      runtime.failureRecorded = true;
+    }
     if (runtime.workspaceTerminalId !== undefined) {
       const terminal = this.#terminals.get(runtime.workspaceTerminalId);
       terminal?.session.disconnect();
@@ -3114,11 +3133,7 @@ export class SandboxController {
         .catch(() => undefined);
       delete runtime.workspaceTerminalId;
     }
-    await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "unknown", {
-      failureCode: runtime.failure.code,
-      ...(runtime.handle ? { handle: runtime.handle } : {}),
-    });
-    runtime.failureRecorded = true;
+    await this.#bindings.confirmPhysicalClosure(runtime.physicalActivationId);
   }
 
   async #enforceWarmLimit(): Promise<void> {
@@ -3256,6 +3271,8 @@ export class SandboxController {
       },
     );
     delete environment.failure;
+    delete environment.failureRecorded;
+    delete environment.closureConfirmed;
     return observation;
   }
 
@@ -3263,7 +3280,6 @@ export class SandboxController {
     environment: ManagedDevelopmentEnvironment,
     error: unknown,
   ): Promise<void> {
-    await this.#bindings.closePhysical(environment.reservation.environmentId);
     environment.failure ??=
       error instanceof SandboxControlError
         ? error
@@ -3273,14 +3289,19 @@ export class SandboxController {
             false,
             error,
           );
-    const runtimeCapsule = await this.#persistentCapsule(environment.handle).catch(() => undefined);
-    await this.#stateRepository
-      .setDevelopmentEnvironmentState(environment.reservation.environmentId, "unknown", {
-        handle: environment.handle,
-        failureCode: environment.failure.code,
-        ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
-      })
-      .catch((persistenceError: unknown) => this.#onMaintenanceError?.(persistenceError));
+    if (!environment.failureRecorded) {
+      await this.#stateRepository.setDevelopmentEnvironmentState(
+        environment.reservation.environmentId,
+        "unknown",
+        {
+          handle: environment.handle,
+          failureCode: environment.failure.code,
+        },
+      );
+      environment.failureRecorded = true;
+    }
+    await this.#bindings.confirmPhysicalClosure(environment.reservation.environmentId);
+    environment.closureConfirmed = true;
   }
 
   #closeTerminal(terminalId: string, terminal: ManagedWorkspaceTerminal): Promise<void> {

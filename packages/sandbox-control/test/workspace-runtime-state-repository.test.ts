@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostgresWorkspaceRuntimeStateRepository } from "../src/index.ts";
 import { CubePersistentCapsuleCodec } from "../src/cube-persistent-capsule.ts";
 import { PostgresSandboxBindings } from "../src/sandbox-bindings.ts";
+import { quarantineExecutionTarget } from "../src/runtime-quarantine.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 
@@ -67,6 +68,155 @@ async function fixtureDatabase() {
 }
 
 describe("PostgreSQL Sandbox control ownership", () => {
+  it("pins quarantine to the physical target and rejects late identity rewrites", async () => {
+    const database = await fixtureDatabase(),
+      instanceId = randomUUID(),
+      physicalId = randomUUID(),
+      runtimeId = randomUUID();
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
+      database,
+      sandboxDomainId: "sandbox-domain-0001",
+      instanceId,
+      ownerBaseUrl: "http://quarantine.test",
+    });
+    resources.push(() => repository.close());
+    await repository.start();
+    const tenant = await createPrivateTenant(database, {
+      slug: randomUUID(),
+      ownerDisplayName: "Quarantine",
+    });
+    const store = new ControlPlaneStore({ database, ...tenant });
+    const project = await store.createProject({ name: "Quarantine", source: { kind: "empty" } });
+    const session = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "Quarantine",
+      "elastic",
+    );
+    const run = await store.acceptTurn(session.sessionId, randomUUID(), { prompt: "fixture" });
+    const assignment = {
+      tenantId: tenant.tenantId,
+      projectId: project.projectId,
+      workspaceId: project.workspaceId,
+      supervisorId: "fixture",
+      bootId: randomUUID(),
+      sandboxId: randomUUID(),
+      runId: run.runId,
+      sessionId: session.sessionId,
+      turnId: run.turnId,
+      executionReference: createExecutionReference(randomUUID(), run.runId, 1),
+    };
+    const target = {
+      apiUrl: "http://cube.test",
+      nodeId: "node-one",
+      bootId: randomUUID(),
+      sandboxId: "a".repeat(32),
+    };
+    await database
+      .insertInto("workspace_runtimes")
+      .values({
+        workspace_runtime_id: physicalId,
+        tenant_id: tenant.tenantId,
+        project_id: project.projectId,
+        workspace_id: project.workspaceId,
+        sandbox_domain_id: "sandbox-domain-0001",
+        owner_instance_id: instanceId,
+        owner_base_url: "http://quarantine.test",
+        supervisor_id: assignment.supervisorId,
+        boot_id: assignment.bootId,
+        sandbox_id: assignment.sandboxId,
+        run_id: run.runId,
+        session_id: session.sessionId,
+        turn_id: run.turnId,
+        lease_id: randomUUID(),
+        fencing_token: "1",
+        turn_context_sha256: "a".repeat(64),
+        execution_context_sha256: "b".repeat(64),
+        environment_sha256: "c".repeat(64),
+        runtime_id: runtimeId,
+        runtime_name: target.sandboxId,
+        state: "active",
+        failure_code: null,
+        updated_at: new Date(),
+      })
+      .execute();
+    const bindings = new PostgresSandboxBindings(
+      database,
+      "sandbox-domain-0001",
+      instanceId,
+      "http://quarantine.test",
+      async () => {},
+    );
+    const register = async (bindingId: string, sandboxId: string) =>
+      bindings.register(
+        bindingId,
+        {
+          version: 1,
+          target: { ...target, sandboxId },
+          initialization: {
+            toolWorkerProtocolVersion: 2,
+            type: "worker.initialize",
+            activationId: bindingId,
+            toolRoot: "/workspace",
+            environment: project.environment,
+            workspaceSeed: { kind: "empty" },
+          },
+        } as never,
+        {
+          assignment,
+          physicalActivationId: physicalId,
+          turnContextSha256: "a".repeat(64),
+          executionContextSha256: "b".repeat(64),
+          allowedTools: ["bash"],
+          sandboxProfileKey: "standard",
+        },
+      );
+    const oldBinding = randomUUID();
+    await register(oldBinding, target.sandboxId);
+    expect(await quarantineExecutionTarget(database, { ...target, nodeId: "wrong-node" })).toEqual(
+      [],
+    );
+    expect(await quarantineExecutionTarget(database, target)).toEqual([oldBinding]);
+    expect(
+      (
+        await database
+          .selectFrom("workspace_runtimes")
+          .select("state")
+          .where("workspace_runtime_id", "=", physicalId)
+          .executeTakeFirstOrThrow()
+      ).state,
+    ).toBe("unknown");
+    const replacementId = randomUUID(),
+      replacementName = "b".repeat(32),
+      replacementBinding = randomUUID();
+    await database
+      .updateTable("workspace_runtimes")
+      .set({ state: "active", runtime_id: replacementId, runtime_name: replacementName })
+      .where("workspace_runtime_id", "=", physicalId)
+      .execute();
+    await register(replacementBinding, replacementName);
+    await expect(
+      repository.setWorkspaceRuntimeState(physicalId, "unknown", {
+        handle: { runtimeId, runtimeName: target.sandboxId } as SandboxHandle,
+      }),
+    ).rejects.toMatchObject({ code: "ownership_lost" });
+    await quarantineExecutionTarget(database, target);
+    const resource = await database
+      .selectFrom("workspace_runtimes")
+      .select(["state", "runtime_id"])
+      .where("workspace_runtime_id", "=", physicalId)
+      .executeTakeFirstOrThrow();
+    expect(resource).toEqual({ state: "active", runtime_id: replacementId });
+    expect(
+      (
+        await database
+          .selectFrom("sandbox_tool_bindings")
+          .select("dispatch_closed")
+          .where("binding_id", "=", replacementBinding)
+          .executeTakeFirstOrThrow()
+      ).dispatch_closed,
+    ).toBe(false);
+  });
   it("keeps shared warm compute until its last conversation is deleted and accounts for failed cleanup", async () => {
     const database = await fixtureDatabase();
     const instanceId = randomUUID(),
@@ -791,18 +941,47 @@ describe("PostgreSQL Sandbox control ownership", () => {
     await routes.closeScope(routeScope, false);
     expect((await routes.find(routeScope, false))[0]!.dispatchClosed).toBe(true);
     expect((await routes.find(routeScope, true)).filter((r) => !r.dispatchClosed)).toHaveLength(1);
-    await new PostgresSandboxBindings(
+    await expect(routes.confirmPhysicalClosure(activation.activationId)).rejects.toThrow(
+      "has not committed",
+    );
+    await expect(
+      database.transaction().execute(async (tx) => {
+        await tx
+          .updateTable("workspace_runtimes")
+          .set({ state: "unknown" })
+          .where("workspace_runtime_id", "=", activation.activationId)
+          .execute();
+        throw new Error("quarantine rollback");
+      }),
+    ).rejects.toThrow("quarantine rollback");
+    expect((await routes.find(routeScope, true)).filter((r) => !r.dispatchClosed)).toHaveLength(1);
+    await repository.setWorkspaceRuntimeState(activation.activationId, "unknown");
+    expect((await routes.find(routeScope, true)).every((r) => r.dispatchClosed)).toBe(true);
+    const unavailable = new PostgresSandboxBindings(
       database,
       "sandbox-domain-0001",
-      crypto.randomUUID(),
-      "http://retired-owner.test",
-      async () => {},
-    ).closePhysical(activation.activationId);
-    expect((await routes.find(routeScope, true)).filter((r) => !r.dispatchClosed)).toHaveLength(1);
-    await routes.closePhysical(activation.activationId);
-    expect((await routes.find(routeScope, true)).every((r) => r.dispatchClosed)).toBe(true);
-    await routes.closeTarget(descriptor.target);
-    expect((await routes.find(routeScope, true)).every((r) => r.dispatchClosed)).toBe(true);
+      "20000000-0000-4000-8000-000000000004",
+      "http://owner.test",
+      async () => {
+        throw new Error("publication unavailable");
+      },
+    );
+    await expect(unavailable.confirmPhysicalClosure(activation.activationId)).rejects.toThrow(
+      "publication unavailable",
+    );
+    expect(
+      (
+        await database
+          .selectFrom("workspace_runtimes")
+          .select("state")
+          .where("workspace_runtime_id", "=", activation.activationId)
+          .executeTakeFirstOrThrow()
+      ).state,
+    ).toBe("unknown");
+    await routes.confirmPhysicalClosure(activation.activationId);
+    // Continue the ownership fixture after a separately confirmed recovery;
+    // the old binding identities remain closed.
+    await repository.setWorkspaceRuntimeState(activation.activationId, "active");
     await database
       .updateTable("sandbox_control_instances")
       .set({ lease_expires_at: new Date(0) })

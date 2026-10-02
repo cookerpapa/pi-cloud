@@ -24,7 +24,8 @@ PiCloud deployment. Remaining operational limits are listed below.
 ## Reliability and capacity
 
 - [ ] R02-01: commit physical-runtime quarantine and binding closure before waiting
-      for Kafka/owner publication confirmation. Preserve pending closure, shared-VM
+      for Kafka/owner publication confirmation. Source repair and targeted PG/failure
+      checks are complete under ADR-0213; matched rollout remains pending. Preserve pending closure, shared-VM
       scope and confirmed-absence quota release. [October 2 review](reports/repository-review-20261002.md).
 - [ ] R02-02: distinguish listener/topic health from usable publication-owner and
       control-view readiness before Worker Run admission, without globally gating

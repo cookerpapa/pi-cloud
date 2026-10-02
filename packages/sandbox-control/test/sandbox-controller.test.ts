@@ -29,9 +29,16 @@ type TestSandboxControllerOptions = Omit<SandboxControllerOptions, TestSandboxCo
   Partial<Pick<SandboxControllerOptions, TestSandboxControlDefaults>>;
 
 function testBroker(options: TestSandboxControllerOptions): SandboxController {
+  const bindings = options.bindings ?? new InMemorySandboxBindings();
+  const stateRepository = options.stateRepository ?? new InMemoryWorkspaceRuntimeStateRepository();
+  if (
+    stateRepository instanceof InMemoryWorkspaceRuntimeStateRepository &&
+    bindings instanceof InMemorySandboxBindings
+  )
+    stateRepository.onQuarantine = (id) => bindings.commitPhysicalClosure(id);
   return new SandboxController({
-    bindings: new InMemorySandboxBindings(),
-    stateRepository: new InMemoryWorkspaceRuntimeStateRepository(),
+    bindings,
+    stateRepository,
     ownerBaseUrl: "http://sandbox-control.test",
     imageRevision: "development",
     ...options,
@@ -1954,28 +1961,37 @@ describe("provider-backed Sandbox controller", () => {
     await manager.close();
   });
 
-  it("fails every binding when the shared physical Workspace runtime is lost", async () => {
-    const fixture = providerFixture();
-    const bindings = new InMemorySandboxBindings();
-    const observe = vi.spyOn(fixture.provider, "observeRuntime").mockResolvedValue({
-      runtimeName: "test",
-      nodeId: "node-test",
-      presence: "present",
-      state: "stopped",
-    });
-    const manager = testBroker({ provider: fixture.provider, bindings });
-    await manager.create(createRequest);
-    await manager.create(nextBindingRequest(assignment.workspaceId));
-    await manager.observeRuntimeHealth();
-    expect([...bindings.rows.values()].map((r) => r.dispatchClosed)).toEqual([true, true]);
-    expect(observe).toHaveBeenCalledOnce();
-    await expect(manager.create(nextBindingRequest(assignment.workspaceId))).rejects.toMatchObject({
-      code: "execution_stop_unconfirmed",
-    });
-    expect(manager.admittedCount).toBe(1);
-    expect(fixture.destroyed).toBe(false);
-    await manager.close();
-  });
+  it.each([false, true])(
+    "fails every shared binding even when quarantine publication fails (%s)",
+    async (publicationFails) => {
+      const fixture = providerFixture();
+      const bindings = new InMemorySandboxBindings();
+      if (publicationFails)
+        vi.spyOn(bindings, "confirmPhysicalClosure").mockRejectedValue(
+          new Error("publication unavailable"),
+        );
+      const observe = vi.spyOn(fixture.provider, "observeRuntime").mockResolvedValue({
+        runtimeName: "test",
+        nodeId: "node-test",
+        presence: "present",
+        state: "stopped",
+      });
+      const manager = testBroker({ provider: fixture.provider, bindings });
+      await manager.create(createRequest);
+      await manager.create(nextBindingRequest(assignment.workspaceId));
+      await manager.observeRuntimeHealth();
+      expect([...bindings.rows.values()].map((r) => r.dispatchClosed)).toEqual([true, true]);
+      expect(observe).toHaveBeenCalledOnce();
+      await expect(
+        manager.create(nextBindingRequest(assignment.workspaceId)),
+      ).rejects.toMatchObject({
+        code: "execution_stop_unconfirmed",
+      });
+      expect(manager.admittedCount).toBe(1);
+      expect(fixture.destroyed).toBe(false);
+      await manager.close();
+    },
+  );
 
   it("does not race binding cancellation with a second physical Cube destroy", async () => {
     const fixture = providerFixture();

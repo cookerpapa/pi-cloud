@@ -5,7 +5,7 @@ import {
   encodeSessionImages,
   type ConfiguredImageAttachments,
 } from "@pi-cloud/session-attachments";
-import { sql, type Kysely } from "kysely";
+import type { Kysely } from "kysely";
 import { CubeSandboxProvider } from "./cubesandbox-sandbox-provider.ts";
 import { OfficialCubeSandboxRuntimeClient } from "./cubesandbox-runtime-client.ts";
 import { SandboxControlServer } from "./sandbox-control-server.ts";
@@ -19,6 +19,7 @@ import { PostgresSandboxBindings } from "./sandbox-bindings.ts";
 import { SandboxBindingView } from "./sandbox-binding-view.ts";
 import { ToolCommandDispatcher, httpToolLogDelivery } from "./tool-command-dispatcher.ts";
 import { loadSandboxControlConfig } from "./sandbox-control-config.ts";
+import { quarantineExecutionTarget } from "./runtime-quarantine.ts";
 import { ExecutionPathProbes } from "./execution-path-probes.ts";
 import { executionTargetId } from "./sandbox-execution.ts";
 import { RUNTIME_EXECUTION_EVIDENCE_PATH } from "@pi-cloud/protocol";
@@ -254,47 +255,18 @@ export async function createSandboxControl(options: {
       quarantine: async (target) => {
         // Failed scoped stopping is a control-plane resource decision. Preserve
         // identity/capsule and quota until explicit recovery confirms absence.
-        const affectedBindings = await database.transaction().execute(async (trx) => {
-          const affected = await trx
-            .updateTable("sandbox_tool_bindings")
-            .set({ dispatch_closed: true })
-            .returning(["binding_id", "snapshot"])
-            .where(sql<string>`descriptor->'target'->>'sandboxId'`, "=", target.sandboxId)
-            .where(sql<string>`descriptor->'target'->>'apiUrl'`, "=", target.apiUrl)
-            .where(sql<string>`descriptor->'target'->>'bootId'`, "=", target.bootId)
-            .execute();
-          const ids = [
-            ...new Set(
-              affected
-                .map((row) => row.snapshot.physicalActivationId)
-                .filter((id): id is string => typeof id === "string"),
-            ),
-          ];
-          if (!ids.length) return [];
-          await trx
-            .updateTable("workspace_runtimes")
-            .set({
-              state: "unknown",
-              failure_code: "execution_stop_unconfirmed",
-              updated_at: sql<Date>`clock_timestamp()`,
-            })
-            .where("workspace_runtime_id", "in", ids)
-            .where("state", "not in", ["released", "cleaning"])
-            .execute();
-          await trx
-            .updateTable("development_environments")
-            .set({
-              state: "unknown",
-              failure_code: "execution_stop_unconfirmed",
-              updated_at: sql<Date>`clock_timestamp()`,
-            })
-            .where("id", "in", ids)
-            .where("state", "not in", ["released", "releasing", "failed"])
-            .execute();
-          return affected.map((row) => row.binding_id);
-        });
-        await options.publishBindingChanges(affectedBindings);
-        await controller.quarantineExecutionTarget(target);
+        const affectedBindings = await quarantineExecutionTarget(database, target);
+        // Both paths run even if one owner cannot confirm publication. PG has
+        // already quarantined the target; local admission must close too.
+        const outcomes = await Promise.allSettled([
+          controller.quarantineExecutionTarget(target),
+          options.publishBindingChanges(affectedBindings),
+        ]);
+        const failures = outcomes.flatMap((result) =>
+          result.status === "rejected" ? [result.reason] : [],
+        );
+        if (failures.length)
+          throw new AggregateError(failures, "Runtime quarantine propagation is unconfirmed");
       },
     });
     cleanup.push(() => dispatcher.close());

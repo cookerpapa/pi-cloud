@@ -1058,6 +1058,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("id", "=", environmentId)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "!=", "released")
+        .$if(state === "unknown" && detail.handle !== undefined, (query) =>
+          query.where((eb) =>
+            eb.or([eb("runtime_id", "is", null), eb("runtime_id", "=", detail.handle!.runtimeId)]),
+          ),
+        )
         .executeTakeFirst();
     });
     if (updated.numUpdatedRows !== 1n) {
@@ -1455,6 +1460,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("workspace_runtime_id", "=", activationId)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "!=", "released")
+        .$if(state === "unknown" && detail.handle !== undefined, (query) =>
+          query.where((eb) =>
+            eb.or([eb("runtime_id", "is", null), eb("runtime_id", "=", detail.handle!.runtimeId)]),
+          ),
+        )
         .executeTakeFirst();
       if (result.numUpdatedRows === 1n && state === "active" && detail.handle !== undefined) {
         const { assignment, environment, environmentValidation } = detail.handle;

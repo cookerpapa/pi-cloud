@@ -48,9 +48,16 @@ type TestSandboxControllerOptions = Omit<SandboxControllerOptions, TestSandboxCo
   Partial<Pick<SandboxControllerOptions, TestSandboxControlDefaults>>;
 
 function testBroker(options: TestSandboxControllerOptions): SandboxController {
+  const bindings = options.bindings ?? new InMemorySandboxBindings();
+  const stateRepository = options.stateRepository ?? new InMemoryWorkspaceRuntimeStateRepository();
+  if (
+    stateRepository instanceof InMemoryWorkspaceRuntimeStateRepository &&
+    bindings instanceof InMemorySandboxBindings
+  )
+    stateRepository.onQuarantine = (id) => bindings.commitPhysicalClosure(id);
   return new SandboxController({
-    bindings: new InMemorySandboxBindings(),
-    stateRepository: new InMemoryWorkspaceRuntimeStateRepository(),
+    bindings,
+    stateRepository,
     ownerBaseUrl: "http://sandbox-control.test",
     imageRevision: "development",
     ...options,

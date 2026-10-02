@@ -26,8 +26,7 @@ export interface SandboxBindingReader {
   isAlive(instanceId: string): Promise<boolean>;
 }
 export interface SandboxBindings extends SandboxBindingReader {
-  closePhysical(physicalActivationId: string): Promise<void>;
-  closeTarget(target: SandboxExecutionDescriptor["target"]): Promise<void>;
+  confirmPhysicalClosure(physicalActivationId: string): Promise<void>;
   register(
     bindingId: string,
     descriptor: SandboxExecutionDescriptor,
@@ -125,25 +124,17 @@ export class PostgresSandboxBindings implements SandboxBindings {
       .execute();
     await this.publishChanges(closed.map((r) => r.binding_id));
   }
-  async closeTarget(target: SandboxExecutionDescriptor["target"]): Promise<void> {
+  async confirmPhysicalClosure(physicalActivationId: string): Promise<void> {
+    // The resource transaction has already closed every binding, including
+    // those left by a previous controller. This port only confirms propagation.
     const closed = await this.database
-      .updateTable("sandbox_tool_bindings")
-      .set({ dispatch_closed: true })
-      .where(sql<string>`descriptor->'target'->>'sandboxId'`, "=", target.sandboxId)
-      .where(sql<string>`descriptor->'target'->>'apiUrl'`, "=", target.apiUrl)
-      .where(sql<string>`descriptor->'target'->>'bootId'`, "=", target.bootId)
-      .returning("binding_id")
-      .execute();
-    await this.publishChanges(closed.map((r) => r.binding_id));
-  }
-  async closePhysical(physicalActivationId: string): Promise<void> {
-    const closed = await this.database
-      .updateTable("sandbox_tool_bindings")
-      .set({ dispatch_closed: true })
-      .where("owner_instance_id", "=", this.instanceId)
+      .selectFrom("sandbox_tool_bindings")
+      .select(["binding_id", "dispatch_closed"])
+      .where("sandbox_domain_id", "=", this.sandboxDomainId)
       .where(sql<string>`snapshot->>'physicalActivationId'`, "=", physicalActivationId)
-      .returning("binding_id")
       .execute();
+    if (closed.some((row) => !row.dispatch_closed))
+      throw new Error("Physical binding closure has not committed");
     await this.publishChanges(closed.map((r) => r.binding_id));
   }
   async adopt(

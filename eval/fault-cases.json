@@ -454,8 +454,8 @@
       "id": "shared-runtime-loss",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/sandbox-controller.test.ts",
-      "test": "fails every binding when the shared physical Workspace runtime is lost",
-      "invariant": "Loss of one Workspace Cube cannot leave a surviving logical Tool binding."
+      "test": "fails every shared binding even when quarantine publication fails",
+      "invariant": "A lost shared VM closes every binding and local admission even when closure publication is unavailable."
     },
     {
       "id": "workspace-volume-delete-race",
@@ -869,6 +869,13 @@
       "file": "test/subagent-read-views.test.ts",
       "test": "keeps bounded references when bodies are evicted and retires only consumed input",
       "invariant": "Evicting a body cannot discard durable unconsumed Agent input."
+    },
+    {
+      "id": "quarantine-stale-physical-target",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "pins quarantine to the physical target and rejects late identity rewrites",
+      "invariant": "A delayed old VM quarantine cannot rewrite its replacement identity or close replacement bindings."
     }
   ]
 }
