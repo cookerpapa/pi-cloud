@@ -3,6 +3,7 @@ import * as controlPlanePublication from "./158_control_plane_publication.ts";
 import * as cubeExecutionBinding from "./159_cube_execution_binding.ts";
 import * as orderedControlChanges from "./160_ordered_control_changes.ts";
 import * as inputQueueChanges from "./161_input_queue_changes.ts";
+import * as subagentControlChanges from "./162_subagent_control_changes.ts";
 import * as permanentConversationDeletion from "./156_permanent_conversation_deletion.ts";
 import * as directWorkspaceStorage from "./138_direct_workspace_storage.ts";
 import * as removeUnusedSubagentResultPointer from "./155_remove_unused_subagent_result_pointer.ts";
@@ -325,6 +326,7 @@ export const migrationProvider: MigrationProvider = {
       "159_cube_execution_binding": cubeExecutionBinding,
       "160_ordered_control_changes": orderedControlChanges,
       "161_input_queue_changes": inputQueueChanges,
+      "162_subagent_control_changes": subagentControlChanges,
     };
   },
 };

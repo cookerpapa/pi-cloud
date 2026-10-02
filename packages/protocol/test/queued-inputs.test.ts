@@ -51,7 +51,13 @@ describe("pending input protocol", () => {
       acceptedAt: "2026-09-26T00:00:00.000Z",
       status: "steering",
     };
-    const queue = { sessionId: id, revision: 0, activeTurnId: null, items: [item] };
+    const queue = {
+      sessionId: id,
+      revision: 0,
+      viewVersion: "0",
+      activeTurnId: null,
+      items: [item],
+    };
     expect(parseInputQueueResource(queue).items[0]?.status).toBe("steering");
     expect(() =>
       parseInputQueueResource({

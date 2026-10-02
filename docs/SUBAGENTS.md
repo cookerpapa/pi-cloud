@@ -92,6 +92,16 @@ consumption state, and the Worker Session Host owns all active Lanes and native
 sequence allocation. Ordinary child output uses the same native log as parent
 output. Internal notifications never use the public model egress proxy.
 
+The partition owner retains bounded pending references and caches Worker routes,
+target identities, status and supervisor-request reads. Committed PG control
+changes invalidate the relevant family; native input consumption and seals wake
+its pending work. Timers cover known retries/expiry instead of globally polling
+pending commands each second. Reassignment reloads current pending references
+after the Kafka recovery boundary. Large command/result bodies remain in PG
+outside the bounded working cache. Actual input delivery still checks the current
+Run and consumption marker in PG; cached status is not delivery authority.
+See [ADR-0212](adr/0212-ordered-control-read-models.md).
+
 A family occupies one Worker slot and one owner lease. Child Runs keep task
 identities, not independently renewed leases. Quiet tasks are managed by task/
 model/Tool deadlines. Actual model requests (including Compaction) take a fair

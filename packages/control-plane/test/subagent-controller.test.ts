@@ -9,6 +9,7 @@ import {
   type SubagentHostRequest,
   type SubagentControlResult,
   type SubagentControlRequest,
+  parseSessionControlChange,
 } from "@pi-cloud/protocol";
 import {
   NativeSessionWriter,
@@ -46,9 +47,9 @@ async function deliver(_lease: string, request: SubagentHostRequest) {
     results.set(request.response.requestId, request.response);
   } else if (request.action === "schedule") scheduled.push(request.runId);
 }
-function controller() {
+function controller(database: Kysely<Database> = db) {
   const value = new SubagentController({
-    database: db,
+    database,
     managementToken: "x".repeat(48),
     allowInsecureHttp: true,
     ownsPartition: () => true,
@@ -59,6 +60,7 @@ function controller() {
     treePolicy: { maximumDepth: 4, maximumNodes: 32 },
   });
   hosts.push(value);
+  void value.recover().catch(() => {});
   return value;
 }
 function command(
@@ -99,8 +101,32 @@ const start = (key: string, workflowId?: string) =>
 const consume = (host: SubagentController, fact: AcceptedSubagentCommand) =>
   host.consume({ fact, topic: "test", partition: 0, offset: offset++ });
 async function response(id: string) {
-  await vi.waitFor(() => expect(results.has(id)).toBe(true), { timeout: 5000, interval: 10 });
+  await vi.waitFor(
+    async () => {
+      await propagateChanges();
+      expect(results.has(id)).toBe(true);
+    },
+    { timeout: 5000, interval: 10 },
+  );
   return results.get(id)!;
+}
+const seenChanges = new WeakMap<SubagentController, Set<string>>();
+async function propagateChanges() {
+  // This fixture simulates the control stream; runtime tests exercise actual Kafka.
+  const rows = await db
+    .selectFrom("outbox")
+    .select(["id", "payload"])
+    .where("topic", "=", "session.control.changed.v1")
+    .execute();
+  for (const host of hosts) {
+    let seen = seenChanges.get(host);
+    if (!seen) seenChanges.set(host, (seen = new Set()));
+    for (const row of rows) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      await host.changed(parseSessionControlChange(row.payload), () => true);
+    }
+  }
 }
 
 beforeAll(async () => {
@@ -230,6 +256,42 @@ afterAll(async () => {
 });
 
 describe("ordered Subagent admission and delivery", () => {
+  it("keeps repeated status reads in memory and performs no idle pending scans", async () => {
+    const queries: string[] = [];
+    const measured = db.withPlugin({
+      transformQuery({ node, queryId }) {
+        queries.push(db.getExecutor().compileQuery(node, queryId).sql);
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    });
+    const host = controller(measured),
+      fact = start("cached-status");
+    await consume(host, fact);
+    await response(fact.factId);
+    for (let i = 0; i < 2; i++) {
+      const warm = command({ action: "status", target: "cached-status" }, fact.workflowId);
+      await consume(host, warm);
+      await response(warm.factId);
+      await propagateChanges();
+    }
+    queries.length = 0;
+    for (let i = 0; i < 10; i++) {
+      const status = command({ action: "status", target: "cached-status" }, fact.workflowId);
+      await consume(host, status);
+      expect((await response(status.factId)).ok).toBe(true);
+    }
+    expect(
+      queries.filter((q) => q.includes('"child_run"') && q.includes('as "executionState"')),
+    ).toEqual([]);
+    await propagateChanges();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    queries.length = 0;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(queries).toEqual([]);
+  });
   it("prepares one native Lane before making its Child runnable; replay does not duplicate it", async () => {
     const host = controller(),
       fact = start("one");
@@ -289,6 +351,7 @@ describe("ordered Subagent admission and delivery", () => {
     hosts.splice(hosts.indexOf(first), 1);
     failNotifications = 0;
     const next = controller();
+    await propagateChanges();
     next.wake();
     expect((await response(fact.factId)).ok).toBe(true);
     const rows = await db
@@ -362,6 +425,7 @@ describe("ordered Subagent admission and delivery", () => {
       })
       .where("id", "=", child.childRunId as string)
       .execute();
+    await propagateChanges();
     host.wake();
     expect((await response(send.factId)).result?.state).toBe("accepted");
     await consume(host, send);
@@ -419,6 +483,7 @@ describe("ordered Subagent admission and delivery", () => {
       .where("id", "=", child.childRunId as string)
       .execute();
     const replacement = controller();
+    await propagateChanges();
     replacement.wake();
     await vi.waitFor(
       async () => {

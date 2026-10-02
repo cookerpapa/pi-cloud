@@ -813,6 +813,62 @@
       "file": "test/tool-command-routing.test.ts",
       "test": "refuses queued commands after unconfirmed stopping, including dispatcher replacement",
       "invariant": "Durable binding closure rejects late Tool handoffs even after stopping is unconfirmed and the dispatcher is replaced."
+    },
+    {
+      "id": "binding-view-stale-read",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-binding-view.test.ts",
+      "test": "does not resurrect a deleted route after an older read completes",
+      "invariant": "A late binding read cannot reopen a deleted route."
+    },
+    {
+      "id": "binding-view-reassignment",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-binding-view.test.ts",
+      "test": "discards both delayed bootstrap and event reads after assignment replacement",
+      "invariant": "Old snapshots cannot repopulate a new partition owner."
+    },
+    {
+      "id": "binding-old-publication-revocation",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-binding-view.test.ts",
+      "test": "an old publication retry still installs current deletion before its Kafka send",
+      "invariant": "An old unsent open reference cannot hide a current PG revocation."
+    },
+    {
+      "id": "queue-view-snapshot-race",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/input-queue-view.test.ts",
+      "test": "never lets an older concurrent SQL snapshot overwrite a newer version",
+      "invariant": "Queue presentation never regresses after a newer committed change."
+    },
+    {
+      "id": "queue-wake-inflight",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-input-wakes.test.ts",
+      "test": "retains one wake arriving during an in-flight Session read",
+      "invariant": "A control change during reconciliation is not lost."
+    },
+    {
+      "id": "queue-known-retry",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-input-wakes.test.ts",
+      "test": "waits for a known retry deadline without polling the database each tick",
+      "invariant": "Idle timers do not scan PG and known retries remain scheduled."
+    },
+    {
+      "id": "subagent-view-late-read",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/subagent-read-views.test.ts",
+      "test": "shares warm lookups and rejects late cache installation after a family change",
+      "invariant": "A stale Subagent read cannot overwrite a newer family view."
+    },
+    {
+      "id": "subagent-pending-input-reference",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/subagent-read-views.test.ts",
+      "test": "keeps bounded references when bodies are evicted and retires only consumed input",
+      "invariant": "Evicting a body cannot discard durable unconsumed Agent input."
     }
   ]
 }

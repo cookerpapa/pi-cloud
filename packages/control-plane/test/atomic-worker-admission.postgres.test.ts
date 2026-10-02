@@ -199,6 +199,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       const projector = new ExecutionStreamProjector(db);
       const seals = await db
         .selectFrom("outbox")
+        .where("aggregate_type", "=", "session_terminal_event")
         .select("payload")
         .where("tenant_id", "=", tenant.tenantId)
         .execute();
@@ -703,6 +704,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         await projector.project({ fact, topic: "ready-race", partition: 0, offset: BigInt(i) });
       const row = await db
         .selectFrom("outbox")
+        .where("aggregate_type", "=", "session_terminal_event")
         .select("payload")
         .where("tenant_id", "=", f.tenant.tenantId)
         .executeTakeFirstOrThrow();
@@ -767,6 +769,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       await projector.project({ fact, topic: "ready-rollback", partition: 0, offset: BigInt(i) });
     const row = await db
       .selectFrom("outbox")
+      .where("aggregate_type", "=", "session_terminal_event")
       .select("payload")
       .where("tenant_id", "=", f.tenant.tenantId)
       .executeTakeFirstOrThrow();
@@ -811,7 +814,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         );
       wake.refresh();
       await vi.waitFor(() => expect(wake.generation).toBeGreaterThan(0));
-      const before = wake.generation;
+      let before = wake.generation;
       const entered = Promise.withResolvers<void>(),
         release = Promise.withResolvers<void>();
       const statements: string[] = [];
@@ -843,9 +846,18 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       const outcome = Promise.allSettled([executing]);
       try {
         await entered.promise;
+        // Admission now emits queue-view hints on the shared control channel.
+        // Drain those committed notifications before testing the held settlement.
+        const admissionGeneration = wake.generation;
+        await sql`select pg_notify(${SESSION_CONTROL_NOTIFICATION_CHANNEL}, 'settlement-test-barrier')`.execute(
+          db,
+        );
+        await vi.waitFor(() => expect(wake.generation).toBeGreaterThan(admissionGeneration));
+        before = wake.generation;
         expect(
           await db
             .selectFrom("outbox")
+            .where("aggregate_type", "=", "session_terminal_event")
             .select("id")
             .where("tenant_id", "=", f.tenant.tenantId)
             .execute(),
@@ -869,6 +881,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
           expect(
             await db
               .selectFrom("outbox")
+              .where("aggregate_type", "=", "session_terminal_event")
               .select("id")
               .where("tenant_id", "=", f.tenant.tenantId)
               .execute(),
@@ -1336,6 +1349,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect((await f.state()).run.state).toBe("cancelled");
     const seal = await db
       .selectFrom("outbox")
+      .where("aggregate_type", "=", "session_terminal_event")
       .select("payload")
       .where("tenant_id", "=", f.tenant.tenantId)
       .executeTakeFirstOrThrow();
@@ -1591,6 +1605,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(await f.executor().dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
     const seal = await db
       .selectFrom("outbox")
+      .where("aggregate_type", "=", "session_terminal_event")
       .select("payload")
       .where("tenant_id", "=", f.tenant.tenantId)
       .executeTakeFirstOrThrow();

@@ -148,6 +148,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
     async function project() {
       const outbox = await db
         .selectFrom("outbox")
+        .where("aggregate_type", "=", "session_terminal_event")
         .select("payload")
         .where("tenant_id", "=", tenant.tenantId)
         .execute();

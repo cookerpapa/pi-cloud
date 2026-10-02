@@ -86,6 +86,28 @@ control changes too. Canonical native messages plus projected seals determine
 completed output; raw Cube replies never do. Durable command/consumption receipts,
 tree-limit admission and cancellation remain PG decisions.
 
+Worker endpoints and target identities are cached within their immutable scope;
+transport failure invalidates an endpoint for a cold retry. Mutable status and
+supervisor-request reads share a bounded family cache, invalidated by committed
+control changes and native consumption/seals. Waiting commands retain bounded
+references; large bodies remain in PG except for a byte-bounded working cache.
+There is no one-second PG scan of all commands. Memory timers wake known retries
+and deadlines; bootstrap/reassignment reloads current pending references. Stale
+preparation cleanup is scheduled from known preparation deadlines.
+
+Actual Agent input delivery retains one fresh PG decision for the current target
+Run and canonical input-consumption marker. A terminal Run can be committed before
+its asynchronous change arrives; a cached running state cannot authorize sending
+another input. This is distinct from the repeatable Worker-address/directory read.
+An isolated regression reproduced a late send when this decision was cached;
+the authoritative check remains. Status presentation may be eventually consistent.
+
+The shared Outbox collector removes superseded published control references in
+bounded batches after a five-minute grace. It retains the latest published view
+version and every unpublished reference; native seals retain their separate
+lifecycle. Removed queue/binding/command resources and deleted native Session families do not
+require retained current heads.
+
 Pending input/Agent work uses bounded owner-local indexes and deadlines, with
 startup/reassignment recovery and bounded retry/reconciliation. Removing steady
 global scans must not lose wakeups, expired requests, unconsumed inputs or

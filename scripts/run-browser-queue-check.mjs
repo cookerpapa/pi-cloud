@@ -19,10 +19,11 @@ const id = n => "10000000-0000-4000-8000-"+String(n).padStart(12,"0");
 window.queueId=id;
 window.actions=[];window.snapshots=[];window.restored=[];
 let generation=0, receipts=new Map();
-const reset = () => ({sessionId:id(90),revision:1,activeTurnId:id(99),items:["A","B","C"].map((text,i)=>({turnId:id(i+1),runId:id(i+11),text,mailboxPosition:i+1,acceptedAt:"2026-09-26T00:00:00.000Z",status:"queued"}))});
-window.queue=reset();
+const reset = () => ({sessionId:id(90),revision:1,viewVersion:"1",activeTurnId:id(99),items:["A","B","C"].map((text,i)=>({turnId:id(i+1),runId:id(i+11),text,mailboxPosition:i+1,acceptedAt:"2026-09-26T00:00:00.000Z",status:"queued"}))});
+window.queue=reset();window.queueReads=0;
 const api = {
   async getInputQueue() {
+    window.queueReads++;
     const snapshot=structuredClone(window.queue);
     if(window.failRead){window.failRead=false;throw new TypeError("read failed");}
     if(window.delayRead){window.delayRead=false;return new Promise(resolve=>{window.releaseRead=()=>resolve(snapshot);});}
@@ -31,7 +32,7 @@ const api = {
   async mutateQueuedInput(sessionId,turnId,action,key){
     window.actions.push({sessionId,turnId,action:structuredClone(action),key});
     if(receipts.has(key))return {...structuredClone(receipts.get(key)),replayed:true};
-    if(window.conflict){window.conflict=false;window.queue.revision++;throw new PiCloudApiError(409,"conflict","changed");}
+    if(window.conflict){window.conflict=false;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);throw new PiCloudApiError(409,"conflict","changed");}
     if(action.revision!==window.queue.revision)throw new PiCloudApiError(409,"conflict","stale");
     const items=window.queue.items,index=items.findIndex(i=>i.turnId===turnId),item=items[index];
     if(!item)throw new PiCloudApiError(409,"conflict","started");
@@ -39,7 +40,7 @@ const api = {
     if(action.action==="cancel")items.splice(index,1);
     if(action.action==="move"){const other=index+(action.direction==="up"?-1:1);[items[index],items[other]]=[items[other],items[index]];}
     if(action.action==="steer"){if(action.text!==undefined)item.text=action.text;item.status="steering";}
-    window.queue.revision++;
+    window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);
     window.queue.items.forEach((item,i)=>item.mailboxPosition=i+1);
     const result={queue:structuredClone(window.queue),replayed:false};receipts.set(key,result);
     if(window.loseReply){window.loseReply=false;throw new TypeError("reply lost");}
@@ -47,9 +48,9 @@ const api = {
   }
 };
 window.renderQueue=(canMutate=true)=>{
-  window.queue=reset();receipts=new Map();window.actions=[];window.restored=[];window.snapshots=[];
+  window.queue=reset();window.queueReads=0;receipts=new Map();window.actions=[];window.restored=[];window.snapshots=[];
   root.render(React.createElement(React.StrictMode,null,React.createElement(I18nProvider,{initialLanguage:"zh-CN"},
-    React.createElement(PendingInputQueue,{key:++generation,api,sessionId:window.queue.sessionId,canMutate,refreshSignal:String(generation),
+    React.createElement(PendingInputQueue,{key:++generation,api,sessionId:window.queue.sessionId,canMutate,refreshSignal:String(generation),streamQueue:null,
       onSnapshot:q=>window.snapshots.push(q),onRestoreDraft:text=>window.restored.push(text)}))));
 };
 window.refreshQueue=()=>window.dispatchEvent(new Event("focus"));
@@ -90,6 +91,13 @@ try {
     await page.navigate(`http://127.0.0.1:${port}/queue.html`);
     await page.waitFor(
       "window.fixtureReady && document.querySelectorAll('.pending-input-row').length===3",
+    );
+    const initialReads = await page.evaluate("window.queueReads");
+    await page.wait(4500);
+    assert.equal(
+      await page.evaluate("window.queueReads"),
+      initialReads,
+      "Idle queue must not poll",
     );
     const click = async (selector, text) =>
       page.evaluate(
@@ -136,7 +144,7 @@ try {
       true,
     );
     await page.evaluate(
-      "window.queue.items.splice(1,1);window.queue.revision++;window.refreshQueue()",
+      "window.queue.items.splice(1,1);window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue()",
     );
     await page.waitFor("document.querySelectorAll('.pending-input-row').length===1");
 
@@ -149,7 +157,9 @@ try {
       await page.evaluate("document.querySelector('.pending-input-editor textarea').value"),
       "retained draft",
     );
-    await page.evaluate("window.queue.items=[];window.queue.revision++;window.refreshQueue()");
+    await page.evaluate(
+      "window.queue.items=[];window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue()",
+    );
     await page.waitFor("document.querySelector('.pending-input-editor [role=status]')");
     await click(".pending-input-editor", "放回输入框");
     assert.deepEqual(await page.evaluate("window.restored"), ["retained draft"]);
@@ -194,7 +204,7 @@ try {
     );
   });
   console.log(
-    "browser_queue_check_passed edit order cancel edited_steer lost_reply draft_retention stale_read read_recovery viewer mobile",
+    "browser_queue_check_passed no_poll edit order cancel edited_steer lost_reply draft_retention stale_read read_recovery viewer mobile",
   );
 } finally {
   await server.close();

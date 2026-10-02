@@ -85,7 +85,7 @@ export class SessionControlOutbox {
       throw new Error("Session control publication was not confirmed");
     await this.database
       .updateTable("outbox")
-      .set({ published_at: new Date(), last_error: null })
+      .set({ published_at: sql<Date>`clock_timestamp()`, last_error: null })
       .where("id", "=", row.id)
       .where("published_at", "is", null)
       .execute();

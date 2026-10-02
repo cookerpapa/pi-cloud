@@ -1,4 +1,5 @@
 import { PostgresNotificationWake, type Database } from "@pi-cloud/database";
+import { operationalLog } from "@pi-cloud/observability";
 import {
   SESSION_TERMINAL_EVENT_OUTBOX_TOPIC,
   SESSION_CONTROL_OUTBOX_TOPIC,
@@ -26,6 +27,7 @@ export class SessionOutboxRelay {
   #abort: AbortController | undefined;
   #task: Promise<void> | undefined;
   #failure: unknown;
+  #lastPrune = 0;
 
   constructor(options: {
     database: Kysely<Database>;
@@ -74,6 +76,32 @@ export class SessionOutboxRelay {
 
   async dispatchOne(): Promise<boolean> {
     return (await this.#dispatch(1)) > 0;
+  }
+
+  /** Keep current view versions and unsettled publication; obsolete references
+   * are not a second control history. Native seals retain their existing rules. */
+  async prunePublishedControls(): Promise<void> {
+    await sql`delete from outbox where id in (
+      select old.id from outbox old
+      where old.aggregate_type='session_control_change' and old.published_at < clock_timestamp()-interval '5 minutes'
+        and (
+          exists(select 1 from outbox newer where newer.aggregate_type='session_control_change'
+            and newer.tenant_id=old.tenant_id and newer.aggregate_id=old.aggregate_id
+            and newer.payload->>'entity'=old.payload->>'entity'
+            and newer.payload->>'runId' is not distinct from old.payload->>'runId'
+            and (newer.payload->>'version')::bigint > (old.payload->>'version')::bigint
+            and newer.published_at is not null)
+          or (old.payload->>'entity'='input_queue' and not exists(
+            select 1 from sessions s where s.tenant_id=old.tenant_id and s.id=old.aggregate_id))
+          or (old.payload->>'entity'='sandbox_binding' and not exists(
+            select 1 from sandbox_tool_bindings b where b.tenant_id=old.tenant_id
+              and b.binding_id=old.aggregate_id and b.run_id=(old.payload->>'runId')::uuid))
+          or (old.payload->>'entity'='subagent_command' and not exists(
+            select 1 from subagent_control_commands c where c.tenant_id=old.tenant_id and c.id=old.aggregate_id))
+          or (old.payload->>'entity'='subagent_state' and not exists(
+            select 1 from pi_sessions s where s.tenant_id=old.tenant_id and s.id=old.payload#>>'{scope,piSessionId}'))
+        ) order by old.created_at,old.id limit 512
+    )`.execute(this.#database);
   }
 
   async #dispatch(limit: number): Promise<number> {
@@ -129,7 +157,7 @@ export class SessionOutboxRelay {
         throw new Error("Session control receipt did not match its Fact");
       await this.#database
         .updateTable("outbox")
-        .set({ published_at: new Date(), last_error: null })
+        .set({ published_at: sql<Date>`clock_timestamp()`, last_error: null })
         .where("id", "=", row.id)
         .where("attempts", "=", row.attempts)
         .where("published_at", "is", null)
@@ -154,6 +182,16 @@ export class SessionOutboxRelay {
 
   async #run(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
+      if (performance.now() - this.#lastPrune >= 60_000) {
+        this.#lastPrune = performance.now();
+        await this.prunePublishedControls().catch(() =>
+          operationalLog({
+            service: "pi-cloud-control-plane",
+            level: "warn",
+            event: "control_outbox.cleanup_failed",
+          }),
+        );
+      }
       this.#wake.refresh();
       const generation = this.#wake.generation;
       let waitMs = this.#pollIntervalMs;

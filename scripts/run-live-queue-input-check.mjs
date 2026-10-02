@@ -74,6 +74,17 @@ try {
   report.resources = { sessionId: session.sessionId, workspaceId: project.workspaceId };
   await withChromePage({}, async (page) => {
     try {
+      await page.send("Page.addScriptToEvaluateOnNewDocument", {
+        source: `
+        window.queueReads=0;
+        const originalFetch=window.fetch.bind(window);
+        window.fetch=(input,init)=>{
+          const url=typeof input==='string'?input:input.url;
+          if(new URL(url,location.href).pathname.endsWith('/queued-inputs') && (init?.method??'GET')==='GET')window.queueReads++;
+          return originalFetch(input,init);
+        };
+      `,
+      });
       await page.navigate(base);
       await page.evaluate('localStorage.setItem("pi-cloud:ui-language","zh-CN")');
       await page.send("Page.reload", { ignoreCache: true });
@@ -93,7 +104,7 @@ try {
       await page.waitFor("document.querySelector('.product-composer textarea')");
       first = await api.acceptTurn(
         session.sessionId,
-        `Call bash exactly once with command: sleep 20; printf 'QUEUE_TOOL_OK\\n'. Keep Workspace files unchanged. After the Tool finishes reply ${markers.first}, following any later steering instruction.`,
+        `Call bash exactly once with command: sleep 30; printf 'QUEUE_TOOL_OK\\n'. Keep Workspace files unchanged. After the Tool finishes reply ${markers.first}, following any later steering instruction.`,
         newIdempotencyKey("turn"),
       );
       await until(
@@ -104,6 +115,7 @@ try {
             ?.transcript?.items.some((i) => i.kind === "tool" && i.status === "running"),
         "active Tool",
       );
+      const beforePush = await page.evaluate("window.queueReads");
       a = await api.acceptTurn(
         session.sessionId,
         `This is a separate task. Use no tools and reply exactly ORIGINAL_${suffix}.`,
@@ -125,6 +137,24 @@ try {
         newIdempotencyKey("turn"),
       );
       await page.waitFor("document.querySelectorAll('.pending-input-row').length===4");
+      assert.equal(
+        await page.evaluate("window.queueReads"),
+        beforePush,
+        "Other-client queue changes must arrive through SSE",
+      );
+      report.otherClientPush = true;
+      await page.send("Page.reload", { ignoreCache: true });
+      await page.waitFor("document.querySelectorAll('.pending-input-row').length===4");
+      await wait(1000);
+      const afterReconnect = await page.evaluate("window.queueReads");
+      await wait(4500);
+      assert.equal(
+        await page.evaluate("window.queueReads"),
+        afterReconnect,
+        "Reconnected queue must not poll",
+      );
+      report.reconnectedQueue = true;
+      report.idleBrowserQueueReads = 0;
       const row = (id) => `.pending-input-row[data-turn-id="${id}"]`;
       const click = async (selector, text) => {
         const expression = `(()=>{const r=document.querySelector(${JSON.stringify(selector)});const b=r&&Array.from(r.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)});return b&&!b.disabled;})()`;
@@ -262,7 +292,7 @@ try {
   report.cleanupCompleted = errors.length === 0;
   if (failure) report.failure = failure instanceof Error ? failure.message : String(failure);
   await writeFile(
-    "docs/reports/queued-inputs-live-20260926.json",
+    process.argv[2] ?? "/tmp/pi-cloud-queued-inputs-live.json",
     JSON.stringify(report, null, 2) + "\n",
   );
   if (failure || errors.length)

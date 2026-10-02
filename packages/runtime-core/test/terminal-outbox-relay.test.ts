@@ -1,7 +1,10 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "@pi-cloud/protocol";
+import {
+  SESSION_TERMINAL_EVENT_OUTBOX_TOPIC,
+  SESSION_CONTROL_OUTBOX_TOPIC,
+} from "@pi-cloud/protocol";
 import { expect, it, vi } from "vitest";
 import { SessionOutboxRelay } from "../src/session-outbox-relay.ts";
 import type { SessionLogFact } from "../src/accepted-fact.ts";
@@ -116,7 +119,7 @@ it("claims bounded Session heads without holding a connection during delivery an
       notificationConnectionString,
       bus: retryBus,
     });
-    await expect(retry.dispatchOne()).rejects.toThrow("Terminal publication failed");
+    await expect(retry.dispatchOne()).rejects.toThrow("Session control publication failed");
     await db
       .updateTable("outbox")
       .set({ available_at: new Date(0) })
@@ -166,6 +169,78 @@ it("claims bounded Session heads without holding a connection during delivery an
         .where("id", "=", staleId)
         .executeTakeFirstOrThrow(),
     ).toEqual(fresh);
+    const aggregate = crypto.randomUUID(),
+      controlIds: string[] = [];
+    await db
+      .insertInto("pi_sessions")
+      .values({
+        tenant_id: tenant,
+        id: sessionA,
+        created_at_ms: String(Date.now()),
+        parent_session_id: null,
+        name: null,
+      })
+      .execute();
+    for (const version of [1, 2, 3]) {
+      const id = crypto.randomUUID();
+      controlIds.push(id);
+      await db
+        .insertInto("outbox")
+        .values({
+          id,
+          tenant_id: tenant,
+          aggregate_type: "session_control_change",
+          aggregate_id: aggregate,
+          topic: SESSION_CONTROL_OUTBOX_TOPIC,
+          payload: {
+            kind: "control_change",
+            factId: id,
+            scope: { tenantId: tenant, piSessionId: sessionA },
+            entity: "subagent_state",
+            entityId: aggregate,
+            version: String(version),
+            occurredAt: new Date().toISOString(),
+          },
+          published_at: version === 3 ? null : new Date(Date.now() - 600000),
+          available_at: new Date(Date.now() + 600000),
+          last_error: null,
+        })
+        .execute();
+    }
+    const sealsBefore = await db
+      .selectFrom("outbox")
+      .select("id")
+      .where("topic", "=", SESSION_TERMINAL_EVENT_OUTBOX_TOPIC)
+      .execute();
+    await second.prunePublishedControls();
+    const retained = await db
+      .selectFrom("outbox")
+      .select("id")
+      .where("topic", "=", SESSION_CONTROL_OUTBOX_TOPIC)
+      .execute();
+    expect(retained.map((r) => r.id).sort()).toEqual(controlIds.slice(1).sort());
+    await db
+      .deleteFrom("pi_sessions")
+      .where("tenant_id", "=", tenant)
+      .where("id", "=", sessionA)
+      .execute();
+    await second.prunePublishedControls();
+    expect(
+      (
+        await db
+          .selectFrom("outbox")
+          .select("id")
+          .where("topic", "=", SESSION_CONTROL_OUTBOX_TOPIC)
+          .execute()
+      ).map((r) => r.id),
+    ).toEqual(controlIds.slice(2));
+    expect(
+      await db
+        .selectFrom("outbox")
+        .select("id")
+        .where("topic", "=", SESSION_TERMINAL_EVENT_OUTBOX_TOPIC)
+        .execute(),
+    ).toEqual(sealsBefore);
   } finally {
     release();
     await db.destroy();

@@ -121,7 +121,13 @@ it.skipIf(!external)(
           .where("released_at", "is", null)
           .execute(),
       ).toEqual([]);
-      expect(await db.selectFrom("outbox").select("id").execute()).toHaveLength(2);
+      expect(
+        await db
+          .selectFrom("outbox")
+          .select("id")
+          .where("aggregate_type", "=", "session_terminal_event")
+          .execute(),
+      ).toHaveLength(2);
     } finally {
       clearTimeout(timer);
       release();

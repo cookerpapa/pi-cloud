@@ -241,15 +241,18 @@ export async function startControlPlane(): Promise<void> {
       controlChanges: {
         load: async (partitions, current) => {
           await bindingView.load(partitions, current);
+          if (current()) await subagents.recover(partitions, current);
           if (current()) queuedInputs?.recoverPending();
         },
         reset: () => {
           bindingView.reset();
           inputQueues.reset();
+          subagents.reset();
         },
         prepare: (change, current) => bindingView.prepare(change, current),
         consume: async (change, current) => {
           await bindingView.consume(change, current);
+          await subagents.changed(change, current);
           if (current() && change.entity === "input_queue")
             queuedInputs?.notifySession(change.scope.tenantId, change.entityId);
           try {

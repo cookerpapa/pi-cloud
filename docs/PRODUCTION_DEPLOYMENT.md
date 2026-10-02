@@ -34,7 +34,20 @@ that revision's deployment instructions. Reload open browser pages. Do not mix
 incompatible publishers, change a live Kafka partition count or silently convert
 an unsupported Volume layout. Back up user data before a storage/protocol cutover.
 
-The current pre-release uses Kafka v12 and `pcer2_` Run references. ADR-0209 and
+The current pre-release uses Kafka v13 and `pcer2_` Run references.
+Migrations 160–162 and ADR-0212 add ordered control-change references on the same
+physical-Session path. Drain accepted Runs, release Session leases, and publish
+and project every seal on v12 before stopping old Workers and Control Plane.
+Back up PG, apply the migrations from the new image, recreate its bootstrap
+container, then start matching Control Plane, Workers and Web on v13. The single
+Projector group bootstraps its disposable binding and pending-work views from PG.
+The queue API/SSE now requires `viewVersion`; reload old browser pages. No old
+consumer or wire-compatibility path runs alongside the new one. Native history,
+images and Workspace Volumes remain intact. Guest build inputs and Cube Tool
+wire v2 are unchanged, so this cutover preserves the running development machines
+and current READY template catalog.
+
+ADR-0209 and
 migration 158 move publication from direct Worker producers to the control-plane
 ingress. Drain all accepted Runs, release their Session leases and project/publish
 all seals on v11 before stopping old services. Migration 158 refuses an unfinished

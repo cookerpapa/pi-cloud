@@ -389,7 +389,7 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     expect(await executor.dispatchNext()).toMatchObject({ status: "completed", runId: b.runId });
   });
 
-  it("persists cancellation as a typed control request without a queue Outbox", async () => {
+  it("persists cancellation as a typed control request without a cancellation queue Outbox", async () => {
     const s = await conversation("cancel"),
       a = await store.acceptTurn(s.sessionId, "first", { prompt: "wait" });
     const worker = await createTestWorker(database),
@@ -415,7 +415,13 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
       expect(await store.acceptTurnCancellation(s.sessionId, a.turnId, "cancel", {})).toMatchObject(
         { controlRequestId: accepted.controlRequestId, replayed: true },
       );
-      expect(await database.selectFrom("outbox").select("id").execute()).toEqual([]);
+      expect(
+        await database
+          .selectFrom("outbox")
+          .select("id")
+          .where("aggregate_type", "!=", "session_control_change")
+          .execute(),
+      ).toEqual([]);
       const cancellation = new RunCancellationExecutor({
         database,
         executionAuthority: worker.coordinator,

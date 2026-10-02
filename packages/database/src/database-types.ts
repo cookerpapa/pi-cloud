@@ -628,6 +628,7 @@ export interface SubagentExecutionTable {
 }
 
 export interface SubagentControlCommandTable {
+  revision: GeneratedInt8;
   id: string;
   ordinal: GeneratedInt8;
   tenant_id: string;
