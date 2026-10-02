@@ -290,12 +290,13 @@ export class SandboxPreviewGateway {
     return scope;
   }
   async #authorizedOwner(scope: SandboxPreviewConnectionRequest): Promise<string> {
-    if (
-      (await this.#workspaceBinding(scope.tenantId, scope.userId, scope.target)) !==
-      scope.workspaceId
-    )
-      throw new Error("Preview workspace changed");
-    return this.#resolveBaseUrl(scope.tenantId, scope.userId, scope.target);
+    const binding = await this.#resolveAuthorizedBinding(
+      scope.tenantId,
+      scope.userId,
+      scope.target,
+    );
+    if (binding.workspaceId !== scope.workspaceId) throw new Error("Preview workspace changed");
+    return binding.baseUrl;
   }
   #prepare(request: IncomingMessage, scope: SandboxPreviewConnectionRequest): void {
     const origin = this.#origin(request);
@@ -466,16 +467,17 @@ export class SandboxPreviewGateway {
       : { kind: "development_environment", environmentId: environment.id };
   }
 
-  async #resolveBaseUrl(
+  async #resolveAuthorizedBinding(
     tenantId: string,
     userId: string,
     target: SandboxPreviewTarget,
-  ): Promise<string> {
+  ): Promise<{ workspaceId: string; baseUrl: string }> {
     if (target.kind === "development_environment") {
       const row = await this.#database
         .selectFrom("development_environments as development")
         .innerJoin("sandbox_domains as domain", "domain.id", "development.sandbox_domain_id")
         .select([
+          "development.workspace_id as workspaceId",
           "development.owner_base_url as ownerBaseUrl",
           "domain.sandbox_control_base_url as fallbackBaseUrl",
         ])
@@ -485,7 +487,7 @@ export class SandboxPreviewGateway {
         .where("development.state", "=", "running")
         .executeTakeFirst();
       if (row === undefined) throw new Error("Development environment preview is unavailable");
-      return row.ownerBaseUrl ?? row.fallbackBaseUrl;
+      return { workspaceId: row.workspaceId, baseUrl: row.ownerBaseUrl ?? row.fallbackBaseUrl };
     }
     const row = await this.#database
       .selectFrom("sessions as session_row")
@@ -510,15 +512,18 @@ export class SandboxPreviewGateway {
           .on("runtime.state", "in", ["materializing", "active", "warm", "cleaning"]),
       )
       .select([
+        "session_row.workspace_id as workspaceId",
         "runtime.owner_base_url as ownerBaseUrl",
         "domain.sandbox_control_base_url as fallbackBaseUrl",
       ])
       .where("session_row.tenant_id", "=", tenantId)
       .where("session_row.id", "=", target.sessionId)
       .where("session_row.pruned_at", "is", null)
+      .where("session_row.created_by_user_id", "=", userId)
+      .where("workspace.deleted_at", "is", null)
       .orderBy("service.last_seen_at", "desc")
       .executeTakeFirst();
     if (row === undefined) throw new Error("Conversation preview is unavailable");
-    return row.ownerBaseUrl ?? row.fallbackBaseUrl;
+    return { workspaceId: row.workspaceId, baseUrl: row.ownerBaseUrl ?? row.fallbackBaseUrl };
   }
 }

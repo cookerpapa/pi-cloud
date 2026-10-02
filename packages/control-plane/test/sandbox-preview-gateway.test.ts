@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import Fastify from "fastify";
 import { createServer, request as httpRequest } from "node:http";
@@ -39,7 +40,18 @@ afterEach(async () => {
 
 async function fixture(
   previewFailure?: "sandbox_application_unavailable" | "sandbox_execution_unavailable",
+  resourceScope: Omit<
+    import("@pi-cloud/protocol").SandboxPreviewConnectionRequest,
+    "expiresAt"
+  > = scope,
 ) {
+  const hostname = previewOriginHostname(
+    secret,
+    "preview.test",
+    resourceScope.target,
+    resourceScope.port,
+    resourceScope.workspaceId,
+  );
   const observed: Array<{
     path: string;
     cookie: string | undefined;
@@ -119,7 +131,9 @@ async function fixture(
   });
   await new Promise<void>((r) => broker.listen(0, "127.0.0.1", r));
   cleanups.push(() => new Promise<void>((r) => broker.close(() => r())));
-  let available = true;
+  let available = true,
+    queries = 0,
+    workspaceId = resourceScope.workspaceId;
   const database = {
     selectFrom() {
       const filters: Array<[string, string, unknown]> = [];
@@ -141,15 +155,19 @@ async function fixture(
           return builder;
         },
         async executeTakeFirst() {
+          queries++;
           if (
             !available ||
             filters.some(
-              ([key, , value]) => key.endsWith("owner_user_id") && value !== scope.userId,
+              ([key, , value]) =>
+                (key.endsWith("owner_user_id") || key.endsWith("created_by_user_id")) &&
+                value !== resourceScope.userId,
             )
           )
             return undefined;
           return {
-            workspace_id: scope.workspaceId,
+            workspace_id: workspaceId,
+            workspaceId,
             ownerBaseUrl: `http://127.0.0.1:${(broker.address() as import("node:net").AddressInfo).port}`,
           };
         },
@@ -167,7 +185,7 @@ async function fixture(
   gateway.install(fastify);
   await fastify.ready();
   cleanups.push(() => fastify.close());
-  const ticket = issuePreviewAccessToken(secret, scope);
+  const ticket = issuePreviewAccessToken(secret, resourceScope);
   const request = (path: string, headers: Record<string, string> = {}) =>
     new Promise<{ status: number; headers: import("node:http").IncomingHttpHeaders; body: Buffer }>(
       (resolve) => {
@@ -196,6 +214,10 @@ async function fixture(
     );
   return {
     gateway,
+    queries: () => queries,
+    rebind: () => {
+      workspaceId = randomUUID();
+    },
     ticket,
     request,
     observed,
@@ -208,6 +230,21 @@ async function fixture(
 }
 
 describe("root-origin Preview", () => {
+  it.each(["conversation", "development_environment"] as const)(
+    "authorizes each %s request with one current PG read and rejects rebinding",
+    async (kind) => {
+      const f = await fixture(undefined, {
+        ...scope,
+        target: kind === "conversation" ? { kind, sessionId: randomUUID() } : scope.target,
+      });
+      expect((await f.request("/src/main.js")).status).toBe(200);
+      expect(f.queries()).toBe(1);
+      f.rebind();
+      expect((await f.request("/src/main.js")).status).toBe(502);
+      expect(f.queries()).toBe(2);
+      expect(f.connections).toHaveLength(1);
+    },
+  );
   it.each([
     ["sandbox_application_unavailable", 502, "application port"],
     ["sandbox_execution_unavailable", 503, "execution channel"],

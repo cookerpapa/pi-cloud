@@ -47,8 +47,8 @@ PiCloud deployment. Remaining operational limits are listed below.
       matched cold-recovery acceptance remains pending.
 - [ ] Discuss O02-04/05: merge Preview target reads and validate scoped connection
       reuse; deduplicate identical immutable-image reads within one decode operation.
-      Image decode deduplication and isolation checks pass; Preview merge and
-      matched acceptance remain pending. Shared-resource invalidation is not
+      Image decode deduplication and Preview query merge pass their targeted
+      isolation/rebinding checks; matched acceptance remains pending. Shared-resource invalidation is not
       implicitly covered by Session control facts.
 
 - [x] Implement and validate [ADR-0212](adr/0212-ordered-control-read-models.md)
