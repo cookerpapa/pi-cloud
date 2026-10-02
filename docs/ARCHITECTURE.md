@@ -621,6 +621,15 @@ the owning Worker. Long preparation and result waits never block its partition
 handler. Result notifications use the Worker management channel, independently
 of the Provider HTTP proxy, rather than per-child status polling.
 
+The same owner caches bounded Worker routes, target directories and family read
+results. PG-originated Subagent state/command changes invalidate these views and
+wake affected pending references; native input consumption and seals also wake
+them. Timers inspect known retry/expiry deadlines, without globally scanning
+pending commands every second. Reassignment reconstructs pending work from PG.
+Actual input delivery still checks the current receiver Run and consumption
+receipt in PG; a cached running status cannot authorize a late input. These
+views do not replace PG task admission, cancellation or durable receipts.
+
 Direct delegation creates no script or Cube. Workflow JavaScript runs in Cube
 through envd's bounded stdin/stdout bridge. Guest `runs.*` requests return to the
 owning Worker publication port; no PG/Kafka/model credentials enter the guest.

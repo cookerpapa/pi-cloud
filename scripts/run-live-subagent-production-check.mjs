@@ -65,6 +65,24 @@ const bootstrapApi = new PiCloudApi(fetchFromProduction, token);
 let api = bootstrapApi;
 let authorizationToken = token;
 const measurements = [];
+// Live bindings prove the VM actually used by each Run. Released runtime rows
+// intentionally clear identity; they cannot serve as historical test evidence.
+const observedRuntimes = new Map();
+async function sampleRuntimeBindings() {
+  if (!project) return;
+  const rows = JSON.parse(
+    await psql(`select coalesce(json_agg(json_build_object(
+    'runId',b.run_id,'runtimeId',b.descriptor->'target'->>'sandboxId')),'[]'::json)::text
+    from sandbox_tool_bindings b where b.tenant_id=${sqlLiteral(registration.tenantId)}
+      and b.snapshot->'assignment'->>'workspaceId'=${sqlLiteral(project.workspaceId)}`),
+  );
+  for (const row of rows) {
+    assert(row.runtimeId);
+    const prior = observedRuntimes.get(row.runId);
+    assert(prior === undefined || prior === row.runtimeId, "Run was redirected to another VM");
+    observedRuntimes.set(row.runId, row.runtimeId);
+  }
+}
 
 function capture(command, args, timeoutMs = 120_000) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -129,6 +147,16 @@ async function runTurn(sessionId, prompt) {
     firstTextMs = null;
   process.stdout.write(`subagent_live_turn_started ${sequence}\n`);
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("subagent-live"));
+  let observing = true;
+  let observationFailure;
+  const observe = (async () => {
+    while (observing) {
+      await sampleRuntimeBindings();
+      if (observing) await wait(200);
+    }
+  })().catch((error) => {
+    observationFailure = error;
+  });
   const controller = new AbortController();
   const admissionMs = performance.now() - startedAt;
   const timer = setTimeout(() => controller.abort(), 10 * 60_000);
@@ -198,6 +226,9 @@ async function runTurn(sessionId, prompt) {
   } finally {
     clearTimeout(timer);
     controller.abort();
+    observing = false;
+    await observe;
+    if (observationFailure) throw observationFailure;
   }
 }
 
@@ -205,6 +236,7 @@ async function executionEvidence(parentRunId, executionId) {
   const value = await psql(`
     select json_build_object(
       'executionId', execution.id,
+      'parentRunId', parent_run.id,
       'sandboxMode', execution.sandbox_mode,
       'state', execution.state,
       'childSessionId', execution.child_session_id,
@@ -213,8 +245,6 @@ async function executionEvidence(parentRunId, executionId) {
       'childWorkspaceId', child_run.workspace_id,
       'computeSessionId', child_run.compute_session_id,
       'cwd', child_run.working_directory,
-      'parentRuntimeId', (select runtime_id from workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=parent_run.workspace_id and compute_session_id is not distinct from parent_run.compute_session_id order by created_at desc limit 1),
-      'childRuntimeId', (select runtime_id from workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child_run.workspace_id and compute_session_id is not distinct from child_run.compute_session_id order by created_at desc limit 1),
       'childRunState', child_run.state,
       'parentWorker', parent_run.sandbox_id,
       'childWorker', child_run.sandbox_id,
@@ -265,7 +295,12 @@ async function executionEvidence(parentRunId, executionId) {
     limit 1
   `);
   assert(value, `Parent Run ${parentRunId} produced no durable Subagent execution`);
-  return JSON.parse(value);
+  const result = JSON.parse(value);
+  return {
+    ...result,
+    parentRuntimeId: observedRuntimes.get(result.parentRunId) ?? null,
+    childRuntimeId: observedRuntimes.get(result.childRunId) ?? null,
+  };
 }
 
 async function recursiveTreeEvidence(rootRunId) {

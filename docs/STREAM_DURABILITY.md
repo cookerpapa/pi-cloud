@@ -10,6 +10,15 @@ These guarantees concern formal conversation events. Disposable `tool.progress`
 snapshots are a separate HTTP/SSE observation: no Kafka/PG write, durable sequence,
 context entry or reconnect replay. Losing one cannot fail or complete a Tool.
 
+ADR-0212 adds bounded PG control-change references to the same ordered Kafka
+Session path. They rebuild binding, queue and Subagent read views, without
+creating Pi Entries or changing native sequence. New owners capture Kafka
+bounds before loading PG snapshots, then consume subsequent changes. Binding
+closure also installs a synchronous dispatch barrier before its publication.
+The derived `input.queue` SSE snapshot is disposable presentation with its own
+`viewVersion`; reconnect obtains current PG state rather than replaying an old
+queue snapshot as conversation history.
+
 Model-consumed images are durable Session attachments, not disposable observations.
 An image upload must complete before its reference can reach Kafka. The native
 after-hook result becomes canonical through the ordinary writer/Projector path.
