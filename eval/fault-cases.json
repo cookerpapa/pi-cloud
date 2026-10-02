@@ -925,6 +925,13 @@
       "file": "test/queued-inputs.test.ts",
       "test": "recovers acknowledged Steer scopes and wakes them for canonical consumption without idle reads",
       "invariant": "An HTTP ACK cannot retire pending native input; cold recovery and canonical wakes still reconcile it."
+    },
+    {
+      "id": "control-coalescing-logical-restore",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-change-transactions.postgres.test.ts",
+      "test": "does not reuse a coalescing identity across commit, rollback or a restored reference",
+      "invariant": "Retained or logically restored references cannot collide with a new transaction; connection reuse and savepoint rollback clear temporary identity."
     }
   ]
 }

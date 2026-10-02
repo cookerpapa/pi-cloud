@@ -184,3 +184,69 @@ it.skipIf(!endpoint)(
     expect(await refs()).toHaveLength(3);
   },
 );
+
+it.skipIf(!endpoint)(
+  "does not reuse a coalescing identity across commit, rollback or a restored reference",
+  async () => {
+    const f = await fixture();
+    await db.deleteFrom("outbox").where("tenant_id", "=", f.tenantId).execute();
+    await db.connection().execute(async (connection) => {
+      const currentMarker = async (cx: typeof connection) =>
+        (
+          await sql<{
+            id: string | null;
+          }>`select nullif(current_setting('pi_cloud.control_transaction',true),'') id`.execute(cx)
+        ).rows[0]!.id;
+      let first: string | null = null;
+      await connection.transaction().execute(async (tx) => {
+        await sql`select pi_cloud_input_queue_change(${f.tenantId}::uuid,${f.sessionId}::uuid)`.execute(
+          tx,
+        );
+        first = await currentMarker(tx);
+        expect(first).toMatch(/^[a-f0-9-]{36}$/);
+      });
+      expect(await currentMarker(connection)).toBeNull();
+      // Retained/restored published rows keep their payload and original marker.
+      await connection
+        .updateTable("outbox")
+        .set({ published_at: new Date() })
+        .where("tenant_id", "=", f.tenantId)
+        .execute();
+      await expect(
+        connection.transaction().execute(async (tx) => {
+          await sql`select pi_cloud_input_queue_change(${f.tenantId}::uuid,${f.sessionId}::uuid)`.execute(
+            tx,
+          );
+          expect(await currentMarker(tx)).not.toBe(first);
+          throw new Error("rollback");
+        }),
+      ).rejects.toThrow("rollback");
+      expect(await currentMarker(connection)).toBeNull();
+      await connection.transaction().execute(async (tx) => {
+        await sql`savepoint before_control`.execute(tx);
+        await sql`select pi_cloud_input_queue_change(${f.tenantId}::uuid,${f.sessionId}::uuid)`.execute(
+          tx,
+        );
+        const abandoned = await currentMarker(tx);
+        await sql`rollback to savepoint before_control`.execute(tx);
+        expect(await currentMarker(tx)).toBeNull();
+        await sql`select pi_cloud_input_queue_change(${f.tenantId}::uuid,${f.sessionId}::uuid)`.execute(
+          tx,
+        );
+        expect(await currentMarker(tx)).not.toBe(abandoned);
+        expect(await currentMarker(tx)).not.toBe(first);
+      });
+      expect(await currentMarker(connection)).toBeNull();
+      const rows = await connection
+        .selectFrom("outbox")
+        .selectAll()
+        .where("tenant_id", "=", f.tenantId)
+        .execute();
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((r) => r.control_transaction)).size).toBe(2);
+      const retained = rows.find((r) => r.control_transaction === first);
+      expect(retained).toBeDefined();
+      expect(retained!.published_at).not.toBeNull();
+    });
+  },
+);

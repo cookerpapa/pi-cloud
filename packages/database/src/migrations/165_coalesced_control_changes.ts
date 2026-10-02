@@ -2,14 +2,20 @@ import { sql, type Kysely } from "kysely";
 
 export async function up<DB>(database: Kysely<DB>): Promise<void> {
   await sql`
-    alter table outbox add column control_transaction bigint;
+    alter table outbox add column control_transaction uuid;
     create unique index outbox_transaction_control on outbox(control_transaction,tenant_id,aggregate_id,((payload->>'entity')))
       where control_transaction is not null;
     create or replace function pi_cloud_control_change(tenant uuid, physical_session text, entity text,
       entity_id uuid, revision bigint, detail jsonb) returns uuid language plpgsql as $$
-    declare event_id uuid := gen_random_uuid(); transaction_id bigint;
+    declare event_id uuid := gen_random_uuid(); transaction_id uuid;
     begin
-      if entity in ('input_queue','subagent_state') then transaction_id := txid_current(); end if;
+      if entity in ('input_queue','subagent_state') then
+        transaction_id := nullif(current_setting('pi_cloud.control_transaction',true),'')::uuid;
+        if transaction_id is null then
+          transaction_id := gen_random_uuid();
+          perform set_config('pi_cloud.control_transaction',transaction_id::text,true);
+        end if;
+      end if;
       insert into outbox(id,tenant_id,aggregate_type,aggregate_id,topic,payload,last_error,control_transaction)
       values(event_id,tenant,'session_control_change',entity_id,'session.control.changed.v1',
         jsonb_build_object('kind','control_change','factId',event_id,

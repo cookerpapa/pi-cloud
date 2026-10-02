@@ -57,7 +57,13 @@ remain immutable. Skip installed versions and irrelevant Steer wakes. Binding
 creation/closure keeps its stronger synchronous contract. Recover only owner
 state, with paging and row/byte bounds after ownership filtering.
 
-Coalescing keys include the PG transaction, tenant, entity and logical Session;
+Coalescing keys include a transaction-local UUID, tenant, entity and logical Session.
+The UUID is generated on first use and stored with `set_config(..., true)`;
+[PG transaction-local settings](https://www.postgresql.org/docs/current/sql-set.html)
+reset at commit/rollback and respect savepoints. Do not persist PG numeric XIDs as
+business identities across logical restores into another cluster. This marker
+only coalesces uncommitted references; it is not execution authority.
+For each key,
 the retained reference takes the last allocated revision while preserving its
 Fact ID. This matters when a transaction waits for a Session lock after an earlier
 trigger. Bindings and commands are not coalesced. Subagent revision assignment is

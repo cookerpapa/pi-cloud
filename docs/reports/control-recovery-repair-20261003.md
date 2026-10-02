@@ -20,6 +20,7 @@
 PG migrations 163–165；Kafka Session log 仍为 v13，固定 Native Tool wire 仍为 2。
 `input_queue` 引用可携带 `steerPending: true`，仅说明本事务加入过待消费输入；省略不表示权威的“没有 Steer”。
 发布健康接口返回分区范围，属于匹配部署的私有协议。未新增服务或持久执行权威。
+上线前额外收紧了逻辑恢复边界：事务内合并采用 PG transaction-local UUID，避免把内部数值事务号保存为跨集群恢复后的永久唯一键；连接复用、commit/rollback、保存点回滚与已发布引用保留均有真实 PG 测试。
 
 ## 固定工作量对照
 
