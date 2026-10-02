@@ -23,6 +23,11 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
+- [ ] Implement and validate [ADR-0211](adr/0211-execution-path-and-runtime-probes.md):
+      independent Projector/guest-return observations, one fixed guest probe for
+      Worker round trips and controller checks, fair due-time health work outside
+      cleanup, partial-inventory safety, and matched Luna/Cube/browser acceptance.
+
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
       text block; that interval must not be labelled entirely as internal relay time.

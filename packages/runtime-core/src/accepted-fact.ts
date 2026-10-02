@@ -31,7 +31,7 @@ export type CandidatePiSessionAppendFact = Readonly<{
 }>;
 
 export type CandidateFact =
-  | Readonly<{ kind: "path_probe"; factId: string; occurredAt: string }>
+  | Omit<import("@pi-cloud/protocol").PathProbe, "scope">
   | Readonly<{ kind: "tool_command"; command: CandidateToolCommand }>
   | Readonly<{ kind: "subagent_command"; command: CandidateSubagentCommand }>
   | Readonly<{ kind: "agent_event"; publication: EventPublishMessage }>

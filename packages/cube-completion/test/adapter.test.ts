@@ -1,3 +1,4 @@
+import type { ToolReply } from "@pi-cloud/event-log";
 import { randomUUID, createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
@@ -110,7 +111,7 @@ it("reports failed image storage without inserting an inline image or invented v
   const f = fixture();
   f.put.mockRejectedValueOnce(new Error("object store unavailable"));
   await f.adapter.accept(f.packet);
-  expect(f.publish.mock.calls[0]![1].event).toMatchObject({
+  expect((f.publish.mock.calls[0]![1] as ToolReply).event).toMatchObject({
     isError: true,
     result: {
       content: [{ type: "text", text: expect.stringContaining("image_attachment_upload_failed") }],
@@ -160,8 +161,52 @@ it("marks an unconfirmed scope stop as runtime unavailable without destroying a 
     ...f.packet,
     result: { failure: "tool_scope_stop_unconfirmed", quarantine: true },
   });
-  expect(f.publish.mock.calls[0]![1].event).toMatchObject({
+  expect((f.publish.mock.calls[0]![1] as ToolReply).event).toMatchObject({
     isError: true,
     result: { content: [{ text: expect.stringContaining("cubesandbox_tool_unavailable") }] },
   });
+});
+
+it("publishes one distinct probe reply for shared VM bindings without Tool or image work", async () => {
+  const f = fixture(),
+    probeId = randomUUID(),
+    bindingIds = [randomUUID(), randomUUID()];
+  const context: CompletionPacket["context"] = {
+    kind: "execution_probe",
+    replyTopic: f.context.replyTopic,
+    sentAt: Date.now(),
+    bindingIds,
+    execution: { bindingId: bindingIds[0]!, targetId: "physical-target", bootId: randomUUID() },
+  };
+  const packet: CompletionPacket = {
+    kind: "result",
+    operationId: probeId,
+    context,
+    result: { output: { type: "worker.probe_result", probeId, guestBootId: randomUUID() } },
+  };
+  await f.adapter.accept(packet);
+  expect(f.publish).toHaveBeenCalledWith(
+    context.replyTopic,
+    expect.objectContaining({ kind: "execution_probe", probeId, bindingIds }),
+  );
+  expect(f.put).not.toHaveBeenCalled();
+  expect(f.progress.update).not.toHaveBeenCalled();
+  await expect(
+    f.adapter.accept({ ...packet, result: { failure: "probe_expired" } }),
+  ).rejects.toThrow();
+  await expect(f.adapter.accept({ ...packet, operationId: randomUUID() })).rejects.toThrow(
+    "identity",
+  );
+  expect(f.publish).toHaveBeenCalledOnce();
+});
+
+it("only actual native guest completion supplies physical execution evidence", async () => {
+  const f = fixture();
+  f.context.execution = { bindingId: randomUUID(), targetId: "target", bootId: randomUUID() };
+  await f.adapter.accept(f.packet);
+  expect(f.publish.mock.calls[0]![1]).toMatchObject({
+    execution: { ...f.context.execution, observedAt: expect.any(Number) },
+  });
+  await f.adapter.accept({ ...f.packet, result: { failure: "execution_not_started" } });
+  expect(f.publish.mock.calls[1]![1]).not.toHaveProperty("execution");
 });

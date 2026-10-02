@@ -161,6 +161,7 @@ Do not commit proxy credentials or expose a local proxy publicly.
 | `PI_CLOUD_WORKER_MODEL_CONCURRENCY` | `4` | simultaneous provider requests across the Worker, including Compaction |
 | `PI_CLOUD_SESSION_MODEL_CONCURRENCY` | `4` | simultaneous provider requests per physical Session; cannot exceed the Worker limit |
 | `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes managed by the one-host control plane; leaves two elastic slots beside one starter development machine |
+| `PI_CLOUD_RUNTIME_PROBE_CONCURRENCY` | `4` | concurrent physical-runtime health checks per control plane, range 1–64; limits in-flight work, never the number of VMs covered |
 | `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous interactive workflows per control plane (Helm default 32); fixed Tools have a Cubelet-local limit of 32 |
 | `PI_CLOUD_CONTROL_PLANE_MEMORY_LIMIT` / `PI_CLOUD_CONTROL_PLANE_CPUS` | `1536m` / `2.0` | combined control-plane resources; raise together with measured operation/delivery capacity; Helm uses workload resources |
 | `PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES` | `4` | idle warm Cube limit |
@@ -279,7 +280,8 @@ Tool replies to a separate Worker-boot Kafka topic; it does not consume the
 execution log. The reply producer caps in-flight bytes at 16 MiB and delivery
 at 30 seconds. Replies expire after 11 minutes; positively retired boot topics
 and groups are reaped after that grace. Active commands remain separately bounded.
-Only final results use that topic. Temporary progress uses the completion adapter's
+Only final Tool results and bounded typed execution-probe replies use that topic.
+Probe replies never become Tool Results or native history. Temporary progress uses the completion adapter's
 `PI_CLOUD_CONTROL_PLANE_URL` (the internal Control Plane Service URL), the existing
 Supervisor management credential and TCP/3000. Compose/Helm supply it. HTTP connections are
 pooled; snapshots are bounded to 8,192 characters with a one-second send cadence

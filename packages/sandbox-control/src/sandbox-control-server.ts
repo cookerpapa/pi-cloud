@@ -19,6 +19,7 @@ import {
   parseSandboxPreviewConnection,
   type InternalServiceError,
   type SupervisorManagementResponse,
+  RUNTIME_EXECUTION_EVIDENCE_PATH,
 } from "@pi-cloud/protocol";
 import fastifyWebsocket from "@fastify/websocket";
 import { parseTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
@@ -100,6 +101,7 @@ export type SandboxControlBackend = Pick<
       | "disconnectSourceCredential"
       | "uploadWorkspaceFile"
       | "prepareInputImages"
+      | "recordRuntimeEvidence"
     >
   >;
 
@@ -486,6 +488,36 @@ export class SandboxControlServer {
           });
       });
     });
+    this.#server.post(
+      RUNTIME_EXECUTION_EVIDENCE_PATH,
+      { bodyLimit: 1024 },
+      async (request, reply) => {
+        const credential = bearer(request.headers.authorization);
+        if (
+          !this.#deliveryDigest ||
+          !credential ||
+          !timingSafeEqual(digest(credential), this.#deliveryDigest)
+        )
+          return reply.code(401).send();
+        const value = request.body as
+          { tenantId?: unknown; targetId?: unknown; observedAt?: unknown } | undefined;
+        if (
+          !value ||
+          typeof value.tenantId !== "string" ||
+          !value.tenantId.length ||
+          value.tenantId.length > 128 ||
+          typeof value.targetId !== "string" ||
+          !/^[0-9a-f]{64}$/.test(value.targetId) ||
+          typeof value.observedAt !== "number" ||
+          !Number.isSafeInteger(value.observedAt) ||
+          value.observedAt < 0 ||
+          Object.keys(value).length !== 3
+        )
+          return reply.code(400).send();
+        this.#broker.recordRuntimeEvidence?.(value.tenantId, value.targetId, value.observedAt);
+        return reply.code(204).send();
+      },
+    );
     this.#server.post(WORKFLOW_LOG_DELIVERY_PATH, async (request, reply) => {
       const credential = bearer(request.headers.authorization);
       if (

@@ -8,7 +8,8 @@ confirmation. It remains visible after commentary and between Tool calls.
 Worker phase snapshots are lossy HTTP/SSE observations; dropped frames cannot
 affect execution. Actual Tool log updates also refresh browser activity.
 
-Ordinary execution records provide path evidence. Quiet active Sessions send
+Ordinary execution records provide path evidence. Quiet active Sessions and
+Sessions awaiting fresh guest evidence send
 one bounded Kafka `path_probe` at most every 15 seconds, shared across their
 Lanes. Path evidence expires after 45 seconds. Replayed timestamps cannot refresh
 it, and timestamps over five seconds in the future are rejected. This diagnostic
@@ -17,19 +18,46 @@ SSE keepalives establish browser connectivity only. A confirmed runtime path doe
 not prove that a provider or guest is making progress, and missing observations
 do not revoke a lease or authorize automatic Tool replay.
 
-`run.activity` and `run.path` frames are separate from transcript sequence and
+`run.activity`, `run.path` and `run.execution` frames are separate from transcript sequence and
 are not included in exports or model context. Projector/stream resets discard
 them, so reconnect can briefly show unknown freshness. No per-Run Prometheus
 labels or durable health table is introduced. See
 [ADR-0201](adr/0201-runtime-activity-and-path-probes.md) for bounds and deployment.
 
-Both SSE observations carry `sessionId`, `turnId` and `runId`. `run.activity`
+Runtime observations carry `sessionId`, `turnId` and `runId`. `run.activity`
 also carries `phase`, monotonic `revision`, `observedAt` and `lastActivityAt`;
 `run.path` carries original `sentAt` and Projector `observedAt`. Times are Unix
-milliseconds. Neither frame has a transcript sequence. Source phases cover
+milliseconds. None has a transcript sequence. Source phases cover
 preparation, model wait/response, Tool arguments/execution, Agent waits, retry,
 Compaction, cancellation and settlement. A fresh connection starts with unknown
 path evidence and gets a fresh 45-second observation window before warning.
+
+## Guest execution and physical runtime health
+
+ADR-0211 extends an activated Session probe through the fixed guest execution
+transport and the original Worker's Kafka mailbox. Projector confirmation and
+guest round-trip confirmation remain independent. `run.execution` carries a
+revision, observation time and an `execution` object: status (not_applicable,
+pending, confirmed or unavailable), last confirmed stage (projector, cube or
+worker), original sent time, optional binding/target IDs and last confirmed guest
+time. A new binding/boot clears old freshness. Cube admission alone is not guest
+success. Missing completion narrows a suspected interval; it does not identify
+the failed component, and may include loss of the final HTTP observation.
+
+Only already activated bindings participate; probes never create or resume VMs.
+Real guest Tool completions can refresh execution evidence, including ordinary
+command errors, but synthetic dispatch failures and assistant text cannot.
+Control Plane uses the same guest probe directly when physical VM evidence is
+due, without requiring a Worker or Kafka. This health pump is independent of
+cleanup. A partial Cube inventory proves presence only. Probe timeouts do not
+authorize resource destruction, quota release, lease changes or Tool replay.
+
+Existing sandbox-duration histograms use bounded operations `health_probe`,
+`health_scheduling`, `path_handoff` and `path_round_trip`. Scheduling measures
+lateness beyond each target's due time; round-trip duration is measured with
+the Worker's monotonic clock. Neither successful inventory reads nor HTTP
+handoff receipts count as completed guest round trips. Probe state is disposable
+and has no durable per-sample rows. See [ADR-0211](adr/0211-execution-path-and-runtime-probes.md).
 
 ## Monitoring stack
 

@@ -614,3 +614,4 @@ export {
   runInterruptionMessage,
   type RunInterruptionReason,
 } from "./run-interruption.ts";
+export * from "./execution-probe.ts";

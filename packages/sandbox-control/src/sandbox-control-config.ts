@@ -21,6 +21,7 @@ export type SandboxControlConfig = {
   persistentStateKey: Uint8Array;
   imageRevision: string;
   maximumActiveSandboxes: number;
+  runtimeProbeConcurrency: number;
   warmTtlMs: number;
   maximumWarmWorkspaceRuntimes: number;
   workspaceDeletionReaperIntervalMs: number;
@@ -300,6 +301,7 @@ export async function loadSandboxControlConfig(
       1,
       1_000,
     ),
+    runtimeProbeConcurrency: integer(environment.PI_CLOUD_RUNTIME_PROBE_CONCURRENCY, 4, 1, 64),
     warmTtlMs: integer(
       environment.PI_CLOUD_SANDBOX_WARM_TTL_MS,
       15 * 60_000,

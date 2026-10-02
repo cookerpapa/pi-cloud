@@ -73,6 +73,7 @@ export interface SandboxControlBoundary {
 }
 
 export type RemoteToolSandboxTurnRunnerOptions = {
+  onRuntimeBinding?: (executionReference: string, bindingId: string | undefined) => void;
   onActivity?: (
     command: ExecuteTurnCommandMessage,
     update: import("@pi-cloud/protocol").RunActivityUpdate | undefined,
@@ -158,6 +159,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
   readonly #acquireModelPermit: RemoteToolSandboxTurnRunnerOptions["acquireModelPermit"];
   readonly #onActivity: RemoteToolSandboxTurnRunnerOptions["onActivity"];
+  readonly #onRuntimeBinding: RemoteToolSandboxTurnRunnerOptions["onRuntimeBinding"];
   readonly #requestTimeoutMs: number | undefined;
   readonly #turnTimeoutMs: number | undefined;
   readonly #idGenerator: () => string;
@@ -175,6 +177,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
 
   constructor(options: RemoteToolSandboxTurnRunnerOptions) {
     this.#onActivity = options.onActivity;
+    this.#onRuntimeBinding = options.onRuntimeBinding;
     this.#broker = options.broker;
     this.#runtimeIdentity = validateSandboxRuntimeIdentity(options.runtimeIdentity);
     this.#trustedWorkspaceDirectory = resolve(options.trustedWorkspaceDirectory);
@@ -417,6 +420,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         try {
           const created = await this.#broker.create(createRequest, signal);
           activation = created;
+          try {
+            this.#onRuntimeBinding?.(command.payload.executionReference, created.activationId);
+          } catch {
+            /* Observation only. */
+          }
           this.#metrics?.sandboxDuration.observe(
             { operation: "reserve", outcome: "completed" },
             (performance.now() - createStartedAt) / 1_000,
@@ -729,6 +737,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         ),
       );
       await Promise.allSettled([...inputPreparations]);
+      try {
+        this.#onRuntimeBinding?.(command.payload.executionReference, undefined);
+      } catch {
+        /* Observation only. */
+      }
       signal.removeEventListener("abort", abortSandbox);
       let cleanupError: unknown;
       if (

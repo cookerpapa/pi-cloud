@@ -54,6 +54,10 @@ export class SessionProjector {
       notificationConnectionString: string;
       advertisedBaseUrl: string;
       publicationToken: string;
+      executionProbes?: {
+        consume(fact: import("@pi-cloud/protocol").PathProbe, current?: () => boolean): void;
+        reset(): void;
+      };
       toolCommands: {
         consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
         close?(): Promise<void>;
@@ -108,6 +112,7 @@ export class SessionProjector {
         this.#projection.reset();
         this.eventStore.reset();
         this.observations.reset();
+        options.executionProbes?.reset();
       },
       onRevoked: () => {
         const closing: Promise<void>[] = [];
@@ -133,7 +138,9 @@ export class SessionProjector {
           if (current?.() === false) return;
           const { fact } = record;
           if (fact.kind === "path_probe") {
-            this.observations.record(record, this.#projection.observes(record));
+            const open = this.#projection.observes(record);
+            this.observations.record(record, open);
+            if (open) options.executionProbes?.consume(fact, current);
             return;
           }
           const projected = await timing.measure("projection", () =>

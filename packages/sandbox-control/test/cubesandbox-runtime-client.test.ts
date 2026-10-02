@@ -41,6 +41,46 @@ beforeEach(() => {
   tcpConnectMode = "connected";
 });
 
+it("uses the same native probe endpoint for direct guest evidence and asynchronous mailbox delivery", async () => {
+  const client = executionClient();
+  const probeId = "10000000-0000-4000-8000-000000000099",
+    guestBootId = "10000000-0000-4000-8000-000000000098";
+  try {
+    executionReply = {
+      accepted: true,
+      bootID: executionTarget.bootId,
+      probeID: probeId,
+      output: { type: "worker.probe_result", probeId, guestBootId },
+    };
+    await expect(client.probeExecution(executionTarget, probeId)).resolves.toMatchObject({
+      probeId,
+      guestBootId,
+    });
+    expect(observed.at(-1)?.path).toContain("/execution/probe");
+    expect(observed.at(-1)?.body).not.toHaveProperty("completionContext");
+    executionReply = { accepted: true, bootID: executionTarget.bootId, probeID: probeId };
+    await client.submitProbe(executionTarget, {
+      probeId,
+      runId: "run",
+      writerId: "writer",
+      completionContext: { kind: "execution_probe" },
+    });
+    expect(observed.at(-1)?.body).toMatchObject({
+      runID: "run",
+      writerID: "writer",
+      completionContext: { kind: "execution_probe" },
+    });
+    executionReply = { accepted: true, bootID: "replaced", probeID: probeId };
+    await expect(client.probeExecution(executionTarget, probeId)).rejects.toThrow("identity");
+    executionReply = { accepted: false, rejection: "node_unavailable" };
+    await expect(client.probeExecution(executionTarget, probeId)).rejects.toMatchObject({
+      code: "node_unavailable",
+    });
+  } finally {
+    await client.close();
+  }
+});
+
 function connectFrame(value: unknown, flags = 0): Buffer {
   const payload = Buffer.from(JSON.stringify(value), "utf8");
   const header = Buffer.alloc(5);

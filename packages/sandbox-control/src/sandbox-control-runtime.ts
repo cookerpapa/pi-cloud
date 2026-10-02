@@ -18,6 +18,10 @@ import { WorkflowCommandDispatcher } from "./workflow-command-dispatcher.ts";
 import { PostgresSandboxBindings } from "./sandbox-bindings.ts";
 import { ToolCommandDispatcher, httpToolLogDelivery } from "./tool-command-dispatcher.ts";
 import { loadSandboxControlConfig } from "./sandbox-control-config.ts";
+import { ExecutionPathProbes } from "./execution-path-probes.ts";
+import { executionTargetId } from "./sandbox-execution.ts";
+import { RUNTIME_EXECUTION_EVIDENCE_PATH } from "@pi-cloud/protocol";
+import { fetch as internalFetch } from "undici";
 
 /** A control-plane module. It has no standalone process, database pool or Run lease. */
 export async function createSandboxControl(options: {
@@ -113,6 +117,9 @@ export async function createSandboxControl(options: {
       stateRepository: ownership,
       imageRevision: config.imageRevision,
       maximumActiveSandboxes: config.maximumActiveSandboxes,
+      runtimeProbeConcurrency: config.runtimeProbeConcurrency,
+      onProbeSample: (stage, ms, outcome) =>
+        metrics.sandboxDuration.observe({ operation: `health_${stage}`, outcome }, ms / 1000),
       warmTtlMs: config.warmTtlMs,
       maximumWarmWorkspaceRuntimes: config.maximumWarmWorkspaceRuntimes,
       serviceRegistry: new PostgresSandboxHttpServiceRegistry({ database }),
@@ -177,7 +184,43 @@ export async function createSandboxControl(options: {
     serverOwns = true;
     cleanup.push(() => server.close());
     const remoteWorkflow = httpToolLogDelivery(options.managementToken);
+    const probes = new ExecutionPathProbes({
+      routes: bindings,
+      cube: client,
+      sample: (stage, ms, outcome) =>
+        metrics.sandboxDuration.observe({ operation: `path_${stage}`, outcome }, ms / 1000),
+      diagnostic: (runId, stage, reason) =>
+        operationalLog({
+          service: "pi-cloud-control-plane",
+          level: "warn",
+          event: "execution.probe_unconfirmed",
+          attributes: { runId, stage, reason },
+        }),
+      runtimeEvidence: async (route, observedAt) => {
+        const tenantId = route.snapshot.assignment.tenantId;
+        const targetId = executionTargetId(route.descriptor.target);
+        if (route.instanceId === instanceId) {
+          controller.recordRuntimeEvidence(tenantId, targetId, observedAt);
+          return;
+        }
+        const response = await internalFetch(
+          new URL(RUNTIME_EXECUTION_EVIDENCE_PATH, route.baseUrl),
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${options.managementToken}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ tenantId, targetId, observedAt }),
+            signal: AbortSignal.timeout(1000),
+          },
+        );
+        await response.body?.cancel();
+      },
+    });
+    cleanup.push(() => probes.close());
     const dispatcher = new ToolCommandDispatcher({
+      onDispatch: (command, route) => probes.rememberTool(command, route),
       routes: bindings,
       cube: client,
       metrics,
@@ -251,7 +294,7 @@ export async function createSandboxControl(options: {
     await controller.recoverPersistentDevelopmentEnvironments();
     await server.listen();
     reaper.start();
-    return { controller, dispatcher, close };
+    return { controller, dispatcher, probes, close };
   } catch (error) {
     try {
       await close();

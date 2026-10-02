@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
-import { parseSupervisorToControlMessage, RUN_PATH_PROBE_INTERVAL_MS } from "@pi-cloud/protocol";
+import {
+  parseSupervisorToControlMessage,
+  RUN_PATH_PROBE_INTERVAL_MS,
+  RUN_OBSERVATION_STALE_MS,
+  EXECUTION_PROBE_TIMEOUT_MS,
+  type RuntimeObservationScope,
+  type PathProbe,
+  type ExecutionObservationDelivery,
+  type ExecutionEvidence,
+} from "@pi-cloud/protocol";
+import type { ToolReplyMailbox } from "@pi-cloud/event-log";
 import type {
   ActiveExecutionLogResolver,
   AcceptedFactBus,
@@ -18,8 +28,25 @@ import { AcceptedFactCapacityError } from "./accepted-fact.ts";
 import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
 import type { AcceptedFact } from "./accepted-fact.ts";
 
+export type WorkerExecutionProbeTransport = {
+  topic: string;
+  replies: Pick<ToolReplyMailbox, "waitProbe">;
+  partitionFor(id: string): number;
+  report(value: ExecutionObservationDelivery): void;
+};
+
 /** Worker-local ordering over control-plane publication; no second lease renewer. */
 export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionLogResolver {
+  #probeTransport: WorkerExecutionProbeTransport | undefined;
+  readonly #runtimeBindings = new Map<
+    string,
+    {
+      scope: RuntimeObservationScope;
+      bindingId?: string;
+      successAt: number;
+      pending?: AbortController;
+    }
+  >();
   readonly #writers = new Map<string, ExecutionLogWriter>();
   readonly #opening = new Set<string>();
   readonly #families = new Map<
@@ -27,7 +54,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     {
       touched: number;
       pending: boolean;
-      writers: Map<string, { ready(): boolean; send(): Promise<void> }>;
+      writers: Map<string, { ready(): boolean; due(): boolean; send(): Promise<void> }>;
     }
   >();
   readonly #probeTimer: NodeJS.Timeout;
@@ -43,7 +70,14 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       throw new TypeError("Invalid path probe interval");
     this.#probeTimer = setInterval(() => {
       for (const family of this.#families.values()) {
-        if (family.pending || performance.now() - family.touched < this.probeIntervalMs) continue;
+        const executionDue = [...family.writers.values()].some(
+          (writer) => writer.ready() && writer.due(),
+        );
+        if (
+          family.pending ||
+          (!executionDue && performance.now() - family.touched < this.probeIntervalMs)
+        )
+          continue;
         const writer = [...family.writers.values()].find((writer) => writer.ready());
         if (!writer) continue;
         family.pending = true;
@@ -57,6 +91,95 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       }
     }, probeIntervalMs);
     this.#probeTimer.unref();
+  }
+  configureExecutionProbes(transport: WorkerExecutionProbeTransport): void {
+    this.#probeTransport = transport;
+  }
+  bindRuntime(executionReference: string, bindingId: string | undefined): void {
+    const runtime = this.#runtimeBindings.get(executionReference);
+    if (!runtime || runtime.bindingId === bindingId) return;
+    runtime.pending?.abort();
+    delete runtime.pending;
+    if (bindingId) runtime.bindingId = bindingId;
+    else delete runtime.bindingId;
+    runtime.successAt = 0;
+  }
+  recordExecutionEvidence(operationId: string, evidence: ExecutionEvidence): void {
+    const runtime = [...this.#runtimeBindings.values()].find(
+      (r) => r.bindingId === evidence.bindingId,
+    );
+    if (
+      !runtime ||
+      !this.#probeTransport ||
+      evidence.observedAt < Date.now() - RUN_OBSERVATION_STALE_MS ||
+      evidence.observedAt > Date.now() + 5000
+    )
+      return;
+    runtime.successAt = Math.max(runtime.successAt, evidence.observedAt);
+    this.#probeTransport.report({
+      scope: runtime.scope,
+      partition: this.#probeTransport.partitionFor(runtime.scope.piSessionId),
+      kind: "tool",
+      requestId: operationId,
+      sentAt: evidence.observedAt,
+      evidence,
+    });
+  }
+  #prepareProbe(writerId: string, probeId: string, sentAt: number): PathProbe["execution"] {
+    const transport = this.#probeTransport;
+    if (!transport) return undefined;
+    const bindings = [];
+    for (const [reference, runtime] of this.#runtimeBindings) {
+      if (runtime.scope.writerId !== writerId || !runtime.bindingId || bindings.length >= 64)
+        continue;
+      const bindingId = runtime.bindingId;
+      let probe = !runtime.pending && sentAt - runtime.successAt >= this.probeIntervalMs;
+      if (probe) {
+        const started = performance.now();
+        const pending = new AbortController();
+        runtime.pending = pending;
+        try {
+          const reply = transport.replies.waitProbe(
+            probeId,
+            bindingId,
+            AbortSignal.any([pending.signal, AbortSignal.timeout(EXECUTION_PROBE_TIMEOUT_MS)]),
+          );
+          void reply
+            .then((value) => {
+              if (
+                this.#runtimeBindings.get(reference) !== runtime ||
+                runtime.bindingId !== bindingId ||
+                value.sentAt !== sentAt ||
+                Date.now() - sentAt > EXECUTION_PROBE_TIMEOUT_MS ||
+                performance.now() - started > EXECUTION_PROBE_TIMEOUT_MS ||
+                value.evidence.observedAt < sentAt - 5000 ||
+                value.evidence.observedAt > Date.now() + 5000
+              )
+                return;
+              runtime.successAt = Math.max(runtime.successAt, value.evidence.observedAt);
+              transport.report({
+                scope: runtime.scope,
+                partition: transport.partitionFor(runtime.scope.piSessionId),
+                kind: "probe",
+                requestId: probeId,
+                sentAt,
+                roundTripMs: Math.max(0, performance.now() - started),
+                evidence: { ...value.evidence, bindingId },
+              });
+            })
+            .catch(() => {})
+            .finally(() => {
+              if (runtime.pending === pending) delete runtime.pending;
+            });
+        } catch {
+          pending.abort();
+          delete runtime.pending;
+          probe = false;
+        }
+      }
+      bindings.push({ bindingId, scope: runtime.scope, probe });
+    }
+    return { replyTopic: transport.topic, bindings };
   }
   resolve(lease: string) {
     return this.#writers.get(lease);
@@ -90,6 +213,14 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       this.#opening.delete(request.executionReference);
     }
     const permit = request.publication;
+    const { leaseId: _lease, piSessionLane: _lane, ...observationScope } = permit.scope;
+    const runtimeBinding = { scope: observationScope, successAt: 0 } as {
+      scope: RuntimeObservationScope;
+      bindingId?: string;
+      successAt: number;
+      pending?: AbortController;
+    };
+    this.#runtimeBindings.set(request.executionReference, runtimeBinding);
     let family = this.#families.get(permit.scope.writerId);
     if (!family)
       this.#families.set(
@@ -195,6 +326,8 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       },
       close: async () => {
         closing = true;
+        runtimeBinding.pending?.abort();
+        this.#runtimeBindings.delete(request.executionReference);
         activeFamily.writers.delete(request.executionReference);
         if (!activeFamily.writers.size) this.#families.delete(permit.scope.writerId);
         await tail;
@@ -212,13 +345,22 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     this.#writers.set(request.executionReference, writer);
     activeFamily.writers.set(request.executionReference, {
       ready: () => !closing && !failure && published,
+      due: () =>
+        !!this.#probeTransport &&
+        !!runtimeBinding.bindingId &&
+        !runtimeBinding.pending &&
+        Date.now() - runtimeBinding.successAt >= this.probeIntervalMs,
       send: async () => {
         // Probes never establish a recovery floor or consume native/display sequence.
         if (closing || failure || !published) return;
+        const factId = randomUUID(),
+          sentAt = Date.now();
+        const execution = this.#prepareProbe(permit.scope.writerId, factId, sentAt);
         await publish({
           kind: "path_probe",
-          factId: randomUUID(),
-          occurredAt: new Date().toISOString(),
+          factId,
+          occurredAt: new Date(sentAt).toISOString(),
+          ...(execution ? { execution } : {}),
         });
       },
     });

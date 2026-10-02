@@ -5,23 +5,34 @@ import {
   type AcceptedToolCommand,
   type NativeToolEnd,
   type ToolProgressDelivery,
-  type ImagePacked,
+  parseGuestProbeReply,
+  type ExecutionEvidence,
 } from "@pi-cloud/protocol";
+import type { WorkerReply } from "@pi-cloud/event-log";
 import { encodeSessionImages, type ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 
 type CompletionContext = {
+  kind?: never;
   scope: AcceptedToolCommand["scope"];
   replyTopic: string;
   toolCallId: string;
   nativeToolCallId: string;
   toolName: string;
   partition: number;
+  execution?: Omit<ExecutionEvidence, "observedAt">;
+};
+type ProbeCompletionContext = {
+  kind: "execution_probe";
+  replyTopic: string;
+  sentAt: number;
+  bindingIds: string[];
+  execution: Omit<ExecutionEvidence, "observedAt">;
 };
 export type CompletionPacket = {
   id?: string;
   kind: "progress" | "result";
   operationId: string;
-  context: CompletionContext;
+  context: CompletionContext | ProbeCompletionContext;
   output?: unknown;
   result?: { output?: unknown; failure?: string; quarantine?: boolean };
 };
@@ -30,16 +41,35 @@ export class CubeCompletionAdapter {
   constructor(
     readonly options: {
       images?: ImageAttachmentCodec;
-      publish(
-        topic: string,
-        reply: { operationId: string; sequence: 1; event: ImagePacked<NativeToolEnd> },
-      ): Promise<void>;
+      publish(topic: string, reply: WorkerReply): Promise<void>;
       progress: { update(value: ToolProgressDelivery): void; forget(id: string): void };
     },
   ) {}
 
   async accept(packet: CompletionPacket): Promise<void> {
     const context = packet.context;
+    const observedAt = Date.now();
+    if (context.kind === "execution_probe") {
+      if (
+        packet.kind !== "result" ||
+        !packet.result ||
+        packet.result.failure ||
+        packet.result.quarantine
+      )
+        throw new Error("Execution probe did not complete");
+      const result = parseGuestProbeReply(packet.result.output);
+      if (result.probeId !== packet.operationId)
+        throw new Error("Execution probe identity changed");
+      await this.options.publish(context.replyTopic, {
+        kind: "execution_probe",
+        probeId: result.probeId,
+        guestBootId: result.guestBootId,
+        sentAt: context.sentAt,
+        bindingIds: context.bindingIds,
+        evidence: { ...context.execution, observedAt },
+      });
+      return;
+    }
     if (
       !packet.operationId ||
       !context?.scope?.tenantId ||
@@ -94,6 +124,7 @@ export class CubeCompletionAdapter {
     if (packet.kind !== "result" || !packet.result) throw new Error("Missing execution result");
     this.options.progress.forget(packet.operationId);
     let event: NativeToolEnd;
+    let guestCompleted = false;
     if (packet.result.failure) {
       const code =
         packet.result.quarantine || packet.result.failure === "tool_sandbox_unavailable"
@@ -125,6 +156,7 @@ export class CubeCompletionAdapter {
           if (response.operation !== "tool.execute" || response.event.type !== "tool_execution_end")
             throw new Error("Fixed tool completion requires a native final result");
           event = response.event;
+          guestCompleted = true;
         }
       }
     }
@@ -153,6 +185,9 @@ export class CubeCompletionAdapter {
       operationId: packet.operationId,
       sequence: 1,
       event: encoded,
+      ...(guestCompleted && context.execution
+        ? { execution: { ...context.execution, observedAt } }
+        : {}),
     });
   }
 }

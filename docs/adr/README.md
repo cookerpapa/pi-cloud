@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0211](0211-execution-path-and-runtime-probes.md) — accepted execution-path
+   observations and unified physical-runtime probes; implementation in progress.
+
 1. [ADR-0210](0210-cube-execution-handoff-and-scoped-stop.md) — native Cube handoff,
    scoped stopping and controller-owned VM recovery.
 

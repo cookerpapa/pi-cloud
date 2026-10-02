@@ -10,6 +10,7 @@ import type {
 import { WorkerExecutionLog } from "../src/worker-execution-log.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
 import { parseKafkaAcceptedFact } from "../src/kafka-accepted-fact.ts";
+import { ToolReplyMailbox, toolReplyTopic } from "@pi-cloud/event-log";
 
 it("decodes only the bounded content-free probe protocol", () => {
   const { leaseId: _lease, piSessionLane: _lane, ...scope } = toolInvocationFixture().scope;
@@ -70,7 +71,7 @@ function fixture(append: (fact: AcceptedFact) => Promise<AcceptedFactReceipt>) {
         items: [],
         events: [],
       });
-    return { writer, publish };
+    return { writer, publish, executionReference };
   }
   return { log, writes, base, open };
 }
@@ -109,6 +110,116 @@ it("probes a quiet physical Session once across Lanes and never opens or sequenc
     await vi.advanceTimersByTimeAsync(60_000);
     expect(facts).toHaveLength(length);
   } finally {
+    await f.log.close();
+  }
+});
+
+it("probes bound guests despite ongoing text and aggregates Session bindings into one publication", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval", "performance"] });
+  const facts: AcceptedFact[] = [],
+    mailbox = new ToolReplyMailbox(),
+    report = vi.fn();
+  const f = fixture(async (fact) => {
+    facts.push(fact);
+    return { factId: fact.factId, durable: true };
+  });
+  f.log.configureExecutionProbes({
+    topic: toolReplyTopic(crypto.randomUUID()),
+    replies: mailbox,
+    partitionFor: () => 0,
+    report,
+  });
+  try {
+    const childRunId = crypto.randomUUID();
+    const a = await f.open(f.base),
+      b = await f.open({ ...f.base, runId: childRunId, piSessionLane: "child" });
+    await a.publish();
+    await b.publish();
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(facts.filter((f) => f.kind === "path_probe").at(-1)).toMatchObject({
+      execution: { bindings: [] },
+    });
+    const ids = [crypto.randomUUID(), crypto.randomUUID()];
+    f.log.bindRuntime(a.executionReference, ids[0]);
+    f.log.bindRuntime(b.executionReference, ids[1]);
+    await vi.advanceTimersByTimeAsync(14000);
+    await a.publish();
+    await vi.advanceTimersByTimeAsync(1000);
+    const probe = facts
+      .filter((f): f is Extract<AcceptedFact, { kind: "path_probe" }> => f.kind === "path_probe")
+      .at(-1)!;
+    expect(probe.execution?.bindings.map((b) => b.bindingId)).toEqual(ids);
+    expect(probe.execution?.bindings.every((b) => b.probe)).toBe(true);
+    mailbox.accept({
+      kind: "execution_probe",
+      probeId: probe.factId,
+      sentAt: Date.parse(probe.occurredAt),
+      guestBootId: crypto.randomUUID(),
+      bindingIds: ids,
+      evidence: {
+        bindingId: ids[0]!,
+        targetId: "target",
+        bootId: crypto.randomUUID(),
+        observedAt: Date.now(),
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(report).toHaveBeenCalledTimes(2);
+    expect(report.mock.calls.map(([r]) => r.scope.runId)).toEqual([f.base.runId, childRunId]);
+    expect(f.writes).not.toHaveBeenCalled();
+    expect(a.writer.acknowledgedThroughSeq).toBe(0);
+  } finally {
+    mailbox.close();
+    await f.log.close();
+  }
+});
+
+it("lost guest replies do not stop log probes, and replacement rejects old binding replies", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval", "performance"] });
+  const facts: AcceptedFact[] = [],
+    mailbox = new ToolReplyMailbox(),
+    report = vi.fn();
+  const f = fixture(async (fact) => {
+    facts.push(fact);
+    return { factId: fact.factId, durable: true };
+  });
+  f.log.configureExecutionProbes({
+    topic: toolReplyTopic(crypto.randomUUID()),
+    replies: mailbox,
+    partitionFor: () => 0,
+    report,
+  });
+  try {
+    const a = await f.open(f.base);
+    await a.publish();
+    const old = crypto.randomUUID();
+    f.log.bindRuntime(a.executionReference, old);
+    await vi.advanceTimersByTimeAsync(15000);
+    const first = facts.filter(
+      (f): f is Extract<AcceptedFact, { kind: "path_probe" }> => f.kind === "path_probe",
+    )[0]!;
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(facts.filter((f) => f.kind === "path_probe")).toHaveLength(2);
+    f.log.bindRuntime(a.executionReference, crypto.randomUUID());
+    mailbox.accept({
+      kind: "execution_probe",
+      probeId: first.factId,
+      sentAt: Date.parse(first.occurredAt),
+      guestBootId: crypto.randomUUID(),
+      bindingIds: [old],
+      evidence: {
+        bindingId: old,
+        targetId: "target",
+        bootId: crypto.randomUUID(),
+        observedAt: Date.now(),
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(report).not.toHaveBeenCalled();
+    await a.publish();
+    expect(f.writes).not.toHaveBeenCalled();
+  } finally {
+    mailbox.close();
     await f.log.close();
   }
 });

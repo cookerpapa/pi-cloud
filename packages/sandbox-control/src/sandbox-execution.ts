@@ -1,4 +1,11 @@
 import type { ToolWorkerInput } from "@pi-cloud/protocol";
+import { createHash } from "node:crypto";
+
+export function executionTargetId(target: SandboxExecutionTarget): string {
+  return createHash("sha256")
+    .update(JSON.stringify([target.apiUrl, target.nodeId, target.sandboxId, target.bootId]))
+    .digest("hex");
+}
 
 /** Immutable fixed guest transport metadata. It grants no lifecycle authority. */
 export type SandboxExecutionTarget = Readonly<{

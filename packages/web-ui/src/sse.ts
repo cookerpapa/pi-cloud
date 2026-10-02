@@ -199,7 +199,11 @@ async function consumeResponse(
         options.onToolProgress?.(progress);
         continue;
       }
-      if (frame.event === "run.activity" || frame.event === "run.path") {
+      if (
+        frame.event === "run.activity" ||
+        frame.event === "run.path" ||
+        frame.event === "run.execution"
+      ) {
         const observation = parseRunObservation(value);
         if (observation.sessionId !== options.sessionId || observation.type !== frame.event)
           throw new SessionStreamError("Run observation identity is invalid", false);

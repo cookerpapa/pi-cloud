@@ -207,7 +207,9 @@ export interface SandboxProvider {
   readonly defaultPolicy: SandboxPolicy;
   checkHealth(): Promise<void>;
   /** Attest Guest execution, not merely the provider's control-plane record. */
-  probeExecution?(handle: SandboxHandle): Promise<{ continuityId: string }>;
+  probeExecution(handle: SandboxHandle): Promise<{ continuityId: string }>;
+  executionIdentity(handle: SandboxHandle): string;
+  observeRuntimeInventory(): Promise<ReadonlyMap<string, SandboxRuntimeObservation>>;
   create(spec: SandboxCreateSpec): Promise<SandboxHandle>;
   destroyPersistentCapsule(
     capsule: string,

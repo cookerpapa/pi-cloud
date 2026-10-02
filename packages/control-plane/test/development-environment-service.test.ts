@@ -79,6 +79,15 @@ function provider(): SandboxProvider {
     providerId: "cubesandbox",
     defaultPolicy: CUBESANDBOX_TOOL_POLICY,
     async checkHealth() {},
+    executionIdentity(handle) {
+      return handle.runtimeId;
+    },
+    async observeRuntimeInventory() {
+      return new Map();
+    },
+    async probeExecution(handle) {
+      return { continuityId: handle.runtimeId };
+    },
     async create(spec) {
       return {
         runtimeNodeId: "node-test",

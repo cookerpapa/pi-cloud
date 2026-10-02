@@ -197,6 +197,12 @@ function providerFixture() {
       };
     },
     async stopExecutionScope() {},
+    executionIdentity(handle) {
+      return handle.activationId;
+    },
+    async observeRuntimeInventory() {
+      return new Map();
+    },
     async observeRuntime(handle) {
       return {
         runtimeName: handle.runtimeName,
@@ -1960,7 +1966,7 @@ describe("provider-backed Sandbox controller", () => {
     const manager = testBroker({ provider: fixture.provider, bindings });
     await manager.create(createRequest);
     await manager.create(nextBindingRequest(assignment.workspaceId));
-    await manager.reapWorkspaceRuntimes();
+    await manager.observeRuntimeHealth();
     expect([...bindings.rows.values()].map((r) => r.dispatchClosed)).toEqual([true, true]);
     expect(observe).toHaveBeenCalledOnce();
     await expect(manager.create(nextBindingRequest(assignment.workspaceId))).rejects.toMatchObject({

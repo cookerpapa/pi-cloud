@@ -3,6 +3,8 @@ import {
   RUN_OBSERVATION_STALE_MS,
   type RunActivityDelivery,
   type RuntimeObservationScope,
+  type ProbeBinding,
+  type ExecutionPathStatus,
 } from "@pi-cloud/protocol";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import type { SessionEventHub } from "./session-event-hub.ts";
@@ -14,6 +16,8 @@ type Active = {
   activityAt: number;
   pathAt: number;
   touched: number;
+  executionRevision: number;
+  execution?: ExecutionPathStatus;
 };
 
 /** Disposable, bounded admission from the Projector's already-checked scopes. */
@@ -53,6 +57,7 @@ export class RunObservations {
         activityAt: 0,
         pathAt: 0,
         touched: this.clock(),
+        executionRevision: 0,
       };
       this.#runs.set(scope.runId, active);
       let family = this.#families.get(scope.writerId);
@@ -112,6 +117,64 @@ export class RunObservations {
       phase: delivery.phase,
       observedAt: delivery.observedAt,
       lastActivityAt: delivery.lastActivityAt,
+    });
+  }
+
+  isActive(scope: RuntimeObservationScope, partition?: number): boolean {
+    const active = this.#runs.get(scope.runId);
+    return (
+      !!active &&
+      (partition === undefined || active.partition === partition) &&
+      isDeepStrictEqual(active.scope, scope)
+    );
+  }
+  executionTargets(writerId: string, bindings: readonly ProbeBinding[], sentAt: number): void {
+    for (const runId of this.#families.get(writerId) ?? []) {
+      const active = this.#runs.get(runId)!;
+      const binding = bindings.find(
+        (b) => b.scope.runId === runId && isDeepStrictEqual(b.scope, active.scope),
+      );
+      if (!binding)
+        this.execution(active.scope, { status: "not_applicable", stage: "projector", sentAt });
+      else if (binding.probe || active.execution?.bindingId !== binding.bindingId)
+        this.execution(active.scope, {
+          status: "pending",
+          stage: "projector",
+          bindingId: binding.bindingId,
+          sentAt,
+        });
+    }
+  }
+  execution(scope: RuntimeObservationScope, value: ExecutionPathStatus): void {
+    const active = this.#runs.get(scope.runId),
+      now = this.clock();
+    if (!active || !isDeepStrictEqual(active.scope, scope) || !this.#fresh(value.sentAt, now))
+      return;
+    const old = active.execution;
+    if (old && value.sentAt < old.sentAt) return;
+    if (old && value.sentAt === old.sentAt && old.stage === "worker" && value.stage !== "worker")
+      return;
+    const same =
+      !!value.bindingId &&
+      old?.bindingId === value.bindingId &&
+      (!value.targetId || !old.targetId || old.targetId === value.targetId);
+    const confirmedAt = value.confirmedAt ?? (same ? old?.confirmedAt : undefined);
+    const targetId = value.targetId ?? (same ? old?.targetId : undefined);
+    active.execution = {
+      ...value,
+      ...(confirmedAt === undefined ? {} : { confirmedAt }),
+      ...(targetId === undefined ? {} : { targetId }),
+    };
+    active.executionRevision++;
+    active.touched = now;
+    this.hub.publishObservation(scope.tenantId, {
+      type: "run.execution",
+      sessionId: scope.sessionId,
+      turnId: scope.turnId,
+      runId: scope.runId,
+      revision: active.executionRevision,
+      observedAt: now,
+      execution: active.execution,
     });
   }
   sweep(): void {

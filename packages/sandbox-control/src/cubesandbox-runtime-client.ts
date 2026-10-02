@@ -1,6 +1,12 @@
 import { Agent, buildConnector, fetch, type Dispatcher } from "undici";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
-import { PREVIEW_ACCESS_TTL_MS, MAX_IMAGE_GUEST_RESPONSE_BYTES } from "@pi-cloud/protocol";
+import {
+  PREVIEW_ACCESS_TTL_MS,
+  MAX_IMAGE_GUEST_RESPONSE_BYTES,
+  EXECUTION_PROBE_TIMEOUT_MS,
+  parseGuestProbeReply,
+  type GuestProbeReply,
+} from "@pi-cloud/protocol";
 import { Duplex, Readable, Writable } from "node:stream";
 
 const controlDispatcher = new Agent();
@@ -95,6 +101,11 @@ export interface CubeSandboxRuntimeClient {
     nodeId: string,
   ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation>;
   executionTarget(sandboxId: string, nodeId: string): Promise<CubeExecutionTarget>;
+  probeExecution(target: CubeExecutionTarget, probeId: string): Promise<GuestProbeReply>;
+  submitProbe(
+    target: CubeExecutionTarget,
+    request: { probeId: string; runId: string; writerId: string; completionContext: unknown },
+  ): Promise<void>;
   submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void>;
   stopExecutionScope(
     target: CubeExecutionTarget,
@@ -698,7 +709,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
     if (
       value.enabled !== true ||
-      value.protocolVersion !== 1 ||
+      value.protocolVersion !== 2 ||
       typeof value.bootID !== "string" ||
       !/^[0-9a-f-]{36}$/.test(value.bootID)
     )
@@ -736,6 +747,47 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       value.bootID !== target.bootId
     )
       throw new CubeRuntimeClientError("Cube execution handoff could not be confirmed");
+  }
+
+  async probeExecution(target: CubeExecutionTarget, probeId: string): Promise<GuestProbeReply> {
+    const value = await this.#probe(target, probeId);
+    if (value.failure) throw new CubeExecutionRejected(String(value.failure));
+    const reply = parseGuestProbeReply(value.output);
+    if (reply.probeId !== probeId) throw new CubeRuntimeClientError("Guest probe identity changed");
+    return reply;
+  }
+
+  async submitProbe(
+    target: CubeExecutionTarget,
+    request: { probeId: string; runId: string; writerId: string; completionContext: unknown },
+  ): Promise<void> {
+    await this.#probe(target, request.probeId, {
+      runID: request.runId,
+      writerID: request.writerId,
+      completionContext: request.completionContext,
+    });
+  }
+
+  async #probe(target: CubeExecutionTarget, probeId: string, extra?: object) {
+    const value = await this.#executionRequest(
+      target.sandboxId,
+      "probe",
+      {
+        nodeID: target.nodeId,
+        bootID: target.bootId,
+        probeID: probeId,
+        ...extra,
+      },
+      extra ? 5000 : EXECUTION_PROBE_TIMEOUT_MS,
+      target.apiUrl,
+    );
+    if (value.accepted !== true)
+      throw new CubeExecutionRejected(
+        typeof value.rejection === "string" ? value.rejection : "probe_unavailable",
+      );
+    if (value.bootID !== target.bootId || value.probeID !== probeId)
+      throw new CubeRuntimeClientError("Cube probe identity changed");
+    return value;
   }
 
   async stopExecutionScope(

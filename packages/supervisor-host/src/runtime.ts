@@ -488,7 +488,17 @@ export class PiWorkerRuntime {
       this.#config.managementToken,
     );
     this.#activity = activity;
+    const workerLog = executionLogs instanceof WorkerExecutionLog ? executionLogs : undefined;
+    workerLog?.configureExecutionProbes({
+      topic: toolReplies.topic,
+      replies: toolReplies,
+      partitionFor: (id) => kafkaProducerLane(id, this.#config.kafka.partitions),
+      report: (delivery) => activity.execution(delivery),
+    });
+    toolReplies.onExecutionEvidence = (id, evidence) =>
+      workerLog?.recordExecutionEvidence(id, evidence);
     const runner = new RemoteToolSandboxTurnRunner({
+      onRuntimeBinding: (reference, bindingId) => workerLog?.bindRuntime(reference, bindingId),
       onActivity: (command, update) => {
         const p = command.payload;
         if (!update) {

@@ -12,6 +12,7 @@ import {
 import type { ToolLogFact, ToolLogRecord } from "./workflow-command-dispatcher.ts";
 import type { SandboxBinding, SandboxBindingReader } from "./sandbox-bindings.ts";
 import type { SandboxExecutionTarget } from "./sandbox-execution.ts";
+import { executionTargetId } from "./sandbox-execution.ts";
 
 export const WORKFLOW_LOG_DELIVERY_PATH = "/internal/v1/workflow-log-delivery";
 export type ToolLogDelivery = Readonly<{
@@ -50,6 +51,7 @@ export class ToolCommandDispatcher {
         scope: AcceptedToolCommand["scope"],
       ): Promise<void>;
       quarantine(target: SandboxExecutionTarget): Promise<void>;
+      onDispatch?(command: AcceptedToolCommand, route: SandboxBinding): void;
       metrics?: PiCloudMetrics;
     },
   ) {}
@@ -124,6 +126,11 @@ export class ToolCommandDispatcher {
           fact,
         });
       } else {
+        try {
+          this.options.onDispatch?.(command, route);
+        } catch {
+          /* Observation only. */
+        }
         await this.options.cube.submitTool(route.descriptor.target, {
           operationId: command.request.operationId,
           runId: command.scope.runId,
@@ -134,6 +141,11 @@ export class ToolCommandDispatcher {
             operation: command.request,
           },
           completionContext: {
+            execution: {
+              bindingId: route.bindingId,
+              targetId: executionTargetId(route.descriptor.target),
+              bootId: route.descriptor.target.bootId,
+            },
             scope: command.scope,
             replyTopic: command.replyTopic,
             toolCallId: command.toolCallId,

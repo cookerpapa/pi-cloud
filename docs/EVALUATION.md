@@ -132,6 +132,16 @@ checks cancellation and Worker replacement, and verifies the uncertain command
 is not replayed. Process faults require that only this check's Run is active;
 cleanup restores stopped services and revokes the disposable tenant credential.
 
+For [ADR-0211](adr/0211-execution-path-and-runtime-probes.md), run
+`PI_CLOUD_LIVE_EXECUTION_PROBE_CHECK=1 npm run production:execution-probe-check -- /tmp/execution-probes-live.json`.
+The matched Worker/Control Plane/Cube/guest set must be installed first. It uses
+GPT-6 Luna to check pure chat without allocation and a successful complete probe
+while a real Bash is still executing. It checks direct native VM responses,
+executor-boot rejection, an undeliverable fixture reply destination, pause without
+probe-triggered resume, and absence of probe content in native history. Only its
+own VM is paused, and all owned resources are removed. Repeat the existing owned
+Cube handoff/control-plane restart gate for recovery across process replacement.
+
 For ADR-0197 storage acceptance, run
 `PI_CLOUD_LIVE_INDEXED_LOG_CHECK=1 node --import tsx scripts/run-live-indexed-log-check.mjs /tmp/indexed-log-live.json`.
 It uses real GPT-6 Luna/Cube Tools and a Child Lane, creates a human Fork, then

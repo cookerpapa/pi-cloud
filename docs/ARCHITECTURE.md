@@ -366,22 +366,31 @@ Runner maps native lifecycle/stream events into PiCloud phases and last-activity
 time. Worker sends bounded, coalesced HTTP observations to the existing Projector
 partition owner; its cached admitted scope checks tenant, Run, writer and fence.
 The existing Worker management credential protects this private ingress.
-`run.activity` and `run.path` are unsequenced, disposable SSE frames. Slow readers
+`run.activity`, `run.path` and `run.execution` are unsequenced, disposable SSE frames. Slow readers
 retain only the latest values; reconnect starts without old observation history.
 Only active turns may display them, and terminal state wins over late frames.
 
 Ordinary successfully processed execution records provide path evidence. After
-publication silence, one physical Session emits at most one `path_probe` every
-15 seconds through its existing publication writer and Kafka partition. There is at
-most one outstanding probe per family, and an acknowledged ordinary record must
-precede it. The probe is the explicit observation-transport exception: it enters
-Kafka to measure that path, but never native Pi history, PG projection, display
-sequence, model context or Tool routing. It neither renews leases nor changes
-recovery authority. Original timestamps and monotonic positions prevent replay
-from appearing fresh; evidence older than 45 seconds is stale. A probe ACK failure
+publication silence or stale execution evidence, one physical Session emits at
+most one `path_probe` every 15 seconds through its existing publication writer and
+Kafka partition. One bounded payload includes its activated Lane bindings; there
+is at most one pending guest response per binding. An acknowledged ordinary
+record must precede probes. Projector arrival immediately confirms the log path.
+Existing active bindings can continue through Cube's fixed guest probe and the
+original Worker's reply mailbox; grouped bindings sharing a VM use one guest echo.
+The Worker reports that complete round trip over HTTP. Log-path confirmation
+does not wait for this branch. Unactivated bindings are not applicable, never
+provisioned for observation; an expected but missing binding stays unavailable.
+The probe is the explicit observation-transport exception: it enters Kafka but
+never native Pi history, PG projection, display sequence, model context or Tool
+execution authority. It neither renews leases nor changes recovery authority.
+Original timestamps, matched probe/target/boot identities and monotonic positions
+prevent replay from appearing fresh; evidence older than 45 seconds is stale.
+Projector reset discards pending evidence. A probe ACK failure
 does not create an uncertain semantic mutation; shared producer failures retain
 the existing fail-closed behavior. Phase, actual model/Tool activity and path
-confirmation are separate UI signals. See [ADR-0201](adr/0201-runtime-activity-and-path-probes.md).
+confirmation are separate UI signals. See [ADR-0201](adr/0201-runtime-activity-and-path-probes.md)
+and [ADR-0211](adr/0211-execution-path-and-runtime-probes.md).
 
 ## Native Pi state and Harness
 
@@ -508,6 +517,17 @@ the VM unavailable for recovery. User-owned machines keep explicit release
 semantics. Missing heartbeats/master routes are not proof of VM absence; quota
 release follows positive observation on the recorded node.
 
+Physical health runs independently from resource cleanup. A due-time pump covers
+all known VMs with bounded concurrency, without truncating each sweep to 16.
+Recent current-VM responses from Worker probes or real guest Tool completions
+postpone duplicate controller execution checks. Idle VMs use the same fixed
+guest probe with a bounded direct HTTP response, independent of Worker/Kafka
+availability. Paused VMs are not woken. A bounded inventory supplies positive
+lifecycle observations; omissions require exact node observation and never imply
+absence. Probe failure only requests further diagnosis; definite stopped/unsafe/
+absent observations retain the existing recovery policy. Health samples remain
+in memory and metrics, while lifecycle transitions remain in PostgreSQL.
+
 `SandboxAdmission` owns local physical capacity and allocation waiters. Runtime
 capsules preserve elastic and development VMs across controller replacement;
 recorded execution boot identities cannot silently change during adoption.
@@ -525,7 +545,8 @@ not authority. The final reply resolves or
 rejects `execute`. Pi still owns after-Tool hooks, its lifecycle events and the
 canonical Tool Result appended to the execution log. Kafka reply ACK releases transport buffers, with
 no completed-result cache or per-result retirement notification.
-Kafka replies accept only the final result; guest updates use the separate HTTP
+Kafka Tool replies accept only the final result; typed observation probe replies
+share that mailbox without resolving native Tool callbacks. Guest updates use the separate HTTP
 observation path. The Worker observes its reply Promise before awaiting command
 publication and retires it on every exit, including image-decoding failure.
 The Projector expands a combined invocation into the native Cube handoff

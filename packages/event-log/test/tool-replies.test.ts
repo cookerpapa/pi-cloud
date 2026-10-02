@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { ToolReplyMailbox, type ToolReply } from "../src/tool-replies.ts";
+import { ToolReplyMailbox, parseWorkerReply, type ToolReply } from "../src/tool-replies.ts";
 import type { NativeToolEnd, NativeToolUpdate } from "@pi-cloud/protocol";
 
 const update: NativeToolUpdate = {
@@ -28,6 +28,32 @@ it("delivers one final result only to its registered operation, ignoring duplica
   mailbox.accept({ operationId: "b", sequence: 1, event: end });
   expect(await b).toEqual(end);
   expect(mailbox.size).toBe(0);
+});
+
+it("keeps batched probe replies separate from native Tool promises and discards retired bindings", async () => {
+  const mailbox = new ToolReplyMailbox(),
+    cancel = new AbortController();
+  const a = mailbox.waitProbe("probe", "a", cancel.signal),
+    b = mailbox.waitProbe("probe", "b", new AbortController().signal);
+  const tool = mailbox.wait("probe", "call_1", "bash", new AbortController().signal);
+  cancel.abort(new Error("binding retired"));
+  const reply = parseWorkerReply(
+    JSON.stringify({
+      kind: "execution_probe",
+      probeId: "probe",
+      sentAt: 100000,
+      guestBootId: "guest",
+      bindingIds: ["a", "b"],
+      evidence: { bindingId: "a", targetId: "target", bootId: "boot", observedAt: 100001 },
+    }),
+  );
+  mailbox.accept(reply);
+  await expect(a).rejects.toThrow("retired");
+  await expect(b).resolves.toMatchObject({ kind: "execution_probe" });
+  expect(mailbox.size).toBe(1);
+  mailbox.accept({ operationId: "probe", sequence: 1, event: end });
+  await expect(tool).resolves.toEqual(end);
+  mailbox.close();
 });
 
 it("rejects progress on the final-only Kafka reply transport", async () => {

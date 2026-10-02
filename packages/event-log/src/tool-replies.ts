@@ -6,6 +6,10 @@ import {
   type NativeToolEnd,
   type ImagePacked,
   validateImageReferencePayload,
+  parseExecutionProbeReply,
+  type ExecutionProbeReply,
+  type ExecutionEvidence,
+  parseExecutionEvidence,
 } from "@pi-cloud/protocol";
 import { KafkaLogConsumer } from "./kafka-log-consumer.ts";
 
@@ -24,10 +28,14 @@ export type ToolReply = {
   operationId: string;
   sequence: 1;
   event: ImagePacked<NativeToolEnd>;
+  execution?: ExecutionEvidence;
 };
+export type WorkerReply = ToolReply | ExecutionProbeReply;
 
-function parseReply(value: string | Buffer): ToolReply {
-  const reply = JSON.parse(value.toString()) as ToolReply;
+export function parseWorkerReply(value: string | Buffer): WorkerReply {
+  const valueObject = JSON.parse(value.toString());
+  if (valueObject?.kind === "execution_probe") return parseExecutionProbeReply(valueObject);
+  const reply = valueObject as ToolReply;
   if (
     typeof reply.operationId !== "string" ||
     reply.sequence !== 1 ||
@@ -35,6 +43,7 @@ function parseReply(value: string | Buffer): ToolReply {
   )
     throw new Error("Invalid Tool reply identity");
   validateImageReferencePayload(reply.event);
+  if (reply.execution) parseExecutionEvidence(reply.execution);
   return { ...reply, event: parseNativeToolEvent(reply.event) as ToolReply["event"] };
 }
 
@@ -55,11 +64,14 @@ export class KafkaToolReplyPublisher {
   start(): Promise<void> {
     return this.#producer.connect();
   }
-  async publish(topic: string, reply: ToolReply): Promise<void> {
+  async publish(topic: string, reply: WorkerReply): Promise<void> {
     if (!TOOL_REPLY_TOPIC_PATTERN.test(topic)) throw new Error("Invalid Tool reply destination");
-    if (reply.sequence !== 1 || reply.event.type !== "tool_execution_end")
-      throw new Error("Kafka Tool replies require one final result");
-    validateImageReferencePayload(reply.event);
+    if ("kind" in reply) parseExecutionProbeReply(reply);
+    else {
+      if (reply.sequence !== 1 || reply.event.type !== "tool_execution_end")
+        throw new Error("Kafka Tool replies require one final result");
+      validateImageReferencePayload(reply.event);
+    }
     const value = Buffer.from(JSON.stringify(reply));
     if (this.#bytes + value.byteLength > 16 * 1024 * 1024)
       throw new Error("Tool reply producer capacity exhausted");
@@ -67,7 +79,9 @@ export class KafkaToolReplyPublisher {
     try {
       await this.#producer.send({
         topic,
-        messages: [{ key: reply.operationId, value, partition: 0 }],
+        messages: [
+          { key: "kind" in reply ? reply.probeId : reply.operationId, value, partition: 0 },
+        ],
       });
     } finally {
       this.#bytes -= value.byteLength;
@@ -89,6 +103,33 @@ type Pending = {
 /** One boot-local mailbox for all slots. A new Worker never resumes old promises. */
 export class ToolReplyMailbox {
   readonly #pending = new Map<string, Pending>();
+  readonly #probes = new Map<
+    string,
+    { resolve(value: ExecutionProbeReply): void; reject(error: unknown): void; cleanup(): void }
+  >();
+  onExecutionEvidence: ((operationId: string, evidence: ExecutionEvidence) => void) | undefined;
+  waitProbe(probeId: string, bindingId: string, signal: AbortSignal): Promise<ExecutionProbeReply> {
+    signal.throwIfAborted();
+    const key = `${probeId}:${bindingId}`;
+    if (this.#probes.size >= 1024 || this.#probes.has(key))
+      throw new Error("Probe mailbox capacity exhausted");
+    const promise = new Promise<ExecutionProbeReply>((resolve, reject) => {
+      const abort = () => {
+        this.#probes.delete(key);
+        signal.removeEventListener("abort", abort);
+        reject(signal.reason);
+      };
+      this.#probes.set(key, {
+        resolve,
+        reject,
+        cleanup: () => signal.removeEventListener("abort", abort),
+      });
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+    });
+    void promise.catch(() => {});
+    return promise;
+  }
   wait(operationId: string, toolCallId: string, toolName: string, signal: AbortSignal) {
     signal.throwIfAborted();
     if (this.#pending.has(operationId)) throw new Error("Tool operation already waiting");
@@ -111,7 +152,18 @@ export class ToolReplyMailbox {
     void promise.catch(() => {}); // cancellation may precede publication completion
     return promise;
   }
-  accept(reply: ToolReply): void {
+  accept(reply: WorkerReply): void {
+    if ("kind" in reply) {
+      for (const bindingId of reply.bindingIds) {
+        const key = `${reply.probeId}:${bindingId}`,
+          pending = this.#probes.get(key);
+        if (!pending) continue;
+        this.#probes.delete(key);
+        pending.cleanup();
+        pending.resolve(reply);
+      }
+      return;
+    }
     const pending = this.#pending.get(reply.operationId);
     if (!pending) return;
     if (
@@ -126,6 +178,13 @@ export class ToolReplyMailbox {
     this.#pending.delete(reply.operationId);
     pending.cleanup();
     pending.resolve(reply.event);
+    if (reply.execution) {
+      try {
+        this.onExecutionEvidence?.(reply.operationId, reply.execution);
+      } catch {
+        /* Observations cannot fail a Tool. */
+      }
+    }
   }
   #finish(id: string, pending: Pending, error: unknown) {
     this.#pending.delete(id);
@@ -133,6 +192,11 @@ export class ToolReplyMailbox {
     pending.reject(error);
   }
   close(): void {
+    for (const [id, pending] of this.#probes) {
+      this.#probes.delete(id);
+      pending.cleanup();
+      pending.reject(new Error("Probe Worker stopped"));
+    }
     for (const [id, pending] of this.#pending)
       this.#finish(id, pending, new Error("Tool reply Worker stopped; outcome UNKNOWN"));
   }
@@ -143,7 +207,7 @@ export class ToolReplyMailbox {
 
 export class KafkaToolReplyMailbox extends ToolReplyMailbox {
   readonly topic: string;
-  readonly #consumer: KafkaLogConsumer<ToolReply>;
+  readonly #consumer: KafkaLogConsumer<WorkerReply>;
   readonly #admin;
   constructor(readonly options: { brokers: readonly string[]; bootId: string; replicas: number }) {
     super();
@@ -162,7 +226,7 @@ export class KafkaToolReplyMailbox extends ToolReplyMailbox {
       groupId: `tool-reply-${options.bootId}`,
       topic: this.topic,
       commitMessages: false,
-      decode: parseReply,
+      decode: parseWorkerReply,
       handler: async ({ fact }) => this.accept(fact),
     });
   }

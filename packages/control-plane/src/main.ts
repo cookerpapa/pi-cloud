@@ -196,6 +196,7 @@ export async function startControlPlane(): Promise<void> {
       advertisedBaseUrl: config.projectorAdvertisedBaseUrl,
       subagentCommands: subagents,
       toolCommands: sandboxControl.dispatcher,
+      executionProbes: sandboxControl.probes,
       partitions: config.kafkaPartitions,
       replicas: config.kafkaReplicas,
       capacity: config.producerCapacity,
@@ -205,6 +206,13 @@ export async function startControlPlane(): Promise<void> {
     // The completed Projector now owns/drains its command consumers.
     unattachedSubagents = undefined;
     const activeAgentEvents = agentEvents;
+    const executionProbes = sandboxControl.probes;
+    executionProbes.observeWith({
+      active: (scope, partition) => activeAgentEvents.observations.isActive(scope, partition),
+      targets: (writer, bindings, at) =>
+        activeAgentEvents.observations.executionTargets(writer, bindings, at),
+      status: (scope, status) => activeAgentEvents.observations.execution(scope, status),
+    });
     await verifyBootstrap(database);
     await activeAgentEvents.start();
     operationalMetrics = new OperationalMetricsSampler({
@@ -379,6 +387,7 @@ export async function startControlPlane(): Promise<void> {
         config.supervisorManagementToken,
         (partition) => activeAgentEvents.ownerForPartition(partition),
         (delivery) => activeAgentEvents.observations.activity(delivery),
+        (delivery) => executionProbes.complete(delivery),
       ),
       toolProgressIngress: new ToolProgressIngress(
         config.supervisorManagementToken,

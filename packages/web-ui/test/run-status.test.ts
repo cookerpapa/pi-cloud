@@ -58,3 +58,53 @@ it("keeps activity and path freshness separate across silence, cancellation and 
   store.receive({ ...activity, revision: 3 });
   expect(store.get("turn")).toBeUndefined();
 });
+
+it("keeps guest freshness independent from messages and clears it on binding replacement", () => {
+  const store = new RunObservationStore();
+  const stop = store.subscribe("turn", () => {});
+  const turn = {
+    runId: "run",
+    turnId: "turn",
+    status: "running",
+    items: [],
+  } as unknown as TurnView;
+  const scope = { sessionId: "s", turnId: "turn", runId: "run" };
+  store.receive({
+    ...scope,
+    type: "run.execution",
+    revision: 1,
+    observedAt: 100000,
+    execution: { status: "not_applicable", stage: "projector", sentAt: 100000 },
+  });
+  expect(runStatus(turn, store.get("turn"), 100001).executionState).toBe("not_applicable");
+  store.receive({
+    ...scope,
+    type: "run.execution",
+    revision: 2,
+    observedAt: 100000,
+    execution: {
+      status: "confirmed",
+      stage: "worker",
+      bindingId: "old",
+      targetId: "old-vm",
+      sentAt: 100000,
+      confirmedAt: 100000,
+    },
+  });
+  store.receive({ ...scope, type: "run.path", sentAt: 150000, observedAt: 150001 });
+  expect(runStatus(turn, store.get("turn"), 150001)).toMatchObject({
+    delayed: false,
+    executionState: "unconfirmed",
+  });
+  store.receive({
+    ...scope,
+    type: "run.execution",
+    revision: 3,
+    observedAt: 151000,
+    execution: { status: "pending", stage: "projector", bindingId: "new", sentAt: 151000 },
+  });
+  expect(runStatus(turn, store.get("turn"), 151001).executionSeconds).toBeUndefined();
+  store.reset();
+  expect(store.get("turn")).toBeUndefined();
+  stop();
+});

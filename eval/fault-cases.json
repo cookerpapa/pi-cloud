@@ -3,6 +3,55 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "execution-probe-no-allocation",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/execution-path-probes.test.ts",
+      "test": "never probes absent chat bindings, but treats a missing expected binding as unavailable",
+      "invariant": "Probes never allocate a VM; an expected missing binding is unavailable, not silently not-applicable."
+    },
+    {
+      "id": "execution-probe-fast-reply",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/execution-path-probes.test.ts",
+      "test": "a return before the handoff HTTP ACK cannot regress from Worker to Cube stage",
+      "invariant": "A fast complete return cannot be overwritten by a later admission receipt."
+    },
+    {
+      "id": "execution-probe-stale-identity",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/execution-path-probes.test.ts",
+      "test": "expired, wrong-boot, closed and duplicate replies never fabricate fresh health",
+      "invariant": "Current scope, target and deadline are required for fresh evidence; unknown transport never authorizes resource recovery."
+    },
+    {
+      "id": "execution-probe-projector-reset",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/execution-path-probes.test.ts",
+      "test": "Projector reset discards pending acknowledgements even when the same Session is re-admitted",
+      "invariant": "Pending observations cannot survive Projector ownership reset as fresh acknowledgements."
+    },
+    {
+      "id": "runtime-probe-partial-inventory",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/runtime-health-monitor.test.ts",
+      "test": "missing inventory and failed execution need exact evidence, not inferred absence",
+      "invariant": "Partial inventory or failed guest responses cannot authorize VM destruction or quota release."
+    },
+    {
+      "id": "runtime-probe-fleet-coverage",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/runtime-health-monitor.test.ts",
+      "test": "covers 160 due VMs without a batch truncation and bounds concurrent execution",
+      "invariant": "Every due physical runtime is examined without a 16-item truncation or unbounded concurrent requests."
+    },
+    {
+      "id": "execution-probe-independent-paths",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/path-probe.test.ts",
+      "test": "lost guest replies do not stop log probes, and replacement rejects old binding replies",
+      "invariant": "Missing guest replies do not block publication, native drain or future log-path probes; replaced bindings reject late evidence."
+    },
+    {
       "id": "machine-rebind-release-race",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/workspace-admission.integration.test.ts",

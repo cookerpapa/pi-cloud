@@ -84,6 +84,7 @@
     "production:product-surface-check": "node --import tsx scripts/run-live-product-surface-check.mjs",
     "production:snake-preview-check": "node --import tsx scripts/run-live-snake-preview-check.mjs",
     "production:native-tool-check": "node --import tsx scripts/run-live-native-tool-check.mjs",
+    "production:execution-probe-check": "node --import tsx scripts/run-live-execution-probe-check.mjs",
     "production:vite-preview-check": "node --import tsx scripts/run-live-vite-preview-check.mjs",
     "production:preview-isolation-check": "node --import tsx scripts/run-live-preview-isolation-check.mjs",
     "production:browser-ui-check": "node --import tsx scripts/run-live-browser-ui-check.mjs",

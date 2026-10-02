@@ -1,5 +1,6 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { ExecutionEvidenceSchema } from "./execution-probe.ts";
 
 export const RUN_ACTIVITY_PATH = "/internal/v1/run-activity";
 export const RUN_PATH_PROBE_INTERVAL_MS = 15_000;
@@ -33,12 +34,30 @@ export const RuntimeObservationScopeSchema = Type.Object(
   { additionalProperties: false },
 );
 export type RuntimeObservationScope = Static<typeof RuntimeObservationScopeSchema>;
+export const ProbeBindingSchema = Type.Object(
+  {
+    bindingId: id,
+    scope: RuntimeObservationScopeSchema,
+    probe: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+export type ProbeBinding = Static<typeof ProbeBindingSchema>;
 export const PathProbeSchema = Type.Object(
   {
     kind: Type.Literal("path_probe"),
     factId: id,
     scope: RuntimeObservationScopeSchema,
     occurredAt: Type.String({ minLength: 20, maxLength: 40 }),
+    execution: Type.Optional(
+      Type.Object(
+        {
+          replyTopic: id,
+          bindings: Type.Array(ProbeBindingSchema, { maxItems: 64 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -60,8 +79,53 @@ export const RunActivityDeliverySchema = Type.Object(
   { additionalProperties: false },
 );
 export type RunActivityDelivery = Static<typeof RunActivityDeliverySchema>;
+export const ExecutionObservationDeliverySchema = Type.Object(
+  {
+    scope: RuntimeObservationScopeSchema,
+    partition: Type.Integer({ minimum: 0 }),
+    kind: Type.Union([Type.Literal("probe"), Type.Literal("tool")]),
+    requestId: id,
+    sentAt: timestamp,
+    evidence: ExecutionEvidenceSchema,
+    roundTripMs: Type.Optional(Type.Number({ minimum: 0, maximum: 60_000 })),
+  },
+  { additionalProperties: false },
+);
+export type ExecutionObservationDelivery = Static<typeof ExecutionObservationDeliverySchema>;
+export function parseExecutionObservationDelivery(value: unknown): ExecutionObservationDelivery {
+  if (!Value.Check(ExecutionObservationDeliverySchema, value))
+    throw new Error("Invalid execution observation");
+  return value as ExecutionObservationDelivery;
+}
+export const ExecutionPathStatusSchema = Type.Object(
+  {
+    status: Type.Union([
+      Type.Literal("not_applicable"),
+      Type.Literal("pending"),
+      Type.Literal("confirmed"),
+      Type.Literal("unavailable"),
+    ]),
+    stage: Type.Union([Type.Literal("projector"), Type.Literal("cube"), Type.Literal("worker")]),
+    bindingId: Type.Optional(id),
+    targetId: Type.Optional(id),
+    confirmedAt: Type.Optional(timestamp),
+    sentAt: timestamp,
+  },
+  { additionalProperties: false },
+);
+export type ExecutionPathStatus = Static<typeof ExecutionPathStatusSchema>;
 const identity = { sessionId: id, turnId: id, runId: id };
 export const RunObservationSchema = Type.Union([
+  Type.Object(
+    {
+      ...identity,
+      type: Type.Literal("run.execution"),
+      revision: Type.Integer({ minimum: 1 }),
+      observedAt: timestamp,
+      execution: ExecutionPathStatusSchema,
+    },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       ...identity,

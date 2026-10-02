@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { open, unlink } from "node:fs/promises";
+import { open, readFile, unlink } from "node:fs/promises";
 import {
   enterExecutionCgroup,
   finishExecutionCgroup,
@@ -44,6 +44,30 @@ async function main(): Promise<void> {
   };
   process.stdout.write('{"type":"scope.ready"}\n');
   if (!operationId) throw new Error("Execution scope identity required");
+  if (mode === "probe") {
+    const deadline = setTimeout(
+      () => process.stdin.destroy(new Error("Execution probe expired")),
+      5000,
+    );
+    try {
+      const input = JSON.parse((await inputFrames.next()).value ?? "");
+      if (
+        !/^[0-9a-f-]{36}$/.test(operationId) ||
+        input.probeId !== operationId ||
+        input.mode !== "probe" ||
+        Object.keys(input).length !== 2
+      )
+        throw new Error("Execution probe identity changed");
+      const guestBootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+      process.stdout.write(
+        JSON.stringify({ type: "worker.probe_result", probeId: operationId, guestBootId }) + "\n",
+      );
+      await receipt();
+    } finally {
+      clearTimeout(deadline);
+    }
+    return;
+  }
   if (mode === "stop") {
     const result = await stopExecutionCgroup(operationId);
     if (result.inputPath) await unlink(result.inputPath).catch(() => {});

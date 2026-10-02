@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import Fastify from "fastify";
-import { RUN_ACTIVITY_PATH } from "@pi-cloud/protocol";
+import { RUN_ACTIVITY_PATH, EXECUTION_OBSERVATION_PATH } from "@pi-cloud/protocol";
 import { RunActivityIngress } from "../src/run-activity-ingress.ts";
 
 it("requires Worker management authority, validates bounded payloads and follows partition ownership", async () => {
@@ -49,6 +49,50 @@ it("requires Worker management authority, validates bounded payloads and follows
     owner.mockRejectedValueOnce(new Error("Owner changed"));
     expect((await server.inject(request)).statusCode).toBe(503);
     expect(publish).toHaveBeenCalledOnce();
+  } finally {
+    await server.close();
+  }
+});
+
+it("routes execution evidence to the same partition owner and rejects extra payload material", async () => {
+  const server = Fastify(),
+    owner = vi.fn(async (_p: number): Promise<string | undefined> => undefined),
+    execution = vi.fn();
+  new RunActivityIngress("worker-token", owner, vi.fn(), execution).install(server);
+  const payload = {
+    scope: {
+      tenantId: "t",
+      sessionId: "s",
+      turnId: "turn",
+      runId: "run",
+      writerId: "writer",
+      piSessionId: "physical",
+      fencingToken: 1,
+    },
+    partition: 2,
+    kind: "probe",
+    requestId: "probe",
+    sentAt: 100000,
+    evidence: { bindingId: "binding", targetId: "vm", bootId: "boot", observedAt: 100001 },
+    roundTripMs: 1,
+  };
+  const request = {
+    method: "POST" as const,
+    url: EXECUTION_OBSERVATION_PATH,
+    payload,
+    headers: { authorization: "Bearer worker-token" },
+  };
+  try {
+    expect((await server.inject({ ...request, headers: {} })).statusCode).toBe(401);
+    expect(
+      (await server.inject({ ...request, payload: { ...payload, command: "PRIVATE" } })).statusCode,
+    ).toBe(400);
+    owner.mockResolvedValueOnce("http://other:3000");
+    const redirect = await server.inject(request);
+    expect(redirect.statusCode).toBe(307);
+    expect(execution).not.toHaveBeenCalled();
+    expect((await server.inject(request)).statusCode).toBe(204);
+    expect(execution).toHaveBeenCalledExactlyOnceWith(payload);
   } finally {
     await server.close();
   }

@@ -6,6 +6,7 @@ import { useI18n } from "./i18n.tsx";
 type Observations = {
   activity?: Extract<RunObservation, { type: "run.activity" }>;
   path?: Extract<RunObservation, { type: "run.path" }>;
+  execution?: Extract<RunObservation, { type: "run.execution" }>;
   toolActivityAt?: number;
 };
 /** Health is disposable UI state, separate from transcript/history. */
@@ -31,11 +32,15 @@ export class RunObservationStore {
     const listeners = this.#listeners.get(value.turnId);
     if (!listeners) return;
     const previous = this.#values.get(value.turnId);
-    const knownRun = previous?.activity?.runId ?? previous?.path?.runId;
+    const knownRun =
+      previous?.activity?.runId ?? previous?.path?.runId ?? previous?.execution?.runId;
     if (knownRun && knownRun !== value.runId) return;
     if (value.type === "run.activity") {
       if (previous?.activity && previous.activity.revision >= value.revision) return;
       this.#values.set(value.turnId, { ...previous, activity: value });
+    } else if (value.type === "run.execution") {
+      if (previous?.execution && previous.execution.revision >= value.revision) return;
+      this.#values.set(value.turnId, { ...previous, execution: value });
     } else {
       if (previous?.path && previous.path.sentAt >= value.sentAt) return;
       this.#values.set(value.turnId, { ...previous, path: value });
@@ -64,6 +69,9 @@ export function runStatus(
     value && (!turn.runId || turn.runId === value.runId);
   const activity = belongs(observations?.activity) ? observations?.activity : undefined;
   const path = belongs(observations?.path) ? observations?.path : undefined;
+  const execution = belongs(observations?.execution)
+    ? observations?.execution?.execution
+    : undefined;
   let phase: RunPhase | "queued" | "working" = turn.status === "queued" ? "queued" : "working";
   if (activity && now - activity.observedAt <= RUN_OBSERVATION_STALE_MS) phase = activity.phase;
   if (turn.status === "cancelling") phase = "cancelling";
@@ -73,6 +81,16 @@ export function runStatus(
     phase,
     activitySeconds: lastActivityAt ? seconds(lastActivityAt) : undefined,
     pathSeconds: path ? seconds(path.sentAt) : undefined,
+    executionState:
+      execution?.status === "not_applicable"
+        ? ("not_applicable" as const)
+        : execution?.confirmedAt && now - execution.confirmedAt <= RUN_OBSERVATION_STALE_MS
+          ? ("confirmed" as const)
+          : execution
+            ? ("unconfirmed" as const)
+            : undefined,
+    executionSeconds: execution?.confirmedAt ? seconds(execution.confirmedAt) : undefined,
+    executionStage: execution?.stage,
     delayed:
       turn.status !== "queued" &&
       (path
@@ -130,6 +148,11 @@ export function RunStatus({
           {status.activitySeconds === undefined
             ? null
             : ` · ${t("run.activityAge", { seconds: status.activitySeconds })}`}
+          {status.executionState === "confirmed"
+            ? ` · ${t("run.executionAge", { seconds: status.executionSeconds ?? 0 })}`
+            : status.executionState === "unconfirmed"
+              ? ` · ${t("run.executionUnconfirmed")}`
+              : null}
         </small>
       ) : null}
     </div>

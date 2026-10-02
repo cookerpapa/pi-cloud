@@ -96,6 +96,8 @@ export type SandboxControllerOptions = {
   stateRepository: WorkspaceRuntimeStateRepository;
   idGenerator?: () => string;
   maximumActiveSandboxes?: number;
+  runtimeProbeConcurrency?: number;
+  onProbeSample?(stage: "probe" | "scheduling", durationMs: number, outcome: string): void;
   warmTtlMs?: number;
   maximumWarmWorkspaceRuntimes?: number;
   clock?: () => number;
@@ -375,7 +377,7 @@ export class SandboxController {
   readonly #cleanupLoop: Promise<void>;
   #workspaceCleanup: Promise<void> | undefined;
   #closing: Promise<void> | undefined;
-  #healthCursor = 0;
+  readonly #runtimeHealth: RuntimeHealthMonitor;
   #developmentEnvironmentRecovery: Promise<number> | undefined;
 
   constructor(options: SandboxControllerOptions) {
@@ -432,6 +434,16 @@ export class SandboxController {
       () => this.reapWorkspaceRuntimes(),
       (error) => this.#onMaintenanceError?.(error),
     );
+    this.#runtimeHealth = new RuntimeHealthMonitor({
+      targets: () => this.#runtimeHealthTargets(),
+      inventory: () => this.#provider.observeRuntimeInventory(),
+      onError: (error) => this.#onMaintenanceError?.(error),
+      ...(options.runtimeProbeConcurrency === undefined
+        ? {}
+        : { concurrency: options.runtimeProbeConcurrency }),
+      ...(options.onProbeSample ? { sample: options.onProbeSample } : {}),
+      clock: this.#clock,
+    });
   }
 
   get providerId(): string {
@@ -2657,6 +2669,7 @@ export class SandboxController {
     this.#admission.close();
     clearInterval(this.#reaper);
     this.#cleanupController.abort();
+    await this.#runtimeHealth.close();
     await this.#cleanupLoop;
     await this.#developmentEnvironmentRecovery?.catch((error) => {
       errors.push(error);
@@ -2824,7 +2837,15 @@ export class SandboxController {
 
   reapWorkspaceRuntimes(): Promise<void> {
     return (this.#workspaceCleanup ??= (async () => {
-      await this.#observeRuntimeHealth();
+      const runtimes = new Set([
+        ...this.#warm.values(),
+        ...[...this.#toolBindings.values()].flatMap((b) =>
+          b.elasticRuntime ? [b.elasticRuntime] : [],
+        ),
+      ]);
+      for (const runtime of runtimes)
+        if (runtime.failure && !runtime.failureRecorded)
+          await this.#markElasticRuntimeLost(runtime, runtime.failure);
       await this.reapWarm();
       await this.reapRetiredWarm();
       await this.#reapOrphanedWorkspaceRuntimes();
@@ -2834,16 +2855,26 @@ export class SandboxController {
     }));
   }
 
-  async #observeRuntimeHealth(): Promise<void> {
+  async observeRuntimeHealth(): Promise<void> {
+    this.#runtimeHealth.refresh();
+    await this.#runtimeHealth.settle();
+  }
+
+  recordRuntimeEvidence(tenantId: string, targetId: string, observedAt: number): boolean {
+    if (this.#closing) return false;
+    if (!this.#runtimeHealthTargets().some((t) => t.id === targetId && t.tenantId === tenantId))
+      return false;
+    this.#runtimeHealth.refresh();
+    return this.#runtimeHealth.evidence(targetId, observedAt);
+  }
+
+  #runtimeHealthTargets(): Array<RuntimeHealthTarget & { tenantId: string }> {
     const runtimes = new Set([
       ...this.#warm.values(),
       ...[...this.#toolBindings.values()].flatMap((binding) =>
         binding.elasticRuntime ? [binding.elasticRuntime] : [],
       ),
     ]);
-    for (const runtime of runtimes)
-      if (runtime.failure && !runtime.failureRecorded)
-        await this.#markElasticRuntimeLost(runtime, runtime.failure);
     const candidates = [...runtimes]
       .filter((runtime) => runtime.handle && !runtime.failure)
       .map((runtime) => ({
@@ -2858,23 +2889,20 @@ export class SandboxController {
             fail: (error: Error) => this.#quarantineDevelopmentEnvironment(environment, error),
           })),
       );
-    if (!candidates.length) return;
-    for (let i = 0; i < Math.min(16, candidates.length); i++) {
-      const candidate = candidates[this.#healthCursor++ % candidates.length]!;
-      const observed = await this.#provider.observeRuntime(candidate.handle);
-      if (
-        observed.presence === "absent" ||
-        observed.execution === "unsafe" ||
-        (observed.presence === "present" && ["stopped", "error"].includes(observed.state))
-      )
-        await candidate.fail(
+    return candidates.map((candidate) => ({
+      tenantId: candidate.handle.assignment.tenantId,
+      id: this.#provider.executionIdentity(candidate.handle),
+      observe: () => this.#provider.observeRuntime(candidate.handle),
+      probe: () => this.#provider.probeExecution(candidate.handle),
+      fail: () =>
+        candidate.fail(
           new SandboxControlError(
             "execution_stop_unconfirmed",
             "Runtime execution is unavailable; control-plane recovery is required",
             false,
           ),
-        );
-    }
+        ),
+    }));
   }
 
   async reapWarm(): Promise<void> {
@@ -3202,13 +3230,6 @@ export class SandboxController {
   async #verifyDevelopmentEnvironment(
     environment: ManagedDevelopmentEnvironment,
   ): Promise<{ continuityId: string }> {
-    if (this.#provider.probeExecution === undefined) {
-      throw new SandboxControlError(
-        "cubesandbox_tool_unavailable",
-        "Guest execution probes are unavailable",
-        false,
-      );
-    }
     const observation = await this.#provider.probeExecution(environment.handle);
     const runtimeCapsule = await this.#persistentCapsule(environment.handle);
     if (runtimeCapsule === undefined) {
@@ -3340,3 +3361,4 @@ export class SandboxController {
     return value;
   }
 }
+import { RuntimeHealthMonitor, type RuntimeHealthTarget } from "./runtime-health-monitor.ts";

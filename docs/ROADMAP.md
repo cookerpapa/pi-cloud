@@ -55,6 +55,11 @@ Single-host acceptance does not establish independent-node availability.
 
 ## Current release gate
 
+- [ ] [ADR-0211](adr/0211-execution-path-and-runtime-probes.md): extend existing
+      Session probes through active Cube bindings and the Worker reply mailbox;
+      unify direct VM execution probes, bounded health scheduling and lifecycle
+      reconciliation. Complete fault, capacity and matched deployment acceptance.
+
 - [x] Complete the [September 30 whole-repository review](reports/repository-review-20260930.md)
       against pinned Pi, current ADRs and original design rationale; record
       reproducible findings, coverage and verification limits.

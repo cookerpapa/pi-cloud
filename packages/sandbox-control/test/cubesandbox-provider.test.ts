@@ -138,6 +138,19 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
 }
 
 class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
+  readonly submitProbe = vi.fn<CubeSandboxRuntimeClient["submitProbe"]>(async () => {});
+  async probeExecution(
+    target: Awaited<ReturnType<CubeSandboxRuntimeClient["executionTarget"]>>,
+    probeId: string,
+  ) {
+    const current = await this.executionTarget(target.sandboxId, target.nodeId);
+    if (
+      current.bootId !== target.bootId ||
+      this.instances.get(target.sandboxId)?.state !== "running"
+    )
+      throw new Error("Guest execution unavailable");
+    return { type: "worker.probe_result" as const, probeId, guestBootId: this.guestBootId };
+  }
   readonly submitTool = vi.fn<CubeSandboxRuntimeClient["submitTool"]>(async () => {});
   readonly stopExecutionScope = vi.fn<CubeSandboxRuntimeClient["stopExecutionScope"]>(
     async () => {},
@@ -274,9 +287,6 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     const cleanedPath = /trap '\/bin\/rm -f -- ([^']+)' EXIT/u.exec(input.command)?.[1];
     if (cleanedPath !== undefined) this.guestFiles.delete(cleanedPath);
     this.requests.push({ sandboxId: instance.sandboxId, input, guestRequest: request });
-    if (request.mode === "execution_probe") {
-      return { stdout: this.guestBootId + "\n", stderr: "", exitCode: 0 };
-    }
     if (input.command.includes("envd-guest-control.mjs")) {
       if (request.mode === "evidence") {
         return this.#result({
@@ -381,8 +391,6 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   }
 
   requestForCommand(input: CubeSandboxGuestCommandRequest): Record<string, unknown> {
-    if (input.command.includes("/proc/sys/kernel/random/boot_id"))
-      return { mode: "execution_probe" };
     const path = input.command.match(/(\/tmp\/pi-cloud-envd-[0-9a-f-]{36}\.json)$/u)?.[1];
     const bytes = path === undefined ? undefined : this.guestFiles.get(path);
     if (bytes === undefined) throw new Error("guest request unavailable");
@@ -1430,15 +1438,15 @@ describe("CubeSandbox Provider contract", () => {
     });
     const capsule = await provider.persistentCapsule(handle);
     await provider.detachPersistent(handle);
-    const original = runtime.runCommand.bind(runtime);
-    runtime.runCommand = async () => {
+    const original = runtime.probeExecution.bind(runtime);
+    runtime.probeExecution = async () => {
       throw new Error("host unavailable");
     };
     await expect(provider.adoptPersistentCapsule(capsule.capsule)).rejects.toMatchObject({
       code: "cubesandbox_tool_unavailable",
     });
     expect(runtime.destroyed).toEqual([]);
-    runtime.runCommand = original;
+    runtime.probeExecution = original;
     const recovered = await provider.adoptPersistentCapsule(capsule.capsule);
     expect(recovered.runtimeId).toBe(handle.runtimeId);
     // Even a provider shutdown without a successful explicit detach cannot

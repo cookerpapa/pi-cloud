@@ -32,8 +32,10 @@ protocol, record the decision under `docs/adr/` before implementation.
   transport boundary; the public API and durable domain model use PiCloud-owned
   schemas. Native Tool final replies become canonical only after Worker Harness
   processing. Observation-only phase/Tool updates use lossy HTTP/SSE, never Kafka,
-  PG or context. ADR-0201 permits bounded transport path probes on the same Kafka
-  Session path; they never become native history or a second execution authority.
+  PG or context. ADR-0201/0211 permit bounded transport probes on the same Kafka
+  Session path and boot-scoped Worker reply transport; they never become native
+  history or a second execution authority. Physical VM evidence is disposable;
+  missing probes never authorize destruction, replay or quota release.
 - Run the fixed Pi core only in the trusted Agent Runner, never in the API/control-plane
   process. Route every untrusted file or shell operation to a separate Tool Sandbox.
 - Load only code-owned trusted infrastructure tools in the Agent Runner.

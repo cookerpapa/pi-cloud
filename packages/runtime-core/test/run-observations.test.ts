@@ -40,6 +40,67 @@ const record = (
   offset,
 });
 
+it("records stage confirmations without replacing activity, preserves freshness and rejects old targets", async () => {
+  let now = 100_000;
+  const hub = new SessionEventHub(),
+    observations = new RunObservations(hub, () => now),
+    sub = hub.subscribe("tenant", "session");
+  observations.record(record(now, 1n), true);
+  await sub.next();
+  observations.executionTargets(scope.writerId, [], now);
+  expect(await sub.next()).toMatchObject({
+    observation: { type: "run.execution", execution: { status: "not_applicable" } },
+  });
+  now += 1000;
+  observations.execution(scope, {
+    status: "confirmed",
+    stage: "worker",
+    bindingId: "b",
+    targetId: "vm",
+    sentAt: now,
+    confirmedAt: now,
+  });
+  expect(await sub.next()).toMatchObject({ observation: { execution: { confirmedAt: now } } });
+  observations.execution(scope, {
+    status: "pending",
+    stage: "cube",
+    bindingId: "b",
+    targetId: "vm",
+    sentAt: now,
+  });
+  expect(await sub.next(1)).toBe("heartbeat");
+  now += 15000;
+  observations.execution(scope, {
+    status: "pending",
+    stage: "projector",
+    bindingId: "b",
+    sentAt: now,
+  });
+  expect(await sub.next()).toMatchObject({
+    observation: { execution: { confirmedAt: 101000, targetId: "vm" } },
+  });
+  observations.execution(scope, {
+    status: "pending",
+    stage: "projector",
+    bindingId: "b",
+    targetId: "new-vm",
+    sentAt: now,
+  });
+  const next = await sub.next();
+  expect(next).toMatchObject({ observation: { execution: { targetId: "new-vm" } } });
+  expect(next).not.toHaveProperty("observation.execution.confirmedAt");
+  observations.reset();
+  observations.execution(scope, {
+    status: "confirmed",
+    stage: "worker",
+    bindingId: "b",
+    sentAt: now,
+    confirmedAt: now,
+  });
+  expect(await sub.next(1)).toBe("heartbeat");
+  hub.onApplicationShutdown();
+});
+
 it("shares Session path evidence across Lanes while rejecting replay, stale and future probes", async () => {
   let now = 100_000;
   const hub = new SessionEventHub(),

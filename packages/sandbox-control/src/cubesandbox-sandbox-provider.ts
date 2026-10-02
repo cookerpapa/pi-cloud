@@ -1,4 +1,5 @@
 import type { SandboxExecutionDescriptor, SandboxExecutionTarget } from "./sandbox-execution.ts";
+import { executionTargetId } from "./sandbox-execution.ts";
 import { workflowGuestSource } from "./workflow-guest-source.ts";
 import type { Duplex } from "node:stream";
 import {
@@ -1029,6 +1030,36 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
   }
 
+  executionIdentity(handle: SandboxHandle): string {
+    return executionTargetId(this.#localOwned(handle).executionTarget);
+  }
+
+  async observeRuntimeInventory(): Promise<
+    ReadonlyMap<string, import("./sandbox-provider.ts").SandboxRuntimeObservation>
+  > {
+    const instances = new Map(
+      (await this.#client.list()).map((instance) => [instance.sandboxId, instance]),
+    );
+    const observations = new Map<
+      string,
+      import("./sandbox-provider.ts").SandboxRuntimeObservation
+    >();
+    for (const activation of this.#activations.values()) {
+      const target = activation.executionTarget;
+      const instance = instances.get(target.sandboxId);
+      // The list may omit whole nodes or stop at its transport bound. Only
+      // positively matched node/VM identities supply lifecycle evidence.
+      if (instance?.nodeId === target.nodeId)
+        observations.set(executionTargetId(target), {
+          runtimeName: target.sandboxId,
+          nodeId: target.nodeId,
+          presence: "present",
+          state: instance.state,
+        });
+    }
+    return observations;
+  }
+
   async openTerminal(
     handle: SandboxHandle,
     size: SandboxTerminalSize,
@@ -1474,27 +1505,11 @@ export class CubeSandboxProvider implements SandboxProvider {
 
   async probeExecution(handle: SandboxHandle): Promise<{ continuityId: string }> {
     try {
-      const activation = await this.#owned(handle);
-      if (activation.instance.state.toLowerCase() !== "running") {
-        throw new Error("Guest is not running");
-      }
-      const executor = await this.#client.executionTarget(
-        activation.executionTarget.sandboxId,
-        activation.executionTarget.nodeId,
+      const activation = this.#localOwned(handle);
+      const { guestBootId: bootId } = await this.#client.probeExecution(
+        activation.executionTarget,
+        randomUUID(),
       );
-      if (executor.bootId !== activation.executionTarget.bootId)
-        throw new Error("Cube executor changed; prior scope stopping is unconfirmed");
-      const result = await this.#client.runCommand(activation.instance, {
-        command: `/usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node -e 'const fs=require("node:fs");fs.accessSync("/opt/pi-cloud/bin/envd-tool-exec.mjs",fs.constants.R_OK);process.stdout.write(fs.readFileSync("/proc/sys/kernel/random/boot_id","utf8"));'`,
-        cwd: "/",
-        user: "root",
-        timeoutMs: 10_000,
-        maximumOutputBytes: 1024,
-      });
-      const bootId = result.stdout.trim();
-      if (result.exitCode !== 0 || !/^[0-9a-f-]{36}$/.test(bootId)) {
-        throw new Error("Guest execution probe did not complete successfully");
-      }
       if (activation.guestBootId !== undefined && activation.guestBootId !== bootId) {
         activation.continuityId = runtimeUuid(`${handle.runtimeName}:${bootId}`);
       }

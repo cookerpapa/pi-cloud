@@ -105,6 +105,19 @@ node observation before quota is released.
 
 ## Tool and terminal channels
 
+Managed execution protocol 2 adds `POST /sandboxes/:id/execution/probe`.
+The recorded node and executor boot are required. A fixed guest program echoes
+a probe UUID and its kernel boot identity over the same native raw-PTY transport
+as Tools, without Workspace access or user commands. Controller probes return
+within the bounded HTTP request; Session probes use bounded asynchronous takeover
+and the existing completion adapter/Worker reply topic. The latter groups shared
+VM bindings in one echo. Direct observation works even when Kafka completion is
+unavailable. Probe lifetimes use a separate four-request Cubelet budget and no
+retained Tool operation ledger. Failure has no quarantine or deletion authority.
+The provider replaces its former envd command-based execution probe with this
+single native implementation. Cube/guest/adapter/Worker upgrades must match
+[ADR-0211](adr/0211-execution-path-and-runtime-probes.md).
+
 Fixed Agent Tools use native Cubelet execution. The Web Terminal keeps its
 separate human reservation and envd PTY through the control-plane module:
 
