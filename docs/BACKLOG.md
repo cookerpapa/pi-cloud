@@ -23,11 +23,10 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] Implement and validate [ADR-0211](adr/0211-execution-path-and-runtime-probes.md):
-      independent Projector/guest-return observations, one fixed guest probe for
-      Worker round trips and controller checks, fair due-time health work outside
-      cleanup, partial-inventory safety, and matched Luna/Cube/browser acceptance.
-
+- [ ] Measure ADR-0211 probe scheduling lag and false-unconfirmed rate on actual
+      multi-node fleets before raising concurrency or claiming fleet-wide detection
+      deadlines. [Current acceptance](reports/execution-probes-20261002.md) proves
+      160-target scheduling and single-host real execution, not physical fleet scale.
 - [ ] Separate provider first-token latency from phase-aware first-display latency
       in future timing comparisons. Complete commentary waits for its provider
       text block; that interval must not be labelled entirely as internal relay time.
@@ -78,6 +77,11 @@ PiCloud deployment. Remaining operational limits are listed below.
       before increasing tree or model concurrency defaults.
 
 ## Deployment operations
+
+- [ ] Repeat the broad browser interaction gate beyond the focused execution-probe
+      acceptance after its model-menu/catalog expectations were corrected. The
+      [probe-focused gate](reports/execution-probes-browser-20261002.json) passed;
+      that is not a claim that every legacy browser flow was revalidated.
 
 - [ ] Diagnose Cube node template-cleanup timeouts observed during the
       [chat upload rollout](reports/user-input-attachments-rollout-20260929.json).

@@ -1,6 +1,8 @@
 # ADR-0211: execution-path observations and physical runtime probes
 
-Status: accepted by the owner, implementation in progress, 2026-10-02.
+Status: implemented, deployed and validated, 2026-10-02. See the
+[acceptance record](../reports/execution-probes-20261002.md) for real Luna/Cube,
+browser, process-fault evidence and maintenance corrections.
 
 ## Context and adoption
 

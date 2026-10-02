@@ -485,13 +485,17 @@ try {
         "GPT-6 Sol",
         "conversation.modelSolFast",
       );
+      const solDefaultThinking = (await api.getModelCatalog()).models.find(
+        (model) => model.provider === "openai-codex" && model.modelId === "gpt-6-sol",
+      )?.defaultThinkingLevel;
+      assert(solDefaultThinking, "GPT-6 Sol catalog default is missing");
       await click(".product-model-menu-fast", "conversation.fastMode");
       await waitFor(async () => {
         const selected = await api.getSessionModel(elasticConversation.sessionId);
         return (
           selected.provider === "openai-codex" &&
           selected.modelId === "gpt-6-sol" &&
-          selected.thinkingLevel === "medium" &&
+          selected.thinkingLevel === solDefaultThinking &&
           selected.fastMode
         );
       }, "GPT Fast model switch");

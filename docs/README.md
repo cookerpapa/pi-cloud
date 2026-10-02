@@ -23,6 +23,11 @@ Use documentation in this order:
 research, conversations and superseded implementation logs remain in Git
 history instead of the maintained tree.
 
+The [October 2 execution-probe acceptance](reports/execution-probes-20261002.md)
+records independent Projector/guest-return observations, direct physical-VM
+probing, real Luna/browser/process-fault checks, and the deployment repairs and
+asset-preservation verification.
+
 The [September 30 repository review](reports/repository-review-20260930.md)
 records the complete scope, eight confirmed findings, three discussion items
 and historical boundary probes at its recorded baseline. The baseline had

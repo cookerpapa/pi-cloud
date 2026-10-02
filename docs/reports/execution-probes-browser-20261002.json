@@ -1,0 +1,70 @@
+{
+  "accepted": true,
+  "piCloudRevision": "df564a973bc22c6836fc837fa00692ed0e68a99e",
+  "harnessWorkingTreeDirty": false,
+  "runtimeRevisions": {
+    "pi-cloud-production-web-1": "27acf05e820d77df776f3319b063aa352436bf9d",
+    "pi-cloud-production-control-plane-1": "27acf05e820d77df776f3319b063aa352436bf9d"
+  },
+  "workerRuntimeImages": {
+    "pi-cloud-production-supervisor-host-1-1": "pi-cloud/supervisor-host:production",
+    "pi-cloud-production-supervisor-host-1": "pi-cloud/supervisor-host:production"
+  },
+  "checkedAt": "2026-10-02T05:09:51.962Z",
+  "account": "browser.acceptance.muqi6fgh",
+  "clickedControls": [
+    "auth.localOnly",
+    "auth.registerTab",
+    "auth.loginTab",
+    "auth.login",
+    "sidebar.brand",
+    "account.menuOpen",
+    "account.languageMenu",
+    "account.languageEnglish",
+    "account.menuOpenAgain",
+    "account.languageMenuAgain",
+    "account.languageChinese",
+    "composer.defaultModelVisible",
+    "sidebar.collapse",
+    "sidebar.expand",
+    "tree.collapse",
+    "tree.expand",
+    "conversation.new",
+    "conversation.elasticMode",
+    "conversation.defaultModelHidden",
+    "conversation.performanceProfile",
+    "conversation.create",
+    "codeHost.open",
+    "codeHost.close",
+    "conversation.testModelMenu",
+    "conversation.testProvider",
+    "conversation.testLuna",
+    "conversation.testMedium",
+    "composer.send",
+    "conversation.defaultModel",
+    "conversation.openFromSnapshot",
+    "probe.sendLongBash",
+    "probe.roundTripVisibleDuringBash",
+    "probe.completed"
+  ],
+  "clickedControlCount": 33,
+  "latencyMs": {
+    "userSubmitToFirstAssistantText": 3183,
+    "userSubmitToCompleteReply": 3390
+  },
+  "browserFirstText": {
+    "submittedWallAt": 1790917736909,
+    "userClickToFirstDomMs": 3122.39999999851,
+    "userClickToFirstTextPaintMs": 3136.300000000745,
+    "domToFirstTextPaintMs": 13.900000002235174,
+    "measurement": "Chrome Element Timing text-paint; one browser monotonic clock; headless rendering"
+  },
+  "firstModelTiming": {
+    "providerRouteToFirstTextMs": 2714.152,
+    "nonProviderClickToPaintMs": 422.148000000745,
+    "measurement": "Subtract same-sampling provider interval from browser click-to-paint; no cross-process wall-clock subtraction"
+  },
+  "testMode": "execution-probe",
+  "screenshotCaptured": true,
+  "cleanupCompleted": true
+}
