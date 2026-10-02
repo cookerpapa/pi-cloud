@@ -113,6 +113,19 @@ const until = async (check: () => Promise<boolean> | boolean) => {
     await delay(10);
   }
 };
+const statementWal = async () => {
+  const { rows } = await sql<{ bytes: string; records: string; fullPages: string }>`select
+    coalesce(sum(wal_bytes),0)::text bytes, coalesce(sum(wal_records),0)::text records,
+    coalesce(sum(wal_fpi),0)::text "fullPages" from pg_stat_statements
+    where dbid=(select oid from pg_database where datname=current_database()) and toplevel`.execute(
+    observer,
+  );
+  return {
+    bytes: Number(rows[0]!.bytes),
+    records: Number(rows[0]!.records),
+    fullPages: Number(rows[0]!.fullPages),
+  };
+};
 const model: Model<"openai-responses"> = {
   id: "gpt-6-luna",
   name: "Deterministic fixture",
@@ -134,6 +147,7 @@ const report: any = {
   samples: [],
 };
 try {
+  await sql`create extension if not exists pg_stat_statements`.execute(observer);
   await runMigrations(db, "up");
   const tenant = await createPrivateTenant(db, {
     slug: name.replaceAll("_", "-"),
@@ -344,6 +358,7 @@ try {
       const walStart = (
         await sql<{ lsn: string }>`select pg_current_wal_insert_lsn()::text lsn`.execute(observer)
       ).rows[0]!.lsn;
+      const statementWalBefore = await statementWal();
       counters = {
         sql: 0,
         transactions: 0,
@@ -398,7 +413,11 @@ try {
       assert(Number(rows[0]!.native) >= 4);
       assert(measured.kafkaRecords > 0);
       assert(measured.kafkaTransactions > 0);
+      const statementWalAfter = await statementWal();
       report.samples.push({
+        statementWalBytes: statementWalAfter.bytes - statementWalBefore.bytes,
+        statementWalRecords: statementWalAfter.records - statementWalBefore.records,
+        statementWalFullPageImages: statementWalAfter.fullPages - statementWalBefore.fullPages,
         ...measured,
         nativeRows: Number(rows[0]!.native),
         outboxRows: Number(rows[0]!.outbox),
@@ -428,7 +447,7 @@ try {
     "No Tool/VM or live provider cost; actual Pi loop and durable native lifecycle are included.",
     "SQL counts pg Client requests including transaction commands; trigger-internal statements are represented in WAL, not separately counted.",
     "Kafka bytes are produced JSON payloads, not replication/network bytes; transactions count native producer commit calls.",
-    "WAL is a cluster LSN delta; run in the otherwise idle isolated PG fixture. Heap deltas include GC noise.",
+    "walBytes is a cluster LSN delta including background/checkpoint effects; statementWalBytes sums only this database top-level pg_stat_statements entries, including trigger writes without nested double-counting. Heap deltas include GC noise.",
     "Recovery includes producer/group ownership and view bootstrap, not replay of arbitrary effects.",
   ];
   await writeFile(

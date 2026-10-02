@@ -37,9 +37,7 @@
     },
     "bindingBootstrap": {
       "rowSource": "simulated SQL results; predicate checked separately on PG",
-      "requestedPartitions": [
-        1
-      ],
+      "requestedPartitions": [1],
       "sqlPageLimit": 256,
       "rejected": false
     },

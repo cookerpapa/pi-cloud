@@ -51,6 +51,22 @@ const report = {
 };
 let project, session, active, failure, stoppedWorkerService;
 const pause = () => new Promise((r) => setTimeout(r, 250));
+async function startStoppedWorker(service) {
+  const { stdout } = await execFile("docker", [
+    "ps",
+    "--all",
+    "--quiet",
+    "--filter",
+    "label=com.docker.compose.project=pi-cloud-production",
+    "--filter",
+    `label=com.docker.compose.service=${service}`,
+  ]);
+  const ids = stdout.trim().split(/\s+/).filter(Boolean);
+  assert.equal(ids.length, 1, "Expected exactly one stopped test Worker container");
+  // Restore this process only; compose start also starts one-shot dependencies.
+  await execFile("docker", ["start", ids[0]]);
+}
+
 async function waitRun(id) {
   const until = Date.now() + 600000;
   while (Date.now() < until) {
@@ -197,11 +213,7 @@ try {
     .join("")
     .trim();
   if (stoppedWorkerService) {
-    await execFile(process.execPath, [
-      "scripts/production-compose.mjs",
-      "start",
-      stoppedWorkerService,
-    ]);
+    await startStoppedWorker(stoppedWorkerService);
     stoppedWorkerService = undefined;
   }
   const expectedFile = await api.readWorkspaceFile(session.sessionId, ".image-check-expected.json");
@@ -229,12 +241,7 @@ try {
 } finally {
   const errors = [];
   try {
-    if (stoppedWorkerService)
-      await execFile(process.execPath, [
-        "scripts/production-compose.mjs",
-        "start",
-        stoppedWorkerService,
-      ]);
+    if (stoppedWorkerService) await startStoppedWorker(stoppedWorkerService);
   } catch (e) {
     errors.push(e);
   }

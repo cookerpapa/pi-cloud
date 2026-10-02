@@ -23,33 +23,19 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] R02-01: commit physical-runtime quarantine and binding closure before waiting
-      for Kafka/owner publication confirmation. Source repair and targeted PG/failure
-      checks are complete under ADR-0213; matched rollout remains pending. Preserve pending closure, shared-VM
-      scope and confirmed-absence quota release. [October 2 review](reports/repository-review-20261002.md).
-- [ ] R02-02: distinguish listener/topic health from usable publication-owner and
-      control-view readiness before Worker Run admission, without globally gating
-      healthy partitions on unrelated projection lag. Source repair and targeted
-      admission/readiness checks are complete; matched rollout remains pending.
-- [ ] R02-03: remove whole-batch Outbox waiting across independent partitions;
-      keep bounded concurrency, entity-head order and PG claim/retry guards. Source
-      repair and isolated-PG progress/cleanup checks are complete; rollout remains pending.
-- [ ] R02-04: make duplicate Subagent command admission produce no new control
-      notification when its source state/revision did not change. Source repair and
-      transactional PG checks pass; matched rollout remains pending.
-- [ ] Measure and reduce O02-01/02's control-reference amplification, empty Steer
-      reconciliation, known-version echo reads, idle relay scans and cleanup backlog.
-      Transaction-local references, known-version guards and retained Steer scopes
-      are implemented. Report whole-Turn SQL/WAL/Kafka/recovery costs alongside
-      cache-hit counts at final acceptance.
-- [ ] O02-03: scope binding bootstrap to owned partitions before applying capacity
-      limits. Owner-filtered PK paging and per-owner row/byte budgets are implemented;
-      matched cold-recovery acceptance remains pending.
-- [ ] Discuss O02-04/05: merge Preview target reads and validate scoped connection
-      reuse; deduplicate identical immutable-image reads within one decode operation.
-      Image decode deduplication and Preview query merge pass their targeted
-      isolation/rebinding checks; matched acceptance remains pending. Shared-resource invalidation is not
-      implicitly covered by Session control facts.
+- [ ] Make Docker/K3s completion bridge address changes invalidate persistent
+      transport connections without VM restart or effect replay. October 3 live
+      acceptance exposed stale PG/Kafka EndpointSlices after host restart and
+      broker connections retained after refresh; the existing operator procedure
+      repaired them. Choose a bounded discovery/reconnect contract before changing
+      deployment privileges or the native execution protocol.
+
+The October 2 R02-01–04 repairs and accepted O02-01–05 slices are deployed under
+[ADR-0213](adr/0213-control-recovery-and-propagation-budgets.md).
+[Final source, budget, fault and production evidence](reports/control-recovery-repair-20261003.md)
+records 1,650 assertions, 133 fault cases, real Luna/VM/browser tests and preserved
+original history. Preview tunnel reuse and shared-resource invalidation remain
+separate design questions, not an implicit part of the completed query merge.
 
 - [x] Implement and validate [ADR-0212](adr/0212-ordered-control-read-models.md)
       in complete slices: binding publication/revocation, queued-input views,

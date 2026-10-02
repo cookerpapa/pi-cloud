@@ -1,0 +1,64 @@
+{
+  "checkedAt": "2026-10-02T20:10:16.022131+00:00",
+  "deploymentRevision": "6ccbb6c5b06192cb4e037eb64a037129ddae2dbb",
+  "guestInputs": "e661c7d9d5798d4ef1f0761df29594163cb6da13",
+  "database": {
+    "schema": "165_coalesced_control_changes",
+    "native": {
+      "rows": 174,
+      "digest": "3d5d7c8afb87d46da35e9b88714128d0"
+    },
+    "activeRuns": 0,
+    "leases": 0,
+    "unsealed": 0,
+    "pendingSeals": 0,
+    "pendingControls": 0,
+    "imageObjects": 0,
+    "imageReferences": 0,
+    "originalDevelopmentEnvironment": {
+      "id": "fac894ba-0db5-4e09-b4d0-9c7d64c9bed7",
+      "workspaceId": "b7da1836-f92c-473c-9823-a03f15df974d",
+      "state": "unknown",
+      "generation": 5,
+      "runtimeId": "e1c606f6-1399-55bd-86ea-6f0c65d83ce7",
+      "runtimeName": "f6b00c1230274effbf9fec93761acaa7"
+    }
+  },
+  "applications": [
+    {
+      "container": "pi-cloud-production-control-plane-1",
+      "revision": "6ccbb6c5b06192cb4e037eb64a037129ddae2dbb",
+      "health": "healthy",
+      "automaticRestarts": 0
+    },
+    {
+      "container": "pi-cloud-production-supervisor-host-1",
+      "revision": "6ccbb6c5b06192cb4e037eb64a037129ddae2dbb",
+      "health": "healthy",
+      "automaticRestarts": 1
+    },
+    {
+      "container": "pi-cloud-production-supervisor-host-1-1",
+      "revision": "6ccbb6c5b06192cb4e037eb64a037129ddae2dbb",
+      "health": "healthy",
+      "automaticRestarts": 0
+    },
+    {
+      "container": "pi-cloud-production-web-1",
+      "revision": "6ccbb6c5b06192cb4e037eb64a037129ddae2dbb",
+      "health": "healthy",
+      "automaticRestarts": 0
+    }
+  ],
+  "originalNativeHistoryUnchanged": true,
+  "originalDevelopmentEnvironmentIdentityAndStateUnchanged": true,
+  "ownedImagesRemoved": 6,
+  "ownedIsolatedPgKafkaAndWorktreeRemoved": true,
+  "http": {
+    "controlReady": 200,
+    "publicationReady": 200,
+    "web": 200,
+    "partitionCount": 32,
+    "availablePartitions": 32
+  }
+}

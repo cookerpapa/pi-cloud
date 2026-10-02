@@ -58,8 +58,10 @@ Single-host acceptance does not establish independent-node availability.
 - [x] Complete the [October 2 whole-repository review](reports/repository-review-20261002.md)
       at `6c74c653`, including README/current-topology corrections, isolated PG
       measurements and recovery/ownership characterization. Confirmed repairs
-      and optimization decisions are implemented under ADR-0213; matched release
-      verification and deployment are in progress.
+      and accepted optimizations are deployed under ADR-0213; [matched verification,
+      budget measurements and real-model recovery acceptance](reports/control-recovery-repair-20261003.md)
+      are complete. The newly observed Docker/K3s transport-discovery limit is
+      recorded in BACKLOG.
 
 - [x] [ADR-0212](adr/0212-ordered-control-read-models.md): remove hot binding reads,
       replace queued-input polling with owner views, and drive Session-local

@@ -275,7 +275,10 @@ real PG, private publication HTTP, RF3 Kafka and watched queue projection, with 
 deterministic GPT-6 Luna-labelled stream fixture (no model-service request).
 It counts PG client requests including transaction commands, Outbox references,
 logical Kafka bytes/producer commits, native rows, fixture WAL and owner recovery.
-Use an otherwise idle, separate PG fixture for WAL; never production brokers.
+Use an otherwise idle, separate PG fixture with shared_preload_libraries=pg_stat_statements
+and pg_stat_statements.track=top. The script creates the extension only in its own
+disposable database and records both statement WAL and cluster LSN deltas; never
+use production brokers.
 Only one Session Projector test/benchmark may use a fixture cluster at a time.
 
 ```bash

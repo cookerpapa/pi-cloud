@@ -94,6 +94,22 @@ token; the API server controls its actual expiry. Rerun the root installer to
 renew that private kubeconfig before it expires. Never copy a cluster-admin
 kubeconfig or the completion credentials into a Tool VM.
 
+After Docker infrastructure restarts or network addresses change, run
+`node scripts/configure-cube-completion.mjs` even when the Guest image is unchanged.
+The Cube namespace's PG/S3/Kafka EndpointSlices contain Docker addresses; Pod
+readiness alone does not prove those addresses still name the intended services.
+Use the project's Linux `/usr/local/bin/k3s kubectl` with its private kubeconfig;
+a Windows kubectl wrapper can resolve a different localhost API server.
+
+Address refresh does not invalidate an existing TCP connection. In the
+[October 3 acceptance](reports/control-recovery-repair-20261003.md), swapped broker
+addresses required draining Runs and retiring only the fixed Node completion
+transport child; Cubelet supervised its replacement, without re-executing guest
+commands or restarting VMs. An operator must identify that exact process and
+verify quiescence before such maintenance. Do not use broad process matching,
+whole-VM deletion or command replay to repair uncertain result transport.
+Automatic bridge-change connection refresh remains a documented limitation.
+
 Historical v10→v11 Tool identity and combined-intent decisions remain in ADR-0185
 and ADR-0198. Current result Entry IDs remain distinct from native provider IDs;
 this publication cutover does not reintroduce RunAttempt or change Tool reply IDs.

@@ -1,6 +1,7 @@
 # ADR-0213: control recovery and propagation budgets
 
-Status: owner-approved review repairs, implementation in progress, 2026-10-03.
+Status: implemented and deployed, 2026-10-03.
+[Verification and deployment evidence](../reports/control-recovery-repair-20261003.md).
 Scope: [October 2 findings](../reports/repository-review-20261002.md), R02-01–04
 and bounded O02-01–05 improvements. No new execution authority, broker, scheduler
 or shared-resource broadcast service is introduced.

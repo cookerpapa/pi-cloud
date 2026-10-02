@@ -1,5 +1,9 @@
 # Documentation map
 
+The latest [control recovery repair and acceptance](reports/control-recovery-repair-20261003.md)
+records ADR-0213's completed rollout, full-Turn cost comparison, 1,650 assertions,
+133 fault cases and real Luna/browser/process-restart results, including limits.
+
 Use documentation in this order:
 
 1. [`README.md`](../README.md) — product, one-message path and deployment entry.
