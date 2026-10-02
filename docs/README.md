@@ -23,6 +23,11 @@ Use documentation in this order:
 research, conversations and superseded implementation logs remain in Git
 history instead of the maintained tree.
 
+The [October 2 whole-repository review](reports/repository-review-20261002.md)
+critically evaluates the current authority, recovery and control-view boundaries.
+It records four confirmed implementation findings, five optimization/capacity
+areas, explicit reproduction limits and README corrections; repairs remain open.
+
 The [October 2 ordered control views acceptance](reports/ordered-control-views-20261002.md)
 records PG/Outbox/Kafka propagation into binding, queue and Subagent memory views,
 measured query reductions, real Luna/browser/restart acceptance and the matched

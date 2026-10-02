@@ -23,6 +23,25 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
+- [ ] R02-01: commit physical-runtime quarantine and binding closure before waiting
+      for Kafka/owner publication confirmation. Preserve pending closure, shared-VM
+      scope and confirmed-absence quota release. [October 2 review](reports/repository-review-20261002.md).
+- [ ] R02-02: distinguish listener/topic health from usable publication-owner and
+      control-view readiness before Worker Run admission, without globally gating
+      healthy partitions on unrelated projection lag.
+- [ ] R02-03: remove whole-batch Outbox waiting across independent partitions;
+      keep bounded concurrency, entity-head order and PG claim/retry guards.
+- [ ] R02-04: make duplicate Subagent command admission produce no new control
+      notification when its source state/revision did not change.
+- [ ] Measure and reduce O02-01/02's control-reference amplification, empty Steer
+      reconciliation, known-version echo reads, idle relay scans and cleanup backlog.
+      Report whole-Turn SQL/WAL/Kafka/recovery costs alongside cache-hit counts.
+- [ ] O02-03: scope binding bootstrap to owned partitions before applying capacity
+      limits; the current global 65,536-row cap does not grow with Projector replicas.
+- [ ] Discuss O02-04/05: merge Preview target reads and validate scoped connection
+      reuse; deduplicate identical immutable-image reads within one decode operation.
+      Shared-resource invalidation is not implicitly covered by Session control facts.
+
 - [x] Implement and validate [ADR-0212](adr/0212-ordered-control-read-models.md)
       in complete slices: binding publication/revocation, queued-input views,
       then Subagent directory and pending-work reconciliation. Preserve PG
@@ -71,9 +90,11 @@ PiCloud deployment. Remaining operational limits are listed below.
 - [ ] Keep the [unexplained historical SSE opening](reports/stream-reopen-investigation-20260909.md)
       distinct from intentional stale-snapshot replacement. The final 200 browser
       checks have no unexpected openings; that does not identify the old root cause.
-- [ ] Prove a Cube-native scoped launch-generation contract before claiming
-      physical execution fencing. [Research](reports/cube-execution-generation-study.md)
-      is complete; ordinary shell effects remain potentially UNKNOWN.
+- [ ] Validate executor/node loss beyond ADR-0210's implemented boot-scoped
+      admission and cgroup stopping. The earlier
+      [generation study](reports/cube-execution-generation-study.md) remains historical
+      evidence, not a statement that scoped fencing is absent today. Durable
+      cross-boot process/result recovery and ordinary shell effects remain UNKNOWN.
 - [ ] Validate PostgreSQL/PgBouncer failover, Cube compute-node drain and shared
       Volume attachment on actual independent machines.
 - [ ] Measure producer latency across Session counts, canonical projection

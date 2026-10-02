@@ -1,0 +1,82 @@
+{
+  "baseline": "6c74c653ee22e402a660cce0644f1859c2893281",
+  "realPostgres": {
+    "schemaMigrations": 162,
+    "replicatedKafkaUsed": false,
+    "queueReferences": {
+      "accept": 2,
+      "admit": 3,
+      "complete": 3,
+      "total": 8
+    },
+    "emptySteerWake": {
+      "heldInputs": 0,
+      "sqlQueries": 2
+    },
+    "noopReplay": {
+      "sourceRevisionUnchanged": true,
+      "newOutboxReferences": 1
+    },
+    "relayBatchBlocking": {
+      "sessions": 20,
+      "distinctHashPartitions": 20,
+      "publicationTransport": "simulated",
+      "onePublicationHeld": true,
+      "attemptedBeforeRelease": 16,
+      "healthyNotAttempted": 4
+    },
+    "idleRelay": {
+      "observedWindowMs": 1000,
+      "sqlQueries": 20,
+      "defaultPollIntervalMs": 50
+    }
+  },
+  "characterization": {
+    "readiness": {
+      "transportAndDatabase": "simulated; actual Projector and HTTP service",
+      "healthStatus": 200,
+      "publicationStatus": 409,
+      "reason": "not_owner"
+    },
+    "bindingBootstrap": {
+      "rowSource": "simulated SQL results",
+      "rows": 65537,
+      "requestedPartitions": [1],
+      "rowsBelongingToRequestedPartitions": 0,
+      "globalSqlLimit": 65537,
+      "rejected": true
+    },
+    "subagentEcho": {
+      "database": "simulated; actual controller",
+      "knownRevision": "9",
+      "duplicateNotifications": 5,
+      "fullRowSelects": 5
+    },
+    "imageDecode": {
+      "references": 2,
+      "distinctObjects": 1,
+      "storeGetCalls": 2,
+      "byteSource": "simulated; no image-model claim"
+    },
+    "quarantine": {
+      "dependencies": "provider, binding publication and PG repository simulated; actual health monitor/controller",
+      "outcomes": [
+        {
+          "publicationFails": false,
+          "resourceState": "unknown",
+          "bindingClosed": true,
+          "errors": 0,
+          "destroyCalls": 0
+        },
+        {
+          "publicationFails": true,
+          "resourceState": "running",
+          "bindingClosed": true,
+          "errors": 1,
+          "destroyCalls": 0
+        }
+      ]
+    }
+  },
+  "limits": "PG fixture uses real current migrations and production SQL/classes with simulated publication. Characterization cases simulate external ports; no production fault injection, real VM outage or latency/load claim. Assertions describe existing defects/limits, not repaired behavior."
+}

@@ -1,0 +1,107 @@
+{
+  "baseline": "6c74c653ee22e402a660cce0644f1859c2893281",
+  "generatedAt": "2026-10-02T15:37:30.910187+00:00",
+  "executedThisReview": {
+    "characterizationTests": 5,
+    "realPostgresProbeScript": true,
+    "existingContractFiles": 49,
+    "existingContractTests": 409,
+    "schemaMigrationsAppliedInIsolatedDatabase": 162,
+    "checks": [
+      "documentation",
+      "dependency-hardening",
+      "self-hosted-install-contract",
+      "runtime-policy",
+      "Helm/distributed-preflight",
+      "image-closure",
+      "format",
+      "additional-report-and-ADR-link-checks"
+    ]
+  },
+  "inheritedNotRerun": {
+    "source": "ordered-views-verification-20261002.json",
+    "businessApplicationRevision": "07729c7345fe4aa6c50f3294d9f0dd3f597140aa",
+    "workspaceAssertions": 1562,
+    "namedFaultCases": 124,
+    "reason": "Business source at review baseline is unchanged from the preceding accepted deployment; this review changes docs and evidence only."
+  },
+  "limits": [
+    "Characterization asserts observed defects; it is not a repair acceptance pass.",
+    "Real PG, simulated publication, simulated VM/consumer dependencies as labeled in probes.",
+    "No fresh full workspace/typecheck/fault-matrix/model/real-Cube run in this review.",
+    "No production mutation or deployment."
+  ],
+  "logs": [
+    {
+      "name": "control-probes.log",
+      "sha256": "8aa2eaff39136087f149aaba99e6fce744249184a79f7c640835a8c457fcda00",
+      "bytes": 934,
+      "summary": []
+    },
+    {
+      "name": "view-probes.log",
+      "sha256": "81d83ffd2167cf1fcc620c5590a865cb515e31bab2cd6066b8f357b9417ad123",
+      "bytes": 203,
+      "summary": ["Test Files  1 passed (1)", "Tests  5 passed (5)"]
+    },
+    {
+      "name": "contracts.log",
+      "sha256": "42a73a27611027fee6a6f841731d2863bc330dc733a8b2524de24b233a90a998",
+      "bytes": 1651,
+      "summary": ["Test Files  49 passed (49)", "Tests  409 passed (409)"]
+    },
+    {
+      "name": "docs.log",
+      "sha256": "9102b21e3e117c958ff328af8a4cbbee24450b089a43776758687bd00b0c68d6",
+      "bytes": 105,
+      "summary": ["documentation_check_passed files=28"]
+    },
+    {
+      "name": "dependencies.log",
+      "sha256": "cb94b044d6b54dc65d39a0bf5d7fa928dc47490cf21f863997b0a594f5e2dd8e",
+      "bytes": 191,
+      "summary": [
+        "pi_dependency_hardening_passed pi=0.84.1 roots=1 brace-expansion=5.0.12 undici=8.10.2 protobufjs=7.6.5"
+      ]
+    },
+    {
+      "name": "install.log",
+      "sha256": "e7369f89f513b6f21976f64f37fdacc8361d0014deac66b2753b8d9c98402d4a",
+      "bytes": 173,
+      "summary": ["self_hosted_install_contract_ok"]
+    },
+    {
+      "name": "runtime-policy.log",
+      "sha256": "ea80913d0ac920bed4b9c41e83a4297e66d7596bfd78e5e142d5dea42d2fbb0d",
+      "bytes": 220,
+      "summary": ["runtime_time_budget_check_passed", "cubesandbox_template_retention_check_passed"]
+    },
+    {
+      "name": "helm.log",
+      "sha256": "d1ae25a82bb905feb554ac34b321c2aee96a0521f76ec23dabc2eba49e371448",
+      "bytes": 953,
+      "summary": ["distributed_values_policy_check_passed"]
+    },
+    {
+      "name": "image-closure.log",
+      "sha256": "f99b41e818d1a0b10d19da70c82f544c8bf98358122a4b24ba3cbfd44aba5b3f",
+      "bytes": 198,
+      "summary": [
+        "supervisor_image_closure_passed workspaces=13 root=@pi-cloud/supervisor-host dockerfiles=10 copy_sources=208"
+      ]
+    },
+    {
+      "name": "format-final.log",
+      "sha256": "ee3c89742afe6548f8d589fa2c2a122bb7b08c46d64d5690070ee3308fcf510c",
+      "bytes": 201,
+      "summary": ["All matched files use Prettier code style!"]
+    },
+    {
+      "name": "docs-final.log",
+      "sha256": "9102b21e3e117c958ff328af8a4cbbee24450b089a43776758687bd00b0c68d6",
+      "bytes": 105,
+      "summary": ["documentation_check_passed files=28"]
+    }
+  ],
+  "isolatedTestResourcesCleaned": true
+}

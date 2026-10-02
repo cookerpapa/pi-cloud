@@ -14,8 +14,12 @@ PiCloud.
 - PostgreSQL-backed Run queue publication and cancellation;
 - model/proxy configuration and usage;
 - Session Projector: native history, live views and ordered Tool/Subagent routing.
+- ordered PG control-change publication and bounded owner-local read views;
+- direct VM health observations and controller-owned recovery decisions.
 
-It does not execute user commands and does not control Cube directly.
+It manages Cube through `SandboxProvider`; Cube executes user file/shell Tools.
+The Pi Agent Loop runs in the trusted Worker. Publication, projection and sandbox
+lifecycle are modules of this process, with no independent Tool Broker.
 
 ## Public product APIs
 
@@ -48,10 +52,14 @@ durable side effects.
 
 ### Pending input protocol
 
-Queue reads return `{ sessionId, revision, activeTurnId, items }`. Items contain
+Queue reads return `{ sessionId, revision, viewVersion, activeTurnId, items }`. Items contain
 `turnId`, `runId`, `text`, `mailboxPosition`, `acceptedAt` and `status` (`queued`
 or `steering`). Reads share a consistent PostgreSQL snapshot; pending input is
 separate from conversation history pagination and its Turn count.
+`viewVersion` is a bigint string ordering presentation snapshots independently of
+the numeric edit `revision`. The initial/reconnect/focus GET reads PG; subsequent
+changes arrive as `input.queue` on the existing SSE connection. Successful edits
+reuse their returned snapshot. There is no periodic queue GET.
 
 Actions require `Idempotency-Key` and the `revision` from the last queue read:
 
@@ -98,8 +106,9 @@ records, display events and Tool/control commands before projection; persistent
 Cube Volumes own Workspace bytes.
 
 Conversation titles are independent from Workspace names. A Workspace may be
-shared by multiple conversations. Archived conversations are excluded from
-ordinary list/direct-read APIs.
+shared by multiple conversations. Deleting a quiescent conversation permanently
+removes its subtree and associated native/control history. Workspace bytes have
+an independent lifecycle; branch pruning retains its separate `pruned_at` semantics.
 
 ## Administration
 

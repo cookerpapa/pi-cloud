@@ -80,11 +80,12 @@ this boundary; it never proves VM absence.
 
 Before contacting Cube, closure marks the existing Run binding as closed for
 dispatch in PostgreSQL. Quarantine closes every binding of that exact physical
-target in the same transaction as its resource state change. Dispatch reads this
-bounded binding once per Tool instead of caching mutable eligibility. This one
-indexed lookup survives Projector replacement and prevents a recovered network
-from admitting an old queued command after an unconfirmed stop. It is not a
-Run/lease revalidation, per-operation ledger, or another fencing authority.
+target in the same transaction as its resource state change. ADR-0212 replaces
+the original per-Tool binding SELECT with a partition-owner memory view. PG
+retains closure admission and recovery; acknowledged revocation requires a
+synchronous owner barrier, not merely eventual delivery of a close notification.
+Bootstrap reloads current closure before routing. This is not a Run/lease
+revalidation, per-operation ledger, or another fencing authority.
 Commands whose lookup preceded closure remain potentially in flight; native
 scope stopping or quarantine handles their uncertain outcome.
 

@@ -20,6 +20,8 @@ Pi Worker -> Publication ingress -> Kafka -> Session Projector
                                             +-> PostgreSQL (conversation history)
                                             +-> Browser (SSE)
                                             `-> Cube native execution endpoint
+
+Control state -> PostgreSQL + Outbox -> same ingress/Kafka -> Projector memory views
 ```
 
 Whole file/shell Tools execute in Cube. Final results return through Kafka to
@@ -30,10 +32,17 @@ Kafka carries their references and Pi receives ordinary image content.
 The API, publication ingress, Projector and sandbox lifecycle controller share
 one Control Plane process. Cubelet owns accepted fixed Tool processes and their
 Kafka completion delivery. There is no separate Broker service.
-Ingress serializes Session writes and seals; its ordinary append path uses no SQL.
-Outputs are persisted
-before display, except disposable Tool log previews. Recovery never automatically
-replays uncertain commands.
+Ingress serializes Session writes, control changes and seals; its ordinary Worker
+append path uses no SQL. PG remains the Run/control authority. Committed control
+references refresh bounded binding, queued-input and Subagent views. Tool/probe
+routes read owner memory; pending inputs use SSE and relevant work wakes on changes
+or known deadlines. Lifecycle mutations and recovery retain PG checks.
+
+Canonical conversation output is durable before display. Runtime activity, Tool
+previews and health observations are disposable. Control Plane probes existing
+VMs directly and reuses confirmed execution-path evidence; missing probes do not
+authorize VM destruction or quota release. Recovery never automatically replays
+uncertain commands.
 
 ## Quick start
 

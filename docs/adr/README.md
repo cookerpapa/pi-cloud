@@ -10,8 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
-1. [ADR-0212](0212-ordered-control-read-models.md) — accepted ordered control
-   changes and bounded binding, queue and Subagent read views; implementation in progress.
+1. [ADR-0212](0212-ordered-control-read-models.md) — deployed ordered control
+   changes and bounded binding, queue and Subagent read views.
 
 1. [ADR-0211](0211-execution-path-and-runtime-probes.md) — deployed execution-path
    observations and unified physical-runtime probes, with independent stage evidence.

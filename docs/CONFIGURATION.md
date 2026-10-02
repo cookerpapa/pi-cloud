@@ -1,13 +1,16 @@
 # Configuration
 
 Pending conversation inputs have a code-owned maximum of 64 items per Session
-and the existing 100,000-character input limit. The pending-input view polls at
-two seconds while visible and refreshes on focus/actions; browser requests have
-a ten-second deadline. Promotion reconciliation scans at most 32 eligible rows,
-allows two local HTTP deliveries in flight and retains per-Run delivery order.
+and the existing 100,000-character input limit. The pending-input view uses
+`input.queue` SSE updates and current snapshots on initialization, reconnect and
+focus; browser requests have a ten-second deadline. Successful actions reuse
+their returned snapshot. Promotion reconciliation wakes affected Sessions on
+changes/known deadlines and selects at most 32 eligible rows per scoped pass;
+it allows two local HTTP deliveries in flight and retains per-Run delivery order.
 Retries use the existing control-request identity and bounded next-attempt times.
 These are product limits, not another Run scheduler or tenant model concurrency
-setting. See [ADR-0194](adr/0194-editable-pending-inputs.md).
+setting. See [ADR-0194](adr/0194-editable-pending-inputs.md) and
+[ADR-0212](adr/0212-ordered-control-read-models.md).
 
 PiCloud has four configuration surfaces. A setting belongs to exactly one of
 them:
@@ -290,8 +293,9 @@ and one-second deadline. Progress failure never changes execution status.
 Fixed Tools are handed directly from Projector to the recorded Cube API/node/boot.
 The native handoff is bounded to five seconds; ambiguous acceptance closes that
 operation scope and is not replayed. Closure blocks publication admission, joins
-Cube/workflow scopes, then publishes the ordered seal. The seal Outbox polls every
-50 ms. Interactive workflows use the private control-plane TCP/4300 endpoint and
+Cube/workflow scopes, then publishes the ordered seal. The shared seal/control
+Outbox uses LISTEN hints with a 50 ms fallback poll. Interactive workflows use
+the private control-plane TCP/4300 endpoint and
 the Supervisor management credential. There is no completed-result GET/cache or
 commit-notification RPC.
 

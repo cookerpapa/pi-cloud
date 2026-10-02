@@ -48,8 +48,8 @@ The old Fact Gateway, Fact WebSocket, secondary channel lease/progress store,
 independent projection service and execution-committed notification are removed.
 Historical migrations/reports describe their named revisions, not alternate modes.
 
-Seal insertion emits an empty commit-time PG notification. One session-affine
-LISTEN connection per Projector wakes the existing terminal Outbox claimant;
+Seal/control-reference insertion emits an empty commit-time PG notification. One session-affine
+LISTEN connection per Projector wakes the shared Session Outbox claimant;
 50ms polling still covers missing hints and reconnects. Hints delivered during
 an empty scan are retained by generation, and cannot bypass publication backoff.
 No browser payload or authority moves through NOTIFY. Drain proof and completion
@@ -100,8 +100,8 @@ claim returns a conflict without a lock cycle. PostgreSQL's deferrable mailbox
 uniqueness permits atomic adjacent swaps. Original acceptance fingerprints remain
 unchanged. Unstarted cancelled rows are retained as audit/idempotency tombstones,
 outside conversation history. At most 64 pending inputs are accepted per Session.
-Queue reads return revision, active input and pending order in one SQL snapshot;
-they do not open a transaction for each browser poll.
+Initial and explicit queue reads return edit revision, view version, active input
+and pending order in one SQL snapshot; steady presentation uses SSE.
 
 Promotion holds the source out of readiness and creates a control request in the
 same transaction. Direct Steer atomically accepts and holds a new source at the
@@ -815,10 +815,12 @@ progress read, retaining independent cancellation and current-owner checks.
 The PG budgets cover native/seal transactions, not pool acquisition, every API
 query or external routing; a persistently failing record still blocks its partition.
 
-Executor admission and log seals do not atomically revoke a request already
-sent to Cube or kill guest processes. The Cube-native launch-generation contract
-remains unimplemented; existing no-replay/UNKNOWN tests do not prove physical
-execution fencing. PG failover, Cube node drain and full multi-node HA remain
+Cubelet now enforces boot-scoped admission and Run/writer/operation closure,
+joining active native processes and operation cgroups before confirming a stop
+(ADR-0210). Previously completed background services and already-issued external
+effects retain their documented lifetimes. This does not establish durable
+cross-boot process/result recovery or exactly-once effects. PG failover, Cube node
+drain and full multi-node HA remain
 separate deployment acceptance work. The isolated duplicate SSE opening remains
 unexplained; reproducing intentional stale-snapshot cancellation is not its fix.
 

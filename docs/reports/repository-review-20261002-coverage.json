@@ -1,0 +1,245 @@
+{
+  "baseline": "6c74c653ee22e402a660cce0644f1859c2893281",
+  "trackedFiles": 1348,
+  "trackedPathListSha256": "ff3f1f2656afd7aa292d91781c5e0770177ee5e75a8a426b6522218fa59c5df4",
+  "categories": {
+    "other": 76,
+    "deployment": 54,
+    "documentation": 323,
+    "package_source": 355,
+    "package_tests": 259,
+    "historical_migrations": 163,
+    "scripts": 118
+  },
+  "workspaceCount": 22,
+  "workspaces": [
+    {
+      "name": "control-plane",
+      "sourceFiles": 64,
+      "sourceLines": 23470,
+      "testFiles": 57,
+      "dependencies": [
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/observability",
+        "@pi-cloud/protocol",
+        "@pi-cloud/runtime-core",
+        "@pi-cloud/sandbox-control",
+        "@pi-cloud/subagent-control",
+        "@pi-cloud/workspace-runtime",
+        "@pi-cloud/session-attachments",
+        "@pi-cloud/pi-session-postgres"
+      ],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "cube-api-authorizer",
+      "sourceFiles": 4,
+      "sourceLines": 307,
+      "testFiles": 2,
+      "dependencies": [],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "cube-completion",
+      "sourceFiles": 3,
+      "sourceLines": 289,
+      "testFiles": 2,
+      "dependencies": [
+        "@pi-cloud/database",
+        "@pi-cloud/event-log",
+        "@pi-cloud/protocol",
+        "@pi-cloud/session-attachments"
+      ],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "cube-egress-gateway",
+      "sourceFiles": 5,
+      "sourceLines": 606,
+      "testFiles": 2,
+      "dependencies": [],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "database",
+      "sourceFiles": 8,
+      "sourceLines": 1511,
+      "testFiles": 15,
+      "dependencies": ["@pi-cloud/domain"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "domain",
+      "sourceFiles": 4,
+      "sourceLines": 284,
+      "testFiles": 2,
+      "dependencies": ["@pi-cloud/protocol"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "event-log",
+      "sourceFiles": 7,
+      "sourceLines": 1603,
+      "testFiles": 6,
+      "dependencies": ["@pi-cloud/protocol", "@pi-cloud/observability"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "fake-model-server",
+      "sourceFiles": 3,
+      "sourceLines": 931,
+      "testFiles": 2,
+      "dependencies": [],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "observability",
+      "sourceFiles": 7,
+      "sourceLines": 759,
+      "testFiles": 2,
+      "dependencies": [],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "pi-session-postgres",
+      "sourceFiles": 13,
+      "sourceLines": 3382,
+      "testFiles": 9,
+      "dependencies": ["@pi-cloud/database", "@pi-cloud/protocol", "@pi-cloud/session-attachments"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "protocol",
+      "sourceFiles": 43,
+      "sourceLines": 6866,
+      "testFiles": 19,
+      "dependencies": [],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "provider-egress-relay",
+      "sourceFiles": 4,
+      "sourceLines": 445,
+      "testFiles": 1,
+      "dependencies": [],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "runtime-core",
+      "sourceFiles": 42,
+      "sourceLines": 8535,
+      "testFiles": 19,
+      "dependencies": [
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/event-log",
+        "@pi-cloud/observability",
+        "@pi-cloud/pi-session-postgres",
+        "@pi-cloud/protocol",
+        "@pi-cloud/session-attachments"
+      ],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "sandbox-control",
+      "sourceFiles": 33,
+      "sourceLines": 16982,
+      "testFiles": 31,
+      "dependencies": [
+        "@pi-cloud/event-log",
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "@pi-cloud/protocol",
+        "@pi-cloud/workspace-runtime",
+        "@pi-cloud/session-attachments"
+      ],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "sandbox-supervisor",
+      "sourceFiles": 27,
+      "sourceLines": 8538,
+      "testFiles": 36,
+      "dependencies": [
+        "@pi-cloud/observability",
+        "@pi-cloud/protocol",
+        "@pi-cloud/workspace-runtime"
+      ],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "session-attachments",
+      "sourceFiles": 6,
+      "sourceLines": 471,
+      "testFiles": 3,
+      "dependencies": ["@pi-cloud/database", "@pi-cloud/protocol"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "ssh-gateway",
+      "sourceFiles": 5,
+      "sourceLines": 436,
+      "testFiles": 2,
+      "dependencies": ["@pi-cloud/database", "@pi-cloud/protocol"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "subagent-control",
+      "sourceFiles": 3,
+      "sourceLines": 1431,
+      "testFiles": 1,
+      "dependencies": ["@pi-cloud/database", "@pi-cloud/protocol"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "supervisor-host",
+      "sourceFiles": 20,
+      "sourceLines": 5403,
+      "testFiles": 22,
+      "dependencies": [
+        "@pi-cloud/event-log",
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "@pi-cloud/pi-session-postgres",
+        "@pi-cloud/protocol",
+        "@pi-cloud/runtime-core",
+        "@pi-cloud/sandbox-control",
+        "@pi-cloud/subagent-control",
+        "@pi-cloud/sandbox-supervisor",
+        "@pi-cloud/workspace-runtime",
+        "@pi-cloud/session-attachments"
+      ],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "tool-sandbox",
+      "sourceFiles": 11,
+      "sourceLines": 2007,
+      "testFiles": 5,
+      "dependencies": ["@pi-cloud/protocol", "@pi-cloud/workspace-runtime"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "web-ui",
+      "sourceFiles": 38,
+      "sourceLines": 15616,
+      "testFiles": 20,
+      "dependencies": ["@pi-cloud/protocol"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    },
+    {
+      "name": "workspace-runtime",
+      "sourceFiles": 4,
+      "sourceLines": 370,
+      "testFiles": 2,
+      "dependencies": ["@pi-cloud/protocol"],
+      "coverage": "package/dependency inventory and boundary review; depth described in report"
+    }
+  ],
+  "method": "Whole tracked-tree inventory and static boundary scans; manual review of execution/storage/recovery/control/guest/gateway/UI/deployment paths. No claim of line-by-line proof for every file. Historical migrations reviewed as replay schema, not current topology.",
+  "piVersion": "0.84.1",
+  "runtimeMutations": false,
+  "productionMutations": false,
+  "newPaidModelCalls": 0
+}

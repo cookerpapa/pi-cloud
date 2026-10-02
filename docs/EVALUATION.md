@@ -27,8 +27,10 @@ reconnect-prefix presentation, first-use panel sizing and resize cleanup.
 in the current tree and has a passed assertion in Vitest's machine-readable
 report; missing or skipped targets fail the gate. CI executes this gate as well
 as the general suite. The suite is deterministic fault injection, not a
-multi-node chaos claim. The latest current-topology run is recorded in the
-[fault evaluation report](reports/indexed-native-log-faults-20260927.json).
+multi-node chaos claim. Recent current-topology verification is recorded in the
+[ordered-view acceptance](reports/ordered-control-views-20261002.md). Historical
+fault reports retain their named revision and coverage, including the
+[indexed-log run](reports/indexed-native-log-faults-20260927.json).
 
 Real PostgreSQL cases use two existing opt-in variables:
 `PI_CLOUD_POSTGRES_INTEGRATION_URL` and

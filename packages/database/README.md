@@ -6,9 +6,11 @@ records; it does not own the Kafka AcceptedFact log or Workspace file bytes.
 
 The current schema enforces tenant-consistent foreign keys, idempotent command
 intake, Lane ordering, physical-Session leases and task references, Pi SessionStorage,
-resource metadata, Tool Broker ownership, Subagent relations and
+resource metadata, sandbox-controller ownership and bindings, Subagent relations and
 administrator/model configuration. Application state machines still own legal
 transition order.
+Bounded Outbox references propagate committed control changes through the same
+Session Kafka path. Their views are disposable; Run/control decisions remain in PG.
 
 Migration sources preserve pre-release history so a new database can replay
 from migration 001. Historical table/column names are not current architecture
