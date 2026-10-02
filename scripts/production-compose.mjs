@@ -188,7 +188,10 @@ const template = allowsStaleCubeTemplate
 const invalidClusterEvidence =
   cluster?.formatVersion !== 1 ||
   cluster?.cubeCommit !== "8721dd151971ce3c2966482bbd32904ad98f378e" ||
-  cluster?.executionProtocolVersion !== 1 ||
+  cluster?.executionProtocolVersion !==
+    JSON.parse(
+      await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json"), "utf8"),
+    ).managedProtocolVersion ||
   cluster?.runtimePatchSha256 !== runtimePatchSha256 ||
   cluster?.podNetworkMtu !== 1_450 ||
   isIP(cluster?.master?.host ?? "") !== 4 ||
