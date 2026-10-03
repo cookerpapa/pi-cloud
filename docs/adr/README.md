@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0219](0219-ordered-cube-admission.md) — approved ordered binding closure
+   and bounded Cube destination progress; implementation in progress.
 1. [ADR-0218](0218-review-boundary-repairs.md) — approved follow-up input, time,
    cleanup and verification boundary repairs; implementation in progress.
 1. [ADR-0217](0217-declarative-cube-release.md) — one fully rendered Cube Helm
