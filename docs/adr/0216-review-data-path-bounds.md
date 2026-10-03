@@ -1,7 +1,8 @@
 # ADR-0216: bounded presentation and image data paths
 
-Status: accepted for implementation, 2026-10-03, following the owner's approval
+Status: implemented, deployed and verified, 2026-10-03, following the owner's approval
 of the [October 3 review](../reports/repository-review-20261003.md).
+[Acceptance](../reports/review-repair-20261003.md).
 
 ## Preserved ownership
 

@@ -1,11 +1,11 @@
 # Implementation roadmap
 
-## Current verification
+## Completed review repairs
 
 [ADR-0216](adr/0216-review-data-path-bounds.md) and
 [ADR-0217](adr/0217-declarative-cube-release.md) implement the approved October 3
 review repairs. [Tests, measurements and rollout status](reports/review-repair-20261003.md)
-track the matched release; existing storage and execution authorities remain.
+record the deployed matched release; existing storage and execution authorities remain.
 
 ## Completed foundation
 

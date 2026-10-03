@@ -1,0 +1,301 @@
+{
+  "format": "pi-cloud.review-repair-acceptance.v1",
+  "applicationRevision": "4d733638bd15f49672c469003e769aaff4679faa",
+  "deploymentToolsRevision": "d59ac3d286f4bb75d23ff541735c5baa4db0c842",
+  "recordedAt": "2026-10-03T12:04:00.191Z",
+  "status": "deployed",
+  "applicationImageVersion": "k3s-4d733638bd15-musacdjq",
+  "schema": 168,
+  "sessionLogVersion": 13,
+  "guestWireVersion": 2,
+  "guestSourceId": "40422e3847ba4a21215cbbdf883d10f2fb3c2643",
+  "completion": {
+    "image": "pi-cloud/cubelet:completion-98f57612304c27a1394999dfc2bbe8aae45bd210",
+    "sourceId": "98f57612304c27a1394999dfc2bbe8aae45bd210",
+    "patchId": "9921cb020fa94551",
+    "base": "pi-cloud/cubelet-base:execution-probe-namespace"
+  },
+  "checks": {
+    "workspaceTypechecks": "passed",
+    "initialFullCheck": {
+      "passed": 1613,
+      "failed": 1,
+      "skipped": 8,
+      "failedCase": "main-acquisition fixture used the same mock object for two pools"
+    },
+    "fixedStartupFixture": {
+      "passed": 4,
+      "failed": 0
+    },
+    "resolvedUniqueWorkspaceCases": 1614,
+    "acceptanceHelperCases": 63,
+    "faultCases": {
+      "passed": 148,
+      "total": 148,
+      "sourceRevision": "4d733638bd15f49672c469003e769aaff4679faa"
+    },
+    "queueBrowser": [
+      "edit",
+      "order",
+      "cancel",
+      "edited-steer",
+      "lost-reply",
+      "draft-retention",
+      "stale-read",
+      "read-recovery",
+      "mobile",
+      "viewer",
+      "pagination",
+      "page-conflict",
+      "late-page-edit"
+    ],
+    "otherGates": [
+      "format",
+      "documentation",
+      "runtime-policy",
+      "installer",
+      "helm",
+      "observability",
+      "image-closure",
+      "high-severity-security"
+    ],
+    "securityLimitation": "Existing moderate Fastify/Nest findings remain"
+  },
+  "measurement": {
+    "revision": "working-tree",
+    "scope": "isolated PostgreSQL, synthetic inputs; no Kafka, model or VM latency claims",
+    "queues": [
+      {
+        "queuedInputs": 10,
+        "visibleInputs": 10,
+        "reachableInputs": 10,
+        "snapshotBytes": 42960,
+        "allPagesReadMs": 5.31
+      },
+      {
+        "queuedInputs": 100,
+        "visibleInputs": 20,
+        "reachableInputs": 100,
+        "snapshotBytes": 85781,
+        "allPagesReadMs": 17.25
+      },
+      {
+        "queuedInputs": 500,
+        "visibleInputs": 20,
+        "reachableInputs": 500,
+        "snapshotBytes": 85782,
+        "allPagesReadMs": 76.59
+      }
+    ],
+    "laneHeads": [
+      {
+        "storedLanes": 1,
+        "appendItems": 1,
+        "returnedLaneHeads": 0,
+        "returnedHeadBytes": 2,
+        "transactionMs": 12.94
+      },
+      {
+        "storedLanes": 101,
+        "appendItems": 1,
+        "returnedLaneHeads": 0,
+        "returnedHeadBytes": 2,
+        "transactionMs": 8.4
+      },
+      {
+        "storedLanes": 1001,
+        "appendItems": 1,
+        "returnedLaneHeads": 0,
+        "returnedHeadBytes": 2,
+        "transactionMs": 7.46
+      },
+      {
+        "storedLanes": 10001,
+        "appendItems": 1,
+        "returnedLaneHeads": 0,
+        "returnedHeadBytes": 2,
+        "transactionMs": 5.93
+      }
+    ]
+  },
+  "realChartRender": {
+    "status": "passed",
+    "upstreamCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
+    "renderedResourceCount": 48,
+    "cubeletImage": "pi-cloud/cubelet:fixture-completion",
+    "masterImage": "pi-cloud/cube-master:fixture-native",
+    "pluginConfigPresent": true,
+    "completionSecretPresent": true,
+    "productionMutations": false
+  },
+  "serverValidation": {
+    "serverDryRunPassed": true,
+    "resources": 34,
+    "productionMutations": false
+  },
+  "nativeBaseGuard": {
+    "status": "passed",
+    "mismatchedNativeBaseRejected": true,
+    "validImage": "pi-cloud/cubelet:completion-98f57612304c27a1394999dfc2bbe8aae45bd210"
+  },
+  "firstRollout": {
+    "revision": "4d733638bd15f49672c469003e769aaff4679faa",
+    "startedAt": "2026-10-03T11:18:06.684Z",
+    "cubeImage": "pi-cloud/cubelet:completion-98f57612304c27a1394999dfc2bbe8aae45bd210",
+    "stages": ["workers and API drained"],
+    "before": {
+      "active_runs": 0,
+      "unsealed_runs": 0,
+      "active_uploads": 0,
+      "terminals": 0,
+      "native_rows": 0,
+      "image_objects": 21,
+      "image_digest": "7050ccf8285b06535454a8c1077c64e1"
+    },
+    "error": "helm failed 1",
+    "cause": "YAML 1.2 reserialization changed Kubernetes YAML 1.1 string/octal types",
+    "recovery": "Application replica counts restored; running resources healthy; fixed renderer and added server dry-run before applying the matching release"
+  },
+  "rollout": {
+    "revision": "4d733638bd15f49672c469003e769aaff4679faa",
+    "deploymentToolsRevision": "d59ac3d286f4bb75d23ff541735c5baa4db0c842",
+    "startedAt": "2026-10-03T11:36:12.093Z",
+    "cubeImage": "pi-cloud/cubelet:completion-98f57612304c27a1394999dfc2bbe8aae45bd210",
+    "stages": [
+      "workers and API drained",
+      "Cube rendered release upgraded",
+      "matched application release deployed"
+    ],
+    "before": {
+      "active_runs": 0,
+      "unsealed_runs": 0,
+      "active_uploads": 0,
+      "terminals": 0,
+      "native_rows": 0,
+      "image_objects": 21,
+      "image_digest": "7050ccf8285b06535454a8c1077c64e1"
+    },
+    "after": {
+      "active_runs": 0,
+      "unsealed_runs": 0,
+      "active_uploads": 0,
+      "terminals": 0,
+      "native_rows": 0,
+      "image_objects": 21,
+      "image_digest": "7050ccf8285b06535454a8c1077c64e1"
+    },
+    "success": true
+  },
+  "helmOwnership": [
+    {
+      "kind": "ConfigMap",
+      "name": "pi-cloud-posix-volume-plugin",
+      "release": "cube",
+      "manager": "Helm"
+    },
+    {
+      "kind": "Secret",
+      "name": "pi-cloud-cube-completion",
+      "release": "cube",
+      "manager": "Helm"
+    },
+    {
+      "kind": "DaemonSet",
+      "name": "cube-node",
+      "release": "cube",
+      "manager": "Helm",
+      "ready": 1
+    },
+    {
+      "kind": "Deployment",
+      "name": "cube-proxy",
+      "release": "cube",
+      "manager": "Helm",
+      "ready": 1
+    }
+  ],
+  "realModel": {
+    "checkedAt": "2026-10-03T11:40:10.217Z",
+    "scriptSha256": "18bf88732260d5eb7f75644974ab3c900d886f3726a70465cb12293058d97fbd",
+    "model": "gpt-6-luna",
+    "accepted": true,
+    "runs": [
+      {
+        "runId": "cc8b00f3-f4d5-4a95-83df-d4fc2cb946f1",
+        "workerId": "cbc089e2-fcde-4b8f-95d2-1e3121a0e9be",
+        "tools": []
+      },
+      {
+        "runId": "c59b6541-3672-4e63-a97f-1351a57f0121",
+        "workerId": "1f72feee-741a-4827-8e15-cf02efbdfcd8",
+        "tools": [
+          {
+            "name": "read",
+            "status": "completed"
+          },
+          {
+            "name": "bash",
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "runId": "ede2cee9-99e1-41b0-82bb-0693981240d9",
+        "workerId": "cbc089e2-fcde-4b8f-95d2-1e3121a0e9be",
+        "tools": []
+      }
+    ],
+    "resources": {
+      "tenantId": "11d9a86a-9211-432e-abcd-4ddd6f9c01b5",
+      "workspaceId": "b7c5beb2-2313-4bc8-8ebf-8695c7db96d7",
+      "sessionId": "d8ebd3d0-e28c-4f86-bc3d-b82e867c1ea4"
+    },
+    "unlimitedAttachments": {
+      "count": 6,
+      "totalBytes": 60862123,
+      "imageBytes": 24161963,
+      "executionMode": "elastic"
+    },
+    "browser": {
+      "uploadedBytes": 24161963,
+      "previewAfterReload": true,
+      "originalTextSeparate": true,
+      "imageSeenWithoutTool": true
+    },
+    "referencesOnly": {
+      "bytes": 3822,
+      "count": 2
+    },
+    "mutableSourceChanged": true,
+    "coldRecovery": {
+      "previousWorker": "1f72feee-741a-4827-8e15-cf02efbdfcd8",
+      "nextWorker": "cbc089e2-fcde-4b8f-95d2-1e3121a0e9be",
+      "unseenVisualAttributeCorrect": true
+    },
+    "cleanupRequested": true
+  },
+  "cleanup": {
+    "fixtureImagesRemoved": 2,
+    "workspacePurged": true,
+    "after": {
+      "active_runs": 0,
+      "native_rows": 0,
+      "image_objects": 21,
+      "image_digest": "7050ccf8285b06535454a8c1077c64e1"
+    }
+  },
+  "originalAssets": {
+    "verifiedObjects": 21,
+    "verifiedBytes": 255806801,
+    "completeSha256Validation": true,
+    "streamedWithoutWholeObjectBuffer": true
+  },
+  "isolatedPostgres": "removed with anonymous volume; no fixture databases remained",
+  "limits": [
+    "One physical host; no new physical-node HA claim",
+    "Ordinary active-Worker cancellation fallback remains one second",
+    "Queue first-page bytes are compared; all-pages latency is not compared to the old single query",
+    "Normalized native image content still materializes",
+    "Native Cube API/Master images retained; completion and deployment transforms updated"
+  ]
+}

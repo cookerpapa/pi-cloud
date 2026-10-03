@@ -23,7 +23,7 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-The [October 3 review](reports/repository-review-20261003.md) repairs are implemented
+The [October 3 review](reports/repository-review-20261003.md) repairs are deployed
 under [ADR-0216](adr/0216-review-data-path-bounds.md) and
 [ADR-0217](adr/0217-declarative-cube-release.md).
 [Verification and rollout status](reports/review-repair-20261003.md) records the

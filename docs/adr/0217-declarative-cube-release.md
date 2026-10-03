@@ -1,8 +1,9 @@
 # ADR-0217: one rendered Cube release
 
-Status: accepted for implementation, 2026-10-03. The owner approved optimizing
+Status: implemented, deployed and verified, 2026-10-03. The owner approved optimizing
 [review D03-01/02](../reports/repository-review-20261003.md) after discussing the
 Helm/post-install drift and the maintenance responsibility of the Cube extension.
+[Acceptance](../reports/review-repair-20261003.md).
 
 ## Decision and reuse
 
@@ -23,6 +24,13 @@ the desired state. Temporary render inputs are private and removed after Helm.
 Helm owns the final Master Secret, plugin ConfigMap, completion Secret, mounts,
 completion environment and image versions together. Normal upgrades and rollback
 therefore retain one rendered release history instead of an out-of-band patch.
+
+Parse Kubernetes input using YAML 1.1 and emit JSON documents so quoted `off/on`
+strings and octal file modes keep their types. The embedded Master YAML uses the
+same schema. Both deployment entry points perform a server-side dry run inside
+the renderer before Helm can apply the release. Validation failure emits neither
+a partial manifest nor secret-bearing diagnostics. Offline render checks remain
+available without cluster access.
 
 Both full Cube installation and completion-configuration reconciliation use the
 same renderer. The latter upgrades the existing release with retained values; it
