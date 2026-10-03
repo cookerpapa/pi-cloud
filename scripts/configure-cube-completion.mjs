@@ -39,7 +39,12 @@ for (const name of ["postgres", "session-images", "kafka-1", "kafka-2", "kafka-3
   if (!service.spec?.selector || !Object.keys(service.spec.selector).length)
     throw new Error(`Cube completion requires a selector-backed ${name} Service`);
 }
-const release = await prepareCubeRelease({ repositoryRoot, cubeRepository, runtimeDirectory });
+const release = await prepareCubeRelease({
+  repositoryRoot,
+  cubeRepository,
+  runtimeDirectory,
+  validation: { binary: kubectl, prefix, kubeconfig },
+});
 try {
   const objects = JSON.parse(
     await capture([

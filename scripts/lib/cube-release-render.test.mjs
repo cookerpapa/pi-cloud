@@ -1,4 +1,9 @@
 import { expect, it } from "vitest";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { parse, parseAllDocuments, stringify } from "yaml";
 import { renderCubeRelease } from "./cube-release-render.mjs";
 import { cubeAdoptionFlags } from "./cube-release-inputs.mjs";
@@ -153,4 +158,55 @@ it("rejects unexpected chart shapes and foreign resource ownership", () => {
   expect(() => cubeAdoptionFlags([{ kind: "Secret", metadata: { name: "unrelated" } }])).toThrow(
     "Unexpected",
   );
+});
+
+it("preserves YAML 1.1 string values and octal permissions for Kubernetes", () => {
+  const source = objects(fixture());
+  const node = find(source, "DaemonSet", "cube-node");
+  node.spec.template.spec.containers[0].env.push(
+    ...["off", "on", "yes", "no", "y", "n"].map((value, i) => ({ name: `FLAG_${i}`, value })),
+  );
+  node.spec.template.spec.volumes.push({
+    name: "script",
+    configMap: { name: "script", defaultMode: 0o755 },
+  });
+  const original = source
+    .map((r) => stringify(r, { version: "1.1", directives: false }))
+    .join("---\n")
+    .replace("defaultMode: 493", "defaultMode: 0755");
+  const decoded = parseAllDocuments(renderCubeRelease(original, input), { version: "1.1" }).map(
+    (d) => d.toJS(),
+  );
+  const pod = find(decoded, "DaemonSet", "cube-node").spec.template.spec;
+  expect(
+    pod.containers[0].env.filter((e) => e.name.startsWith("FLAG_")).map((e) => e.value),
+  ).toEqual(["off", "on", "yes", "no", "y", "n"]);
+  expect(pod.volumes.find((v) => v.name === "script").configMap.defaultMode).toBe(0o755);
+});
+
+it("emits no release or credential details when pre-deployment server validation fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-cube-validation-"));
+  try {
+    const path = join(directory, "input.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        ...input,
+        validation: { binary: "/bin/false", prefix: [], kubeconfig: "fixture" },
+      }),
+      { mode: 0o600 },
+    );
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("../render-cube-release.mjs", import.meta.url)), path],
+      { input: fixture(), encoding: "utf8" },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      "Cube release rendering failed; inspect pinned chart/input contracts\n",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

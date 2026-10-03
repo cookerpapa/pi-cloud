@@ -6,7 +6,12 @@ import { join, resolve } from "node:path";
 const execute = promisify(execFile);
 
 /** Export pinned chart/config; never derive desired state from a running Pod. */
-export async function prepareCubeRelease({ repositoryRoot, cubeRepository, runtimeDirectory }) {
+export async function prepareCubeRelease({
+  repositoryRoot,
+  cubeRepository,
+  runtimeDirectory,
+  validation,
+}) {
   const manifest = JSON.parse(
     await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json"), "utf8"),
   );
@@ -52,6 +57,7 @@ export async function prepareCubeRelease({ repositoryRoot, cubeRepository, runti
         "utf8",
       ),
       completionFiles,
+      ...(validation ? { validation } : {}),
     };
     const inputPath = join(directory, "render-inputs.json");
     await writeFile(inputPath, JSON.stringify(input), { mode: 0o600 });

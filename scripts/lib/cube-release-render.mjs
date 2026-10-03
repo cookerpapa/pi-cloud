@@ -58,7 +58,7 @@ export function renderCubeRelease(yaml, input) {
     !input.completionFiles
   )
     throw new Error("Invalid Cube render inputs");
-  const resources = parseAllDocuments(yaml)
+  const resources = parseAllDocuments(yaml, { version: "1.1" })
     .map((document) => {
       if (document.errors.length) throw new Error("Invalid Cube manifest YAML");
       return document.toJS();
@@ -93,7 +93,7 @@ export function renderCubeRelease(yaml, input) {
       ? Buffer.from(masterSecret.data["conf.yaml"], "base64").toString()
       : undefined);
   if (!conf) throw new Error("Pinned Cube Master configuration is missing");
-  const masterConfig = parse(conf);
+  const masterConfig = parse(conf, { version: "1.1" });
   if (!Array.isArray(masterConfig.volume_plugins))
     throw new Error("Pinned Cube Master plugin configuration changed");
   upsert(masterConfig.volume_plugins, {
@@ -101,7 +101,10 @@ export function renderCubeRelease(yaml, input) {
     type: "binary",
     binary_path: "/usr/local/services/cubetoolbox/CubeMaster/plugin/cube-volume-picloud-posix",
   });
-  masterSecret.stringData = { ...masterSecret.stringData, "conf.yaml": stringify(masterConfig) };
+  masterSecret.stringData = {
+    ...masterSecret.stringData,
+    "conf.yaml": stringify(masterConfig, { version: "1.1", directives: false }),
+  };
   if (masterSecret.data) delete masterSecret.data["conf.yaml"];
   const config = cubeletPluginConfiguration(input.cubeletConfig);
   const fingerprint = {
@@ -185,5 +188,7 @@ export function renderCubeRelease(yaml, input) {
     if (prior < 0) resources.push(resource);
     else resources[prior] = resource;
   }
-  return resources.map((resource) => stringify(resource)).join("---\n");
+  // Kubernetes' YAML decoder uses YAML 1.1 (off/on and octal literals). JSON
+  // documents retain exact scalar types across Helm and that decoder.
+  return resources.map((resource) => JSON.stringify(resource, null, 2) + "\n").join("---\n");
 }

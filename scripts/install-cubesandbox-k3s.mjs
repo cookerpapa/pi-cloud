@@ -957,7 +957,12 @@ await runKubectl([
 await waitForRunningPod("app.kubernetes.io/name=pi-cloud-cube-egress-gateway", 180_000);
 
 await preparePosixVolumeRoot();
-const cubeRelease = await prepareCubeRelease({ repositoryRoot, cubeRepository, runtimeDirectory });
+const cubeRelease = await prepareCubeRelease({
+  repositoryRoot,
+  cubeRepository,
+  runtimeDirectory,
+  validation: { binary: kubectlCommand, prefix: kubectlPrefix, kubeconfig },
+});
 try {
   const objects = JSON.parse(
     await captureKubectl([
