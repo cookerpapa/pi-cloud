@@ -18,7 +18,10 @@ import {
   projectNativeSessionAppend,
   type NativeLaneSessionStorage,
 } from "@pi-cloud/pi-session-postgres";
-import type { AcceptedSubagentCommand } from "@pi-cloud/runtime-core/accepted-fact";
+import type {
+  AcceptedSubagentCommand,
+  AcceptedExecutionSealFact,
+} from "@pi-cloud/runtime-core/accepted-fact";
 import type { Kysely } from "kysely";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
@@ -256,6 +259,40 @@ afterAll(async () => {
 });
 
 describe("ordered Subagent admission and delivery", () => {
+  it("limits an unrelated seal to its Run instead of scanning global Subagent state", async () => {
+    const queries: Array<{ sql: string; parameters: readonly unknown[] }> = [];
+    const measured = db.withPlugin({
+      transformQuery({ node, queryId }) {
+        queries.push(db.getExecutor().compileQuery(node, queryId));
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    });
+    const host = new SubagentController({
+      database: measured,
+      managementToken: "x".repeat(48),
+      allowInsecureHttp: true,
+      ownsPartition: () => true,
+      deliver,
+    });
+    const target = crypto.randomUUID();
+    const fact = {
+      kind: "execution_seal",
+      scope: { ...command({ action: "supervisor", operation: "pending" }).scope, runId: target },
+    } as AcceptedExecutionSealFact;
+    await host.consume({ fact, topic: "test", partition: 0, offset: offset++ });
+    await host.close();
+    expect(queries).toHaveLength(2);
+    expect(
+      queries.every(
+        (query) => query.parameters.includes(target) && query.parameters.includes(tenantId),
+      ),
+    ).toBe(true);
+    expect(queries.some((query) => query.sql.includes("min(updated_at)"))).toBe(false);
+  });
+
   it("keeps repeated status reads in memory and performs no idle pending scans", async () => {
     const queries: string[] = [];
     const measured = db.withPlugin({

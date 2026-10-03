@@ -1043,10 +1043,7 @@ export class PostgresSubagentJobProvider {
     return this.status(tenantId, executionId);
   }
 
-  async reapStalePreparations(maximumAgeMs = 20 * 60_000, limit = 32): Promise<number> {
-    if (!Number.isSafeInteger(maximumAgeMs) || maximumAgeMs < 60_000) {
-      throw new TypeError("Subagent preparation maximum age is invalid");
-    }
+  async reconcileRun(scope?: { tenantId: string; runId: string }, limit = 32): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256) {
       throw new TypeError("Subagent preparation reaper limit is invalid");
     }
@@ -1060,6 +1057,11 @@ export class PostgresSubagentJobProvider {
       .select(["execution.tenant_id as tenantId", "execution.id"])
       .where("execution.state", "in", ["queued", "running"])
       .where("child_run.state", "in", ["completed", "failed", "cancelled", "timed_out"])
+      .$if(scope !== undefined, (query) =>
+        query
+          .where("execution.tenant_id", "=", scope!.tenantId)
+          .where("child_run.id", "=", scope!.runId),
+      )
       .orderBy("child_run.settled_at", "asc")
       .limit(limit)
       .execute();
@@ -1074,7 +1076,13 @@ export class PostgresSubagentJobProvider {
       for (const child of activeChildren) await this.cancel(row.tenantId, child.id);
       await this.status(row.tenantId, row.id);
     }
+    return terminal.length;
+  }
 
+  async reapStalePreparations(maximumAgeMs = 20 * 60_000, limit = 32): Promise<number> {
+    if (!Number.isSafeInteger(maximumAgeMs) || maximumAgeMs < 60_000)
+      throw new TypeError("Subagent preparation maximum age is invalid");
+    const terminal = await this.reconcileRun(undefined, limit);
     const stale = await this.#database
       .selectFrom("subagent_executions")
       .select([
@@ -1093,7 +1101,7 @@ export class PostgresSubagentJobProvider {
       .orderBy("updated_at", "asc")
       .limit(limit)
       .execute();
-    let reaped = terminal.length;
+    let reaped = terminal;
     for (const row of stale) {
       await this.#failPreparation(
         row.tenantId,

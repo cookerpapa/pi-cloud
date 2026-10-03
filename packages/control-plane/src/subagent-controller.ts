@@ -47,6 +47,7 @@ export class SubagentController {
   #scan: Promise<void> | undefined;
   #again = false;
   #reapRequested = false;
+  readonly #reapScopes = new Map<string, { tenantId: string; runId: string; due: number }>();
   readonly #timer: NodeJS.Timeout;
   constructor(
     readonly options: {
@@ -110,7 +111,12 @@ export class SubagentController {
         void this.recover(this.#recoveryRequest.partitions, this.#recoveryRequest.current).catch(
           () => {},
         );
-      if (this.#dirty.size || this.#reapRequested) this.wake();
+      if (
+        this.#dirty.size ||
+        this.#reapRequested ||
+        [...this.#reapScopes.values()].some((s) => s.due <= now)
+      )
+        this.wake();
     }, 1000);
     this.#timer.unref();
   }
@@ -157,6 +163,9 @@ export class SubagentController {
     this.#deadlines.clear();
     this.#recoveryRequest = undefined;
     this.#recoveryPlan = undefined;
+    this.#reapScopes.clear();
+    this.#reapRequested = false;
+    this.#nextReap = Infinity;
   }
   async recover(
     partitions?: readonly number[],
@@ -365,7 +374,7 @@ export class SubagentController {
           item.entry.message.role === "toolResult" &&
           item.entry.message.toolName === "subagent"
         ) {
-          this.#reapRequested = true;
+          this.#requestRunReap(record.fact.scope);
           this.#touch(record.fact.scope.tenantId, record.fact.scope.piSessionId);
         }
         if (item.kind === "entry" && item.entry.id.startsWith("pc-agent-input-")) {
@@ -381,7 +390,7 @@ export class SubagentController {
         }
       }
     }
-    if (record.fact.kind === "execution_seal") this.#reapRequested = true;
+    if (record.fact.kind === "execution_seal") this.#requestRunReap(record.fact.scope);
     if (record.fact.kind === "execution_seal")
       this.#touch(record.fact.scope.tenantId, record.fact.scope.piSessionId);
     else if (record.fact.kind === "subagent_command") this.wake();
@@ -428,23 +437,59 @@ export class SubagentController {
       });
   }
 
+  #requestRunReap(scope: { tenantId: string; runId: string }): void {
+    if (this.#reapScopes.size >= 4096 && !this.#reapScopes.has(scope.runId)) {
+      this.#reapRequested = true;
+      return;
+    }
+    this.#reapScopes.set(scope.runId, { tenantId: scope.tenantId, runId: scope.runId, due: 0 });
+  }
+
   async #drain(): Promise<void> {
+    const reapingGeneration = this.#generation;
     if (this.#reapRequested) {
       this.#reapRequested = false;
-      await this.#jobs.reapStalePreparations();
-      await this.#retireChildren();
+      const reaped = await this.#jobs.reapStalePreparations();
+      const retired = await this.#retireChildren();
+      if (reapingGeneration !== this.#generation) return;
+      if (reaped >= 32 || retired >= 32)
+        this.#nextReap = Math.min(this.#nextReap, performance.now() + 1000);
       const next = await this.options.database
         .selectFrom("subagent_executions")
-        .select(sql<Date | null>`min(created_at)`.as("created"))
+        .select(
+          sql<
+            number | null
+          >`(extract(epoch from (min(updated_at)+interval '20 minutes'-clock_timestamp()))*1000)::float8`.as(
+            "remaining",
+          ),
+        )
         .where("state", "=", "preparing")
         .executeTakeFirstOrThrow();
-      if (next.created)
+      if (reapingGeneration !== this.#generation) return;
+      if (next.remaining !== null)
         this.#nextReap = Math.min(
           this.#nextReap,
-          performance.now() +
-            Math.max(0, new Date(next.created).valueOf() + 20 * 60_000 - Date.now()),
+          performance.now() + Math.max(1000, next.remaining),
         );
     }
+    const due = [...this.#reapScopes.values()]
+      .filter((s) => s.due <= performance.now())
+      .slice(0, 32);
+    for (const scope of due) {
+      if (reapingGeneration !== this.#generation) return;
+      try {
+        await this.#jobs.reconcileRun(scope);
+        const retired = await this.#retireChildren(scope);
+        if (this.#reapScopes.get(scope.runId) === scope) {
+          if (retired >= 32) scope.due = performance.now() + 1000;
+          else this.#reapScopes.delete(scope.runId);
+        }
+      } catch (error) {
+        scope.due = performance.now() + 1000;
+        this.options.onError?.(error);
+      }
+    }
+    if ([...this.#reapScopes.values()].some((s) => s.due <= performance.now())) this.#again = true;
     const available = 128 - this.#inflight.size;
     if (available <= 0) return;
     const generation = this.#generation;
@@ -746,7 +791,7 @@ export class SubagentController {
       await this.#sendMessage(row, command);
   }
 
-  async #retireChildren(): Promise<void> {
+  async #retireChildren(scope?: { tenantId: string; runId: string }): Promise<number> {
     const rows = await this.options.database
       .selectFrom("subagent_executions as e")
       .innerJoin("runs as parent", "parent.id", "e.parent_run_id")
@@ -762,9 +807,15 @@ export class SubagentController {
         ]),
       )
       .where("r.state", "in", ["queued", "running"])
+      .$if(scope !== undefined, (query) =>
+        query
+          .where("e.tenant_id", "=", scope!.tenantId)
+          .where("e.parent_run_id", "=", scope!.runId),
+      )
       .limit(32)
       .execute();
     for (const row of rows) await this.#jobs.cancel(row.tenant_id, row.id);
+    return rows.length;
   }
   async #latestRun(
     command: AcceptedSubagentCommand,
