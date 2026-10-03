@@ -71,10 +71,55 @@ describe.sequential("pending conversation inputs", () => {
     });
     const queue = new QueuedInputService({ database, steering });
     const list = () => queue.list(tenant.tenantId, session.sessionId);
+    const listAll = async () => {
+      let page = await list();
+      const items = [...page.items];
+      while (page.hasMore) {
+        page = await queue.list(tenant.tenantId, session.sessionId, {
+          afterPosition: page.items.at(-1)!.mailboxPosition,
+          viewVersion: page.viewVersion,
+        });
+        items.push(...page.items);
+      }
+      return items;
+    };
     const accept = (text: string, key: string = randomUUID()) =>
       store.acceptTurn(session.sessionId, key, { prompt: text });
-    return { tenant, store, session, queue, steering, list, accept };
+    return { tenant, store, session, queue, steering, list, listAll, accept };
   }
+  it("pages unbounded queues without mixing revisions or reading all input bodies", async () => {
+    const f = await fixture();
+    for (let i = 0; i < 65; i++) await f.accept(`${i}:` + "x".repeat(4096));
+    const first = await f.list();
+    expect(first.items).toHaveLength(20);
+    expect(first.hasMore).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(first))).toBeLessThan(90_000);
+    expect(await f.listAll()).toHaveLength(65);
+    const cursor = {
+      afterPosition: first.items.at(-1)!.mailboxPosition,
+      viewVersion: first.viewVersion,
+    };
+    const second = await f.queue.list(f.tenant.tenantId, f.session.sessionId, cursor);
+    expect(second.items[0]?.text.startsWith("20:")).toBe(true);
+    await f.queue.mutate(
+      f.tenant.tenantId,
+      f.session.sessionId,
+      second.items[0]!.turnId,
+      randomUUID(),
+      {
+        action: "move",
+        direction: "up",
+        revision: first.revision,
+      },
+    );
+    await expect(
+      f.queue.list(f.tenant.tenantId, f.session.sessionId, cursor),
+    ).rejects.toMatchObject({ code: "conflict" });
+    await expect(
+      f.queue.list(f.tenant.tenantId, f.session.sessionId, { afterPosition: 20 }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
   async function seal(runId: string) {
     const outbox = await database
       .selectFrom("outbox")
@@ -637,7 +682,7 @@ describe.sequential("pending conversation inputs", () => {
       await f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "overflow", {
         text: "accepted without a count quota",
       });
-      expect((await f.list()).items).toHaveLength(66);
+      expect(await f.listAll()).toHaveLength(66);
       expect(
         await database
           .selectFrom("turn_control_requests")
@@ -794,7 +839,7 @@ describe.sequential("pending conversation inputs", () => {
     ).rejects.toMatchObject({ code: "idempotency_conflict" });
     for (let i = 1; i < 65; i++) await f.accept(`input ${i}`);
     await f.accept("overflow");
-    expect((await f.list()).items).toHaveLength(66);
+    expect(await f.listAll()).toHaveLength(66);
   }, 30000);
 
   it("recovers a consumed promotion after a lost reply and API restart without duplicate delivery", async () => {
@@ -994,7 +1039,7 @@ describe.sequential("pending conversation inputs", () => {
     const history = await f.store.getConversation(f.session.sessionId);
     expect(history.turns.map((t) => t.turnId)).toEqual([b.turnId, a.turnId]);
     expect(history.historyTruncated).toBe(false);
-    expect((await f.list()).items).toHaveLength(45);
+    expect(await f.listAll()).toHaveLength(45);
   });
 
   it.skipIf(!external)(

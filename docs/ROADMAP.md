@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Current verification
+
+[ADR-0216](adr/0216-review-data-path-bounds.md) and
+[ADR-0217](adr/0217-declarative-cube-release.md) implement the approved October 3
+review repairs. [Tests, measurements and rollout status](reports/review-repair-20261003.md)
+track the matched release; existing storage and execution authorities remain.
+
 ## Completed foundation
 
 - [x] [ADR-0215](adr/0215-unlimited-product-quotas.md): no default resource/product

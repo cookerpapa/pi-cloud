@@ -1,91 +1,83 @@
 import { execFile, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cubeCompletionPatch, cubeCompletionSecret } from "./lib/cube-execution-deployment.mjs";
+import { prepareCubeRelease, cubeAdoptionFlags } from "./lib/cube-release-inputs.mjs";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
-const runtime = resolve(
-  root,
+const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const runtimeDirectory = resolve(
+  repositoryRoot,
   process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
 );
+const cubeRepository = resolve(
+  repositoryRoot,
+  process.env.PI_CLOUD_CUBESANDBOX_REPOSITORY ?? "../CubeSandbox",
+);
 const kubeconfig =
-  process.env.PI_CLOUD_CUBE_COMPLETION_KUBECONFIG ?? resolve(runtime, "k3s/kubeconfig.yaml");
+  process.env.PI_CLOUD_CUBE_COMPLETION_KUBECONFIG ??
+  resolve(runtimeDirectory, "k3s/kubeconfig.yaml");
 const kubectl = process.env.PI_CLOUD_KUBECTL_BIN ?? "/usr/local/bin/k3s";
 const prefix = process.env.PI_CLOUD_KUBECTL_BIN ? [] : ["kubectl"];
 const env = { ...process.env, KUBECONFIG: kubeconfig };
-function capture(command, args) {
-  return new Promise((resolvePromise, reject) =>
-    execFile(
-      command,
-      args,
-      { cwd: root, env, encoding: "utf8", maxBuffer: 1024 * 1024 },
-      (error, stdout) =>
-        error ? reject(new Error(`${command} failed`)) : resolvePromise(stdout.trim()),
-    ),
-  );
+const execute = promisify(execFile);
+async function capture(args) {
+  try {
+    return (
+      await execute(kubectl, [...prefix, "-n", "cube-system", ...args], {
+        cwd: repositoryRoot,
+        env,
+        maxBuffer: 1024 * 1024,
+      })
+    ).stdout;
+  } catch {
+    throw new Error("Cube release discovery failed");
+  }
 }
-function apply(value, patch = false) {
-  const args = patch
-    ? [
-        "-n",
-        "cube-system",
-        "patch",
-        "daemonset",
-        "cube-node",
-        "--type=strategic",
-        "--patch",
-        JSON.stringify(value),
-      ]
-    : ["apply", "-f", "-"];
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(kubectl, [...prefix, ...args], {
-      cwd: root,
-      env,
-      stdio: [patch ? "ignore" : "pipe", "inherit", "inherit"],
-    });
-    child.on("error", reject);
-    child.on("exit", (code) =>
-      code === 0 ? resolvePromise() : reject(new Error("Cube completion configuration failed")),
-    );
-    if (!patch) child.stdin.end(JSON.stringify(value));
-  });
-}
-// Kubernetes selector-backed Services own discovery. Never publish Pod/Docker IPs.
+// Kubernetes Services remain the discovery authority; no Pod or Docker IP mapping.
 for (const name of ["postgres", "session-images", "kafka-1", "kafka-2", "kafka-3"]) {
-  const service = JSON.parse(
-    await capture(kubectl, [...prefix, "-n", "cube-system", "get", "service", name, "-o", "json"]),
-  );
-  if (!service.spec?.selector || Object.keys(service.spec.selector).length === 0)
+  const service = JSON.parse(await capture(["get", "service", name, "-o", "json"]));
+  if (!service.spec?.selector || !Object.keys(service.spec.selector).length)
     throw new Error(`Cube completion requires a selector-backed ${name} Service`);
 }
-const files = {};
-for (const name of [
-  "database-url",
-  "supervisor-management-token",
-  "session-image-s3-credentials.json",
-])
-  files[name] = await readFile(resolve(runtime, "secrets", name));
-await apply(cubeCompletionSecret(files));
-await apply(
-  cubeCompletionPatch({
-    kafkaBrokers: ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"],
-    controlPlaneUrl: "http://control-plane:3000",
-    imageEndpoint: "http://session-images:8333",
-    secretDigest: createHash("sha256")
-      .update(Buffer.concat(Object.values(files)))
-      .digest("hex"),
-  }),
-  true,
-);
-await capture(kubectl, [
-  ...prefix,
-  "-n",
-  "cube-system",
-  "rollout",
-  "status",
-  "daemonset/cube-node",
-  "--timeout=180s",
-]);
-process.stdout.write("Cube completion host connections configured\n");
+const release = await prepareCubeRelease({ repositoryRoot, cubeRepository, runtimeDirectory });
+try {
+  const objects = JSON.parse(
+    await capture([
+      "get",
+      "configmap/pi-cloud-posix-volume-plugin",
+      "secret/pi-cloud-cube-completion",
+      "--ignore-not-found",
+      "-o",
+      "json",
+    ]),
+  );
+  const adoption = cubeAdoptionFlags(objects.items ?? (objects.kind ? [objects] : []));
+  await new Promise((resolvePromise, reject) => {
+    const child = spawn(
+      process.env.PI_CLOUD_HELM_BIN ?? "helm",
+      [
+        "upgrade",
+        "cube",
+        release.chart,
+        "--namespace",
+        "cube-system",
+        "--kubeconfig",
+        kubeconfig,
+        "--reuse-values",
+        ...release.rendererArgs,
+        ...adoption,
+        "--wait",
+        "--timeout",
+        "15m",
+      ],
+      { cwd: repositoryRoot, env, stdio: "inherit" },
+    );
+    child.on("error", reject);
+    child.on("exit", (code) =>
+      code === 0 ? resolvePromise() : reject(new Error("Cube release reconciliation failed")),
+    );
+  });
+} finally {
+  await release.close();
+}
+process.stdout.write("Cube release configuration reconciled through Helm\n");

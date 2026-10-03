@@ -54,12 +54,21 @@ describe("pending input protocol", () => {
       sessionId: id,
       revision: 0,
       viewVersion: "0",
+      afterPosition: 0,
+      hasMore: false,
       activeTurnId: null,
       items: [item],
     };
     expect(parseInputQueueResource(queue).items[0]?.status).toBe("steering");
+    expect(() =>
+      parseInputQueueResource({ ...queue, items: Array.from({ length: 21 }, () => item) }),
+    ).toThrow();
     expect(
-      parseInputQueueResource({ ...queue, items: Array.from({ length: 65 }, () => item) }).items,
-    ).toHaveLength(65);
+      parseInputQueueResource({
+        ...queue,
+        hasMore: true,
+        items: Array.from({ length: 20 }, () => item),
+      }).items,
+    ).toHaveLength(20);
   });
 });

@@ -475,7 +475,15 @@ describe("CubeSandbox Provider contract", () => {
       stderr: "",
       exitCode: 0,
     });
-    expect(await provider.prepareInputImage(handle, Buffer.from("input"), "image/png")).toEqual({
+    expect(
+      await provider.prepareInputImage(handle, {
+        chunks: (async function* () {
+          yield Buffer.from("input");
+        })(),
+        byteLength: 5,
+        mimeType: "image/png",
+      }),
+    ).toEqual({
       data,
       mimeType: "image/png",
       hints: [],
@@ -1280,7 +1288,17 @@ describe("CubeSandbox Provider contract", () => {
       if (phase === "before_upload") abort.abort(reason);
       try {
         const result = await provider
-          .prepareInputImage(handle, Buffer.from("image"), "image/png", abort.signal)
+          .prepareInputImage(
+            handle,
+            {
+              chunks: (async function* () {
+                yield Buffer.from("image");
+              })(),
+              byteLength: 5,
+              mimeType: "image/png",
+            },
+            abort.signal,
+          )
           .catch((error) => error);
         if (phase === "cleanup_failure" || phase === "cleanup_nonzero") {
           expect(result).toBeInstanceOf(AggregateError);

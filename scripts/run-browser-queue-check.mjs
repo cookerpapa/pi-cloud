@@ -19,12 +19,18 @@ const id = n => "10000000-0000-4000-8000-"+String(n).padStart(12,"0");
 window.queueId=id;
 window.actions=[];window.snapshots=[];window.restored=[];
 let generation=0, receipts=new Map();
-const reset = () => ({sessionId:id(90),revision:1,viewVersion:"1",activeTurnId:id(99),items:["A","B","C"].map((text,i)=>({turnId:id(i+1),runId:id(i+11),text,mailboxPosition:i+1,acceptedAt:"2026-09-26T00:00:00.000Z",status:"queued"}))});
+const reset = (count=3) => ({sessionId:id(90),revision:1,viewVersion:"1",afterPosition:0,hasMore:false,activeTurnId:id(99),items:Array.from({length:count},(_,i)=>({text:["A","B","C"][i]??"Input "+(i+1),i})).map(({text,i})=>({turnId:id(i+1),runId:id(i+11),text,mailboxPosition:i+1,acceptedAt:"2026-09-26T00:00:00.000Z",status:"queued"}))});
 window.queue=reset();window.queueReads=0;
+const pageOf = (page) => {
+  if(page && window.conflictPage){window.conflictPage=false;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);}
+  if(page && page.viewVersion!==window.queue.viewVersion)throw new PiCloudApiError(409,"conflict","page changed");
+  const afterPosition=page?.afterPosition??0, items=window.queue.items.filter(i=>i.mailboxPosition>afterPosition);
+  return {...structuredClone(window.queue),afterPosition,hasMore:items.length>20,items:structuredClone(items.slice(0,20))};
+};
 const api = {
-  async getInputQueue() {
+  async getInputQueue(_session,_signal,page) {
     window.queueReads++;
-    const snapshot=structuredClone(window.queue);
+    const snapshot=pageOf(page);
     if(window.failRead){window.failRead=false;throw new TypeError("read failed");}
     if(window.delayRead){window.delayRead=false;return new Promise(resolve=>{window.releaseRead=()=>resolve(snapshot);});}
     return snapshot;
@@ -42,13 +48,13 @@ const api = {
     if(action.action==="steer"){if(action.text!==undefined)item.text=action.text;item.status="steering";}
     window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);
     window.queue.items.forEach((item,i)=>item.mailboxPosition=i+1);
-    const result={queue:structuredClone(window.queue),replayed:false};receipts.set(key,result);
+    const result={queue:pageOf(),replayed:false};receipts.set(key,result);
     if(window.loseReply){window.loseReply=false;throw new TypeError("reply lost");}
     return result;
   }
 };
-window.renderQueue=(canMutate=true)=>{
-  window.queue=reset();window.queueReads=0;receipts=new Map();window.actions=[];window.restored=[];window.snapshots=[];
+window.renderQueue=(canMutate=true,count=3)=>{
+  window.queue=reset(count);window.queueReads=0;receipts=new Map();window.actions=[];window.restored=[];window.snapshots=[];
   root.render(React.createElement(React.StrictMode,null,React.createElement(I18nProvider,{initialLanguage:"zh-CN"},
     React.createElement(PendingInputQueue,{key:++generation,api,sessionId:window.queue.sessionId,canMutate,refreshSignal:String(generation),streamQueue:null,
       onSnapshot:q=>window.snapshots.push(q),onRestoreDraft:text=>window.restored.push(text)}))));
@@ -202,9 +208,43 @@ try {
       ),
       true,
     );
+    await page.evaluate("window.renderQueue(true,45)");
+    await page.waitFor("document.querySelectorAll('.pending-input-row').length===20");
+    await click(".pending-input-queue", "显示更多");
+    await page.waitFor("document.querySelectorAll('.pending-input-row').length===40");
+    await page.evaluate("window.refreshQueue()");
+    await page.wait(100);
+    assert.equal(await page.evaluate("document.querySelectorAll('.pending-input-row').length"), 40);
+    await click(row(25), "编辑");
+    await draft("draft on a later page");
+    await page.evaluate("window.conflictPage=true");
+    await click(".pending-input-queue", "显示更多");
+    await page.waitFor(
+      "document.querySelectorAll('.pending-input-row').length===20 && document.querySelector('.pending-input-error')",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.pending-input-editor textarea').value"),
+      "draft on a later page",
+    );
+    await click(".pending-input-queue", "显示更多");
+    await page.waitFor("document.querySelectorAll('.pending-input-row').length===40");
+    await click(".pending-input-editor", "保存");
+    await page.waitFor(
+      "!document.querySelector('.pending-input-editor') && window.queue.items[24].text==='draft on a later page'",
+    );
+    await click(".pending-input-queue", "显示更多");
+    await page.waitFor("document.querySelectorAll('.pending-input-row').length===40");
+    await click(".pending-input-queue", "显示更多");
+    await page.waitFor("document.querySelectorAll('.pending-input-row').length===45");
+    assert.equal(
+      await page.evaluate(
+        "Array.from(document.querySelectorAll('.pending-input-queue>button')).some(b=>b.textContent==='显示更多')",
+      ),
+      false,
+    );
   });
   console.log(
-    "browser_queue_check_passed no_poll edit order cancel edited_steer lost_reply draft_retention stale_read read_recovery viewer mobile",
+    "browser_queue_check_passed no_poll edit order cancel edited_steer lost_reply draft_retention stale_read read_recovery viewer mobile pagination page_conflict late_page_edit",
   );
 } finally {
   await server.close();

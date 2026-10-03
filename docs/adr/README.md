@@ -10,6 +10,10 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0217](0217-declarative-cube-release.md) — one fully rendered Cube Helm
+   release and a narrower completion image dependency boundary.
+1. [ADR-0216](0216-review-data-path-bounds.md) — approved bounded queue
+   presentation, streamed image preparation and review correctness repairs.
 1. [ADR-0215](0215-unlimited-product-quotas.md) — owner-approved removal of
    default resource/product quotas and streamed uploads; deployed and verified.
 

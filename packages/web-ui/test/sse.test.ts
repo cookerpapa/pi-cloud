@@ -22,6 +22,8 @@ it("parses a large pushed input queue without consuming transcript sequence", as
     sessionId: SESSION_ID,
     revision: 1,
     viewVersion: "19",
+    afterPosition: 0,
+    hasMore: false,
     activeTurnId: null,
     items: [
       {

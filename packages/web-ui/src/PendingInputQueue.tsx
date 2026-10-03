@@ -47,16 +47,31 @@ export function PendingInputQueue({
   const callbacks = useRef({ onSnapshot, onRestoreDraft, t });
   callbacks.current = { onSnapshot, onRestoreDraft, t };
   const apply = useCallback(
-    (next: InputQueueResource) => {
+    (page: InputQueueResource) => {
+      let next = page;
       if (
         !mounted.current ||
         next.sessionId !== sessionId ||
         (current.current && BigInt(next.viewVersion) < BigInt(current.current.viewVersion))
       )
         return;
+      if (page.afterPosition > 0) {
+        if (
+          !current.current ||
+          current.current.viewVersion !== page.viewVersion ||
+          current.current.items.at(-1)?.mailboxPosition !== page.afterPosition
+        )
+          return;
+        next = { ...page, afterPosition: 0, items: [...current.current.items, ...page.items] };
+      } else if (
+        current.current?.viewVersion === page.viewVersion &&
+        current.current.items.length > page.items.length
+      )
+        return;
       const same =
         current.current?.revision === next.revision &&
         current.current.activeTurnId === next.activeTurnId &&
+        current.current.hasMore === next.hasMore &&
         current.current.items.length === next.items.length &&
         current.current.items.every((item, index) => {
           const other = next.items[index]!;
@@ -116,6 +131,38 @@ export function PendingInputQueue({
     void refresh(undefined, true);
   }, [refresh, refreshSignal]);
 
+  async function loadMore(): Promise<void> {
+    const snapshot = current.current;
+    const last = snapshot?.items.at(-1);
+    if (!snapshot?.hasMore || !last || inFlight.current) return;
+    inFlight.current = true;
+    readAbort.current?.abort();
+    const controller = new AbortController();
+    readAbort.current = controller;
+    const request = ++sequence.current;
+    setBusy("page");
+    let reload = false;
+    try {
+      const page = await api.getInputQueue(sessionId, controller.signal, {
+        afterPosition: last.mailboxPosition,
+        viewVersion: snapshot.viewVersion,
+      });
+      if (mounted.current && request === sequence.current) apply(page);
+    } catch (cause) {
+      if (mounted.current && !controller.signal.aborted) {
+        reload = cause instanceof PiCloudApiError && cause.status === 409;
+        setError(reload ? "queue.changed" : "queue.loadError");
+      }
+    } finally {
+      inFlight.current = false;
+      if (readAbort.current === controller) readAbort.current = undefined;
+      if (mounted.current) {
+        setBusy(null);
+        if (reload) void refresh(undefined, true);
+      }
+    }
+  }
+
   async function perform(turnId: string, action: Action): Promise<boolean> {
     const snapshot = current.current;
     if (!snapshot || inFlight.current || !canMutate) return false;
@@ -170,7 +217,10 @@ export function PendingInputQueue({
     <section className="pending-input-queue" aria-label={t("queue.title")}>
       <header>
         <strong>{t("queue.title")}</strong>
-        <span>{queue?.items.length ?? 0}</span>
+        <span>
+          {queue?.items.length ?? 0}
+          {queue?.hasMore ? "+" : ""}
+        </span>
         <small>{t("queue.hint")}</small>
       </header>
       {error ? (
@@ -222,9 +272,9 @@ export function PendingInputQueue({
                 disabled={
                   !canMutate ||
                   busy !== null ||
-                  index === queue.items.length - 1 ||
+                  (index === queue.items.length - 1 && !queue.hasMore) ||
                   item.status !== "queued" ||
-                  queue.items[index + 1]?.status !== "queued"
+                  (index < queue.items.length - 1 && queue.items[index + 1]?.status !== "queued")
                 }
                 onClick={() => void perform(item.turnId, { action: "move", direction: "down" })}
               >
@@ -263,6 +313,11 @@ export function PendingInputQueue({
           </div>
         ))}
       </div>
+      {queue?.hasMore ? (
+        <button type="button" disabled={busy !== null} onClick={() => void loadMore()}>
+          {t("queue.more")}
+        </button>
+      ) : null}
       {editing ? (
         <form
           className="pending-input-editor"

@@ -27,10 +27,10 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       if (failPut) throw new Error("upload failed");
       bytes.set(key, Buffer.from(value));
     },
-    async get(key) {
+    async *readStream(key) {
       const value = bytes.get(key);
       if (!value) throw new Error("missing image");
-      return value;
+      yield value;
     },
     async delete(key) {
       if (failDelete) throw new Error("delete interrupted");
@@ -145,6 +145,60 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     await expect(store.get(otherTenant, ref)).rejects.toThrow("tenant");
     bytes.set(`session-images/${tenantId}/${ref.id}`, Buffer.from("corrupt"));
     await expect(store.get(tenantId, ref)).rejects.toThrow("integrity");
+  });
+
+  it("streams with backpressure, validates the complete hash and closes on early consumer failure", async () => {
+    const value = randomBytes(512 * 1024);
+    const ref = await store.put({ tenantId }, value, "image/png");
+    let chunksRead = 0,
+      closes = 0;
+    let corrupt = false;
+    const streaming = new PostgresImageAttachmentStore(db, {
+      ...blobs,
+      async *readStream(_key, _length, signal) {
+        try {
+          for (let offset = 0; offset < value.length; offset += 64 * 1024) {
+            signal.throwIfAborted();
+            chunksRead++;
+            yield corrupt ? Buffer.alloc(64 * 1024) : value.subarray(offset, offset + 64 * 1024);
+          }
+        } finally {
+          closes++;
+        }
+      },
+    });
+    const sinkError = new Error("Guest input failed");
+    await expect(
+      streaming.withStream(tenantId, ref, async (chunks) => {
+        for await (const chunk of chunks) {
+          expect(chunk.byteLength).toBe(64 * 1024);
+          expect(chunksRead).toBe(1);
+          throw sinkError;
+        }
+      }),
+    ).rejects.toBe(sinkError);
+    expect(closes).toBe(1);
+    await expect(
+      streaming.withStream(tenantId, ref, async (chunks) => {
+        for await (const _chunk of chunks) return "stopped early";
+      }),
+    ).rejects.toThrow("complete source");
+    expect(closes).toBe(2);
+    corrupt = true;
+    await expect(
+      streaming.withStream(tenantId, ref, async (chunks) => {
+        for await (const _chunk of chunks) {
+          /* consume */
+        }
+      }),
+    ).rejects.toThrow("integrity");
+    corrupt = false;
+    let consumed = 0;
+    await streaming.withStream(tenantId, ref, async (chunks) => {
+      for await (const chunk of chunks) consumed += chunk.byteLength;
+    });
+    expect(consumed).toBe(value.length);
+    expect(closes).toBe(4);
   });
 
   it("reaps only claimed tenant/object pairs when tenants share an object ID", async () => {

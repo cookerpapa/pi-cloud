@@ -23,6 +23,22 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
+The [October 3 review](reports/repository-review-20261003.md) repairs are implemented
+under [ADR-0216](adr/0216-review-data-path-bounds.md) and
+[ADR-0217](adr/0217-declarative-cube-release.md).
+[Verification and rollout status](reports/review-repair-20261003.md) records the
+upload/cancellation/reminder fixes, paged asynchronous queue views, scoped Lane
+reads, streamed image normalization and one rendered Cube release.
+Cancellation scanning now excludes pending admissions and already-cancelling
+local Runs; ordinary active Runs retain the one-second missed-notification fallback.
+
+- [ ] Measure cross-Worker Run-queue notification fan-out and ordinary active-Worker
+      negative cancellation reads at fleet scale before changing the recovery cadence.
+- [ ] Measure mixed API/image/queue load after the bounded read/stream changes before
+      deciding whether the shared Control Plane needs process separation.
+- [ ] Evaluate upstreaming/narrowing the pinned Cube native execution extensions;
+      declarative release management does not eliminate their maintenance responsibility.
+
 [ADR-0215](adr/0215-unlimited-product-quotas.md) is deployed: default resource and
 product quotas were removed, uploads stream with verified identity, and matched
 Cube/Worker contracts passed [unit, fault and live acceptance](reports/unlimited-quotas-20261003.md).
@@ -31,7 +47,6 @@ The [K3s cutover](reports/k3s-migration-20261003.md) is complete: old business
 state was reset as requested; real Tool/image execution survived PG/Kafka/S3
 Pod replacement and a Control Plane crash. Deferred Cube template-cache cleanup
 and physical-node HA remain outside that acceptance.
-
 
 The October 2 R02-01–04 repairs and accepted O02-01–05 slices are deployed under
 [ADR-0213](adr/0213-control-recovery-and-propagation-budgets.md).
@@ -99,8 +114,8 @@ separate design questions, not an implicit part of the completed query merge.
       throughput/WAL and live-tail memory with 2,000/10,000 SSE connections.
 - [ ] Validate KEDA and Kafka partition sizing against the intended enterprise
       workload, not only a single-host synthetic producer benchmark.
-- [ ] Measure the shared Session writer/Projector at the maximum child count
-      before increasing tree or model concurrency defaults.
+- [ ] Measure the shared Session writer/Projector across growing active and historical
+      Lane counts; unlimited product defaults do not establish sustainable capacity.
 
 ## Deployment operations
 
@@ -119,7 +134,7 @@ separate design questions, not an implicit part of the completed query merge.
       Rebuilding that specification from the same image restored creation, but
       the underlying snapshot/vsock failure is not yet established. No automatic
       template replacement, Tool retry or weaker readiness was introduced.
-- [ ] Run the one-host installer on a genuinely clean machine; current k3d
+- [ ] Run the one-host installer on a genuinely clean machine; current K3s
       cutover tests do not establish that broader claim.
 - [ ] Reconcile Cube Volume node references after host/guest loss and resolve
       template cleanup via stable node identity rather than obsolete Pod IPs.

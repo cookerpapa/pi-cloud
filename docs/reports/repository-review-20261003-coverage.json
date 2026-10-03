@@ -1,0 +1,4618 @@
+{
+  "format": "pi-cloud.repository-review-coverage.v1",
+  "baseline": "4294c75932e79b4705e2243483e3ad9604ea29a0",
+  "reviewedAt": "2026-10-03T08:58:17.856Z",
+  "method": "Whole-repository inventory and AST screening; risk-based reading across every workspace and critical boundaries; targeted reproducers and full workspace checks. Not a claim of manual line-by-line proof.",
+  "counts": {
+    "trackedFiles": 1396,
+    "workspaces": 22,
+    "productionTsFilesExcludingMigrations": 360,
+    "productionSourceLines": 97547,
+    "trackedMigrationFiles": 169
+  },
+  "scopeByWorkspace": {
+    "control-plane": {
+      "productionFiles": 66,
+      "representativeReviewedBoundaries": [
+        "packages/control-plane/src/main.ts",
+        "packages/control-plane/src/input-queue-view.ts",
+        "packages/control-plane/src/input-queue-snapshot.ts",
+        "packages/control-plane/src/workspace-upload-service.ts",
+        "packages/control-plane/src/control-plane.controller.ts",
+        "packages/control-plane/src/conversation-deletion-service.ts",
+        "packages/control-plane/src/subagent-read-views.ts",
+        "packages/control-plane/src/gitlab-issue-note-reconciler.ts",
+        "packages/control-plane/src/preview-connect.ts"
+      ]
+    },
+    "cube-api-authorizer": {
+      "productionFiles": 4,
+      "representativeReviewedBoundaries": [
+        "packages/cube-api-authorizer/src/authorization.ts",
+        "packages/cube-api-authorizer/src/server.ts",
+        "packages/cube-api-authorizer/src/main.ts"
+      ]
+    },
+    "cube-completion": {
+      "productionFiles": 3,
+      "representativeReviewedBoundaries": [
+        "packages/cube-completion/src/adapter.ts",
+        "packages/cube-completion/src/frames.ts",
+        "packages/cube-completion/src/main.ts"
+      ]
+    },
+    "cube-egress-gateway": {
+      "productionFiles": 5,
+      "representativeReviewedBoundaries": [
+        "packages/cube-egress-gateway/src/configuration-poller.ts",
+        "packages/cube-egress-gateway/src/public-address-policy.ts"
+      ]
+    },
+    "database": {
+      "productionFiles": 8,
+      "representativeReviewedBoundaries": [
+        "packages/database/src/client.ts",
+        "packages/database/src/index.ts"
+      ]
+    },
+    "domain": {
+      "productionFiles": 5,
+      "representativeReviewedBoundaries": [
+        "packages/domain/src/state-machines.ts",
+        "packages/domain/src/resource-limit.ts"
+      ]
+    },
+    "event-log": {
+      "productionFiles": 7,
+      "representativeReviewedBoundaries": [
+        "packages/event-log/src/kafka-log-consumer.ts",
+        "packages/event-log/src/kafka-publication-writer.ts"
+      ]
+    },
+    "fake-model-server": {
+      "productionFiles": 3,
+      "representativeReviewedBoundaries": [
+        "packages/fake-model-server/src/server.ts",
+        "packages/fake-model-server/src/index.ts"
+      ]
+    },
+    "observability": {
+      "productionFiles": 7,
+      "representativeReviewedBoundaries": [
+        "packages/observability/src/logger.ts",
+        "packages/observability/src/index.ts"
+      ]
+    },
+    "pi-session-postgres": {
+      "productionFiles": 13,
+      "representativeReviewedBoundaries": [
+        "packages/pi-session-postgres/src/native-session-writer.ts",
+        "packages/pi-session-postgres/src/postgres-native-session-host.ts",
+        "packages/pi-session-postgres/src/postgres-session-storage.ts",
+        "packages/pi-session-postgres/src/postgres-session-repository.ts",
+        "packages/pi-session-postgres/src/project-native-session-append.ts"
+      ]
+    },
+    "protocol": {
+      "productionFiles": 45,
+      "representativeReviewedBoundaries": [
+        "packages/protocol/src/session-control-change.ts",
+        "packages/protocol/src/image-attachment.ts",
+        "packages/protocol/src/tool-command.ts"
+      ]
+    },
+    "provider-egress-relay": {
+      "productionFiles": 4,
+      "representativeReviewedBoundaries": ["packages/provider-egress-relay/src/relay.ts"]
+    },
+    "runtime-core": {
+      "productionFiles": 42,
+      "representativeReviewedBoundaries": [
+        "packages/runtime-core/src/session-projector.ts",
+        "packages/runtime-core/src/session-publication-ingress.ts",
+        "packages/runtime-core/src/session-control-outbox.ts",
+        "packages/runtime-core/src/session-outbox-relay.ts",
+        "packages/runtime-core/src/execution-stream-projection.ts",
+        "packages/runtime-core/src/run-cancellation-executor.ts",
+        "packages/runtime-core/src/projection-transaction.ts",
+        "packages/runtime-core/src/session-event-hub.ts",
+        "packages/runtime-core/src/session-event-stream.ts",
+        "packages/runtime-core/src/accepted-fact-recovery.ts"
+      ]
+    },
+    "sandbox-control": {
+      "productionFiles": 34,
+      "representativeReviewedBoundaries": [
+        "packages/sandbox-control/src/sandbox-controller.ts",
+        "packages/sandbox-control/src/sandbox-bindings.ts",
+        "packages/sandbox-control/src/sandbox-binding-view.ts",
+        "packages/sandbox-control/src/tool-command-dispatcher.ts",
+        "packages/sandbox-control/src/runtime-health-monitor.ts",
+        "packages/sandbox-control/src/runtime-quarantine.ts",
+        "packages/sandbox-control/src/execution-path-probes.ts",
+        "packages/sandbox-control/src/upload-http.ts",
+        "packages/sandbox-control/src/cubesandbox-sandbox-provider.ts",
+        "packages/sandbox-control/src/workspace-runtime-cleanup.ts",
+        "packages/sandbox-control/src/workspace-volume-deletion-reaper.ts"
+      ]
+    },
+    "sandbox-supervisor": {
+      "productionFiles": 27,
+      "representativeReviewedBoundaries": [
+        "packages/sandbox-supervisor/src/cloud-agent-runtime.ts",
+        "packages/sandbox-supervisor/src/pi-cloud-turn-runner.ts",
+        "packages/sandbox-supervisor/src/trusted-remote-tools.ts",
+        "packages/sandbox-supervisor/src/prepared-tool.ts",
+        "packages/sandbox-supervisor/src/pi-settlement-gate.ts"
+      ]
+    },
+    "session-attachments": {
+      "productionFiles": 6,
+      "representativeReviewedBoundaries": [
+        "packages/session-attachments/src/store.ts",
+        "packages/session-attachments/src/s3.ts"
+      ]
+    },
+    "ssh-gateway": {
+      "productionFiles": 5,
+      "representativeReviewedBoundaries": ["packages/ssh-gateway/src/ticket-authority.ts"]
+    },
+    "subagent-control": {
+      "productionFiles": 3,
+      "representativeReviewedBoundaries": [
+        "packages/subagent-control/src/postgres-subagent-job-provider.ts"
+      ]
+    },
+    "supervisor-host": {
+      "productionFiles": 20,
+      "representativeReviewedBoundaries": [
+        "packages/supervisor-host/src/postgres-pi-worker.ts",
+        "packages/supervisor-host/src/family-model-permits.ts",
+        "packages/supervisor-host/src/worker-memory-monitor.ts",
+        "packages/supervisor-host/src/model-gateway.ts",
+        "packages/supervisor-host/src/agent-run-execution-backend.ts"
+      ]
+    },
+    "web-ui": {
+      "productionFiles": 38,
+      "representativeReviewedBoundaries": [
+        "packages/web-ui/src/ChatApp.tsx",
+        "packages/web-ui/src/sse.ts",
+        "packages/web-ui/src/session-view.ts",
+        "packages/web-ui/src/useComposerUploads.ts"
+      ]
+    },
+    "workspace-runtime": {
+      "productionFiles": 4,
+      "representativeReviewedBoundaries": ["packages/workspace-runtime/src/upload-file.ts"]
+    },
+    "tool-sandbox": {
+      "productionFiles": 11,
+      "representativeReviewedBoundaries": [
+        "packages/tool-sandbox/src/native-tools.ts",
+        "packages/tool-sandbox/src/image-processor.ts",
+        "packages/tool-sandbox/src/input-files.ts",
+        "packages/tool-sandbox/src/envd-input-files.ts"
+      ]
+    }
+  },
+  "additionalBoundaries": [
+    "README.md",
+    "docs/README.md",
+    "docs/ARCHITECTURE.md",
+    "docs/ROADMAP.md",
+    "docs/BACKLOG.md",
+    "docs/adr/0210-cube-execution-handoff-and-scoped-stop.md",
+    "docs/adr/0212-ordered-control-read-models.md",
+    "docs/adr/0213-control-recovery-and-propagation-budgets.md",
+    "docs/adr/0214-unified-self-hosted-k3s.md",
+    "docs/adr/0215-unlimited-product-quotas.md",
+    "scripts/install-cubesandbox-k3s.mjs",
+    "scripts/lib/guest-build-identity.mjs",
+    "deploy/cubesandbox/runtime-build.json",
+    "deploy/cubesandbox/Dockerfile.cubelet",
+    "deploy/helm/pi-cloud-platform/values.yaml",
+    "deploy/helm/pi-cloud-infrastructure/values.yaml"
+  ],
+  "nativeSdk": {
+    "version": "0.84.1",
+    "sourceBoundaries": [
+      "node_modules/@earendil-works/pi-agent-core/dist/agent-loop.js",
+      "node_modules/@earendil-works/pi-agent-core/dist/harness/agent-harness.js"
+    ]
+  },
+  "limits": [
+    "Historical migrations and acceptance reports were evidence, not current topology.",
+    "No production faults, live model calls, real browser/Cube acceptance or physical multi-node HA test in this review.",
+    "Cube patch manifests and integration boundaries were reviewed; the upstream Rust/Go fork was not rebuilt/retested in this review.",
+    "AST query-operation counts are syntactic occurrences, not measured database round trips."
+  ],
+  "sourceInventory": [
+    {
+      "file": "packages/control-plane/src/api-exception.filter.ts",
+      "lines": 150,
+      "sha256": "21f3605f9c5290b9bff5867ae5601aae89e1c4a573732cdce6890e70b1a7793a",
+      "imports": [
+        "@nestjs/common",
+        "@pi-cloud/protocol",
+        "fastify",
+        "./control-plane-store.ts",
+        "./public-tenant-registration.ts",
+        "./tenant-request-context.ts",
+        "./tenant-model-configuration.ts",
+        "./conversation-deletion-service.ts",
+        "./workspace-browser-service.ts",
+        "./web-authentication.ts",
+        "./platform-runtime-settings.ts",
+        "./source-control-service.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/application.ts",
+      "lines": 99,
+      "sha256": "dfe1853bfb70628c03f772c3734b621bf61c0319c956df4d1cb195fc795a881d",
+      "imports": [
+        "./binary-body-parser.ts",
+        "./session-publication-service.ts",
+        "reflect-metadata",
+        "@nestjs/core",
+        "@nestjs/platform-fastify",
+        "./api-exception.filter.ts",
+        "./control-plane.module.ts",
+        "./control-plane-store.ts",
+        "@pi-cloud/runtime-core/session-event-stream",
+        "./supervisor-websocket-gateway.ts",
+        "./turn-steer.ts",
+        "./supervisor-boot-provisioner.ts",
+        "./production-http-gateway.ts",
+        "./public-tenant-registration.ts",
+        "./workspace-browser-service.ts",
+        "./web-authentication.ts",
+        "./workspace-terminal-gateway.ts",
+        "./development-environment-service.ts",
+        "./sandbox-preview-gateway.ts",
+        "./ssh-access-ticket-service.ts",
+        "./source-control-service.ts",
+        "./tool-progress-ingress.ts",
+        "./run-activity-ingress.ts",
+        "./workspace-upload-service.ts",
+        "@pi-cloud/session-attachments"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/assignment-reconciler.ts",
+      "lines": 628,
+      "sha256": "3e1e536e573a90ecaebdace5f5ff507656286a3fb74f566cbf7292dfcc3df8eb",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/runtime-core/session-lease-release",
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "kysely",
+        "node:crypto",
+        "@pi-cloud/runtime-core/run-state",
+        "@pi-cloud/runtime-core/execution-stream-seal",
+        "@pi-cloud/protocol"
+      ],
+      "queryOperationOccurrences": 52,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/binary-body-parser.ts",
+      "lines": 32,
+      "sha256": "9b05f448420bb64094b754058055d62fb1ed8bcde9418b27f378c68a13e7cbfb",
+      "imports": ["fastify", "node:stream"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/bootstrap-main.ts",
+      "lines": 50,
+      "sha256": "dea644706e5e79524aa775284c17c77414b68cc13ea97b8eb1c0d58727f2d501",
+      "imports": [
+        "@pi-cloud/database",
+        "node:url",
+        "./production-bootstrap.ts",
+        "./production-config.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/code-host-response.ts",
+      "lines": 54,
+      "sha256": "2d67c5f13597f81dca94c5da4249701f4ea95641c2f5301490e668ff709d4b53",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/control-plane-runtime.ts",
+      "lines": 187,
+      "sha256": "3782926de8de4d73b61f53348d515a7215726d7fd3646efc14a43e98ce2f831b",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@nestjs/platform-fastify",
+        "kysely",
+        "./application.ts",
+        "./assignment-reconciler.ts",
+        "@pi-cloud/runtime-core/session-event-stream",
+        "./supervisor-maintenance-runtime.ts",
+        "@pi-cloud/runtime-core/session-event-hub",
+        "./supervisor-connection-manager.ts",
+        "./supervisor-websocket-gateway.ts",
+        "./supervisor-boot-provisioner.ts",
+        "./production-http-gateway.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/control-plane-store-error.ts",
+      "lines": 19,
+      "sha256": "9fb518414d5bd2331c0b221b53040e24ecad10755cdf65ae70547b5ab88b1c0f",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/control-plane-store-factory.ts",
+      "lines": 38,
+      "sha256": "1bae7f31592b4f1767db6dfbc5ee87407308d185b88bdbd9742545b2234a7609",
+      "imports": [
+        "@pi-cloud/database",
+        "kysely",
+        "./control-plane-store.ts",
+        "./tenant-identity.ts",
+        "@pi-cloud/observability"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/control-plane-store.ts",
+      "lines": 2266,
+      "sha256": "54bb077946b653743286006c4486a21bc9f8041b97979df2303dd0e5126cc731",
+      "imports": [
+        "@pi-cloud/domain",
+        "node:crypto",
+        "./workspace-upload-service.ts",
+        "./queued-steer.ts",
+        "@pi-cloud/runtime-core/run-readiness",
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "kysely",
+        "@pi-cloud/observability",
+        "./model-profile-catalog.ts",
+        "./conversation-reader.ts",
+        "./control-plane-store-error.ts",
+        "./store-resource-mapping.ts",
+        "./control-plane-store-error.ts"
+      ],
+      "queryOperationOccurrences": 142,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/control-plane.controller.ts",
+      "lines": 988,
+      "sha256": "3b8c687e1770c5ee48e2a423e68add6ba9a8665dc230e1e7c2d498752efaf2a6",
+      "imports": [
+        "@nestjs/platform-fastify",
+        "@pi-cloud/protocol",
+        "node:stream",
+        "node:stream/promises",
+        "undici",
+        "@nestjs/common",
+        "@pi-cloud/protocol",
+        "fastify",
+        "./control-plane-store-factory.ts",
+        "./public-tenant-registration.ts",
+        "@pi-cloud/runtime-core/session-event-stream",
+        "./tenant-request-context.ts",
+        "./tenant-model-configuration.ts",
+        "./conversation-deletion-service.ts",
+        "./workspace-browser-service.ts",
+        "./workspace-upload-service.ts",
+        "./web-authentication.ts",
+        "./platform-runtime-settings.ts",
+        "./queued-input-service.ts",
+        "@pi-cloud/protocol",
+        "./conversation-tree-service.ts",
+        "./development-environment-service.ts",
+        "./ssh-access-ticket-service.ts",
+        "./source-control-service.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/control-plane.module.ts",
+      "lines": 231,
+      "sha256": "b3f79616e9ff00e59c598067d889a25677505ef3a826ffd12060073239a4afe7",
+      "imports": [
+        "@nestjs/common",
+        "./control-plane.controller.ts",
+        "./workspace-upload-service.ts",
+        "@pi-cloud/session-attachments",
+        "./control-plane-store.ts",
+        "./control-plane-store-factory.ts",
+        "./public-tenant-registration.ts",
+        "@pi-cloud/runtime-core/session-event-hub",
+        "@pi-cloud/runtime-core/session-event-stream",
+        "./tenant-identity.ts",
+        "./tenant-request-context.ts",
+        "./tenant-model-configuration.ts",
+        "./conversation-deletion-service.ts",
+        "./workspace-browser-service.ts",
+        "./web-authentication.ts",
+        "./platform-runtime-settings.ts",
+        "./turn-steering-service.ts",
+        "./queued-input-service.ts",
+        "./turn-steer.ts",
+        "./conversation-tree-service.ts",
+        "./development-environment-service.ts",
+        "./ssh-access-ticket-service.ts",
+        "./source-control-service.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/conversation-deletion-service.ts",
+      "lines": 124,
+      "sha256": "cd1b0c6f01086a636a372e7963becb06d3ffe16d72a29c31f7939c3a960703f9",
+      "imports": ["@pi-cloud/database", "@pi-cloud/pi-session-postgres", "kysely"],
+      "queryOperationOccurrences": 17,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/conversation-reader.ts",
+      "lines": 618,
+      "sha256": "02e5164fbe8e36ab3fc93ef332ebd169991fbdfc05fd30199af37824e1d97695",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "kysely",
+        "kysely/helpers/postgres",
+        "@pi-cloud/protocol",
+        "@pi-cloud/runtime-core/canonical-pi-conversation",
+        "./delegated-session-projection.ts",
+        "./control-plane-store-error.ts",
+        "./inherited-context-preview.ts",
+        "./store-resource-mapping.ts"
+      ],
+      "queryOperationOccurrences": 20,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/conversation-tree-service.ts",
+      "lines": 1553,
+      "sha256": "e785d80dfd90ca6e9fe13c2e855c057d9a676d37718ebb8d1121098622889bc6",
+      "imports": [
+        "node:crypto",
+        "@pi-cloud/database",
+        "@pi-cloud/pi-session-postgres",
+        "@pi-cloud/protocol",
+        "kysely",
+        "./control-plane-store.ts",
+        "./delegated-session-projection.ts"
+      ],
+      "queryOperationOccurrences": 94,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/delegated-session-projection.ts",
+      "lines": 115,
+      "sha256": "a7548aadf9cf30ce2852d7b8221c46c4f88c0c7fb4da2057c020e2dd0bbcca7c",
+      "imports": ["@pi-cloud/database", "@pi-cloud/protocol", "kysely"],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/development-environment-service.ts",
+      "lines": 1081,
+      "sha256": "7a842185031be5dae6b2765734883cbdf5f723afc28d86a8b41d8fff618d770f",
+      "imports": [
+        "node:crypto",
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@pi-cloud/workspace-runtime",
+        "kysely",
+        "./control-plane-store.ts",
+        "./tenant-identity.ts",
+        "undici"
+      ],
+      "queryOperationOccurrences": 77,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/control-plane/src/github-app-client.ts",
+      "lines": 290,
+      "sha256": "1a96595b8a2a0a25aa3349c70833386679a3c4af9136ae187ed8efd3514e9f25",
+      "imports": ["node:crypto", "./code-host-response.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/gitlab-issue-note-reconciler.ts",
+      "lines": 280,
+      "sha256": "670585bc6df274a0224e1e81dc202f2172bac4131d45311aa6614ed3080b09f9",
+      "imports": [
+        "@pi-cloud/database",
+        "node:crypto",
+        "kysely",
+        "./gitlab-project-client.ts",
+        "./source-control-service.ts"
+      ],
+      "queryOperationOccurrences": 18,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/control-plane/src/gitlab-project-client.ts",
+      "lines": 377,
+      "sha256": "3b395ae3cc48bc7b7558f8b520743eddcfa91923373078bed3c01b1eac9abf0e",
+      "imports": ["node:crypto", "./code-host-response.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/http-supervisor-management.ts",
+      "lines": 470,
+      "sha256": "d68c1b9f69b3fc8832dccded53e594e1a9abc01e8e8bab73893cf23465147bdc",
+      "imports": [
+        "@pi-cloud/protocol",
+        "undici",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "./supervisor-connection-manager.ts",
+        "@pi-cloud/runtime-core/session-lease-coordinator",
+        "./turn-steer.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/index.ts",
+      "lines": 271,
+      "sha256": "936898bbd88bfab6dfaf165ea17601cd435996fb15fba8637fc776d6796946ed",
+      "imports": [
+        "./sandbox-preview-gateway.ts",
+        "./tenant-identity.ts",
+        "./control-plane-store-factory.ts",
+        "./conversation-tree-service.ts",
+        "./development-environment-service.ts",
+        "./public-tenant-registration.ts",
+        "./tenant-request-context.ts",
+        "./tenant-model-configuration.ts",
+        "./tenant-administration.ts",
+        "./platform-model-configuration.ts",
+        "./platform-administrator.ts",
+        "./web-authentication.ts",
+        "./application.ts",
+        "./assignment-reconciler.ts",
+        "@pi-cloud/runtime-core/run-cancellation-executor",
+        "./control-plane.module.ts",
+        "@pi-cloud/runtime-core/execution-log",
+        "@pi-cloud/runtime-core/conversation-turn-projection",
+        "./turn-steer.ts",
+        "./turn-steering-service.ts",
+        "./control-plane-runtime.ts",
+        "./supervisor-maintenance-runtime.ts",
+        "@pi-cloud/runtime-core/run-executor",
+        "@pi-cloud/runtime-core/session-lease-coordinator",
+        "./supervisor-connection-manager.ts",
+        "./supervisor-websocket-gateway.ts",
+        "./supervisor-boot-provisioner.ts",
+        "./http-supervisor-management.ts",
+        "./production-http-gateway.ts",
+        "./production-config.ts",
+        "./production-bootstrap.ts",
+        "./platform-runtime-settings.ts",
+        "@pi-cloud/runtime-core/session-event-hub",
+        "@pi-cloud/runtime-core/session-event-stream",
+        "./control-plane-store.ts",
+        "./conversation-deletion-service.ts",
+        "./workspace-browser-service.ts",
+        "./workspace-terminal-gateway.ts",
+        "./github-app-client.ts",
+        "./source-control-service.ts",
+        "./source-control-issue-coordinator.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/inherited-context-preview.ts",
+      "lines": 138,
+      "sha256": "0c9375fcfd6f0737898fe087ae2b83471ba65ff7a2ff8dd9b2f8a83c18f35f6c",
+      "imports": ["@pi-cloud/protocol", "./control-plane-store-error.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/input-queue-snapshot.ts",
+      "lines": 88,
+      "sha256": "31a989f453139e5eb85e5e58bbbd59b6b98c034232e063bc1ad73398d5ce78e9",
+      "imports": [
+        "@pi-cloud/database",
+        "kysely",
+        "kysely/helpers/postgres",
+        "@pi-cloud/protocol",
+        "./control-plane-store-error.ts"
+      ],
+      "queryOperationOccurrences": 5,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/input-queue-view.ts",
+      "lines": 77,
+      "sha256": "b611b93bbef4cc195b4ca342b36cc37721bc6a0d24052d479e4a0fb203c76264",
+      "imports": ["@pi-cloud/protocol", "./control-plane-store-error.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/main.ts",
+      "lines": 608,
+      "sha256": "3d10c4101dcf1a2732bb0be083cdca8fea597afec942f37e2f8ce3291f95ff92",
+      "imports": [
+        "./session-publication-service.ts",
+        "./subagent-controller.ts",
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "node:crypto",
+        "node:url",
+        "kysely",
+        "./http-supervisor-management.ts",
+        "@pi-cloud/runtime-core/session-lease-coordinator",
+        "@pi-cloud/runtime-core/session-projector",
+        "@pi-cloud/runtime-core/kafka-accepted-fact",
+        "@pi-cloud/runtime-core/session-control-outbox",
+        "./input-queue-view.ts",
+        "./input-queue-snapshot.ts",
+        "./queued-input-service.ts",
+        "@pi-cloud/sandbox-control/runtime",
+        "./supervisor-boot-provisioner.ts",
+        "./production-config.ts",
+        "./production-http-gateway.ts",
+        "./tenant-identity.ts",
+        "./platform-model-configuration.ts",
+        "./web-authentication.ts",
+        "./control-plane-runtime.ts",
+        "@pi-cloud/sandbox-control/client",
+        "./workspace-terminal-gateway.ts",
+        "./development-environment-service.ts",
+        "./sandbox-preview-gateway.ts",
+        "./ssh-access-ticket-service.ts",
+        "./operational-metrics-sampler.ts",
+        "./github-app-client.ts",
+        "./source-control-service.ts",
+        "./source-control-issue-coordinator.ts",
+        "./gitlab-issue-note-reconciler.ts",
+        "@pi-cloud/session-attachments",
+        "./source-control-credential-vault.ts",
+        "undici",
+        "./tool-progress-ingress.ts",
+        "./run-activity-ingress.ts"
+      ],
+      "queryOperationOccurrences": 7,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/model-profile-catalog.ts",
+      "lines": 168,
+      "sha256": "95c1ac003ee5e79d7a4b099cfe94f7c10fd6181eab5e3be82aec43c7af81013e",
+      "imports": ["@pi-cloud/protocol", "@pi-cloud/database", "@pi-cloud/protocol", "kysely"],
+      "queryOperationOccurrences": 6,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/operational-metrics-sampler.ts",
+      "lines": 122,
+      "sha256": "f7b245cbd77f2d560299dd46ef5bb479b7ed90dac650b9154cce0f634bb799d0",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "@pi-cloud/runtime-core/session-projector",
+        "kysely"
+      ],
+      "queryOperationOccurrences": 1,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/control-plane/src/platform-administrator.ts",
+      "lines": 69,
+      "sha256": "0f017a0f933b84e9714f92ba753e72a1ddac010d2e02a4e56c2538b599a0a206",
+      "imports": ["@pi-cloud/database", "kysely", "node:url", "./production-config.ts"],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/platform-model-configuration.ts",
+      "lines": 50,
+      "sha256": "7fcb0a24c0e64ea539d4d97dbe8924a39ab42c718b42c919a24a63e748a541a3",
+      "imports": [
+        "@pi-cloud/database",
+        "kysely",
+        "./tenant-administration.ts",
+        "./model-profile-catalog.ts"
+      ],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/platform-runtime-settings.ts",
+      "lines": 248,
+      "sha256": "ee3c8a5cfc04bebaf84d9e78ed294702b4ffc1574c2d5de949a86789a345dc5a",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "kysely",
+        "./tenant-identity.ts"
+      ],
+      "queryOperationOccurrences": 10,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/preview-connect.ts",
+      "lines": 98,
+      "sha256": "56af7594a370f33d0a7a49b2c240264c8ddda3556e959cb6172e3e5d8c2592bc",
+      "imports": ["node:http", "node:https", "node:net", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/control-plane/src/production-bootstrap.ts",
+      "lines": 282,
+      "sha256": "229b7b6ac37f1bbda87cdf00d8810bcee4ecad4124d6a4384dab9c67342ff953",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "kysely",
+        "./production-config.ts",
+        "./tenant-identity.ts"
+      ],
+      "queryOperationOccurrences": 36,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/production-config.ts",
+      "lines": 665,
+      "sha256": "1e2915adbd7b0ea3df6c6af6c451dccb244fffba65591b2e6c5795dfeab651aa",
+      "imports": [
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "./tenant-administration.ts",
+        "@pi-cloud/runtime-core/kafka-accepted-fact"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/production-http-gateway.ts",
+      "lines": 132,
+      "sha256": "d6a07d06e4cb0a6802b69c0ce14095f83c47760fc5619236addce71fe508f614",
+      "imports": ["fastify", "./tenant-identity.ts", "./web-authentication.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/public-tenant-registration.ts",
+      "lines": 108,
+      "sha256": "b5032351819af395222fef0ecbfaff707b4c0b45dbb2837a1854ccbcd4349af5",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "kysely",
+        "./tenant-administration.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/queued-input-service.ts",
+      "lines": 757,
+      "sha256": "091a3d82f065159b04ee95a963f29cbeff38b3a6704c75b7ac9b6b69ea3d6893",
+      "imports": [
+        "node:crypto",
+        "@pi-cloud/observability",
+        "kysely",
+        "./input-queue-snapshot.ts",
+        "@pi-cloud/database",
+        "@pi-cloud/runtime-core/run-readiness",
+        "@pi-cloud/protocol",
+        "./control-plane-store-error.ts",
+        "@pi-cloud/protocol",
+        "./workspace-upload-service.ts",
+        "./turn-steering-service.ts",
+        "./queued-steer.ts"
+      ],
+      "queryOperationOccurrences": 51,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/control-plane/src/queued-steer.ts",
+      "lines": 112,
+      "sha256": "eabd2fbc683e78629af582d5977a5d83ce0c20f567f9b29c29f7338b23aae5f1",
+      "imports": ["@pi-cloud/database", "kysely", "./control-plane-store-error.ts"],
+      "queryOperationOccurrences": 6,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/run-activity-ingress.ts",
+      "lines": 69,
+      "sha256": "874ebb5b114de92931463108f9fce5838ff724fa90f82db4d6cdbc5d45a1b0cb",
+      "imports": ["node:crypto", "fastify", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/sandbox-preview-gateway.ts",
+      "lines": 530,
+      "sha256": "3c39a65f92ae834cbf372b0c5647b730a5a7897f3e06abc47aff2ef13daf622d",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "fastify",
+        "kysely",
+        "node:crypto",
+        "node:http",
+        "node:net",
+        "httpxy",
+        "./tenant-identity.ts",
+        "./preview-connect.ts"
+      ],
+      "queryOperationOccurrences": 10,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/session-publication-service.ts",
+      "lines": 119,
+      "sha256": "16470bda916ceda8d5baf93945229f165a8df7ed039dc77b214293f9b92e32e9",
+      "imports": [
+        "node:crypto",
+        "fastify",
+        "@pi-cloud/protocol",
+        "@pi-cloud/runtime-core/session-projector",
+        "@pi-cloud/runtime-core/kafka-accepted-fact",
+        "@pi-cloud/runtime-core/accepted-fact",
+        "@pi-cloud/runtime-core/http-publication-client",
+        "@pi-cloud/runtime-core/session-publication-ingress",
+        "@pi-cloud/protocol/native-session"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/source-control-credential-vault.ts",
+      "lines": 147,
+      "sha256": "bbaa10d3d52a2c74b9be9c18f65f78f733a7b1c9f2727c2f1a3c3e40757ea924",
+      "imports": ["node:crypto"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/source-control-issue-coordinator.ts",
+      "lines": 451,
+      "sha256": "8996ed57e32274d86836c52783d83bcbdfdb7b0645beeb0727f5473a24147a46",
+      "imports": [
+        "@pi-cloud/database",
+        "kysely",
+        "./control-plane-store.ts",
+        "./github-app-client.ts",
+        "./gitlab-project-client.ts",
+        "./source-control-service.ts",
+        "./tenant-identity.ts"
+      ],
+      "queryOperationOccurrences": 34,
+      "timerOccurrences": 3
+    },
+    {
+      "file": "packages/control-plane/src/source-control-service.ts",
+      "lines": 2058,
+      "sha256": "f2cfb8191d5fbd855e05a2cb944ee1c84a60e9e7a267ee88d40bc46f266ae3b4",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@pi-cloud/sandbox-control/client",
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "node:timers/promises",
+        "kysely",
+        "./github-app-client.ts",
+        "./gitlab-project-client.ts",
+        "./source-control-credential-vault.ts",
+        "./tenant-identity.ts"
+      ],
+      "queryOperationOccurrences": 139,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/ssh-access-ticket-service.ts",
+      "lines": 139,
+      "sha256": "39fd10ee141b8c85c1fa4da9e7bed6dafaff8498c510c87c82f6cbcb795108bb",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "kysely",
+        "./control-plane-store.ts",
+        "./tenant-identity.ts"
+      ],
+      "queryOperationOccurrences": 4,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/store-resource-mapping.ts",
+      "lines": 97,
+      "sha256": "58be1e7c856b6d37a40672f6f3c0921fa751deaff6ce8e5b12a5057820e11386",
+      "imports": ["node:crypto", "@pi-cloud/protocol", "./control-plane-store-error.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/subagent-controller.ts",
+      "lines": 927,
+      "sha256": "712b840285d34722c765379e0a47ec02b68719bbe22041412fa149cbd7b70cee",
+      "imports": [
+        "node:util",
+        "@pi-cloud/domain",
+        "@pi-cloud/database",
+        "@pi-cloud/runtime-core/accepted-fact",
+        "@pi-cloud/runtime-core/kafka-accepted-fact-consumer",
+        "@pi-cloud/protocol",
+        "@pi-cloud/subagent-control/subagent-jobs",
+        "@pi-cloud/subagent-control/subagent-supervisor",
+        "kysely",
+        "./http-supervisor-management.ts",
+        "./subagent-read-views.ts",
+        "./subagent-pending-commands.ts"
+      ],
+      "queryOperationOccurrences": 34,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/control-plane/src/subagent-pending-commands.ts",
+      "lines": 118,
+      "sha256": "36d1f6c26b82093819a9a2a9e4ccf8a2a375de1d0fd122b4abb4e1dc05d46824",
+      "imports": ["@pi-cloud/database", "kysely", "@pi-cloud/runtime-core/accepted-fact"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/subagent-read-views.ts",
+      "lines": 71,
+      "sha256": "f8cd141cd28dc02cebbe6cde800dfe900ac4bed05139d1b7336fca206abb6430",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/supervisor-boot-provisioner.ts",
+      "lines": 531,
+      "sha256": "7f85cb94655960eb3488ad2e45c9109b9fba878991d5dd7fff1fddbfd547d5fc",
+      "imports": [
+        "@pi-cloud/domain",
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "fastify",
+        "kysely",
+        "./supervisor-websocket-gateway.ts"
+      ],
+      "queryOperationOccurrences": 22,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/supervisor-connection-manager.ts",
+      "lines": 1211,
+      "sha256": "359597f8682d0eebfd0f2004de6174a973630a8f58a5a4690a21c1509fa16d8b",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "@pi-cloud/runtime-core/quarantined-session-recovery",
+        "node:crypto",
+        "kysely",
+        "@pi-cloud/database",
+        "./assignment-reconciler.ts",
+        "@pi-cloud/runtime-core/session-lease-coordinator"
+      ],
+      "queryOperationOccurrences": 60,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/supervisor-maintenance-runtime.ts",
+      "lines": 209,
+      "sha256": "82340247e631f515c427533b52a7591cf5ae09165b9102dda830d0f95840bb7a",
+      "imports": ["./supervisor-connection-manager.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/control-plane/src/supervisor-websocket-gateway.ts",
+      "lines": 441,
+      "sha256": "c8598a2e5a69ca17aaf64e3e9ba4e1fb0c9b60c65f22423f21158240522fef06",
+      "imports": [
+        "@fastify/websocket",
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "node:tls",
+        "fastify",
+        "ws",
+        "./supervisor-connection-manager.ts",
+        "./supervisor-connection-manager.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/control-plane/src/tenant-admin.ts",
+      "lines": 179,
+      "sha256": "21e5952f0075523b4ea579b9f736e4c1422b55f7cf4a58b8fc5902c702d657ba",
+      "imports": [
+        "@pi-cloud/database",
+        "node:url",
+        "./tenant-administration.ts",
+        "./production-config.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/tenant-administration.ts",
+      "lines": 398,
+      "sha256": "1e3cfdbaece80508d19bee7d5d50613f8a9887847142541774fbc6957d1f7697",
+      "imports": [
+        "@pi-cloud/domain",
+        "@pi-cloud/database",
+        "node:crypto",
+        "kysely",
+        "./tenant-identity.ts",
+        "@pi-cloud/protocol",
+        "./model-profile-catalog.ts"
+      ],
+      "queryOperationOccurrences": 29,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/tenant-identity.ts",
+      "lines": 266,
+      "sha256": "887fd5eda2b518f0bc0e49d53e423a85b7abe63781f4bc56863964fbe9aff95b",
+      "imports": ["@pi-cloud/database", "node:crypto", "kysely", "fastify"],
+      "queryOperationOccurrences": 8,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/tenant-model-configuration.ts",
+      "lines": 287,
+      "sha256": "3e82a2dc937220a255260b13389417bb583e121df1aa4a68cec6bec5be0449be",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "kysely",
+        "node:crypto",
+        "./model-profile-catalog.ts",
+        "./tenant-identity.ts"
+      ],
+      "queryOperationOccurrences": 18,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/tenant-request-context.ts",
+      "lines": 54,
+      "sha256": "332e4a616cddcd3c5e8e6df06d9757d178dbb19d6ca35ecbaf3352b35ca56f64",
+      "imports": ["fastify", "./tenant-identity.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/tool-progress-ingress.ts",
+      "lines": 43,
+      "sha256": "0706eb3fd674b5dcd1f92d3a1fca82905faf6b639c0bcdaba546306898c932ae",
+      "imports": ["node:crypto", "fastify", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/turn-steer.ts",
+      "lines": 35,
+      "sha256": "50974d5d276d7b3a07c05db5447b852c5118f3fdede582cd1bcace92ea912f8c",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/turn-steering-service.ts",
+      "lines": 85,
+      "sha256": "3c07042d56c3ecc09fbb863859cc9199a771fe2892abc4adeb3b077fcdad3ddb",
+      "imports": ["@pi-cloud/database", "@pi-cloud/protocol", "kysely", "./turn-steer.ts"],
+      "queryOperationOccurrences": 6,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/web-authentication.ts",
+      "lines": 492,
+      "sha256": "f759e3d86a9c7cfab165f5bc8501dde1d6eb7ed9e72a073f8e570ac170c453ab",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "kysely",
+        "./tenant-administration.ts",
+        "./tenant-identity.ts"
+      ],
+      "queryOperationOccurrences": 16,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/workspace-browser-service.ts",
+      "lines": 191,
+      "sha256": "a75e87076be8893dae39b1211797e068aab370e8132eb9f0ddc0978a14bef112",
+      "imports": ["@pi-cloud/database", "@pi-cloud/protocol", "node:crypto", "kysely"],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/workspace-terminal-gateway.ts",
+      "lines": 463,
+      "sha256": "ebf71775b9e2f08d5fd5f28ead284597d40002812f94dff176ef4393b7f685b0",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@pi-cloud/workspace-runtime",
+        "fastify",
+        "kysely",
+        "node:crypto",
+        "ws",
+        "./tenant-identity.ts"
+      ],
+      "queryOperationOccurrences": 8,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/control-plane/src/workspace-upload-service.ts",
+      "lines": 433,
+      "sha256": "721717663560eac1572e34b30adc18160e1b9b12f49049d58022791b3906b6a5",
+      "imports": [
+        "node:crypto",
+        "node:path",
+        "kysely",
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@pi-cloud/session-attachments",
+        "./workspace-upload-stream.ts",
+        "./control-plane-store-error.ts"
+      ],
+      "queryOperationOccurrences": 27,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/control-plane/src/workspace-upload-stream.ts",
+      "lines": 113,
+      "sha256": "019e1952f8d85a3884ccfc8daedca471eb6109d27ab9793e3950398eb508a66c",
+      "imports": ["node:crypto", "node:stream", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/cube-api-authorizer/src/authorization.ts",
+      "lines": 154,
+      "sha256": "e9235e589359c30a571d7629a47084be324b5cdac01903329b8a92732b480ddd",
+      "imports": ["node:crypto"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-api-authorizer/src/config.ts",
+      "lines": 61,
+      "sha256": "b69e57f9da1457ae86f11739a4761a8ace69fedc760ab10485097463edb3984f",
+      "imports": ["node:fs", "node:fs/promises", "node:path"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-api-authorizer/src/main.ts",
+      "lines": 23,
+      "sha256": "52129dc10e773bce1e2919e350797536c28e3f75dd4b44d4c0a2d68b2b50a8b9",
+      "imports": ["./config.ts", "./server.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-api-authorizer/src/server.ts",
+      "lines": 73,
+      "sha256": "f79fe4aaa88bd7cea512300033d94fe65edef41c3ebe66c81ed3621fcecb0ebf",
+      "imports": ["node:http", "./authorization.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-completion/src/adapter.ts",
+      "lines": 194,
+      "sha256": "783f5767ead1a31d20f7eab1b7f2a4f5054f43acb877e1676d22f2fcb8dc3998",
+      "imports": ["@pi-cloud/protocol", "@pi-cloud/event-log", "@pi-cloud/session-attachments"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-completion/src/frames.ts",
+      "lines": 27,
+      "sha256": "7142eb5ddb840a4cbab5a6bce4d86effb0ebc2d0c919bc92d7319d2a3651c687",
+      "imports": ["node:stream"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-completion/src/main.ts",
+      "lines": 71,
+      "sha256": "e25d1813717744b5b2bd282ba40c2c4def50c4f3abd64133b45f5fe126ee71d7",
+      "imports": [
+        "node:fs/promises",
+        "@pi-cloud/database",
+        "@pi-cloud/event-log",
+        "@pi-cloud/session-attachments",
+        "./adapter.ts",
+        "./frames.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-egress-gateway/src/config.ts",
+      "lines": 86,
+      "sha256": "a614e9361187240a22f876cf7f6e8fb1a22147ccea4e7fd2d1d705c1d0bc6bcc",
+      "imports": ["node:fs", "node:fs/promises", "node:net", "node:path"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-egress-gateway/src/configuration-poller.ts",
+      "lines": 94,
+      "sha256": "855c1f603d783f4f0ce30cb917861c872671f1b66aa3211b84973904ff07eb00",
+      "imports": ["node:timers/promises"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-egress-gateway/src/main.ts",
+      "lines": 35,
+      "sha256": "a301817be0bc34cbc060ae4f659f6cfe65c33c02d250d1a747ab26b25c2d1cdb",
+      "imports": ["./config.ts", "./configuration-poller.ts", "./proxy-server.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/cube-egress-gateway/src/proxy-server.ts",
+      "lines": 347,
+      "sha256": "76cf813d99bc0740cca7cfbccbc531b1dd8b8fd3488e369574b56cc8e5052f28",
+      "imports": [
+        "node:dns/promises",
+        "node:http",
+        "node:https",
+        "node:net",
+        "node:tls",
+        "node:stream",
+        "./public-address-policy.ts",
+        "./configuration-poller.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/cube-egress-gateway/src/public-address-policy.ts",
+      "lines": 49,
+      "sha256": "b9a966141d93f3cb40e11271982df9442047804ca56783dd85214d3e431322d8",
+      "imports": ["node:net"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/database/src/authority-time.ts",
+      "lines": 9,
+      "sha256": "15df6c0adb91a6fbc264dac6ca1b2f73d9eb8141931961615610f88bfa2e7ec3",
+      "imports": ["kysely", "./database-types.ts"],
+      "queryOperationOccurrences": 1,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/database/src/client.ts",
+      "lines": 144,
+      "sha256": "552aa11c016c9290a8d6eb6f883d295e9e495990eb4b102b5218dd6d3dc37294",
+      "imports": ["kysely", "pg", "node:crypto", "node:perf_hooks", "./database-types.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/database/src/database-types.ts",
+      "lines": 1105,
+      "sha256": "c721f363aac7979b7bca9e1b8dcbe99d4c63f7af5a6b592fd5173148d0e0c4f7",
+      "imports": ["@pi-cloud/domain", "kysely"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/database/src/index.ts",
+      "lines": 56,
+      "sha256": "34dc603a452da60c6aa847697046a8fbed0aba08de2d80ed9b9369efee6fe582",
+      "imports": [
+        "./client.ts",
+        "./retry-transaction.ts",
+        "./authority-time.ts",
+        "./postgres-queue-wake.ts",
+        "./database-types.ts",
+        "./run-migrations.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/database/src/migrate.ts",
+      "lines": 34,
+      "sha256": "2ee0c130f33c686cc3cafe74ebbb1a8f95805707082fb72a7eb247a20122bd7b",
+      "imports": ["./client.ts", "./run-migrations.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/database/src/postgres-queue-wake.ts",
+      "lines": 115,
+      "sha256": "0e458dd67c59f5098de4d13aadcd87ac8756d8d551074f296120ec82957a96c0",
+      "imports": ["pg"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/database/src/retry-transaction.ts",
+      "lines": 21,
+      "sha256": "c9801b8f25fbf0a18683dfe6d916007f082a6dcf8d0d1b41d70e899349f5226c",
+      "imports": ["kysely"],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/database/src/run-migrations.ts",
+      "lines": 37,
+      "sha256": "667048f47b952afce98339fbfc83908e42194bbab0db5d5f9fbd5f8325615727",
+      "imports": ["kysely/migration", "kysely", "./database-types.ts", "./migrations/index.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/domain/src/agent-definition.ts",
+      "lines": 14,
+      "sha256": "80849c72815e672f65005fed4e88e2cf434b1439eb725f6f5bcab2ba2f022ff3",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/domain/src/index.ts",
+      "lines": 44,
+      "sha256": "025e6f626cf47dcddd2c7b5b7d6a3b9327489b6023d800964383daeff7918be6",
+      "imports": [
+        "./resource-limit.ts",
+        "./agent-definition.ts",
+        "./model-profile.ts",
+        "./state-machines.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/domain/src/model-profile.ts",
+      "lines": 87,
+      "sha256": "84b111e7ef6a0025c14503ce4727d40a69d62ec16c3d37c1cc8bb1c5a4d719f2",
+      "imports": ["@pi-cloud/protocol", "typebox", "typebox/value"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/domain/src/resource-limit.ts",
+      "lines": 20,
+      "sha256": "ff241487cdf9fe4a39d2d602c847c5f99ee874ccdc0b3d13de1b2a78497b9655",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/domain/src/state-machines.ts",
+      "lines": 149,
+      "sha256": "478ccff53d36615ca2b0ab5dcf566d108ef4f21dcde918c7f147183297188023",
+      "imports": ["@pi-cloud/protocol", "typebox", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/event-log/src/index.ts",
+      "lines": 6,
+      "sha256": "cf41523c89fda2c895480690ffc8daa085183d7743c6af945b567fb1997d3f95",
+      "imports": [
+        "./kafka-log-consumer.ts",
+        "./producer-capacity.ts",
+        "./tool-replies.ts",
+        "./tool-progress-publisher.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/event-log/src/kafka-log-consumer.ts",
+      "lines": 639,
+      "sha256": "891fd79daaf782665b5efd12d67338424ab3da7df23dc22f40d7cf30c99a1f24",
+      "imports": [
+        "./kafka-partition-reader.ts",
+        "./kafka-publication-writer.ts",
+        "@confluentinc/kafka-javascript",
+        "@confluentinc/kafka-javascript",
+        "@pi-cloud/observability"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 7
+    },
+    {
+      "file": "packages/event-log/src/kafka-partition-reader.ts",
+      "lines": 419,
+      "sha256": "777219eeac9c7c67429c2e2c07c397b56b9201e25766c73d458c8ac9ca7616b0",
+      "imports": ["@confluentinc/kafka-javascript", "@confluentinc/kafka-javascript"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/event-log/src/kafka-publication-writer.ts",
+      "lines": 198,
+      "sha256": "41461c62218f7e68fbf0d53c09203eba4d945892f10c05b51ca4e1343daaa296",
+      "imports": [
+        "@confluentinc/kafka-javascript",
+        "@confluentinc/kafka-javascript",
+        "@pi-cloud/protocol/native-session",
+        "./kafka-partition-reader.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/event-log/src/producer-capacity.ts",
+      "lines": 31,
+      "sha256": "684669ddafde944335411b55812e2556c8e216a5352540f5e9e43c77073436fe",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/event-log/src/tool-progress-publisher.ts",
+      "lines": 65,
+      "sha256": "1e8f4ad8bdd2c8efa08e77ca95ab5767558c2cb24ae9e8f797221e5bce6c45ff",
+      "imports": ["undici", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/event-log/src/tool-replies.ts",
+      "lines": 268,
+      "sha256": "b3be3a863178bba01e8453a93189adb34eb84792cbb8280a74d345c66e552a45",
+      "imports": [
+        "@confluentinc/kafka-javascript",
+        "@pi-cloud/protocol",
+        "./kafka-log-consumer.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/fake-model-server/src/index.ts",
+      "lines": 11,
+      "sha256": "65392f04e877995ebca27e997ee3aaf18f4eae90c65ee16ea0f6643a18ecb70a",
+      "imports": ["./server.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/fake-model-server/src/run-server.ts",
+      "lines": 54,
+      "sha256": "ebd12455c80ac665ee6800fb1bf934d728843304a6f61b2b582837a23ff34ee5",
+      "imports": ["./index.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/fake-model-server/src/server.ts",
+      "lines": 869,
+      "sha256": "9337bad6afdce924c44d10864d21907042d6424355fbca9fe8f82fd6a9b7cd8c",
+      "imports": ["node:crypto", "node:http", "node:net", "node:net"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/observability/src/index.ts",
+      "lines": 17,
+      "sha256": "98971802bb00eea31ac014589c2d908c7c23c54a5094ac90f9c6518de3299af6",
+      "imports": [
+        "./metrics.ts",
+        "./metrics-server.ts",
+        "./logger.ts",
+        "./run-timing.ts",
+        "./runtime.ts",
+        "./trace.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/observability/src/logger.ts",
+      "lines": 46,
+      "sha256": "8d9dc5023bd0a779007f9f7142217c53138b4ba7e9d7a28aec0e0e18cd772996",
+      "imports": ["@opentelemetry/api"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/observability/src/metrics-server.ts",
+      "lines": 77,
+      "sha256": "305d89e6433dcb67abd1787775e3f672b9a9bed1e8923006a49f16c7d0174dc9",
+      "imports": ["node:crypto", "node:http", "prom-client"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/observability/src/metrics.ts",
+      "lines": 384,
+      "sha256": "56cf4747a03eba20104740193901e646f2e2cb7432fc1a745f2132dc5c93090a",
+      "imports": ["prom-client"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/observability/src/run-timing.ts",
+      "lines": 35,
+      "sha256": "a65ed1fe850be5ff61a654209490917080fda9337780e1764beaba295491ba20",
+      "imports": ["./metrics.ts", "./logger.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/observability/src/runtime.ts",
+      "lines": 79,
+      "sha256": "d7e4b66e596c226a83f3217e7c80b3655d5cb8366f46826dcca51c71836d9477",
+      "imports": ["node:fs/promises", "./metrics.ts", "./metrics-server.ts", "./trace.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/observability/src/trace.ts",
+      "lines": 142,
+      "sha256": "522925bfd654bba3c25f82b10622504f6154bbb7d5ce19c15044c19638177e10",
+      "imports": [
+        "@opentelemetry/api",
+        "@opentelemetry/exporter-trace-otlp-http",
+        "@opentelemetry/sdk-node",
+        "@opentelemetry/sdk-trace-base"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/delete-native-sessions.ts",
+      "lines": 52,
+      "sha256": "5e2c166451dc2ec6a48ce8f026cf32529dfbb2ef95d014b53070454838d4b6f0",
+      "imports": ["@earendil-works/pi-agent-core", "@pi-cloud/database", "kysely"],
+      "queryOperationOccurrences": 10,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/execution-authority.ts",
+      "lines": 13,
+      "sha256": "b059dea61cdb8f9ef8ccde18fef51466745c970f7a8b5d5546db0b1b2a78fced",
+      "imports": ["@pi-cloud/database", "kysely"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/idle-session-mutation.ts",
+      "lines": 23,
+      "sha256": "f2269ada323bff5108458b8a98d513018c789bd477faef6e51f820471906f88d",
+      "imports": ["@pi-cloud/database", "@earendil-works/pi-agent-core", "kysely"],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/index.ts",
+      "lines": 29,
+      "sha256": "d564c1a6bb9d1adc361fce4acd34993fe09994b627968d3af0d215296372ce31",
+      "imports": [
+        "./session-entry-payload-cache.ts",
+        "./postgres-session-projection-rebuilder.ts",
+        "./project-native-session-append.ts",
+        "./idle-session-mutation.ts",
+        "./postgres-native-session-host.ts",
+        "./native-session-writer.ts",
+        "./postgres-session-storage.ts",
+        "./execution-authority.ts",
+        "./postgres-session-repository.ts",
+        "./delete-native-sessions.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/native-projection-progress.ts",
+      "lines": 81,
+      "sha256": "aeb4eb4fd394f40830c2542a24df598cdd62c3a7a0e4d8745bfc3d7db2dc4578",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/pi-session-postgres/src/native-session-writer.ts",
+      "lines": 806,
+      "sha256": "d947b7fd31753f0ad6bd00b0397f4eb43ed0aa574ea1d3d86b88f92f6b3b509d",
+      "imports": [
+        "@earendil-works/pi-agent-core",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol/native-session"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/postgres-native-session-host.ts",
+      "lines": 442,
+      "sha256": "8021989358bfca6901be21278788a364d94df22c4df104bef60929650a165e58",
+      "imports": [
+        "@pi-cloud/session-attachments",
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@earendil-works/pi-agent-core",
+        "kysely",
+        "kysely/helpers/postgres",
+        "./native-session-writer.ts",
+        "./postgres-session-storage.ts",
+        "./postgres-session-lease-observer.ts",
+        "./native-projection-progress.ts",
+        "@pi-cloud/protocol/native-session",
+        "./session-entry-payload-cache.ts"
+      ],
+      "queryOperationOccurrences": 14,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/pi-session-postgres/src/postgres-session-lease-observer.ts",
+      "lines": 234,
+      "sha256": "bb0d33d0f7cda860d6ae453622459c9c5ed3ced1c168bd1c0e7dfd8ef5aca18c",
+      "imports": [
+        "@earendil-works/pi-agent-core",
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "kysely",
+        "./execution-authority.ts"
+      ],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/pi-session-postgres/src/postgres-session-projection-rebuilder.ts",
+      "lines": 178,
+      "sha256": "de44f33efc68e32a90329e545885e674ae63d16e5edd99f788b0396f8ec4c634",
+      "imports": ["@pi-cloud/database", "kysely", "./idle-session-mutation.ts"],
+      "queryOperationOccurrences": 18,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/postgres-session-repository.ts",
+      "lines": 406,
+      "sha256": "5ae299ad84abda233242a22241a00b6903f0654bf882c4e24ee8513ba695b179",
+      "imports": [
+        "./delete-native-sessions.ts",
+        "@pi-cloud/session-attachments",
+        "@pi-cloud/database",
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai",
+        "kysely",
+        "./execution-authority.ts",
+        "./session-entry-payload-cache.ts",
+        "./postgres-session-storage.ts"
+      ],
+      "queryOperationOccurrences": 35,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/postgres-session-storage.ts",
+      "lines": 839,
+      "sha256": "48d9920fcb5598cccbec3d496466a6de1a4ea1baaccd61fc10de2a6b5b4b037c",
+      "imports": [
+        "@pi-cloud/database",
+        "@earendil-works/pi-agent-core",
+        "kysely",
+        "./execution-authority.ts",
+        "./idle-session-mutation.ts",
+        "@pi-cloud/session-attachments",
+        "./session-entry-payload-cache.ts",
+        "./execution-authority.ts"
+      ],
+      "queryOperationOccurrences": 60,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/project-native-session-append.ts",
+      "lines": 201,
+      "sha256": "8f7d45f7961f66a483972c2eb1849a2145ffc53d0d8a355fbf63bc3d850da770",
+      "imports": [
+        "@pi-cloud/database",
+        "@earendil-works/pi-agent-core",
+        "kysely",
+        "@pi-cloud/protocol/native-session"
+      ],
+      "queryOperationOccurrences": 17,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/pi-session-postgres/src/session-entry-payload-cache.ts",
+      "lines": 91,
+      "sha256": "c36d80cce77e33eab62b25ee5d87d1e1ab1d72fdeb74d147edb6bdb6567eeb89",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/agent-input-budget.ts",
+      "lines": 22,
+      "sha256": "26eaf29c9335d821dc1863208b3aab3a16c850ed5da650c70d4826b99df0d580",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/agent-runtime.ts",
+      "lines": 74,
+      "sha256": "8b84819f941b331086f15969008f8b241067efa0a352965faafab3587a4914b0",
+      "imports": ["typebox", "./control-plane-api.ts", "./protocol-primitives.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/control-plane-api.ts",
+      "lines": 1583,
+      "sha256": "19f56a151ab3114dd4e9fd97e2f184ea76c081d192ee114160a40c27ddbf43e1",
+      "imports": [
+        "./agent-input-budget.ts",
+        "./inherited-context.ts",
+        "typebox",
+        "typebox/value",
+        "./model-catalog.ts",
+        "./protocol-primitives.ts",
+        "./event-envelope.ts",
+        "./environment.ts",
+        "./development-environment-profile.ts",
+        "./user-upload.ts",
+        "./protocol-primitives.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/development-environment-profile.ts",
+      "lines": 41,
+      "sha256": "0c52de6587b4415733736f15d09dc9e708f1eec7ba7333c8d9f386540df4e54b",
+      "imports": ["typebox"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/development-environment.ts",
+      "lines": 314,
+      "sha256": "12658a4e9f1d767ddddff6f5f3c9afd02c402c5f88f00552b4ec3fdf13c90fde",
+      "imports": [
+        "./guest-directory.ts",
+        "typebox",
+        "typebox/value",
+        "./workspace-seed.ts",
+        "./environment.ts",
+        "./protocol-primitives.ts",
+        "./development-environment-profile.ts",
+        "./development-environment-profile.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/environment.ts",
+      "lines": 340,
+      "sha256": "921acc23e503c5aae9c3aadcd01f8f2db1033d067d5091e794a5e29609a89a28",
+      "imports": ["typebox", "typebox/value", "./protocol-primitives.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/event-envelope.ts",
+      "lines": 496,
+      "sha256": "5c4c5674a5b64331bae8d83efab9665c09254f60f1d0a672fbb5df2e1db0159b",
+      "imports": ["typebox", "typebox/value", "#schema-check", "./protocol-primitives.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/execution-probe.ts",
+      "lines": 67,
+      "sha256": "9e91e6702e2dde75b15d07b7b2d05d7e7433835e1e20ab6dbd7f38b329170247",
+      "imports": ["typebox", "typebox/value"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/execution-reference.ts",
+      "lines": 59,
+      "sha256": "d983062912aaf2acefbb4413a3960eaf75fc2d4b8dc047d9f98c67f3016fc3b3",
+      "imports": ["typebox"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/guest-directory.ts",
+      "lines": 14,
+      "sha256": "e8b6887f84e11219e93da940c932164bb90e512db21fa7de63c1557293604d41",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/guest.ts",
+      "lines": 27,
+      "sha256": "9625f634e2a92b3b4093eb095ad8d42df9d9908b2ee82ff996f848ff4a934993",
+      "imports": [
+        "./environment.ts",
+        "./guest-directory.ts",
+        "./user-upload.ts",
+        "./image-attachment.ts",
+        "./native-tool-event.ts",
+        "./tool-sandbox.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/hosted-search-action.ts",
+      "lines": 54,
+      "sha256": "831fff4ea5c29b25aa2c3a9248c2628d4aca33aaecffe597898f0562033c41b0",
+      "imports": ["./index.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/image-attachment.ts",
+      "lines": 66,
+      "sha256": "53f9a506a16acbde0c67a6895c1ef2079e6646f91b90bb0965c120549d8707b6",
+      "imports": ["typebox", "typebox/value"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/index.ts",
+      "lines": 630,
+      "sha256": "2cb719037f65d4ee201b7d8bac6bfd9f83142281c6e4a19daf477fe30f06424a",
+      "imports": [
+        "./upload-content.ts",
+        "./tool-result-outcome.ts",
+        "./user-upload.ts",
+        "./worker-runtime-identity.ts",
+        "./image-attachment.ts",
+        "./session-stream-framing.ts",
+        "./model-catalog.ts",
+        "./execution-reference.ts",
+        "./sandbox-preview.ts",
+        "./event-envelope.ts",
+        "./model-sampling.ts",
+        "./source-control.ts",
+        "./agent-runtime.ts",
+        "./workspace-seed.ts",
+        "./development-environment.ts",
+        "./guest-directory.ts",
+        "./workspace-terminal.ts",
+        "./environment.ts",
+        "./tool-sandbox.ts",
+        "./tool-result-budget.ts",
+        "./protocol-primitives.ts",
+        "./control-plane-api.ts",
+        "./supervisor-wire.ts",
+        "./tool-capabilities.ts",
+        "./supervisor-management.ts",
+        "./terminal-event-outbox.ts",
+        "./session-control-change.ts",
+        "./hosted-search-action.ts",
+        "./tool-command.ts",
+        "./subagent-command.ts",
+        "./native-tool-event.ts",
+        "./tool-progress.ts",
+        "./run-observation.ts",
+        "./queued-inputs.ts",
+        "./agent-input-budget.ts",
+        "./inherited-context.ts",
+        "./run-interruption.ts",
+        "./execution-probe.ts",
+        "./publication-availability.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/inherited-context.ts",
+      "lines": 4,
+      "sha256": "b37a66ed85fc7415eb3c133d8109a9615897e9d5d479574aca13d5b4dd01a353",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/model-catalog.ts",
+      "lines": 75,
+      "sha256": "5883dae108b92ad615c13d4979c83c472c99f92b57d6d20ddd73a03880495c0c",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/model-sampling.ts",
+      "lines": 47,
+      "sha256": "566bee1acd973f3c342728f022c91b9f5722dcd0524126ef764f8642ac30e4dd",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/native-session.ts",
+      "lines": 83,
+      "sha256": "1c5fd8f2045b0a3d8f24ae7bcefecdaf9f7bbdfdcd70953fdf8e057ac6364cf3",
+      "imports": [
+        "@earendil-works/pi-agent-core",
+        "./event-envelope.ts",
+        "./image-attachment.ts",
+        "./tool-command.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/native-tool-event.ts",
+      "lines": 41,
+      "sha256": "cf055d0172d124ee5d782ab323f38443b487c660fbb2f4e6d2a955d955b4612b",
+      "imports": ["@earendil-works/pi-agent-core", "typebox", "typebox/value"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/protocol-primitives.ts",
+      "lines": 43,
+      "sha256": "8a96ab0717a292331c863d2c2fbac03fedc7d7dab532258f71bff90e24564328",
+      "imports": ["typebox"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/publication-availability.ts",
+      "lines": 22,
+      "sha256": "b841ce683c87c3109b2b489fb992dbd7e8b137bf2f6c05538d3f1cb82e3ab167",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/queued-inputs.ts",
+      "lines": 93,
+      "sha256": "4d8096c644eedfc8b91d665bfb93d3abac7b07e81b4a92df2dabeb335327a128",
+      "imports": [
+        "./agent-input-budget.ts",
+        "typebox",
+        "typebox/value",
+        "./control-plane-api.ts",
+        "./user-upload.ts",
+        "./protocol-primitives.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/run-interruption.ts",
+      "lines": 62,
+      "sha256": "76884fa18200d37c75236a7bbfd09a62ac72cbc2d4c8bbe3e5b72b24f31580de",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/run-observation.ts",
+      "lines": 155,
+      "sha256": "d6d9aebd78d6cd99640f8246a145eb99268260cc83eace036c74fc80e3e06715",
+      "imports": ["typebox", "typebox/value", "./execution-probe.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/sandbox-preview.ts",
+      "lines": 62,
+      "sha256": "b69110f076ea8774493edfb623ac15b2130175d68349389210129587f4e1f383",
+      "imports": ["typebox", "typebox/value", "./protocol-primitives.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/schema-check.browser.ts",
+      "lines": 8,
+      "sha256": "f01d60af19c818a31a42225e9d7fc1ef2099bf24b48fe1c7caa18c64d80c23e4",
+      "imports": ["typebox/value", "typebox"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/schema-check.ts",
+      "lines": 8,
+      "sha256": "96868d373f3b6a4f4694166a10752c1c53929216c970d3dc606a6a258653d386",
+      "imports": ["typebox/compile", "typebox"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/session-control-change.ts",
+      "lines": 61,
+      "sha256": "25269fd795e7095ebdbe23ed5170a40c83a5cd98ac572c6c14d5c624e0c76f5d",
+      "imports": ["typebox", "typebox/value"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/session-stream-framing.ts",
+      "lines": 6,
+      "sha256": "0850784b397686be754e88cb12bd0df74b2ba0b7b8e9334b17433b1c237ffbeb",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/source-control.ts",
+      "lines": 483,
+      "sha256": "8e0129ea23708dfd0378123507e94203c1204a0174954c094b92a672d348045b",
+      "imports": ["typebox", "typebox/value", "./protocol-primitives.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/subagent-command.ts",
+      "lines": 80,
+      "sha256": "1a6e334c96c3553d67c06bce4155bc5e25641e73a5f374ba9ff29ff7ac7ad907",
+      "imports": ["./tool-capabilities.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/supervisor-management.ts",
+      "lines": 220,
+      "sha256": "1e17a3e1ee55ad3d3d06d57808647eebf6c1efc78571e2e4f4f3007938fe76b4",
+      "imports": [
+        "./protocol-primitives.ts",
+        "typebox",
+        "typebox/value",
+        "./protocol-primitives.ts",
+        "./execution-reference.ts",
+        "./supervisor-wire.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/supervisor-wire.ts",
+      "lines": 516,
+      "sha256": "af30aa448eddc790658a5c9965ac308c3d32744cca58b4aef21acd7a6725a288",
+      "imports": [
+        "./protocol-primitives.ts",
+        "./agent-input-budget.ts",
+        "typebox",
+        "typebox/value",
+        "#schema-check",
+        "./event-envelope.ts",
+        "./protocol-primitives.ts",
+        "./environment.ts",
+        "./development-environment-profile.ts",
+        "./tool-capabilities.ts",
+        "./execution-reference.ts",
+        "./agent-runtime.ts",
+        "./user-upload.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/terminal-event-outbox.ts",
+      "lines": 2,
+      "sha256": "75cea714b3813ab794b77367e78bfa0d72516efa2fce0c30ece835ed42417a70",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/tool-capabilities.ts",
+      "lines": 29,
+      "sha256": "115b1f64f412a6faa01efd2c2b5681292c2649c543a20633d42f0205d686235f",
+      "imports": ["typebox", "typebox/value"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/tool-command.ts",
+      "lines": 38,
+      "sha256": "3192653f06bd9d2152a4d82ed9591913d982597957652c0ea662ca167459c132",
+      "imports": ["./tool-sandbox.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/tool-progress.ts",
+      "lines": 31,
+      "sha256": "41a4603d6f1ca8a513186d2a836cfd85e266b4eb865693827d8a8ff4185b994d",
+      "imports": ["typebox", "typebox/value"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/tool-result-budget.ts",
+      "lines": 26,
+      "sha256": "017f0dcf6b550aa424c0c07c9551b1dc33c343fde9fd8a0f0efc67515e6bf927",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/tool-result-outcome.ts",
+      "lines": 20,
+      "sha256": "b6386cfa36b9aecae23eceb28fa4c2ec496dac68751a59ff8ac8916fcb981041",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/tool-sandbox.ts",
+      "lines": 579,
+      "sha256": "d320fffdeaa4320072c871d8949dad794e0aa11a9396dc54ea1617a51752a3bb",
+      "imports": [
+        "typebox",
+        "typebox/value",
+        "./workspace-seed.ts",
+        "./protocol-primitives.ts",
+        "./environment.ts",
+        "./tool-capabilities.ts",
+        "./development-environment-profile.ts",
+        "./execution-reference.ts",
+        "./native-tool-event.ts",
+        "./image-attachment.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/upload-content.ts",
+      "lines": 34,
+      "sha256": "501e0ecc901ceecf60a429a2c62eb5b1dd60cee3ace14c67d9ccc4d398d3e09d",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/user-upload.ts",
+      "lines": 108,
+      "sha256": "cad88dff3b715cdff285af5fb8021bcd00d15457ee902a71a999fbbd7c5db249",
+      "imports": ["typebox", "typebox/value", "./protocol-primitives.ts", "./image-attachment.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/worker-runtime-identity.ts",
+      "lines": 55,
+      "sha256": "245d50123f73e2e98520ba7b7895de00aaac894291caff4f830c0304ad777f8c",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/workspace-seed.ts",
+      "lines": 33,
+      "sha256": "ab4aee2c21420c086845e055eebbcf4d3941dfc1e0ab5fa5d0376c3b9c99f9a6",
+      "imports": ["typebox"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/protocol/src/workspace-terminal.ts",
+      "lines": 152,
+      "sha256": "8120c3bf314f2d2ebefe679c4c941bfb2c0dc92f0e6ed69dc8066c66e389af99",
+      "imports": [
+        "typebox",
+        "typebox/value",
+        "./workspace-seed.ts",
+        "./environment.ts",
+        "./protocol-primitives.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/provider-egress-relay/src/config.ts",
+      "lines": 100,
+      "sha256": "9e950134125df332c0b83edf4d19f43fa614f815a506338ba6958a757e9e5749",
+      "imports": ["node:path"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/provider-egress-relay/src/index.ts",
+      "lines": 12,
+      "sha256": "c6e063c71fa68112cc6be314c18b3fb6eb8433c1974c64477c5303b8d2a3733e",
+      "imports": ["./config.ts", "./relay.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/provider-egress-relay/src/main.ts",
+      "lines": 64,
+      "sha256": "dd6a23bd38cc802ee82c947cc7d17212873ca9fdbbe2c83babfb66cd2d1eefc5",
+      "imports": ["node:fs/promises", "node:path", "./index.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/provider-egress-relay/src/relay.ts",
+      "lines": 273,
+      "sha256": "f4ef1e4bb9d25310f46c8b7e44d621fef06a274378e05b050c675d647e93c7b6",
+      "imports": ["node:net", "node:http", "node:dns/promises", "node:tls", "node:stream"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/runtime-core/src/accepted-fact-recovery.ts",
+      "lines": 56,
+      "sha256": "fd90e349f7dc06574cdcf02fe3952eceea31cbd3b59516450518eed917ce3326",
+      "imports": ["@pi-cloud/database", "kysely"],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/accepted-fact.ts",
+      "lines": 156,
+      "sha256": "124cfa0b4f677762276bbae67e7c1f74cb09bfbf4095740409b708612f0c639c",
+      "imports": [
+        "@pi-cloud/protocol/native-session",
+        "@pi-cloud/protocol/native-session",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/canonical-pi-conversation.ts",
+      "lines": 600,
+      "sha256": "bdd1c23e2d935e5a084f160e8ef3c717330f2bdbf801a8755ba8ada99a9899f4",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol/native-session",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "kysely",
+        "@earendil-works/pi-agent-core"
+      ],
+      "queryOperationOccurrences": 11,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/compact-event-tail.ts",
+      "lines": 106,
+      "sha256": "1afd17434d9569d4c52eb59452e1e0b26ef84fc9847dc39c4eab98e21d057ac2",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/conversation-turn-projection.ts",
+      "lines": 336,
+      "sha256": "9ff7c221c2dfae4da0e667dabf65bc23dac53072dc69f40029e3d4abe39a7420",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/execution-log-topic.ts",
+      "lines": 89,
+      "sha256": "ee4e8e93adf2eda0f2b613bad458da96b36c745c1da4f96be68df0043cfde9cb",
+      "imports": ["@platformatic/kafka", "@pi-cloud/event-log"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/execution-log.ts",
+      "lines": 23,
+      "sha256": "15662f3226590f7b4b2733ae899bc423059b7db347167e4870a8170d10451649",
+      "imports": ["@pi-cloud/protocol", "./accepted-fact.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/execution-publication.ts",
+      "lines": 27,
+      "sha256": "2c7dd61362a2a42d75362b9e9fb865f8d65d735a2d7d34eb6d61a0c2385ab744",
+      "imports": ["@pi-cloud/protocol", "./accepted-fact.ts", "./execution-log.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/execution-stream-projection.ts",
+      "lines": 387,
+      "sha256": "8cc09815910c2aca188724c4257678843d53cd26134e2d59226fae1a32f2325b",
+      "imports": [
+        "@pi-cloud/database",
+        "./quarantined-session-recovery.ts",
+        "./run-readiness.ts",
+        "@pi-cloud/protocol",
+        "kysely",
+        "./accepted-fact.ts",
+        "./kafka-accepted-fact-consumer.ts",
+        "./canonical-pi-conversation.ts",
+        "./conversation-turn-projection.ts",
+        "./postgres-pi-session-append-projector.ts",
+        "./accepted-fact-recovery.ts",
+        "./compact-event-tail.ts",
+        "./tool-invocation-fact.ts",
+        "./projection-transaction.ts"
+      ],
+      "queryOperationOccurrences": 18,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/execution-stream-seal.ts",
+      "lines": 102,
+      "sha256": "a8ebabde2966b1740e1618d911739a65717f8d92479ebc94c33eb81ff06b6474",
+      "imports": ["@pi-cloud/database", "@pi-cloud/protocol", "kysely", "./accepted-fact.ts"],
+      "queryOperationOccurrences": 9,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/http-publication-client.ts",
+      "lines": 188,
+      "sha256": "1c16be3ca867b4bdf07cb77ece176e48070516aae94975416a5d36d419cba190",
+      "imports": [
+        "undici",
+        "node:timers/promises",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol/native-session",
+        "./accepted-fact.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/index.ts",
+      "lines": 24,
+      "sha256": "f48203edf573784764deabc63c8b37a631b2dfb678c27fbcda5f5c7d5625f08a",
+      "imports": [
+        "./conversation-turn-projection.ts",
+        "./execution-log.ts",
+        "./accepted-fact.ts",
+        "./execution-publication.ts",
+        "./postgres-pi-session-append-projector.ts",
+        "./kafka-accepted-fact.ts",
+        "./kafka-accepted-fact-consumer.ts",
+        "./native-session-log-publisher.ts",
+        "./session-outbox-relay.ts",
+        "./run-state.ts",
+        "./run-cancellation-executor.ts",
+        "./run-executor.ts",
+        "./session-event-hub.ts",
+        "./session-lease-coordinator.ts",
+        "./execution-stream-seal.ts",
+        "./execution-stream-projection.ts",
+        "./canonical-pi-conversation.ts",
+        "./worker-execution-log.ts",
+        "./session-projector.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/kafka-accepted-fact-consumer.ts",
+      "lines": 16,
+      "sha256": "7c0ba80ed91637455f1dbfd08b1fc76cf55a627abe382dd862824577aa70dc35",
+      "imports": ["@pi-cloud/event-log", "./accepted-fact.ts", "./kafka-accepted-fact.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/kafka-accepted-fact.ts",
+      "lines": 54,
+      "sha256": "ce4fbb099acb1b9c1b955736330a55f63261844b7eaffcdc3788ecea19a31a79",
+      "imports": [
+        "@pi-cloud/protocol",
+        "./accepted-fact.ts",
+        "./tool-invocation-fact.ts",
+        "@pi-cloud/event-log"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/kafka-safe-retention.ts",
+      "lines": 185,
+      "sha256": "d05e7c10f0a01c33105d5de4bce681768fc6215f5fbbea1b0b1774d3dbbe5ae7",
+      "imports": ["@platformatic/kafka", "@pi-cloud/database", "kysely", "@pi-cloud/event-log"],
+      "queryOperationOccurrences": 3,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/runtime-core/src/native-session-log-publisher.ts",
+      "lines": 92,
+      "sha256": "b02f0461930282b86e642ca82dc7622298a1159badb6f5c1ec0f72534769c0a9",
+      "imports": [
+        "@pi-cloud/protocol/native-session",
+        "@pi-cloud/protocol/native-session",
+        "@pi-cloud/observability",
+        "@pi-cloud/session-attachments",
+        "./accepted-fact.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/pi-session-worker-ownership.ts",
+      "lines": 44,
+      "sha256": "e87aadcbdfd916bd6cf338ebea8512e3cfae9a142e2063d9331121e364994fec",
+      "imports": ["@pi-cloud/database", "kysely"],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/postgres-pi-session-append-projector.ts",
+      "lines": 103,
+      "sha256": "9e0de002c7d627c52a4a90e9c508bd2ef0b2987e7edf512aeb4f5bdba02c4cda",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/pi-session-postgres",
+        "@pi-cloud/protocol/native-session",
+        "kysely",
+        "./accepted-fact.ts",
+        "./accepted-fact-recovery.ts",
+        "./projection-transaction.ts"
+      ],
+      "queryOperationOccurrences": 8,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/postgres-publication-control.ts",
+      "lines": 68,
+      "sha256": "2cd5205f6930a2f25341a22f7ffcc82ca69da687d018279331482105cd52cef3",
+      "imports": [
+        "@pi-cloud/database",
+        "node:util",
+        "kysely",
+        "./accepted-fact.ts",
+        "./session-publication-ingress.ts"
+      ],
+      "queryOperationOccurrences": 4,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/prepare-execution-fact.ts",
+      "lines": 144,
+      "sha256": "39a0b55c4a475807e1d46a18a79a3fbcabc49efe0eaedfe2ad9ae2aa6c31abfb",
+      "imports": ["./accepted-fact.ts", "./tool-invocation-fact.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/projection-timing.ts",
+      "lines": 74,
+      "sha256": "7cd413997b299960a47c3045e7312118210dd85daf7cc60d40defb5388c6d495",
+      "imports": ["@pi-cloud/observability", "./kafka-accepted-fact-consumer.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/projection-transaction.ts",
+      "lines": 33,
+      "sha256": "c2b578183b153a17d8d54fa854414d7ca0444f3ce335ad6ec7810df390eccfc4",
+      "imports": ["@pi-cloud/database", "kysely"],
+      "queryOperationOccurrences": 3,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/quarantined-session-recovery.ts",
+      "lines": 81,
+      "sha256": "71120ee0891f03dba6848f78bb5b6d61e0dd9f287f6c92a6ddf88b4978856537",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "kysely",
+        "./run-readiness.ts"
+      ],
+      "queryOperationOccurrences": 6,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/run-cancellation-executor.ts",
+      "lines": 960,
+      "sha256": "c74012430d06c5cb4d962154084d87f9b12a5644c42d14b673b74a5c3c9efff9",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "kysely",
+        "node:crypto",
+        "./run-executor.ts",
+        "./run-state.ts",
+        "./execution-stream-seal.ts"
+      ],
+      "queryOperationOccurrences": 40,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/run-executor.ts",
+      "lines": 1289,
+      "sha256": "aae9d0151f56cffe3be99be8e0561954566d9fed29e5f4e09d6975990bf09073",
+      "imports": [
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "@pi-cloud/observability",
+        "@pi-cloud/observability",
+        "kysely",
+        "node:crypto",
+        "./run-state.ts",
+        "./pi-session-worker-ownership.ts",
+        "./execution-stream-seal.ts",
+        "./quarantined-session-recovery.ts",
+        "@pi-cloud/database",
+        "./accepted-fact.ts",
+        "node:util",
+        "./execution-publication.ts",
+        "./session-lease-coordinator.ts"
+      ],
+      "queryOperationOccurrences": 30,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/run-observation-view.ts",
+      "lines": 55,
+      "sha256": "e493b021a1c05e6644adb972eed840adba11eb7bfa0e41c619d6bf37c8b3496a",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/run-observations.ts",
+      "lines": 196,
+      "sha256": "3c7610558e55885313caf061bf46a3d14b8b75e26ce6178c0f1238b57cef1ee6",
+      "imports": [
+        "node:util",
+        "@pi-cloud/protocol",
+        "./kafka-accepted-fact-consumer.ts",
+        "./session-event-hub.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/run-readiness.ts",
+      "lines": 36,
+      "sha256": "f61fa79635b0529cb7073118a0d363f0f17a8368afc54889fabc3989528dc71d",
+      "imports": ["@pi-cloud/database", "kysely"],
+      "queryOperationOccurrences": 1,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/run-state.ts",
+      "lines": 92,
+      "sha256": "4fe9a189bce6ab8910a14f05a5bd23308aafbabe0fc2b97bc38e578ae1890a3a",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "kysely"
+      ],
+      "queryOperationOccurrences": 6,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/session-control-outbox.ts",
+      "lines": 94,
+      "sha256": "38a02cd7796dbc2ca5e49d0e6888f1b6bff17aafea6a1a30694d9bb662c0937a",
+      "imports": ["node:util", "@pi-cloud/database", "kysely", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 6,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/session-event-hub.ts",
+      "lines": 262,
+      "sha256": "cad71a7c028d000ef946f85743f4bc07ae56405538e8120c1f2c74f85848d79b",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/runtime-core/src/session-event-stream.ts",
+      "lines": 249,
+      "sha256": "279c25388f6e9d6691fe66c0d694ba27170a69aec984b7930b95cf44bc78ed40",
+      "imports": [
+        "@pi-cloud/protocol",
+        "node:http",
+        "./session-live-view.ts",
+        "./session-event-hub.ts",
+        "@pi-cloud/protocol",
+        "./session-stream-framing.ts",
+        "./conversation-turn-projection.ts",
+        "node:timers/promises",
+        "./tool-progress-view.ts",
+        "./run-observation-view.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/runtime-core/src/session-lease-coordinator.ts",
+      "lines": 610,
+      "sha256": "c1be389271e8aef5a1846186c9fb617d875507940021f7625e37d80d67451a10",
+      "imports": [
+        "@pi-cloud/database",
+        "./session-lease-release.ts",
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "kysely",
+        "./run-executor.ts"
+      ],
+      "queryOperationOccurrences": 38,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/session-lease-release.ts",
+      "lines": 57,
+      "sha256": "4715259d46f0adee36799b225b7e422322f8d8f2a11d825c1270010423a90e6a",
+      "imports": ["@pi-cloud/database", "kysely"],
+      "queryOperationOccurrences": 8,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/session-live-view.ts",
+      "lines": 86,
+      "sha256": "5d5da7a5aaa6f2c0331ea179d682fd0daa59ba20b29877b1637e6b9f6a896b01",
+      "imports": ["@pi-cloud/protocol", "./session-event-hub.ts", "./compact-event-tail.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/runtime-core/src/session-outbox-relay.ts",
+      "lines": 254,
+      "sha256": "1f89b03ca69e4b3837f6eb986ec1f0fdcbc06a73c5c2a310afe496aa184af862",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "@pi-cloud/protocol",
+        "node:timers/promises",
+        "kysely",
+        "./accepted-fact.ts",
+        "./kafka-accepted-fact.ts"
+      ],
+      "queryOperationOccurrences": 6,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/runtime-core/src/session-projector.ts",
+      "lines": 443,
+      "sha256": "4299571566544d84f3a4aa54d6095980595447dbba5610cba70789364c839108",
+      "imports": [
+        "@pi-cloud/database",
+        "kysely",
+        "@pi-cloud/event-log",
+        "./kafka-accepted-fact.ts",
+        "./execution-stream-projection.ts",
+        "./accepted-fact.ts",
+        "@pi-cloud/protocol",
+        "./session-control-outbox.ts",
+        "@pi-cloud/event-log",
+        "@pi-cloud/observability",
+        "./execution-log-topic.ts",
+        "./session-publication-ingress.ts",
+        "./postgres-publication-control.ts",
+        "./http-publication-client.ts",
+        "./session-live-view.ts",
+        "./session-outbox-relay.ts",
+        "./kafka-safe-retention.ts",
+        "./accepted-fact-recovery.ts",
+        "./accepted-fact.ts",
+        "./kafka-accepted-fact-consumer.ts",
+        "./tool-invocation-fact.ts",
+        "./projection-timing.ts",
+        "./run-observations.ts"
+      ],
+      "queryOperationOccurrences": 4,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/runtime-core/src/session-publication-ingress.ts",
+      "lines": 484,
+      "sha256": "3ac7eb47a821f7fd33bc3da45da1e26a458d17e27372232e8ca9b2ea09721264",
+      "imports": [
+        "node:util",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol/native-session",
+        "@pi-cloud/event-log",
+        "@pi-cloud/observability",
+        "./accepted-fact.ts",
+        "@pi-cloud/protocol",
+        "./tool-invocation-fact.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/session-stream-framing.ts",
+      "lines": 36,
+      "sha256": "e6df3a227d522f674e1b0c6599d2a9b6e683c2eb5003542570d581d1b8a23591",
+      "imports": ["@discoveryjs/json-ext", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/tool-invocation-fact.ts",
+      "lines": 84,
+      "sha256": "5b60dc0a69152673f294bfc3af133e83c4eccd710a8e3824bcacc3548b2e92f8",
+      "imports": ["node:util", "@pi-cloud/protocol", "./accepted-fact.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/tool-progress-view.ts",
+      "lines": 41,
+      "sha256": "2068d42983dcdd433066b427384a91944bcd029b3c1422390453f66fdf0894d8",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/runtime-core/src/worker-execution-log.ts",
+      "lines": 382,
+      "sha256": "249a0ca4996e458d48b2a50cea86e04e98957b343b0e30f53baabbec1e0f5b28",
+      "imports": [
+        "node:crypto",
+        "@pi-cloud/database",
+        "kysely",
+        "@pi-cloud/protocol",
+        "@pi-cloud/event-log",
+        "./accepted-fact.ts",
+        "./execution-log.ts",
+        "./prepare-execution-fact.ts",
+        "@pi-cloud/event-log",
+        "./accepted-fact.ts",
+        "@pi-cloud/protocol/native-session",
+        "./accepted-fact.ts"
+      ],
+      "queryOperationOccurrences": 4,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/sandbox-control/src/cube-persistent-capsule.ts",
+      "lines": 62,
+      "sha256": "c53c9764d99046d4741bfb50550fe03eb6fd716d987f11e45c8acb305c785775",
+      "imports": ["node:crypto"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/cubesandbox-runtime-client.ts",
+      "lines": 1571,
+      "sha256": "451f6426810ed72f2b0cca3bd203f9e57dbbc3cf5f5b63f4eb65df0023a2c57d",
+      "imports": ["undici", "./direct-private-egress.ts", "@pi-cloud/protocol", "node:stream"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 5
+    },
+    {
+      "file": "packages/sandbox-control/src/cubesandbox-sandbox-provider.ts",
+      "lines": 2260,
+      "sha256": "ebc831f5e386a32f4823597dda65a81ebbf7a168271fb27f5ea8bebcf868a7e4",
+      "imports": [
+        "./sandbox-execution.ts",
+        "./sandbox-execution.ts",
+        "./workflow-guest-source.ts",
+        "node:stream",
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "node:net",
+        "./cubesandbox-runtime-client.ts",
+        "./workspace-volume-gateway.ts",
+        "@pi-cloud/protocol",
+        "./sandbox-provider.ts",
+        "./cube-persistent-capsule.ts",
+        "./cubesandbox-workspace-browser.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/sandbox-control/src/cubesandbox-workspace-browser.ts",
+      "lines": 68,
+      "sha256": "5ebfb90ef2714d37a8a07c02e3a43cf7448293798475a15d2e685efe1f1cfdab",
+      "imports": ["@pi-cloud/protocol", "./cubesandbox-runtime-client.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/direct-private-egress.ts",
+      "lines": 48,
+      "sha256": "93b0ab15401bc08acbe7a1489143c6526d14df4d34c1e2c5e93b756980a1f748",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/execution-path-probes.ts",
+      "lines": 380,
+      "sha256": "b7ba663f04f8025deaaf72cb7386d8b8fbe2c9a1c3a314dc9728de68a14be776",
+      "imports": [
+        "node:util",
+        "@pi-cloud/protocol",
+        "@pi-cloud/event-log",
+        "./sandbox-bindings.ts",
+        "./cubesandbox-runtime-client.ts",
+        "./cubesandbox-runtime-client.ts",
+        "./sandbox-execution.ts",
+        "p-queue"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/sandbox-control/src/index.ts",
+      "lines": 95,
+      "sha256": "5955925dc8b5acdf66e80aa084f3d6cfdce5e80beda38eb9245a48b5d411906b",
+      "imports": [
+        "./sandbox-control-client.ts",
+        "./workspace-runtime-state-repository.ts",
+        "./cubesandbox-sandbox-provider.ts",
+        "./cubesandbox-runtime-client.ts",
+        "./sandbox-provider.ts",
+        "./sandbox-controller.ts",
+        "./sandbox-control-config.ts",
+        "./sandbox-control-server.ts",
+        "./workspace-volume-gateway.ts",
+        "./workspace-volume-gateway.ts",
+        "./workspace-volume-deletion-reaper.ts",
+        "./sandbox-http-service-registry.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/persistent-volume-workspace-volume-gateway.ts",
+      "lines": 867,
+      "sha256": "73b10224946d23338afcf0ed37e91945154caec0e06419c0d17bce8125a5f447",
+      "imports": [
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "node:net",
+        "@pi-cloud/workspace-runtime",
+        "./workspace-volume-gateway-contract.ts",
+        "./workspace-volume-gateway-contract.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/postgres-workspace-volume-gateway-lock.ts",
+      "lines": 45,
+      "sha256": "2cc15c1501beec7a750ce0a3f05a68b2e29b764f712773b1d7b344f6e5b16073",
+      "imports": ["pg", "./workspace-volume-gateway-contract.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/runtime-health-monitor.ts",
+      "lines": 156,
+      "sha256": "9b9fc7a606d46e8ccc3a10bb502b80d459539920aab98e53721385b12074e2df",
+      "imports": ["@pi-cloud/protocol", "./sandbox-provider.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/sandbox-control/src/runtime-quarantine.ts",
+      "lines": 75,
+      "sha256": "71b829c237b594f2589ead727e44fe9657cea1ea363c357e8472dd9462fb80c1",
+      "imports": ["@pi-cloud/database", "kysely", "./sandbox-execution.ts"],
+      "queryOperationOccurrences": 10,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-admission.ts",
+      "lines": 148,
+      "sha256": "c87205d66d1839135f65ade931b704ae7d3f3868c1aa6217d34d2cc2616ed2f9",
+      "imports": ["@pi-cloud/protocol", "./sandbox-provider.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-binding-view.ts",
+      "lines": 182,
+      "sha256": "306d0afb1c9af2fc5129175650c53110892e41970a7e99afeffb29bf7554798a",
+      "imports": ["./sandbox-bindings.ts", "@pi-cloud/protocol", "./sandbox-bindings.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-bindings.ts",
+      "lines": 218,
+      "sha256": "4fb41b71de24ead73691670b17d642fdd3e338d9476c32cfb6df395e1e02a963",
+      "imports": [
+        "@pi-cloud/database",
+        "kysely",
+        "@pi-cloud/protocol",
+        "./workflow-command-dispatcher.ts",
+        "./sandbox-execution.ts"
+      ],
+      "queryOperationOccurrences": 18,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-control-client.ts",
+      "lines": 955,
+      "sha256": "4d0cbdafb8ae7b725c097a6c1ba9da26526c37c87eb6003fe6d220db97b18215",
+      "imports": [
+        "./upload-http.ts",
+        "@pi-cloud/protocol",
+        "@pi-cloud/observability",
+        "node:crypto",
+        "undici",
+        "@pi-cloud/protocol",
+        "./workspace-volume-gateway-contract.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-control-config.ts",
+      "lines": 400,
+      "sha256": "bed741fcfc20f2423f92dbced298551b6f93fedc87d7a78fbdefbd7fa081e2b1",
+      "imports": [
+        "@pi-cloud/domain",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "./direct-private-egress.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-control-runtime.ts",
+      "lines": 315,
+      "sha256": "aadb84dc7cd0a1d63ab406e6d0b25c21c894cb24d4eabbfe17a3e52550f62647",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "@pi-cloud/event-log",
+        "@pi-cloud/session-attachments",
+        "kysely",
+        "./cubesandbox-sandbox-provider.ts",
+        "./cubesandbox-runtime-client.ts",
+        "./sandbox-control-server.ts",
+        "./sandbox-controller.ts",
+        "./workspace-volume-gateway.ts",
+        "./workspace-runtime-state-repository.ts",
+        "./sandbox-http-service-registry.ts",
+        "./workspace-volume-deletion-reaper.ts",
+        "./workflow-command-dispatcher.ts",
+        "./sandbox-bindings.ts",
+        "./sandbox-binding-view.ts",
+        "./tool-command-dispatcher.ts",
+        "./sandbox-control-config.ts",
+        "./runtime-quarantine.ts",
+        "./execution-path-probes.ts",
+        "./sandbox-execution.ts",
+        "@pi-cloud/protocol",
+        "undici"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-control-server.ts",
+      "lines": 1201,
+      "sha256": "7548f1d09ee10907cb374c41c04aa11d59f55119480190de9ff42a2c90f97370",
+      "imports": [
+        "node:stream",
+        "@pi-cloud/protocol",
+        "@fastify/websocket",
+        "@pi-cloud/observability",
+        "node:crypto",
+        "fastify",
+        "ws",
+        "./workflow-channels.ts",
+        "./sandbox-control-client.ts",
+        "./sandbox-provider.ts",
+        "./workspace-volume-gateway-contract.ts",
+        "@pi-cloud/protocol",
+        "./sandbox-control-client.ts",
+        "./sandbox-controller.ts",
+        "./tool-command-dispatcher.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-controller.ts",
+      "lines": 3392,
+      "sha256": "212e19a495ef0379302838165e1359631c422e30160410bdd8678934296fefec",
+      "imports": [
+        "@pi-cloud/domain",
+        "./sandbox-execution.ts",
+        "./sandbox-bindings.ts",
+        "@pi-cloud/database",
+        "./workspace-runtime-cleanup.ts",
+        "./workflow-channels.ts",
+        "./sandbox-admission.ts",
+        "p-queue",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "@pi-cloud/session-attachments",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "./sandbox-provider.ts",
+        "./workspace-runtime-state-repository.ts",
+        "./sandbox-http-service-registry.ts",
+        "./runtime-health-monitor.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-execution.ts",
+      "lines": 33,
+      "sha256": "f60366a6107717d20c72dd977cf862bbe42399902cd40a5c481419221fee2acb",
+      "imports": ["@pi-cloud/protocol", "node:crypto"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-http-service-registry.ts",
+      "lines": 143,
+      "sha256": "eedb5686486d42cb7289aa78554d2cf1a0c25449e020fda2391509a23b6c4047",
+      "imports": ["@pi-cloud/database", "./sandbox-provider.ts", "kysely", "node:crypto"],
+      "queryOperationOccurrences": 12,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/sandbox-provider.ts",
+      "lines": 306,
+      "sha256": "a8ced66dcc36f0b4ef9d844b21ca8d1683daf70d0723153796a3cb31c8627bc2",
+      "imports": [
+        "@pi-cloud/protocol",
+        "node:stream",
+        "@pi-cloud/protocol",
+        "./workspace-volume-gateway-contract.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/tool-command-dispatcher.ts",
+      "lines": 261,
+      "sha256": "d047ab0f55842cde9223e3d847608fc5eb35c8fad26c117ed13006d70d77f900",
+      "imports": [
+        "@pi-cloud/protocol",
+        "@pi-cloud/observability",
+        "undici",
+        "./cubesandbox-runtime-client.ts",
+        "./workflow-command-dispatcher.ts",
+        "./sandbox-bindings.ts",
+        "./sandbox-execution.ts",
+        "./sandbox-execution.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/upload-http.ts",
+      "lines": 85,
+      "sha256": "789c2c88b46bddca78d403e5157bf584518de28b8e3a8be195cc787cc3d01129",
+      "imports": ["undici", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/sandbox-control/src/workflow-channels.ts",
+      "lines": 152,
+      "sha256": "b16d01b268e6177da1be2cbe6cabeade6c736dfcbf4a62c97e585ac16f4e4045",
+      "imports": [
+        "node:events",
+        "node:stream",
+        "node:readline",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/sandbox-control/src/workflow-command-dispatcher.ts",
+      "lines": 259,
+      "sha256": "d4e8b2f63476293248176e0e953a222d858704c39839cdc9cb78ea8e5a7922c7",
+      "imports": [
+        "@pi-cloud/protocol",
+        "@pi-cloud/observability",
+        "./sandbox-provider.ts",
+        "./sandbox-controller.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/workflow-guest-source.ts",
+      "lines": 90,
+      "sha256": "51c13b22206929bee67bc19cc1a05861afef27521505a030d21ed68f77608eef",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/workspace-runtime-cleanup.ts",
+      "lines": 28,
+      "sha256": "e9c5f4dab528d5b4aa8aa5e7c5f777165c0b3049c121009654e9fedc38cdd898",
+      "imports": ["@pi-cloud/database"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/workspace-runtime-state-repository.ts",
+      "lines": 1922,
+      "sha256": "97017744a0ea165ec587bb67df677b43a49ffd52bcbbcbba3011827d5cd122d3",
+      "imports": [
+        "node:crypto",
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "./sandbox-provider.ts",
+        "kysely",
+        "node:timers/promises",
+        "@pi-cloud/database"
+      ],
+      "queryOperationOccurrences": 163,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/sandbox-control/src/workspace-volume-deletion-reaper.ts",
+      "lines": 173,
+      "sha256": "971e51acb41d495accc4ed21d2fd566f368537522aba650b76979da6d11da476",
+      "imports": ["@pi-cloud/database", "kysely", "./workspace-volume-gateway-contract.ts"],
+      "queryOperationOccurrences": 3,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/sandbox-control/src/workspace-volume-gateway-contract.ts",
+      "lines": 295,
+      "sha256": "15c2039b653fcb711fe327476ce46cb3b4ebddd9b77a39e97c874bd03f38f7c9",
+      "imports": ["@pi-cloud/protocol", "node:crypto", "node:path"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/workspace-volume-gateway-main.ts",
+      "lines": 132,
+      "sha256": "ac96f8f1c931d3607ef905bc7aa85d788ab7b528f456f5639a74e4c7228ca952",
+      "imports": [
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "./workspace-volume-gateway.ts",
+        "pg",
+        "@pi-cloud/observability",
+        "./postgres-workspace-volume-gateway-lock.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-control/src/workspace-volume-gateway-transport.ts",
+      "lines": 908,
+      "sha256": "fdcc091858f5985c8be5a54564535740fa93a20c4e14d9ea5775122ff8059797",
+      "imports": [
+        "node:stream",
+        "./upload-http.ts",
+        "node:crypto",
+        "@pi-cloud/observability",
+        "fastify",
+        "p-queue",
+        "undici",
+        "@pi-cloud/protocol",
+        "./workspace-volume-gateway-contract.ts",
+        "./workspace-volume-gateway-contract.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/sandbox-control/src/workspace-volume-gateway.ts",
+      "lines": 28,
+      "sha256": "f5793288b86beec4e17f2d241e1616284dac3bcdc7e2b97bbd7b45eac53d7b9c",
+      "imports": [
+        "./workspace-volume-gateway-contract.ts",
+        "./persistent-volume-workspace-volume-gateway.ts",
+        "./postgres-workspace-volume-gateway-lock.ts",
+        "./workspace-volume-gateway-transport.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/agent-run-supervisor.ts",
+      "lines": 969,
+      "sha256": "7d8cc7c3a3a969cba34bc75c08ffd5b94c30c5adcc94e8fbba22b38871756bb5",
+      "imports": ["@pi-cloud/domain", "@pi-cloud/protocol", "node:util", "./pi-turn-runtime.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/agent-turn-runtime.ts",
+      "lines": 75,
+      "sha256": "17bbf4dcdbda4a6fdc7e04caefe07e3b78e250d904470cf9c04d180f263a821e",
+      "imports": ["@pi-cloud/protocol", "@earendil-works/pi-agent-core"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/assistant-text-presentation.ts",
+      "lines": 55,
+      "sha256": "db5c0e39b5e702f61994a9a4861fc67c4ba673fbd9f5e52ecf2595fc3c278054",
+      "imports": ["@pi-cloud/protocol", "./agent-turn-runtime.ts", "./cloud-agent-runtime.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/cloud-agent-runtime.ts",
+      "lines": 1358,
+      "sha256": "791ae0fd9a9f58714e273d2eefdadf618c4735aadca6f5d6744111e6fed8507d",
+      "imports": [
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-ai",
+        "./model-stream-error.ts",
+        "@pi-cloud/protocol",
+        "./tool-invocation.ts",
+        "./prepared-tool.ts",
+        "@pi-cloud/protocol/native-session"
+      ],
+      "queryOperationOccurrences": 1,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/cloud-context.ts",
+      "lines": 245,
+      "sha256": "0237193e74f6e1a7500c6c65c20b9acd035c79132420cff254948fa3afe3cc6b",
+      "imports": ["@pi-cloud/protocol", "node:crypto", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/index.ts",
+      "lines": 151,
+      "sha256": "e5f1d28484b8cb5cc59267b0e3fbf8e78b89097ba416a7331ae72963c4896304",
+      "imports": [
+        "./pi-agent-event-adapter.ts",
+        "./pi-turn-runtime.ts",
+        "./pi-sandbox-continuity.ts",
+        "./pi-cloud-turn-runner.ts",
+        "./trusted-remote-tools.ts",
+        "./subagent-tool.ts",
+        "./cloud-context.ts",
+        "./pi-sampling-step.ts",
+        "./pi-settlement-gate.ts",
+        "./agent-run-supervisor.ts",
+        "./agent-turn-runtime.ts",
+        "./provider-hosted-transcript.ts",
+        "./remote-tool-sandbox-turn-runner.ts",
+        "./workspace-seed.ts",
+        "./supervisor-websocket-client.ts",
+        "./reconnecting-supervisor-websocket-client.ts",
+        "./subagent-control-client.ts",
+        "./workflow-transport.ts",
+        "./cloud-agent-runtime.ts",
+        "./tool-invocation.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/model-stream-error.ts",
+      "lines": 7,
+      "sha256": "4e6c6de8c6cc40b62f914894a9e9873e13f7258acde9c3d94fba92e545984c53",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/pi-agent-event-adapter.ts",
+      "lines": 670,
+      "sha256": "f7a84bf17a593b34c2c4c0d9c3444d87fe236c548ec57b76ca4231037d54d9e2",
+      "imports": [
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "@pi-cloud/protocol",
+        "./model-stream-error.ts",
+        "@earendil-works/pi-ai"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/pi-cloud-turn-runner.ts",
+      "lines": 1106,
+      "sha256": "cbdec95601f7bbc8972706f66c8735d2b95890df910b63e23a53f3e13c7c2007",
+      "imports": [
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol/native-session",
+        "./cloud-agent-runtime.ts",
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-coding-agent",
+        "@earendil-works/pi-ai",
+        "@pi-cloud/observability",
+        "./pi-agent-event-adapter.ts",
+        "./assistant-text-presentation.ts",
+        "./tool-invocation.ts",
+        "./pi-sandbox-continuity.ts",
+        "./pi-sampling-step.ts",
+        "./provider-hosted-tools.ts",
+        "./provider-hosted-transcript.ts",
+        "./pi-turn-runtime.ts",
+        "./trusted-remote-tools.ts",
+        "./pi-run-activity.ts",
+        "@pi-cloud/protocol",
+        "./agent-turn-runtime.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/pi-run-activity.ts",
+      "lines": 79,
+      "sha256": "4bdb2a94883c770e08859db38d73026e9bf1edd3d735aa6a8692f618318b1bc3",
+      "imports": ["@pi-cloud/protocol", "./cloud-agent-runtime.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/pi-sampling-step.ts",
+      "lines": 62,
+      "sha256": "ead9d11045def7d0678cf001a257fab51b53923dd4a2cc3050c82065dfd083a7",
+      "imports": ["./cloud-context.ts", "./pi-sandbox-continuity.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/pi-sandbox-continuity.ts",
+      "lines": 318,
+      "sha256": "4a6474dbb2d41ad89d89af28260def8f9d4bab77cf74fde039d345b37fd830bb",
+      "imports": ["node:crypto", "@earendil-works/pi-agent-core", "./cloud-context.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/pi-settlement-gate.ts",
+      "lines": 139,
+      "sha256": "8c63db04168a1abe3e3620b412167462b4424d7efd2a369013f1deec5cb19bf9",
+      "imports": ["@pi-cloud/protocol", "@earendil-works/pi-agent-core"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/pi-turn-runtime.ts",
+      "lines": 71,
+      "sha256": "71d92dd6d19b505f68dc63a4a03ff611f1fb230cd79b893143c3cc50006cef34",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/prepared-tool.ts",
+      "lines": 14,
+      "sha256": "e9d164afffc7b067363206df48235ff19b511bb8103b031a7b559a484da4c0fc",
+      "imports": ["@earendil-works/pi-agent-core", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/provider-hosted-tools.ts",
+      "lines": 45,
+      "sha256": "46a18765848097e28a3621d800648bd668887c973ba7ea58563d1472c3c4c993",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/provider-hosted-transcript.ts",
+      "lines": 213,
+      "sha256": "12d6529fb1ce56ec331b10bb04b5ab05ecd111fd36ca2c8554d9bb9a67884f89",
+      "imports": [
+        "@earendil-works/pi-ai",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "./agent-turn-runtime.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/reconnecting-supervisor-websocket-client.ts",
+      "lines": 447,
+      "sha256": "54b152696ac270c882b3d9d9310050a1db854ec91d10b3ea10d82f0a9f3d6255",
+      "imports": ["@pi-cloud/protocol", "./supervisor-websocket-client.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/remote-tool-sandbox-turn-runner.ts",
+      "lines": 787,
+      "sha256": "5e8cea9aebbe72a0e0fab52e222cb3301a9f6d55dafd0be5c92697bf80e138b0",
+      "imports": [
+        "./workflow-transport.ts",
+        "@pi-cloud/observability",
+        "@pi-cloud/protocol",
+        "@pi-cloud/workspace-runtime",
+        "node:fs/promises",
+        "node:path",
+        "./agent-run-supervisor.ts",
+        "./pi-turn-runtime.ts",
+        "./pi-cloud-turn-runner.ts",
+        "./pi-settlement-gate.ts",
+        "@pi-cloud/protocol",
+        "./agent-turn-runtime.ts",
+        "./trusted-remote-tools.ts",
+        "./cloud-context.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/sampling-context.ts",
+      "lines": 91,
+      "sha256": "3f97364f2c75a190af16e1d9630613c0c9b439db1f4b70a6bba615241e92af18",
+      "imports": [
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai",
+        "@pi-cloud/protocol",
+        "./cloud-context.ts",
+        "./pi-sandbox-continuity.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/subagent-control-client.ts",
+      "lines": 78,
+      "sha256": "9d45a4c6af400f5842ab90a30952bedf7e998f6ac7dc353e143a7aee8a2bacd8",
+      "imports": ["node:crypto", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/subagent-tool.ts",
+      "lines": 187,
+      "sha256": "c812e17c297f2b658819204c19a341bb0f422aab114e546b05c0fdb667fd80aa",
+      "imports": [
+        "@earendil-works/pi-agent-core",
+        "typebox",
+        "typebox/value",
+        "@pi-cloud/protocol"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/supervisor-websocket-client.ts",
+      "lines": 686,
+      "sha256": "65433321dae4d2d2e98b7197e718052e9c562b1b9ff123bb389d671ca66f31cd",
+      "imports": ["@pi-cloud/domain", "@pi-cloud/protocol", "ws", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 4
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/tool-invocation.ts",
+      "lines": 34,
+      "sha256": "192f43011d2da74674cf8d0ea9289402e44282c64668934eaf1cbda6a63b8751",
+      "imports": ["node:async_hooks"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/trusted-remote-tools.ts",
+      "lines": 543,
+      "sha256": "cad2219bef4d66f535ac96a33242a8775815008096b34c6717f12ded14ad1316",
+      "imports": [
+        "@pi-cloud/protocol",
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-coding-agent",
+        "node:crypto",
+        "./tool-invocation.ts",
+        "./prepared-tool.ts",
+        "./sampling-context.ts",
+        "./cloud-context.ts",
+        "./pi-sandbox-continuity.ts",
+        "./workflow-transport.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/workflow-transport.ts",
+      "lines": 129,
+      "sha256": "6e41c01ab22fb22b719d520c9102509c55767c2d38cb974929900e9bcb4c5b3b",
+      "imports": ["ws", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/sandbox-supervisor/src/workspace-seed.ts",
+      "lines": 2,
+      "sha256": "3eaa81597e64bd3333c5c59ff72b5952340bdd238251d06877b16c705d778f97",
+      "imports": ["@pi-cloud/workspace-runtime"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/session-attachments/src/codec.ts",
+      "lines": 144,
+      "sha256": "64c16f2cd215a43fa0830b2f2900cfabf509d26e6e2579ed85228f5650513421",
+      "imports": ["node:crypto", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/session-attachments/src/configured.ts",
+      "lines": 68,
+      "sha256": "a1f767195a0dc1258bdb7480da6761e77a2ffa15490193d29e85a94f994a7c18",
+      "imports": [
+        "node:fs/promises",
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "kysely",
+        "./codec.ts",
+        "./store.ts",
+        "./s3.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/session-attachments/src/index.ts",
+      "lines": 7,
+      "sha256": "252d6ecd3590292162a74be8fec11894b403db64fde0129a2669e567d97a81c0",
+      "imports": [
+        "./codec.ts",
+        "./codec.ts",
+        "./store.ts",
+        "./s3.ts",
+        "./configured.ts",
+        "./reaper.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/session-attachments/src/reaper.ts",
+      "lines": 31,
+      "sha256": "6509055d7ecf0eb2ff98995b2df633f58ac8902645b4a2b01f2fc40f42b6c802",
+      "imports": ["./store.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/session-attachments/src/s3.ts",
+      "lines": 114,
+      "sha256": "304a563316803f3eae91e75e176ea5fb7d8d297eb5648d69ead91f312985f4c4",
+      "imports": ["node:stream", "@aws-sdk/client-s3", "./store.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/session-attachments/src/store.ts",
+      "lines": 246,
+      "sha256": "e6e0adb981683cca447ca1517ccf2a02db18938b514e7f6c5e476f42987945bd",
+      "imports": [
+        "node:crypto",
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "kysely",
+        "./codec.ts"
+      ],
+      "queryOperationOccurrences": 15,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/ssh-gateway/src/config.ts",
+      "lines": 57,
+      "sha256": "c60d52f6f480c6f2dbb1cbad3a601cdcdbae3069e218de6fdaf6a3a2e88e9ee9",
+      "imports": ["node:fs", "node:fs/promises"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/ssh-gateway/src/main.ts",
+      "lines": 30,
+      "sha256": "9a36652627067b889a6e25a3f15ed21f90a7f7febf4849268a4cb824be449a4e",
+      "imports": ["@pi-cloud/database", "./config.ts", "./server.ts", "./ticket-authority.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/ssh-gateway/src/sandbox-control-terminal.ts",
+      "lines": 157,
+      "sha256": "cc2381e4277f754f701d08b22c9992c1722339c74840b0019bedc065e7eb4256",
+      "imports": [
+        "@pi-cloud/protocol",
+        "node:crypto",
+        "ws",
+        "node:stream",
+        "./ticket-authority.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/ssh-gateway/src/server.ts",
+      "lines": 116,
+      "sha256": "8e983dd734ca43bf3973c8fb05a21da214536738d9d56fdb8d2372c013bfc37a",
+      "imports": [
+        "ssh2",
+        "./config.ts",
+        "./ticket-authority.ts",
+        "./sandbox-control-terminal.ts",
+        "node:events"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/ssh-gateway/src/ticket-authority.ts",
+      "lines": 81,
+      "sha256": "f865cede3f0893687eb09d465f2a65b9ab1f2606616f7a5ed2282178cc67ef57",
+      "imports": ["@pi-cloud/database", "node:crypto", "kysely"],
+      "queryOperationOccurrences": 6,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/subagent-control/src/index.ts",
+      "lines": 16,
+      "sha256": "802cdca287d61e20a0184a8b0b68ba0e649a9158d2123d856f9f81e1bbd23f34",
+      "imports": [
+        "./postgres-subagent-job-provider.ts",
+        "./postgres-subagent-supervisor-channel.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/subagent-control/src/postgres-subagent-job-provider.ts",
+      "lines": 1110,
+      "sha256": "7f1b1b4f4a1e6f2f325c6d508415ad66e1f004fdf055b4b4116eb9f02ee5cbcb",
+      "imports": [
+        "@pi-cloud/domain",
+        "node:crypto",
+        "node:path",
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@earendil-works/pi-agent-core",
+        "kysely"
+      ],
+      "queryOperationOccurrences": 84,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/subagent-control/src/postgres-subagent-supervisor-channel.ts",
+      "lines": 317,
+      "sha256": "c978f722bc64952ad8352610586d58695ae552d44931304c7edd08de4f3b0607",
+      "imports": ["node:crypto", "@pi-cloud/database", "kysely"],
+      "queryOperationOccurrences": 26,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/agent-run-execution-backend.ts",
+      "lines": 675,
+      "sha256": "9f2b1136e3ae863b072fc4f48ec5a86fb85167d72b278ec685fc52f112fb9413",
+      "imports": [
+        "@pi-cloud/sandbox-supervisor",
+        "@pi-cloud/protocol",
+        "@pi-cloud/observability",
+        "@pi-cloud/runtime-core/run-cancellation-executor",
+        "@pi-cloud/runtime-core/run-executor",
+        "@pi-cloud/database",
+        "kysely",
+        "@pi-cloud/runtime-core",
+        "@pi-cloud/runtime-core/execution-log",
+        "@pi-cloud/runtime-core/session-lease-coordinator"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/supervisor-host/src/boot-ledger.ts",
+      "lines": 397,
+      "sha256": "294cf45f3451afc64344a9158ccf8603ddb9c6e74c2406d4da19d60276476926",
+      "imports": ["node:crypto", "node:fs", "node:fs/promises", "node:path"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/config.ts",
+      "lines": 440,
+      "sha256": "e543815c9a3d93bc74b59908e06aaa87e43211ab86734277eaf2ee77a361db3b",
+      "imports": [
+        "@pi-cloud/domain",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "@pi-cloud/protocol",
+        "@pi-cloud/runtime-core/kafka-accepted-fact"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/family-model-permits.ts",
+      "lines": 115,
+      "sha256": "0a9e608ecc4acf42e607ca639ee7300d0ed3c500ab57fa4ff017438c4cd6219a",
+      "imports": ["@pi-cloud/domain"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/index.ts",
+      "lines": 51,
+      "sha256": "4474a5a0497dc467fdef7a16b9d10d0972fc3697aca7e043c5d02d2d5a80b594",
+      "imports": [
+        "./boot-ledger.ts",
+        "./management-server.ts",
+        "./provisioning-client.ts",
+        "./config.ts",
+        "./runtime.ts",
+        "./model-gateway.ts",
+        "./responses-hosted-activity.ts",
+        "./workspace-seed.ts",
+        "./postgres-pi-worker.ts",
+        "./agent-run-execution-backend.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/main.ts",
+      "lines": 103,
+      "sha256": "efa93e99447c8087f0b5b3b2ddfd87cc4bb2182166cc3c546cb878b1aab661ea",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "node:url",
+        "node:timers/promises",
+        "./config.ts",
+        "./runtime.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/management-server.ts",
+      "lines": 314,
+      "sha256": "05d7d7e8765497fc3a4e9d7453119d68c2e58289b86ecc51688518771a2e2d73",
+      "imports": ["@pi-cloud/protocol", "node:crypto", "fastify", "./boot-ledger.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/model-gateway.ts",
+      "lines": 943,
+      "sha256": "ca78d074955b8b073665d9b070809b4f392fb2c5205b8823fea192676e66dfb6",
+      "imports": [
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "@pi-cloud/sandbox-supervisor",
+        "@pi-cloud/observability",
+        "node:crypto",
+        "node:http",
+        "node:net",
+        "node:events",
+        "node:stream",
+        "node:zlib",
+        "./responses-hosted-activity.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/supervisor-host/src/postgres-pi-worker.ts",
+      "lines": 410,
+      "sha256": "f33b055d476c0af94e254e311c4ac349411aa43c72729edb016082841a02c214",
+      "imports": [
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "@pi-cloud/database",
+        "@pi-cloud/runtime-core/run-cancellation-executor",
+        "@pi-cloud/runtime-core/run-executor",
+        "./worker-memory-monitor.ts",
+        "kysely",
+        "pg"
+      ],
+      "queryOperationOccurrences": 2,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/provisioning-client.ts",
+      "lines": 163,
+      "sha256": "8211cceca3915d31b71396897bca4acb2987874261a8ad752aa31593263ee798",
+      "imports": ["@pi-cloud/protocol", "undici"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/responses-hosted-activity.ts",
+      "lines": 291,
+      "sha256": "daad7b303e3c636da54ce1664b1963e550811e12d99beefbc4a57672bceddef2",
+      "imports": ["@pi-cloud/sandbox-supervisor", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/retired-runs.ts",
+      "lines": 24,
+      "sha256": "96c11308fca483d9ee54074931a273b066f624c98da3969b5fcca27293a6c89c",
+      "imports": ["@pi-cloud/database", "kysely"],
+      "queryOperationOccurrences": 1,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/run-activity-publisher.ts",
+      "lines": 151,
+      "sha256": "2abf189b7e13403ac4a9da84c0ee2fe987680b304c0dad7cd82679d02dbf12bd",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/supervisor-host/src/run-claim-readiness.ts",
+      "lines": 75,
+      "sha256": "022c785a69ad22a817f30a00f3498e27ae23563b292d368a4164ea544cfee8c5",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/supervisor-host/src/runtime.ts",
+      "lines": 840,
+      "sha256": "9d1507b38c0c25b77b193764ebea750fb8721f20340c08a410d17878339fbc5e",
+      "imports": [
+        "@pi-cloud/domain",
+        "@pi-cloud/protocol",
+        "@pi-cloud/runtime-core/http-publication-client",
+        "@pi-cloud/sandbox-supervisor",
+        "@pi-cloud/runtime-core/run-cancellation-executor",
+        "@pi-cloud/runtime-core/execution-log",
+        "@pi-cloud/runtime-core/worker-execution-log",
+        "@pi-cloud/runtime-core/kafka-accepted-fact",
+        "@pi-cloud/event-log",
+        "@pi-cloud/runtime-core/native-session-log-publisher",
+        "@pi-cloud/runtime-core/accepted-fact",
+        "./agent-run-execution-backend.ts",
+        "@pi-cloud/runtime-core/run-executor",
+        "@pi-cloud/runtime-core/session-lease-coordinator",
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "@pi-cloud/pi-session-postgres",
+        "@pi-cloud/protocol",
+        "@pi-cloud/sandbox-control",
+        "@pi-cloud/sandbox-supervisor",
+        "./tools/trusted-tool-runtime.ts",
+        "./family-model-permits.ts",
+        "node:crypto",
+        "kysely",
+        "./boot-ledger.ts",
+        "./config.ts",
+        "./management-server.ts",
+        "./model-gateway.ts",
+        "./run-claim-readiness.ts",
+        "./postgres-pi-worker.ts",
+        "./provisioning-client.ts",
+        "./workspace-seed.ts",
+        "./retired-runs.ts",
+        "./run-activity-publisher.ts",
+        "@pi-cloud/protocol",
+        "@pi-cloud/session-attachments",
+        "@pi-cloud/protocol"
+      ],
+      "queryOperationOccurrences": 1,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/supervisor-host/src/tools/postgres-preview-tool.ts",
+      "lines": 76,
+      "sha256": "d7d5f263d73ff473a526959ae51bdcbc0b5dd8b358172520c0fa93a9186bf228",
+      "imports": ["@pi-cloud/database", "@earendil-works/pi-agent-core", "typebox", "kysely"],
+      "queryOperationOccurrences": 4,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/tools/subagent-supervisor-tools.ts",
+      "lines": 92,
+      "sha256": "0013c66389f7076afe551c7ebbbe76f174c4e28ea462c95f7d25653d8ad39af2",
+      "imports": ["@earendil-works/pi-agent-core", "@pi-cloud/protocol", "typebox"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/tools/trusted-tool-runtime.ts",
+      "lines": 180,
+      "sha256": "31e598118bc4803a56e75fb72304fef3fa8d6f9ac3147730779f68acb1e07190",
+      "imports": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@pi-cloud/sandbox-supervisor",
+        "kysely",
+        "@pi-cloud/subagent-control",
+        "./subagent-supervisor-tools.ts",
+        "./postgres-preview-tool.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/supervisor-host/src/worker-memory-monitor.ts",
+      "lines": 101,
+      "sha256": "cdbea1baed9dd90ac332b1e6861fbfd5ff169ff1921af9a3390c1ca4b33379fd",
+      "imports": ["node:worker_threads", "node:v8"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/supervisor-host/src/workspace-seed.ts",
+      "lines": 15,
+      "sha256": "1987c235bebe461afbc21d24d90dece45d81760617e65191e4840b3dd1860c87",
+      "imports": [
+        "@pi-cloud/protocol",
+        "@pi-cloud/sandbox-supervisor",
+        "@pi-cloud/workspace-runtime"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/tool-sandbox/src/cube-tool-scope.ts",
+      "lines": 147,
+      "sha256": "8723be2947702062f2ab14e2a9c0231da7532e6149e3eb2a8766ce5851297614",
+      "imports": ["node:child_process", "node:fs", "node:fs/promises", "./execution-cgroup.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/tool-sandbox/src/envd-guest-control.ts",
+      "lines": 165,
+      "sha256": "36de00b10acc76fc2f0b1aaaa5fa1c1734d92059b5e0c5c37882e1c9dbe85f9b",
+      "imports": [
+        "node:fs",
+        "@pi-cloud/protocol/guest",
+        "node:fs/promises",
+        "node:os",
+        "node:path"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/tool-sandbox/src/envd-input-files.ts",
+      "lines": 28,
+      "sha256": "91754620915a97de01db434968aff0125dd024aca0a7ba7988f388468189fa06",
+      "imports": ["node:fs", "node:fs/promises", "./input-files.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/tool-sandbox/src/envd-tool-exec.ts",
+      "lines": 169,
+      "sha256": "73cac401c8057752c1d04eb2a8632e87569b06dcdfa0674002512f2f263568f7",
+      "imports": [
+        "@pi-cloud/protocol/guest",
+        "./native-tools.ts",
+        "node:events",
+        "node:fs",
+        "node:fs/promises",
+        "./tool-worker.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/tool-sandbox/src/execution-cgroup.ts",
+      "lines": 166,
+      "sha256": "09511fd0fd4a2446574a0c30e03aa751d7a37024e55c2a37cc3e1b0d144de208",
+      "imports": ["node:fs", "node:fs/promises", "node:path"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/tool-sandbox/src/image-processor.ts",
+      "lines": 58,
+      "sha256": "5126fe70054be52d55e83aec2b4c9e7e977d8d2d6153583a448d9be3f3c3feaf",
+      "imports": ["sharp", "@earendil-works/pi-agent-core"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/tool-sandbox/src/index.ts",
+      "lines": 7,
+      "sha256": "cabab8c06897e9cb4d3dd20952ee34fc115748c1551a5f33b6a80eae3e4df8da",
+      "imports": ["./tool-worker.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/tool-sandbox/src/input-files.ts",
+      "lines": 59,
+      "sha256": "fc1da2b173213d5d4193582b6c2ac0dd69ba177984ac57da993da7fc7b1a3ead",
+      "imports": [
+        "node:fs",
+        "node:fs/promises",
+        "@pi-cloud/workspace-runtime",
+        "./image-processor.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/tool-sandbox/src/native-tool-output.ts",
+      "lines": 78,
+      "sha256": "ce837b91144b3cef507417b609545e70a81cbfda5dc967f5a457627a92befd41",
+      "imports": ["@earendil-works/pi-agent-core", "node:string_decoder"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/tool-sandbox/src/native-tools.ts",
+      "lines": 285,
+      "sha256": "4a09e2512ebc08503b6491f4ecbda91192cc124054f8749681302e9a71e4759c",
+      "imports": [
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-agent-core/node",
+        "@pi-cloud/protocol/guest",
+        "node:child_process",
+        "node:fs/promises",
+        "node:fs",
+        "node:path",
+        "./tool-worker.ts",
+        "./native-tool-output.ts",
+        "./image-processor.ts"
+      ],
+      "queryOperationOccurrences": 3,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/tool-sandbox/src/tool-worker.ts",
+      "lines": 852,
+      "sha256": "0101f9644efba03ce78452ed0f503a5dad93a51c384a4c1291546b51b0ea5ef3",
+      "imports": [
+        "@pi-cloud/protocol/guest",
+        "@pi-cloud/workspace-runtime",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "node:net"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 3
+    },
+    {
+      "file": "packages/web-ui/src/AccountMenu.tsx",
+      "lines": 141,
+      "sha256": "ef00c9c7d93e65a49cc04521fb8b835b864747038864d72dd9a714cb360bd070",
+      "imports": ["react", "./i18n.tsx", "./ui-errors.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/AdminPage.tsx",
+      "lines": 288,
+      "sha256": "fcee0646880980bf9b1bf68eb79adbeadea100cc967ecfd37384795d3a765e36",
+      "imports": [
+        "react",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "./api.ts",
+        "./ui-errors.ts",
+        "./i18n.tsx",
+        "./AccountMenu.tsx",
+        "./web-configuration.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/AuthScreen.tsx",
+      "lines": 160,
+      "sha256": "a6fba1cadaf18880f2b9f87ada64abd47e0105d81d058fbcc699fb655e7ce002",
+      "imports": ["react", "@pi-cloud/protocol", "./api.ts", "./ui-errors.ts", "./i18n.tsx"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/ChatApp.tsx",
+      "lines": 2370,
+      "sha256": "d67baa4085d17f8c13cd426ed46d52234bd3d90b6f59ad3a4f281408bed8c28e",
+      "imports": [
+        "./InheritedContext.tsx",
+        "./useComposerUploads.ts",
+        "./UploadCards.tsx",
+        "react",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "./api.ts",
+        "./AccountMenu.tsx",
+        "./AuthScreen.tsx",
+        "./ConversationTreeNavigator.tsx",
+        "./MessageCopyButton.tsx",
+        "./ConversationTurn.tsx",
+        "./PendingInputQueue.tsx",
+        "./WorkspaceRebindDialog.tsx",
+        "./conversation-export.ts",
+        "./ModelSettingsMenu.tsx",
+        "./conversation-scroll.ts",
+        "./session-view.ts",
+        "./sse.ts",
+        "./tool-progress.tsx",
+        "./RunStatus.tsx",
+        "./ui-errors.ts",
+        "./WorkspaceInspector.tsx",
+        "./use-resizable-panel.ts",
+        "./i18n.tsx",
+        "./web-configuration.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 2
+    },
+    {
+      "file": "packages/web-ui/src/CodeHostConnectionsModal.tsx",
+      "lines": 171,
+      "sha256": "8c42f901d49a950f0a7d62328f68f2fde6d1d20aafa1ef78821ddd3943146776",
+      "imports": ["react", "@pi-cloud/protocol", "./api.ts", "./i18n.tsx", "./ui-errors.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/ConversationTreeNavigator.tsx",
+      "lines": 347,
+      "sha256": "6f3de628aed47300bdce52e893a52bc7eb6b45d1520683d690da07fcda751200",
+      "imports": [
+        "react",
+        "@pi-cloud/protocol",
+        "./active-turn-selection.ts",
+        "./i18n.tsx",
+        "./use-resizable-panel.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/web-ui/src/ConversationTurn.tsx",
+      "lines": 512,
+      "sha256": "67ad466296ac0691d751f7dcdc8a63f1838a3a6618cbef199fc45c85cae51596",
+      "imports": [
+        "./UploadCards.tsx",
+        "./api.ts",
+        "react",
+        "./conversation-presentation.ts",
+        "./Markdown.tsx",
+        "./session-view.ts",
+        "./ToolActivity.tsx",
+        "./i18n.tsx",
+        "./MessageCopyButton.tsx",
+        "./tool-progress.tsx",
+        "./RunStatus.tsx"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/web-ui/src/HighlightedCode.tsx",
+      "lines": 63,
+      "sha256": "f46bfdbe09acbcb7644aada6a30989cd8880149539d9afe8d9630bdc0a9f84f0",
+      "imports": ["react"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/InheritedContext.tsx",
+      "lines": 69,
+      "sha256": "797f481e7a44c42fd7b05101bf32318ae0fc4fbcda61b9089a5f27debbe215dd",
+      "imports": ["@pi-cloud/protocol", "./Markdown.tsx", "./MessageCopyButton.tsx", "./i18n.tsx"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/Markdown.tsx",
+      "lines": 106,
+      "sha256": "f6d5a6e55897acef5235b35b76645c51d3c3a64037ec281c4dbfdfba05d924c9",
+      "imports": [
+        "react",
+        "react-markdown",
+        "remark-gfm",
+        "remark-parse",
+        "unified",
+        "./HighlightedCode.tsx",
+        "./i18n.tsx"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/MessageCopyButton.tsx",
+      "lines": 86,
+      "sha256": "24ada8a8148a5e29e4dcf3120fc54e2573e2a387e906b12817a4ddf16b53ed81",
+      "imports": ["react"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/web-ui/src/ModelSettingsMenu.tsx",
+      "lines": 284,
+      "sha256": "bb99c3e74c2d46ad9843408390124261d2cb71ff8eda709afcffa7d84efff8d6",
+      "imports": ["react", "@pi-cloud/protocol", "@pi-cloud/protocol", "./i18n.tsx"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/PendingInputQueue.tsx",
+      "lines": 342,
+      "sha256": "dddd75d7dab43bbccc2e750099b4611b2bb5a3c849aed7f754acc2e57d4fbd1b",
+      "imports": [
+        "./UploadCards.tsx",
+        "@pi-cloud/protocol",
+        "react",
+        "@pi-cloud/protocol",
+        "./api.ts",
+        "./i18n.tsx"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/ResourceManagementPage.tsx",
+      "lines": 832,
+      "sha256": "db6b94dab59df0a5d649d280ffcaf45978a69c2f42e5bb1bcde12d67ea192c8a",
+      "imports": [
+        "react",
+        "@pi-cloud/protocol",
+        "./api.ts",
+        "@pi-cloud/protocol",
+        "./i18n.tsx",
+        "./WorkspaceDirectoryPicker.tsx",
+        "./CodeHostConnectionsModal.tsx"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 3
+    },
+    {
+      "file": "packages/web-ui/src/RunStatus.tsx",
+      "lines": 161,
+      "sha256": "27e03400720f123c67aaab0b1cf80a19112a3a03b0b6a0693db201667a778b69",
+      "imports": ["react", "@pi-cloud/protocol", "./session-view.ts", "./i18n.tsx"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/web-ui/src/ToolActivity.tsx",
+      "lines": 426,
+      "sha256": "4244b6fad85a79cf1601063650b799a650c58e7c1d068e665f487fa0653a59be",
+      "imports": [
+        "react",
+        "./HighlightedCode.tsx",
+        "./i18n.tsx",
+        "./session-view.ts",
+        "./tool-progress.tsx"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/UploadCards.tsx",
+      "lines": 123,
+      "sha256": "209784052e53cec640ca10113e81fc900bae86698d632268a36f2a2142a8d834",
+      "imports": [
+        "react",
+        "@pi-cloud/protocol",
+        "./api.ts",
+        "./i18n.tsx",
+        "./useComposerUploads.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/WorkspaceDirectoryPicker.tsx",
+      "lines": 318,
+      "sha256": "6e47b19879952762d3a7053061a1649af0505a1042a1290f0cdd7ec47a315572",
+      "imports": ["react", "@pi-cloud/protocol", "./api.ts", "./i18n.tsx"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/WorkspaceInspector.tsx",
+      "lines": 351,
+      "sha256": "095d20764f5322e28aec483330f0804c91ab8ddfc5ea31ea5188810f307e8e67",
+      "imports": ["react", "@pi-cloud/protocol", "./api.ts", "./i18n.tsx"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/WorkspaceRebindDialog.tsx",
+      "lines": 320,
+      "sha256": "12c37de4deb1b9af54e1ba37df5db0d60b333b4cfeeb182ee6185f984d49e621",
+      "imports": [
+        "react",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "./api.ts",
+        "./i18n.tsx",
+        "./ui-errors.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/WorkspaceTerminal.tsx",
+      "lines": 279,
+      "sha256": "517a93ab6bdcb3f8edd6f0ebaaf74c397755637c27195b75120fd4000df1bc73",
+      "imports": [
+        "@xterm/addon-fit",
+        "@xterm/xterm",
+        "@xterm/xterm/css/xterm.css",
+        "@pi-cloud/protocol",
+        "react",
+        "./i18n.tsx"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/active-turn-selection.ts",
+      "lines": 23,
+      "sha256": "6a29fa77fd6610afef45d07a4ed56ae7656c04593432570b35a7f745894a0fae",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/api.ts",
+      "lines": 902,
+      "sha256": "0d236e5e1aa5f24f75a6f761f8d7908b1e4144c3058f7d3844f56b544b0ff809",
+      "imports": ["./upload-digest.ts", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/conversation-export.ts",
+      "lines": 161,
+      "sha256": "2f1a3279eb6982a90c0f492185457d1e79a7e2dec601e9f708dfc5d9e4797ed5",
+      "imports": ["@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/conversation-presentation.ts",
+      "lines": 87,
+      "sha256": "3999dd195c621c3c006a4ec881993c20e1164f4d1adc5093ca8fed47e26650a3",
+      "imports": ["./session-view.ts", "./ToolActivity.tsx"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/conversation-scroll.ts",
+      "lines": 12,
+      "sha256": "fee8d10e8d6ce4b2acb79a59b5f5f67d882936a3ae6a09da4c14cb2acb98f92e",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/highlight-js.d.ts",
+      "lines": 23,
+      "sha256": "ae6a0024c027a114fc937fcbe1dbcd9058b428dd2360fd5e8a5bbbdcc672763e",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/i18n.tsx",
+      "lines": 1016,
+      "sha256": "dca4133b678e05fc427706021a0b0c4c158f20afed9884a6d08bb64c50725a6b",
+      "imports": ["react"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/main.tsx",
+      "lines": 31,
+      "sha256": "4872d7023791f911fde4727a1b4cf4ad4cf13c22379305a74891d472c626cb7a",
+      "imports": [
+        "react",
+        "react-dom/client",
+        "./ChatApp.tsx",
+        "./i18n.tsx",
+        "./product.css",
+        "./web-configuration.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/session-view.ts",
+      "lines": 793,
+      "sha256": "6ea7f2ff8fe0d7fefb88d88865f204ada76351f7689bbbe707257bd175c7f8ba",
+      "imports": ["@pi-cloud/protocol", "@pi-cloud/protocol", "./sse.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/source-highlight.ts",
+      "lines": 140,
+      "sha256": "a11e32b01262b9d051a12b0dc617f56aab70ce8c3820ab060fe411234ff9ef80",
+      "imports": [
+        "highlight.js/lib/core",
+        "highlight.js/lib/languages/bash",
+        "highlight.js/lib/languages/c",
+        "highlight.js/lib/languages/cpp",
+        "highlight.js/lib/languages/csharp",
+        "highlight.js/lib/languages/css",
+        "highlight.js/lib/languages/diff",
+        "highlight.js/lib/languages/go",
+        "highlight.js/lib/languages/java",
+        "highlight.js/lib/languages/javascript",
+        "highlight.js/lib/languages/json",
+        "highlight.js/lib/languages/kotlin",
+        "highlight.js/lib/languages/markdown",
+        "highlight.js/lib/languages/php",
+        "highlight.js/lib/languages/python",
+        "highlight.js/lib/languages/ruby",
+        "highlight.js/lib/languages/rust",
+        "highlight.js/lib/languages/sql",
+        "highlight.js/lib/languages/typescript",
+        "highlight.js/lib/languages/xml",
+        "highlight.js/lib/languages/yaml"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/sse.ts",
+      "lines": 308,
+      "sha256": "abd0edaef34817f472c8a3c19385cf319f2bafdceb6a037fd003d7f2daccc6aa",
+      "imports": [
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol",
+        "@discoveryjs/json-ext",
+        "@pi-cloud/protocol",
+        "@pi-cloud/protocol"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 1
+    },
+    {
+      "file": "packages/web-ui/src/tool-progress.tsx",
+      "lines": 100,
+      "sha256": "fbd5b127ef12ec038093d4c23611e9c7ad2311032637855dca4785d04ee6d2ed",
+      "imports": ["react", "@pi-cloud/protocol", "./i18n.tsx"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/ui-errors.ts",
+      "lines": 8,
+      "sha256": "1d4f036cad44701d9ac091f9a3bbc52efc23f16370e6f20d9712e4d2f2b8ae32",
+      "imports": ["./api.ts", "./i18n.tsx"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/upload-digest.ts",
+      "lines": 19,
+      "sha256": "bc39f1efa0b507ec2d888f09daacf73f5bc6b250f8e46b92705c9db569b067b6",
+      "imports": ["@noble/hashes/sha2.js", "@noble/hashes/utils.js", "@pi-cloud/protocol"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/use-resizable-panel.ts",
+      "lines": 107,
+      "sha256": "ba082d1cf8b8b50f2429873e9362ff174d798ca50a2798cf22305339fbde5f56",
+      "imports": ["react"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/useComposerUploads.ts",
+      "lines": 157,
+      "sha256": "72749c1b56c3236747fb2926ce971c1d3b8b973d23ab488c8ed6654d76bee684",
+      "imports": ["react", "@pi-cloud/protocol", "./api.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/web-ui/src/web-configuration.ts",
+      "lines": 58,
+      "sha256": "10cdcf5f5218ef484cef913d6184b9090bbe510f3275e88019461de738225c42",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/workspace-runtime/src/index.ts",
+      "lines": 18,
+      "sha256": "44202a28f7df01e39b9c0fd0899153ec473add860481e448704f25fbf18dab4e",
+      "imports": ["./upload-file.ts", "./workspace-seed.ts", "./workspace-error.ts"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/workspace-runtime/src/upload-file.ts",
+      "lines": 105,
+      "sha256": "4f0c60d55abd16871f7f2752fa2507966a734826224853d9eafe2547bea41236",
+      "imports": ["node:fs", "node:fs/promises", "node:crypto", "@pi-cloud/protocol/uploads"],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/workspace-runtime/src/workspace-error.ts",
+      "lines": 10,
+      "sha256": "8b2eb2c308529ac15ef2ac0212bbc28652bb9b69ad2d343db5b50b04e8398670",
+      "imports": [],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    },
+    {
+      "file": "packages/workspace-runtime/src/workspace-seed.ts",
+      "lines": 248,
+      "sha256": "65da6ec9a72753de550b24c070f6dff852db9ac8ad8bf545dc8fc6926d63fabb",
+      "imports": [
+        "@pi-cloud/protocol/workspace",
+        "node:crypto",
+        "node:fs/promises",
+        "node:path",
+        "node:util",
+        "./workspace-error.ts"
+      ],
+      "queryOperationOccurrences": 0,
+      "timerOccurrences": 0
+    }
+  ]
+}

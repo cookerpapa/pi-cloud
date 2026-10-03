@@ -455,6 +455,11 @@ The database URL may use PgBouncer transaction pooling with protocol-level
 prepared-statement tracking enabled (`max_prepared_statements > 0`, PgBouncer
 1.21 or newer; start with 128). Do not use SQL-level PREPARE/EXECUTE wrappers.
 See [PgBouncer's configuration contract](https://www.pgbouncer.org/config.html#max_prepared_statements).
+The dedicated queue-display pool sends a five-second `statement_timeout` startup
+parameter. A PgBouncer query endpoint must track that parameter as well
+(`track_extra_parameters = statement_timeout`) rather than ignore it; verify this
+support on the deployed PgBouncer version. The repair acceptance uses direct PG.
+See [startup parameter tracking](https://www.pgbouncer.org/config.html#track_extra_parameters).
 The separate
 notification URL must connect directly to PostgreSQL because `LISTEN` is
 session-scoped. Control Plane and Worker both read `DATABASE_NOTIFICATION_URL_FILE`;

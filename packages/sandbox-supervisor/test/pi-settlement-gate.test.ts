@@ -113,4 +113,59 @@ describe("Pi settlement gate", () => {
     });
     expect(controller.prepareFollowUp()).toBeUndefined();
   });
+
+  function start(
+    controller: PiSettlementGateController,
+    id: string,
+    name: string,
+    command?: string,
+  ) {
+    emit(controller, "tool_execution_start", { toolCallId: id, toolName: name, args: { command } });
+  }
+  function end(controller: PiSettlementGateController, id: string, name: string) {
+    emit(controller, "tool_execution_end", {
+      toolCallId: id,
+      toolName: name,
+      isError: false,
+      result: {},
+    });
+  }
+  function stop(controller: PiSettlementGateController) {
+    emit(controller, "message_end", { message: { role: "assistant", stopReason: "stop" } });
+  }
+
+  it.each(["write", "edit", "bash"])(
+    "requires verification after a later %s, even with a reused call ID",
+    (name) => {
+      const controller = install();
+      start(controller, "reused", "bash", "npm test");
+      end(controller, "reused", "bash");
+      start(controller, "reused", name, "touch app.ts");
+      end(controller, "reused", name);
+      stop(controller);
+      expect(controller.prepareFollowUp()).toBeDefined();
+      expect(controller.prepareFollowUp()).toBeUndefined();
+    },
+  );
+
+  it.each(["edit-first", "verify-first"])("does not certify an overlapping edit (%s)", (order) => {
+    const controller = install();
+    start(controller, "edit", "edit");
+    start(controller, "verify", "bash", "npm test");
+    if (order === "edit-first") end(controller, "edit", "edit");
+    end(controller, "verify", "bash");
+    if (order === "verify-first") end(controller, "edit", "edit");
+    stop(controller);
+    expect(controller.prepareFollowUp()).toBeDefined();
+  });
+
+  it("accepts fresh verification after the latest mutation has completed", () => {
+    const controller = install();
+    start(controller, "same", "edit");
+    end(controller, "same", "edit");
+    start(controller, "same", "bash", "npm test");
+    end(controller, "same", "bash");
+    stop(controller);
+    expect(controller.prepareFollowUp()).toBeUndefined();
+  });
 });

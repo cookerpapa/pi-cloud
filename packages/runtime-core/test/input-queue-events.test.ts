@@ -13,6 +13,8 @@ it("coalesces queue snapshots per subscriber, isolates tenants and clears on res
     sessionId: session,
     revision: 1,
     viewVersion: version,
+    afterPosition: 0,
+    hasMore: false,
     activeTurnId: null,
     items: [],
   });

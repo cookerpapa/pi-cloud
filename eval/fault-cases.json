@@ -839,7 +839,7 @@
       "id": "queue-view-snapshot-race",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/input-queue-view.test.ts",
-      "test": "never lets an older concurrent SQL snapshot overwrite a newer version",
+      "test": "coalesces changes arriving during a read and never publishes an obsolete snapshot",
       "invariant": "Queue presentation never regresses after a newer committed change."
     },
     {
@@ -967,6 +967,76 @@
       "file": "test/binary-body-parser.test.ts",
       "test": "streams only upload routes while preserving bounded internal binary publications",
       "invariant": "Removing upload body limits cannot turn internal native publication frames into unparsed streams or remove their transport envelope."
+    },
+    {
+      "id": "streamed-s3-receipt-deadline",
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/s3.test.ts",
+      "test": "terminates a streamed PUT whose complete body is accepted without a receipt",
+      "invariant": "A stalled receipt cannot renew upload claims indefinitely; progressing transfers retain their lifetime."
+    },
+    {
+      "id": "streamed-s3-body-abort",
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/s3.test.ts",
+      "test": "cancels a GET after headers while the response body is stalled",
+      "invariant": "Cancellation closes an S3 body even after HTTP headers have resolved."
+    },
+    {
+      "id": "input-image-consumer-closure",
+      "workspace": "@pi-cloud/session-attachments",
+      "file": "test/storage.postgres.test.ts",
+      "test": "streams with backpressure, validates the complete hash and closes on early consumer failure",
+      "invariant": "Consumer failure/early return never certifies an incomplete image and closes its source."
+    },
+    {
+      "id": "cancel-pg-clock",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/run-queue.test.ts",
+      "test": "uses PG time for cancellation claim/retry under clock skew (-60000)",
+      "invariant": "PG due time, claims and retries remain correct under application clock skew and concurrent dispatch."
+    },
+    {
+      "id": "queue-view-read-isolation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/input-queue-view.test.ts",
+      "test": "does not await slow presentation reads or block another watched Session",
+      "invariant": "Disposable queue reads cannot hold ordered projection or another watched Session."
+    },
+    {
+      "id": "queue-view-reset-capacity",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/input-queue-view.test.ts",
+      "test": "bounds outstanding reads through reset and resynchronizes capacity overflow",
+      "invariant": "Owner changes retain read-slot bounds and discard old completions; overflow requests resynchronization."
+    },
+    {
+      "id": "queue-page-version",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "pages unbounded queues without mixing revisions or reading all input bodies",
+      "invariant": "Paging never mixes queue orders or limits the count of durable inputs."
+    },
+    {
+      "id": "projection-lane-read-scope",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/native-session-projection.test.ts",
+      "test": "does not transfer unrelated historical Lane heads for Entry or metadata appends",
+      "invariant": "Historical Lane count cannot amplify unrelated native append head reads."
+    },
+    {
+      "id": "presentation-pool-deadline",
+      "workspace": "@pi-cloud/database",
+      "file": "test/read-pool-budget.postgres.test.ts",
+      "test": "terminates slow disposable reads without blocking the authority pool",
+      "invariant": "Display queries have server deadlines and separate connection capacity from authority mutations."
+    },
+    {
+      "id": "verification-overlap",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-settlement-gate.test.ts",
+      "test": "does not certify an overlapping edit (verify-first)",
+      "invariant": "A verification result cannot certify a mutation still running or completed after its start."
     }
   ]
 }

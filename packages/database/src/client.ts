@@ -8,6 +8,8 @@ export type CreateDatabaseOptions = {
   connectionString: string;
   maxConnections?: number;
   minConnections?: number;
+  /** Dedicated disposable-read pools only; authority writes keep their own budgets. */
+  readTimeoutMs?: number;
 };
 
 const MAX_PREPARED_STATEMENTS_PER_CONNECTION = 128;
@@ -29,12 +31,25 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
   ) {
     throw new Error("minConnections must be an integer between zero and maxConnections");
   }
+  if (
+    options.readTimeoutMs !== undefined &&
+    (!Number.isSafeInteger(options.readTimeoutMs) || options.readTimeoutMs < 1)
+  )
+    throw new Error("readTimeoutMs must be a positive safe integer");
   // Keep a small warm floor across user/model pauses so named plans survive.
   // pg still creates clients lazily and retires excess idle/broken connections.
   const pool = new Pool({
     connectionString: options.connectionString,
     max: maxConnections,
     min: minConnections,
+    ...(options.readTimeoutMs === undefined
+      ? {}
+      : {
+          connectionTimeoutMillis: options.readTimeoutMs,
+          statement_timeout: options.readTimeoutMs,
+          query_timeout: options.readTimeoutMs + 1000,
+          keepAlive: true,
+        }),
   });
   // pg removes a broken idle client itself. Observe that background event
   // without crashing unrelated Runs or retrying an in-flight SQL operation.
@@ -77,6 +92,15 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
             const onError = (error: Error) => {
               failure ??= error;
             };
+            const readBudget = <T>(request: Promise<T>): Promise<T> =>
+              options.readTimeoutMs === undefined
+                ? request
+                : request.catch((error: Error) => {
+                    // pg's client timeout alone does not cancel a server query.
+                    // Evict the disposable-read socket on release as well.
+                    failure ??= error;
+                    throw error;
+                  });
             const connection: PostgresPoolClient = {
               get processID() {
                 return (client as PoolClient & { processID: number }).processID;
@@ -126,9 +150,10 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
                     name = `${namespace}${statements.size}`;
                     statements.set(text, name);
                   }
-                  if (name) return client.query({ name, text, values: [...parameters] });
+                  if (name)
+                    return readBudget(client.query({ name, text, values: [...parameters] }));
                 }
-                return Reflect.apply(client.query, client, [text, parameters]);
+                return readBudget(Reflect.apply(client.query, client, [text, parameters]));
               }) as PostgresPoolClient["query"],
             };
             entry = { connection, onError };

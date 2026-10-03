@@ -1,4 +1,4 @@
-import { Readable } from "node:stream";
+import { addAbortSignal, Readable } from "node:stream";
 import {
   S3Client,
   PutObjectCommand,
@@ -17,6 +17,8 @@ export class S3ImageBlobStore implements ImageBlobStore {
       bucket: string;
       accessKeyId: string;
       secretAccessKey: string;
+      idleTimeoutMs?: number;
+      connectionTimeoutMs?: number;
     },
   ) {
     const url = new URL(options.endpoint);
@@ -28,6 +30,9 @@ export class S3ImageBlobStore implements ImageBlobStore {
       url.hash
     )
       throw new Error("Invalid attachment S3 endpoint");
+    for (const timeout of [options.idleTimeoutMs ?? 60_000, options.connectionTimeoutMs ?? 5000])
+      if (!Number.isSafeInteger(timeout) || timeout < 1)
+        throw new Error("Invalid attachment transport timeout");
     this.#client = new S3Client({
       endpoint: options.endpoint,
       region: options.region,
@@ -36,6 +41,13 @@ export class S3ImageBlobStore implements ImageBlobStore {
       maxAttempts: 2,
       requestChecksumCalculation: "WHEN_REQUIRED",
       responseChecksumValidation: "WHEN_REQUIRED",
+      // Socket inactivity includes the final receipt wait but does not limit
+      // the total duration of a progressing upload/download. Let Smithy own
+      // request destruction rather than racing an uncancelled send promise.
+      requestHandler: {
+        connectionTimeout: options.connectionTimeoutMs ?? 5000,
+        socketTimeout: options.idleTimeoutMs ?? 60_000,
+      },
     });
   }
   async checkHealth() {
@@ -78,7 +90,7 @@ export class S3ImageBlobStore implements ImageBlobStore {
       body.destroy();
     }
   }
-  async get(key: string, maximumBytes: number, signal: AbortSignal) {
+  async *readStream(key: string, maximumBytes: number, signal: AbortSignal) {
     const result = await this.#client.send(
       new GetObjectCommand({ Bucket: this.options.bucket, Key: key }),
       { abortSignal: signal },
@@ -88,16 +100,17 @@ export class S3ImageBlobStore implements ImageBlobStore {
       if (body && "destroy" in body) body.destroy();
       throw new Error("Invalid image object length");
     }
-    const chunks: Buffer[] = [];
+    if (!(body instanceof Readable)) throw new Error("Invalid image object stream");
+    addAbortSignal(signal, body);
     let bytes = 0;
     try {
       for await (const chunk of body as AsyncIterable<Uint8Array>) {
         signal.throwIfAborted();
         bytes += chunk.byteLength;
         if (bytes > maximumBytes) throw new Error("Image object exceeds its byte limit");
-        chunks.push(Buffer.from(chunk));
+        yield chunk;
       }
-      return Buffer.concat(chunks, bytes);
+      if (bytes !== result.ContentLength) throw new Error("Image object length changed");
     } finally {
       if ("destroy" in body) body.destroy();
     }

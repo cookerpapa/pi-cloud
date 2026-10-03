@@ -18,8 +18,8 @@ see [configuration](docs/CONFIGURATION.md) and [uploads](docs/CHAT_ATTACHMENTS.m
 ## Architecture
 
 ```text
-Browser -> Control Plane -> PostgreSQL queue -> Pi Worker
-Pi Worker <-> CLIProxyAPI <-> Model
+Browser -> Control Plane -> PostgreSQL (Run queue/control) -> Pi Worker
+Pi Worker <-> Worker-local Model Gateway <-> CLIProxyAPI <-> Model
 
 Pi Worker -> Publication ingress -> Kafka -> Session Projector
                                             +-> PostgreSQL (conversation history)
@@ -27,10 +27,15 @@ Pi Worker -> Publication ingress -> Kafka -> Session Projector
                                             `-> Cube native execution endpoint
 
 Control state -> PostgreSQL + Outbox -> same ingress/Kafka -> Projector memory views
+Cube completion -> boot-scoped Kafka replies -> original Pi Worker
+
+Chat upload -> Control Plane -> Cube Workspace Volume
+                            `-> S3 (immutable source images)
 ```
 
-Whole file/shell Tools execute in Cube. Final results return through Kafka to
-Pi Worker; optional temporary logs go directly through Projector to the browser.
+Whole file/shell Tools execute in Cube. Replies return through the separate
+Worker-boot Kafka transport; Pi processes them before publishing the canonical
+Tool Result to the Session log. Optional temporary logs go through Projector HTTP/SSE.
 Workspace files live on persistent Cube Volumes.
 Images used by the Agent are immutable Session attachments in private S3 storage;
 Kafka carries their references and Pi receives ordinary image content.
@@ -45,6 +50,11 @@ or known deadlines. Worker admission uses the available publication partitions;
 binding bootstrap pages only the owner’s state. Transaction-local queue/state
 notifications are coalesced, and independent Outbox sends prevent a slow request
 from holding an entire batch. Lifecycle mutations and recovery retain PG checks.
+Queue display refreshes coalesce outside ordered projection, using a separate
+two-connection read pool. Responses carry 20 inputs per page; all queued inputs
+remain accessible, with drafts preserved when queue changes invalidate a page.
+Control references carry identities and revisions; changed views can still read
+PG. This is not a complete copy of control state inside Kafka.
 
 Canonical conversation output is durable before display. Runtime activity, Tool
 previews and health observations are disposable. Control Plane probes existing
@@ -52,6 +62,14 @@ VMs directly and reuses confirmed execution-path evidence; missing probes do not
 authorize VM destruction or quota release. Recovery never automatically replays
 uncertain commands. Quarantine closes PG bindings before confirming propagation,
 so a publication outage cannot leave a failed VM eligible for new work.
+
+One physical Session family stays on one Worker, and each Kafka partition keeps
+ordered projection. The single-host profile does not provide physical-node HA.
+The [review and repair record](docs/reports/review-repair-20261003.md) records
+verified behavior and remaining limits. Original images stream to Cube for
+normalization; native context still materializes normalized image content.
+Cube mounts, configuration and completion credentials are rendered into one
+Helm release before deployment, with native-version and source-identity checks.
 
 ## Quick start
 

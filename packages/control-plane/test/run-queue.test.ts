@@ -389,63 +389,92 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     expect(await executor.dispatchNext()).toMatchObject({ status: "completed", runId: b.runId });
   });
 
-  it("persists cancellation as a typed control request without a cancellation queue Outbox", async () => {
-    const s = await conversation("cancel"),
-      a = await store.acceptTurn(s.sessionId, "first", { prompt: "wait" });
-    const worker = await createTestWorker(database),
-      entered = Promise.withResolvers<void>(),
-      interrupt = Promise.withResolvers<void>(),
-      exited = Promise.withResolvers<void>();
-    let reference!: string;
-    const executor = worker.executor({
-      async execute(_r, l, admission) {
-        reference = admission!.executionReference;
-        entered.resolve();
-        await interrupt.promise;
-        l.executionExited();
-        exited.resolve();
-        throw new TurnExecutionCancelledError("user_request", false);
-      },
-    });
-    const executing = executor.dispatchRun(a.runId);
-    void executing.catch(entered.reject);
-    await entered.promise;
-    try {
-      const accepted = await store.acceptTurnCancellation(s.sessionId, a.turnId, "cancel", {});
-      expect(await store.acceptTurnCancellation(s.sessionId, a.turnId, "cancel", {})).toMatchObject(
-        { controlRequestId: accepted.controlRequestId, replayed: true },
-      );
-      expect(
-        await database
-          .selectFrom("outbox")
-          .select("id")
-          .where("aggregate_type", "!=", "session_control_change")
-          .execute(),
-      ).toEqual([]);
-      const cancellation = new RunCancellationExecutor({
-        database,
-        executionAuthority: worker.coordinator,
-        backend: {
-          async cancel(r, l) {
-            await l.started({ executionReference: reference });
-            interrupt.resolve();
-            await exited.promise;
-            return { reason: r.reason, forced: false };
-          },
+  it.each([-60_000, 60_000])(
+    "uses PG time for cancellation claim/retry under clock skew (%s)",
+    async (skew) => {
+      const s = await conversation("cancel"),
+        a = await store.acceptTurn(s.sessionId, "first", { prompt: "wait" });
+      const worker = await createTestWorker(database),
+        entered = Promise.withResolvers<void>(),
+        interrupt = Promise.withResolvers<void>(),
+        exited = Promise.withResolvers<void>();
+      let reference!: string;
+      const executor = worker.executor({
+        async execute(_r, l, admission) {
+          reference = admission!.executionReference;
+          entered.resolve();
+          await interrupt.promise;
+          l.executionExited();
+          exited.resolve();
+          throw new TurnExecutionCancelledError("user_request", false);
         },
       });
-      expect(await cancellation.dispatchTargetRun(a.runId)).toMatchObject({ status: "cancelled" });
-      await executing;
-      expect(
-        await database.selectFrom("turn_control_requests").select(["kind", "state"]).execute(),
-      ).toEqual([{ kind: "cancel", state: "completed" }]);
-      await seal(a.runId);
-      expect((await store.getRun(a.runId)).state).toBe("cancelled");
-    } finally {
-      interrupt.resolve();
-      await executing;
-    }
-  });
+      const executing = executor.dispatchRun(a.runId);
+      void executing.catch(entered.reject);
+      await entered.promise;
+      try {
+        const accepted = await store.acceptTurnCancellation(s.sessionId, a.turnId, "cancel", {});
+        expect(
+          await store.acceptTurnCancellation(s.sessionId, a.turnId, "cancel", {}),
+        ).toMatchObject({ controlRequestId: accepted.controlRequestId, replayed: true });
+        expect(
+          await database
+            .selectFrom("outbox")
+            .select("id")
+            .where("aggregate_type", "!=", "session_control_change")
+            .execute(),
+        ).toEqual([]);
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(Date.now() + skew);
+        let calls = 0;
+        const cancellation = new RunCancellationExecutor({
+          database,
+          executionAuthority: worker.coordinator,
+          backend: {
+            async cancel(r, l) {
+              if (++calls === 1)
+                throw new TurnCancellationBackendError(
+                  "temporarily_unavailable",
+                  "Try later",
+                  true,
+                );
+              await l.started({ executionReference: reference });
+              interrupt.resolve();
+              await exited.promise;
+              return { reason: r.reason, forced: false };
+            },
+          },
+        });
+        expect(await cancellation.dispatchTargetRun(a.runId)).toMatchObject({
+          status: "retry_scheduled",
+        });
+        const retry = await sql<{ remaining: number }>`select
+        extract(epoch from (available_at-clock_timestamp()))::float8 * 1000 as remaining
+        from turn_control_requests where id=${accepted.controlRequestId}::uuid`.execute(database);
+        expect(retry.rows[0]!.remaining).toBeGreaterThan(0);
+        expect(retry.rows[0]!.remaining).toBeLessThanOrEqual(1000);
+        expect(await cancellation.dispatchTargetRun(a.runId)).toEqual({ status: "idle" });
+        await sql`update turn_control_requests set available_at=clock_timestamp()-interval '1 millisecond'
+        where id=${accepted.controlRequestId}::uuid`.execute(database);
+        const competing = await Promise.all([
+          cancellation.dispatchTargetRun(a.runId),
+          cancellation.dispatchTargetRun(a.runId),
+        ]);
+        expect(competing.map((r) => r.status).sort()).toEqual(["cancelled", "idle"]);
+        expect(calls).toBe(2);
+        await executing;
+        expect(
+          await database.selectFrom("turn_control_requests").select(["kind", "state"]).execute(),
+        ).toEqual([{ kind: "cancel", state: "completed" }]);
+        await seal(a.runId);
+        expect((await store.getRun(a.runId)).state).toBe("cancelled");
+      } finally {
+        vi.useRealTimers();
+        interrupt.resolve();
+        await executing;
+      }
+    },
+  );
 
   it("lets competing Workers claim different ready Runs without a candidate scan", async () => {
     const a = await conversation("A"),

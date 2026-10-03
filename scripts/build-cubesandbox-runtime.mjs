@@ -107,6 +107,8 @@ try {
     "--build-arg",
     `PI_CLOUD_COMPLETION_SOURCE_ID=${await completionBuildIdentity(root)}`,
     "--build-arg",
+    `PI_CLOUD_CUBE_PATCH_ID=${createHash("sha256").update(JSON.stringify(manifest)).digest("hex").slice(0, 16)}`,
+    "--build-arg",
     `NPM_CONFIG_REGISTRY=${process.env.NPM_CONFIG_REGISTRY ?? "https://registry.npmjs.org"}`,
     "-f",
     "deploy/cubesandbox/Dockerfile.cubelet",

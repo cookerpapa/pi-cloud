@@ -30,6 +30,17 @@ export async function projectNativeSessionAppend(
   const ids = items.flatMap((item) =>
     item.kind === "entry" ? [item.entry.id] : item.kind === "record" ? [item.record.id] : [],
   );
+  const lanes = [
+    ...new Set(
+      items.flatMap((item) =>
+        item.kind === "entry" || item.kind === "lane"
+          ? [item.lane]
+          : item.kind === "record"
+            ? [item.record.lane]
+            : [],
+      ),
+    ),
+  ];
   // These reads share one fresh snapshot AFTER the Session lock. Combining the
   // lock itself with them would miss state committed while waiting for it.
   const {
@@ -42,7 +53,8 @@ export async function projectNativeSessionAppend(
     (select seq from pi_session_log where tenant_id=${tenantId}::uuid and session_id=${sessionId}
       and append_id=${appendId}::uuid limit 1) as prior_seq,
     coalesce((select jsonb_agg(jsonb_build_object('lane',lane,'leaf_id',leaf_id))
-      from pi_session_lanes where tenant_id=${tenantId}::uuid and session_id=${sessionId}), '[]'::jsonb) as lanes,
+      from pi_session_lanes where tenant_id=${tenantId}::uuid and session_id=${sessionId}
+        and lane=any(${lanes}::text[])), '[]'::jsonb) as lanes,
     exists(select 1 from pi_session_log where tenant_id=${tenantId}::uuid
       and session_id=${sessionId} and id=any(${ids}::text[])) as collision`.execute(transaction);
   if (context!.prior_seq !== null) {

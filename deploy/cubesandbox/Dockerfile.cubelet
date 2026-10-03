@@ -26,6 +26,7 @@ RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
 
 FROM ${CUBELET_BASE_IMAGE}
 ARG PI_CLOUD_COMPLETION_SOURCE_ID
+ARG PI_CLOUD_CUBE_PATCH_ID
 ENV PI_CLOUD_COMPLETION_SOURCE_ID=${PI_CLOUD_COMPLETION_SOURCE_ID}
 LABEL pi-cloud.completion-source-id=${PI_CLOUD_COMPLETION_SOURCE_ID}
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
@@ -33,15 +34,19 @@ COPY --from=completion-dependencies /opt/pi-cloud/node_modules /opt/pi-cloud/nod
 COPY --from=completion-dependencies /opt/pi-cloud/packages /opt/pi-cloud/packages
 COPY package.json tsconfig.base.json /opt/pi-cloud/
 COPY packages/cube-completion/src /opt/pi-cloud/packages/cube-completion/src
-COPY packages/database/src /opt/pi-cloud/packages/database/src
-COPY packages/domain/src /opt/pi-cloud/packages/domain/src
+# Completion uses the connection adapter; migrations and control authority stay
+# outside Cubelet's runtime/release closure. Type-only schema imports are erased.
+COPY packages/database/src/client.ts /opt/pi-cloud/packages/database/src/client.ts
 COPY packages/event-log/src /opt/pi-cloud/packages/event-log/src
 COPY packages/observability/src /opt/pi-cloud/packages/observability/src
 COPY packages/protocol/src /opt/pi-cloud/packages/protocol/src
 COPY packages/session-attachments/src /opt/pi-cloud/packages/session-attachments/src
 RUN test -n "$PI_CLOUD_COMPLETION_SOURCE_ID" \
+    && test -n "$PI_CLOUD_CUBE_PATCH_ID" \
+    && /usr/local/bin/node -e "const v=require('/opt/cube-image/Cubelet/version.json').components.cubelet.version;if(v!=='0.6.0-picloud-'+process.env.PI_CLOUD_CUBE_PATCH_ID)throw new Error('Cubelet base image differs from the pinned native patch set')" \
     && /usr/local/bin/node --version \
     && cd /opt/pi-cloud && node --input-type=module --eval "await import('@confluentinc/kafka-javascript')" \
-    && node --import /opt/pi-cloud/node_modules/tsx/dist/loader.mjs --input-type=module --eval "await import('./packages/cube-completion/src/adapter.ts')"
+    && test ! -e /opt/pi-cloud/packages/database/src/migrations \
+    && node --import /opt/pi-cloud/node_modules/tsx/dist/loader.mjs --input-type=module --eval "await import('@pi-cloud/database/client'); await import('./packages/cube-completion/src/adapter.ts')"
 # Credentials and Kafka/PG/S3 addresses are mounted only into this trusted host
 # process by deployment; the inherited Cube entrypoint remains the PID 1 contract.

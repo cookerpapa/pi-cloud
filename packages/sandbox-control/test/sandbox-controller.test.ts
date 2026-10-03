@@ -338,23 +338,31 @@ describe("provider-backed Sandbox controller", () => {
         finish = Promise.withResolvers<void>();
       const prepare = vi.fn<NonNullable<SandboxProvider["prepareInputImage"]>>(
         async (_handle, content) => {
-          expect(content).toEqual(bytes);
+          const received: Uint8Array[] = [];
+          for await (const chunk of content.chunks) received.push(chunk);
+          expect(Buffer.concat(received)).toEqual(bytes);
+          expect(content.byteLength).toBe(bytes.length);
           entered.resolve();
           if (cancel) await finish.promise;
           return { data: bytes.toString("base64"), mimeType: "image/png", hints: [] };
         },
       );
       fixture.provider.prepareInputImage = prepare;
-      const get = vi.fn(async (tenantId, ref) => {
+      const withStream = vi.fn(async (tenantId, ref, consume, signal) => {
         expect(tenantId).toBe(assignment.tenantId);
         expect(ref).toEqual(source);
-        return bytes;
+        return consume(
+          (async function* () {
+            yield bytes;
+          })(),
+          signal,
+        );
       });
       const put = vi.fn(async () => source);
       const broker = testBroker({
         provider: fixture.provider,
         stateRepository: repository,
-        inputImages: { get, put },
+        inputImages: { withStream, put },
       });
       const reserved = await broker.create(createRequest);
       const request = {

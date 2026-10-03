@@ -71,10 +71,20 @@ Kubernetes cluster. Client reconnect/deadlines remain necessary after a TCP brea
 ## Storage and upgrades
 
 Cube upgrades use the full `cubesandbox:cluster-install` workflow: it installs the
-pinned native patches and current completion adapter, then reconciles the POSIX
-plugin configuration and shared host mounts after Helm. A bare Cube Helm upgrade
-can restore upstream paths/images over those installer-managed fields. End existing
+pinned native patches and current completion adapter. A shared Helm post-renderer
+adds the POSIX configuration, shared mounts, completion Secret and credential
+fingerprints before Kubernetes receives the release. Completion reconciliation
+uses the same renderer and retained Helm values; it no longer patches workloads
+after deployment. Use this maintained path for every upgrade: omitting the
+renderer can still remove required resources. End existing
 VMs before changing the Cube Node DaemonSet; its Pod/network namespace is recreated.
+The first cutover adopts the two named installer-owned ConfigMap/Secret objects
+after rejecting foreign Helm ownership. Preserve intended image values during
+that cutover if earlier manual updates diverged from Helm's stored values.
+Subsequent rollbacks use the stored rendered release; a pre-cutover rollback needs
+the old complete installer. See [ADR-0217](adr/0217-declarative-cube-release.md).
+The completion image build requires `PI_CLOUD_CUBE_PATCH_ID` matching the actual
+base image, so a stale local `production` tag cannot silently produce a release.
 Platform deployment checks the actual CubeMaster/Cubelet shared path, Cubelet
 configuration mount, native patch version and completion source identity before
 changing the application. It refuses a mismatched runtime rather than accepting a

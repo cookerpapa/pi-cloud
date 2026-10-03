@@ -4,6 +4,7 @@ import { jsonArrayFrom } from "kysely/helpers/postgres";
 import {
   parseInputQueueResource,
   parseUserUploads,
+  INPUT_QUEUE_PAGE_SIZE,
   type InputQueueResource,
 } from "@pi-cloud/protocol";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
@@ -18,7 +19,16 @@ export async function readInputQueue(
   database: Kysely<Database>,
   tenantId: string,
   sessionId: string,
+  page: { afterPosition?: number; viewVersion?: string } = {},
 ): Promise<InputQueueResource> {
+  const afterPosition = page.afterPosition ?? 0;
+  if (
+    !Number.isSafeInteger(afterPosition) ||
+    afterPosition < 0 ||
+    (page.viewVersion !== undefined && !/^(0|[1-9][0-9]{0,18})$/.test(page.viewVersion)) ||
+    (afterPosition > 0 && page.viewVersion === undefined)
+  )
+    throw new ControlPlaneStoreError("invalid_request", "Invalid queue page");
   // One statement supplies one MVCC snapshot without a polling transaction
   // or separate Session / pending / active reads.
   const session = await database
@@ -61,7 +71,9 @@ export async function readInputQueue(
           .where(sql<boolean>`r.state='queued'`)
           .where("r.lease_id", "is", null)
           .where("t.state", "=", "queued")
-          .orderBy("r.mailbox_position", "asc"),
+          .where("r.mailbox_position", ">", String(afterPosition))
+          .orderBy("r.mailbox_position", "asc")
+          .limit(INPUT_QUEUE_PAGE_SIZE + 1),
       ).as("items"),
     ])
     .where("s.tenant_id", "=", tenantId)
@@ -69,12 +81,17 @@ export async function readInputQueue(
     .where("s.pruned_at", "is", null)
     .executeTakeFirst();
   if (!session) throw new ControlPlaneStoreError("not_found", "Session was not found");
+  const viewVersion = session.viewVersion ?? "0";
+  if (page.viewVersion !== undefined && page.viewVersion !== viewVersion)
+    throw new ControlPlaneStoreError("conflict", "The queue changed; reload its first page");
   return parseInputQueueResource({
     sessionId,
     revision: number(session.row_version),
-    viewVersion: session.viewVersion ?? "0",
+    viewVersion,
+    afterPosition,
+    hasMore: session.items.length > INPUT_QUEUE_PAGE_SIZE,
     activeTurnId: session.activeTurnId ?? null,
-    items: session.items.map((item) => ({
+    items: session.items.slice(0, INPUT_QUEUE_PAGE_SIZE).map((item) => ({
       turnId: item.turn_id,
       runId: item.id,
       text: item.input_text,

@@ -819,11 +819,18 @@ export class PiCloudApi {
     );
   }
 
-  async getInputQueue(sessionId: string, signal?: AbortSignal): Promise<InputQueueResource> {
+  async getInputQueue(
+    sessionId: string,
+    signal?: AbortSignal,
+    page?: { afterPosition: number; viewVersion: string },
+  ): Promise<InputQueueResource> {
+    const query = page
+      ? `?${new URLSearchParams({ afterPosition: String(page.afterPosition), viewVersion: page.viewVersion })}`
+      : "";
     return parseInputQueueResource(
       await request(
         this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs`,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs${query}`,
         {
           method: "GET",
           signal: signal

@@ -13,6 +13,7 @@ import {
 const Text = Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS });
 const Revision = NonNegativeSafeIntegerSchema;
 const options = { additionalProperties: false } as const;
+export const INPUT_QUEUE_PAGE_SIZE = 20;
 export const QueuedInputActionSchema = Type.Union([
   Type.Object(
     {
@@ -60,7 +61,9 @@ export const InputQueueResourceSchema = Type.Object(
     revision: Revision,
     activeTurnId: Type.Union([UuidSchema, Type.Null()]),
     viewVersion: Type.String({ pattern: "^(0|[1-9][0-9]{0,18})$" }),
-    items: Type.Array(QueuedInputResourceSchema),
+    afterPosition: NonNegativeSafeIntegerSchema,
+    hasMore: Type.Boolean(),
+    items: Type.Array(QueuedInputResourceSchema, { maxItems: INPUT_QUEUE_PAGE_SIZE }),
   },
   options,
 );

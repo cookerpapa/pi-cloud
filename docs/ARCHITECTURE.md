@@ -292,7 +292,7 @@ Worker before Kafka publication. PostgreSQL applies those exact records and
 updates projection progress in the same transaction. A crash before commit
 replays the record; a crash after commit can redeliver it without changing its
 meaning. Native sequence conflicts stop recovery rather than being skipped.
-Projection reads its prior append, Lane heads and identity conflicts together,
+Projection reads its prior append, affected Lane heads and identity conflicts together,
 but only after acquiring the physical Session lock in a separate statement.
 This preserves a fresh snapshot after waiting for another projection.
 Native message/Tool-intent projection co-commits display event/native positions
@@ -360,6 +360,17 @@ SSE frames. There is no two-second polling. `viewVersion` orders presentation
 snapshots independently of the existing optimistic edit `revision`, including
 Run transitions that change queue membership. Queue changes do not restart the
 execution SSE stream. Optimistic conflicts preserve the editing draft.
+
+Queue display refresh is bounded asynchronous work in the same owner process,
+outside the ordered Projector handler. Two read slots and a separate two-connection
+pool isolate it from authority SQL; server statements have a five-second deadline.
+Owner reset discards stale completions without freeing occupied slots early.
+Failures/capacity exhaustion request resynchronization instead of Kafka retries.
+Queue pages contain at most 20 complete inputs, `afterPosition` and `hasMore`.
+Continuation requests require the same `viewVersion`; changed order returns 409.
+SSE publishes the first page; loading more is explicit and newer snapshots discard
+obsolete continuation pages while retaining editing drafts. This is a response
+bound, not a total input quota (ADR-0216).
 
 Steer reconciliation wakes only the affected Session on control changes,
 canonical input consumption and seals, or a known PG retry deadline. Startup,
@@ -834,6 +845,12 @@ required. See [run lifecycle](RUN_LIFECYCLE.md), [crash contracts](STREAM_DURABI
 and [configuration](CONFIGURATION.md) for operational boundaries.
 
 ## Intentional coupling and unverified boundaries
+
+The [October 3 repair](reports/review-repair-20261003.md) removes ordered-handler
+waits on queue presentation, unrelated Lane-head transfers, and complete-original
+image buffering on the Cube normalization path. Normalized native image content
+and explicitly requested UI/history data still consume memory. These improvements
+do not establish physical-node HA or unbounded aggregate capacity.
 
 API and Projector share a process. PG or live-owner admission failure stalls its
 Kafka partition, though guest execution does not; other partition handlers can

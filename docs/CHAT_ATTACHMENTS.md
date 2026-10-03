@@ -33,7 +33,11 @@ parsing or permanent archival of every uploaded file.
 3. Turn acceptance, queued edits and steer freeze bounded metadata/references
    with the input. No bytes enter PG command rows, Worker commands or Kafka.
 4. The admitted Run uses its normal fenced Cube activation to decode/normalize
-   sources before model use. Preparation is a bounded infrastructure operation,
+   sources before model use. The original S3 object streams through the trusted
+   attachment/provider ports into Cube's existing temporary upload file; Control
+   Plane does not concatenate the original into a Buffer. Tenant, length and hash
+   checks must finish before preparation succeeds. Consumer failure/early return
+   aborts and closes the source. Preparation is a bounded infrastructure operation,
    not an Agent Tool invocation. It holds no model permit and stays tracked until
    guest cancellation completes. Run closure also joins a late image-steer
    reservation before releasing its binding; normal release cancels and joins
@@ -43,6 +47,11 @@ parsing or permanent archival of every uploaded file.
    externalizes the final image into the canonical append-only history and restores
    it on cold reads, Compaction and Fork. The Agent can see an attached screenshot
    in its first request without issuing `read` just to obtain its pixels.
+
+S3 connection and socket inactivity are bounded to five and sixty seconds.
+The idle budget includes waiting for a final PUT receipt and resets while bytes
+make progress; it does not cap total upload duration. Upload failure still cancels
+and joins both byte-placement branches before ending the claim (ADR-0216).
 
 The browser displays original user text separately from attachment cards. Its
 previews use an authenticated API; no object-store credentials or public bucket

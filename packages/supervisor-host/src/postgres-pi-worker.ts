@@ -11,7 +11,7 @@ import {
   type RunClaimReference,
 } from "@pi-cloud/runtime-core/run-executor";
 import { WorkerMemoryMonitor } from "./worker-memory-monitor.ts";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { Client } from "pg";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
@@ -351,8 +351,13 @@ export class PostgresPiWorker {
   }
 
   async #dispatchCancellations(): Promise<void> {
-    if (this.#activeRuns.size === 0) return;
-    const references = await this.#cancellationReferences();
+    const eligible = this.#activeReferences()
+      .map((r) => r.runId)
+      .filter((id) => !this.#activeCancellations.has(id));
+    // Pending admissions have no local Agent to cancel. Already-dispatched
+    // cancellations are joined separately; polling them cannot add work.
+    if (!eligible.length) return;
+    const references = await this.#cancellationReferences(eligible);
     for (const { targetRunId } of references) {
       if (this.#activeCancellations.has(targetRunId)) continue;
       // Cancellation can wait for guest/Agent cleanup. It must not hold the
@@ -373,7 +378,7 @@ export class PostgresPiWorker {
     }
   }
 
-  async #cancellationReferences(): Promise<CancellationReference[]> {
+  async #cancellationReferences(runIds: readonly string[]): Promise<CancellationReference[]> {
     if (this.#activeCancellations.size >= 256) return [];
     return this.#database
       .selectFrom("turn_control_requests as cancellation")
@@ -383,8 +388,9 @@ export class PostgresPiWorker {
           .onRef("run.id", "=", "cancellation.target_run_id"),
       )
       .select("run.id as targetRunId")
-      .where("cancellation.available_at", "<=", new Date())
+      .where("cancellation.available_at", "<=", sql<Date>`clock_timestamp()`)
       .where("cancellation.kind", "=", "cancel")
+      .where("run.id", "in", [...runIds])
       .where("cancellation.state", "in", ["pending", "dispatched"])
       .where("run.sandbox_id", "=", this.#identity)
       .where("run.state", "in", ["running", "settling"])

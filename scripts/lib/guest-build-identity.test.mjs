@@ -152,3 +152,33 @@ it("changes the completion identity when its protocol or pinned native runtime c
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("keeps database migrations outside the real completion image identity", async () => {
+  const { completionBuildIdentity } = await import("./guest-build-identity.mjs");
+  const root = await mkdtemp(join(tmpdir(), "pi-completion-scope-"));
+  try {
+    const copied = guestCopyInputs(
+      await readFile(join(repository, "deploy/cubesandbox/Dockerfile.cubelet"), "utf8"),
+      "deploy/cubesandbox/Dockerfile.cubelet",
+    );
+    for (const input of [...copied, "deploy/cubesandbox/runtime-build.json"]) {
+      const target = join(root, input);
+      await mkdir(dirname(target), { recursive: true });
+      await cp(join(repository, input), target, { recursive: true });
+    }
+    const before = await completionBuildIdentity(root);
+    await mkdir(join(root, "packages/database/src/migrations"), { recursive: true });
+    await writeFile(
+      join(root, "packages/database/src/migrations/unrelated.ts"),
+      "throw new Error('not completion code');",
+    );
+    expect(await completionBuildIdentity(root)).toBe(before);
+    await appendFile(
+      join(root, "packages/database/src/client.ts"),
+      "\n// transport adapter change\n",
+    );
+    expect(await completionBuildIdentity(root)).not.toBe(before);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -245,8 +245,12 @@ export class QueuedInputService {
       });
   }
 
-  async list(tenantId: string, sessionId: string): Promise<InputQueueResource> {
-    return readInputQueue(this.#database, tenantId, sessionId);
+  async list(
+    tenantId: string,
+    sessionId: string,
+    page: { afterPosition?: number; viewVersion?: string } = {},
+  ): Promise<InputQueueResource> {
+    return readInputQueue(this.#database, tenantId, sessionId, page);
   }
 
   async #lockSession(tx: Transaction<Database>, tenantId: string, sessionId: string) {

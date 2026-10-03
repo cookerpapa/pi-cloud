@@ -1,4 +1,4 @@
-import { retryTransaction, type Database } from "@pi-cloud/database";
+import { databaseTime, retryTransaction, type Database } from "@pi-cloud/database";
 import {
   transitionTurnControlRequest,
   transitionSession,
@@ -114,7 +114,6 @@ export type RunCancellationExecutorOptions = {
   database: Kysely<Database>;
   backend: TurnCancellationBackend;
   executionAuthority: TurnExecutionAuthority;
-  clock?: () => Date;
   claimLeaseMs?: number;
   retryDelayMs?: number;
   maxAttempts?: number;
@@ -143,14 +142,6 @@ type CancellationFailure = {
 function positiveInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) {
     throw new TypeError(`${name} must be a positive safe integer`);
-  }
-  return value;
-}
-
-function safeDate(clock: () => Date): Date {
-  const value = clock();
-  if (!(value instanceof Date) || Number.isNaN(value.valueOf())) {
-    throw new TypeError("cancellation dispatcher clock must return a valid Date");
   }
   return value;
 }
@@ -196,7 +187,6 @@ export class RunCancellationExecutor {
   readonly #database: Kysely<Database>;
   readonly #backend: TurnCancellationBackend;
   readonly #executionAuthority: TurnExecutionAuthority;
-  readonly #clock: () => Date;
   readonly #claimLeaseMs: number;
   readonly #retryDelayMs: number;
   readonly #maxAttempts: number;
@@ -206,7 +196,6 @@ export class RunCancellationExecutor {
     this.#database = options.database;
     this.#backend = options.backend;
     this.#executionAuthority = options.executionAuthority;
-    this.#clock = options.clock ?? (() => new Date());
     this.#claimLeaseMs = positiveInteger(
       options.claimLeaseMs ?? DEFAULT_CLAIM_LEASE_MS,
       "claimLeaseMs",
@@ -316,8 +305,7 @@ export class RunCancellationExecutor {
   }
 
   async #claimNext(targetRunId: string): Promise<ClaimedCancellation | undefined> {
-    const now = safeDate(this.#clock);
-    const leaseUntil = new Date(now.valueOf() + this.#claimLeaseMs);
+    const now = sql<Date>`clock_timestamp()`;
     return this.#database.transaction().execute(async (transaction) => {
       const row = await transaction
         .selectFrom("turn_control_requests as cancellation")
@@ -448,7 +436,7 @@ export class RunCancellationExecutor {
         .updateTable("turn_control_requests")
         .set({
           attempts: sql<number>`${sql.ref("attempts")} + 1`,
-          available_at: leaseUntil,
+          available_at: sql<Date>`clock_timestamp() + ${this.#claimLeaseMs} * interval '1 millisecond'`,
           failure_code: null,
         })
         .where("tenant_id", "=", row.tenantId)
@@ -519,9 +507,9 @@ export class RunCancellationExecutor {
     claim: ClaimedCancellation,
     acknowledgement: TurnExecutionReference,
   ): Promise<void> {
-    const now = safeDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
+      const now = await databaseTime(transaction);
       const activePair = rows.turnState === "running" && rows.sessionState === "running";
       if (
         rows.cancellationTurnControlRequestState !== "dispatched" ||
@@ -613,7 +601,6 @@ export class RunCancellationExecutor {
     acknowledgement: TurnExecutionReference,
     result: TurnCancellationResult,
   ): Promise<void> {
-    const now = safeDate(this.#clock);
     const terminalEventId = this.#idGenerator();
     const terminalBody = {
       type: "turn.cancelled",
@@ -624,6 +611,7 @@ export class RunCancellationExecutor {
     // this settlement, never the model/Tool cancellation itself.
     await retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
+      const now = await databaseTime(transaction);
       if (
         rows.cancellationTurnControlRequestState !== "acknowledged" ||
         rows.turnState !== "cancelling" ||
@@ -744,11 +732,11 @@ export class RunCancellationExecutor {
     failure: CancellationFailure,
     acknowledgement?: TurnExecutionReference,
   ): Promise<RunCancellationExecutionResult> {
-    const now = safeDate(this.#clock);
     const shouldRetry = !started && failure.retryable && claim.attempt < this.#maxAttempts;
 
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
+      const now = await databaseTime(transaction);
       if (shouldRetry) {
         if (rows.cancellationTurnControlRequestState !== "dispatched") {
           throw new RunCancellationExecutorInvariantError(

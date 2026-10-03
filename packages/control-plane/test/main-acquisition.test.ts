@@ -80,10 +80,11 @@ it("cleans database and telemetry when Subagent construction fails before the Pr
 it("closes a constructed Subagent controller when Projector ownership was never established", async () => {
   const close = vi.fn(async () => {}),
     destroy = vi.fn(async () => {}),
+    destroyReads = vi.fn(async () => {}),
     subagentClose = vi.fn(async () => {});
   const failure = new Error("Projector construction failed");
   calls.observability.mockResolvedValue({ metrics: {}, close });
-  calls.database.mockReturnValue({ destroy });
+  calls.database.mockReturnValueOnce({ destroy }).mockReturnValueOnce({ destroy: destroyReads });
   calls.subagents.mockImplementation(function () {
     return { close: subagentClose };
   });
@@ -94,6 +95,10 @@ it("closes a constructed Subagent controller when Projector ownership was never 
   expect(subagentClose).toHaveBeenCalledOnce();
   expect(calls.sandboxClose).toHaveBeenCalledOnce();
   expect(destroy).toHaveBeenCalledOnce();
+  expect(destroyReads).toHaveBeenCalledOnce();
+  expect(calls.database).toHaveBeenLastCalledWith(
+    expect.objectContaining({ maxConnections: 2, readTimeoutMs: 5000 }),
+  );
   expect(close).toHaveBeenCalledOnce();
 });
 

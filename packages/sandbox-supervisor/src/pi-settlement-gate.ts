@@ -64,9 +64,11 @@ function validatePolicy(policy: PiSettlementGatePolicy): PiSettlementGatePolicy 
 /** Produces at most one project verification reminder; never executes a Tool. */
 export class PiSettlementGateController {
   readonly #policy: PiSettlementGatePolicy;
-  readonly #verificationCalls = new Set<string>();
+  readonly #verificationCalls = new Map<string, number>();
+  readonly #mutatingCalls = new Set<string>();
   #mutationObserved = false;
-  #verificationSucceeded = false;
+  #mutationRevision = 0;
+  #verifiedRevision = -1;
   #lastStopReason: string | undefined;
   #used = false;
 
@@ -76,25 +78,29 @@ export class PiSettlementGateController {
 
   observe(event: AgentEvent): void {
     if (event.type === "tool_execution_start") {
-      if (event.toolName === "write" || event.toolName === "edit") {
-        this.#mutationObserved = true;
-        return;
-      }
-      if (event.toolName !== "bash") return;
+      // Native call IDs may be reused by a later Assistant response.
+      this.#verificationCalls.delete(event.toolCallId);
+      if (!["write", "edit", "bash"].includes(event.toolName)) return;
       this.#mutationObserved = true;
+      this.#mutationRevision++;
       if (
+        event.toolName === "bash" &&
         isRecord(event.args) &&
         typeof event.args.command === "string" &&
         isConfiguredVerification(event.args.command, this.#policy)
       ) {
-        this.#verificationCalls.add(event.toolCallId);
-      }
+        this.#verificationCalls.set(event.toolCallId, this.#mutationRevision);
+      } else this.#mutatingCalls.add(event.toolCallId);
       return;
     }
     if (event.type === "tool_execution_end") {
-      if (this.#verificationCalls.delete(event.toolCallId) && !event.isError) {
-        this.#verificationSucceeded = true;
-      }
+      const revision = this.#verificationCalls.get(event.toolCallId);
+      this.#verificationCalls.delete(event.toolCallId);
+      // A mutation that was already running when verification started can
+      // change bytes afterwards, including a partially failed write/shell.
+      if (this.#mutatingCalls.delete(event.toolCallId)) this.#mutationRevision++;
+      if (revision === this.#mutationRevision && !event.isError && this.#mutatingCalls.size === 0)
+        this.#verifiedRevision = revision;
       return;
     }
     if (event.type === "message_end" && isRecord(event.message)) {
@@ -107,7 +113,7 @@ export class PiSettlementGateController {
     if (
       this.#used ||
       !this.#mutationObserved ||
-      this.#verificationSucceeded ||
+      this.#verifiedRevision === this.#mutationRevision ||
       this.#lastStopReason === undefined ||
       this.#lastStopReason === "error" ||
       this.#lastStopReason === "aborted"

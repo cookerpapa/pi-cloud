@@ -1,5 +1,11 @@
 # Documentation map
 
+The [October 3 repository review](reports/repository-review-20261003.md) covers
+all 22 workspaces at `4294c759`, distinguishes confirmed behavior issues from
+optimization and architecture proposals, and includes isolated reproducers.
+The subsequent [repair record](reports/review-repair-20261003.md) tracks the
+approved fixes, data-path measurements and matched release verification.
+
 The latest [quota removal and streaming-upload acceptance](reports/unlimited-quotas-20261003.md)
 records 138 passing fault cases and seven real Luna Runs across elastic Workspace,
 dedicated-machine and queued-image paths. The preceding [K3s cutover](reports/k3s-migration-20261003.md)
@@ -33,9 +39,10 @@ research, conversations and superseded implementation logs remain in Git
 history instead of the maintained tree.
 
 The [October 2 whole-repository review](reports/repository-review-20261002.md)
-critically evaluates the current authority, recovery and control-view boundaries.
-It records four confirmed implementation findings, five optimization/capacity
-areas, explicit reproduction limits and README corrections; repairs remain open.
+evaluates the authority, recovery and control-view boundaries at its baseline.
+Its four confirmed findings and accepted optimization slices were repaired in
+[ADR-0213's rollout](reports/control-recovery-repair-20261003.md); the remaining
+design and capacity questions are tracked in the maintained backlog.
 
 The [October 2 ordered control views acceptance](reports/ordered-control-views-20261002.md)
 records PG/Outbox/Kafka propagation into binding, queue and Subagent memory views,

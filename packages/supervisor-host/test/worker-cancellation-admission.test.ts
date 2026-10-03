@@ -109,6 +109,8 @@ it.each([false, true])(
       worker.scheduleOwnedSubagent(first.runId);
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledTimes(1));
       const before = scans;
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      expect(scans).toBe(before);
       queue.push(second);
       worker.scheduleOwnedSubagent(second.runId);
       await vi.waitFor(() => expect(started).toContain(second.runId));

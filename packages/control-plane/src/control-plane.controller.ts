@@ -883,11 +883,26 @@ export class ControlPlaneController {
   }
 
   @Get("sessions/:sessionId/queued-inputs")
-  async getQueuedInputs(@Req() request: FastifyRequest, @Param("sessionId") sessionId: unknown) {
+  async getQueuedInputs(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionId: unknown,
+    @Query("afterPosition") afterPosition: unknown,
+    @Query("viewVersion") viewVersion: unknown,
+  ) {
     const identity = this.tenantRequestContext.resolve(request);
+    if (
+      (afterPosition !== undefined &&
+        (typeof afterPosition !== "string" || !/^(0|[1-9][0-9]*)$/.test(afterPosition))) ||
+      (viewVersion !== undefined && typeof viewVersion !== "string")
+    )
+      throw new ControlPlaneApiValidationError("Invalid queue page");
     return this.queuedInputs.list(
       identity.tenantId,
       parseUuidPathParameter(sessionId, "sessionId"),
+      {
+        ...(afterPosition === undefined ? {} : { afterPosition: Number(afterPosition) }),
+        ...(viewVersion === undefined ? {} : { viewVersion: viewVersion as string }),
+      },
     );
   }
 

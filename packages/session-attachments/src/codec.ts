@@ -17,6 +17,17 @@ export interface ImageAttachmentStore {
   get(tenantId: string, reference: ImageAttachmentReference, signal?: AbortSignal): Promise<Buffer>;
 }
 
+/** Original objects can be larger than a model image. A scoped consumer keeps
+ * their transport streaming and guarantees closure on failure/early return. */
+export interface ImageAttachmentSource {
+  withStream<T>(
+    tenantId: string,
+    reference: ImageAttachmentReference,
+    consume: (chunks: AsyncIterable<Uint8Array>, signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T>;
+}
+
 const object = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 

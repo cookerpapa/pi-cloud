@@ -1,0 +1,255 @@
+{
+  "format": "pi-cloud.repository-review-probes.v1",
+  "baseline": "4294c75932e79b4705e2243483e3ad9604ea29a0",
+  "recordedAt": "2026-10-03T08:58:17.872Z",
+  "scope": "isolated local PostgreSQL, synthetic inputs, local HTTP S3 stand-in; no production fault injection",
+  "check": {
+    "command": "npm run check",
+    "exitCode": 0,
+    "postgresIntegrationEnabled": true,
+    "kafkaIntegrationEnabled": false,
+    "cubeLiveGateEnabled": false,
+    "passed": 1654,
+    "skipped": 8,
+    "results": [
+      {
+        "workspace": "@pi-cloud/control-plane",
+        "passed": 327,
+        "skipped": 3,
+        "total": 330
+      },
+      {
+        "workspace": "@pi-cloud/cube-api-authorizer",
+        "passed": 46,
+        "skipped": 0,
+        "total": 46
+      },
+      {
+        "workspace": "@pi-cloud/cube-completion",
+        "passed": 11,
+        "skipped": 0,
+        "total": 11
+      },
+      {
+        "workspace": "@pi-cloud/cube-egress-gateway",
+        "passed": 9,
+        "skipped": 0,
+        "total": 9
+      },
+      {
+        "workspace": "@pi-cloud/database",
+        "passed": 40,
+        "skipped": 0,
+        "total": 40
+      },
+      {
+        "workspace": "@pi-cloud/domain",
+        "passed": 16,
+        "skipped": 0,
+        "total": 16
+      },
+      {
+        "workspace": "@pi-cloud/event-log",
+        "passed": 18,
+        "skipped": 2,
+        "total": 20
+      },
+      {
+        "workspace": "@pi-cloud/fake-model-server",
+        "passed": 17,
+        "skipped": 0,
+        "total": 17
+      },
+      {
+        "workspace": "@pi-cloud/observability",
+        "passed": 9,
+        "skipped": 0,
+        "total": 9
+      },
+      {
+        "workspace": "@pi-cloud/pi-session-postgres",
+        "passed": 88,
+        "skipped": 0,
+        "total": 88
+      },
+      {
+        "workspace": "@pi-cloud/protocol",
+        "passed": 113,
+        "skipped": 0,
+        "total": 113
+      },
+      {
+        "workspace": "@pi-cloud/provider-egress-relay",
+        "passed": 5,
+        "skipped": 0,
+        "total": 5
+      },
+      {
+        "workspace": "@pi-cloud/runtime-core",
+        "passed": 93,
+        "skipped": 1,
+        "total": 94
+      },
+      {
+        "workspace": "@pi-cloud/sandbox-control",
+        "passed": 231,
+        "skipped": 2,
+        "total": 233
+      },
+      {
+        "workspace": "@pi-cloud/sandbox-supervisor",
+        "passed": 238,
+        "skipped": 0,
+        "total": 238
+      },
+      {
+        "workspace": "@pi-cloud/session-attachments",
+        "passed": 16,
+        "skipped": 0,
+        "total": 16
+      },
+      {
+        "workspace": "@pi-cloud/ssh-gateway",
+        "passed": 4,
+        "skipped": 0,
+        "total": 4
+      },
+      {
+        "workspace": "@pi-cloud/subagent-control",
+        "passed": 18,
+        "skipped": 0,
+        "total": 18
+      },
+      {
+        "workspace": "@pi-cloud/supervisor-host",
+        "passed": 93,
+        "skipped": 0,
+        "total": 93
+      },
+      {
+        "workspace": "@pi-cloud/tool-sandbox",
+        "passed": 47,
+        "skipped": 0,
+        "total": 47
+      },
+      {
+        "workspace": "@pi-cloud/web-ui",
+        "passed": 152,
+        "skipped": 0,
+        "total": 152
+      },
+      {
+        "workspace": "@pi-cloud/workspace-runtime",
+        "passed": 6,
+        "skipped": 0,
+        "total": 6
+      },
+      {
+        "workspace": "acceptance-helpers",
+        "passed": 57,
+        "skipped": 0,
+        "total": 57
+      }
+    ],
+    "rawLogSha256": "b14a8688b72e3ea9f2623decdf5709d7549ef899a19085e9acd7f1ad106ec447"
+  },
+  "probes": {
+    "s3Stall": {
+      "scenario": "S3 accepts complete streamed PUT then withholds HTTP response",
+      "startedAt": "2026-10-03T08:49:06.407Z",
+      "serverConsumedBytes": 1024,
+      "pendingAfter65Seconds": true,
+      "elapsedMs": 65029,
+      "outcome": "AbortError",
+      "cancelSettled": true
+    },
+    "cancelClock": {
+      "baseline": "4294c759",
+      "clockSkewMs": -60000,
+      "pgDueRequests": 1,
+      "skewedClockResult": {
+        "status": "idle"
+      },
+      "skewedClockBackendCalls": 0,
+      "alignedClockStatus": "cancelled",
+      "alignedClockBackendCalls": 1
+    },
+    "dataPaths": {
+      "baseline": "4294c759",
+      "scope": "isolated PostgreSQL, synthetic inputs; no Kafka, model or VM latency claims",
+      "queues": [
+        {
+          "queuedInputs": 10,
+          "snapshotBytes": 42926,
+          "readMs": 4.94
+        },
+        {
+          "queuedInputs": 100,
+          "snapshotBytes": 428309,
+          "readMs": 12.3
+        },
+        {
+          "queuedInputs": 500,
+          "snapshotBytes": 2141510,
+          "readMs": 52.01
+        }
+      ],
+      "laneHeads": [
+        {
+          "storedLanes": 1,
+          "appendItems": 1,
+          "returnedLaneHeads": 1,
+          "returnedHeadBytes": 32,
+          "transactionMs": 16.07
+        },
+        {
+          "storedLanes": 101,
+          "appendItems": 1,
+          "returnedLaneHeads": 101,
+          "returnedHeadBytes": 4124,
+          "transactionMs": 7.96
+        },
+        {
+          "storedLanes": 1001,
+          "appendItems": 1,
+          "returnedLaneHeads": 1001,
+          "returnedHeadBytes": 41925,
+          "transactionMs": 8.97
+        },
+        {
+          "storedLanes": 10001,
+          "appendItems": 1,
+          "returnedLaneHeads": 10001,
+          "returnedHeadBytes": 428926,
+          "transactionMs": 34.14
+        }
+      ]
+    },
+    "settlementGate": {
+      "baseline": "4294c759",
+      "sequence": ["verification succeeded", "later edit succeeded", "assistant stopped"],
+      "reminderAfterLaterEdit": false
+    }
+  },
+  "limitations": [
+    "Snapshot sizes and returned Lane counts are deterministic for the fixture; durations are single samples under concurrent isolated tests, not performance or throughput promises.",
+    "S3 was observed for 65 seconds and then explicitly aborted; indefinite waiting is inferred from absent adapter/SDK deadlines, not an infinite-duration experiment.",
+    "Cancellation uses real PostgreSQL Run/lease admission and a controlled backend; no model or shell command was executed.",
+    "No deliberate OOM or production resource load experiment."
+  ],
+  "cleanup": {
+    "isolatedPostgresContainer": "removed with its anonymous volume after confirming no remaining fixture databases",
+    "fixtureDatabases": "dropped by each probe",
+    "s3StandIn": "closed; upload explicitly aborted and sockets closed",
+    "productionMutation": false
+  },
+  "additionalChecks": {
+    "documentation": "passed",
+    "changedMarkdownLinks": "passed",
+    "format": "passed after formatting the data-path reproducer",
+    "runtimePolicy": "passed",
+    "helm": "passed",
+    "selfHostedInstaller": "passed",
+    "gitDiffWhitespace": "passed"
+  }
+}

@@ -41,7 +41,7 @@ import type {
   SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
 import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
-import type { ImageAttachmentStore } from "@pi-cloud/session-attachments";
+import type { ImageAttachmentSource, ImageAttachmentStore } from "@pi-cloud/session-attachments";
 import { type SandboxControlRequest, type SandboxControlResponse } from "@pi-cloud/protocol";
 type InputImageRequest = Extract<
   SandboxControlRequest,
@@ -88,7 +88,7 @@ export type SandboxControllerOptions = {
   controlReady?: () => boolean;
   bindings: SandboxBindings;
   workspaceCleanupWake?: WorkspaceCleanupWake;
-  inputImages?: ImageAttachmentStore;
+  inputImages?: ImageAttachmentSource & Pick<ImageAttachmentStore, "put">;
   provider: SandboxProvider;
   ownerBaseUrl: string;
   stateRepository: WorkspaceRuntimeStateRepository;
@@ -351,7 +351,7 @@ function developmentEnvironmentAssignment(
 
 export class SandboxController {
   readonly #bindings: SandboxBindings;
-  readonly #inputImages: ImageAttachmentStore | undefined;
+  readonly #inputImages: (ImageAttachmentSource & Pick<ImageAttachmentStore, "put">) | undefined;
   readonly #inputPreparation = new PQueue({ concurrency: 1 });
   readonly #workflowChannels = new WorkflowChannels();
   readonly #provider: SandboxProvider;
@@ -2012,15 +2012,19 @@ export class SandboxController {
             for (const source of request.images) {
               combined.throwIfAborted();
               this.#stateRepository.assertLocalOwnership();
-              const bytes = await this.#inputImages!.get(
+              const prepared = await this.#inputImages!.withStream(
                 activation.assignment.tenantId,
                 source,
-                combined,
-              );
-              const prepared = await this.#provider.prepareInputImage!(
-                handle,
-                bytes,
-                source.mimeType,
+                (chunks, signal) =>
+                  this.#provider.prepareInputImage!(
+                    handle,
+                    {
+                      chunks,
+                      byteLength: source.byteLength,
+                      mimeType: source.mimeType,
+                    },
+                    signal,
+                  ),
                 combined,
               );
               const decoded = Buffer.from(prepared.data, "base64");

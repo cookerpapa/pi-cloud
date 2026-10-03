@@ -82,15 +82,16 @@ assert.match(installer, /\$\{cubeEgressGatewayImageRepository\}:\$\{piCloudRevis
 assert.match(installer, /set[\s\S]+image[\s\S]+authorizer=/u);
 assert.match(installer, /set[\s\S]+image[\s\S]+gateway=/u);
 assert.match(installer, /images[\s\S]+import[\s\S]+archivePath/u);
-assert.equal(
-  installer.split('mountPath: "/data/cube-shared"').length - 1,
-  2,
-  "both CubeMaster and Cubelet must mount the authoritative persistent Workspace root",
-);
+// Final mounts and consumer fingerprints are validated on rendered manifests
+// by cube-release-render.test.mjs and the deployment preflight. The installer
+// must use that path, not duplicate mounts in post-install imperative patches.
+assert.match(installer, /prepareCubeRelease/u);
+assert.match(installer, /cubeRelease\.rendererArgs/u);
+const renderer = readFileSync("scripts/lib/cube-release-render.mjs", "utf8");
 assert.match(
-  installer,
+  renderer,
   /pi-cloud\.io\/posix-shared-root-identity/u,
-  "the installer must roll Cube Pods when the hostPath inode changes",
+  "the rendered Cube release must roll Pods when the hostPath inode changes",
 );
 assert.ok(
   !installer.includes('capture("kubectl"') && !installer.includes('run("kubectl"'),

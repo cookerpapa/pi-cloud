@@ -1,4 +1,4 @@
-import { readyCubeletPod, withCubeExecutionCompletion } from "./lib/cube-execution-deployment.mjs";
+import { prepareCubeRelease, cubeAdoptionFlags } from "./lib/cube-release-inputs.mjs";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -69,12 +69,6 @@ const minimumInotifyInstances = 1_024;
 const k3sServiceCidr = "10.43.0.0/16";
 const templateRegistryTlsSecret = "pi-cloud-cube-template-registry-tls";
 const templateRegistryDockerTrustDirectory = "/etc/docker/certs.d/localhost:5000";
-const posixVolumePluginName = "picloud-posix";
-const posixVolumePluginConfigMap = "pi-cloud-posix-volume-plugin";
-const posixVolumePluginSource = resolve(
-  repositoryRoot,
-  "deploy/cubesandbox/cube-volume-picloud-posix.sh",
-);
 const posixSharedRoot = resolve(runtimeDirectory, "state/cube-shared");
 const posixVolumeRoot = resolve(posixSharedRoot, "volume");
 const cubeletDataPath = "/data/cubelet";
@@ -469,279 +463,10 @@ async function restartCubeWorkloadsAfterNetworkChange() {
   }
 }
 
-function withCubeletPosixVolumePlugin(config) {
-  if (
-    config.includes(`name        = "${posixVolumePluginName}"`) ||
-    config.includes(`name = "${posixVolumePluginName}"`)
-  ) {
-    return config;
-  }
-  const marker = `    [[plugins."io.cubelet.internal.v1.storage".volume_plugins]]
-      name        = "cos"
-      type        = "binary"
-      binary_path = "/usr/local/services/cubetoolbox/Cubelet/plugin/cube-volume-cos"`;
-  if (!config.includes(marker)) {
-    throw new Error("Cubelet v0.6 volume plugin configuration shape was not recognized");
-  }
-  return config.replace(
-    marker,
-    `${marker}
-
-    [[plugins."io.cubelet.internal.v1.storage".volume_plugins]]
-      name        = "${posixVolumePluginName}"
-      type        = "binary"
-      binary_path = "/usr/local/services/cubetoolbox/Cubelet/plugin/cube-volume-picloud-posix"`,
-  );
-}
-
-function withCubeMasterPosixVolumePlugin(config) {
-  if (config.includes(`  - name: ${posixVolumePluginName}\n`)) return config;
-  const marker = `  - name: cos
-    type: binary
-    binary_path: /usr/local/services/cubetoolbox/CubeMaster/plugin/cube-volume-cos`;
-  if (!config.includes(marker)) {
-    throw new Error("CubeMaster v0.6 volume plugin configuration shape was not recognized");
-  }
-  return config.replace(
-    marker,
-    `${marker}
-  - name: ${posixVolumePluginName}
-    type: binary
-    binary_path: /usr/local/services/cubetoolbox/CubeMaster/plugin/cube-volume-picloud-posix`,
-  );
-}
-
-async function installPosixVolumePlugin() {
+async function preparePosixVolumeRoot() {
   await mkdir(posixVolumeRoot, { recursive: true, mode: 0o700 });
   await chmod(posixSharedRoot, 0o700);
-  // A hostPath bind mount keeps the original inode alive when an operator
-  // atomically replaces or moves the runtime directory. Put the resolved
-  // directory identity on both Pod templates so re-running the installer
-  // recreates CubeMaster/Cubelet instead of silently retaining a stale mount.
-  const sharedRootMetadata = await stat(posixSharedRoot);
-  const sharedRootIdentity = `${String(sharedRootMetadata.dev)}-${String(sharedRootMetadata.ino)}`;
-  const pluginSha256 = createHash("sha256")
-    .update(await readFile(posixVolumePluginSource))
-    .digest("hex");
   await chmod(posixVolumeRoot, 0o750);
-  await runKubectl([
-    "-n",
-    "cube-system",
-    "rollout",
-    "status",
-    "daemonset/cube-node",
-    "--timeout=180s",
-  ]);
-  const deadline = Date.now() + 180_000;
-  let currentConfig;
-  while (Date.now() < deadline) {
-    const pods = JSON.parse(
-      await captureKubectl([
-        "-n",
-        "cube-system",
-        "get",
-        "pods",
-        "-l",
-        "app.kubernetes.io/component=cube-node",
-        "-o",
-        "json",
-      ]),
-    );
-    const pod = readyCubeletPod(pods.items);
-    if (pod) {
-      try {
-        currentConfig = await captureKubectl([
-          "-n",
-          "cube-system",
-          "exec",
-          pod,
-          "-c",
-          "cubelet",
-          "--",
-          "cat",
-          "/usr/local/services/cubetoolbox/Cubelet/config/config.toml",
-        ]);
-        break;
-      } catch {
-        // A container can be replaced between observation and this read-only exec.
-      }
-    }
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1000));
-  }
-  if (!currentConfig) throw new Error("Ready Cubelet configuration was unavailable after rollout");
-  const cubeletConfig = withCubeExecutionCompletion(withCubeletPosixVolumePlugin(currentConfig));
-  const masterSecret = JSON.parse(
-    await captureKubectl([
-      "-n",
-      "cube-system",
-      "get",
-      "secret",
-      "cube-master-config",
-      "-o",
-      "json",
-    ]),
-  );
-  const encodedMasterConfig = masterSecret?.data?.["conf.yaml"];
-  if (typeof encodedMasterConfig !== "string") {
-    throw new Error("CubeMaster configuration Secret was invalid");
-  }
-  const masterConfig = withCubeMasterPosixVolumePlugin(
-    Buffer.from(encodedMasterConfig, "base64").toString("utf8"),
-  );
-  const temporary = await mkdtemp(join(tmpdir(), "pi-cloud-cube-posix-volume-"));
-  try {
-    const cubeletConfigPath = join(temporary, "cubelet-config.toml");
-    await writeFile(cubeletConfigPath, cubeletConfig, { mode: 0o600 });
-    const configMap = await captureKubectl([
-      "-n",
-      "cube-system",
-      "create",
-      "configmap",
-      posixVolumePluginConfigMap,
-      `--from-file=cubelet-config.toml=${cubeletConfigPath}`,
-      `--from-file=cube-volume-picloud-posix=${posixVolumePluginSource}`,
-      "--dry-run=client",
-      "-o",
-      "json",
-    ]);
-    await runKubectl(["apply", "-f", "-"], { input: configMap });
-    await runKubectl([
-      "-n",
-      "cube-system",
-      "patch",
-      "secret",
-      "cube-master-config",
-      "--type=merge",
-      "-p",
-      JSON.stringify({
-        data: { "conf.yaml": Buffer.from(masterConfig, "utf8").toString("base64") },
-      }),
-    ]);
-    await runKubectl([
-      "-n",
-      "cube-system",
-      "patch",
-      "deployment",
-      "cube-master",
-      "--type=strategic",
-      "-p",
-      JSON.stringify({
-        spec: {
-          template: {
-            metadata: {
-              annotations: {
-                "pi-cloud.io/posix-shared-root-identity": sharedRootIdentity,
-                "pi-cloud.io/posix-volume-plugin-sha256": pluginSha256,
-              },
-            },
-            spec: {
-              containers: [
-                {
-                  name: "cube-master",
-                  volumeMounts: [
-                    {
-                      name: "picloud-posix-volume-plugin",
-                      mountPath:
-                        "/usr/local/services/cubetoolbox/CubeMaster/plugin/cube-volume-picloud-posix",
-                      subPath: "cube-volume-picloud-posix",
-                      readOnly: true,
-                    },
-                    {
-                      name: "picloud-posix-shared",
-                      mountPath: "/data/cube-shared",
-                    },
-                  ],
-                },
-              ],
-              volumes: [
-                {
-                  name: "picloud-posix-volume-plugin",
-                  configMap: { name: posixVolumePluginConfigMap, defaultMode: 365 },
-                },
-                {
-                  name: "picloud-posix-shared",
-                  hostPath: { path: posixSharedRoot, type: "Directory" },
-                },
-              ],
-            },
-          },
-        },
-      }),
-    ]);
-    await runKubectl([
-      "-n",
-      "cube-system",
-      "patch",
-      "daemonset",
-      "cube-node",
-      "--type=strategic",
-      "-p",
-      JSON.stringify({
-        spec: {
-          template: {
-            metadata: {
-              annotations: {
-                "pi-cloud.io/posix-shared-root-identity": sharedRootIdentity,
-              },
-            },
-            spec: {
-              containers: [
-                {
-                  name: "cubelet",
-                  volumeMounts: [
-                    {
-                      name: "picloud-posix-volume-plugin",
-                      mountPath: "/opt/cube-image/Cubelet/plugin/cube-volume-picloud-posix",
-                      subPath: "cube-volume-picloud-posix",
-                      readOnly: true,
-                    },
-                    {
-                      name: "picloud-posix-volume-plugin",
-                      mountPath: "/opt/cube-image/Cubelet/config/config.toml",
-                      subPath: "cubelet-config.toml",
-                      readOnly: true,
-                    },
-                    {
-                      name: "data-cube-shared",
-                      mountPath: "/data/cube-shared",
-                    },
-                  ],
-                },
-              ],
-              volumes: [
-                {
-                  name: "picloud-posix-volume-plugin",
-                  configMap: { name: posixVolumePluginConfigMap, defaultMode: 365 },
-                },
-                {
-                  name: "data-cube-shared",
-                  hostPath: { path: posixSharedRoot, type: "Directory" },
-                },
-              ],
-            },
-          },
-        },
-      }),
-    ]);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-  await runKubectl([
-    "-n",
-    "cube-system",
-    "rollout",
-    "status",
-    "deployment/cube-master",
-    "--timeout=600s",
-  ]);
-  await runKubectl([
-    "-n",
-    "cube-system",
-    "rollout",
-    "status",
-    "daemonset/cube-node",
-    "--timeout=900s",
-  ]);
 }
 
 async function assertCubePodMtu(expectedMtu) {
@@ -1092,33 +817,6 @@ async function installTemplateRegistry() {
   }
 }
 
-async function reconcileRedisCredentialRevision() {
-  // Projected Secret files and environment variables do not reload Redis or
-  // subPath-mounted consumer configuration in already-running containers.
-  const secret = JSON.parse(
-    await captureKubectl(["-n", "cube-system", "get", "secret", "cube-secret", "-o", "json"]),
-  );
-  const password = secret.data?.["redis-password"];
-  if (typeof password !== "string") throw new Error("Cube Redis credential is missing");
-  const revision = createHash("sha256").update(Buffer.from(password, "base64")).digest("hex");
-  const patch = JSON.stringify({
-    spec: {
-      template: {
-        metadata: { annotations: { "pi-cloud.io/redis-credential-revision": revision } },
-      },
-    },
-  });
-  for (const resource of [
-    "statefulset/cube-redis",
-    "deployment/cube-master",
-    "deployment/cube-proxy",
-    "deployment/cube-lifecycle-manager",
-  ]) {
-    await runKubectl(["-n", "cube-system", "patch", resource, "--type=merge", "--patch", patch]);
-    await runKubectl(["-n", "cube-system", "rollout", "status", resource, "--timeout=180s"]);
-  }
-}
-
 if ((await repositoryHead(cubeRepository)) !== CUBE_COMMIT) {
   throw new Error(`CubeSandbox checkout must be pinned to ${CUBE_COMMIT}`);
 }
@@ -1258,38 +956,57 @@ await runKubectl([
 ]);
 await waitForRunningPod("app.kubernetes.io/name=pi-cloud-cube-egress-gateway", 180_000);
 
-await run("helm", [
-  "upgrade",
-  "--install",
-  "cube",
-  join(cubeRepository, "deploy/kubernetes/chart"),
-  "--namespace",
-  "cube-system",
-  "--values",
-  join(cubeRepository, "deploy/kubernetes/chart/values-single-node.yaml"),
-  "--values",
-  resolve(repositoryRoot, "deploy/cubesandbox/values-pi-cloud-single-node.yaml"),
-  "--values",
-  secretValuesPath,
-  "--set",
-  "images.api.repository=pi-cloud/cube-api",
-  "--set",
-  `images.api.tag=${piCloudRevision}`,
-  "--set",
-  "images.master.repository=pi-cloud/cube-master",
-  "--set",
-  `images.master.tag=${piCloudRevision}`,
-  "--set",
-  "images.cubelet.repository=pi-cloud/cubelet",
-  "--set",
-  `images.cubelet.tag=${piCloudRevision}`,
-  "--wait",
-  "--timeout",
-  "90m",
-]);
+await preparePosixVolumeRoot();
+const cubeRelease = await prepareCubeRelease({ repositoryRoot, cubeRepository, runtimeDirectory });
+try {
+  const objects = JSON.parse(
+    await captureKubectl([
+      "-n",
+      "cube-system",
+      "get",
+      "configmap/pi-cloud-posix-volume-plugin",
+      "secret/pi-cloud-cube-completion",
+      "--ignore-not-found",
+      "-o",
+      "json",
+    ]),
+  );
+  const adoption = cubeAdoptionFlags(objects.items ?? (objects.kind ? [objects] : []));
+  await run("helm", [
+    "upgrade",
+    "--install",
+    "cube",
+    cubeRelease.chart,
+    "--namespace",
+    "cube-system",
+    "--values",
+    join(cubeRelease.chart, "values-single-node.yaml"),
+    "--values",
+    resolve(repositoryRoot, "deploy/cubesandbox/values-pi-cloud-single-node.yaml"),
+    "--values",
+    secretValuesPath,
+    "--set",
+    "images.api.repository=pi-cloud/cube-api",
+    "--set",
+    `images.api.tag=${piCloudRevision}`,
+    "--set",
+    "images.master.repository=pi-cloud/cube-master",
+    "--set",
+    `images.master.tag=${piCloudRevision}`,
+    "--set",
+    "images.cubelet.repository=pi-cloud/cubelet",
+    "--set",
+    `images.cubelet.tag=${piCloudRevision}`,
+    ...cubeRelease.rendererArgs,
+    ...adoption,
+    "--wait",
+    "--timeout",
+    "90m",
+  ]);
+} finally {
+  await cubeRelease.close();
+}
 await ensureCubeletLoopbackCapacity();
-await reconcileRedisCredentialRevision();
-await installPosixVolumePlugin();
 if (nodeNetwork.changed) {
   await restartCubeWorkloadsAfterNetworkChange();
 }

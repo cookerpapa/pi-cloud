@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { createDatabase } from "@pi-cloud/database";
+import { createDatabase } from "@pi-cloud/database/client";
 import { KafkaToolReplyPublisher, ToolProgressPublisher } from "@pi-cloud/event-log";
 import { configuredImageAttachments } from "@pi-cloud/session-attachments";
 import { CubeCompletionAdapter, type CompletionPacket } from "./adapter.ts";

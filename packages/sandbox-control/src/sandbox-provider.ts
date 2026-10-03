@@ -272,8 +272,7 @@ export interface SandboxProvider {
   ): Promise<WorkspaceUploadReceipt>;
   prepareInputImage?(
     handle: SandboxHandle,
-    bytes: Uint8Array,
-    mimeType: string,
+    source: { chunks: AsyncIterable<Uint8Array>; byteLength: number; mimeType: string },
     signal?: AbortSignal,
   ): Promise<PreparedInputImage>;
   uploadMachineWorkspaceFile?(

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import { parseImageAttachmentReference, type ImageAttachmentReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
-import type { ImageAttachmentStore, ImageScope } from "./codec.ts";
+import type { ImageAttachmentSource, ImageAttachmentStore, ImageScope } from "./codec.ts";
 
 export interface ImageBlobStore {
   put(key: string, bytes: Buffer, mimeType: string, signal: AbortSignal): Promise<void>;
@@ -13,7 +13,7 @@ export interface ImageBlobStore {
     mimeType: string,
     signal: AbortSignal,
   ): Promise<void>;
-  get(key: string, maximumBytes: number, signal: AbortSignal): Promise<Buffer>;
+  readStream(key: string, maximumBytes: number, signal: AbortSignal): AsyncIterable<Uint8Array>;
   delete(key: string, signal: AbortSignal): Promise<void>;
 }
 type Inventory = {
@@ -35,7 +35,7 @@ function deadline(signal?: AbortSignal) {
 }
 
 /** PG owns reachability, S3 owns bytes. Network I/O never holds a PG transaction. */
-export class PostgresImageAttachmentStore implements ImageAttachmentStore {
+export class PostgresImageAttachmentStore implements ImageAttachmentStore, ImageAttachmentSource {
   #inFlightBytes = 0;
   readonly #capacityWaiters = new Set<() => void>();
   constructor(
@@ -172,10 +172,32 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore {
     reference: ImageAttachmentReference,
     signal?: AbortSignal,
   ): Promise<Buffer> {
-    const ref = parseImageAttachmentReference(reference);
-    const objectKey = key(tenantId, ref.id);
     const abort = deadline(signal);
-    abort.throwIfAborted();
+    const ref = await this.#readReference(tenantId, reference, abort);
+    return this.#bounded(
+      ref.byteLength,
+      () =>
+        this.#consume(
+          tenantId,
+          ref,
+          async (chunks) => {
+            const bytes: Buffer[] = [];
+            for await (const chunk of chunks) bytes.push(Buffer.from(chunk));
+            return Buffer.concat(bytes, ref.byteLength);
+          },
+          abort,
+        ),
+      abort,
+    );
+  }
+
+  async #readReference(
+    tenantId: string,
+    reference: ImageAttachmentReference,
+    signal?: AbortSignal,
+  ) {
+    const ref = parseImageAttachmentReference(reference);
+    signal?.throwIfAborted();
     const {
       rows: [row],
     } = await sql<Inventory>`select * from session_image_objects
@@ -188,19 +210,53 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore {
       row.mime_type !== ref.mimeType
     )
       throw new Error("Image attachment is unavailable in this tenant");
-    return this.#bounded(
-      ref.byteLength,
-      async () => {
-        const bytes = await this.blobs.get(objectKey, ref.byteLength, abort);
-        if (
-          bytes.length !== ref.byteLength ||
-          createHash("sha256").update(bytes).digest("hex") !== ref.sha256
-        )
-          throw new Error("Image attachment integrity check failed");
-        return bytes;
-      },
-      abort,
-    );
+    signal?.throwIfAborted();
+    return ref;
+  }
+
+  async withStream<T>(
+    tenantId: string,
+    reference: ImageAttachmentReference,
+    consume: (chunks: AsyncIterable<Uint8Array>, signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const ref = await this.#readReference(tenantId, reference, signal);
+    return this.#consume(tenantId, ref, consume, signal);
+  }
+
+  async #consume<T>(
+    tenantId: string,
+    ref: ImageAttachmentReference,
+    consume: (chunks: AsyncIterable<Uint8Array>, signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const controller = new AbortController();
+    const combined = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+    const source = this.blobs.readStream(key(tenantId, ref.id), ref.byteLength, combined);
+    let complete = false;
+    const verified = (async function* () {
+      let length = 0;
+      const hash = createHash("sha256");
+      for await (const chunk of source) {
+        combined.throwIfAborted();
+        length += chunk.byteLength;
+        if (length > ref.byteLength) throw new Error("Image attachment integrity check failed");
+        hash.update(chunk);
+        yield chunk;
+      }
+      if (length !== ref.byteLength || hash.digest("hex") !== ref.sha256)
+        throw new Error("Image attachment integrity check failed");
+      complete = true;
+    })();
+    try {
+      const value = await consume(verified, combined);
+      combined.throwIfAborted();
+      if (!complete) throw new Error("Image consumer did not verify the complete source");
+      return value;
+    } finally {
+      controller.abort();
+      await verified.return(undefined).catch(() => {});
+    }
   }
   async reap(graceMs = 24 * 60 * 60 * 1000, signal?: AbortSignal): Promise<number> {
     if (!Number.isSafeInteger(graceMs) || graceMs < 0)

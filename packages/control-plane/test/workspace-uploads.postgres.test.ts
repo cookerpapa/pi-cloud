@@ -89,10 +89,10 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       async put(key, bytes) {
         blobs.set(key, Buffer.from(bytes));
       },
-      async get(key) {
+      async *readStream(key) {
         const value = blobs.get(key);
         if (!value) throw new Error("Missing blob");
-        return value;
+        yield value;
       },
       async delete(key) {
         blobs.delete(key);

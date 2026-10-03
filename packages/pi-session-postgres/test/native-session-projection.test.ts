@@ -143,6 +143,40 @@ it("projects exact writer stamps, mixed records and inherited/empty Lanes after 
   ).toBe(false);
 });
 
+it("does not transfer unrelated historical Lane heads for Entry or metadata appends", async () => {
+  const f = await fixture();
+  await db
+    .insertInto("pi_session_lanes")
+    .values(
+      Array.from({ length: 1000 }, (_, i) => ({
+        tenant_id: f.tenantId,
+        session_id: f.sessionId,
+        lane: `cold-${i}`,
+        leaf_id: null,
+      })),
+    )
+    .execute();
+  const loaded: unknown[][] = [];
+  const measured = db.withPlugin({
+    transformQuery({ node }) {
+      return node;
+    },
+    async transformResult({ result }) {
+      for (const row of result.rows) if (Array.isArray(row.lanes)) loaded.push(row.lanes);
+      return result;
+    },
+  });
+  await f.main.appendEntry(
+    { id: f.writer.idGenerator(), type: "custom", customType: "state" },
+    "main",
+  );
+  await f.main.setName("renamed");
+  for (const frame of f.frames) await f.project(frame, measured);
+  expect(loaded).toEqual([[{ lane: "main", leaf_id: null }], []]);
+  expect(await f.storage.getName()).toBe("renamed");
+  expect(await f.storage.getLanes()).toHaveLength(1001);
+});
+
 it("loads append identity, Lane heads and ID conflicts in one post-lock query", async () => {
   const f = await fixture();
   await f.main.mutate({

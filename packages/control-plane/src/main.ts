@@ -97,6 +97,8 @@ export async function startControlPlane(): Promise<void> {
   let issueNoteReconciler: GitLabIssueNoteReconciler | undefined;
   let images: ConfiguredImageAttachments | undefined;
   let imageReaper: ImageAttachmentReaper | undefined;
+  let queueDatabase: ReturnType<typeof createDatabase> | undefined;
+  let queueViews: InputQueueView | undefined;
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let internalSourceControlDispatcher: Agent | undefined;
   let closePromise: Promise<void> | undefined;
@@ -107,6 +109,8 @@ export async function startControlPlane(): Promise<void> {
       () => issueCoordinator?.close(),
       // Relinquish log partitions before potentially long resource drains.
       () => agentEvents?.close(),
+      () => queueViews?.close(),
+      () => queueDatabase?.destroy(),
       () => runtime?.close(),
       () => developmentEnvironmentService?.close(),
       () => operationalMetrics?.close(),
@@ -203,12 +207,25 @@ export async function startControlPlane(): Promise<void> {
         }),
     });
     unattachedSubagents = subagents;
+    const queueReads = createDatabase({
+      connectionString: config.databaseUrl,
+      maxConnections: 2,
+      readTimeoutMs: 5000,
+    });
+    queueDatabase = queueReads;
     const inputQueues = new InputQueueView({
-      read: (tenant, session) => readInputQueue(database, tenant, session),
+      read: (tenant, session) => readInputQueue(queueReads, tenant, session),
       watched: (tenant, session) => agentEvents?.eventHub.hasSubscribers(tenant, session) === true,
       publish: (tenant, queue) => agentEvents?.eventHub.publishInputQueue(tenant, queue),
       unavailable: (tenant, session) => agentEvents?.eventHub.resyncSession(tenant, session),
+      onError: () =>
+        operationalLog({
+          service: "pi-cloud-control-plane",
+          level: "warn",
+          event: "input_queue.observation_unavailable",
+        }),
     });
+    queueViews = inputQueues;
     const bindingView = sandboxControl.bindingView;
     agentEvents = new SessionProjector({
       publicationToken: config.supervisorManagementToken,
@@ -266,18 +283,7 @@ export async function startControlPlane(): Promise<void> {
               change.entityId,
               change.steerPending === true,
             );
-          try {
-            await inputQueues.consume(change, current);
-          } catch {
-            // Queue presentation is disposable. A failed snapshot must not
-            // stop unrelated native projection or durable input reconciliation.
-            agentEvents?.eventHub.resyncSession(change.scope.tenantId, change.entityId);
-            operationalLog({
-              service: "pi-cloud-control-plane",
-              level: "warn",
-              event: "input_queue.observation_unavailable",
-            });
-          }
+          inputQueues.consume(change, current);
         },
       },
       partitions: config.kafkaPartitions,

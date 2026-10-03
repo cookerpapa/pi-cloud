@@ -959,6 +959,8 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
     sessionId: SESSION_ID,
     revision: 1,
     viewVersion: "1",
+    afterPosition: 0,
+    hasMore: false,
     activeTurnId: null,
     items: [item],
   };

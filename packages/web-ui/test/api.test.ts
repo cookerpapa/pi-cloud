@@ -60,7 +60,15 @@ describe("tenant-aware browser API", () => {
   it("sends versioned queue actions with their stable idempotency key", async () => {
     const sessionId = "10000000-0000-4000-8000-000000000001";
     const turnId = "20000000-0000-4000-8000-000000000001";
-    const queue = { sessionId, revision: 7, viewVersion: "19", activeTurnId: turnId, items: [] };
+    const queue = {
+      sessionId,
+      revision: 7,
+      viewVersion: "19",
+      afterPosition: 0,
+      hasMore: false,
+      activeTurnId: turnId,
+      items: [],
+    };
     const action = { action: "steer" as const, revision: 7, targetTurnId: turnId, text: "edited" };
     const transport = vi.fn<typeof fetch>(async (input, init) => {
       if (init?.method === "GET") {

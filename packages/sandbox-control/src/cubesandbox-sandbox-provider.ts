@@ -1682,23 +1682,25 @@ export class CubeSandboxProvider implements SandboxProvider {
 
   async prepareInputImage(
     handle: SandboxHandle,
-    bytes: Uint8Array,
-    mimeType: string,
+    source: { chunks: AsyncIterable<Uint8Array>; byteLength: number; mimeType: string },
     signal?: AbortSignal,
   ) {
     const activation = this.#dataOwned(handle);
     const envelope = record(
       await this.#withGuestUpload(
         activation.instance,
-        (async function* () {
-          yield bytes;
-        })(),
-        bytes.byteLength,
+        source.chunks,
+        source.byteLength,
         signal,
         (sourcePath) =>
           this.#guestJson(
             activation.instance,
-            { mode: "normalize_image", sourcePath, byteLength: bytes.byteLength, mimeType },
+            {
+              mode: "normalize_image",
+              sourcePath,
+              byteLength: source.byteLength,
+              mimeType: source.mimeType,
+            },
             {
               program: "input",
               sourcePath,
