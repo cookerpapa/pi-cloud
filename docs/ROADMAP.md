@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Completed follow-up review
+
+- [x] Review `3dbf49fb` across all workspaces, pinned Pi, lifecycle/recovery,
+      deployment and validation paths. [Findings and evidence](reports/repository-review-20261003-r2.md)
+      include default-test failures and separate the Cube capacity decision from
+      local fixes. Implementation remains tracked in BACKLOG.
+
 ## Completed review repairs
 
 [ADR-0216](adr/0216-review-data-path-bounds.md) and

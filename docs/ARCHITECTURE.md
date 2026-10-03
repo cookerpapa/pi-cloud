@@ -192,7 +192,8 @@ covers missed wakeups. There is no Temporal or competing dispatcher.
 An active physical Session occupies one local Worker slot and has one native writer
 and one owner lease, while main and Child Agent Loops run concurrently. Model
 requests share a separate, abortable, round-robin budget keyed by physical Session;
-Tools/child waits hold no model permit. Tree depth and total nodes remain bounded.
+Tools/child waits hold no model permit. Tree depth and total-node product limits
+default to absent; explicitly configured finite policies remain enforceable.
 KEDA counts active/ready physical families, not descendant Run rows. Cube compute
 capacity scales independently. Draining rejects new families but finishes existing
 families, including their newly delegated children.

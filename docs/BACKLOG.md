@@ -23,6 +23,28 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
+The [follow-up review at `3dbf49fb`](reports/repository-review-20261003-r2.md)
+records new findings separately from the deployed repairs below:
+
+- [ ] R2-01: align human input/edit/steer acceptance with the existing native
+      serialized Fact budget, including composed attachment metadata; no truncation.
+- [ ] R2-02: use PG time for Subagent cancellation availability and supervisor
+      request deadlines/replies; verify producer skew and post-lock expiry.
+- [ ] R2-03: isolate image-deletion errors and make Workspace purge retries fair,
+      retaining node-absence, Volume and attachment-reachability protections.
+- [ ] Q2-01: repair the repeatable default PGlite queued-input test failure, or
+      make the real-PG test requirement explicit. Node 24.18 also reproduces the
+      cancellation/next-test sequence; the external-PG cases pass. This does not
+      establish a failure of the separately configured GitHub CI job.
+- [ ] O2-01: scope normal Subagent reaping to affected Session/Run changes.
+      An unrelated seal currently issues four global reads even with no Subagents;
+      retain startup/overflow/missed-change recovery.
+- [ ] D2-01: discuss Cube scope-tombstone exhaustion and recovery. The current
+      global closed flag survives confirmed retirement of the offending VM;
+      changing scope-fencing or admission recovery requires an ADR.
+- [ ] R2-05/06: resolve optional verification commands from the frozen Run cwd,
+      and share terminal-size constraints across SSH open/resize and its protocol.
+
 The [October 3 review](reports/repository-review-20261003.md) repairs are deployed
 under [ADR-0216](adr/0216-review-data-path-bounds.md) and
 [ADR-0217](adr/0217-declarative-cube-release.md).
@@ -118,6 +140,10 @@ separate design questions, not an implicit part of the completed query merge.
       Lane counts; unlimited product defaults do not establish sustainable capacity.
 
 ## Deployment operations
+
+- [ ] R2-04: migrate the public Kafka evaluation command and retained acceptance
+      wrappers off the removed `pi-cloud-production_event-log` Docker network.
+      Use an explicit isolated fixture/current K3s entry; remove obsolete wrappers.
 
 - [ ] Repeat the broad browser interaction gate beyond the focused execution-probe
       acceptance after its model-menu/catalog expectations were corrected. The

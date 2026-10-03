@@ -1,0 +1,475 @@
+{
+  "format": "pi-cloud.repository-review-evidence.v2",
+  "revision": "3dbf49fb53c2faa3ee1a62faa5657f72a126a59d",
+  "generatedAt": "2026-10-03T13:28:57.927Z",
+  "runtimeModified": false,
+  "productionMutated": false,
+  "environment": {
+    "node": "24.12.0; focused counterexamples and Pi conformance also checked with 24.18.0",
+    "postgres": "isolated postgres:17-alpine, 768 MiB, 1 CPU",
+    "kafka": "isolated RF3 apache/kafka@sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75, 768 MiB / 1 CPU each",
+    "characterizationNode": "24.18.0"
+  },
+  "verification": {
+    "typecheck": "22 workspaces passed",
+    "defaultWorkspaceTests": {
+      "passed": 1448,
+      "failed": 11,
+      "skipped": 163,
+      "failedFile": "packages/control-plane/test/queued-inputs.test.ts",
+      "reproduction": "full default run, standalone file, two-case cancellation-then-next-test on Node 24.12.0 and 24.18.0",
+      "githubCi": "Uses external PostgreSQL; default PGlite failure is not a demonstrated GitHub CI failure"
+    },
+    "nativePgFocused": {
+      "files": 4,
+      "passed": 56
+    },
+    "piPgConformanceAndQueries": {
+      "files": 4,
+      "passed": 33
+    },
+    "acceptanceHelpers": {
+      "files": 13,
+      "passed": 63
+    },
+    "browserQueue": "passed: edit/order/cancel/edited steer/lost reply/draft retention/stale read/read recovery/viewer/mobile/pagination/page conflict/later-page edit",
+    "policyChecks": [
+      "docs",
+      "dependency hardening",
+      "installer contract",
+      "runtime budgets",
+      "template retention",
+      "Helm",
+      "distributed preflight",
+      "observability",
+      "Worker image closure"
+    ],
+    "security": {
+      "securityAuditPassed": true,
+      "auditLevel": "high",
+      "remediatedShrinkwrapFindings": [
+        {
+          "name": "brace-expansion",
+          "installedVersion": "5.0.12",
+          "advisoryUrls": [
+            "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+            "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+            "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p"
+          ],
+          "reason": "The exact shrinkwrapped node is replaced and verified; no reported affected range includes its installed version"
+        },
+        {
+          "name": "undici",
+          "installedVersion": "8.10.2",
+          "advisoryUrls": [
+            "https://github.com/advisories/GHSA-3wwx-pv8p-q78v",
+            "https://github.com/advisories/GHSA-pmjh-fq2x-6v4x",
+            "https://github.com/advisories/GHSA-r53p-7pc4-xj5r",
+            "https://github.com/advisories/GHSA-rfgv-xxqx-mfg5",
+            "https://github.com/advisories/GHSA-3xpg-4rpp-hhhm",
+            "https://github.com/advisories/GHSA-2jfj-6hjv-fm6j",
+            "https://github.com/advisories/GHSA-2gqq-gqf2-x968",
+            "https://github.com/advisories/GHSA-w293-vg96-wgc3",
+            "https://github.com/advisories/GHSA-8436-99hf-9mmv",
+            "https://github.com/advisories/GHSA-rx4f-c7p8-82vq"
+          ],
+          "reason": "The exact shrinkwrapped node is replaced and verified; no reported affected range includes its installed version"
+        },
+        {
+          "name": "@earendil-works/pi-coding-agent",
+          "installedVersion": "0.84.1",
+          "advisoryUrls": [
+            "https://github.com/advisories/GHSA-3wwx-pv8p-q78v",
+            "https://github.com/advisories/GHSA-pmjh-fq2x-6v4x",
+            "https://github.com/advisories/GHSA-r53p-7pc4-xj5r",
+            "https://github.com/advisories/GHSA-rfgv-xxqx-mfg5",
+            "https://github.com/advisories/GHSA-3xpg-4rpp-hhhm",
+            "https://github.com/advisories/GHSA-2jfj-6hjv-fm6j",
+            "https://github.com/advisories/GHSA-2gqq-gqf2-x968",
+            "https://github.com/advisories/GHSA-w293-vg96-wgc3",
+            "https://github.com/advisories/GHSA-8436-99hf-9mmv",
+            "https://github.com/advisories/GHSA-rx4f-c7p8-82vq"
+          ],
+          "reason": "Every dependency behind this aggregate finding was verified against its installed version and affected ranges"
+        }
+      ],
+      "remainingVulnerabilities": [
+        {
+          "name": "@nestjs/platform-fastify",
+          "severity": "moderate",
+          "nodes": ["node_modules/@nestjs/platform-fastify"]
+        },
+        {
+          "name": "fastify",
+          "severity": "moderate",
+          "nodes": ["node_modules/fastify"]
+        }
+      ]
+    }
+  },
+  "probes": {
+    "acceptedInputWireBudget": {
+      "characters": 100000,
+      "requestJsonBytes": 599973,
+      "acceptedRun": true,
+      "initialNativeFactBytes": 1801283,
+      "maximumFactBytes": 921600,
+      "modelRequests": 0,
+      "rejection": "size"
+    },
+    "unrelatedSealSubagentReads": {
+      "globalQueries": 4,
+      "existingSubagents": 0,
+      "queryTemplates": [
+        "select \"execution\".\"tenant_id\" as \"tenantId\", \"execution\".\"id\" from \"subagent_executions\" as \"execution\" inner join \"runs\" as \"child_run\" on \"child_run\".\"tenant_id\" = \"execution\".\"tenant_id\" and \"child_run\".\"id\" = \"execution\".\"child_run_id\" where \"execution\".\"state\" in ($1, $2) and \"child_run\".\"state\" in ($3, $4, $5, $6) order by \"child_run\".\"settled_at\" asc limit $7",
+        "select \"tenant_id\" as \"tenantId\", \"id\", \"child_session_id\" as \"childSessionId\", \"child_run_id\" as \"childRunId\", \"state\" from \"subagent_executions\" where \"state\" = $1 and \"updated_at\" < $2 order by \"updated_at\" asc limit $3",
+        "select \"e\".\"id\", \"e\".\"tenant_id\" from \"subagent_executions\" as \"e\" inner join \"runs\" as \"parent\" on \"parent\".\"id\" = \"e\".\"parent_run_id\" inner join \"runs\" as \"r\" on \"r\".\"id\" = \"e\".\"child_run_id\" where (\"parent\".\"output_sealed_at\" is not null or not exists(select 1 from subagent_supervisor_requests sr where sr.execution_id=e.id and sr.expects_reply=true)\n          and exists(select 1 from pi_session_log pe where pe.kind='entry' and pe.tenant_id=e.tenant_id and pe.turn_id=parent.turn_id\n            and pe.type='message' and pe.payload->'entry'->'message'->>'role'='toolResult'\n            and pe.id=e.parent_tool_call_id)) and \"r\".\"state\" in ($1, $2) limit $3",
+        "select min(created_at) as \"created\" from \"subagent_executions\" where \"state\" = $1"
+      ]
+    },
+    "verificationDirectory": {
+      "workingDirectory": "/home/user/project",
+      "relativeVerificationDirectory": "frontend",
+      "instructedDirectory": "/workspace/frontend"
+    },
+    "sshTerminalColumns": {
+      "requested": 600,
+      "forwarded": 600,
+      "downstreamMaximum": 512,
+      "result": "PiCloud SSH terminal is unavailable."
+    },
+    "workspaceDeletion": {
+      "blockedOldest": 16,
+      "healthyBehind": 1,
+      "rounds": [0, 0, 0],
+      "externalDeleteAttempts": 48,
+      "healthyAttempts": 0,
+      "afterUnblocking": "all 17 purged over two batches"
+    },
+    "imageDeletion": {
+      "objects": 3,
+      "rounds": 3,
+      "deleteAttempts": 3,
+      "distinctAttemptedObjects": 1,
+      "remaining": 3
+    },
+    "subagentCancellationClock": {
+      "appSkewMs": 60000,
+      "immediatelyDueInPG": false,
+      "secondsUntilDue": 59.989766
+    },
+    "supervisorReplyClock": {
+      "positiveSkewMs": 60000,
+      "validRequestRejected": true,
+      "negativeSkewMs": -60000,
+      "expiredRequestAccepted": true
+    }
+  },
+  "cubeCapacity": {
+    "source": "maintained patches 0003 + 0004, temporary Go module, no VM or production process",
+    "scopeTombstonesBefore": 65536,
+    "scopeTombstonesAfterForget": 0,
+    "acceptingAfterForget": false,
+    "newRuntimeRejection": "executor_capacity"
+  },
+  "dataPaths": {
+    "revision": "3dbf49fb",
+    "scope": "isolated PostgreSQL, synthetic inputs; no Kafka, model or VM latency claims",
+    "queues": [
+      {
+        "queuedInputs": 10,
+        "visibleInputs": 10,
+        "reachableInputs": 10,
+        "snapshotBytes": 42960,
+        "allPagesReadMs": 6.84
+      },
+      {
+        "queuedInputs": 100,
+        "visibleInputs": 20,
+        "reachableInputs": 100,
+        "snapshotBytes": 85781,
+        "allPagesReadMs": 19.81
+      },
+      {
+        "queuedInputs": 500,
+        "visibleInputs": 20,
+        "reachableInputs": 500,
+        "snapshotBytes": 85782,
+        "allPagesReadMs": 85.33
+      }
+    ],
+    "laneHeads": [
+      {
+        "storedLanes": 1,
+        "appendItems": 1,
+        "returnedLaneHeads": 0,
+        "returnedHeadBytes": 2,
+        "transactionMs": 12.97
+      },
+      {
+        "storedLanes": 101,
+        "appendItems": 1,
+        "returnedLaneHeads": 0,
+        "returnedHeadBytes": 2,
+        "transactionMs": 6.91
+      },
+      {
+        "storedLanes": 1001,
+        "appendItems": 1,
+        "returnedLaneHeads": 0,
+        "returnedHeadBytes": 2,
+        "transactionMs": 7.74
+      },
+      {
+        "storedLanes": 10001,
+        "appendItems": 1,
+        "returnedLaneHeads": 0,
+        "returnedHeadBytes": 2,
+        "transactionMs": 7.9
+      }
+    ]
+  },
+  "nativeTurnBudget": {
+    "format": "pi-cloud.native-turn-budget.v1",
+    "revision": "3dbf49fb",
+    "scope": "complete no-Tool Pi Turns with deterministic provider, actual PG/HTTP/RF3/control projection; no VM or provider latency",
+    "samples": [
+      {
+        "statementWalBytes": 51448,
+        "statementWalRecords": 454,
+        "statementWalFullPageImages": 0,
+        "sql": 142,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6828,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 60,
+          "with": 34,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 400600,
+        "durationMs": 7782.212127999999,
+        "heapDeltaBytes": -11817048
+      },
+      {
+        "statementWalBytes": 45837,
+        "statementWalRecords": 392,
+        "statementWalFullPageImages": 0,
+        "sql": 143,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6830,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 59,
+          "with": 36,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 47208,
+        "durationMs": 8726.037347000001,
+        "heapDeltaBytes": -7187896
+      },
+      {
+        "statementWalBytes": 45825,
+        "statementWalRecords": 392,
+        "statementWalFullPageImages": 0,
+        "sql": 142,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6831,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 59,
+          "with": 35,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 47184,
+        "durationMs": 7741.113064000001,
+        "heapDeltaBytes": -1611960
+      },
+      {
+        "statementWalBytes": 46804,
+        "statementWalRecords": 400,
+        "statementWalFullPageImages": 0,
+        "sql": 143,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6831,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 59,
+          "with": 36,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 48248,
+        "durationMs": 8727.263030999995,
+        "heapDeltaBytes": 5546904
+      },
+      {
+        "statementWalBytes": 46042,
+        "statementWalRecords": 395,
+        "statementWalFullPageImages": 0,
+        "sql": 143,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6831,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 59,
+          "with": 36,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 47464,
+        "durationMs": 8742.071064000003,
+        "heapDeltaBytes": -2174208
+      },
+      {
+        "statementWalBytes": 45437,
+        "statementWalRecords": 395,
+        "statementWalFullPageImages": 0,
+        "sql": 143,
+        "transactions": 12,
+        "nativeRows": 6,
+        "kafkaRecords": 9,
+        "kafkaBytes": 6832,
+        "kafkaTransactions": 9,
+        "kinds": {
+          "control_change": 4,
+          "pi_session_append": 4,
+          "execution_seal": 1
+        },
+        "sqlVerbs": {
+          "begin": 12,
+          "select": 59,
+          "with": 36,
+          "commit": 12,
+          "update": 14,
+          "insert": 10
+        },
+        "outboxRows": 5,
+        "queueReferences": 4,
+        "walBytes": 46808,
+        "durationMs": 8687.007331,
+        "heapDeltaBytes": 10509552
+      }
+    ],
+    "ownerRecovery": {
+      "durationMs": 650.1881159999975,
+      "heapDeltaBytes": 1598224
+    },
+    "measurementLimits": [
+      "No Tool/VM or live provider cost; actual Pi loop and durable native lifecycle are included.",
+      "SQL counts pg Client requests including transaction commands; trigger-internal statements are represented in WAL, not separately counted.",
+      "Kafka bytes are produced JSON payloads, not replication/network bytes; transactions count native producer commit calls.",
+      "walBytes is a cluster LSN delta including background/checkpoint effects; statementWalBytes sums only this database top-level pg_stat_statements entries, including trigger writes without nested double-counting. Heap deltas include GC noise.",
+      "Recovery includes producer/group ownership and view bootstrap, not replay of arbitrary effects."
+    ]
+  },
+  "kafkaIsolation": {
+    "format": "pi-cloud.consumer-isolation.v2",
+    "checkedAt": "2026-10-03T13:07:33.367Z",
+    "passed": true,
+    "heldPartitionRecords": 513,
+    "otherPartitionMs": 108.17177300000185,
+    "allHeldRecordsRecovered": true,
+    "recoveryRecordsRead": 2,
+    "projectionFloorReplayedDespiteCommittedGroup": true,
+    "incompleteDeliveryReplayedDespiteProjectedFloor": true,
+    "consumerRebalance": true
+  },
+  "kafkaBackpressure": {
+    "format": "pi-cloud.transport-backpressure.v2",
+    "checkedAt": "2026-10-03T13:06:48.220Z",
+    "topology": "R=3 private one-partition topic; quota only on one unique test producer ID",
+    "offered": 6000,
+    "accepted": 66,
+    "rejected": 5934,
+    "persisted": 66,
+    "elapsedMs": 4900,
+    "pendingFacts": 0,
+    "pendingBytes": 0,
+    "interpretation": "overload/recovery proof, not unthrottled throughput or whole-process memory guarantee"
+  },
+  "kafkaRetention": {
+    "format": "pi-cloud.native-retention.v1",
+    "checkedAt": "2026-10-03T13:16:03.728Z",
+    "accepted": true,
+    "scope": "real R3 Kafka producer/admin deletion with socket-backed PGlite progress fixtures; no model calls",
+    "noCheckpointRetainsAll": true,
+    "unsealedPrefixPreserved": true,
+    "gracePreservesRecent": true,
+    "databaseFailureStopsDeletion": true,
+    "lowWatermarks": [0, 5, 40, 40]
+  },
+  "limitations": [
+    "No real-provider or VM execution was repeated; prior rollout evidence is historical, not this review acceptance.",
+    "RF3 brokers share one host; not independent-node HA.",
+    "Turn budget counts include transaction commands/background work; concurrent isolated Kafka gates overlap early samples, so no production latency/regression claim.",
+    "No production mixed API/image/SSE load, 2k/10k SSE, whole-system restore or fresh-machine installation claim.",
+    "Clock probes use a reduced relational fixture with real PG; other PG probes use the current migrations."
+  ],
+  "cleanup": {
+    "isolatedPostgres": "stopped and auto-removed with anonymous volume",
+    "isolatedKafka": "all three pinned brokers stopped and auto-removed with anonymous volumes; earlier 4.1.1 fixture was also removed before pinned verification",
+    "network": "pi-cloud-review-r2 removed",
+    "temporaryNodeBinary": "removed",
+    "cubeProbe": "temporary patched Go directory removed by probe",
+    "production": "not mutated"
+  }
+}

@@ -156,10 +156,11 @@ Before admission commits, no output or Agent execution is allowed. After admissi
 even preparation failure or a lost first Kafka ACK requires a seal, not a blind
 retry or output-free pre-start requeue. Running includes context preparation,
 not proof that a model or Tool has actually started.
-An execution seal in the same Kafka partition closes a retired Run. A delayed
-Worker producer can still append its old record, but if it arrives after the seal both
-canonical and live consumers discard it. Earlier accepted data is projected
-before the successor is allowed to claim. A caught interruption writes Pi's minimal
+An execution seal in the same Kafka partition closes a retired Run. The
+control-plane ingress closes publication admission before stopping execution
+scopes and publishing that seal. Replaced ingress owners are transactionally
+fenced. Earlier accepted data is projected before the successor is allowed to
+claim; replayed records cannot reopen a sealed scope. A caught interruption writes Pi's minimal
 abort/reset boundary. A hard Worker loss is reconciled from the retained Kafka
 prefix plus a factual interruption marker; no Tool result is invented. A
 normal failure/cancellation uses the same ordered seal reducer, with no best-effort

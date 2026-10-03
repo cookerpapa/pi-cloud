@@ -70,6 +70,8 @@ verified behavior and remaining limits. Original images stream to Cube for
 normalization; native context still materializes normalized image content.
 Cube mounts, configuration and completion credentials are rendered into one
 Helm release before deployment, with native-version and source-identity checks.
+The [follow-up review](docs/reports/repository-review-20261003-r2.md) records
+current findings, reproduction evidence and test limitations at `3dbf49fb`.
 
 ## Quick start
 

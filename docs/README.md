@@ -1,5 +1,10 @@
 # Documentation map
 
+The [October 3 follow-up review](reports/repository-review-20261003-r2.md) covers
+all 22 workspaces at `3dbf49fb`, with new input/time/cleanup findings, a Cube
+capacity-isolation decision, query measurements and explicit test limitations.
+It does not change the deployed runtime. Its unfinished work is in BACKLOG.
+
 The [October 3 repository review](reports/repository-review-20261003.md) covers
 all 22 workspaces at `4294c759`, distinguishes confirmed behavior issues from
 optimization and architecture proposals, and includes isolated reproducers.
