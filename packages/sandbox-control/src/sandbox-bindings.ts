@@ -9,6 +9,12 @@ import {
 import type { ToolLogFact } from "./workflow-command-dispatcher.ts";
 import type { SandboxBindingSnapshot, SandboxExecutionDescriptor } from "./sandbox-execution.ts";
 
+export class BindingClosurePending extends Error {
+  constructor(cause: unknown) {
+    super("Ordered binding closure is pending", { cause });
+  }
+}
+
 export type SandboxBinding = Readonly<{
   bindingId: string;
   instanceId: string;
@@ -105,17 +111,16 @@ export class PostgresSandboxBindings implements SandboxBindings {
         .executeTakeFirst())
     )
       throw new Error("Binding execution closure is unconfirmed");
-    await this.publishChanges([bindingId]);
+    // Stopping was confirmed before deletion. Outbox delivery only retires
+    // the already-closed read view; it is not another release authority.
   }
   async releaseAfterPhysicalAbsence(physicalActivationId: string): Promise<void> {
     // Caller has confirmed native destruction/absence on the recorded node.
-    const rows = await this.database
+    await this.database
       .deleteFrom("sandbox_tool_bindings")
       .where("sandbox_domain_id", "=", this.sandboxDomainId)
       .where(sql<string>`snapshot->>'physicalActivationId'`, "=", physicalActivationId)
-      .returning("binding_id")
       .execute();
-    await this.publishChanges(rows.map((row) => row.binding_id));
     this.#notify();
   }
   #query() {
@@ -173,8 +178,12 @@ export class PostgresSandboxBindings implements SandboxBindings {
     )
       .returning(["binding_id", "run_id"])
       .execute();
-    await this.publishChanges(closed.map((r) => r.binding_id));
-    await this.#waitForClosure(closed);
+    try {
+      await this.publishChanges(closed.map((r) => r.binding_id));
+      await this.#waitForClosure(closed);
+    } catch (cause) {
+      throw new BindingClosurePending(cause);
+    }
   }
   async acknowledgeClosure(
     change: SandboxBindingChange,
@@ -252,14 +261,14 @@ export class PostgresSandboxBindings implements SandboxBindings {
   async adopt(
     physicalActivationId: string,
   ): Promise<readonly (SandboxBinding & { closed: boolean })[]> {
-    const adopted = await this.database
+    // The immutable target stays unchanged. Ownership + its Outbox reference
+    // commit together; a starting publication endpoint must not fail VM adoption.
+    await this.database
       .updateTable("sandbox_tool_bindings")
       .set({ owner_instance_id: this.instanceId })
       .where("sandbox_domain_id", "=", this.sandboxDomainId)
       .where(sql<string>`snapshot->>'physicalActivationId'`, "=", physicalActivationId)
-      .returning("binding_id")
       .execute();
-    await this.publishChanges(adopted.map((r) => r.binding_id));
     return (await this.#query()
       .where("binding.sandbox_domain_id", "=", this.sandboxDomainId)
       .leftJoin("runs as run", "run.id", "binding.run_id")

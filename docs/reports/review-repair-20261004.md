@@ -98,3 +98,14 @@ repository preserves capsule-backed VM state for verified adoption; missing
 capsules and genuine recovery/physical failures still close admission. The full
 sandbox suite then passes 239 tests, including both new cases. No VM is declared
 healthy merely because it has a capsule.
+
+The [next attempt](review-r2-handoff-restart-notification-20261004.json) completed
+the Run but exposed a failed Tool. A bounded diagnostic trace then showed a
+verified VM and open adopted binding, followed exactly 15 seconds later by
+`runtime_recovery_unconfirmed` after the synchronous adoption notification
+failed. Adoption and already-confirmed retirement now rely on committed Outbox
+references; new registration/closure retain their barriers. Pending closure
+recovery defers without quarantining siblings or installing partial local state.
+The 89 affected controller/routing/PG/view tests pass, including a publication-
+outage regression; the additional retirement guard check also passes. Physical
+identity and explicit quarantine checks remain in force.

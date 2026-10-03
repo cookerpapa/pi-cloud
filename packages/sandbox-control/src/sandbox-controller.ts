@@ -1,6 +1,6 @@
 import { resourceLimit } from "@pi-cloud/domain";
 import type { SandboxExecutionTarget } from "./sandbox-execution.ts";
-import type { SandboxBindings } from "./sandbox-bindings.ts";
+import { BindingClosurePending, type SandboxBindings } from "./sandbox-bindings.ts";
 import { PostgresQueueWake } from "@pi-cloud/database";
 import {
   runWorkspaceRuntimeCleanup,
@@ -597,6 +597,7 @@ export class SandboxController {
         if (handle !== undefined) {
           await this.#provider.detachPersistent?.(handle).catch(() => undefined);
         }
+        if (error instanceof BindingClosurePending) continue;
         await this.#stateRepository
           .setDevelopmentEnvironmentState(candidate.reservation.environmentId, "unknown", {
             failureCode: operationFailureCode(error),
@@ -613,6 +614,7 @@ export class SandboxController {
     runtime?: ManagedElasticRuntime,
     environment?: ManagedDevelopmentEnvironment,
   ): Promise<void> {
+    const restored: ManagedToolBinding[] = [];
     for (const route of await this.#bindings.adopt(handle.activationId)) {
       const { snapshot, descriptor, bindingId } = route;
       if (route.closed) {
@@ -668,9 +670,12 @@ export class SandboxController {
         ...(runtime ? { elasticRuntime: runtime } : {}),
         ...(environment ? { developmentEnvironmentId: environment.reservation.environmentId } : {}),
       };
-      this.#toolBindings.set(bindingId, binding);
-      runtime?.bindingIds.add(bindingId);
-      environment?.bindingIds.add(bindingId);
+      restored.push(binding);
+    }
+    for (const binding of restored) {
+      this.#toolBindings.set(binding.activationId, binding);
+      runtime?.bindingIds.add(binding.activationId);
+      environment?.bindingIds.add(binding.activationId);
     }
   }
 
@@ -726,6 +731,7 @@ export class SandboxController {
         recovered++;
       } catch (error) {
         if (handle) await this.#provider.detachPersistent?.(handle).catch(() => {});
+        if (error instanceof BindingClosurePending) continue;
         await this.#stateRepository.setWorkspaceRuntimeState(candidate.activationId, "unknown", {
           runtimeCapsule: candidate.runtimeCapsule,
           failureCode: "runtime_recovery_unconfirmed",

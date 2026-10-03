@@ -1,3 +1,4 @@
+import { BindingClosurePending } from "../src/sandbox-bindings.ts";
 import { InMemorySandboxBindings } from "./helpers/in-memory-sandbox-bindings.ts";
 import { SandboxCreationError } from "../src/sandbox-provider.ts";
 import { InMemoryWorkspaceRuntimeStateRepository } from "./helpers/in-memory-workspace-runtime-state-repository.ts";
@@ -508,6 +509,50 @@ describe("provider-backed Sandbox controller", () => {
     );
     expect(fixture.destroyed).toBe(false);
     await second.close();
+  });
+
+  it("retries pending ordered closure without quarantining or partially restoring a shared VM", async () => {
+    const fixture = providerFixture(),
+      bindings = new InMemorySandboxBindings();
+    const create = vi.spyOn(fixture.provider, "create");
+    const first = testBroker({ provider: fixture.provider, bindings });
+    const active = await first.create(createRequest);
+    const next = nextBindingRequest(assignment.workspaceId);
+    const closing = await first.create(next);
+    const handle = await create.mock.results[0]!.value;
+    await first.close();
+    bindings.rows.set(closing.activationId, {
+      ...bindings.rows.get(closing.activationId)!,
+      dispatchClosed: true,
+    });
+    bindings.onClose = async () => {
+      throw new BindingClosurePending(new Error("publication unavailable"));
+    };
+    const state = new InMemoryWorkspaceRuntimeStateRepository();
+    vi.spyOn(state, "claimRecoverableWorkspaceRuntimes").mockResolvedValue([
+      {
+        activationId: handle.activationId,
+        runtimeCapsule: "test-exclusive-machine-capsule",
+        sandboxProfileKey: "standard",
+      },
+    ]);
+    const update = vi.spyOn(state, "setWorkspaceRuntimeState");
+    vi.spyOn(fixture.provider, "adoptPersistentCapsule").mockResolvedValue(handle);
+    const replacement = testBroker({
+      provider: fixture.provider,
+      bindings,
+      stateRepository: state,
+    });
+    expect(await replacement.recoverPersistentDevelopmentEnvironments()).toBe(0);
+    expect(replacement.ownsToolBinding(active.activationId)).toBe(false);
+    expect(update).not.toHaveBeenCalled();
+    expect(fixture.destroyed).toBe(false);
+    bindings.onClose = async () => {};
+    expect(await replacement.recoverPersistentDevelopmentEnvironments()).toBe(1);
+    expect(replacement.ownsToolBinding(active.activationId)).toBe(true);
+    expect(replacement.ownsToolBinding(closing.activationId)).toBe(false);
+    expect(update).toHaveBeenCalledWith(handle.activationId, "active", expect.anything());
+    await replacement.close();
   });
 
   it("retires an orphaned terminal channel while preserving its shared VM", async () => {

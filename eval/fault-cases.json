@@ -1065,6 +1065,20 @@
       "file": "test/workspace-runtime-state-repository.test.ts",
       "test": "preserves recoverable VM bindings across controller expiry until physical evidence closes them",
       "invariant": "Controller ownership loss preserves capsule-backed VM state/bindings for verified adoption; actual physical uncertainty still closes them atomically."
+    },
+    {
+      "id": "adoption-notification-outage",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "adopts a binding through durable Outbox metadata while publication is unavailable",
+      "invariant": "Verified VM adoption and confirmed binding retirement survive notification outages through durable Outbox propagation."
+    },
+    {
+      "id": "recovery-closure-pending",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
+      "test": "retries pending ordered closure without quarantining or partially restoring a shared VM",
+      "invariant": "Pending ordered closure neither quarantines a verified shared VM nor exposes partial local binding restoration."
     }
   ]
 }

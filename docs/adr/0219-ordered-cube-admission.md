@@ -119,3 +119,19 @@ The existing adoption path claims lost owners and checks the recorded VM/boot.
 A capsule does not prove liveness. Failed adoption, explicit quarantine, real
 physical evidence and incomplete provisioning retain their existing unknown/
 closure rules. No binding reopens and no unconfirmed effects are replayed.
+
+The instrumented retry also found adoption's synchronous notification attempting
+HTTP publication before startup/partition routing had settled. Its 15-second
+transport failure was then misclassified as physical recovery failure. Binding
+adoption now commits ownership and its existing Outbox reference without waiting
+for delivery. Outbox replay/owner bootstrap propagates this metadata; it does not
+change the immutable Cube target or reopen a binding. Registration and closure
+retain their required publication barriers. A notification outage cannot cancel
+already accepted native work or quarantine a verified VM.
+
+Retiring a binding after confirmed stopping/physical absence likewise needs only
+its PG deletion plus durable Outbox reference; its already-closed target cannot
+admit new effects while the memory view catches up. Registration and closing
+remain synchronous barriers. Recovery stages local bindings as one set. A pending
+ordered-closure delivery is retried by existing recovery, rather than quarantining
+a shared VM or exposing a partially restored local set.

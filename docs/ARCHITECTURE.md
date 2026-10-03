@@ -94,7 +94,10 @@ Cube retains one source identity and per-partition progress per physical VM;
 active operation fingerprints disappear after bounded delivery. Boot changes,
 confirmed VM absence and shutdown remain distinct. Controller lease loss alone
 preserves capsule-backed VM state and bindings for verified takeover; it never
-substitutes for physical failure evidence. Read-only probes do not
+substitutes for physical failure evidence. Ownership adoption and retirement of
+already-stopped bindings commit their Outbox references without waiting for
+notification transport. Registration and closure retain synchronous barriers;
+pending closure recovery retries without partially installing local bindings. Read-only probes do not
 advance admission. See [ADR-0219](adr/0219-ordered-cube-admission.md).
 
 No browser payload or authority moves through NOTIFY. Drain proof and completion

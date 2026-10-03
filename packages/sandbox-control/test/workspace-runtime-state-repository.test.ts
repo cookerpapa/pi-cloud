@@ -1640,3 +1640,66 @@ it.each(["shutdown", "expiry"] as const)(
     expect((await first.row()).dispatch_closed).toBe(true);
   },
 );
+
+it("adopts a binding through durable Outbox metadata while publication is unavailable", async () => {
+  const f = await orderedClosureFixture(),
+    first = await f.makeBinding();
+  const replacementId = randomUUID();
+  const replacement = new PostgresWorkspaceRuntimeStateRepository({
+    database: f.database,
+    sandboxDomainId: "sandbox-domain-0001",
+    instanceId: replacementId,
+    ownerBaseUrl: "http://adoption.test",
+  });
+  resources.push(() => replacement.close());
+  await replacement.start();
+  const publish = vi.fn(async () => {
+    throw new Error("publication endpoint is still starting");
+  });
+  const adopted = new PostgresSandboxBindings(
+    f.database,
+    "sandbox-domain-0001",
+    replacementId,
+    "http://adoption.test",
+    publish,
+  );
+  const before = (await first.row()).revision;
+  const rows = await adopted.adopt(f.physicalId);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    instanceId: replacementId,
+    closed: false,
+    dispatchClosed: false,
+  });
+  expect(publish).not.toHaveBeenCalled();
+  const change = await first.change();
+  expect(BigInt(change.version)).toBeGreaterThan(BigInt(before));
+  expect(change.closed).toBe(false);
+  expect(
+    (
+      await f.database
+        .selectFrom("outbox")
+        .select("published_at")
+        .where("id", "=", change.factId)
+        .executeTakeFirstOrThrow()
+    ).published_at,
+  ).toBeNull();
+  await expect(adopted.release(f.bindingId, first.assignment)).rejects.toThrow("unconfirmed");
+  await f.database
+    .updateTable("sandbox_tool_bindings")
+    .set({ dispatch_closed: true })
+    .where("run_id", "=", first.scope.runId)
+    .execute();
+  const closed = await first.change();
+  await adopted.acknowledgeClosure(closed, closurePosition, "stopped");
+  await adopted.release(f.bindingId, first.assignment);
+  expect(publish).not.toHaveBeenCalled();
+  expect(await adopted.find(first.scope, false)).toEqual([]);
+  const retired = await f.database
+    .selectFrom("outbox")
+    .select("payload")
+    .where("aggregate_id", "=", f.bindingId)
+    .orderBy(sql`(payload->>'version')::bigint desc`)
+    .executeTakeFirstOrThrow();
+  expect(retired.payload.closed).toBe(true);
+});
