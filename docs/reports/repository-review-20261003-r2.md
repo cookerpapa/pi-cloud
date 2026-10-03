@@ -1,5 +1,9 @@
 # 全仓复审：Pi 对齐、恢复边界与运行开销
 
+Implementation follow-up: [October 4 repairs](review-repair-20261004.md).
+The baseline characterization scripts shown below are preserved at commit
+`2c2e1310`; current acceptance uses the maintained tests and Cube admission gate.
+
 审查基线：`3dbf49fb53c2faa3ee1a62faa5657f72a126a59d`，2026-10-03。
 本轮交付审查结论、复现脚本和文档勘误；没有修改运行时代码、部署或生产数据。
 上一轮 R03/O03 修复状态仍以[修复验收](review-repair-20261003.md)为准。

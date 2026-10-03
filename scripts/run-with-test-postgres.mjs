@@ -20,7 +20,12 @@ try {
     : await new Promise((resolve, reject) => {
         child = spawn(command === "node" ? process.execPath : command, args, {
           stdio: "inherit",
-          env: { ...process.env, PI_CLOUD_POSTGRES_INTEGRATION_URL: fixture.url },
+          env: {
+            ...process.env,
+            PI_CLOUD_POSTGRES_INTEGRATION_URL: fixture.url,
+            PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL:
+              process.env.PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL ?? fixture.url,
+          },
         });
         child.once("error", reject);
         child.once("exit", (code) => resolve(code ?? 1));

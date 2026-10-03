@@ -633,6 +633,7 @@ const executionTarget = {
   bootId: "11111111-1111-4111-8111-111111111111",
 };
 const executionRequest = {
+  source: { topic: "test-session-log", partition: 0, offset: "1" },
   operationId: "22222222-2222-4222-8222-222222222222",
   runId: "33333333-3333-4333-8333-333333333333",
   writerId: "44444444-4444-4444-8444-444444444444",
@@ -684,7 +685,7 @@ it("distinguishes explicit refusal from an ambiguous HTTP or identity failure", 
     executionReply = {
       accepted: false,
       operationID: executionRequest.operationId,
-      rejection: "scope_closed",
+      rejection: "execution_position_stale",
     };
     await expect(client.submitTool(executionTarget, executionRequest)).rejects.toBeInstanceOf(
       CubeExecutionRejected,
@@ -697,7 +698,7 @@ it("distinguishes explicit refusal from an ambiguous HTTP or identity failure", 
     executionReply = {
       accepted: false,
       operationID: "another-operation",
-      rejection: "scope_closed",
+      rejection: "execution_position_stale",
     };
     await expect(client.submitTool(executionTarget, executionRequest)).rejects.not.toBeInstanceOf(
       CubeExecutionRejected,
@@ -711,10 +712,16 @@ it("never treats a replaced boot's stopping response as proof", async () => {
   try {
     executionReply = { stopped: true, bootID: "another-boot" };
     await expect(
-      client.stopExecutionScope(executionTarget, { runId: executionRequest.runId }),
+      client.stopExecutionScope(executionTarget, {
+        runId: executionRequest.runId,
+        source: executionRequest.source,
+      }),
     ).rejects.toThrow("could not be confirmed");
     executionReply = { stopped: true, bootID: executionTarget.bootId };
-    await client.stopExecutionScope(executionTarget, { runId: executionRequest.runId });
+    await client.stopExecutionScope(executionTarget, {
+      runId: executionRequest.runId,
+      source: executionRequest.source,
+    });
   } finally {
     await client.close();
   }

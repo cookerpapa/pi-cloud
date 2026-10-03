@@ -12,7 +12,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest --run --maxWorkers=1 --testTimeout=30000 --hookTimeout=60000"
+    "test": "node ../../scripts/run-with-test-postgres.mjs -- node ../../node_modules/vitest/vitest.mjs --run --maxWorkers=1 --testTimeout=30000 --hookTimeout=60000"
   },
   "dependencies": {
     "@pi-cloud/event-log": "0.1.0",

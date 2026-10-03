@@ -447,8 +447,8 @@
       "id": "cancel-stop-failure",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/sandbox-controller.test.ts",
-      "test": "revokes the Session lease before a provider stop failure escapes",
-      "invariant": "Cancellation revokes Tool authority before uncertain process cleanup returns."
+      "test": "waits for ordered stopping and preserves binding/quota when it is unconfirmed",
+      "invariant": "Cancellation closes binding admission, waits for ordered stopping and retains binding/quota if confirmation is unavailable."
     },
     {
       "id": "shared-runtime-loss",
@@ -1037,6 +1037,20 @@
       "file": "test/pi-settlement-gate.test.ts",
       "test": "does not certify an overlapping edit (verify-first)",
       "invariant": "A verification result cannot certify a mutation still running or completed after its start."
+    },
+    {
+      "id": "ordered-closure-stale-ack",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "does not treat quarantine as stopping or let an old ACK satisfy a retry",
+      "invariant": "An old closure acknowledgement cannot authorize release after a new retry; quarantine is not absence."
+    },
+    {
+      "id": "ordered-closure-open-fact",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-binding-view.test.ts",
+      "test": "uses the closed fact for stopping even when an older open fact loaded the closed PG snapshot",
+      "invariant": "Only the actual closed Kafka fact supplies the stopping position; an older open reference cannot fence newer work."
     }
   ]
 }

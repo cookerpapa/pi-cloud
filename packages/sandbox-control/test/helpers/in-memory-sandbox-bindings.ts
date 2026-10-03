@@ -2,6 +2,8 @@ import { parseExecutionReference } from "@pi-cloud/protocol";
 import type { SandboxBindings, SandboxBinding } from "../../src/sandbox-bindings.ts";
 
 export class InMemorySandboxBindings implements SandboxBindings {
+  onClose?: (row: SandboxBinding) => Promise<void>;
+  readonly stopped = new Set<string>();
   readonly rows = new Map<string, SandboxBinding>();
   async register(...[bindingId, descriptor, snapshot]: Parameters<SandboxBindings["register"]>) {
     this.rows.set(bindingId, {
@@ -14,7 +16,10 @@ export class InMemorySandboxBindings implements SandboxBindings {
     });
   }
   async release(...[bindingId]: Parameters<SandboxBindings["release"]>) {
+    if (this.rows.has(bindingId) && !this.stopped.has(bindingId))
+      throw new Error("Binding execution closure is unconfirmed");
     this.rows.delete(bindingId);
+    this.stopped.delete(bindingId);
   }
   async find(...[scope, wholeWriter]: Parameters<SandboxBindings["find"]>) {
     return [...this.rows.values()].filter((row) => {
@@ -32,8 +37,11 @@ export class InMemorySandboxBindings implements SandboxBindings {
       .map((row) => ({ ...row, closed: row.dispatchClosed }));
   }
   async closeScope(...args: Parameters<SandboxBindings["closeScope"]>) {
-    for (const row of await this.find(...args))
+    for (const row of await this.find(args[0], args[1])) {
       this.rows.set(row.bindingId, { ...row, dispatchClosed: true });
+      await this.onClose?.(row);
+      this.stopped.add(row.bindingId);
+    }
   }
   commitPhysicalClosure(physicalActivationId: string): void {
     for (const row of this.rows.values())
@@ -47,6 +55,13 @@ export class InMemorySandboxBindings implements SandboxBindings {
       )
     )
       throw new Error("Physical binding closure has not committed");
+  }
+  async releaseAfterPhysicalAbsence(physicalActivationId: string): Promise<void> {
+    for (const row of this.rows.values())
+      if (row.snapshot.physicalActivationId === physicalActivationId) {
+        this.rows.delete(row.bindingId);
+        this.stopped.delete(row.bindingId);
+      }
   }
   async inventory(sandboxId: string) {
     return [...this.rows.values()].filter((row) => row.snapshot.assignment.sandboxId === sandboxId);

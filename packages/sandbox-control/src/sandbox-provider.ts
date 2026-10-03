@@ -221,10 +221,6 @@ export interface SandboxProvider {
     bindingId: string,
     toolRoot: string,
   ): Promise<import("./sandbox-execution.ts").SandboxExecutionDescriptor>;
-  stopExecutionScope(
-    target: import("./sandbox-execution.ts").SandboxExecutionTarget,
-    scope: { runId?: string; writerId?: string; operationId?: string },
-  ): Promise<void>;
   observeRuntime(handle: SandboxHandle): Promise<SandboxRuntimeObservation>;
   discoverHttpServices?(
     handle: SandboxHandle,

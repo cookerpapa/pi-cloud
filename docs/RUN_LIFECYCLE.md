@@ -97,7 +97,8 @@ For a Tool call, the Worker uses the execution's PG-issued publication identity.
 Its first lazy binding prepares the Workspace-owned Cube and records a bounded
 immutable execution descriptor; later bindings can share that VM. Different
 Sessions may execute Tools concurrently there. The control plane owns lifecycle
-and binding closure, while Cube enforces boot/operation/closed-scope identity.
+and binding closure, while Cube enforces boot identity, active-operation identity
+and per-VM Kafka partition progress.
 
 There are two native post-sampling commits. First, an AcceptedFact carries the
 complete Pi Assistant Entry, its usage Record and `model.sampling.completed`.
@@ -110,7 +111,9 @@ Cube owns execution and final Kafka delivery; Pi's Worker-side processing makes
 the returned Tool Result canonical.
 
 An ambiguous handoff closes its operation scope and is not replayed. Cube rejects
-a changed duplicate and recognizes an already accepted operation within its boot.
+a changed active duplicate and recognizes an identical active operation within
+its boot. Completed operation bodies are discarded after delivery; source
+positions reject historical replay without retaining every closed Run.
 If start/result or stopping cannot be proven, the outcome remains `UNKNOWN`;
 quarantine does not assert physical VM absence.
 
@@ -157,8 +160,11 @@ even preparation failure or a lost first Kafka ACK requires a seal, not a blind
 retry or output-free pre-start requeue. Running includes context preparation,
 not proof that a model or Tool has actually started.
 An execution seal in the same Kafka partition closes a retired Run. The
-control-plane ingress closes publication admission before stopping execution
-scopes and publishing that seal. Replaced ingress owners are transactionally
+control-plane ingress closes publication admission, requests PG binding closure,
+and waits for its ordered Kafka control fact to stop Cube. The binding's lifecycle
+acknowledgement distinguishes stopped from quarantined. Normal resource release
+requires stopped; quarantine never releases quota. An explicit retry advances the
+closure revision. Only then can ingress publish the final seal (ADR-0219). Replaced ingress owners are transactionally
 fenced. Earlier accepted data is projected before the successor is allowed to
 claim; replayed records cannot reopen a sealed scope. A caught interruption writes Pi's minimal
 abort/reset boundary. A hard Worker loss is reconciled from the retained Kafka

@@ -287,6 +287,18 @@ export async function createSandboxControl(options: {
       dispatcher,
       probes,
       bindingView,
+      consumeBindingChange: async (
+        change: import("@pi-cloud/protocol").SessionControlChange,
+        current: () => boolean,
+        position: import("@pi-cloud/protocol").ExecutionLogPosition,
+      ) => {
+        await bindingView.consume(change, current);
+        if (change.entity !== "sandbox_binding" || !change.closed || !current()) return;
+        const route = bindingView.closure(change, current);
+        if (!route) return; // Binding removal required stopping or physical absence.
+        const outcome = await dispatcher.closeBinding(change, route, position, current);
+        if (current()) await bindings.acknowledgeClosure(change, position, outcome);
+      },
       close,
       get ready() {
         return started && closing === undefined;

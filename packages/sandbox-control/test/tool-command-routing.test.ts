@@ -219,6 +219,7 @@ describe("Projector native Cube handoff", () => {
     expect(f.cube.submitTool).toHaveBeenCalledOnce();
     expect(f.cube.stopExecutionScope).toHaveBeenCalledWith(f.route.descriptor.target, {
       operationId: f.command.request.operationId,
+      source: { topic: "session-log", partition: 0, offset: "0" },
     });
     expect(f.quarantine).not.toHaveBeenCalled();
     expect(f.publishReply).toHaveBeenCalledWith(
@@ -252,7 +253,7 @@ describe("Projector native Cube handoff", () => {
     expect(order).toEqual(["quarantine", "reply"]);
     expect(f.quarantine).toHaveBeenCalledWith(f.route.descriptor.target);
   });
-  it.each(["capacity", "scope_closed"])(
+  it.each(["capacity", "execution_position_stale"])(
     "does not destroy or quarantine a VM for explicit %s refusal",
     async (code) => {
       const f = fixture();
@@ -276,6 +277,23 @@ describe("Projector native Cube handoff", () => {
     f.cube.stopExecutionScope.mockRejectedValue(new Error("node unavailable"));
     await f.router.consume(record({ kind: "execution_seal", scope: f.command.scope }));
     expect(f.closeScope).toHaveBeenCalledExactlyOnceWith(f.command.scope, false);
+    expect(f.cube.stopExecutionScope).not.toHaveBeenCalled();
+    await f.router.closeBinding(
+      {
+        kind: "control_change",
+        entity: "sandbox_binding",
+        entityId: f.route.bindingId,
+        runId: f.command.scope.runId,
+        scope: f.command.scope,
+        closed: true,
+        version: "2",
+        factId: randomUUID(),
+        occurredAt: new Date().toISOString(),
+      },
+      { ...f.route, dispatchClosed: true },
+      { topic: "session-log", partition: 0, offset: "1" },
+      () => true,
+    );
     expect(f.quarantine).toHaveBeenCalledOnce();
     const late = { ...f.command, request: { ...f.command.request, operationId: randomUUID() } };
     await f.router.consume(record(late, 2n));
@@ -292,15 +310,55 @@ describe("Projector native Cube handoff", () => {
     );
     expect(f.cube.submitTool).toHaveBeenCalledOnce();
   });
-  it("coalesces a writer seal to one closure per physical target", async () => {
+  it("requests writer closure through PG without issuing a synthetic-position Stop", async () => {
     const f = fixture();
-    f.find.mockResolvedValue([f.route, { ...f.route, bindingId: randomUUID() }]);
-    await f.router.consume(
-      record({ kind: "execution_seal", scope: f.command.scope, closesWriter: true }),
-    );
-    expect(f.find).toHaveBeenCalledWith(f.command.scope, true);
-    expect(f.cube.stopExecutionScope).toHaveBeenCalledExactlyOnceWith(f.route.descriptor.target, {
-      writerId: f.command.scope.writerId,
+    const pending = Promise.withResolvers<void>();
+    f.closeScope.mockImplementation(() => pending.promise);
+    let sealed = false;
+    const closing = f.router
+      .consume(record({ kind: "execution_seal", scope: f.command.scope, closesWriter: true }))
+      .then(() => {
+        sealed = true;
+      });
+    await Promise.resolve();
+    expect(f.closeScope).toHaveBeenCalledWith(f.command.scope, true);
+    expect(sealed).toBe(false);
+    expect(f.cube.stopExecutionScope).not.toHaveBeenCalled();
+    pending.resolve();
+    await closing;
+    expect(sealed).toBe(true);
+  });
+  it("uses only the closed control position, with idempotent Stop retries", async () => {
+    const f = fixture();
+    const change = {
+      kind: "control_change" as const,
+      entity: "sandbox_binding" as const,
+      entityId: f.route.bindingId,
+      runId: f.command.scope.runId,
+      scope: f.command.scope,
+      closed: true,
+      version: "2",
+      factId: randomUUID(),
+      occurredAt: new Date().toISOString(),
+    };
+    const source = { topic: "session-log", partition: 0, offset: "101" };
+    for (let i = 0; i < 2; i++)
+      expect(
+        await f.router.closeBinding(
+          change,
+          { ...f.route, dispatchClosed: true },
+          source,
+          () => true,
+        ),
+      ).toBe("stopped");
+    expect(f.cube.stopExecutionScope).toHaveBeenLastCalledWith(f.route.descriptor.target, {
+      runId: f.command.scope.runId,
+      source,
     });
+    expect(f.cube.submitTool).not.toHaveBeenCalled();
+    expect(f.closeScope).not.toHaveBeenCalled();
+    await expect(
+      f.router.closeBinding({ ...change, closed: false }, f.route, source, () => true),
+    ).rejects.toThrow("not closed");
   });
 });

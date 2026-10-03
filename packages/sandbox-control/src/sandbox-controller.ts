@@ -616,9 +616,16 @@ export class SandboxController {
     for (const route of await this.#bindings.adopt(handle.activationId)) {
       const { snapshot, descriptor, bindingId } = route;
       if (route.closed) {
-        await this.#provider.stopExecutionScope(descriptor.target, {
-          runId: parseExecutionReference(snapshot.assignment.executionReference).runId,
-        });
+        const identity = parseExecutionReference(snapshot.assignment.executionReference);
+        await this.#bindings.closeScope(
+          {
+            tenantId: snapshot.assignment.tenantId,
+            runId: identity.runId,
+            writerId: identity.leaseId,
+          },
+          false,
+          true,
+        );
         await this.#bindings.release(bindingId, snapshot.assignment);
         continue;
       }
@@ -2193,28 +2200,13 @@ export class SandboxController {
         writerId: identityForStop.leaseId,
       },
       false,
+      true,
     );
     const preparations = [...activation.operations]
       .filter(([key]) => key.startsWith("input:"))
       .map(([, operation]) => operation);
     for (const preparation of preparations)
       preparation.controller.abort(new Error("Input preparation binding released"));
-    const handleForStop = activation.elasticRuntime?.handle ?? activation.handle;
-    if (handleForStop) {
-      const descriptor = await this.#provider.describeExecution(
-        handleForStop,
-        activation.activationId,
-        activation.spec.toolRoot ?? handleForStop.workspaceRoot,
-      );
-      try {
-        await this.#provider.stopExecutionScope(descriptor.target, {
-          runId: parseExecutionReference(activation.assignment.executionReference).runId,
-        });
-      } catch (error) {
-        await this.quarantineExecutionTarget(descriptor.target);
-        throw error;
-      }
-    }
     await this.#bindings.release(activation.activationId, activation.assignment);
     await Promise.allSettled(preparations.map((preparation) => preparation.result));
     if (activation.elasticRuntime !== undefined) {
@@ -2368,8 +2360,8 @@ export class SandboxController {
         await this.#bindings.closeScope(
           { tenantId: assignment.tenantId, runId: identity.runId, writerId: identity.leaseId },
           false,
+          true,
         );
-        await this.#provider.stopExecutionScope(route.descriptor.target, { runId: identity.runId });
         await this.#bindings.release(activationId, assignment);
       }
       return;
@@ -3189,8 +3181,7 @@ export class SandboxController {
             orphan.assignment,
           );
         else await this.#provider.destroyRuntime(orphan.activationId, orphan.assignment);
-        for (const route of await this.#bindings.adopt(orphan.activationId))
-          await this.#bindings.release(route.bindingId, route.snapshot.assignment);
+        await this.#bindings.releaseAfterPhysicalAbsence(orphan.activationId);
         if (handle) await this.#serviceRegistry?.endRuntime(handle.runtimeId);
         await this.#stateRepository.setWorkspaceRuntimeState(orphan.activationId, "released");
         this.#admission.release(orphan.activationId);

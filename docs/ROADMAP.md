@@ -5,7 +5,8 @@
 - [x] Review `3dbf49fb` across all workspaces, pinned Pi, lifecycle/recovery,
       deployment and validation paths. [Findings and evidence](reports/repository-review-20261003-r2.md)
       include default-test failures and separate the Cube capacity decision from
-      local fixes. Implementation remains tracked in BACKLOG.
+      local fixes. [Approved implementation and verification](reports/review-repair-20261004.md)
+      follow ADR-0218/0219; the matched release gate remains tracked in BACKLOG.
 
 ## Completed review repairs
 

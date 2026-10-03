@@ -205,3 +205,23 @@ it("pages one owner's snapshot and enforces retained row/byte budgets before rea
   f.source.loadView.mockResolvedValueOnce(rows.slice(0, 2));
   await expect(limited.load([0], () => true)).rejects.toThrow("capacity");
 });
+
+it("uses the closed fact for stopping even when an older open fact loaded the closed PG snapshot", async () => {
+  const f = fixture();
+  await f.view.load([0], () => true);
+  f.set({ ...f.original, revision: "3", dispatchClosed: true });
+  const open = f.change("2"),
+    closed = f.change("3", true);
+  if (open.entity !== "sandbox_binding" || closed.entity !== "sandbox_binding")
+    throw new Error("fixture");
+  await f.view.prepare(open, () => true);
+  await f.view.consume(open, () => true);
+  expect(f.view.closure(open, () => true)).toBeUndefined();
+  for (let n = 0; n < 2; n++) {
+    await f.view.consume(closed, () => true);
+    expect(f.view.closure(closed, () => true)?.bindingId).toBe(f.original.bindingId);
+  }
+  expect(f.source.readChange).toHaveBeenCalledOnce();
+  f.view.reset();
+  expect(f.view.closure(closed, () => true)).toBeUndefined();
+});

@@ -50,6 +50,10 @@ or known deadlines. Worker admission uses the available publication partitions;
 binding bootstrap pages only the owner’s state. Transaction-local queue/state
 notifications are coalesced, and independent Outbox sends prevent a slow request
 from holding an entire batch. Lifecycle mutations and recovery retain PG checks.
+Binding closure travels through that same Session log. Projector sends Cube the
+actual close position and records a bounded lifecycle acknowledgement before
+normal release. Cube rejects delayed old commands by VM/partition progress;
+completed Runs do not accumulate in a permanent closed-task list.
 Queue display refreshes coalesce outside ordered projection, using a separate
 two-connection read pool. Responses carry 20 inputs per page; all queued inputs
 remain accessible, with drafts preserved when queue changes invalidate a page.
@@ -71,7 +75,8 @@ normalization; native context still materializes normalized image content.
 Cube mounts, configuration and completion credentials are rendered into one
 Helm release before deployment, with native-version and source-identity checks.
 The [follow-up review](docs/reports/repository-review-20261003-r2.md) records
-current findings, reproduction evidence and test limitations at `3dbf49fb`.
+findings and baseline evidence at `3dbf49fb`; [the repairs](docs/reports/review-repair-20261004.md)
+track the approved fixes and matched protocol-3 verification.
 
 ## Quick start
 

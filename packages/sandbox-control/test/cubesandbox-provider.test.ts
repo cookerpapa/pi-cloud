@@ -1419,7 +1419,8 @@ describe("CubeSandbox Provider contract", () => {
     runtime.stopExecutionScope.mockRejectedValue(new Error("node unavailable"));
     const descriptor = await provider.describeExecution(handle, ACTIVATION_ID, "/home/user");
     await expect(
-      provider.stopExecutionScope(descriptor.target, {
+      runtime.stopExecutionScope(descriptor.target, {
+        source: { topic: "test-log", partition: 0, offset: "1" },
         runId: parseExecutionReference(assignment.executionReference).runId,
       }),
     ).rejects.toThrow("node unavailable");

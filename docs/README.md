@@ -1,5 +1,8 @@
 # Documentation map
 
+The [October 4 repair record](reports/review-repair-20261004.md) tracks the approved
+boundary fixes and Kafka-ordered Cube closure (ADR-0218/0219).
+
 The [October 3 follow-up review](reports/repository-review-20261003-r2.md) covers
 all 22 workspaces at `3dbf49fb`, with new input/time/cleanup findings, a Cube
 capacity-isolation decision, query measurements and explicit test limitations.

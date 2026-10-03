@@ -82,9 +82,11 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Do not claim exactly-once semantics for arbitrary shell commands or external side effects.
 - Do not run untrusted tools in the control-plane or trusted Agent Runner process.
 - Control Plane owns VM lifecycle, binding admission and recovery. Cubelet owns
-  accepted fixed Tool lifetimes and boot/scope fencing; do not add per-Tool PG
+  accepted fixed Tool lifetimes and boot/ordered-position fencing (ADR-0219); do not add per-Tool PG
   Run-lease checks. Close publication admission and execution scopes before
-  appending a seal. `SandboxProvider` owns Cube mechanics and exposes no native
+  appending a seal. Binding closure travels through the Session log and its bounded
+  lifecycle ACK distinguishes stopped from quarantined. Controller release never
+  calls Cube Stop directly. `SandboxProvider` owns Cube mechanics and exposes no native
   SDK or management credentials to the Worker. There is no independent Broker.
   Quota release requires confirmed absence on the recorded node, not a missing
   heartbeat or master route. A normal Tool error never authorizes whole-VM deletion.

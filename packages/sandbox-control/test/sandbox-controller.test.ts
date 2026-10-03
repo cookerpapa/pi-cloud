@@ -203,7 +203,6 @@ function providerFixture() {
         },
       };
     },
-    async stopExecutionScope() {},
     executionIdentity(handle) {
       return handle.activationId;
     },
@@ -472,7 +471,7 @@ describe("provider-backed Sandbox controller", () => {
     const fixture = providerFixture(),
       bindings = new InMemorySandboxBindings();
     const create = vi.spyOn(fixture.provider, "create"),
-      stop = vi.spyOn(fixture.provider, "stopExecutionScope");
+      stop = vi.spyOn(bindings, "closeScope");
     const first = testBroker({
       provider: fixture.provider,
       bindings,
@@ -500,9 +499,13 @@ describe("provider-backed Sandbox controller", () => {
     expect(fixture.createCount).toBe(1);
     expect(stop).not.toHaveBeenCalled();
     await second.stop(binding.activationId, assignment);
-    expect(stop).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
-      runId: parseExecutionReference(assignment.executionReference).runId,
-    });
+    expect(stop).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        runId: parseExecutionReference(assignment.executionReference).runId,
+      }),
+      false,
+      true,
+    );
     expect(fixture.destroyed).toBe(false);
     await second.close();
   });
@@ -1953,15 +1956,19 @@ describe("provider-backed Sandbox controller", () => {
   it("runs two Session Tool bindings through one physical Workspace runtime", async () => {
     const fixture = providerFixture(),
       bindings = new InMemorySandboxBindings();
-    const stop = vi.spyOn(fixture.provider, "stopExecutionScope");
+    const stop = vi.spyOn(bindings, "closeScope");
     const manager = testBroker({ provider: fixture.provider, bindings });
     const first = await manager.create(createRequest),
       next = nextBindingRequest(assignment.workspaceId);
     await manager.create(next);
     await manager.stop(first.activationId, assignment);
-    expect(stop).toHaveBeenCalledWith(expect.anything(), {
-      runId: parseExecutionReference(assignment.executionReference).runId,
-    });
+    expect(stop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: parseExecutionReference(assignment.executionReference).runId,
+      }),
+      false,
+      true,
+    );
     expect(stop).toHaveBeenCalledTimes(1);
     expect(bindings.rows.size).toBe(1);
     expect(fixture.destroyed).toBe(false);
@@ -2054,26 +2061,27 @@ describe("provider-backed Sandbox controller", () => {
     await manager.close();
   });
 
-  it("revokes the Session lease before a provider stop failure escapes", async () => {
+  it("waits for ordered stopping and preserves binding/quota when it is unconfirmed", async () => {
     const fixture = providerFixture(),
-      state = new InMemoryWorkspaceRuntimeStateRepository();
-    const update = vi.spyOn(state, "setWorkspaceRuntimeState");
-    const manager = testBroker({ provider: fixture.provider, stateRepository: state });
+      bindings = new InMemorySandboxBindings();
+    const manager = testBroker({ provider: fixture.provider, bindings });
     const first = await manager.create(createRequest);
-    vi.spyOn(fixture.provider, "stopExecutionScope").mockRejectedValue(
-      new Error("native stopping unconfirmed"),
+    const wait = Promise.withResolvers<void>();
+    bindings.onClose = () => wait.promise;
+    const closing = manager.stop(first.activationId, assignment);
+    await vi.waitFor(() =>
+      expect(bindings.rows.get(first.activationId)?.dispatchClosed).toBe(true),
     );
-    await expect(manager.stop(first.activationId, assignment)).rejects.toThrow("unconfirmed");
-    expect(update).toHaveBeenLastCalledWith(
-      expect.anything(),
-      "unknown",
-      expect.objectContaining({ handle: expect.anything() }),
-    );
+    expect(manager.warmCount).toBe(0);
+    expect(manager.admittedCount).toBe(1);
+    wait.reject(new Error("ordered stopping unconfirmed"));
+    await expect(closing).rejects.toThrow("unconfirmed");
+    expect(bindings.rows.has(first.activationId)).toBe(true);
     expect(manager.admittedCount).toBe(1);
     expect(fixture.destroyed).toBe(false);
-    await expect(manager.create(nextBindingRequest(assignment.workspaceId))).rejects.toMatchObject({
-      code: "cubesandbox_tool_unavailable",
-    });
+    bindings.onClose = async () => {};
+    await manager.stop(first.activationId, assignment);
+    expect(bindings.rows.has(first.activationId)).toBe(false);
     await manager.close();
   });
 

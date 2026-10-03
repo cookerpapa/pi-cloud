@@ -67,7 +67,11 @@ export class SessionProjector {
         load(partitions: readonly number[], current: () => boolean): Promise<void>;
         reset(): void;
         prepare(change: SessionControlChange, current: () => boolean): Promise<void>;
-        consume(change: SessionControlChange, current: () => boolean): Promise<void>;
+        consume(
+          change: SessionControlChange,
+          current: () => boolean,
+          position: import("@pi-cloud/protocol").ExecutionLogPosition,
+        ): Promise<void>;
       };
       executionProbes?: {
         consume(fact: import("@pi-cloud/protocol").PathProbe, current?: () => boolean): void;
@@ -91,8 +95,8 @@ export class SessionProjector {
       this.publication,
       async (fact) => {
         const partition = this.publicationPartition(fact.scope.piSessionId);
-        // The immutable Outbox fact was authorized before this hook. Stop effects
-        // before logging the seal, independently of Projector catch-up latency.
+        // Revoke admission, then wait for the ordered binding closure before the
+        // final seal. The synthetic position is never sent to Cube.
         await options.toolCommands.consume({ topic, partition, offset: 0n, fact }, () =>
           this.#consumer.ownsPartition(partition),
         );
@@ -170,7 +174,11 @@ export class SessionProjector {
           if (current?.() === false) return;
           if (!options.controlChanges && raw.fact.entity === "sandbox_binding")
             throw new Error("Sandbox control view is not installed");
-          await options.controlChanges?.consume(raw.fact, current ?? (() => true));
+          await options.controlChanges?.consume(raw.fact, current ?? (() => true), {
+            topic: raw.topic,
+            partition: raw.partition,
+            offset: raw.offset.toString(),
+          });
           if (current?.() !== false)
             await options.database.transaction().execute((tx) => recordFactProjection(tx, raw));
           return;

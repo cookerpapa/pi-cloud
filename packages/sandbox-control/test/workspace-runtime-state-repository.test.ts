@@ -1,10 +1,8 @@
 import { SandboxBindingView } from "../src/sandbox-binding-view.ts";
 import { kafkaProducerLane } from "../../runtime-core/src/kafka-accepted-fact.ts";
 import { ConversationDeletionService } from "../../control-plane/src/conversation-deletion-service.ts";
-import { PGlite } from "@electric-sql/pglite";
 import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
-import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import {
   createExecutionReference,
@@ -55,18 +53,9 @@ async function fixtureDatabase() {
     await runMigrations(database, "up");
     return database;
   }
-  const pglite = await PGlite.create();
-  resources.push(async () => pglite.close());
-  const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
-  await socket.start();
-  resources.push(async () => socket.stop());
-  const database = createDatabase({
-    connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
-    maxConnections: 2,
-  });
-  resources.push(async () => database.destroy());
-  await runMigrations(database, "up");
-  return database;
+  throw new Error(
+    "Sandbox ownership contracts require PostgreSQL; use npm test or PI_CLOUD_POSTGRES_INTEGRATION_URL",
+  );
 }
 
 describe("PostgreSQL Sandbox control ownership", () => {
@@ -961,7 +950,20 @@ describe("PostgreSQL Sandbox control ownership", () => {
       "sandbox-domain-0001",
       "20000000-0000-4000-8000-000000000004",
       "http://owner.test",
-      async () => {},
+      async () => {
+        const changes = await database
+          .selectFrom("outbox")
+          .select("payload")
+          .where("aggregate_type", "=", "session_control_change")
+          .where(sql<boolean>`payload->>'entity'='sandbox_binding' and payload->>'closed'='true'`)
+          .execute();
+        for (const { payload } of changes)
+          await routes.acknowledgeClosure(
+            payload as unknown as import("@pi-cloud/protocol").SandboxBindingChange,
+            { topic: "fixture", partition: 0, offset: "1" },
+            "stopped",
+          );
+      },
     );
     const descriptor = {
       version: 1 as const,
@@ -1359,4 +1361,162 @@ describe("PostgreSQL Sandbox control ownership", () => {
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ instance_id: replacementInstanceId, state: "ready" });
   }, 30_000);
+});
+
+async function orderedClosureFixture() {
+  const database = await fixtureDatabase(),
+    instanceId = randomUUID();
+  const repository = new PostgresWorkspaceRuntimeStateRepository({
+    database,
+    sandboxDomainId: "sandbox-domain-0001",
+    instanceId,
+    ownerBaseUrl: "http://ordered.test",
+  });
+  resources.push(() => repository.close());
+  await repository.start();
+  const tenant = await createPrivateTenant(database, {
+    slug: randomUUID(),
+    ownerDisplayName: "Ordered closure",
+  });
+  const store = new ControlPlaneStore({ database, ...tenant });
+  const project = await store.createProject({ name: "Ordered closure", source: { kind: "empty" } });
+  const bindings = new PostgresSandboxBindings(
+    database,
+    "sandbox-domain-0001",
+    instanceId,
+    "http://ordered.test",
+    async () => {},
+  );
+  const bindingId = randomUUID(),
+    physicalId = randomUUID();
+  const makeBinding = async () => {
+    const session = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "Ordered",
+      "elastic",
+    );
+    const run = await store.acceptTurn(session.sessionId, randomUUID(), { prompt: "fixture" });
+    const writerId = randomUUID();
+    const assignment = {
+      tenantId: tenant.tenantId,
+      projectId: project.projectId,
+      workspaceId: project.workspaceId,
+      supervisorId: "fixture",
+      bootId: randomUUID(),
+      sandboxId: randomUUID(),
+      sessionId: session.sessionId,
+      turnId: run.turnId,
+      runId: run.runId,
+      executionReference: createExecutionReference(writerId, run.runId, 1),
+    };
+    await bindings.register(
+      bindingId,
+      {
+        version: 1,
+        target: {
+          apiUrl: "http://cube.test",
+          sandboxId: "a".repeat(32),
+          nodeId: "node",
+          bootId: randomUUID(),
+        },
+        initialization: {} as never,
+      },
+      {
+        assignment,
+        physicalActivationId: physicalId,
+        turnContextSha256: "a".repeat(64),
+        executionContextSha256: "b".repeat(64),
+        allowedTools: ["bash"],
+        sandboxProfileKey: "standard",
+      },
+    );
+    const scope = { tenantId: tenant.tenantId, runId: run.runId, writerId };
+    const row = () =>
+      database
+        .selectFrom("sandbox_tool_bindings")
+        .selectAll()
+        .where("run_id", "=", run.runId)
+        .where("binding_id", "=", bindingId)
+        .executeTakeFirstOrThrow();
+    const change = async () => {
+      const state = await row();
+      const outbox = await database
+        .selectFrom("outbox")
+        .select("payload")
+        .where("aggregate_id", "=", bindingId)
+        .where(sql<string>`payload->>'version'`, "=", state.revision)
+        .executeTakeFirstOrThrow();
+      return outbox.payload as unknown as import("@pi-cloud/protocol").SandboxBindingChange;
+    };
+    return { scope, assignment, row, change };
+  };
+  return { database, bindings, bindingId, physicalId, makeBinding };
+}
+const closurePosition = { topic: "test-session-log", partition: 0, offset: "101" };
+
+it("waits for an ordered ACK without waiting for a sibling binding with the same ID", async () => {
+  const f = await orderedClosureFixture(),
+    first = await f.makeBinding(),
+    sibling = await f.makeBinding();
+  let completed = false;
+  const pending = f.bindings.closeScope(first.scope, false).then(() => {
+    completed = true;
+  });
+  await vi.waitFor(async () => expect((await first.row()).dispatch_closed).toBe(true));
+  expect(completed).toBe(false);
+  await expect(f.bindings.release(f.bindingId, first.assignment)).rejects.toThrow("unconfirmed");
+  const change = await first.change();
+  const before = await f.database
+    .selectFrom("outbox")
+    .select(sql<number>`count(*)::int`.as("count"))
+    .executeTakeFirstOrThrow();
+  await f.bindings.acknowledgeClosure(change, closurePosition, "stopped");
+  await pending;
+  // Lost ACK/replay remains idempotent and generates no new control reference.
+  await f.bindings.acknowledgeClosure(change, closurePosition, "stopped");
+  const after = await f.database
+    .selectFrom("outbox")
+    .select(sql<number>`count(*)::int`.as("count"))
+    .executeTakeFirstOrThrow();
+  expect(after).toEqual(before);
+  await f.bindings.release(f.bindingId, first.assignment);
+  expect((await sibling.row()).dispatch_closed).toBe(false);
+});
+
+it("does not treat quarantine as stopping or let an old ACK satisfy a retry", async () => {
+  const f = await orderedClosureFixture(),
+    first = await f.makeBinding();
+  const pending = f.bindings.closeScope(first.scope, false);
+  await vi.waitFor(async () => expect((await first.row()).dispatch_closed).toBe(true));
+  const old = await first.change();
+  await f.bindings.acknowledgeClosure(old, closurePosition, "quarantined");
+  await pending;
+  await expect(f.bindings.release(f.bindingId, first.assignment)).rejects.toThrow("unconfirmed");
+  let completed = false;
+  const retry = f.bindings.closeScope(first.scope, false, true).then(() => {
+    completed = true;
+  });
+  await vi.waitFor(async () =>
+    expect(BigInt((await first.row()).closure_revision!)).toBeGreaterThan(BigInt(old.version)),
+  );
+  await f.bindings.acknowledgeClosure(old, closurePosition, "stopped");
+  expect((await first.row()).closure_result).toBeNull();
+  expect(completed).toBe(false);
+  const next = await first.change();
+  await f.bindings.acknowledgeClosure(next, { ...closurePosition, offset: "102" }, "stopped");
+  await retry;
+  await f.bindings.acknowledgeClosure(next, closurePosition, "quarantined");
+  expect((await first.row()).closure_result?.outcome).toBe("stopped");
+  await f.bindings.release(f.bindingId, first.assignment);
+});
+
+it("requires the explicit physical-absence release path for an unconfirmed binding", async () => {
+  const f = await orderedClosureFixture(),
+    first = await f.makeBinding();
+  const pending = f.bindings.closeScope(first.scope, false);
+  await vi.waitFor(async () => expect((await first.row()).dispatch_closed).toBe(true));
+  await f.bindings.releaseAfterPhysicalAbsence(f.physicalId);
+  await pending;
+  expect(await f.bindings.find(first.scope, false)).toEqual([]);
 });

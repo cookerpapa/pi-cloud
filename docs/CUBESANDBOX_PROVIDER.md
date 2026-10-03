@@ -24,10 +24,19 @@ an alternate runtime or fallback.
 
 PG is Run/control authority. Source admission uses installed memory and closes
 before seals. A Cube request carries immutable physical endpoint/node/boot,
-Run/writer and operation identity. Cube checks local closed scopes/dedup state,
+Run/writer, operation identity and its Kafka topic/partition/offset. Cube checks
+boot identity, active duplicate fingerprints and monotonic VM/partition progress,
 without a per-command PG lease query. Domain-independent Projector ownership
 uses a deployment-owned Cube endpoint registry; metadata cannot select an
 unconfigured credential destination.
+
+PG binding revocation is installed at publication admission. Its closed reference
+then follows the same Kafka Session queue; Projector stops that Run at the actual
+close position and acknowledges the binding. Controller release waits for that
+acknowledgement, and only confirmed stopping permits normal binding removal.
+Quarantine is a different outcome and never proves VM absence. A delayed old RPC
+cannot overtake the close and start work; final seal publication follows this
+closure. Completed operation entries are removed after bounded result delivery.
 
 Cancellation stops and joins the native main process before killing its entire
 cgroup. Normal completed Bash may leave a background server running. A failed
@@ -106,7 +115,7 @@ node observation before quota is released.
 
 ## Tool and terminal channels
 
-Managed execution protocol 2 adds `POST /sandboxes/:id/execution/probe`.
+Managed execution protocol 3 includes `POST /sandboxes/:id/execution/probe`.
 The recorded node and executor boot are required. A fixed guest program echoes
 a probe UUID and its kernel boot identity over the same native raw-PTY transport
 as Tools, without Workspace access or user commands. Controller probes return
@@ -116,7 +125,11 @@ VM bindings in one echo. Direct observation works even when Kafka completion is
 unavailable. Probe lifetimes use a separate four-request Cubelet budget and no
 retained Tool operation ledger. Failure has no quarantine or deletion authority.
 The provider replaces its former envd command-based execution probe with this
-single native implementation. Cube/guest/adapter/Worker upgrades must match
+single native implementation. Probes never advance Tool admission positions;
+late observations have no effect authority. Managed submit/stop requires a source
+position; there is no protocol-2 fallback. Guest Tool wire remains version 2.
+Cube/app upgrades require the drained, matched build in
+[ADR-0219](adr/0219-ordered-cube-admission.md); probe semantics remain those of
 [ADR-0211](adr/0211-execution-path-and-runtime-probes.md).
 
 Fixed Agent Tools use native Cubelet execution. The Web Terminal keeps its

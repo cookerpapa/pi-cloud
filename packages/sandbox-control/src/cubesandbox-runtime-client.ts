@@ -2,6 +2,8 @@ import { Agent, buildConnector, fetch, type Dispatcher } from "undici";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
 import {
   MAX_TERMINAL_ROWS,
+  parseExecutionLogPosition,
+  type ExecutionLogPosition,
   MAX_TERMINAL_COLS,
   PREVIEW_ACCESS_TTL_MS,
   MAX_IMAGE_GUEST_RESPONSE_BYTES,
@@ -45,6 +47,7 @@ export type CubeExecutionTarget = Readonly<{
   bootId: string;
 }>;
 export type CubeToolHandoff = Readonly<{
+  source: ExecutionLogPosition;
   operationId: string;
   runId: string;
   writerId: string;
@@ -54,10 +57,11 @@ export type CubeToolHandoff = Readonly<{
   maximumOutputBytes: number;
 }>;
 
-/** Only an explicit endpoint rejection proves that this handoff did not start. */
+/** Endpoint refusal, distinct from a lost transport ACK. A stale position or
+ * changed operation can refer to earlier effects and must remain UNKNOWN. */
 export class CubeExecutionRejected extends Error {
   constructor(readonly code: string) {
-    super(`Cube execution rejected before start: ${code}`);
+    super(`Cube execution refused: ${code}`);
   }
 }
 
@@ -111,7 +115,12 @@ export interface CubeSandboxRuntimeClient {
   submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void>;
   stopExecutionScope(
     target: CubeExecutionTarget,
-    scope: { runId?: string; writerId?: string; operationId?: string },
+    scope: {
+      source: ExecutionLogPosition;
+      runId?: string;
+      writerId?: string;
+      operationId?: string;
+    },
   ): Promise<void>;
   pause(sandboxId: string): Promise<void>;
   connect(sandboxId: string, timeoutSeconds: number): Promise<CubeSandboxInstance>;
@@ -720,7 +729,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
     if (
       value.enabled !== true ||
-      value.protocolVersion !== 2 ||
+      value.protocolVersion !== 3 ||
       typeof value.bootID !== "string" ||
       !/^[0-9a-f-]{36}$/.test(value.bootID)
     )
@@ -736,6 +745,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         nodeID: target.nodeId,
         bootID: target.bootId,
         operationID: request.operationId,
+        source: parseExecutionLogPosition(request.source),
         runID: request.runId,
         writerID: request.writerId,
         payload: request.payload,
@@ -803,7 +813,12 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
 
   async stopExecutionScope(
     target: CubeExecutionTarget,
-    scope: { runId?: string; writerId?: string; operationId?: string },
+    scope: {
+      source: ExecutionLogPosition;
+      runId?: string;
+      writerId?: string;
+      operationId?: string;
+    },
   ): Promise<void> {
     const value = await this.#executionRequest(
       target.sandboxId,
@@ -814,6 +829,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         runID: scope.runId,
         writerID: scope.writerId,
         operationID: scope.operationId,
+        source: parseExecutionLogPosition(scope.source),
       },
       20000,
       target.apiUrl,

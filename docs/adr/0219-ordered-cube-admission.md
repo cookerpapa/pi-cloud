@@ -71,6 +71,14 @@ operation body/identity; positions prevent historical replay without a lifetime
 list of closed Runs. Stale submissions have UNKNOWN semantics when prior execution
 cannot be established, never automatic shell retry.
 
+This relies on the existing publication contract: native Tool invocations never
+retry an ambiguous append/commit. Kafka's producer is idempotent; only a proven
+pre-enqueue refusal permits another application send. A later arbitrary copy of
+an old Tool at a new log position is not a supported retry protocol. Native writer
+and HTTP/Kafka ambiguity tests must retain this rule; offsets alone do not
+deduplicate arbitrary newly published commands. Control references may retry
+because their closure effects are idempotent.
+
 Stop retries are idempotent for their exact scope and do not regress progress.
 Cleanup after an ambiguous handoff uses that already-logged command's position,
 so a Stop which overtakes the original RPC also rejects its later admission.

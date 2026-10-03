@@ -285,6 +285,8 @@ export interface SandboxControlWorkspaceRuntimeTable {
 }
 
 export interface SandboxToolBindingTable {
+  closure_revision: NullableInt8;
+  closure_result: GeneratedNullable<Record<string, unknown>>;
   pi_session_id: Generated<string>;
   revision: GeneratedInt8;
   dispatch_closed: Generated<boolean>;

@@ -130,6 +130,26 @@ Current evidence:
 These reports are single-host evidence, not managed-PostgreSQL HA or
 multi-region saturation claims.
 
+The root test command shares one disposable PostgreSQL fixture across workspaces
+and supplies both integration and Session-conformance endpoints. Direct
+control-plane/sandbox workspace commands provision the same fixture when needed.
+Concurrent queued-input and binding-closure contracts require real PostgreSQL;
+they do not use the PGlite socket fallback. Explicit test URLs remain caller-owned.
+
+## Cube admission contract
+
+`npm run cubesandbox:admission-check` extracts the maintained Go admission/probe
+tests from the digest-checked patch and runs them with the pinned Go Docker image
+and race detector. It needs Docker, not an operator Cube checkout or a live VM.
+It covers delayed submit after Stop, duplicate/ambiguous admission, shared VM
+siblings, independent partitions, probe isolation, and 70,000 closures followed
+by new work. This is part of `npm run ci`.
+
+`ordered-cube-closure.integration.test.ts` uses the explicit test PG and RF3 Kafka
+endpoints. Native Cube RPC alone is simulated: it proves final-seal ordering and
+lost lifecycle-ACK replay through the real control/reference path. The native Go
+contract and matched live Cube acceptance cover the destination separately.
+
 ## Cube and real-model acceptance
 
 For missing-Workspace recovery onto a development machine, run

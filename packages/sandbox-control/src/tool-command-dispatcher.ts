@@ -1,6 +1,9 @@
 import {
   MAX_IMAGE_GUEST_RESPONSE_BYTES,
+  parseExecutionReference,
   type AcceptedToolCommand,
+  type ExecutionLogPosition,
+  type SandboxBindingChange,
   type NativeToolEnd,
 } from "@pi-cloud/protocol";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
@@ -62,49 +65,17 @@ export class ToolCommandDispatcher {
     this.options.metrics?.toolLogConsumed.inc({ kind: fact?.kind ?? "ignored" });
     if (!fact) return;
     const seal = fact.kind === "execution_seal";
-    if (seal) await this.options.routes.closeScope(fact.scope, fact.closesWriter === true);
-    // The partition view receives current closure at control publication
-    // admission. Normal routing is in memory; Cube still fences in-flight work.
-    const routes = await this.options.routes.find(fact.scope, seal && fact.closesWriter === true);
-    if (current?.() === false) return;
     if (seal) {
-      const targets = new Map(
-        routes.map((r) => [JSON.stringify(r.descriptor.target), r.descriptor.target]),
-      );
-      const fixed = Promise.all(
-        [...targets.values()].map(async (target) => {
-          if (current?.() === false) return;
-          try {
-            await this.options.cube.stopExecutionScope(
-              target,
-              fact.closesWriter ? { writerId: fact.scope.writerId } : { runId: fact.scope.runId },
-            );
-          } catch {
-            await this.options.quarantine(target);
-          }
-        }),
-      );
-      // Workflow hostcalls are tied to the control-plane owner's live duplex.
-      const workflows = Promise.all(
-        [...new Map(routes.map((r) => [r.instanceId, r])).values()].map(async (route) => {
-          if (current?.() === false) return;
-          try {
-            await this.options.workflow(route, {
-              instanceId: route.instanceId,
-              topic: record.topic,
-              partition: record.partition,
-              offset: record.offset.toString(),
-              fact,
-            });
-          } catch {
-            if (await this.options.routes.isAlive(route.instanceId))
-              throw new Error("Workflow closure is unconfirmed");
-          }
-        }),
-      );
-      await Promise.all([fixed, workflows]);
+      await this.options.routes.closeScope(fact.scope, fact.closesWriter === true);
       return;
     }
+    const routes = await this.options.routes.find(fact.scope, false);
+    if (current?.() === false) return;
+    const source = {
+      topic: record.topic,
+      partition: record.partition,
+      offset: record.offset.toString(),
+    };
     const command = fact as AcceptedToolCommand;
     const route = routes.find((r) => r.bindingId === command.request.activationId);
     if (!route || route.dispatchClosed) {
@@ -132,6 +103,7 @@ export class ToolCommandDispatcher {
           /* Observation only. */
         }
         await this.options.cube.submitTool(route.descriptor.target, {
+          source,
           operationId: command.request.operationId,
           runId: command.scope.runId,
           writerId: command.scope.writerId,
@@ -165,6 +137,7 @@ export class ToolCommandDispatcher {
       if (!(error instanceof CubeExecutionRejected)) {
         try {
           await this.options.cube.stopExecutionScope(route.descriptor.target, {
+            source,
             operationId: command.request.operationId,
           });
         } catch {
@@ -175,19 +148,20 @@ export class ToolCommandDispatcher {
         await this.options.quarantine(route.descriptor.target);
         code = "cubesandbox_tool_unavailable";
       } else
-        code =
-          error.code === "operation_changed"
-            ? "cubesandbox_tool_result_unknown"
-            : error.code === "scope_closed"
-              ? "tool_command_sealed"
-              : [
-                    "node_unavailable",
-                    "execution_unavailable",
-                    "execution_endpoint_unconfigured",
-                    "executor_capacity",
-                  ].includes(error.code)
-                ? "cubesandbox_tool_unavailable"
-                : "tool_execution_not_started";
+        code = [
+          "operation_changed",
+          "execution_position_stale",
+          "execution_stream_changed",
+        ].includes(error.code)
+          ? "cubesandbox_tool_result_unknown"
+          : [
+                "node_unavailable",
+                "execution_unavailable",
+                "execution_endpoint_unconfigured",
+                "executor_capacity",
+              ].includes(error.code)
+            ? "cubesandbox_tool_unavailable"
+            : "tool_execution_not_started";
       await this.#fail(
         command,
         code,
@@ -199,6 +173,46 @@ export class ToolCommandDispatcher {
         (performance.now() - started) / 1000,
       );
     }
+  }
+  /** Only the actual closed control fact supplies the Stop position. */
+  async closeBinding(
+    change: SandboxBindingChange,
+    route: SandboxBinding,
+    source: ExecutionLogPosition,
+    current: () => boolean,
+  ): Promise<"stopped" | "quarantined"> {
+    if (!change.closed || !route.dispatchClosed) throw new Error("Binding is not closed");
+    if (!current()) throw new Error("Binding closure owner changed");
+    let outcome: "stopped" | "quarantined" = "stopped";
+    try {
+      await this.options.cube.stopExecutionScope(route.descriptor.target, {
+        runId: change.runId,
+        source,
+      });
+    } catch {
+      await this.options.quarantine(route.descriptor.target);
+      outcome = "quarantined";
+    }
+    if (!current()) throw new Error("Binding closure owner changed");
+    try {
+      await this.options.workflow(route, {
+        ...source,
+        instanceId: route.instanceId,
+        fact: {
+          kind: "execution_seal",
+          scope: {
+            tenantId: change.scope.tenantId,
+            runId: change.runId,
+            writerId: parseExecutionReference(route.snapshot.assignment.executionReference).leaseId,
+          },
+          closesWriter: false,
+        },
+      });
+    } catch {
+      if (await this.options.routes.isAlive(route.instanceId))
+        throw new Error("Workflow closure is unconfirmed");
+    }
+    return outcome;
   }
   async #fail(command: AcceptedToolCommand, code: string, text: string): Promise<void> {
     if (!command.replyTopic) return;

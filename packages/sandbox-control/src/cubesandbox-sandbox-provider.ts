@@ -1003,13 +1003,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     };
   }
 
-  async stopExecutionScope(
-    target: SandboxExecutionTarget,
-    scope: { runId?: string; writerId?: string; operationId?: string },
-  ): Promise<void> {
-    await this.#client.stopExecutionScope(target, scope);
-  }
-
   async observeRuntime(
     handle: SandboxHandle,
   ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation> {

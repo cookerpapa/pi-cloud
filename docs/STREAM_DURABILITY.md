@@ -14,7 +14,13 @@ ADR-0212 adds bounded PG control-change references to the same ordered Kafka
 Session path. They rebuild binding, queue and Subagent read views, without
 creating Pi Entries or changing native sequence. New owners capture Kafka
 bounds before loading PG snapshots, then consume subsequent changes. Binding
-closure also installs a synchronous dispatch barrier before its publication.
+closure installs a synchronous dispatch barrier before its publication.
+Under ADR-0219 the actual closed fact also triggers Cube Stop at its Kafka
+position. PG stores a bounded lifecycle acknowledgement on the binding; only
+stopped allows normal release. Quarantined preserves uncertainty and resource
+ownership. A lost acknowledgement replays idempotent Stop, never Tool execution.
+The final Run/writer seal follows that closure. Destination VM/partition progress
+rejects delayed old-owner commands that Kafka fencing cannot retract.
 The derived `input.queue` SSE snapshot is disposable presentation with its own
 `viewVersion`; reconnect obtains current PG state rather than replaying an old
 queue snapshot as conversation history.
@@ -141,7 +147,9 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 | during PG transaction | rollback state and position; re-read the record |
 | PG commit succeeds, consumer ACK lost | idempotent semantic replay; Tool dispatch requires confirmed commit |
 | native/seal SQL exceeds its local lock/statement budget | server cancellation and rollback leave the offset pending; retry that partition in order, with no Tool dispatch |
-| seal request before Kafka append | retry the same seal; next Run stays queued |
+| binding close before Cube Stop/ACK | replay the closed control reference; keep binding and quota, and block the final seal until stopped or quarantined |
+| lost closure ACK after Cube Stop | replay idempotent Stop at the same position; never resubmit the Tool |
+| seal request before Kafka append | retry the same seal after ordered binding closure; next Run stays queued |
 | old data before first seal | valid historical input, even if PG already knows closure |
 | old data after first seal | no PG, UI or new execution effect |
 | seal commit before UI update | replacement snapshot or seal replay restores visibility |

@@ -226,7 +226,7 @@ export async function startControlPlane(): Promise<void> {
         }),
     });
     queueViews = inputQueues;
-    const bindingView = sandboxControl.bindingView;
+    const { bindingView, consumeBindingChange } = sandboxControl;
     agentEvents = new SessionProjector({
       publicationToken: config.supervisorManagementToken,
       database,
@@ -274,8 +274,8 @@ export async function startControlPlane(): Promise<void> {
           subagents.reset();
         },
         prepare: (change, current) => bindingView.prepare(change, current),
-        consume: async (change, current) => {
-          await bindingView.consume(change, current);
+        consume: async (change, current, position) => {
+          await consumeBindingChange(change, current, position);
           await subagents.changed(change, current);
           if (current() && change.entity === "input_queue")
             queuedInputs?.notifySession(

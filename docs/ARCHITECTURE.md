@@ -25,9 +25,9 @@ Browser → Control Plane → PostgreSQL accepted Run
                                                        ↓
                                                  native reply → Kafka reply topic → Worker/Pi
 
-Control authority → PG seal Outbox → publication ingress → Kafka seal → PG closure
-                                                    ↓
-                                               next Run eligible
+Control authority → PG binding close + Outbox → same ingress/Kafka
+  → Projector → Cube scoped Stop(position) → PG binding closure acknowledgement
+  → final Kafka seal → PG terminal/native closure → next Run eligible
 ```
 
 The Projector currently runs in the Control Plane process. Its modules remain
@@ -79,6 +79,22 @@ immutable. Input references that add held Steer work carry an additive wake hint
 owned-scope recovery retains ACKed inputs until canonical consumption or sealed
 restoration. Other Session events do not issue empty reconciliation reads. A
 bounded held-scope index falls back to scoped reconciliation on overflow.
+Ordinary Subagent maintenance follows affected Run changes with indexed parent/child
+reads. Startup, known deadlines and bounded-scope overflow retain global recovery.
+
+Binding closure uses the existing closed control fact, not a direct controller
+Stop racing Tool publication. The ingress still installs PG revocation before
+publishing that fact. Projector supplies the fact's actual Kafka position to Cube;
+reading a newer closed PG snapshot through an older open fact cannot perform Stop.
+The binding stores a bounded stopped/quarantined acknowledgement. Normal release
+requires stopped; quarantine preserves the physical identity and quota. A retry
+gets a new closure revision, so old acknowledgements cannot complete it. Final
+seals wait for scope closure; arbitrary shell work is never replayed.
+Cube retains one source identity and per-partition progress per physical VM;
+active operation fingerprints disappear after bounded delivery. Boot changes,
+confirmed VM absence and shutdown remain distinct. Read-only probes do not
+advance admission. See [ADR-0219](adr/0219-ordered-cube-admission.md).
+
 No browser payload or authority moves through NOTIFY. Drain proof and completion
 remain separate durable boundaries (ADR-0177).
 

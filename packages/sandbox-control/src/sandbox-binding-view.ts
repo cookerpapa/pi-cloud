@@ -159,6 +159,23 @@ export class SandboxBindingView implements SandboxBindingReader {
       ? this.#change(change, current, false)
       : Promise.resolve();
   }
+  closure(change: SandboxBindingChange, current: () => boolean): SandboxBindingRecord | undefined {
+    if (
+      !change.closed ||
+      !current() ||
+      !this.#ready ||
+      !this.#partitions.has(this.options.partitionFor(change.scope.piSessionId))
+    )
+      return;
+    // prepare() may already have installed this revision. The closed fact still
+    // needs its ordered effect, including during replay after a lost ACK.
+    const row = this.#entries.get(
+      routeKey(change.scope.tenantId, change.runId, change.entityId),
+    )?.route;
+    if (row && (!row.dispatchClosed || BigInt(row.revision) < BigInt(change.version)))
+      throw new Error("Binding closure view is behind its fact");
+    return row;
+  }
   async find(
     scope: Parameters<SandboxBindingReader["find"]>[0],
     wholeWriter: boolean,

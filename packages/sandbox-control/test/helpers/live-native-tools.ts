@@ -36,6 +36,17 @@ export async function liveNativeTools(
     await client.close();
     throw error;
   }
+  // The isolated backend fixture provides one source order per physical VM;
+  // production obtains it from the committed Session Kafka record.
+  const topic = `native-fixture-${randomUUID()}`;
+  let offset = 0n;
+  const position = () => ({ topic, partition: 0, offset: (++offset).toString() });
+  bindings.onClose = async (binding) => {
+    await client.stopExecutionScope(binding.descriptor.target, {
+      runId: parseExecutionReference(binding.snapshot.assignment.executionReference).runId,
+      source: position(),
+    });
+  };
   return {
     async executeTool(
       executionReference: string,
@@ -64,9 +75,11 @@ export async function liveNativeTools(
         request.toolName,
         combined,
       );
+      const source = position();
       let stopping: Promise<void> | undefined;
       const abort = () => {
         stopping ??= client.stopExecutionScope(binding.descriptor.target, {
+          source,
           operationId: request.operationId,
         });
         void stopping.catch(() => {});
@@ -74,6 +87,7 @@ export async function liveNativeTools(
       combined.addEventListener("abort", abort, { once: true });
       try {
         await client.submitTool(binding.descriptor.target, {
+          source,
           operationId: request.operationId,
           runId: identity.runId,
           writerId: identity.leaseId,

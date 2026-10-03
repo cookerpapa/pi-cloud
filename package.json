@@ -26,7 +26,7 @@
     "postinstall": "node scripts/harden-pi-dependencies.mjs",
     "dependencies:harden": "node scripts/harden-pi-dependencies.mjs && npm rebuild @confluentinc/kafka-javascript",
     "dependencies:check": "node scripts/harden-pi-dependencies.mjs --check",
-    "ci": "npm run dependencies:harden && npm run format:check && npm run docs:check && npm run production:install:check && npm run runtime-policy:check && npm run helm:check && npm run observability:check && npm run image:closure-check && npm run build && npm run check && npm run eval:faults && npm run security:audit",
+    "ci": "npm run dependencies:harden && npm run format:check && npm run docs:check && npm run production:install:check && npm run runtime-policy:check && npm run cubesandbox:admission-check && npm run helm:check && npm run observability:check && npm run image:closure-check && npm run build && npm run check && npm run eval:faults && npm run security:audit",
     "build": "npm run build --workspaces --if-present",
     "cubesandbox:template-check": "node scripts/run-cubesandbox-template-check.mjs",
     "cubesandbox:live-check": "node scripts/run-cubesandbox-provider-live-check.mjs",
@@ -104,7 +104,7 @@
     "format": "git ls-files --cached --others --exclude-standard -z | xargs -0 -r prettier --write --ignore-unknown",
     "format:check": "git ls-files --cached --others --exclude-standard -z | xargs -0 -r prettier --check --ignore-unknown",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "node scripts/run-with-test-postgres.mjs -- npm run test --workspaces --if-present",
     "test:acceptance-helpers": "vitest run scripts/lib --maxWorkers=1",
     "fake-model:start": "npm run start --workspace @pi-cloud/fake-model-server",
     "db:migrate": "npm run migrate --workspace @pi-cloud/database",
@@ -119,7 +119,8 @@
     "production:gpt6-check": "node scripts/run-live-gpt6-capability-check.mjs",
     "production:user-upload-check": "node --import tsx scripts/run-live-user-upload-check.mjs",
     "production:up:observability": "PI_CLOUD_OBSERVABILITY_ENABLED=1 node scripts/production-kubernetes.mjs deploy",
-    "production:config:observability": "PI_CLOUD_OBSERVABILITY_ENABLED=1 node scripts/production-kubernetes.mjs config"
+    "production:config:observability": "PI_CLOUD_OBSERVABILITY_ENABLED=1 node scripts/production-kubernetes.mjs config",
+    "cubesandbox:admission-check": "node scripts/check-cube-admission.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.1",

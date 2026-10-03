@@ -122,7 +122,6 @@ function provider(): SandboxProvider {
         },
       };
     },
-    async stopExecutionScope() {},
     async observeRuntime(handle) {
       return {
         runtimeName: handle.runtimeName,

@@ -1,7 +1,7 @@
 {
   "upstreamRepository": "https://github.com/TencentCloud/CubeSandbox.git",
   "upstreamCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
-  "managedProtocolVersion": 2,
+  "managedProtocolVersion": 3,
   "guestProtocolVersion": 2,
   "patches": [
     {
@@ -14,11 +14,7 @@
     },
     {
       "file": "0003-native-tool-execution.patch",
-      "sha256": "935c30ab6a1f721d07fea3512f068a414e9429a76ff20974617b2063ff5b2745"
-    },
-    {
-      "file": "0004-execution-probes.patch",
-      "sha256": "296c34a26383669345762472ae1bdb52facf7f56d211ccbc225c08ccc6af36db"
+      "sha256": "78f2eccc9dbe1b2002c10d88bca2603c60cb1a5714b6b766f533ef295b86b367"
     }
   ],
   "buildImages": {
