@@ -184,6 +184,11 @@ describe("WorkspaceVolumeDeletionReaper", () => {
       await expect(reaper.runOnce()).resolves.toBe(0);
       await expect(lstat(join(volumeRoot, "workspace", "private.txt"))).resolves.toBeDefined();
       expect(deleteVolumeMetadata).toHaveBeenCalledWith(volumeId);
+      await database
+        .updateTable("workspaces")
+        .set({ storage_purge_available_at: new Date(0) })
+        .where("id", "=", IDS.workspace)
+        .execute();
       await expect(reaper.runOnce()).resolves.toBe(1);
       await expect(lstat(volumeRoot)).rejects.toMatchObject({ code: "ENOENT" });
       await expect(

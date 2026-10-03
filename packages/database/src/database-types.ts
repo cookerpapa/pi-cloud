@@ -525,6 +525,8 @@ export interface WorkspaceTable {
   row_version: GeneratedInt8;
   deleted_at: NullableTimestamp;
   storage_purged_at: NullableTimestamp;
+  storage_purge_available_at: GeneratedTimestamp;
+  storage_purge_failures: GeneratedInteger;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
 }

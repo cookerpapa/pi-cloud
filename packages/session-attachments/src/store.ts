@@ -272,10 +272,11 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       const { rows: candidates } = await sql<{ tenant_id: string; id: string }>`
         select tenant_id,id from session_image_objects o
         where created_at < clock_timestamp() - ${graceMs} * interval '1 millisecond'
+          and cleanup_available_at <= clock_timestamp()
           and not exists(select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
           and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.image_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
-        order by created_at limit 32 for update skip locked`.execute(tx);
+        order by cleanup_available_at,created_at limit 32 for update skip locked`.execute(tx);
       if (!candidates.length) return [];
       // A fresh statement after locking observes reference commits which we waited for.
       const { rows } = await sql<{
@@ -289,13 +290,30 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
         returning tenant_id,id`.execute(tx);
       return rows;
     });
+    const failures: unknown[] = [];
+    let deleted = 0;
     for (const row of rows) {
       signal?.throwIfAborted();
-      await this.blobs.delete(key(row.tenant_id, row.id), deadline(signal));
-      await sql`delete from session_image_objects where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting'`.execute(
-        this.database,
-      );
+      try {
+        await this.blobs.delete(key(row.tenant_id, row.id), deadline(signal));
+        const removed =
+          await sql`delete from session_image_objects where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting' returning id`.execute(
+            this.database,
+          );
+        deleted += removed.rows.length;
+      } catch (error) {
+        signal?.throwIfAborted();
+        await sql`update session_image_objects set
+          cleanup_available_at=clock_timestamp()+least(300,power(2,least(cleanup_failures,8))) * interval '1 second',
+          cleanup_failures=least(cleanup_failures+1,16)
+          where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting'`.execute(
+          this.database,
+        );
+        failures.push(error);
+      }
     }
-    return rows.length;
+    if (failures.length)
+      throw new AggregateError(failures, "Image cleanup deferred failed objects");
+    return deleted;
   }
 }

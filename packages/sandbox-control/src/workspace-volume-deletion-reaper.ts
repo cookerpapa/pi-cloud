@@ -105,6 +105,7 @@ export class WorkspaceVolumeDeletionReaper {
       where workspace.deleted_at is not null
         and workspace.sandbox_domain_id = ${this.#sandboxDomainId}
         and workspace.storage_purged_at is null
+        and workspace.storage_purge_available_at <= clock_timestamp()
         and not exists (
           select 1
           from workspace_runtimes as activation
@@ -119,7 +120,7 @@ export class WorkspaceVolumeDeletionReaper {
             and terminal.workspace_id = workspace.id
             and terminal.state in ('reserved', 'materializing', 'active', 'cleaning', 'unknown')
         )
-      order by workspace.deleted_at asc, workspace.id asc
+      order by workspace.storage_purge_available_at, workspace.deleted_at, workspace.id
       limit ${this.#batchSize}
     `.execute(this.#database);
     let purged = 0;
@@ -137,7 +138,7 @@ export class WorkspaceVolumeDeletionReaper {
         const purgedAt = this.#clock();
         const updated = await this.#database
           .updateTable("workspaces")
-          .set({ storage_purged_at: purgedAt, updated_at: purgedAt })
+          .set({ storage_purged_at: purgedAt, updated_at: purgedAt, storage_purge_failures: 0 })
           .where("tenant_id", "=", workspace.tenantId)
           .where("id", "=", workspace.workspaceId)
           .where("sandbox_domain_id", "=", this.#sandboxDomainId)
@@ -164,6 +165,19 @@ export class WorkspaceVolumeDeletionReaper {
           .executeTakeFirst();
         if (updated.numUpdatedRows === 1n) purged += 1;
       } catch (error: unknown) {
+        // Advancing the selection key lets later healthy resources run even if
+        // the next sweep is later than the retry deadline. No lock spans Cube IO.
+        await this.#database
+          .updateTable("workspaces")
+          .set({
+            storage_purge_available_at: sql<Date>`clock_timestamp() + least(300,power(2,least(storage_purge_failures,8))) * interval '1 second'`,
+            storage_purge_failures: sql<number>`least(storage_purge_failures+1,16)`,
+          })
+          .where("tenant_id", "=", workspace.tenantId)
+          .where("id", "=", workspace.workspaceId)
+          .where("storage_purged_at", "is", null)
+          .where("deleted_at", "is not", null)
+          .execute();
         this.#onError(error);
       }
     }

@@ -70,6 +70,36 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     }
   });
 
+  it("continues past an object deletion failure and defers only that object", async () => {
+    const refs = [];
+    for (let i = 0; i < 3; i++)
+      refs.push(await store.put({ tenantId }, Buffer.from(`cleanup-${i}`), "image/png"));
+    const keys = refs.map((ref) => `session-images/${tenantId}/${ref.id}`);
+    const flaky = new PostgresImageAttachmentStore(db, {
+      ...blobs,
+      async delete(key, signal) {
+        if (key === keys[0]) throw new Error("one object unavailable");
+        await blobs.delete(key, signal);
+      },
+    });
+    await expect(flaky.reap(0)).rejects.toThrow("Image cleanup deferred");
+    expect(keys.map((key) => bytes.has(key))).toEqual([true, false, false]);
+    const {
+      rows: [retry],
+    } = await sql<{
+      due: boolean;
+      failures: number;
+    }>`select cleanup_available_at>clock_timestamp() as due,cleanup_failures as failures from session_image_objects where tenant_id=${tenantId}::uuid and id=${refs[0]!.id}::uuid`.execute(
+      db,
+    );
+    expect(retry).toEqual({ due: true, failures: 1 });
+    expect(await flaky.reap(0)).toBe(0);
+    await sql`update session_image_objects set cleanup_available_at=clock_timestamp() where tenant_id=${tenantId}::uuid and id=${refs[0]!.id}::uuid`.execute(
+      db,
+    );
+    expect(await store.reap(0)).toBe(1);
+  });
+
   it.each(["toolResult", "user"] as const)(
     "cold public SessionStorage reads reconstruct exact images while PG stores only references (%s)",
     async (role) => {
@@ -267,8 +297,11 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       ),
     ).rejects.toThrow("unavailable");
     failDelete = true;
-    await expect(store.reap(0)).rejects.toThrow("delete interrupted");
+    await expect(store.reap(0)).rejects.toThrow("Image cleanup deferred");
     failDelete = false;
+    await sql`update session_image_objects set cleanup_available_at=clock_timestamp() where state='deleting'`.execute(
+      db,
+    );
     const retry = new PostgresImageAttachmentStore(db, blobs);
     expect(await retry.reap(0)).toBeGreaterThan(0);
     const remaining = await sql`select id from session_image_objects where state!='ready'`.execute(

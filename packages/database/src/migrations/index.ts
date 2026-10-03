@@ -1,3 +1,4 @@
+import * as fairResourceCleanup from "./169_fair_resource_cleanup.ts";
 import * as unlimitedUploads from "./168_unlimited_uploads.ts";
 import * as unlimitedExecutionQuotas from "./167_unlimited_execution_quotas.ts";
 import * as unlimitedProductQuotas from "./166_unlimited_product_quotas.ts";
@@ -339,6 +340,7 @@ export const migrationProvider: MigrationProvider = {
       "166_unlimited_product_quotas": unlimitedProductQuotas,
       "167_unlimited_execution_quotas": unlimitedExecutionQuotas,
       "168_unlimited_uploads": unlimitedUploads,
+      "169_fair_resource_cleanup": fairResourceCleanup,
     };
   },
 };
