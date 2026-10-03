@@ -5,6 +5,9 @@ import {
   createPiCloudEventFactory,
   parseSupervisorToControlMessage,
   inputWithUploads,
+  assertUserInputBudget,
+  assertPreparedUserInputBudget,
+  MAX_INPUT_IMAGE_HINT_BYTES,
   type RunInterruptionReason,
   type UserUpload,
   type PiCloudEvent,
@@ -456,6 +459,7 @@ export class PiCloudTurnRunner {
   }
 
   async #prepareInput(text: string, uploads: readonly UserUpload[] = [], signal?: AbortSignal) {
+    assertUserInputBudget(text, uploads);
     const described = inputWithUploads(text, uploads);
     if (!uploads.some((file) => file.image))
       return { text: described, images: [] as ImageContent[] };
@@ -466,10 +470,19 @@ export class PiCloudTurnRunner {
         false,
       );
     const prepared = await this.#options.prepareInputUploads(uploads, signal);
+    const hints = prepared.hints.length ? `\nImage preparation: ${prepared.hints.join(" ")}` : "";
+    if (
+      Buffer.byteLength(JSON.stringify(hints)) - 2 >
+      prepared.images.length * MAX_INPUT_IMAGE_HINT_BYTES
+    )
+      throw new PiTurnError(
+        "input_image_hints_invalid",
+        "Image preparation exceeded its metadata budget",
+        false,
+      );
+    assertPreparedUserInputBudget(described + hints, prepared.images.length);
     return {
-      text: prepared.hints.length
-        ? `${described}\nImage preparation: ${prepared.hints.join(" ")}`
-        : described,
+      text: described + hints,
       images: prepared.images,
     };
   }

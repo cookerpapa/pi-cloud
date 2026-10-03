@@ -611,6 +611,10 @@ export {
   MAX_AGENT_INPUT_CHARACTERS,
   MAX_SUBAGENT_TASK_JSON_BYTES,
   assertSubagentTaskInputBudget,
+  assertUserInputText,
+  assertUserInputBudget,
+  assertPreparedUserInputBudget,
+  MAX_INPUT_IMAGE_HINT_BYTES,
 } from "./agent-input-budget.ts";
 export {
   MAX_INHERITED_CONTEXT_ENTRIES,

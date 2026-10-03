@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0218](0218-review-boundary-repairs.md) — approved follow-up input, time,
+   cleanup and verification boundary repairs; implementation in progress.
 1. [ADR-0217](0217-declarative-cube-release.md) — one fully rendered Cube Helm
    release and a narrower completion image dependency boundary.
 1. [ADR-0216](0216-review-data-path-bounds.md) — approved bounded queue

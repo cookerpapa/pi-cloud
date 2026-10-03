@@ -198,6 +198,56 @@ describe.sequential("pending conversation inputs", () => {
     );
   }
 
+  it("rejects the serialized input budget before acceptance, edit or promotion commits", async () => {
+    const f = await fixture();
+    const run = await active(f);
+    const oversized = "fixture:" + "\u0001".repeat(99992);
+    try {
+      const before = await f.list();
+      const count = await database
+        .selectFrom("runs")
+        .select("id")
+        .where("tenant_id", "=", f.tenant.tenantId)
+        .execute();
+      await expect(f.accept(oversized)).rejects.toMatchObject({ code: "invalid_request" });
+      await expect(
+        f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, randomUUID(), {
+          text: oversized,
+        }),
+      ).rejects.toMatchObject({ code: "invalid_request" });
+      for (const action of [
+        { action: "edit" as const, text: oversized, revision: before.revision },
+        {
+          action: "steer" as const,
+          text: oversized,
+          revision: before.revision,
+          targetTurnId: run.first.turnId,
+        },
+      ])
+        await expect(
+          f.queue.mutate(
+            f.tenant.tenantId,
+            f.session.sessionId,
+            run.source.turnId,
+            randomUUID(),
+            action,
+          ),
+        ).rejects.toMatchObject({ code: "invalid_request" });
+      expect(await f.list()).toEqual(before);
+      expect(
+        await database
+          .selectFrom("runs")
+          .select("id")
+          .where("tenant_id", "=", f.tenant.tenantId)
+          .execute(),
+      ).toEqual(count);
+    } finally {
+      run.finish.resolve();
+      await run.execution;
+      await seal(run.first.runId);
+    }
+  });
+
   it("atomically accepts direct Steer with the active Run settings and one retry identity", async () => {
     const f = await fixture();
     const run = await active(f);

@@ -1,5 +1,5 @@
 import { ResourceLimitSchema } from "./protocol-primitives.ts";
-import { MAX_AGENT_INPUT_CHARACTERS } from "./agent-input-budget.ts";
+import { MAX_AGENT_INPUT_CHARACTERS, assertUserInputBudget } from "./agent-input-budget.ts";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createSchemaCheck } from "#schema-check";
@@ -495,6 +495,13 @@ export function parseControlToSupervisorMessage(value: unknown): ControlToSuperv
   }
 
   const message = value as ControlToSupervisorMessage;
+  if (message.type === "command.turn.execute") {
+    try {
+      assertUserInputBudget(message.payload.input.text, message.payload.input.uploads);
+    } catch (error) {
+      throw new PiCloudWireProtocolError((error as Error).message);
+    }
+  }
   if (
     message.type === "supervisor.registered" &&
     message.payload.heartbeatTimeoutMs <= message.payload.heartbeatIntervalMs

@@ -10,7 +10,7 @@ import {
   type QueuedInputActionResult,
 } from "@pi-cloud/protocol";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
-import { parseUserUploads, reviewedModel } from "@pi-cloud/protocol";
+import { parseUserUploads, reviewedModel, assertUserInputBudget } from "@pi-cloud/protocol";
 import { bindInputUploads } from "./workspace-upload-service.ts";
 import type { TurnSteeringService } from "./turn-steering-service.ts";
 import { holdQueuedSteer, lockSteerTarget } from "./queued-steer.ts";
@@ -291,6 +291,7 @@ export class QueuedInputService {
         "r.lease_id",
         "t.state as turnState",
         "t.input_uploads",
+        "t.input_text",
         "t.provider",
         "t.model_id",
       ])
@@ -415,6 +416,13 @@ export class QueuedInputService {
             : action.action === "edit" || action.action === "steer"
               ? parseUserUploads(source.input_uploads)
               : [];
+        if (action.action === "edit" || action.action === "steer") {
+          try {
+            assertUserInputBudget(action.text ?? source.input_text ?? "", uploads);
+          } catch (error) {
+            throw new ControlPlaneStoreError("invalid_request", (error as Error).message);
+          }
+        }
         if (
           (action.action === "edit" || action.action === "steer") &&
           action.text !== undefined &&

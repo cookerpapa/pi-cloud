@@ -1,5 +1,13 @@
 # Chat uploads and visual input
 
+Accepted text and attachment metadata must fit the existing native Session Fact
+transport budget. Acceptance, queue edits and Steer share the same encoded-byte
+check, including composed file descriptions and packed image references. Original
+file byte sizes are not a product quota. Oversized combinations fail before input
+is committed; user text is never truncated. Image normalization has a bounded
+code-owned hint allowance and the Runner verifies the final prepared input too
+([ADR-0218](adr/0218-review-boundary-repairs.md)).
+
 The composer accepts file selection, drag/drop and pasted images. Files selected
 before a conversation exists remain in the browser until its Workspace is chosen.
 Uploads to an existing conversation begin immediately; sending waits for the

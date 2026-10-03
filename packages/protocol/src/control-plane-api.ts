@@ -1,4 +1,4 @@
-import { MAX_AGENT_INPUT_CHARACTERS } from "./agent-input-budget.ts";
+import { MAX_AGENT_INPUT_CHARACTERS, assertUserInputBudget } from "./agent-input-budget.ts";
 import {
   MAX_INHERITED_CONTEXT_ENTRIES,
   MAX_INHERITED_CONTEXT_TEXT_CHARACTERS,
@@ -1380,6 +1380,11 @@ export function parseAcceptTurnRequest(value: unknown): AcceptTurnRequest {
   if (request.prompt.trim().length === 0 && !request.uploadIds?.length) {
     throw new ControlPlaneApiValidationError("Turn prompt must contain a non-whitespace character");
   }
+  try {
+    assertUserInputBudget(request.prompt);
+  } catch (error) {
+    throw new ControlPlaneApiValidationError((error as Error).message);
+  }
   return request;
 }
 
@@ -1395,6 +1400,11 @@ export function parseCreateTurnSteerRequest(value: unknown): CreateTurnSteerRequ
   const request = parseSchema(CreateTurnSteerRequestSchema, value, "create-turn-steer request");
   if (request.text.trim().length === 0 && !request.uploadIds?.length) {
     throw new ControlPlaneApiValidationError("Steer text must contain a non-whitespace character");
+  }
+  try {
+    assertUserInputBudget(request.text);
+  } catch (error) {
+    throw new ControlPlaneApiValidationError((error as Error).message);
   }
   return request;
 }

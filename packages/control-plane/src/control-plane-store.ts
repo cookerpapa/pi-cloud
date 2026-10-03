@@ -44,6 +44,7 @@ import {
   parseCloudToolCapabilitySnapshot,
   reviewedModel,
   validMachineDirectory,
+  assertUserInputBudget,
 } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
@@ -1683,6 +1684,11 @@ export class ControlPlaneStore {
         workingDirectory: target?.working_directory ?? session.working_directory,
         ids: request.uploadIds ?? [],
       });
+      try {
+        assertUserInputBudget(request.prompt, uploads);
+      } catch (error) {
+        throw new ControlPlaneStoreError("invalid_request", (error as Error).message);
+      }
       if (
         uploads.some((file) => file.image) &&
         !(
