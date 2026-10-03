@@ -3,6 +3,7 @@ COPY scripts/install-node-os-security-updates.sh /tmp/install-node-os-security-u
 RUN sh /tmp/install-node-os-security-updates.sh && rm /tmp/install-node-os-security-updates.sh
 
 FROM os-base AS dependencies
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
 
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
@@ -10,7 +11,8 @@ COPY packages/ssh-gateway/package.json packages/ssh-gateway/package.json
 COPY packages/ssh-gateway/tsconfig.json packages/ssh-gateway/tsconfig.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/protocol/package.json packages/protocol/package.json
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
+RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts && npm cache clean --force
 
 FROM os-base
 

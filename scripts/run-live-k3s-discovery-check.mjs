@@ -147,7 +147,7 @@ try {
     session.sessionId,
     randomUUID(),
     new Blob([png()], { type: "image/png" }),
-    "blue.png",
+    "fixture.png",
   );
   await turn(
     `用 bash 执行 printf 'ONCE\\n' > /workspace/k3s-once.txt。然后用 read 读取图片 ${upload.path}，只回复图片的颜色。不要子代理。`,
@@ -182,8 +182,12 @@ try {
     );
   }, "publication partitions reconnect");
   const after = await turn(
-    `用 read 重新读取图片 ${upload.path}，只根据图片判断主色。再用 bash 执行 cat /workspace/k3s-once.txt，确认恰好一行 ONCE；不要写入或重做之前的命令。最后回答 BLUE 和文件校验结果。`,
+    `用 read 重新读取图片 ${upload.path}，只根据图片判断主色。再用 bash 执行 cat /workspace/k3s-once.txt，确认恰好一行 ONCE；不要写入或重做之前的命令。最后用英文回答图片颜色和文件校验结果。`,
   );
+  for (const run of report.runs) {
+    assert(run.tools.some((tool) => tool.name === "read" && tool.state === "completed"));
+    assert(run.tools.some((tool) => tool.name === "bash" && tool.state === "completed"));
+  }
   const text = after.transcript.items
     .filter((i) => i.kind === "text")
     .map((i) => i.text)
