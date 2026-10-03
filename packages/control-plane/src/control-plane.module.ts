@@ -94,10 +94,10 @@ export class ControlPlaneModule {
       new WebAuthenticationService({
         database: options.database,
         enabled: false,
-        maximumTenants: 2,
+        maximumTenants: null,
         tenantQuotas: {
-          maximumProjects: 10,
-          maximumSessions: 100,
+          maximumProjects: null,
+          maximumSessions: null,
         },
       });
     return {
@@ -122,10 +122,10 @@ export class ControlPlaneModule {
             database: options.database,
             ...(options.publicRegistration ?? {
               enabled: false,
-              maximumTenants: 2,
+              maximumTenants: null,
               tenantQuotas: {
-                maximumProjects: 10,
-                maximumSessions: 100,
+                maximumProjects: null,
+                maximumSessions: null,
               },
               ...(options.platformOperatorTenantId === undefined
                 ? {}

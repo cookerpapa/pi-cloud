@@ -115,11 +115,11 @@
       "invariant": "Expired drafts release image pins; a revoked upload cannot become a ready input after a late external reply."
     },
     {
-      "id": "upload-capacity-gc-race",
+      "id": "upload-stream-gc-pin",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/workspace-uploads.postgres.test.ts",
-      "test": "limits simultaneous HTTP bodies and fails closed if image cleanup wins publication",
-      "invariant": "Binary upload admission is bounded before buffering; image pinning cannot acknowledge a GC-deleted source."
+      "test": "accepts more than four files and 32 MiB, and pins an image while final publication is pending",
+      "invariant": "Streaming uploads exceed former product quotas while image reachability is pinned before final publication; GC cannot remove an active source."
     },
     {
       "id": "upload-symlink-confinement",
@@ -932,6 +932,34 @@
       "file": "test/control-change-transactions.postgres.test.ts",
       "test": "does not reuse a coalescing identity across commit, rollback or a restored reference",
       "invariant": "Retained or logically restored references cannot collide with a new transaction; connection reuse and savepoint rollback clear temporary identity."
+    },
+    {
+      "id": "upload-stream-digest-rejection",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-uploads.postgres.test.ts",
+      "test": "rejects false Content-Digest and publishes no ready metadata",
+      "invariant": "A declared content digest is verified against the actual stream before ready metadata is published."
+    },
+    {
+      "id": "upload-stream-truncation-cancel",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/upload-file.test.ts",
+      "test": "streams a 65 MiB file, rejects truncation and removes a cancelled partial file",
+      "invariant": "Truncated, overlong or cancelled transfers leave no partial published file, including above the former upload size limit."
+    },
+    {
+      "id": "upload-owner-change-no-replay",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-control-server-client.test.ts",
+      "test": "resolves the upload owner before consuming bytes and never replays a consumed stream on a late redirect",
+      "invariant": "Ownership is resolved before byte consumption; a later redirect never implicitly replays a consumed upload stream."
+    },
+    {
+      "id": "worker-unlimited-memory-admission",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/worker-memory-monitor.test.ts",
+      "test": "uses current heap/RSS with a fresh off-thread limit and rejects stale samples",
+      "invariant": "An unlimited cgroup cannot suppress all claims; real physical memory pressure and stale evidence still stop new-family admission."
     }
   ]
 }
