@@ -30,8 +30,8 @@ fair cleanup, explicit PG tests, isolated Kafka fixtures, scoped Subagent reads,
 Run-directory verification, terminal dimensions and ordered Cube closure.
 [Verification and release evidence](reports/review-repair-20261004.md) tracks completion.
 
-- [ ] Complete the matched managed-protocol-3 Cube/app build, full verification
-      and drained release acceptance without deleting existing Workspace bytes/history.
+- [ ] Finish matched guest-template/application rollout and live release acceptance
+      after the passing full checks and Cube protocol-3 release; preserve existing assets.
 
 The [October 3 review](reports/repository-review-20261003.md) repairs are deployed
 under [ADR-0216](adr/0216-review-data-path-bounds.md) and

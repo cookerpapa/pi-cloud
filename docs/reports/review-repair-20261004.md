@@ -1,7 +1,8 @@
 # October 4 follow-up review repairs
 
-Status: implementation and targeted contracts complete; full checks and matched
-managed-protocol-3 build/release acceptance in progress. No production data reset.
+Status: implementation and automated checks complete. Matched Cube release 22
+is installed; guest-template/application cutover and live acceptance are in
+progress. No production data reset.
 
 The owner approved the [follow-up review](repository-review-20261003-r2.md) fixes
 and Kafka-ordered stopping. Decisions are recorded in [ADR-0218](../adr/0218-review-boundary-repairs.md)
@@ -33,6 +34,26 @@ transport is version 3 with no version-2 fallback. The native execution/probe
 patches are consolidated into one maintained patch, pinned by digest.
 
 ## Evidence
+
+The repaired runtime source is committed at `98379564`; build proxy forwarding
+is `3b991061`. The fault report was started on the working tree before these
+commits, and explicitly records that fact rather than claiming a clean baseline.
+
+- Full `npm run check`: 1,699 passing tests in 251 files, nine explicitly skipped
+  external-runtime cases. Type checking passes across all workspaces. Separate
+  real Kafka integrations cover three of the external paths.
+- [Fault evaluation](review-repair-faults-20261004.json): 150/150 selected contracts
+  pass across 59 test groups. These overlap the normal suite; counts are not additive.
+- Formatting, documentation, dependency hardening, installation contracts, Helm,
+  runtime policy, observability, image closure and application builds pass.
+  The existing high-severity security gate passes; two moderate dependency
+  findings remain and are not represented as newly repaired here.
+- Matched native build: managed protocol 3, guest wire 2, patch set
+  `5fb3cf5860924168`, completion source `e95a4d4d830096b65a5242fdfdc387efcb132dc5`.
+  Cube Helm release 22 uses the same pinned chart and declarative renderer as
+  installation. The host-initialization entry requires root; updating this
+  existing cluster used the prepared, server-validated release and imported
+  images, with no extra post-deployment patches.
 
 - Targeted composed-input, Runner and attachment contracts; 28 queued-input tests
   pass with the default disposable PostgreSQL command.
