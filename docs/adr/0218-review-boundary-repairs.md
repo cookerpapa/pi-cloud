@@ -1,7 +1,7 @@
 # ADR-0218: consistent input, time and cleanup boundaries
 
-Status: accepted for implementation, 2026-10-04, following the owner's request
-to implement the follow-up review and ensuing discussion.
+Status: implemented and deployed, 2026-10-04. Acceptance and live recovery
+corrections are recorded in [the repair report](../reports/review-repair-20261004.md).
 
 ## Scope and existing infrastructure
 

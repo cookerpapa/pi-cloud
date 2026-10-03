@@ -6,7 +6,8 @@
       deployment and validation paths. [Findings and evidence](reports/repository-review-20261003-r2.md)
       include default-test failures and separate the Cube capacity decision from
       local fixes. [Approved implementation and verification](reports/review-repair-20261004.md)
-      follow ADR-0218/0219; the matched release gate remains tracked in BACKLOG.
+      follow ADR-0218/0219, including the matched release and live recovery,
+      cancellation and image-queue acceptance.
 
 ## Completed review repairs
 

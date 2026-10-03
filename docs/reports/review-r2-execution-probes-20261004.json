@@ -1,0 +1,20 @@
+{
+  "checkedAt": "2026-10-03T19:29:12.452Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "sessionId": "e7086c53-3349-43bc-836f-14d4be6cdfb0",
+  "chatAllocatedNoVm": true,
+  "runId": "314fa375-5a66-474a-8a57-2eced7a4cdf8",
+  "confirmedDuringBash": true,
+  "stages": ["projector", "cube", "worker"],
+  "observationFrames": 19,
+  "noProbeHistory": true,
+  "runtime": {
+    "directMs": 72.57116400000007,
+    "oldBootRejected": true,
+    "directWithUndeliverableReply": true,
+    "pausedNotWoken": true,
+    "resumed": true
+  },
+  "cleanupCompleted": true
+}

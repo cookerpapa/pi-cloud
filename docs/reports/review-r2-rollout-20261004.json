@@ -1,0 +1,41 @@
+{
+  "checkedAt": "2026-10-03T20:04:16.136Z",
+  "state": {
+    "active_runs": 0,
+    "active_leases": 0,
+    "bindings": 0,
+    "unknown_allocations": 2,
+    "schema": "170_ordered_binding_closure"
+  },
+  "originalImages": {
+    "count": 21,
+    "digest": "e36bbbff657962ce2d1092fe960e11f6"
+  },
+  "cubeInventoryCount": 0,
+  "ownedDirectProbeAbsence": [
+    {
+      "id": "4a3223a357aa4ea8a7ec34eca4a59a63",
+      "presence": "absent",
+      "state": "unknown"
+    },
+    {
+      "id": "d2b66a47b8a3462392c8d06ddd6d5c9e",
+      "presence": "absent",
+      "state": "unknown"
+    }
+  ],
+  "deployment": {
+    "controlPlane": "pi-cloud/control-plane:review-r2-recovery-v3",
+    "otherApplicationImages": "review-r2-ordered-v3",
+    "runtimeSource": "21b3f206f8d159f401cbc984609cb898addf9131",
+    "schema": 170,
+    "managedProtocol": 3,
+    "guestWire": 2,
+    "cubePatch": "5fb3cf5860924168",
+    "completionSource": "e95a4d4d830096b65a5242fdfdc387efcb132dc5",
+    "guestSource": "24bc31718964bea54eac600c1a42335ae7d20be6",
+    "standardTemplate": "tpl-091587931471433489c921ba",
+    "platformHelmRevision": 12
+  },
+  "unknownAllocationNote": "One pre-existing record plus one owned failed standard-VM allocation lack recorded VM/node identity. Preserved for evidence-based recovery; an empty master inventory is not substituted for per-allocation absence."
+}

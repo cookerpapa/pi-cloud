@@ -1,7 +1,7 @@
 # ADR-0219: ordered Cube admission and binding closure
 
-Status: accepted for implementation, 2026-10-04, following the owner's discussion
-of Kafka-ordered stopping and approval to implement the follow-up review.
+Status: implemented and deployed, 2026-10-04. Acceptance and live recovery
+corrections are recorded in [the repair report](../reports/review-repair-20261004.md).
 
 ## Problem and reuse
 

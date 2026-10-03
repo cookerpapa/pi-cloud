@@ -1,8 +1,9 @@
 # October 4 follow-up review repairs
 
-Status: implementation and automated checks complete. Matched Cube release 22
-is installed; guest-template/application cutover and live acceptance are in
-progress. No production data reset.
+Status: implemented and deployed. Matched protocol-3 Cube/application release,
+schema 170, real-model tools, Pod replacement, path probes, shared-VM cancellation
+and image-queue acceptance pass. Direct containerd-task SIGKILL (exit 137) also
+passes. [Final inventory](review-r2-rollout-20261004.json) is recorded. No production data reset.
 
 The owner approved the [follow-up review](repository-review-20261003-r2.md) fixes
 and Kafka-ordered stopping. Decisions are recorded in [ADR-0218](../adr/0218-review-boundary-repairs.md)
@@ -35,14 +36,14 @@ patches are consolidated into one maintained patch, pinned by digest.
 
 ## Evidence
 
-The repaired runtime source is committed at `98379564`; build proxy forwarding
-is `3b991061`. The fault report was started on the working tree before these
-commits, and explicitly records that fact rather than claiming a clean baseline.
+The repaired runtime source is `98379564`, build proxy forwarding is `3b991061`,
+and live recovery corrections are `d9f8ebc4` / `21b3f206`. The latest fault report
+runs against clean `21b3f206`; the earlier working-tree run remains in Git.
 
-- Full `npm run check`: 1,699 passing tests in 251 files, nine explicitly skipped
+- Full `npm run check` before the live recovery corrections: 1,699 passing tests in 251 files, nine explicitly skipped
   external-runtime cases. Type checking passes across all workspaces. Separate
   real Kafka integrations cover three of the external paths.
-- [Fault evaluation](review-repair-faults-20261004.json): 150/150 selected contracts
+- [Fault evaluation](review-repair-faults-20261004.json): 154/154 selected contracts
   pass across 59 test groups. These overlap the normal suite; counts are not additive.
 - Formatting, documentation, dependency hardening, installation contracts, Helm,
   runtime policy, observability, image closure and application builds pass.
@@ -109,3 +110,51 @@ recovery defers without quarantining siblings or installing partial local state.
 The 89 affected controller/routing/PG/view tests pass, including a publication-
 outage regression; the additional retirement guard check also passes. Physical
 identity and explicit quarantine checks remain in force.
+
+## Matched deployment and live evidence
+
+- Application image family: `review-r2-ordered-v3`; Control Plane after recovery
+  corrections: `review-r2-recovery-v3` (`21b3f206`). Database schema 170. Native
+  Cube patch/completion identities above remain unchanged. Guest source:
+  `24bc31718964bea54eac600c1a42335ae7d20be6`.
+- [Native tools](review-r2-native-tools-20261004.json): three Luna Turns and 13
+  successful read/write/edit/Bash calls, including large output and symlink edits.
+- [Pod replacement](review-r2-handoff-restart-20261004.json): original Worker
+  survives, native command finishes, exact file contents prove one execution.
+- [Direct process SIGKILL](review-r2-process-restart-20261004.json): confirmed
+  exit 137 and increased container restart count; original Worker/native command
+  completes exactly once. The preceding in-container PID-1 signal attempt did
+  not restart the process and was correctly rejected by the gate.
+- [Execution probes](review-r2-execution-probes-20261004.json): no VM for chat,
+  Projector/Cube/Worker stages confirmed during silent Bash, no probe history,
+  replaced boot refused, paused VM not awakened by probing.
+- [Shared VM cancellation](review-r2-shared-vm-cancel-20261004.json): two bindings
+  on one physical VM; cancellation settles in 547 ms in this sample, both parent
+  and child stop, the sibling completes and the command executes once. This is
+  a single-host sample, not a latency guarantee.
+- [Starter image queue](review-r2-queued-image-20261004.json) and
+  [standard image queue](review-r2-queued-image-standard-20261004.json): image-only
+  admission, editing with attachment retention, promotion to steer, exactly one
+  input consumption and direct Luna vision without a read Tool.
+
+The first [standard-profile image attempt](review-r2-queued-image-standard-initial-20261004.json)
+failed before Tool admission. A direct Cube call reproduced HTTP 500 with
+`reset guest time failed` on that template. Recreating the standard template from
+the same immutable image produced `tpl-091587931471433489c921ba`; a real VM boot
+and the full standard image-queue scenario then passed. Only the generated
+standard-template selection changed. This does not establish the upstream
+snapshot/time-reset root cause or remove deferred old-template cleanup.
+
+The upload gate now stops immediately if its prerequisite Run terminates before
+any running Tool, and accepts an explicit fixture profile (starter by default).
+The shared-VM cancellation script is retained as a reusable acceptance gate.
+
+Final state: Control Plane and both Workers Ready; no active Runs, leases or Tool
+bindings; Cube inventory empty. The original 21 image-object identities/hashes
+match the pre-rollout digest. Owned test PG/Kafka containers and private rendered
+Secret/diagnostic files were removed. Cleanup requests for live fixtures completed;
+one failed standard-VM creation still has an unknown allocation with no recorded
+VM/node identity, alongside the pre-existing unknown allocation. They remain
+held rather than forcing absence or quota release. The two identifiable direct
+Cube probes have independently confirmed absence on the recorded node. Deferred
+old-template GC and the failed-allocation identity gap remain explicit backlog work.

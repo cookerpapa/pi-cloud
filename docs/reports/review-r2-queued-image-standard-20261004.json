@@ -1,0 +1,32 @@
+{
+  "checkedAt": "2026-10-03T19:54:03.758Z",
+  "scriptSha256": "29abc005a006092fcf46ac8353dd3f4ffe61b43dcc17983ae5461df06c21b07d",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "a73d8394-e5e7-47d8-8a73-de6d66b19b18",
+      "workerId": "ee846fba-20d5-4523-a0a5-0aac8129dc5e",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "resources": {
+    "tenantId": "6d9c1e7a-955b-4cd7-baeb-daa8af7b26cc",
+    "workspaceId": "5a8c1b64-c69a-42e4-b8e0-9e68c42a9c69",
+    "sessionId": "86d1137b-b851-4ac2-9b0c-c849518266c3"
+  },
+  "scenario": "queue",
+  "queuedImageSteer": {
+    "imageOnlyAdmission": true,
+    "editPreservedAttachment": true,
+    "consumedExactlyOnce": true,
+    "directVisionWithoutRead": true,
+    "sourceRunCancelled": true
+  },
+  "cleanupRequested": true
+}

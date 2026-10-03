@@ -1,4 +1,4 @@
-import { serviceAddress, kubectlAsync, podFor } from "./lib/production-kubernetes.mjs";
+import { serviceAddress, kubectl, kubectlAsync, podFor } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -11,7 +11,7 @@ import { createDatabase } from "../packages/database/src/index.ts";
 import { sql } from "kysely";
 if (process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 for a disposable Luna/Cube Run and control-plane SIGKILL",
+    "Set PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 for a disposable Luna/Cube Run and control-plane replacement",
   );
 const root = fileURLToPath(new URL("..", import.meta.url));
 const runtime = resolve(
@@ -36,7 +36,14 @@ async function waitFor(fn, label, ms = 120000) {
   throw Error("Timed out: " + label);
 }
 let project, session, turn, error;
-const report = { checkedAt: new Date().toISOString(), model: "gpt-6-luna", accepted: false };
+const faultMode = process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE ?? "pod";
+assert(["pod", "process"].includes(faultMode));
+const report = {
+  checkedAt: new Date().toISOString(),
+  model: "gpt-6-luna",
+  faultMode,
+  accepted: false,
+};
 async function assertOnlyOwnedRun() {
   const url = new URL((await readFile(runtime + "/secrets/database-url", "utf8")).trim());
   url.hostname = serviceAddress("postgres");
@@ -90,15 +97,51 @@ try {
   const before = await api.getRun(turn.runId);
   report.workerId = before.workerId;
   await assertOnlyOwnedRun();
-  await kubectlAsync([
-    "delete",
-    "pod",
-    podFor("control-plane"),
-    "--grace-period=0",
-    "--force",
-    "--wait=true",
-  ]);
-  await kubectlAsync(["rollout", "status", "deployment/pi-cloud-control-plane", "--timeout=180s"]);
+  const targetPod = podFor("control-plane");
+  if (faultMode === "process") {
+    const beforePod = JSON.parse(kubectl(["get", "pod", targetPod, "-o", "json"]));
+    const count = beforePod.status.containerStatuses[0].restartCount;
+    const containerId = beforePod.status.containerStatuses[0].containerID;
+    assert(
+      /^containerd:\/\/[0-9a-f]{64}$/.test(containerId),
+      "Expected the local K3s containerd task",
+    );
+    await exec("/usr/local/bin/k3s", [
+      "ctr",
+      "-n",
+      "k8s.io",
+      "tasks",
+      "kill",
+      "--signal",
+      "SIGKILL",
+      containerId.slice("containerd://".length),
+    ]);
+    await waitFor(
+      async () => {
+        const status = JSON.parse(kubectl(["get", "pod", targetPod, "-o", "json"])).status
+          .containerStatuses[0];
+        if (!(status.restartCount > count && status.ready && status.state.running)) return false;
+        assert.equal(
+          status.lastState?.terminated?.exitCode,
+          137,
+          "Process did not exit through SIGKILL",
+        );
+        report.processExitCode = status.lastState.terminated.exitCode;
+        report.restartCountIncreased = true;
+        return true;
+      },
+      "process restarted and Ready",
+      180000,
+    );
+  } else {
+    await kubectlAsync(["delete", "pod", targetPod, "--grace-period=0", "--force", "--wait=true"]);
+    await kubectlAsync([
+      "rollout",
+      "status",
+      "deployment/pi-cloud-control-plane",
+      "--timeout=180s",
+    ]);
+  }
   const finished = await waitFor(
     async () => {
       try {

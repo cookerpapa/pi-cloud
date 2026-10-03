@@ -1,0 +1,11 @@
+{
+  "checkedAt": "2026-10-03T19:33:24.116Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "sharedVmVerified": true,
+  "cancelMs": 547,
+  "parentAndChildStopped": true,
+  "siblingCompleted": true,
+  "executionCount": 1,
+  "cleanupCompleted": true
+}

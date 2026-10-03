@@ -38,6 +38,8 @@ const report = {
 };
 let api, tenant, project, session, active, development, failure;
 const machineMode = process.argv[3] === "machine";
+const elasticProfile = process.env.PI_CLOUD_LIVE_SANDBOX_PROFILE ?? "starter";
+assert(["starter", "standard", "performance"].includes(elasticProfile));
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(fn, label, budget = 600000) {
   const deadline = Date.now() + budget;
@@ -108,15 +110,18 @@ async function queuedImageScenario() {
     "low",
   );
   const running = active;
-  await until(
-    async () =>
-      (await api.getConversation(session.sessionId)).turns
-        .find((t) => t.turnId === running.turnId)
-        ?.transcript?.items.some(
-          (i) => i.kind === "tool" && i.toolName === "bash" && i.status === "running",
-        ),
-    "Running Tool",
-  );
+  await until(async () => {
+    const state = await api.getRun(running.runId);
+    if (["completed", "failed", "cancelled", "timed_out"].includes(state.state))
+      throw new Error(
+        `Run ended before the required running Tool: ${state.state} ${JSON.stringify(state.failure)}`,
+      );
+    return (await api.getConversation(session.sessionId)).turns
+      .find((t) => t.turnId === running.turnId)
+      ?.transcript?.items.some(
+        (i) => i.kind === "tool" && i.toolName === "bash" && i.status === "running",
+      );
+  }, "Running Tool");
   const queued = await api.acceptTurn(session.sessionId, "", newIdempotencyKey("turn"), "low", [
     image.id,
   ]);
@@ -194,7 +199,7 @@ try {
     project.workspaceId,
     "Upload image acceptance",
     machineMode ? "development_environment" : "elastic",
-    machineMode ? undefined : "standard",
+    machineMode ? undefined : elasticProfile,
     machineMode ? "/home/user" : "/workspace",
     { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "low", fastMode: false },
   );

@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-10-03T19:31:57.788Z",
+  "scriptSha256": "18bf88732260d5eb7f75644974ab3c900d886f3726a70465cb12293058d97fbd",
+  "model": "gpt-6-luna",
+  "accepted": false,
+  "runs": [],
+  "resources": {
+    "tenantId": "770333a2-d914-42bd-b02b-7bfbafd85453",
+    "workspaceId": "b6bdc955-8943-4af9-ba78-ff4508d4135f",
+    "sessionId": "1bc32e3a-dcf4-4f0d-bbd8-ac719aa72a62"
+  },
+  "scenario": "queue",
+  "cleanupRequested": true
+}

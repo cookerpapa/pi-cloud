@@ -30,9 +30,6 @@ fair cleanup, explicit PG tests, isolated Kafka fixtures, scoped Subagent reads,
 Run-directory verification, terminal dimensions and ordered Cube closure.
 [Verification and release evidence](reports/review-repair-20261004.md) tracks completion.
 
-- [ ] Finish matched guest-template/application rollout and live release acceptance
-      after the passing full checks and Cube protocol-3 release; preserve existing assets.
-
 The [October 3 review](reports/repository-review-20261003.md) repairs are deployed
 under [ADR-0216](adr/0216-review-data-path-bounds.md) and
 [ADR-0217](adr/0217-declarative-cube-release.md).
@@ -128,6 +125,14 @@ separate design questions, not an implicit part of the completed query merge.
       Lane counts; unlimited product defaults do not establish sustainable capacity.
 
 ## Deployment operations
+
+- [ ] Investigate Cube standard-template snapshot restoration returning
+      `reset guest time failed` despite READY status. Recreating the same-image
+      template restores boot and image-queue acceptance, but the upstream failure
+      mechanism is not established. Preserve creation uncertainty and node-absence
+      requirements; no forced quota release or identity fabrication for failed
+      allocations lacking a recorded VM/node (one older record and one failed
+      standard-profile acceptance allocation remain held). [Evidence](reports/review-repair-20261004.md).
 
 
 - [ ] Repeat the broad browser interaction gate beyond the focused execution-probe

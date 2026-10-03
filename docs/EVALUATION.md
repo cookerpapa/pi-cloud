@@ -346,3 +346,17 @@ When sharing third-party `node_modules`, also preload
 would silently use current workspace code. `PI_CLOUD_REVIEW_SOURCE_AUDIT` writes
 its import map. Report fixed-workload limits and memory/latency variability with
 the measurements; this is not fleet capacity or live provider latency evidence.
+
+### Ordered closure and controller replacement
+
+Run `PI_CLOUD_LIVE_ORDERED_CLOSE_CHECK=1 node --import tsx scripts/run-live-ordered-cube-close-check.mjs`
+against the matched deployment to test two Luna Sessions sharing one VM, stopping
+one command's parent/child processes while its sibling completes. The fixture
+checks only its owned resources and requests cleanup.
+
+The controller restart gate accepts
+`PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=process` for a local containerd-task SIGKILL and
+checks exit code 137, an increased container restart count and readiness. Its default `pod`
+mode tests Pod replacement; force deletion alone is not proof of SIGKILL.
+Upload acceptance uses the starter fixture profile by default;
+`PI_CLOUD_LIVE_SANDBOX_PROFILE=standard` tests the standard template explicitly.

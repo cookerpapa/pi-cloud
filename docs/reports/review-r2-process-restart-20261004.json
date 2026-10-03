@@ -1,0 +1,15 @@
+{
+  "checkedAt": "2026-10-03T20:01:05.079Z",
+  "model": "gpt-6-luna",
+  "faultMode": "process",
+  "accepted": true,
+  "runId": "46e59030-3513-40b9-91c1-c55cda3d52e4",
+  "workerId": "ee846fba-20d5-4523-a0a5-0aac8129dc5e",
+  "processExitCode": 137,
+  "restartCountIncreased": true,
+  "completionState": "completed",
+  "executionCount": 1,
+  "workerUnchanged": true,
+  "cubeCompletedAcrossControlPlaneLoss": true,
+  "cleanupCompleted": true
+}
