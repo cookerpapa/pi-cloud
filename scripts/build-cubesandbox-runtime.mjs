@@ -1,3 +1,4 @@
+import { completionBuildIdentity } from "./lib/guest-build-identity.mjs";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile, rm, copyFile, access } from "node:fs/promises";
@@ -103,6 +104,10 @@ try {
     "--network=host",
     "--build-arg",
     `CUBELET_BASE_IMAGE=pi-cloud/cubelet-base:${tag}`,
+    "--build-arg",
+    `PI_CLOUD_COMPLETION_SOURCE_ID=${await completionBuildIdentity(root)}`,
+    "--build-arg",
+    `NPM_CONFIG_REGISTRY=${process.env.NPM_CONFIG_REGISTRY ?? "https://registry.npmjs.org"}`,
     "-f",
     "deploy/cubesandbox/Dockerfile.cubelet",
     "-t",

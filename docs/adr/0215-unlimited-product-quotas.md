@@ -1,6 +1,7 @@
 # ADR-0215: No default resource or product quotas
 
-Status: accepted; implementation in progress (2026-10-03).
+Status: implemented and deployed (2026-10-03).
+Acceptance: [unlimited quota rollout](../reports/unlimited-quotas-20261003.md).
 
 ## Owner decision
 
@@ -93,4 +94,7 @@ before adoption. Record the exact transport contract with the implementation.
   disconnection and claim expiry do not publish a partial file or false success.
 - Remove retired quota UI/configuration defaults and document real remaining
   protocol/provider/physical constraints. Deploy matched API, Worker and guest
-  contracts, with no old-wire fallback.
+  contracts, including the trusted Cubelet completion adapter, with no old-wire fallback.
+The deployment checks both its pinned native patch version and a content identity
+of the adapter/dependency COPY inputs. Removing resource ceilings must preserve
+the installer's shared Workspace mounts and POSIX plugin configuration.

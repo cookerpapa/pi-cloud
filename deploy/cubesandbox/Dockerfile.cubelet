@@ -4,6 +4,8 @@ ARG CUBELET_BASE_IMAGE=pi-cloud/cubelet-base:production
 ARG NODE_IMAGE=node:24.18.0-bullseye-slim@sha256:aca89821b1f09df223227ff2abe075fc3161f05604d3b61309f46820a5938020
 FROM ${NODE_IMAGE} AS node-runtime
 FROM ${CUBELET_BASE_IMAGE} AS completion-dependencies
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
+ENV NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}
 COPY --from=node-runtime /usr/local /usr/local
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       python3 make g++ pkg-config libssl-dev zlib1g-dev libsasl2-dev libcurl4-openssl-dev \
@@ -23,6 +25,9 @@ RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
     && npm cache clean --force
 
 FROM ${CUBELET_BASE_IMAGE}
+ARG PI_CLOUD_COMPLETION_SOURCE_ID
+ENV PI_CLOUD_COMPLETION_SOURCE_ID=${PI_CLOUD_COMPLETION_SOURCE_ID}
+LABEL pi-cloud.completion-source-id=${PI_CLOUD_COMPLETION_SOURCE_ID}
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=completion-dependencies /opt/pi-cloud/node_modules /opt/pi-cloud/node_modules
 COPY --from=completion-dependencies /opt/pi-cloud/packages /opt/pi-cloud/packages
@@ -34,7 +39,8 @@ COPY packages/event-log/src /opt/pi-cloud/packages/event-log/src
 COPY packages/observability/src /opt/pi-cloud/packages/observability/src
 COPY packages/protocol/src /opt/pi-cloud/packages/protocol/src
 COPY packages/session-attachments/src /opt/pi-cloud/packages/session-attachments/src
-RUN /usr/local/bin/node --version \
+RUN test -n "$PI_CLOUD_COMPLETION_SOURCE_ID" \
+    && /usr/local/bin/node --version \
     && cd /opt/pi-cloud && node --input-type=module --eval "await import('@confluentinc/kafka-javascript')" \
     && node --import /opt/pi-cloud/node_modules/tsx/dist/loader.mjs --input-type=module --eval "await import('./packages/cube-completion/src/adapter.ts')"
 # Credentials and Kafka/PG/S3 addresses are mounted only into this trusted host

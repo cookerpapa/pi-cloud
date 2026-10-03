@@ -70,7 +70,7 @@ a ready input. The renewable 120-second claim fences stale completions. File pla
 uses confined directory descriptors, exclusive publication and checksum checks.
 Bodies stream with backpressure; the browser hashes bounded 256 KiB slices before
 sending, and receivers verify byte length and SHA-256 before publishing. There is
-no whole-file control-plane buffer or disk spool. Failed transfers retry the whole
+no whole-file control-plane buffer or disk spool on the upload transport. Failed transfers retry the whole
 file under the same identity. Admission rejects unavailable, expired or differently
 scoped attachments.
 

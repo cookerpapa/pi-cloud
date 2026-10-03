@@ -1,3 +1,9 @@
+import { createHash } from "node:crypto";
+import { readyCubeletPod } from "./lib/cube-execution-deployment.mjs";
+import {
+  assertCubeWorkspaceContract,
+  assertCubeCompletionVersion,
+} from "./lib/cube-workspace-contract.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, chmodSync } from "node:fs";
 import { resolve } from "node:path";
@@ -18,7 +24,7 @@ import {
 } from "./lib/production-kubernetes.mjs";
 import { selfHostedValues } from "./lib/self-hosted-values.mjs";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
-import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
+import { guestBuildIdentity, completionBuildIdentity } from "./lib/guest-build-identity.mjs";
 
 const [action, ...args] = process.argv.slice(2);
 const environment = { ...runtimeEnvironment(), ...process.env };
@@ -197,6 +203,37 @@ function installSecrets() {
   });
 }
 async function deploy() {
+  assertCubeWorkspaceContract(
+    JSON.parse(kubectl(["get", "deployment", "cube-master", "-o", "json"])),
+    JSON.parse(kubectl(["get", "daemonset", "cube-node", "-o", "json"])),
+    resolve(runtimeDirectory, "state/cube-shared"),
+  );
+  const cubelet = readyCubeletPod(
+    JSON.parse(
+      kubectl(["get", "pods", "-l", "app.kubernetes.io/component=cube-node", "-o", "json"]),
+    ).items,
+  );
+  if (!cubelet) throw new Error("A ready Cubelet is required before deploying the platform");
+  const installed = JSON.parse(
+    kubectl([
+      "exec",
+      cubelet,
+      "-c",
+      "cubelet",
+      "--",
+      "/usr/local/bin/node",
+      "-e",
+      "const v=require('/opt/cube-image/Cubelet/version.json');console.log(JSON.stringify({source:process.env.PI_CLOUD_COMPLETION_SOURCE_ID,version:v.components.cubelet.version}))",
+    ]),
+  );
+  const runtimeBuild = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json")),
+  );
+  assertCubeCompletionVersion(
+    installed,
+    await completionBuildIdentity(repositoryRoot),
+    createHash("sha256").update(JSON.stringify(runtimeBuild)).digest("hex").slice(0, 16),
+  );
   const { platform } = await values();
   installSecrets();
   if (environment.PI_CLOUD_OBSERVABILITY_ENABLED === "1") {

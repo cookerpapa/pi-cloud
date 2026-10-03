@@ -70,6 +70,16 @@ Kubernetes cluster. Client reconnect/deadlines remain necessary after a TCP brea
 
 ## Storage and upgrades
 
+Cube upgrades use the full `cubesandbox:cluster-install` workflow: it installs the
+pinned native patches and current completion adapter, then reconciles the POSIX
+plugin configuration and shared host mounts after Helm. A bare Cube Helm upgrade
+can restore upstream paths/images over those installer-managed fields. End existing
+VMs before changing the Cube Node DaemonSet; its Pod/network namespace is recreated.
+Platform deployment checks the actual CubeMaster/Cubelet shared path, Cubelet
+configuration mount, native patch version and completion source identity before
+changing the application. It refuses a mismatched runtime rather than accepting a
+healthy Pod as proof of a working Tool path.
+
 PostgreSQL, Kafka and attachment storage use static local PVs below
 `/var/lib/pi-cloud`, with node affinity and `Retain`. Cube Workspace bytes stay in
 `runtime/state/cube-shared/volume`, mounted into Cube and the Volume Gateway.

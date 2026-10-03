@@ -4,8 +4,8 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const guestDockerfile = "deploy/cubesandbox/Dockerfile.tool";
 
-export function guestCopyInputs(dockerfile) {
-  const inputs = new Set([guestDockerfile]);
+export function guestCopyInputs(dockerfile, dockerfilePath = guestDockerfile) {
+  const inputs = new Set([dockerfilePath]);
   for (const line of dockerfile.replace(/\\\r?\n/g, " ").split(/\r?\n/)) {
     if (!/^COPY\s/i.test(line.trim()) || /\s--from(?:=|\s)/i.test(line)) continue;
     const tokens = line
@@ -29,10 +29,23 @@ export function guestCopyInputs(dockerfile) {
 }
 
 /** Runtime identity only; the actual built image still has its full OCI digest. */
-export async function guestBuildIdentity(repositoryRoot) {
+export function guestBuildIdentity(repositoryRoot) {
+  return buildIdentity(repositoryRoot, guestDockerfile, "pi-cloud.guest-build-inputs.v1\0");
+}
+
+export function completionBuildIdentity(repositoryRoot) {
+  return buildIdentity(
+    repositoryRoot,
+    "deploy/cubesandbox/Dockerfile.cubelet",
+    "pi-cloud.completion-build-inputs.v1\0",
+    ["deploy/cubesandbox/runtime-build.json"],
+  );
+}
+
+async function buildIdentity(repositoryRoot, dockerfilePath, prefix, extraInputs = []) {
   const root = resolve(repositoryRoot);
-  const dockerfile = await readFile(resolve(root, guestDockerfile), "utf8");
-  const hash = createHash("sha256").update("pi-cloud.guest-build-inputs.v1\0");
+  const dockerfile = await readFile(resolve(root, dockerfilePath), "utf8");
+  const hash = createHash("sha256").update(prefix);
   const active = new Set();
   async function visit(path) {
     const addressed = resolve(path),
@@ -58,6 +71,7 @@ export async function guestBuildIdentity(repositoryRoot) {
       active.delete(addressed);
     }
   }
-  for (const input of guestCopyInputs(dockerfile)) await visit(resolve(root, input));
+  for (const input of [...guestCopyInputs(dockerfile, dockerfilePath), ...extraInputs])
+    await visit(resolve(root, input));
   return hash.digest("hex").slice(0, 40);
 }

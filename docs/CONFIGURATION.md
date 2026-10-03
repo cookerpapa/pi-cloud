@@ -120,9 +120,9 @@ changing service identities or mount permissions.
 | `PI_CLOUD_GRAFANA_URL`, `PI_CLOUD_PROMETHEUS_URL`, `PI_CLOUD_ALERTMANAGER_URL`, `PI_CLOUD_JAEGER_URL` | empty | optional browser-visible console links; empty hides the link |
 | `PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID` | empty | set by `production:administrator` |
 | `PI_CLOUD_PUBLIC_REGISTRATION_ENABLED` | `true` | allow new browser accounts |
-| `PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS` | `1000` | maximum public tenants |
-| `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS` | `10` | projects per public tenant |
-| `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS` | `100` | Sessions per public tenant |
+| `PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS` | `unlimited` | maximum public tenants |
+| `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS` | `unlimited` | projects per public tenant |
+| `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS` | `unlimited` | Sessions per public tenant |
 | `PI_CLOUD_WEB_SESSION_TTL_MS` | `2592000000` | browser login lifetime (30 days) |
 | `PI_CLOUD_WEB_SESSION_COOKIE_SECURE` | `false` | set `true` when the public endpoint is HTTPS |
 

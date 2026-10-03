@@ -124,3 +124,31 @@ it("recognizes multi-line COPY and rejects implicit build-context scans", () => 
   expect(() => guestCopyInputs("COPY . /app")).toThrow("explicit local inputs");
   expect(() => guestCopyInputs("COPY src/* /app")).toThrow("explicit local inputs");
 });
+
+it("changes the completion identity when its protocol or pinned native runtime changes", async () => {
+  const { completionBuildIdentity } = await import("./guest-build-identity.mjs");
+  const root = await mkdtemp(join(tmpdir(), "pi-completion-identity-"));
+  try {
+    await mkdir(join(root, "deploy/cubesandbox"), { recursive: true });
+    await writeFile(
+      join(root, "deploy/cubesandbox/Dockerfile.cubelet"),
+      "FROM fixture\nCOPY protocol.ts /opt/protocol.ts\n",
+    );
+    await writeFile(
+      join(root, "deploy/cubesandbox/runtime-build.json"),
+      '{"upstreamCommit":"first"}',
+    );
+    await writeFile(join(root, "protocol.ts"), "budget: number");
+    const before = await completionBuildIdentity(root);
+    await writeFile(join(root, "protocol.ts"), "budget: number | null");
+    const nullable = await completionBuildIdentity(root);
+    expect(nullable).not.toBe(before);
+    await writeFile(
+      join(root, "deploy/cubesandbox/runtime-build.json"),
+      '{"upstreamCommit":"second"}',
+    );
+    expect(await completionBuildIdentity(root)).not.toBe(nullable);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

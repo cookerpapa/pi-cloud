@@ -1,6 +1,11 @@
 # Documentation map
 
-The latest [control recovery repair and acceptance](reports/control-recovery-repair-20261003.md)
+The latest [quota removal and streaming-upload acceptance](reports/unlimited-quotas-20261003.md)
+records 138 passing fault cases and seven real Luna Runs across elastic Workspace,
+dedicated-machine and queued-image paths. The preceding [K3s cutover](reports/k3s-migration-20261003.md)
+records native discovery, data reset and Pod/crash recovery.
+
+The [control recovery repair and acceptance](reports/control-recovery-repair-20261003.md)
 records ADR-0213's completed rollout, full-Turn cost comparison, 1,650 assertions,
 133 fault cases and real Luna/browser/process-restart results, including limits.
 

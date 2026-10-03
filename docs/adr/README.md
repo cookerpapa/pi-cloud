@@ -11,7 +11,7 @@ revision-bound reports, not as alternate production backends.
 Read the documents in this order:
 
 1. [ADR-0215](0215-unlimited-product-quotas.md) — owner-approved removal of
-   default resource/product quotas and streamed uploads; implementation in progress.
+   default resource/product quotas and streamed uploads; deployed and verified.
 
 1. [ADR-0214](0214-unified-self-hosted-k3s.md) — approved self-hosted K3s
    consolidation, stable Services and owner-approved data reset; deployed and verified.

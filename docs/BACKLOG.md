@@ -23,9 +23,9 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] Implement [ADR-0215](adr/0215-unlimited-product-quotas.md): remove self-hosted
-      resource ceilings and product quotas, retain ownership/recovery/backpressure,
-      and stream uploads beyond the old size/count limits with verified identity.
+[ADR-0215](adr/0215-unlimited-product-quotas.md) is deployed: default resource and
+product quotas were removed, uploads stream with verified identity, and matched
+Cube/Worker contracts passed [unit, fault and live acceptance](reports/unlimited-quotas-20261003.md).
 
 The [K3s cutover](reports/k3s-migration-20261003.md) is complete: old business
 state was reset as requested; real Tool/image execution survived PG/Kafka/S3
