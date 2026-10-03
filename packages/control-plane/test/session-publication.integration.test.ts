@@ -1,3 +1,4 @@
+import { installBinaryBodyParser } from "../src/binary-body-parser.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
@@ -48,11 +49,7 @@ it.skipIf(!postgres || !brokers)(
     const appendRequests: string[] = [];
     const server = Fastify({ logger: false }),
       token = "publication-fixture-" + randomUUID();
-    server.addContentTypeParser(
-      "application/octet-stream",
-      { parseAs: "buffer", bodyLimit: 4 * 1024 * 1024 },
-      (_request, body, done) => done(null, body),
-    );
+    installBinaryBodyParser(server);
     server.addHook("onRequest", (request, _reply, done) => {
       requestScope.run(request.url, done);
     });

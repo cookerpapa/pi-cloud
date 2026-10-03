@@ -1,3 +1,4 @@
+import { installBinaryBodyParser } from "./binary-body-parser.ts";
 import type { SessionPublicationService } from "./session-publication-service.ts";
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
@@ -57,11 +58,7 @@ export async function createControlPlaneApplication(
   options: ControlPlaneApplicationOptions,
 ): Promise<NestFastifyApplication> {
   const adapter = new FastifyAdapter({ logger: false });
-  adapter
-    .getInstance()
-    .addContentTypeParser("application/octet-stream", (_request, stream, done) =>
-      done(null, stream),
-    );
+  installBinaryBodyParser(adapter.getInstance());
   options.productionHttpGateway?.install(adapter.getInstance());
   options.toolProgressIngress?.install(adapter.getInstance());
   options.runActivityIngress?.install(adapter.getInstance());

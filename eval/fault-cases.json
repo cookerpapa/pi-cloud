@@ -960,6 +960,13 @@
       "file": "test/worker-memory-monitor.test.ts",
       "test": "uses current heap/RSS with a fresh off-thread limit and rejects stale samples",
       "invariant": "An unlimited cgroup cannot suppress all claims; real physical memory pressure and stale evidence still stop new-family admission."
+    },
+    {
+      "id": "upload-publication-parser-isolation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/binary-body-parser.test.ts",
+      "test": "streams only upload routes while preserving bounded internal binary publications",
+      "invariant": "Removing upload body limits cannot turn internal native publication frames into unparsed streams or remove their transport envelope."
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { RouteConfig } from "@nestjs/platform-fastify";
 import { parseUploadIdentity } from "@pi-cloud/protocol";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -669,6 +670,7 @@ export class ControlPlaneController {
     return this.controlPlaneStores.forIdentity(identity).getRun(runId);
   }
 
+  @RouteConfig({ piCloudStreamUpload: true })
   @Put("sessions/:sessionId/uploads/:uploadId")
   async uploadWorkspaceFile(
     @Req() request: FastifyRequest,

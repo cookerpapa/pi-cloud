@@ -1,3 +1,4 @@
+import { installBinaryBodyParser } from "../src/binary-body-parser.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
@@ -59,11 +60,7 @@ it.skipIf(!postgres || !brokers)(
       if (request.url.endsWith("/control")) controlRequests++;
       done();
     });
-    server.addContentTypeParser(
-      "application/octet-stream",
-      { parseAs: "buffer" },
-      (_r, body, done) => done(null, body),
-    );
+    installBinaryBodyParser(server);
     server.addHook("onSend", (request, reply, payload, done) => {
       if (loseControlAck && request.url.endsWith("/control")) {
         loseControlAck = false;
