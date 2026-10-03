@@ -1,5 +1,7 @@
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
+import { posix } from "node:path";
+import { validMachineDirectory } from "@pi-cloud/protocol";
 
 export const SETTLEMENT_GATE_COMMAND_ID = "settlement-gate" as const;
 export const PI_SETTLEMENT_GATE_CUSTOM_TYPE = "pi-cloud.settlement_gate" as const;
@@ -7,6 +9,7 @@ export const PI_SETTLEMENT_GATE_CUSTOM_TYPE = "pi-cloud.settlement_gate" as cons
 export type PiSettlementGatePolicy = Readonly<{
   command: string;
   cwd: string;
+  workingDirectory: string;
   timeoutMs: number;
   maximumFollowUps: 1;
 }>;
@@ -22,13 +25,15 @@ function normalizedCommand(value: string): string {
 function isConfiguredVerification(command: string, policy: PiSettlementGatePolicy): boolean {
   const candidate = normalizedCommand(command);
   const verification = normalizedCommand(policy.command);
-  if (policy.cwd === ".") return candidate === verification;
-  return (
-    candidate === `cd ${policy.cwd} && ${verification}` ||
-    candidate === `cd -- ${policy.cwd} && ${verification}` ||
-    candidate === `cd /workspace/${policy.cwd} && ${verification}` ||
-    candidate === `cd -- /workspace/${policy.cwd} && ${verification}`
-  );
+  if (policy.cwd === "." && candidate === verification) return true;
+  const absolute = posix.resolve(policy.workingDirectory, policy.cwd);
+  return [policy.cwd, absolute].some((path) => {
+    const quoted = `'${path.replaceAll("'", "'\\''")}'`;
+    const words = /^[A-Za-z0-9_./-]+$/.test(path) ? [path, quoted] : [quoted];
+    return words.some((word) =>
+      ["cd", "cd --"].some((cd) => candidate === `${cd} ${word} && ${verification}`),
+    );
+  });
 }
 
 export function settlementGatePolicyFromCommand(
@@ -41,6 +46,7 @@ export function settlementGatePolicyFromCommand(
   return Object.freeze({
     command: configured.command,
     cwd: configured.cwd,
+    workingDirectory: command.payload.workingDirectory,
     timeoutMs: configured.timeoutMs,
     maximumFollowUps: 1,
   });
@@ -52,6 +58,7 @@ function validatePolicy(policy: PiSettlementGatePolicy): PiSettlementGatePolicy 
     policy.command.trim().length === 0 ||
     policy.command.length > 4_096 ||
     !/^(?:\.|[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)$/u.test(policy.cwd) ||
+    !validMachineDirectory(policy.workingDirectory) ||
     !Number.isSafeInteger(policy.timeoutMs) ||
     policy.timeoutMs < 100 ||
     policy.timeoutMs > 300_000
@@ -121,7 +128,7 @@ export class PiSettlementGateController {
       return undefined;
     }
     this.#used = true;
-    const cwd = this.#policy.cwd === "." ? "/workspace" : `/workspace/${this.#policy.cwd}`;
+    const cwd = posix.resolve(this.#policy.workingDirectory, this.#policy.cwd);
     return {
       role: "custom",
       customType: PI_SETTLEMENT_GATE_CUSTOM_TYPE,

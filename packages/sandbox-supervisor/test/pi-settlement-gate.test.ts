@@ -14,6 +14,7 @@ function install() {
   return new PiSettlementGateController({
     command: "npm test",
     cwd: ".",
+    workingDirectory: "/workspace",
     timeoutMs: 120_000,
     maximumFollowUps: 1,
   });
@@ -28,6 +29,40 @@ function emit(
 }
 
 describe("Pi settlement gate", () => {
+  it.each(["/workspace/repository", "/home/user/project", "/home/user/My Project"])(
+    "uses the frozen Run directory %s for recognition and reminders",
+    (workingDirectory) => {
+      const policy = {
+        command: "npm test",
+        cwd: "frontend",
+        workingDirectory,
+        timeoutMs: 10000,
+        maximumFollowUps: 1 as const,
+      };
+      const unchecked = new PiSettlementGateController(policy);
+      emit(unchecked, "tool_execution_start", { toolCallId: "write", toolName: "write", args: {} });
+      emit(unchecked, "tool_execution_end", {
+        toolCallId: "write",
+        toolName: "write",
+        isError: false,
+      });
+      emit(unchecked, "message_end", { message: { role: "assistant", stopReason: "stop" } });
+      expect(JSON.stringify(unchecked.prepareFollowUp())).toContain(`${workingDirectory}/frontend`);
+      const checked = new PiSettlementGateController(policy);
+      emit(checked, "tool_execution_start", {
+        toolCallId: "check",
+        toolName: "bash",
+        args: { command: `cd '${workingDirectory}/frontend' && npm test` },
+      });
+      emit(checked, "tool_execution_end", {
+        toolCallId: "check",
+        toolName: "bash",
+        isError: false,
+      });
+      emit(checked, "message_end", { message: { role: "assistant", stopReason: "stop" } });
+      expect(checked.prepareFollowUp()).toBeUndefined();
+    },
+  );
   it("is absent by default and is enabled only by the named project recipe command", () => {
     const base = {
       payload: { environment: { recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE } },
@@ -36,6 +71,7 @@ describe("Pi settlement gate", () => {
 
     const configured = {
       payload: {
+        workingDirectory: "/workspace",
         environment: {
           recipe: {
             ...DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
@@ -56,6 +92,7 @@ describe("Pi settlement gate", () => {
     expect(settlementGatePolicyFromCommand(configured)).toEqual({
       command: "npm test",
       cwd: ".",
+      workingDirectory: "/workspace",
       timeoutMs: 120_000,
       maximumFollowUps: 1,
     });
