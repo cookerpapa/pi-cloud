@@ -712,7 +712,7 @@ export class PostgresSubagentJobProvider {
         await transaction
           .updateTable("runs")
           .set({
-            available_at: new Date(Date.now() + LOCAL_CHILD_CLAIM_GRACE_MS),
+            available_at: sql<Date>`clock_timestamp() + ${LOCAL_CHILD_CLAIM_GRACE_MS} * interval '1 millisecond'`,
             ready_at: sql<Date>`clock_timestamp()`,
           })
           .where("tenant_id", "=", input.tenantId)
@@ -747,7 +747,7 @@ export class PostgresSubagentJobProvider {
     failureCode: string,
     failureMessage: string,
   ): Promise<void> {
-    const now = new Date();
+    const now = sql<Date>`clock_timestamp()`;
     await this.#database.transaction().execute(async (transaction) => {
       const execution = await transaction
         .selectFrom("subagent_executions")
@@ -977,7 +977,7 @@ export class PostgresSubagentJobProvider {
         throw new PostgresSubagentJobError("not_found", "Subagent execution was not found");
       }
       if (["completed", "failed", "cancelled", "unknown"].includes(row.executionState)) return;
-      const now = new Date();
+      const now = sql<Date>`clock_timestamp()`;
       if (row.executionState === "preparing" || row.runState === "queued") {
         await transaction
           .updateTable("runs")
@@ -1085,7 +1085,11 @@ export class PostgresSubagentJobProvider {
         "state",
       ])
       .where("state", "=", "preparing")
-      .where("updated_at", "<", new Date(Date.now() - maximumAgeMs))
+      .where(
+        "updated_at",
+        "<",
+        sql<Date>`clock_timestamp() - ${maximumAgeMs} * interval '1 millisecond'`,
+      )
       .orderBy("updated_at", "asc")
       .limit(limit)
       .execute();

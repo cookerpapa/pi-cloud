@@ -116,12 +116,11 @@ export class PostgresSubagentSupervisorChannel {
       if (execution.state !== "running") {
         await transaction
           .updateTable("subagent_executions")
-          .set({ state: "running", updated_at: new Date() })
+          .set({ state: "running", updated_at: sql<Date>`clock_timestamp()` })
           .where("tenant_id", "=", input.tenantId)
           .where("id", "=", execution.id)
           .executeTakeFirstOrThrow();
       }
-      const expiresAt = expectsReply ? new Date(Date.now() + REQUEST_TIMEOUT_MS) : null;
       const row = await transaction
         .insertInto("subagent_supervisor_requests")
         .values({
@@ -133,10 +132,12 @@ export class PostgresSubagentSupervisorChannel {
           interview: input.interview ?? null,
           expects_reply: expectsReply,
           reply_message: null,
-          expires_at: expiresAt,
+          expires_at: expectsReply
+            ? sql<Date>`clock_timestamp() + ${REQUEST_TIMEOUT_MS} * interval '1 millisecond'`
+            : null,
           replied_at: null,
         })
-        .returning(["created_at as createdAt"])
+        .returning(["created_at as createdAt", "expires_at as expiresAt"])
         .executeTakeFirstOrThrow();
       return resource({
         id: requestId,
@@ -145,7 +146,7 @@ export class PostgresSubagentSupervisorChannel {
         message,
         expectsReply,
         createdAt: row.createdAt,
-        expiresAt,
+        expiresAt: row.expiresAt,
         replyMessage: null,
       });
     });
@@ -194,7 +195,7 @@ export class PostgresSubagentSupervisorChannel {
           expression("expects_reply", "=", false),
           expression.and([
             expression("reply_message", "is", null),
-            expression("expires_at", ">", sql<Date>`now()`),
+            expression("expires_at", ">", sql<Date>`clock_timestamp()`),
           ]),
         ]),
       )
@@ -229,7 +230,7 @@ export class PostgresSubagentSupervisorChannel {
       .where("execution.parent_session_id", "=", parentSessionId)
       .where("request.expects_reply", "=", true)
       .where("request.reply_message", "is", null)
-      .where("request.expires_at", ">", sql<Date>`now()`)
+      .where("request.expires_at", ">", sql<Date>`clock_timestamp()`)
       .orderBy("request.created_at", "asc")
       .limit(100)
       .execute();
@@ -285,7 +286,6 @@ export class PostgresSubagentSupervisorChannel {
         )
         .select([
           "request.reply_message as replyMessage",
-          "request.expires_at as expiresAt",
           "execution.parent_session_id as parentSessionId",
         ])
         .where("request.tenant_id", "=", input.tenantId)
@@ -300,16 +300,18 @@ export class PostgresSubagentSupervisorChannel {
           throw new Error("Supervisor request already has a different reply");
         return;
       }
-      if (request.expiresAt === null || request.expiresAt.valueOf() <= Date.now()) {
-        throw new Error("Supervisor request has expired");
-      }
-      await transaction
+      // This statement runs after the request lock. An earlier SELECT snapshot
+      // (or the replying process's clock) cannot extend the deadline.
+      const replied = await transaction
         .updateTable("subagent_supervisor_requests")
-        .set({ reply_message: message, replied_at: new Date() })
+        .set({ reply_message: message, replied_at: sql<Date>`clock_timestamp()` })
         .where("tenant_id", "=", input.tenantId)
         .where("id", "=", input.requestId)
         .where("reply_message", "is", null)
-        .executeTakeFirstOrThrow();
+        .where("expires_at", ">", sql<Date>`clock_timestamp()`)
+        .returning("id")
+        .executeTakeFirst();
+      if (!replied) throw new Error("Supervisor request has expired");
     });
     return this.request(input.tenantId, input.requestId);
   }
