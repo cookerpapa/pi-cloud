@@ -1,3 +1,4 @@
+import { ResourceLimitSchema } from "./protocol-primitives.ts";
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { OpaqueIdSchema, UtcTimestampSchema, UuidSchema } from "./protocol-primitives.ts";
@@ -25,7 +26,7 @@ export const SupervisorBootProvisionRequestSchema = Type.Object(
     sandboxId: UuidSchema,
     credentialId: UuidSchema,
     credentialSha256: Sha256Schema,
-    maxConcurrentSessions: Type.Integer({ minimum: 1, maximum: 256 }),
+    maxConcurrentSessions: ResourceLimitSchema,
     managementBaseUrl: Type.String({ minLength: 8, maxLength: 2_048 }),
   },
   { additionalProperties: false },
@@ -40,7 +41,7 @@ export const SupervisorBootProvisionResponseSchema = Type.Object(
     bootId: UuidSchema,
     sandboxId: UuidSchema,
     credentialId: UuidSchema,
-    maxConcurrentSessions: Type.Integer({ minimum: 1, maximum: 256 }),
+    maxConcurrentSessions: ResourceLimitSchema,
     expiresAt: UtcTimestampSchema,
     idempotent: Type.Boolean(),
   },
@@ -129,7 +130,7 @@ export const SupervisorManagementResponseSchema = Type.Union([
       type: Type.Literal("assignments.listed"),
       requestId: UuidSchema,
       sandboxId: UuidSchema,
-      assignments: Type.Array(SupervisorRuntimeAssignmentSchema, { maxItems: 1_024 }),
+      assignments: Type.Array(SupervisorRuntimeAssignmentSchema),
     },
     { additionalProperties: false },
   ),

@@ -6,9 +6,14 @@ Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 - Multi-round chat, model switching, hosted search and Subagents.
 - Editable queued messages, ordering, individual removal and promotion to active steer.
 - Persistent conversations, context compaction and interruption recovery.
-- Chat file uploads into Workspace; attached images reach the model directly.
+- Streaming chat file uploads into Workspace; attached images reach the model directly.
 - Elastic Workspaces or dedicated development machines, with file browsing,
   terminals and app previews. Dedicated machines also support SSH.
+
+Self-hosted defaults impose no product quotas on Session counts, concurrency,
+Subagent trees or uploaded file sizes/counts. Resource requests, physical VM
+specifications, memory-pressure admission and transport/provider limits remain;
+see [configuration](docs/CONFIGURATION.md) and [uploads](docs/CHAT_ATTACHMENTS.md).
 
 ## Architecture
 

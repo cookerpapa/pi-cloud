@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import { parseUuidPathParameter } from "@pi-cloud/protocol";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
@@ -34,10 +35,10 @@ export type ProductionControlPlaneConfig = {
   sshAdvertisedPort: number;
   sshTicketTtlMs: number;
   supervisorIdPrefix: string;
-  supervisorMaximumCapacity: number;
+  supervisorMaximumCapacity: number | null;
   subagentTreePolicy: {
-    maximumDepth: number;
-    maximumNodes: number;
+    maximumDepth: number | null;
+    maximumNodes: number | null;
   };
   supervisorManagementBaseUrlTemplates: readonly string[];
   allowInsecureInternalHttp: boolean;
@@ -50,7 +51,7 @@ export type ProductionControlPlaneConfig = {
   webSessionTtlMs: number;
   publicRegistration: {
     enabled: boolean;
-    maximumTenants: number;
+    maximumTenants: number | null;
     tenantQuotas: TenantQuotaConfiguration;
   };
   publicOriginBaseUrl: string;
@@ -77,8 +78,8 @@ export type ProductionBootstrapConfig = {
   credentialBindingId: string;
   modelProfileId: string;
   modelProfileName: string;
-  maximumProjects: number;
-  maximumSessions: number;
+  maximumProjects: number | null;
+  maximumSessions: number | null;
   sandboxDomains: readonly ProductionSandboxDomainConfig[];
 };
 
@@ -88,7 +89,7 @@ type ProductionSandboxDomainConfig = {
   state: "active" | "draining" | "disabled";
   sandboxControlBaseUrl: string;
   workspaceStorageKey: string;
-  maximumActiveSandboxes: number;
+  maximumActiveSandboxes: number | null;
 };
 
 function sandboxDomains(value: string): readonly ProductionSandboxDomainConfig[] {
@@ -135,21 +136,17 @@ function sandboxDomains(value: string): readonly ProductionSandboxDomainConfig[]
     ) {
       throw new TypeError(`Sandbox Domain ${domain.id} has an invalid Workspace storage key`);
     }
-    if (
-      typeof domain.maximumActiveSandboxes !== "number" ||
-      !Number.isSafeInteger(domain.maximumActiveSandboxes) ||
-      domain.maximumActiveSandboxes < 1 ||
-      domain.maximumActiveSandboxes > 1_000_000
-    ) {
-      throw new TypeError(`Sandbox Domain ${domain.id} has an invalid capacity`);
-    }
+    const maximumActiveSandboxes = resourceLimit(
+      domain.maximumActiveSandboxes,
+      `Sandbox Domain ${domain.id} capacity`,
+    );
     return {
       id: domain.id,
       displayName: domain.displayName,
       state: domain.state,
       sandboxControlBaseUrl: domain.sandboxControlBaseUrl,
       workspaceStorageKey: domain.workspaceStorageKey,
-      maximumActiveSandboxes: domain.maximumActiveSandboxes,
+      maximumActiveSandboxes,
     };
   });
   if (new Set(domains.map((domain) => domain.id)).size !== domains.length) {
@@ -485,16 +482,19 @@ export async function loadProductionControlPlaneConfig(
     supervisorIdPrefix: supervisorIdPrefixValue(
       required(environment, "PI_CLOUD_SUPERVISOR_ID_PREFIX"),
     ),
-    supervisorMaximumCapacity: integerValue(
-      environment,
+    supervisorMaximumCapacity: resourceLimit(
+      environment.PI_CLOUD_SUPERVISOR_MAXIMUM_CAPACITY,
       "PI_CLOUD_SUPERVISOR_MAXIMUM_CAPACITY",
-      2,
-      1,
-      256,
     ),
     subagentTreePolicy: {
-      maximumDepth: integerValue(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4, 1, 64),
-      maximumNodes: integerValue(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_NODES", 32, 1, 10_000),
+      maximumDepth: resourceLimit(
+        environment.PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH,
+        "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH",
+      ),
+      maximumNodes: resourceLimit(
+        environment.PI_CLOUD_SUBAGENT_MAXIMUM_NODES,
+        "PI_CLOUD_SUBAGENT_MAXIMUM_NODES",
+      ),
     },
     supervisorManagementBaseUrlTemplates: managementUrlTemplates(
       required(environment, "PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES"),
@@ -520,27 +520,18 @@ export async function loadProductionControlPlaneConfig(
     ),
     publicRegistration: {
       enabled: booleanValue(environment, "PI_CLOUD_PUBLIC_REGISTRATION_ENABLED"),
-      maximumTenants: integerValue(
-        environment,
+      maximumTenants: resourceLimit(
+        environment.PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS,
         "PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS",
-        1_000,
-        2,
-        1_000_000,
       ),
       tenantQuotas: {
-        maximumProjects: integerValue(
-          environment,
+        maximumProjects: resourceLimit(
+          environment.PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS,
           "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS",
-          10,
-          1,
-          1_000_000,
         ),
-        maximumSessions: integerValue(
-          environment,
+        maximumSessions: resourceLimit(
+          environment.PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS,
           "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS",
-          100,
-          1,
-          1_000_000,
         ),
       },
     },
@@ -660,19 +651,13 @@ export function loadProductionBootstrapConfig(
       environment.PI_CLOUD_MODEL_PROFILE_NAME ?? "deterministic-java-repair",
       "PI_CLOUD_MODEL_PROFILE_NAME",
     ),
-    maximumProjects: integerValue(
-      environment,
+    maximumProjects: resourceLimit(
+      environment.PI_CLOUD_TENANT_MAXIMUM_PROJECTS,
       "PI_CLOUD_TENANT_MAXIMUM_PROJECTS",
-      100,
-      1,
-      1_000_000,
     ),
-    maximumSessions: integerValue(
-      environment,
+    maximumSessions: resourceLimit(
+      environment.PI_CLOUD_TENANT_MAXIMUM_SESSIONS,
       "PI_CLOUD_TENANT_MAXIMUM_SESSIONS",
-      1_000,
-      1,
-      1_000_000,
     ),
     sandboxDomains: sandboxDomains(required(environment, "PI_CLOUD_SANDBOX_DOMAINS_JSON")),
   };

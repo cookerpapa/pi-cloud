@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
@@ -20,7 +21,7 @@ export type SandboxControlConfig = {
   terminalToken: string;
   persistentStateKey: Uint8Array;
   imageRevision: string;
-  maximumActiveSandboxes: number;
+  maximumActiveSandboxes: number | null;
   runtimeProbeConcurrency: number;
   warmTtlMs: number;
   maximumWarmWorkspaceRuntimes: number;
@@ -295,11 +296,9 @@ export async function loadSandboxControlConfig(
       "PI_CLOUD_IMAGE_REVISION",
       128,
     ),
-    maximumActiveSandboxes: integer(
+    maximumActiveSandboxes: resourceLimit(
       environment.PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES,
-      3,
-      1,
-      1_000,
+      "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES",
     ),
     runtimeProbeConcurrency: integer(environment.PI_CLOUD_RUNTIME_PROBE_CONCURRENCY, 4, 1, 64),
     warmTtlMs: integer(

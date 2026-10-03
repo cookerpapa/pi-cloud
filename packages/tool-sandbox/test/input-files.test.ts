@@ -1,10 +1,21 @@
 import { randomUUID, createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
-import { expect, it } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { prepareInputFile } from "../src/input-files.ts";
+
+const paths: string[] = [];
+afterEach(async () => {
+  for (const path of paths.splice(0)) await rm(path, { force: true });
+});
+async function source(bytes: Buffer) {
+  const sourcePath = `/tmp/pi-cloud-upload-${randomUUID()}`;
+  paths.push(sourcePath);
+  await writeFile(sourcePath, bytes);
+  return { sourcePath, byteLength: bytes.length };
+}
 
 it("normalizes uploaded images inside the fixed guest with the existing image policy", async () => {
   const input = await sharp({
@@ -15,7 +26,7 @@ it("normalizes uploaded images inside the fixed guest with the existing image po
     .toBuffer();
   const result = await prepareInputFile({
     mode: "normalize_image",
-    data: input.toString("base64"),
+    ...(await source(input)),
     mimeType: "image/jpeg",
   });
   expect(result).toHaveProperty("mimeType", "image/png");
@@ -26,7 +37,7 @@ it("normalizes uploaded images inside the fixed guest with the existing image po
   await expect(
     prepareInputFile({
       mode: "normalize_image",
-      data: Buffer.from("broken").toString("base64"),
+      ...(await source(Buffer.from("broken"))),
       mimeType: "image/png",
     }),
   ).rejects.toThrow();
@@ -44,7 +55,7 @@ it("places machine uploads under the selected working directory without overwrit
     id,
     name: "note.txt",
     directory,
-    data: bytes.toString("base64"),
+    ...(await source(bytes)),
     sha256: createHash("sha256").update(bytes).digest("hex"),
   };
   try {

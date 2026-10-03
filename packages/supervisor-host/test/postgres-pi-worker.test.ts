@@ -70,3 +70,16 @@ describe("PostgreSQL queue wake-up", () => {
     await expect(cancelled).resolves.toBeUndefined();
   });
 });
+
+it("does not impose a family or Lane quota in unlimited mode but retains memory admission", () => {
+  const active = Array.from({ length: 40 }, (_, n) => ({
+    tenantId: "tenant",
+    piSessionId: `family-${n}`,
+    runId: `run-${n}`,
+  }));
+  expect(familyAdmission(active, null, null, true, 2)).toEqual({ blockedFamilyKeys: [] });
+  expect(familyAdmission(active, null, null, false, 2)).toEqual({
+    allowedFamilyKeys: active.map((r) => `tenant:${r.piSessionId}`),
+    blockedFamilyKeys: [],
+  });
+});

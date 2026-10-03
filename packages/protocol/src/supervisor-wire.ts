@@ -1,3 +1,4 @@
+import { ResourceLimitSchema } from "./protocol-primitives.ts";
 import { MAX_AGENT_INPUT_CHARACTERS } from "./agent-input-budget.ts";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
@@ -92,9 +93,9 @@ const TurnModelSnapshotSchema = Type.Object(
 
 export const TurnBudgetSnapshotSchema = Type.Object(
   {
-    maximumModelRequests: Type.Integer({ minimum: 1, maximum: 1_024 }),
-    maximumToolCalls: Type.Integer({ minimum: 1, maximum: 10_000 }),
-    remainingToolCalls: Type.Integer({ minimum: 0, maximum: 10_000 }),
+    maximumModelRequests: ResourceLimitSchema,
+    maximumToolCalls: ResourceLimitSchema,
+    remainingToolCalls: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
     maximumToolOutputBytes: Type.Integer({ minimum: 1_024, maximum: 1_048_576 }),
     maximumRunDurationMs: Type.Integer({ minimum: 1_000, maximum: 3_600_000 }),
     compactionReserveTokens: Type.Integer({ minimum: 1_024, maximum: 1_000_000 }),
@@ -131,7 +132,7 @@ export const SupervisorRegisterMessageSchema = Type.Object(
           uniqueItems: true,
         }),
         acceptingAssignments: Type.Boolean(),
-        maxConcurrentSessions: PositiveSafeIntegerSchema,
+        maxConcurrentSessions: ResourceLimitSchema,
       },
       { additionalProperties: false },
     ),
@@ -342,8 +343,8 @@ export const SupervisorHeartbeatMessageSchema = Type.Object(
         bootId: UuidSchema,
         connectionId: UuidSchema,
         acceptingAssignments: Type.Boolean(),
-        maxConcurrentSessions: PositiveSafeIntegerSchema,
-        families: Type.Array(HeartbeatSessionSchema, { maxItems: 1_000 }),
+        maxConcurrentSessions: ResourceLimitSchema,
+        families: Type.Array(HeartbeatSessionSchema),
       },
       { additionalProperties: false },
     ),
@@ -368,7 +369,7 @@ export const SupervisorHeartbeatAckMessageSchema = Type.Object(
       {
         acknowledgedMessageId: UuidSchema,
         connectionId: UuidSchema,
-        familyLeaseRenewals: Type.Array(FamilyLeaseRenewalSchema, { maxItems: 1_000 }),
+        familyLeaseRenewals: Type.Array(FamilyLeaseRenewalSchema),
       },
       { additionalProperties: false },
     ),
@@ -466,7 +467,10 @@ export function parseSupervisorToControlMessage(value: unknown): SupervisorToCon
   }
 
   if (message.type === "supervisor.heartbeat") {
-    if (message.payload.families.length > message.payload.maxConcurrentSessions) {
+    if (
+      message.payload.maxConcurrentSessions !== null &&
+      message.payload.families.length > message.payload.maxConcurrentSessions
+    ) {
       throw new PiCloudWireProtocolError(
         "supervisor.heartbeat families exceed maxConcurrentSessions",
       );

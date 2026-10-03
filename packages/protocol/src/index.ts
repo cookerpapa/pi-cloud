@@ -1,3 +1,4 @@
+export { uploadContentDigest, parseUploadIdentity, type UploadContent } from "./upload-content.ts";
 export { toolResultIsUnknown } from "./tool-result-outcome.ts";
 export * from "./user-upload.ts";
 

@@ -74,9 +74,9 @@ spec:
             - { name: config, mountPath: /config }
             - { name: data, mountPath: /data }
       volumes:
-        - { name: tmp, emptyDir: { sizeLimit: 64Mi } }
-        - { name: config, emptyDir: { sizeLimit: 32Mi } }
-        - { name: data, emptyDir: { sizeLimit: 32Mi } }
+        - { name: tmp, emptyDir: {} }
+        - { name: config, emptyDir: {} }
+        - { name: data, emptyDir: {} }
 ---
 apiVersion: v1
 kind: Service

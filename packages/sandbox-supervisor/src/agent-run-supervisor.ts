@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import {
   parseControlToSupervisorMessage,
   parseExecutionReference,
@@ -80,8 +81,8 @@ export type RevokedSupervisorAssignments = {
 
 export type AgentRunSupervisorOptions = {
   runner: SupervisorTurnRunner;
-  maxConcurrentSessions?: number;
-  maximumLanesPerFamily?: number;
+  maxConcurrentSessions?: number | null;
+  maximumLanesPerFamily?: number | null;
   clock?: () => Date;
   monotonicNow?: () => number;
   idGenerator?: () => string;
@@ -131,13 +132,6 @@ export class AgentRunSupervisorError extends Error {
   }
 }
 
-function positiveInteger(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new TypeError(`${name} must be a positive safe integer`);
-  }
-  return value;
-}
-
 function validDate(clock: () => Date): Date {
   const value = clock();
   if (!(value instanceof Date) || Number.isNaN(value.valueOf())) {
@@ -163,8 +157,8 @@ function sameSteerIdentity(left: SteerTurnCommandMessage, right: SteerTurnComman
 
 export class AgentRunSupervisor {
   readonly #runner: SupervisorTurnRunner;
-  readonly #maxConcurrentSessions: number;
-  readonly #maximumLanesPerFamily: number;
+  readonly #maxConcurrentSessions: number | null;
+  readonly #maximumLanesPerFamily: number | null;
   readonly #clock: () => Date;
   readonly #monotonicNow: () => number;
   readonly #heartbeatStarted = new WeakMap<SupervisorHeartbeatMessage, number>();
@@ -178,13 +172,13 @@ export class AgentRunSupervisor {
     { epoch: number; leaseId: string; writerId: string; lastRunId: string }
   >();
   constructor(options: AgentRunSupervisorOptions) {
-    this.#maximumLanesPerFamily = positiveInteger(
-      options.maximumLanesPerFamily ?? 33,
+    this.#maximumLanesPerFamily = resourceLimit(
+      options.maximumLanesPerFamily,
       "maximumLanesPerFamily",
     );
     this.#runner = options.runner;
-    this.#maxConcurrentSessions = positiveInteger(
-      options.maxConcurrentSessions ?? 1,
+    this.#maxConcurrentSessions = resourceLimit(
+      options.maxConcurrentSessions,
       "maxConcurrentSessions",
     );
     this.#clock = options.clock ?? (() => new Date());
@@ -446,11 +440,13 @@ export class AgentRunSupervisor {
     if (
       current === undefined &&
       !families.includes(family) &&
+      this.#maxConcurrentSessions !== null &&
       new Set(families).size >= this.#maxConcurrentSessions
     )
       return this.#rejected(command, "capacity", "Supervisor Session capacity is full", true);
     if (
       current === undefined &&
+      this.#maximumLanesPerFamily !== null &&
       families.filter((k) => k === family).length >= this.#maximumLanesPerFamily
     )
       return this.#rejected(command, "capacity", "Supervisor family Lane capacity is full", true);

@@ -10,11 +10,14 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0215](0215-unlimited-product-quotas.md) — owner-approved removal of
+   default resource/product quotas and streamed uploads; implementation in progress.
+
 1. [ADR-0214](0214-unified-self-hosted-k3s.md) — approved self-hosted K3s
-   consolidation, stable Services and retained-data cutover; implementation in progress.
+   consolidation, stable Services and owner-approved data reset; deployed and verified.
 
 1. [ADR-0213](0213-control-recovery-and-propagation-budgets.md) — approved control
-   recovery repairs and bounded propagation/read improvements; implementation in progress.
+   recovery repairs and bounded propagation/read improvements; deployed and verified.
 
 1. [ADR-0212](0212-ordered-control-read-models.md) — deployed ordered control
    changes and bounded binding, queue and Subagent read views.

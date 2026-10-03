@@ -34,6 +34,8 @@ describe.skipIf(!endpoint)("one-Run identity cutover", () => {
     }).migrateTo("144_ready_run_admission");
     if (migrated.error) throw migrated.error;
     const tenant = await createPrivateTenant(db, {
+      // This fixture targets the historical schema before nullable quotas.
+      quotas: { maximumProjects: 100, maximumSessions: 1000 },
       slug: "cutover",
       ownerDisplayName: "Migration test",
     });

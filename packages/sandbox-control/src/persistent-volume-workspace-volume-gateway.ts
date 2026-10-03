@@ -381,14 +381,14 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
 
   async uploadFile(
     input: WorkspaceVolumeGatewayUploadInput,
-    bytes: Uint8Array,
+    chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ) {
     const identity = validatedIdentity(input);
     return this.#withVolumeLock(identity.volumeId, async () => {
       signal?.throwIfAborted();
       if (!this.#authorizeUpload) throw new Error("Workspace upload authorization is unavailable");
-      await this.#authorizeUpload(input, bytes.length);
+      await this.#authorizeUpload(input, input.byteLength);
       const directory = await this.#validatedVolume(identity);
       const target = await this.#browseTarget(directory, input.rootPath, "", true);
       const root = await this.#openBrowseTarget(target, true);
@@ -396,7 +396,8 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         return await writeWorkspaceUpload(root, {
           id: input.uploadId,
           name: input.name,
-          bytes,
+          chunks,
+          byteLength: input.byteLength,
           sha256: input.sha256,
           ...(signal ? { signal } : {}),
         });

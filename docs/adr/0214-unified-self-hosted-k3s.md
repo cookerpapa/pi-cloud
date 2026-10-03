@@ -1,6 +1,7 @@
 # ADR-0214: One K3s deployment for the self-hosted runtime
 
-Status: accepted; implementation and migration in progress (2026-10-03).
+Status: implemented and deployed (2026-10-03).
+Acceptance: [K3s cutover report](../reports/k3s-migration-20261003.md).
 
 ## Problem and acceptance
 

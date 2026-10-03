@@ -14,7 +14,7 @@ import {
 export type PublicTenantRegistrationOptions = {
   database: Kysely<Database>;
   enabled: boolean;
-  maximumTenants: number;
+  maximumTenants: number | null;
   tenantQuotas: TenantQuotaConfiguration;
   idGenerator?: () => string;
   randomSecret?: () => string;

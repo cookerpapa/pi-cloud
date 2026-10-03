@@ -102,8 +102,23 @@ try {
   );
   const worker = find("StatefulSet", "pi-cloud-pi-worker-primary-v1");
   assert.equal(worker.spec.replicas, 2);
-  assert.equal(worker.spec.template.spec.containers[0].resources.limits.memory, "2Gi");
   assert.equal(worker.spec.template.spec.hostNetwork, false);
+  const gateway = find("StatefulSet", "cli-proxy-api").spec.template.spec.containers[0];
+  assert.equal(gateway.resources.limits, undefined);
+  assert.equal(
+    gateway.env.some((e) => e.name === "GOMEMLIMIT"),
+    false,
+  );
+  for (const resource of objects.filter((o) =>
+    ["Deployment", "StatefulSet", "Job"].includes(o.kind),
+  )) {
+    for (const container of resource.spec.template.spec.containers)
+      assert.equal(
+        container.resources?.limits,
+        undefined,
+        `${resource.metadata.name} must not impose a hard resource quota`,
+      );
+  }
   const cp = find("Deployment", "pi-cloud-control-plane");
   const env = Object.fromEntries(
     cp.spec.template.spec.containers[0].env.map((x) => [x.name, x.value]),

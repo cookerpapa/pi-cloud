@@ -18,7 +18,7 @@ function cancelled() {
   );
 }
 
-/** One Broker's physical capacity, not Session scheduling or execution authority.
+/** Control Plane VM admission policy, separate from Session execution authority.
  * Warm-runtime eviction is supplied by the lifecycle owner; no PG or Cube API lives here. */
 export class SandboxAdmission {
   readonly #assigned = new Map<string, ToolSandboxAssignment>();
@@ -27,7 +27,7 @@ export class SandboxAdmission {
   #evicting: Promise<void> | undefined;
 
   constructor(
-    readonly maximum: number,
+    readonly maximum: number | null,
     readonly evictWarm: () => Promise<boolean>,
   ) {}
 
@@ -65,12 +65,12 @@ export class SandboxAdmission {
   async acquire(activationId: string, assignment: ToolSandboxAssignment, signal?: AbortSignal) {
     this.#assertOpen(signal);
     if (this.#assigned.has(activationId)) return;
-    while (this.#assigned.size >= this.maximum) {
+    while (this.maximum !== null && this.#assigned.size >= this.maximum) {
       if (!(await this.evictWarm())) break;
       this.#assertOpen(signal);
     }
     this.#assertOpen(signal);
-    if (this.#assigned.size < this.maximum) {
+    if (this.maximum === null || this.#assigned.size < this.maximum) {
       this.#assigned.set(activationId, assignment);
       return;
     }
@@ -91,7 +91,12 @@ export class SandboxAdmission {
   }
 
   release(id: string) {
-    if (!this.#assigned.delete(id) || this.#closed || this.#assigned.size >= this.maximum) return;
+    if (
+      !this.#assigned.delete(id) ||
+      this.#closed ||
+      (this.maximum !== null && this.#assigned.size >= this.maximum)
+    )
+      return;
     const waiter = this.#waiting.shift();
     if (!waiter) return;
     this.#detach(waiter);
@@ -105,7 +110,12 @@ export class SandboxAdmission {
   /** A completed Run made a VM evictable while another binding was queued. */
   offerWarm(): Promise<void> {
     return (this.#evicting ??= (async () => {
-      while (!this.#closed && this.#waiting.length && this.#assigned.size >= this.maximum)
+      while (
+        !this.#closed &&
+        this.#waiting.length &&
+        this.maximum !== null &&
+        this.#assigned.size >= this.maximum
+      )
         if (!(await this.evictWarm())) break;
     })().finally(() => {
       this.#evicting = undefined;

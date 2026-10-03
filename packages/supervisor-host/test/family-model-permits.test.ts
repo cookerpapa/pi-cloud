@@ -69,3 +69,27 @@ describe("physical-Session model permits", () => {
     gate.close();
   });
 });
+
+it("admits more than the former model/family limits when both policies are unlimited", async () => {
+  const gate = new FamilyModelPermits({ maximum: null, perFamily: null });
+  const releases = await Promise.all(Array.from({ length: 40 }, () => gate.acquire("same-family")));
+  expect(releases).toHaveLength(40);
+  for (const release of releases) release();
+  gate.close();
+  await expect(gate.acquire("next")).rejects.toThrow("closed");
+});
+
+it("keeps an explicit global limit when the family policy is unlimited", async () => {
+  const gate = new FamilyModelPermits({ maximum: 1, perFamily: null });
+  const first = await gate.acquire("one");
+  let entered = false;
+  const next = gate.acquire("one").then((release) => {
+    entered = true;
+    return release;
+  });
+  await Promise.resolve();
+  expect(entered).toBe(false);
+  first();
+  (await next)();
+  gate.close();
+});

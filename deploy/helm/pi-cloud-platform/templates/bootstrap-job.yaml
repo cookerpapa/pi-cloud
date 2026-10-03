@@ -56,8 +56,8 @@ spec:
             - { name: PI_CLOUD_CREDENTIAL_BINDING_ID, value: {{ .Values.bootstrap.credentialBindingId | quote }} }
             - { name: PI_CLOUD_DEFAULT_MODEL_PROFILE_ID, value: {{ .Values.bootstrap.defaultModelProfileId | quote }} }
             - { name: PI_CLOUD_MODEL_PROFILE_NAME, value: {{ .Values.bootstrap.modelProfileName | quote }} }
-            - { name: PI_CLOUD_TENANT_MAXIMUM_PROJECTS, value: {{ .Values.bootstrap.maximumProjects | quote }} }
-            - { name: PI_CLOUD_TENANT_MAXIMUM_SESSIONS, value: {{ .Values.bootstrap.maximumSessions | quote }} }
+            - { name: PI_CLOUD_TENANT_MAXIMUM_PROJECTS, value: {{ .Values.bootstrap.maximumProjects | default "unlimited" | quote }} }
+            - { name: PI_CLOUD_TENANT_MAXIMUM_SESSIONS, value: {{ .Values.bootstrap.maximumSessions | default "unlimited" | quote }} }
             - { name: PI_CLOUD_SANDBOX_DOMAINS_JSON, value: {{ toJson .Values.sandboxDomains | quote }} }
           securityContext:
             allowPrivilegeEscalation: false
@@ -65,7 +65,6 @@ spec:
             capabilities: { drop: [ALL] }
           resources:
             requests: { cpu: 100m, memory: 128Mi }
-            limits: { cpu: "1", memory: 512Mi }
           volumeMounts:
             # Migrations need a direct PostgreSQL session; do not run them
             # through a transaction-pooling PgBouncer endpoint.
@@ -76,5 +75,5 @@ spec:
         - name: secrets
           secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
         - name: tmp
-          emptyDir: { sizeLimit: 64Mi }
+          emptyDir: {}
 {{- end }}

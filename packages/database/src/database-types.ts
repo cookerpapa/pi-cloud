@@ -220,7 +220,7 @@ export interface SandboxDomainTable {
   sandbox_control_base_url: string;
   workspace_storage_key: string;
   assigned_workspaces: GeneratedInt8;
-  maximum_active_sandboxes: GeneratedInteger;
+  maximum_active_sandboxes: GeneratedNullable<number>;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
 }
@@ -423,10 +423,10 @@ export interface TenantRuntimePolicyTable {
   tenant_id: string;
   default_model_profile_id: string;
   enabled: GeneratedBoolean;
-  maximum_projects: GeneratedInteger;
-  maximum_sessions: GeneratedInteger;
-  maximum_model_requests_per_run: GeneratedInteger;
-  maximum_tool_calls_per_run: GeneratedInteger;
+  maximum_projects: GeneratedNullable<number>;
+  maximum_sessions: GeneratedNullable<number>;
+  maximum_model_requests_per_run: GeneratedNullable<number>;
+  maximum_tool_calls_per_run: GeneratedNullable<number>;
   maximum_tool_output_bytes: GeneratedInteger;
   maximum_run_duration_ms: GeneratedInteger;
   compaction_reserve_tokens: GeneratedInteger;
@@ -776,7 +776,7 @@ export interface SandboxTable {
   supervisor_id: string;
   boot_id: string;
   state: SandboxState;
-  max_concurrent_sessions: number;
+  max_concurrent_sessions: number | null;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
   terminated_at: NullableTimestamp;
@@ -857,7 +857,7 @@ export interface SupervisorBootCredentialTable {
 
 export interface SupervisorHostTable {
   supervisor_id: string;
-  maximum_capacity: number;
+  maximum_capacity: number | null;
   management_base_url: string;
   created_at: Timestamp;
   updated_at: Timestamp;

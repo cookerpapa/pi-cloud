@@ -124,10 +124,10 @@ describe("Supervisor host production configuration", () => {
       supervisorWebSocketUrl: "ws://control-plane:3000/internal/v1/supervisor",
       maxConcurrentSessions: 4,
       databaseMaxConnections: 7,
-      subagentMaximumDepth: 4,
-      subagentMaximumNodes: 32,
-      modelConcurrency: 4,
-      familyModelConcurrency: 4,
+      subagentMaximumDepth: null,
+      subagentMaximumNodes: null,
+      modelConcurrency: null,
+      familyModelConcurrency: null,
       databaseNotificationUrl: "postgresql://picloud:secret@postgres:5432/picloud",
       managementPort: 4100,
       managementAdvertisedBaseUrl: "http://supervisor-production-1:4100/",
@@ -194,7 +194,7 @@ describe("Supervisor host production configuration", () => {
     ).resolves.toMatchObject({ maxConcurrentSessions: 2 });
     await expect(
       loadSupervisorHostConfig({ ...environment, PI_CLOUD_SUPERVISOR_CAPACITY: "16" }),
-    ).resolves.toMatchObject({ maxConcurrentSessions: 16, databaseMaxConnections: 16 });
+    ).resolves.toMatchObject({ maxConcurrentSessions: 16, databaseMaxConnections: 4 });
     await expect(
       loadSupervisorHostConfig({
         ...environment,

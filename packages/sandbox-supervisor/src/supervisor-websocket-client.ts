@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
@@ -37,7 +38,7 @@ export type SupervisorWebSocketRegistration = {
   piVersion?: string;
   supportedProtocolVersions?: readonly number[];
   capabilities?: readonly string[];
-  maxConcurrentSessions: number;
+  maxConcurrentSessions: number | null;
 };
 
 export type SupervisorWebSocketClientOptions = {
@@ -204,7 +205,7 @@ export class SupervisorWebSocketClient {
       ),
       supportedProtocolVersions: [...(options.registration.supportedProtocolVersions ?? [1])],
       capabilities: [...(options.registration.capabilities ?? ["pi.sdk"])],
-      maxConcurrentSessions: positiveInteger(
+      maxConcurrentSessions: resourceLimit(
         options.registration.maxConcurrentSessions,
         "registration.maxConcurrentSessions",
       ),

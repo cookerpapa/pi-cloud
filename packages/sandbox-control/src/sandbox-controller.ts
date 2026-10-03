@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import type { SandboxExecutionTarget } from "./sandbox-execution.ts";
 import type { SandboxBindings } from "./sandbox-bindings.ts";
 import { PostgresQueueWake } from "@pi-cloud/database";
@@ -41,11 +42,7 @@ import type {
 } from "@pi-cloud/protocol";
 import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
 import type { ImageAttachmentStore } from "@pi-cloud/session-attachments";
-import {
-  MAX_USER_INPUT_UPLOAD_BYTES,
-  type SandboxControlRequest,
-  type SandboxControlResponse,
-} from "@pi-cloud/protocol";
+import { type SandboxControlRequest, type SandboxControlResponse } from "@pi-cloud/protocol";
 type InputImageRequest = Extract<
   SandboxControlRequest,
   { type: "tool_sandbox.prepare_input_images" }
@@ -96,7 +93,7 @@ export type SandboxControllerOptions = {
   ownerBaseUrl: string;
   stateRepository: WorkspaceRuntimeStateRepository;
   idGenerator?: () => string;
-  maximumActiveSandboxes?: number;
+  maximumActiveSandboxes?: number | null;
   runtimeProbeConcurrency?: number;
   onProbeSample?(stage: "probe" | "scheduling", durationMs: number, outcome: string): void;
   warmTtlMs?: number;
@@ -204,7 +201,6 @@ type ManagedDevelopmentEnvironment = {
 
 const DEFAULT_WARM_TTL_MS = 15 * 60_000;
 const DEFAULT_MAXIMUM_WARM_WORKSPACE_RUNTIMES = 4;
-const DEFAULT_MAXIMUM_ACTIVE_SANDBOXES = 2;
 
 function positiveInteger(value: number, name: string, maximum: number): number {
   if (!Number.isSafeInteger(value) || value < 1 || value > maximum) {
@@ -363,7 +359,7 @@ export class SandboxController {
   readonly #stateRepository: WorkspaceRuntimeStateRepository;
   readonly #serviceRegistry: SandboxHttpServiceRegistry | undefined;
   readonly #idGenerator: () => string;
-  readonly #maximumActiveSandboxes: number;
+  readonly #maximumActiveSandboxes: number | null;
   readonly #warmTtlMs: number;
   readonly #maximumWarmWorkspaceRuntimes: number;
   readonly #clock: () => number;
@@ -395,10 +391,9 @@ export class SandboxController {
     this.#stateRepository = options.stateRepository;
     this.#serviceRegistry = options.serviceRegistry;
     this.#idGenerator = options.idGenerator ?? randomUUID;
-    this.#maximumActiveSandboxes = positiveInteger(
-      options.maximumActiveSandboxes ?? DEFAULT_MAXIMUM_ACTIVE_SANDBOXES,
+    this.#maximumActiveSandboxes = resourceLimit(
+      options.maximumActiveSandboxes,
       "maximumActiveSandboxes",
-      1_000,
     );
     this.#admission = new SandboxAdmission(this.#maximumActiveSandboxes, async () => {
       const oldest = [...this.#warm.entries()].sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt)[0];
@@ -478,7 +473,7 @@ export class SandboxController {
     return this.#admission.waitingCount;
   }
 
-  get maximumActiveSandboxes(): number {
+  get maximumActiveSandboxes(): number | null {
     return this.#maximumActiveSandboxes;
   }
 
@@ -2014,7 +2009,6 @@ export class SandboxController {
           try {
             const handle = await this.#materialize(activation, combined);
             const images: InputImageResponse["images"] = [];
-            let total = 0;
             for (const source of request.images) {
               combined.throwIfAborted();
               this.#stateRepository.assertLocalOwnership();
@@ -2030,11 +2024,7 @@ export class SandboxController {
                 combined,
               );
               const decoded = Buffer.from(prepared.data, "base64");
-              if (
-                !decoded.length ||
-                decoded.toString("base64") !== prepared.data ||
-                (total += decoded.length) > MAX_USER_INPUT_UPLOAD_BYTES
-              )
+              if (!decoded.length || decoded.toString("base64") !== prepared.data)
                 throw new SandboxControlError(
                   "input_images_too_large",
                   "Prepared input images exceed their combined size limit",
@@ -2535,11 +2525,11 @@ export class SandboxController {
     return this.#provider.listWorkspaceDirectory(request);
   }
 
-  async uploadWorkspaceFile(
-    request: WorkspaceUploadRequest,
-    bytes: Uint8Array,
-    signal?: AbortSignal,
-  ) {
+  async prepareWorkspaceUpload(request: WorkspaceUploadRequest): Promise<void> {
+    await this.#authorizeUpload(request);
+  }
+
+  async #authorizeUpload(request: WorkspaceUploadRequest) {
     this.#stateRepository.assertLocalOwnership();
     if (!this.#stateRepository.authorizeWorkspaceUpload)
       throw new SandboxControlError(
@@ -2547,16 +2537,24 @@ export class SandboxController {
         "Upload authorization is unavailable",
         false,
       );
-    await this.#stateRepository.authorizeWorkspaceUpload(request, bytes.length);
-    if (request.machine) {
-      const handle = await this.#machineBrowserHandle(request);
+    await this.#stateRepository.authorizeWorkspaceUpload(request, request.byteLength);
+    return request.machine ? this.#machineBrowserHandle(request) : undefined;
+  }
+
+  async uploadWorkspaceFile(
+    request: WorkspaceUploadRequest,
+    chunks: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    const handle = await this.#authorizeUpload(request);
+    if (handle) {
       if (!this.#provider.uploadMachineWorkspaceFile)
         throw new SandboxControlError(
           "workspace_upload_unavailable",
           "Machine upload is unavailable",
           false,
         );
-      return this.#provider.uploadMachineWorkspaceFile(handle, request, bytes, signal);
+      return this.#provider.uploadMachineWorkspaceFile(handle, request, chunks, signal);
     }
     if (!this.#provider.uploadWorkspaceFile)
       throw new SandboxControlError(
@@ -2564,7 +2562,7 @@ export class SandboxController {
         "Workspace upload is unavailable",
         false,
       );
-    return this.#provider.uploadWorkspaceFile(request, bytes, signal);
+    return this.#provider.uploadWorkspaceFile(request, chunks, signal);
   }
 
   async readWorkspaceFile(

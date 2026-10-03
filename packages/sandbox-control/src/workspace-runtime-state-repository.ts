@@ -579,6 +579,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       }
       if (
         liveTerminal === undefined &&
+        domain.maximum_active_sandboxes !== null &&
         (await this.#domainReservedSandboxes(transaction)) >= domain.maximum_active_sandboxes
       )
         return { status: "capacity" };
@@ -737,10 +738,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "Workspace terminal Sandbox Domain is unavailable",
         );
       }
-      const domainReserved = await this.#domainReservedSandboxes(transaction);
-      const existingWorkspaceRuntime = activation === undefined ? 0 : 1;
-      if (domainReserved - existingWorkspaceRuntime >= domain.maximum_active_sandboxes) {
-        return { status: "capacity" };
+      if (domain.maximum_active_sandboxes !== null) {
+        const domainReserved = await this.#domainReservedSandboxes(transaction);
+        const existingWorkspaceRuntime = activation === undefined ? 0 : 1;
+        if (domainReserved - existingWorkspaceRuntime >= domain.maximum_active_sandboxes)
+          return { status: "capacity" };
       }
       const currentFence = Math.max(
         Number(session.lease_epoch),
@@ -883,8 +885,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "Development environment Sandbox Domain is unavailable",
         );
       }
-      const domainReserved = await this.#domainReservedSandboxes(transaction);
-      if (domainReserved >= domain.maximum_active_sandboxes) return { status: "capacity" };
+      if (
+        domain.maximum_active_sandboxes !== null &&
+        (await this.#domainReservedSandboxes(transaction)) >= domain.maximum_active_sandboxes
+      )
+        return { status: "capacity" };
       await transaction
         .updateTable("development_environments")
         .set({

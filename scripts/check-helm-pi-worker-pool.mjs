@@ -48,11 +48,11 @@ assert.equal(
   environment.DATABASE_NOTIFICATION_URL_FILE,
   "/run/pi-cloud-secrets/database-notification-url",
 );
-assert.equal(environment.PI_CLOUD_SUPERVISOR_CAPACITY, "4");
+assert.equal(environment.PI_CLOUD_SUPERVISOR_CAPACITY, "unlimited");
 assert.equal(environment.PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS, "8");
 assert.equal(environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT, undefined);
-assert.equal(environment.PI_CLOUD_WORKER_MODEL_CONCURRENCY, "4");
-assert.equal(environment.PI_CLOUD_SESSION_MODEL_CONCURRENCY, "4");
+assert.equal(environment.PI_CLOUD_WORKER_MODEL_CONCURRENCY, "unlimited");
+assert.equal(environment.PI_CLOUD_SESSION_MODEL_CONCURRENCY, "unlimited");
 
 const customWorker = parseAllDocuments(
   run([

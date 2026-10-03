@@ -14,7 +14,6 @@ import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import {
   MAX_TOOL_COMMAND_BYTES,
   MAX_TOOL_MUTATION_FILE_BYTES,
-  MAX_IMAGE_INPUT_BYTES,
   type NativeToolEnd,
   type NativeToolUpdate,
   type ToolSandboxOperationRequest,
@@ -78,10 +77,7 @@ export async function executeNativeTool(
       };
       env.readBinaryFile = async (target) => {
         try {
-          return ok(
-            (await readWorkspaceFile(await canonicalPath(target), "/", MAX_IMAGE_INPUT_BYTES))
-              .content,
-          );
+          return ok((await readWorkspaceFile(await canonicalPath(target), "/", null)).content);
         } catch (error) {
           return err(fileError(error, target));
         }

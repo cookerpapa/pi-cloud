@@ -2283,7 +2283,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               className="product-attach-button"
               title={t("upload.limit")}
               aria-label={t("upload.add")}
-              disabled={!canMutate || !canQueue || operation !== null || uploads.items.length >= 4}
+              disabled={!canMutate || !canQueue || operation !== null}
               onClick={() => filePickerRef.current?.click()}
             >
               ＋

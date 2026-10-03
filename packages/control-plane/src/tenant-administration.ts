@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import type { Database, TenantApiCredentialRole } from "@pi-cloud/database";
 import { randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
@@ -11,8 +12,8 @@ import type { ProviderModelSelection } from "@pi-cloud/protocol";
 import { supportedModel } from "./model-profile-catalog.ts";
 
 export type TenantQuotaConfiguration = Readonly<{
-  maximumProjects: number;
-  maximumSessions: number;
+  maximumProjects: number | null;
+  maximumSessions: number | null;
 }>;
 
 export type PrivateTenantInitialModel = ProviderModelSelection;
@@ -22,7 +23,7 @@ export type CreatePrivateTenantOptions = {
   ownerDisplayName: string;
   ownerCredentialLabel?: string;
   quotas?: Partial<TenantQuotaConfiguration>;
-  maximumTenants?: number;
+  maximumTenants?: number | null;
   idGenerator?: () => string;
   randomSecret?: () => string;
   clock?: () => Date;
@@ -60,11 +61,6 @@ export type TenantCredentialMetadata = Readonly<{
   lastUsedAt: string | null;
 }>;
 
-const DEFAULT_QUOTAS: TenantQuotaConfiguration = {
-  maximumProjects: 100,
-  maximumSessions: 1_000,
-};
-
 export class TenantAdministrationError extends Error {
   readonly code:
     "tenant_conflict" | "tenant_capacity_reached" | "tenant_not_found" | "user_not_found";
@@ -101,27 +97,12 @@ function boundedText(value: string, name: string, maximum: number): string {
   return value;
 }
 
-function positiveInteger(value: number, name: string, maximum: number): number {
-  if (!Number.isSafeInteger(value) || value < 1 || value > maximum) {
-    throw new TypeError(`${name} must be an integer from 1 to ${String(maximum)}`);
-  }
-  return value;
-}
-
 function quotaConfiguration(
   value: Partial<TenantQuotaConfiguration> = {},
 ): TenantQuotaConfiguration {
   const quotas = {
-    maximumProjects: positiveInteger(
-      value.maximumProjects ?? DEFAULT_QUOTAS.maximumProjects,
-      "maximumProjects",
-      1_000_000,
-    ),
-    maximumSessions: positiveInteger(
-      value.maximumSessions ?? DEFAULT_QUOTAS.maximumSessions,
-      "maximumSessions",
-      1_000_000,
-    ),
+    maximumProjects: resourceLimit(value.maximumProjects, "maximumProjects"),
+    maximumSessions: resourceLimit(value.maximumSessions, "maximumSessions"),
   };
   return quotas;
 }
@@ -163,10 +144,7 @@ export async function createPrivateTenant(
     128,
   );
   const quotas = quotaConfiguration(options.quotas);
-  const maximumTenants =
-    options.maximumTenants === undefined
-      ? undefined
-      : positiveInteger(options.maximumTenants, "maximumTenants", 1_000_000);
+  const maximumTenants = resourceLimit(options.maximumTenants, "maximumTenants");
   const idGenerator = options.idGenerator ?? randomUUID;
   const tenantId = validUuid(idGenerator(), "generated tenantId");
   const ownerUserId = validUuid(idGenerator(), "generated ownerUserId");
@@ -195,7 +173,7 @@ export async function createPrivateTenant(
 
   try {
     await database.transaction().execute(async (transaction) => {
-      if (maximumTenants !== undefined) {
+      if (maximumTenants !== null) {
         // A new smaller UUID can replace a row-based admission anchor. Serialize
         // only tenant writes; normal tenant reads and Agent execution stay concurrent.
         await sql`lock table tenants in share row exclusive mode`.execute(transaction);

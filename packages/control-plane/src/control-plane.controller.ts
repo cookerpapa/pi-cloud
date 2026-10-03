@@ -1,3 +1,4 @@
+import { parseUploadIdentity } from "@pi-cloud/protocol";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Agent, fetch as internalFetch } from "undici";
@@ -680,10 +681,24 @@ export class ControlPlaneController {
     const identity = this.tenantRequestContext.requireMutation(request);
     const sessionId = parseUuidPathParameter(sessionValue, "sessionId"),
       uploadId = parseUuidPathParameter(uploadValue, "uploadId");
-    if (typeof name !== "string" || !Buffer.isBuffer(body))
+    if (typeof name !== "string" || !(body instanceof Readable))
       throw new ControlPlaneApiValidationError(
         "Upload must contain a filename and binary file body",
       );
+    let content;
+    try {
+      content = {
+        ...parseUploadIdentity(
+          request.headers["content-length"],
+          request.headers["content-digest"],
+        ),
+        chunks: body,
+      };
+    } catch (error) {
+      throw new ControlPlaneApiValidationError(
+        error instanceof Error ? error.message : "Invalid upload identity",
+      );
+    }
     const abort = new AbortController();
     const closed = () => {
       if (!reply.raw.writableEnded) abort.abort(new Error("Upload caller disconnected"));
@@ -699,7 +714,7 @@ export class ControlPlaneController {
             sessionId,
             uploadId,
             name,
-            body,
+            content,
             abort.signal,
           ),
         );

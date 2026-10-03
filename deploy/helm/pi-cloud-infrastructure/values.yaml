@@ -13,11 +13,12 @@ kafka:
   image: apache/kafka@sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75
   clusterId: MkU3OEVBNTcwNTJENDM2Qk
   size: 32Gi
-  heap: -Xms512m -Xmx1g
 sessionImages:
   image: chrislusf/seaweedfs:4.47_full@sha256:1ed51b50d7586b42761b507b6ee3fc7f4b305ce2fca7590c438bb71c9c0813c9
   size: 64Gi
 provider:
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
   uid: 1000
   gid: 1000
   image: pi-cloud/cli-proxy-api:production

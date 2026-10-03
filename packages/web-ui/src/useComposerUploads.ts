@@ -1,11 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  MAX_USER_INPUT_UPLOAD_BYTES,
-  MAX_USER_UPLOAD_BYTES,
-  MAX_USER_UPLOADS,
-  uploadFileName,
-  type UserUpload,
-} from "@pi-cloud/protocol";
+import { uploadFileName, type UserUpload } from "@pi-cloud/protocol";
 import type { PiCloudApi } from "./api.ts";
 
 export type ComposerUpload = {
@@ -50,14 +44,8 @@ export function useComposerUploads(
     try {
       for (const item of next) {
         uploadFileName(item.name);
-        if (item.size < 1 || item.size > MAX_USER_UPLOAD_BYTES) throw new Error();
+        if (item.size < 1) throw new Error();
       }
-      if (
-        current.current.length + next.length > MAX_USER_UPLOADS ||
-        [...current.current, ...next].reduce((sum, item) => sum + item.size, 0) >
-          MAX_USER_INPUT_UPLOAD_BYTES
-      )
-        throw new Error();
       replace([...current.current, ...next]);
       setError(false);
     } catch {
@@ -66,16 +54,6 @@ export function useComposerUploads(
   }
   function restore(uploads: UserUpload[]) {
     const next = uploads.filter((upload) => !current.current.some((item) => item.id === upload.id));
-    if (
-      current.current.length + next.length > MAX_USER_UPLOADS ||
-      [...current.current, ...next.map((upload) => ({ size: upload.byteLength }))].reduce(
-        (sum, item) => sum + item.size,
-        0,
-      ) > MAX_USER_INPUT_UPLOAD_BYTES
-    ) {
-      setError(true);
-      return false;
-    }
     replace([
       ...current.current,
       ...next.map((upload): ComposerUpload => ({

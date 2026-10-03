@@ -26,6 +26,8 @@ it.skipIf(!endpoint)(
       }).migrateTo("155_remove_unused_subagent_result_pointer");
       if (migrated.error) throw migrated.error;
       const tenant = await createPrivateTenant(db, {
+        // This fixture targets the historical schema before nullable quotas.
+        quotas: { maximumProjects: 100, maximumSessions: 1000 },
         slug: "delete-cutover",
         ownerDisplayName: "Cutover",
       });

@@ -82,14 +82,12 @@ spec:
             requests:
               cpu: 25m
               memory: 48Mi
-            limits:
-              cpu: 500m
-              memory: 192Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
-              drop: [ALL]
+              drop:
+                - ALL
           volumeMounts:
             - name: config-token
               mountPath: /run/pi-cloud-secrets/config-token
@@ -101,8 +99,7 @@ spec:
         - name: config-token
           secret:
             secretName: pi-cloud-cube-egress-config
-            defaultMode: 0440
+            defaultMode: 440
         - name: tmp
           emptyDir:
             medium: Memory
-            sizeLimit: 16Mi

@@ -43,7 +43,7 @@ spec:
           readinessProbe:
             { exec: { command: [pg_isready, -U, pi_cloud, -d, pi_cloud] }, periodSeconds: 5 }
           # A transient database stall must not create an automatic crash loop.
-          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: "4", memory: 768Mi } }
+          resources: { requests: { cpu: 100m, memory: 256Mi } }
           volumeMounts:
             - { name: data, mountPath: /var/lib/postgresql/data }
             - { name: secrets, mountPath: /run/secrets, readOnly: true }
@@ -55,4 +55,4 @@ spec:
             secretName: {{ .Values.existingSecret }}
             defaultMode: 256
             items: [{ key: postgres-password, path: postgres-password }]
-        - { name: shm, emptyDir: { medium: Memory, sizeLimit: 128Mi } }
+        - { name: shm, emptyDir: { medium: Memory} }

@@ -164,9 +164,7 @@
         "apiCredentialId",
         "credentialBindingId",
         "defaultModelProfileId",
-        "modelProfileName",
-        "maximumProjects",
-        "maximumSessions"
+        "modelProfileName"
       ],
       "properties": {
         "enabled": {
@@ -194,14 +192,12 @@
           "$ref": "#/$defs/boundedText"
         },
         "maximumProjects": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000000
+          "type": ["integer", "null"],
+          "minimum": 1
         },
         "maximumSessions": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000000
+          "type": ["integer", "null"],
+          "minimum": 1
         }
       }
     },
@@ -450,11 +446,9 @@
         "workspaceDeletionReaperIntervalMs",
         "workspaceDeletionReaperBatchSize",
         "volumeGatewayRequestTimeoutMs",
-        "maximumActivePerReplica",
         "maximumWarmWorkspaceRuntimesPerReplica",
         "warmTtlMs",
         "workspace",
-        "state",
         "cube",
         "volumeGatewayResources",
         "volumeGatewayUrl"
@@ -499,9 +493,8 @@
           "maximum": 3600000
         },
         "maximumActivePerReplica": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4096
+          "type": ["integer", "null"],
+          "minimum": 1
         },
         "maximumActiveCommands": {
           "type": "integer",
@@ -525,16 +518,6 @@
           "properties": {
             "existingClaim": {
               "$ref": "#/$defs/dnsLabel"
-            }
-          }
-        },
-        "state": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["size"],
-          "properties": {
-            "size": {
-              "$ref": "#/$defs/quantity"
             }
           }
         },
@@ -680,14 +663,7 @@
     "sandboxDomain": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "displayName",
-        "state",
-        "sandboxControlBaseUrl",
-        "workspaceStorageKey",
-        "maximumActiveSandboxes"
-      ],
+      "required": ["id", "displayName", "state", "sandboxControlBaseUrl", "workspaceStorageKey"],
       "properties": {
         "id": {
           "type": "string",
@@ -709,9 +685,8 @@
           "$ref": "#/$defs/path"
         },
         "maximumActiveSandboxes": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000000
+          "type": ["integer", "null"],
+          "minimum": 1
         }
       }
     },
@@ -791,7 +766,7 @@
     "resources": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requests", "limits"],
+      "required": ["requests"],
       "properties": {
         "requests": {
           "type": "object",
@@ -955,25 +930,22 @@
     "publicRegistration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "maximumTenants", "maximumProjects", "maximumSessions"],
+      "required": ["enabled"],
       "properties": {
         "enabled": {
           "type": "boolean"
         },
         "maximumTenants": {
-          "type": "integer",
-          "minimum": 2,
-          "maximum": 1000000
+          "type": ["integer", "null"],
+          "minimum": 1
         },
         "maximumProjects": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000000
+          "type": ["integer", "null"],
+          "minimum": 1
         },
         "maximumSessions": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000000
+          "type": ["integer", "null"],
+          "minimum": 1
         }
       }
     }

@@ -74,7 +74,7 @@ spec:
         - name: platform-secrets
           secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
         - name: tmp
-          emptyDir: { sizeLimit: 32Mi }
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

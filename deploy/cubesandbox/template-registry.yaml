@@ -96,9 +96,6 @@ spec:
             requests:
               cpu: 50m
               memory: 64Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
           volumeMounts:
             - name: storage
               mountPath: /var/lib/registry
@@ -114,10 +111,9 @@ spec:
         - name: tls
           secret:
             secretName: pi-cloud-cube-template-registry-tls
-            defaultMode: 0440
+            defaultMode: 440
         - name: tmp
-          emptyDir:
-            sizeLimit: 32Mi
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

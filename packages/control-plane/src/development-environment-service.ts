@@ -396,24 +396,26 @@ export class DevelopmentEnvironmentService {
       const workspaceId = this.#id();
       const environmentVersionId = this.#id();
       const selectedProfile = profile(request.profileKey);
-      const projectCountRow = await transaction
-        .selectFrom("projects")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", identity.tenantId)
-        .where("deleted_at", "is", null)
-        .executeTakeFirstOrThrow();
-      const projectCount = Number(projectCountRow.count);
-      if (!Number.isSafeInteger(projectCount) || projectCount < 0) {
-        throw new ControlPlaneStoreError(
-          "control_plane_misconfigured",
-          "Tenant project count is invalid",
-        );
-      }
-      if (projectCount >= policy.maximum_projects) {
-        throw new ControlPlaneStoreError(
-          "tenant_quota_exceeded",
-          "Tenant project quota has been reached",
-        );
+      if (policy.maximum_projects !== null) {
+        const projectCountRow = await transaction
+          .selectFrom("projects")
+          .select(({ fn }) => fn.countAll<string>().as("count"))
+          .where("tenant_id", "=", identity.tenantId)
+          .where("deleted_at", "is", null)
+          .executeTakeFirstOrThrow();
+        const projectCount = Number(projectCountRow.count);
+        if (!Number.isSafeInteger(projectCount) || projectCount < 0) {
+          throw new ControlPlaneStoreError(
+            "control_plane_misconfigured",
+            "Tenant project count is invalid",
+          );
+        }
+        if (projectCount >= policy.maximum_projects) {
+          throw new ControlPlaneStoreError(
+            "tenant_quota_exceeded",
+            "Tenant project quota has been reached",
+          );
+        }
       }
       const domain = await transaction
         .selectFrom("sandbox_domains")

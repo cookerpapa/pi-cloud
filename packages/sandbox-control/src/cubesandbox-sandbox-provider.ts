@@ -6,7 +6,6 @@ import {
   isExpectedDefaultToolchain,
   MAX_TOOL_EXECUTION_TIMEOUT_MS,
   MAX_IMAGE_GUEST_RESPONSE_BYTES,
-  MAX_USER_UPLOAD_BYTES,
   validGuestDirectoryName,
   parseEnvironmentToolchainReport,
   parseExecutionReference,
@@ -656,15 +655,13 @@ export class CubeSandboxProvider implements SandboxProvider {
       runAsToolUser: boolean;
       timeoutMs: number;
       maximumOutputBytes?: number;
+      sourcePath?: string;
       signal?: AbortSignal;
     }>,
   ): Promise<unknown> {
     const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
     const bytes = Buffer.from(JSON.stringify(input), "utf8");
-    const inputLimit =
-      options.program === "input"
-        ? Math.ceil(MAX_USER_UPLOAD_BYTES / 3) * 4 + 8192
-        : 16 * 1024 * 1024;
+    const inputLimit = options.program === "input" ? 8192 : 16 * 1024 * 1024;
     if (bytes.byteLength < 2 || bytes.byteLength > inputLimit) {
       throw new SandboxControlError(
         "cubesandbox_guest_request_invalid",
@@ -689,12 +686,15 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
+    if (options.sourcePath && !/^\/tmp\/pi-cloud-upload-[0-9a-f-]{36}$/.test(options.sourcePath))
+      throw new Error("Invalid guest upload path");
+    const paths = [path, ...(options.sourcePath ? [options.sourcePath] : [])].join(" ");
     const prefix = options.runAsToolUser
       ? "/usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs "
       : "";
     const prepareInput = options.runAsToolUser
-      ? `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && `
-      : `/bin/chmod 0400 ${path} && `;
+      ? `/bin/chown 1000:1000 ${paths} && /bin/chmod 0400 ${paths} && `
+      : `/bin/chmod 0400 ${paths} && `;
     options.signal?.throwIfAborted();
     await this.#client.writeGuestFile(instance, path, bytes);
     if (options.signal?.aborted) {
@@ -719,7 +719,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       throw options.signal.reason;
     }
     const result = await this.#client.runCommand(instance, {
-      command: `trap '/bin/rm -f -- ${path}' EXIT; ${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
+      command: `trap '/bin/rm -f -- ${paths}' EXIT; ${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
       cwd: "/",
       user: "root",
       timeoutMs: options.timeoutMs,
@@ -1643,6 +1643,43 @@ export class CubeSandboxProvider implements SandboxProvider {
     });
   }
 
+  async #withGuestUpload<T>(
+    instance: CubeSandboxInstance,
+    chunks: AsyncIterable<Uint8Array>,
+    byteLength: number,
+    signal: AbortSignal | undefined,
+    use: (sourcePath: string) => Promise<T>,
+  ): Promise<T> {
+    signal?.throwIfAborted();
+    const path = `/tmp/pi-cloud-upload-${randomUUID()}`;
+    let failure: unknown;
+    try {
+      await this.#client.writeGuestFileStream(instance, path, chunks, byteLength, signal);
+      signal?.throwIfAborted();
+      return await use(path);
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      // A partial transfer may never start the guest helper/EXIT trap.
+      try {
+        const cleanup = await this.#client.runCommand(instance, {
+          command: `/bin/rm -f -- ${path}`,
+          cwd: "/",
+          user: "root",
+          timeoutMs: 5000,
+          maximumOutputBytes: 1024,
+        });
+        if (cleanup.exitCode !== 0)
+          throw new Error(`Guest upload cleanup exited with code ${cleanup.exitCode}`);
+      } catch (cleanupError) {
+        if (failure !== undefined)
+          throw new AggregateError([failure, cleanupError], "Guest upload and cleanup failed");
+        throw cleanupError;
+      }
+    }
+  }
+
   async prepareInputImage(
     handle: SandboxHandle,
     bytes: Uint8Array,
@@ -1651,16 +1688,26 @@ export class CubeSandboxProvider implements SandboxProvider {
   ) {
     const activation = this.#dataOwned(handle);
     const envelope = record(
-      await this.#guestJson(
+      await this.#withGuestUpload(
         activation.instance,
-        { mode: "normalize_image", data: Buffer.from(bytes).toString("base64"), mimeType },
-        {
-          program: "input",
-          runAsToolUser: true,
-          timeoutMs: 30_000,
-          maximumOutputBytes: MAX_IMAGE_GUEST_RESPONSE_BYTES,
-          ...(signal ? { signal } : {}),
-        },
+        (async function* () {
+          yield bytes;
+        })(),
+        bytes.byteLength,
+        signal,
+        (sourcePath) =>
+          this.#guestJson(
+            activation.instance,
+            { mode: "normalize_image", sourcePath, byteLength: bytes.byteLength, mimeType },
+            {
+              program: "input",
+              sourcePath,
+              runAsToolUser: true,
+              timeoutMs: 30_000,
+              maximumOutputBytes: MAX_IMAGE_GUEST_RESPONSE_BYTES,
+              ...(signal ? { signal } : {}),
+            },
+          ),
       ),
       "Input image result",
     );
@@ -1689,22 +1736,36 @@ export class CubeSandboxProvider implements SandboxProvider {
   async uploadMachineWorkspaceFile(
     handle: SandboxHandle,
     request: WorkspaceUploadRequest,
-    bytes: Uint8Array,
+    chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ) {
     const activation = this.#dataOwned(handle);
     const envelope = record(
-      await this.#guestJson(
+      await this.#withGuestUpload(
         activation.instance,
-        {
-          mode: "upload_file",
-          directory: request.machine!.directory,
-          id: request.uploadId,
-          name: request.name,
-          sha256: request.sha256,
-          data: Buffer.from(bytes).toString("base64"),
-        },
-        { program: "input", runAsToolUser: true, timeoutMs: 30_000, ...(signal ? { signal } : {}) },
+        chunks,
+        request.byteLength,
+        signal,
+        (sourcePath) =>
+          this.#guestJson(
+            activation.instance,
+            {
+              mode: "upload_file",
+              directory: request.machine!.directory,
+              id: request.uploadId,
+              name: request.name,
+              sha256: request.sha256,
+              sourcePath,
+              byteLength: request.byteLength,
+            },
+            {
+              program: "input",
+              sourcePath,
+              runAsToolUser: true,
+              timeoutMs: 300_000,
+              ...(signal ? { signal } : {}),
+            },
+          ),
       ),
       "Upload result",
     );
@@ -1716,14 +1777,14 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     const receipt =
       envelope.result as import("./workspace-volume-gateway-contract.ts").WorkspaceUploadReceipt;
-    if (receipt.sha256 !== request.sha256 || receipt.byteLength !== bytes.length)
+    if (receipt.sha256 !== request.sha256 || receipt.byteLength !== request.byteLength)
       throw new Error("Upload receipt changed identity");
     return receipt;
   }
 
   async uploadWorkspaceFile(
     request: WorkspaceUploadRequest,
-    bytes: Uint8Array,
+    chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ) {
     if (!this.#workspaceVolumeGateway.uploadFile)
@@ -1741,9 +1802,10 @@ export class CubeSandboxProvider implements SandboxProvider {
         uploadId: request.uploadId,
         name: request.name,
         sha256: request.sha256,
+        byteLength: request.byteLength,
         claimToken: request.claimToken,
       },
-      bytes,
+      chunks,
       signal,
     );
   }

@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import {
   S3Client,
   PutObjectCommand,
@@ -53,6 +54,29 @@ export class S3ImageBlobStore implements ImageBlobStore {
       }),
       { abortSignal: signal },
     );
+  }
+  async putStream(
+    key: string,
+    chunks: AsyncIterable<Uint8Array>,
+    byteLength: number,
+    mimeType: string,
+    signal: AbortSignal,
+  ) {
+    const body = Readable.from(chunks, { objectMode: false, highWaterMark: 65536 });
+    try {
+      await this.#client.send(
+        new PutObjectCommand({
+          Bucket: this.options.bucket,
+          Key: key,
+          Body: body,
+          ContentType: mimeType,
+          ContentLength: byteLength,
+        }),
+        { abortSignal: signal },
+      );
+    } finally {
+      body.destroy();
+    }
   }
   async get(key: string, maximumBytes: number, signal: AbortSignal) {
     const result = await this.#client.send(

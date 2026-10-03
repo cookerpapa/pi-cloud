@@ -663,7 +663,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               toolRuntimeFailure ??= new PiTurnError(failure.code, failure.message, false);
               await stepWorldState.recordUnavailable();
             },
-            remainingToolCalls: command.payload.budgets?.remainingToolCalls ?? 128,
+            remainingToolCalls: command.payload.budgets?.remainingToolCalls ?? null,
             maximumToolOutputBytes: command.payload.budgets?.maximumToolOutputBytes ?? 65_536,
             workingDirectory: command.payload.workingDirectory,
             ...(downstreamTrace === undefined

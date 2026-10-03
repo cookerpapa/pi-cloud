@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import { createHash, randomUUID } from "node:crypto";
 import { posix } from "node:path";
 import type {
@@ -50,8 +51,8 @@ export type CloudSubagentJobResult = CloudSubagentJobHandle &
   }>;
 
 export type CloudSubagentTreePolicy = Readonly<{
-  maximumDepth: number;
-  maximumNodes: number;
+  maximumDepth: number | null;
+  maximumNodes: number | null;
 }>;
 
 export type CloudSubagentTreeContext = Readonly<{
@@ -64,8 +65,8 @@ export type CloudSubagentTreeContext = Readonly<{
 }>;
 
 export const DEFAULT_CLOUD_SUBAGENT_TREE_POLICY: CloudSubagentTreePolicy = Object.freeze({
-  maximumDepth: 4,
-  maximumNodes: 32,
+  maximumDepth: null,
+  maximumNodes: null,
 });
 
 export class PostgresSubagentJobError extends Error {
@@ -222,11 +223,8 @@ export class PostgresSubagentJobProvider {
     this.#id = options.idGenerator ?? randomUUID;
     this.#validateDirectory = options.validateDirectory;
     const treePolicy = options.treePolicy ?? DEFAULT_CLOUD_SUBAGENT_TREE_POLICY;
-    for (const [name, value] of Object.entries(treePolicy)) {
-      if (!Number.isSafeInteger(value) || value < 1 || value > 10_000) {
-        throw new TypeError(`Subagent tree policy ${name} is invalid`);
-      }
-    }
+    for (const [name, value] of Object.entries(treePolicy))
+      resourceLimit(value, `Subagent ${name}`);
     this.#treePolicy = { ...treePolicy };
   }
 
@@ -399,7 +397,10 @@ export class PostgresSubagentJobProvider {
         parentExecutionId: parentExecution?.id ?? null,
         depth: (parentExecution?.depth ?? 0) + 1,
       };
-      if (treeContext.depth > this.#treePolicy.maximumDepth) {
+      if (
+        this.#treePolicy.maximumDepth !== null &&
+        treeContext.depth > this.#treePolicy.maximumDepth
+      ) {
         throw new PostgresSubagentJobError(
           "subagent_tree_depth_exhausted",
           `Subagent tree depth limit ${String(this.#treePolicy.maximumDepth)} was reached`,
@@ -420,36 +421,39 @@ export class PostgresSubagentJobProvider {
           );
         }
       }
-      const treeNodes = await transaction
-        .selectFrom("subagent_executions")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", input.tenantId)
-        .where("root_run_id", "=", treeContext.rootRunId)
-        .executeTakeFirstOrThrow();
-      if (Number(treeNodes.count) >= this.#treePolicy.maximumNodes) {
-        throw new PostgresSubagentJobError(
-          "subagent_tree_node_budget_exhausted",
-          `Subagent tree node limit ${String(this.#treePolicy.maximumNodes)} was reached`,
-        );
+      if (this.#treePolicy.maximumNodes !== null) {
+        const treeNodes = await transaction
+          .selectFrom("subagent_executions")
+          .select(({ fn }) => fn.countAll<string>().as("count"))
+          .where("tenant_id", "=", input.tenantId)
+          .where("root_run_id", "=", treeContext.rootRunId)
+          .executeTakeFirstOrThrow();
+        if (Number(treeNodes.count) >= this.#treePolicy.maximumNodes) {
+          throw new PostgresSubagentJobError(
+            "subagent_tree_node_budget_exhausted",
+            `Subagent tree node limit ${String(this.#treePolicy.maximumNodes)} was reached`,
+          );
+        }
       }
-
       const policy = await transaction
         .selectFrom("tenant_runtime_policies")
         .select("maximum_sessions")
         .where("tenant_id", "=", input.tenantId)
         .forUpdate()
         .executeTakeFirstOrThrow();
-      const sessionCount = await transaction
-        .selectFrom("sessions")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", input.tenantId)
-        .where("pruned_at", "is", null)
-        .executeTakeFirstOrThrow();
-      if (Number(sessionCount.count) >= policy.maximum_sessions) {
-        throw new PostgresSubagentJobError(
-          "tenant_session_quota",
-          "Tenant Session quota does not have capacity for a Subagent",
-        );
+      if (policy.maximum_sessions !== null) {
+        const sessionCount = await transaction
+          .selectFrom("sessions")
+          .select(({ fn }) => fn.countAll<string>().as("count"))
+          .where("tenant_id", "=", input.tenantId)
+          .where("pruned_at", "is", null)
+          .executeTakeFirstOrThrow();
+        if (Number(sessionCount.count) >= policy.maximum_sessions) {
+          throw new PostgresSubagentJobError(
+            "tenant_session_quota",
+            "Tenant Session quota does not have capacity for a Subagent",
+          );
+        }
       }
 
       const executionId = this.#id();
@@ -552,7 +556,8 @@ export class PostgresSubagentJobProvider {
           environment_version_id: parent.environmentVersionId,
           agent_system_prompt: childSystemPrompt(
             input.systemPrompt,
-            treeContext.depth < this.#treePolicy.maximumDepth,
+            this.#treePolicy.maximumDepth === null ||
+              treeContext.depth < this.#treePolicy.maximumDepth,
           ),
           tool_capability_snapshot: sql<unknown[]>`${JSON.stringify(tools)}::jsonb`,
           conversation_base_seq: 0,
@@ -888,12 +893,15 @@ export class PostgresSubagentJobProvider {
         "Subagent Run is missing its durable tree identity",
       );
     }
-    const nodeCount = await this.#database
-      .selectFrom("subagent_executions")
-      .select(({ fn }) => fn.countAll<string>().as("count"))
-      .where("tenant_id", "=", tenantId)
-      .where("root_run_id", "=", row.rootRunId)
-      .executeTakeFirstOrThrow();
+    const nodeCount =
+      this.#treePolicy.maximumNodes === null
+        ? undefined
+        : await this.#database
+            .selectFrom("subagent_executions")
+            .select(({ fn }) => fn.countAll<string>().as("count"))
+            .where("tenant_id", "=", tenantId)
+            .where("root_run_id", "=", row.rootRunId)
+            .executeTakeFirstOrThrow();
     return {
       executionId: row.executionId,
       rootSessionId: row.rootSessionId,
@@ -901,8 +909,9 @@ export class PostgresSubagentJobProvider {
       ...(row.parentExecutionId === null ? {} : { parentExecutionId: row.parentExecutionId }),
       depth: row.depth,
       canSpawnChildren:
-        row.depth < this.#treePolicy.maximumDepth &&
-        Number(nodeCount.count) < this.#treePolicy.maximumNodes,
+        (this.#treePolicy.maximumDepth === null || row.depth < this.#treePolicy.maximumDepth) &&
+        (this.#treePolicy.maximumNodes === null ||
+          Number(nodeCount?.count) < this.#treePolicy.maximumNodes),
     };
   }
 

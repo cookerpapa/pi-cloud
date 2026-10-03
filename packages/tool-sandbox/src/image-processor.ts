@@ -1,9 +1,4 @@
 import sharp from "sharp";
-import {
-  MAX_IMAGE_ATTACHMENT_BYTES,
-  MAX_IMAGE_DECODE_PIXELS,
-  MAX_IMAGE_INPUT_BYTES,
-} from "@pi-cloud/protocol/guest";
 import type { ReadImageProcessor } from "@earendil-works/pi-agent-core";
 
 /** Codex 40e5de9's patch-grid sizing, expressed through Pi's public processor port. */
@@ -27,11 +22,15 @@ export function imageDimensions(width: number, height: number, original: boolean
   };
 }
 
-export const processReadImage: ReadImageProcessor = async (bytes, _mime, options) => {
+export const processReadImage: ReadImageProcessor = (bytes, _mime, options) =>
+  processImageSource(bytes, options);
+export async function processImageSource(
+  bytes: Uint8Array | string,
+  options: { autoResizeImages: boolean },
+): ReturnType<ReadImageProcessor> {
   try {
-    if (bytes.length > MAX_IMAGE_INPUT_BYTES) throw new Error("Image input exceeds 64 MiB");
     const source = sharp(bytes, {
-      limitInputPixels: MAX_IMAGE_DECODE_PIXELS,
+      limitInputPixels: false,
       animated: false,
       failOn: "error",
     });
@@ -43,8 +42,6 @@ export const processReadImage: ReadImageProcessor = async (bytes, _mime, options
       .resize(dimensions.width, dimensions.height, { fit: "fill", withoutEnlargement: true })
       .toColourspace("srgb");
     const output = await pipeline.png().toBuffer();
-    if (output.length > MAX_IMAGE_ATTACHMENT_BYTES)
-      throw new Error("Normalized image exceeds 42 MiB");
     const mimeType = "image/png";
     return {
       ok: true,
@@ -57,4 +54,4 @@ export const processReadImage: ReadImageProcessor = async (bytes, _mime, options
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "Image decoding failed" };
   }
-};
+}

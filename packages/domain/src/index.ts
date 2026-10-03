@@ -1,4 +1,10 @@
 export {
+  resourceLimit,
+  limitReached,
+  minimumResourceLimit,
+  type ResourceLimit,
+} from "./resource-limit.ts";
+export {
   PI_CODING_AGENT_REVISION_ID,
   type AgentRevisionSnapshot,
   type AgentRuntimeKind,

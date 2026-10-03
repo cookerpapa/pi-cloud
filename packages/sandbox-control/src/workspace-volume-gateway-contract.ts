@@ -67,6 +67,7 @@ export type WorkspaceVolumeGatewayUploadInput = WorkspaceVolumeGatewayIdentity &
   Readonly<{
     rootPath: string;
     uploadId: string;
+    byteLength: number;
     name: string;
     sha256: string;
     claimToken: string;
@@ -114,7 +115,7 @@ export type WorkspaceVolumeGatewaySourceCredentialDisconnectInput = WorkspaceVol
 export interface WorkspaceVolumeGateway {
   uploadFile?(
     input: WorkspaceVolumeGatewayUploadInput,
-    bytes: Uint8Array,
+    chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ): Promise<WorkspaceUploadReceipt>;
   checkHealth(): Promise<void>;

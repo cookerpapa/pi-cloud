@@ -775,3 +775,39 @@ describe("tenant model gateway", () => {
     await expect(gateway.checkProviderHealth()).resolves.toBeUndefined();
   });
 });
+
+it("allows more than 128 model requests on one unlimited Run capability", async () => {
+  const upstream = vi.fn<typeof fetch>(
+    async () =>
+      new Response('data: {"type":"response.completed","response":{"id":"done"}}\n\n', {
+        headers: { "content-type": "text/event-stream" },
+      }),
+  );
+  const gateway = new TenantModelGateway({
+    host: "127.0.0.1",
+    port: 0,
+    advertisedBaseUrl: "http://worker:4200",
+    providerGatewayBaseUrl: "http://provider-gateway:8317",
+    providerGatewayApiKey: PROVIDER_GATEWAY_KEY,
+    maximumRequestsPerTurn: null,
+    fetchImplementation: upstream,
+  });
+  gateways.push(gateway);
+  await gateway.start();
+  const lease = gateway.issue(command("openai-codex", "gpt-6-luna"));
+  for (let n = 0; n < 129; n++) {
+    const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/codex/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${lease.runtime.capability}`,
+        "content-type": "application/json",
+        ...samplingHeaders(),
+      },
+      body: JSON.stringify({ model: "gpt-6-luna", stream: true, input: [] }),
+    });
+    expect(response.status).toBe(200);
+    await response.text();
+  }
+  expect(upstream).toHaveBeenCalledTimes(129);
+  await lease.release();
+});

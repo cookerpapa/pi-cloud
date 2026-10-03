@@ -42,7 +42,7 @@ it("uses current heap/RSS with a fresh off-thread limit and rejects stale sample
   expect(monitor.hasHeadroom()).toBe(false);
   const starting = monitor.start(),
     worker = state.workers[0]!;
-  worker.emit("message", { limit: 1_000, startedAt: now });
+  worker.emit("message", { limit: 1_000, available: 900, total: 1_000, startedAt: now });
   await starting;
   try {
     expect(monitor.hasHeadroom()).toBe(true);
@@ -54,14 +54,25 @@ it("uses current heap/RSS with a fresh off-thread limit and rejects stale sample
     state.heap.used_heap_size = 100;
     now += 2_501;
     expect(monitor.hasHeadroom()).toBe(false);
-    worker.emit("message", { limit: 100, startedAt: now });
+    worker.emit("message", { limit: 100, available: 90, total: 1_000, startedAt: now });
     expect(monitor.hasHeadroom()).toBe(false);
-    worker.emit("message", { limit: 0, startedAt: now });
+    worker.emit("message", { limit: 0, available: 900, total: 1_000, startedAt: now });
     expect(monitor.hasHeadroom()).toBe(true);
+    worker.emit("message", { limit: 0, available: 100, total: 1000, startedAt: now });
+    expect(monitor.hasHeadroom()).toBe(false);
+    worker.emit("message", {
+      limit: Number(2n ** 64n - 1n),
+      available: 900,
+      total: 1000,
+      startedAt: now,
+    });
+    expect(monitor.hasHeadroom()).toBe(true);
+    worker.emit("message", { limit: 10_000, available: 100, total: 1000, startedAt: now });
+    expect(monitor.hasHeadroom()).toBe(false);
     expect(mainProbe).not.toHaveBeenCalled();
     worker.emit("error", new Error("probe failed"));
     expect(monitor.hasHeadroom()).toBe(false);
-    worker.emit("message", { limit: 1_000, startedAt: now });
+    worker.emit("message", { limit: 1_000, available: 900, total: 1_000, startedAt: now });
     expect(monitor.hasHeadroom()).toBe(false);
     worker.emit("exit", 1);
     expect(failure).toHaveBeenCalledTimes(1);

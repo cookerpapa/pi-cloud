@@ -137,7 +137,7 @@ type SandboxIdentityRow = {
   supervisor_id: string;
   boot_id: string;
   state: SandboxState;
-  max_concurrent_sessions: number;
+  max_concurrent_sessions: number | null;
 };
 
 type ConnectionRow = {

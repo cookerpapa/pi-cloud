@@ -2,6 +2,10 @@
 
 ## Completed foundation
 
+- [x] [ADR-0214](adr/0214-unified-self-hosted-k3s.md): one K3s self-hosted runtime,
+      native Service discovery and owner-approved business-data reset.
+      [Tool/image and Pod/crash recovery acceptance](reports/k3s-migration-20261003.md).
+
 - [x] [ADR-0200](adr/0200-workspace-uploads-and-user-image-input.md): chat uploads
       into Workspace, native user image content, immutable Session image sources,
       queue/steer/history support and matched schema/Guest rollout.

@@ -1,3 +1,4 @@
+import { resourceLimit, minimumResourceLimit } from "@pi-cloud/domain";
 import { reviewedModel, type ReviewedModel, type AssistantMessagePhase } from "@pi-cloud/protocol";
 import {
   MODEL_SAMPLING_ATTEMPT_HEADER,
@@ -54,7 +55,7 @@ type ActiveCapabilityFields = {
   modelProfileId: string;
   serviceTier: "fast" | null;
   expiresAt: number;
-  maximumRequestsPerRun: number;
+  maximumRequestsPerRun: number | null;
   requestsStarted: number;
   revoked: boolean;
   requestControllers: Set<AbortController>;
@@ -74,7 +75,7 @@ export type TenantModelGatewayOptions = {
   providerGatewayBaseUrl: string;
   providerGatewayApiKey: string;
   capabilityTtlMs?: number;
-  maximumRequestsPerTurn?: number;
+  maximumRequestsPerTurn?: number | null;
   upstreamConnectTimeoutMs?: number;
   upstreamIdleTimeoutMs?: number;
   piRequestTimeoutMs?: number;
@@ -363,7 +364,7 @@ export class TenantModelGateway {
   readonly #providerGatewayBaseUrl: string;
   readonly #providerGatewayApiKey: string;
   readonly #capabilityTtlMs: number;
-  readonly #maximumRequestsPerTurn: number;
+  readonly #maximumRequestsPerTurn: number | null;
   readonly #upstreamConnectTimeoutMs: number;
   readonly #upstreamIdleTimeoutMs: number;
   readonly #piRequestTimeoutMs: number;
@@ -400,10 +401,9 @@ export class TenantModelGateway {
       "capabilityTtlMs",
       60 * 60_000,
     );
-    this.#maximumRequestsPerTurn = positiveInteger(
-      options.maximumRequestsPerTurn ?? 128,
+    this.#maximumRequestsPerTurn = resourceLimit(
+      options.maximumRequestsPerTurn,
       "maximumRequestsPerTurn",
-      256,
     );
     this.#upstreamConnectTimeoutMs = positiveInteger(
       options.upstreamConnectTimeoutMs ?? 120_000,
@@ -551,9 +551,9 @@ export class TenantModelGateway {
       modelProfileId: command.payload.model.profileId,
       serviceTier: command.payload.model.serviceTier,
       expiresAt,
-      maximumRequestsPerRun: Math.min(
+      maximumRequestsPerRun: minimumResourceLimit(
         this.#maximumRequestsPerTurn,
-        command.payload.budgets?.maximumModelRequests ?? this.#maximumRequestsPerTurn,
+        command.payload.budgets?.maximumModelRequests ?? null,
       ),
       requestsStarted: 0,
       revoked: false,
@@ -745,7 +745,10 @@ export class TenantModelGateway {
       // No await between the final authority/count check and reservation.
       this.#requireCapability(active);
       controller.signal.throwIfAborted();
-      if (active.requestsStarted >= active.maximumRequestsPerRun) {
+      if (
+        active.maximumRequestsPerRun !== null &&
+        active.requestsStarted >= active.maximumRequestsPerRun
+      ) {
         throw new SafeGatewayHttpError(
           429,
           "model_request_limit_exceeded",

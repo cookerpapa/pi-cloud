@@ -38,3 +38,5 @@ export const ExecutionModeSchema = Type.Union([
   Type.Literal("development_environment"),
 ]);
 export type ExecutionMode = Static<typeof ExecutionModeSchema>;
+
+export const ResourceLimitSchema = Type.Union([PositiveSafeIntegerSchema, Type.Null()]);

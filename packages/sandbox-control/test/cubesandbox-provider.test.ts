@@ -251,6 +251,16 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     this.instances.delete(sandboxId);
   }
 
+  async writeGuestFileStream(
+    _instance: CubeSandboxInstance,
+    path: string,
+    chunks: AsyncIterable<Uint8Array>,
+  ) {
+    const buffers: Buffer[] = [];
+    for await (const chunk of chunks) buffers.push(Buffer.from(chunk));
+    this.guestFiles.set(path, Buffer.concat(buffers));
+  }
+
   async writeGuestFile(
     _instance: CubeSandboxInstance,
     path: string,
@@ -263,9 +273,10 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     instance: CubeSandboxInstance,
     input: CubeSandboxGuestCommandRequest,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    const cleanup = /^\/bin\/rm -f -- (\/tmp\/pi-cloud-envd-[0-9a-f-]{36}\.json)$/u.exec(
-      input.command,
-    );
+    const cleanup =
+      /^\/bin\/rm -f -- (\/tmp\/(?:pi-cloud-envd-[0-9a-f-]{36}\.json|pi-cloud-upload-[0-9a-f-]{36}))$/u.exec(
+        input.command,
+      );
     if (cleanup) {
       this.requests.push({
         sandboxId: instance.sandboxId,
@@ -398,7 +409,9 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   }
 
   requestForCommand(input: CubeSandboxGuestCommandRequest): Record<string, unknown> {
-    const path = input.command.match(/(\/tmp\/pi-cloud-envd-[0-9a-f-]{36}\.json)$/u)?.[1];
+    const path = input.command.match(
+      /(\/tmp\/(?:pi-cloud-envd-[0-9a-f-]{36}\.json|pi-cloud-upload-[0-9a-f-]{36}))$/u,
+    )?.[1];
     const bytes = path === undefined ? undefined : this.guestFiles.get(path);
     if (bytes === undefined) throw new Error("guest request unavailable");
     return JSON.parse(Buffer.from(bytes).toString("utf8")) as Record<string, unknown>;
@@ -1250,11 +1263,13 @@ describe("CubeSandbox Provider contract", () => {
       });
       const abort = new AbortController();
       const reason = new Error("Task cancelled before guest dispatch");
-      const originalWrite = runtime.writeGuestFile.bind(runtime);
-      const writes = vi.spyOn(runtime, "writeGuestFile").mockImplementation(async (...args) => {
-        await originalWrite(...args);
-        abort.abort(reason);
-      });
+      const originalWrite = runtime.writeGuestFileStream.bind(runtime);
+      const writes = vi
+        .spyOn(runtime, "writeGuestFileStream")
+        .mockImplementation(async (...args) => {
+          await originalWrite(...args);
+          abort.abort(reason);
+        });
       const cleanupError = new Error("Guest cleanup channel is unavailable");
       const originalRun = runtime.runCommand.bind(runtime);
       const calls = vi.spyOn(runtime, "runCommand").mockImplementation(async (instance, input) => {
@@ -1280,7 +1295,7 @@ describe("CubeSandbox Provider contract", () => {
         expect(writes).toHaveBeenCalledTimes(phase === "before_upload" ? 0 : 1);
         expect(calls).toHaveBeenCalledTimes(phase === "before_upload" ? 0 : 1);
         for (const [, request] of calls.mock.calls) {
-          expect(request.command).toMatch(/^\/bin\/rm -f -- \/tmp\/pi-cloud-envd-/);
+          expect(request.command).toMatch(/^\/bin\/rm -f -- \/tmp\/pi-cloud-upload-/);
           expect(request.signal).toBeUndefined();
         }
         expect(runtime.destroyed).toEqual([]);

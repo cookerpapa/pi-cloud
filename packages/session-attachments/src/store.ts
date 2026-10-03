@@ -1,15 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
-import {
-  MAX_IMAGE_ATTACHMENT_BYTES,
-  parseImageAttachmentReference,
-  type ImageAttachmentReference,
-} from "@pi-cloud/protocol";
+import { parseImageAttachmentReference, type ImageAttachmentReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { ImageAttachmentStore, ImageScope } from "./codec.ts";
 
 export interface ImageBlobStore {
   put(key: string, bytes: Buffer, mimeType: string, signal: AbortSignal): Promise<void>;
+  putStream?(
+    key: string,
+    chunks: AsyncIterable<Uint8Array>,
+    byteLength: number,
+    mimeType: string,
+    signal: AbortSignal,
+  ): Promise<void>;
   get(key: string, maximumBytes: number, signal: AbortSignal): Promise<Buffer>;
   delete(key: string, signal: AbortSignal): Promise<void>;
 }
@@ -34,18 +37,35 @@ function deadline(signal?: AbortSignal) {
 /** PG owns reachability, S3 owns bytes. Network I/O never holds a PG transaction. */
 export class PostgresImageAttachmentStore implements ImageAttachmentStore {
   #inFlightBytes = 0;
+  readonly #capacityWaiters = new Set<() => void>();
   constructor(
     readonly database: Kysely<Database>,
     readonly blobs: ImageBlobStore,
   ) {}
-  async #bounded<T>(bytes: number, fn: () => Promise<T>): Promise<T> {
-    if (this.#inFlightBytes + bytes > 128 * 1024 * 1024)
-      throw new Error("Image attachment transfer capacity exhausted");
+  async #bounded<T>(bytes: number, fn: () => Promise<T>, signal: AbortSignal): Promise<T> {
+    while (this.#inFlightBytes > 0 && this.#inFlightBytes + bytes > 128 * 1024 * 1024) {
+      signal.throwIfAborted();
+      await new Promise<void>((resolve, reject) => {
+        const wake = () => {
+          this.#capacityWaiters.delete(wake);
+          signal.removeEventListener("abort", abort);
+          resolve();
+        };
+        const abort = () => {
+          this.#capacityWaiters.delete(wake);
+          reject(signal.reason);
+        };
+        this.#capacityWaiters.add(wake);
+        signal.addEventListener("abort", abort, { once: true });
+      });
+    }
+    signal.throwIfAborted();
     this.#inFlightBytes += bytes;
     try {
       return await fn();
     } finally {
       this.#inFlightBytes -= bytes;
+      for (const wake of [...this.#capacityWaiters]) wake();
     }
   }
   async put(
@@ -63,21 +83,89 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore {
     const objectKey = key(scope.tenantId, ref.id);
     const abort = deadline(signal);
     abort.throwIfAborted();
-    return this.#bounded(bytes.length, async () => {
-      await sql`insert into session_image_objects(tenant_id,id,source_run_id,state,sha256,byte_length,mime_type)
+    return this.#bounded(
+      bytes.length,
+      async () => {
+        await sql`insert into session_image_objects(tenant_id,id,source_run_id,state,sha256,byte_length,mime_type)
         values(${scope.tenantId}::uuid,${ref.id}::uuid,${scope.runId ?? null}::uuid,'uploading',${ref.sha256},${ref.byteLength},${mimeType})`.execute(
-        this.database,
-      );
-      await this.blobs.put(objectKey, bytes, mimeType, abort);
-      abort.throwIfAborted();
-      const result = await sql`update session_image_objects set state='ready'
+          this.database,
+        );
+        await this.blobs.put(objectKey, bytes, mimeType, abort);
+        abort.throwIfAborted();
+        const result = await sql`update session_image_objects set state='ready'
         where tenant_id=${scope.tenantId}::uuid and id=${ref.id}::uuid and state='uploading' returning id`.execute(
+          this.database,
+        );
+        if (!result.rows.length)
+          throw new Error("Image attachment upload lost its inventory identity");
+        return ref;
+      },
+      abort,
+    );
+  }
+  async putStream(
+    scope: { tenantId: string; uploadId: string; claimToken: string },
+    content: import("@pi-cloud/protocol").UploadContent,
+    mimeType: ImageAttachmentReference["mimeType"],
+    signal: AbortSignal,
+  ): Promise<ImageAttachmentReference> {
+    if (!this.blobs.putStream)
+      throw new Error("Attachment storage does not support streamed uploads");
+    const ref = parseImageAttachmentReference({
+      id: randomUUID(),
+      sha256: content.sha256,
+      byteLength: content.byteLength,
+      mimeType,
+    });
+    // Draft reachability begins before network I/O, so a long progressing upload
+    // cannot be mistaken for a day-old orphan by the image reaper.
+    await this.database.transaction().execute(async (tx) => {
+      await sql`insert into session_image_objects(tenant_id,id,source_run_id,state,sha256,byte_length,mime_type)
+      values(${scope.tenantId}::uuid,${ref.id}::uuid,null,'uploading',${ref.sha256},${ref.byteLength},${mimeType})`.execute(
+        tx,
+      );
+      const claim = await tx
+        .updateTable("session_uploads")
+        .set({ image_id: ref.id, image_reference: { ...ref } })
+        .where("id", "=", scope.uploadId)
+        .where("tenant_id", "=", scope.tenantId)
+        .where("claim_token", "=", scope.claimToken)
+        .where("state", "=", "uploading")
+        .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
+        .returning("id")
+        .executeTakeFirst();
+      if (!claim) throw new Error("Image upload lost its active claim");
+    });
+    let length = 0,
+      complete = false;
+    const hash = createHash("sha256");
+    const verified = (async function* () {
+      for await (const chunk of content.chunks) {
+        signal.throwIfAborted();
+        length += chunk.byteLength;
+        if (length > ref.byteLength) throw new Error("Image upload length changed");
+        hash.update(chunk);
+        yield chunk;
+      }
+      if (length !== ref.byteLength || hash.digest("hex") !== ref.sha256)
+        throw new Error("Image upload digest changed");
+      complete = true;
+    })();
+    await this.blobs.putStream(
+      key(scope.tenantId, ref.id),
+      verified,
+      ref.byteLength,
+      mimeType,
+      signal,
+    );
+    if (!complete) throw new Error("Image upload did not consume the complete stream");
+    signal.throwIfAborted();
+    const ready =
+      await sql`update session_image_objects set state='ready' where tenant_id=${scope.tenantId}::uuid and id=${ref.id}::uuid and state='uploading' returning id`.execute(
         this.database,
       );
-      if (!result.rows.length)
-        throw new Error("Image attachment upload lost its inventory identity");
-      return ref;
-    });
+    if (!ready.rows.length) throw new Error("Image upload lost its inventory identity");
+    return ref;
   }
   async get(
     tenantId: string,
@@ -100,19 +188,19 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore {
       row.mime_type !== ref.mimeType
     )
       throw new Error("Image attachment is unavailable in this tenant");
-    return this.#bounded(ref.byteLength, async () => {
-      const bytes = await this.blobs.get(
-        objectKey,
-        Math.min(ref.byteLength, MAX_IMAGE_ATTACHMENT_BYTES),
-        abort,
-      );
-      if (
-        bytes.length !== ref.byteLength ||
-        createHash("sha256").update(bytes).digest("hex") !== ref.sha256
-      )
-        throw new Error("Image attachment integrity check failed");
-      return bytes;
-    });
+    return this.#bounded(
+      ref.byteLength,
+      async () => {
+        const bytes = await this.blobs.get(objectKey, ref.byteLength, abort);
+        if (
+          bytes.length !== ref.byteLength ||
+          createHash("sha256").update(bytes).digest("hex") !== ref.sha256
+        )
+          throw new Error("Image attachment integrity check failed");
+        return bytes;
+      },
+      abort,
+    );
   }
   async reap(graceMs = 24 * 60 * 60 * 1000, signal?: AbortSignal): Promise<number> {
     if (!Number.isSafeInteger(graceMs) || graceMs < 0)

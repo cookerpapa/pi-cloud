@@ -687,6 +687,7 @@ describe("HttpWorkspaceVolumeGateway", () => {
         uploadId: randomUUID(),
         claimToken: randomUUID(),
         name: "note.txt",
+        byteLength: 4,
         sha256: createHash("sha256").update("note").digest("hex"),
       };
     await createPluginVolumeFixture(workspaceRoot, input);
@@ -715,7 +716,12 @@ describe("HttpWorkspaceVolumeGateway", () => {
           })
         ).status,
       ).toBe(401);
-      const result = await client.uploadFile(input, Buffer.from("note"));
+      const result = await client.uploadFile(
+        input,
+        (async function* () {
+          yield Buffer.from("note");
+        })(),
+      );
       expect(result.relativePath).toBe(`uploads/${input.uploadId}/note.txt`);
       expect(
         await readFile(
@@ -723,10 +729,22 @@ describe("HttpWorkspaceVolumeGateway", () => {
           "utf8",
         ),
       ).toBe("note");
-      expect(await client.uploadFile(input, Buffer.from("note"))).toEqual(result);
+      expect(
+        await client.uploadFile(
+          input,
+          (async function* () {
+            yield Buffer.from("note");
+          })(),
+        ),
+      ).toEqual(result);
       allowed = false;
       await expect(
-        client.uploadFile({ ...input, uploadId: randomUUID() }, Buffer.from("note")),
+        client.uploadFile(
+          { ...input, uploadId: randomUUID() },
+          (async function* () {
+            yield Buffer.from("note");
+          })(),
+        ),
       ).rejects.toThrow();
       expect(authorizeUpload).toHaveBeenCalledTimes(3);
       expect(

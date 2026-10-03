@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import type { PublicationAvailability } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -747,7 +748,7 @@ export class RunExecutor {
       }
       safeMailboxPosition(row.mailboxPosition);
 
-      const maximumToolCalls = safeNonNegativeInteger(row.maximumToolCalls, "tool-call budget");
+      const maximumToolCalls = resourceLimit(row.maximumToolCalls, "tool-call budget");
       // Each newly admitted Run starts with its frozen budget. Recovery does
       // not replay an admitted Run; the Runner decrements this budget locally.
       const remainingToolCalls = maximumToolCalls;
@@ -806,10 +807,7 @@ export class RunExecutor {
           recipeSha256: row.environmentRecipeSha256,
         }),
         budgets: {
-          maximumModelRequests: safeNonNegativeInteger(
-            row.maximumModelRequests,
-            "model-request budget",
-          ),
+          maximumModelRequests: resourceLimit(row.maximumModelRequests, "model-request budget"),
           maximumToolCalls,
           remainingToolCalls,
           maximumToolOutputBytes: safeNonNegativeInteger(

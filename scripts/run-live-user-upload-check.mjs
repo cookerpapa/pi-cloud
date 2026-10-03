@@ -36,7 +36,8 @@ const report = {
   accepted: false,
   runs: [],
 };
-let api, tenant, project, session, active, stoppedWorker, failure;
+let api, tenant, project, session, active, development, failure;
+const machineMode = process.argv[3] === "machine";
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(fn, label, budget = 600000) {
   const deadline = Date.now() + budget;
@@ -173,14 +174,28 @@ try {
     (url, init) => fetch(new URL(String(url), baseUrl), init),
     tenant.credential.token,
   );
-  project = await api.createProject(`Upload acceptance ${Date.now()}`, { kind: "empty" });
+  if (machineMode) {
+    development = await api.createDevelopmentEnvironment(
+      `Upload machine ${Date.now()}`,
+      "standard",
+      newIdempotencyKey("machine"),
+    );
+    await until(
+      async () =>
+        (await api.listDevelopmentEnvironments()).environments.find(
+          (e) => e.environmentId === development.environmentId && e.state === "running",
+        ),
+      "Machine start",
+    );
+    project = { projectId: development.projectId, workspaceId: development.workspaceId };
+  } else project = await api.createProject(`Upload acceptance ${Date.now()}`, { kind: "empty" });
   session = await api.createSession(
     project.projectId,
     project.workspaceId,
     "Upload image acceptance",
-    "elastic",
-    "standard",
-    "/workspace",
+    machineMode ? "development_environment" : "elastic",
+    machineMode ? undefined : "standard",
+    machineMode ? "/home/user" : "/workspace",
     { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "low", fastMode: false },
   );
   report.resources = {
@@ -209,15 +224,21 @@ try {
     const overlay = Buffer.from(
       `<svg width="1300" height="900"><rect x="180" y="100" width="940" height="680" fill="white"/><g font-family="sans-serif" fill="black"><text x="650" y="250" text-anchor="middle" font-size="90">${code}</text>${bars}</g></svg>`,
     );
-    const png = await sharp(randomBytes(1300 * 900 * 3), {
-      raw: { width: 1300, height: 900, channels: 3 },
+    const png = await sharp(randomBytes(3200 * 2400 * 3), {
+      raw: { width: 3200, height: 2400, channels: 3 },
     })
       .composite([{ input: overlay }])
       .png()
       .toBuffer();
-    assert(png.length > 1024 * 1024);
+    assert(png.length > 16 * 1024 * 1024);
     const imageFile = join(directory, "capture.png");
     await writeFile(imageFile, png);
+    const files = [imageFile];
+    for (let index = 0; index < 5; index++) {
+      const path = join(directory, `extra-${index}.bin`);
+      await writeFile(path, Buffer.alloc(7 * 1024 * 1024, index + 65));
+      files.push(path);
+    }
     let uploadId;
     // Exercise the deployed composer, browser body, actual Caddy CSP and preview.
     await withChromePage({}, async (page) => {
@@ -238,7 +259,7 @@ try {
         nodeId: root.nodeId,
         selector: "input[type=file]",
       });
-      await page.send("DOM.setFileInputFiles", { nodeId, files: [imageFile] });
+      await page.send("DOM.setFileInputFiles", { nodeId, files });
       await page.waitFor('document.querySelector(".upload-card img")?.naturalWidth>0', 30000);
       const upload = await until(async () => {
         const { rows } =
@@ -248,6 +269,25 @@ try {
         return rows.find((r) => r.state === "ready");
       }, "Browser upload");
       uploadId = upload.id;
+      await until(async () => {
+        const rows = await db
+          .selectFrom("session_uploads")
+          .select("id")
+          .where("session_id", "=", session.sessionId)
+          .where("state", "=", "ready")
+          .execute();
+        return rows.length === 6;
+      }, "All six streamed files");
+      assert(
+        await page.evaluate('!document.querySelector(".product-attach-button").disabled'),
+        "Composer retained a four-file quota",
+      );
+      report.unlimitedAttachments = {
+        count: 6,
+        totalBytes: png.length + 35 * 1024 * 1024,
+        imageBytes: png.length,
+        executionMode: machineMode ? "development_environment" : "elastic",
+      };
       const prompt =
         "请直接看这条消息附带的图片，只回复图片顶端的六位数字。不要描述柱状图，不要调用任何工具。";
       await page.evaluate(
@@ -363,7 +403,13 @@ try {
     errors.push(error);
   }
   try {
-    if (project) await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
+    if (development)
+      await api.developmentEnvironmentAction(
+        development.environmentId,
+        "release",
+        newIdempotencyKey("release"),
+      );
+    else if (project) await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
   } catch (error) {
     errors.push(error);
   }

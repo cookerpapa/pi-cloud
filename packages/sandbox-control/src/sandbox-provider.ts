@@ -267,7 +267,7 @@ export interface SandboxProvider {
   /** Read one current bounded file without creating a Cube. */
   uploadWorkspaceFile?(
     request: WorkspaceUploadRequest,
-    bytes: Uint8Array,
+    chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ): Promise<WorkspaceUploadReceipt>;
   prepareInputImage?(
@@ -279,7 +279,7 @@ export interface SandboxProvider {
   uploadMachineWorkspaceFile?(
     handle: SandboxHandle,
     request: WorkspaceUploadRequest,
-    bytes: Uint8Array,
+    chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ): Promise<WorkspaceUploadReceipt>;
   readWorkspaceFile?(

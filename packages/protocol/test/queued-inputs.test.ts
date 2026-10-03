@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  MAX_QUEUED_INPUTS,
   parseInputQueueResource,
   parseQueuedInputAction,
   parseTurnSteerResource,
@@ -59,11 +58,8 @@ describe("pending input protocol", () => {
       items: [item],
     };
     expect(parseInputQueueResource(queue).items[0]?.status).toBe("steering");
-    expect(() =>
-      parseInputQueueResource({
-        ...queue,
-        items: Array.from({ length: MAX_QUEUED_INPUTS + 1 }, () => item),
-      }),
-    ).toThrow();
+    expect(
+      parseInputQueueResource({ ...queue, items: Array.from({ length: 65 }, () => item) }).items,
+    ).toHaveLength(65);
   });
 });

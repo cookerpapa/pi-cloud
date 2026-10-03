@@ -110,7 +110,7 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   onToolOperationUnavailable?: (
     failure: Readonly<{ code: string; message: string; retryable: boolean }>,
   ) => void | Promise<void>;
-  remainingToolCalls: number;
+  remainingToolCalls: number | null;
   maximumToolOutputBytes: number;
   workingDirectory: string;
   supportsImages?: boolean;
@@ -180,9 +180,8 @@ function validateRuntimeConfiguration(
       typeof candidate.onToolOperationStarted !== "function") ||
     (candidate.onToolOperationUnavailable !== undefined &&
       typeof candidate.onToolOperationUnavailable !== "function") ||
-    !Number.isSafeInteger(remainingToolCalls) ||
-    remainingToolCalls < 0 ||
-    remainingToolCalls > 10_000 ||
+    (remainingToolCalls !== null &&
+      (!Number.isSafeInteger(remainingToolCalls) || remainingToolCalls < 0)) ||
     !Number.isSafeInteger(maximumToolOutputBytes) ||
     maximumToolOutputBytes < 1_024 ||
     maximumToolOutputBytes > 1_048_576 ||
@@ -259,10 +258,10 @@ export function createTrustedRemoteAgentTools(
   });
 
   const consumeToolCall = (): void => {
-    if (remainingToolCalls < 1) {
+    if (remainingToolCalls !== null && remainingToolCalls < 1) {
       throw new Error("tool_budget_exhausted: Run tool-call budget is exhausted");
     }
-    remainingToolCalls -= 1;
+    if (remainingToolCalls !== null) remainingToolCalls -= 1;
   };
 
   const prepareOperation = async (

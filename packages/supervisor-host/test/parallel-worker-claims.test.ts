@@ -55,6 +55,12 @@ function fixture(
     where() {
       return this;
     },
+    $if(enabled: boolean, apply: (query: typeof this) => typeof this) {
+      return enabled ? apply(this) : this;
+    },
+    orderBy() {
+      return this;
+    },
     limit() {
       return this;
     },

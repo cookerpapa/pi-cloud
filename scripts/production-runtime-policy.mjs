@@ -1,3 +1,12 @@
+function optionalLimit(environment, name) {
+  const value = environment[name];
+  if (value === undefined || value === "" || value === "unlimited") return null;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1)
+    throw new Error(`${name} must be a positive safe integer or unlimited`);
+  return parsed;
+}
+
 const MINIMUM_EVENT_RETENTION_MS = 60 * 60_000;
 const PI_TURN_TIMEOUT_MS = 10 * 60_000;
 const SETTLEMENT_GRACE_MS = 5 * 60_000;
@@ -94,19 +103,17 @@ export function validateProductionRuntimeEnvironment(environment) {
   ) {
     throw new Error("PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID must be empty or a UUID");
   }
-  integer(environment, "PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS", 1_000, 2, 1_000_000);
-  integer(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS", 10, 1, 1_000_000);
-  integer(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS", 100, 1, 1_000_000);
-  const workerCapacity = integer(environment, "PI_CLOUD_SUPERVISOR_CAPACITY", 4, 1, 16);
+  optionalLimit(environment, "PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS");
+  optionalLimit(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS");
+  optionalLimit(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS");
+  optionalLimit(environment, "PI_CLOUD_SUPERVISOR_CAPACITY");
   integer(environment, "PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS", 4, 2, 64);
-  integer(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4, 1, 64);
-  const subagentNodes = integer(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_NODES", 32, 1, 10_000);
+  optionalLimit(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH");
+  optionalLimit(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_NODES");
   if (environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT !== undefined)
     throw new Error("Remove PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT; capacity is now Session-based");
-  const models = integer(environment, "PI_CLOUD_WORKER_MODEL_CONCURRENCY", 4, 1, 1000);
-  integer(environment, "PI_CLOUD_SESSION_MODEL_CONCURRENCY", Math.min(4, models), 1, models);
-  if (workerCapacity * (subagentNodes + 1) > 1000)
-    throw new Error("Worker task inventory cannot exceed 1000 Lanes");
+  optionalLimit(environment, "PI_CLOUD_WORKER_MODEL_CONCURRENCY");
+  optionalLimit(environment, "PI_CLOUD_SESSION_MODEL_CONCURRENCY");
   const queueWaitMs = integer(
     environment,
     "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS",
@@ -155,7 +162,7 @@ export function validateProductionRuntimeEnvironment(environment) {
   if (ownershipHeartbeatMs * 2 >= ownershipLeaseMs) {
     throw new Error("Sandbox control heartbeat must leave lease failure margin");
   }
-  integer(environment, "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES", 3, 1, 1_000);
+  optionalLimit(environment, "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES");
   integer(environment, "PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES", 4, 1, 1_000);
   integer(environment, "PI_CLOUD_SANDBOX_WARM_TTL_MS", 900_000, 1_000, 24 * 60 * 60_000);
   integer(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS", 2, 1, 64);

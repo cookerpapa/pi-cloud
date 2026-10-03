@@ -10,7 +10,6 @@ import {
   UuidSchema,
 } from "./protocol-primitives.ts";
 
-export const MAX_QUEUED_INPUTS = 64;
 const Text = Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS });
 const Revision = NonNegativeSafeIntegerSchema;
 const options = { additionalProperties: false } as const;
@@ -61,7 +60,7 @@ export const InputQueueResourceSchema = Type.Object(
     revision: Revision,
     activeTurnId: Type.Union([UuidSchema, Type.Null()]),
     viewVersion: Type.String({ pattern: "^(0|[1-9][0-9]{0,18})$" }),
-    items: Type.Array(QueuedInputResourceSchema, { maxItems: MAX_QUEUED_INPUTS }),
+    items: Type.Array(QueuedInputResourceSchema),
   },
   options,
 );

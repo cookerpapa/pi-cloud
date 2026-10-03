@@ -23,10 +23,14 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] Implement [ADR-0214](adr/0214-unified-self-hosted-k3s.md): migrate the
-      self-hosted platform and durable infrastructure into the existing K3s,
-      reset existing business data as requested, replace Docker IP bridges with
-      selector-backed Services, and verify real Tool/image execution after Pod replacement.
+- [ ] Implement [ADR-0215](adr/0215-unlimited-product-quotas.md): remove self-hosted
+      resource ceilings and product quotas, retain ownership/recovery/backpressure,
+      and stream uploads beyond the old size/count limits with verified identity.
+
+The [K3s cutover](reports/k3s-migration-20261003.md) is complete: old business
+state was reset as requested; real Tool/image execution survived PG/Kafka/S3
+Pod replacement and a Control Plane crash. Deferred Cube template-cache cleanup
+and physical-node HA remain outside that acceptance.
 
 
 The October 2 R02-01–04 repairs and accepted O02-01–05 slices are deployed under

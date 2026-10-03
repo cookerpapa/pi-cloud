@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 type Waiter = {
   resolve(release: () => void): void;
   reject(error: unknown): void;
@@ -15,20 +16,14 @@ export class FamilyModelPermits {
   #closed = false;
   constructor(
     readonly options: {
-      maximum: number;
-      perFamily: number;
+      maximum: number | null;
+      perFamily: number | null;
       onChange?: (sample: { active: number; waiting: number }) => void;
       onWait?: (milliseconds: number) => void;
     },
   ) {
-    if (
-      !Number.isSafeInteger(options.maximum) ||
-      options.maximum < 1 ||
-      !Number.isSafeInteger(options.perFamily) ||
-      options.perFamily < 1 ||
-      options.perFamily > options.maximum
-    )
-      throw new TypeError("Invalid family model concurrency");
+    resourceLimit(options.maximum, "Worker model concurrency");
+    resourceLimit(options.perFamily, "Session model concurrency");
   }
   acquire(key: string, signal?: AbortSignal): Promise<() => void> {
     if (this.#closed) return Promise.reject(new Error("Worker model admission is closed"));
@@ -70,13 +65,13 @@ export class FamilyModelPermits {
     let skipped = 0;
     while (
       !this.#closed &&
-      this.#active < this.options.maximum &&
+      (this.options.maximum === null || this.#active < this.options.maximum) &&
       this.#ready.length &&
       skipped < this.#ready.length
     ) {
       const key = this.#ready.shift()!,
         family = this.#families.get(key)!;
-      if (family.active >= this.options.perFamily) {
+      if (this.options.perFamily !== null && family.active >= this.options.perFamily) {
         this.#ready.push(key);
         skipped++;
         continue;

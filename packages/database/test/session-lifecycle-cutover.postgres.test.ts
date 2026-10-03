@@ -25,6 +25,8 @@ it.skipIf(!endpoint)(
       }).migrateTo("156_permanent_conversation_deletion");
       if (result.error) throw result.error;
       const tenant = await createPrivateTenant(db, {
+        // This fixture targets the historical schema before nullable quotas.
+        quotas: { maximumProjects: 100, maximumSessions: 1000 },
         slug: "lifecycle",
         ownerDisplayName: "Fixture",
       });

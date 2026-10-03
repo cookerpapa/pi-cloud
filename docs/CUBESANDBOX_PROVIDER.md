@@ -58,8 +58,9 @@ The guest uses Pi's public image processor hook with pinned Sharp. `read` accept
 optional image `detail: high | original`; high is the default. The dimensions and
 32px patch budgets match the inspected Codex client: high 2048/2500, original
 6000/10000. Images are sniffed by content and normalized to static lossless 8-bit
-PNG; hints report the delivered dimensions. Input is capped at 64 MiB/100 million
-decoded pixels and output at 42 MiB. Decode errors and unsupported model vision
+PNG; hints report the delivered dimensions. Image inputs have no PiCloud byte/pixel quota; normalized replies retain the
+64 MiB transport envelope and the existing model sizing policy. Available guest
+memory and provider capabilities still apply. Decode errors and unsupported model vision
 are visible; the system never silently switches models or reduces detail on retry.
 
 The guest helper reuses fixed Pi edit/write logic locally and emits native

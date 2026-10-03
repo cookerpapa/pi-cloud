@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
@@ -30,12 +31,12 @@ export type SupervisorHostConfig = {
   managementHost: string;
   managementPort: number;
   managementAdvertisedBaseUrl: string;
-  maxConcurrentSessions: number;
+  maxConcurrentSessions: number | null;
   databaseMaxConnections: number;
-  subagentMaximumDepth: number;
-  subagentMaximumNodes: number;
-  modelConcurrency: number;
-  familyModelConcurrency: number;
+  subagentMaximumDepth: number | null;
+  subagentMaximumNodes: number | null;
+  modelConcurrency: number | null;
+  familyModelConcurrency: number | null;
   sandboxControlBaseUrls: readonly string[];
   sandboxControlRequestTimeoutMs: number;
   trustedWorkspaceDirectory: string;
@@ -44,7 +45,7 @@ export type SupervisorHostConfig = {
   modelGatewayPort: number;
   modelGatewayAdvertisedBaseUrl: string;
   modelGatewayCapabilityTtlMs: number;
-  modelGatewayMaximumRequestsPerTurn: number;
+  modelGatewayMaximumRequestsPerTurn: number | null;
   modelGatewayUpstreamConnectTimeoutMs: number;
   modelGatewayUpstreamIdleTimeoutMs: number;
   piModelRequestTimeoutMs: number;
@@ -304,44 +305,34 @@ export async function loadSupervisorHostConfig(
   if (modelGatewayCapabilityTtlMs < piTurnTimeoutMs + MODEL_CAPABILITY_EXPIRY_MARGIN_MS) {
     throw new TypeError("Model capability TTL must outlive the Pi Turn timeout and expiry margin");
   }
-  const subagentMaximumNodes = integerValue(
-    environment,
+  const subagentMaximumNodes = resourceLimit(
+    environment.PI_CLOUD_SUBAGENT_MAXIMUM_NODES,
     "PI_CLOUD_SUBAGENT_MAXIMUM_NODES",
-    32,
-    1,
-    10_000,
   );
   if (environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT !== undefined)
     throw new TypeError(
       "PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT was removed; configure Worker/Session model concurrency instead",
     );
-  const modelConcurrency = integerValue(
-    environment,
+  const modelConcurrency = resourceLimit(
+    environment.PI_CLOUD_WORKER_MODEL_CONCURRENCY,
     "PI_CLOUD_WORKER_MODEL_CONCURRENCY",
-    4,
-    1,
-    1000,
   );
-  const familyModelConcurrency = integerValue(
-    environment,
+  const familyModelConcurrency = resourceLimit(
+    environment.PI_CLOUD_SESSION_MODEL_CONCURRENCY,
     "PI_CLOUD_SESSION_MODEL_CONCURRENCY",
-    Math.min(4, modelConcurrency),
-    1,
-    modelConcurrency,
   );
   const databaseUrl = await secret(environment, "DATABASE_URL", allowInlineSecrets);
   const databaseNotificationUrl =
     (await optionalSecret(environment, "DATABASE_NOTIFICATION_URL", allowInlineSecrets)) ??
     databaseUrl;
-  const maxConcurrentSessions = integerValue(environment, "PI_CLOUD_SUPERVISOR_CAPACITY", 4, 1, 16);
-  if (maxConcurrentSessions * (subagentMaximumNodes + 1) > 1000)
-    throw new TypeError(
-      "Session capacity times (Subagent node budget + 1) cannot exceed the Worker task inventory limit of 1000",
-    );
+  const maxConcurrentSessions = resourceLimit(
+    environment.PI_CLOUD_SUPERVISOR_CAPACITY,
+    "PI_CLOUD_SUPERVISOR_CAPACITY",
+  );
   const databaseMaxConnections = integerValue(
     environment,
     "PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS",
-    Math.min(16, maxConcurrentSessions + 2),
+    4,
     2,
     64,
   );
@@ -411,7 +402,10 @@ export async function loadSupervisorHostConfig(
     ),
     maxConcurrentSessions,
     databaseMaxConnections,
-    subagentMaximumDepth: integerValue(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4, 1, 64),
+    subagentMaximumDepth: resourceLimit(
+      environment.PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH,
+      "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH",
+    ),
     subagentMaximumNodes,
     modelConcurrency,
     familyModelConcurrency,
@@ -433,12 +427,9 @@ export async function loadSupervisorHostConfig(
       required(environment, "PI_CLOUD_MODEL_GATEWAY_ADVERTISED_URL"),
     ),
     modelGatewayCapabilityTtlMs,
-    modelGatewayMaximumRequestsPerTurn: integerValue(
-      environment,
+    modelGatewayMaximumRequestsPerTurn: resourceLimit(
+      environment.PI_CLOUD_MODEL_GATEWAY_MAXIMUM_REQUESTS_PER_TURN,
       "PI_CLOUD_MODEL_GATEWAY_MAXIMUM_REQUESTS_PER_TURN",
-      128,
-      1,
-      256,
     ),
     modelGatewayUpstreamConnectTimeoutMs,
     modelGatewayUpstreamIdleTimeoutMs,

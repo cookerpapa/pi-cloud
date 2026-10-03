@@ -1,3 +1,6 @@
+import * as unlimitedUploads from "./168_unlimited_uploads.ts";
+import * as unlimitedExecutionQuotas from "./167_unlimited_execution_quotas.ts";
+import * as unlimitedProductQuotas from "./166_unlimited_product_quotas.ts";
 import * as coalescedControlChanges from "./165_coalesced_control_changes.ts";
 import * as sessionPartitionFilter from "./164_session_partition_filter.ts";
 import * as atomicSessionLifecycle from "./157_atomic_session_lifecycle.ts";
@@ -333,6 +336,9 @@ export const migrationProvider: MigrationProvider = {
       "163_atomic_runtime_quarantine": atomicRuntimeQuarantine,
       "164_session_partition_filter": sessionPartitionFilter,
       "165_coalesced_control_changes": coalescedControlChanges,
+      "166_unlimited_product_quotas": unlimitedProductQuotas,
+      "167_unlimited_execution_quotas": unlimitedExecutionQuotas,
+      "168_unlimited_uploads": unlimitedUploads,
     };
   },
 };

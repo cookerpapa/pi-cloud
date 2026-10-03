@@ -180,17 +180,17 @@ spec:
               value: {{ printf "http://$(POD_NAME).%s.$(POD_NAMESPACE).svc.%s:4100" $name .Values.workerPool.clusterDomain | quote }}
               {{- end }}
             - name: PI_CLOUD_SUPERVISOR_CAPACITY
-              value: {{ .Values.workerPool.capacity | quote }}
+              value: {{ .Values.workerPool.capacity | default "unlimited" | quote }}
             - name: PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS
               value: {{ .Values.database.maxConnections | quote }}
             - name: PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH
-              value: {{ .Values.runtime.subagents.maximumDepth | quote }}
+              value: {{ .Values.runtime.subagents.maximumDepth | default "unlimited" | quote }}
             - name: PI_CLOUD_SUBAGENT_MAXIMUM_NODES
-              value: {{ .Values.runtime.subagents.maximumNodes | quote }}
+              value: {{ .Values.runtime.subagents.maximumNodes | default "unlimited" | quote }}
             - name: PI_CLOUD_WORKER_MODEL_CONCURRENCY
-              value: {{ .Values.runtime.modelConcurrency | quote }}
+              value: {{ .Values.runtime.modelConcurrency | default "unlimited" | quote }}
             - name: PI_CLOUD_SESSION_MODEL_CONCURRENCY
-              value: {{ .Values.runtime.sessionModelConcurrency | quote }}
+              value: {{ .Values.runtime.sessionModelConcurrency | default "unlimited" | quote }}
             - name: PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY
               value: /workspace
             - name: PI_CLOUD_BOOT_STATE_DIRECTORY
@@ -203,8 +203,6 @@ spec:
               value: http://127.0.0.1:4200
             - name: PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS
               value: {{ .Values.runtime.timeouts.modelCapabilityTtlMs | quote }}
-            - name: PI_CLOUD_MODEL_GATEWAY_MAXIMUM_REQUESTS_PER_TURN
-              value: "128"
             - name: PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.modelUpstreamConnectMs | quote }}
             - name: PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS
@@ -299,11 +297,9 @@ spec:
         - name: workspace
           emptyDir:
             medium: Memory
-            sizeLimit: {{ .Values.ephemeral.workspaceSizeLimit }}
         - name: temporary
           emptyDir:
             medium: Memory
-            sizeLimit: {{ .Values.ephemeral.temporarySizeLimit }}
         - name: secrets
           secret:
             secretName: {{ .Values.database.existingSecret }}

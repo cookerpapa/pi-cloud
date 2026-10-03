@@ -1,12 +1,17 @@
 import { createTestWorker } from "./admit-test-execution.ts";
 import type { TurnSteerRequest } from "../src/turn-steer.ts";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import type { FastifyInstance } from "fastify";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { parseUserUpload, parseTurnSteerResource, uploadRelativePath } from "@pi-cloud/protocol";
+import {
+  uploadContentDigest,
+  parseUserUpload,
+  parseTurnSteerResource,
+  uploadRelativePath,
+} from "@pi-cloud/protocol";
 import { PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
 import {
   createControlPlaneApplication,
@@ -21,6 +26,21 @@ import { QueuedInputService } from "../src/queued-input-service.ts";
 import { TurnSteeringService } from "../src/turn-steering-service.ts";
 import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 
+function content(bytes: Buffer) {
+  return {
+    byteLength: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    chunks: (async function* () {
+      for (let offset = 0; offset < bytes.length; offset += 65536)
+        yield bytes.subarray(offset, offset + 65536);
+    })(),
+  };
+}
+async function collect(chunks: AsyncIterable<Uint8Array>) {
+  const buffers: Buffer[] = [];
+  for await (const chunk of chunks) buffers.push(Buffer.from(chunk));
+  return Buffer.concat(buffers);
+}
 const external = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.skipIf(!external).sequential("Workspace uploads and durable user attachments", () => {
   let admin: ReturnType<typeof createDatabase>, db: ReturnType<typeof createDatabase>;
@@ -33,10 +53,11 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
   const blobs = new Map<string, Buffer>();
   const placed = new Map<string, Buffer>();
   let hold: (() => Promise<void>) | undefined;
-  const place = vi.fn<WorkspaceUploader["uploadWorkspaceFile"]>(async (request, bytes, signal) => {
+  const place = vi.fn<WorkspaceUploader["uploadWorkspaceFile"]>(async (request, chunks, signal) => {
     await hold?.();
     signal?.throwIfAborted();
-    placed.set(request.uploadId, Buffer.from(bytes));
+    const bytes = await collect(chunks);
+    placed.set(request.uploadId, bytes);
     return {
       relativePath: uploadRelativePath(request.uploadId, request.name),
       byteLength: bytes.length,
@@ -62,6 +83,9 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
     other = await createPrivateTenant(db, { slug: "other", ownerDisplayName: "Other" });
     store = new ControlPlaneStore({ database: db, ...tenant });
     images = new PostgresImageAttachmentStore(db, {
+      async putStream(key, chunks) {
+        blobs.set(key, await collect(chunks));
+      },
       async put(key, bytes) {
         blobs.set(key, Buffer.from(bytes));
       },
@@ -108,14 +132,19 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
     });
     return store.createSession(p.projectId, p.workspaceId, "Attachments", "elastic");
   }
-  function headers(token = tenant.credential.token) {
-    return { authorization: `Bearer ${token}`, "content-type": "application/octet-stream" };
+  function headers(token = tenant.credential.token, bytes = png) {
+    return {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/octet-stream",
+      "content-length": String(bytes.length),
+      "content-digest": uploadContentDigest(content(bytes).sha256),
+    };
   }
   async function upload(sessionId: string, id = randomUUID(), bytes = png, name = "capture.png") {
     const response = await http.inject({
       method: "PUT",
       url: `/v1/sessions/${sessionId}/uploads/${id}?name=${encodeURIComponent(name)}`,
-      headers: headers(),
+      headers: headers(undefined, bytes),
       payload: bytes,
     });
     expect(response.statusCode, response.body).toBe(200);
@@ -142,12 +171,19 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
     expect(a.image).toBeUndefined();
     expect(await upload(s.sessionId, id, bytes, "notes.txt")).toEqual(a);
     expect(place.mock.calls.length - count).toBe(1);
+    await expect(
+      uploads.upload(tenant.tenantId, tenant.ownerUserId, s.sessionId, id, "notes.txt", {
+        ...content(Buffer.alloc(bytes.length, 66)),
+        sha256: a.sha256,
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(place.mock.calls.length - count).toBe(1);
     expect(
       (
         await http.inject({
           method: "PUT",
           url,
-          headers: headers(),
+          headers: headers(undefined, Buffer.from("changed")),
           payload: Buffer.from("changed"),
         })
       ).statusCode,
@@ -157,21 +193,15 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
         await http.inject({
           method: "PUT",
           url,
-          headers: headers(other.credential.token),
+          headers: headers(other.credential.token, bytes),
           payload: bytes,
         })
       ).statusCode,
     ).toBe(404);
-    expect(
-      (
-        await http.inject({
-          method: "PUT",
-          url,
-          headers: headers(),
-          payload: Buffer.alloc(16 * 1024 * 1024 + 1),
-        })
-      ).statusCode,
-    ).toBe(413);
+    const large = Buffer.alloc(17 * 1024 * 1024, 66);
+    expect((await upload(s.sessionId, randomUUID(), large, "large.bin")).byteLength).toBe(
+      large.length,
+    );
   });
   it("pins image-only input through queue editing, cancellation, Workspace changes and image GC", async () => {
     const s = await session(),
@@ -354,7 +384,7 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       await finish.promise;
     };
     const result = uploads
-      .upload(tenant.tenantId, tenant.ownerUserId, s.sessionId, id, "later.png", png)
+      .upload(tenant.tenantId, tenant.ownerUserId, s.sessionId, id, "later.png", content(png))
       .catch((error: unknown) => error);
     try {
       await entered.promise;
@@ -369,57 +399,128 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
     ).toBeUndefined();
     await images.reap(0);
   });
-  it("limits simultaneous HTTP bodies and fails closed if image cleanup wins publication", async () => {
-    const s = await session(),
-      entered = Promise.withResolvers<void>(),
-      finish = Promise.withResolvers<void>();
-    let enteredCount = 0;
-    hold = async () => {
-      if (++enteredCount === 2) entered.resolve();
-      await finish.promise;
-    };
-    const pending = [upload(s.sessionId), upload(s.sessionId)];
-    try {
-      await entered.promise;
-      const rejected = await http.inject({
-        method: "PUT",
-        url: `/v1/sessions/${s.sessionId}/uploads/${randomUUID()}?name=third.txt`,
-        headers: headers(),
-        payload: Buffer.from("third"),
-      });
-      expect(rejected.statusCode).toBe(429);
-    } finally {
-      hold = undefined;
-      finish.resolve();
-      await Promise.all(pending);
-    }
-    const original = images.put.bind(images);
-    const put = vi.spyOn(images, "put").mockImplementationOnce(async (...args) => {
+  it("accepts more than four files and 32 MiB, and pins an image while final publication is pending", async () => {
+    const s = await session();
+    const files = [];
+    for (let index = 0; index < 5; index++)
+      files.push(
+        await upload(
+          s.sessionId,
+          randomUUID(),
+          Buffer.alloc(7 * 1024 * 1024, index + 65),
+          `file-${index}.bin`,
+        ),
+      );
+    const accepted = await store.acceptTurn(s.sessionId, "many-files", {
+      prompt: "",
+      uploadIds: files.map((file) => file.id),
+    });
+    const turn = await db
+      .selectFrom("turns")
+      .select("input_uploads")
+      .where("id", "=", accepted.turnId)
+      .executeTakeFirstOrThrow();
+    expect(turn.input_uploads).toHaveLength(5);
+    const original = images.putStream.bind(images);
+    const put = vi.spyOn(images, "putStream").mockImplementationOnce(async (...args) => {
       const ref = await original(...args);
       await images.reap(0);
       return ref;
     });
     try {
-      await expect(
-        uploads.upload(
-          tenant.tenantId,
-          tenant.ownerUserId,
-          s.sessionId,
-          randomUUID(),
-          "raced.png",
-          png,
-        ),
-      ).rejects.toMatchObject({ code: "conflict" });
+      expect(
+        (
+          await uploads.upload(
+            tenant.tenantId,
+            tenant.ownerUserId,
+            s.sessionId,
+            randomUUID(),
+            "raced.png",
+            content(png),
+          )
+        ).image,
+      ).toBeDefined();
     } finally {
       put.mockRestore();
     }
+  });
+
+  it("renews a progressing upload claim and draft reachability while placement is pending", async () => {
+    const s = await session(),
+      id = randomUUID();
+    const entered = Promise.withResolvers<void>(),
+      finish = Promise.withResolvers<void>();
+    hold = async () => {
+      entered.resolve();
+      await finish.promise;
+    };
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const pending = uploads.upload(
+      tenant.tenantId,
+      tenant.ownerUserId,
+      s.sessionId,
+      id,
+      "renew.png",
+      content(png),
+    );
+    try {
+      await entered.promise;
+      await db
+        .updateTable("session_uploads")
+        .set({
+          lease_expires_at: new Date(Date.now() + 10_000),
+          expires_at: new Date(Date.now() + 10_000),
+        })
+        .where("id", "=", id)
+        .execute();
+      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.waitFor(async () => {
+        const row = await db
+          .selectFrom("session_uploads")
+          .select(["lease_expires_at", "expires_at"])
+          .where("id", "=", id)
+          .executeTakeFirstOrThrow();
+        expect(new Date(row.lease_expires_at).getTime()).toBeGreaterThan(Date.now() + 100_000);
+        expect(new Date(row.expires_at).getTime()).toBeGreaterThan(Date.now() + 23 * 60 * 60_000);
+      });
+    } finally {
+      hold = undefined;
+      finish.resolve();
+      await pending;
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects false Content-Digest and publishes no ready metadata", async () => {
+    const s = await session(),
+      id = randomUUID(),
+      bytes = Buffer.from("a digest must be verified, not trusted");
+    const identity = content(bytes);
+    identity.sha256 = "0".repeat(64);
+    await expect(
+      uploads.upload(tenant.tenantId, tenant.ownerUserId, s.sessionId, id, "invalid.txt", identity),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(
+      await db
+        .selectFrom("session_uploads")
+        .select("state")
+        .where("id", "=", id)
+        .executeTakeFirst(),
+    ).toMatchObject({ state: "failed" });
   });
 
   it("rejects unsafe names, unsupported images and aborted requests before placement", async () => {
     const s = await session();
     const count = place.mock.calls.length;
     await expect(
-      uploads.upload(tenant.tenantId, tenant.ownerUserId, s.sessionId, randomUUID(), "../x", png),
+      uploads.upload(
+        tenant.tenantId,
+        tenant.ownerUserId,
+        s.sessionId,
+        randomUUID(),
+        "../x",
+        content(png),
+      ),
     ).rejects.toMatchObject({ code: "invalid_request" });
     await expect(
       uploads.upload(
@@ -428,7 +529,7 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
         s.sessionId,
         randomUUID(),
         "x.gif",
-        Buffer.from("GIF89a"),
+        content(Buffer.from("GIF89a")),
       ),
     ).rejects.toMatchObject({ code: "invalid_request" });
     await expect(
@@ -438,10 +539,10 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
         s.sessionId,
         randomUUID(),
         "x.png",
-        png,
+        content(png),
         AbortSignal.abort(),
       ),
-    ).rejects.toMatchObject({ code: "conflict" });
+    ).rejects.toThrow();
     expect(place.mock.calls.length).toBe(count);
   });
 });

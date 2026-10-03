@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import type { PublicationAvailability } from "@pi-cloud/protocol";
 import { HttpPublicationClient } from "@pi-cloud/runtime-core/http-publication-client";
 import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
@@ -177,13 +178,7 @@ export class PiWorkerRuntime {
   #terminalFailureCode: string | undefined;
 
   constructor(options: PiWorkerRuntimeOptions) {
-    if (
-      !Number.isSafeInteger(options.config.maxConcurrentSessions) ||
-      options.config.maxConcurrentSessions < 1 ||
-      options.config.maxConcurrentSessions > 16
-    ) {
-      throw new TypeError("Pi SDK Worker runtime capacity must be between 1 and 16");
-    }
+    resourceLimit(options.config.maxConcurrentSessions, "Worker Session capacity");
     if (
       !Number.isSafeInteger(options.config.databaseMaxConnections) ||
       options.config.databaseMaxConnections < 2 ||
@@ -599,7 +594,8 @@ export class PiWorkerRuntime {
     const runSupervisor = new AgentRunSupervisor({
       runner,
       maxConcurrentSessions: this.#config.maxConcurrentSessions,
-      maximumLanesPerFamily: this.#config.subagentMaximumNodes + 1,
+      maximumLanesPerFamily:
+        this.#config.subagentMaximumNodes === null ? null : this.#config.subagentMaximumNodes + 1,
     });
     this.#runSupervisor = runSupervisor;
     client = new ReconnectingSupervisorWebSocketClient({
@@ -644,7 +640,8 @@ export class PiWorkerRuntime {
       notificationConnectionString: this.#config.databaseNotificationUrl,
       identity: runWorkerIdentity,
       maximumActiveFamilies: this.#config.maxConcurrentSessions,
-      maximumLanesPerFamily: this.#config.subagentMaximumNodes + 1,
+      maximumLanesPerFamily:
+        this.#config.subagentMaximumNodes === null ? null : this.#config.subagentMaximumNodes + 1,
       onCapacity: (sample) => this.#metrics?.activeSessionFamilies.set(sample.families),
       canClaimRuns: () =>
         (this.#state === "ready" || this.#state === "draining") && client?.state === "connected",

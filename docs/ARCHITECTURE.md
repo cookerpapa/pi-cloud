@@ -126,7 +126,7 @@ Run/Turn locks with NOWAIT while holding the Session lock, so a concurrent Worke
 claim returns a conflict without a lock cycle. PostgreSQL's deferrable mailbox
 uniqueness permits atomic adjacent swaps. Original acceptance fingerprints remain
 unchanged. Unstarted cancelled rows are retained as audit/idempotency tombstones,
-outside conversation history. At most 64 pending inputs are accepted per Session.
+outside conversation history. Pending inputs have no per-Session count quota (ADR-0215).
 Initial and explicit queue reads return edit revision, view version, active input
 and pending order in one SQL snapshot; steady presentation uses SSE.
 
@@ -609,7 +609,9 @@ paths/symlinks. Native Node writes retain byte bounds, edit-conflict detection
 and file/parent fsync before success. Host Volume browsing retains its separate
 containment checks. Pi may run read-only/delegation batches concurrently; any
 fixed write/edit/bash in a batch retains native sequential execution. Existing
-Tool, child-tree and executor limits remain, as does one ordered Session writer.
+Tool transport/fault bounds remain, as does one ordered Session writer. Product
+quotas for families, descendants and model/Tool call counts default to absent
+(ADR-0215).
 The former per-file and raw Bash RPC forms are removed; native Tools and scoped
 workflows are the only Agent execution requests. Text reads retain Pi's LF split,
 CR and BOM behavior, including an empty final line, within the existing bounds.
@@ -764,9 +766,10 @@ The role-free Subagent tool uses Pi's public runtime/storage contracts and the
 community `runs.run`/`runs.all` programming model, not a CLI-emulation backend.
 Fresh context and inherited context are independent of shared/ephemeral compute
 selection and working directory. All active Lanes share one physical Session owner; PG holds durable
-parent/child communication and cancellation state. Defaults bound recursive depth
-to 4 and total descendants to 32. Worker and per-Session model request limits
-default to 4; children are not rejected merely because another child is waiting.
+parent/child communication and cancellation state. Recursive depth, descendant
+count and Worker/per-Session model concurrency default to no product quota;
+explicit finite policies still use fair admission. Children are not rejected
+merely because another child is waiting (ADR-0215).
 An ephemeral child uses a new lazy, bounded-warm Cube against the parent Volume.
 Shared descendants inherit that compute scope. The accepted Run freezes the scope
 and cwd; explicit directories must exist. Elastic Volumes retain `/workspace` and

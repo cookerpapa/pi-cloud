@@ -1,11 +1,9 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { posix } from "node:path";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import type { Database, SessionUploadTable } from "@pi-cloud/database";
 import {
-  MAX_USER_UPLOAD_BYTES,
-  MAX_USER_UPLOADS,
-  MAX_USER_INPUT_UPLOAD_BYTES,
+  type UploadContent,
   USER_UPLOAD_DRAFT_TTL_MS,
   parseUserUpload,
   uploadFileName,
@@ -14,13 +12,14 @@ import {
   type WorkspaceUploadRequest,
   parseImageAttachmentReference,
 } from "@pi-cloud/protocol";
-import type { ImageAttachmentStore } from "@pi-cloud/session-attachments";
+import type { ImageAttachmentStore, ImageUploadStore } from "@pi-cloud/session-attachments";
+import { forkUpload, verifiedUpload, sniffUpload } from "./workspace-upload-stream.ts";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 
 export interface WorkspaceUploader {
   uploadWorkspaceFile(
     request: WorkspaceUploadRequest,
-    bytes: Uint8Array,
+    chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ): Promise<{ relativePath: string; byteLength: number; sha256: string }>;
 }
@@ -61,7 +60,7 @@ export class WorkspaceUploadService {
     readonly options: {
       database: Kysely<Database>;
       uploader?: WorkspaceUploader;
-      images?: ImageAttachmentStore;
+      images?: ImageAttachmentStore & ImageUploadStore;
     },
   ) {}
 
@@ -71,7 +70,7 @@ export class WorkspaceUploadService {
     sessionId: string,
     id: string,
     nameValue: string,
-    bytes: Buffer,
+    content: UploadContent,
     signal?: AbortSignal,
   ): Promise<UserUpload> {
     let name: string;
@@ -80,17 +79,23 @@ export class WorkspaceUploadService {
     } catch {
       throw new ControlPlaneStoreError("invalid_request", "Upload filename is invalid");
     }
-    if (!bytes.length || bytes.length > MAX_USER_UPLOAD_BYTES)
-      throw new ControlPlaneStoreError(
-        "invalid_request",
-        "Upload must contain between 1 byte and 16 MiB",
-      );
+    if (
+      !Number.isSafeInteger(content.byteLength) ||
+      content.byteLength < 1 ||
+      !/^[0-9a-f]{64}$/.test(content.sha256)
+    )
+      throw new ControlPlaneStoreError("invalid_request", "Invalid upload identity");
     if (!this.options.uploader)
       throw new ControlPlaneStoreError(
         "control_plane_misconfigured",
         "Workspace uploads are unavailable",
       );
-    const mimeType = imageMime(bytes);
+    const controller = new AbortController();
+    const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const source = await sniffUpload(verifiedUpload(content, combined)).catch(() => {
+      throw new ControlPlaneStoreError("invalid_request", "Upload stream failed its content check");
+    });
+    const mimeType = imageMime(source.prefix);
     if (!mimeType && /\.(png|jpe?g|webp|gif|bmp|avif|heic)$/i.test(name))
       throw new ControlPlaneStoreError(
         "invalid_request",
@@ -101,7 +106,7 @@ export class WorkspaceUploadService {
         "control_plane_misconfigured",
         "Image attachment storage is unavailable",
       );
-    const sha256 = createHash("sha256").update(bytes).digest("hex"),
+    const sha256 = content.sha256,
       claimToken = randomUUID();
     const db = this.options.database;
     const claimed = await db.transaction().execute(async (tx) => {
@@ -149,7 +154,7 @@ export class WorkspaceUploadService {
           existing.working_directory !== session.working_directory ||
           existing.name !== name ||
           existing.sha256 !== sha256 ||
-          Number(existing.byte_length) !== bytes.length
+          Number(existing.byte_length) !== content.byteLength
         )
           conflict(
             "Upload identity was already used for different content or a different Workspace",
@@ -174,16 +179,6 @@ export class WorkspaceUploadService {
           .executeTakeFirst();
         if (!updated) conflict("Upload is already in progress");
       } else {
-        const pending = await tx
-          .selectFrom("session_uploads")
-          .select(({ fn }) => fn.countAll<string>().as("count"))
-          .where("tenant_id", "=", tenantId)
-          .where("session_id", "=", sessionId)
-          .where("accepted_at", "is", null)
-          .where("state", "in", ["uploading", "ready"])
-          .where("expires_at", ">", sql<Date>`clock_timestamp()`)
-          .executeTakeFirstOrThrow();
-        if (Number(pending.count) >= 16) conflict("Too many pending uploads in this conversation");
         await tx
           .insertInto("session_uploads")
           .values({
@@ -197,7 +192,7 @@ export class WorkspaceUploadService {
             name,
             path: posix.join(session.working_directory, uploadRelativePath(id, name)),
             mime_type: mimeType ?? "application/octet-stream",
-            byte_length: bytes.length,
+            byte_length: content.byteLength,
             sha256,
             state: "uploading",
             claim_token: claimToken,
@@ -209,9 +204,45 @@ export class WorkspaceUploadService {
       }
       return { session };
     });
-    if (claimed.ready) return claimed.ready;
+    if (claimed.ready) {
+      // A declared digest identifies the retry; it is not proof of the bytes.
+      // Verify replays too, without repeating placement or buffering the file.
+      try {
+        for await (const _chunk of source.chunks) combined.throwIfAborted();
+      } catch {
+        throw new ControlPlaneStoreError("conflict", "Upload retry content changed");
+      }
+      return claimed.ready;
+    }
+    let renewal = Promise.resolve();
+    let renewing = false;
+    const timer = setInterval(() => {
+      if (renewing) return;
+      renewing = true;
+      renewal = db
+        .updateTable("session_uploads")
+        .set({
+          lease_expires_at: sql`clock_timestamp() + interval '2 minutes'`,
+          expires_at: sql`clock_timestamp() + ${USER_UPLOAD_DRAFT_TTL_MS} * interval '1 millisecond'`,
+        })
+        .where("id", "=", id)
+        .where("claim_token", "=", claimToken)
+        .where("state", "=", "uploading")
+        .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
+        .returning("id")
+        .executeTakeFirst()
+        .then((row) => {
+          if (!row) controller.abort(new Error("Upload claim expired"));
+        })
+        .catch((error) => controller.abort(error))
+        .finally(() => {
+          renewing = false;
+        });
+    }, 30_000);
+    timer.unref();
+    let fork: ReturnType<typeof forkUpload> | undefined;
     try {
-      signal?.throwIfAborted();
+      combined.throwIfAborted();
       const session = claimed.session;
       const machine =
         session.execution_mode === "development_environment"
@@ -228,7 +259,8 @@ export class WorkspaceUploadService {
       )
         conflict("Workspace root is invalid");
       const request: WorkspaceUploadRequest = {
-        toolBrokerProtocolVersion: 1,
+        uploadProtocolVersion: 2,
+        byteLength: content.byteLength,
         type: "workspace.upload_file",
         requestId: randomUUID(),
         uploadId: id,
@@ -243,17 +275,40 @@ export class WorkspaceUploadService {
           : session.working_directory.slice("/workspace".length).replace(/^\//, ""),
         ...(machine ? { machine } : {}),
       };
-      const receipt = await this.options.uploader.uploadWorkspaceFile(request, bytes, signal);
+      if (mimeType) fork = forkUpload(source.chunks, combined);
+      const transfer = this.options.uploader.uploadWorkspaceFile(
+        request,
+        fork?.workspace ?? source.chunks,
+        combined,
+      );
+      const archival = mimeType
+        ? this.options.images!.putStream(
+            { tenantId, uploadId: id, claimToken },
+            { ...content, chunks: fork!.image },
+            mimeType,
+            combined,
+          )
+        : Promise.resolve(undefined);
+      // Join both effects on failure before releasing the claim. The sibling
+      // cannot keep publishing after a new retry takes ownership.
+      const results = await Promise.allSettled(
+        [transfer, archival].map((promise) =>
+          promise.catch((error) => {
+            controller.abort(error);
+            throw error;
+          }),
+        ),
+      );
+      for (const result of results) if (result.status === "rejected") throw result.reason;
+      const receipt = (results[0] as PromiseFulfilledResult<Awaited<typeof transfer>>).value;
+      const image = (results[1] as PromiseFulfilledResult<Awaited<typeof archival>>).value;
       if (
         receipt.sha256 !== sha256 ||
-        receipt.byteLength !== bytes.length ||
+        receipt.byteLength !== content.byteLength ||
         receipt.relativePath !== uploadRelativePath(id, name)
       )
         throw new Error("Workspace upload receipt changed identity");
-      const image = mimeType
-        ? await this.options.images!.put({ tenantId }, bytes, mimeType, signal)
-        : undefined;
-      signal?.throwIfAborted();
+      combined.throwIfAborted();
       const row = await db.transaction().execute(async (tx) => {
         if (image) {
           const { rows } = await sql<{ id: string }>`select id from session_image_objects
@@ -295,6 +350,11 @@ export class WorkspaceUploadService {
         "conflict",
         "File upload did not complete; retry the upload",
       );
+    } finally {
+      clearInterval(timer);
+      await renewal;
+      controller.abort();
+      fork?.close();
     }
   }
 
@@ -336,7 +396,7 @@ export async function bindInputUploads(
   },
 ): Promise<UserUpload[]> {
   if (!input.ids.length) return [];
-  if (input.ids.length > MAX_USER_UPLOADS || new Set(input.ids).size !== input.ids.length)
+  if (new Set(input.ids).size !== input.ids.length)
     throw new ControlPlaneStoreError("invalid_request", "Invalid input attachment list");
   const rows = await tx
     .selectFrom("session_uploads")
@@ -360,8 +420,6 @@ export async function bindInputUploads(
     conflict("An attachment is unavailable or belongs to another conversation or Workspace");
   const map = new Map(rows.map((row) => [row.id, uploadResource(row)]));
   const uploads = input.ids.map((id) => map.get(id)!);
-  if (uploads.reduce((sum, row) => sum + row.byteLength, 0) > MAX_USER_INPUT_UPLOAD_BYTES)
-    throw new ControlPlaneStoreError("invalid_request", "Combined attachments exceed 32 MiB");
   // The Turn is created later in this same transaction. This claim keeps draft
   // expiry from racing admission and permits reuse inside the same Session.
   await tx

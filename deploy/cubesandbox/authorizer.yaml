@@ -75,9 +75,6 @@ spec:
             requests:
               cpu: 10m
               memory: 24Mi
-            limits:
-              cpu: 250m
-              memory: 64Mi
           volumeMounts:
             - name: credential
               mountPath: /run/pi-cloud-secrets/api-key
@@ -93,7 +90,6 @@ spec:
         - name: temporary
           emptyDir:
             medium: Memory
-            sizeLimit: 8Mi
 ---
 apiVersion: v1
 kind: Service

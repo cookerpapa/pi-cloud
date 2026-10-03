@@ -178,6 +178,8 @@ async function fixture(database: Kysely<Database> = db) {
 
 async function createFixture(db: Kysely<Database>) {
   const tenant = await createPrivateTenant(db, {
+    // Also used against the historical schema by the migration contract.
+    quotas: { maximumProjects: 100, maximumSessions: 1000 },
     slug: `note-${randomUUID()}`,
     ownerDisplayName: "Fixture owner",
   });

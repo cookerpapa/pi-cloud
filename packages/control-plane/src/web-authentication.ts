@@ -34,7 +34,7 @@ const DUMMY_PASSWORD_HASH = Buffer.alloc(PASSWORD_HASH_BYTES, 0xa5);
 export type WebAuthenticationOptions = {
   database: Kysely<Database>;
   enabled: boolean;
-  maximumTenants: number;
+  maximumTenants: number | null;
   tenantQuotas: TenantQuotaConfiguration;
   initialModel?:
     | PrivateTenantInitialModel

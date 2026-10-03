@@ -20,8 +20,7 @@ const zhCN = {
   "upload.uploading": "上传中…",
   "upload.ready": "已上传",
   "upload.failed": "上传失败",
-  "upload.limit":
-    "每次最多 4 个文件，单个不超过 16 MB，总计不超过 32 MB；图片支持 PNG、JPEG、WebP。",
+  "upload.limit": "文件上传不设大小和数量配额；图片支持 PNG、JPEG、WebP。",
   "upload.previewFailed": "图片预览暂不可用",
 
   "chat.loadEarlier": "加载更早的消息",
@@ -461,7 +460,7 @@ const enUS: Record<UiTextKey, string> = {
   "upload.uploading": "Uploading…",
   "upload.ready": "Uploaded",
   "upload.failed": "Upload failed",
-  "upload.limit": "Up to 4 files, 16 MB each and 32 MB total. Images: PNG, JPEG, WebP.",
+  "upload.limit": "No file size or count quota. Images: PNG, JPEG, WebP.",
   "upload.previewFailed": "Image preview unavailable",
 
   "chat.loadEarlier": "Load earlier messages",

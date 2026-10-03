@@ -3,9 +3,6 @@ import { Value } from "typebox/value";
 import { UuidSchema } from "./protocol-primitives.ts";
 import { ImageAttachmentReferenceSchema } from "./image-attachment.ts";
 
-export const MAX_USER_UPLOAD_BYTES = 16 * 1024 * 1024;
-export const MAX_USER_UPLOADS = 4;
-export const MAX_USER_INPUT_UPLOAD_BYTES = 32 * 1024 * 1024;
 export const USER_UPLOAD_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const UserUploadSchema = Type.Object(
@@ -16,23 +13,23 @@ export const UserUploadSchema = Type.Object(
     name: Type.String({ minLength: 1, maxLength: 200 }),
     path: Type.String({ minLength: 1, maxLength: 4096, pattern: "^/" }),
     mimeType: Type.String({ minLength: 1, maxLength: 128 }),
-    byteLength: Type.Integer({ minimum: 1, maximum: MAX_USER_UPLOAD_BYTES }),
+    byteLength: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     sha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
     image: Type.Optional(ImageAttachmentReferenceSchema),
   },
   { additionalProperties: false },
 );
 export type UserUpload = Static<typeof UserUploadSchema>;
-export const UserUploadsSchema = Type.Array(UserUploadSchema, { maxItems: MAX_USER_UPLOADS });
+export const UserUploadsSchema = Type.Array(UserUploadSchema);
 export const UserUploadIdsSchema = Type.Array(UuidSchema, {
-  maxItems: MAX_USER_UPLOADS,
   uniqueItems: true,
 });
 
 export const WorkspaceUploadRequestSchema = Type.Object(
   {
-    toolBrokerProtocolVersion: Type.Literal(1),
+    uploadProtocolVersion: Type.Literal(2),
     type: Type.Literal("workspace.upload_file"),
+    byteLength: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     requestId: UuidSchema,
     uploadId: UuidSchema,
     claimToken: UuidSchema,
@@ -71,11 +68,8 @@ export function parseUserUpload(value: unknown): UserUpload {
 export function parseUserUploads(value: unknown): UserUpload[] {
   if (!Value.Check(UserUploadsSchema, value)) throw new Error("Invalid input attachments");
   const uploads = value.map(parseUserUpload);
-  if (
-    new Set(uploads.map((file) => file.id)).size !== uploads.length ||
-    uploads.reduce((sum, file) => sum + file.byteLength, 0) > MAX_USER_INPUT_UPLOAD_BYTES
-  )
-    throw new Error("Input attachments exceed their budget");
+  if (new Set(uploads.map((file) => file.id)).size !== uploads.length)
+    throw new Error("Duplicate input attachment identities");
   return uploads;
 }
 export function uploadFileName(value: string): string {

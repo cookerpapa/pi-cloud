@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  MAX_IMAGE_ATTACHMENT_BYTES,
   IMAGE_OPAQUE_FIELDS,
   parseImageAttachmentReference,
   type ImageAttachmentReference,
@@ -48,17 +47,9 @@ export class ImageAttachmentCodec {
       ) {
         if (!["image/png", "image/jpeg", "image/webp"].includes(part.mimeType))
           throw new Error("Image must be normalized before attachment upload");
-        if (
-          part.data.length > Math.ceil(MAX_IMAGE_ATTACHMENT_BYTES / 3) * 4 ||
-          part.data.length % 4 !== 0
-        )
-          throw new Error("Invalid or oversized image content");
+        if (part.data.length % 4 !== 0) throw new Error("Invalid or oversized image content");
         const bytes = Buffer.from(part.data, "base64");
-        if (
-          !bytes.length ||
-          bytes.length > MAX_IMAGE_ATTACHMENT_BYTES ||
-          bytes.toString("base64") !== part.data
-        )
+        if (!bytes.length || bytes.toString("base64") !== part.data)
           throw new Error("Invalid or oversized image content");
         const sha = createHash("sha256").update(bytes).digest("hex");
         const key = `${scope.tenantId}:${scope.runId ?? "cold"}:${part.mimeType}:${sha}`;
@@ -139,4 +130,14 @@ export class ImageAttachmentCodec {
     };
     return (await visit(value)) as T;
   }
+}
+
+/** Upload ingress uses a stream; native Pi image parts retain the Buffer API above. */
+export interface ImageUploadStore {
+  putStream(
+    scope: { tenantId: string; uploadId: string; claimToken: string },
+    content: import("@pi-cloud/protocol").UploadContent,
+    mimeType: ImageAttachmentReference["mimeType"],
+    signal: AbortSignal,
+  ): Promise<ImageAttachmentReference>;
 }

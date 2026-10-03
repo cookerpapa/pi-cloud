@@ -10,7 +10,7 @@ global:
 workerPool:
   name: primary
   replicas: 2
-  capacity: 4
+  capacity: null
   clusterDomain: cluster.local
 
 autoscaling:
@@ -62,11 +62,11 @@ credentials:
 
 runtime:
   allowInsecureInternalHttp: true
-  modelConcurrency: 4
-  sessionModelConcurrency: 4
+  modelConcurrency: null
+  sessionModelConcurrency: null
   subagents:
-    maximumDepth: 4
-    maximumNodes: 32
+    maximumDepth: null
+    maximumNodes: null
   timeouts:
     sandboxControlRequestMs: 360000
     modelCapabilityTtlMs: 900000
@@ -82,11 +82,6 @@ state:
 
 resources:
   requests: { cpu: 500m, memory: 2Gi }
-  limits: { cpu: "2", memory: 4Gi }
-
-ephemeral:
-  workspaceSizeLimit: 128Mi
-  temporarySizeLimit: 128Mi
 
 networkPolicy:
   enabled: true

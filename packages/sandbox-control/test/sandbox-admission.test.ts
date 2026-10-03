@@ -82,3 +82,15 @@ describe("Broker physical Sandbox admission", () => {
     expect(capacity.size).toBe(0);
   });
 });
+
+it("records every admitted VM without a count quota and preserves close rejection", async () => {
+  const evict = vi.fn(async () => false);
+  const admission = new SandboxAdmission(null, evict);
+  await Promise.all(Array.from({ length: 40 }, (_, n) => admission.acquire(String(n), assignment)));
+  expect(admission.size).toBe(40);
+  expect(evict).not.toHaveBeenCalled();
+  admission.close();
+  await expect(admission.acquire("late", assignment)).rejects.toMatchObject({
+    code: "tool_binding_admission_closed",
+  });
+});

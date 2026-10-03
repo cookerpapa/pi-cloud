@@ -1,15 +1,14 @@
 # Configuration
 
-Pending conversation inputs have a code-owned maximum of 64 items per Session
-and the existing 100,000-character input limit. The pending-input view uses
+Pending conversation inputs have no count quota. Their existing 100,000-character
+wire envelope remains bounded, along with encoded delegated startup records. The pending-input view uses
 `input.queue` SSE updates and current snapshots on initialization, reconnect and
 focus; browser requests have a ten-second deadline. Successful actions reuse
 their returned snapshot. Promotion reconciliation wakes affected Sessions on
 changes/known deadlines and selects at most 32 eligible rows per scoped pass;
 it allows two local HTTP deliveries in flight and retains per-Run delivery order.
 Retries use the existing control-request identity and bounded next-attempt times.
-These are product limits, not another Run scheduler or tenant model concurrency
-setting. See [ADR-0194](adr/0194-editable-pending-inputs.md) and
+Delivery batch sizes and transport envelopes do not cap the total accepted queue. See [ADR-0194](adr/0194-editable-pending-inputs.md) and
 [ADR-0212](adr/0212-ordered-control-read-models.md).
 
 PiCloud has four configuration surfaces. A setting belongs to exactly one of
@@ -155,26 +154,30 @@ Do not commit proxy credentials or expose a local proxy publicly.
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
-| `PI_CLOUD_SUPERVISOR_CAPACITY` | `4` | active physical Session families per Worker; all delegated Lanes share their family's slot |
+| `PI_CLOUD_SUPERVISOR_CAPACITY` | `unlimited` | active physical Session families per Worker; all delegated Lanes share their family's slot |
 | `PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS` | `4` | bounded PostgreSQL pool per Worker; tune independently from slots |
-| `PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH` | `4` | recursive Agent-tree depth |
-| `PI_CLOUD_SUBAGENT_MAXIMUM_NODES` | `32` | total descendants per root Run |
-| `PI_CLOUD_WORKER_MODEL_CONCURRENCY` | `4` | simultaneous provider requests across the Worker, including Compaction |
-| `PI_CLOUD_SESSION_MODEL_CONCURRENCY` | `4` | simultaneous provider requests per physical Session; cannot exceed the Worker limit |
-| `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes managed by the one-host control plane; leaves two elastic slots beside one starter development machine |
+| `PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH` | `unlimited` | recursive Agent-tree depth |
+| `PI_CLOUD_SUBAGENT_MAXIMUM_NODES` | `unlimited` | total descendants per root Run |
+| `PI_CLOUD_WORKER_MODEL_CONCURRENCY` | `unlimited` | simultaneous provider requests across the Worker, including Compaction |
+| `PI_CLOUD_SESSION_MODEL_CONCURRENCY` | `unlimited` | simultaneous provider requests per physical Session; combines with any explicitly configured Worker limit |
+| `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `unlimited` | optional active-Cube quota; physical Cube capacity still applies |
 | `PI_CLOUD_RUNTIME_PROBE_CONCURRENCY` | `4` | concurrent physical-runtime health checks per control plane, range 1–64; limits in-flight work, never the number of VMs covered |
 | `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous interactive workflows per control plane (Helm default 32); fixed Tools have a Cubelet-local limit of 32 |
-| `PI_CLOUD_CONTROL_PLANE_MEMORY_LIMIT` / `PI_CLOUD_CONTROL_PLANE_CPUS` | `1536m` / `2.0` | combined control-plane resources; raise together with measured operation/delivery capacity; Helm uses workload resources |
 | `PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES` | `4` | idle warm Cube limit |
 | `PI_CLOUD_SANDBOX_WARM_TTL_MS` | `900000` | idle warm lifetime (15 minutes) |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS` | `15000` | control-plane sandbox-management ownership lease |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS` | `5000` | sandbox-management ownership heartbeat |
 
-The self-hosted K3s kubelet allows 1,024 processes/threads per Pod. Its native Kafka
-transactional producers scale with owned partitions; the 32-partition rollout
-observed 251 threads, so the former 256 limit could prevent health probes from
-starting. Size the PID budget with partition ownership and retain probe headroom;
-Session count alone does not describe this overhead.
+The self-hosted K3s kubelet uses `pod-max-pids=-1` (node allocatable PID capacity).
+Helm workloads keep scheduling requests and omit CPU/memory hard limits; scratch
+`emptyDir` volumes have no PiCloud size ceiling. VM profile specifications still
+allocate finite guest CPU/memory. There is no PiCloud `GOMEMLIMIT` override.
+
+Product quotas default to absent (`null` in durable policy and Helm values,
+`unlimited` in environment configuration). This includes tenants/projects/Sessions,
+Worker families, model concurrency, model/Tool counts per Run and Subagent trees.
+Explicit positive limits remain optional operator policy; migrations 166–168 clear
+the previous deployment defaults. See [ADR-0215](adr/0215-unlimited-product-quotas.md).
 
 Session capacity and model concurrency are separate. Subagent depth/node settings
 apply to both Projector admission and Worker bounds; the self-hosted values generator shares the variables,
@@ -205,14 +208,12 @@ switch. Keep the database host clock disciplined; this does not certify clock
 continuity across an untested database failover.
 `production:config` rejects incoherent lease combinations.
 
-The default admits four active families, not one parent plus three children.
-Models are served round-robin between ready families. Waiting for a Tool, child
-or supervisor holds no model permit. Depth/node limits still bound the number
-of resident tasks; capacity × (node limit + 1) must fit the 1,000-task inventory.
-At 85% of the Node heap limit or reported constrained-memory RSS limit, the Worker
-stops admitting new families but can finish existing families. This is a soft
-admission watermark, not an OOM guarantee. Size memory for contexts, serialization
-and output, not just model inference or the number of HTTP submissions.
+There is no default active-family or child-count quota. With explicit finite
+model permits, ready families are served round-robin. Waiting for a Tool, child
+or supervisor holds no model permit. Memory admission stops new families at 85%
+heap/constrained-memory RSS use or below 15% available host/cgroup memory, while
+existing families can finish. This is a soft admission watermark, not an OOM
+guarantee. Contexts and serialization still consume real memory.
 The OS memory limit is sampled once a second on one internal thread per Worker;
 heap usage and RSS remain fresh main-thread reads. Missing, failed or older-than-2.5s
 limit samples stop new-family admission. This prevents synchronous cgroup discovery
@@ -522,8 +523,10 @@ backend in the platform and `pi-workers` values, and put the JSON in each truste
 component's existing Secret. An empty endpoint disables image storage explicitly;
 reading images then fails clearly instead of returning inline Kafka payloads.
 
-Per-image input/output bounds are 64/42 MiB; guest image replies are capped at
-64 MiB. S3 transfer admission is 128 MiB per process, independent of native
+Uploads and image references have no product byte quota; guest normalized-image
+reply envelopes remain 64 MiB. S3 upload transport streams. Native buffered image
+reads/writes wait under a 128 MiB aggregate admission budget; an oversized single
+image may proceed alone. This is transport backpressure, independent of native
 context memory. Model requests permit 128 MiB raw/decompressed bodies with a
 256 MiB aggregate in-flight payload budget; buffers and parsed JSON add memory
 beyond these byte counters. Kafka execution records stay below 900 KiB and reject

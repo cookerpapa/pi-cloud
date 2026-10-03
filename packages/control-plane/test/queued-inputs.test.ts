@@ -5,7 +5,6 @@ import { Pool } from "pg";
 import { sql, type Kysely, type QueryId } from "kysely";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
-import { MAX_QUEUED_INPUTS } from "@pi-cloud/protocol";
 import { parseKafkaAcceptedFact } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { projectNativeSessionAppend } from "@pi-cloud/pi-session-postgres";
 import { ExecutionStreamProjector } from "@pi-cloud/runtime-core";
@@ -634,19 +633,17 @@ describe.sequential("pending conversation inputs", () => {
         }),
       ).rejects.toMatchObject({ code: "idempotency_conflict" });
       expect(await f.list()).toEqual(before);
-      for (let i = before.items.length; i < MAX_QUEUED_INPUTS; i++) await f.accept(`input ${i}`);
-      await expect(
-        f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "overflow", {
-          text: "full",
-        }),
-      ).rejects.toMatchObject({ code: "conflict" });
-      expect((await f.list()).items).toHaveLength(MAX_QUEUED_INPUTS);
+      for (let i = before.items.length; i < 65; i++) await f.accept(`input ${i}`);
+      await f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "overflow", {
+        text: "accepted without a count quota",
+      });
+      expect((await f.list()).items).toHaveLength(66);
       expect(
         await database
           .selectFrom("turn_control_requests")
           .select("id")
           .where("tenant_id", "=", f.tenant.tenantId)
-          .where("idempotency_key", "in", ["foreign", "overflow"])
+          .where("idempotency_key", "in", ["foreign"])
           .execute(),
       ).toEqual([]);
     } finally {
@@ -795,9 +792,9 @@ describe.sequential("pending conversation inputs", () => {
         revision: q.revision,
       }),
     ).rejects.toMatchObject({ code: "idempotency_conflict" });
-    for (let i = 1; i < MAX_QUEUED_INPUTS; i++) await f.accept(`input ${i}`);
-    await expect(f.accept("overflow")).rejects.toMatchObject({ code: "conflict" });
-    expect((await f.list()).items).toHaveLength(MAX_QUEUED_INPUTS);
+    for (let i = 1; i < 65; i++) await f.accept(`input ${i}`);
+    await f.accept("overflow");
+    expect((await f.list()).items).toHaveLength(66);
   }, 30000);
 
   it("recovers a consumed promotion after a lost reply and API restart without duplicate delivery", async () => {

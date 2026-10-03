@@ -1,3 +1,4 @@
+import { uploadHttp, readUploadReceipt } from "./upload-http.ts";
 import {
   TOOL_WORKFLOW_PATH,
   parseInternalServiceError,
@@ -32,11 +33,7 @@ import {
 import { activeTraceCarrier } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
 import { Agent, fetch as internalFetch, type Response } from "undici";
-import {
-  MAX_USER_UPLOAD_BYTES,
-  uploadRelativePath,
-  type WorkspaceUploadRequest,
-} from "@pi-cloud/protocol";
+import { uploadRelativePath, type WorkspaceUploadRequest } from "@pi-cloud/protocol";
 import type { WorkspaceUploadReceipt } from "./workspace-volume-gateway-contract.ts";
 
 // Broker routes may be Pod IPs; they must not traverse the provider egress proxy.
@@ -349,55 +346,71 @@ export class SandboxControlClient {
 
   async uploadWorkspaceFile(
     request: WorkspaceUploadRequest,
-    bytes: Uint8Array,
+    chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
-    redirects = 0,
   ): Promise<WorkspaceUploadReceipt> {
-    if (!bytes.length || bytes.length > MAX_USER_UPLOAD_BYTES)
-      throw new Error("Upload exceeds its size limit");
-    const response = await internalFetch(
-      new URL(SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH, this.#baseUrl),
-      {
-        dispatcher: internalDispatcher,
-        redirect: "manual",
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${this.#serviceToken}`,
-          "content-type": "application/octet-stream",
-          "x-pi-cloud-upload": Buffer.from(JSON.stringify(request)).toString("base64url"),
+    let owner: SandboxControlClient = this;
+    for (let redirects = 0; ; redirects++) {
+      const response = await internalFetch(
+        new URL(SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH, owner.#baseUrl),
+        {
+          dispatcher: internalDispatcher,
+          redirect: "manual",
+          method: "HEAD",
+          headers: {
+            authorization: `Bearer ${this.#serviceToken}`,
+            "x-pi-cloud-upload": Buffer.from(JSON.stringify(request)).toString("base64url"),
+          },
+          signal: signal
+            ? AbortSignal.any([signal, AbortSignal.timeout(this.#requestTimeoutMs)])
+            : AbortSignal.timeout(this.#requestTimeoutMs),
         },
-        body: Buffer.from(bytes),
-        signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(this.#requestTimeoutMs)])
-          : AbortSignal.timeout(this.#requestTimeoutMs),
-      },
-    );
-    if (response.status === 307 && response.headers.get("location")) {
-      await response.body?.cancel();
-      if (redirects >= 3) throw new Error("Workspace owner routing did not converge");
-      const owner = new SandboxControlClient({
-        baseUrl: response.headers.get("location")!,
-        serviceToken: this.#serviceToken,
-        allowInsecureHttp: this.#allowInsecureHttp,
-        requestTimeoutMs: this.#requestTimeoutMs,
-      });
-      return owner.uploadWorkspaceFile(request, bytes, signal, redirects + 1);
-    }
-    const value = await boundedJson(response);
-    if (!response.ok)
-      throw new SandboxControlClientError(
-        "workspace_upload_failed",
-        "Workspace upload failed",
-        response.status >= 500,
       );
-    const receipt = value as WorkspaceUploadReceipt;
-    if (
-      receipt.sha256 !== request.sha256 ||
-      receipt.byteLength !== bytes.length ||
-      receipt.relativePath !== uploadRelativePath(request.uploadId, request.name)
-    )
-      throw new Error("Workspace upload receipt changed identity");
-    return receipt;
+      await response.body?.cancel();
+      if (response.status === 307 && response.headers.get("location")) {
+        if (redirects >= 3) throw new Error("Workspace owner routing did not converge");
+        owner = new SandboxControlClient({
+          baseUrl: response.headers.get("location")!,
+          serviceToken: this.#serviceToken,
+          allowInsecureHttp: this.#allowInsecureHttp,
+          requestTimeoutMs: this.#requestTimeoutMs,
+        });
+        continue;
+      }
+      if (!response.ok)
+        throw new SandboxControlClientError(
+          "workspace_upload_failed",
+          "Workspace upload preflight failed",
+          response.status >= 500,
+        );
+      break;
+    }
+    return uploadHttp({
+      url: new URL(SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH, owner.#baseUrl),
+      token: this.#serviceToken,
+      metadata: request,
+      chunks,
+      ...(signal ? { signal } : {}),
+      receiptTimeoutMs: this.#requestTimeoutMs,
+      read: async (response) => {
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new SandboxControlClientError(
+            "workspace_upload_failed",
+            "Workspace upload failed; retry its identity",
+            response.status >= 500 || response.status === 307,
+          );
+        }
+        const receipt = (await readUploadReceipt(response)) as WorkspaceUploadReceipt;
+        if (
+          receipt.sha256 !== request.sha256 ||
+          receipt.byteLength !== request.byteLength ||
+          receipt.relativePath !== uploadRelativePath(request.uploadId, request.name)
+        )
+          throw new Error("Workspace upload receipt changed identity");
+        return receipt;
+      },
+    });
   }
 
   async readWorkspaceFile(
@@ -780,10 +793,10 @@ export class ReplicatedSandboxControlClient {
 
   uploadWorkspaceFile(
     request: WorkspaceUploadRequest,
-    bytes: Uint8Array,
+    chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ): Promise<WorkspaceUploadReceipt> {
-    return this.#nextReplica().uploadWorkspaceFile(request, bytes, signal);
+    return this.#nextReplica().uploadWorkspaceFile(request, chunks, signal);
   }
 
   readWorkspaceFile(

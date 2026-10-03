@@ -941,3 +941,90 @@ describe("Sandbox control authenticated RPC", () => {
     );
   });
 });
+
+it("resolves the upload owner before consuming bytes and never replays a consumed stream on a late redirect", async () => {
+  const bytes = Buffer.alloc(17 * 1024 * 1024, 0x42);
+  const request = {
+    uploadProtocolVersion: 2 as const,
+    type: "workspace.upload_file" as const,
+    requestId: crypto.randomUUID(),
+    uploadId: crypto.randomUUID(),
+    claimToken: crypto.randomUUID(),
+    tenantId: crypto.randomUUID(),
+    workspaceId: crypto.randomUUID(),
+    sessionId: crypto.randomUUID(),
+    rootPath: "",
+    name: "large.bin",
+    byteLength: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+  let prepared = false,
+    received = 0,
+    lateRedirect = false,
+    ownerAddress = "";
+  const target = {
+    ...backend(),
+    async prepareWorkspaceUpload() {
+      prepared = true;
+    },
+    async uploadWorkspaceFile(input: typeof request, chunks: AsyncIterable<Uint8Array>) {
+      if (lateRedirect) throw new SandboxOwnerRedirectError(ownerAddress);
+      const hash = createHash("sha256");
+      for await (const chunk of chunks) {
+        received += chunk.byteLength;
+        hash.update(chunk);
+      }
+      expect(hash.digest("hex")).toBe(input.sha256);
+      return {
+        relativePath: `uploads/${input.uploadId}/${input.name}`,
+        sha256: input.sha256,
+        byteLength: received,
+      };
+    },
+  };
+  const owner = new SandboxControlServer({
+    host: "127.0.0.1",
+    port: 0,
+    serviceToken: SERVICE_TOKEN,
+    workspaceServiceToken: SERVICE_TOKEN,
+    broker: target,
+  });
+  servers.push(owner);
+  ownerAddress = await owner.listen();
+  const forward = vi.fn(async () => {
+    throw new Error("Bytes reached a non-owner");
+  });
+  const redirect = new SandboxControlServer({
+    host: "127.0.0.1",
+    port: 0,
+    serviceToken: SERVICE_TOKEN,
+    workspaceServiceToken: SERVICE_TOKEN,
+    broker: {
+      ...backend(),
+      prepareWorkspaceUpload: async () => {
+        throw new SandboxOwnerRedirectError(ownerAddress);
+      },
+      uploadWorkspaceFile: forward,
+    },
+  });
+  servers.push(redirect);
+  const client = new SandboxControlClient({
+    baseUrl: await redirect.listen(),
+    serviceToken: SERVICE_TOKEN,
+    allowInsecureHttp: true,
+  });
+  const chunks = {
+    async *[Symbol.asyncIterator]() {
+      expect(prepared).toBe(true);
+      for (let i = 0; i < bytes.length; i += 65536) yield bytes.subarray(i, i + 65536);
+    },
+  };
+  expect((await client.uploadWorkspaceFile(request, chunks)).byteLength).toBe(bytes.length);
+  expect(forward).not.toHaveBeenCalled();
+  lateRedirect = true;
+  await expect(client.uploadWorkspaceFile(request, chunks)).rejects.toMatchObject({
+    code: "workspace_upload_failed",
+    retryable: true,
+  });
+  expect(received).toBe(bytes.length);
+});

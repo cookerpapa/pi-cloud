@@ -15,7 +15,8 @@
   "dependencies": {
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/protocol": "0.1.0",
-    "kysely": "0.29.4"
+    "kysely": "0.29.4",
+    "@pi-cloud/domain": "0.1.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.84.1",

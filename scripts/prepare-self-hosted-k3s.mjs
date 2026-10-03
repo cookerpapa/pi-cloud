@@ -20,10 +20,10 @@ const kubeletArgs = k3sConfig["kubelet-arg"] ?? [];
 const currentLimit = Number(
   kubeletArgs.find((value) => value.startsWith("pod-max-pids="))?.split("=")[1] ?? 0,
 );
-if (currentLimit > 0 && currentLimit < 1024) {
+if (currentLimit !== -1) {
   k3sConfig["kubelet-arg"] = [
     ...kubeletArgs.filter((value) => !value.startsWith("pod-max-pids=")),
-    "pod-max-pids=1024",
+    "pod-max-pids=-1",
   ];
   writeFileSync(k3sConfigPath, stringify(k3sConfig), { mode: 0o600 });
   execFileSync("systemctl", ["restart", "k3s"], { stdio: "inherit" });

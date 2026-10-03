@@ -48,11 +48,10 @@ spec:
             - { name: KAFKA_MIN_INSYNC_REPLICAS, value: "2" }
             - { name: KAFKA_NUM_PARTITIONS, value: "32" }
             - { name: KAFKA_LOG_DIRS, value: /var/lib/kafka/data }
-            - { name: KAFKA_HEAP_OPTS, value: {{ $.Values.kafka.heap | quote }} }
           ports: [{ name: kafka, containerPort: 9092 }, { name: controller, containerPort: 9093 }]
           readinessProbe: { tcpSocket: { port: kafka }, periodSeconds: 5, timeoutSeconds: 2 }
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
-          resources: { requests: { cpu: 100m, memory: 768Mi }, limits: { cpu: "4", memory: 2Gi } }
+          resources: { requests: { cpu: 100m, memory: 768Mi } }
           volumeMounts: [{ name: data, mountPath: /var/lib/kafka/data }]
       volumes: [{ name: data, persistentVolumeClaim: { claimName: pi-cloud-kafka-{{ $id }} } }]
 {{- end }}

@@ -1,11 +1,7 @@
 import { constants } from "node:fs";
 import { open, mkdir, link, unlink, type FileHandle } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import {
-  MAX_USER_UPLOAD_BYTES,
-  uploadFileName,
-  uploadRelativePath,
-} from "@pi-cloud/protocol/uploads";
+import { uploadFileName, uploadRelativePath } from "@pi-cloud/protocol/uploads";
 
 /** Linux fd-relative placement. Caller owns and has authorized the root fd.
  * Exclusive link publishes a complete file without replacing user changes. */
@@ -14,18 +10,19 @@ export async function writeWorkspaceUpload(
   input: {
     id: string;
     name: string;
-    bytes: Uint8Array;
+    chunks: AsyncIterable<Uint8Array>;
+    byteLength: number;
     sha256: string;
     signal?: AbortSignal;
   },
 ): Promise<{ relativePath: string; byteLength: number; sha256: string }> {
   const relativePath = uploadRelativePath(input.id, input.name);
   if (
-    !input.bytes.length ||
-    input.bytes.length > MAX_USER_UPLOAD_BYTES ||
-    createHash("sha256").update(input.bytes).digest("hex") !== input.sha256
+    !Number.isSafeInteger(input.byteLength) ||
+    input.byteLength < 1 ||
+    !/^[0-9a-f]{64}$/.test(input.sha256)
   )
-    throw new Error("Upload content does not match its identity or size limit");
+    throw new Error("Upload content identity is invalid");
   input.signal?.throwIfAborted();
   const directories: FileHandle[] = [];
   let current = root;
@@ -52,7 +49,17 @@ export async function writeWorkspaceUpload(
       0o600,
     );
     try {
-      await file.writeFile(input.bytes, { signal: input.signal });
+      const hash = createHash("sha256");
+      let length = 0;
+      for await (const chunk of input.chunks) {
+        input.signal?.throwIfAborted();
+        length += chunk.byteLength;
+        if (length > input.byteLength) throw new Error("Upload exceeds its declared length");
+        hash.update(chunk);
+        await file.writeFile(chunk, { signal: input.signal });
+      }
+      if (length !== input.byteLength || hash.digest("hex") !== input.sha256)
+        throw new Error("Upload content does not match its declared identity");
       await file.sync();
     } finally {
       await file.close();
@@ -69,7 +76,7 @@ export async function writeWorkspaceUpload(
       );
       try {
         const stat = await existing.stat();
-        if (!stat.isFile() || stat.size !== input.bytes.length)
+        if (!stat.isFile() || stat.size !== input.byteLength)
           throw new Error("Upload destination already contains different content");
         const digest = createHash("sha256");
         const buffer = Buffer.allocUnsafe(64 * 1024);
@@ -78,18 +85,18 @@ export async function writeWorkspaceUpload(
           const { bytesRead } = await existing.read(buffer, 0, buffer.length, null);
           if (!bytesRead) break;
           total += bytesRead;
-          if (total > input.bytes.length)
+          if (total > input.byteLength)
             throw new Error("Upload destination changed during verification");
           digest.update(buffer.subarray(0, bytesRead));
         }
-        if (total !== input.bytes.length || digest.digest("hex") !== input.sha256)
+        if (total !== input.byteLength || digest.digest("hex") !== input.sha256)
           throw new Error("Upload destination already contains different content");
       } finally {
         await existing.close();
       }
     }
     await current.sync();
-    return { relativePath, byteLength: input.bytes.length, sha256: input.sha256 };
+    return { relativePath, byteLength: input.byteLength, sha256: input.sha256 };
   } finally {
     if (temporary) await unlink(temporary).catch(() => {});
     for (const directory of directories.reverse()) await directory.close();

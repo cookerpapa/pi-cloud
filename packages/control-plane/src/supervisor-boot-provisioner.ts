@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import type { Database } from "@pi-cloud/database";
 import {
   parseSupervisorBootProvisionRequest,
@@ -22,7 +23,7 @@ export type SupervisorBootProvisionerOptions = {
   database: Kysely<Database>;
   allowedSupervisorIdPrefix: string;
   managementBaseUrlTemplates: readonly string[];
-  maximumCapacity: number;
+  maximumCapacity: number | null;
   enrollmentToken: string;
   credentialTtlMs?: number;
   clock?: () => Date;
@@ -166,7 +167,7 @@ function validPath(value: string): string {
 function sameProvision(
   request: SupervisorBootProvisionRequest,
   credential: CredentialRow,
-  sandbox: { max_concurrent_sessions: number } | undefined,
+  sandbox: { max_concurrent_sessions: number | null } | undefined,
   host: { management_base_url: string } | undefined,
 ): boolean {
   return (
@@ -185,7 +186,7 @@ export class SupervisorBootProvisioner {
   readonly #database: Kysely<Database>;
   readonly #allowedSupervisorIdPrefix: string;
   readonly #managementBaseUrlTemplates: readonly string[];
-  readonly #maximumCapacity: number;
+  readonly #maximumCapacity: number | null;
   readonly #enrollmentDigest: Buffer;
   readonly #credentialTtlMs: number;
   readonly #clock: () => Date;
@@ -207,7 +208,7 @@ export class SupervisorBootProvisioner {
     ) {
       throw new TypeError("managementBaseUrlTemplates must contain unique templates");
     }
-    this.#maximumCapacity = positiveInteger(options.maximumCapacity, "maximumCapacity", 256);
+    this.#maximumCapacity = resourceLimit(options.maximumCapacity, "maximumCapacity");
     this.#enrollmentDigest = tokenDigest(boundedToken(options.enrollmentToken, "enrollmentToken"));
     this.#credentialTtlMs = positiveInteger(
       options.credentialTtlMs ?? DEFAULT_CREDENTIAL_TTL_MS,
@@ -252,7 +253,12 @@ export class SupervisorBootProvisioner {
         managementUrl(template.replace("{supervisorId}", provisionedSupervisorId)) ===
         provisionedManagementBaseUrl,
     );
-    if (!matchesAllowedManagementRoute || request.maxConcurrentSessions > this.#maximumCapacity) {
+    if (
+      !matchesAllowedManagementRoute ||
+      (this.#maximumCapacity !== null &&
+        (request.maxConcurrentSessions === null ||
+          request.maxConcurrentSessions > this.#maximumCapacity))
+    ) {
       throw new SupervisorBootProvisionError(
         "provision_policy_rejected",
         "Supervisor provision request is outside deployment policy",
@@ -296,7 +302,11 @@ export class SupervisorBootProvisioner {
             updated_at: now,
           })
           .where("supervisor_id", "=", provisionedSupervisorId)
-          .where("maximum_capacity", "=", host.maximum_capacity)
+          .where(
+            "maximum_capacity",
+            host.maximum_capacity === null ? "is" : "=",
+            host.maximum_capacity,
+          )
           .executeTakeFirstOrThrow();
       }
       const conflict = await this.#findConflict(transaction, request);

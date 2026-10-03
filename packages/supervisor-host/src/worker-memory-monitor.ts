@@ -3,15 +3,16 @@ import { getHeapStatistics } from "node:v8";
 
 const monotonicMs = () => Number(process.hrtime.bigint() / 1_000_000n);
 const MAX_SAMPLE_AGE_MS = 2_500;
-type LimitSample = { limit: number; startedAt: number };
+type LimitSample = { limit: number; available: number; total: number; startedAt: number };
 
 // libuv's cgroup discovery is synchronous and can stall for tens of milliseconds.
-// Keep it off the Agent/PG callback thread; only the limit is sampled, not usage.
+// Keep it off the Agent/PG callback thread; availability is sampled off-thread alongside the container ceiling.
 const probe = `
   const { parentPort } = require('node:worker_threads');
+  const { totalmem } = require('node:os');
   const sample = () => {
     const startedAt = Number(process.hrtime.bigint() / 1_000_000n);
-    parentPort.postMessage({ limit: process.constrainedMemory(), startedAt });
+    parentPort.postMessage({ limit: process.constrainedMemory(), available: process.availableMemory(), total: totalmem(), startedAt });
   };
   sample();
   setInterval(sample, 1000);
@@ -78,9 +79,13 @@ export class WorkerMemoryMonitor {
     )
       return false;
     const heap = getHeapStatistics();
+    // libuv can return UINT64_MAX for an existing but unlimited cgroup. A
+    // cgroup budget larger than physical memory is not usable RAM.
+    const budget = Math.min(sample.limit || sample.total, sample.total);
     return (
       heap.used_heap_size < heap.heap_size_limit * 0.85 &&
-      (sample.limit === 0 || process.memoryUsage.rss() < sample.limit * 0.85)
+      process.memoryUsage.rss() < budget * 0.85 &&
+      sample.available > budget * 0.15
     );
   }
 

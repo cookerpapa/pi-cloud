@@ -1,3 +1,4 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import type { PublicationAvailability } from "@pi-cloud/protocol";
 import { PostgresQueueWake, type Database } from "@pi-cloud/database";
 import {
@@ -22,8 +23,8 @@ export const familyKey = (r: Pick<ExecutionReference, "tenantId" | "piSessionId"
 
 export function familyAdmission(
   active: readonly ExecutionReference[],
-  capacity: number,
-  maximumLanesPerFamily: number,
+  capacity: number | null,
+  maximumLanesPerFamily: number | null,
   memoryHeadroom = true,
   pendingClaims = 0,
 ): RunClaimAdmission {
@@ -32,11 +33,14 @@ export function familyAdmission(
   return {
     // An unknown claim can become a new family or another Lane in any current
     // family. Reserve both possibilities until its committed identity arrives.
-    ...(counts.size + pendingClaims < capacity && memoryHeadroom
+    ...((capacity === null || counts.size + pendingClaims < capacity) && memoryHeadroom
       ? {}
       : { allowedFamilyKeys: [...counts.keys()] }),
     blockedFamilyKeys: [...counts]
-      .filter(([, count]) => count + pendingClaims >= maximumLanesPerFamily)
+      .filter(
+        ([, count]) =>
+          maximumLanesPerFamily !== null && count + pendingClaims >= maximumLanesPerFamily,
+      )
       .map(([key]) => key),
   };
 }
@@ -49,8 +53,8 @@ export type PostgresPiWorkerOptions = {
   database: Kysely<Database>;
   notificationConnectionString: string;
   identity: string;
-  maximumActiveFamilies: number;
-  maximumLanesPerFamily: number;
+  maximumActiveFamilies: number | null;
+  maximumLanesPerFamily: number | null;
   memoryHeadroom?: () => boolean;
   onCapacity?: (sample: { families: number; lanes: number }) => void;
   pollIntervalMs?: number;
@@ -95,8 +99,8 @@ export class PostgresPiWorker {
   readonly #database: Kysely<Database>;
   readonly #notificationConnectionString: string;
   readonly #identity: string;
-  readonly #maximumActiveFamilies: number;
-  readonly #maximumLanesPerFamily: number;
+  readonly #maximumActiveFamilies: number | null;
+  readonly #maximumLanesPerFamily: number | null;
   readonly #memoryHeadroom: () => boolean;
   readonly #memoryMonitor: WorkerMemoryMonitor | undefined;
   readonly #onCapacity: NonNullable<PostgresPiWorkerOptions["onCapacity"]>;
@@ -129,11 +133,11 @@ export class PostgresPiWorker {
       8_192,
     );
     this.#identity = bounded(options.identity, "identity", 256);
-    this.#maximumActiveFamilies = positiveInteger(
+    this.#maximumActiveFamilies = resourceLimit(
       options.maximumActiveFamilies,
       "maximumActiveFamilies",
     );
-    this.#maximumLanesPerFamily = positiveInteger(
+    this.#maximumLanesPerFamily = resourceLimit(
       options.maximumLanesPerFamily,
       "maximumLanesPerFamily",
     );
@@ -370,6 +374,7 @@ export class PostgresPiWorker {
   }
 
   async #cancellationReferences(): Promise<CancellationReference[]> {
+    if (this.#activeCancellations.size >= 256) return [];
     return this.#database
       .selectFrom("turn_control_requests as cancellation")
       .innerJoin("runs as run", (join) =>
@@ -383,7 +388,12 @@ export class PostgresPiWorker {
       .where("cancellation.state", "in", ["pending", "dispatched"])
       .where("run.sandbox_id", "=", this.#identity)
       .where("run.state", "in", ["running", "settling"])
-      .limit(this.#maximumActiveFamilies * this.#maximumLanesPerFamily)
+      .$if(this.#activeCancellations.size > 0, (query) =>
+        query.where("run.id", "not in", [...this.#activeCancellations.keys()]),
+      )
+      .orderBy("cancellation.available_at")
+      .orderBy("cancellation.id")
+      .limit(256 - this.#activeCancellations.size)
       .execute();
   }
 

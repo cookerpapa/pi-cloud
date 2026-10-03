@@ -230,14 +230,14 @@ describe("PiWorkerRuntime", () => {
         new PiWorkerRuntime({
           config: {
             ...baseConfig,
-            maxConcurrentSessions: 17,
+            maxConcurrentSessions: 0,
           },
           database,
 
           sandboxControl: runtimeSandboxControl,
           runWorkerFactory,
         }),
-    ).toThrow("Pi SDK Worker runtime capacity must be between 1 and 16");
+    ).toThrow("positive safe integer or unlimited");
     expect(
       () =>
         new PiWorkerRuntime({

@@ -369,7 +369,7 @@ disable:
   - metrics-server
 secrets-encryption: true
 kubelet-arg:
-  - pod-max-pids=1024
+  - pod-max-pids=-1
 EOF
   sudo install -d -m 0755 /etc/rancher/k3s
   if [[ ! -e /etc/rancher/k3s/config.yaml ]]; then

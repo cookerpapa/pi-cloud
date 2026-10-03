@@ -1,5 +1,5 @@
+import { resourceLimit } from "@pi-cloud/domain";
 import { createHash, randomUUID } from "node:crypto";
-import { MAX_QUEUED_INPUTS } from "@pi-cloud/protocol";
 import { bindInputUploads } from "./workspace-upload-service.ts";
 import { holdQueuedSteer, lockSteerTarget } from "./queued-steer.ts";
 import { laneDependenciesReady } from "@pi-cloud/runtime-core/run-readiness";
@@ -111,8 +111,8 @@ type ModelSnapshotRow = {
 
 type TenantRuntimePolicy = {
   defaultModelProfileId: string;
-  maximumProjects: number;
-  maximumSessions: number;
+  maximumProjects: number | null;
+  maximumSessions: number | null;
 };
 
 type AssignedSandboxDomain = {
@@ -256,20 +256,22 @@ export class ControlPlaneStore {
     try {
       return await this.#database.transaction().execute(async (transaction) => {
         const policy = await this.#lockTenantPolicy(transaction);
-        const projectCount = await transaction
-          .selectFrom("projects")
-          .select((expression) => expression.fn.countAll<string>().as("count"))
-          .where("tenant_id", "=", this.#tenantId)
-          .where("deleted_at", "is", null)
-          .executeTakeFirstOrThrow();
-        if (
-          nonNegativeSafeInteger(projectCount.count, "Tenant project count") >=
-          policy.maximumProjects
-        ) {
-          throw new ControlPlaneStoreError(
-            "tenant_quota_exceeded",
-            "Tenant project quota has been reached",
-          );
+        if (policy.maximumProjects !== null) {
+          const projectCount = await transaction
+            .selectFrom("projects")
+            .select((expression) => expression.fn.countAll<string>().as("count"))
+            .where("tenant_id", "=", this.#tenantId)
+            .where("deleted_at", "is", null)
+            .executeTakeFirstOrThrow();
+          if (
+            nonNegativeSafeInteger(projectCount.count, "Tenant project count") >=
+            policy.maximumProjects
+          ) {
+            throw new ControlPlaneStoreError(
+              "tenant_quota_exceeded",
+              "Tenant project quota has been reached",
+            );
+          }
         }
         const project = await transaction
           .insertInto("projects")
@@ -426,21 +428,23 @@ export class ControlPlaneStore {
           "Conversation execution mode does not match the selected storage resource",
         );
       }
-      const sessionCount = await transaction
-        .selectFrom("sessions")
-        .select((expression) => expression.fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", this.#tenantId)
-        .where("pruned_at", "is", null)
-        .executeTakeFirstOrThrow();
-      if (
-        nonNegativeSafeInteger(sessionCount.count, "Tenant session count") >= policy.maximumSessions
-      ) {
-        throw new ControlPlaneStoreError(
-          "tenant_quota_exceeded",
-          "Tenant session quota has been reached",
-        );
+      if (policy.maximumSessions !== null) {
+        const sessionCount = await transaction
+          .selectFrom("sessions")
+          .select((expression) => expression.fn.countAll<string>().as("count"))
+          .where("tenant_id", "=", this.#tenantId)
+          .where("pruned_at", "is", null)
+          .executeTakeFirstOrThrow();
+        if (
+          nonNegativeSafeInteger(sessionCount.count, "Tenant session count") >=
+          policy.maximumSessions
+        ) {
+          throw new ControlPlaneStoreError(
+            "tenant_quota_exceeded",
+            "Tenant session quota has been reached",
+          );
+        }
       }
-
       const developmentEnvironment = await transaction
         .selectFrom("development_environments")
         .select(["id", "owner_user_id", "profile_key", "state"])
@@ -1631,15 +1635,6 @@ export class ControlPlaneStore {
         session.next_mailbox_position,
         "Next mailbox position",
       );
-      const queued = await transaction
-        .selectFrom("runs")
-        .select(sql<number>`count(*)::int`.as("count"))
-        .where("tenant_id", "=", this.#tenantId)
-        .where("session_id", "=", session.id)
-        .where(sql<boolean>`state='queued'`)
-        .executeTakeFirstOrThrow();
-      if (queued.count >= MAX_QUEUED_INPUTS)
-        throw new ControlPlaneStoreError("conflict", "Pending input queue is full");
       if (steerTargetTurnId !== undefined && session.state !== "running")
         throw new ControlPlaneStoreError(
           "conflict",
@@ -2263,8 +2258,8 @@ export class ControlPlaneStore {
     }
     return {
       defaultModelProfileId: policy.defaultModelProfileId,
-      maximumProjects: positiveSafeInteger(String(policy.maximumProjects), "Project quota"),
-      maximumSessions: positiveSafeInteger(String(policy.maximumSessions), "Session quota"),
+      maximumProjects: resourceLimit(policy.maximumProjects, "Project quota"),
+      maximumSessions: resourceLimit(policy.maximumSessions, "Session quota"),
     };
   }
 }

@@ -83,10 +83,10 @@ spec:
             - { name: tmp, mountPath: /tmp }
       volumes:
         - { name: workspace-rwx, persistentVolumeClaim: { claimName: {{ .Values.sandboxPlane.workspace.existingClaim }} } }
-        - { name: gateway-state, emptyDir: { sizeLimit: {{ .Values.sandboxPlane.state.size }} } }
+        - { name: gateway-state, emptyDir: {} }
         - name: secrets
           secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
-        - { name: tmp, emptyDir: { sizeLimit: 128Mi } }
+        - { name: tmp, emptyDir: {} }
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

@@ -8,12 +8,8 @@ export {
   type EnvironmentToolchainReport,
 } from "./environment.ts";
 export { validGuestDirectoryName } from "./guest-directory.ts";
-export { MAX_USER_UPLOAD_BYTES, uploadFileName, uploadRelativePath } from "./user-upload.ts";
-export {
-  MAX_IMAGE_ATTACHMENT_BYTES,
-  MAX_IMAGE_DECODE_PIXELS,
-  MAX_IMAGE_INPUT_BYTES,
-} from "./image-attachment.ts";
+export { uploadFileName, uploadRelativePath } from "./user-upload.ts";
+export {} from "./image-attachment.ts";
 export { type NativeToolEnd, type NativeToolUpdate } from "./native-tool-event.ts";
 export {
   MAX_TOOL_COMMAND_BYTES,

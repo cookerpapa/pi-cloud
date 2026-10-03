@@ -553,11 +553,11 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const store = new ControlPlaneStore({ database: measured, ...f.tenant });
     await store.acceptTurn(f.session.sessionId, randomUUID(), { prompt: "follow-up" });
     // The driver adds BEGIN/COMMIT outside Kysely's query-plugin callbacks.
-    // ADR-0194 also checks the 64-input cap under the Session lock.
-    expect(queries).toHaveLength(6);
+    // ADR-0215 removes the queue-count query; Session ordering still holds its lock.
+    expect(queries).toHaveLength(5);
     expect(
       queries.filter((q) => q.startsWith('select count(*)::int as "count" from "runs"')),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(queries.filter((q) => q.startsWith('with "accepted_turn"'))).toHaveLength(1);
     queries.length = 0;
     const backend: TurnExecutionBackend = {

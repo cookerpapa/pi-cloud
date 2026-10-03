@@ -2135,7 +2135,7 @@ describe("provider-backed Sandbox controller", () => {
         kafkaBrokers: ["kafka:9092"],
         sandboxDomainId: "sandbox-domain-0001",
         advertisedBaseUrl: "http://sandbox-control-0:4300/",
-        maximumActiveSandboxes: 3,
+        maximumActiveSandboxes: null,
         maximumWarmWorkspaceRuntimes: 4,
         cubeSandbox: {
           apiUrl: "https://cube-api.internal",

@@ -46,6 +46,10 @@ cubeEgress:
     enabled: true
     ingressInterface: cube-dev
     tproxyOnIP: 172.16.0.1
+  resources:
+    limits: null
+  netResources:
+    limits: null
 
 cubeNode:
   pvmGuestKernel:
@@ -53,6 +57,8 @@ cubeNode:
   network:
     cidr: 172.16.0.0/18
     cidrSkipConflictCheck: false
+  resources:
+    limits: null
 
 bootstrap:
   pvmHostKernel:
@@ -71,3 +77,14 @@ bootstrap:
         enabled: true
         imagePath: /data/cubelet-xfs.img
         size: 64G
+cubeNodeInstaller:
+  resources:
+    limits: null
+cubeNodeBootstrap:
+  waitResources:
+    limits: null
+  resources:
+    limits: null
+cubeNodePvm:
+  resources:
+    limits: null

@@ -1,3 +1,4 @@
+import { blobContentDigest } from "./upload-digest.ts";
 import {
   parseUserUpload,
   type UserUpload,
@@ -761,7 +762,10 @@ export class PiCloudApi {
         `/v1/sessions/${encodeURIComponent(sessionId)}/uploads/${encodeURIComponent(id)}?name=${encodeURIComponent(name)}`,
         {
           method: "PUT",
-          headers: { "content-type": "application/octet-stream" },
+          headers: {
+            "content-type": "application/octet-stream",
+            "content-digest": await blobContentDigest(file, signal),
+          },
           body: file,
           signal: signal ?? null,
         },

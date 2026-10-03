@@ -15,7 +15,7 @@ it("accepts attachment-only input and preserves bounded identities without accep
   expect(() => parseAcceptTurnRequest({ prompt: "x", uploads: [{ data: "inline" }] })).toThrow();
 });
 
-it("describes filenames as escaped data and bounds aggregate attachments", () => {
+it("describes filenames as escaped data without aggregate attachment quotas", () => {
   const upload = {
     id: randomUUID(),
     sessionId: randomUUID(),
@@ -33,10 +33,16 @@ it("describes filenames as escaped data and bounds aggregate attachments", () =>
     path: upload.path,
     bytes: upload.byteLength,
   });
-  expect(() =>
-    parseUserUploads([upload, { ...upload, id: randomUUID() }, { ...upload, id: randomUUID() }]),
-  ).toThrow("budget");
-  expect(() => parseUserUploads([upload, upload])).toThrow("budget");
+  expect(
+    parseUserUploads(
+      Array.from({ length: 6 }, () => ({
+        ...upload,
+        id: randomUUID(),
+        byteLength: 100 * 1024 * 1024,
+      })),
+    ),
+  ).toHaveLength(6);
+  expect(() => parseUserUploads([upload, upload])).toThrow("Duplicate");
   for (const name of ["../x", "/x", "..", "a\nb", "a\\b", "界".repeat(81)])
     expect(() => uploadFileName(name)).toThrow();
 });

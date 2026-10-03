@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import {
   SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_PATH,
   SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
@@ -37,7 +38,7 @@ import {
 } from "./sandbox-control-client.ts";
 import { SandboxControlError } from "./sandbox-provider.ts";
 import { WorkspaceVolumeGatewayError } from "./workspace-volume-gateway-contract.ts";
-import { MAX_USER_UPLOAD_BYTES, parseWorkspaceUploadRequest } from "@pi-cloud/protocol";
+import { parseUploadIdentity, parseWorkspaceUploadRequest } from "@pi-cloud/protocol";
 import { SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH } from "./sandbox-control-client.ts";
 import { SandboxOwnerRedirectError, type SandboxController } from "./sandbox-controller.ts";
 import { WORKFLOW_LOG_DELIVERY_PATH, type ToolLogDelivery } from "./tool-command-dispatcher.ts";
@@ -100,6 +101,7 @@ export type SandboxControlBackend = Pick<
       | "listSourceCredentials"
       | "disconnectSourceCredential"
       | "uploadWorkspaceFile"
+      | "prepareWorkspaceUpload"
       | "prepareInputImages"
       | "recordRuntimeEvidence"
     >
@@ -223,7 +225,7 @@ export class SandboxControlServer {
     this.#server = Fastify({
       logger: false,
       bodyLimit: options.bodyLimit ?? DEFAULT_BODY_LIMIT,
-      requestTimeout: 320_000,
+      requestTimeout: 0,
       keepAliveTimeout: 5_000,
     });
     this.#server.addHook("onRequest", async (request, reply) => {
@@ -349,7 +351,10 @@ export class SandboxControlServer {
     const labels = { provider: this.#broker.providerId };
     this.#metrics?.sandboxActive.set(labels, this.#broker.activeCount);
     this.#metrics?.sandboxAdmissionActive.set(labels, this.#broker.admittedCount);
-    this.#metrics?.sandboxAdmissionLimit.set(labels, this.#broker.maximumActiveSandboxes);
+    this.#metrics?.sandboxAdmissionLimit.set(
+      labels,
+      this.#broker.maximumActiveSandboxes ?? Infinity,
+    );
     this.#metrics?.sandboxAdmissionWaiting.set(labels, this.#broker.admissionWaitingCount);
     this.#metrics?.sandboxPrewarm.set(labels, this.#broker.cleanPrewarmCount);
   }
@@ -756,63 +761,75 @@ export class SandboxControlServer {
       }
     });
 
-    this.#server.addContentTypeParser(
-      "application/octet-stream",
-      { parseAs: "buffer", bodyLimit: MAX_USER_UPLOAD_BYTES },
-      (_request, body, done) => done(null, body),
+    this.#server.addContentTypeParser("application/octet-stream", (_request, body, done) =>
+      done(null, body),
     );
-    const uploads = new Set<FastifyRequest>();
     this.#server.addHook("onRequest", async (request, reply) => {
-      if (request.url.split("?", 1)[0] !== SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH) return;
-      if (!this.#workspaceServiceAuthorized(request.headers.authorization))
+      if (
+        request.url.split("?", 1)[0] === SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH &&
+        !this.#workspaceServiceAuthorized(request.headers.authorization)
+      )
         return reply.code(401).send({ error: { code: "unauthorized", retryable: false } });
-      if (uploads.size >= 2)
-        return reply
-          .code(429)
-          .send({ error: { code: "upload_capacity_exhausted", retryable: true } });
-      uploads.add(request);
-      reply.raw.once("close", () => {
-        uploads.delete(request);
-      });
     });
-    this.#server.addHook("onResponse", async (request) => {
-      uploads.delete(request);
+    // Resolve ownership before streaming. A consumed stream is never replayed
+    // automatically when the owner changes; the caller retries its upload ID.
+    this.#server.head(SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH, async (request, reply) => {
+      try {
+        const header = request.headers["x-pi-cloud-upload"];
+        if (
+          typeof header !== "string" ||
+          header.length > 12000 ||
+          !this.#broker.prepareWorkspaceUpload
+        )
+          throw new Error("Invalid upload preflight");
+        await this.#broker.prepareWorkspaceUpload(
+          parseWorkspaceUploadRequest(JSON.parse(Buffer.from(header, "base64url").toString())),
+        );
+        return reply.code(204).send();
+      } catch (error) {
+        if (error instanceof SandboxOwnerRedirectError)
+          return reply.code(307).header("location", error.ownerBaseUrl).send();
+        return this.#failure(reply, error);
+      }
     });
-    this.#server.addHook("onRequestAbort", async (request) => {
-      uploads.delete(request);
-    });
-    this.#server.post(
-      SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH,
-      { bodyLimit: MAX_USER_UPLOAD_BYTES },
-      async (request, reply) => {
-        const abort = new AbortController();
-        const closed = () => {
-          if (!reply.raw.writableEnded) abort.abort(new Error("Upload caller disconnected"));
-        };
-        reply.raw.on("close", closed);
-        try {
-          const header = request.headers["x-pi-cloud-upload"];
-          if (typeof header !== "string" || header.length > 12000 || !Buffer.isBuffer(request.body))
-            throw new Error("Invalid Workspace upload body");
-          if (!this.#broker.uploadWorkspaceFile)
-            throw new SandboxControlError(
-              "workspace_upload_unavailable",
-              "Workspace upload is unavailable",
-              false,
-            );
-          const input = parseWorkspaceUploadRequest(
-            JSON.parse(Buffer.from(header, "base64url").toString()),
+    this.#server.post(SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH, async (request, reply) => {
+      const abort = new AbortController();
+      const closed = () => {
+        if (!reply.raw.writableEnded) abort.abort(new Error("Upload caller disconnected"));
+      };
+      reply.raw.on("close", closed);
+      try {
+        const header = request.headers["x-pi-cloud-upload"];
+        if (
+          typeof header !== "string" ||
+          header.length > 12000 ||
+          !(request.body instanceof Readable)
+        )
+          throw new Error("Invalid Workspace upload body");
+        if (!this.#broker.uploadWorkspaceFile)
+          throw new SandboxControlError(
+            "workspace_upload_unavailable",
+            "Workspace upload is unavailable",
+            false,
           );
-          return await this.#broker.uploadWorkspaceFile(input, request.body, abort.signal);
-        } catch (error) {
-          if (error instanceof SandboxOwnerRedirectError)
-            return reply.code(307).header("location", error.ownerBaseUrl).send();
-          return this.#failure(reply, error);
-        } finally {
-          reply.raw.removeListener("close", closed);
-        }
-      },
-    );
+        const input = parseWorkspaceUploadRequest(
+          JSON.parse(Buffer.from(header, "base64url").toString()),
+        );
+        const identity = parseUploadIdentity(
+          request.headers["content-length"],
+          request.headers["content-digest"],
+        );
+        if (input.sha256 !== identity.sha256 || input.byteLength !== identity.byteLength)
+          throw new Error("Upload identity changed");
+        return await this.#broker.uploadWorkspaceFile(input, request.body, abort.signal);
+      } catch (error) {
+        if (error instanceof SandboxOwnerRedirectError)
+          return reply.code(307).header("location", error.ownerBaseUrl).send();
+        return this.#failure(reply, error);
+      } finally {
+        reply.raw.removeListener("close", closed);
+      }
+    });
 
     this.#server.post(SANDBOX_CONTROL_WORKSPACE_BROWSER_PATH, async (request, reply) => {
       if (!this.#workspaceServiceAuthorized(request.headers.authorization)) {

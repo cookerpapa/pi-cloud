@@ -31,6 +31,8 @@ describe.skipIf(!endpoint)("dormant accounting retirement", () => {
     }).migrateTo("146_environment_validation_run_identity");
     if (result.error) throw result.error;
     tenant = await createPrivateTenant(db, {
+      // This fixture targets the historical schema before nullable quotas.
+      quotas: { maximumProjects: 100, maximumSessions: 1000 },
       slug: "retirement",
       ownerDisplayName: "Retirement fixture",
     });

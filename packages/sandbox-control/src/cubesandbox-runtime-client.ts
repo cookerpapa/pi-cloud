@@ -119,6 +119,13 @@ export interface CubeSandboxRuntimeClient {
     instance: CubeSandboxInstance,
     input: CubeSandboxGuestCommandRequest,
   ): Promise<CubeSandboxGuestCommandResult>;
+  writeGuestFileStream(
+    instance: CubeSandboxInstance,
+    path: string,
+    chunks: AsyncIterable<Uint8Array>,
+    byteLength: number,
+    signal?: AbortSignal,
+  ): Promise<void>;
   writeGuestFile(instance: CubeSandboxInstance, path: string, data: Uint8Array): Promise<void>;
   openTerminal(
     instance: CubeSandboxInstance,
@@ -534,6 +541,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const proxyNodeIp = validateHost(options.proxyNodeIp, "CubeSandbox proxy node IP");
     const baseConnect = buildConnector({ timeout: this.#requestTimeoutMs });
     this.#dispatcher = new Agent({
+      headersTimeout: 0,
+      bodyTimeout: 0,
       connect(connection, callback) {
         const servername =
           (connection as { servername?: string }).servername ??
@@ -1031,6 +1040,61 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     }
   }
 
+  async writeGuestFileStream(
+    instance: CubeSandboxInstance,
+    path: string,
+    chunks: AsyncIterable<Uint8Array>,
+    byteLength: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const controller = new AbortController();
+    const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const progress = () => {
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => controller.abort(new Error("Guest upload stopped making progress")),
+        60_000,
+      );
+      timer.unref();
+    };
+    progress();
+    const body = (async function* () {
+      for await (const chunk of chunks) {
+        combined.throwIfAborted();
+        progress();
+        yield chunk;
+      }
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => controller.abort(new Error("Guest upload receipt timed out")),
+        30_000,
+      );
+      timer.unref();
+    })();
+    try {
+      const response = await this.#dataFetch(
+        instance,
+        CUBESANDBOX_ENVD_PORT,
+        `/files?path=${encodeURIComponent(this.#guestPath(path))}&username=root`,
+        {
+          headers: {
+            "content-type": "application/octet-stream",
+            "content-length": String(byteLength),
+          },
+          body,
+          signal: combined,
+        },
+      );
+      await readBoundedResponse(response, 64 * 1024);
+      if (!response.ok)
+        throw new CubeRuntimeClientError("Guest file upload failed", response.status);
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  }
+
   async openTcp(instance: CubeSandboxInstance, port: number): Promise<Duplex> {
     if (
       !Number.isInteger(port) ||
@@ -1406,7 +1470,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     input: Readonly<{
       method?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
       headers?: Readonly<Record<string, string>>;
-      body?: Uint8Array;
+      body?: Uint8Array | AsyncIterable<Uint8Array>;
       signal: AbortSignal;
     }>,
   ): Promise<Awaited<ReturnType<typeof fetch>>> {
@@ -1425,7 +1489,11 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
           : { "x-access-token": instance.envdAccessToken }),
         ...(input.headers ?? {}),
       },
-      ...(input.body === undefined ? {} : { body: Buffer.from(input.body) }),
+      ...(input.body === undefined
+        ? {}
+        : input.body instanceof Uint8Array
+          ? { body: Buffer.from(input.body) }
+          : { body: input.body, duplex: "half" as const }),
       dispatcher: this.#dispatcher,
       signal: input.signal,
     });

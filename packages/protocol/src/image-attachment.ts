@@ -1,10 +1,7 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-export const MAX_IMAGE_INPUT_BYTES = 64 * 1024 * 1024;
-export const MAX_IMAGE_ATTACHMENT_BYTES = 42 * 1024 * 1024;
 export const MAX_IMAGE_GUEST_RESPONSE_BYTES = 64 * 1024 * 1024;
-export const MAX_IMAGE_DECODE_PIXELS = 100_000_000;
 /** Pi treats these fields as opaque user/Tool JSON, never native image parts. */
 export const IMAGE_OPAQUE_FIELDS: ReadonlySet<string> = new Set([
   "details",
@@ -19,7 +16,7 @@ export const ImageAttachmentReferenceSchema = Type.Object(
       pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     }),
     sha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-    byteLength: Type.Integer({ minimum: 1, maximum: MAX_IMAGE_ATTACHMENT_BYTES }),
+    byteLength: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     mimeType: Type.Union([
       Type.Literal("image/png"),
       Type.Literal("image/jpeg"),

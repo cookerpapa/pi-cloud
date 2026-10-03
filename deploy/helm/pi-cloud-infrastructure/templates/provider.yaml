@@ -38,7 +38,7 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
-          resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { cpu: 250m, memory: 96Mi } }
+          resources: { requests: { cpu: 20m, memory: 32Mi } }
           volumeMounts: [{ name: socket, mountPath: /run/pi-cloud-provider-relay }]
       volumes:
         - name: socket
@@ -90,7 +90,7 @@ spec:
           readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 6 }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
-          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: "1", memory: 512Mi } }
+          resources: {{- toYaml .Values.provider.resources | nindent 12 }}
           volumeMounts:
             - { name: data, mountPath: /data }
             - { name: config, mountPath: /run/pi-cloud-secrets/cli-proxy-config.yaml }
@@ -99,4 +99,4 @@ spec:
         - { name: data, persistentVolumeClaim: { claimName: pi-cloud-provider } }
         - name: config
           hostPath: { path: {{ required "providerConfigPath is required" .Values.providerConfigPath | quote }}, type: File }
-        - { name: tmp, emptyDir: { sizeLimit: 32Mi } }
+        - { name: tmp, emptyDir: {} }

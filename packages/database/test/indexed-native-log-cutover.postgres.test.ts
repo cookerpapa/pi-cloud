@@ -31,6 +31,8 @@ it.skipIf(!endpoint)(
       }).migrateTo("152_editable_pending_inputs");
       if (migrated.error) throw migrated.error;
       const tenant = await createPrivateTenant(db, {
+        // This fixture targets the historical schema before nullable quotas.
+        quotas: { maximumProjects: 100, maximumSessions: 1000 },
         slug: "indexed-log",
         ownerDisplayName: "Storage contract",
       });

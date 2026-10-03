@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 
 export function selfHostedValues({ environment: e, runtime, cluster, template, images }) {
   const n = (key, fallback) => Number(e[key] ?? fallback);
+  const quota = (key) =>
+    e[key] === undefined || e[key] === "unlimited" || e[key] === "" ? null : Number(e[key]);
   const b = (key, fallback) => (e[key] ?? String(fallback)) === "true";
   const image = (key) => ({
     repository: images[key].slice(0, images[key].lastIndexOf(":")),
@@ -56,8 +58,8 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         apiCredentialId: e.PI_CLOUD_API_CREDENTIAL_ID,
         credentialBindingId: e.PI_CLOUD_CREDENTIAL_BINDING_ID,
         defaultModelProfileId: e.PI_CLOUD_DEFAULT_MODEL_PROFILE_ID,
-        maximumProjects: n("PI_CLOUD_TENANT_MAXIMUM_PROJECTS", 100),
-        maximumSessions: n("PI_CLOUD_TENANT_MAXIMUM_SESSIONS", 1000),
+        maximumProjects: quota("PI_CLOUD_TENANT_MAXIMUM_PROJECTS"),
+        maximumSessions: quota("PI_CLOUD_TENANT_MAXIMUM_SESSIONS"),
       },
       controlPlane: {
         replicas: 1,
@@ -74,9 +76,9 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
           "127.0.0.1,localhost,postgres,session-images,control-plane,workspace-volume-gateway,cube-api,cube-proxy,cli-proxy-api,gitlab.internal,.svc,.cluster.local,10.42.0.0/16,10.43.0.0/16,10.255.255.254",
         publicRegistration: {
           enabled: b("PI_CLOUD_PUBLIC_REGISTRATION_ENABLED", true),
-          maximumTenants: n("PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS", 1000),
-          maximumProjects: n("PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS", 10),
-          maximumSessions: n("PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS", 100),
+          maximumTenants: quota("PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS"),
+          maximumProjects: quota("PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS"),
+          maximumSessions: quota("PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS"),
         },
         sourceControl: {
           github: {
@@ -93,10 +95,10 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         },
         resources: {
           requests: { cpu: "100m", memory: "384Mi" },
-          limits: { cpu: "2", memory: "2Gi" },
         },
       },
       web: {
+        resources: { requests: { cpu: "50m", memory: "64Mi" } },
         replicas: 1,
         autoscaling: { enabled: false },
         adminOriginBaseUrl:
@@ -115,6 +117,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         },
       },
       sshGateway: {
+        resources: { requests: { cpu: "50m", memory: "64Mi" } },
         replicas: 1,
         serviceType: "ClusterIP",
         advertisedHost: e.PI_CLOUD_SSH_ADVERTISED_HOST ?? "127.0.0.1",
@@ -136,9 +139,10 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         externalEgressCidrs: [`${cluster.nodeAddress ?? "10.255.255.254"}/32`],
       },
       sandboxPlane: {
+        volumeGatewayResources: { requests: { cpu: "250m", memory: "256Mi" } },
         volumeGatewayReplicas: 1,
         workspace: { existingClaim: "pi-cloud-workspaces" },
-        maximumActivePerReplica: n("PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES", 3),
+        maximumActivePerReplica: quota("PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES"),
         maximumActiveCommands: n("PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS", 8),
         maximumWarmWorkspaceRuntimesPerReplica: n("PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES", 4),
         cube: {
@@ -160,9 +164,8 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       "pi-workers": {
         resources: {
           requests: { cpu: "250m", memory: "384Mi" },
-          limits: { cpu: "2", memory: "2Gi" },
         },
-        workerPool: { replicas: 2, capacity: n("PI_CLOUD_SUPERVISOR_CAPACITY", 4) },
+        workerPool: { replicas: 2, capacity: quota("PI_CLOUD_SUPERVISOR_CAPACITY") },
         autoscaling: { enabled: false },
         image: image("worker"),
         services: {
@@ -178,11 +181,11 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         database: { maxConnections: n("PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS", 4) },
         runtime: {
           subagents: {
-            maximumDepth: n("PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4),
-            maximumNodes: n("PI_CLOUD_SUBAGENT_MAXIMUM_NODES", 32),
+            maximumDepth: quota("PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH"),
+            maximumNodes: quota("PI_CLOUD_SUBAGENT_MAXIMUM_NODES"),
           },
-          modelConcurrency: n("PI_CLOUD_WORKER_MODEL_CONCURRENCY", 4),
-          sessionModelConcurrency: n("PI_CLOUD_SESSION_MODEL_CONCURRENCY", 4),
+          modelConcurrency: quota("PI_CLOUD_WORKER_MODEL_CONCURRENCY"),
+          sessionModelConcurrency: quota("PI_CLOUD_SESSION_MODEL_CONCURRENCY"),
         },
         networkPolicy: { externalEgressCidrs: [] },
       },

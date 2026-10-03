@@ -20,7 +20,10 @@ local volumes, builds/imports images and installs two Helm releases in
 runs a database migration/bootstrap Job before application rollout. Worker boot
 claims use the K3s local-path provisioner; its helper image is prefetched too.
 Workers retain the former 2 GiB memory limit for large native image payloads;
-1 GiB failed the 25 MB image acceptance. The kubelet permits 1,024 tasks per Pod because the Control Plane's partitioned
+1 GiB failed the 25 MB image acceptance. The provider gateway uses 1 GiB with
+`GOMEMLIMIT=768MiB`: its former 512 MiB limit also failed the multi-image request
+on K3s without container swap. This is a measured local-profile budget, not a
+guarantee for arbitrary concurrent large-context requests. The kubelet permits 1,024 tasks per Pod because the Control Plane's partitioned
 Kafka producers require native threads; a 128-task limit prevents ingress readiness.
 
 Open `http://127.0.0.1:8080`, register an account, then designate the administrator:

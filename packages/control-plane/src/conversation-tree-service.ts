@@ -1207,18 +1207,19 @@ export class ConversationTreeService {
           .where("tenant_id", "=", tenantId)
           .forUpdate()
           .executeTakeFirstOrThrow();
-        const sessionCount = await transaction
-          .selectFrom("sessions")
-          .select((expression) => expression.fn.countAll<string>().as("count"))
-          .where("tenant_id", "=", tenantId)
-          .executeTakeFirstOrThrow();
-        if (safeInteger(sessionCount.count, "Tenant Session count") >= policy.maximum_sessions) {
-          throw new ControlPlaneStoreError(
-            "tenant_quota_exceeded",
-            "Tenant session quota has been reached",
-          );
+        if (policy.maximum_sessions !== null) {
+          const sessionCount = await transaction
+            .selectFrom("sessions")
+            .select((expression) => expression.fn.countAll<string>().as("count"))
+            .where("tenant_id", "=", tenantId)
+            .executeTakeFirstOrThrow();
+          if (safeInteger(sessionCount.count, "Tenant Session count") >= policy.maximum_sessions) {
+            throw new ControlPlaneStoreError(
+              "tenant_quota_exceeded",
+              "Tenant session quota has been reached",
+            );
+          }
         }
-
         const leaf = await transaction
           .selectFrom("pi_session_lanes")
           .select("leaf_id")
