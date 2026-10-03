@@ -1,6 +1,8 @@
 import { Agent, buildConnector, fetch, type Dispatcher } from "undici";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
 import {
+  MAX_TERMINAL_ROWS,
+  MAX_TERMINAL_COLS,
   PREVIEW_ACCESS_TTL_MS,
   MAX_IMAGE_GUEST_RESPONSE_BYTES,
   EXECUTION_PROBE_TIMEOUT_MS,
@@ -498,9 +500,9 @@ function terminalSize(value: Readonly<{ rows: number; cols: number }>): Readonly
     !Number.isSafeInteger(value.rows) ||
     !Number.isSafeInteger(value.cols) ||
     value.rows < 2 ||
-    value.rows > 500 ||
+    value.rows > MAX_TERMINAL_ROWS ||
     value.cols < 2 ||
-    value.cols > 1_000
+    value.cols > MAX_TERMINAL_COLS
   ) {
     throw new TypeError("CubeSandbox PTY size was invalid");
   }

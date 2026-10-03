@@ -3,6 +3,7 @@ import type { SshGatewayConfig } from "./config.ts";
 import { SshTicketAuthority, type SshTerminalGrant } from "./ticket-authority.ts";
 import { openSandboxControlTerminal } from "./sandbox-control-terminal.ts";
 import { once } from "node:events";
+import { MAX_TERMINAL_ROWS, MAX_TERMINAL_COLS } from "@pi-cloud/protocol";
 
 function boundedDimension(value: number | undefined, fallback: number, maximum: number): number {
   return Number.isSafeInteger(value) && value !== undefined && value >= 2 && value <= maximum
@@ -42,13 +43,13 @@ export function createSshGateway(options: {
         let cols = 100;
         let terminal: Awaited<ReturnType<typeof openSandboxControlTerminal>> | undefined;
         session.on("pty", (acceptPty, _reject, info) => {
-          rows = boundedDimension(info.rows, 24, 500);
-          cols = boundedDimension(info.cols, 100, 1_000);
+          rows = boundedDimension(info.rows, 24, MAX_TERMINAL_ROWS);
+          cols = boundedDimension(info.cols, 100, MAX_TERMINAL_COLS);
           acceptPty?.();
         });
         session.on("window-change", (acceptWindow, _reject, info) => {
-          rows = boundedDimension(info.rows, rows, 500);
-          cols = boundedDimension(info.cols, cols, 1_000);
+          rows = boundedDimension(info.rows, rows, MAX_TERMINAL_ROWS);
+          cols = boundedDimension(info.cols, cols, MAX_TERMINAL_COLS);
           void terminal?.resize(rows, cols).catch(() => undefined);
           acceptWindow?.();
         });

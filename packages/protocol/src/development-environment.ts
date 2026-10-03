@@ -5,6 +5,7 @@ import { AgentWorkspaceSeedSchema } from "./workspace-seed.ts";
 import { EnvironmentRuntimeSnapshotSchema } from "./environment.ts";
 import { UuidSchema } from "./protocol-primitives.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
+import { TerminalSizeProperties } from "./workspace-terminal.ts";
 export {
   DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
   DEVELOPMENT_ENVIRONMENT_PROFILES,
@@ -188,8 +189,7 @@ export const DevelopmentEnvironmentTerminalOpenRequestSchema = Type.Object(
     environmentId: UuidSchema,
     tenantId: UuidSchema,
     userId: UuidSchema,
-    rows: Type.Integer({ minimum: 2, maximum: 512 }),
-    cols: Type.Integer({ minimum: 2, maximum: 512 }),
+    ...TerminalSizeProperties,
   },
   { additionalProperties: false },
 );

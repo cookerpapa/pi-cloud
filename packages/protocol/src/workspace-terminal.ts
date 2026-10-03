@@ -12,9 +12,11 @@ const Base64Schema = Type.String({
   pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
 });
 
-const TerminalSize = {
-  rows: Type.Integer({ minimum: 2, maximum: 500 }),
-  cols: Type.Integer({ minimum: 2, maximum: 1_000 }),
+export const MAX_TERMINAL_ROWS = 500;
+export const MAX_TERMINAL_COLS = 1_000;
+export const TerminalSizeProperties = {
+  rows: Type.Integer({ minimum: 2, maximum: MAX_TERMINAL_ROWS }),
+  cols: Type.Integer({ minimum: 2, maximum: MAX_TERMINAL_COLS }),
 };
 
 export const WorkspaceTerminalOpenRequestSchema = Type.Object(
@@ -29,7 +31,7 @@ export const WorkspaceTerminalOpenRequestSchema = Type.Object(
     sessionId: UuidSchema,
     environment: EnvironmentRuntimeSnapshotSchema,
     workspaceSeed: AgentWorkspaceSeedSchema,
-    ...TerminalSize,
+    ...TerminalSizeProperties,
   },
   { additionalProperties: false },
 );
@@ -47,7 +49,7 @@ export const WorkspaceTerminalClientFrameSchema = Type.Union([
     {
       workspaceTerminalProtocolVersion: Type.Literal(1),
       type: Type.Literal("workspace_terminal.resize"),
-      ...TerminalSize,
+      ...TerminalSizeProperties,
     },
     { additionalProperties: false },
   ),

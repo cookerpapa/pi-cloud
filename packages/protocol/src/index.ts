@@ -184,6 +184,8 @@ export { validGuestDirectoryName } from "./guest-directory.ts";
 
 export {
   MAX_WORKSPACE_TERMINAL_FRAME_BYTES,
+  MAX_TERMINAL_ROWS,
+  MAX_TERMINAL_COLS,
   SANDBOX_CONTROL_TERMINAL_PATH,
   WorkspaceTerminalClientFrameSchema,
   WorkspaceTerminalOpenRequestSchema,
