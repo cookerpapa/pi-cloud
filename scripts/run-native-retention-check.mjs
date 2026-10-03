@@ -1,53 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { writeFile } from "node:fs/promises";
+import { kafkaEvaluation } from "./lib/kafka-evaluation.mjs";
 
-if (process.env.PI_CLOUD_NATIVE_RETENTION_CHECK !== "1")
-  throw new Error("Opt in to private Kafka retention acceptance");
-if (process.argv[2] !== "inside") {
-  const exec = promisify(execFile),
-    name = `pi-cloud-native-gc-${randomUUID()}`;
-  try {
-    const result = await exec(
-      "docker",
-      [
-        "run",
-        "--rm",
-        "--name",
-        name,
-        "--network",
-        "pi-cloud-production_event-log",
-        "--cpus",
-        "1",
-        "--memory",
-        "1g",
-        "-v",
-        `${process.cwd()}:/app:ro`,
-        "-w",
-        "/app",
-        "-e",
-        "PI_CLOUD_NATIVE_RETENTION_CHECK",
-        "node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d",
-        "node",
-        "--import",
-        "tsx",
-        "scripts/run-native-retention-check.mjs",
-        "inside",
-      ],
-      { timeout: 120000, maxBuffer: 1024 * 1024 },
-    );
-    const report = JSON.parse(result.stdout.trim().split("\n").at(-1));
-    await writeFile(
-      "docs/reports/native-retention-acceptance-latest.json",
-      JSON.stringify(report, null, 2) + "\n",
-    );
-    console.log(JSON.stringify(report));
-  } finally {
-    await exec("docker", ["rm", "-f", name]).catch(() => {});
-  }
-} else {
+await kafkaEvaluation("docs/reports/native-retention-acceptance-latest.json", async (brokers) => {
   const { Admin } = await import("@platformatic/kafka"),
     { PGlite } = await import("@electric-sql/pglite"),
     { PGLiteSocketServer } = await import("@electric-sql/pglite-socket");
@@ -55,10 +10,7 @@ if (process.argv[2] !== "inside") {
     { sql } = await import("kysely");
   const { PublicationHarness } = await import("./lib/publication-harness.ts"),
     { KafkaSafeRetention } = await import("../packages/runtime-core/src/kafka-safe-retention.ts");
-  const brokers = (
-      process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS ?? "kafka-1:9092,kafka-2:9092,kafka-3:9092"
-    ).split(","),
-    topic = `pi-cloud.native-gc.${randomUUID()}`;
+  const topic = `pi-cloud.native-gc.${randomUUID()}`;
   const pg = await PGlite.create(),
     socket = new PGLiteSocketServer({ db: pg, host: "127.0.0.1", port: 0 });
   await socket.start();
@@ -150,20 +102,18 @@ if (process.argv[2] !== "inside") {
     await new Promise((r) => setTimeout(r, 1200));
     await assert.rejects(gc.sweep());
     assert.equal(await low(), oldEnd);
-    console.log(
-      JSON.stringify({
-        format: "pi-cloud.native-retention.v1",
-        checkedAt: new Date().toISOString(),
-        accepted: true,
-        scope:
-          "real R3 Kafka producer/admin deletion with socket-backed PGlite progress fixtures; no model calls",
-        noCheckpointRetainsAll: true,
-        unsealedPrefixPreserved: true,
-        gracePreservesRecent: true,
-        databaseFailureStopsDeletion: true,
-        lowWatermarks: [0, 5, Number(oldEnd), Number(oldEnd)],
-      }),
-    );
+    return {
+      format: "pi-cloud.native-retention.v1",
+      checkedAt: new Date().toISOString(),
+      accepted: true,
+      scope:
+        "real R3 Kafka producer/admin deletion with socket-backed PGlite progress fixtures; no model calls",
+      noCheckpointRetainsAll: true,
+      unsealedPrefixPreserved: true,
+      gracePreservesRecent: true,
+      databaseFailureStopsDeletion: true,
+      lowWatermarks: [0, 5, Number(oldEnd), Number(oldEnd)],
+    };
   } finally {
     await gc.close();
     await bus.close();
@@ -173,4 +123,4 @@ if (process.argv[2] !== "inside") {
     await socket.stop();
     await pg.close();
   }
-}
+});

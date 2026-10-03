@@ -1,85 +1,171 @@
-import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { kafkaEvaluation } from "./lib/kafka-evaluation.mjs";
+import { Admin } from "@platformatic/kafka";
+import { randomUUID } from "node:crypto";
+import { cpus, totalmem } from "node:os";
+import { performance } from "node:perf_hooks";
+import { PublicationHarness } from "./lib/publication-harness.ts";
 
-const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const image =
-  "node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d";
+await kafkaEvaluation("docs/reports/kafka-accepted-fact-load-latest.json", async (brokers) => {
+  const topic = `pi-cloud.accepted-fact-benchmark-${randomUUID()}`;
+  const clientId = `pi-cloud-kafka-load-${randomUUID()}`;
+  const durationMs = Number(process.env.PI_CLOUD_KAFKA_LOAD_DURATION_MS ?? 0);
+  if (!Number.isSafeInteger(durationMs) || durationMs < 0 || durationMs > 180_000)
+    throw new Error("PI_CLOUD_KAFKA_LOAD_DURATION_MS must be between 0 and 180000");
+  const requestedCases = process.env.PI_CLOUD_KAFKA_LOAD_CASES?.split(",");
+  const eventsOverride =
+    process.env.PI_CLOUD_KAFKA_LOAD_EVENTS_PER_SESSION === undefined
+      ? undefined
+      : Number(process.env.PI_CLOUD_KAFKA_LOAD_EVENTS_PER_SESSION);
+  if (
+    eventsOverride !== undefined &&
+    (!Number.isSafeInteger(eventsOverride) || eventsOverride < 1 || eventsOverride > 4096)
+  )
+    throw new Error("PI_CLOUD_KAFKA_LOAD_EVENTS_PER_SESSION must be between 1 and 4096");
 
-const revision = await new Promise((resolvePromise, rejectPromise) => {
-  execFile(
-    "git",
-    ["rev-parse", "HEAD"],
-    { cwd: repositoryRoot, encoding: "utf8" },
-    (error, stdout) => {
-      if (error) rejectPromise(error);
-      else resolvePromise(stdout.trim());
-    },
-  );
+  function percentile(values, fraction) {
+    const sorted = [...values].sort((left, right) => left - right);
+    return sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)] ?? 0;
+  }
+
+  function latency(values) {
+    return Object.fromEntries(
+      [
+        ["p50", 0.5],
+        ["p95", 0.95],
+        ["p99", 0.99],
+      ].map(([name, fraction]) => [name, Number(percentile(values, fraction).toFixed(3))]),
+    );
+  }
+
+  async function mapConcurrent(values, concurrency, operation) {
+    let cursor = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+        while (true) {
+          const index = cursor++;
+          if (index >= values.length) return;
+          await operation(values[index], index);
+        }
+      }),
+    );
+  }
+
+  function sessionSeed() {
+    return {
+      tenantId: randomUUID(),
+      sessionId: randomUUID(),
+      runId: randomUUID(),
+      turnId: randomUUID(),
+    };
+  }
+
+  function fact(seed, sequence, payloadBytes) {
+    const eventId = randomUUID();
+    const occurredAt = new Date().toISOString();
+    return {
+      kind: "agent_event",
+      factId: eventId,
+      scope: {
+        tenantId: seed.tenantId,
+        sessionId: seed.sessionId,
+        piSessionId: seed.sessionId,
+        writerId: seed.runId,
+        runId: seed.runId,
+        turnId: seed.turnId,
+        fencingToken: 1,
+      },
+      event: {
+        schemaVersion: 1,
+        eventId,
+        sessionId: seed.sessionId,
+        turnId: seed.turnId,
+        agentId: "root",
+        seq: sequence,
+        occurredAt,
+        type: "assistant.text.delta",
+        payload: { text: "x".repeat(payloadBytes) },
+      },
+      occurredAt,
+    };
+  }
+
+  const bus = new PublicationHarness({
+    brokers,
+    clientId,
+    topic,
+    partitions: 32,
+    replicas: 3,
+  });
+  const admin = new Admin({ clientId: `${clientId}-cleanup`, bootstrapBrokers: brokers });
+
+  try {
+    await bus.start();
+    const cases = [];
+    for (const configuration of [
+      { name: "concurrency-1", sessions: 1, eventsPerSession: 4_096, concurrency: 1 },
+      { name: "concurrency-16", sessions: 16, eventsPerSession: 256, concurrency: 16 },
+      { name: "concurrency-64", sessions: 64, eventsPerSession: 64, concurrency: 64 },
+      { name: "concurrency-128", sessions: 128, eventsPerSession: 32, concurrency: 128 },
+      { name: "concurrency-256", sessions: 256, eventsPerSession: 16, concurrency: 256 },
+      { name: "concurrency-512", sessions: 512, eventsPerSession: 8, concurrency: 512 },
+      { name: "concurrency-1024", sessions: 1_024, eventsPerSession: 4, concurrency: 1_024 },
+      { name: "sustained-256", sessions: 256, eventsPerSession: 1_024, concurrency: 256 },
+      { name: "sustained-512", sessions: 512, eventsPerSession: 512, concurrency: 512 },
+      { name: "sustained-1024", sessions: 1_024, eventsPerSession: 256, concurrency: 1_024 },
+    ]) {
+      if (requestedCases && !requestedCases.includes(configuration.name)) continue;
+      if (eventsOverride !== undefined) configuration.eventsPerSession = eventsOverride;
+      const seeds = Array.from({ length: configuration.sessions }, sessionSeed);
+      const latencies = [];
+      const startedAt = performance.now();
+      const timed = configuration.name === "sustained-1024" && durationMs > 0;
+      const deadline = startedAt + durationMs;
+      let events = 0;
+      await mapConcurrent(seeds, configuration.concurrency, async (seed) => {
+        for (
+          let sequence = 1;
+          timed ? performance.now() < deadline : sequence <= configuration.eventsPerSession;
+          sequence += 1
+        ) {
+          const eventStartedAt = performance.now();
+          await bus.append(fact(seed, sequence, 256));
+          latencies.push(performance.now() - eventStartedAt);
+          events++;
+        }
+      });
+      const elapsedMs = performance.now() - startedAt;
+      cases.push({
+        ...configuration,
+        ...(timed ? { eventsPerSession: undefined, targetDurationMs: durationMs } : {}),
+        events,
+        elapsedMs: Number(elapsedMs.toFixed(3)),
+        eventsPerSecond: Number(((events * 1_000) / elapsedMs).toFixed(2)),
+        acknowledgementLatencyMs: latency(latencies),
+      });
+    }
+    if (!cases.length || requestedCases?.some((name) => !cases.some((c) => c.name === name)))
+      throw new Error("PI_CLOUD_KAFKA_LOAD_CASES contains an unknown case");
+    return {
+      format: "pi-cloud.kafka-accepted-fact-load.v2",
+      generatedAt: new Date().toISOString(),
+      host: {
+        logicalCpuCount: cpus().length,
+        totalMemoryGiB: Number((totalmem() / 1_024 ** 3).toFixed(2)),
+        node: process.version,
+      },
+      kafka: { topic, brokers: 3, partitions: 32, replicas: 3, acknowledgements: "all" },
+      applicationMicrobatch: false,
+      acknowledgementBoundary: "transaction_commit",
+      publicationBatching: true,
+      transactionalPartitions: 32,
+      recordAuthentication: "trusted-private-ingress",
+      scope:
+        "installed Session ingress -> transactional Kafka ACK; excludes HTTP, PG grant/opening, projection, model and Cube",
+      cases,
+    };
+  } finally {
+    await bus.close().catch(() => undefined);
+    await admin.deleteTopics({ topics: [topic] }).catch(() => undefined);
+    await admin.close().catch(() => undefined);
+  }
 });
-
-const output = await new Promise((resolvePromise, rejectPromise) => {
-  execFile(
-    "docker",
-    [
-      "run",
-      "--rm",
-      "--network",
-      "pi-cloud-production_event-log",
-      "--volume",
-      `${repositoryRoot}:/app:ro`,
-      "--workdir",
-      "/app",
-      ...(process.env.PI_CLOUD_KAFKA_LOAD_DURATION_MS === undefined
-        ? []
-        : [
-            "--env",
-            `PI_CLOUD_KAFKA_LOAD_DURATION_MS=${process.env.PI_CLOUD_KAFKA_LOAD_DURATION_MS}`,
-          ]),
-      image,
-      "node",
-      "--import",
-      "tsx",
-      "scripts/kafka-accepted-fact-load-worker.mjs",
-    ],
-    { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 8 * 1_024 * 1_024, timeout: 10 * 60_000 },
-    (error, stdout, stderr) => {
-      if (error) rejectPromise(new Error(stderr.trim() || error.message));
-      else resolvePromise(stdout.trim());
-    },
-  );
-});
-
-const report = JSON.parse(output.split("\n").at(-1));
-report.revision = revision;
-const reportDirectory = resolve(repositoryRoot, "docs/reports");
-await mkdir(reportDirectory, { recursive: true });
-await writeFile(
-  resolve(reportDirectory, "kafka-accepted-fact-load-latest.json"),
-  `${JSON.stringify(report, null, 2)}\n`,
-);
-await writeFile(
-  resolve(reportDirectory, "kafka-accepted-fact-load-latest.md"),
-  [
-    "# Kafka AcceptedFact load",
-    "",
-    `- Checked at: ${report.generatedAt}`,
-    `- Revision: \`${report.revision}\``,
-    `- Kafka: ${String(report.kafka.brokers)} brokers / ${String(report.kafka.partitions)} partitions / RF ${String(report.kafka.replicas)} / acks=${report.kafka.acknowledgements}`,
-    `- Application microbatch: ${String(report.applicationMicrobatch)}`,
-    `- Producer delivery report: ${String(report.producerDeliveryReportMode)}`,
-    `- Transactional publication partitions: ${String(report.transactionalPartitions)}`,
-    `- Record trust: ${report.recordAuthentication}`,
-    `- Measurement scope: ${report.scope}`,
-    "",
-    "| Case | Events | Events/s | ACK p50 | ACK p95 | ACK p99 |",
-    "| --- | ---: | ---: | ---: | ---: | ---: |",
-    ...report.cases.map(
-      (item) =>
-        `| ${item.name} | ${String(item.events)} | ${String(item.eventsPerSecond)} | ${String(item.acknowledgementLatencyMs.p50)} ms | ${String(item.acknowledgementLatencyMs.p95)} ms | ${String(item.acknowledgementLatencyMs.p99)} ms |`,
-    ),
-    "",
-  ].join("\n"),
-);
-process.stdout.write(`${JSON.stringify(report)}\n`);

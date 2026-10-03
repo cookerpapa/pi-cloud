@@ -29,6 +29,26 @@ test/queued-inputs.test.ts` provisions it automatically. The former PGlite socke
 fallback for this group is removed after reproducible wire-response corruption;
 no production driver workaround or skipped cancellation assertions is introduced.
 
+The Kafka capacity, partition-isolation and native-retention scripts, plus
+`npm run eval:kafka-accepted-facts`, use a disposable three-broker fixture with
+the production Kafka image pin. Docker supplies only this test infrastructure.
+To use an existing dedicated RF3 test cluster, set
+`PI_CLOUD_KAFKA_INTEGRATION_BROKERS` to its three advertised endpoints. No retired
+production Docker network or `inside` mode remains. Set `PI_CLOUD_EVAL_OUTPUT`
+to select the JSON evidence path; otherwise each command writes its named report.
+
+```bash
+npm run eval:kafka:backpressure
+npm run eval:kafka:isolation
+npm run eval:kafka:retention
+PI_CLOUD_KAFKA_LOAD_CASES=concurrency-1,concurrency-16 \
+  PI_CLOUD_KAFKA_LOAD_EVENTS_PER_SESSION=2 npm run eval:kafka-accepted-facts
+```
+
+The last command is a small fixed-workload entry-point check, not a capacity
+benchmark. Omit its two workload overrides for the full load matrix; evidence
+records the selected cases and actual per-Session event counts.
+
 The presentation check uses installed Chrome/Chromium and actual React effects,
 without accounts or model calls: progressive text under StrictMode, immediate
 reconnect-prefix presentation, first-use panel sizing and resize cleanup.
