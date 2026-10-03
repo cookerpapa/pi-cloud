@@ -25,17 +25,16 @@ const base = `http://127.0.0.1:${env.PI_CLOUD_HTTP_PORT}`;
 const api = new PiCloudApi((path, init) => fetch(new URL(path, base), init), token);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const sqlString = (value) => `'${String(value).replaceAll("'", "''")}'`;
-async function compose(...args) {
-  const result = await exec(process.execPath, ["scripts/production-compose.mjs", ...args], {
+async function deploymentCommand(...args) {
+  const result = await exec(process.execPath, ["scripts/production-kubernetes.mjs", ...args], {
     timeout: 180000,
     maxBuffer: 256 * 1024,
   });
   return result.stdout.trim();
 }
 async function sql(query) {
-  return compose(
+  return deploymentCommand(
     "exec",
-    "-T",
     "postgres",
     "psql",
     "-X",
@@ -231,12 +230,11 @@ try {
   );
   assert.equal(active, 0, "Refusing control-plane restart while any user Run is active");
   console.log("[machine-failure] restarting control plane; Guest and application must stay alive");
-  await compose("restart", "control-plane");
+  await deploymentCommand("restart", "control-plane");
   for (let n = 0; n < 120; n++) {
     try {
-      await compose(
+      await deploymentCommand(
         "exec",
-        "-T",
         "control-plane",
         "node",
         "-e",

@@ -18,3 +18,4 @@ deploy/production/runtime/
 deploy/production/runtime/**
 deploy/helm/pi-cloud-pi-worker-pool/templates/
 deploy/helm/pi-cloud-platform/templates/
+deploy/helm/pi-cloud-infrastructure/templates/

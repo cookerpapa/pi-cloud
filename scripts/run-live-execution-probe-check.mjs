@@ -33,9 +33,10 @@ async function waitFor(test, label, ms = 180000) {
   throw new Error(`Timed out: ${label}`);
 }
 async function query(text) {
-  const { stdout } = await exec("docker", [
+  const { stdout } = await exec(process.execPath, [
+    "scripts/production-kubernetes.mjs",
     "exec",
-    "pi-cloud-production-postgres-1",
+    "postgres",
     "psql",
     "-U",
     "pi_cloud",
@@ -85,11 +86,11 @@ try{
 `;
   return new Promise((resolve, reject) => {
     const child = spawn(
-      "docker",
+      process.execPath,
       [
+        "scripts/production-kubernetes.mjs",
         "exec",
-        "-i",
-        "pi-cloud-production-control-plane-1",
+        "control-plane",
         "node",
         "--import",
         "tsx",

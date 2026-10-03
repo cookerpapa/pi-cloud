@@ -1,3 +1,4 @@
+import { kubectl } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -11,7 +12,9 @@ if (process.env.PI_CLOUD_LIVE_PROJECTOR_CHECK !== "1")
   throw new Error("Opt in to real model/Cube usage with PI_CLOUD_LIVE_PROJECTOR_CHECK=1");
 // Run with a second Control Plane/Projector in the production group. Its current
 // assignment is independently checked with kafka-consumer-groups --members.
-const replica = process.env.PI_CLOUD_TEST_PROJECTOR_CONTAINER ?? "pi-cloud-projector-acceptance";
+const replica = process.env.PI_CLOUD_TEST_PROJECTOR_POD;
+assert(replica, "PI_CLOUD_TEST_PROJECTOR_POD must identify the second Control Plane Pod");
+const replicaIp = JSON.parse(kubectl(["get", "pod", replica, "-o", "json"])).status.podIP;
 const exec = promisify(execFile),
   sessions = [];
 const env = Object.fromEntries(
@@ -38,9 +41,10 @@ const fetchApi = async (path, init = {}) => {
 const api = new PiCloudApi(fetchApi);
 const sql = async (query) =>
   (
-    await exec("docker", [
+    await exec(process.execPath, [
+      "scripts/production-kubernetes.mjs",
       "exec",
-      "pi-cloud-production-postgres-1",
+      "postgres",
       "psql",
       "-U",
       "pi_cloud",
@@ -52,7 +56,7 @@ const sql = async (query) =>
   ).stdout.trim();
 async function metrics() {
   const code = `const t=require('node:fs').readFileSync(process.env.PI_CLOUD_METRICS_TOKEN_FILE,'utf8').trim();fetch('http://127.0.0.1:9464/metrics',{headers:{authorization:'Bearer '+t}}).then(r=>{if(!r.ok)throw Error('metrics');return r.text()}).then(t=>console.log(t))`;
-  const text = (await exec("docker", ["exec", replica, "node", "-e", code])).stdout;
+  const text = kubectl(["exec", replica, "--", "node", "-e", code]);
   const sample = (name) =>
     text
       .split("\n")
@@ -73,11 +77,12 @@ const report = { accepted: false, checkedAt: new Date().toISOString(), runs: [] 
 let stream;
 try {
   const owner =
-    "pi-cloud-projector@" + Buffer.from(`http://${replica}:3000/`).toString("base64url");
+    "pi-cloud-projector@" + Buffer.from(`http://${replicaIp}:3000/`).toString("base64url");
   const membership = (
-    await exec("docker", [
+    await exec(process.execPath, [
+      "scripts/production-kubernetes.mjs",
       "exec",
-      "pi-cloud-production-kafka-1-1",
+      "kafka-1",
       "/opt/kafka/bin/kafka-consumer-groups.sh",
       "--bootstrap-server",
       "kafka-1:9092",

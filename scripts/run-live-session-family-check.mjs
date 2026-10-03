@@ -1,3 +1,4 @@
+import { kubectlAsync } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -36,9 +37,9 @@ const base = new URL(
 );
 const request = (path, init) => fetch(new URL(String(path), base), init);
 const exec = promisify(execFile);
-const compose = async (...args) =>
+const deploymentCommand = async (...args) =>
   (
-    await exec(process.execPath, ["scripts/production-compose.mjs", ...args], {
+    await exec(process.execPath, ["scripts/production-kubernetes.mjs", ...args], {
       cwd: root,
       encoding: "utf8",
       timeout: 180000,
@@ -47,9 +48,8 @@ const compose = async (...args) =>
   ).stdout.trim();
 const quote = (v) => `'${String(v).replaceAll("'", "''")}'`;
 const sql = (q) =>
-  compose(
+  deploymentCommand(
     "exec",
-    "-T",
     "postgres",
     "psql",
     "-U",
@@ -348,8 +348,11 @@ try {
       "0",
       "Refusing to interrupt unrelated work",
     );
-    await compose("kill", "--signal", "SIGKILL", "supervisor-host");
-    await compose("stop", "supervisor-host");
+    const owner = await sql(
+      `select h.supervisor_id from runs r join sandboxes h on h.id=r.worker_id where r.id=${quote(crash.accepted.runId)}`,
+    );
+    assert(/^pi-cloud-pi-worker-primary-v1-[01]$/.test(owner));
+    await kubectlAsync(["delete", "pod", owner, "--grace-period=0", "--force", "--wait=true"]);
     const failed = await crash.finished;
     assert.equal(failed.terminal.type, "turn.failed");
     await until(
@@ -359,7 +362,12 @@ try {
         "0",
       "family closure projection",
     );
-    await compose("up", "-d", "--no-deps", "--wait", "supervisor-host-1");
+    await kubectlAsync([
+      "rollout",
+      "status",
+      "statefulset/pi-cloud-pi-worker-primary-v1",
+      "--timeout=180s",
+    ]);
     const resumed = await start(
       a,
       "The previous run was interrupted. Do not repeat the old append or launch script. Do this check yourself with bash: verify crash-once.txt has exactly one line, then run python3 insertion_sort.py && python3 binary_search.py && python3 fibonacci.py. Only if every check exits successfully, write recovery-verified.txt containing FAMILY-RECOVERY-OK and reply exactly FAMILY-RECOVERY-OK. If tools fail, report the failure without the success marker; do not retry more than once.",

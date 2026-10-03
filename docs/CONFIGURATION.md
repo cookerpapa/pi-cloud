@@ -65,7 +65,7 @@ as the UI. This changes neither provider credentials nor unrelated models.
 
 When running this file-based setup command manually after adding a Provider,
 wait for active model Runs to finish and restart **only** `cli-proxy-api` through
-`node scripts/production-compose.mjs restart cli-proxy-api`. The one-host config
+`node scripts/production-kubernetes.mjs restart cli-proxy-api`. The one-host config
 is a single-file bind mount: host-side atomic replacement is not an in-container
 hot edit. Normal account changes through CLIProxyAPI's own management page remain
 its native hot-reload path; no cluster restart is required.
@@ -89,7 +89,6 @@ These flags apply only when creating or reconciling a host:
 | `--cube-repository` | installer-managed path | pinned CubeSandbox checkout |
 | `--bind-address` | `127.0.0.1` | Web/Preview listener on a fresh install |
 | `--port` | `8080` | Web/Preview port on a fresh install |
-| `--pi-workers` | `kubernetes` | trusted Worker pool mode: `kubernetes` or `compose` |
 | `--skip-host-bootstrap` | off | require preinstalled host dependencies |
 
 Existing bind/port/Worker mode is never silently overwritten. Use
@@ -156,9 +155,8 @@ Do not commit proxy credentials or expose a local proxy publicly.
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
-| `PI_CLOUD_POSTGRES_CPUS` | `4` | one-host PostgreSQL CPU ceiling, not a reservation; lower it on compact hosts only after checking claim/restore latency and cgroup throttling; external PostgreSQL resources are configured by its operator |
 | `PI_CLOUD_SUPERVISOR_CAPACITY` | `4` | active physical Session families per Worker; all delegated Lanes share their family's slot |
-| `PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS` | `4` | bounded PostgreSQL pool per Compose Worker; tune independently from slots |
+| `PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS` | `4` | bounded PostgreSQL pool per Worker; tune independently from slots |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH` | `4` | recursive Agent-tree depth |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_NODES` | `32` | total descendants per root Run |
 | `PI_CLOUD_WORKER_MODEL_CONCURRENCY` | `4` | simultaneous provider requests across the Worker, including Compaction |
@@ -172,14 +170,14 @@ Do not commit proxy credentials or expose a local proxy publicly.
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS` | `15000` | control-plane sandbox-management ownership lease |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS` | `5000` | sandbox-management ownership heartbeat |
 
-The Compose control plane allows 1,024 processes/threads. Its native Kafka
+The self-hosted K3s kubelet allows 1,024 processes/threads per Pod. Its native Kafka
 transactional producers scale with owned partitions; the 32-partition rollout
 observed 251 threads, so the former 256 limit could prevent health probes from
 starting. Size the PID budget with partition ownership and retain probe headroom;
 Session count alone does not describe this overhead.
 
 Session capacity and model concurrency are separate. Subagent depth/node settings
-apply to both Projector admission and Worker bounds; Compose shares the variables,
+apply to both Projector admission and Worker bounds; the self-hosted values generator shares the variables,
 and Helm reads the same `pi-workers.runtime.subagents` values. Model limits are
 `runtime.modelConcurrency` and `runtime.sessionModelConcurrency`. Internal Worker management
 RPC uses a dedicated direct connection pool, not the Provider HTTP proxy.
@@ -232,7 +230,7 @@ interpreted as a new limit. Several Worker processes may share a host.
 | `PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES` | `67108864` | per-producer-instance encoded Fact body budget, including queued and submitted-unacknowledged Facts; Helm: `global.kafka.producerPendingBytes` |
 | `PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS` | `4096` | same budget in records; limit reached rejects before enqueue; Helm: `global.kafka.producerPendingFacts` |
 | `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL` | `http://preview.localhost:8080` | isolated application Preview base domain |
-| `PI_CLOUD_PREVIEW_PORT` | `3001` | internal Control Plane Preview listener; Compose wires Caddy to it automatically; not an application port or a new public port |
+| `PI_CLOUD_PREVIEW_PORT` | `3001` | internal Control Plane Preview listener; the Helm chart wires Caddy to it automatically; not an application port or a new public port |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS` | `2` | trusted Volume operations in flight |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_QUEUED_OPERATIONS` | `32` | bounded Volume wait queue |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS` | `30000` | maximum queue wait |
@@ -286,7 +284,7 @@ and groups are reaped after that grace. Active commands remain separately bounde
 Only final Tool results and bounded typed execution-probe replies use that topic.
 Probe replies never become Tool Results or native history. Temporary progress uses the completion adapter's
 `PI_CLOUD_CONTROL_PLANE_URL` (the internal Control Plane Service URL), the existing
-Supervisor management credential and TCP/3000. Compose/Helm supply it. HTTP connections are
+Supervisor management credential and TCP/3000. Helm supplies it. HTTP connections are
 pooled; snapshots are bounded to 8,192 characters with a one-second send cadence
 and one-second deadline. Progress failure never changes execution status.
 
@@ -385,7 +383,7 @@ settings preserve their repository refresh and Issue intake:
 | `PI_CLOUD_GITHUB_WEBHOOK_SECRET_PATH` | host path to the mode-0600 Webhook-secret file |
 | `PI_CLOUD_GITHUB_ISSUE_LABEL` | explicit automation label, default `picloud` |
 
-The Compose deployment routes `api.github.com` and `github.com` through the
+The self-hosted deployment routes `api.github.com` and `github.com` through the
 same bounded trusted egress relay used by model providers. In Kubernetes,
 enable `controlPlane.sourceControl.github`, place the private-key and Webhook
 secret entries in `global.existingSecret`, and ensure the configured provider
@@ -418,7 +416,7 @@ unused lifetime is 24 hours.
 
 ## Safety-coupled one-host budgets
 
-The one-host Compose profile fixes Tool, model, Turn and shutdown budgets as a
+The one-host K3s profile fixes Tool, model, Turn and shutdown budgets as a
 validated set. They are not ordinary `.env` knobs because increasing one may
 make another service kill a still-valid operation. Current defaults are:
 
@@ -459,7 +457,7 @@ See [PgBouncer's configuration contract](https://www.pgbouncer.org/config.html#m
 The separate
 notification URL must connect directly to PostgreSQL because `LISTEN` is
 session-scoped. Control Plane and Worker both read `DATABASE_NOTIFICATION_URL_FILE`;
-when absent, they use `DATABASE_URL_FILE` (appropriate for direct-PG Compose).
+when absent, they use `DATABASE_URL_FILE` (appropriate for direct-PG self-hosting).
 Helm mounts `external.database.notificationSecretKey` for the Control Plane's
 one terminal-relay listener per replica, outside its ordinary SQL pool. It does
 not allocate a listener per Session. The Volume Gateway also mounts this direct Secret key for its
@@ -476,7 +474,7 @@ npm run runtime-policy:check
 npm run helm:check
 ```
 
-Service startup validates individual ranges; the Compose wrapper additionally
+Service startup validates individual ranges; the Kubernetes deployer additionally
 validates cross-service concurrency, lease, retention and timeout relations.
 
 Producer limits include queued and submitted-unacknowledged encoded Fact bodies,
@@ -518,7 +516,7 @@ Trusted Control Plane, Cube completion adapter and Workers use the same private 
 | `PI_CLOUD_IMAGE_S3_BUCKET` | Exclusive attachment bucket, default `pi-cloud-session-images` |
 | `PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE` | Private JSON containing `accessKeyId` and `secretAccessKey` |
 
-Compose initializes these automatically. Helm exposes `imageAttachments` with
+The self-hosted deployment initializes these automatically. Helm exposes `imageAttachments` with
 `endpoint`, `region`, `bucket` and `credentialsSecretKey`; configure the same
 backend in the platform and `pi-workers` values, and put the JSON in each trusted
 component's existing Secret. An empty endpoint disables image storage explicitly;

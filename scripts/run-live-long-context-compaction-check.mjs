@@ -49,14 +49,13 @@ const environment = Object.fromEntries(
       return [line.slice(0, separator), line.slice(separator + 1)];
     }),
 );
-const workerDeployment = environment.PI_CLOUD_PI_WORKER_DEPLOYMENT ?? "compose";
-assert(["compose", "kubernetes"].includes(workerDeployment), "Unsupported Worker deployment");
-const kubernetesStatefulSet = "pi-cloud-pi-worker-local-v1";
+const workerDeployment = "kubernetes";
+const kubernetesStatefulSet = "pi-cloud-pi-worker-primary-v1";
 const kubernetesArgs = [
   "--kubeconfig",
-  resolve(runtimeDirectory, "kubernetes/pi-worker-local.kubeconfig"),
+  resolve(runtimeDirectory, "k3s/kubeconfig.yaml"),
   "--namespace",
-  "pi-cloud-workers",
+  "cube-system",
 ];
 const bindAddress = environment.PI_CLOUD_HTTP_BIND_ADDRESS;
 const port = environment.PI_CLOUD_HTTP_PORT;
@@ -127,9 +126,8 @@ function sqlLiteral(value) {
 
 async function psql(query) {
   return capture(process.execPath, [
-    "scripts/production-compose.mjs",
+    "scripts/production-kubernetes.mjs",
     "exec",
-    "-T",
     "postgres",
     "psql",
     "--username",
@@ -157,9 +155,8 @@ async function revokeAcceptanceCredential(registration) {
   assert(separator > 4, "Acceptance API token identity is invalid");
   const credentialId = registration.apiToken.slice(4, separator);
   await capture(process.execPath, [
-    "scripts/production-compose.mjs",
+    "scripts/production-kubernetes.mjs",
     "exec",
-    "-T",
     "control-plane",
     "node",
     "--import",
@@ -520,12 +517,6 @@ async function waitForWorkers(expectedCount) {
   throw new Error(`Worker pool did not converge to ${String(expectedCount)} active Workers`);
 }
 
-function composeService(supervisorId) {
-  if (supervisorId.endsWith("-1")) return "supervisor-host";
-  if (supervisorId.endsWith("-2")) return "supervisor-host-1";
-  throw new Error(`No production Compose service mapping for ${supervisorId}`);
-}
-
 async function stopWorker(supervisorId) {
   assert.equal(
     Number(
@@ -536,15 +527,12 @@ async function stopWorker(supervisorId) {
     0,
     "Refusing Worker switch while another tenant has unfinished work",
   );
-  if (workerDeployment === "compose") {
-    const service = composeService(supervisorId);
-    await capture(process.execPath, ["scripts/production-compose.mjs", "stop", service]);
-    return { mode: "compose", service };
-  }
+
   const ordinal = [0, 1].find((index) => supervisorId === `${kubernetesStatefulSet}-${index}`);
   assert.notEqual(ordinal, undefined, "Unknown local Kubernetes Worker");
   const { spec } = JSON.parse(
-    await capture("kubectl", [
+    await capture("/usr/local/bin/k3s", [
+      "kubectl",
       ...kubernetesArgs,
       "get",
       "statefulset",
@@ -559,7 +547,8 @@ async function stopWorker(supervisorId) {
   try {
     // Keep precisely the other Pod. Merely deleting this Pod would let the
     // StatefulSet immediately recreate the same Worker identity.
-    await capture("kubectl", [
+    await capture("/usr/local/bin/k3s", [
+      "kubectl",
       ...kubernetesArgs,
       "patch",
       "statefulset",
@@ -568,7 +557,8 @@ async function stopWorker(supervisorId) {
       "--patch",
       JSON.stringify({ spec: { replicas: 1, ordinals: { start: 1 - ordinal } } }),
     ]);
-    await capture("kubectl", [
+    await capture("/usr/local/bin/k3s", [
+      "kubectl",
       ...kubernetesArgs,
       "wait",
       "--for=delete",
@@ -587,10 +577,9 @@ async function stopWorker(supervisorId) {
 }
 
 async function restoreWorker(previous) {
-  if (previous.mode === "compose") {
-    await capture(process.execPath, ["scripts/production-compose.mjs", "start", previous.service]);
-  } else {
-    await capture("kubectl", [
+  {
+    await capture("/usr/local/bin/k3s", [
+      "kubectl",
       ...kubernetesArgs,
       "patch",
       "statefulset",
@@ -599,7 +588,8 @@ async function restoreWorker(previous) {
       "--patch",
       JSON.stringify({ spec: { replicas: previous.replicas, ordinals: previous.ordinals } }),
     ]);
-    await capture("kubectl", [
+    await capture("/usr/local/bin/k3s", [
+      "kubectl",
       ...kubernetesArgs,
       "rollout",
       "status",

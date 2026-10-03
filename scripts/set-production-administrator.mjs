@@ -38,11 +38,13 @@ if (
 const output = execFileSync(
   process.execPath,
   [
-    "scripts/production-compose.mjs",
-    "run",
-    "--rm",
-    "--no-deps",
-    "database-bootstrap",
+    "scripts/production-kubernetes.mjs",
+    "exec",
+    "control-plane",
+    "node",
+    "/app/node_modules/tsx/dist/cli.mjs",
+    "--tsconfig",
+    "/app/packages/control-plane/tsconfig.json",
     "/app/packages/control-plane/src/platform-administrator.ts",
     "resolve",
     "--username",
@@ -87,19 +89,10 @@ try {
   await rm(temporaryPath, { force: true }).catch(() => undefined);
 }
 
-execFileSync(
-  process.execPath,
-  [
-    "scripts/production-compose.mjs",
-    "up",
-    "--detach",
-    "--no-deps",
-    "--force-recreate",
-    "--wait",
-    "control-plane",
-  ],
-  { cwd: repositoryRoot, stdio: "inherit" },
-);
+execFileSync(process.execPath, ["scripts/production-kubernetes.mjs", "deploy"], {
+  cwd: repositoryRoot,
+  stdio: "inherit",
+});
 process.stdout.write(
   `Platform administrator configured for ${username}. Sign out and sign in again to refresh the browser identity.\n`,
 );

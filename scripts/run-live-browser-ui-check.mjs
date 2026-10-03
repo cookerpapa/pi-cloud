@@ -1,3 +1,4 @@
+import { kubectl, podFor } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -1002,21 +1003,11 @@ const report = {
   harnessWorkingTreeDirty:
     execFileSync("git", ["status", "--porcelain"], { cwd: repositoryRoot, encoding: "utf8" }).trim()
       .length > 0,
-  runtimeRevisions: Object.fromEntries(
-    JSON.parse(
-      execFileSync(
-        "docker",
-        [
-          "inspect",
-          "pi-cloud-production-web-1",
-          "pi-cloud-production-control-plane-1",
-          "pi-cloud-production-control-plane-1",
-        ],
-        { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 },
-      ),
-    ).map((container) => [
-      container.Name.slice(1),
-      container.Config.Labels["org.opencontainers.image.revision"],
+  runtimeImages: Object.fromEntries(
+    ["web", "control-plane"].map((service) => [
+      service,
+      JSON.parse(kubectl(["get", "pod", podFor(service), "-o", "json"])).status.containerStatuses[0]
+        .imageID,
     ]),
   ),
   workerRuntimeImages: Object.fromEntries(

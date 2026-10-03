@@ -11,8 +11,12 @@ spec:
   replicas: {{ ternary (int .Values.web.autoscaling.minReplicas) (int .Values.web.replicas) .Values.web.autoscaling.enabled }}
   minReadySeconds: 5
   strategy:
+    {{- if or .Values.web.hostPorts.http .Values.web.hostPorts.admin .Values.web.hostPorts.provider }}
+    type: Recreate
+    {{- else }}
     type: RollingUpdate
     rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+    {{- end }}
   selector:
     matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: web }
   template:
@@ -24,6 +28,9 @@ spec:
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
       {{- end }}
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -46,7 +53,15 @@ spec:
             - { name: PI_CLOUD_PROMETHEUS_URL, value: {{ .Values.web.managementUrls.prometheus | quote }} }
             - { name: PI_CLOUD_ALERTMANAGER_URL, value: {{ .Values.web.managementUrls.alertmanager | quote }} }
             - { name: PI_CLOUD_JAEGER_URL, value: {{ .Values.web.managementUrls.jaeger | quote }} }
-          ports: [{ name: http, containerPort: 8080 }, { name: admin, containerPort: 8081 }]
+          ports:
+            {{- range $name, $containerPort := dict "http" 8080 "admin" 8081 "provider" 8318 }}
+            - name: {{ $name }}
+              containerPort: {{ $containerPort }}
+              {{- if index $.Values.web.hostPorts $name }}
+              hostPort: {{ index $.Values.web.hostPorts $name }}
+              hostIP: {{ ternary $.Values.web.hostIP $.Values.web.adminHostIP (eq $name "http") | quote }}
+              {{- end }}
+            {{- end }}
           readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }
           securityContext:

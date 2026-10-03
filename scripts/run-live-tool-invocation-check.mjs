@@ -1,3 +1,4 @@
+import { replacePod, kubectlAsync } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -27,17 +28,18 @@ const report = {
   model: "gpt-6-luna",
   accepted: false,
 };
-const compose = (args) =>
-  exec(process.execPath, ["scripts/production-compose.mjs", ...args], {
+const deploymentCommand = (args) =>
+  exec(process.execPath, ["scripts/production-kubernetes.mjs", ...args], {
     timeout: 180000,
     maxBuffer: 1024 * 1024,
   });
 const query = async (sql) =>
   JSON.parse(
     (
-      await exec("docker", [
+      await exec(process.execPath, [
+        "scripts/production-kubernetes.mjs",
         "exec",
-        "pi-cloud-production-postgres-1",
+        "postgres",
         "psql",
         "-U",
         "pi_cloud",
@@ -82,10 +84,11 @@ async function auditKafka(runIds) {
   );
   const assistants = new Set();
   const child = spawn(
-    "docker",
+    process.execPath,
     [
+      "scripts/production-kubernetes.mjs",
       "exec",
-      "pi-cloud-production-kafka-1-1",
+      "kafka-1",
       "/opt/kafka/bin/kafka-console-consumer.sh",
       "--bootstrap-server",
       "kafka-1:9092",
@@ -217,8 +220,7 @@ try {
   assert.equal(count, 1, "Another Run started; refusing an unrelated restart");
   report.restartStartedAt = new Date().toISOString();
   restartNeeded = true;
-  await compose(["kill", "--signal", "SIGKILL", "control-plane"]);
-  await compose(["start", "--wait", "control-plane"]);
+  await replacePod("control-plane");
   restartNeeded = false;
   report.restartCompletedAt = new Date().toISOString();
   const run = await waitRun(active.runId);
@@ -248,7 +250,12 @@ try {
   const errors = [];
   if (restartNeeded) {
     try {
-      await compose(["start", "--wait", "control-plane"]);
+      await kubectlAsync([
+        "rollout",
+        "status",
+        "deployment/pi-cloud-control-plane",
+        "--timeout=180s",
+      ]);
     } catch (error) {
       errors.push(error);
     }

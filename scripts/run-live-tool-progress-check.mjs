@@ -1,3 +1,4 @@
+import { replacePod } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -173,9 +174,10 @@ try {
       15000,
     );
     if (process.env.PI_CLOUD_TOOL_PROGRESS_RESTART_CHECK === "1") {
-      const { stdout } = await exec("docker", [
+      const { stdout } = await exec(process.execPath, [
+        "scripts/production-kubernetes.mjs",
         "exec",
-        "pi-cloud-production-postgres-1",
+        "postgres",
         "psql",
         "-U",
         "pi_cloud",
@@ -186,8 +188,7 @@ try {
       ]);
       assert.equal(stdout.trim(), active.runId, "Refuse process fault while other Runs are active");
       const before = snapshots;
-      await exec("docker", ["kill", "--signal=KILL", "pi-cloud-production-control-plane-1"]);
-      await exec("docker", ["start", "pi-cloud-production-control-plane-1"]);
+      await replacePod("control-plane");
       // Replace the Projector process, not the Worker or the running Tool.
       await page.waitFor(
         "document.querySelector('.product-tool-progress-tail')?.textContent.includes('OBS_TICK_')",

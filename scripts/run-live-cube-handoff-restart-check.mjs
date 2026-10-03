@@ -1,3 +1,4 @@
+import { serviceAddress, kubectlAsync, podFor } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -37,10 +38,8 @@ async function waitFor(fn, label, ms = 120000) {
 let project, session, turn, error;
 const report = { checkedAt: new Date().toISOString(), model: "gpt-6-luna", accepted: false };
 async function assertOnlyOwnedRun() {
-  const { stdout } = await exec("docker", ["inspect", "pi-cloud-production-postgres-1"]);
   const url = new URL((await readFile(runtime + "/secrets/database-url", "utf8")).trim());
-  url.hostname =
-    JSON.parse(stdout)[0].NetworkSettings.Networks["pi-cloud-production_database"].IPAddress;
+  url.hostname = serviceAddress("postgres");
   const db = createDatabase({ connectionString: url.toString(), maxConnections: 1 });
   try {
     const { rows } =
@@ -56,13 +55,7 @@ async function assertOnlyOwnedRun() {
     await db.destroy();
   }
 }
-async function compose(args) {
-  return exec(process.execPath, [root + "/scripts/production-compose.mjs", ...args], {
-    cwd: root,
-    timeout: 180000,
-    maxBuffer: 1024 * 1024,
-  });
-}
+
 try {
   project = await api.createProject("Cube handoff restart " + Date.now());
   session = await api.createSession(
@@ -97,12 +90,15 @@ try {
   const before = await api.getRun(turn.runId);
   report.workerId = before.workerId;
   await assertOnlyOwnedRun();
-  await compose(["kill", "--signal", "SIGKILL", "control-plane"]);
-  try {
-    await delay(2000);
-  } finally {
-    await compose(["start", "--wait", "control-plane"]);
-  }
+  await kubectlAsync([
+    "delete",
+    "pod",
+    podFor("control-plane"),
+    "--grace-period=0",
+    "--force",
+    "--wait=true",
+  ]);
+  await kubectlAsync(["rollout", "status", "deployment/pi-cloud-control-plane", "--timeout=180s"]);
   const finished = await waitFor(
     async () => {
       try {

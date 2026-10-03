@@ -59,9 +59,8 @@ async function psql(query) {
   const { stdout } = await exec(
     process.execPath,
     [
-      "scripts/production-compose.mjs",
+      "scripts/production-kubernetes.mjs",
       "exec",
-      "-T",
       "postgres",
       "psql",
       "--username",

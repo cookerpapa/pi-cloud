@@ -1092,73 +1092,6 @@ async function installTemplateRegistry() {
   }
 }
 
-async function installCompletionDeploymentCredential() {
-  const namespace = "cube-system",
-    name = "pi-cloud-completion-deployer";
-  const objects = [
-    { apiVersion: "v1", kind: "ServiceAccount", metadata: { name, namespace } },
-    {
-      apiVersion: "rbac.authorization.k8s.io/v1",
-      kind: "Role",
-      metadata: { name, namespace },
-      rules: [
-        { apiGroups: [""], resources: ["services"], verbs: ["get", "create", "patch", "update"] },
-        {
-          apiGroups: ["discovery.k8s.io"],
-          resources: ["endpointslices"],
-          verbs: ["get", "create", "patch", "update"],
-        },
-        { apiGroups: [""], resources: ["secrets"], verbs: ["create"] },
-        {
-          apiGroups: [""],
-          resources: ["secrets"],
-          resourceNames: ["pi-cloud-cube-completion"],
-          verbs: ["get", "patch", "update"],
-        },
-        {
-          apiGroups: ["apps"],
-          resources: ["daemonsets"],
-          resourceNames: ["cube-node"],
-          verbs: ["get", "list", "watch", "patch"],
-        },
-      ],
-    },
-    {
-      apiVersion: "rbac.authorization.k8s.io/v1",
-      kind: "RoleBinding",
-      metadata: { name, namespace },
-      subjects: [{ kind: "ServiceAccount", name, namespace }],
-      roleRef: { apiGroup: "rbac.authorization.k8s.io", kind: "Role", name },
-    },
-  ];
-  for (const object of objects)
-    await runKubectl(["apply", "-f", "-"], { input: JSON.stringify(object) });
-  const current = JSON.parse(
-    await captureKubectl(["config", "view", "--raw", "--minify", "-o", "json"]),
-  );
-  const token = await captureKubectl([
-    "-n",
-    namespace,
-    "create",
-    "token",
-    name,
-    "--duration=8760h",
-  ]);
-  const config = {
-    apiVersion: "v1",
-    kind: "Config",
-    clusters: [{ name: "cube", cluster: current.clusters[0].cluster }],
-    users: [{ name, user: { token } }],
-    contexts: [{ name: "cube-completion", context: { cluster: "cube", user: name, namespace } }],
-    "current-context": "cube-completion",
-  };
-  const path = resolve(runtimeDirectory, "cubesandbox/completion-kubeconfig.json");
-  const owner = await stat(credentialPath);
-  await writeFile(path, JSON.stringify(config) + "\n", { mode: 0o600 });
-  await chmod(path, 0o600);
-  await chown(path, owner.uid, owner.gid);
-}
-
 async function reconcileRedisCredentialRevision() {
   // Projected Secret files and environment variables do not reload Redis or
   // subPath-mounted consumer configuration in already-running containers.
@@ -1357,7 +1290,6 @@ await run("helm", [
 await ensureCubeletLoopbackCapacity();
 await reconcileRedisCredentialRevision();
 await installPosixVolumePlugin();
-await installCompletionDeploymentCredential();
 if (nodeNetwork.changed) {
   await restartCubeWorkloadsAfterNetworkChange();
 }

@@ -247,9 +247,8 @@ try {
   const postgresDump = execFileSync(
     process.execPath,
     [
-      "scripts/production-compose.mjs",
+      "scripts/production-kubernetes.mjs",
       "exec",
-      "-T",
       "postgres",
       "pg_dump",
       "--username",

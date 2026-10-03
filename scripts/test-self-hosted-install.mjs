@@ -17,19 +17,10 @@ assert.match(help.stdout, /never accepts a model API key/u);
 
 const plan = await execute(
   "bash",
-  [
-    installer,
-    "--print-plan",
-    "--runtime-dir",
-    "tmp/example-runtime",
-    "--pi-workers",
-    "compose",
-    "--port",
-    "18080",
-  ],
+  [installer, "--print-plan", "--runtime-dir", "tmp/example-runtime", "--port", "18080"],
   { cwd: repositoryRoot },
 );
-assert.match(plan.stdout, /Pi Worker mode:\s+compose/u);
+assert.match(plan.stdout, /Runtime:.*existing K3s/u);
 assert.match(plan.stdout, /tmp\/example-runtime/u);
 assert.match(plan.stdout, /http:\/\/127\.0\.0\.1:18080/u);
 
@@ -39,77 +30,6 @@ assert.match(installerSource, /production:administrator -- --username/u);
 assert.match(installerSource, /clean Git checkout/u);
 assert.doesNotMatch(installerSource, /health_url=.*\/health(?:["'])/u);
 
-const composeWrapper = await readFile(
-  fileURLToPath(new URL("production-compose.mjs", import.meta.url)),
-  "utf8",
-);
-assert.match(
-  composeWrapper,
-  /new Set\(\["build", "down"/u,
-  "production image build must not require a template that it is about to create",
-);
-assert.match(
-  composeWrapper,
-  /"ssh-gateway"/u,
-  "production deployment must rebuild the SSH gateway with the current revision",
-);
-const productionCompose = await readFile(
-  fileURLToPath(new URL("../deploy/production/compose.yaml", import.meta.url)),
-  "utf8",
-);
-assert.match(productionCompose, /kafka-1:9092,kafka-2:9092,kafka-3:9092/u);
-assert.match(productionCompose, /PI_CLOUD_KAFKA_REPLICAS: "3"/u);
-assert.doesNotMatch(productionCompose, /event-gateway|valkey|nats-/u);
-const compose = parse(productionCompose, {
-  customTags: [{ tag: "!override", collection: "seq", resolve: (value) => value }],
-});
-assert.equal(compose.services.postgres.cpus, "${PI_CLOUD_POSTGRES_CPUS:-4}");
-for (const host of [
-  ".workers.pi-cloud.local",
-  "supervisor-host",
-  "pi-cloud-worker-1",
-  "pi-cloud-worker-2",
-]) {
-  assert(
-    compose.services["control-plane"].environment.NO_PROXY.split(",").includes(host),
-    `Private Worker management must bypass the provider proxy: ${host}`,
-  );
-}
-assert.equal(
-  compose.services["supervisor-host"].user,
-  "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}",
-  "Worker identity must match the owner of its private boot Volume and mounted Secrets",
-);
-assert.equal(compose.services["supervisor-host-1"].extends.service, "supervisor-host");
-assert.equal(compose.services["supervisor-host-1"].user, undefined);
-assert.equal(
-  compose.services["workspace-volume-gateway"].user,
-  `${VOLUME_READER_UID}:\${PI_CLOUD_APPLICATION_GID:-1000}`,
-  "The Volume reader must match Cube's filesystem UID, not the host operator UID",
-);
-for (const key of [
-  "PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES",
-  "PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS",
-]) {
-  assert.equal(
-    compose.services["supervisor-host"].environment[key],
-    compose.services["control-plane"].environment[key],
-  );
-}
-const usedNetworks = new Set(
-  Object.values(compose.services).flatMap((service) =>
-    Array.isArray(service.networks) ? service.networks : Object.keys(service.networks ?? {}),
-  ),
-);
-assert.deepEqual(
-  Object.keys(compose.networks).filter((name) => !usedNetworks.has(name)),
-  [],
-);
-assert(
-  productionCompose.includes(
-    "PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: ${PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY:-}",
-  ),
-);
 validateProductionRuntimeEnvironment({
   PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: "http://127.0.0.1:12450",
 });
@@ -119,19 +39,6 @@ for (const proxy of ["socks5://127.0.0.1:12450", "http://proxy/path", "http://pr
     /PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY/,
   );
 }
-const relayImage = productionCompose
-  .split("  provider-egress-relay-image:")[1]
-  ?.split("\nnetworks:")[0];
-assert.match(
-  relayImage ?? "",
-  /\n      network: host\n/u,
-  "Relay security-package installation must reach the configured host proxy during build",
-);
-assert.match(
-  relayImage ?? "",
-  /\n    network_mode: none\n/u,
-  "The image-only service must remain unrunnable on the application network",
-);
 validateProductionRuntimeEnvironment({});
 validateProductionRuntimeEnvironment({
   PI_CLOUD_HTTP_PORT: "18080",
@@ -171,7 +78,7 @@ await assert.rejects(
     cwd: repositoryRoot,
   }),
   (error) => {
-    assert.match(error.stderr, /--pi-workers must be kubernetes or compose/u);
+    assert.match(error.stderr, /unknown option.*--pi-workers/u);
     return true;
   },
 );

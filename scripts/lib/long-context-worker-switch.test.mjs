@@ -14,8 +14,8 @@ function fixture(failWait = false, failRestore = false) {
     process,
     AggregateError,
     workerDeployment: "kubernetes",
-    kubernetesArgs: ["--kubeconfig", "/fixture", "--namespace", "pi-cloud-workers"],
-    kubernetesStatefulSet: "pi-cloud-pi-worker-local-v1",
+    kubernetesArgs: ["--kubeconfig", "/fixture", "--namespace", "cube-system"],
+    kubernetesStatefulSet: "pi-cloud-pi-worker-primary-v1",
     tenantId: "fixture",
     sqlLiteral: JSON.stringify,
     psql: async () => "0",
@@ -44,7 +44,7 @@ describe("long-context local Worker replacement", () => {
     "removes ordinal %s and restores both replicas without retaining an override",
     async (ordinal) => {
       const f = fixture();
-      const previous = await f.stopWorker(`pi-cloud-pi-worker-local-v1-${ordinal}`);
+      const previous = await f.stopWorker(`pi-cloud-pi-worker-primary-v1-${ordinal}`);
       await f.restoreWorker(previous);
       const patches = f.calls
         .filter(([, args]) => Array.isArray(args) && args.includes("--patch"))
@@ -58,14 +58,14 @@ describe("long-context local Worker replacement", () => {
   );
   it("restores the pool after a partially applied switch", async () => {
     const f = fixture(true);
-    await expect(f.stopWorker("pi-cloud-pi-worker-local-v1-0")).rejects.toThrow(
+    await expect(f.stopWorker("pi-cloud-pi-worker-primary-v1-0")).rejects.toThrow(
       "Pod removal failed",
     );
     expect(f.calls.at(-1)).toEqual(["enrolled", 2]);
   });
   it("retains both primary and rollback failures", async () => {
     const f = fixture(true, true);
-    const failure = await f.stopWorker("pi-cloud-pi-worker-local-v1-0").catch((error) => error);
+    const failure = await f.stopWorker("pi-cloud-pi-worker-primary-v1-0").catch((error) => error);
     expect(failure.errors.map((error) => error.message)).toEqual([
       "Pod removal failed",
       "Restore failed",
@@ -74,7 +74,7 @@ describe("long-context local Worker replacement", () => {
   it("does not change the pool while foreign work is active", async () => {
     const f = fixture();
     f.context.psql = async () => "1";
-    await expect(f.stopWorker("pi-cloud-pi-worker-local-v1-0")).rejects.toThrow("another tenant");
+    await expect(f.stopWorker("pi-cloud-pi-worker-primary-v1-0")).rejects.toThrow("another tenant");
     expect(f.calls).toEqual([]);
   });
 });

@@ -1,3 +1,4 @@
+import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
@@ -20,16 +21,7 @@ const apiKey = (
 ).trim();
 const providerGatewayUrl =
   process.env.PI_CLOUD_PROVIDER_GATEWAY_PROBE_URL ??
-  `http://${execFileSync(
-    "docker",
-    [
-      "inspect",
-      "pi-cloud-production-cli-proxy-api-1",
-      "--format",
-      "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-    ],
-    { encoding: "utf8" },
-  ).trim()}:8317`;
+  `http://${serviceAddress("cli-proxy-api")}:8317`;
 
 const routes = {
   gpt: "gpt-6-luna",

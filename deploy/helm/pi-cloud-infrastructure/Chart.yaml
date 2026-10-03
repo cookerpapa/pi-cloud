@@ -1,0 +1,6 @@
+apiVersion: v2
+name: pi-cloud-infrastructure
+description: Pinned single-node PiCloud infrastructure on native Kubernetes resources
+type: application
+version: 0.1.0
+kubeVersion: ">=1.30.0-0"

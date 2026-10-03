@@ -111,10 +111,11 @@ function countPiSessionPayloads(sessionId, marker) {
   ].join(" ");
   return Number(
     execFileSync(
-      "docker",
+      process.execPath,
       [
+        "scripts/production-kubernetes.mjs",
         "exec",
-        "pi-cloud-production-postgres-1",
+        "postgres",
         "psql",
         "-U",
         "pi_cloud",

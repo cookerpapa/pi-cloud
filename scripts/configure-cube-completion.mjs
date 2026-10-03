@@ -3,11 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  cubeCompletionBridge,
-  cubeCompletionPatch,
-  cubeCompletionSecret,
-} from "./lib/cube-execution-deployment.mjs";
+import { cubeCompletionPatch, cubeCompletionSecret } from "./lib/cube-execution-deployment.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const runtime = resolve(
@@ -15,8 +11,7 @@ const runtime = resolve(
   process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
 );
 const kubeconfig =
-  process.env.PI_CLOUD_CUBE_COMPLETION_KUBECONFIG ??
-  resolve(runtime, "cubesandbox/completion-kubeconfig.json");
+  process.env.PI_CLOUD_CUBE_COMPLETION_KUBECONFIG ?? resolve(runtime, "k3s/kubeconfig.yaml");
 const kubectl = process.env.PI_CLOUD_KUBECTL_BIN ?? "/usr/local/bin/k3s";
 const prefix = process.env.PI_CLOUD_KUBECTL_BIN ? [] : ["kubectl"];
 const env = { ...process.env, KUBECONFIG: kubeconfig };
@@ -57,31 +52,14 @@ function apply(value, patch = false) {
     if (!patch) child.stdin.end(JSON.stringify(value));
   });
 }
-const targets = [];
-for (const [name, network, port, required] of [
-  ["postgres", "database", 5432, true],
-  ["session-images", "database", 8333, true],
-  ["control-plane", "management", 3000, false],
-  ...[1, 2, 3].map((id) => [`kafka-${id}`, "event-log", 9092, true]),
-]) {
-  const id = await capture("docker", [
-    "ps",
-    "-q",
-    "--filter",
-    "label=com.docker.compose.project=pi-cloud-production",
-    "--filter",
-    `label=com.docker.compose.service=${name}`,
-  ]);
-  if (!id) {
-    if (required) throw new Error(`Start ${name} before configuring Cube completion`);
-    continue;
-  }
-  const [container] = JSON.parse(await capture("docker", ["inspect", id]));
-  const address = container.NetworkSettings.Networks[`pi-cloud-production_${network}`]?.IPAddress;
-  if (!address) throw new Error(`Missing trusted ${name} network address`);
-  targets.push({ name, address, port });
+// Kubernetes selector-backed Services own discovery. Never publish Pod/Docker IPs.
+for (const name of ["postgres", "session-images", "kafka-1", "kafka-2", "kafka-3"]) {
+  const service = JSON.parse(
+    await capture(kubectl, [...prefix, "-n", "cube-system", "get", "service", name, "-o", "json"]),
+  );
+  if (!service.spec?.selector || Object.keys(service.spec.selector).length === 0)
+    throw new Error(`Cube completion requires a selector-backed ${name} Service`);
 }
-for (const object of cubeCompletionBridge(targets)) await apply(object);
 const files = {};
 for (const name of [
   "database-url",

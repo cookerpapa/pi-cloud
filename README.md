@@ -72,7 +72,9 @@ at least 16 GiB RAM and 40 GiB free disk. Intended for private deployments.
    machine, request one under **开发资源** first. Pure chat needs no sandbox.
 
 Configuration and secrets are stored in the private `deploy/production/runtime/`
-directory. For upgrades, public access or Kubernetes, follow the guides below.
+directory. All runtime services run in K3s; Docker is used for image builds.
+Services track Pod replacement automatically. See the guides below for upgrades,
+public access and distributed deployment.
 
 ## Documentation
 

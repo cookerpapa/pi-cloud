@@ -1,0 +1,42 @@
+{{- $node := required "nodeName is required for local storage" .Values.nodeName -}}
+{{- $root := .Values.storageRoot -}}
+{{- $volumes := list
+  (dict "name" "postgres" "path" (printf "%s/postgres" $root) "size" .Values.postgres.size)
+  (dict "name" "kafka-1" "path" (printf "%s/kafka-1" $root) "size" .Values.kafka.size)
+  (dict "name" "kafka-2" "path" (printf "%s/kafka-2" $root) "size" .Values.kafka.size)
+  (dict "name" "kafka-3" "path" (printf "%s/kafka-3" $root) "size" .Values.kafka.size)
+  (dict "name" "session-images" "path" (printf "%s/session-images" $root) "size" .Values.sessionImages.size)
+  (dict "name" "provider" "path" (required "providerStatePath is required" .Values.providerStatePath) "size" "2Gi")
+  (dict "name" "workspaces" "path" (required "workspacePath is required" .Values.workspacePath) "size" "128Gi") -}}
+{{- range $volumes }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ $.Release.Namespace }}-pi-cloud-{{ .name }}
+  annotations: { helm.sh/resource-policy: keep }
+spec:
+  capacity: { storage: {{ .size }} }
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  local: { path: {{ .path | quote }} }
+  claimRef: { namespace: {{ $.Release.Namespace }}, name: pi-cloud-{{ .name }} }
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - { key: kubernetes.io/hostname, operator: In, values: [{{ $node | quote }}] }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pi-cloud-{{ .name }}
+  annotations: { helm.sh/resource-policy: keep }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ""
+  volumeName: {{ $.Release.Namespace }}-pi-cloud-{{ .name }}
+  resources: { requests: { storage: {{ .size }} } }
+{{- end }}

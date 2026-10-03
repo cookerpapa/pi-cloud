@@ -52,37 +52,6 @@ function dockerComposeCapture(args) {
   return result.stdout;
 }
 
-function connectPiCloudNetwork() {
-  const network = "pi-cloud-production_model-egress";
-  const inspected = spawnSync("docker", ["network", "inspect", network], {
-    cwd: root,
-    env: environment,
-    stdio: "ignore",
-  });
-  if (inspected.status !== 0) return;
-  const connected = spawnSync(
-    "docker",
-    [
-      "network",
-      "connect",
-      "--alias",
-      "gitlab.localhost",
-      "--alias",
-      "gitlab.internal",
-      network,
-      "pi-cloud-gitlab-gitlab-1",
-    ],
-    { cwd: root, env: environment, encoding: "utf8" },
-  );
-  if (
-    connected.status !== 0 &&
-    !`${connected.stdout}${connected.stderr}`.includes("already exists")
-  ) {
-    process.stderr.write(connected.stderr);
-    process.exit(connected.status ?? 1);
-  }
-}
-
 async function configureLocalWebhookDelivery() {
   const marker = resolve(runtime, "secrets/local-webhook-delivery-v1");
   try {
@@ -122,6 +91,5 @@ if (command === "init") {
   dockerCompose(args);
   if (command === "up") {
     await configureLocalWebhookDelivery();
-    connectPiCloudNetwork();
   }
 }

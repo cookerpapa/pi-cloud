@@ -5,12 +5,6 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseAllDocuments, stringify } from "yaml";
-import {
-  bridgeTargets,
-  composeBridgeResources,
-  composeNetworks,
-  localWorkerValues,
-} from "./local-worker-connections.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const chart = resolve(root, "deploy/helm/pi-cloud-pi-worker-pool");
@@ -109,75 +103,4 @@ assert.match(scaler.spec.triggers[0].metadata.query, /r\.ready_at IS NOT NULL/);
 assert.match(scaler.spec.triggers[0].metadata.query, /family\.unsealed_runs=0/);
 assert.doesNotMatch(scaler.spec.triggers[0].metadata.query, /lease_id IS NULL|claim_expires_at/);
 assert(find("TriggerAuthentication"));
-const directory = mkdtempSync(resolve(tmpdir(), "pi-cloud-local-worker-contract-"));
-try {
-  const values = localWorkerValues(
-    {
-      PI_CLOUD_KAFKA_PARTITIONS: "64",
-      PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES: "1048576",
-      PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS: "16",
-      PI_CLOUD_SUPERVISOR_CAPACITY: "8",
-      PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS: "6",
-      PI_CLOUD_WORKER_MODEL_CONCURRENCY: "12",
-      PI_CLOUD_SESSION_MODEL_CONCURRENCY: "6",
-      PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH: "3",
-      PI_CLOUD_SUBAGENT_MAXIMUM_NODES: "16",
-    },
-    "pi-cloud-system",
-  );
-  const path = resolve(directory, "values.yaml");
-  writeFileSync(path, stringify(values));
-  const local = parseAllDocuments(run(["template", "local-workers", chart, "--values", path]))
-    .map((document) => document.toJSON())
-    .find((resource) => resource?.kind === "StatefulSet");
-  const localEnvironment = Object.fromEntries(
-    local.spec.template.spec.containers[0].env.map((entry) => [entry.name, entry.value]),
-  );
-  for (const [key, value] of Object.entries({
-    PI_CLOUD_KAFKA_PARTITIONS: "64",
-    PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES: "1048576",
-    PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS: "16",
-    PI_CLOUD_SUPERVISOR_CAPACITY: "8",
-    PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS: "6",
-    PI_CLOUD_WORKER_MODEL_CONCURRENCY: "12",
-    PI_CLOUD_SESSION_MODEL_CONCURRENCY: "6",
-    PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH: "3",
-    PI_CLOUD_SUBAGENT_MAXIMUM_NODES: "16",
-  }))
-    assert.equal(Number(localEnvironment[key]), Number(value), key);
-  const bridges = composeBridgeResources(
-    bridgeTargets.map((target) => ({ ...target, address: "192.0.2.10" })),
-    "pi-cloud-system",
-    "pi-cloud-workers",
-  );
-  const aliases = bridges.filter(
-    (resource) => resource.kind === "Service" && resource.metadata.namespace === "pi-cloud-workers",
-  );
-  assert.deepEqual(aliases.map((resource) => resource.metadata.name).sort(), [
-    "control-plane",
-    "kafka-1",
-    "kafka-2",
-    "kafka-3",
-  ]);
-  for (const broker of localEnvironment.PI_CLOUD_KAFKA_BROKERS.split(",")) {
-    const [name, port] = broker.split(":");
-    assert.equal(port, "9092");
-    assert.equal(
-      aliases.find((resource) => resource.metadata.name === name).spec.externalName,
-      `${name}.pi-cloud-system.svc.cluster.local`,
-    );
-    assert.equal(
-      bridgeTargets.find((target) => target.name === name).network,
-      composeNetworks.eventLog,
-    );
-  }
-  const gateway = new URL(localEnvironment.PI_CLOUD_PROVIDER_GATEWAY_URL);
-  assert.equal(gateway.hostname, "cli-proxy-api.pi-cloud-system.svc.cluster.local");
-  const gatewayBridge = bridges.find(
-    (resource) => resource.kind === "Service" && resource.metadata.name === "cli-proxy-api",
-  );
-  assert.equal(gatewayBridge.spec.ports[0].port, Number(gateway.port));
-} finally {
-  rmSync(directory, { recursive: true });
-}
 process.stdout.write("Pi Worker Helm chart uses the shared PostgreSQL queue and passed.\n");

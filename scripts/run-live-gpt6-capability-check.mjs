@@ -1,3 +1,4 @@
+import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
@@ -10,16 +11,7 @@ if (process.env.PI_CLOUD_LIVE_GPT6_CHECK !== "1")
   );
 const runtime = "deploy/production/runtime";
 const key = (await readFile(`${runtime}/secrets/cli-proxy-api-key`, "utf8")).trim();
-const ip = execFileSync(
-  "docker",
-  [
-    "inspect",
-    "pi-cloud-production-cli-proxy-api-1",
-    "--format",
-    "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-  ],
-  { encoding: "utf8" },
-).trim();
+const ip = serviceAddress("cli-proxy-api");
 const model = "gpt-6-luna";
 async function call(input, tools = [], extra = {}) {
   const response = await fetch(`http://${ip}:8317/v1/responses`, {

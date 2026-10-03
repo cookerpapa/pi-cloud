@@ -1,3 +1,4 @@
+import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -18,9 +19,7 @@ const port = env.match(/^PI_CLOUD_HTTP_PORT=(\d+)$/m)?.[1];
 assert(port);
 const base = `http://127.0.0.1:${port}`;
 const pg = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
-pg.hostname = JSON.parse(
-  execFileSync("docker", ["inspect", "pi-cloud-production-postgres-1"], { encoding: "utf8" }),
-)[0].NetworkSettings.Networks["pi-cloud-production_database"].IPAddress;
+pg.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: pg.toString(), maxConnections: 2 });
 const report = {
   checkedAt: new Date().toISOString(),

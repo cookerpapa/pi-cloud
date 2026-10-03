@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export async function ensureSessionImageConfig(runtimeDirectory, { read, write }) {
@@ -39,5 +38,4 @@ export async function ensureSessionImageConfig(runtimeDirectory, { read, write }
     if (error.code !== "ENOENT") throw error;
     await write(configPath, JSON.stringify(config) + "\n");
   }
-  await mkdir(resolve(runtimeDirectory, "state/session-images"), { recursive: true, mode: 0o700 });
 }

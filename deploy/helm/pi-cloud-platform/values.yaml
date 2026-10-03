@@ -1,3 +1,5 @@
+profile: distributed
+
 piWorkersEnabled: true
 sandboxPlaneEnabled: true
 globalPlaneEnabled: true
@@ -75,6 +77,9 @@ controlPlane:
     maximumSessions: 100
   supervisorIdPrefix: pi-cloud-pi-worker-
   publicOriginBaseUrl: https://pi-cloud.example.com
+  previewOriginBaseUrl: ""
+  cookieSecure: true
+  noProxy: "127.0.0.1,localhost,.svc,.cluster.local"
   sourceControl:
     github:
       enabled: false
@@ -98,6 +103,8 @@ sshGateway:
   replicas: 2
   advertisedHost: ssh.pi-cloud.example.com
   port: 2222
+  hostPort: 0
+  hostIP: 127.0.0.1
   ticketTtlMs: 86400000
   serviceType: LoadBalancer
   resources:
@@ -106,6 +113,9 @@ sshGateway:
 
 web:
   replicas: 2
+  hostPorts: { http: 0, admin: 0, provider: 0 }
+  hostIP: 127.0.0.1
+  adminHostIP: 127.0.0.1
   adminOriginBaseUrl: https://admin.pi-cloud.example.com
   managementUrls:
     providerGateway: ""
@@ -247,7 +257,7 @@ pi-workers:
     size: 1Gi
   resources:
     requests: { cpu: 250m, memory: 384Mi }
-    limits: { cpu: "2", memory: 1Gi }
+    limits: { cpu: "2", memory: 2Gi }
   ephemeral: { workspaceSizeLimit: 128Mi, temporarySizeLimit: 128Mi }
   networkPolicy:
     enabled: true

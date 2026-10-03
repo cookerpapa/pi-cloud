@@ -1,3 +1,4 @@
+import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -27,43 +28,7 @@ async function readJson(path) {
 }
 
 function workspaceVolumeGatewayAddress() {
-  const containerIds = execFileSync(
-    "docker",
-    [
-      "ps",
-      "--filter",
-      "label=com.docker.compose.service=workspace-volume-gateway",
-      "--format",
-      "{{.ID}}",
-    ],
-    { cwd: repositoryRoot, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
-  )
-    .trim()
-    .split(/\r?\n/u)
-    .filter(Boolean);
-  if (containerIds.length !== 1) {
-    throw new Error(
-      "exactly one running production workspace-volume-gateway is required by the live gate",
-    );
-  }
-  const networks = JSON.parse(
-    execFileSync(
-      "docker",
-      ["inspect", "--format", "{{json .NetworkSettings.Networks}}", containerIds[0]],
-      {
-        cwd: repositoryRoot,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "inherit"],
-      },
-    ),
-  );
-  const addresses = Object.values(networks)
-    .map((network) => network?.IPAddress)
-    .filter((address) => typeof address === "string" && address.length > 0);
-  if (addresses.length < 1) {
-    throw new Error("workspace-volume-gateway has no reachable container address");
-  }
-  return addresses[0];
+  return serviceAddress("workspace-volume-gateway");
 }
 
 const cluster = await readJson(`${runtimeDirectory}/cubesandbox/cluster.json`);

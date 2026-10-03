@@ -6,9 +6,8 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const compose = parse(readFileSync(resolve(root, "deploy/production/compose.yaml"), "utf8"), {
-  customTags: [{ tag: "!override", collection: "seq", resolve: (value) => value }],
-});
+const prometheusImage =
+  "prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996";
 const result = spawnSync(
   "docker",
   [
@@ -29,7 +28,7 @@ const result = spawnSync(
     "/contracts/tests",
     "--entrypoint",
     "/bin/promtool",
-    compose.services.prometheus.image,
+    prometheusImage,
     "test",
     "rules",
     "sampler.test.yml",

@@ -1,7 +1,6 @@
 import { expect, it } from "vitest";
 import {
   withCubeExecutionCompletion,
-  cubeCompletionBridge,
   cubeCompletionPatch,
   cubeCompletionSecret,
   readyCubeletPod,
@@ -39,12 +38,4 @@ it("keeps completion credentials on the trusted Cubelet container", () => {
   expect(JSON.stringify(patch)).not.toContain("api-key");
   const secret = cubeCompletionSecret({ "database-url": Buffer.from("fixture") });
   expect(Buffer.from(secret.data["database-url"], "base64").toString()).toBe("fixture");
-});
-it("bridges advertised Kafka names to explicit reachable addresses", () => {
-  const objects = cubeCompletionBridge([{ name: "kafka-1", address: "172.20.0.3", port: 9092 }]);
-  expect(objects[0].metadata.name).toBe("kafka-1");
-  expect(objects[1].endpoints[0].addresses).toEqual(["172.20.0.3"]);
-  expect(() =>
-    cubeCompletionBridge([{ name: "../wrong", address: "172.20.0.3", port: 9092 }]),
-  ).toThrow();
 });

@@ -1,7 +1,7 @@
-{{- if and (or .Values.globalPlaneEnabled .Values.sandboxPlaneEnabled) (lt (int .Values.controlPlane.replicas) 2) -}}
+{{- if and (eq .Values.profile "distributed") (or .Values.globalPlaneEnabled .Values.sandboxPlaneEnabled) (lt (int .Values.controlPlane.replicas) 2) -}}
 {{- fail "controlPlane.replicas must be at least 2 for the distributed profile" -}}
 {{- end -}}
-{{- if and .Values.globalPlaneEnabled (lt (int .Values.web.replicas) 2) -}}
+{{- if and (eq .Values.profile "distributed") .Values.globalPlaneEnabled (lt (int .Values.web.replicas) 2) -}}
 {{- fail "web.replicas must be at least 2 for the distributed profile" -}}
 {{- end -}}
 {{- if and .Values.controlPlane.autoscaling.enabled (lt (int .Values.controlPlane.autoscaling.maxReplicas) (int .Values.controlPlane.autoscaling.minReplicas)) -}}

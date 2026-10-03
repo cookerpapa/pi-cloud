@@ -78,7 +78,7 @@ application / process metrics -> Prometheus -> Alertmanager
                                    Grafana
 
 application traces ----------------> Jaeger
-bounded JSON logs -----------------> Docker logging driver
+bounded JSON logs -----------------> Kubernetes container logs
 ```
 
 Run it with:
@@ -98,7 +98,7 @@ The loopback-only operator endpoints are:
 
 Grafana's administrator password is stored in the private runtime secrets
 directory. Metrics endpoints are bearer-protected on the internal
-observability network. None of these operator ports is public by default.
+trusted Kubernetes namespace. None of these operator ports is public by default.
 
 ## What is monitored
 

@@ -1,0 +1,89 @@
+{{- if .Values.observability.enabled }}
+{{- range $name, $port := dict "prometheus" 9090 "alertmanager" 9093 "jaeger" 16686 "grafana" 3000 }}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: {{ $name }} }
+spec:
+  selector: { app.kubernetes.io/instance: {{ $.Release.Name }}, app.kubernetes.io/component: {{ $name }} }
+  ports:
+    - { name: http, port: {{ $port }}, targetPort: http }
+    {{- if eq $name "jaeger" }}
+    - { name: otlp, port: 4318, targetPort: 4318 }
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: {{ $name }} }
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  persistentVolumeClaimRetentionPolicy: { whenDeleted: Retain, whenScaled: Retain }
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ $.Release.Name }}, app.kubernetes.io/component: {{ $name }} }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/instance: {{ $.Release.Name }}, app.kubernetes.io/component: {{ $name }} }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector: { kubernetes.io/hostname: {{ $.Values.nodeName | quote }} }
+      securityContext: { runAsUser: 1000, runAsGroup: 1000, runAsNonRoot: true, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: {{ $name }}
+          image: {{ index $.Values.observability.images $name | quote }}
+          ports:
+            - { name: http, containerPort: {{ $port }}, hostIP: 127.0.0.1, hostPort: {{ ternary 3001 (int $port) (eq $name "grafana") }} }
+          {{- if eq $name "prometheus" }}
+          args: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/data, --storage.tsdb.retention.time=7d]
+          {{- else if eq $name "alertmanager" }}
+          args: [--config.file=/etc/alertmanager/alertmanager.yml, --storage.path=/data]
+          {{- else if eq $name "grafana" }}
+          env:
+            - { name: GF_PATHS_DATA, value: /data }
+            - { name: GF_PATHS_PLUGINS, value: /data/plugins }
+            - { name: GF_PATHS_LOGS, value: /tmp/grafana-logs }
+            - { name: GF_SECURITY_ADMIN_PASSWORD__FILE, value: /run/pi-cloud-secrets/grafana-admin-password }
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "false" }
+          {{- else }}
+          env:
+            - { name: SPAN_STORAGE_TYPE, value: badger }
+            - { name: BADGER_EPHEMERAL, value: "false" }
+            - { name: BADGER_DIRECTORY_VALUE, value: /data/value }
+            - { name: BADGER_DIRECTORY_KEY, value: /data/key }
+            - { name: COLLECTOR_OTLP_ENABLED, value: "true" }
+          {{- end }}
+          readinessProbe: { tcpSocket: { port: http }, periodSeconds: 5 }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: "1", memory: 512Mi } }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            {{- if eq $name "prometheus" }}
+            - { name: config, mountPath: /etc/prometheus/prometheus.yml, subPath: prometheus.yml, readOnly: true }
+            - { name: config, mountPath: /etc/prometheus/rules/pi-cloud.yml, subPath: alerts.yml, readOnly: true }
+            - { name: secrets, mountPath: /run/pi-cloud-secrets, readOnly: true }
+            {{- else if eq $name "alertmanager" }}
+            - { name: config, mountPath: /etc/alertmanager/alertmanager.yml, subPath: alertmanager.yml, readOnly: true }
+            {{- else if eq $name "grafana" }}
+            - { name: config, mountPath: /etc/grafana/provisioning/datasources/pi-cloud.yml, subPath: datasources.yml, readOnly: true }
+            - { name: config, mountPath: /etc/grafana/provisioning/dashboards/pi-cloud.yml, subPath: dashboards.yml, readOnly: true }
+            - { name: config, mountPath: /var/lib/grafana/dashboards/platform.json, subPath: platform.json, readOnly: true }
+            - { name: secrets, mountPath: /run/pi-cloud-secrets, readOnly: true }
+            {{- end }}
+      volumes:
+        - { name: config, configMap: { name: pi-cloud-observability } }
+        - name: secrets
+          secret:
+            secretName: {{ $.Values.existingSecret }}
+            defaultMode: 288
+            items:
+              - { key: metrics-token, path: metrics-token }
+              - { key: grafana-admin-password, path: grafana-admin-password }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: { requests: { storage: 2Gi } }
+{{- end }}
+{{- end }}

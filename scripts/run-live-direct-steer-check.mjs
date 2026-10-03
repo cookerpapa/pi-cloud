@@ -1,3 +1,4 @@
+import { serviceAddress, kubectlAsync } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile as callback, execFileSync } from "node:child_process";
@@ -17,9 +18,7 @@ const exec = promisify(callback),
 const env = await readFile(`${runtime}/.env`, "utf8");
 const base = `http://127.0.0.1:${env.match(/^PI_CLOUD_HTTP_PORT=(\d+)$/m)?.[1]}`;
 const pg = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
-pg.hostname = JSON.parse(
-  execFileSync("docker", ["inspect", "pi-cloud-production-postgres-1"], { encoding: "utf8" }),
-)[0].NetworkSettings.Networks["pi-cloud-production_database"].IPAddress;
+pg.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: pg.toString(), maxConnections: 2 });
 const report = {
   checkedAt: new Date().toISOString(),
@@ -144,19 +143,15 @@ try {
         .select("supervisor_id")
         .where("id", "=", active.workerId)
         .executeTakeFirstOrThrow();
-      const prefix = env.match(/^PI_CLOUD_SUPERVISOR_ID_PREFIX=(.*)$/m)?.[1] ?? "pi-cloud-worker-";
-      assert([`${prefix}1`, `${prefix}2`].includes(worker.supervisor_id));
-      stoppedWorker =
-        worker.supervisor_id === `${prefix}1` ? "supervisor-host" : "supervisor-host-1";
-      await exec(process.execPath, [
-        "scripts/production-compose.mjs",
-        "stop",
-        "--timeout",
-        "0",
-        stoppedWorker,
+      await kubectlAsync([
+        "delete",
+        "pod",
+        worker.supervisor_id,
+        "--grace-period=0",
+        "--force",
+        "--wait=true",
+        "--timeout=120s",
       ]);
-      await exec(process.execPath, ["scripts/production-compose.mjs", "start", stoppedWorker]);
-      stoppedWorker = undefined;
     } else if (kind === "cancelled") {
       await api.cancelTurn(session.sessionId, accepted.turnId, newIdempotencyKey("cancel"));
     }
@@ -249,10 +244,7 @@ try {
       errors.push(error);
     }
   }
-  if (stoppedWorker)
-    await cleanup(() =>
-      exec(process.execPath, ["scripts/production-compose.mjs", "start", stoppedWorker]),
-    );
+
   for (const session of sessions)
     await cleanup(async () => {
       const queue = await api.getInputQueue(session.sessionId);

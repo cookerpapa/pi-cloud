@@ -612,11 +612,7 @@ const bindAddress = boundedEnvironmentValue(
   /^[a-zA-Z0-9:._-]+$/,
   128,
 );
-const supervisorIdPrefix = boundedEnvironmentValue(
-  "PI_CLOUD_SUPERVISOR_ID_PREFIX",
-  "pi-cloud-worker-",
-  /^[a-z0-9](?:[-a-z0-9]{0,62})-$/,
-);
+
 const publicRegistrationEnabled = booleanEnvironmentValue(
   "PI_CLOUD_PUBLIC_REGISTRATION_ENABLED",
   "true",
@@ -726,10 +722,6 @@ const environment = [
   `PI_CLOUD_CREDENTIAL_BINDING_ID=${identities.credentialBindingId}`,
   `PI_CLOUD_DEFAULT_MODEL_PROFILE_ID=${identities.modelProfileId}`,
   "PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID=",
-  `PI_CLOUD_SUPERVISOR_ID_PREFIX=${supervisorIdPrefix}`,
-  "PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES=http://{supervisorId}:4100",
-  "PI_CLOUD_PI_WORKER_DEPLOYMENT=compose",
-  "PI_CLOUD_POSTGRES_CPUS=4",
   "PI_CLOUD_SUPERVISOR_CAPACITY=4",
   "PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS=4",
   "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH=4",
@@ -740,7 +732,7 @@ const environment = [
   "PI_CLOUD_WEB_SESSION_TTL_MS=2592000000",
   `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL=http://preview.localhost:${httpPort()}`,
   "PI_CLOUD_GITLAB_ENABLED=false",
-  `PI_CLOUD_GITLAB_WEBHOOK_URL=http://host.docker.internal:${httpPort()}/v1/source-control/gitlab/webhook`,
+  `PI_CLOUD_GITLAB_WEBHOOK_URL=http://127.0.0.1:${httpPort()}/v1/source-control/gitlab/webhook`,
   "PI_CLOUD_GITLAB_ISSUE_LABEL=picloud",
   "PI_CLOUD_GITLAB_WORKSPACE_BASE_URL=",
   `PI_CLOUD_PUBLIC_REGISTRATION_ENABLED=${publicRegistrationEnabled}`,

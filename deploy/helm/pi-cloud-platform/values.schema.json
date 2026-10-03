@@ -247,6 +247,14 @@
         },
         "resources": {
           "$ref": "#/$defs/resources"
+        },
+        "hostIP": {
+          "type": "string"
+        },
+        "hostPort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
         }
       }
     },
@@ -264,7 +272,7 @@
       "properties": {
         "replicas": {
           "type": "integer",
-          "minimum": 2,
+          "minimum": 1,
           "maximum": 256
         },
         "autoscaling": {
@@ -319,6 +327,33 @@
               "$ref": "#/$defs/optionalDnsName"
             }
           }
+        },
+        "hostIP": {
+          "type": "string"
+        },
+        "hostPorts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "http": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "admin": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "provider": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          }
+        },
+        "adminHostIP": {
+          "type": "string"
         }
       }
     },
@@ -636,6 +671,9 @@
           "minLength": 1
         }
       }
+    },
+    "profile": {
+      "enum": ["distributed", "self-hosted"]
     }
   },
   "$defs": {
@@ -805,7 +843,7 @@
       "properties": {
         "replicas": {
           "type": "integer",
-          "minimum": 2,
+          "minimum": 1,
           "maximum": 256
         },
         "autoscaling": {
@@ -902,6 +940,15 @@
               }
             }
           }
+        },
+        "previewOriginBaseUrl": {
+          "type": "string"
+        },
+        "cookieSecure": {
+          "type": "boolean"
+        },
+        "noProxy": {
+          "type": "string"
         }
       }
     },

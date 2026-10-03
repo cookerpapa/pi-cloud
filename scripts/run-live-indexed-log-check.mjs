@@ -1,3 +1,4 @@
+import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -21,9 +22,7 @@ const api = new PiCloudApi(
   (await readFile(`${runtime}/secrets/api-token`, "utf8")).trim(),
 );
 const url = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
-url.hostname = JSON.parse(
-  execFileSync("docker", ["inspect", "pi-cloud-production-postgres-1"], { encoding: "utf8" }),
-)[0].NetworkSettings.Networks["pi-cloud-production_database"].IPAddress;
+url.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: url.toString(), maxConnections: 2 });
 const report = {
   revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),

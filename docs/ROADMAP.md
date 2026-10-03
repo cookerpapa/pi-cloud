@@ -22,7 +22,7 @@
   Cube with independently fenced concurrent Tool bindings;
 - Control-plane-independent development-machine runtime with running-state-preserving takeover;
 - conversation trees, Fork, Steer, recursive Subagents and Workspace rebinding;
-- Compose one-host deployment and Kubernetes/KEDA manifests;
+- Unified self-hosted K3s deployment and distributed Kubernetes/KEDA manifests;
 - non-exclusive GitLab Issue claims and private-project
   Issue-to-Run execution choices;
 - ordinary user-owned Git worktrees with user-directed commit, push and

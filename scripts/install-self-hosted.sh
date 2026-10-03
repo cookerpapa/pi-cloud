@@ -23,8 +23,6 @@ bind_address="127.0.0.1"
 http_port="8080"
 bind_address_explicit="false"
 http_port_explicit="false"
-pi_workers=""
-pi_workers_explicit="false"
 assume_yes="false"
 check_only="false"
 print_plan_only="false"
@@ -45,8 +43,6 @@ Options:
   --check-only                  Run read-only checks and exit.
   --print-plan                  Print the plan without checking or changing anything.
   --skip-host-bootstrap         Do not install OS packages, Docker, or K3s.
-  --pi-workers MODE             MODE is kubernetes or compose. Fresh installs
-                                 default to kubernetes.
   --runtime-dir PATH            Private runtime directory.
   --cube-repository PATH        Existing or PiCloud-managed Cube checkout.
   --bind-address ADDRESS        Fresh-install Web bind address (default: 127.0.0.1).
@@ -88,9 +84,6 @@ while (($# > 0)); do
     --check-only) check_only="true"; shift ;;
     --print-plan) print_plan_only="true"; shift ;;
     --skip-host-bootstrap) skip_host_bootstrap="true"; shift ;;
-    --pi-workers)
-      (($# >= 2)) || fail "--pi-workers requires kubernetes or compose"
-      pi_workers=$2; pi_workers_explicit="true"; shift 2 ;;
     --runtime-dir)
       (($# >= 2)) || fail "--runtime-dir requires a path"
       runtime_directory="$(absolute_path "$2")"; shift 2 ;;
@@ -108,8 +101,6 @@ while (($# > 0)); do
   esac
 done
 
-[[ -z "${pi_workers}" || "${pi_workers}" == "compose" || "${pi_workers}" == "kubernetes" ]] ||
-  fail "--pi-workers must be kubernetes or compose"
 [[ "${http_port}" =~ ^[0-9]+$ ]] || fail "--port must be an integer"
 ((http_port >= 1 && http_port <= 65535)) || fail "--port must be from 1 to 65535"
 [[ -n "${bind_address}" && ! "${bind_address}" =~ [[:space:]] ]] || fail "bind address is invalid"
@@ -124,7 +115,7 @@ PiCloud self-hosted deployment plan
   Runtime data:     ${runtime_directory}
   Cube source:      ${cube_repository}
   Web endpoint:     http://${bind_address}:${http_port}
-  Pi Worker mode:   ${pi_workers:-kubernetes for a fresh deployment; preserve existing mode on rerun}
+  Runtime:          existing K3s cluster (all PiCloud services)
 
   1. Validate Linux x86_64, systemd, KVM, memory and disk capacity.
   2. Install required Debian/Ubuntu packages and Docker Engine when absent.
@@ -155,11 +146,10 @@ systemd_usable() {
   [[ "${state}" == "running" || "${state}" == "degraded" ]]
 }
 docker_command_usable() {
-  docker version --format '{{.Server.Version}}' >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+  docker version --format '{{.Server.Version}}' >/dev/null 2>&1
 }
 sudo_docker_usable() {
-  sudo -n docker version --format '{{.Server.Version}}' >/dev/null 2>&1 &&
-    sudo -n docker compose version >/dev/null 2>&1
+  sudo -n docker version --format '{{.Server.Version}}' >/dev/null 2>&1
 }
 
 run_read_only_checks() {
@@ -180,11 +170,11 @@ run_read_only_checks() {
     check_fail "need at least 40 GiB and 15% free (found $((disk_kib / 1024 / 1024)) GiB, ${disk_percent}%)"
   fi
   if docker_command_usable; then
-    check_pass "Docker Engine and Compose are usable"
+    check_pass "Docker Engine is usable for image builds"
   elif sudo_docker_usable; then
     check_warn "Docker works through passwordless sudo but this shell lacks direct access"
   else
-    check_warn "Docker Engine/Compose absent; normal installation supplies them"
+    check_warn "Docker Engine absent; normal installation supplies them"
   fi
   if command -v node >/dev/null 2>&1 && node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=19)?0:1)'; then
     check_pass "Node.js $(node --version) satisfies the repository engine"
@@ -316,7 +306,7 @@ install_local_helm() {
 install_docker_if_needed() {
   current_phase="Docker Engine installation"
   if docker_command_usable || sudo_docker_usable; then return; fi
-  [[ "${skip_host_bootstrap}" != "true" ]] || fail "Docker Engine and Compose are required"
+  [[ "${skip_host_bootstrap}" != "true" ]] || fail "Docker Engine is required for image builds"
   [[ "${distribution_id}" == "debian" || "${distribution_id}" == "ubuntu" ]] ||
     fail "automatic Docker installation supports Debian/Ubuntu only"
   local conflict
@@ -352,7 +342,6 @@ enable_docker_for_current_run() {
   current_phase="Docker access configuration"
   if docker_command_usable; then return; fi
   sudo docker version --format '{{.Server.Version}}' >/dev/null
-  sudo docker compose version >/dev/null
   getent group docker >/dev/null 2>&1 && sudo usermod -aG docker "$(id -un)"
   docker_wrapper_directory="${temporary_directory}/docker-wrapper"
   mkdir -m 0700 "${docker_wrapper_directory}"
@@ -380,7 +369,7 @@ disable:
   - metrics-server
 secrets-encryption: true
 kubelet-arg:
-  - pod-max-pids=128
+  - pod-max-pids=1024
 EOF
   sudo install -d -m 0755 /etc/rancher/k3s
   if [[ ! -e /etc/rancher/k3s/config.yaml ]]; then
@@ -420,6 +409,15 @@ EOF
       sudo install -m 0755 "${helper}" /usr/local/libexec/pi-cloud-prepare-k3s-wsl
     fi
     sudo install -m 0644 "${dropin}" /etc/systemd/system/k3s.service.d/pi-cloud-containerd-socket.conf
+  fi
+  if ! grep -qi microsoft-standard-wsl /proc/sys/kernel/osrelease; then
+    local socket_dropin="${temporary_directory}/pi-cloud-containerd-socket.conf"
+    cat >"${socket_dropin}" <<'EOF'
+[Service]
+ExecStartPost=/bin/sh -eu -c 'for attempt in $(seq 1 100); do test -S /run/k3s/containerd/containerd.sock && break; sleep 0.1; done; chgrp docker /run/k3s/containerd/containerd.sock; chmod 0660 /run/k3s/containerd/containerd.sock'
+EOF
+    sudo install -d -m 0755 /etc/systemd/system/k3s.service.d
+    sudo install -m 0644 "${socket_dropin}" /etc/systemd/system/k3s.service.d/pi-cloud-containerd-socket.conf
   fi
 }
 
@@ -519,21 +517,6 @@ log "Initializing private PiCloud and Cube runtime material"
 run_npm run production:init
 run_npm run cubesandbox:init
 
-install_intent_path="${runtime_directory}/.self-hosted-install-pi-worker-intent"
-[[ ! -L "${install_intent_path}" ]] || fail "install intent must not be a symbolic link"
-if [[ -z "${pi_workers}" ]]; then
-  if [[ -r "${install_intent_path}" ]]; then
-    pi_workers="$(<"${install_intent_path}")"
-  elif [[ "${runtime_was_initialized}" == "true" ]]; then
-    pi_workers="$(runtime_environment_value PI_CLOUD_PI_WORKER_DEPLOYMENT || true)"
-  else
-    pi_workers="kubernetes"
-  fi
-  [[ -n "${pi_workers}" ]] || pi_workers="kubernetes"
-fi
-[[ "${pi_workers}" == "compose" || "${pi_workers}" == "kubernetes" ]] ||
-  fail "persisted Pi Worker install intent is invalid"
-
 configured_bind_address="$(runtime_environment_value PI_CLOUD_HTTP_BIND_ADDRESS || true)"
 configured_http_port="$(runtime_environment_value PI_CLOUD_HTTP_PORT || true)"
 if [[ "${bind_address_explicit}" == "true" && "${configured_bind_address}" != "${bind_address}" ]]; then
@@ -545,43 +528,26 @@ fi
 bind_address="${configured_bind_address:-${bind_address}}"
 http_port="${configured_http_port:-${http_port}}"
 
-current_mode="$(runtime_environment_value PI_CLOUD_PI_WORKER_DEPLOYMENT || true)"
-if [[ "${pi_workers_explicit}" == "true" && "${pi_workers}" == "compose" && "${current_mode}" == "kubernetes" ]]; then
-  fail "existing deployment uses Kubernetes Workers; use npm run kubernetes:pi-workers:down for explicit downgrade"
-fi
-if [[ "${runtime_was_initialized}" != "true" || "${pi_workers_explicit}" == "true" || -e "${install_intent_path}" ]]; then
-  printf '%s\n' "${pi_workers}" >"${install_intent_path}"
-  chmod 0600 "${install_intent_path}"
-fi
-
 current_phase="CubeSandbox cluster reconciliation"
 log "Reconciling CubeSandbox's KVM execution plane"
 run_root_node "${repository_root}/scripts/install-cubesandbox-k3s.mjs"
+run_root_node "${repository_root}/scripts/prepare-self-hosted-k3s.mjs"
 
 current_phase="PiCloud production deployment"
 log "Building and starting PiCloud"
 run_npm run production:deploy
 
-current_mode="$(runtime_environment_value PI_CLOUD_PI_WORKER_DEPLOYMENT || true)"
-if [[ "${pi_workers}" == "kubernetes" && "${current_mode}" != "kubernetes" ]]; then
-  current_phase="Kubernetes Pi Worker Pool deployment"
-  log "Switching the Pi Worker Pool to Kubernetes"
-  run_npm run kubernetes:pi-workers:up
-fi
-
 current_phase="post-deployment verification"
 log "Verifying the deployed product"
 run_npm run production:ps
-if [[ "$(runtime_environment_value PI_CLOUD_PI_WORKER_DEPLOYMENT || true)" == "kubernetes" ]]; then
-  run_npm run kubernetes:pi-workers:status
-fi
+
 
 display_host="${bind_address}"
 if [[ "${display_host}" == *:* && "${display_host}" != \[*\] ]]; then display_host="[${display_host}]"; fi
 health_url="http://${display_host}:${http_port}/healthz"
 health_response="$(curl --fail --silent --show-error "${health_url}")"
 [[ "${health_response}" == "ok" ]] || fail "Web health returned an unexpected response at ${health_url}"
-rm -f -- "${install_intent_path}"
+
 
 cat <<EOF
 

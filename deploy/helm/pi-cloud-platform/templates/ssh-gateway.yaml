@@ -10,6 +10,9 @@ metadata:
 spec:
   replicas: {{ .Values.sshGateway.replicas }}
   minReadySeconds: 5
+  {{- if .Values.sshGateway.hostPort }}
+  strategy: { type: Recreate }
+  {{- end }}
   selector:
     matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: ssh-gateway }
   template:
@@ -40,7 +43,13 @@ spec:
         - name: ssh-gateway
           image: {{ include "pi-cloud-platform.image" .Values.images.sshGateway | quote }}
           imagePullPolicy: {{ .Values.images.sshGateway.pullPolicy }}
-          ports: [{ name: ssh, containerPort: 2222 }]
+          ports:
+            - name: ssh
+              containerPort: 2222
+              {{- if .Values.sshGateway.hostPort }}
+              hostPort: {{ .Values.sshGateway.hostPort }}
+              hostIP: {{ .Values.sshGateway.hostIP | quote }}
+              {{- end }}
           env:
             - { name: NODE_ENV, value: production }
             - { name: HOST, value: 0.0.0.0 }

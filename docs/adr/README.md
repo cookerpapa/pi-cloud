@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0214](0214-unified-self-hosted-k3s.md) — approved self-hosted K3s
+   consolidation, stable Services and retained-data cutover; implementation in progress.
+
 1. [ADR-0213](0213-control-recovery-and-propagation-budgets.md) — approved control
    recovery repairs and bounded propagation/read improvements; implementation in progress.
 

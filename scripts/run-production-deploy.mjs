@@ -39,30 +39,9 @@ await run("scripts/init-production.mjs");
 await run("scripts/configure-deepseek-native-responses.mjs");
 await run("scripts/init-cubesandbox-runtime.mjs");
 await run("scripts/register-cubesandbox-tool-template.mjs");
-await run("scripts/production-compose.mjs", ["build"]);
-await run("scripts/production-compose.mjs", [
-  "up",
-  "--detach",
-  "--wait",
-  "postgres",
-  "kafka-1",
-  "kafka-2",
-  "kafka-3",
-  "session-images-init",
-]);
-await run("scripts/configure-cube-completion.mjs");
-await run("scripts/production-compose.mjs", ["up", "--detach", "--wait", "--remove-orphans"]);
-await run("scripts/configure-cube-completion.mjs");
-// A single-file bind mount can retain the old inode after an atomic host-side
-// configuration replacement. Recreate the gateway to mount the governed file.
-await run("scripts/production-compose.mjs", [
-  "up",
-  "--detach",
-  "--wait",
-  "--no-deps",
-  "--force-recreate",
-  "cli-proxy-api",
-]);
+await run("scripts/production-kubernetes.mjs", ["build"]);
+await run("scripts/production-kubernetes.mjs", ["import-images"]);
+await run("scripts/production-kubernetes.mjs", ["deploy"]);
 
 const runtimeDirectory = resolve(
   repositoryRoot,
@@ -82,9 +61,6 @@ const bindAddress = environment.PI_CLOUD_HTTP_BIND_ADDRESS;
 const port = environment.PI_CLOUD_HTTP_PORT;
 if (bindAddress === undefined || port === undefined) {
   throw new Error("Production HTTP endpoint configuration is missing");
-}
-if (environment.PI_CLOUD_PI_WORKER_DEPLOYMENT === "kubernetes") {
-  await run("scripts/local-kubernetes-pi-workers.mjs", ["up"]);
 }
 const displayHost = bindAddress.includes(":") ? `[${bindAddress}]` : bindAddress;
 process.stdout.write(`PiCloud production deployment is ready at http://${displayHost}:${port}\n`);

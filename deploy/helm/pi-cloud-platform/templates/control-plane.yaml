@@ -112,9 +112,10 @@ spec:
             - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES, value: {{ .Values.global.kafka.producerPendingBytes | quote }} }
             - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS, value: {{ .Values.global.kafka.producerPendingFacts | quote }} }
             - { name: PI_CLOUD_ACCEPTED_FACT_RETENTION_MS, value: {{ .Values.global.kafka.acceptedFactRetentionMs | quote }} }
-            - { name: PI_CLOUD_PREVIEW_ORIGIN_BASE_URL, value: {{ printf "https://preview.%s" .Values.web.ingress.host | quote }} }
+            - { name: PI_CLOUD_PREVIEW_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.previewOriginBaseUrl | default (printf "https://preview.%s" .Values.web.ingress.host) | quote }} }
             - { name: PI_CLOUD_PUBLIC_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.publicOriginBaseUrl | quote }} }
             - { name: NODE_USE_ENV_PROXY, value: "1" }
+            - { name: NO_PROXY, value: {{ .Values.controlPlane.noProxy | quote }} }
             - { name: HTTPS_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
             - { name: HTTP_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
             {{- if .Values.controlPlane.sourceControl.github.enabled }}
@@ -160,7 +161,7 @@ spec:
             - { name: PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS, value: {{ .Values.controlPlane.publicRegistration.maximumTenants | quote }} }
             - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS, value: {{ .Values.controlPlane.publicRegistration.maximumProjects | quote }} }
             - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS, value: {{ .Values.controlPlane.publicRegistration.maximumSessions | quote }} }
-            - { name: PI_CLOUD_WEB_SESSION_COOKIE_SECURE, value: "true" }
+            - { name: PI_CLOUD_WEB_SESSION_COOKIE_SECURE, value: {{ .Values.controlPlane.cookieSecure | quote }} }
             - { name: PI_CLOUD_METRICS_HOST, value: 0.0.0.0 }
             - { name: PI_CLOUD_METRICS_PORT, value: "9464" }
             - { name: PI_CLOUD_METRICS_TOKEN_FILE, value: /run/pi-cloud-secrets/metrics-token }

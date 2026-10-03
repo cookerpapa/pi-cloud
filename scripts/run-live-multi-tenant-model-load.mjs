@@ -1,3 +1,4 @@
+import { kubectl } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
@@ -112,9 +113,8 @@ function sqlLiteral(value) {
 
 async function psql(query) {
   return capture(process.execPath, [
-    "scripts/production-compose.mjs",
+    "scripts/production-kubernetes.mjs",
     "exec",
-    "-T",
     "postgres",
     "psql",
     "--username",
@@ -584,15 +584,10 @@ try {
     Math.min(...allResults.map((result) => result.submittedWallAt)),
   );
   const report = {
-    databaseCpuLimitCores:
-      Number(
-        await capture("docker", [
-          "inspect",
-          "--format",
-          "{{.HostConfig.NanoCpus}}",
-          "pi-cloud-production-postgres-1",
-        ]),
-      ) / 1e9,
+    databaseCpuLimitCores: Number(
+      JSON.parse(kubectl(["get", "statefulset", "postgres", "-o", "json"])).spec.template.spec
+        .containers[0].resources.limits.cpu,
+    ),
     accepted: true,
     piCloudRevision: testedRevision,
     checkedAt: new Date().toISOString(),

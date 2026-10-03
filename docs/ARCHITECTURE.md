@@ -870,3 +870,14 @@ becomes running in the admitted Run transaction; completion/cancellation returns
 to idle or quarantines the Session as failed. Recovery persists failed → idle only
 when the existing PG guards confirm both Agent exit and native output seal. VM
 startup/eviction is not a Session state; those resources retain their own lifecycle.
+
+## Self-hosted deployment boundary
+
+[ADR-0214](adr/0214-unified-self-hosted-k3s.md) unifies the one-host runtime in
+K3s. Native selector-backed Services own endpoint changes; clients retain their
+reconnect/deadline behavior. PostgreSQL/Kafka/S3 and provider infrastructure deploy
+before the platform migration Job. Retained local PVs replace Docker-owned data
+volumes; Cube remains the sole Workspace byte authority. Worker boot state uses
+retained claims. Docker is a build/import dependency, not a runtime discovery
+source. No domain lease, Kafka writer, Tool authority or Pi loop changes.
+The single-node profile shares `cube-system` with Cube and does not imply HA.

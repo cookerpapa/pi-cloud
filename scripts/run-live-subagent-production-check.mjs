@@ -104,9 +104,8 @@ function sqlLiteral(value) {
 
 async function psql(query) {
   return capture(process.execPath, [
-    "scripts/production-compose.mjs",
+    "scripts/production-kubernetes.mjs",
     "exec",
-    "-T",
     "postgres",
     "psql",
     "--username",

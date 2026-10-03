@@ -1,0 +1,102 @@
+{{- range $mode := list "host" "bridge" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: provider-{{ $mode }}-egress-relay }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ $.Release.Name }}, app.kubernetes.io/component: provider-{{ $mode }}-egress-relay }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/instance: {{ $.Release.Name }}, app.kubernetes.io/component: provider-{{ $mode }}-egress-relay }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      hostNetwork: {{ eq $mode "host" }}
+      dnsPolicy: {{ ternary "ClusterFirstWithHostNet" "ClusterFirst" (eq $mode "host") }}
+      nodeSelector: { kubernetes.io/hostname: {{ $.Values.nodeName | quote }} }
+      securityContext: { runAsUser: 1000, runAsGroup: 1000, runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: relay
+          image: {{ $.Values.provider.relayImage | quote }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: PI_CLOUD_PROVIDER_RELAY_MODE, value: {{ $mode }} }
+            - { name: PI_CLOUD_PROVIDER_RELAY_SOCKET, value: /run/pi-cloud-provider-relay/provider-egress.sock }
+            {{- if eq $mode "host" }}
+            - { name: PI_CLOUD_PROVIDER_RELAY_ALLOWED_HOSTS, value: "api.deepseek.com,api.github.com,github.com,api.openai.com,auth.openai.com,chatgpt.com" }
+            - { name: PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY, value: {{ $.Values.provider.upstreamProxy | quote }} }
+            {{- else }}
+            - { name: PI_CLOUD_PROVIDER_RELAY_HOST, value: 0.0.0.0 }
+            - { name: PI_CLOUD_PROVIDER_RELAY_PORT, value: "3129" }
+            {{- end }}
+          readinessProbe:
+            exec:
+              command: [node, -e, "const s=require('node:net').connect({path:'/run/pi-cloud-provider-relay/provider-egress.sock'});s.setTimeout(2000);s.once('connect',()=>{s.destroy();process.exit(0)});s.once('error',()=>process.exit(1));s.once('timeout',()=>process.exit(1))"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { cpu: 250m, memory: 96Mi } }
+          volumeMounts: [{ name: socket, mountPath: /run/pi-cloud-provider-relay }]
+      volumes:
+        - name: socket
+          hostPath: { path: {{ required "relaySocketPath is required" $.Values.relaySocketPath | quote }}, type: Directory }
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: provider-egress-relay }
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: provider-bridge-egress-relay }
+  ports: [{ name: proxy, port: 3129, targetPort: 3129 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: cli-proxy-api }
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: cli-proxy-api }
+  ports: [{ name: http, port: 8317, targetPort: 8317 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: cli-proxy-api }
+spec:
+  serviceName: cli-proxy-api
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: cli-proxy-api }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: cli-proxy-api }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector: { kubernetes.io/hostname: {{ .Values.nodeName | quote }} }
+      securityContext: { runAsUser: {{ .Values.provider.uid }}, runAsGroup: {{ .Values.provider.gid }}, runAsNonRoot: true, fsGroup: {{ .Values.provider.gid }}, fsGroupChangePolicy: OnRootMismatch, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: cli-proxy-api
+          image: {{ .Values.provider.image | quote }}
+          imagePullPolicy: IfNotPresent
+          args: [./CLIProxyAPI, -config, /run/pi-cloud-secrets/cli-proxy-config.yaml]
+          env:
+            - { name: HOME, value: /data }
+            - { name: HTTP_PROXY, value: "http://provider-egress-relay:3129" }
+            - { name: HTTPS_PROXY, value: "http://provider-egress-relay:3129" }
+            - { name: NO_PROXY, value: "127.0.0.1,localhost,.svc,.cluster.local" }
+            - { name: MANAGEMENT_STATIC_PATH, value: /data/static }
+          ports: [{ name: http, containerPort: 8317 }]
+          readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 6 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: "1", memory: 512Mi } }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: config, mountPath: /run/pi-cloud-secrets/cli-proxy-config.yaml }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: pi-cloud-provider } }
+        - name: config
+          hostPath: { path: {{ required "providerConfigPath is required" .Values.providerConfigPath | quote }}, type: File }
+        - { name: tmp, emptyDir: { sizeLimit: 32Mi } }

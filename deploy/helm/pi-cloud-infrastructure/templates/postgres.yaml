@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Service
+metadata: { name: postgres }
+spec:
+  selector:
+    { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: postgres }
+  ports: [{ name: postgres, port: 5432, targetPort: 5432 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: postgres }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: postgres }
+  template:
+    metadata:
+      labels:
+        { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: postgres }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 120
+      nodeSelector: { kubernetes.io/hostname: {{ .Values.nodeName | quote }} }
+      securityContext: { seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image | quote }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: POSTGRES_USER, value: pi_cloud }
+            - { name: POSTGRES_DB, value: pi_cloud }
+            - { name: POSTGRES_PASSWORD_FILE, value: /run/secrets/postgres-password }
+          ports: [{ containerPort: 5432, name: postgres }]
+          startupProbe:
+            {
+              exec: { command: [pg_isready, -U, pi_cloud, -d, pi_cloud] },
+              periodSeconds: 5,
+              failureThreshold: 60,
+            }
+          readinessProbe:
+            { exec: { command: [pg_isready, -U, pi_cloud, -d, pi_cloud] }, periodSeconds: 5 }
+          # A transient database stall must not create an automatic crash loop.
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: "4", memory: 768Mi } }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: secrets, mountPath: /run/secrets, readOnly: true }
+            - { name: shm, mountPath: /dev/shm }
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: pi-cloud-postgres } }
+        - name: secrets
+          secret:
+            secretName: {{ .Values.existingSecret }}
+            defaultMode: 256
+            items: [{ key: postgres-password, path: postgres-password }]
+        - { name: shm, emptyDir: { medium: Memory, sizeLimit: 128Mi } }

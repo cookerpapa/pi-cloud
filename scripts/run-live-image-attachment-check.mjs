@@ -1,3 +1,4 @@
+import { serviceAddress, kubectlAsync } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFile as execFileCallback, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
@@ -24,10 +25,7 @@ const api = new PiCloudApi(
   (url, init) => fetch(new URL(String(url), `http://127.0.0.1:${port}`), init),
   (await readFile(`${runtime}/secrets/api-token`, "utf8")).trim(),
 );
-const address = (name) =>
-  JSON.parse(
-    execFileSync("docker", ["inspect", `pi-cloud-production-${name}-1`], { encoding: "utf8" }),
-  )[0].NetworkSettings.Networks["pi-cloud-production_database"].IPAddress;
+const address = serviceAddress;
 const pgurl = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
 pgurl.hostname = address("postgres");
 const db = createDatabase({ connectionString: pgurl.toString(), maxConnections: 2 });
@@ -49,23 +47,8 @@ const report = {
   runs: [],
   images: [],
 };
-let project, session, active, failure, stoppedWorkerService;
+let project, session, active, failure;
 const pause = () => new Promise((r) => setTimeout(r, 250));
-async function startStoppedWorker(service) {
-  const { stdout } = await execFile("docker", [
-    "ps",
-    "--all",
-    "--quiet",
-    "--filter",
-    "label=com.docker.compose.project=pi-cloud-production",
-    "--filter",
-    `label=com.docker.compose.service=${service}`,
-  ]);
-  const ids = stdout.trim().split(/\s+/).filter(Boolean);
-  assert.equal(ids.length, 1, "Expected exactly one stopped test Worker container");
-  // Restore this process only; compose start also starts one-shot dependencies.
-  await execFile("docker", ["start", ids[0]]);
-}
 
 async function waitRun(id) {
   const until = Date.now() + 600000;
@@ -180,29 +163,7 @@ try {
   const {
     rows: [sandbox],
   } = await sql`select supervisor_id from sandboxes where id=${owner}::uuid`.execute(db);
-  if (env.match(/^PI_CLOUD_PI_WORKER_DEPLOYMENT=(.*)$/m)?.[1] === "kubernetes") {
-    await execFile(process.env.PI_CLOUD_KUBECTL_BIN ?? "/usr/local/bin/kubectl", [
-      "--kubeconfig",
-      `${runtime}/kubernetes/pi-worker-local.kubeconfig`,
-      "-n",
-      "pi-cloud-workers",
-      "delete",
-      "pod",
-      sandbox.supervisor_id,
-      "--wait=true",
-      "--timeout=120s",
-    ]);
-  } else {
-    const prefix = env.match(/^PI_CLOUD_SUPERVISOR_ID_PREFIX=(.*)$/m)?.[1] ?? "pi-cloud-worker-";
-    assert([prefix + "1", prefix + "2"].includes(sandbox.supervisor_id), "Unknown local Worker");
-    stoppedWorkerService =
-      sandbox.supervisor_id === prefix + "1" ? "supervisor-host" : "supervisor-host-1";
-    await execFile(process.execPath, [
-      "scripts/production-compose.mjs",
-      "stop",
-      stoppedWorkerService,
-    ]);
-  }
+  await kubectlAsync(["delete", "pod", sandbox.supervisor_id, "--wait=true", "--timeout=120s"]);
   const recalled = await turn(
     "不要调用任何工具、不要读取文件。只根据前面三张柱状图，按图片显示顺序分别输出每张图的柱子从高到低的颜色名称。每张图一行，只用 BLUE、ORANGE、GREEN 三个英文大写名称并用逗号分隔。",
   );
@@ -212,10 +173,6 @@ try {
     .map((i) => i.text)
     .join("")
     .trim();
-  if (stoppedWorkerService) {
-    await startStoppedWorker(stoppedWorkerService);
-    stoppedWorkerService = undefined;
-  }
   const expectedFile = await api.readWorkspaceFile(session.sessionId, ".image-check-expected.json");
   const rankings = JSON.parse(Buffer.from(expectedFile.bytes).toString("utf8"));
   assert(Array.isArray(rankings) && rankings.length === 3);
@@ -241,7 +198,6 @@ try {
 } finally {
   const errors = [];
   try {
-    if (stoppedWorkerService) await startStoppedWorker(stoppedWorkerService);
   } catch (e) {
     errors.push(e);
   }

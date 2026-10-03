@@ -1,3 +1,9 @@
+import {
+  serviceAddress,
+  kubectlAsync,
+  signalService,
+  replacePod,
+} from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile as callback, execFileSync } from "node:child_process";
@@ -21,9 +27,7 @@ const port = env.match(/^PI_CLOUD_HTTP_PORT=(\d+)$/m)?.[1];
 assert(port);
 const base = `http://127.0.0.1:${port}`;
 const pgurl = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
-pgurl.hostname = JSON.parse(
-  execFileSync("docker", ["inspect", "pi-cloud-production-postgres-1"], { encoding: "utf8" }),
-)[0].NetworkSettings.Networks["pi-cloud-production_database"].IPAddress;
+pgurl.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: pgurl.toString(), maxConnections: 2 });
 const report = {
   checkedAt: new Date().toISOString(),
@@ -195,8 +199,7 @@ try {
     );
     const before = await logCount();
     await alone();
-    await exec("docker", ["pause", "pi-cloud-production-control-plane-1"]);
-    paused = true;
+    paused = signalService("control-plane", "SIGSTOP");
     try {
       await page.waitFor(
         `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('状态更新延迟')`,
@@ -216,12 +219,9 @@ try {
     report.delayedStatusVisible = true;
     report.leaseSurvivedProjectorPause = true;
     const oldSnapshots = snapshots;
-    await exec("docker", ["unpause", "pi-cloud-production-control-plane-1"]);
+    signalService("control-plane", "SIGCONT", paused);
     paused = false;
-    await exec("docker", ["kill", "--signal=KILL", "pi-cloud-production-control-plane-1"]);
-    projectorStopped = true;
-    await exec("docker", ["start", "pi-cloud-production-control-plane-1"]);
-    projectorStopped = false;
+    await replacePod("control-plane");
     const recoveredAt = Date.now();
     await until(
       () =>
@@ -284,19 +284,15 @@ try {
     const current = await api.getRun(active.runId);
     const { rows: workers } =
       await sql`select supervisor_id from sandboxes where id=${current.workerId}::uuid`.execute(db);
-    const prefix = env.match(/^PI_CLOUD_SUPERVISOR_ID_PREFIX=(.*)$/m)?.[1] ?? "pi-cloud-worker-";
-    assert([`${prefix}1`, `${prefix}2`].includes(workers[0].supervisor_id));
-    stoppedWorker =
-      workers[0].supervisor_id === `${prefix}1` ? "supervisor-host" : "supervisor-host-1";
-    await exec(process.execPath, [
-      "scripts/production-compose.mjs",
-      "stop",
-      "--timeout",
-      "0",
-      stoppedWorker,
+    await kubectlAsync([
+      "delete",
+      "pod",
+      workers[0].supervisor_id,
+      "--grace-period=0",
+      "--force",
+      "--wait=true",
+      "--timeout=120s",
     ]);
-    await exec(process.execPath, ["scripts/production-compose.mjs", "start", stoppedWorker]);
-    stoppedWorker = undefined;
     const lost = await finished(active.runId);
     assert.notEqual(lost.state, "completed");
     await page.waitFor("!document.querySelector('.product-run-status')", 20_000);
@@ -328,14 +324,7 @@ try {
       errors.push(error);
     }
   };
-  if (paused)
-    await cleanup(() => exec("docker", ["unpause", "pi-cloud-production-control-plane-1"]));
-  if (projectorStopped)
-    await cleanup(() => exec("docker", ["start", "pi-cloud-production-control-plane-1"]));
-  if (stoppedWorker)
-    await cleanup(() =>
-      exec(process.execPath, ["scripts/production-compose.mjs", "start", stoppedWorker]),
-    );
+  if (paused) await cleanup(() => signalService("control-plane", "SIGCONT", paused));
   await cleanup(async () => {
     if (api && active && !terminal((await api.getRun(active.runId)).state)) {
       await api.cancelTurn(session.sessionId, active.turnId, newIdempotencyKey("cleanup"));

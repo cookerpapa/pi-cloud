@@ -1,3 +1,4 @@
+import { serviceAddress, kubectlAsync } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { execFile as callback, execFileSync } from "node:child_process";
@@ -23,9 +24,7 @@ const env = await readFile(`${runtime}/.env`, "utf8"),
 assert(port);
 const baseUrl = `http://127.0.0.1:${port}`;
 const pgurl = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
-pgurl.hostname = JSON.parse(
-  execFileSync("docker", ["inspect", "pi-cloud-production-postgres-1"], { encoding: "utf8" }),
-)[0].NetworkSettings.Networks["pi-cloud-production_database"].IPAddress;
+pgurl.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: pgurl.toString(), maxConnections: 2 });
 const directory = await mkdtemp(join(tmpdir(), "pi-cloud-upload-live-"));
 const report = {
@@ -317,11 +316,7 @@ try {
       await sql`select supervisor_id,boot_id from sandboxes where id=${fileTurn.run.workerId}::uuid`.execute(
         db,
       );
-    const prefix = env.match(/^PI_CLOUD_SUPERVISOR_ID_PREFIX=(.*)$/m)?.[1] ?? "pi-cloud-worker-";
-    assert([prefix + "1", prefix + "2"].includes(owners[0].supervisor_id));
-    stoppedWorker =
-      owners[0].supervisor_id === prefix + "1" ? "supervisor-host" : "supervisor-host-1";
-    await execFile(process.execPath, ["scripts/production-compose.mjs", "stop", stoppedWorker]);
+    await kubectlAsync(["delete", "pod", owners[0].supervisor_id, "--wait=true", "--timeout=120s"]);
     const recalled = await turn(
       "不调用任何工具，不读取文件。根据最早那张图片中的柱状图，只输出三个柱子从高到低的颜色英文名称，用逗号分隔。之前没有要求你回答过这个顺序，现在请看原始图片。",
     );
@@ -336,20 +331,12 @@ try {
       nextWorker: recalled.run.workerId,
       unseenVisualAttributeCorrect: true,
     };
-    await execFile(process.execPath, ["scripts/production-compose.mjs", "start", stoppedWorker]);
-    stoppedWorker = undefined;
   }
   report.accepted = true;
 } catch (error) {
   failure = error;
 } finally {
   const errors = [];
-  try {
-    if (stoppedWorker)
-      await execFile(process.execPath, ["scripts/production-compose.mjs", "start", stoppedWorker]);
-  } catch (error) {
-    errors.push(error);
-  }
   try {
     if (
       api &&

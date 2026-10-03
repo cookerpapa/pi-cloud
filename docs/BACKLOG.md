@@ -23,12 +23,11 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] Make Docker/K3s completion bridge address changes invalidate persistent
-      transport connections without VM restart or effect replay. October 3 live
-      acceptance exposed stale PG/Kafka EndpointSlices after host restart and
-      broker connections retained after refresh; the existing operator procedure
-      repaired them. Choose a bounded discovery/reconnect contract before changing
-      deployment privileges or the native execution protocol.
+- [ ] Implement [ADR-0214](adr/0214-unified-self-hosted-k3s.md): migrate the
+      self-hosted platform and durable infrastructure into the existing K3s,
+      reset existing business data as requested, replace Docker IP bridges with
+      selector-backed Services, and verify real Tool/image execution after Pod replacement.
+
 
 The October 2 R02-01–04 repairs and accepted O02-01–05 slices are deployed under
 [ADR-0213](adr/0213-control-recovery-and-propagation-budgets.md).

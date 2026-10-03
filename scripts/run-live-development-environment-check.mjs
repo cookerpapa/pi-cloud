@@ -1,3 +1,4 @@
+import { kubectl, podFor } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readPrivateRuntimeFile as readPrivate } from "./lib/runtime-file-policy.mjs";
@@ -92,9 +93,8 @@ function sqlLiteral(value) {
 
 async function psql(query) {
   return capture(process.execPath, [
-    "scripts/production-compose.mjs",
+    "scripts/production-kubernetes.mjs",
     "exec",
-    "-T",
     "postgres",
     "psql",
     "--username",
@@ -172,9 +172,8 @@ async function waitForSandboxControlReady() {
   while (Date.now() < deadline) {
     try {
       await capture(process.execPath, [
-        "scripts/production-compose.mjs",
+        "scripts/production-kubernetes.mjs",
         "exec",
-        "-T",
         "control-plane",
         "node",
         "-e",
@@ -522,7 +521,7 @@ try {
 
   await capture(
     process.execPath,
-    ["scripts/production-compose.mjs", "restart", "control-plane"],
+    ["scripts/production-kubernetes.mjs", "restart", "control-plane"],
     5 * 60_000,
   );
   await waitForSandboxControlReady();
@@ -629,17 +628,8 @@ try {
 
   const report = {
     accepted: true,
-    piCloudRevision: await capture("docker", [
-      "inspect",
-      "--format",
-      '{{ index .Config.Labels "org.opencontainers.image.revision" }}',
-      await capture(process.execPath, [
-        "scripts/production-compose.mjs",
-        "ps",
-        "--quiet",
-        "supervisor-host",
-      ]),
-    ]),
+    deployedWorkerImage: JSON.parse(kubectl(["get", "pod", podFor("pi-workers"), "-o", "json"]))
+      .status.containerStatuses[0].imageID,
     testRevision: await capture("git", ["rev-parse", "HEAD"]),
     checkedAt: new Date().toISOString(),
     developmentEnvironmentId: development.environmentId,

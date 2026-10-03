@@ -7,6 +7,8 @@ const archivePath = `${k3sImageDirectory}/pi-cloud-cubesandbox-v0.6.0.tar`;
 const partialArchivePath = `${archivePath}.partial`;
 const images = [
   "busybox:1.36",
+  // K3s v1.36.2 local-path PVC helper, needed before Worker boot claims can bind.
+  "rancher/mirrored-library-busybox:1.37.0",
   "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/alpine-k8s:1.28.15",
   "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-api:v0.6.0",
   "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0",

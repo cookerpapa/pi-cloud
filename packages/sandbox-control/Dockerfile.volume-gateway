@@ -25,7 +25,7 @@ FROM os-base
 ARG PI_CLOUD_VERSION=development
 ARG PI_CLOUD_REVISION=unknown
 LABEL org.opencontainers.image.title="PiCloud Workspace volume gateway" \
-      org.opencontainers.image.description="Workspace bytes, Git credentials and fixed private Cube relays" \
+      org.opencontainers.image.description="Workspace bytes and Git credentials" \
       org.opencontainers.image.version="${PI_CLOUD_VERSION}" \
       org.opencontainers.image.revision="${PI_CLOUD_REVISION}"
 ENV NODE_ENV=production

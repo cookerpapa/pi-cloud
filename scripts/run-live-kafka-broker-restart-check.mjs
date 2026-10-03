@@ -1,3 +1,4 @@
+import { replacePod } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
@@ -47,38 +48,8 @@ const baseUrl = new URL(
 );
 const fetchFromProduction = (input, init) => fetch(new URL(String(input), baseUrl), init);
 
-function executeCompose(args, timeoutMs = 180_000) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    execFile(
-      process.execPath,
-      ["scripts/production-compose.mjs", ...args],
-      {
-        cwd: repositoryRoot,
-        env: process.env,
-        encoding: "utf8",
-        maxBuffer: 2 * 1_024 * 1_024,
-        timeout: timeoutMs,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          rejectPromise(
-            new Error(`Infrastructure replacement failed: ${stderr.trim() || error.message}`),
-          );
-        } else {
-          resolvePromise(stdout.trim());
-        }
-      },
-    );
-  });
-}
-
 async function replaceKafkaBroker() {
-  await executeCompose(["kill", "--signal", "SIGKILL", "kafka-1"]);
-  try {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  } finally {
-    await executeCompose(["start", "--wait", "kafka-1"]);
-  }
+  await replacePod("kafka-1");
 }
 
 async function waitForCompletedRun(api, runId) {

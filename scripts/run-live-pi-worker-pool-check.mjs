@@ -68,13 +68,10 @@ let authorizationToken = token;
 const fetchFromProduction = (input, init) => fetch(new URL(String(input), baseUrl), init);
 const bootstrapApi = new PiCloudApi(fetchFromProduction, token);
 let api = bootstrapApi;
-const workerDeployment = environment.PI_CLOUD_PI_WORKER_DEPLOYMENT ?? "compose";
-if (workerDeployment !== "compose" && workerDeployment !== "kubernetes") {
-  throw new Error("Production Pi Worker deployment mode is invalid");
-}
-const kubernetesKubeconfig = resolve(runtimeDirectory, "kubernetes/pi-worker-local.kubeconfig");
-const kubernetesNamespace = "pi-cloud-workers";
-const kubernetesStatefulSet = "pi-cloud-pi-worker-local-v1";
+const workerDeployment = "kubernetes";
+const kubernetesKubeconfig = resolve(runtimeDirectory, "k3s/kubeconfig.yaml");
+const kubernetesNamespace = "cube-system";
+const kubernetesStatefulSet = "pi-cloud-pi-worker-primary-v1";
 const kubernetesScaleDownWorker = `${kubernetesStatefulSet}-1`;
 
 function capture(command, args, timeoutMs = 120_000) {
@@ -110,9 +107,8 @@ function sqlLiteral(value) {
 
 async function psql(query) {
   return capture(process.execPath, [
-    "scripts/production-compose.mjs",
+    "scripts/production-kubernetes.mjs",
     "exec",
-    "-T",
     "postgres",
     "psql",
     "--username",
@@ -301,24 +297,14 @@ async function waitForWorkers(expectedCount) {
   throw new Error(`Worker pool did not converge to ${String(expectedCount)} active Workers`);
 }
 
-function composeService(supervisorId) {
-  if (supervisorId.endsWith("-1")) return "supervisor-host";
-  if (supervisorId.endsWith("-2")) return "supervisor-host-1";
-  throw new Error(`No production Compose service mapping for ${supervisorId}`);
-}
-
 async function stopWorker(supervisorId) {
-  if (workerDeployment === "compose") {
-    const service = composeService(supervisorId);
-    await capture(process.execPath, ["scripts/production-compose.mjs", "stop", service]);
-    return { mode: "compose", service };
-  }
   assert.equal(
     supervisorId,
     kubernetesScaleDownWorker,
     "The selected Kubernetes failover owner must be StatefulSet ordinal 1",
   );
-  await capture("kubectl", [
+  await capture("/usr/local/bin/k3s", [
+    "kubectl",
     "--kubeconfig",
     kubernetesKubeconfig,
     "--namespace",
@@ -340,21 +326,19 @@ async function killWorker(supervisorId) {
     0,
     "Refusing Worker fault injection while another tenant has unfinished work",
   );
-  if (workerDeployment === "compose") {
-    const service = composeService(supervisorId);
-    await capture(process.execPath, [
-      "scripts/production-compose.mjs",
-      "kill",
-      "--signal",
-      "SIGKILL",
-      service,
-    ]);
-    return { mode: "compose", service };
-  }
+
   const kubectlArgs = ["--kubeconfig", kubernetesKubeconfig, "--namespace", kubernetesNamespace];
   const readState = async () => {
     const pod = JSON.parse(
-      await capture("kubectl", [...kubectlArgs, "get", "pod", supervisorId, "--output", "json"]),
+      await capture("/usr/local/bin/k3s", [
+        "kubectl",
+        ...kubectlArgs,
+        "get",
+        "pod",
+        supervisorId,
+        "--output",
+        "json",
+      ]),
     );
     return pod.status.containerStatuses.find((container) => container.name === "pi-worker");
   };
@@ -364,7 +348,8 @@ async function killWorker(supervisorId) {
   const killScript = `const fs=require('node:fs');const pids=fs.readdirSync('/proc').filter(p=>/^[0-9]+$/.test(p)&&p!=='1').filter(p=>{try{return fs.readFileSync('/proc/'+p+'/cmdline','utf8').split('\\0').includes('/app/packages/supervisor-host/src/main.ts')}catch(e){if(e.code==='ENOENT')return false;throw e}});if(pids.length!==1)throw Error('Expected one Agent Runner');process.kill(Number(pids[0]),'SIGKILL')`;
   let injectionError;
   try {
-    await capture("kubectl", [
+    await capture("/usr/local/bin/k3s", [
+      "kubectl",
       ...kubectlArgs,
       "exec",
       supervisorId,
@@ -509,14 +494,9 @@ async function crashStreamingTurn(sessionId) {
 }
 
 async function restoreWorker(stoppedWorker) {
-  if (stoppedWorker.mode === "compose") {
-    await capture(process.execPath, [
-      "scripts/production-compose.mjs",
-      "start",
-      stoppedWorker.service,
-    ]);
-  } else if (stoppedWorker.mode === "kubernetes") {
-    await capture("kubectl", [
+  if (stoppedWorker.mode === "kubernetes") {
+    await capture("/usr/local/bin/k3s", [
+      "kubectl",
       "--kubeconfig",
       kubernetesKubeconfig,
       "--namespace",
@@ -614,7 +594,7 @@ async function cleanup() {
 
 try {
   const candidates = [];
-  const maximumCandidates = workerDeployment === "kubernetes" ? 8 : 1;
+  const maximumCandidates = 8;
   let selected;
   for (let index = 0; index < maximumCandidates && selected === undefined; index += 1) {
     const marker = `PI-POOL-${suffix.toUpperCase()}-${String(index + 1)}`;
@@ -638,10 +618,7 @@ try {
       evidence: await runEvidence(turn.runId),
     };
     candidates.push(candidate);
-    if (
-      workerDeployment === "compose" ||
-      candidate.evidence.supervisorId === kubernetesScaleDownWorker
-    ) {
+    if (candidate.evidence.supervisorId === kubernetesScaleDownWorker) {
       selected = candidate;
     }
   }
@@ -671,10 +648,7 @@ try {
   createdSessionIds.push(crashSession.sessionId);
   await api.updateSessionModel(crashSession.sessionId, acceptanceModel);
   const crashed = await crashStreamingTurn(crashSession.sessionId);
-  if (workerDeployment === "compose") {
-    const crashSurvivors = await waitForWorkers(1);
-    assert(!crashSurvivors.includes(crashed.killed.evidence.supervisorId));
-  } else {
+  {
     await waitForWorkers(2);
   }
   const recovered = await runTurn(

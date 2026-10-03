@@ -14,65 +14,35 @@ export async function localWorkerTargets(options = {}) {
       fileURLToPath(new URL("../..", import.meta.url)),
       process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
     );
-  const deployment =
-    options.deployment ??
-    (await readFile(resolve(directory, ".env"), "utf8")).match(
-      /^PI_CLOUD_PI_WORKER_DEPLOYMENT=(.+)$/m,
-    )?.[1] ??
-    "compose";
-  if (deployment === "kubernetes") {
-    const prefix = [
-      "--kubeconfig",
-      resolve(directory, "kubernetes/pi-worker-local.kubeconfig"),
-      "--namespace",
-      "pi-cloud-workers",
-    ];
-    const { stdout } = await execute("kubectl", [
-      ...prefix,
-      "get",
-      "pods",
-      "--selector",
-      "app.kubernetes.io/component=trusted-pi-worker",
-      "--output",
-      "json",
-    ]);
-    return JSON.parse(stdout).items.map((pod) => ({
+  const binary = process.env.PI_CLOUD_KUBECTL_BIN ?? "/usr/local/bin/k3s";
+  const prefix = [
+    ...(process.env.PI_CLOUD_KUBECTL_BIN ? [] : ["kubectl"]),
+    "--kubeconfig",
+    resolve(directory, "k3s/kubeconfig.yaml"),
+    "--namespace",
+    "cube-system",
+  ];
+  const { stdout } = await execute(binary, [
+    ...prefix,
+    "get",
+    "pods",
+    "--selector",
+    "app.kubernetes.io/component=trusted-pi-worker",
+    "--output",
+    "json",
+  ]);
+  return JSON.parse(stdout)
+    .items.filter((pod) => !pod.metadata.deletionTimestamp)
+    .map((pod) => ({
       name: pod.metadata.name,
       image: pod.spec.containers.find((c) => c.name === "pi-worker").image,
-      binary: "kubectl",
+      binary,
       execArgs: [...prefix, "exec", pod.metadata.name, "--container", "pi-worker", "--"],
       inspectArgs: [...prefix, "get", "pod", pod.metadata.name, "--output", "json"],
       logArgs: [...prefix, "logs", "--container", "pi-worker", pod.metadata.name],
       previous:
         (pod.status.containerStatuses?.find((c) => c.name === "pi-worker")?.restartCount ?? 0) > 0,
     }));
-  }
-  if (deployment !== "compose")
-    throw new Error("Unsupported Worker deployment for acceptance logs");
-  const { stdout } = await execute("docker", [
-    "ps",
-    "--all",
-    "--filter",
-    "label=com.docker.compose.project=pi-cloud-production",
-    "--format",
-    "{{.Names}} {{.Image}}",
-  ]);
-  return stdout
-    .trim()
-    .split("\n")
-    .filter((line) => /^pi-cloud-production-supervisor-host(?:-\d+)?-\d+ /.test(line))
-    .map((line) => {
-      const [name, image] = line.split(" ");
-      return {
-        name,
-        image,
-        binary: "docker",
-        logArgs: ["logs", name],
-        previous: false,
-        execArgs: ["exec", name],
-        inspectArgs: ["inspect", name],
-      };
-    });
 }
 
 /** Compare live process identities across a fault without confusing a retained Pod name with its process. */
@@ -82,18 +52,10 @@ export async function localWorkerProcesses(options = {}) {
   for (const target of await localWorkerTargets(options)) {
     const { stdout } = await execute(target.binary, target.inspectArgs);
     const state = JSON.parse(stdout);
-    const container = target.binary === "docker" ? state[0] : undefined;
-    const running =
-      container?.State?.Running ??
-      state.status?.containerStatuses?.find((c) => c.name === "pi-worker")?.state.running;
+    const container = state.status?.containerStatuses?.find((c) => c.name === "pi-worker");
+    const running = container?.state.running;
     if (!running) continue;
-    const identity = container
-      ? [container.Id, container.State.StartedAt]
-      : [
-          state.metadata.uid,
-          state.status.containerStatuses.find((c) => c.name === "pi-worker").containerID,
-          running.startedAt,
-        ];
+    const identity = [state.metadata.uid, container.containerID, running.startedAt];
     processes.push({ ...target, identity });
   }
   return processes.sort((a, b) => a.name.localeCompare(b.name));
@@ -121,7 +83,7 @@ export async function readWorkerModelTimings(runIds, sinceMs, options = {}) {
         target.binary,
         [
           ...target.logArgs,
-          target.binary === "kubectl" ? "--since-time" : "--since",
+          "--since-time",
           new Date(sinceMs - 1000).toISOString(),
           ...(previous ? ["--previous"] : []),
         ],

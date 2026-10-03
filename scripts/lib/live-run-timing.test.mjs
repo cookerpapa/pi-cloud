@@ -9,29 +9,9 @@ import {
 } from "./live-run-timing.mjs";
 
 describe("deployed Worker timing inventory", () => {
-  it("ignores stopped Compose processes and retains their exact restart identity", async () => {
-    const live = await localWorkerProcesses({
-      deployment: "compose",
-      execute: async (_binary, args) => ({
-        stdout:
-          args[0] === "ps"
-            ? "pi-cloud-production-supervisor-host-1 worker:one\npi-cloud-production-supervisor-host-2-1 worker:two\n"
-            : JSON.stringify([
-                {
-                  Id: args[1],
-                  State: { Running: !args[1].includes("-2-1"), StartedAt: "boot-one" },
-                },
-              ]),
-      }),
-    });
-    expect(live).toHaveLength(1);
-    expect(live[0].identity).toEqual(["pi-cloud-production-supervisor-host-1", "boot-one"]);
-    expect(live[0].execArgs).toEqual(["exec", "pi-cloud-production-supervisor-host-1"]);
-  });
   it("detects container replacement even when a Kubernetes Pod keeps its name and UID", async () => {
     let incarnation = "container-one";
     const options = {
-      deployment: "kubernetes",
       runtimeDirectory: "/fixture",
       execute: async (_binary, args) => {
         const pod = {
@@ -69,37 +49,9 @@ describe("deployed Worker timing inventory", () => {
       event: "model.transport.timing",
       attributes: { runId, receivedAtMs },
     });
-  it("reads only actual Compose Workers and filters other Run records", async () => {
+  it("reads current and terminated Kubernetes containers through the installed K3s cluster", async () => {
     const calls = [];
     const records = await readWorkerModelTimings(["mine"], 2000, {
-      deployment: "compose",
-      execute: async (binary, args) => {
-        calls.push([binary, args]);
-        if (args[0] === "ps")
-          return {
-            stdout:
-              "pi-cloud-production-supervisor-host-1 worker:one\n" +
-              "pi-cloud-production-control-plane-1 cp:one\n" +
-              "pi-cloud-production-supervisor-host-2-1 worker:two\n",
-          };
-        return {
-          stdout: line("other", 1) + "\n" + line("mine", args[1].includes("-2-1") ? 2 : 3),
-          stderr: "diagnostic only",
-        };
-      },
-    });
-    expect(records).toEqual([
-      { runId: "mine", receivedAtMs: 2 },
-      { runId: "mine", receivedAtMs: 3 },
-    ]);
-    expect(calls).toHaveLength(3);
-    expect(calls.every(([binary]) => binary === "docker")).toBe(true);
-    expect(calls[1][1].slice(-2)).toEqual(["--since", "1970-01-01T00:00:01.000Z"]);
-  });
-  it("reads current and terminated Kubernetes containers without guessing a Compose name", async () => {
-    const calls = [];
-    const records = await readWorkerModelTimings(["mine"], 2000, {
-      deployment: "kubernetes",
       runtimeDirectory: "/fixture",
       execute: async (binary, args) => {
         calls.push([binary, args]);
@@ -123,26 +75,24 @@ describe("deployed Worker timing inventory", () => {
     });
     expect(records.map((record) => record.receivedAtMs)).toEqual([1, 2]);
     expect(calls).toHaveLength(3);
-    expect(calls.every(([binary]) => binary === "kubectl")).toBe(true);
+    expect(calls.every(([binary]) => binary === "/usr/local/bin/k3s")).toBe(true);
     expect(calls[1][1]).toContain("--since-time");
     expect(calls[2][1]).toContain("--previous");
-    expect(calls[0][1].slice(0, 4)).toEqual([
+    expect(calls[0][1].slice(1, 5)).toEqual([
       "--kubeconfig",
-      "/fixture/kubernetes/pi-worker-local.kubeconfig",
+      "/fixture/k3s/kubeconfig.yaml",
       "--namespace",
-      "pi-cloud-workers",
+      "cube-system",
     ]);
   });
   it("propagates inventory failure instead of producing empty timing evidence", async () => {
     await expect(
       localWorkerTargets({
-        deployment: "kubernetes",
         execute: async () => {
           throw new Error("cluster unreachable");
         },
       }),
     ).rejects.toThrow("cluster unreachable");
-    await expect(localWorkerTargets({ deployment: "unsupported" })).rejects.toThrow("Unsupported");
   });
 });
 

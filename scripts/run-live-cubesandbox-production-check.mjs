@@ -1,3 +1,4 @@
+import { kubectl, podFor } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
@@ -29,16 +30,9 @@ if (process.env.PI_CLOUD_LIVE_CUBESANDBOX_CHECK !== "1") {
   );
 }
 const writeReport = process.env.PI_CLOUD_LIVE_CUBESANDBOX_REPORT !== "0";
-const deployedControlPlaneRevision = execFileSync(
-  "docker",
-  [
-    "inspect",
-    "--format",
-    '{{ index .Config.Labels "org.opencontainers.image.revision" }}',
-    "pi-cloud-production-control-plane-1",
-  ],
-  { encoding: "utf8" },
-).trim();
+const deployedControlPlaneImage = JSON.parse(
+  kubectl(["get", "pod", podFor("control-plane"), "-o", "json"]),
+).status.containerStatuses[0].imageID;
 
 const runtimeDirectory = resolve(
   repositoryRoot,
@@ -195,9 +189,8 @@ function sqlLiteral(value) {
 
 async function psql(query) {
   return capture(process.execPath, [
-    "scripts/production-compose.mjs",
+    "scripts/production-kubernetes.mjs",
     "exec",
-    "-T",
     "postgres",
     "psql",
     "--username",
@@ -301,9 +294,8 @@ async function waitForPreview(path, marker) {
 
 async function kafkaState() {
   const offsets = await capture(process.execPath, [
-    "scripts/production-compose.mjs",
+    "scripts/production-kubernetes.mjs",
     "exec",
-    "-T",
     "kafka-1",
     "/opt/kafka/bin/kafka-get-offsets.sh",
     "--bootstrap-server",
@@ -519,9 +511,8 @@ async function listLogicalSandboxAssignments(logicalSandboxId) {
     await capture(
       process.execPath,
       [
-        "scripts/production-compose.mjs",
+        "scripts/production-kubernetes.mjs",
         "exec",
-        "-T",
         "control-plane",
         "node",
         "--input-type=module",
@@ -693,9 +684,8 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
   await capture(
     process.execPath,
     [
-      "scripts/production-compose.mjs",
+      "scripts/production-kubernetes.mjs",
       "exec",
-      "-T",
       "control-plane",
       "node",
       "--input-type=module",
@@ -1260,7 +1250,8 @@ try {
   );
   const report = {
     accepted: true,
-    piCloudRevision: deployedControlPlaneRevision,
+    piCloudRevision: testedRevision,
+    deployedControlPlaneImage,
     testRevision: testedRevision,
     checkedAt: new Date().toISOString(),
     upstream: "TencentCloud/CubeSandbox@v0.6.0",

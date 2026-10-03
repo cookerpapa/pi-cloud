@@ -29,39 +29,6 @@ export function withCubeExecutionCompletion(config) {
       `${section}\n    execution_completion_command = ${JSON.stringify(CUBE_COMPLETION_COMMAND)}`,
     );
 }
-export function cubeCompletionBridge(targets, namespace = "cube-system") {
-  return targets.flatMap(({ name, address, port }) => {
-    if (
-      !/^[a-z0-9-]+$/.test(name) ||
-      !/^\d+\.\d+\.\d+\.\d+$/.test(address) ||
-      !Number.isInteger(port)
-    )
-      throw new Error("Invalid Cube completion bridge endpoint");
-    return [
-      {
-        apiVersion: "v1",
-        kind: "Service",
-        metadata: { name, namespace, labels: { "pi-cloud.io/bridge": "completion" } },
-        spec: { ports: [{ name: "tcp", protocol: "TCP", port, targetPort: port }] },
-      },
-      {
-        apiVersion: "discovery.k8s.io/v1",
-        kind: "EndpointSlice",
-        metadata: {
-          name: `picloud-completion-${name}`,
-          namespace,
-          labels: {
-            "kubernetes.io/service-name": name,
-            "endpointslice.kubernetes.io/managed-by": "pi-cloud-cube-completion",
-          },
-        },
-        addressType: "IPv4",
-        endpoints: [{ addresses: [address], conditions: { ready: true } }],
-        ports: [{ name: "tcp", protocol: "TCP", port }],
-      },
-    ];
-  });
-}
 export function cubeCompletionSecret(files, namespace = "cube-system") {
   return {
     apiVersion: "v1",

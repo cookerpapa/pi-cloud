@@ -134,7 +134,7 @@ spec:
               value: {{ .Values.services.providerProxyUrl | quote }}
             {{- end }}
             - name: NO_PROXY
-              value: {{ printf "127.0.0.1,localhost,sandbox-control,.svc,.svc.%s" .Values.workerPool.clusterDomain | quote }}
+              value: {{ printf "127.0.0.1,localhost,control-plane,cli-proxy-api,session-images,sandbox-control,.svc,.svc.%s" .Values.workerPool.clusterDomain | quote }}
             - name: DATABASE_URL_FILE
               value: /run/pi-cloud-secrets/database-url
             - name: DATABASE_NOTIFICATION_URL_FILE
