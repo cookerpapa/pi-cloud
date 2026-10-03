@@ -18,6 +18,17 @@ The ordinary test suite covers queue claims, Session ordering, leases/fences,
 Pi SessionStorage, event ordering, cancellation, Tool ambiguity, Volume lifecycle
 and tenant isolation without spending model tokens.
 
+Control-plane integration tests and the fault gate use real PostgreSQL for queue
+locking and cancellation. Their npm entry points reuse an explicit isolated
+`PI_CLOUD_POSTGRES_INTEGRATION_URL`, or create a disposable pinned PostgreSQL
+container on a random loopback port when Docker is available. The container has
+no host mounts and is stopped/removed after the command. A supplied URL must be
+dedicated test infrastructure, never a production database. The direct queued-input
+Vitest file requires that URL; `npm test --workspace @pi-cloud/control-plane --
+test/queued-inputs.test.ts` provisions it automatically. The former PGlite socket
+fallback for this group is removed after reproducible wire-response corruption;
+no production driver workaround or skipped cancellation assertions is introduced.
+
 The presentation check uses installed Chrome/Chromium and actual React effects,
 without accounts or model calls: progressive text under StrictMode, immediate
 reconnect-prefix presentation, first-use panel sizing and resize cleanup.

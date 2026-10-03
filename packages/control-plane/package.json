@@ -13,7 +13,7 @@
     "tenant-admin": "tsx src/tenant-admin.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest --run --maxWorkers=1 --testTimeout=30000 --hookTimeout=60000"
+    "test": "node ../../scripts/run-with-test-postgres.mjs -- node ../../node_modules/vitest/vitest.mjs --run --maxWorkers=1 --testTimeout=30000 --hookTimeout=60000"
   },
   "dependencies": {
     "@fastify/websocket": "11.3.0",

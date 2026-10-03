@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { PGlite } from "@electric-sql/pglite";
-import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { Pool } from "pg";
 import { sql, type Kysely, type QueryId } from "kysely";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
@@ -19,33 +17,26 @@ import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation
 
 const external = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.sequential("pending conversation inputs", () => {
-  let database: Kysely<Database>,
-    engine: PGlite | undefined,
-    socket: PGLiteSocketServer | undefined;
+  let database: Kysely<Database>;
   let admin: Pool | undefined, name: string, url: string;
   let offset = 0n;
   beforeAll(async () => {
-    if (external) {
-      admin = new Pool({ connectionString: external, max: 1 });
-      name = `queue_inputs_${randomUUID().replaceAll("-", "")}`;
-      await admin.query(`create database "${name}"`);
-      const endpoint = new URL(external);
-      endpoint.pathname = `/${name}`;
-      endpoint.searchParams.set("options", "-c lock_timeout=1000 -c statement_timeout=5000");
-      url = endpoint.toString();
-    } else {
-      engine = await PGlite.create();
-      socket = new PGLiteSocketServer({ db: engine, host: "127.0.0.1", port: 0 });
-      await socket.start();
-      url = `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`;
-    }
-    database = createDatabase({ connectionString: url, maxConnections: external ? 8 : 1 });
+    if (!external)
+      throw new Error(
+        "Queued input tests require real PostgreSQL; npm test --workspace @pi-cloud/control-plane supplies an isolated fixture",
+      );
+    admin = new Pool({ connectionString: external, max: 1 });
+    name = `queue_inputs_${randomUUID().replaceAll("-", "")}`;
+    await admin.query(`create database "${name}"`);
+    const endpoint = new URL(external);
+    endpoint.pathname = `/${name}`;
+    endpoint.searchParams.set("options", "-c lock_timeout=1000 -c statement_timeout=5000");
+    url = endpoint.toString();
+    database = createDatabase({ connectionString: url, maxConnections: 8 });
     await runMigrations(database, "up");
   }, 60000);
   afterAll(async () => {
     await database?.destroy();
-    await socket?.stop();
-    await engine?.close();
     if (admin) {
       await admin.query(`drop database "${name}"`);
       await admin.end();
@@ -584,51 +575,48 @@ describe.sequential("pending conversation inputs", () => {
     },
   );
 
-  it.skipIf(!external)(
-    "deduplicates simultaneous direct Steer acceptance and rejects locked targets without orphaned input",
-    async () => {
-      const f = await fixture();
-      const run = await active(f);
-      const pool = new Pool({ connectionString: url, max: 1 });
-      const locker = await pool.connect();
-      try {
-        const accepts = await Promise.all(
-          [1, 2].map(() =>
-            f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "direct", {
-              text: "one input",
-            }),
-          ),
-        );
-        expect(new Set(accepts.map((v) => v.sourceRunId)).size).toBe(1);
-        expect(accepts.map((v) => v.replayed).sort()).toEqual([false, true]);
-        const before = await f.list();
-        await locker.query("begin");
-        await locker.query("select id from runs where id=$1 for no key update", [run.first.runId]);
-        await expect(
-          f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "locked", {
-            text: "must not leak",
+  it("deduplicates simultaneous direct Steer acceptance and rejects locked targets without orphaned input", async () => {
+    const f = await fixture();
+    const run = await active(f);
+    const pool = new Pool({ connectionString: url, max: 1 });
+    const locker = await pool.connect();
+    try {
+      const accepts = await Promise.all(
+        [1, 2].map(() =>
+          f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "direct", {
+            text: "one input",
           }),
-        ).rejects.toMatchObject({ code: "conflict" });
-        await locker.query("rollback");
-        expect(await f.list()).toEqual(before);
-        expect(
-          await database
-            .selectFrom("turn_control_requests")
-            .select("id")
-            .where("tenant_id", "=", f.tenant.tenantId)
-            .where("idempotency_key", "=", "locked")
-            .execute(),
-        ).toEqual([]);
-      } finally {
-        await locker.query("rollback");
-        locker.release();
-        await pool.end();
-        run.finish.resolve();
-        await run.execution;
-        await seal(run.first.runId);
-      }
-    },
-  );
+        ),
+      );
+      expect(new Set(accepts.map((v) => v.sourceRunId)).size).toBe(1);
+      expect(accepts.map((v) => v.replayed).sort()).toEqual([false, true]);
+      const before = await f.list();
+      await locker.query("begin");
+      await locker.query("select id from runs where id=$1 for no key update", [run.first.runId]);
+      await expect(
+        f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "locked", {
+          text: "must not leak",
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+      await locker.query("rollback");
+      expect(await f.list()).toEqual(before);
+      expect(
+        await database
+          .selectFrom("turn_control_requests")
+          .select("id")
+          .where("tenant_id", "=", f.tenant.tenantId)
+          .where("idempotency_key", "=", "locked")
+          .execute(),
+      ).toEqual([]);
+    } finally {
+      await locker.query("rollback");
+      locker.release();
+      await pool.end();
+      run.finish.resolve();
+      await run.execution;
+      await seal(run.first.runId);
+    }
+  });
 
   it("keeps direct Steer after active cancellation and permits removing its restored input", async () => {
     const f = await fixture();
@@ -1092,38 +1080,35 @@ describe.sequential("pending conversation inputs", () => {
     expect(await f.listAll()).toHaveLength(45);
   });
 
-  it.skipIf(!external)(
-    "deduplicates concurrent replicas and rejects a competing stale queue mutation",
-    async () => {
-      const f = await fixture(),
-        input = await f.accept("original");
-      const other = new QueuedInputService({ database, steering: f.steering });
-      let q = await f.list();
-      const action = { action: "edit" as const, revision: q.revision, text: "shared edit" };
-      const results = await Promise.all(
-        [f.queue, other].map((service) =>
-          service.mutate(f.tenant.tenantId, f.session.sessionId, input.turnId, "same", action),
-        ),
-      );
-      expect(results.map((r) => r.replayed).sort()).toEqual([false, true]);
-      q = await f.list();
-      const races = await Promise.allSettled([
-        f.queue.mutate(f.tenant.tenantId, f.session.sessionId, input.turnId, "edit-again", {
-          action: "edit",
-          revision: q.revision,
-          text: "winner",
-        }),
-        other.mutate(f.tenant.tenantId, f.session.sessionId, input.turnId, "remove", {
-          action: "cancel",
-          revision: q.revision,
-        }),
-      ]);
-      expect(races.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-      expect(races.filter((r) => r.status === "rejected")).toMatchObject([
-        { reason: { code: "conflict" } },
-      ]);
-    },
-  );
+  it("deduplicates concurrent replicas and rejects a competing stale queue mutation", async () => {
+    const f = await fixture(),
+      input = await f.accept("original");
+    const other = new QueuedInputService({ database, steering: f.steering });
+    let q = await f.list();
+    const action = { action: "edit" as const, revision: q.revision, text: "shared edit" };
+    const results = await Promise.all(
+      [f.queue, other].map((service) =>
+        service.mutate(f.tenant.tenantId, f.session.sessionId, input.turnId, "same", action),
+      ),
+    );
+    expect(results.map((r) => r.replayed).sort()).toEqual([false, true]);
+    q = await f.list();
+    const races = await Promise.allSettled([
+      f.queue.mutate(f.tenant.tenantId, f.session.sessionId, input.turnId, "edit-again", {
+        action: "edit",
+        revision: q.revision,
+        text: "winner",
+      }),
+      other.mutate(f.tenant.tenantId, f.session.sessionId, input.turnId, "remove", {
+        action: "cancel",
+        revision: q.revision,
+      }),
+    ]);
+    expect(races.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(races.filter((r) => r.status === "rejected")).toMatchObject([
+      { reason: { code: "conflict" } },
+    ]);
+  });
 
   it("orders promotions to one Run across API replicas while an earlier reply is pending", async () => {
     const entered = Promise.withResolvers<void>(),
