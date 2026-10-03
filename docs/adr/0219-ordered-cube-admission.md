@@ -106,3 +106,16 @@ without position advancement, more than the old 65,536 closures, bounded retaine
 state, shutdown and confirmed VM removal. Test controller release and final seal
 through real PG/Kafka before matched Cube deployment. Missing probes or metadata
 still cannot authorize VM destruction or quota release.
+
+## Controller replacement discovered during live acceptance
+
+The first live Control Plane crash check exposed an existing state conflation:
+controller lease loss marked capsule-backed VMs `unknown`; migration 163's quarantine
+trigger closed their bindings. With ordered closure those references correctly
+stop Cube, which also exposed that controller loss had incorrectly become a VM
+failure signal. Controller shutdown/expiry must preserve the last observed state
+of a VM with a durable recovery capsule and retire only its controller ownership.
+The existing adoption path claims lost owners and checks the recorded VM/boot.
+A capsule does not prove liveness. Failed adoption, explicit quarantine, real
+physical evidence and incomplete provisioning retain their existing unknown/
+closure rules. No binding reopens and no unconfirmed effects are replayed.

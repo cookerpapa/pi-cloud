@@ -1,0 +1,112 @@
+{
+  "checkedAt": "2026-10-03T18:39:00.500Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "f1c7960c-f888-436c-a3c1-0b1ab7946778",
+      "elapsedMs": 23203,
+      "modelTransportMs": 17534.727,
+      "tools": [
+        {
+          "name": "write",
+          "state": "completed",
+          "durationMs": 431,
+          "resultBytes": 88
+        },
+        {
+          "name": "read",
+          "state": "completed",
+          "durationMs": 260,
+          "resultBytes": 491
+        },
+        {
+          "name": "edit",
+          "state": "completed",
+          "durationMs": 238,
+          "resultBytes": 970
+        },
+        {
+          "name": "bash",
+          "state": "completed",
+          "durationMs": 498,
+          "resultBytes": 58
+        }
+      ]
+    },
+    {
+      "runId": "2d5a0f42-90d0-4a99-b2a4-dc945f2c7dfe",
+      "elapsedMs": 18024,
+      "modelTransportMs": 15213.295,
+      "tools": [
+        {
+          "name": "write",
+          "state": "completed",
+          "durationMs": 339,
+          "resultBytes": 87
+        },
+        {
+          "name": "bash",
+          "state": "completed",
+          "durationMs": 249,
+          "resultBytes": 76
+        },
+        {
+          "name": "bash",
+          "state": "completed",
+          "durationMs": 439,
+          "resultBytes": 497
+        }
+      ]
+    },
+    {
+      "runId": "112a39fe-d49d-4745-96ed-7d640c815cb7",
+      "elapsedMs": 24686,
+      "modelTransportMs": 20952.494000000002,
+      "tools": [
+        {
+          "name": "write",
+          "state": "completed",
+          "durationMs": 274,
+          "resultBytes": 93
+        },
+        {
+          "name": "bash",
+          "state": "completed",
+          "durationMs": 241,
+          "resultBytes": 50
+        },
+        {
+          "name": "read",
+          "state": "completed",
+          "durationMs": 244,
+          "resultBytes": 45
+        },
+        {
+          "name": "edit",
+          "state": "completed",
+          "durationMs": 228,
+          "resultBytes": 300
+        },
+        {
+          "name": "read",
+          "state": "completed",
+          "durationMs": 234,
+          "resultBytes": 44
+        },
+        {
+          "name": "bash",
+          "state": "completed",
+          "durationMs": 232,
+          "resultBytes": 55
+        }
+      ]
+    }
+  ],
+  "resources": {
+    "projectId": "eba61b45-9cae-482f-9cc4-a83d44c5883e",
+    "workspaceId": "767c6a4a-4e8b-4df0-ae5d-ef71cf61b31d",
+    "sessionId": "4846a488-03a0-46eb-b146-d4902b4877e9"
+  },
+  "cleanupCompleted": true
+}

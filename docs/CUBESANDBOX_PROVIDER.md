@@ -42,7 +42,10 @@ Cancellation stops and joins the native main process before killing its entire
 cgroup. Normal completed Bash may leave a background server running. A failed
 scoped stop makes the VM unavailable for explicit control-plane recovery; a
 normal Tool error has no VM-destruction power. Controller replacement adopts
-persisted VM capsules and active binding descriptors. Cubelet boot replacement
+persisted VM capsules and active binding descriptors. Controller expiry/shutdown
+preserves the last physical state of capsule-backed VMs; it does not quarantine
+them or close their bindings. Adoption still checks VM/boot continuity, and a
+real recovery failure closes admission. Cubelet boot replacement
 is different: old execution outcomes are unknown and are never replayed.
 
 There is no completed-result GET/cache or PG Tool operation ledger. The bounded

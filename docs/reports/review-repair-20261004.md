@@ -85,3 +85,16 @@ provides exactly-once arbitrary shell effects. Quarantined or replaced-executor
 results remain UNKNOWN. The Cube extensions remain an explicit maintenance
 responsibility. Binding ACK waits are bounded lifecycle work, not per-Tool SQL;
 missing observations never authorize deletion or quota release.
+
+## Live recovery correction
+
+The first [live controller crash attempt](review-r2-handoff-restart-initial-20261004.json)
+failed with `cubesandbox_tool_unavailable`. Controller shutdown/expiry marked
+capsule-backed VMs unknown; the quarantine trigger closed their bindings, and
+the new ordered handler correctly stopped those scopes. The error was treating
+controller loss as physical uncertainty. Two real-PG regression cases reproduce
+closed bindings on both shutdown and expiry before the fix. The corrected
+repository preserves capsule-backed VM state for verified adoption; missing
+capsules and genuine recovery/physical failures still close admission. The full
+sandbox suite then passes 239 tests, including both new cases. No VM is declared
+healthy merely because it has a capsule.

@@ -1051,6 +1051,20 @@
       "file": "test/sandbox-binding-view.test.ts",
       "test": "uses the closed fact for stopping even when an older open fact loaded the closed PG snapshot",
       "invariant": "Only the actual closed Kafka fact supplies the stopping position; an older open reference cannot fence newer work."
+    },
+    {
+      "id": "controller-shutdown-preserves-cube",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "preserves recoverable VM bindings across controller shutdown until physical evidence closes them",
+      "invariant": "Controller ownership loss preserves capsule-backed VM state/bindings for verified adoption; actual physical uncertainty still closes them atomically."
+    },
+    {
+      "id": "controller-expiry-preserves-cube",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "preserves recoverable VM bindings across controller expiry until physical evidence closes them",
+      "invariant": "Controller ownership loss preserves capsule-backed VM state/bindings for verified adoption; actual physical uncertainty still closes them atomically."
     }
   ]
 }

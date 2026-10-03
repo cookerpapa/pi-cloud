@@ -1451,7 +1451,17 @@ async function orderedClosureFixture() {
     };
     return { scope, assignment, row, change };
   };
-  return { database, bindings, bindingId, physicalId, makeBinding };
+  return {
+    database,
+    bindings,
+    bindingId,
+    physicalId,
+    makeBinding,
+    repository,
+    instanceId,
+    tenant,
+    project,
+  };
 }
 const closurePosition = { topic: "test-session-log", partition: 0, offset: "101" };
 
@@ -1520,3 +1530,113 @@ it("requires the explicit physical-absence release path for an unconfirmed bindi
   await pending;
   expect(await f.bindings.find(first.scope, false)).toEqual([]);
 });
+
+it.each(["shutdown", "expiry"] as const)(
+  "preserves recoverable VM bindings across controller %s until physical evidence closes them",
+  async (mode) => {
+    const f = await orderedClosureFixture(),
+      first = await f.makeBinding();
+    const capsule = new CubePersistentCapsuleCodec(Buffer.alloc(32, 9)).seal({
+      fixture: "recoverable VM",
+    });
+    await f.database
+      .insertInto("workspace_runtimes")
+      .values({
+        workspace_runtime_id: f.physicalId,
+        tenant_id: f.tenant.tenantId,
+        project_id: f.project.projectId,
+        workspace_id: f.project.workspaceId,
+        sandbox_domain_id: "sandbox-domain-0001",
+        owner_instance_id: f.instanceId,
+        owner_base_url: "http://ordered.test",
+        supervisor_id: "fixture",
+        boot_id: first.assignment.bootId,
+        sandbox_id: first.assignment.sandboxId,
+        run_id: first.scope.runId,
+        session_id: first.assignment.sessionId,
+        turn_id: first.assignment.turnId,
+        lease_id: first.scope.writerId,
+        fencing_token: "1",
+        turn_context_sha256: "a".repeat(64),
+        execution_context_sha256: "b".repeat(64),
+        environment_sha256: "c".repeat(64),
+        runtime_id: randomUUID(),
+        runtime_name: "a".repeat(32),
+        runtime_capsule: capsule,
+        state: "active",
+        failure_code: null,
+        updated_at: new Date(),
+      })
+      .execute();
+    const machine = randomUUID();
+    await f.database
+      .insertInto("development_environments")
+      .values({
+        id: machine,
+        tenant_id: f.tenant.tenantId,
+        owner_user_id: f.tenant.ownerUserId,
+        project_id: f.project.projectId,
+        workspace_id: f.project.workspaceId,
+        sandbox_domain_id: "sandbox-domain-0001",
+        environment_version_id: null,
+        owner_instance_id: f.instanceId,
+        owner_base_url: "http://ordered.test",
+        profile_key: "standard",
+        cpu_count: 2,
+        memory_mib: 4096,
+        system_disk_gib: 20,
+        runtime_id: randomUUID(),
+        runtime_name: "b".repeat(32),
+        runtime_capsule: capsule,
+        ip_address: null,
+        agent_activation_id: null,
+        state: "paused",
+        failure_code: null,
+        idempotency_key: randomUUID(),
+        request_sha256: "d".repeat(64),
+      })
+      .execute();
+    const replacementId = randomUUID();
+    const replacement = new PostgresWorkspaceRuntimeStateRepository({
+      database: f.database,
+      sandboxDomainId: "sandbox-domain-0001",
+      instanceId: replacementId,
+      ownerBaseUrl: "http://replacement.test",
+    });
+    resources.push(() => replacement.close());
+    if (mode === "shutdown") await f.repository.close();
+    else
+      await f.database
+        .updateTable("sandbox_control_instances")
+        .set({ lease_expires_at: sql<Date>`clock_timestamp()-interval '1 second'` })
+        .where("instance_id", "=", f.instanceId)
+        .execute();
+    await replacement.start();
+    expect(await f.bindings.isAlive(f.instanceId)).toBe(false);
+    expect((await first.row()).dispatch_closed).toBe(false);
+    expect(
+      await f.database
+        .selectFrom("workspace_runtimes")
+        .select(["state", "runtime_capsule"])
+        .where("workspace_runtime_id", "=", f.physicalId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ state: "active", runtime_capsule: capsule });
+    expect(
+      (
+        await f.database
+          .selectFrom("development_environments")
+          .select("state")
+          .where("id", "=", machine)
+          .executeTakeFirstOrThrow()
+      ).state,
+    ).toBe("paused");
+    expect(await replacement.claimRecoverableWorkspaceRuntimes(16, [])).toEqual([
+      expect.objectContaining({ activationId: f.physicalId, runtimeCapsule: capsule }),
+    ]);
+    // Independent physical uncertainty must still atomically revoke dispatch.
+    await replacement.setWorkspaceRuntimeState(f.physicalId, "unknown", {
+      failureCode: "runtime_recovery_unconfirmed",
+    });
+    expect((await first.row()).dispatch_closed).toBe(true);
+  },
+);

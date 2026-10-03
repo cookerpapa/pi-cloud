@@ -69,7 +69,7 @@ try {
   );
   turn = await api.acceptTurn(
     session.sessionId,
-    "只调用一次 bash，命令必须为：printf 'started\\n' >> once.txt; sleep 45; printf 'finished\\n' >> once.txt; printf 'CUBE_HANDOFF_SURVIVED'。不要调用其他工具，不要搜索、不要子代理。完成后只回复 CUBE_HANDOFF_SURVIVED。",
+    "只调用一次 bash，命令必须为：printf 'started\\n' >> once.txt; sleep 45; printf 'finished\\n' >> once.txt; printf 'CUBE_HANDOFF_SURVIVED'。timeout 参数设为 120 秒。不要调用其他工具，不要搜索、不要子代理。完成后只回复 CUBE_HANDOFF_SURVIVED。",
     newIdempotencyKey("handoff"),
     "low",
   );
@@ -111,6 +111,8 @@ try {
     "Run completion",
     180000,
   );
+  report.completionState = finished.state;
+  if (finished.failure) report.failure = finished.failure;
   assert.equal(finished.state, "completed", JSON.stringify(finished.failure));
   assert.equal(finished.workerId, before.workerId);
   const transcript = (await api.getConversation(session.sessionId)).turns.find(

@@ -1761,6 +1761,9 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .set({ state: "unknown", failure_code: "tool_broker_stopped", updated_at: now })
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "in", ["reserved", "materializing", "active", "warm"])
+        // Controller departure is not evidence against an independently owned
+        // Cube execution. A recorded capsule allows the next owner to verify it.
+        .where("runtime_capsule", "is", null)
         .execute();
       await transaction
         .updateTable("workspace_terminal_sessions")
@@ -1895,6 +1898,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       .set({ state: "unknown", failure_code: "tool_broker_owner_lost", updated_at: now })
       .where("owner_instance_id", "in", lostIds)
       .where("state", "in", ["reserved", "materializing", "active", "warm"])
+      .where("runtime_capsule", "is", null)
       .execute();
     await transaction
       .updateTable("workspace_terminal_sessions")
@@ -1916,6 +1920,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       })
       .where("owner_instance_id", "in", lostIds)
       .where("state", "in", ["provisioning", "running", "paused", "releasing"])
+      .where("runtime_capsule", "is", null)
       .execute();
   }
 }

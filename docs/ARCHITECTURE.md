@@ -92,7 +92,9 @@ gets a new closure revision, so old acknowledgements cannot complete it. Final
 seals wait for scope closure; arbitrary shell work is never replayed.
 Cube retains one source identity and per-partition progress per physical VM;
 active operation fingerprints disappear after bounded delivery. Boot changes,
-confirmed VM absence and shutdown remain distinct. Read-only probes do not
+confirmed VM absence and shutdown remain distinct. Controller lease loss alone
+preserves capsule-backed VM state and bindings for verified takeover; it never
+substitutes for physical failure evidence. Read-only probes do not
 advance admission. See [ADR-0219](adr/0219-ordered-cube-admission.md).
 
 No browser payload or authority moves through NOTIFY. Drain proof and completion
