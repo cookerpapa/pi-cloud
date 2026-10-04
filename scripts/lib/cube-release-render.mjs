@@ -31,12 +31,12 @@ export function cubeletPluginConfiguration(base) {
   const metadata =
     /(^[ \t]*\[plugins\."io\.containerd\.metadata\.v1\.bolt"\][\s\S]*?)(?=^[ \t]*\[|(?![\s\S]))/m;
   const section = base.match(metadata)?.[0];
-  if (!section || !/^\s*no_sync\s*=\s*(?:true|false)\s*$/m.test(section))
+  if (!section || !/^[ \t]*no_sync[ \t]*=[ \t]*(?:true|false)[ \t]*$/m.test(section))
     throw new Error("Pinned Cube node metadata configuration changed");
   // Allocation admission must survive process/power loss before native Create.
   base = base.replace(
     metadata,
-    section.replace(/^(\s*no_sync\s*=\s*)(?:true|false)\s*$/m, "$1false"),
+    section.replace(/^([ \t]*no_sync[ \t]*=[ \t]*)(?:true|false)[ \t]*$/m, "$1false"),
   );
   const marker = `    [[plugins."io.cubelet.internal.v1.storage".volume_plugins]]
       name        = "cos"

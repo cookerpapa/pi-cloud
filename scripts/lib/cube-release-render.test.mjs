@@ -23,6 +23,8 @@ const input = {
     create_deadline = "1m"
 [plugins."io.containerd.metadata.v1.bolt"]
     no_sync = true
+[plugins."io.containerd.monitor.v1.cgroups"]
+    no_prometheus = false
 `,
   completionFiles: Object.fromEntries(
     ["database-url", "supervisor-management-token", "session-image-s3-credentials.json"].map(
@@ -97,6 +99,7 @@ it("renders a complete, idempotent Cube release before deployment while retainin
   expect(config["cubelet-config.toml"]).toContain("cube-volume-picloud-posix");
   expect(config["cubelet-config.toml"]).toContain("no_sync = false");
   expect(config["cubelet-config.toml"]).not.toContain("no_sync = true");
+  expect(config["cubelet-config.toml"]).toContain("no_sync = false\n[plugins.");
   const masterConfig = parse(
     find(resources, "Secret", "cube-master-config").stringData["conf.yaml"],
   );
