@@ -811,8 +811,8 @@
       "id": "quarantined-binding-late-command",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/tool-command-routing.test.ts",
-      "test": "refuses queued commands after unconfirmed stopping, including dispatcher replacement",
-      "invariant": "Durable binding closure rejects late Tool handoffs even after stopping is unconfirmed and the dispatcher is replaced."
+      "test": "refuses later routing after binding closure, including dispatcher replacement",
+      "invariant": "Durable routing closure rejects later Tool handoffs after dispatcher replacement without cancelling previously accepted processes."
     },
     {
       "id": "binding-view-stale-read",
