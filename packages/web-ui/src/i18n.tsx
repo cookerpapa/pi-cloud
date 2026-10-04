@@ -210,6 +210,7 @@ const zhCN = {
   "queue.closeEdit": "关闭编辑",
   "queue.editLabel": "编辑待发消息",
   "queue.steering": "已提交引导，等待本轮处理",
+  "queue.steeringPaused": "正在确认引导是否已处理；未处理的消息将保持暂停。",
   "queue.noActive": "当前没有可引导的任务，消息仍在队列中。",
   "queue.loadError": "待发队列暂时无法刷新，正在重试。",
   "queue.actionError": "操作未完成，请重试。编辑中的草稿已保留。",
@@ -667,6 +668,8 @@ const enUS: Record<UiTextKey, string> = {
   "queue.closeEdit": "Close editor",
   "queue.editLabel": "Edit queued message",
   "queue.steering": "Submitted to the current task; awaiting processing",
+  "queue.steeringPaused":
+    "Confirming whether the instruction was consumed; otherwise it stays paused.",
   "queue.noActive": "There is no active task to steer. The message remains queued.",
   "queue.loadError": "The queue could not refresh. Retrying.",
   "queue.actionError": "The action did not finish. Retry; your draft has been kept.",

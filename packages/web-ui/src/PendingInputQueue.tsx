@@ -262,11 +262,12 @@ export function PendingInputQueue({
                 {item.text.length > 240 ? "…" : ""}
               </p>
               <UploadCards api={api} uploads={item.uploads ?? []} />
-              {item.paused ? (
-                <small className="pending-input-status">{t("queue.paused")}</small>
-              ) : null}
               {item.status === "steering" ? (
-                <small className="pending-input-status">{t("queue.steering")}</small>
+                <small className="pending-input-status">
+                  {t(item.paused ? "queue.steeringPaused" : "queue.steering")}
+                </small>
+              ) : item.paused ? (
+                <small className="pending-input-status">{t("queue.paused")}</small>
               ) : null}
             </div>
             <div className="pending-input-actions">
