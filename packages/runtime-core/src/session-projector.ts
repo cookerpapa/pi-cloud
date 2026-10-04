@@ -118,10 +118,12 @@ export class SessionProjector {
     this.#observationSweep.unref();
     this.#projection = new ExecutionStreamProjector(options.database);
     let currentControlAssignment: () => boolean = () => false;
+    const groupId = "pi-cloud-session-projector-v2";
     this.#consumer = new KafkaLogConsumer({
       brokers: options.brokers,
       topic,
-      groupId: "pi-cloud-session-projector-v2",
+      groupId,
+      readPartitionOwners: () => this.#topic.partitionOwners(groupId),
       clientId:
         PREFIX + Buffer.from(new URL(options.advertisedBaseUrl).toString()).toString("base64url"),
       groupRecovery: true,

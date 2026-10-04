@@ -81,6 +81,16 @@ export class ExecutionLogTopic {
     if (!this.#started || !(await this.#admin.listTopics()).includes(this.#topic))
       throw new Error("Execution log topic is unavailable");
   }
+  async partitionOwners(groupId: string): Promise<ReadonlyMap<number, string>> {
+    // Confluent's native Admin conversion dereferences a null assignor for
+    // missing groups. Reuse this existing protocol Admin, including its decoder.
+    const groups = await this.#admin.describeGroups({ groups: [groupId] });
+    const owners = new Map<number, string>();
+    for (const member of groups.get(groupId)?.members.values() ?? [])
+      for (const partition of member.assignments?.get(this.#topic)?.partitions ?? [])
+        owners.set(partition, member.clientId);
+    return owners;
+  }
   async close(): Promise<void> {
     this.#started = false;
     await this.#admin.close();

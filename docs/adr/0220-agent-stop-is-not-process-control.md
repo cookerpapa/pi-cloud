@@ -55,3 +55,18 @@ truthful native Tool result, discarded late replies and a usable next Run.
 Prove PG revocation/release without Cube acknowledgement, no process-stop RPC on
 ambiguous handoff, and shared-VM sibling isolation. A live command must survive
 the chat Stop button and remain inspectable/controllable by the next Run.
+
+## Acceptance prerequisite: nullable Kafka group descriptions
+
+The real binding-recovery test exposed a native crash in the pinned Confluent
+1.10.1 Admin `describeGroups` conversion. GDB identifies
+`FromConsumerGroupDescription` calling V8's string constructor/`strlen`; the
+installed `src/common.cc` converts the nullable partition assignor without a
+null check. Missing/changing groups are normal during owner recovery.
+
+Reuse the already-pinned Platformatic 2.9.0 Admin owned by `ExecutionLogTopic`
+for this read-only metadata lookup. Supply its result through a reader port;
+retain the consumer's epoch checks, one-second cache and single pending lookup.
+This adds no connection, dependency, parser patch, consumer group or authority.
+Native consumption and transactional publication remain unchanged. Missing
+membership supplies no owner; it never grants publication authority.

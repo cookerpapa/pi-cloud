@@ -25,6 +25,8 @@ export type KafkaLogConsumerOptions<T> = {
   groupRecovery?: boolean;
   /** Preserve a monotonic effect-dispatch boundary even when projection replay rewinds. */
   orderedEffects?: boolean;
+  /** Owner discovery uses the composition's existing Admin metadata adapter. */
+  readPartitionOwners?(): Promise<ReadonlyMap<number, string>>;
   onReset?(): void;
   onRevoked?(): void;
   onAssigned?(partitions: readonly number[], current: () => boolean): Promise<void>;
@@ -608,13 +610,10 @@ export class KafkaLogConsumer<T> {
     if (!this.#membersLoading) {
       const epoch = this.#epoch;
       const loading = (async () => {
-        await this.#bounds();
-        const description = await this.#admin.describeGroups([this.#options.groupId]);
+        if (!this.#options.readPartitionOwners)
+          throw new Error("Kafka group metadata reader is unavailable");
+        const owners = new Map(await this.#options.readPartitionOwners());
         if (epoch !== this.#epoch || this.#closing) throw new Error("Projector ownership changed");
-        const owners = new Map<number, string>();
-        for (const member of description.groups[0]?.members ?? [])
-          for (const p of member.assignment.topicPartitions)
-            if (p.topic === this.#options.topic) owners.set(p.partition, member.clientId);
         this.#memberCache = { owners, until: Date.now() + 1000 };
         return owners;
       })().finally(() => {
