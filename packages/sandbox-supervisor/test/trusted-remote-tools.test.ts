@@ -525,9 +525,13 @@ describe("whole-tool Worker adapter", () => {
 
   it("records an unconfirmed cancellation without claiming infrastructure failure", async () => {
     const cancelled = new AbortController(),
-      unavailable = vi.fn();
+      unavailable = vi.fn(),
+      unconfirmed = vi.fn(),
+      cancel = vi.fn(async () => {});
     const { value } = configuration({
       onToolOperationUnavailable: unavailable,
+      onToolCancellationUnconfirmed: unconfirmed,
+      publishToolCancellation: cancel,
       cancellationTimeoutMs: () => 20,
       publishToolCommand: async (command) => {
         cancelled.abort(new Error("user cancelled"));
@@ -542,5 +546,65 @@ describe("whole-tool Worker adapter", () => {
         .execute("cancelled", { command: "echo fixture" }, cancelled.signal),
     ).rejects.toThrow("may still be running");
     expect(unavailable).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(unconfirmed).toHaveBeenCalledOnce();
+  });
+
+  it("forwards cancellation through the validated adapter and waits for its original final reply", async () => {
+    const cancelled = new AbortController(),
+      reply = Promise.withResolvers<NativeToolEnd>();
+    const cancel = vi.fn(
+      async (_request: import("@pi-cloud/protocol").CandidateToolCancellation) => {},
+    );
+    const unconfirmed = vi.fn();
+    let command: CandidateToolCommand | undefined;
+    const { value } = configuration({
+      cancellationTimeoutMs: () => 1000,
+      onToolCancellationUnconfirmed: unconfirmed,
+      publishToolCancellation: cancel,
+      waitForToolReply: async () => reply.promise,
+      publishToolCommand: async (c) => {
+        command = c;
+        cancelled.abort();
+        return { operationId: c.request.operationId, accepted: true };
+      },
+    });
+    const remote = createTrustedRemoteAgentTools(value);
+    await remote.transformContext([]);
+    let ended = false;
+    const executing = remote.tools
+      .find((t) => t.name === "bash")!
+      .execute("cancelled", { command: "echo fixture" }, cancelled.signal)
+      .then(
+        () => {
+          ended = true;
+          return undefined;
+        },
+        (error) => {
+          ended = true;
+          return error as Error;
+        },
+      );
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+    expect(cancel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationId: command!.request.operationId,
+        activationId: command!.request.activationId,
+        executionReference: EXECUTION_LEASE,
+      }),
+    );
+    expect(ended).toBe(false);
+    reply.resolve({
+      type: "tool_execution_end",
+      toolCallId: "cancelled",
+      toolName: "bash",
+      isError: true,
+      result: {
+        content: [{ type: "text", text: "partial-before-cancel\nCommand aborted" }],
+        details: undefined,
+      },
+    });
+    expect((await executing)?.message).toBe("partial-before-cancel\nCommand aborted");
+    expect(unconfirmed).not.toHaveBeenCalled();
   });
 });

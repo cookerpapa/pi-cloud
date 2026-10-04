@@ -75,7 +75,7 @@ class RemoteToolError extends Error {
 export type TrustedRemoteToolsRuntimeConfiguration = {
   observeToolDuration?: (seconds: number, outcome: "completed" | "failed") => void;
   publishToolCommand: ToolCommandPublisher["publishToolCommand"];
-  publishToolCancellation?: import("@pi-cloud/protocol").ToolCancellationPublisher["publishToolCancellation"];
+  publishToolCancellation: import("@pi-cloud/protocol").ToolCancellationPublisher["publishToolCancellation"];
   cancellationTimeoutMs?: () => number;
   onToolCancellationUnconfirmed?: () => void;
   waitForToolReply?: (
@@ -179,6 +179,7 @@ function validateRuntimeConfiguration(
     !/^[0-9a-f]{64}$/.test(turnContextSha256) ||
     !/^[0-9a-f]{64}$/.test(executionContextSha256) ||
     typeof candidate.captureStepContext !== "function" ||
+    typeof candidate.publishToolCancellation !== "function" ||
     (candidate.onToolOperationStarted !== undefined &&
       typeof candidate.onToolOperationStarted !== "function") ||
     (candidate.onToolOperationUnavailable !== undefined &&
@@ -208,6 +209,13 @@ function validateRuntimeConfiguration(
   }
   return {
     publishToolCommand: candidate.publishToolCommand,
+    publishToolCancellation: candidate.publishToolCancellation,
+    ...(candidate.cancellationTimeoutMs
+      ? { cancellationTimeoutMs: candidate.cancellationTimeoutMs }
+      : {}),
+    ...(candidate.onToolCancellationUnconfirmed
+      ? { onToolCancellationUnconfirmed: candidate.onToolCancellationUnconfirmed }
+      : {}),
     ...(candidate.observeToolDuration
       ? { observeToolDuration: candidate.observeToolDuration }
       : {}),
@@ -311,6 +319,12 @@ export function createTrustedRemoteAgentTools(
     if (!runtime.waitForToolReply) throw new Error("Native Tool reply transport is unavailable");
     const pending = runtime.waitForToolReply(candidate, replySignal, toolCallId);
     let received = false;
+    let cancellationUnconfirmed = false;
+    const markCancellationUnconfirmed = () => {
+      if (cancellationUnconfirmed) return;
+      cancellationUnconfirmed = true;
+      runtime.onToolCancellationUnconfirmed?.();
+    };
     void pending.then(
       () => {
         received = true;
@@ -337,7 +351,7 @@ export function createTrustedRemoteAgentTools(
       },
       dispose: () => {
         if (candidate.operation === "tool.execute" && signal?.aborted && !received)
-          runtime.onToolCancellationUnconfirmed?.();
+          markCancellationUnconfirmed();
         pendingAbort.abort(new Error("Tool reply wait closed"));
       },
       result: async () => {
@@ -347,8 +361,6 @@ export function createTrustedRemoteAgentTools(
             ...(signal ? { signal } : {}),
             received: () => received,
             cancel: async () => {
-              if (!runtime.publishToolCancellation)
-                throw new Error("Tool cancellation publisher is unavailable");
               await runtime.publishToolCancellation({
                 executionReference: runtime.executionReference,
                 activationId: candidate.activationId,
@@ -357,7 +369,7 @@ export function createTrustedRemoteAgentTools(
               });
             },
             abortWait: (error) => pendingAbort.abort(error),
-            unconfirmed: () => runtime.onToolCancellationUnconfirmed?.(),
+            unconfirmed: markCancellationUnconfirmed,
             timeoutMs: runtime.cancellationTimeoutMs?.() ?? TOOL_CANCELLATION_TIMEOUT_MS,
           });
           const event = await final.catch(async (error: unknown) => {

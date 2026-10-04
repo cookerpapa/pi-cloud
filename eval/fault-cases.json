@@ -1156,6 +1156,13 @@
       "file": "test/native-tools.test.ts",
       "test": "leaves a completed background launch alive when a later Bash is cancelled",
       "invariant": "Esc targets unfinished Tools, never background services left by completed calls."
+    },
+    {
+      "id": "tool-cancel-adapter-wiring",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "test": "forwards cancellation through the validated adapter and waits for its original final reply",
+      "invariant": "Runtime normalization must retain the cancellation publisher and settlement budget; transport acceptance never replaces the final result."
     }
   ]
 }
