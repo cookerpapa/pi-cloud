@@ -1,0 +1,37 @@
+{
+  "checkedAt": "2026-10-04T00:40:47.558Z",
+  "source": "17bd65b733c8bc0d7ba2e62efc85b793c259b9ef",
+  "images": "agent-stop-v4-meta",
+  "schema": 171,
+  "managedCubeProtocol": 4,
+  "cubePatchId": "c507fbd3bc6e15da",
+  "completionSource": "24039375d4353f13e8a575333ad0a117e8cea2fc",
+  "guestSource": "9cbc73ff371079762fca7da8fb77bf277a043118",
+  "state": {
+    "active_runs": 0,
+    "active_leases": 0,
+    "bindings": 0,
+    "image_objects": 21,
+    "missing_image_references": 0
+  },
+  "cubeInventoryCount": 0,
+  "live": {
+    "checkedAt": "2026-10-04T00:36:48.836Z",
+    "model": "gpt-6-luna",
+    "accepted": true,
+    "sharedVmVerified": true,
+    "cancelMs": 281,
+    "parentAndChildSurvivedChatStop": true,
+    "explicitProcessStopInNextRun": true,
+    "interruptionContextRetained": true,
+    "siblingCompleted": true,
+    "executionCount": 1,
+    "cleanupCompleted": true
+  },
+  "imageInventory": {
+    "beforeCutover": 24,
+    "afterAcceptance": 21,
+    "missingReferencedObjects": 0,
+    "note": "The existing orphan-image reaper remained enabled. Raw object inventory changed; this is not an exact attachment-identity preservation test."
+  }
+}

@@ -1,6 +1,7 @@
 # ADR-0220: Agent Stop is not VM process control
 
-Status: accepted by the owner, 2026-10-04; implementation in progress.
+Status: implemented and deployed, 2026-10-04. See the
+[verification and live acceptance](../reports/agent-stop-correction-20261004.md).
 
 ## Correction
 
