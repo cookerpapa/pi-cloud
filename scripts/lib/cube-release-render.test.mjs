@@ -21,6 +21,8 @@ const input = {
       binary_path = "/usr/local/services/cubetoolbox/Cubelet/plugin/cube-volume-cos"
 [plugins."io.cubelet.cubebox-service.v1.cubebox-service"]
     create_deadline = "1m"
+[plugins."io.containerd.metadata.v1.bolt"]
+    no_sync = true
 `,
   completionFiles: Object.fromEntries(
     ["database-url", "supervisor-management-token", "session-image-s3-credentials.json"].map(
@@ -93,6 +95,8 @@ it("renders a complete, idempotent Cube release before deployment while retainin
   const config = find(resources, "ConfigMap", "pi-cloud-posix-volume-plugin").data;
   expect(config["cubelet-config.toml"]).toContain("execution_completion_command");
   expect(config["cubelet-config.toml"]).toContain("cube-volume-picloud-posix");
+  expect(config["cubelet-config.toml"]).toContain("no_sync = false");
+  expect(config["cubelet-config.toml"]).not.toContain("no_sync = true");
   const masterConfig = parse(
     find(resources, "Secret", "cube-master-config").stringData["conf.yaml"],
   );

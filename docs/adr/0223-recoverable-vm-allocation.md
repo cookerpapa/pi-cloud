@@ -86,6 +86,10 @@ ID. Its durable receipt precedes the native create workflow. Duplicate RPCs do
 not launch another workflow; an interrupted node incarnation never silently
 re-executes a partially completed creation. Original results remain queryable;
 unrecoverable partial execution retains UNKNOWN with its physical identity.
+The declarative Cube renderer sets the existing Bolt metadata plugin's `no_sync`
+to `false`; upstream's throughput-oriented default is insufficient for admission
+receipts. Node startup refuses asynchronous metadata. This adds synchronous
+metadata writes at physical lifecycle boundaries and must be measured at scale.
 
 Close is irreversible for that allocation and idempotent. Persist closure before
 waiting for physical cleanup. Creation and closure share the node's allocation

@@ -193,6 +193,8 @@ private `/allocations/:allocationId/get|close` POST endpoints. Duplicate creatio
 retains its original VM/node and private-ingress token. A timeout is not a proved
 capacity refusal or absence. Closed admission plus node absence is required for
 cleanup completion; endpoint acceptance alone cannot release resources.
+The rendered Cubelet metadata configuration requires `no_sync = false`; the
+allocation adapter refuses startup if durable admission cannot be guaranteed.
 
 `workspace_runtimes`, `development_environments` and independent terminal
 allocations retain their creation configuration until resource deletion. Existing
