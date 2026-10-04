@@ -170,6 +170,16 @@ async function fixture(
         accepted.resolve();
         await options.invocationAck?.(fact);
       }
+      if (fact.kind === "tool_cancel") {
+        const reply = replies.get(fact.request.operationId)!;
+        reply.resolve({
+          type: "tool_execution_end",
+          toolCallId: reply.request.toolCallId,
+          toolName: reply.request.toolName,
+          isError: true,
+          result: { content: [{ type: "text", text: "Command aborted" }], details: {} },
+        });
+      }
       return { factId: fact.factId, durable: true as const };
     }),
   };
@@ -208,6 +218,8 @@ async function fixture(
   let step = 0;
   const remote = createTrustedRemoteAgentTools({
     publishToolCommand: standalone,
+    publishToolCancellation: (cancellation) =>
+      log.resolve(f.executionReference)!.publishToolCancellation(cancellation),
     waitForToolReply: (request, signal) =>
       new Promise<NativeToolEnd>((resolve, reject) => {
         replies.set(request.operationId, { resolve, signal, request });
@@ -484,6 +496,12 @@ it("admits sequential Tools separately and leaves later calls unstarted on cance
   const admitted = f.facts.filter((fact) => fact.kind === "tool_invocation");
   expect(admitted).toHaveLength(1);
   expect(toolCommandForFact(admitted[0]!)!.request).toMatchObject({ toolCallId: "first" });
+  const cancellations = f.facts.filter((fact) => fact.kind === "tool_cancel");
+  expect(cancellations).toHaveLength(1);
+  expect(cancellations[0]!.request.operationId).toBe(
+    toolCommandForFact(admitted[0]!)!.request.operationId,
+  );
+  expect(f.facts.indexOf(cancellations[0]!)).toBeGreaterThan(f.facts.indexOf(admitted[0]!));
 });
 
 it("preserves parallel reads and gives reused provider IDs distinct invocation identities", async () => {
