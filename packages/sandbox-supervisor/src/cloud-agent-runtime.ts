@@ -109,6 +109,10 @@ export type CloudAgentRuntimeOptions = Readonly<{
   tools?: readonly AgentTool[];
   thinkingLevel?: ThinkingLevel;
   streamOptions?: SimpleStreamOptions;
+  /** Frozen transport/provider policy shared by sampling and native maintenance.
+   * Session identity, token budgets, cache retention and hosted Tools stay local
+   * to the purpose that requested them. */
+  commonModelOptions?: Pick<SimpleStreamOptions, "timeoutMs" | "transport" | "onPayload">;
   retry?: RetryPolicy;
   compaction?: CompactionSettings;
   toolExecution?: ToolExecutionMode;
@@ -465,17 +469,15 @@ export class CloudAgentRuntime {
             ],
             { type: "sampling_start" },
           );
-          const headers = {
-            ...(this.#options.streamOptions?.headers ?? {}),
-            ...(options?.headers ?? {}),
-          };
-          const transformedHeaders = await this.#options.transformHeaders?.(headers);
-          const effectiveOptions: SimpleStreamOptions = {
+          const effectiveOptions = await this.#applyModelPolicy({
             ...options,
             ...this.#options.streamOptions,
             ...(options?.signal === undefined ? {} : { signal: options.signal }),
-            headers: transformedHeaders ?? headers,
-          };
+            headers: {
+              ...(this.#options.streamOptions?.headers ?? {}),
+              ...(options?.headers ?? {}),
+            },
+          });
           const callerOnPayload = effectiveOptions.onPayload;
           if (this.#options.transformProviderPayload !== undefined) {
             effectiveOptions.onPayload = async (payload, targetModel) => {
@@ -1029,7 +1031,7 @@ export class CloudAgentRuntime {
       resultEntryId: entryId,
       compactionReason: reason,
     });
-    const compactionModels = this.#modelsWithHeaders();
+    const compactionModels = this.#modelsWithPolicy();
     const compactable = preserveCompactionFacts(preparation.value, context, [
       INTERRUPTION_CUSTOM_TYPE,
       ...(this.#options.compactionRetainedCustomTypes ?? []),
@@ -1120,12 +1122,30 @@ export class CloudAgentRuntime {
     return compactedContext;
   }
 
-  #modelsWithHeaders(): Models {
+  async #applyModelPolicy(options: SimpleStreamOptions = {}): Promise<SimpleStreamOptions> {
+    const common = this.#options.commonModelOptions;
+    const headers = await this.#options.transformHeaders?.({ ...(options.headers ?? {}) });
+    return {
+      ...options,
+      ...common,
+      ...(headers === undefined ? {} : { headers }),
+      ...(common?.onPayload
+        ? {
+            onPayload: async (payload, model) => {
+              const local = await options.onPayload?.(payload, model);
+              return common.onPayload!(local ?? payload, model);
+            },
+          }
+        : {}),
+    };
+  }
+
+  #modelsWithPolicy(): Models {
     const models = this.#options.models;
     if (models === undefined) {
       throw new Error("Automatic compaction requires Pi Models");
     }
-    const transformHeaders = this.#options.transformHeaders;
+    const applyPolicy = (options?: SimpleStreamOptions) => this.#applyModelPolicy(options);
     const acquire = this.#options.acquireModelPermit;
     return new Proxy(models, {
       get(target, property, receiver) {
@@ -1140,13 +1160,11 @@ export class CloudAgentRuntime {
         ) => {
           const release = await acquire?.(options?.signal);
           try {
-            const headers = transformHeaders
-              ? await transformHeaders({ ...(options?.headers ?? {}) })
-              : options?.headers;
-            const response = await target.completeSimple(model, context, {
-              ...options,
-              ...(headers ? { headers } : {}),
-            });
+            const response = await target.completeSimple(
+              model,
+              context,
+              await applyPolicy(options),
+            );
             // Pi 0.84 accepts a length-limited/empty summary as success. Replacing
             // the branch with it would discard recoverable conversation context.
             const hasText = response.content.some(

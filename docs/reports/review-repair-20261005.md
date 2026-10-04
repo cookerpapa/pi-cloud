@@ -30,5 +30,12 @@ All 22 full-schema ownership tests pass, including both ordering and deadline
 cases for creation/closure. All 14 SSH-consumption/development-machine tests pass;
 the narrow consumption fixture verifies expiry during lock wait and one-time use.
 
-Remaining slices: shared model policy, structured Tool
+## Pi request-policy slice — ADR-0224
+
+R04-05: ordinary sampling and native Compaction apply one common request policy
+for transport, timeout and frozen service tier. Summary session IDs, cache policy
+and output limits remain Pi-owned; hosted search is sampling-only. All 91 runtime,
+lifecycle and request-policy tests pass, including Standard/Fast compaction.
+
+Remaining slices: structured Tool
 failure envelope, Volume reference convergence, browser gate and measured cleanup.

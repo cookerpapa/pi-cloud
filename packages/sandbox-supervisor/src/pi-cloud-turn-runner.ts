@@ -890,22 +890,26 @@ export class PiCloudTurnRunner {
           },
           tools: tools.tools,
           thinkingLevel: command.payload.model.thinkingLevel,
-          streamOptions: {
+          commonModelOptions: {
             timeoutMs: this.#requestTimeoutMs,
-            sessionId: command.payload.sessionId,
-            // The cloud runtime owns visible, governed retry attempts so each one
-            // receives a fresh sampling identity and model-request ledger row.
-            maxRetries: 0,
-            ...((config.hostedTools === undefined || config.hostedTools.length === 0) &&
-            config.serviceTier !== "fast"
-              ? {}
-              : {
-                  onPayload: (payload: unknown) => {
-                    const withTools = mergeProviderHostedTools(payload, config.hostedTools ?? []);
-                    return mergeProviderServiceTier(withTools, config.serviceTier);
-                  },
-                }),
             ...(config.transport === undefined ? {} : { transport: config.transport }),
+            ...(config.serviceTier === "fast"
+              ? {
+                  onPayload: (payload: unknown) =>
+                    mergeProviderServiceTier(payload, config.serviceTier),
+                }
+              : {}),
+          },
+          streamOptions: {
+            sessionId: command.payload.sessionId,
+            // Native retry policy governs each visible sampling attempt.
+            maxRetries: 0,
+            ...(config.hostedTools?.length
+              ? {
+                  onPayload: (payload: unknown) =>
+                    mergeProviderHostedTools(payload, config.hostedTools!),
+                }
+              : {}),
             ...(config.maxTokens === undefined ? {} : { maxTokens: config.maxTokens }),
           },
           retry: { enabled: true, maxRetries: 2, baseDelayMs: 500 },
