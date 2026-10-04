@@ -1,8 +1,8 @@
 import type { Database } from "@pi-cloud/database";
 import type { SshAccessTicketResource } from "@pi-cloud/protocol";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { Kysely } from "kysely";
-import { ControlPlaneStoreError } from "./control-plane-store.ts";
+import { sql, type Kysely } from "kysely";
+import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
 const DEFAULT_TICKET_TTL_MS = 24 * 60 * 60_000;
@@ -13,7 +13,6 @@ export type SshAccessTicketServiceOptions = Readonly<{
   advertisedHost?: string;
   advertisedPort?: number;
   ticketTtlMs?: number;
-  clock?: () => Date;
   idGenerator?: () => string;
   secretGenerator?: () => string;
 }>;
@@ -36,7 +35,6 @@ export class SshAccessTicketService {
   readonly #host: string;
   readonly #port: number;
   readonly #ttlMs: number;
-  readonly #clock: () => Date;
   readonly #id: () => string;
   readonly #secret: () => string;
 
@@ -56,7 +54,6 @@ export class SshAccessTicketService {
     ) {
       throw new TypeError("SSH access ticket TTL is invalid");
     }
-    this.#clock = options.clock ?? (() => new Date());
     this.#id = options.idGenerator ?? randomUUID;
     this.#secret = options.secretGenerator ?? (() => randomBytes(32).toString("base64url"));
   }
@@ -68,8 +65,6 @@ export class SshAccessTicketService {
     if (!this.#enabled) {
       throw new ControlPlaneStoreError("not_found", "SSH access is not enabled");
     }
-    const now = this.#clock();
-    const expiresAt = new Date(now.valueOf() + this.#ttlMs);
     const ticketId = this.#id();
     const secret = this.#secret();
     if (!/^[A-Za-z0-9_-]{43}$/.test(secret)) {
@@ -106,7 +101,7 @@ export class SshAccessTicketService {
         "SSH requires a running exclusive environment with no other human terminal",
       );
     }
-    await this.#database
+    const issued = await this.#database
       .insertInto("ssh_access_tickets")
       .values({
         ticket_id: ticketId,
@@ -115,10 +110,11 @@ export class SshAccessTicketService {
         session_id: sessionId,
         environment_id: environment.environmentId,
         secret_sha256: secretSha256,
-        expires_at: expiresAt,
+        expires_at: sql<Date>`clock_timestamp() + ${this.#ttlMs} * interval '1 millisecond'`,
         consumed_at: null,
-        created_at: now,
+        created_at: sql<Date>`clock_timestamp()`,
       })
+      .returning("expires_at")
       .executeTakeFirstOrThrow();
     const command = `ssh -p ${String(this.#port)} picloud@${this.#host}`;
     const oneLineCommand = `SSHPASS='${password}' sshpass -e ssh -o StrictHostKeyChecking=accept-new -p ${String(this.#port)} picloud@${this.#host}`;
@@ -132,7 +128,7 @@ export class SshAccessTicketService {
       password,
       command,
       oneLineCommand,
-      expiresAt: expiresAt.toISOString(),
+      expiresAt: issued.expires_at.toISOString(),
     };
   }
 }

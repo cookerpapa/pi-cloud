@@ -18,5 +18,17 @@ paused-delete/managed-cleanup service tests with CGO disabled (local static
 cubecow library unavailable); controller, runtime client, monitor and recovery
 tests. Native production build and live acceptance remain required.
 
-Remaining slices: PG ownership/SSH time, shared model policy, structured Tool
+## PG decision slice — ADR-0224
+
+- R04-04: owned lifecycle transactions lock the controller before resources,
+  then check PG expiry again before commit. Retirement uses the same lock order.
+  Waiting past expiry rolls back authorization; no Cube RPC runs under a PG lock.
+- R04-07: ticket issue returns PG-computed expiry; consume checks it after the
+  ticket lock. Removed the independent application-clock policy.
+
+All 22 full-schema ownership tests pass, including both ordering and deadline
+cases for creation/closure. All 14 SSH-consumption/development-machine tests pass;
+the narrow consumption fixture verifies expiry during lock wait and one-time use.
+
+Remaining slices: shared model policy, structured Tool
 failure envelope, Volume reference convergence, browser gate and measured cleanup.

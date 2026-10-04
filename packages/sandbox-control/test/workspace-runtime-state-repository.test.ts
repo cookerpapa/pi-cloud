@@ -146,6 +146,130 @@ describe("PostgreSQL Sandbox control ownership", () => {
     return { database, repository, instanceId, spec, tenant };
   }
 
+  it.each(["create", "close"] as const)(
+    "serializes %s authorization before concurrent owner retirement",
+    async (action) => {
+      const f = await allocationFixture();
+      if (action === "close") await f.repository.beginCreation(f.spec);
+      let release!: () => void, locked!: () => void;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      const entered = new Promise<void>((r) => {
+        locked = r;
+      });
+      const blocker = f.database.transaction().execute(async (tx) => {
+        await tx
+          .selectFrom("workspace_runtimes")
+          .select("workspace_runtime_id")
+          .where("workspace_runtime_id", "=", f.spec.activationId)
+          .forUpdate()
+          .execute();
+        locked();
+        await gate;
+      });
+      await entered;
+      let mutation: Promise<unknown> | undefined, retirement: Promise<unknown> | undefined;
+      try {
+        mutation =
+          action === "create"
+            ? f.repository.beginCreation(f.spec)
+            : f.repository.closeAllocation(f.spec.activationId, "workspace");
+        await vi.waitFor(async () => {
+          const waits = await sql<{
+            n: number;
+          }>`select count(*)::int as n from pg_stat_activity where datname=current_database() and wait_event_type='Lock'`.execute(
+            f.database,
+          );
+          expect(waits.rows[0]!.n).toBe(1);
+        });
+        retirement =
+          sql`update sandbox_control_instances set state='lost' where instance_id=${f.instanceId}::uuid`.execute(
+            f.database,
+          );
+        await vi.waitFor(async () => {
+          const waits = await sql<{
+            n: number;
+          }>`select count(*)::int as n from pg_stat_activity where datname=current_database() and wait_event_type='Lock'`.execute(
+            f.database,
+          );
+          expect(waits.rows[0]!.n).toBe(2);
+        });
+        release();
+        await blocker;
+        await expect(mutation).resolves.toBeDefined();
+        await retirement;
+        await expect(
+          f.repository.closeAllocation(f.spec.activationId, "workspace"),
+        ).rejects.toMatchObject({ code: "ownership_lost" });
+      } finally {
+        release();
+        await blocker;
+        await Promise.allSettled([mutation, retirement]);
+      }
+    },
+  );
+
+  it.each(["create", "close"] as const)(
+    "rolls back %s after waiting past the PG owner deadline",
+    async (action) => {
+      const f = await allocationFixture();
+      if (action === "close") await f.repository.beginCreation(f.spec);
+      let release!: () => void, locked!: () => void;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      const entered = new Promise<void>((r) => {
+        locked = r;
+      });
+      const blocker = f.database.transaction().execute(async (tx) => {
+        await tx
+          .selectFrom("workspace_runtimes")
+          .select("workspace_runtime_id")
+          .where("workspace_runtime_id", "=", f.spec.activationId)
+          .forUpdate()
+          .execute();
+        locked();
+        await gate;
+      });
+      await entered;
+      let mutation: Promise<unknown> | undefined;
+      try {
+        await sql`update sandbox_control_instances set lease_expires_at=clock_timestamp()+interval '500 milliseconds' where instance_id=${f.instanceId}::uuid`.execute(
+          f.database,
+        );
+        mutation = (
+          action === "create"
+            ? f.repository.beginCreation(f.spec)
+            : f.repository.closeAllocation(f.spec.activationId, "workspace")
+        ).catch((e) => e);
+        await vi.waitFor(async () => {
+          const waits = await sql<{
+            n: number;
+          }>`select count(*)::int as n from pg_stat_activity where datname=current_database() and wait_event_type='Lock'`.execute(
+            f.database,
+          );
+          expect(waits.rows[0]!.n).toBe(1);
+        });
+        await sql`select pg_sleep(0.55)`.execute(f.database);
+        release();
+        await blocker;
+        expect(await mutation).toMatchObject({ code: "ownership_lost" });
+        const row = await f.database
+          .selectFrom("workspace_runtimes")
+          .select(["allocation_closed", "creation_spec"])
+          .where("workspace_runtime_id", "=", f.spec.activationId)
+          .executeTakeFirstOrThrow();
+        expect(row.allocation_closed).toBe(false);
+        if (action === "create") expect(row.creation_spec).toBeNull();
+      } finally {
+        release();
+        await blocker;
+        await mutation;
+      }
+    },
+  );
+
   it("rejects a late terminal activation after its physical allocation was closed", async () => {
     const f = await allocationFixture();
     const terminalId = randomUUID();

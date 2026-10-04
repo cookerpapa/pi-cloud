@@ -1,6 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import { createHash } from "node:crypto";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 
 const PASSWORD_PATTERN = /^pcssh_([0-9a-f-]{36})\.([A-Za-z0-9_-]{43})$/i;
 
@@ -16,11 +16,9 @@ export type SshTerminalGrant = Readonly<{
 
 export class SshTicketAuthority {
   readonly #database: Kysely<Database>;
-  readonly #clock: () => Date;
 
-  constructor(options: { database: Kysely<Database>; clock?: () => Date }) {
+  constructor(options: { database: Kysely<Database> }) {
     this.#database = options.database;
-    this.#clock = options.clock ?? (() => new Date());
   }
 
   async consume(username: string, password: string): Promise<SshTerminalGrant | undefined> {
@@ -28,7 +26,6 @@ export class SshTicketAuthority {
     const ticketId = PASSWORD_PATTERN.exec(password)?.[1];
     if (ticketId === undefined) return undefined;
     const digest = createHash("sha256").update(password, "utf8").digest("hex");
-    const now = this.#clock();
     return this.#database.transaction().execute(async (transaction) => {
       const ticket = await transaction
         .selectFrom("ssh_access_tickets as ticket")
@@ -50,7 +47,6 @@ export class SshTicketAuthority {
         ])
         .where("ticket.ticket_id", "=", ticketId)
         .where("ticket.secret_sha256", "=", digest)
-        .where("ticket.expires_at", ">", now)
         .where("ticket.consumed_at", "is", null)
         .where("development.owner_user_id", "=", (eb) => eb.ref("ticket.user_id"))
         .where("development.state", "=", "running")
@@ -61,8 +57,11 @@ export class SshTicketAuthority {
       if (ticket === undefined) return undefined;
       const consumed = await transaction
         .updateTable("ssh_access_tickets")
-        .set({ consumed_at: now })
+        .set({ consumed_at: sql<Date>`clock_timestamp()` })
         .where("ticket_id", "=", ticket.ticketId)
+        // The ticket lock has been acquired: evaluate expiry now, not before
+        // waiting for it. PG is the shared issue/consume clock.
+        .where("expires_at", ">", sql<Date>`clock_timestamp()`)
         .where("consumed_at", "is", null)
         .executeTakeFirst();
       if (consumed.numUpdatedRows !== 1n) return undefined;

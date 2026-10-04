@@ -68,7 +68,20 @@ it.each(
         recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
         recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
       },
-      environmentValidation: {},
+      environmentValidation: {
+        profileKey: "pi-cloud-fullstack",
+        profileVersion: "1",
+        imageRevision: "development",
+        specSha256: DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+        recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+        isolationBoundary: "microvm",
+        runtime: "cubesandbox-kvm",
+        networkMode: "public_web_proxy_private_denied",
+        runAsUser: "1000:1000",
+        readOnlyRootFilesystem: false,
+        tools: [],
+        recipeCommands: [],
+      },
     } as SandboxHandle;
     let attached = false;
     const provider = {

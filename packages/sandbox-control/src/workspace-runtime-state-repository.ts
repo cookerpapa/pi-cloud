@@ -461,8 +461,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           ? "id"
           : "workspace_runtime_id",
     );
-    return this.#database.transaction().execute(async (tx) => {
-      await this.#assertCurrentOwner(tx);
+    return this.#ownedTransaction(async (tx) => {
       const { rows } = await sql<{
         creation_spec: Record<string, unknown>;
         creation_not_after: Date;
@@ -500,8 +499,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           ? "id"
           : "workspace_runtime_id",
     );
-    return this.#database.transaction().execute(async (tx) => {
-      await this.#assertCurrentOwner(tx);
+    return this.#ownedTransaction(async (tx) => {
       const { rows } = await sql<{
         allocation_protocol: number | null;
         creation_not_after: Date | null;
@@ -529,7 +527,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   async reserve(input: WorkspaceRuntimeReservation): Promise<WorkspaceRuntimeReservationResult> {
     const now = validDate(this.#clock);
     const execution = executionIdentity(input.assignment);
-    return this.#database.transaction().execute(async (transaction) => {
+    return this.#ownedTransaction(async (transaction) => {
       const workspace = await transaction
         .selectFrom("workspaces")
         .select("sandbox_domain_id")
@@ -544,7 +542,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "Workspace is not assigned to this Sandbox Domain",
         );
       }
-      await this.#assertCurrentOwner(transaction);
       const liveTerminal =
         input.computeSessionId !== undefined
           ? undefined
@@ -769,8 +766,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<WorkspaceTerminalReservationResult> {
     const now = validDate(this.#clock);
     const leaseExpiresAt = new Date(now.valueOf() + this.#leaseMs);
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    return this.#ownedTransaction(async (transaction) => {
       const workspace = await transaction
         .selectFrom("workspaces")
         .select(["sandbox_domain_id", "project_id", "workspace_kind"])
@@ -931,8 +927,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     input: DevelopmentEnvironmentReservation,
   ): Promise<DevelopmentEnvironmentReservationResult> {
     const now = validDate(this.#clock);
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    return this.#ownedTransaction(async (transaction) => {
       const environment = await transaction
         .selectFrom("development_environments")
         .selectAll()
@@ -1167,8 +1162,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     } = {},
   ): Promise<void> {
     const now = validDate(this.#clock);
-    const updated = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    const updated = await this.#ownedTransaction(async (transaction) => {
       return transaction
         .updateTable("development_environments")
         .set({
@@ -1223,8 +1217,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     detail: { handle?: SandboxHandle; failureCode?: string; runtimeCapsule?: string } = {},
   ): Promise<void> {
     const now = validDate(this.#clock);
-    await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    await this.#ownedTransaction(async (transaction) => {
       const returned = await transaction
         .updateTable("development_environments")
         .set({
@@ -1257,8 +1250,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
 
   async reserveDevelopmentEnvironmentTerminal(environmentId: string): Promise<boolean> {
     const now = validDate(this.#clock);
-    const reserved = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    const reserved = await this.#ownedTransaction(async (transaction) => {
       return transaction
         .updateTable("development_environments")
         .set({ terminal_active: true, updated_at: now })
@@ -1286,8 +1278,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<readonly DevelopmentEnvironmentReservation[]> {
     const boundedLimit = positiveInteger(limit, "development environment orphan limit");
     const now = validDate(this.#clock);
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    return this.#ownedTransaction(async (transaction) => {
       const rows = await transaction
         .selectFrom("development_environments")
         .select([
@@ -1359,8 +1350,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     excluded: readonly string[],
   ): Promise<readonly RecoverableWorkspaceRuntime[]> {
     const bounded = positiveInteger(limit, "Workspace recovery limit");
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    return this.#ownedTransaction(async (transaction) => {
       let query = transaction
         .selectFrom("workspace_runtimes as runtime")
         .leftJoin(
@@ -1448,8 +1438,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     const boundedLimit = positiveInteger(limit, "development environment recovery limit");
     const excluded = [...new Set(excludeEnvironmentIds)];
     const now = validDate(this.#clock);
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    return this.#ownedTransaction(async (transaction) => {
       const candidates = transaction
         .selectFrom("development_environments as environment")
         .leftJoin("sandbox_control_instances as owner", (join) =>
@@ -1537,8 +1526,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     detail: { handle?: SandboxHandle; failureCode?: string } = {},
   ): Promise<void> {
     const now = validDate(this.#clock);
-    const updated = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    const updated = await this.#ownedTransaction(async (transaction) => {
       return transaction
         .updateTable("workspace_terminal_sessions")
         .set({
@@ -1569,8 +1557,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   async claimOrphanedTerminals(limit: number): Promise<readonly OrphanedWorkspaceTerminal[]> {
     const boundedLimit = positiveInteger(limit, "terminal orphan cleanup limit");
     const now = validDate(this.#clock);
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    return this.#ownedTransaction(async (transaction) => {
       const rows = await transaction
         .selectFrom("workspace_terminal_sessions")
         .select([
@@ -1630,8 +1617,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     detail: { handle?: SandboxHandle; failureCode?: string; runtimeCapsule?: string } = {},
   ): Promise<void> {
     const now = validDate(this.#clock);
-    const updated = await this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    const updated = await this.#ownedTransaction(async (transaction) => {
       const result = await transaction
         .updateTable("workspace_runtimes")
         .set({
@@ -1738,8 +1724,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<readonly OrphanedWorkspaceRuntime[]> {
     const boundedLimit = positiveInteger(limit, "orphan cleanup limit");
     const now = validDate(this.#clock);
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    return this.#ownedTransaction(async (transaction) => {
       const rows = await transaction
         .selectFrom("workspace_runtimes")
         .select([
@@ -1824,8 +1809,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     // least two Broker lease windows before treating a runtime with no live
     // Workspace lease as orphaned.
     const orphanedBefore = new Date(now.valueOf() - minimumUnboundAgeMs);
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    return this.#ownedTransaction(async (transaction) => {
       const rows = await transaction
         .selectFrom("workspace_runtimes as activation")
         .select([
@@ -1918,8 +1902,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
 
   async listRetiredWarmWorkspaceRuntimeIds(): Promise<readonly string[]> {
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction);
+    return this.#ownedTransaction(async (transaction) => {
       const rows = await transaction
         .selectFrom("workspace_runtimes as activation")
         .innerJoin("workspaces as workspace", (join) =>
@@ -1944,6 +1927,12 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     await this.#heartbeatTask;
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
+      await transaction
+        .selectFrom("sandbox_control_instances")
+        .select("instance_id")
+        .where("instance_id", "=", this.#instanceId)
+        .forUpdate()
+        .execute();
       await transaction
         .updateTable("workspace_runtimes")
         .set({ state: "unknown", failure_code: "tool_broker_stopped", updated_at: now })
@@ -2033,20 +2022,38 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       requestedAt + renewed.lease_expires_at.valueOf() - renewed.last_heartbeat_at.valueOf();
   }
 
-  async #assertCurrentOwner(transaction: Transaction<Database>): Promise<void> {
-    const owner = await transaction
-      .selectFrom("sandbox_control_instances")
-      .select("instance_id")
-      .where("instance_id", "=", this.#instanceId)
-      .where("state", "=", "ready")
-      .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
-      .executeTakeFirst();
-    if (owner === undefined) {
-      throw new WorkspaceRuntimeStateRepositoryError(
-        "ownership_lost",
-        "Sandbox control database ownership lease is not current",
-      );
-    }
+  async #ownedTransaction<T>(work: (transaction: Transaction<Database>) => Promise<T>): Promise<T> {
+    return this.#database.transaction().execute(async (transaction) => {
+      // Materialization forces the lock to complete before PG decision time is
+      // sampled. SHARE conflicts with owner expiry/renewal's non-key updates.
+      const locked = await sql<{ instance_id: string }>`
+        with owner as materialized (
+          select instance_id,state,lease_expires_at from sandbox_control_instances
+          where instance_id=${this.#instanceId}::uuid for share
+        ) select instance_id from owner where state='ready' and lease_expires_at>clock_timestamp()
+      `.execute(transaction);
+      if (!locked.rows.length)
+        throw new WorkspaceRuntimeStateRepositoryError(
+          "ownership_lost",
+          "Sandbox control database ownership lease is not current",
+        );
+      const result = await work(transaction);
+      // Resource locks may have waited past lease expiry. Roll back all writes
+      // in that case; no external effects are performed within this transaction.
+      const current = await transaction
+        .selectFrom("sandbox_control_instances")
+        .select("instance_id")
+        .where("instance_id", "=", this.#instanceId)
+        .where("state", "=", "ready")
+        .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
+        .executeTakeFirst();
+      if (!current)
+        throw new WorkspaceRuntimeStateRepositoryError(
+          "ownership_lost",
+          "Sandbox control lease expired during lifecycle admission",
+        );
+      return result;
+    });
   }
 
   async #domainReservedSandboxes(transaction: Transaction<Database>): Promise<number> {

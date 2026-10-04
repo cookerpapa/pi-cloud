@@ -480,7 +480,6 @@ describe("user-owned development environments", () => {
       enabled: true,
       advertisedHost: "127.0.0.1",
       advertisedPort: 2_222,
-      clock: () => new Date("2026-08-23T00:00:00.000Z"),
       idGenerator: () => "12121212-1212-4212-8212-121212121212",
       secretGenerator: () => "s".repeat(43),
     });
@@ -490,8 +489,14 @@ describe("user-owned development environments", () => {
       environmentId: created.environmentId,
       command: "ssh -p 2222 picloud@127.0.0.1",
       username: "picloud",
-      expiresAt: "2026-08-24T00:00:00.000Z",
     });
+    const timing = await sql<{
+      remaining: number;
+    }>`select extract(epoch from (expires_at-clock_timestamp()))::float as remaining from ssh_access_tickets where ticket_id=${ticket.ticketId}::uuid`.execute(
+      database,
+    );
+    expect(timing.rows[0]!.remaining).toBeGreaterThan(86300);
+    expect(timing.rows[0]!.remaining).toBeLessThanOrEqual(86400);
     expect(ticket.oneLineCommand).toContain("sshpass -e ssh");
     expect(ticket.password).toMatch(/^pcssh_/);
     expect(
