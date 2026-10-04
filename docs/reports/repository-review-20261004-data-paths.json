@@ -1,0 +1,57 @@
+{
+  "revision": "8d8ee837",
+  "scope": "isolated PostgreSQL, synthetic inputs; no Kafka, model or VM latency claims",
+  "queues": [
+    {
+      "queuedInputs": 10,
+      "visibleInputs": 10,
+      "reachableInputs": 10,
+      "snapshotBytes": 43134,
+      "allPagesReadMs": 5.17
+    },
+    {
+      "queuedInputs": 100,
+      "visibleInputs": 20,
+      "reachableInputs": 100,
+      "snapshotBytes": 86105,
+      "allPagesReadMs": 21.08
+    },
+    {
+      "queuedInputs": 500,
+      "visibleInputs": 20,
+      "reachableInputs": 500,
+      "snapshotBytes": 86106,
+      "allPagesReadMs": 88.09
+    }
+  ],
+  "laneHeads": [
+    {
+      "storedLanes": 1,
+      "appendItems": 1,
+      "returnedLaneHeads": 0,
+      "returnedHeadBytes": 2,
+      "transactionMs": 12.61
+    },
+    {
+      "storedLanes": 101,
+      "appendItems": 1,
+      "returnedLaneHeads": 0,
+      "returnedHeadBytes": 2,
+      "transactionMs": 7.72
+    },
+    {
+      "storedLanes": 1001,
+      "appendItems": 1,
+      "returnedLaneHeads": 0,
+      "returnedHeadBytes": 2,
+      "transactionMs": 6.22
+    },
+    {
+      "storedLanes": 10001,
+      "appendItems": 1,
+      "returnedLaneHeads": 0,
+      "returnedHeadBytes": 2,
+      "transactionMs": 7.83
+    }
+  ]
+}

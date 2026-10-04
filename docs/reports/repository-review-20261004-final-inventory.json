@@ -1,0 +1,8 @@
+{
+  "checkedAt": "2026-10-04T15:14:12.354Z",
+  "scope": "Read-only final inventory; no historical UNKNOWN cleanup",
+  "pendingOrActiveRuns": 0,
+  "unknownWorkspaceAllocations": 2,
+  "observedCubeVMs": 0,
+  "ownedReviewVMs": 0
+}

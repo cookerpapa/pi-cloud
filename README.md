@@ -87,6 +87,10 @@ The [follow-up review](docs/reports/repository-review-20261003-r2.md) records
 findings and baseline evidence at `3dbf49fb`; [the repairs](docs/reports/review-repair-20261004.md)
 track the approved fixes and matched protocol-3 verification.
 
+The [October 4 whole-repository review](docs/reports/repository-review-20261004.md)
+records current lifecycle/recovery, Pi request-policy and validation gaps, with
+isolated reproductions and SQL measurements. Its repairs remain in the backlog.
+
 ## Quick start
 
 Requires x86_64 Debian/Ubuntu or WSL2 with systemd, writable `/dev/kvm`,

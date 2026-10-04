@@ -1,0 +1,6 @@
+{
+  "baselinePatchId": "602fa6575ee1ed5d",
+  "testImageOnlyChangedPatchId": "632649784653de3a",
+  "productionPatchDigestsEqual": true,
+  "observation": "Native image protocol/source identity changes when only the disposable test MySQL image changes."
+}

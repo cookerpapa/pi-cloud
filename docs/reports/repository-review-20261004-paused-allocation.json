@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-10-04T13:38:47.199Z",
+  "scope": "one owned real Cube VM; no user VM or Run mutation",
+  "closeAttempts": [
+    {
+      "error": "CubeSandbox API request failed with HTTP 500",
+      "ms": 183
+    },
+    {
+      "error": "CubeSandbox API request failed with HTTP 500",
+      "ms": 38
+    },
+    {
+      "error": "CubeSandbox API request failed with HTTP 500",
+      "ms": 36
+    }
+  ],
+  "cleanupConfirmed": true,
+  "stateAfterCloseAttempts": "paused",
+  "reproduced": true
+}

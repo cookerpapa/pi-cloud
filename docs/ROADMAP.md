@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## October 4 whole-repository review
+
+- [x] Review `8d8ee837`: lifecycle/recovery, pinned Pi behavior, ordered execution,
+      storage/assets, product paths and deployment. [Report and evidence](reports/repository-review-20261004.md).
+- [ ] Resolve R04-01–07 and Q04-01 in separate repair slices; record protocol or
+      storage decisions before implementation. Priority starts with paused VM
+      closure and recovery-state isolation.
+
 ## Recoverable VM allocation
 
 - [x] Deliver [ADR-0223](adr/0223-recoverable-vm-allocation.md): stable physical

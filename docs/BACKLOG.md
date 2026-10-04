@@ -23,6 +23,26 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
+The [October 4 whole-repository review](reports/repository-review-20261004.md)
+is complete at `8d8ee837`. Its fixes are pending:
+
+- [ ] R04-01: align allocation Close with Cube's paused-VM deletion budget; test
+      direct paused release and cleanup that outlives a caller's query deadline.
+- [ ] R04-02: publish recovered handles only after adoption succeeds, roll back
+      partial local state, and contain individual health-target enumeration failures.
+- [ ] R04-03: define recovery of Volume reference bookkeeping after cleanup-result
+      persistence loss or receipt collection; preserve physical deletion guards.
+- [ ] R04-04: close the controller ownership-read/resource-write revocation window.
+- [ ] R04-05: share applicable model request policy with native Compaction so
+      Fast-mode maintenance requests retain the frozen service tier.
+- [ ] R04-06: distinguish infrastructure failure from native Tool error with a
+      structured transport field; ordinary Bash output must not control Run liveness.
+- [ ] R04-07: use PG decision time for SSH ticket issue/consumption and validate
+      expiry after acquiring the relevant lock.
+- [ ] Q04-01: update the full browser gate's queue fixture to the current protocol
+      and validate fixture responses with the production parser. Its original entry
+      fails; the schema-corrected temporary control experiment passes.
+
 [ADR-0223](adr/0223-recoverable-vm-allocation.md) is deployed: creation identity
 precedes the physical effect, lost replies recover the original allocation,
 closure excludes delayed creation, and unconfirmed node outcomes remain held.
@@ -153,11 +173,6 @@ separate design questions, not an implicit part of the completed query merge.
       allocations lacking a recorded VM/node (one older record and one failed
       standard-profile acceptance allocation remain held). [Evidence](reports/review-repair-20261004.md).
 
-
-- [ ] Repeat the broad browser interaction gate beyond the focused execution-probe
-      acceptance after its model-menu/catalog expectations were corrected. The
-      [probe-focused gate](reports/execution-probes-browser-20261002.json) passed;
-      that is not a claim that every legacy browser flow was revalidated.
 
 - [ ] Diagnose Cube node template-cleanup timeouts observed during the
       [chat upload rollout](reports/user-input-attachments-rollout-20260929.json).

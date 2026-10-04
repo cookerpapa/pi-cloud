@@ -5,6 +5,10 @@ Loop, model context, Tool selection and Compaction. PiCloud owns durable input,
 execution authority, distributed placement, output projection and Cube lifetimes.
 CubeSandbox KVM is the only untrusted execution backend.
 
+Current implementation gaps and verification limits are recorded in the
+[October 4 review](reports/repository-review-20261004.md), including allocation
+cleanup, partial adoption, Volume bookkeeping and request-policy boundaries.
+
 ## One message
 
 ```text

@@ -1,0 +1,84 @@
+{
+  "baseline": "8d8ee83723bb236d6f5d820fb21a5783f95c6711",
+  "scope": "Review only; production runtime and native patches unchanged",
+  "gates": {
+    "check": {
+      "passed": 1741,
+      "skipped": 9
+    },
+    "faults": {
+      "passed": 178,
+      "total": 178,
+      "dirtyWorktree": false
+    },
+    "nativeAllocation": {
+      "passed": 9
+    },
+    "nativeAdmission": {
+      "passed": 15
+    },
+    "nativeReceiptCharacterizations": {
+      "passed": 2,
+      "mode": "real Bolt/MySQL; baseline defect assertions; simulated physical cleanup callback"
+    },
+    "reviewCharacterizations": {
+      "recovery": 2,
+      "ownerRevocation": 2,
+      "fastCompaction": 1,
+      "toolErrorText": 2,
+      "sshClock": 1
+    },
+    "healthProcess": {
+      "expectedExitCode": 1,
+      "observedExitCode": 1,
+      "scope": "isolated actual monitor with failing target enumeration"
+    },
+    "browserPresentation": {
+      "baseline": "failed",
+      "failure": "Old queue fixture lacks viewVersion/paging/pause fields; timeout at submitted-draft row",
+      "schemaCorrectedTemporaryFixture": "passed",
+      "productCodeChanged": false
+    },
+    "webDeployment": "passed",
+    "documentation": "passed",
+    "formatAtBaseline": "passed",
+    "runtimePolicy": "passed",
+    "installContract": "passed",
+    "helm": "passed",
+    "observability": "passed",
+    "imageClosure": "passed",
+    "security": {
+      "highCriticalGate": "passed",
+      "remainingModeratePackages": ["fastify", "@nestjs/platform-fastify"]
+    },
+    "reviewCombined": {
+      "files": 5,
+      "passed": 8,
+      "scope": "Baseline characterization assertions; real isolated PG where specified"
+    },
+    "finalFormat": "passed",
+    "finalDocumentation": "passed"
+  },
+  "live": {
+    "paidModelRequests": 0,
+    "ownedCubePausedCloseReproduced": true,
+    "ownedCubeNodeAbsenceConfirmed": true,
+    "productionProcessFaults": 0,
+    "finalInventory": "repository-review-20261004-final-inventory.json"
+  },
+  "limits": [
+    "No new multi-node HA, power-loss or fleet-load claim",
+    "Narrow SSH PG fixture does not exercise full SSH/VM authorization",
+    "Existing broad browser gate remains failing; passing control only changed its fixture",
+    "SQL counts exclude HTTP/Kafka/Cube/provider work and trigger-internal SQL"
+  ],
+  "commands": {
+    "default": "npm run check; npm run eval:faults; npm run cubesandbox:allocation-check; npm run cubesandbox:admission-check",
+    "reviewUnits": "node scripts/run-with-test-postgres.mjs -- npx vitest run scripts/review-20261004-{owner,recovery,compaction,tool-error,ssh-clock}.test.ts --maxWorkers=1",
+    "nativeReceipts": "node scripts/review-20261004-cube.mjs",
+    "health": "node --import tsx scripts/review-20261004-health-crash.mjs (expected exit 1)",
+    "sql": "node scripts/run-with-test-postgres.mjs -- node --import tsx scripts/review-20261004-sql.mjs",
+    "browserControl": "node scripts/review-20261004-browser.mjs",
+    "ownedVm": "PI_CLOUD_LIVE_REVIEW=1 node --import tsx scripts/review-20261004-paused-allocation.mjs"
+  }
+}
