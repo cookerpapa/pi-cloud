@@ -229,6 +229,8 @@ try {
     await page.waitFor(
       "document.querySelector('.pending-input-queue header').textContent.includes('继续队列')",
     );
+    assert.equal(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
+    await page.screenshot("/tmp/pi-cloud-paused-queue-browser.png");
     assert.equal(
       await page.evaluate("document.querySelector('.pending-input-editor textarea').value"),
       "draft before Stop",

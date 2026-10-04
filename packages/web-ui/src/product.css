@@ -1842,6 +1842,7 @@ body.product-panel-resizing {
 }
 .pending-input-queue header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
@@ -1850,9 +1851,17 @@ body.product-panel-resizing {
   color: #bbb;
 }
 .pending-input-queue header small {
-  margin-left: auto;
+  flex: 1 0 100%;
+  order: 1;
   color: #aaa;
   font-size: 11px;
+}
+.pending-input-queue header strong,
+.pending-input-queue header button {
+  white-space: nowrap;
+}
+.pending-input-queue header button {
+  margin-left: auto;
 }
 .pending-input-list {
   max-height: min(32vh, 280px);
