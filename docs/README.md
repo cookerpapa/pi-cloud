@@ -1,5 +1,9 @@
 # Documentation map
 
+[ADR-0223](adr/0223-recoverable-vm-allocation.md) adds stable VM allocation,
+recoverable creation and irreversible closure; implementation acceptance is in
+progress. PG retains lifecycle authority and Cube supplies the physical contract.
+
 [ADR-0221](adr/0221-pi-tool-cancellation.md) implements Pi-style Tool cancellation:
 ordered operation interruption, original-result settlement and bounded UNKNOWN
 outcomes. [Verification and matched release](reports/pi-tool-cancellation-20261004.md)

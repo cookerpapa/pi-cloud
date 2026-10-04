@@ -66,6 +66,7 @@ export class CubeExecutionRejected extends Error {
 }
 
 export type CubeSandboxCreateInput = Readonly<{
+  allocation: Readonly<{ id: string; createBefore: number }>;
   templateId: string;
   timeoutSeconds: number;
   metadata: Readonly<Record<string, string>>;
@@ -74,6 +75,21 @@ export type CubeSandboxCreateInput = Readonly<{
   volumeMounts?: readonly Readonly<{ name: string; path: "/workspace" | "/home/user" }>[];
   lifecycle?: Readonly<{ onTimeout: "kill" | "pause"; autoResume: boolean }>;
 }>;
+
+export type CubeAllocationState = Readonly<{
+  allocationId: string;
+  createBefore: number;
+  phase: "missing" | "pending" | "creating" | "ready" | "failed" | "closing" | "absent";
+  closed: boolean;
+  sandboxId?: string;
+  nodeId?: string;
+  instance?: CubeSandboxInstance;
+}>;
+export class CubeAllocationClosedError extends Error {
+  constructor(readonly absenceConfirmed: boolean) {
+    super("Cube allocation is closed");
+  }
+}
 
 export type CubeSandboxGuestCommandRequest = Readonly<{
   command: string;
@@ -101,6 +117,11 @@ export interface CubeSandboxRuntimeClient {
   ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
   deleteVolume(volumeId: string): Promise<void>;
   create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance>;
+  allocation(
+    id: string,
+    createBefore: number,
+    action: "get" | "close",
+  ): Promise<CubeAllocationState>;
   read(sandboxId: string): Promise<CubeSandboxInstance | undefined>;
   observe(
     sandboxId: string,
@@ -627,54 +648,141 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   }
 
   async create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance> {
-    const response = await this.#control("/sandboxes", {
-      method: "POST",
-      body: JSON.stringify({
-        templateID: input.templateId,
-        timeout: input.timeoutSeconds,
-        metadata: input.metadata,
-        ...(input.volumeMounts === undefined
-          ? {}
-          : {
-              volumeMounts: input.volumeMounts.map((mount) => {
-                if (
-                  !/^pcw-[0-9a-f]{48}$/.test(mount.name) ||
-                  !new Set(["/workspace", "/home/user"]).has(mount.path)
-                ) {
-                  throw new CubeRuntimeClientError("CubeSandbox volume mount was invalid");
-                }
-                return { name: mount.name, path: mount.path };
-              }),
+    this.#allocationIdentity(input.allocation.id, input.allocation.createBefore);
+    const body = JSON.stringify({
+      templateID: input.templateId,
+      timeout: input.timeoutSeconds,
+      metadata: {
+        ...input.metadata,
+        "picloud.allocation_id": input.allocation.id,
+        "picloud.create_before": String(input.allocation.createBefore),
+      },
+      ...(input.volumeMounts === undefined
+        ? {}
+        : {
+            volumeMounts: input.volumeMounts.map((mount) => {
+              if (
+                !/^pcw-[0-9a-f]{48}$/.test(mount.name) ||
+                !new Set(["/workspace", "/home/user"]).has(mount.path)
+              ) {
+                throw new CubeRuntimeClientError("CubeSandbox volume mount was invalid");
+              }
+              return { name: mount.name, path: mount.path };
             }),
-        allow_internet_access: true,
-        network: {
-          allowPublicTraffic: false,
-          maskRequestHost: "localhost:${PORT}",
-          allowOut: [...new Set([`${this.#egressProxyIp}/32`, ...this.#directPrivateCidrs])],
-          denyOut: ["0.0.0.0/0"],
-        },
-        // PiCloud owns the shorter Session warm TTL and explicit destroy.
-        // Cube's timeout is only the fail-safe orphan reaper. A timed-out VM
-        // must not become an untracked paused guest because this provider no
-        // longer reconnects physical runtimes across manager loss.
-        lifecycle: {
-          on_timeout: input.lifecycle?.onTimeout ?? "kill",
-          auto_resume: input.lifecycle?.autoResume ?? false,
-        },
-      }),
+          }),
+      allow_internet_access: true,
+      network: {
+        allowPublicTraffic: false,
+        maskRequestHost: "localhost:${PORT}",
+        allowOut: [...new Set([`${this.#egressProxyIp}/32`, ...this.#directPrivateCidrs])],
+        denyOut: ["0.0.0.0/0"],
+      },
+      // PiCloud owns the Session warm TTL and explicit allocation closure.
+      // Cube's timeout is the physical fail-safe; dedicated machines may pause.
+      lifecycle: {
+        on_timeout: input.lifecycle?.onTimeout ?? "kill",
+        auto_resume: input.lifecycle?.autoResume ?? false,
+      },
     });
-    const instance = parseInstance(
-      parseJson(await readBoundedResponse(response, 256 * 1_024), "CubeSandbox create"),
-      this.#sandboxDomain,
-      false,
-    );
-    if (instance.trafficAccessToken === undefined) {
-      await this.destroy(instance.sandboxId).catch(() => undefined);
-      throw new CubeRuntimeClientError(
-        "CubeSandbox did not return the required private-ingress token",
+    const end = performance.now() + this.#requestTimeoutMs;
+    let failure: unknown;
+    do {
+      try {
+        const response = await this.#control("/sandboxes", { method: "POST", body });
+        const instance = parseInstance(
+          parseJson(await readBoundedResponse(response, 256 * 1024), "CubeSandbox create"),
+          this.#sandboxDomain,
+          true,
+        );
+        if (
+          !instance.trafficAccessToken ||
+          !instance.nodeId ||
+          instance.sandboxId !== input.allocation.id.replaceAll("-", "")
+        )
+          throw new CubeRuntimeClientError(
+            "Cube allocation did not return its exact private runtime identity",
+          );
+        return instance;
+      } catch (cause) {
+        failure = cause;
+        if (
+          cause instanceof CubeRuntimeClientError &&
+          [400, 401, 403, 409].includes(cause.statusCode ?? 0)
+        )
+          throw cause;
+      }
+      const state = await this.allocation(
+        input.allocation.id,
+        input.allocation.createBefore,
+        "get",
       );
-    }
-    return instance;
+      if (state.closed) throw new CubeAllocationClosedError(state.phase === "absent");
+      if (state.phase === "ready" && state.instance) return state.instance;
+      if (state.phase === "failed" || Date.now() >= input.allocation.createBefore) break;
+      if (performance.now() < end) await new Promise((resolve) => setTimeout(resolve, 250));
+    } while (performance.now() < end);
+    throw failure ?? new CubeRuntimeClientError("Cube allocation creation is unconfirmed");
+  }
+
+  #allocationIdentity(id: string, createBefore: number): void {
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) ||
+      !Number.isSafeInteger(createBefore) ||
+      createBefore <= 0
+    )
+      throw new CubeRuntimeClientError("Invalid allocation authorization");
+  }
+
+  async allocation(
+    id: string,
+    createBefore: number,
+    action: "get" | "close",
+  ): Promise<CubeAllocationState> {
+    this.#allocationIdentity(id, createBefore);
+    const response = await this.#control(`/allocations/${id}/${action}`, {
+      method: "POST",
+      body: JSON.stringify({ createBefore }),
+    });
+    const value = record(
+      parseJson(await readBoundedResponse(response, 256 * 1024), "Cube allocation"),
+      "Cube allocation",
+    );
+    if (
+      value.allocationID !== id ||
+      value.createBefore !== createBefore ||
+      typeof value.closed !== "boolean" ||
+      !["missing", "pending", "creating", "ready", "failed", "closing", "absent"].includes(
+        String(value.phase),
+      )
+    )
+      throw new CubeRuntimeClientError("Cube allocation receipt identity is invalid");
+    if (value.sandboxID !== undefined && value.sandboxID !== id.replaceAll("-", ""))
+      throw new CubeRuntimeClientError("Cube allocation physical identity changed");
+    if (value.phase === "absent" && value.closed !== true)
+      throw new CubeRuntimeClientError("Cube allocation absence lacks closed admission");
+    const instance =
+      value.instance === undefined
+        ? undefined
+        : parseInstance(value.instance, this.#sandboxDomain, true);
+    if (
+      instance &&
+      (!instance.trafficAccessToken ||
+        !instance.nodeId ||
+        instance.sandboxId !== value.sandboxID ||
+        instance.nodeId !== value.nodeID)
+    )
+      throw new CubeRuntimeClientError("Cube allocation result is incomplete");
+    if (value.phase === "ready" && !instance)
+      throw new CubeRuntimeClientError("Cube allocation result is missing");
+    return {
+      allocationId: id,
+      createBefore,
+      phase: value.phase as CubeAllocationState["phase"],
+      closed: value.closed,
+      ...(typeof value.sandboxID === "string" ? { sandboxId: value.sandboxID } : {}),
+      ...(typeof value.nodeID === "string" && value.nodeID ? { nodeId: value.nodeID } : {}),
+      ...(instance ? { instance } : {}),
+    };
   }
 
   async read(sandboxId: string): Promise<CubeSandboxInstance | undefined> {
@@ -730,7 +838,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
     if (
       value.enabled !== true ||
-      value.protocolVersion !== 5 ||
+      value.protocolVersion !== 6 ||
       typeof value.bootID !== "string" ||
       !/^[0-9a-f-]{36}$/.test(value.bootID)
     )

@@ -85,7 +85,12 @@ export type SandboxCreateSpec = Readonly<{
   sandboxProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
 }>;
 
+/** Issued once by the resource owner before Cube receives any creation RPC. */
+export type SandboxAllocationAuthorization = Readonly<{ createBefore: number }>;
+export const SANDBOX_CREATION_WINDOW_MS = 5 * 60_000;
+
 export type SandboxHandle = Readonly<{
+  allocation: SandboxAllocationAuthorization;
   runtimeNodeId: string;
   providerApiVersion: 1;
   providerId: string;
@@ -210,7 +215,10 @@ export interface SandboxProvider {
   probeExecution(handle: SandboxHandle): Promise<{ continuityId: string }>;
   executionIdentity(handle: SandboxHandle): string;
   observeRuntimeInventory(): Promise<ReadonlyMap<string, SandboxRuntimeObservation>>;
-  create(spec: SandboxCreateSpec): Promise<SandboxHandle>;
+  create(
+    spec: SandboxCreateSpec,
+    authorization: SandboxAllocationAuthorization,
+  ): Promise<SandboxHandle>;
   destroyPersistentCapsule(
     capsule: string,
     activationId: string,
@@ -294,7 +302,11 @@ export interface SandboxProvider {
     request: SourceControlWorkspaceCredentialDisconnectRequest,
   ): Promise<SourceControlWorkspaceCredentialDisconnectResponse>;
   /** Used only when the Sandbox control restarted before it could reconstruct a handle. */
-  destroyRuntime(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
+  destroyRuntime(
+    activationId: string,
+    assignment: ToolSandboxAssignment,
+    authorization: SandboxAllocationAuthorization | undefined,
+  ): Promise<void>;
 
   close(): Promise<void>;
 }

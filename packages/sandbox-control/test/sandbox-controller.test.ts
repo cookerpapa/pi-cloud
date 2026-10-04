@@ -220,10 +220,11 @@ function providerFixture() {
     },
     defaultPolicy: CUBESANDBOX_TOOL_POLICY,
     async checkHealth() {},
-    async create(spec) {
+    async create(spec, authorization) {
       createCount += 1;
       createSpec = spec;
       return {
+        allocation: authorization,
         runtimeNodeId: "node-test",
         providerApiVersion: 1,
         providerId: "cubesandbox",
@@ -598,9 +599,9 @@ describe("provider-backed Sandbox controller", () => {
     const stop = vi.spyOn(fixture.provider, "destroy");
     const created: SandboxCreateSpec[] = [];
     const original = fixture.provider.create;
-    fixture.provider.create = async (spec) => {
+    fixture.provider.create = async (spec, authorization) => {
       created.push(spec);
-      return { ...(await original(spec)), runtimeId: spec.activationId };
+      return { ...(await original(spec, authorization)), runtimeId: spec.activationId };
     };
     const manager = testBroker({
       provider: fixture.provider,
@@ -778,6 +779,42 @@ describe("provider-backed Sandbox controller", () => {
           runtimeCapsule: expect.any(String),
         }),
       );
+    } finally {
+      await manager.close();
+    }
+  });
+
+  it("requires durable allocation closure even after a retry reports a preflight rejection", async () => {
+    const fixture = providerFixture(),
+      repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const state = vi.spyOn(repository, "setDevelopmentEnvironmentState");
+    vi.spyOn(fixture.provider, "create").mockRejectedValue(
+      new SandboxCreationError(new Error("local preflight rejected"), true),
+    );
+    fixture.provider.destroyRuntime = vi.fn(async () => {
+      throw new Error("older creation outcome unavailable");
+    });
+    const manager = testBroker({ provider: fixture.provider, stateRepository: repository });
+    try {
+      await expect(
+        manager.provisionDevelopmentEnvironment({
+          developmentEnvironmentProtocolVersion: 1,
+          type: "development_environment.provision",
+          requestId: randomUUID(),
+          environmentId: ACTIVATION_ID,
+          tenantId: assignment.tenantId,
+          userId: "fixture-user",
+          projectId: assignment.projectId,
+          workspaceId: assignment.workspaceId,
+          generation: 1,
+          profileKey: "standard",
+          environment,
+          workspaceSeed: { kind: "sample_java" },
+        }),
+      ).rejects.toThrow();
+      expect(repository.closedAllocations.has(ACTIVATION_ID)).toBe(true);
+      expect(manager.admittedCount).toBe(1);
+      expect(state).toHaveBeenLastCalledWith(ACTIVATION_ID, "unknown", expect.any(Object));
     } finally {
       await manager.close();
     }
@@ -1133,6 +1170,10 @@ describe("provider-backed Sandbox controller", () => {
     fixture.provider.destroyRuntime = destroyRuntime;
     const stateRepository = new InMemoryWorkspaceRuntimeStateRepository();
     const environmentId = "21111111-1111-4111-8111-111111111121";
+    vi.spyOn(stateRepository, "closeAllocation").mockResolvedValue({
+      status: "authorized",
+      authorization: { createBefore: Date.now() + 300_000 },
+    });
     await stateRepository.reserveDevelopmentEnvironment({
       environmentId,
       tenantId: assignment.tenantId,

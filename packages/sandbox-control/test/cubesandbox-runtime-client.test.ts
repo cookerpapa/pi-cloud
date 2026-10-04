@@ -21,9 +21,18 @@ type ObservedRequest = {
 };
 
 let server: Server;
+const allocation = {
+  id: "aabbccdd-eeff-0011-2233-445566778899",
+  createBefore: Date.now() + 300_000,
+};
 let port: number;
 const observed: ObservedRequest[] = [];
 let runtimeState: string | undefined = "running";
+let loseCreateReply = false;
+let allocationClosed = false;
+let createEffects = 0;
+let createReceipt: Record<string, unknown> | undefined;
+let allocationReplyOverride: unknown;
 let pauseReturnsTimeout = false;
 let observationMode: "present" | "absent" | "unavailable" | "missing-endpoint" | "wrong-node" =
   "present";
@@ -32,6 +41,11 @@ let executionStatus = 200;
 let tcpResponse: ServerResponse | undefined;
 let tcpConnectMode: "connected" | "refused" | "unreachable" = "connected";
 beforeEach(() => {
+  loseCreateReply = false;
+  allocationClosed = false;
+  createEffects = 0;
+  createReceipt = undefined;
+  allocationReplyOverride = undefined;
   observed.length = 0;
   executionTarget.apiUrl = `http://127.0.0.1:${port}`;
   executionReply = {};
@@ -137,7 +151,7 @@ beforeAll(async () => {
         response.end('{"status":"ok"}');
         return;
       }
-      if (host.startsWith("49983-cube-runtime-1.")) {
+      if (host.startsWith("49983-aabbccddeeff00112233445566778899.")) {
         if (request.url?.startsWith("/files?") === true) {
           response.writeHead(200, { "content-type": "application/json" });
           response.end("[]");
@@ -232,11 +246,34 @@ beforeAll(async () => {
         return;
       }
       if (request.method === "POST" && request.url === "/sandboxes") {
+        if (allocationClosed) {
+          response.writeHead(409);
+          response.end("allocation_closed");
+          return;
+        }
+        if (!createReceipt) createEffects++;
+        createReceipt ??= {
+          sandboxID: allocation.id.replaceAll("-", ""),
+          clientID: "cube-node-1",
+          templateID: "pi-cloud-tool-v1",
+          state: runtimeState,
+          domain: "cube.test",
+          metadata: (body as { metadata?: unknown }).metadata,
+          trafficAccessToken: "private-traffic-token",
+          envdAccessToken: "envd-access-token",
+          cpuCount: 1,
+          memoryMB: 768,
+        };
+        if (loseCreateReply) {
+          loseCreateReply = false;
+          request.socket.destroy();
+          return;
+        }
         response.writeHead(201, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
-            sandboxID: "cube-runtime-1",
-            clientID: "20000000-0000-4000-8000-000000000001",
+            sandboxID: "aabbccddeeff00112233445566778899",
+            clientID: "cube-node-1",
             templateID: "pi-cloud-tool-v1",
             state: runtimeState,
             domain: "cube.test",
@@ -249,7 +286,28 @@ beforeAll(async () => {
         );
         return;
       }
-      if (request.method === "POST" && request.url === "/sandboxes/cube-runtime-1/pause") {
+      if (request.method === "POST" && request.url?.startsWith(`/allocations/${allocation.id}/`)) {
+        if (request.url.endsWith("/close")) allocationClosed = true;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify(
+            allocationReplyOverride ?? {
+              allocationID: allocation.id,
+              createBefore: allocation.createBefore,
+              closed: allocationClosed,
+              phase: allocationClosed ? "absent" : createReceipt ? "ready" : "missing",
+              sandboxID: allocation.id.replaceAll("-", ""),
+              nodeID: "cube-node-1",
+              ...(!allocationClosed && createReceipt ? { instance: createReceipt } : {}),
+            },
+          ),
+        );
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        request.url === "/sandboxes/aabbccddeeff00112233445566778899/pause"
+      ) {
         if (pauseReturnsTimeout) {
           pauseReturnsTimeout = false;
           runtimeState = "pausing";
@@ -265,12 +323,15 @@ beforeAll(async () => {
         response.end();
         return;
       }
-      if (request.method === "POST" && request.url === "/sandboxes/cube-runtime-1/connect") {
+      if (
+        request.method === "POST" &&
+        request.url === "/sandboxes/aabbccddeeff00112233445566778899/connect"
+      ) {
         runtimeState = "running";
         response.writeHead(201, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
-            sandboxID: "cube-runtime-1",
+            sandboxID: "aabbccddeeff00112233445566778899",
             clientID: "20000000-0000-4000-8000-000000000002",
             templateID: "pi-cloud-tool-v1",
             state: runtimeState,
@@ -282,11 +343,14 @@ beforeAll(async () => {
         );
         return;
       }
-      if (request.method === "GET" && request.url === "/sandboxes/cube-runtime-1") {
+      if (
+        request.method === "GET" &&
+        request.url === "/sandboxes/aabbccddeeff00112233445566778899"
+      ) {
         response.writeHead(200, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
-            sandboxID: "cube-runtime-1",
+            sandboxID: "aabbccddeeff00112233445566778899",
             clientID: "cube-node-1",
             templateID: "pi-cloud-tool-v1",
             state: runtimeState,
@@ -301,7 +365,7 @@ beforeAll(async () => {
         response.end(
           JSON.stringify([
             {
-              sandboxID: "cube-runtime-1",
+              sandboxID: "aabbccddeeff00112233445566778899",
               clientID: "cube-node-1",
               templateID: "pi-cloud-tool-v1",
               state: runtimeState,
@@ -312,7 +376,10 @@ beforeAll(async () => {
         );
         return;
       }
-      if (request.method === "DELETE" && request.url === "/sandboxes/cube-runtime-1") {
+      if (
+        request.method === "DELETE" &&
+        request.url === "/sandboxes/aabbccddeeff00112233445566778899"
+      ) {
         response.writeHead(204);
         response.end();
         return;
@@ -332,17 +399,80 @@ afterAll(async () => {
 });
 
 describe("official CubeSandbox HTTP compatibility client", () => {
-  it("resolves node identity from details rather than create/connect client UUIDs", async () => {
+  it("recovers a lost creation reply by the original allocation identity without another physical create", async () => {
+    const client = executionClient();
+    loseCreateReply = true;
+    try {
+      const input = {
+        allocation,
+        templateId: "pi-cloud-tool-v1",
+        timeoutSeconds: -1,
+        metadata: {},
+        allowInternetAccess: true as const,
+        allowPublicTraffic: false as const,
+      };
+      const first = await client.create(input);
+      expect(first.nodeId).toBe("cube-node-1");
+      expect(createEffects).toBe(1);
+      expect(observed.some((r) => r.path === `/allocations/${allocation.id}/get`)).toBe(true);
+      expect((await client.create(input)).sandboxId).toBe(first.sandboxId);
+      expect(createEffects).toBe(1);
+    } finally {
+      await client.close();
+    }
+  });
+  it("closes an unregistered allocation before accepting a delayed creation", async () => {
+    const client = executionClient();
+    try {
+      expect(
+        await client.allocation(allocation.id, allocation.createBefore, "close"),
+      ).toMatchObject({ phase: "absent", closed: true });
+      await expect(
+        client.create({
+          allocation,
+          templateId: "pi-cloud-tool-v1",
+          timeoutSeconds: -1,
+          metadata: {},
+          allowInternetAccess: true,
+          allowPublicTraffic: false,
+        }),
+      ).rejects.toThrow();
+      expect(createEffects).toBe(0);
+    } finally {
+      await client.close();
+    }
+  });
+  it.each(["identity", "deadline", "absence"])(
+    "rejects an invalid allocation %s receipt",
+    async (mode) => {
+      const client = executionClient();
+      allocationReplyOverride = {
+        allocationID: mode === "identity" ? "bad" : allocation.id,
+        createBefore: allocation.createBefore + (mode === "deadline" ? 1 : 0),
+        phase: "absent",
+        closed: mode !== "absence",
+      };
+      try {
+        await expect(
+          client.allocation(allocation.id, allocation.createBefore, "close"),
+        ).rejects.toThrow();
+      } finally {
+        await client.close();
+      }
+    },
+  );
+  it("uses managed creation node identity while connect client UUIDs remain non-authoritative", async () => {
     const client = executionClient();
     try {
       const created = await client.create({
+        allocation,
         templateId: "pi-cloud-tool-v1",
         timeoutSeconds: 60,
         metadata: {},
         allowInternetAccess: true,
         allowPublicTraffic: false,
       });
-      expect(created.nodeId).toBeUndefined();
+      expect(created.nodeId).toBe("cube-node-1");
       expect((await client.read(created.sandboxId))?.nodeId).toBe("cube-node-1");
       expect((await client.connect(created.sandboxId, -1)).nodeId).toBeUndefined();
     } finally {
@@ -398,7 +528,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     runtimeState = state;
     try {
       const expected = !state || state === "future-state" ? "unknown" : state;
-      await expect(client.read("cube-runtime-1")).resolves.toMatchObject({
+      await expect(client.read("aabbccddeeff00112233445566778899")).resolves.toMatchObject({
         state: expected,
         nodeId: "cube-node-1",
       });
@@ -422,6 +552,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
       tcpConnectMode = mode;
       try {
         const instance = await client.create({
+          allocation,
           templateId: "pi-cloud-tool-v1",
           timeoutSeconds: 900,
           metadata: {},
@@ -461,8 +592,10 @@ describe("official CubeSandbox HTTP compatibility client", () => {
       egressProxyIp: "10.255.255.254",
       requestTimeoutMs: 2_000,
     });
-    await expect(client.pause("cube-runtime-1")).resolves.toBeUndefined();
-    await expect(client.read("cube-runtime-1")).resolves.toMatchObject({ state: "paused" });
+    await expect(client.pause("aabbccddeeff00112233445566778899")).resolves.toBeUndefined();
+    await expect(client.read("aabbccddeeff00112233445566778899")).resolves.toMatchObject({
+      state: "paused",
+    });
     await client.close();
   });
 
@@ -499,6 +632,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
       ),
     ).toBeDefined();
     const instance = await client.create({
+      allocation,
       templateId: "pi-cloud-tool-v1",
       timeoutSeconds: 900,
       metadata: { "picloud.managed": "true" },
@@ -549,7 +683,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     const dataRequest = observed.find((request) => request.path === "/process.Process/Start");
     expect(dataRequest).toMatchObject({
       headers: {
-        host: "49983-cube-runtime-1.cube.test",
+        host: "49983-aabbccddeeff00112233445566778899.cube.test",
         "e2b-traffic-access-token": "private-traffic-token",
         "cube-traffic-access-token": "private-traffic-token",
         "x-access-token": "envd-access-token",
@@ -573,7 +707,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     const start = observed.filter((request) => request.path === "/process.Process/Start").at(-1);
     expect(start).toMatchObject({
       headers: {
-        host: "49983-cube-runtime-1.cube.test",
+        host: "49983-aabbccddeeff00112233445566778899.cube.test",
         "e2b-traffic-access-token": "private-traffic-token",
         "cube-traffic-access-token": "private-traffic-token",
         "x-access-token": "envd-access-token",
@@ -607,7 +741,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     });
     await expect(client.openTcp(instance, 49983)).rejects.toThrow("Invalid application port");
     await expect(client.read(instance.sandboxId)).resolves.toMatchObject({
-      sandboxId: "cube-runtime-1",
+      sandboxId: "aabbccddeeff00112233445566778899",
       metadata: { "picloud.managed": "true" },
     });
     await expect(client.list()).resolves.toHaveLength(1);

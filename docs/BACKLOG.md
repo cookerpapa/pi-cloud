@@ -23,6 +23,10 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
+- [ ] Implement [ADR-0223](adr/0223-recoverable-vm-allocation.md) across Cube and
+      SandboxProvider: persist identity before creation, recover lost replies,
+      fence delayed creation after closure, and retain uncertain node evidence.
+
 [ADR-0222](adr/0222-paused-inputs-after-stop.md) is deployed: Stop durably pauses
 pending human inputs; new input runs independently and explicit Send/Continue
 queue resumes old input. [Verification](reports/paused-inputs-20261004.md) includes

@@ -38,6 +38,13 @@ export function isAllowedCubeApiOperation(path: string, method: string): boolean
   if (parsed.origin !== "http://cube-api.internal" || parsed.hash !== "") return false;
   if (
     normalizedMethod === "POST" &&
+    /^\/allocations\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(get|close)$/.test(
+      parsed.pathname,
+    )
+  )
+    return parsed.search === "";
+  if (
+    normalizedMethod === "POST" &&
     /^\/sandboxes\/[a-f0-9]{32}\/execution\/(capabilities|submit|cancel|probe)$/i.test(
       parsed.pathname,
     )

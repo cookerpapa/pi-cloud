@@ -9,7 +9,13 @@ import {
   type ToolSandboxAssignment,
   type SandboxPreviewTarget,
 } from "@pi-cloud/protocol";
-import type { SandboxHandle } from "../../src/sandbox-provider.ts";
+import {
+  SANDBOX_CREATION_WINDOW_MS,
+  type SandboxHandle,
+  type SandboxCreateSpec,
+  type SandboxAllocationAuthorization,
+} from "../../src/sandbox-provider.ts";
+import { isDeepStrictEqual } from "node:util";
 import type {
   WorkspaceRuntimeStateRepository,
   OrphanedWorkspaceTerminal,
@@ -23,10 +29,38 @@ import type {
   SandboxPreviewOwnerResult,
   RecoverableDevelopmentEnvironment,
   OrphanedWorkspaceRuntime,
+  AllocationKind,
+  AllocationClosure,
 } from "../../src/workspace-runtime-state-repository.ts";
 
 /** Test fixture only. Production effects always use PostgreSQL ownership. */
 export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntimeStateRepository {
+  readonly creations = new Map<
+    string,
+    { spec: SandboxCreateSpec; authorization: SandboxAllocationAuthorization }
+  >();
+  readonly closedAllocations = new Set<string>();
+  async beginCreation(
+    spec: SandboxCreateSpec,
+    _kind?: AllocationKind,
+  ): Promise<SandboxAllocationAuthorization> {
+    if (this.closedAllocations.has(spec.activationId)) throw new Error("Allocation closed");
+    const prior = this.creations.get(spec.activationId);
+    if (prior) {
+      if (!isDeepStrictEqual(prior.spec, spec)) throw new Error("Allocation changed");
+      return prior.authorization;
+    }
+    const authorization = { createBefore: Date.now() + SANDBOX_CREATION_WINDOW_MS };
+    this.creations.set(spec.activationId, { spec: structuredClone(spec), authorization });
+    return authorization;
+  }
+  async closeAllocation(id: string, _kind: AllocationKind): Promise<AllocationClosure> {
+    this.closedAllocations.add(id);
+    const prior = this.creations.get(id);
+    return prior
+      ? { status: "authorized", authorization: prior.authorization }
+      : { status: "never_issued" };
+  }
   onQuarantine?: (physicalActivationId: string) => void;
   readonly #terminals = new Map<string, OrphanedWorkspaceTerminal>();
   readonly #activations = new Map<string, WorkspaceRuntimeReservation>();

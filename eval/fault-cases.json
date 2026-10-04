@@ -1205,6 +1205,48 @@
       "file": "test/cloud-agent-runtime.test.ts",
       "test": "does not consume queued follow_up when a cancelled Tool returns",
       "invariant": "A cancelled Tool cannot drain pending native input into history; the durable source remains available for consumption-confirmed restoration."
+    },
+    {
+      "id": "allocation-intent-recovery",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "retains immutable allocation authorization and recovers uncapsuled creation after owner replacement",
+      "invariant": "Creation authorization and configuration survive controller loss; closure is irreversible and late completion cannot reopen the resource."
+    },
+    {
+      "id": "allocation-unissued-closure",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "closes unissued allocations without fabricating legacy absence (legacy=false)",
+      "invariant": "Closing before authorization blocks later materialization without inferring physical absence from an inventory miss."
+    },
+    {
+      "id": "allocation-legacy-uncertainty",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "closes unissued allocations without fabricating legacy absence (legacy=true)",
+      "invariant": "Historical missing allocation identity never becomes invented absence or quota release."
+    },
+    {
+      "id": "allocation-lost-create-reply",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-runtime-client.test.ts",
+      "test": "recovers a lost creation reply by the original allocation identity without another physical create",
+      "invariant": "Lost creation replies resolve by the original allocation, without allocating another VM."
+    },
+    {
+      "id": "allocation-late-create",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-runtime-client.test.ts",
+      "test": "closes an unregistered allocation before accepting a delayed creation",
+      "invariant": "A delayed create cannot reopen a previously closed allocation."
+    },
+    {
+      "id": "allocation-preflight-not-absence",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
+      "test": "requires durable allocation closure even after a retry reports a preflight rejection",
+      "invariant": "Local preflight rejection cannot release an earlier uncertain same-ID allocation; closure and physical confirmation remain required."
     }
   ]
 }

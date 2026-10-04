@@ -145,6 +145,29 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
 }
 
 class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
+  readonly allocationClosures = new Set<string>();
+  async allocation(id: string, createBefore: number, action: "get" | "close") {
+    const index = this.creates.findIndex((input) => input.allocation.id === id);
+    const sandboxId = index < 0 ? undefined : `cube-sandbox-${index + 1}`;
+    const instance = sandboxId ? this.instances.get(sandboxId) : undefined;
+    if (action === "close") {
+      this.allocationClosures.add(id);
+      if (sandboxId) {
+        await this.destroy(sandboxId);
+        const observed = await this.observe(sandboxId, "node-test");
+        if (observed.presence !== "absent")
+          return { allocationId: id, createBefore, closed: true, phase: "closing" as const };
+      }
+      return { allocationId: id, createBefore, closed: true, phase: "absent" as const };
+    }
+    return {
+      allocationId: id,
+      createBefore,
+      closed: this.allocationClosures.has(id),
+      phase: instance ? ("ready" as const) : ("missing" as const),
+      ...(instance ? { instance } : {}),
+    };
+  }
   readonly cancelTool = vi.fn<CubeSandboxRuntimeClient["cancelTool"]>(async () => {});
   readonly submitProbe = vi.fn<CubeSandboxRuntimeClient["submitProbe"]>(async () => {});
   async probeExecution(
@@ -196,6 +219,15 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   async deleteVolume(_volumeId: string): Promise<void> {}
 
   async create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance> {
+    if (this.allocationClosures.has(input.allocation.id)) throw new Error("Allocation was closed");
+    const previous = this.creates.findIndex((c) => c.allocation.id === input.allocation.id);
+    if (previous >= 0) {
+      if (JSON.stringify(this.creates[previous]) !== JSON.stringify(input))
+        throw new Error("Allocation parameters changed");
+      const existing = this.instances.get(`cube-sandbox-${previous + 1}`);
+      if (!existing) throw new Error("Allocation is absent");
+      return existing;
+    }
     this.creates.push(input);
     const sandboxId = `cube-sandbox-${String(this.creates.length)}`;
     const instance: CubeSandboxInstance = {
@@ -204,7 +236,11 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       nodeId: "node-test",
       state: "running",
       domain: "cube.internal",
-      metadata: Object.freeze({ ...input.metadata }),
+      metadata: Object.freeze({
+        ...input.metadata,
+        "picloud.allocation_id": input.allocation.id,
+        "picloud.create_before": String(input.allocation.createBefore),
+      }),
       trafficAccessToken: `private-traffic-token-${String(this.creates.length)}`,
       envdAccessToken: `envd-access-token-${String(this.creates.length)}`,
       cpuCount: 1,
@@ -246,6 +282,8 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   }
 
   async destroy(sandboxId: string): Promise<void> {
+    const id = this.instances.get(sandboxId)?.metadata["picloud.allocation_id"];
+    if (id) this.allocationClosures.add(id);
     this.destroyed.push(sandboxId);
     this.instances.delete(sandboxId);
   }
@@ -461,13 +499,16 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
     });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+      },
+      creationAuthorization,
+    );
     const data = Buffer.alloc(6 * 1024 * 1024, 42).toString("base64");
     vi.spyOn(runtime, "runCommand").mockResolvedValue({
       stdout: JSON.stringify({ ok: true, result: { data, mimeType: "image/png", hints: [] } }),
@@ -542,13 +583,16 @@ describe("CubeSandbox Provider contract", () => {
       workspaceVolumeGateway: volume,
     });
     for (let index = 0; index < 2; index++)
-      await provider.create({
-        activationId: crypto.randomUUID(),
-        assignment: { ...assignment, workspaceId: `close-${index}` },
-        environment,
-        workspaceSeed: { kind: "sample_java" },
-        policy: provider.defaultPolicy,
-      });
+      await provider.create(
+        {
+          activationId: crypto.randomUUID(),
+          assignment: { ...assignment, workspaceId: `close-${index}` },
+          environment,
+          workspaceSeed: { kind: "sample_java" },
+          policy: provider.defaultPolicy,
+        },
+        creationAuthorization,
+      );
     const destroyFailure = new Error("destroy failed"),
       closeFailure = new Error("transport close failed");
     const destroy = vi.spyOn(runtime, "destroy").mockRejectedValueOnce(destroyFailure);
@@ -571,24 +615,30 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway: volume,
     });
-    const parent = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-      lifetime: "development_environment",
-      toolRoot: "/home/user/project",
-    });
-    const child = await provider.create({
-      activationId: "10000000-0000-4000-8000-000000000011",
-      assignment: { ...assignment, sessionId: "child-session" },
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-      volumeMountPath: "/home/user",
-      toolRoot: "/home/user/worktrees/feature-a",
-    });
+    const parent = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+        lifetime: "development_environment",
+        toolRoot: "/home/user/project",
+      },
+      creationAuthorization,
+    );
+    const child = await provider.create(
+      {
+        activationId: "10000000-0000-4000-8000-000000000011",
+        assignment: { ...assignment, sessionId: "child-session" },
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+        volumeMountPath: "/home/user",
+        toolRoot: "/home/user/worktrees/feature-a",
+      },
+      creationAuthorization,
+    );
     expect(child.runtimeId).not.toBe(parent.runtimeId);
     expect(runtime.creates[0]?.volumeMounts).toEqual(runtime.creates[1]?.volumeMounts);
     expect(runtime.creates[1]?.volumeMounts?.[0]?.path).toBe("/home/user");
@@ -618,13 +668,16 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway: volume,
     });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+      },
+      creationAuthorization,
+    );
     const inspect = vi
       .spyOn(runtime, "read")
       .mockRejectedValue(new Error("control plane unavailable"));
@@ -652,13 +705,16 @@ describe("CubeSandbox Provider contract", () => {
         runtimeClient: runtime,
         workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
       });
-      const handle = await provider.create({
-        activationId: ACTIVATION_ID,
-        assignment,
-        environment,
-        workspaceSeed: { kind: "sample_java" },
-        policy: provider.defaultPolicy,
-      });
+      const handle = await provider.create(
+        {
+          activationId: ACTIVATION_ID,
+          assignment,
+          environment,
+          workspaceSeed: { kind: "sample_java" },
+          policy: provider.defaultPolicy,
+        },
+        creationAuthorization,
+      );
       const instance = runtime.instances.get(handle.runtimeName)!;
       runtime.instances.set(handle.runtimeName, { ...instance, state });
       const probe = vi.spyOn(runtime, "runCommand"),
@@ -683,16 +739,19 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
     });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+      },
+      creationAuthorization,
+    );
     const destroy = vi.spyOn(runtime, "destroy").mockResolvedValue(undefined);
     await expect(provider.destroy(handle)).rejects.toMatchObject({
-      code: "cubesandbox_assignment_still_alive",
+      code: "cubesandbox_absence_unconfirmed",
     });
     expect((await provider.inspect(handle)).state).toBe("running");
     destroy.mockRestore();
@@ -737,16 +796,19 @@ describe("CubeSandbox Provider contract", () => {
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
     });
     await expect(
-      provider.create({
-        activationId: ACTIVATION_ID,
-        assignment,
-        environment,
-        workspaceSeed: { kind: "sample_java" },
-        policy: {
-          ...provider.defaultPolicy,
-          network: { mode: "deny_all" } as never,
+      provider.create(
+        {
+          activationId: ACTIVATION_ID,
+          assignment,
+          environment,
+          workspaceSeed: { kind: "sample_java" },
+          policy: {
+            ...provider.defaultPolicy,
+            network: { mode: "deny_all" } as never,
+          },
         },
-      }),
+        creationAuthorization,
+      ),
     ).rejects.toMatchObject({
       code: "cubesandbox_policy_unsupported",
       retryable: false,
@@ -771,18 +833,21 @@ describe("CubeSandbox Provider contract", () => {
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
       persistentStateKey,
     });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: {
-        kind: "bundle",
-        bundle: encodeWorkspaceBlob(createWorkspaceSeed([])),
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: {
+          kind: "bundle",
+          bundle: encodeWorkspaceBlob(createWorkspaceSeed([])),
+        },
+        policy: provider.defaultPolicy,
+        lifetime: "development_environment",
+        sandboxProfileKey: "standard",
       },
-      policy: provider.defaultPolicy,
-      lifetime: "development_environment",
-      sandboxProfileKey: "standard",
-    });
+      creationAuthorization,
+    );
     const terminal = await provider.openTerminal(handle, { rows: 24, cols: 100 });
     expect(runtime.terminalAdmins).toEqual([true]);
     await terminal.kill();
@@ -1081,13 +1146,16 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway,
     });
-    const first = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
+    const first = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+      },
+      creationAuthorization,
+    );
     await provider.destroy(first);
 
     const nextActivationId = "20000000-0000-4000-8000-000000000041";
@@ -1108,13 +1176,16 @@ describe("CubeSandbox Provider contract", () => {
         parseExecutionReference(assignment.executionReference).fencingToken,
       ),
     };
-    const restored = await provider.create({
-      activationId: nextActivationId,
-      assignment: nextAssignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
+    const restored = await provider.create(
+      {
+        activationId: nextActivationId,
+        assignment: nextAssignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+      },
+      creationAuthorization,
+    );
     expect(runtime.creates).toHaveLength(2);
     expect(runtime.creates[1]).toMatchObject({
       templateId: "pi-cloud-tool-v1",
@@ -1163,20 +1234,23 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
     });
-    const parent = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment: {
-        ...assignment,
-        executionReference: createExecutionReference(
-          "20000000-0000-4000-8000-000000000050",
-          parseExecutionReference(assignment.executionReference).runId,
-          41,
-        ),
+    const parent = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment: {
+          ...assignment,
+          executionReference: createExecutionReference(
+            "20000000-0000-4000-8000-000000000050",
+            parseExecutionReference(assignment.executionReference).runId,
+            41,
+          ),
+        },
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
       },
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
+      creationAuthorization,
+    );
 
     const childBindingId = "20000000-0000-4000-8000-000000000054";
     const parentDescriptor = await provider.describeExecution(parent, ACTIVATION_ID, "/workspace");
@@ -1204,13 +1278,16 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: new FakeCubeRuntimeClient(),
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
     });
-    const originalHandle = await originalProvider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: originalProvider.defaultPolicy,
-    });
+    const originalHandle = await originalProvider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: originalProvider.defaultPolicy,
+      },
+      creationAuthorization,
+    );
     await originalProvider.destroy(originalHandle);
     await originalProvider.close();
 
@@ -1231,13 +1308,16 @@ describe("CubeSandbox Provider contract", () => {
         parseExecutionReference(assignment.executionReference).fencingToken + 1,
       ),
     };
-    const upgradedHandle = await upgradedProvider.create({
-      activationId: "20000000-0000-4000-8000-000000000050",
-      assignment: upgradedAssignment,
-      environment: { ...environment, imageRevision: "next-deployment" },
-      workspaceSeed: { kind: "sample_java" },
-      policy: upgradedProvider.defaultPolicy,
-    });
+    const upgradedHandle = await upgradedProvider.create(
+      {
+        activationId: "20000000-0000-4000-8000-000000000050",
+        assignment: upgradedAssignment,
+        environment: { ...environment, imageRevision: "next-deployment" },
+        workspaceSeed: { kind: "sample_java" },
+        policy: upgradedProvider.defaultPolicy,
+      },
+      creationAuthorization,
+    );
     expect(upgradedVolumeGateway.verify).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: assignment.tenantId,
@@ -1260,14 +1340,17 @@ describe("CubeSandbox Provider contract", () => {
         runtimeClient: runtime,
         workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
       });
-      const handle = await provider.create({
-        activationId: ACTIVATION_ID,
-        assignment,
-        environment,
-        workspaceSeed: { kind: "sample_java" },
-        policy: provider.defaultPolicy,
-        lifetime: "development_environment",
-      });
+      const handle = await provider.create(
+        {
+          activationId: ACTIVATION_ID,
+          assignment,
+          environment,
+          workspaceSeed: { kind: "sample_java" },
+          policy: provider.defaultPolicy,
+          lifetime: "development_environment",
+        },
+        creationAuthorization,
+      );
       const abort = new AbortController();
       const reason = new Error("Task cancelled before guest dispatch");
       const originalWrite = runtime.writeGuestFileStream.bind(runtime);
@@ -1351,17 +1434,20 @@ describe("CubeSandbox Provider contract", () => {
     });
     try {
       await expect(
-        provider.create({
-          activationId: ACTIVATION_ID,
-          assignment,
-          environment,
-          workspaceSeed: { kind: "sample_java" },
-          policy: provider.defaultPolicy,
-        }),
+        provider.create(
+          {
+            activationId: ACTIVATION_ID,
+            assignment,
+            environment,
+            workspaceSeed: { kind: "sample_java" },
+            policy: provider.defaultPolicy,
+          },
+          creationAuthorization,
+        ),
       ).rejects.toMatchObject({
         code: "environment_preflight_mismatch",
         retryable: false,
-        absenceConfirmed: true,
+        absenceConfirmed: false,
         cause: {
           cause: {
             code: "workspace_attach_invalid",
@@ -1369,7 +1455,7 @@ describe("CubeSandbox Provider contract", () => {
           },
         },
       });
-      expect(runtime.destroyed).toEqual(["cube-sandbox-1"]);
+      expect(runtime.destroyed).toEqual([]);
     } finally {
       await provider.close();
     }
@@ -1407,14 +1493,17 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
     });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-      lifetime: "development_environment",
-    });
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+        lifetime: "development_environment",
+      },
+      creationAuthorization,
+    );
     const before = await provider.probeExecution(handle);
     const capsule = await provider.persistentCapsule(handle);
     await provider.detachPersistent(handle);
@@ -1437,14 +1526,17 @@ describe("CubeSandbox Provider contract", () => {
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
       persistentStateKey: Buffer.alloc(32, 9),
     });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-      lifetime: "development_environment",
-    });
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+        lifetime: "development_environment",
+      },
+      creationAuthorization,
+    );
     const capsule = await provider.persistentCapsule(handle);
     await provider.detachPersistent(handle);
     const original = runtime.probeExecution.bind(runtime);
@@ -1473,14 +1565,17 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
     });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-      lifetime: "development_environment",
-    });
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+        lifetime: "development_environment",
+      },
+      creationAuthorization,
+    );
     const capsule = await provider.persistentCapsule(handle);
     await provider.detachPersistent(handle);
     vi.spyOn(runtime, "executionTarget").mockResolvedValue({
@@ -1535,13 +1630,16 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
     });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment: dependencyEnvironment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment: dependencyEnvironment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+      },
+      creationAuthorization,
+    );
     expect(runtime.creates).toHaveLength(1);
     expect(runtime.creates[0]).toMatchObject({
       allowInternetAccess: true,
@@ -1561,3 +1659,5 @@ describe("CubeSandbox Provider contract", () => {
     await provider.close();
   });
 });
+
+const creationAuthorization = { createBefore: Date.now() + 300_000 };

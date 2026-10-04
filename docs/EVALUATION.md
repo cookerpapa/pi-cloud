@@ -350,6 +350,23 @@ the measurements; this is not fleet capacity or live provider latency evidence.
 
 ### Agent Stop and controller replacement
 
+`npm run cubesandbox:allocation-check` exports the pinned Cube source and applies
+the maintained patch set. It tests node bbolt persistence and race boundaries and
+Master allocation transactions against disposable pinned MySQL. An explicit
+`PI_CLOUD_ALLOCATION_MYSQL_DSN` must address a disposable database named
+`allocation_test` or prefixed `pi_cloud_allocation_`; it is never inferred from
+production credentials. Cube source defaults to `~/CubeSandbox`, overridable via
+`PI_CLOUD_CUBESANDBOX_REPOSITORY`.
+
+`PI_CLOUD_LIVE_VM_ALLOCATION_CHECK=1 node --import tsx scripts/run-live-vm-allocation-check.mjs`
+uses owned short-lived VMs to drop a successful create reply, retrieve the same
+VM, repeat creation, close before delayed creation, and close in the native
+creation window. It confirms physical absence on the recorded node.
+`PI_CLOUD_LIVE_CREATION_RECOVERY_CHECK=1 node --import tsx scripts/run-live-vm-creation-recovery-check.mjs`
+uses Luna and an owned Workspace, SIGKILLs Control Plane after creation intent but
+before capsule persistence, and requires adoption of the original allocation.
+It refuses unrelated pending/active Runs and open terminals before the fault.
+
 Run `PI_CLOUD_LIVE_PAUSED_QUEUE_CHECK=1 node --import tsx scripts/run-live-paused-input-check.mjs`
 against schema 173 and matched app images for Luna/Cube paused-input acceptance.
 It checks Stop, unconsumed Steer, browser reload, Worker replacement, independent

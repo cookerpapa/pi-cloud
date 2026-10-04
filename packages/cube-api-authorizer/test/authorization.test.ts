@@ -7,6 +7,8 @@ const SANDBOX = "sandbox-123";
 describe("Cube API authorizer", () => {
   it.each([
     ["POST", "/sandboxes"],
+    ["POST", "/allocations/11111111-1111-4111-8111-111111111111/get"],
+    ["POST", "/allocations/11111111-1111-4111-8111-111111111111/close"],
     ["GET", `/sandboxes/${SANDBOX}`],
     ["GET", `/sandboxes/${"a".repeat(32)}/observation`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/capabilities`],
@@ -39,6 +41,8 @@ describe("Cube API authorizer", () => {
 
   it.each([
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/stop`],
+    ["POST", "/allocations/11111111-1111-4111-8111-111111111111/reopen"],
+    ["GET", "/allocations/11111111-1111-4111-8111-111111111111/get"],
     ["GET", "/templates"],
     ["GET", `/sandboxes/${"a".repeat(32)}/observation?nodeID=node-1`],
     ["GET", `/sandboxes/${"a".repeat(32)}/observation?nodeID=`],

@@ -88,8 +88,9 @@ function provider(): SandboxProvider {
     async probeExecution(handle) {
       return { continuityId: handle.runtimeId };
     },
-    async create(spec) {
+    async create(spec, authorization) {
       return {
+        allocation: authorization,
         runtimeNodeId: "node-test",
         providerApiVersion: 1,
         providerId: "cubesandbox",

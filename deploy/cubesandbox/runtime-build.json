@@ -1,7 +1,7 @@
 {
   "upstreamRepository": "https://github.com/TencentCloud/CubeSandbox.git",
   "upstreamCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
-  "managedProtocolVersion": 5,
+  "managedProtocolVersion": 6,
   "guestProtocolVersion": 3,
   "patches": [
     {
@@ -15,6 +15,10 @@
     {
       "file": "0003-native-tool-execution.patch",
       "sha256": "abe6355059c3bed1289bdb9e6240ddb38d2557490148f3089e16d490ce2541f0"
+    },
+    {
+      "file": "0004-recoverable-vm-allocation.patch",
+      "sha256": "f1fa685077f1503c8763ff45268ffb1ead66ea4bfa9186ffd555e9f24476ca9e"
     }
   ],
   "buildImages": {
@@ -24,5 +28,8 @@
     "ubuntu22": "ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02",
     "ubuntu24": "ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
     "alpine": "alpine:3.21@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507"
+  },
+  "testImages": {
+    "mysql": "mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b"
   }
 }

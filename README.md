@@ -39,6 +39,10 @@ Whole file/shell Tools execute in Cube. Replies return through the separate
 Worker-boot Kafka transport; Pi processes them before publishing the canonical
 Tool Result to the Session log. Optional temporary logs go through Projector HTTP/SSE.
 Workspace files live on persistent Cube Volumes.
+Physical allocation uses a stable identity and frozen creation authorization.
+Cube records its VM/node before launch; lost replies resolve through that same
+allocation. Retirement closes creation admission before confirming node absence,
+so a delayed creation cannot reopen a released allocation (ADR-0223).
 Images used by the Agent are immutable Session attachments in private S3 storage;
 Kafka carries their references and Pi receives ordinary image content.
 The API, publication ingress, Projector and sandbox lifecycle controller share

@@ -9,8 +9,10 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   parseEnvironmentValidationReport,
+  DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
 } from "@pi-cloud/protocol";
-import type { SandboxHandle } from "../src/sandbox-provider.ts";
+import type { SandboxHandle, SandboxCreateSpec } from "../src/sandbox-provider.ts";
+import { CUBESANDBOX_TOOL_POLICY } from "../src/cubesandbox-sandbox-provider.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostgresWorkspaceRuntimeStateRepository } from "../src/index.ts";
 import { CubePersistentCapsuleCodec } from "../src/cube-persistent-capsule.ts";
@@ -59,6 +61,152 @@ async function fixtureDatabase() {
 }
 
 describe("PostgreSQL Sandbox control ownership", () => {
+  async function allocationFixture(legacy = false) {
+    const database = await fixtureDatabase(),
+      instanceId = randomUUID();
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
+      database,
+      instanceId,
+      sandboxDomainId: "sandbox-domain-0001",
+      ownerBaseUrl: "http://allocation.test",
+    });
+    resources.push(() => repository.close());
+    await repository.start();
+    const tenant = await createPrivateTenant(database, {
+      slug: randomUUID(),
+      ownerDisplayName: "allocation",
+    });
+    const store = new ControlPlaneStore({ database, ...tenant });
+    const project = await store.createProject({ name: "allocation", source: { kind: "empty" } });
+    const session = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "allocation",
+      "elastic",
+    );
+    const run = await store.acceptTurn(session.sessionId, randomUUID(), { prompt: "allocation" });
+    const lease = randomUUID(),
+      activationId = randomUUID();
+    const assignment = {
+      tenantId: tenant.tenantId,
+      projectId: project.projectId,
+      workspaceId: project.workspaceId,
+      supervisorId: "fixture",
+      bootId: randomUUID(),
+      sandboxId: randomUUID(),
+      runId: run.runId,
+      sessionId: session.sessionId,
+      turnId: run.turnId,
+      executionReference: createExecutionReference(lease, run.runId, 1),
+    };
+    await database
+      .insertInto("workspace_runtimes")
+      .values({
+        workspace_runtime_id: activationId,
+        allocation_protocol: legacy ? null : 1,
+        tenant_id: tenant.tenantId,
+        project_id: project.projectId,
+        workspace_id: project.workspaceId,
+        sandbox_domain_id: "sandbox-domain-0001",
+        owner_instance_id: instanceId,
+        owner_base_url: "http://allocation.test",
+        supervisor_id: assignment.supervisorId,
+        boot_id: assignment.bootId,
+        sandbox_id: assignment.sandboxId,
+        run_id: run.runId,
+        session_id: session.sessionId,
+        turn_id: run.turnId,
+        lease_id: lease,
+        fencing_token: "1",
+        turn_context_sha256: "a".repeat(64),
+        execution_context_sha256: "b".repeat(64),
+        environment_sha256: "c".repeat(64),
+        runtime_id: null,
+        runtime_name: null,
+        state: "materializing",
+        failure_code: null,
+      })
+      .execute();
+    const spec: SandboxCreateSpec = {
+      activationId,
+      assignment,
+      workspaceSeed: { kind: "sample_java" },
+      policy: CUBESANDBOX_TOOL_POLICY,
+      environment: {
+        environmentVersionId: project.environment.environmentVersionId,
+        versionNumber: 1,
+        profileKey: "pi-cloud-fullstack",
+        profileVersion: "1",
+        imageRevision: "test",
+        specSha256: DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+        recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+        recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+      },
+    };
+    return { database, repository, instanceId, spec };
+  }
+
+  it("retains immutable allocation authorization and recovers uncapsuled creation after owner replacement", async () => {
+    const f = await allocationFixture();
+    const first = await f.repository.beginCreation(f.spec);
+    expect(await f.repository.beginCreation(f.spec)).toEqual(first);
+    await expect(
+      f.repository.beginCreation({ ...f.spec, toolRoot: "/changed" }),
+    ).rejects.toMatchObject({ code: "state_conflict" });
+    await expect(
+      f.database
+        .updateTable("workspace_runtimes")
+        .set({ creation_not_after: new Date(first.createBefore + 1) })
+        .where("workspace_runtime_id", "=", f.spec.activationId)
+        .execute(),
+    ).rejects.toThrow("cannot change");
+    await f.repository.close();
+    const next = new PostgresWorkspaceRuntimeStateRepository({
+      database: f.database,
+      instanceId: randomUUID(),
+      sandboxDomainId: "sandbox-domain-0001",
+      ownerBaseUrl: "http://replacement.test",
+    });
+    resources.push(() => next.close());
+    await next.start();
+    const recovered = await next.claimRecoverableWorkspaceRuntimes(16, []);
+    expect(recovered).toContainEqual(
+      expect.objectContaining({
+        activationId: f.spec.activationId,
+        creation: { spec: f.spec, authorization: first },
+      }),
+    );
+    expect(await next.beginCreation(f.spec)).toEqual(first);
+    expect(await next.closeAllocation(f.spec.activationId, "workspace")).toEqual({
+      status: "authorized",
+      authorization: first,
+    });
+    await expect(next.beginCreation(f.spec)).rejects.toMatchObject({ code: "state_conflict" });
+    await expect(
+      next.setWorkspaceRuntimeState(f.spec.activationId, "active"),
+    ).rejects.toMatchObject({ code: "ownership_lost" });
+    await expect(
+      f.database
+        .updateTable("workspace_runtimes")
+        .set({ allocation_closed: false })
+        .where("workspace_runtime_id", "=", f.spec.activationId)
+        .execute(),
+    ).rejects.toThrow("cannot change");
+    expect(await next.claimRecoverableWorkspaceRuntimes(16, [])).toEqual([]);
+  });
+
+  it.each([false, true])(
+    "closes unissued allocations without fabricating legacy absence (legacy=%s)",
+    async (legacy) => {
+      const f = await allocationFixture(legacy);
+      expect(await f.repository.closeAllocation(f.spec.activationId, "workspace")).toEqual({
+        status: legacy ? "legacy" : "never_issued",
+      });
+      await expect(f.repository.beginCreation(f.spec)).rejects.toMatchObject({
+        code: "state_conflict",
+      });
+    },
+  );
   it("loads only owned binding pages before applying capacity limits", async () => {
     const database = await fixtureDatabase(),
       instanceId = randomUUID();
@@ -906,6 +1054,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       ],
     });
     const handle: SandboxHandle = {
+      allocation: { createBefore: Date.now() + 300_000 },
       runtimeNodeId: "node-test",
       providerApiVersion: 1,
       providerId: "cubesandbox",
@@ -1202,7 +1351,11 @@ describe("PostgreSQL Sandbox control ownership", () => {
     ).toEqual(identity);
     await database
       .updateTable("development_environments")
-      .set({ runtime_capsule: null, failure_code: "missing_capsule" })
+      .set({
+        runtime_capsule: null,
+        failure_code: "missing_capsule",
+        updated_at: sql`clock_timestamp()-interval '31 seconds'`,
+      })
       .where("id", "=", machineId)
       .execute();
     expect(await repository.claimOrphanedDevelopmentEnvironments(16)).toEqual([

@@ -186,6 +186,21 @@ Pi Session records.
 
 ## Reconciliation and evidence
 
+Managed protocol 6 adds recoverable allocations (ADR-0223). `SandboxProvider`
+receives an immutable PG-issued creation deadline alongside the physical identity.
+Cube creation carries that identity and deadline, and queries/closure use the
+private `/allocations/:allocationId/get|close` POST endpoints. Duplicate creation
+retains its original VM/node and private-ingress token. A timeout is not a proved
+capacity refusal or absence. Closed admission plus node absence is required for
+cleanup completion; endpoint acceptance alone cannot release resources.
+
+`workspace_runtimes`, `development_environments` and independent terminal
+allocations retain their creation configuration until resource deletion. Existing
+capsule adoption remains supported; incomplete creation recovers through its
+recorded allocation. Legacy UNKNOWN rows without this protocol are not relabelled
+as safe. Cubelet metadata loss rejects old-boot creation and retains uncertainty
+when a prior unfinished creator cannot be physically accounted for.
+
 PostgreSQL records physical Workspace runtime identity and control-plane ownership.
 Run Tool bindings are independently fenced and never masquerade as Cube
 identity. The controller periodically reconciles physical runtime state with Cube

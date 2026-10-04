@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type {
   Database,
   DevelopmentEnvironmentState,
@@ -13,7 +14,12 @@ import {
 import type { DevelopmentEnvironmentProfileKey, SandboxPreviewTarget } from "@pi-cloud/protocol";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES } from "@pi-cloud/protocol";
 import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
-import type { SandboxHandle } from "./sandbox-provider.ts";
+import {
+  SANDBOX_CREATION_WINDOW_MS,
+  type SandboxHandle,
+  type SandboxCreateSpec,
+  type SandboxAllocationAuthorization,
+} from "./sandbox-provider.ts";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
 import { databaseTime } from "@pi-cloud/database";
@@ -76,6 +82,7 @@ export type DevelopmentEnvironmentReservation = Readonly<{
   environmentVersionId: string;
   generation: number;
   profileKey: DevelopmentEnvironmentProfileKey;
+  allocationClosed?: boolean;
 }>;
 
 export type DevelopmentEnvironmentReservationResult =
@@ -98,7 +105,8 @@ export type DevelopmentEnvironmentOwnerResult =
 export type RecoverableDevelopmentEnvironment = Readonly<{
   reservation: DevelopmentEnvironmentReservation;
   state: "running" | "paused" | "unknown";
-  runtimeCapsule: string;
+  runtimeCapsule?: string;
+  creation?: AllocationRecovery;
 }>;
 
 export type SandboxPreviewOwnerResult =
@@ -110,10 +118,46 @@ export type RecoverableWorkspaceRuntime = Readonly<{
   sandboxProfileKey: DevelopmentEnvironmentProfileKey;
   activationId: string;
   computeSessionId?: string;
-  runtimeCapsule: string;
+  runtimeCapsule?: string;
+  creation?: AllocationRecovery;
 }>;
 
+export type AllocationRecovery = Readonly<{
+  spec: SandboxCreateSpec;
+  authorization: SandboxAllocationAuthorization;
+}>;
+export type AllocationClosure =
+  | { status: "never_issued" }
+  | { status: "legacy" }
+  | { status: "authorized"; authorization: SandboxAllocationAuthorization };
+export type AllocationKind = "workspace" | "development_environment" | "terminal";
+
+function allocationRecovery(
+  id: string,
+  spec: Record<string, unknown> | null,
+  deadline: Date | null,
+): AllocationRecovery | undefined {
+  if (spec === null || deadline === null) return undefined;
+  if (
+    spec.activationId !== id ||
+    !spec.assignment ||
+    !spec.environment ||
+    !spec.policy ||
+    !spec.workspaceSeed
+  )
+    throw new Error("Stored allocation identity is invalid");
+  return {
+    spec: spec as SandboxCreateSpec,
+    authorization: { createBefore: new Date(deadline).valueOf() },
+  };
+}
+
 export interface WorkspaceRuntimeStateRepository {
+  beginCreation(
+    spec: SandboxCreateSpec,
+    kind?: AllocationKind,
+  ): Promise<SandboxAllocationAuthorization>;
+  closeAllocation(id: string, kind: AllocationKind): Promise<AllocationClosure>;
   claimRecoverableWorkspaceRuntimes(
     limit: number,
     excluded: readonly string[],
@@ -389,6 +433,97 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         "Sandbox control locally confirmed ownership lease expired",
       );
     }
+  }
+
+  async beginCreation(
+    spec: SandboxCreateSpec,
+    kind: AllocationKind = spec.lifetime === "development_environment"
+      ? "development_environment"
+      : "workspace",
+  ): Promise<SandboxAllocationAuthorization> {
+    const encoded = JSON.stringify(spec);
+    if (Buffer.byteLength(encoded) > 256 * 1024)
+      throw new WorkspaceRuntimeStateRepositoryError(
+        "state_conflict",
+        "Allocation specification exceeds its transport budget",
+      );
+    const table = sql.table(
+      kind === "terminal"
+        ? "workspace_terminal_sessions"
+        : kind === "development_environment"
+          ? "development_environments"
+          : "workspace_runtimes",
+    );
+    const key = sql.ref(
+      kind === "terminal"
+        ? "terminal_id"
+        : kind === "development_environment"
+          ? "id"
+          : "workspace_runtime_id",
+    );
+    return this.#database.transaction().execute(async (tx) => {
+      await this.#assertCurrentOwner(tx);
+      const { rows } = await sql<{
+        creation_spec: Record<string, unknown>;
+        creation_not_after: Date;
+      }>`
+        update ${table} set creation_spec=coalesce(creation_spec,${encoded}::jsonb),
+          creation_not_after=coalesce(creation_not_after,clock_timestamp()+${SANDBOX_CREATION_WINDOW_MS}*interval '1 millisecond'),
+          updated_at=clock_timestamp()
+        where ${key}=${spec.activationId}::uuid and tenant_id=${spec.assignment.tenantId}::uuid
+          and workspace_id=${spec.assignment.workspaceId}::uuid and owner_instance_id=${this.#instanceId}::uuid
+          and sandbox_domain_id=${this.#sandboxDomainId} and allocation_protocol=1 and not allocation_closed
+          and state in ('reserved','materializing','provisioning','unknown')
+        returning creation_spec,creation_not_after`.execute(tx);
+      const row = rows[0];
+      if (!row || !isDeepStrictEqual(row.creation_spec, JSON.parse(encoded)))
+        throw new WorkspaceRuntimeStateRepositoryError(
+          "state_conflict",
+          "Allocation is closed, changed or not owned",
+        );
+      return { createBefore: new Date(row.creation_not_after).valueOf() };
+    });
+  }
+
+  async closeAllocation(id: string, kind: AllocationKind): Promise<AllocationClosure> {
+    const table = sql.table(
+      kind === "terminal"
+        ? "workspace_terminal_sessions"
+        : kind === "development_environment"
+          ? "development_environments"
+          : "workspace_runtimes",
+    );
+    const key = sql.ref(
+      kind === "terminal"
+        ? "terminal_id"
+        : kind === "development_environment"
+          ? "id"
+          : "workspace_runtime_id",
+    );
+    return this.#database.transaction().execute(async (tx) => {
+      await this.#assertCurrentOwner(tx);
+      const { rows } = await sql<{
+        allocation_protocol: number | null;
+        creation_not_after: Date | null;
+      }>`
+        update ${table} set allocation_closed=true,
+          state=case when state='released' then state else ${kind === "development_environment" ? "releasing" : "cleaning"} end,
+          updated_at=clock_timestamp()
+        where ${key}=${id}::uuid and owner_instance_id=${this.#instanceId}::uuid and sandbox_domain_id=${this.#sandboxDomainId}
+        returning allocation_protocol,creation_not_after`.execute(tx);
+      const row = rows[0];
+      if (!row)
+        throw new WorkspaceRuntimeStateRepositoryError(
+          "ownership_lost",
+          "Allocation close is not owned",
+        );
+      if (row.allocation_protocol !== 1) return { status: "legacy" };
+      if (!row.creation_not_after) return { status: "never_issued" };
+      return {
+        status: "authorized",
+        authorization: { createBefore: new Date(row.creation_not_after).valueOf() },
+      };
+    });
   }
 
   async reserve(input: WorkspaceRuntimeReservation): Promise<WorkspaceRuntimeReservationResult> {
@@ -1063,6 +1198,9 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("id", "=", environmentId)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "!=", "released")
+        .$if(["running", "paused", "provisioning"].includes(state), (q) =>
+          q.where("allocation_closed", "=", false),
+        )
         .$if(state === "unknown" && detail.handle !== undefined, (query) =>
           query.where((eb) =>
             eb.or([eb("runtime_id", "is", null), eb("runtime_id", "=", detail.handle!.runtimeId)]),
@@ -1161,11 +1299,27 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "environment_version_id",
           "generation",
           "profile_key",
+          "allocation_closed",
         ])
         .where("sandbox_domain_id", "=", this.#sandboxDomainId)
-        .where("state", "=", "unknown")
-        .where("runtime_capsule", "is", null)
-        .where(sql<boolean>`failure_code is distinct from 'persistent_machine_recovery_required'`)
+        .where("state", "in", ["unknown", "releasing"])
+        .where((eb) =>
+          eb.or([
+            eb("allocation_closed", "=", true),
+            eb.and([
+              eb("runtime_capsule", "is", null),
+              eb("creation_spec", "is", null),
+              sql<boolean>`failure_code is distinct from 'persistent_machine_recovery_required'`,
+            ]),
+          ]),
+        )
+        .where("updated_at", "<=", new Date(now.valueOf() - 30_000))
+        .where((eb) =>
+          eb.or([
+            eb("owner_instance_id", "=", this.#instanceId),
+            sql<boolean>`not exists(select 1 from sandbox_control_instances owner where owner.instance_id=development_environments.owner_instance_id and owner.state='ready' and owner.lease_expires_at>clock_timestamp())`,
+          ]),
+        )
         .where("environment_version_id", "is not", null)
         .orderBy("updated_at", "asc")
         .limit(boundedLimit)
@@ -1183,11 +1337,12 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             updated_at: now,
           })
           .where("id", "=", row.id)
-          .where("state", "=", "unknown")
+          .where("state", "in", ["unknown", "releasing"])
           .executeTakeFirstOrThrow();
       }
       return rows.map((row) => ({
         environmentId: row.id,
+        allocationClosed: row.allocation_closed,
         tenantId: row.tenant_id,
         userId: row.owner_user_id,
         projectId: row.project_id,
@@ -1218,9 +1373,17 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "runtime.compute_session_id",
           "runtime.runtime_capsule",
           "runtime.sandbox_profile_key",
+          "runtime.creation_spec",
+          "runtime.creation_not_after",
         ])
         .where("runtime.sandbox_domain_id", "=", this.#sandboxDomainId)
-        .where("runtime.runtime_capsule", "is not", null)
+        .where("runtime.allocation_closed", "=", false)
+        .where((eb) =>
+          eb.or([
+            eb("runtime.runtime_capsule", "is not", null),
+            eb("runtime.creation_spec", "is not", null),
+          ]),
+        )
         .where((eb) =>
           eb.or([
             eb("runtime.failure_code", "is", null),
@@ -1230,7 +1393,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             ]),
           ]),
         )
-        .where("runtime.state", "in", ["active", "warm", "unknown"])
+        .where("runtime.state", "in", ["active", "warm", "unknown", "materializing"])
         .where((eb) =>
           eb.or([
             eb("runtime.owner_instance_id", "=", this.#instanceId),
@@ -1262,7 +1425,16 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           .execute();
       return rows.map((row) => ({
         activationId: row.workspace_runtime_id,
-        runtimeCapsule: row.runtime_capsule!,
+        ...(row.runtime_capsule ? { runtimeCapsule: row.runtime_capsule } : {}),
+        ...(row.creation_spec && row.creation_not_after
+          ? {
+              creation: allocationRecovery(
+                row.workspace_runtime_id,
+                row.creation_spec,
+                row.creation_not_after,
+              )!,
+            }
+          : {}),
         sandboxProfileKey: row.sandbox_profile_key,
         ...(row.compute_session_id ? { computeSessionId: row.compute_session_id } : {}),
       }));
@@ -1294,10 +1466,18 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "environment.profile_key",
           "environment.state",
           "environment.runtime_capsule",
+          "environment.creation_spec",
+          "environment.creation_not_after",
         ])
         .where("environment.sandbox_domain_id", "=", this.#sandboxDomainId)
-        .where("environment.state", "in", ["running", "paused", "unknown"])
-        .where("environment.runtime_capsule", "is not", null)
+        .where("environment.state", "in", ["running", "paused", "unknown", "provisioning"])
+        .where("environment.allocation_closed", "=", false)
+        .where((eb) =>
+          eb.or([
+            eb("environment.runtime_capsule", "is not", null),
+            eb("environment.creation_spec", "is not", null),
+          ]),
+        )
         .where("environment.environment_version_id", "is not", null)
         .where((expression) =>
           expression.or([
@@ -1327,7 +1507,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             updated_at: now,
           })
           .where("id", "=", row.id)
-          .where("runtime_capsule", "=", row.runtime_capsule)
           .executeTakeFirst();
         if (updated.numUpdatedRows !== 1n) continue;
         recovered.push({
@@ -1342,7 +1521,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             profileKey: developmentProfileKey(row.profile_key),
           },
           state: row.state as "running" | "paused" | "unknown",
-          runtimeCapsule: row.runtime_capsule!,
+          ...(row.runtime_capsule ? { runtimeCapsule: row.runtime_capsule } : {}),
+          ...(row.creation_spec && row.creation_not_after
+            ? { creation: allocationRecovery(row.id, row.creation_spec, row.creation_not_after)! }
+            : {}),
         });
       }
       return recovered;
@@ -1465,6 +1647,9 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("workspace_runtime_id", "=", activationId)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "!=", "released")
+        .$if(["active", "warm", "materializing"].includes(state), (q) =>
+          q.where("allocation_closed", "=", false),
+        )
         .$if(state === "unknown" && detail.handle !== undefined, (query) =>
           query.where((eb) =>
             eb.or([eb("runtime_id", "is", null), eb("runtime_id", "=", detail.handle!.runtimeId)]),

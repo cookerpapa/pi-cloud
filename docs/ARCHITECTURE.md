@@ -650,6 +650,28 @@ counts do not double-count a machine borrowed by an Agent or a shared terminal.
 Interactive workflow hostcall channels retain their existing control-plane
 connection lifetime; they are separate from fixed Tool takeover.
 
+VM creation and retirement follow [ADR-0223](adr/0223-recoverable-vm-allocation.md).
+Before calling Cube, PG stores a bounded immutable creation configuration and
+five-minute creation authorization on the existing physical resource record.
+Controller replacement can recover an allocation before its encrypted runtime
+capsule exists. Cube's allocation catalog fixes VM ID, node and node boot before
+dispatch. Node metadata durably admits the exact identity before native creation;
+duplicate requests return its outcome without repeating the workflow. Observation
+queries may repair publication metadata but do not start a missing VM. Explicit
+Create retries remain confined to the same recorded node and boot.
+
+Cleanup atomically marks the PG allocation closed before contacting Cube. Closing
+at the node excludes future creation and joins any accepted creator before
+physical absence can be confirmed. No-handle cleanup uses the allocation catalog,
+not a missing inventory entry. Newer PG completions cannot reopen a closed intent.
+Master allocation receipts and Volume-reference transitions co-commit so retrieving
+an original reply cannot apply its counters again. Confirmed closed receipts may
+expire after their immutable authorization window plus one hour; node boot checks
+and durable clock floors continue rejecting old requests. Uncertain creations and
+unfinished cleanup never expire merely to free capacity. Historical untracked
+allocations retain independent-verification requirements. No VM deletion follows
+ordinary Agent Stop or an ordinary Tool error.
+
 The guest executes the whole fixed Tool, with native edit/write logic and source
 output bounds. Internal reads/writes are not separate RPCs. The trusted Cube
 adapter forwards Pi-native final results to a Worker-boot Kafka reply topic;

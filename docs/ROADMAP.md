@@ -1,5 +1,11 @@
 # Implementation roadmap
 
+## Recoverable VM allocation
+
+- [ ] Deliver [ADR-0223](adr/0223-recoverable-vm-allocation.md): stable physical
+      allocation, queryable creation, irreversible closure and matched recovery
+      acceptance without resetting business data.
+
 ## Paused input after Stop
 
 - [x] Deliver [ADR-0222](adr/0222-paused-inputs-after-stop.md), including durable

@@ -1,5 +1,6 @@
 import * as toolCancellationRetirement from "./172_tool_cancellation_retirement.ts";
 import * as pausedInputs from "./173_paused_inputs.ts";
+import * as recoverableVmAllocation from "./174_recoverable_vm_allocation.ts";
 import * as agentStopBindingRetirement from "./171_agent_stop_binding_retirement.ts";
 import * as fairResourceCleanup from "./169_fair_resource_cleanup.ts";
 import * as orderedBindingClosure from "./170_ordered_binding_closure.ts";
@@ -349,6 +350,7 @@ export const migrationProvider: MigrationProvider = {
       "171_agent_stop_binding_retirement": agentStopBindingRetirement,
       "172_tool_cancellation_retirement": toolCancellationRetirement,
       "173_paused_inputs": pausedInputs,
+      "174_recoverable_vm_allocation": recoverableVmAllocation,
     };
   },
 };

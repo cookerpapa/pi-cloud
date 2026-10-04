@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0223](0223-recoverable-vm-allocation.md) — stable VM creation identity,
+   queryable outcomes, node boot fencing and irreversible allocation closure.
 1. [ADR-0222](0222-paused-inputs-after-stop.md) — durable pending-input pause on Stop,
    independent fresh input and explicit queue/individual continuation.
 1. [ADR-0221](0221-pi-tool-cancellation.md) — Pi-style operation cancellation,

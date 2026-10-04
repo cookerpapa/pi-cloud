@@ -253,6 +253,10 @@ export interface SandboxControlInstanceTable {
 }
 
 export interface SandboxControlWorkspaceRuntimeTable {
+  allocation_protocol: GeneratedNullable<1>;
+  creation_not_after: NullableTimestamp;
+  creation_spec: GeneratedNullable<Record<string, unknown>>;
+  allocation_closed: GeneratedBoolean;
   sandbox_profile_key: Generated<SandboxProfileKey>;
   runtime_capsule: GeneratedNullable<string>;
   compute_session_id: GeneratedNullable<string>;
@@ -322,6 +326,10 @@ export interface SandboxHttpServiceTable {
 }
 
 export interface WorkspaceTerminalSessionTable {
+  allocation_protocol: GeneratedNullable<1>;
+  creation_not_after: NullableTimestamp;
+  creation_spec: GeneratedNullable<Record<string, unknown>>;
+  allocation_closed: GeneratedBoolean;
   terminal_id: string;
   sandbox_domain_id: string;
   owner_instance_id: string;
@@ -343,6 +351,10 @@ export interface WorkspaceTerminalSessionTable {
 }
 
 export interface DevelopmentEnvironmentTable {
+  allocation_protocol: GeneratedNullable<1>;
+  creation_not_after: NullableTimestamp;
+  creation_spec: GeneratedNullable<Record<string, unknown>>;
+  allocation_closed: GeneratedBoolean;
   id: string;
   tenant_id: string;
   owner_user_id: string;

@@ -68,6 +68,7 @@ import {
   SandboxControlError,
   SandboxCreationError,
   type SandboxHandle,
+  type SandboxCreateSpec,
   type SandboxInspection,
   type SandboxProvider,
   type SandboxTerminalSession,
@@ -78,6 +79,8 @@ import {
   type WorkspaceRuntimeStateRepository,
   type DevelopmentEnvironmentReservation,
   type OrphanedWorkspaceRuntime,
+  type AllocationKind,
+  type AllocationRecovery,
 } from "./workspace-runtime-state-repository.ts";
 import type {
   SandboxHttpServiceRegistry,
@@ -481,6 +484,76 @@ export class SandboxController {
     return this.#toolBindings.size;
   }
 
+  async #createPhysical(spec: SandboxCreateSpec, kind?: AllocationKind): Promise<SandboxHandle> {
+    const authorization = await this.#stateRepository.beginCreation(spec, kind);
+    try {
+      return await this.#provider.create(spec, authorization);
+    } catch (error) {
+      if (
+        Date.now() >= authorization.createBefore ||
+        (error instanceof SandboxCreationError &&
+          (error.absenceConfirmed || error.code === "environment_preflight_mismatch"))
+      ) {
+        let absent = false;
+        try {
+          await this.#closePhysical(
+            spec.activationId,
+            spec.assignment,
+            kind ??
+              (spec.lifetime === "development_environment"
+                ? "development_environment"
+                : "workspace"),
+          );
+          absent = true;
+        } catch {
+          /* An earlier same-ID create may already exist. */
+        }
+        throw new SandboxCreationError(error, absent);
+      }
+      throw error;
+    }
+  }
+
+  async #recoverPhysical(candidate: {
+    runtimeCapsule?: string;
+    creation?: AllocationRecovery;
+  }): Promise<SandboxHandle> {
+    if (candidate.runtimeCapsule)
+      return this.#provider.adoptPersistentCapsule!(candidate.runtimeCapsule);
+    if (!candidate.creation) throw new Error("Runtime creation identity is unavailable");
+    return this.#createPhysical(candidate.creation.spec);
+  }
+
+  async #closePhysical(
+    id: string,
+    assignment: ToolSandboxAssignment,
+    kind: AllocationKind,
+    handle?: SandboxHandle,
+    capsule?: string,
+  ): Promise<void> {
+    const intent = await this.#stateRepository.closeAllocation(id, kind);
+    if (intent.status === "never_issued" && !handle && !capsule) return;
+    if (intent.status !== "authorized")
+      throw new SandboxControlError(
+        "cubesandbox_allocation_identity_unavailable",
+        "Allocation requires independent physical verification",
+        false,
+      );
+    if (handle) {
+      if (
+        handle.activationId !== id ||
+        handle.allocation.createBefore !== intent.authorization.createBefore
+      )
+        throw new SandboxControlError(
+          "cubesandbox_allocation_identity_unavailable",
+          "Allocation handle changed",
+          false,
+        );
+      await this.#provider.destroy(handle);
+    } else if (capsule) await this.#provider.destroyPersistentCapsule(capsule, id, assignment);
+    else await this.#provider.destroyRuntime(id, assignment, intent.authorization);
+  }
+
   async recoverPersistentDevelopmentEnvironments(): Promise<number> {
     if (this.#developmentEnvironmentRecovery !== undefined) {
       return this.#developmentEnvironmentRecovery;
@@ -529,7 +602,7 @@ export class SandboxController {
     for (const candidate of recoverable) {
       let handle: SandboxHandle | undefined;
       try {
-        handle = await this.#provider.adoptPersistentCapsule(candidate.runtimeCapsule);
+        handle = await this.#recoverPhysical(candidate);
         const expected = developmentEnvironmentAssignment({
           environmentId: candidate.reservation.environmentId,
           tenantId: candidate.reservation.tenantId,
@@ -598,10 +671,23 @@ export class SandboxController {
           await this.#provider.detachPersistent?.(handle).catch(() => undefined);
         }
         if (error instanceof BindingClosurePending) continue;
+        if (error instanceof SandboxCreationError && error.absenceConfirmed) {
+          await this.#stateRepository.closeAllocation(
+            candidate.reservation.environmentId,
+            "development_environment",
+          );
+          await this.#stateRepository.setDevelopmentEnvironmentState(
+            candidate.reservation.environmentId,
+            "failed",
+            { failureCode: error.code },
+          );
+          this.#admission.release(candidate.reservation.environmentId);
+          continue;
+        }
         await this.#stateRepository
           .setDevelopmentEnvironmentState(candidate.reservation.environmentId, "unknown", {
             failureCode: operationFailureCode(error),
-            runtimeCapsule: candidate.runtimeCapsule,
+            ...(candidate.runtimeCapsule ? { runtimeCapsule: candidate.runtimeCapsule } : {}),
           })
           .catch(() => undefined);
       }
@@ -691,9 +777,11 @@ export class SandboxController {
     for (const candidate of candidates) {
       let handle: SandboxHandle | undefined;
       try {
-        handle = await this.#provider.adoptPersistentCapsule(candidate.runtimeCapsule);
+        handle = await this.#recoverPhysical(candidate);
         if (handle.activationId !== candidate.activationId)
           throw new Error("Recovered runtime identity changed");
+        const capsule = await this.#persistentCapsule(handle);
+        if (!capsule) throw new Error("Recovered runtime capsule is unavailable");
         const workspaceKey =
           workspaceIdentityKey(handle.assignment) +
           (candidate.computeSessionId ? `:compute:${candidate.computeSessionId}` : "");
@@ -726,14 +814,20 @@ export class SandboxController {
         await this.#stateRepository.setWorkspaceRuntimeState(
           candidate.activationId,
           runtime.bindingIds.size ? "active" : "warm",
-          { handle, runtimeCapsule: candidate.runtimeCapsule },
+          { handle, runtimeCapsule: capsule },
         );
         recovered++;
       } catch (error) {
         if (handle) await this.#provider.detachPersistent?.(handle).catch(() => {});
         if (error instanceof BindingClosurePending) continue;
+        if (error instanceof SandboxCreationError && error.absenceConfirmed) {
+          await this.#stateRepository.closeAllocation(candidate.activationId, "workspace");
+          await this.#stateRepository.setWorkspaceRuntimeState(candidate.activationId, "released");
+          this.#admission.release(candidate.activationId);
+          continue;
+        }
         await this.#stateRepository.setWorkspaceRuntimeState(candidate.activationId, "unknown", {
-          runtimeCapsule: candidate.runtimeCapsule,
+          ...(candidate.runtimeCapsule ? { runtimeCapsule: candidate.runtimeCapsule } : {}),
           failureCode: "runtime_recovery_unconfirmed",
           ...(handle ? { handle } : {}),
         });
@@ -751,7 +845,7 @@ export class SandboxController {
   }
 
   async checkHealth(): Promise<void> {
-    // Broker can serve persistent files even while the Cube control plane is
+    // Workspace storage can serve persistent files even while the Cube control plane is
     // unavailable. Cube validates execution readiness during actual creation.
     await this.#stateRepository.checkHealth();
   }
@@ -842,7 +936,7 @@ export class SandboxController {
     try {
       await this.#admission.acquire(request.environmentId, assignment);
       admitted = true;
-      handle = await this.#provider.create({
+      handle = await this.#createPhysical({
         activationId: request.environmentId,
         assignment,
         environment: request.environment,
@@ -891,7 +985,12 @@ export class SandboxController {
       let absent = !admitted || (error instanceof SandboxCreationError && error.absenceConfirmed);
       if (handle !== undefined) {
         try {
-          await this.#provider.destroy(handle);
+          await this.#closePhysical(
+            request.environmentId,
+            assignment,
+            "development_environment",
+            handle,
+          );
           absent = true;
         } catch {
           absent = false;
@@ -945,7 +1044,7 @@ export class SandboxController {
         generation: ownership.reservation.generation,
       });
       try {
-        await this.#provider.destroyRuntime(request.environmentId, assignment);
+        await this.#closePhysical(request.environmentId, assignment, "development_environment");
       } catch (error: unknown) {
         await this.#stateRepository
           .setDevelopmentEnvironmentState(request.environmentId, "unknown", {
@@ -1054,7 +1153,12 @@ export class SandboxController {
     environment.terminal?.disconnect();
     await environment.terminal?.kill().catch(() => undefined);
     try {
-      await this.#provider.destroy(environment.handle);
+      await this.#closePhysical(
+        request.environmentId,
+        environment.assignment,
+        "development_environment",
+        environment.handle,
+      );
       await this.#serviceRegistry?.endRuntime(environment.handle.runtimeId).catch(() => undefined);
     } catch (error: unknown) {
       await this.#stateRepository
@@ -1309,14 +1413,17 @@ export class SandboxController {
       if (workspaceRuntime === undefined) {
         await this.#admission.acquire(terminalId, assignment);
         admitted = true;
-        handle = await this.#provider.create({
-          activationId: terminalId,
-          assignment,
-          environment: input.environment,
-          workspaceSeed: input.workspaceSeed,
-          policy: this.#provider.defaultPolicy,
-          toolRoot: "/workspace",
-        });
+        handle = await this.#createPhysical(
+          {
+            activationId: terminalId,
+            assignment,
+            environment: input.environment,
+            workspaceSeed: input.workspaceSeed,
+            policy: this.#provider.defaultPolicy,
+            toolRoot: "/workspace",
+          },
+          "terminal",
+        );
       } else {
         this.#warm.delete(workspaceRuntime.workspaceKey);
         handle = await this.#materializeElasticRuntime(workspaceRuntime);
@@ -1371,10 +1478,16 @@ export class SandboxController {
           workspaceRuntime.expiresAt = now + this.#warmTtlMs;
           this.#warm.set(workspaceRuntime.workspaceKey, workspaceRuntime);
         }
-      } else if (handle !== undefined) {
-        await this.#provider.destroy(handle).catch(() => undefined);
+      } else {
+        let absent = !admitted;
+        try {
+          await this.#closePhysical(terminalId, assignment, "terminal", handle);
+          absent = true;
+        } catch {
+          /* Retain uncertain allocation and capacity. */
+        }
+        if (admitted && absent) this.#admission.release(terminalId);
       }
-      if (admitted) this.#admission.release(terminalId);
       await this.#stateRepository
         .setTerminalState(terminalId, "unknown", { failureCode: operationFailureCode(error) })
         .catch(() => undefined);
@@ -2320,13 +2433,18 @@ export class SandboxController {
       };
     }
 
+    await this.#stateRepository.setWorkspaceRuntimeState(
+      runtime.physicalActivationId,
+      "cleaning",
+      runtime.handle ? { handle: runtime.handle } : {},
+    );
+    await this.#closePhysical(
+      runtime.physicalActivationId,
+      runtime.spec.assignment,
+      "workspace",
+      runtime.handle,
+    );
     if (runtime.handle !== undefined) {
-      await this.#stateRepository.setWorkspaceRuntimeState(
-        runtime.physicalActivationId,
-        "cleaning",
-        { handle: runtime.handle },
-      );
-      await this.#provider.destroy(runtime.handle);
       await this.#serviceRegistry?.endRuntime(runtime.handle.runtimeId).catch(() => undefined);
     }
     this.#admission.release(runtime.physicalActivationId);
@@ -3028,7 +3146,7 @@ export class SandboxController {
           signal,
         );
         allocationStarted = true;
-        const handle = await this.#provider.create(runtime.spec);
+        const handle = await this.#createPhysical(runtime.spec);
         if (
           !handleMatches(
             handle,
@@ -3041,9 +3159,10 @@ export class SandboxController {
         ) {
           let absent = false;
           try {
-            await this.#provider.destroyRuntime(
+            await this.#closePhysical(
               runtime.physicalActivationId,
               runtime.spec.assignment,
+              "workspace",
             );
             absent = true;
           } catch {}
@@ -3170,14 +3289,13 @@ export class SandboxController {
         this.#warm.delete(key);
       }
       try {
-        if (handle) await this.#provider.destroy(handle);
-        else if (orphan.runtimeCapsule)
-          await this.#provider.destroyPersistentCapsule(
-            orphan.runtimeCapsule,
-            orphan.activationId,
-            orphan.assignment,
-          );
-        else await this.#provider.destroyRuntime(orphan.activationId, orphan.assignment);
+        await this.#closePhysical(
+          orphan.activationId,
+          orphan.assignment,
+          "workspace",
+          handle,
+          orphan.runtimeCapsule,
+        );
         await this.#bindings.releaseAfterPhysicalAbsence(orphan.activationId);
         if (handle) await this.#serviceRegistry?.endRuntime(handle.runtimeId);
         await this.#stateRepository.setWorkspaceRuntimeState(orphan.activationId, "released");
@@ -3205,7 +3323,7 @@ export class SandboxController {
         createExecutionReference(terminal.terminalId, terminal.terminalId, terminal.fencingToken),
       );
       try {
-        await this.#provider.destroyRuntime(terminal.terminalId, assignment);
+        await this.#closePhysical(terminal.terminalId, assignment, "terminal");
         await this.#stateRepository.setTerminalState(terminal.terminalId, "released");
       } catch (error: unknown) {
         await this.#stateRepository
@@ -3225,6 +3343,21 @@ export class SandboxController {
       if (local?.terminal !== undefined) await local.terminal.kill().catch(() => undefined);
       this.#developmentEnvironments.delete(environment.environmentId);
       try {
+        if (environment.allocationClosed) {
+          const assignment = developmentEnvironmentAssignment(environment);
+          await this.#closePhysical(
+            environment.environmentId,
+            assignment,
+            "development_environment",
+            local?.handle,
+          );
+          await this.#stateRepository.setDevelopmentEnvironmentState(
+            environment.environmentId,
+            "released",
+          );
+          this.#admission.release(environment.environmentId);
+          continue;
+        }
         await this.#stateRepository.setDevelopmentEnvironmentState(
           environment.environmentId,
           "unknown",
@@ -3320,7 +3453,7 @@ export class SandboxController {
         return;
       }
       try {
-        await this.#provider.destroy(terminal.handle);
+        await this.#closePhysical(terminalId, terminal.assignment, "terminal", terminal.handle);
         this.#admission.release(terminalId);
         await this.#stateRepository.setTerminalState(terminalId, "released");
       } catch (error: unknown) {
@@ -3341,8 +3474,13 @@ export class SandboxController {
     await this.#stateRepository.setWorkspaceRuntimeState(warm.physicalActivationId, "cleaning", {
       ...(warm.handle ? { handle: warm.handle } : {}),
     });
+    await this.#closePhysical(
+      warm.physicalActivationId,
+      warm.spec.assignment,
+      "workspace",
+      warm.handle,
+    );
     if (warm.handle) {
-      await this.#provider.destroy(warm.handle);
       await this.#serviceRegistry?.endRuntime(warm.handle.runtimeId);
     }
     this.#admission.release(warm.physicalActivationId);
