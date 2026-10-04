@@ -407,7 +407,9 @@ lock so execution, history and branch ordering agree. Their Run/Turn identities,
 text, attachments and frozen settings remain intact. Moves stay within the same
 paused/eligible group. Steer in flight stays held until canonical consumption or
 the target seal resolves it; unconsumed input returns paused after Stop. New
-deliveries to a cancelling target are rejected. See
+deliveries to a cancelling target are rejected. The Worker uses Pi's public
+`clearAllQueues()` before `abort()` so the cancelled Tool's return cannot consume
+still-pending memory input. PG retains the original input for reconciliation. See
 [ADR-0222](adr/0222-paused-inputs-after-stop.md).
 
 Queue display refresh is bounded asynchronous work in the same owner process,

@@ -89,7 +89,7 @@ try {
     async () =>
       (await api.getConversation(session.sessionId)).turns
         .find((t) => t.runId === first.runId)
-        ?.transcript.items.some((i) => i.kind === "tool" && i.status === "running"),
+        ?.transcript?.items.some((i) => i.kind === "tool" && i.status === "running"),
     "active Bash",
   );
   const b = await accept(prompt(`B_${suffix}`)),
