@@ -70,7 +70,10 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   >();
 
   async start(): Promise<void> {}
-  async claimRecoverableWorkspaceRuntimes(): Promise<
+  async claimRecoverableWorkspaceRuntimes(
+    _limit: number,
+    _excluded: readonly string[] = [],
+  ): Promise<
     readonly import("../../src/workspace-runtime-state-repository.ts").RecoverableWorkspaceRuntime[]
   > {
     return [];
@@ -236,9 +239,10 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       environment.state = state;
     }
   }
-  async claimRecoverableDevelopmentEnvironments(): Promise<
-    readonly RecoverableDevelopmentEnvironment[]
-  > {
+  async claimRecoverableDevelopmentEnvironments(
+    _limit: number,
+    _excluded: readonly string[] = [],
+  ): Promise<readonly RecoverableDevelopmentEnvironment[]> {
     return [];
   }
   async claimOrphanedDevelopmentEnvironments(): Promise<

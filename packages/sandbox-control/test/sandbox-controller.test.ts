@@ -537,13 +537,18 @@ describe("provider-backed Sandbox controller", () => {
       throw new BindingClosurePending(new Error("publication unavailable"));
     };
     const state = new InMemoryWorkspaceRuntimeStateRepository();
-    vi.spyOn(state, "claimRecoverableWorkspaceRuntimes").mockResolvedValue([
-      {
-        activationId: handle.activationId,
-        runtimeCapsule: "test-exclusive-machine-capsule",
-        sandboxProfileKey: "standard",
-      },
-    ]);
+    vi.spyOn(state, "claimRecoverableWorkspaceRuntimes").mockImplementation(
+      async (_limit, excluded = []) =>
+        excluded.includes(handle.activationId)
+          ? []
+          : [
+              {
+                activationId: handle.activationId,
+                runtimeCapsule: "test-exclusive-machine-capsule",
+                sandboxProfileKey: "standard",
+              },
+            ],
+    );
     const update = vi.spyOn(state, "setWorkspaceRuntimeState");
     vi.spyOn(fixture.provider, "adoptPersistentCapsule").mockResolvedValue(handle);
     const replacement = testBroker({

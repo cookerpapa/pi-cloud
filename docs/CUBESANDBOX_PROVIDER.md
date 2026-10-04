@@ -53,6 +53,10 @@ is different: old execution outcomes are unknown and are never replayed.
 There is no completed-result GET/cache or PG Tool operation ledger. The bounded
 host adapter may retry final delivery, never execution. The Worker boot mailbox
 resolves the original callback; a new Worker does not revive old promises.
+The v2 boot reply envelope separates native `tool_result` from structured
+`execution_failure` with a code and `not_started`/`unknown` effect status.
+The Harness never classifies infrastructure from Tool stdout/stderr. Pi retains
+its normal Tool error/hooks path and canonical-result ownership (ADR-0225).
 
 The guest receives no model, PG, S3, Kubernetes or control-plane credential.
 The trusted Cube host completion adapter holds only its required PG/S3/Kafka
@@ -80,7 +84,7 @@ are visible; the system never silently switches models or reduces detail on retr
 The guest helper reuses fixed Pi edit/write logic locally and emits native
 `tool_execution_update`/`tool_execution_end` payloads. Source-side bounded output
 does not kill a command just because its preview is full. No full-output archive
-is created. Kafka credentials remain in the trusted adapter, never in Cube.
+is created. Kafka credentials remain in the trusted host adapter, never in the guest.
 Updates take a separate best-effort host HTTP → Projector SSE path, not Kafka
 or Worker. They are collapsed temporary log previews, not durable Tool results.
 
@@ -100,6 +104,14 @@ no per-Run capture, reference object or Workspace settlement head in PostgreSQL.
 Initialization and live reads address the bound Volume directly. Subagents never
 copy this Volume: optional temporary Cubes mount it at the same guest path.
 Machine home Volumes use `/home/user`, not the machine's private system disk.
+
+Managed Volume placement records a hold before the node Create. Cubelet's
+synchronous reference metadata retains unfinished detach and a durable
+incarnation/revision; Master materializes the latest node state. Deletion closes
+new attachment admission and checks existing holds plus confirmed node detach.
+Zero local references alone do not prove physical cleanup. Allocation receipt
+loss/GC cannot erase the node identity needed to reconcile Volume state.
+Unreachable nodes and untracked historical references remain held (ADR-0226).
 
 A Workspace-owned Cube runtime may remain warm for one deployment-bounded TTL.
 Its processes, sockets and PTYs survive only while that exact runtime
@@ -186,7 +198,8 @@ Pi Session records.
 
 ## Reconciliation and evidence
 
-Managed protocol 6 adds recoverable allocations (ADR-0223). `SandboxProvider`
+Managed protocol 7 retains recoverable allocations (ADR-0223) and adds queryable
+Volume reference state (ADR-0226), alongside v2 boot replies. `SandboxProvider`
 receives an immutable PG-issued creation deadline alongside the physical identity.
 Cube creation carries that identity and deadline, and queries/closure use the
 private `/allocations/:allocationId/get|close` POST endpoints. Duplicate creation

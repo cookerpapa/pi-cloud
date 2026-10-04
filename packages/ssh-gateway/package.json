@@ -6,7 +6,7 @@
   "scripts": {
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest --run"
+    "test": "node ../../scripts/run-with-test-postgres.mjs -- vitest --run"
   },
   "dependencies": {
     "@pi-cloud/database": "0.1.0",

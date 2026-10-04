@@ -1,0 +1,24 @@
+{
+  "checkedAt": "2026-10-04T17:18:01.402Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "scope": "Real Gateway/Pi/Luna component acceptance with a 4096-token fixture window; no PG/Kafka execution or production catalog mutation",
+  "requests": [
+    {
+      "purpose": "compaction",
+      "serviceTier": "fast",
+      "model": "gpt-6-luna"
+    },
+    {
+      "purpose": "sampling",
+      "serviceTier": "fast",
+      "model": "gpt-6-luna"
+    }
+  ],
+  "compactions": [
+    {
+      "success": true,
+      "aborted": false
+    }
+  ]
+}

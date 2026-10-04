@@ -79,6 +79,9 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Treat the persistent Cube Volume as the sole Workspace byte authority. Do
   not add a second per-Run archive/checkpoint head without measured recovery
   requirements and a new ADR.
+  Volume deletion closes attachment admission and reconciles versioned node
+  reference state (ADR-0226). Lost allocation replies, zero holder count alone,
+  and replaced node metadata never prove safe Volume deletion.
 - Do not claim exactly-once semantics for arbitrary shell commands or external side effects.
 - Do not run untrusted tools in the control-plane or trusted Agent Runner process.
 - Control Plane owns VM lifecycle, binding admission and recovery. Cubelet owns

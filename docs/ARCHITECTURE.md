@@ -906,6 +906,19 @@ added; see [ADR-0190](adr/0190-gitlab-issue-note-convergence.md).
 
 ## Authorities and scaling
 
+Lifecycle authorization locks the PG controller identity before resource rows
+and rechecks PG expiry before commit, after any resource-lock wait. External Cube
+calls occur after the transaction. Recovered local handles/bindings become
+available only after preparation and required PG writes succeed. A temporary
+adoption failure or missing local handle is not VM-death evidence (ADR-0224).
+
+Cube managed allocation/Volume state uses the existing Cube metadata. Placement
+holds precede creation; deletion closes new attachment admission and reconciles
+versioned node references independently of allocation reply retention. Pending
+detach and missing/replaced node metadata prevent Volume deletion. PG keeps
+product intent and Cube remains the physical/Workspace-byte authority (ADR-0226).
+These lifecycle checks add no per-Tool PG lease lookup or operation ledger.
+
 | Concern | Authority |
 | --- | --- |
 | users, resources, Runs, leases and fences | PostgreSQL |

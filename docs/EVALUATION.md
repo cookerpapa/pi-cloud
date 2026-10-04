@@ -391,3 +391,13 @@ checks exit code 137, an increased container restart count and readiness. Its de
 mode tests Pod replacement; force deletion alone is not proof of SIGKILL.
 Upload acceptance uses the starter fixture profile by default;
 `PI_CLOUD_LIVE_SANDBOX_PROFILE=standard` tests the standard template explicitly.
+
+The October 4 repair regressions are maintained in the owning package suites and
+`npm run cubesandbox:allocation-check` (real Bolt/MySQL plus native paused-delete
+composition). The old review characterizations remain in Git at `c3f5f6bd`.
+`PI_CLOUD_LIVE_ALLOCATION_VOLUME_CHECK=1 node --import tsx scripts/run-live-allocation-volume-check.mjs`
+uses only its own two VMs and Volume, proving paused direct closure, shared bytes,
+delete/admission exclusion and confirmed cleanup. It requires the matched native
+protocol 7 release. `PI_CLOUD_LIVE_FAST_COMPACTION_CHECK=1 node --import tsx scripts/run-live-fast-compaction-check.mjs`
+runs real Luna through the production Gateway/Pi components with a small fixture
+window. The latter does not claim a durable PG/Kafka Run or million-token load.

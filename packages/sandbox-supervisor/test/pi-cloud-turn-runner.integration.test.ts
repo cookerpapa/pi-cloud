@@ -1,3 +1,4 @@
+import { ToolExecutionFailure } from "@pi-cloud/protocol";
 import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server";
 import type { TrustedModelRuntimeLeaseResolver } from "../src/agent-turn-runtime.ts";
 import {
@@ -1322,21 +1323,29 @@ describe("PiCloudTurnRunner integration", () => {
           operationId: command.request.operationId,
           accepted: true,
         }),
-        waitForToolReply: async (request, _signal, toolCallId) => ({
-          type: "tool_execution_end",
-          toolCallId: toolCallId!,
-          toolName: request.toolName,
-          isError: true,
-          result: {
-            content: [
-              {
-                type: "text",
-                text: "cubesandbox_tool_result_unknown: Guest disconnected after dispatch",
-              },
-            ],
-            details: undefined,
-          },
-        }),
+        waitForToolReply: async (request, _signal, toolCallId) => {
+          if (toolFails)
+            throw new ToolExecutionFailure({
+              code: "cubesandbox_tool_result_unknown",
+              message: "Guest disconnected after dispatch",
+              effect: "unknown",
+            });
+          return {
+            type: "tool_execution_end",
+            toolCallId: toolCallId!,
+            toolName: request.toolName,
+            isError: true,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: "cubesandbox_tool_result_unknown: Guest disconnected after dispatch",
+                },
+              ],
+              details: undefined,
+            },
+          };
+        },
         broker,
         runtimeIdentity: {
           supervisorId: "supervisor-development-failure-test",
