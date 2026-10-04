@@ -143,8 +143,34 @@ describe("PostgreSQL Sandbox control ownership", () => {
         recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
       },
     };
-    return { database, repository, instanceId, spec };
+    return { database, repository, instanceId, spec, tenant };
   }
+
+  it("rejects a late terminal activation after its physical allocation was closed", async () => {
+    const f = await allocationFixture();
+    const terminalId = randomUUID();
+    await f.repository.reserveTerminal({
+      terminalId,
+      tenantId: f.tenant.tenantId,
+      userId: f.tenant.ownerUserId,
+      projectId: f.spec.assignment.projectId,
+      workspaceId: f.spec.assignment.workspaceId,
+      sessionId: f.spec.assignment.sessionId,
+    });
+    await f.repository.setTerminalState(terminalId, "materializing");
+    await f.repository.beginCreation({ ...f.spec, activationId: terminalId }, "terminal");
+    await f.repository.closeAllocation(terminalId, "terminal");
+    await expect(f.repository.setTerminalState(terminalId, "active")).rejects.toMatchObject({
+      code: "ownership_lost",
+    });
+    expect(
+      await f.database
+        .selectFrom("workspace_terminal_sessions")
+        .select(["state", "allocation_closed"])
+        .where("terminal_id", "=", terminalId)
+        .executeTakeFirst(),
+    ).toEqual({ state: "cleaning", allocation_closed: true });
+  });
 
   it("retains immutable allocation authorization and recovers uncapsuled creation after owner replacement", async () => {
     const f = await allocationFixture();

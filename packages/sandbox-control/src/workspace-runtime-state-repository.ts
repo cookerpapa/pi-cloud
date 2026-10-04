@@ -1553,6 +1553,9 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("terminal_id", "=", terminalId)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "!=", "released")
+        .$if(["materializing", "active"].includes(state), (query) =>
+          query.where("allocation_closed", "=", false),
+        )
         .executeTakeFirst();
     });
     if (updated.numUpdatedRows !== 1n) {
