@@ -19,13 +19,13 @@ const id = n => "10000000-0000-4000-8000-"+String(n).padStart(12,"0");
 window.queueId=id;
 window.actions=[];window.snapshots=[];window.restored=[];
 let generation=0, receipts=new Map();
-const reset = (count=3) => ({sessionId:id(90),revision:1,viewVersion:"1",afterPosition:0,hasMore:false,activeTurnId:id(99),items:Array.from({length:count},(_,i)=>({text:["A","B","C"][i]??"Input "+(i+1),i})).map(({text,i})=>({turnId:id(i+1),runId:id(i+11),text,mailboxPosition:i+1,acceptedAt:"2026-09-26T00:00:00.000Z",status:"queued"}))});
+const reset = (count=3) => ({sessionId:id(90),revision:1,viewVersion:"1",afterPosition:0,hasMore:false,hasPausedInputs:false,activeTurnId:id(99),items:Array.from({length:count},(_,i)=>({text:["A","B","C"][i]??"Input "+(i+1),i})).map(({text,i})=>({turnId:id(i+1),runId:id(i+11),text,mailboxPosition:i+1,acceptedAt:"2026-09-26T00:00:00.000Z",status:"queued",paused:false}))});
 window.queue=reset();window.queueReads=0;
 const pageOf = (page) => {
   if(page && window.conflictPage){window.conflictPage=false;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);}
   if(page && page.viewVersion!==window.queue.viewVersion)throw new PiCloudApiError(409,"conflict","page changed");
   const afterPosition=page?.afterPosition??0, items=window.queue.items.filter(i=>i.mailboxPosition>afterPosition);
-  return {...structuredClone(window.queue),afterPosition,hasMore:items.length>20,items:structuredClone(items.slice(0,20))};
+  return {...structuredClone(window.queue),hasPausedInputs:window.queue.items.some(i=>i.paused),afterPosition,hasMore:items.length>20,items:structuredClone(items.slice(0,20))};
 };
 const api = {
   async getInputQueue(_session,_signal,page) {
@@ -44,10 +44,21 @@ const api = {
     if(!item)throw new PiCloudApiError(409,"conflict","started");
     if(action.action==="edit")item.text=action.text;
     if(action.action==="cancel")items.splice(index,1);
+    if(action.action==="send"){item.paused=false;items.push(...items.splice(index,1));}
     if(action.action==="move"){const other=index+(action.direction==="up"?-1:1);[items[index],items[other]]=[items[other],items[index]];}
     if(action.action==="steer"){if(action.text!==undefined)item.text=action.text;item.status="steering";}
     window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);
     window.queue.items.forEach((item,i)=>item.mailboxPosition=i+1);
+    const result={queue:pageOf(),replayed:false};receipts.set(key,result);
+    if(window.loseReply){window.loseReply=false;throw new TypeError("reply lost");}
+    return result;
+  },
+  async resumeInputQueue(sessionId,action,key){
+    window.actions.push({sessionId,action:{...action,action:"resume"},key});
+    if(receipts.has(key))return {...structuredClone(receipts.get(key)),replayed:true};
+    if(action.revision!==window.queue.revision)throw new PiCloudApiError(409,"conflict","stale");
+    window.queue.items.forEach(item=>item.paused=false);
+    window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);
     const result={queue:pageOf(),replayed:false};receipts.set(key,result);
     if(window.loseReply){window.loseReply=false;throw new TypeError("reply lost");}
     return result;
@@ -208,6 +219,42 @@ try {
       ),
       true,
     );
+    await page.evaluate("window.renderQueue()");
+    await page.waitFor("document.querySelectorAll('.pending-input-row').length===3");
+    await click(row(2), "编辑");
+    await draft("draft before Stop");
+    await page.evaluate(
+      "window.queue.items.forEach(i=>i.paused=true);window.queue.activeTurnId=null;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue()",
+    );
+    await page.waitFor(
+      "document.querySelector('.pending-input-queue header').textContent.includes('继续队列')",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.pending-input-editor textarea').value"),
+      "draft before Stop",
+    );
+    await click(".pending-input-editor", "保存");
+    await page.waitFor(
+      "!document.querySelector('.pending-input-editor') && window.queue.items[1].text==='draft before Stop'",
+    );
+    await click(row(3), "↑");
+    await page.waitFor("window.queue.items[1].text==='C'");
+    await click(row(1), "发送");
+    await page.waitFor(
+      "window.queue.items.at(-1).paused===false && document.querySelectorAll('.pending-input-status').length===2",
+    );
+    await page.evaluate("window.refreshQueue()");
+    await page.wait(100);
+    assert.equal(
+      await page.evaluate("document.querySelectorAll('.pending-input-status').length"),
+      2,
+    );
+    await page.evaluate("window.loseReply=true");
+    await click(".pending-input-queue header", "继续队列");
+    await page.waitFor("document.querySelectorAll('.pending-input-status').length===0");
+    const resumed = await page.evaluate("window.actions.filter(a=>a.action.action==='resume')");
+    assert.equal(resumed.length, 2);
+    assert.equal(resumed[0].key, resumed[1].key);
     await page.evaluate("window.renderQueue(true,45)");
     await page.waitFor("document.querySelectorAll('.pending-input-row').length===20");
     await click(".pending-input-queue", "显示更多");
@@ -244,7 +291,7 @@ try {
     );
   });
   console.log(
-    "browser_queue_check_passed no_poll edit order cancel edited_steer lost_reply draft_retention stale_read read_recovery viewer mobile pagination page_conflict late_page_edit",
+    "browser_queue_check_passed no_poll edit order cancel edited_steer lost_reply draft_retention stale_read read_recovery viewer mobile pagination page_conflict late_page_edit paused_draft send_one resume_retry",
   );
 } finally {
   await server.close();

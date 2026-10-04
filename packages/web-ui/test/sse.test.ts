@@ -25,6 +25,7 @@ it("parses a large pushed input queue without consuming transcript sequence", as
     afterPosition: 0,
     hasMore: false,
     activeTurnId: null,
+    hasPausedInputs: false,
     items: [
       {
         turnId: TURN_ID,
@@ -33,6 +34,7 @@ it("parses a large pushed input queue without consuming transcript sequence", as
         mailboxPosition: 1,
         acceptedAt: CREATED_AT,
         status: "queued" as const,
+        paused: false,
       },
     ],
   };

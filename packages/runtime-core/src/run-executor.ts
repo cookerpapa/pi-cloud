@@ -584,6 +584,7 @@ export class RunExecutor {
         // Parameters prevent a generic prepared plan from proving that match.
         .where(sql<boolean>`candidate.state = 'queued' and candidate.ready_at is not null`)
         .where("candidate.queued_steer_id", "is", null)
+        .where("candidate.input_paused", "=", false)
         .where("candidate_session.state", "in", ["cold", "idle"])
         .where(this.#familyAdmission("candidate_session", admission))
         .where(this.#taskOwnerAvailable("candidate"))
@@ -940,7 +941,7 @@ export class RunExecutor {
         fencing_token=${ref.fencingToken},last_event_seq=${Math.max(0, Number(r.nextEventSeq) - 1)},
         output_publication=${JSON.stringify(claim.admission.publication)}::jsonb,native_output_drained=false
         where tenant_id=${r.tenantId}::uuid and id=${r.runId}::uuid
-          and state='queued' and ready_at is not null and queued_steer_id is null
+          and state='queued' and ready_at is not null and queued_steer_id is null and not input_paused
           and lease_id is null and row_version=${runVersion}::bigint
           and exists(select 1 from session_leases l where l.lease_id=${ref.leaseId}::uuid
             and l.tenant_id=${r.tenantId}::uuid and l.pi_session_id=${r.piSessionId}

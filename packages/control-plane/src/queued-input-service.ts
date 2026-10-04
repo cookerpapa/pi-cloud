@@ -8,12 +8,13 @@ import {
   type InputQueueResource,
   type QueuedInputAction,
   type QueuedInputActionResult,
+  type ResumeInputQueue,
 } from "@pi-cloud/protocol";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import { parseUserUploads, reviewedModel, assertUserInputBudget } from "@pi-cloud/protocol";
 import { bindInputUploads } from "./workspace-upload-service.ts";
 import type { TurnSteeringService } from "./turn-steering-service.ts";
-import { holdQueuedSteer, lockSteerTarget } from "./queued-steer.ts";
+import { acceptsSteer, holdQueuedSteer, lockSteerTarget } from "./queued-steer.ts";
 
 function conflict(): never {
   throw new ControlPlaneStoreError(
@@ -287,6 +288,7 @@ export class QueuedInputService {
         "r.turn_id",
         "r.mailbox_position",
         "r.queued_steer_id",
+        "r.input_paused",
         "r.state",
         "r.lease_id",
         "t.state as turnState",
@@ -314,6 +316,102 @@ export class QueuedInputService {
       .where("id", "=", sessionId)
       .execute();
     await advanceLaneReadiness(tx, tenantId, sessionId);
+  }
+
+  /** Positions order executed history too. Resumed intents join the fresh tail;
+   * keep sorting and updates in PG even when the paused backlog spans pages. */
+  async #resumeInputs(
+    tx: Transaction<Database>,
+    tenantId: string,
+    sessionId: string,
+    runId?: string,
+  ): Promise<{ runId: string; turnId: string }> {
+    const { rows } = await sql<{ runId: string | null; turnId: string | null }>`
+      with locked as materialized (
+        select id,turn_id,mailbox_position from runs
+        where tenant_id=${tenantId}::uuid and session_id=${sessionId}::uuid
+          and state='queued' and lease_id is null and input_paused
+          ${runId ? sql`and id=${runId}::uuid` : sql``}
+        order by mailbox_position for no key update nowait
+      ), ordered as (
+        select id,row_number() over(order by mailbox_position)-1 as ordinal from locked
+      ), resumed as (
+        update runs r set input_paused=false,ready_at=null,
+          mailbox_position=s.next_mailbox_position+o.ordinal,
+          row_version=r.row_version+1,updated_at=clock_timestamp()
+        from ordered o,sessions s where r.id=o.id and s.id=${sessionId}::uuid
+          and s.tenant_id=${tenantId}::uuid returning r.id
+      ), advanced as (
+        update sessions set next_mailbox_position=next_mailbox_position+(select count(*) from resumed)
+        where tenant_id=${tenantId}::uuid and id=${sessionId}::uuid returning id
+      ) select (select id from locked order by mailbox_position limit 1) as "runId",
+        (select turn_id from locked order by mailbox_position limit 1) as "turnId"
+      from advanced`.execute(tx);
+    const anchor = rows[0];
+    if (!anchor?.runId || !anchor.turnId) conflict();
+    return { runId: anchor.runId, turnId: anchor.turnId };
+  }
+
+  async resume(
+    tenantId: string,
+    sessionId: string,
+    idempotencyKey: string,
+    request: ResumeInputQueue,
+  ): Promise<QueuedInputActionResult> {
+    const hash = createHash("sha256")
+      .update(JSON.stringify({ sessionId, action: "resume", revision: request.revision }))
+      .digest("hex");
+    let replayed: boolean;
+    try {
+      replayed = await this.#database.transaction().execute(async (tx) => {
+        const session = await this.#lockSession(tx, tenantId, sessionId);
+        const previous = await tx
+          .selectFrom("turn_control_requests")
+          .select(["kind", "request_sha256"])
+          .where("tenant_id", "=", tenantId)
+          .where("session_id", "=", sessionId)
+          .where("idempotency_key", "=", idempotencyKey)
+          .executeTakeFirst();
+        if (previous) {
+          if (previous.kind !== "queue" || previous.request_sha256 !== hash)
+            throw new ControlPlaneStoreError(
+              "idempotency_conflict",
+              "Idempotency-Key was used for another queue operation",
+            );
+          return true;
+        }
+        if (number(session.row_version) !== request.revision) conflict();
+        const anchor = await this.#resumeInputs(tx, tenantId, sessionId);
+        await tx
+          .insertInto("turn_control_requests")
+          .values({
+            id: randomUUID(),
+            tenant_id: tenantId,
+            session_id: sessionId,
+            turn_id: anchor.turnId,
+            target_run_id: anchor.runId,
+            idempotency_key: idempotencyKey,
+            kind: "queue",
+            state: "completed",
+            request_sha256: hash,
+            payload: { action: "resume" },
+            attempts: 0,
+            available_at: sql`clock_timestamp()`,
+            dispatched_at: null,
+            acknowledged_at: null,
+            completed_at: sql`clock_timestamp()`,
+            failure_code: null,
+          })
+          .execute();
+        await this.#changed(tx, tenantId, sessionId);
+        return false;
+      });
+    } catch (error) {
+      if (busy(error)) conflict();
+      throw error;
+    }
+    this.notifySession(tenantId, sessionId);
+    return { queue: await this.list(tenantId, sessionId), replayed };
   }
 
   async #cancel(
@@ -376,7 +474,7 @@ export class QueuedInputService {
           ? { action: "move", revision: request.revision, direction: request.direction }
           : request.action === "steer"
             ? { action: "steer", revision: request.revision, targetTurnId: request.targetTurnId }
-            : { action: "cancel", revision: request.revision };
+            : { action: request.action, revision: request.revision };
     if (action.action === "steer" && request.action === "steer" && request.text !== undefined)
       action.text = request.text.trim();
     const hash = createHash("sha256")
@@ -470,11 +568,14 @@ export class QueuedInputService {
             .execute();
         } else if (action.action === "cancel") {
           await this.#cancel(tx, tenantId, source.id, turnId, "queued_input_cancelled");
+        } else if (action.action === "send") {
+          if (!source.input_paused) conflict();
+          await this.#resumeInputs(tx, tenantId, sessionId, source.id);
         } else if (action.action === "move") {
           const other = await tx
             .selectFrom("runs as r")
             .innerJoin("turns as t", "t.id", "r.turn_id")
-            .select(["r.id", "r.mailbox_position", "r.queued_steer_id"])
+            .select(["r.id", "r.mailbox_position", "r.queued_steer_id", "r.input_paused"])
             .where("r.tenant_id", "=", tenantId)
             .where("r.session_id", "=", sessionId)
             .where(sql<boolean>`r.state='queued'`)
@@ -489,7 +590,12 @@ export class QueuedInputService {
             .forNoKeyUpdate(["r", "t"])
             .noWait()
             .executeTakeFirst();
-          if (!other || other.queued_steer_id !== null) conflict();
+          if (
+            !other ||
+            other.queued_steer_id !== null ||
+            other.input_paused !== source.input_paused
+          )
+            conflict();
           await sql`update runs set mailbox_position=case when id=${source.id}::uuid then ${other.mailbox_position}::bigint else ${source.mailbox_position}::bigint end,
             ready_at=null,row_version=row_version+1,updated_at=clock_timestamp()
             where tenant_id=${tenantId}::uuid and id in (${source.id}::uuid,${other.id}::uuid)`.execute(
@@ -591,6 +697,7 @@ export class QueuedInputService {
           eb("target.output_sealed_at", "is not", null),
           eb.and([
             eb("target.state", "=", "running"),
+            acceptsSteer(sql.ref("target.id")),
             eb("c.state", "in", ["pending", "dispatched"]),
             eb("c.available_at", "<=", sql<Date>`clock_timestamp()`),
             sql<boolean>`not (${earlierDeliveryPending})`,
@@ -633,7 +740,8 @@ export class QueuedInputService {
       .select([
         sql<number>`count(*)::int`.as("held"),
         sql<string | null>`extract(epoch from (min(c.available_at) filter (
-          where target.state='running' and c.state in ('pending','dispatched') and not (${earlierDeliveryPending})
+          where target.state='running' and ${acceptsSteer(sql.ref("target.id"))}
+            and c.state in ('pending','dispatched') and not (${earlierDeliveryPending})
         )-clock_timestamp()))*1000`.as("delay"),
       ])
       .where("r.tenant_id", "=", scope.tenantId)
@@ -689,6 +797,7 @@ export class QueuedInputService {
           "c.state",
           "target.output_sealed_at",
           "target.state as targetState",
+          acceptsSteer(sql.ref("target.id")).as("acceptsSteer"),
           consumedInput.as("consumed"),
           earlierDeliveryPending.as("earlierPending"),
         ])
@@ -732,6 +841,7 @@ export class QueuedInputService {
         target.state === "completed" ||
         target.state === "acknowledged" ||
         target.earlierPending ||
+        !target.acceptsSteer ||
         session.pruned_at !== null ||
         target.targetState !== "running"
       )

@@ -57,6 +57,28 @@ it("accepts committed permanent deletion with an empty 204 response", async () =
 });
 
 describe("tenant-aware browser API", () => {
+  it("resumes the persisted queue with a revision and retry identity", async () => {
+    const sessionId = "10000000-0000-4000-8000-000000000001";
+    const queue = {
+      sessionId,
+      revision: 8,
+      viewVersion: "20",
+      afterPosition: 0,
+      hasMore: false,
+      hasPausedInputs: false,
+      activeTurnId: null,
+      items: [],
+    };
+    const transport = vi.fn<typeof fetch>(async (input, init) => {
+      expect(input).toBe(`/v1/sessions/${sessionId}/queued-inputs/resume`);
+      expect(new Headers(init?.headers).get("idempotency-key")).toBe("resume-queue");
+      expect(JSON.parse(String(init?.body))).toEqual({ revision: 7 });
+      return Response.json({ queue, replayed: true });
+    });
+    expect(
+      await new PiCloudApi(transport).resumeInputQueue(sessionId, { revision: 7 }, "resume-queue"),
+    ).toEqual({ queue, replayed: true });
+  });
   it("sends versioned queue actions with their stable idempotency key", async () => {
     const sessionId = "10000000-0000-4000-8000-000000000001";
     const turnId = "20000000-0000-4000-8000-000000000001";
@@ -67,6 +89,7 @@ describe("tenant-aware browser API", () => {
       afterPosition: 0,
       hasMore: false,
       activeTurnId: turnId,
+      hasPausedInputs: false,
       items: [],
     };
     const action = { action: "steer" as const, revision: 7, targetTurnId: turnId, text: "edited" };

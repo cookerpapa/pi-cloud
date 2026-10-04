@@ -1163,6 +1163,34 @@
       "file": "test/trusted-remote-tools.test.ts",
       "test": "forwards cancellation through the validated adapter and waits for its original final reply",
       "invariant": "Runtime normalization must retain the cancellation publisher and settlement budget; transport acceptance never replaces the final result."
+    },
+    {
+      "id": "queue-stop-durable-pause",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "pauses Stop's existing inputs durably while new input and explicit sends retain execution history order",
+      "invariant": "Stop is durable; new input bypasses paused intents and explicit continuation preserves execution/history order and frozen attachments."
+    },
+    {
+      "id": "queue-stop-steer-unconsumed",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "settles Stop's in-flight Steer by canonical consumption (consumed=false)",
+      "invariant": "An unconsumed Steer survives Stop as a paused input and cannot execute after service reconstruction."
+    },
+    {
+      "id": "queue-stop-steer-consumed",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "settles Stop's in-flight Steer by canonical consumption (consumed=true)",
+      "invariant": "Canonical consumption wins a Stop race; consumed input is not restored or executed again."
+    },
+    {
+      "id": "queue-resume-retry-isolation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "continues all paused pages in their edited order with stale and replayed commands isolated",
+      "invariant": "Server-side continuation covers all pages; stale commands conflict and old retries cannot undo a later pause."
     }
   ]
 }

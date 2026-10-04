@@ -350,6 +350,13 @@ the measurements; this is not fleet capacity or live provider latency evidence.
 
 ### Agent Stop and controller replacement
 
+Run `PI_CLOUD_LIVE_PAUSED_QUEUE_CHECK=1 node --import tsx scripts/run-live-paused-input-check.mjs`
+against schema 173 and matched app images for Luna/Cube paused-input acceptance.
+It checks Stop, unconsumed Steer, browser reload, Worker replacement, independent
+new input, edited individual Send, Continue queue and executed history order.
+Worker replacement refuses unrelated pending/active work. The fixture removes
+its owned Sessions/Workspace; credentials and transcript content are not reports.
+
 Run `PI_CLOUD_LIVE_AGENT_STOP_CHECK=1 node --import tsx scripts/run-live-agent-stop-check.mjs`
 against the matched deployment to test two Luna Sessions sharing one VM. Chat
 Stop cancels the foreground group and retains partial output. A completed

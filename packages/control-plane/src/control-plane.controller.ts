@@ -93,7 +93,7 @@ import { WorkspaceUploadService } from "./workspace-upload-service.ts";
 import { readWebSessionCookie, WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { QueuedInputService } from "./queued-input-service.ts";
-import { parseQueuedInputAction } from "@pi-cloud/protocol";
+import { parseQueuedInputAction, parseResumeInputQueue } from "@pi-cloud/protocol";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
@@ -922,6 +922,23 @@ export class ControlPlaneController {
       parseUuidPathParameter(turnId, "turnId"),
       parseIdempotencyKey(key),
       parseQueuedInputAction(body),
+    );
+  }
+
+  @Post("sessions/:sessionId/queued-inputs/resume")
+  @HttpCode(200)
+  async resumeInputQueue(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionId: unknown,
+    @Headers("idempotency-key") key: unknown,
+    @Body() body: unknown,
+  ) {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    return this.queuedInputs.resume(
+      identity.tenantId,
+      parseUuidPathParameter(sessionId, "sessionId"),
+      parseIdempotencyKey(key),
+      parseResumeInputQueue(body),
     );
   }
 

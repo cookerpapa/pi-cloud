@@ -8,6 +8,8 @@ import { useI18n } from "./i18n.tsx";
 type Action =
   | { action: "edit"; text: string }
   | { action: "cancel" }
+  | { action: "send" }
+  | { action: "resume" }
   | { action: "move"; direction: "up" | "down" }
   | { action: "steer"; text?: string };
 
@@ -71,6 +73,7 @@ export function PendingInputQueue({
       const same =
         current.current?.revision === next.revision &&
         current.current.activeTurnId === next.activeTurnId &&
+        current.current.hasPausedInputs === next.hasPausedInputs &&
         current.current.hasMore === next.hasMore &&
         current.current.items.length === next.items.length &&
         current.current.items.every((item, index) => {
@@ -80,6 +83,7 @@ export function PendingInputQueue({
             item.text === other.text &&
             JSON.stringify(item.uploads ?? []) === JSON.stringify(other.uploads ?? []) &&
             item.status === other.status &&
+            item.paused === other.paused &&
             item.mailboxPosition === other.mailboxPosition
           );
         });
@@ -170,7 +174,7 @@ export function PendingInputQueue({
       setError("queue.noActive");
       return false;
     }
-    const request: QueuedInputAction =
+    const request: QueuedInputAction | { action: "resume"; revision: number } =
       action.action === "steer"
         ? { ...action, revision: snapshot.revision, targetTurnId: snapshot.activeTurnId! }
         : { ...action, revision: snapshot.revision };
@@ -181,14 +185,18 @@ export function PendingInputQueue({
     setBusy(turnId);
     setError(null);
     let succeeded = false;
+    const send = () =>
+      request.action === "resume"
+        ? api.resumeInputQueue(sessionId, { revision: request.revision }, key)
+        : api.mutateQueuedInput(sessionId, turnId, request, key);
     try {
       let result;
       try {
-        result = await api.mutateQueuedInput(sessionId, turnId, request, key);
+        result = await send();
       } catch (first) {
         if (first instanceof PiCloudApiError && first.status < 500) throw first;
         // The same persisted command identity resolves a lost response safely.
-        result = await api.mutateQueuedInput(sessionId, turnId, request, key);
+        result = await send();
       }
       apply(result.queue);
       succeeded = true;
@@ -221,7 +229,16 @@ export function PendingInputQueue({
           {queue?.items.length ?? 0}
           {queue?.hasMore ? "+" : ""}
         </span>
-        <small>{t("queue.hint")}</small>
+        <small>{t(queue?.hasPausedInputs ? "queue.pausedHint" : "queue.hint")}</small>
+        {queue?.hasPausedInputs ? (
+          <button
+            type="button"
+            disabled={!canMutate || busy !== null}
+            onClick={() => void perform("queue", { action: "resume" })}
+          >
+            {t("queue.resume")}
+          </button>
+        ) : null}
       </header>
       {error ? (
         <p role="alert" className="pending-input-error">
@@ -245,11 +262,23 @@ export function PendingInputQueue({
                 {item.text.length > 240 ? "…" : ""}
               </p>
               <UploadCards api={api} uploads={item.uploads ?? []} />
+              {item.paused ? (
+                <small className="pending-input-status">{t("queue.paused")}</small>
+              ) : null}
               {item.status === "steering" ? (
                 <small className="pending-input-status">{t("queue.steering")}</small>
               ) : null}
             </div>
             <div className="pending-input-actions">
+              {item.paused ? (
+                <button
+                  type="button"
+                  disabled={!canMutate || busy !== null || item.status !== "queued"}
+                  onClick={() => void perform(item.turnId, { action: "send" })}
+                >
+                  {t("queue.send")}
+                </button>
+              ) : null}
               <button
                 type="button"
                 title={t("queue.up")}
@@ -259,7 +288,8 @@ export function PendingInputQueue({
                   busy !== null ||
                   index === 0 ||
                   item.status !== "queued" ||
-                  queue.items[index - 1]?.status !== "queued"
+                  queue.items[index - 1]?.status !== "queued" ||
+                  item.paused !== queue.items[index - 1]?.paused
                 }
                 onClick={() => void perform(item.turnId, { action: "move", direction: "up" })}
               >
@@ -274,7 +304,8 @@ export function PendingInputQueue({
                   busy !== null ||
                   (index === queue.items.length - 1 && !queue.hasMore) ||
                   item.status !== "queued" ||
-                  (index < queue.items.length - 1 && queue.items[index + 1]?.status !== "queued")
+                  (index < queue.items.length - 1 && queue.items[index + 1]?.status !== "queued") ||
+                  (index < queue.items.length - 1 && item.paused !== queue.items[index + 1]?.paused)
                 }
                 onClick={() => void perform(item.turnId, { action: "move", direction: "down" })}
               >

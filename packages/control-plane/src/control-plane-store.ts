@@ -1936,6 +1936,29 @@ export class ControlPlaneStore {
         throw new ControlPlaneStoreError("conflict", "Turn cancellation is already in progress");
       }
 
+      // This Session lock serializes Stop with acceptance/queue edits. A replay
+      // returned above must not pause inputs submitted after the original Stop.
+      await transaction
+        .updateTable("runs")
+        .set({
+          input_paused: true,
+          ready_at: null,
+          row_version: sql`row_version + 1`,
+          updated_at: sql`clock_timestamp()`,
+        })
+        .where("tenant_id", "=", this.#tenantId)
+        .where("session_id", "=", sessionId)
+        .where("state", "=", "queued")
+        .where("lease_id", "is", null)
+        .where("input_paused", "=", false)
+        .execute();
+      await transaction
+        .updateTable("sessions")
+        .set({ row_version: sql`row_version + 1`, updated_at: sql`clock_timestamp()` })
+        .where("tenant_id", "=", this.#tenantId)
+        .where("id", "=", sessionId)
+        .execute();
+
       const controlRequest = await transaction
         .insertInto("turn_control_requests")
         .values({

@@ -1,6 +1,12 @@
 import type { Database } from "@pi-cloud/database";
-import { sql, type Transaction } from "kysely";
+import { sql, type RawBuilder, type Transaction } from "kysely";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
+
+export function acceptsSteer(runId: RawBuilder<unknown>): RawBuilder<boolean> {
+  return sql<boolean>`not exists(select 1 from turn_control_requests stop
+    where stop.target_run_id=${runId} and stop.kind='cancel'
+      and stop.state in ('pending','dispatched','acknowledged'))`;
+}
 
 /** Caller holds the Session row; NOWAIT avoids inversion with Run settlement. */
 export async function lockSteerTarget(
@@ -39,6 +45,7 @@ export async function lockSteerTarget(
     .where("r.turn_id", "=", turnId)
     .where("r.state", "=", "running")
     .where("target_turn.state", "=", "running")
+    .where(acceptsSteer(sql.ref("r.id")))
     .forNoKeyUpdate(["r", "target_turn"])
     .noWait()
     .executeTakeFirst();

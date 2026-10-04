@@ -396,6 +396,20 @@ snapshots independently of the existing optimistic edit `revision`, including
 Run transitions that change queue membership. Queue changes do not restart the
 execution SSE stream. Optimistic conflicts preserve the editing draft.
 
+Chat Stop pauses existing unowned input intents in the same PG transaction as
+cancellation admission. `runs.input_paused` keeps them out of readiness/admission
+and excludes them as predecessors of newly sent input. Queue snapshots expose
+`hasPausedInputs` and per-item `paused`; refresh or Worker replacement cannot
+clear these flags. Send resumes one paused item; Continue queue resumes all
+paused items across pages. Both use optimistic revision and existing idempotency
+receipts. Resumed intents receive fresh tail mailbox positions under the Session
+lock so execution, history and branch ordering agree. Their Run/Turn identities,
+text, attachments and frozen settings remain intact. Moves stay within the same
+paused/eligible group. Steer in flight stays held until canonical consumption or
+the target seal resolves it; unconsumed input returns paused after Stop. New
+deliveries to a cancelling target are rejected. See
+[ADR-0222](adr/0222-paused-inputs-after-stop.md).
+
 Queue display refresh is bounded asynchronous work in the same owner process,
 outside the ordered Projector handler. Two read slots and a separate two-connection
 pool isolate it from authority SQL; server statements have a five-second deadline.

@@ -23,8 +23,9 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] Discuss queued follow-up/steer behavior after Stop. The owner requested
-      discussion; this slice preserves current queue semantics.
+- [ ] Implement [ADR-0222](adr/0222-paused-inputs-after-stop.md): preserve and
+      pause pending inputs on Stop, allow independent new input and explicit
+      individual/queue continuation, and verify consumption races and restart.
 
 [ADR-0221](adr/0221-pi-tool-cancellation.md) is implemented and deployed: ordered
 operation cancellation, original native Tool settlement, bounded UNKNOWN and

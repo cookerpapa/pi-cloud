@@ -2,6 +2,7 @@ import type { Database } from "@pi-cloud/database";
 import { parseUserUploads } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import { TurnSteerBackendError, type TurnSteerBackend } from "./turn-steer.ts";
+import { acceptsSteer } from "./queued-steer.ts";
 
 function payloadString(payload: Record<string, unknown>, property: string): string {
   const value = payload[property];
@@ -35,6 +36,7 @@ export class TurnSteeringService {
       .whereRef("source.tenant_id", "=", "c.tenant_id")
       .whereRef("source.session_id", "=", "c.session_id")
       .where("source.state", "=", "queued")
+      .where(acceptsSteer(sql.ref("c.target_run_id")))
       .executeTakeFirst();
     if (!row) return;
     if (row.payload.action !== "steer" || typeof row.text !== "string")

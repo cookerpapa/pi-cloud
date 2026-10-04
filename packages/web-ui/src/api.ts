@@ -7,6 +7,7 @@ import {
   type InputQueueResource,
   type QueuedInputAction,
   type QueuedInputActionResult,
+  type ResumeInputQueue,
   parseAcceptedTurnCancellationResource,
   parseAcceptedTurnResource,
   parseTurnSteerResource,
@@ -852,6 +853,21 @@ export class PiCloudApi {
       await request(
         this.#fetch,
         `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs/${encodeURIComponent(turnId)}/actions`,
+        { ...jsonRequest(action, idempotencyKey), signal: AbortSignal.timeout(10_000) },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async resumeInputQueue(
+    sessionId: string,
+    action: ResumeInputQueue,
+    idempotencyKey: string,
+  ): Promise<QueuedInputActionResult> {
+    return parseQueuedInputActionResult(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs/resume`,
         { ...jsonRequest(action, idempotencyKey), signal: AbortSignal.timeout(10_000) },
         this.#authorizationToken,
       ),

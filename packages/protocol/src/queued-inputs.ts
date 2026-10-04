@@ -25,6 +25,7 @@ export const QueuedInputActionSchema = Type.Union([
     options,
   ),
   Type.Object({ action: Type.Literal("cancel"), revision: Revision }, options),
+  Type.Object({ action: Type.Literal("send"), revision: Revision }, options),
   Type.Object(
     {
       action: Type.Literal("move"),
@@ -52,6 +53,7 @@ export const QueuedInputResourceSchema = Type.Object(
     mailboxPosition: PositiveSafeIntegerSchema,
     acceptedAt: UtcTimestampSchema,
     status: Type.Union([Type.Literal("queued"), Type.Literal("steering")]),
+    paused: Type.Boolean(),
   },
   options,
 );
@@ -60,6 +62,7 @@ export const InputQueueResourceSchema = Type.Object(
     sessionId: UuidSchema,
     revision: Revision,
     activeTurnId: Type.Union([UuidSchema, Type.Null()]),
+    hasPausedInputs: Type.Boolean(),
     viewVersion: Type.String({ pattern: "^(0|[1-9][0-9]{0,18})$" }),
     afterPosition: NonNegativeSafeIntegerSchema,
     hasMore: Type.Boolean(),
@@ -80,6 +83,8 @@ export const InputQueueObservationSchema = Type.Object(
 );
 export type InputQueueObservation = Static<typeof InputQueueObservationSchema>;
 export type QueuedInputActionResult = Static<typeof QueuedInputActionResultSchema>;
+export const ResumeInputQueueSchema = Type.Object({ revision: Revision }, options);
+export type ResumeInputQueue = Static<typeof ResumeInputQueueSchema>;
 function parse<T extends TSchema>(schema: T, value: unknown): Static<T> {
   if (!Value.Check(schema, value))
     throw new ControlPlaneApiValidationError("Invalid pending input request or response");
@@ -93,3 +98,5 @@ export const parseInputQueueObservation = (value: unknown): InputQueueObservatio
   parse(InputQueueObservationSchema, value);
 export const parseQueuedInputActionResult = (value: unknown): QueuedInputActionResult =>
   parse(QueuedInputActionResultSchema, value);
+export const parseResumeInputQueue = (value: unknown): ResumeInputQueue =>
+  parse(ResumeInputQueueSchema, value);
