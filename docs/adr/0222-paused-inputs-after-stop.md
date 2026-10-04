@@ -16,6 +16,10 @@ canonical input Entry or target seal decides consumption, as in ADR-0203.
 Unconsumed input returns paused after Stop; uncertain delivery is never restored
 early. Stop prevents new deliveries to that target. It cannot recall an input
 already admitted by the native Agent before interruption wins the race.
+The Worker clears Pi's pending memory queues through public `clearAllQueues()`
+before `abort()`, matching TUI Esc. Otherwise a cancelled Tool's return can let
+Pi consume queued input before observing model-stream cancellation. PG retains
+the original human input; canonical Entries still decide any consumption race.
 Subagent input and automatic failure recovery retain their existing contracts.
 
 ## Authority and ordering

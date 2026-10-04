@@ -905,6 +905,9 @@ export class CloudAgentRuntime {
   }
 
   abort(): void {
+    // Match Pi's interactive Esc boundary: a finishing cancelled Tool must not
+    // drain pending input into history. PG owns restoration after the seal.
+    this.#agent?.clearAllQueues();
     this.#runCancellation.abort();
     this.#agent?.abort();
   }

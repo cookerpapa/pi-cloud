@@ -827,6 +827,54 @@ describe.sequential("CloudAgentRuntime", () => {
     },
   );
 
+  it.each(["steer", "follow_up"] as const)(
+    "does not consume queued %s when a cancelled Tool returns",
+    async (delivery) => {
+      const storage = await createStorage();
+      const entered = Promise.withResolvers<void>();
+      const runtime = new CloudAgentRuntime({
+        ...(await withNativeSession(storage)),
+        lane: "main",
+        authority: new TestAuthority(),
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+        tools: [
+          {
+            name: "waiting",
+            label: "Waiting",
+            description: "Abortable Tool",
+            parameters: Type.Object({}),
+            async execute(_id, _params, signal) {
+              entered.resolve();
+              await new Promise<void>((resolve) =>
+                signal!.addEventListener("abort", () => resolve(), { once: true }),
+              );
+              throw new Error("Command aborted");
+            },
+          },
+        ],
+        streamFn: () => {
+          const stream = new MockAssistantStream();
+          const message: AssistantMessage = {
+            ...assistant(""),
+            stopReason: "toolUse",
+            content: [{ type: "toolCall", id: "wait-call", name: "waiting", arguments: {} }],
+          };
+          queueMicrotask(() => stream.push({ type: "done", reason: "toolUse", message }));
+          return stream;
+        },
+      });
+      const running = runtime.run("wait until stopped");
+      await entered.promise;
+      const inputId = crypto.randomUUID();
+      await runtime.agentInput(inputId, "keep paused outside native history", delivery);
+      runtime.abort();
+      expect(await running).toMatchObject({ kind: "aborted" });
+      expect(await storage.getEntry(`pc-agent-input-${inputId}`)).toBeUndefined();
+    },
+  );
+
   it("settles a waiting Agent input when bootstrap fails without recording it as consumed", async () => {
     const storage = await createStorage();
     const entered = Promise.withResolvers<void>();

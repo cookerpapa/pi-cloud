@@ -1191,6 +1191,20 @@
       "file": "test/queued-inputs.test.ts",
       "test": "continues all paused pages in their edited order with stale and replayed commands isolated",
       "invariant": "Server-side continuation covers all pages; stale commands conflict and old retries cannot undo a later pause."
+    },
+    {
+      "id": "queue-stop-native-steer",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime.test.ts",
+      "test": "does not consume queued steer when a cancelled Tool returns",
+      "invariant": "A cancelled Tool cannot drain pending native input into history; the durable source remains available for consumption-confirmed restoration."
+    },
+    {
+      "id": "queue-stop-native-follow-up",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime.test.ts",
+      "test": "does not consume queued follow_up when a cancelled Tool returns",
+      "invariant": "A cancelled Tool cannot drain pending native input into history; the durable source remains available for consumption-confirmed restoration."
     }
   ]
 }
