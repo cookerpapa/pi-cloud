@@ -1,6 +1,7 @@
 # ADR-0226: Recoverable Cube Volume reference state
 
-Status: accepted, implementation in progress, 2026-10-05.
+Status: implemented and deployed, 2026-10-05.
+[Verification and matched release](../reports/review-repair-20261005.md).
 
 R04-03 loses Master reference bookkeeping when physical deletion succeeds but
 its allocation reply cannot be persisted. Keeping replies longer cannot recover

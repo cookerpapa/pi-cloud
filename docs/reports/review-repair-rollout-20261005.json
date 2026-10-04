@@ -1,0 +1,113 @@
+{
+  "checkedAt": "2026-10-04T18:11:30.423Z",
+  "nativeProtocol": 7,
+  "guestProtocol": 3,
+  "patchId": "0d27a51febdc87d9",
+  "completionSource": "0d36631cd419e04c29e52dc73d9d89d96c9d7e1b",
+  "workspaceRootIdentity": "2096-33554571",
+  "workloads": [
+    {
+      "name": "pi-cloud-control-plane",
+      "ready": 1,
+      "images": [
+        {
+          "name": "control-plane",
+          "image": "pi-cloud/control-plane:review-boundaries-v7-app"
+        }
+      ]
+    },
+    {
+      "name": "pi-cloud-pi-worker-primary-v1",
+      "ready": 2,
+      "images": [
+        {
+          "name": "pi-worker",
+          "image": "pi-cloud/supervisor-host:review-boundaries-v7-app"
+        }
+      ]
+    },
+    {
+      "name": "pi-cloud-web",
+      "ready": 1,
+      "images": [
+        {
+          "name": "web",
+          "image": "pi-cloud/web-ui:review-boundaries-v7-app"
+        }
+      ]
+    },
+    {
+      "name": "pi-cloud-ssh-gateway",
+      "ready": 1,
+      "images": [
+        {
+          "name": "ssh-gateway",
+          "image": "pi-cloud/ssh-gateway:review-boundaries-v7-app"
+        }
+      ]
+    },
+    {
+      "name": "cube-master",
+      "ready": 1,
+      "images": [
+        {
+          "name": "cube-master",
+          "image": "pi-cloud/cube-master:review-boundaries-v7"
+        }
+      ]
+    },
+    {
+      "name": "cube-api",
+      "ready": 1,
+      "images": [
+        {
+          "name": "cube-api",
+          "image": "pi-cloud/cube-api:review-boundaries-v7"
+        }
+      ]
+    },
+    {
+      "name": "cube-node",
+      "ready": 1,
+      "images": [
+        {
+          "name": "network-agent",
+          "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/network-agent:v0.6.0"
+        },
+        {
+          "name": "cubelet",
+          "image": "pi-cloud/cubelet:review-boundaries-v7"
+        },
+        {
+          "name": "cube-egress",
+          "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress:v0.6.0"
+        },
+        {
+          "name": "cube-egress-net",
+          "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0"
+        }
+      ]
+    }
+  ],
+  "finalState": {
+    "pendingRuns": 0,
+    "activeRuns": 0,
+    "unknownAllocations": 2,
+    "liveMachines": 0,
+    "liveRuntimes": 0,
+    "nativeHistoryRows": 0,
+    "exactNodeVMCount": 0,
+    "checkedAt": "2026-10-04T18:17:32.557Z"
+  },
+  "rollout": {
+    "startedAt": "2026-10-04T17:44:38.435Z",
+    "stage": "ready",
+    "appVersion": "review-boundaries-v7-app",
+    "cubeVersion": "review-boundaries-v7",
+    "before": {
+      "active": 0,
+      "pending": 0
+    },
+    "initialApplicationPreflight": "Cubelet was still becoming ready after Helm; resumed application deployment after readiness"
+  }
+}

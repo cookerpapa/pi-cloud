@@ -1,0 +1,32 @@
+{
+  "checkedAt": "2026-10-04T18:03:46.102Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "b112d161-8514-4fae-b29c-2b328329eb09",
+      "elapsedMs": 13516,
+      "modelTransportMs": 8905.418,
+      "tools": [
+        {
+          "name": "bash",
+          "state": "failed",
+          "durationMs": 388,
+          "resultBytes": 124
+        },
+        {
+          "name": "bash",
+          "state": "completed",
+          "durationMs": 308,
+          "resultBytes": 61
+        }
+      ]
+    }
+  ],
+  "resources": {
+    "projectId": "5a36078d-5b3f-4796-a532-2d3b361977cd",
+    "workspaceId": "2fe72d5b-349c-49a8-bb0b-72e8049bee8c",
+    "sessionId": "360cc653-8965-4a8a-93b8-36e4e08cd6da"
+  },
+  "cleanupCompleted": true
+}

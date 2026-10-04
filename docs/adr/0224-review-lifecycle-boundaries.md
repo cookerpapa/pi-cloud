@@ -1,6 +1,7 @@
 # ADR-0224: Lifecycle recovery and request-policy boundaries
 
-Status: accepted, implementation in progress, 2026-10-05.
+Status: implemented and deployed, 2026-10-05.
+[Verification and matched release](../reports/review-repair-20261005.md).
 
 The owner approved the October 4 review repair proposal. Preserve PG control
 authority, ordered Kafka publication, native Pi execution and Cube physical

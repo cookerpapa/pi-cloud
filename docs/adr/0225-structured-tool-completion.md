@@ -1,6 +1,7 @@
 # ADR-0225: Structured infrastructure failures on the Tool reply transport
 
-Status: accepted, implementation in progress, 2026-10-05.
+Status: implemented and deployed, 2026-10-05.
+[Verification and matched release](../reports/review-repair-20261005.md).
 
 R04-06 reproduced a native Bash failure whose output began with `ownership_lost`
 changing Run liveness. Text belongs to the Tool/model context and cannot supply

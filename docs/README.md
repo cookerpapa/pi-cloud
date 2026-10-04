@@ -3,7 +3,9 @@
 The [October 4 whole-repository review](reports/repository-review-20261004.md)
 audits `8d8ee837` across all 22 workspaces, pinned Pi/Cube, delivery and product
 paths. It records seven defects, a browser-fixture gap, SQL measurements and
-architecture tradeoffs. The review adds evidence; product fixes remain pending.
+architecture tradeoffs. [The October 5 repair and release](reports/review-repair-20261005.md)
+implements all seven fixes and restores the browser gate, with real Pi/Luna,
+Cube Volume, controller/Worker replacement and cancellation acceptance.
 
 [ADR-0223](adr/0223-recoverable-vm-allocation.md) adds stable VM allocation,
 recoverable creation and irreversible closure. [Verification and matched release](reports/vm-allocation-20261004.md)

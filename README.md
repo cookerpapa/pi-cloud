@@ -88,8 +88,10 @@ findings and baseline evidence at `3dbf49fb`; [the repairs](docs/reports/review-
 track the approved fixes and matched protocol-3 verification.
 
 The [October 4 whole-repository review](docs/reports/repository-review-20261004.md)
-records current lifecycle/recovery, Pi request-policy and validation gaps, with
-isolated reproductions and SQL measurements. Its repairs remain in the backlog.
+records lifecycle/recovery, Pi request-policy and validation gaps with isolated
+reproductions and SQL measurements. [The October 5 repairs](docs/reports/review-repair-20261005.md)
+close those gaps with staged adoption, PG-time authorization, shared Compaction
+policy, structured Tool failures and recoverable Cube Volume reference state.
 
 ## Quick start
 

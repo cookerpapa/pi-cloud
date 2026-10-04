@@ -24,24 +24,10 @@ PiCloud deployment. Remaining operational limits are listed below.
 ## Reliability and capacity
 
 The [October 4 whole-repository review](reports/repository-review-20261004.md)
-is complete at `8d8ee837`. Its fixes are pending:
-
-- [ ] R04-01: align allocation Close with Cube's paused-VM deletion budget; test
-      direct paused release and cleanup that outlives a caller's query deadline.
-- [ ] R04-02: publish recovered handles only after adoption succeeds, roll back
-      partial local state, and contain individual health-target enumeration failures.
-- [ ] R04-03: define recovery of Volume reference bookkeeping after cleanup-result
-      persistence loss or receipt collection; preserve physical deletion guards.
-- [ ] R04-04: close the controller ownership-read/resource-write revocation window.
-- [ ] R04-05: share applicable model request policy with native Compaction so
-      Fast-mode maintenance requests retain the frozen service tier.
-- [ ] R04-06: distinguish infrastructure failure from native Tool error with a
-      structured transport field; ordinary Bash output must not control Run liveness.
-- [ ] R04-07: use PG decision time for SSH ticket issue/consumption and validate
-      expiry after acquiring the relevant lock.
-- [ ] Q04-01: update the full browser gate's queue fixture to the current protocol
-      and validate fixture responses with the production parser. Its original entry
-      fails; the schema-corrected temporary control experiment passes.
+is complete at `8d8ee837`. R04-01–07 and Q04-01 are implemented and deployed
+under ADR-0224/0225/0226. [Repair and release evidence](reports/review-repair-20261005.md)
+covers paused release, staged adoption, PG authorization/time, Fast Compaction,
+structured Tool failures, Volume reference recovery and the restored browser gate.
 
 [ADR-0223](adr/0223-recoverable-vm-allocation.md) is deployed: creation identity
 precedes the physical effect, lost replies recover the original allocation,
@@ -116,12 +102,12 @@ separate design questions, not an implicit part of the completed query merge.
       in future timing comparisons. Complete commentary waits for its provider
       text block; that interval must not be labelled entirely as internal relay time.
 
-- [ ] Investigate Cube's stale master Volume reference after full-VM retirement.
-      The [Run identity acceptance](reports/run-identity-acceptance-20260919.md)
-      confirmed an empty Cube/node inventory with master refcount still one on
-      an old resource. The authorized one-off cleanup is not an automatic fix;
-      preserve deletion guards and discuss upstream reconciliation before changing
-      the storage contract.
+- [ ] Audit historical untracked Cube Volume references independently. ADR-0226
+      repairs managed cleanup-reply loss using durable node state; it cannot
+      fabricate missing historical node/store identity. The
+      [older observed drift](reports/run-identity-acceptance-20260919.md) is not
+      blanket evidence that every legacy count is safe to clear. Preserve guards
+      until the recorded physical state is independently verified.
 
 - [ ] Discuss drain/completion durability before any further boundary merging.
       [Terminal wake and transaction-local SQL](reports/terminal-wake-acceptance-20260918.md)

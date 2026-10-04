@@ -4,9 +4,9 @@
 
 - [x] Review `8d8ee837`: lifecycle/recovery, pinned Pi behavior, ordered execution,
       storage/assets, product paths and deployment. [Report and evidence](reports/repository-review-20261004.md).
-- [ ] Resolve R04-01–07 and Q04-01 in separate repair slices; record protocol or
-      storage decisions before implementation. Priority starts with paused VM
-      closure and recovery-state isolation.
+- [x] Resolve R04-01–07 and Q04-01 under ADR-0224/0225/0226, including matched
+      native protocol 7 rollout and owned live acceptance.
+      [Repair evidence](reports/review-repair-20261005.md).
 
 ## Recoverable VM allocation
 

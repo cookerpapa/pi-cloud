@@ -1,0 +1,35 @@
+{
+  "checkedAt": "2026-10-04T18:17:32.557Z",
+  "runtimeRevision": "935f89cf853ea637a7fb1906aa4c9b7c7d5350e7",
+  "verificationBaseRevision": "e160d4c47bffe702c53a389693d2ff90744c2f95",
+  "ci": {
+    "command": "npm run ci",
+    "exitCode": 0,
+    "passedIncludingAcceptanceHelpers": 1760,
+    "optionalExternalTestsSkipped": 9
+  },
+  "faults": {
+    "passed": 178,
+    "total": 178
+  },
+  "browser": {
+    "command": "npm run browser:presentation:check",
+    "passed": true
+  },
+  "live": {
+    "allocationVolume": true,
+    "nativeTools": true,
+    "ordinaryToolError": true,
+    "fastCompaction": true,
+    "imageWorkerRecovery": true,
+    "developmentMachineAndSsh": true,
+    "toolCancellation": true,
+    "unavailableCancellationEndpoint": true
+  },
+  "limits": [
+    "Single-host acceptance, not physical-node HA or fleet capacity.",
+    "Baseline native history was empty; owned image/Worker recovery supplies the actual history-restoration evidence.",
+    "Unchanged upstream TestCreateSnapshotSuccessResponse has an uninitialized node-cache fixture panic outside the passing gates.",
+    "Two historical untracked UNKNOWN allocations remain held."
+  ]
+}

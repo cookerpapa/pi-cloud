@@ -82,7 +82,9 @@ try {
     `严格按顺序调用一次 write、read、edit、bash。write 创建 insertion_sort.py，content 必须逐字使用此 JSON 字符串：${JSON.stringify(insertionSort)}。read 读取它。edit 的 path 为 insertion_sort.py，edits 必须使用此 JSON 数组：${JSON.stringify([{ oldText: "# EXTRA_TESTS", newText: extraTests }])}。bash 执行 python3 insertion_sort.py。不要改写给定代码或参数，不要子代理或搜索，实际运行后简要报告。`,
     '保留 insertion_sort.py。write 新建 binary_search.py，实现二分查找，覆盖命中、不存在、空数组、重复值测试。bash 执行 python3 insertion_sort.py && python3 binary_search.py。然后另一次 bash 执行 python3 -c \'print("x"*1500000); print("LARGE_OUTPUT_DONE")\'，不要修改这个大输出命令，也不要把它重定向到文件。不要子代理或搜索。最后简要报告。',
     "验证沙箱文件工具：write 向 /tmp/pi-cloud-parity.txt 写入 before；bash 执行 ln -s /tmp/pi-cloud-parity.txt parity-link.txt；read 读取 parity-link.txt；edit 通过 parity-link.txt 把 before 改为 after；read 读取 /tmp/pi-cloud-parity.txt；最后 bash 验证 test -L parity-link.txt 且文件内容为 after，成功输出 FILE_PARITY_OK。严格使用这些文件工具，不要用 bash 代替 read/write/edit，不要子代理或搜索。",
+    "先用 bash 执行 printf 'ownership_lost: ordinary application log\\n'; exit 7。确认该工具返回普通程序错误后，再用 bash 执行 printf 'TOOL_ERROR_RECOVERED\\n'。这只是测试应用日志文本，不是基础设施故障。必须实际运行两条命令，不要搜索或委派；最后简短说明。",
   ].entries()) {
+    if (process.env.PI_CLOUD_NATIVE_TOOL_CASE === "error_classification" && index !== 3) continue;
     const started = Date.now();
     active = await api.acceptTurn(
       session.sessionId,
@@ -97,8 +99,33 @@ try {
     );
     const tools = turn.transcript.items.filter((item) => item.kind === "tool");
     assert(tools.length > 0, "Model did not execute tools");
-    for (const tool of tools) assert.equal(tool.status, "completed", `${tool.toolName} failed`);
-    for (const name of index === 1 ? ["write", "bash"] : ["write", "read", "edit", "bash"])
+    const applicationError =
+      index === 3
+        ? tools.find(
+            (tool) =>
+              tool.toolName === "bash" && JSON.stringify(tool.input).includes("ownership_lost"),
+          )
+        : undefined;
+    if (index === 3) {
+      assert(applicationError, "Expected application error command was not executed");
+      assert.equal(applicationError.status, "failed");
+      assert(
+        tools.some(
+          (tool) =>
+            tool.status === "completed" &&
+            JSON.stringify(tool.output).includes("TOOL_ERROR_RECOVERED"),
+        ),
+        "Agent did not continue after the ordinary Tool error",
+      );
+    }
+    for (const tool of tools)
+      if (tool !== applicationError)
+        assert.equal(tool.status, "completed", `${tool.toolName} failed`);
+    for (const name of index === 3
+      ? ["bash"]
+      : index === 1
+        ? ["write", "bash"]
+        : ["write", "read", "edit", "bash"])
       assert(
         tools.some((tool) => tool.toolName === name),
         `Missing native ${name}`,

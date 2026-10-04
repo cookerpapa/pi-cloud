@@ -1,0 +1,32 @@
+{
+  "checkedAt": "2026-10-04T17:52:07.443Z",
+  "accepted": true,
+  "volumeId": "pcw-8835606b2125461d95f3e163cc499f74b3797bf08bd30ed3",
+  "allocations": [
+    {
+      "allocationId": "fb93d463-b516-4977-b847-5d0bd6cd4c81",
+      "sandboxId": "fb93d463b5164977b8475d0bd6cd4c81",
+      "nodeId": "laptop-ovcivi2v",
+      "closed": true
+    },
+    {
+      "allocationId": "8a42b785-c632-4781-b04c-00aaa9103fdb",
+      "sandboxId": "8a42b785c6324781b04c00aaa9103fdb",
+      "nodeId": "laptop-ovcivi2v",
+      "closed": true
+    },
+    {
+      "allocationId": "a07271bc-0413-496f-b50f-423dd0cf9680",
+      "closed": true
+    }
+  ],
+  "checks": {
+    "sharedBytes": true,
+    "pausedDirectClose": true,
+    "sharedReferencePreventsDelete": true,
+    "deletingVolumeRejectsNewPlacement": true,
+    "closedAllocationRejectsDelayedCreate": true,
+    "volumeDeletedAfterFinalReference": true
+  },
+  "cleanupConfirmed": true
+}

@@ -1,7 +1,8 @@
 # October 4 review repairs
 
 Started 2026-10-05 from `c3f5f6bd`. The owner approved the repair proposal.
-Implementation and validation are in progress; production has not yet changed.
+The seven repairs and browser fixture correction are implemented. The matched
+native/application release is deployed and combined verification is complete.
 
 ## Lifecycle slice — ADR-0224
 
@@ -77,4 +78,76 @@ distinguishes prior cancellation settlement. Obsolete review characterizations
 were replaced by maintained regressions; their original source remains in the
 named review commit. Historical report results retain their original baseline.
 
-Full-repository verification, matched build/rollout and live acceptance remain.
+## Matched release and live evidence
+
+Cube API/Master/Cubelet use `review-boundaries-v7`, native patch identity
+`0d27a51febdc87d9`, completion source
+`0d36631cd419e04c29e52dc73d9d89d96c9d7e1b`. Applications use
+`review-boundaries-v7-app`, runtime source `935f89cf`; later changes are regression
+fixtures, acceptance scripts and documentation. Guest source remains
+`992bcf3ad59056d2eb43b87f623fd351661ae47f` / protocol 3. Cube migration is
+`20261005000000`; PG schema remains 174. No business-data reset was performed.
+The Cube metadata backup is retained in the private runtime backup directory.
+
+The drain found no pending/active Runs and exact node inventory had no VM in any
+state. The first application preflight observed Cubelet still starting after
+Helm returned; deployment resumed once all node containers were ready. The final
+release reconciled through the existing Helm renderer and restored the API plus
+two Workers. The baseline had no native history rows, so its empty hash is not
+evidence of restoring an existing user's long conversation.
+
+- [Native allocation/Volume](allocation-volume-acceptance-20261005.json): two
+  actual VMs share bytes. Paused direct Close succeeds; the sibling still reads
+  its file; Volume deletion returns conflict while referenced; new placement and
+  delayed old Create are refused; final Volume deletion/owned cleanup succeed.
+- [Native Tools](native-tools-acceptance-20261005.json): three Luna Runs exercise
+  write/read/edit/bash, bounded large output and symlink behavior.
+- [Ordinary error classification](tool-error-classification-20261005.json): a
+  real Bash exits 7 with `ownership_lost` text; its Tool fails, the next Bash and
+  Run complete. It does not become infrastructure unavailability.
+- [Images and Worker replacement](image-attachments-acceptance-20261005.json):
+  6.3/6.3/25.1 MB normalized images travel as 778/778/779-byte native records;
+  a new Worker recovers visual context after the Workspace image changes.
+- [Fast compaction](fast-compaction-acceptance-20261005.json): actual Pi/Luna
+  summarization and subsequent sampling pass the production Gateway's Fast
+  policy with an isolated small context window, retaining the project marker.
+- [Development machine](development-environment-acceptance-20261005.json):
+  controller replacement, shared/separate-compute Subagents, preview/terminal,
+  one-time SSH, pause/resume and Volume release pass; physical continuity and
+  conversation lifetime retain their separate contracts.
+- [Cancellation](tool-cancellation-acceptance-20261005.json): original foreground
+  Tool cancellation settles in 574 ms, retains partial output/context, preserves
+  completed background work and independent groups, and leaves a shared sibling
+  running. A later explicit command manages those surviving processes.
+- [Unavailable cancellation endpoint](tool-cancellation-fault-20261005.json):
+  pausing the Cube API produces bounded UNKNOWN settlement in 22,350 ms, with
+  one execution, retained interruption context and an unaffected sibling.
+  The endpoint resumes and owned cleanup completes.
+
+These are owned, single-host acceptance cases, not physical-node HA or a fleet
+capacity claim. The two historical untracked UNKNOWN allocations stay held.
+
+## Verification bookkeeping
+
+The first `npm run ci` passed build, native contracts and workspace types, then
+found one integration fixture still simulating infrastructure loss as native
+error text. That fixture now raises the actual structured failure, retaining its
+original expectation that cleanup cannot overwrite the Run's primary failure.
+All 264 supervisor tests pass. The recovery fixture also honors excluded IDs,
+and the SSH package provisions isolated PG when invoked on its own.
+The corrected `npm run ci` exits 0: 1,697 workspace assertions plus 63 acceptance
+helper assertions pass; nine opt-in external-service assertions are skipped.
+All 178 fault cases pass. Native allocation/Volume race and persistence checks,
+paused-delete composition, builds/types, formatting, documentation, Helm/runtime
+policy and the high-severity dependency audit pass. The maintained browser gate
+also passes. The audit retains two moderate dependency findings; it is not a
+claim of zero advisories.
+
+[Verification record](review-repair-verification-20261005.json) ·
+[Fault evidence](review-repair-faults-20261005.json) ·
+[Matched deployment and final inventory](review-repair-rollout-20261005.json).
+
+All live fixtures above completed their owned cleanup. Final checks found zero
+pending/active Runs, development machines, live Workspace runtimes and VMs in
+the node's all-state inventory. Existing untracked UNKNOWN allocations remain
+exactly two. The native Session log returned to its empty pre-acceptance baseline.

@@ -1,0 +1,103 @@
+{
+  "checkedAt": "2026-10-04T17:58:28.213Z",
+  "scriptSha256": "57109d1277732e5d84bf745e3a641c3dadfa31184a4280192dbf6faaaf1d8433",
+  "fixture": "Synthetic bar charts; compare three color-height rankings without a numeric challenge",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "732b75e9-0587-4ff5-aff3-fad0d766b4d6",
+      "workerId": "c409bf34-24ac-4589-baa7-7375601190be",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "390c9e15-eb3f-4d17-b236-424635f2abe5",
+      "workerId": "3e3446b1-8ca9-45d4-b255-0438bc8c0253",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "225876d3-ff7e-4739-a6c5-331fce6a8019",
+      "workerId": "3e3446b1-8ca9-45d4-b255-0438bc8c0253",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "9eb456f8-8493-4d35-a7d5-04905e90db99",
+      "workerId": "c409bf34-24ac-4589-baa7-7375601190be",
+      "tools": []
+    }
+  ],
+  "images": [
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "a8b5e304-5bec-447c-8aba-cb64f4a3ba28",
+        "sha256": "ea222a555bf4ac4468a300e4e68ccb18de8202af8a9399dd6163afd286163da0",
+        "mimeType": "image/png",
+        "byteLength": 6294582
+      },
+      "recordBytes": 778,
+      "detail": "high"
+    },
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "b5ef4f33-ab5c-4184-ba89-b2b9edc8f632",
+        "sha256": "f4c0f1a11dc90a7a6c50e6aaa3c4e4b53f0a269aa0f58219873a110c0d649818",
+        "mimeType": "image/png",
+        "byteLength": 6294330
+      },
+      "recordBytes": 778,
+      "detail": "high"
+    },
+    {
+      "tenantId": "d16a4af7-4a07-4569-bf40-107f611a491c",
+      "ref": {
+        "id": "72063a0a-e497-450b-9e67-8602753fcbe1",
+        "sha256": "dcd3000d8da612a72b337a39189a5a18dff17f7bdc4c7b9fdf9d0b09b2936bea",
+        "mimeType": "image/png",
+        "byteLength": 25128957
+      },
+      "recordBytes": 779,
+      "detail": "original"
+    }
+  ],
+  "resources": {
+    "projectId": "237ad5d7-d7a1-430c-a677-6b34add887c4",
+    "workspaceId": "0724964c-fcf2-421f-a5ab-bfd0143f17a3",
+    "sessionId": "e1ba86d4-c0e5-403d-aa1a-ec774668c313"
+  },
+  "coldRecovery": {
+    "previousWorker": "3e3446b1-8ca9-45d4-b255-0438bc8c0253",
+    "nextWorker": "c409bf34-24ac-4589-baa7-7375601190be",
+    "changedBoot": true,
+    "visionRecallCorrect": true
+  },
+  "cleanupCompleted": true
+}
