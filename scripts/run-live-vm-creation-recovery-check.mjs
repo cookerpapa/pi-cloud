@@ -158,7 +158,17 @@ try {
     .find((t) => t.runId === next.runId)
     .transcript.items.find((i) => i.kind === "tool");
   assert.equal(tool.status, "completed");
-  assert(JSON.stringify(tool.output).includes("RECOVERED_ALLOCATION_OK"));
+  const output = tool.output.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  const count = output.match(/RECOVERED_ALLOCATION_OK\s+([01])\s*$/);
+  assert(count, "Original shell effect was repeated or the verification result is missing");
+  report.originalShellWrites = Number(count[1]);
+  const originalTools = conversation.turns
+    .find((turn) => turn.runId === first.runId)
+    .transcript.items.filter((item) => item.kind === "tool");
+  assert(originalTools.length <= 1, "Recovery issued another Tool for the original Run");
   const { rows: allocations } =
     await sql`select count(*)::int n from workspace_runtimes where workspace_id=${project.workspaceId}::uuid`.execute(
       database,
