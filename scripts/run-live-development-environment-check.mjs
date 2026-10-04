@@ -360,7 +360,7 @@ try {
     `/v1/development-environments/${development.environmentId}/preview/${String(previewPort)}/`,
     { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
   );
-  assert.equal(preview.status, 200);
+  assert.equal(preview.status, 200, (await preview.clone().text()).slice(0, 1500));
   assert.match(await preview.text(), /PI_CLOUD_PREVIEW_OK/);
   await terminalCommand(
     `/v1/development-environments/${development.environmentId}/terminal`,

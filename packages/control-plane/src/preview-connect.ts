@@ -1,5 +1,5 @@
 import { Agent, request as httpRequest } from "node:http";
-import { request as httpsRequest } from "node:https";
+import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
 import type { Socket } from "node:net";
 import {
   PREVIEW_SCOPE_HEADER,
@@ -7,6 +7,11 @@ import {
   SANDBOX_CONTROL_SANDBOX_PREVIEW_PATH,
   type SandboxPreviewConnectionRequest,
 } from "@pi-cloud/protocol";
+
+// PG supplies the trusted internal owner endpoint. Never send its CONNECT or
+// service credentials through the process-wide provider/Internet proxy.
+const directHttpAgent = new Agent({ keepAlive: false });
+const directHttpsAgent = new HttpsAgent({ keepAlive: false });
 
 export class PreviewConnectionError extends Error {
   constructor(
@@ -43,6 +48,7 @@ export function previewConnectionAgent(
       }
       const request = (target.protocol === "https:" ? httpsRequest : httpRequest)(target, {
         method: "CONNECT",
+        agent: target.protocol === "https:" ? directHttpsAgent : directHttpAgent,
         headers: {
           authorization: `Bearer ${serviceToken}`,
           [PREVIEW_SCOPE_HEADER]: Buffer.from(JSON.stringify(scope)).toString("base64url"),
