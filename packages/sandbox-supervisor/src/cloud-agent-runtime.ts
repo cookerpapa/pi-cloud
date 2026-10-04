@@ -1220,7 +1220,7 @@ export class CloudAgentRuntime {
             }
             // A published remote invocation may already be dispatched. This
             // check closes its local wait, not the accepted external effect.
-            executionSignal.throwIfAborted();
+            if (!prepared) executionSignal.throwIfAborted();
             return await (prepared
               ? prepared.result()
               : tool.execute(toolCallId, params, executionSignal, onUpdate));

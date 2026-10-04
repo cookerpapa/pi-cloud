@@ -30,18 +30,18 @@ without a per-command PG lease query. Domain-independent Projector ownership
 uses a deployment-owned Cube endpoint registry; metadata cannot select an
 unconfigured credential destination.
 
-PG binding revocation is installed at publication admission. Its closed reference
-then follows the same Kafka Session queue; Projector stops that Run at the actual
-close position and acknowledges the binding. Controller release waits for that
-acknowledgement, and only confirmed stopping permits normal binding removal.
-Quarantine is a different outcome and never proves VM absence. A delayed old RPC
-cannot overtake the close and start work; final seal publication follows this
-closure. Completed operation entries are removed after bounded result delivery.
+PG binding revocation is installed at publication admission; its closed reference
+follows the same Kafka Session queue. Release retires this routing metadata without
+Cube process-stop RPCs or closure receipts. Already handed-off commands can still
+run after chat Stop. Their late replies cannot enter a sealed Run or another Run's
+callback. Completed operation entries are removed after bounded result delivery;
+partition progress rejects historical duplicates.
 
-Cancellation stops and joins the native main process before killing its entire
-cgroup. Normal completed Bash may leave a background server running. A failed
-scoped stop makes the VM unavailable for explicit control-plane recovery; a
-normal Tool error has no VM-destruction power. Controller replacement adopts
+Chat Stop interrupts the Worker Agent Loop and its reply waits. Native Tool
+timeout and explicit VM lifecycle are separate: a timed-out Tool joins its main
+process before cleaning the cgroup. A failed native cleanup makes the VM
+unavailable for recovery; a normal Tool error has no VM-destruction power.
+Controller replacement adopts
 persisted VM capsules and active binding descriptors. Controller expiry/shutdown
 preserves the last physical state of capsule-backed VMs; it does not quarantine
 them or close their bindings. Adoption still checks VM/boot continuity, and a
@@ -129,10 +129,11 @@ unavailable. Probe lifetimes use a separate four-request Cubelet budget and no
 retained Tool operation ledger. Failure has no quarantine or deletion authority.
 The provider replaces its former envd command-based execution probe with this
 single native implementation. Probes never advance Tool admission positions;
-late observations have no effect authority. Managed submit/stop requires a source
-position; there is no protocol-2 fallback. Guest Tool wire remains version 2.
+late observations have no effect authority. Managed submit requires a source
+position. Protocol 4 removes the Run/process Stop endpoint, with no old-wire
+fallback. Guest Tool wire remains version 2.
 Cube/app upgrades require the drained, matched build in
-[ADR-0219](adr/0219-ordered-cube-admission.md); probe semantics remain those of
+[ADR-0220](adr/0220-agent-stop-is-not-process-control.md); probe semantics remain those of
 [ADR-0211](adr/0211-execution-path-and-runtime-probes.md).
 
 Fixed Agent Tools use native Cubelet execution. The Web Terminal keeps its

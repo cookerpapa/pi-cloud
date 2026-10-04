@@ -110,11 +110,11 @@ that intent, confirms its dispatch offset and issues the bounded Cube handoff.
 Cube owns execution and final Kafka delivery; Pi's Worker-side processing makes
 the returned Tool Result canonical.
 
-An ambiguous handoff closes its operation scope and is not replayed. Cube rejects
+An ambiguous handoff is not replayed or compensated by killing its process. Cube rejects
 a changed active duplicate and recognizes an identical active operation within
 its boot. Completed operation bodies are discarded after delivery; source
 positions reject historical replay without retaining every closed Run.
-If start/result or stopping cannot be proven, the outcome remains `UNKNOWN`;
+If start/result cannot be proven, the outcome remains `UNKNOWN`;
 quarantine does not assert physical VM absence.
 
 
@@ -148,8 +148,8 @@ remain distinct. Public Run state stays settling until its seal is projected.
 
 ## Cancellation and failure
 
-Cancellation stops that task's new effects before trying to interrupt model/Tool
-work; it does not release siblings' shared owner lease. Task state and current
+Chat Stop interrupts that task's Agent Loop/model stream and pending Tool reply
+waits; it does not stop accepted VM processes or release siblings' shared owner lease. Task state and current
 Session authority are required for effects. The maintenance loop retires every
 task of an expired physical Session, while leaving unrelated Sessions on that
 Worker alone. The shared lease is removed only after its task scopes drain.
@@ -161,10 +161,10 @@ retry or output-free pre-start requeue. Running includes context preparation,
 not proof that a model or Tool has actually started.
 An execution seal in the same Kafka partition closes a retired Run. The
 control-plane ingress closes publication admission, requests PG binding closure,
-and waits for its ordered Kafka control fact to stop Cube. The binding's lifecycle
-acknowledgement distinguishes stopped from quarantined. Normal resource release
-requires stopped; quarantine never releases quota. An explicit retry advances the
-closure revision. Only then can ingress publish the final seal (ADR-0219). Replaced ingress owners are transactionally
+and installs routing revocation before appending the final seal (ADR-0220).
+There is no Cube stopping receipt. Accepted commands can continue, and late replies
+are discarded after their Worker waiter detaches. Native interruption context
+must not claim that a process was killed. Replaced ingress owners are transactionally
 fenced. Earlier accepted data is projected before the successor is allowed to
 claim; replayed records cannot reopen a sealed scope. A caught interruption writes Pi's minimal
 abort/reset boundary. A hard Worker loss is reconciled from the retained Kafka

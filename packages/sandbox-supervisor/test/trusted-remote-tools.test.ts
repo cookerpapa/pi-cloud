@@ -538,7 +538,7 @@ describe("whole-tool Worker adapter", () => {
       remote.tools
         .find((tool) => tool.name === "bash")!
         .execute("cancelled", { command: "echo fixture" }, cancelled.signal),
-    ).rejects.toThrow("aborted");
+    ).rejects.toThrow("may still be running");
     expect(unavailable).not.toHaveBeenCalled();
   });
 });

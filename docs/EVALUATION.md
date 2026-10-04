@@ -141,13 +141,14 @@ they do not use the PGlite socket fallback. Explicit test URLs remain caller-own
 `npm run cubesandbox:admission-check` extracts the maintained Go admission/probe
 tests from the digest-checked patch and runs them with the pinned Go Docker image
 and race detector. It needs Docker, not an operator Cube checkout or a live VM.
-It covers delayed submit after Stop, duplicate/ambiguous admission, shared VM
-siblings, independent partitions, probe isolation, and 70,000 closures followed
+It covers delayed submit after a later handoff, duplicate/ambiguous admission,
+accepted-command survival, native timeout isolation, independent partitions,
+probe isolation, and 70,000 completions followed
 by new work. This is part of `npm run ci`.
 
-`ordered-cube-closure.integration.test.ts` uses the explicit test PG and RF3 Kafka
-endpoints. Native Cube RPC alone is simulated: it proves final-seal ordering and
-lost lifecycle-ACK replay through the real control/reference path. The native Go
+`agent-stop-binding-closure.integration.test.ts` uses the explicit test PG and RF3 Kafka
+endpoints. It proves routing revocation precedes the final seal without any
+Cube process-stop RPC or lifecycle receipt. The native Go
 contract and matched live Cube acceptance cover the destination separately.
 
 ## Cube and real-model acceptance
@@ -347,12 +348,13 @@ would silently use current workspace code. `PI_CLOUD_REVIEW_SOURCE_AUDIT` writes
 its import map. Report fixed-workload limits and memory/latency variability with
 the measurements; this is not fleet capacity or live provider latency evidence.
 
-### Ordered closure and controller replacement
+### Agent Stop and controller replacement
 
-Run `PI_CLOUD_LIVE_ORDERED_CLOSE_CHECK=1 node --import tsx scripts/run-live-ordered-cube-close-check.mjs`
-against the matched deployment to test two Luna Sessions sharing one VM, stopping
-one command's parent/child processes while its sibling completes. The fixture
-checks only its owned resources and requests cleanup.
+Run `PI_CLOUD_LIVE_AGENT_STOP_CHECK=1 node --import tsx scripts/run-live-agent-stop-check.mjs`
+against the matched deployment to test two Luna Sessions sharing one VM. Chat
+Stop ends one Agent promptly; the next Run proves its command processes survived
+and then explicitly kills those fixture processes via Bash. Its sibling completes.
+The fixture checks only owned resources and requests cleanup.
 
 The controller restart gate accepts
 `PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=process` for a local containerd-task SIGKILL and

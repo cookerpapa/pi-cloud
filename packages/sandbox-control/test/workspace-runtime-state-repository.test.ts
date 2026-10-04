@@ -950,20 +950,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       "sandbox-domain-0001",
       "20000000-0000-4000-8000-000000000004",
       "http://owner.test",
-      async () => {
-        const changes = await database
-          .selectFrom("outbox")
-          .select("payload")
-          .where("aggregate_type", "=", "session_control_change")
-          .where(sql<boolean>`payload->>'entity'='sandbox_binding' and payload->>'closed'='true'`)
-          .execute();
-        for (const { payload } of changes)
-          await routes.acknowledgeClosure(
-            payload as unknown as import("@pi-cloud/protocol").SandboxBindingChange,
-            { topic: "fixture", partition: 0, offset: "1" },
-            "stopped",
-          );
-      },
+      async () => {},
     );
     const descriptor = {
       version: 1 as const,
@@ -1463,72 +1450,30 @@ async function orderedClosureFixture() {
     project,
   };
 }
-const closurePosition = { topic: "test-session-log", partition: 0, offset: "101" };
-
-it("waits for an ordered ACK without waiting for a sibling binding with the same ID", async () => {
+it("retires routing without a Cube receipt and preserves a sibling with the same binding ID", async () => {
   const f = await orderedClosureFixture(),
     first = await f.makeBinding(),
     sibling = await f.makeBinding();
-  let completed = false;
-  const pending = f.bindings.closeScope(first.scope, false).then(() => {
-    completed = true;
-  });
-  await vi.waitFor(async () => expect((await first.row()).dispatch_closed).toBe(true));
-  expect(completed).toBe(false);
-  await expect(f.bindings.release(f.bindingId, first.assignment)).rejects.toThrow("unconfirmed");
+  await expect(f.bindings.release(f.bindingId, first.assignment)).rejects.toThrow("still open");
+  await f.bindings.closeScope(first.scope, false);
   const change = await first.change();
-  const before = await f.database
-    .selectFrom("outbox")
-    .select(sql<number>`count(*)::int`.as("count"))
-    .executeTakeFirstOrThrow();
-  await f.bindings.acknowledgeClosure(change, closurePosition, "stopped");
-  await pending;
-  // Lost ACK/replay remains idempotent and generates no new control reference.
-  await f.bindings.acknowledgeClosure(change, closurePosition, "stopped");
-  const after = await f.database
-    .selectFrom("outbox")
-    .select(sql<number>`count(*)::int`.as("count"))
-    .executeTakeFirstOrThrow();
-  expect(after).toEqual(before);
+  expect(change.closed).toBe(true);
+  const before = (await first.row()).revision;
+  await f.bindings.closeScope(first.scope, false);
+  expect((await first.row()).revision).toBe(before);
   await f.bindings.release(f.bindingId, first.assignment);
+  await f.bindings.release(f.bindingId, first.assignment);
+  expect(await f.bindings.find(first.scope, false)).toEqual([]);
   expect((await sibling.row()).dispatch_closed).toBe(false);
 });
 
-it("does not treat quarantine as stopping or let an old ACK satisfy a retry", async () => {
+it("uses the explicit physical-absence path to retire all bindings for that VM", async () => {
   const f = await orderedClosureFixture(),
-    first = await f.makeBinding();
-  const pending = f.bindings.closeScope(first.scope, false);
-  await vi.waitFor(async () => expect((await first.row()).dispatch_closed).toBe(true));
-  const old = await first.change();
-  await f.bindings.acknowledgeClosure(old, closurePosition, "quarantined");
-  await pending;
-  await expect(f.bindings.release(f.bindingId, first.assignment)).rejects.toThrow("unconfirmed");
-  let completed = false;
-  const retry = f.bindings.closeScope(first.scope, false, true).then(() => {
-    completed = true;
-  });
-  await vi.waitFor(async () =>
-    expect(BigInt((await first.row()).closure_revision!)).toBeGreaterThan(BigInt(old.version)),
-  );
-  await f.bindings.acknowledgeClosure(old, closurePosition, "stopped");
-  expect((await first.row()).closure_result).toBeNull();
-  expect(completed).toBe(false);
-  const next = await first.change();
-  await f.bindings.acknowledgeClosure(next, { ...closurePosition, offset: "102" }, "stopped");
-  await retry;
-  await f.bindings.acknowledgeClosure(next, closurePosition, "quarantined");
-  expect((await first.row()).closure_result?.outcome).toBe("stopped");
-  await f.bindings.release(f.bindingId, first.assignment);
-});
-
-it("requires the explicit physical-absence release path for an unconfirmed binding", async () => {
-  const f = await orderedClosureFixture(),
-    first = await f.makeBinding();
-  const pending = f.bindings.closeScope(first.scope, false);
-  await vi.waitFor(async () => expect((await first.row()).dispatch_closed).toBe(true));
+    first = await f.makeBinding(),
+    sibling = await f.makeBinding();
   await f.bindings.releaseAfterPhysicalAbsence(f.physicalId);
-  await pending;
   expect(await f.bindings.find(first.scope, false)).toEqual([]);
+  expect(await f.bindings.find(sibling.scope, false)).toEqual([]);
 });
 
 it.each(["shutdown", "expiry"] as const)(
@@ -1684,14 +1629,12 @@ it("adopts a binding through durable Outbox metadata while publication is unavai
         .executeTakeFirstOrThrow()
     ).published_at,
   ).toBeNull();
-  await expect(adopted.release(f.bindingId, first.assignment)).rejects.toThrow("unconfirmed");
+  await expect(adopted.release(f.bindingId, first.assignment)).rejects.toThrow("still open");
   await f.database
     .updateTable("sandbox_tool_bindings")
     .set({ dispatch_closed: true })
     .where("run_id", "=", first.scope.runId)
     .execute();
-  const closed = await first.change();
-  await adopted.acknowledgeClosure(closed, closurePosition, "stopped");
   await adopted.release(f.bindingId, first.assignment);
   expect(publish).not.toHaveBeenCalled();
   expect(await adopted.find(first.scope, false)).toEqual([]);

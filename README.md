@@ -50,10 +50,11 @@ or known deadlines. Worker admission uses the available publication partitions;
 binding bootstrap pages only the owner’s state. Transaction-local queue/state
 notifications are coalesced, and independent Outbox sends prevent a slow request
 from holding an entire batch. Lifecycle mutations and recovery retain PG checks.
-Binding closure travels through that same Session log. Projector sends Cube the
-actual close position and records a bounded lifecycle acknowledgement before
-normal release. Cube rejects delayed old commands by VM/partition progress;
-completed Runs do not accumulate in a permanent closed-task list.
+Chat Stop interrupts the Worker's Agent Loop and reply waits. Accepted VM commands
+may continue; the next interaction can inspect or manage their processes. Binding
+revocation still travels through the Session log before the final seal, without
+Cube process-stop RPCs or lifecycle receipts. Cube's VM/partition progress rejects
+historical duplicates without retaining a permanent closed-task list (ADR-0220).
 Queue display refreshes coalesce outside ordered projection, using a separate
 two-connection read pool. Responses carry 20 inputs per page; all queued inputs
 remain accessible, with drafts preserved when queue changes invalidate a page.

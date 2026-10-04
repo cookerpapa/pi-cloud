@@ -113,15 +113,7 @@ export interface CubeSandboxRuntimeClient {
     request: { probeId: string; runId: string; writerId: string; completionContext: unknown },
   ): Promise<void>;
   submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void>;
-  stopExecutionScope(
-    target: CubeExecutionTarget,
-    scope: {
-      source: ExecutionLogPosition;
-      runId?: string;
-      writerId?: string;
-      operationId?: string;
-    },
-  ): Promise<void>;
+
   pause(sandboxId: string): Promise<void>;
   connect(sandboxId: string, timeoutSeconds: number): Promise<CubeSandboxInstance>;
   list(): Promise<readonly CubeSandboxInstance[]>;
@@ -729,7 +721,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
     if (
       value.enabled !== true ||
-      value.protocolVersion !== 3 ||
+      value.protocolVersion !== 4 ||
       typeof value.bootID !== "string" ||
       !/^[0-9a-f-]{36}$/.test(value.bootID)
     )
@@ -809,33 +801,6 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (value.bootID !== target.bootId || value.probeID !== probeId)
       throw new CubeRuntimeClientError("Cube probe identity changed");
     return value;
-  }
-
-  async stopExecutionScope(
-    target: CubeExecutionTarget,
-    scope: {
-      source: ExecutionLogPosition;
-      runId?: string;
-      writerId?: string;
-      operationId?: string;
-    },
-  ): Promise<void> {
-    const value = await this.#executionRequest(
-      target.sandboxId,
-      "stop",
-      {
-        nodeID: target.nodeId,
-        bootID: target.bootId,
-        runID: scope.runId,
-        writerID: scope.writerId,
-        operationID: scope.operationId,
-        source: parseExecutionLogPosition(scope.source),
-      },
-      20000,
-      target.apiUrl,
-    );
-    if (value.stopped !== true || value.bootID !== target.bootId)
-      throw new CubeRuntimeClientError("Cube execution scope stopping could not be confirmed");
   }
 
   async #executionRequest(

@@ -499,13 +499,19 @@ describe("provider-backed Sandbox controller", () => {
     expect(second.admittedCount).toBe(1);
     expect(fixture.createCount).toBe(1);
     expect(stop).not.toHaveBeenCalled();
-    await second.stop(binding.activationId, assignment);
+    await second.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: binding.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
     expect(stop).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         runId: parseExecutionReference(assignment.executionReference).runId,
       }),
       false,
-      true,
     );
     expect(fixture.destroyed).toBe(false);
     await second.close();
@@ -637,7 +643,14 @@ describe("provider-backed Sandbox controller", () => {
       ).toEqual(["/workspace", "/workspace/worktrees/a", "/workspace/worktrees/b"]);
       expect(one.continuityId).toBe(two.continuityId);
       expect(root.continuityId).not.toBe(one.continuityId);
-      await manager.stop(one.activationId, child);
+      await manager.release({
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.release",
+        requestId: crypto.randomUUID(),
+        activationId: one.activationId,
+        assignment: child,
+        disposition: "keep_warm",
+      });
       expect(created).toHaveLength(2);
       await manager.release({
         toolBrokerProtocolVersion: 1,
@@ -820,7 +833,14 @@ describe("provider-backed Sandbox controller", () => {
     expect(orphaned).not.toHaveBeenCalled();
     expect(terminal).not.toHaveBeenCalled();
 
-    await manager.stop(ACTIVATION_ID, assignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: ACTIVATION_ID,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
     await manager.close();
   });
 
@@ -864,8 +884,22 @@ describe("provider-backed Sandbox controller", () => {
     expect(second.activationId).toBe(
       parseExecutionReference(siblingAssignment.executionReference).runId,
     );
-    await manager.stop(ACTIVATION_ID, assignment);
-    await manager.stop(second.activationId, siblingAssignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: ACTIVATION_ID,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: second.activationId,
+      assignment: siblingAssignment,
+      disposition: "keep_warm",
+    });
     await manager.close();
   });
 
@@ -977,7 +1011,14 @@ describe("provider-backed Sandbox controller", () => {
       rows: 24,
       cols: 100,
     });
-    await manager.stop(secondAgent.activationId, secondAssignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: secondAgent.activationId,
+      assignment: secondAssignment,
+      disposition: "detach",
+    });
     expect(fixture.createCount).toBe(1);
     expect(fixture.destroyed).toBe(false);
     await concurrentTerminal.close();
@@ -1193,8 +1234,22 @@ describe("provider-backed Sandbox controller", () => {
       nodeId: "node-test",
       bootId: "11111111-1111-4111-8111-111111111111",
     });
-    await manager.stop(binding.activationId, assignment);
-    await manager.stop(binding.activationId, assignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: binding.activationId,
+      assignment: assignment,
+      disposition: "detach",
+    });
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: binding.activationId,
+      assignment: assignment,
+      disposition: "detach",
+    });
     expect(returnMachine).toHaveBeenCalledWith(
       ACTIVATION_ID,
       binding.activationId,
@@ -1561,7 +1616,14 @@ describe("provider-backed Sandbox controller", () => {
         httpServices: [{ port: 3_000, protocol: "http" }],
       }),
     );
-    await manager.stop(created.activationId, assignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: created.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
     await manager.close();
   });
 
@@ -1587,7 +1649,14 @@ describe("provider-backed Sandbox controller", () => {
     const waiting = manager.create(next);
     await vi.waitFor(() => expect(manager.admissionWaitingCount).toBe(1));
     expect(fixture.createCount).toBe(1);
-    await manager.stop(first.activationId, assignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: first.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
     const second = await waiting;
     expect(second.workspaceRoot).toBe(next.toolRoot);
     expect(fixture.createCount).toBe(2);
@@ -1636,7 +1705,14 @@ describe("provider-backed Sandbox controller", () => {
     expect(fixture.readWorkspaceFile).toHaveBeenCalledTimes(1);
     expect(manager.admissionWaitingCount).toBe(0);
     expect(manager.admittedCount).toBe(1);
-    await manager.stop(active.activationId, assignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: active.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
   });
 
   it("removes an aborted Tool binding admission waiter without consuming capacity", async () => {
@@ -1694,7 +1770,14 @@ describe("provider-backed Sandbox controller", () => {
     expect(second.continuity).toBe("warm_reuse");
     expect(second.continuityId).toBe(first.continuityId);
     expect(fixture.createCount).toBe(1);
-    await manager.stop(second.activationId, nextAssignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: second.activationId,
+      assignment: nextAssignment,
+      disposition: "keep_warm",
+    });
   });
 
   it("runs parent and child Tool bindings in one shared Workspace runtime", async () => {
@@ -1709,7 +1792,14 @@ describe("provider-backed Sandbox controller", () => {
     );
     expect(first.activationId).not.toBe(second.activationId);
     expect(fixture.createCount).toBe(1);
-    await manager.stop(first.activationId, assignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: first.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
     expect(manager.reservedCount).toBe(1);
     expect(fixture.destroyed).toBe(false);
     await manager.close();
@@ -1904,7 +1994,14 @@ describe("provider-backed Sandbox controller", () => {
     );
     expect(second.continuity).toBe("warm_reuse");
     expect(fixture.createCount).toBe(1);
-    await manager.stop(second.activationId, nextAssignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: second.activationId,
+      assignment: nextAssignment,
+      disposition: "keep_warm",
+    });
     await manager.close();
   });
 
@@ -1994,8 +2091,22 @@ describe("provider-backed Sandbox controller", () => {
       assignment: persistentNextAssignment,
     });
     expect(persistentAgain.continuity).toBe("cold_restore");
-    await manager.stop(persistentAgain.activationId, persistentNextAssignment);
-    await manager.stop(demand.activationId, demandAssignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: persistentAgain.activationId,
+      assignment: persistentNextAssignment,
+      disposition: "keep_warm",
+    });
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: demand.activationId,
+      assignment: demandAssignment,
+      disposition: "keep_warm",
+    });
   });
 
   it("runs two Session Tool bindings through one physical Workspace runtime", async () => {
@@ -2006,13 +2117,19 @@ describe("provider-backed Sandbox controller", () => {
     const first = await manager.create(createRequest),
       next = nextBindingRequest(assignment.workspaceId);
     await manager.create(next);
-    await manager.stop(first.activationId, assignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: first.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
     expect(stop).toHaveBeenCalledWith(
       expect.objectContaining({
         runId: parseExecutionReference(assignment.executionReference).runId,
       }),
       false,
-      true,
     );
     expect(stop).toHaveBeenCalledTimes(1);
     expect(bindings.rows.size).toBe(1);
@@ -2059,8 +2176,22 @@ describe("provider-backed Sandbox controller", () => {
     const first = await manager.create(createRequest);
     const next = nextBindingRequest(assignment.workspaceId);
     await manager.create(next);
-    await manager.stop(first.activationId, assignment);
-    await manager.stop(first.activationId, assignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: first.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: first.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
     expect(fixture.destroyed).toBe(false);
     expect(manager.reservedCount).toBe(1);
     await manager.close();
@@ -2106,26 +2237,40 @@ describe("provider-backed Sandbox controller", () => {
     await manager.close();
   });
 
-  it("waits for ordered stopping and preserves binding/quota when it is unconfirmed", async () => {
+  it("waits for routing revocation and preserves binding/quota if publication fails", async () => {
     const fixture = providerFixture(),
       bindings = new InMemorySandboxBindings();
     const manager = testBroker({ provider: fixture.provider, bindings });
     const first = await manager.create(createRequest);
     const wait = Promise.withResolvers<void>();
     bindings.onClose = () => wait.promise;
-    const closing = manager.stop(first.activationId, assignment);
+    const closing = manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: first.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
     await vi.waitFor(() =>
       expect(bindings.rows.get(first.activationId)?.dispatchClosed).toBe(true),
     );
     expect(manager.warmCount).toBe(0);
     expect(manager.admittedCount).toBe(1);
-    wait.reject(new Error("ordered stopping unconfirmed"));
+    wait.reject(new Error("routing revocation unconfirmed"));
     await expect(closing).rejects.toThrow("unconfirmed");
     expect(bindings.rows.has(first.activationId)).toBe(true);
     expect(manager.admittedCount).toBe(1);
     expect(fixture.destroyed).toBe(false);
     bindings.onClose = async () => {};
-    await manager.stop(first.activationId, assignment);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: crypto.randomUUID(),
+      activationId: first.activationId,
+      assignment: assignment,
+      disposition: "keep_warm",
+    });
     expect(bindings.rows.has(first.activationId)).toBe(false);
     await manager.close();
   });

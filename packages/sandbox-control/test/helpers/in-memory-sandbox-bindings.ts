@@ -3,7 +3,6 @@ import type { SandboxBindings, SandboxBinding } from "../../src/sandbox-bindings
 
 export class InMemorySandboxBindings implements SandboxBindings {
   onClose?: (row: SandboxBinding) => Promise<void>;
-  readonly stopped = new Set<string>();
   readonly rows = new Map<string, SandboxBinding>();
   async register(...[bindingId, descriptor, snapshot]: Parameters<SandboxBindings["register"]>) {
     this.rows.set(bindingId, {
@@ -16,10 +15,9 @@ export class InMemorySandboxBindings implements SandboxBindings {
     });
   }
   async release(...[bindingId]: Parameters<SandboxBindings["release"]>) {
-    if (this.rows.has(bindingId) && !this.stopped.has(bindingId))
-      throw new Error("Binding execution closure is unconfirmed");
+    if (this.rows.has(bindingId) && !this.rows.get(bindingId)!.dispatchClosed)
+      throw new Error("Binding routing admission is still open");
     this.rows.delete(bindingId);
-    this.stopped.delete(bindingId);
   }
   async find(...[scope, wholeWriter]: Parameters<SandboxBindings["find"]>) {
     return [...this.rows.values()].filter((row) => {
@@ -40,7 +38,6 @@ export class InMemorySandboxBindings implements SandboxBindings {
     for (const row of await this.find(args[0], args[1])) {
       this.rows.set(row.bindingId, { ...row, dispatchClosed: true });
       await this.onClose?.(row);
-      this.stopped.add(row.bindingId);
     }
   }
   commitPhysicalClosure(physicalActivationId: string): void {
@@ -60,7 +57,6 @@ export class InMemorySandboxBindings implements SandboxBindings {
     for (const row of this.rows.values())
       if (row.snapshot.physicalActivationId === physicalActivationId) {
         this.rows.delete(row.bindingId);
-        this.stopped.delete(row.bindingId);
       }
   }
   async inventory(sandboxId: string) {

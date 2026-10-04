@@ -159,9 +159,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     return { type: "worker.probe_result" as const, probeId, guestBootId: this.guestBootId };
   }
   readonly submitTool = vi.fn<CubeSandboxRuntimeClient["submitTool"]>(async () => {});
-  readonly stopExecutionScope = vi.fn<CubeSandboxRuntimeClient["stopExecutionScope"]>(
-    async () => {},
-  );
+
   async executionTarget(sandboxId: string, nodeId: string) {
     return {
       apiUrl: "http://cube.test",
@@ -1397,37 +1395,6 @@ describe("CubeSandbox Provider contract", () => {
     } finally {
       await provider.close();
     }
-  });
-
-  it("preserves VM and capsule when scoped stopping is unconfirmed", async () => {
-    const runtime = new FakeCubeRuntimeClient();
-    const provider = testCubeProvider({
-      templateId: "pi-cloud-tool-v1",
-      imageRevision: "development",
-      webProxy: WEB_PROXY,
-      runtimeClient: runtime,
-      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
-    });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-      lifetime: "development_environment",
-    });
-    runtime.stopExecutionScope.mockRejectedValue(new Error("node unavailable"));
-    const descriptor = await provider.describeExecution(handle, ACTIVATION_ID, "/home/user");
-    await expect(
-      runtime.stopExecutionScope(descriptor.target, {
-        source: { topic: "test-log", partition: 0, offset: "1" },
-        runId: parseExecutionReference(assignment.executionReference).runId,
-      }),
-    ).rejects.toThrow("node unavailable");
-    expect(runtime.destroyed).toEqual([]);
-    expect((await provider.persistentCapsule(handle)).capsule).toBeTruthy();
-    await provider.destroy(handle);
-    await provider.close();
   });
 
   it("retains guest continuity and observes a reboot after capsule adoption", async () => {

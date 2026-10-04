@@ -149,27 +149,6 @@ export const ToolSandboxReleaseResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ToolSandboxStopRequestSchema = Type.Object(
-  {
-    ...ToolSandboxEnvelope,
-    type: Type.Literal("tool_sandbox.stop"),
-    requestId: UuidSchema,
-    activationId: UuidSchema,
-    assignment: ToolSandboxAssignmentSchema,
-  },
-  { additionalProperties: false },
-);
-
-export const ToolSandboxStopResponseSchema = Type.Object(
-  {
-    ...ToolSandboxEnvelope,
-    type: Type.Literal("tool_sandbox.stopped"),
-    requestId: UuidSchema,
-    activationId: UuidSchema,
-  },
-  { additionalProperties: false },
-);
-
 const WorkspaceBrowserPathSchema = Type.String({ minLength: 0, maxLength: 4_096 });
 const MachineBrowserTargetSchema = Type.Object(
   {
@@ -281,7 +260,6 @@ export const SandboxControlRequestSchema = Type.Union([
   ),
   ToolSandboxCreateRequestSchema,
   ToolSandboxReleaseRequestSchema,
-  ToolSandboxStopRequestSchema,
 ]);
 
 export const SandboxControlResponseSchema = Type.Union([
@@ -316,7 +294,6 @@ export const SandboxControlResponseSchema = Type.Union([
   ToolSandboxCreateResponseSchema,
   ToolSandboxCreateRedirectResponseSchema,
   ToolSandboxReleaseResponseSchema,
-  ToolSandboxStopResponseSchema,
 ]);
 
 const OperationEnvelope = {
@@ -473,8 +450,6 @@ export type ToolSandboxCreateRedirectResponse = Static<
 >;
 export type ToolSandboxReleaseRequest = Static<typeof ToolSandboxReleaseRequestSchema>;
 export type ToolSandboxReleaseResponse = Static<typeof ToolSandboxReleaseResponseSchema>;
-export type ToolSandboxStopRequest = Static<typeof ToolSandboxStopRequestSchema>;
-export type ToolSandboxStopResponse = Static<typeof ToolSandboxStopResponseSchema>;
 export type SandboxControlListWorkspaceDirectoryRequest = Static<
   typeof SandboxControlListWorkspaceDirectoryRequestSchema
 >;

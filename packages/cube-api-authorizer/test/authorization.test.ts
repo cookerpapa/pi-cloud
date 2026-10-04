@@ -11,7 +11,6 @@ describe("Cube API authorizer", () => {
     ["GET", `/sandboxes/${"a".repeat(32)}/observation`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/capabilities`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/submit`],
-    ["POST", `/sandboxes/${"a".repeat(32)}/execution/stop`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/probe`],
     ["DELETE", `/sandboxes/${SANDBOX}`],
     ["POST", `/sandboxes/${SANDBOX}/pause`],
@@ -38,6 +37,7 @@ describe("Cube API authorizer", () => {
   });
 
   it.each([
+    ["POST", `/sandboxes/${"a".repeat(32)}/execution/stop`],
     ["GET", "/templates"],
     ["GET", `/sandboxes/${"a".repeat(32)}/observation?nodeID=node-1`],
     ["GET", `/sandboxes/${"a".repeat(32)}/observation?nodeID=`],

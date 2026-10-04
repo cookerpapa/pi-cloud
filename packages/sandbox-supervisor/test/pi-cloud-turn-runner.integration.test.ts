@@ -1048,7 +1048,6 @@ describe("PiCloudTurnRunner integration", () => {
       async release() {
         throw new Error("unused");
       },
-      async stop() {},
       workflowUrlFor() {
         return "http://sandbox-control.test/internal/v1/tool-operation";
       },
@@ -1107,7 +1106,6 @@ describe("PiCloudTurnRunner integration", () => {
       prepareInputImages: prepare,
       release,
       async refreshServices() {},
-      async stop() {},
       workflowUrlFor() {
         return "http://sandbox-control.test/internal/v1/tool-operation";
       },
@@ -1218,7 +1216,6 @@ describe("PiCloudTurnRunner integration", () => {
       create,
       async refreshServices() {},
       release,
-      async stop() {},
       workflowUrlFor() {
         return "http://sandbox-control.test/internal/v1/tool-operation";
       },
@@ -1311,12 +1308,10 @@ describe("PiCloudTurnRunner integration", () => {
         if (cleanupFails) throw new Error("cleanup transport unavailable");
         return { retained: true };
       });
-      const stop = vi.fn(async () => undefined);
       const modelLeaseRelease = vi.fn(async () => undefined);
       const broker = {
         create,
         release,
-        stop,
         async refreshServices() {},
         workflowUrlFor() {
           return "http://sandbox-control.test/internal/v1/tool-operation";
@@ -1438,7 +1433,6 @@ describe("PiCloudTurnRunner integration", () => {
             { kind: "detach" },
           );
         else expect(release).not.toHaveBeenCalled();
-        expect(stop).not.toHaveBeenCalled();
         expect(modelLeaseRelease).toHaveBeenCalledTimes(1);
         expect(checkpointEvents.map((event) => event.type)).toContain("tool.started");
         expect(checkpointOperations).toContainEqual(

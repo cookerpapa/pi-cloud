@@ -162,16 +162,8 @@ it.skipIf(!postgres || !brokers)(
               if (change.entity === "sandbox_binding" && change.closed)
                 await closedAdmissionGate?.promise;
             },
-            consume: async (change, current, position) => {
+            consume: async (change, current) => {
               await view.consume(change, current);
-              // This metadata fixture simulates the native stopping outcome.
-              // The separate ordered-Cube integration proves Stop-before-ACK.
-              if (
-                change.entity === "sandbox_binding" &&
-                change.closed &&
-                view.closure(change, current)
-              )
-                await bindings.acknowledgeClosure(change, position, "stopped");
               await inputView.consume(change, current);
             },
           },

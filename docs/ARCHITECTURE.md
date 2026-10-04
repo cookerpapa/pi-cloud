@@ -26,8 +26,10 @@ Browser → Control Plane → PostgreSQL accepted Run
                                                  native reply → Kafka reply topic → Worker/Pi
 
 Control authority → PG binding close + Outbox → same ingress/Kafka
-  → Projector → Cube scoped Stop(position) → PG binding closure acknowledgement
+  → ingress routing revocation + Projector binding view
   → final Kafka seal → PG terminal/native closure → next Run eligible
+Chat Stop → durable PG request → Worker Agent.abort() / close reply waits
+  (accepted Cube processes keep their own lifetime)
 ```
 
 The Projector currently runs in the Control Plane process. Its modules remain
@@ -82,23 +84,23 @@ bounded held-scope index falls back to scoped reconciliation on overflow.
 Ordinary Subagent maintenance follows affected Run changes with indexed parent/child
 reads. Startup, known deadlines and bounded-scope overflow retain global recovery.
 
-Binding closure uses the existing closed control fact, not a direct controller
-Stop racing Tool publication. The ingress still installs PG revocation before
-publishing that fact. Projector supplies the fact's actual Kafka position to Cube;
-reading a newer closed PG snapshot through an older open fact cannot perform Stop.
-The binding stores a bounded stopped/quarantined acknowledgement. Normal release
-requires stopped; quarantine preserves the physical identity and quota. A retry
-gets a new closure revision, so old acknowledgements cannot complete it. Final
-seals wait for scope closure; arbitrary shell work is never replayed.
+Binding closure revokes routing admission; it does not stop Cube processes.
+PG revocation is installed before publishing the binding control reference and
+before final Run sealing. Chat Stop uses the existing durable cancellation request
+to interrupt Pi's Agent Loop and detach pending reply waits. Commands already
+handed off may continue, and their late replies cannot reopen the Run. The native
+Tool result states this uncertainty so the next Run can inspect effects rather
+than blindly repeat them. There is no Cube Stop RPC, lifecycle ACK or polling
+loop in settlement ([ADR-0220](adr/0220-agent-stop-is-not-process-control.md)).
+
 Cube retains one source identity and per-partition progress per physical VM;
 active operation fingerprints disappear after bounded delivery. Boot changes,
 confirmed VM absence and shutdown remain distinct. Controller lease loss alone
-preserves capsule-backed VM state and bindings for verified takeover; it never
-substitutes for physical failure evidence. Ownership adoption and retirement of
-already-stopped bindings commit their Outbox references without waiting for
-notification transport. Registration and closure retain synchronous barriers;
-pending closure recovery retries without partially installing local bindings. Read-only probes do not
-advance admission. See [ADR-0219](adr/0219-ordered-cube-admission.md).
+preserves capsule-backed VM state and bindings for verified takeover. Adoption
+and retirement of already-revoked bindings commit Outbox references without
+waiting for notification transport. Registration and revocation retain their
+publication barriers; pending propagation never substitutes for physical failure.
+Read-only probes do not advance admission. See [ADR-0219](adr/0219-ordered-cube-admission.md).
 
 No browser payload or authority moves through NOTIFY. Drain proof and completion
 remain separate durable boundaries (ADR-0177).
@@ -579,25 +581,26 @@ never reopen or silently retarget a replacement VM. These facts do not become
 Pi Entries or model context. See [ADR-0212](adr/0212-ordered-control-read-models.md).
 
 Cubelet owns native containerd process handles and operation-scoped guest cgroups.
-It rejects duplicate/closed scopes in memory, without querying PG Run leases.
+It rejects stale positions and duplicate/changed operations in memory, without querying PG Run leases.
 A trusted host completion adapter externalizes images and publishes one final
 reply to the original Worker boot. Pi Harness processing still creates the
 canonical Tool Result. No raw-result GET/cache or PG operation ledger exists.
 Uncertain execution never causes automatic shell replay.
 
-Authorized closure stops publication admission in memory, closes execution
-scopes and then writes the seal. Its execution wait is outside the producer queue
-and independent of Projector catch-up. The Projector materializes the already
-closed seal without another stop RPC. This prevents queued historical intents
-from starting after cancellation while other Sessions keep publishing.
+Authorized closure revokes publication and binding routing admission before the
+seal. It does not join Cube processes. Stop interrupts the Worker Agent Loop,
+prevents later invocations and detaches pending reply waits; already handed-off
+commands may continue. Interactive workflow orchestration closes with its caller.
+A late native reply is discarded when its original waiter no longer exists.
 
 The controller chooses, observes, adopts, quarantines and destroys physical VMs.
-A normal Tool error does not destroy a VM. Cancellation joins its native main
-process before killing its cgroup and proving it empty; another completed Tool's
-background server survives. Unknown stopping or executor boot replacement makes
-the VM unavailable for recovery. User-owned machines keep explicit release
-semantics. Missing heartbeats/master routes are not proof of VM absence; quota
-release follows positive observation on the recorded node.
+A normal Tool error or user Stop does not destroy a VM. Explicit native Tool
+execution timeouts still stop the main process and clean its cgroup; ordinary
+completed Bash can leave background servers. Executor boot replacement or an
+unsafe native timeout outcome makes the VM unavailable for recovery. User-owned
+machines keep their explicit release semantics, and elastic VMs retain their
+existing Workspace lifecycle. Missing heartbeats/master routes never prove VM
+absence; quota release follows positive observation on the recorded node.
 
 Physical health runs independently from resource cleanup. A due-time pump covers
 all known VMs with bounded concurrency, without truncating each sweep to 16.
@@ -886,11 +889,11 @@ progress read, retaining independent cancellation and current-owner checks.
 The PG budgets cover native/seal transactions, not pool acquisition, every API
 query or external routing; a persistently failing record still blocks its partition.
 
-Cubelet now enforces boot-scoped admission and Run/writer/operation closure,
-joining active native processes and operation cgroups before confirming a stop
-(ADR-0210). Previously completed background services and already-issued external
-effects retain their documented lifetimes. This does not establish durable
-cross-boot process/result recovery or exactly-once effects. PG failover, Cube node
+Cubelet enforces boot identity, active-operation fingerprints and monotonic
+partition admission. It owns accepted processes independently of the Agent's
+Run; chat Stop does not terminate them (ADR-0220). Explicit Tool timeouts retain
+native process/cgroup cleanup. This does not establish durable cross-boot
+process/result recovery or exactly-once effects. PG failover, Cube node
 drain and full multi-node HA remain
 separate deployment acceptance work. The isolated duplicate SSE opening remains
 unexplained; reproducing intentional stale-snapshot cancellation is not its fix.

@@ -1,8 +1,12 @@
-# ADR-0210: Cube execution handoff and scoped stopping
+# ADR-0210: Cube execution handoff and native timeout cleanup
 
 Status: deployed and verified under the owner's accepted ADR-0209 cutover,
 2026-10-01. See [isolated acceptance](../reports/cube-execution-authority-20261001.md)
 and [production acceptance](../reports/cube-execution-rollout-20261001.md).
+
+Chat Stop follows [ADR-0220](0220-agent-stop-is-not-process-control.md). It never
+invokes native process cleanup; the kernel mechanism below is for native Tool
+timeout and executor shutdown. ADR-0219 bounds destination admission state.
 
 ## Decision and evidence
 
@@ -38,7 +42,7 @@ cgroup capability in the guest contract rather than silently falling back.
   the fixed Tool under UID/GID 1000 with existing privilege restrictions. Keep
   the original parent cgroup's resource accounting. A small root-owned scope
   locator may record the cgroup path; it contains no transcript or Tool result.
-- Cancel an active operation by stopping and joining its native main process
+- On an explicit Tool timeout, stop and join its native main process
   first, then killing the entire recorded cgroup and confirming it is empty.
   Joining the main process first prevents a delayed launcher from creating new
   children after a premature empty-group observation.
@@ -49,8 +53,8 @@ cgroup capability in the guest contract rather than silently falling back.
   background work.
 - Bound scope/dedup state. Do not evict evidence in a way that lets the same
   accepted operation execute again. Exhaustion rejects admission explicitly.
-  A closed Run/writer/operation fence replaces its completed operation entries;
-  confirmed native VM absence retires that VM's in-memory fences. Guest locators
+  ADR-0219 uses per-VM partition progress instead of closed task lists;
+  confirmed native VM absence retires that VM's progress. Guest locators
   serve active scoped stopping, not another durable operation ledger. After the
   launcher leaves its cgroup, remove empty groups and locators; completed
   background groups are pruned only once empty. Thus repeated successful Tools
@@ -69,16 +73,12 @@ from racing unread final output; it acknowledges bytes only, not Kafka durabilit
 or successful Tool execution. Input, output and receipt waits are bounded. No
 Cube agent/shim fork is needed for pipe support.
 
-PG-authorized closure first closes publication admission in memory, then closes
-Cube/interactive-workflow execution scopes, then appends the seal. The execution
-join runs outside the Kafka producer queue. Projector catch-up therefore cannot
-start a cancelled command while waiting to consume its later seal, and an
-unrelated Session is not held behind another Session's stopping RPC. The
-Projector projects the already-closed seal without a second execution-stop trip.
-An unconfirmed stop requires durable runtime quarantine before acknowledging
-this boundary; it never proves VM absence.
+PG-authorized closure revokes publication and binding routing admission before
+appending the seal (ADR-0220). It does not join or cancel accepted Cube processes.
+The Worker aborts its Agent Loop and stops waiting for native replies. Interactive
+workflow channels close with their caller; external Tool effects may continue.
 
-Before contacting Cube, closure marks the existing Run binding as closed for
+Closure marks the existing Run binding as closed for
 dispatch in PostgreSQL. Quarantine closes every binding of that exact physical
 target in the same transaction as its resource state change. ADR-0212 replaces
 the original per-Tool binding SELECT with a partition-owner memory view. PG
@@ -87,7 +87,7 @@ synchronous owner barrier, not merely eventual delivery of a close notification.
 Bootstrap reloads current closure before routing. This is not a Run/lease
 revalidation, per-operation ledger, or another fencing authority.
 Commands whose lookup preceded closure remain potentially in flight; native
-scope stopping or quarantine handles their uncertain outcome.
+execution proceeds independently of the Agent and its result may remain unknown.
 
 ## Results and failure
 

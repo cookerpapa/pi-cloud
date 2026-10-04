@@ -7,9 +7,9 @@ import { createDatabase } from "../packages/database/src/index.ts";
 import { sql } from "kysely";
 import { serviceAddress } from "./lib/production-kubernetes.mjs";
 
-if (process.env.PI_CLOUD_LIVE_ORDERED_CLOSE_CHECK !== "1")
+if (process.env.PI_CLOUD_LIVE_AGENT_STOP_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_ORDERED_CLOSE_CHECK=1 for owned Luna/shared-VM cancellation acceptance",
+    "Set PI_CLOUD_LIVE_AGENT_STOP_CHECK=1 for owned Luna/shared-VM cancellation acceptance",
   );
 const runtime = "deploy/production/runtime";
 const port = (await readFile(`${runtime}/.env`, "utf8")).match(/^PI_CLOUD_HTTP_PORT=(\d+)$/m)?.[1];
@@ -41,7 +41,7 @@ async function run(session, prompt) {
   const turn = await api.acceptTurn(
     session.sessionId,
     prompt,
-    newIdempotencyKey("ordered-close"),
+    newIdempotencyKey("agent-stop"),
     "low",
   );
   turns.push({ session, turn });
@@ -54,7 +54,7 @@ async function settled(turn) {
   }, "Run settlement");
 }
 try {
-  project = await api.createProject("Ordered Cube closure " + Date.now());
+  project = await api.createProject("Agent Stop survival " + Date.now());
   for (const name of ["cancelled scope", "surviving sibling"])
     sessions.push(
       await api.createSession(
@@ -68,7 +68,7 @@ try {
       ),
     );
   const [first, sibling] = sessions;
-  const prefix = `ordered-${randomUUID()}`;
+  const prefix = `agent-stop-${randomUUID()}`;
   const command = `printf 'started\\n' >> ${prefix}.count; printf '%s' $$ > ${prefix}.parent; sleep 120 & child=$!; printf '%s' "$child" > ${prefix}.child; wait "$child"; printf 'late\\n' > ${prefix}.late`;
   const cancelled = await run(
     first,
@@ -108,11 +108,10 @@ try {
   const cancelledRun = await settled(cancelled);
   assert.equal(cancelledRun.state, "cancelled", JSON.stringify(cancelledRun.failure));
   report.cancelMs = Date.now() - cancellationAt;
-  const survived = await settled(peer);
-  assert.equal(survived.state, "completed", JSON.stringify(survived.failure));
-  assert.equal(await read(sibling, `${prefix}.sibling`), "ready\nsurvived\n");
-  assert.equal(await read(first, `${prefix}.count`), "started\n");
-  const verify = `for f in ${prefix}.parent ${prefix}.child; do pid=$(cat "$f"); state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true); case "$state" in ""|Z) ;; *) printf 'STILL_RUNNING'; exit 1;; esac; done; test ! -e ${prefix}.late && printf 'SCOPED_STOP_CONFIRMED'`;
+  assert(report.cancelMs < 15000, "Agent Stop waited for the running command");
+  // The next Agent invocation must see both processes still alive; only its
+  // explicit Bash command then terminates these owned fixture processes.
+  const verify = `for f in ${prefix}.parent ${prefix}.child; do pid=$(cat "$f"); state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true); case "$state" in ""|Z) printf 'PROCESS_DIED_ON_CHAT_STOP'; exit 1;; esac; done; printf 'SURVIVED_CHAT_STOP\\n'; kill "$(cat ${prefix}.child)" "$(cat ${prefix}.parent)"; printf 'EXPLICIT_PROCESS_STOP'`;
   const checked = await run(
     first,
     `只调用一次 bash，command 必须逐字使用这个 JSON 字符串：${JSON.stringify(verify)}。不要使用其他工具，完成后简短回复。`,
@@ -125,8 +124,19 @@ try {
   const tools = detail.transcript.items.filter((i) => i.kind === "tool");
   assert.equal(tools.length, 1);
   assert.equal(tools[0].status, "completed");
-  assert(JSON.stringify(tools[0].output).includes("SCOPED_STOP_CONFIRMED"));
-  report.parentAndChildStopped = true;
+  assert(JSON.stringify(tools[0].output).includes("SURVIVED_CHAT_STOP"));
+  assert(JSON.stringify(tools[0].output).includes("EXPLICIT_PROCESS_STOP"));
+  report.parentAndChildSurvivedChatStop = true;
+  report.explicitProcessStopInNextRun = true;
+  const survived = await settled(peer);
+  assert.equal(survived.state, "completed", JSON.stringify(survived.failure));
+  assert.equal(await read(sibling, `${prefix}.sibling`), "ready\nsurvived\n");
+  assert.equal(await read(first, `${prefix}.count`), "started\n");
+  const cancelledDetail = (await api.getConversation(first.sessionId)).turns.find(
+    (t) => t.runId === cancelled.runId,
+  );
+  assert(JSON.stringify(cancelledDetail).includes("may still be running"));
+  report.interruptionContextRetained = true;
   report.siblingCompleted = true;
   report.executionCount = 1;
   report.accepted = true;
@@ -158,13 +168,13 @@ try {
   await database.destroy();
   report.cleanupCompleted = errors.length === 0;
   await writeFile(
-    process.argv[2] ?? "/tmp/pi-cloud-ordered-close-live.json",
+    process.argv[2] ?? "/tmp/pi-cloud-agent-stop-live.json",
     JSON.stringify(report, null, 2) + "\n",
   );
   console.log(JSON.stringify(report));
   if (failure || errors.length)
     throw new AggregateError(
       [...(failure ? [failure] : []), ...errors],
-      "Ordered Cube closure acceptance failed",
+      "Agent Stop survival acceptance failed",
     );
 }

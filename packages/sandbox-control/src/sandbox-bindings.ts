@@ -1,11 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
-import {
-  parseExecutionReference,
-  type ExecutionLogPosition,
-  type SandboxBindingChange,
-  type ToolSandboxAssignment,
-} from "@pi-cloud/protocol";
+import { parseExecutionReference, type ToolSandboxAssignment } from "@pi-cloud/protocol";
 import type { ToolLogFact } from "./workflow-command-dispatcher.ts";
 import type { SandboxBindingSnapshot, SandboxExecutionDescriptor } from "./sandbox-execution.ts";
 
@@ -39,11 +34,7 @@ export type BindingViewPage = Readonly<{
 export const BINDING_VIEW_PAGE_SIZE = 256;
 export interface SandboxBindingReader {
   find(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<readonly SandboxBinding[]>;
-  closeScope(
-    scope: ToolLogFact["scope"],
-    wholeWriter: boolean,
-    retryQuarantined?: boolean,
-  ): Promise<void>;
+  closeScope(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<void>;
   isAlive(instanceId: string): Promise<boolean>;
 }
 export interface SandboxBindings extends SandboxBindingReader {
@@ -61,7 +52,6 @@ export interface SandboxBindings extends SandboxBindingReader {
 
 /** Bounded immutable transport metadata, with no per-Tool lease/Run authority query. */
 export class PostgresSandboxBindings implements SandboxBindings {
-  readonly #waiters = new Set<() => void>();
   constructor(
     readonly database: Kysely<Database>,
     readonly sandboxDomainId: string,
@@ -97,7 +87,7 @@ export class PostgresSandboxBindings implements SandboxBindings {
       .where("tenant_id", "=", assignment.tenantId)
       .where("run_id", "=", parseExecutionReference(assignment.executionReference).runId)
       .where("binding_id", "=", bindingId)
-      .where(sql<boolean>`dispatch_closed and closure_result->>'outcome'='stopped'`)
+      .where("dispatch_closed", "=", true)
       .returning("binding_id")
       .executeTakeFirst();
     if (
@@ -110,9 +100,9 @@ export class PostgresSandboxBindings implements SandboxBindings {
         .where("run_id", "=", parseExecutionReference(assignment.executionReference).runId)
         .executeTakeFirst())
     )
-      throw new Error("Binding execution closure is unconfirmed");
-    // Stopping was confirmed before deletion. Outbox delivery only retires
-    // the already-closed read view; it is not another release authority.
+      throw new Error("Binding routing admission is still open");
+    // Removing routing metadata does not terminate accepted Tools or release VM quota.
+    // The Outbox retires the already-revoked read view.
   }
   async releaseAfterPhysicalAbsence(physicalActivationId: string): Promise<void> {
     // Caller has confirmed native destruction/absence on the recorded node.
@@ -121,7 +111,6 @@ export class PostgresSandboxBindings implements SandboxBindings {
       .where("sandbox_domain_id", "=", this.sandboxDomainId)
       .where(sql<string>`snapshot->>'physicalActivationId'`, "=", physicalActivationId)
       .execute();
-    this.#notify();
   }
   #query() {
     return this.database
@@ -156,93 +145,24 @@ export class PostgresSandboxBindings implements SandboxBindings {
         : query.where("binding.run_id", "=", scope.runId)
     ).execute()) as unknown as SandboxBinding[];
   }
-  async closeScope(
-    scope: ToolLogFact["scope"],
-    wholeWriter: boolean,
-    retryQuarantined = false,
-  ): Promise<void> {
+  async closeScope(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<void> {
     const query = this.database
       .updateTable("sandbox_tool_bindings")
       .set({ dispatch_closed: true })
-      .$if(retryQuarantined, (q) =>
-        q.set({
-          closure_revision: sql`case when closure_result->>'outcome'='quarantined' then null else closure_revision end`,
-          closure_result: sql`case when closure_result->>'outcome'='quarantined' then null else closure_result end`,
-        }),
-      )
       .where("tenant_id", "=", scope.tenantId!);
     const closed = await (
       wholeWriter
         ? query.where("writer_id", "=", scope.writerId)
         : query.where("run_id", "=", scope.runId)
     )
-      .returning(["binding_id", "run_id"])
+      .returning("binding_id")
       .execute();
     try {
-      await this.publishChanges(closed.map((r) => r.binding_id));
-      await this.#waitForClosure(closed);
+      // Installs routing revocation before the seal. Accepted Cube processes
+      // are independent of Run settlement; there is no execution-stop receipt.
+      await this.publishChanges(closed.map((row) => row.binding_id));
     } catch (cause) {
       throw new BindingClosurePending(cause);
-    }
-  }
-  async acknowledgeClosure(
-    change: SandboxBindingChange,
-    position: ExecutionLogPosition,
-    outcome: "stopped" | "quarantined",
-  ): Promise<void> {
-    if (!change.closed) throw new Error("Only a closed control fact can acknowledge stopping");
-    await this.database
-      .updateTable("sandbox_tool_bindings")
-      .set({ closure_result: { outcome, version: change.version, position } })
-      .where("tenant_id", "=", change.scope.tenantId)
-      .where("binding_id", "=", change.entityId)
-      .where("run_id", "=", change.runId)
-      .where("pi_session_id", "=", change.scope.piSessionId)
-      .where("dispatch_closed", "=", true)
-      .where("closure_revision", "<=", change.version)
-      .where(
-        sql<boolean>`closure_result is null or
-        ((closure_result->>'version')::bigint <= ${change.version}::bigint
-          and (closure_result->>'outcome'<>'stopped' or ${outcome}='stopped'))`,
-      )
-      .execute();
-    this.#notify();
-  }
-  #notify(): void {
-    for (const wake of this.#waiters) wake();
-  }
-  async #waitForClosure(ids: readonly { run_id: string; binding_id: string }[]): Promise<void> {
-    if (!ids.length) return;
-    const deadline = performance.now() + 30_000;
-    for (;;) {
-      // Register before the read: a local ACK cannot race between read and wait.
-      let timer: NodeJS.Timeout | undefined;
-      let wake!: () => void;
-      const changed = new Promise<void>((resolve) => {
-        wake = resolve;
-      });
-      this.#waiters.add(wake);
-      try {
-        const pending = await this.database
-          .selectFrom("sandbox_tool_bindings")
-          .select("binding_id")
-          .where(
-            sql<boolean>`(run_id,binding_id) in (select * from unnest(${ids.map((r) => r.run_id)}::uuid[], ${ids.map((r) => r.binding_id)}::uuid[]))`,
-          )
-          .where("closure_result", "is", null)
-          .limit(1)
-          .executeTakeFirst();
-        if (!pending) return;
-        if (performance.now() >= deadline)
-          throw new Error("Ordered binding closure is still pending");
-        // Fallback covers an ACK by a different control-plane owner. No Tool
-        // or probe uses this lifecycle-only wait.
-        timer = setTimeout(wake, 250);
-        await changed;
-      } finally {
-        clearTimeout(timer);
-        this.#waiters.delete(wake);
-      }
     }
   }
   async confirmPhysicalClosure(physicalActivationId: string): Promise<void> {

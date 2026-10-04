@@ -1,5 +1,11 @@
 # Implementation roadmap
 
+## Agent Stop correction
+
+- [ ] Implement and verify [ADR-0220](adr/0220-agent-stop-is-not-process-control.md):
+      the chat Stop button interrupts the Agent Loop while accepted VM commands
+      retain their independent lifetime.
+
 ## Completed follow-up review
 
 - [x] Review `3dbf49fb` across all workspaces, pinned Pi, lifecycle/recovery,

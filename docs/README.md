@@ -1,7 +1,11 @@
 # Documentation map
 
+[ADR-0220](adr/0220-agent-stop-is-not-process-control.md) corrects chat Stop to
+interrupt only the Worker Agent Loop, without Cube process-stop settlement.
+
 The [October 4 repair record](reports/review-repair-20261004.md) tracks the approved
-boundary fixes and Kafka-ordered Cube closure (ADR-0218/0219).
+boundary fixes and the earlier Cube closure implementation (ADR-0218/0219);
+its process-cancellation assertions describe that historical revision.
 
 The [October 3 follow-up review](reports/repository-review-20261003-r2.md) covers
 all 22 workspaces at `3dbf49fb`, with new input/time/cleanup findings, a Cube

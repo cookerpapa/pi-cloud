@@ -626,7 +626,6 @@ export class SandboxController {
             writerId: identity.leaseId,
           },
           false,
-          true,
         );
         await this.#bindings.release(bindingId, snapshot.assignment);
         continue;
@@ -2117,7 +2116,7 @@ export class SandboxController {
   async quarantineExecutionTarget(target: SandboxExecutionTarget): Promise<void> {
     const failure = new SandboxControlError(
       "cubesandbox_tool_unavailable",
-      "Execution stopping was not confirmed; control-plane recovery is required",
+      "Recorded execution target is unavailable; control-plane recovery is required",
       false,
     );
     const runtimes = new Set([
@@ -2178,7 +2177,7 @@ export class SandboxController {
     request: ToolSandboxReleaseRequest,
   ): Promise<ToolSandboxReleaseResponse> {
     if (!this.#toolBindings.has(request.activationId)) {
-      await this.#stopActivation(request.activationId, request.assignment);
+      await this.#releaseDetachedBinding(request.activationId, request.assignment);
       return {
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.released",
@@ -2198,23 +2197,22 @@ export class SandboxController {
         false,
       );
     activation.inputClosed = true;
-    const identityForStop = parseExecutionReference(activation.assignment.executionReference);
+    const identityForRelease = parseExecutionReference(activation.assignment.executionReference);
     await this.#bindings.closeScope(
       {
         tenantId: activation.assignment.tenantId,
-        runId: identityForStop.runId,
-        writerId: identityForStop.leaseId,
+        runId: identityForRelease.runId,
+        writerId: identityForRelease.leaseId,
       },
       false,
-      true,
     );
-    const preparations = [...activation.operations]
-      .filter(([key]) => key.startsWith("input:"))
-      .map(([, operation]) => operation);
-    for (const preparation of preparations)
-      preparation.controller.abort(new Error("Input preparation binding released"));
+    // These are interactive workflow/input-preparation channels. Fixed Tools
+    // live in Cube and are not in this map; releasing their caller never kills them.
+    const operations = [...activation.operations.values()];
+    for (const operation of operations)
+      operation.controller.abort(new Error("Agent binding released"));
+    await Promise.allSettled(operations.map((operation) => operation.result));
     await this.#bindings.release(activation.activationId, activation.assignment);
-    await Promise.allSettled(preparations.map((preparation) => preparation.result));
     if (activation.elasticRuntime !== undefined) {
       if (request.disposition === "detach") {
         throw new SandboxControlError(
@@ -2344,51 +2342,28 @@ export class SandboxController {
     return this.#provider.inspect(await this.#materialize(activation));
   }
 
-  async stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
-    await this.#stopActivation(activationId, assignment);
-  }
-
-  async #stopActivation(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
-    const activation = this.#toolBindings.get(activationId);
-    if (!activation) {
-      const identity = parseExecutionReference(assignment.executionReference);
-      const routes = await this.#bindings.find(
+  async #releaseDetachedBinding(
+    activationId: string,
+    assignment: ToolSandboxAssignment,
+  ): Promise<void> {
+    const identity = parseExecutionReference(assignment.executionReference);
+    const routes = await this.#bindings.find(
+      { tenantId: assignment.tenantId, runId: identity.runId, writerId: identity.leaseId },
+      false,
+    );
+    for (const route of routes.filter((row) => row.bindingId === activationId)) {
+      if (!sameAssignment(route.snapshot.assignment, assignment))
+        throw new SandboxControlError(
+          "tool_binding_identity_mismatch",
+          "Closing binding identity did not match",
+          false,
+        );
+      await this.#bindings.closeScope(
         { tenantId: assignment.tenantId, runId: identity.runId, writerId: identity.leaseId },
         false,
       );
-      for (const route of routes.filter((row) => row.bindingId === activationId)) {
-        if (!sameAssignment(route.snapshot.assignment, assignment))
-          throw new SandboxControlError(
-            "tool_binding_identity_mismatch",
-            "Closing binding identity did not match",
-            false,
-          );
-        await this.#bindings.closeScope(
-          { tenantId: assignment.tenantId, runId: identity.runId, writerId: identity.leaseId },
-          false,
-          true,
-        );
-        await this.#bindings.release(activationId, assignment);
-      }
-      return;
+      await this.#bindings.release(activationId, assignment);
     }
-    if (!sameAssignment(activation.assignment, assignment))
-      throw new SandboxControlError(
-        "tool_binding_identity_mismatch",
-        "Tool binding assignment identity did not match",
-        false,
-      );
-    const operations = [...activation.operations.values()];
-    for (const operation of operations) operation.controller.abort();
-    await Promise.allSettled(operations.map((operation) => operation.result));
-    await this.#releaseActivation({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.release",
-      requestId: this.#idGenerator(),
-      activationId,
-      assignment,
-      disposition: activation.elasticRuntime ? "keep_warm" : "detach",
-    });
   }
 
   async #returnDevelopmentEnvironmentBinding(
@@ -2495,12 +2470,19 @@ export class SandboxController {
         row.bindingId === assignment.containerId &&
         sameSupervisorAssignment(row.snapshot.assignment, assignment),
     )) {
-      await this.#stopActivation(route.bindingId, route.snapshot.assignment);
+      await this.#releaseActivation({
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.release",
+        requestId: this.#idGenerator(),
+        activationId: route.bindingId,
+        assignment: route.snapshot.assignment,
+        disposition: route.snapshot.developmentEnvironmentId ? "detach" : "keep_warm",
+      });
     }
   }
 
   async confirmAbsent(assignment: SupervisorRuntimeAssignment): Promise<void> {
-    // Absence here is an execution scope, never proof that the shared VM died.
+    // This retires Agent routing authority, never proves VM/process absence.
     await this.terminateAndConfirmAbsent(assignment);
   }
 

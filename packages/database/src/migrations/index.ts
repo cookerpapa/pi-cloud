@@ -1,3 +1,4 @@
+import * as agentStopBindingRetirement from "./171_agent_stop_binding_retirement.ts";
 import * as fairResourceCleanup from "./169_fair_resource_cleanup.ts";
 import * as orderedBindingClosure from "./170_ordered_binding_closure.ts";
 import * as unlimitedUploads from "./168_unlimited_uploads.ts";
@@ -343,6 +344,7 @@ export const migrationProvider: MigrationProvider = {
       "168_unlimited_uploads": unlimitedUploads,
       "169_fair_resource_cleanup": fairResourceCleanup,
       "170_ordered_binding_closure": orderedBindingClosure,
+      "171_agent_stop_binding_retirement": agentStopBindingRetirement,
     };
   },
 };

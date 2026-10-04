@@ -115,7 +115,6 @@ function backend(ownerBaseUrl = "http://sandbox-control.invalid"): SandboxContro
     admissionWaitingCount: 0,
     maximumActiveSandboxes: 2,
     cleanPrewarmCount: 0,
-    async stop() {},
     async listWorkspaceDirectory(request) {
       return {
         toolBrokerProtocolVersion: 1,
@@ -608,7 +607,9 @@ describe("Sandbox control authenticated RPC", () => {
       expect(client.workflowUrlFor(reserved.activationId)).toBe(
         new URL("/internal/v1/tool-workflow", addresses[0]).toString(),
       );
-      await expect(client.stop(reserved.activationId, request.assignment)).resolves.toBeUndefined();
+      await expect(
+        client.release(reserved.activationId, request.assignment, { kind: "keep_warm" }),
+      ).resolves.toMatchObject({ retained: false });
       const siblingSessionRequest: ToolSandboxCreateRequest = {
         ...request,
         requestId: `10000000-0000-4000-8000-00000000004${String(replica)}`,
@@ -623,8 +624,10 @@ describe("Sandbox control authenticated RPC", () => {
         new URL("/internal/v1/tool-workflow", addresses[1]).toString(),
       );
       await expect(
-        client.stop(sibling.activationId, siblingSessionRequest.assignment),
-      ).resolves.toBeUndefined();
+        client.release(sibling.activationId, siblingSessionRequest.assignment, {
+          kind: "keep_warm",
+        }),
+      ).resolves.toMatchObject({ retained: false });
     }
     expect(calls).toEqual([2, 2]);
   });
@@ -718,12 +721,12 @@ describe("Sandbox control authenticated RPC", () => {
   });
 
   it("closes an existing scope through the stable endpoint after its owner Pod disappears", async () => {
-    const closed = vi.fn(async () => {});
+    const closed = vi.fn(backend().release);
     const server = new SandboxControlServer({
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
-      broker: { ...backend("http://127.0.0.1:1"), stop: closed },
+      broker: { ...backend("http://127.0.0.1:1"), release: closed },
     });
     servers.push(server);
     const address = await server.listen();
@@ -756,8 +759,14 @@ describe("Sandbox control authenticated RPC", () => {
       },
       workspaceSeed: { kind: "sample_java" },
     });
-    await client.stop(reserved.activationId, assignment);
-    expect(closed).toHaveBeenCalledExactlyOnceWith(reserved.activationId, assignment);
+    await client.release(reserved.activationId, assignment, { kind: "keep_warm" });
+    expect(closed).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        activationId: reserved.activationId,
+        assignment,
+        disposition: "keep_warm",
+      }),
+    );
   });
 
   it("follows the durable activation owner instead of replaying create elsewhere", async () => {

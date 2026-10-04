@@ -79,6 +79,11 @@ it("never resurrects an aborted invocation from late results", async () => {
   mailbox.accept({ operationId: "op", sequence: 1, event: end });
   await expect(pending).rejects.toThrow("cancelled");
   expect(mailbox.size).toBe(0);
+  const next = mailbox.wait("next-op", "call_1", "bash", new AbortController().signal);
+  mailbox.accept({ operationId: "op", sequence: 1, event: end });
+  expect(mailbox.size).toBe(1);
+  mailbox.accept({ operationId: "next-op", sequence: 1, event: end });
+  await expect(next).resolves.toEqual(end);
 });
 
 it("rejects identity and sequence changes without passing a partial success to Pi", async () => {

@@ -816,7 +816,14 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         await expect(
           manager.inspect(first.activationId, activeFirstAssignment),
         ).resolves.toMatchObject({ state: "running" });
-        await manager.stop(first.activationId, activeFirstAssignment);
+        await manager.release({
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.release",
+          requestId: crypto.randomUUID(),
+          activationId: first.activationId,
+          assignment: activeFirstAssignment,
+          disposition: "keep_warm",
+        });
         expect(manager.ownsToolBinding(first.activationId)).toBe(false);
         await expect(
           manager.inspect(first.activationId, activeFirstAssignment),
@@ -825,14 +832,32 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         failures.push(error);
       } finally {
         if (first !== undefined) {
-          await manager.stop(first.activationId, activeFirstAssignment).catch((error) => {
-            failures.push(error);
-          });
+          await manager
+            .release({
+              toolBrokerProtocolVersion: 1,
+              type: "tool_sandbox.release",
+              requestId: crypto.randomUUID(),
+              activationId: first.activationId,
+              assignment: activeFirstAssignment,
+              disposition: "keep_warm",
+            })
+            .catch((error) => {
+              failures.push(error);
+            });
         }
         if (second !== undefined) {
-          await manager.stop(second.activationId, activeSecondAssignment).catch((error) => {
-            failures.push(error);
-          });
+          await manager
+            .release({
+              toolBrokerProtocolVersion: 1,
+              type: "tool_sandbox.release",
+              requestId: crypto.randomUUID(),
+              activationId: second.activationId,
+              assignment: activeSecondAssignment,
+              disposition: "keep_warm",
+            })
+            .catch((error) => {
+              failures.push(error);
+            });
         }
         await execution?.close().catch((error) => failures.push(error));
         await manager.close().catch((error) => {

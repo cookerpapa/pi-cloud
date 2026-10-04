@@ -27,10 +27,10 @@ publication scope under the current ExecutionReference. Records are not signed:
 trusted Workers publish through the control-plane ingress. Its cached PG-issued
 scope closes before ordered seal publication. Projector preserves historical
 scope/position checks and commits dispatch before issuing effects. Cube checks
-executor boot, operation identity and closed scopes. The control plane closes
-binding eligibility durably before remote stopping; no per-Tool lease/fence SQL
-check or second channel lease is introduced. An already-issued Cube operation
-can continue and remains UNKNOWN when stopping or its result is unavailable.
+executor boot, operation identity and monotonic partition positions. The control
+plane revokes binding eligibility before sealing, without per-Tool lease/fence
+SQL or a second channel lease. Chat Stop never manages VM processes. Already-issued
+Cube operations can continue and remain UNKNOWN when their result is unavailable.
 
 Workers consume their boot's Kafka replies. Control Plane publishes execution
 records; the trusted Cubelet host publishes Tool replies. The Tool guest and

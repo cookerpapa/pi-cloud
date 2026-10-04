@@ -46,7 +46,7 @@ export class ToolCommandDispatcher {
   constructor(
     readonly options: {
       routes: SandboxBindingReader;
-      cube: Pick<CubeSandboxRuntimeClient, "submitTool" | "stopExecutionScope">;
+      cube: Pick<CubeSandboxRuntimeClient, "submitTool">;
       workflow: WorkflowDelivery;
       publishReply(
         topic: string,
@@ -134,34 +134,29 @@ export class ToolCommandDispatcher {
     } catch (error) {
       this.#abandoned++;
       let code = "cubesandbox_tool_result_unknown";
-      if (!(error instanceof CubeExecutionRejected)) {
-        try {
-          await this.options.cube.stopExecutionScope(route.descriptor.target, {
-            source,
-            operationId: command.request.operationId,
-          });
-        } catch {
+      if (error instanceof CubeExecutionRejected) {
+        if (["executor_replaced", "runtime_quarantined"].includes(error.code)) {
           await this.options.quarantine(route.descriptor.target);
           code = "cubesandbox_tool_unavailable";
+        } else {
+          code = [
+            "operation_changed",
+            "execution_position_stale",
+            "execution_stream_changed",
+          ].includes(error.code)
+            ? "cubesandbox_tool_result_unknown"
+            : [
+                  "node_unavailable",
+                  "execution_unavailable",
+                  "execution_endpoint_unconfigured",
+                  "executor_capacity",
+                ].includes(error.code)
+              ? "cubesandbox_tool_unavailable"
+              : "tool_execution_not_started";
         }
-      } else if (["executor_replaced", "runtime_quarantined"].includes(error.code)) {
-        await this.options.quarantine(route.descriptor.target);
-        code = "cubesandbox_tool_unavailable";
-      } else
-        code = [
-          "operation_changed",
-          "execution_position_stale",
-          "execution_stream_changed",
-        ].includes(error.code)
-          ? "cubesandbox_tool_result_unknown"
-          : [
-                "node_unavailable",
-                "execution_unavailable",
-                "execution_endpoint_unconfigured",
-                "executor_capacity",
-              ].includes(error.code)
-            ? "cubesandbox_tool_unavailable"
-            : "tool_execution_not_started";
+      }
+      // A lost handoff response cannot retract an accepted external effect.
+      // Do not compensate by stopping processes or replaying the command.
       await this.#fail(
         command,
         code,
@@ -174,25 +169,14 @@ export class ToolCommandDispatcher {
       );
     }
   }
-  /** Only the actual closed control fact supplies the Stop position. */
-  async closeBinding(
+  /** Close interactive Agent orchestration, never accepted fixed Tool processes. */
+  async closeWorkflowBinding(
     change: SandboxBindingChange,
     route: SandboxBinding,
     source: ExecutionLogPosition,
     current: () => boolean,
-  ): Promise<"stopped" | "quarantined"> {
+  ): Promise<void> {
     if (!change.closed || !route.dispatchClosed) throw new Error("Binding is not closed");
-    if (!current()) throw new Error("Binding closure owner changed");
-    let outcome: "stopped" | "quarantined" = "stopped";
-    try {
-      await this.options.cube.stopExecutionScope(route.descriptor.target, {
-        runId: change.runId,
-        source,
-      });
-    } catch {
-      await this.options.quarantine(route.descriptor.target);
-      outcome = "quarantined";
-    }
     if (!current()) throw new Error("Binding closure owner changed");
     try {
       await this.options.workflow(route, {
@@ -212,7 +196,6 @@ export class ToolCommandDispatcher {
       if (await this.options.routes.isAlive(route.instanceId))
         throw new Error("Workflow closure is unconfirmed");
     }
-    return outcome;
   }
   async #fail(command: AcceptedToolCommand, code: string, text: string): Promise<void> {
     if (!command.replyTopic) return;

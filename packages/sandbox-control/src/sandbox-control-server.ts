@@ -72,7 +72,6 @@ export type SandboxControlBackend = Pick<
   | "create"
   | "refreshServices"
   | "release"
-  | "stop"
   | "listWorkspaceDirectory"
   | "readWorkspaceFile"
   | "listAssignments"
@@ -730,29 +729,6 @@ export class SandboxControlServer {
             this.#broker.cleanPrewarmCount,
           );
           await reply.code(200).send(released);
-          return;
-        }
-        if (message.type === "tool_sandbox.stop") {
-          await this.#observed({
-            request,
-            spanName: "sandbox.stop",
-            operation: "stop",
-            run: () => this.#broker.stop(message.activationId, message.assignment),
-          });
-          this.#metrics?.sandboxActive.set(
-            { provider: this.#broker.providerId },
-            this.#broker.activeCount,
-          );
-          this.#metrics?.sandboxPrewarm.set(
-            { provider: this.#broker.providerId },
-            this.#broker.cleanPrewarmCount,
-          );
-          await reply.code(200).send({
-            toolBrokerProtocolVersion: 1,
-            type: "tool_sandbox.stopped",
-            requestId: message.requestId,
-            activationId: message.activationId,
-          });
           return;
         }
         message satisfies never;

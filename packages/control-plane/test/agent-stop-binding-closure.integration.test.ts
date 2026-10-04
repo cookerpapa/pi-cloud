@@ -17,7 +17,7 @@ import { createTestWorker } from "./admit-test-execution.ts";
 const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 const brokers = process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS?.split(",");
 it.skipIf(!postgres || !brokers)(
-  "orders Cube closure before the final seal and replays a lost closure ACK through real PG/Kafka",
+  "seals after routing revocation without waiting for a Cube process through real PG/Kafka",
   async () => {
     const name = `ordered_cube_${randomUUID().replaceAll("-", "")}`,
       topic = `ordered-cube-${randomUUID()}`;
@@ -27,8 +27,7 @@ it.skipIf(!postgres || !brokers)(
     endpoint.pathname = `/${name}`;
     const database = createDatabase({ connectionString: endpoint.toString(), maxConnections: 8 });
     const kafka = new Admin({ clientId: topic, bootstrapBrokers: brokers! });
-    const finish = Promise.withResolvers<void>(),
-      stopped = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
     let projector: SessionProjector | undefined, execution: Promise<unknown> | undefined;
     const ownerId = randomUUID();
     const owner = new PostgresWorkspaceRuntimeStateRepository({
@@ -71,18 +70,11 @@ it.skipIf(!postgres || !brokers)(
         partitionFor: () => 0,
       });
       const positions: ExecutionLogPosition[] = [];
-      let loseAck = true;
       const submit = vi.fn(async () => {});
       const dispatcher = new ToolCommandDispatcher({
         routes: view,
-        // Only the native Cube RPC is simulated. Its races are covered by the Go manager contract.
-        cube: {
-          submitTool: submit,
-          stopExecutionScope: async (_target, scope) => {
-            positions.push(scope.source);
-            await stopped.promise;
-          },
-        },
+        // Cube receives no stop RPC. Run settlement depends only on routing revocation.
+        cube: { submitTool: submit },
         workflow: async () => {},
         publishReply: async () => {},
         quarantine: async () => {
@@ -110,12 +102,8 @@ it.skipIf(!postgres || !brokers)(
             if (change.entity !== "sandbox_binding" || !change.closed) return;
             const route = view.closure(change, current);
             if (!route) return;
-            const outcome = await dispatcher.closeBinding(change, route, position, current);
-            if (loseAck) {
-              loseAck = false;
-              throw new Error("fixture: closure ACK lost");
-            }
-            if (current()) await bindings.acknowledgeClosure(change, position, outcome);
+            positions.push(position);
+            await dispatcher.closeWorkflowBinding(change, route, position, current);
           },
         },
       });
@@ -184,16 +172,11 @@ it.skipIf(!postgres || !brokers)(
           .select(["output_sealed_at", "output_seal_offset"])
           .where("id", "=", accepted.runId)
           .executeTakeFirstOrThrow();
-      expect((await run()).output_sealed_at).toBeNull();
-      await expect(bindings.release(bindingId, assignment)).rejects.toThrow("unconfirmed");
-      expect(positions[0]).toMatchObject({ topic, partition: 0 });
-      expect(BigInt(positions[0]!.offset)).toBeGreaterThan(0n);
-      stopped.resolve();
       await vi.waitFor(async () => expect((await run()).output_sealed_at).not.toBeNull(), {
         timeout: 20000,
       });
-      expect(positions.length).toBeGreaterThanOrEqual(2);
-      expect(positions[1]).toEqual(positions[0]);
+      expect(positions[0]).toMatchObject({ topic, partition: 0 });
+      expect(BigInt(positions[0]!.offset)).toBeGreaterThan(0n);
       expect(BigInt((await run()).output_seal_offset!)).toBeGreaterThan(
         BigInt(positions[0]!.offset),
       );
@@ -201,16 +184,14 @@ it.skipIf(!postgres || !brokers)(
       await bindings.release(bindingId, assignment);
       process.stdout.write(
         JSON.stringify({
-          measurement: "ordered_cube_closure",
+          measurement: "agent_seal_without_cube_stop",
           realPostgresKafka: true,
-          cubeRpcSimulated: true,
           closeBeforeSeal: true,
-          lostAckReplayedStopOnly: true,
+          cubeStopRequired: false,
         }) + "\n",
       );
     } finally {
       finish.resolve();
-      stopped.resolve();
       await execution?.catch(() => {});
       await projector?.close();
       await owner.close();

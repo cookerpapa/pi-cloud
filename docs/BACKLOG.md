@@ -23,6 +23,11 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
+- [ ] Implement the owner's corrected chat Stop semantics under
+      [ADR-0220](adr/0220-agent-stop-is-not-process-control.md): stop the Worker
+      Agent Loop, preserve accepted VM commands, delete Cube Stop settlement and
+      closure receipts, and verify cancellation/late replies/next-Run behavior.
+
 The [follow-up review at `3dbf49fb`](reports/repository-review-20261003-r2.md)
 repairs are implemented under [ADR-0218](adr/0218-review-boundary-repairs.md) and
 [ADR-0219](adr/0219-ordered-cube-admission.md): composed input budgets, PG clocks,

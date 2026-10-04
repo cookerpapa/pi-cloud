@@ -295,28 +295,6 @@ export class SandboxControlClient {
     return response;
   }
 
-  async stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
-    const requestId = this.#idGenerator();
-    const response = await this.#service({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.stop",
-      requestId,
-      activationId,
-      assignment,
-    });
-    if (
-      response.type !== "tool_sandbox.stopped" ||
-      response.requestId !== requestId ||
-      response.activationId !== activationId
-    ) {
-      throw new SandboxControlClientError(
-        "tool_broker_protocol_error",
-        "Sandbox control stop response did not match",
-        false,
-      );
-    }
-  }
-
   async listWorkspaceDirectory(
     request: SandboxControlListWorkspaceDirectoryRequest,
     signal?: AbortSignal,
@@ -595,9 +573,7 @@ export class SandboxControlClient {
     redirects = 0,
   ): Promise<unknown> {
     const action = body as { type?: string; disposition?: string };
-    const closingScope =
-      action.type === "tool_sandbox.stop" ||
-      (action.type === "tool_sandbox.release" && action.disposition !== "destroy");
+    const closingScope = action.type === "tool_sandbox.release" && action.disposition !== "destroy";
     const timeoutSignal = AbortSignal.timeout(
       closingScope ? Math.min(30_000, this.#requestTimeoutMs) : this.#requestTimeoutMs,
     );
@@ -768,16 +744,6 @@ export class ReplicatedSandboxControlClient {
         return await this.#ownedClient(activationId).release(activationId, assignment, disposition);
       return await this.#closeThroughReplica(activationId, (client) =>
         client.release(activationId, assignment, disposition),
-      );
-    } finally {
-      this.#forgetToolBindingOwner(activationId, assignment);
-    }
-  }
-
-  async stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
-    try {
-      await this.#closeThroughReplica(activationId, (client) =>
-        client.stop(activationId, assignment),
       );
     } finally {
       this.#forgetToolBindingOwner(activationId, assignment);

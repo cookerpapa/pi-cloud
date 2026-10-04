@@ -12,7 +12,7 @@ firewall denial. Enforce deployment isolation with the configured networks/CNI.
 | Pi Worker | Kafka | yes | consume its boot's Tool replies |
 | Pi Worker | provider proxy/model provider | yes | model requests |
 | Control Plane / Session Projector | Kafka | yes | ordered data/seal publication and one consumer group for native history, live views and Tool routing |
-| Control Plane | Cube API | yes | bounded native Tool handoff, scoped stopping, VM lifecycle and interactive transport |
+| Control Plane | Cube API | yes | bounded native Tool handoff, VM lifecycle and interactive transport |
 | Cubelet trusted completion adapter | Kafka | yes | native final replies to original Worker boot |
 | Cubelet trusted completion adapter | PostgreSQL / private S3 | yes | image inventory and immutable bytes |
 | Cubelet trusted completion adapter | Control Plane | yes | disposable progress HTTP observations |

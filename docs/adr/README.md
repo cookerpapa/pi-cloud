@@ -10,10 +10,12 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
-1. [ADR-0219](0219-ordered-cube-admission.md) — approved ordered binding closure
-   and bounded Cube destination progress; implementation in progress.
+1. [ADR-0220](0220-agent-stop-is-not-process-control.md) — chat Stop interrupts the
+   Worker Agent Loop; accepted Cube processes retain their independent lifetime.
+1. [ADR-0219](0219-ordered-cube-admission.md) — bounded Cube destination progress
+   and controller replacement; Run/process stopping is superseded by ADR-0220.
 1. [ADR-0218](0218-review-boundary-repairs.md) — approved follow-up input, time,
-   cleanup and verification boundary repairs; implementation in progress.
+   cleanup and verification boundary repairs; implemented and deployed.
 1. [ADR-0217](0217-declarative-cube-release.md) — one fully rendered Cube Helm
    release and a narrower completion image dependency boundary.
 1. [ADR-0216](0216-review-data-path-bounds.md) — approved bounded queue
@@ -34,7 +36,7 @@ Read the documents in this order:
    observations and unified physical-runtime probes, with independent stage evidence.
 
 1. [ADR-0210](0210-cube-execution-handoff-and-scoped-stop.md) — native Cube handoff,
-   scoped stopping and controller-owned VM recovery.
+   native timeout cleanup and controller-owned VM recovery; Agent Stop follows ADR-0220.
 
 1. [ADR-0209](0209-control-plane-publication-and-sandbox-authority.md) — owner-approved
    control-plane publication and sandbox authority; deployed with real-model and process-failure acceptance.

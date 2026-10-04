@@ -707,26 +707,6 @@ it("distinguishes explicit refusal from an ambiguous HTTP or identity failure", 
     await client.close();
   }
 });
-it("never treats a replaced boot's stopping response as proof", async () => {
-  const client = executionClient();
-  try {
-    executionReply = { stopped: true, bootID: "another-boot" };
-    await expect(
-      client.stopExecutionScope(executionTarget, {
-        runId: executionRequest.runId,
-        source: executionRequest.source,
-      }),
-    ).rejects.toThrow("could not be confirmed");
-    executionReply = { stopped: true, bootID: executionTarget.bootId };
-    await client.stopExecutionScope(executionTarget, {
-      runId: executionRequest.runId,
-      source: executionRequest.source,
-    });
-  } finally {
-    await client.close();
-  }
-});
-
 it("does not forward Cube credentials to an unconfigured descriptor endpoint", async () => {
   const client = executionClient();
   try {

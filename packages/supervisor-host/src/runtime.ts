@@ -91,7 +91,6 @@ export type SupervisorSandboxControl = Pick<
   | "create"
   | "refreshServices"
   | "release"
-  | "stop"
   | "listAssignments"
   | "terminateAndConfirmAbsent"
   | "confirmAbsent"

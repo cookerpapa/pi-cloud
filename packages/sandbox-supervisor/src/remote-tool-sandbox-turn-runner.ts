@@ -68,7 +68,6 @@ export interface SandboxControlBoundary {
     assignment: ToolSandboxAssignment,
     disposition: { kind: "detach" } | { kind: "keep_warm" } | { kind: "destroy" },
   ): Promise<{ retained: boolean }>;
-  stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
   workflowUrlFor(activationId: string): string;
 }
 
@@ -377,40 +376,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     const inputPreparations = new Set<Promise<unknown>>();
     let activation: ToolSandboxCreateResponse | undefined;
     let activationPromise: Promise<ToolSandboxCreateResponse> | undefined;
-    let completedSuccessfully = false;
     let executionError: unknown;
     let toolRuntimeFailure: PiTurnError | undefined;
-    let stopPromise: Promise<void> | undefined;
-    const stopSandbox = (): Promise<void> => {
-      if (activation === undefined) return Promise.resolve();
-      if (stopPromise === undefined) {
-        const startedAt = performance.now();
-        stopPromise = this.#broker.stop(activation.activationId, toolAssignment).then(
-          () => {
-            this.#metrics?.sandboxDuration.observe(
-              { operation: "stop", outcome: "completed" },
-              (performance.now() - startedAt) / 1_000,
-            );
-          },
-          (error: unknown) => {
-            this.#metrics?.sandboxDuration.observe(
-              { operation: "stop", outcome: "failed" },
-              (performance.now() - startedAt) / 1_000,
-            );
-            throw error;
-          },
-        );
-      }
-      return stopPromise;
-    };
-    const abortSandbox = (): void => {
-      if (
-        command.payload.executionMode === "elastic" ||
-        command.payload.computeSessionId !== undefined
-      ) {
-        void stopSandbox().catch(() => undefined);
-      }
-    };
     const ensureActivation = async (): Promise<ToolSandboxCreateResponse> => {
       if (signal.aborted) throw signal.reason;
       if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
@@ -430,7 +397,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             (performance.now() - createStartedAt) / 1_000,
           );
           if (signal.aborted) {
-            await stopSandbox();
             throw signal.reason;
           }
           return created;
@@ -450,9 +416,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     };
 
     try {
-      signal.addEventListener("abort", abortSandbox, { once: true });
-      if (signal.aborted) abortSandbox();
-
       // Both execution modes bind on the first actual Sandbox Tool. A pure
       // chat must not reserve machine authority or depend on Broker uptime.
       // recordActive receives the actual binding before the next clean Step.
@@ -719,7 +682,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       });
       onPiRunnerReady(runner);
       const result = await runner.run(command, publishEvent, signal);
-      completedSuccessfully = true;
       return result;
     } catch (error) {
       // Pi may surface a secondary sampling/settlement error while unwinding
@@ -742,28 +704,21 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       } catch {
         /* Observation only. */
       }
-      signal.removeEventListener("abort", abortSandbox);
       let cleanupError: unknown;
-      if (
-        activation !== undefined &&
-        command.payload.executionMode === "development_environment" &&
-        command.payload.computeSessionId === undefined
-      ) {
+      if (activation !== undefined) {
+        // Agent interruption releases its binding just like normal completion.
+        // Accepted commands and the VM keep their independent lifetimes.
         await this.#broker
-          .release(activation.activationId, toolAssignment, { kind: "detach" })
+          .release(activation.activationId, toolAssignment, {
+            kind:
+              command.payload.executionMode === "development_environment" &&
+              command.payload.computeSessionId === undefined
+                ? "detach"
+                : "keep_warm",
+          })
           .catch((error: unknown) => {
             cleanupError = error;
           });
-      } else if (activation !== undefined && completedSuccessfully && !signal.aborted) {
-        await this.#broker
-          .release(activation.activationId, toolAssignment, { kind: "keep_warm" })
-          .catch((error: unknown) => {
-            cleanupError = error;
-          });
-      } else {
-        await stopSandbox().catch((error: unknown) => {
-          cleanupError = error;
-        });
       }
       await releaseModelRuntimeLease(modelRuntimeLease).catch((error: unknown) => {
         cleanupError ??= error;

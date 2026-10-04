@@ -97,7 +97,6 @@ function sandboxControl(): SupervisorSandboxControl {
     async release() {
       throw new Error("unused");
     },
-    async stop() {},
     async listAssignments() {
       return [];
     },

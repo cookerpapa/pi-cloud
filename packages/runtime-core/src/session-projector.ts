@@ -95,8 +95,8 @@ export class SessionProjector {
       this.publication,
       async (fact) => {
         const partition = this.publicationPartition(fact.scope.piSessionId);
-        // Revoke admission, then wait for the ordered binding closure before the
-        // final seal. The synthetic position is never sent to Cube.
+        // Revoke routing admission before the final seal. Accepted Cube processes
+        // are not stopped and Run settlement never waits for their completion.
         await options.toolCommands.consume({ topic, partition, offset: 0n, fact }, () =>
           this.#consumer.ownsPartition(partition),
         );

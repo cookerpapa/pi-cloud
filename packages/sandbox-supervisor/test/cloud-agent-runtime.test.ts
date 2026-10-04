@@ -38,6 +38,7 @@ import {
   createPiCloudEventFactory,
 } from "@pi-cloud/protocol";
 import { PiAgentEventAdapter } from "../src/pi-agent-event-adapter.ts";
+import type { PreparedAgentTool } from "../src/prepared-tool.ts";
 
 // Pinned-source contract probe: the provider filter originally dropped the
 // failed Assistant even though the pre-provider context still contained it.
@@ -972,6 +973,95 @@ describe.sequential("CloudAgentRuntime", () => {
     expect.soft(effects).toBe(0);
     expect(requests).toBe(1);
   });
+
+  it.each(["publication_ack", "reply_wait"] as const)(
+    "interrupts a published remote Tool at %s without claiming its process stopped",
+    async (boundary) => {
+      const storage = await createStorage();
+      const execution = await withNativeSession(storage);
+      const entered = Promise.withResolvers<void>();
+      let requests = 0,
+        accepted = 0;
+      const message =
+        "Agent stopped waiting; the command may still be running. Inspect before retrying.";
+      const tool: PreparedAgentTool = {
+        name: "remote",
+        label: "Remote",
+        description: "Remote effect",
+        parameters: Type.Object({}),
+        async execute() {
+          throw new Error("Remote work must use its prepared transport");
+        },
+        async prepareExecution(_id, _params, signal) {
+          return {
+            // This fixture records only the native intent. The real transport
+            // schema/routing is exercised by the PG/Kafka and remote Tool tests.
+            command: {} as import("@pi-cloud/protocol").CandidateToolCommand,
+            dispose() {},
+            async result() {
+              entered.resolve();
+              if (!signal!.aborted)
+                await new Promise<void>((resolve) =>
+                  signal!.addEventListener("abort", () => resolve(), { once: true }),
+                );
+              throw new Error(message);
+            },
+          };
+        },
+      };
+      const runtime = new CloudAgentRuntime({
+        ...execution,
+        lane: "main",
+        authority: new TestAuthority(),
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        tools: [tool],
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+        streamFn: () => {
+          requests++;
+          const stream = new MockAssistantStream();
+          const message: AssistantMessage = {
+            ...assistant(""),
+            stopReason: "toolUse",
+            content: [{ type: "toolCall", id: "remote-call", name: "remote", arguments: {} }],
+          };
+          queueMicrotask(() => stream.push({ type: "done", reason: "toolUse", message }));
+          return stream;
+        },
+        commitCheckpoint: async (operation, event) => {
+          await execution.commitCheckpoint(operation);
+          if (event?.type === "tool_execution_start") {
+            accepted++;
+            if (boundary === "publication_ack") runtime.abort();
+          }
+        },
+      });
+      const running = runtime.run("Start a remote command");
+      if (boundary === "reply_wait") {
+        await entered.promise;
+        runtime.abort();
+      }
+      expect(await running).toMatchObject({ kind: "aborted" });
+      expect(accepted).toBe(1);
+      expect(requests).toBe(1);
+      expect(JSON.stringify(await storage.findEntries())).toContain(message);
+      expect(await storage.findOpenOperations("main")).toEqual([]);
+      const contexts: Context[] = [];
+      const next = new CloudAgentRuntime({
+        ...(await withNativeSession(storage)),
+        lane: "main",
+        authority: new TestAuthority(),
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        streamFn: scriptedStream(["Ready to inspect the command"], contexts),
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      });
+      expect(await next.run("Let's discuss before doing anything else")).toMatchObject({
+        kind: "completed",
+      });
+      expect(JSON.stringify(contexts[0]?.messages)).toContain(message);
+    },
+  );
 
   it("keeps frozen Cloud stream options while preserving the active call signal", async () => {
     const storage = await createStorage();

@@ -41,12 +41,6 @@ export async function liveNativeTools(
   const topic = `native-fixture-${randomUUID()}`;
   let offset = 0n;
   const position = () => ({ topic, partition: 0, offset: (++offset).toString() });
-  bindings.onClose = async (binding) => {
-    await client.stopExecutionScope(binding.descriptor.target, {
-      runId: parseExecutionReference(binding.snapshot.assignment.executionReference).runId,
-      source: position(),
-    });
-  };
   return {
     async executeTool(
       executionReference: string,
@@ -75,16 +69,8 @@ export async function liveNativeTools(
         request.toolName,
         combined,
       );
+      void result.catch(() => {});
       const source = position();
-      let stopping: Promise<void> | undefined;
-      const abort = () => {
-        stopping ??= client.stopExecutionScope(binding.descriptor.target, {
-          source,
-          operationId: request.operationId,
-        });
-        void stopping.catch(() => {});
-      };
-      combined.addEventListener("abort", abort, { once: true });
       try {
         await client.submitTool(binding.descriptor.target, {
           source,
@@ -129,18 +115,14 @@ export async function liveNativeTools(
         };
       } catch (error) {
         if (combined.aborted) {
-          abort();
-          await stopping;
           throw new SandboxControlError(
             "tool_cancelled",
-            "Native execution scope stopped",
+            "Agent stopped waiting; the command may still be running",
             false,
             error,
           );
         }
         throw error;
-      } finally {
-        combined.removeEventListener("abort", abort);
       }
     },
     async close() {

@@ -433,7 +433,7 @@
       "id": "ambiguous-tool-transport",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/tool-command-routing.test.ts",
-      "test": "closes an uncertain handoff by operation ID without replaying it",
+      "test": "leaves an uncertain handoff running without replaying or quarantining it",
       "invariant": "An ambiguous Tool transport never blindly replays an arbitrary command."
     },
     {
@@ -444,11 +444,11 @@
       "invariant": "Expiring a child's independent compute scope keeps the shared Volume and the active parent's runtime; each binding uses its own frozen cwd."
     },
     {
-      "id": "cancel-stop-failure",
+      "id": "cancel-routing-publication-failure",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/sandbox-controller.test.ts",
-      "test": "waits for ordered stopping and preserves binding/quota when it is unconfirmed",
-      "invariant": "Cancellation closes binding admission, waits for ordered stopping and retains binding/quota if confirmation is unavailable."
+      "test": "waits for routing revocation and preserves binding/quota if publication fails",
+      "invariant": "Agent cancellation revokes routing without stopping Cube processes; publication failure retains metadata and VM quota."
     },
     {
       "id": "shared-runtime-loss",
@@ -1039,18 +1039,18 @@
       "invariant": "A verification result cannot certify a mutation still running or completed after its start."
     },
     {
-      "id": "ordered-closure-stale-ack",
+      "id": "agent-routing-retirement",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/workspace-runtime-state-repository.test.ts",
-      "test": "does not treat quarantine as stopping or let an old ACK satisfy a retry",
-      "invariant": "An old closure acknowledgement cannot authorize release after a new retry; quarantine is not absence."
+      "test": "retires routing without a Cube receipt and preserves a sibling with the same binding ID",
+      "invariant": "Routing retirement requires closure, isolates the exact Run even with a shared binding ID, and requires no Cube process receipt."
     },
     {
       "id": "ordered-closure-open-fact",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/sandbox-binding-view.test.ts",
-      "test": "uses the closed fact for stopping even when an older open fact loaded the closed PG snapshot",
-      "invariant": "Only the actual closed Kafka fact supplies the stopping position; an older open reference cannot fence newer work."
+      "test": "closes workflow channels only for the closed fact, even if an older reference loaded revocation",
+      "invariant": "Only the closed Kafka fact closes workflow orchestration; a newer PG revocation seen through an older fact is not a workflow command."
     },
     {
       "id": "controller-shutdown-preserves-cube",
@@ -1079,6 +1079,20 @@
       "file": "test/sandbox-controller.test.ts",
       "test": "retries pending ordered closure without quarantining or partially restoring a shared VM",
       "invariant": "Pending ordered closure neither quarantines a verified shared VM nor exposes partial local binding restoration."
+    },
+    {
+      "id": "agent-stop-publication-ack",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime.test.ts",
+      "test": "interrupts a published remote Tool at publication_ack without claiming its process stopped",
+      "invariant": "Agent interruption ends the Loop, preserves truthful Tool uncertainty in the next Run, and never replays an accepted command."
+    },
+    {
+      "id": "agent-stop-reply-wait",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/cloud-agent-runtime.test.ts",
+      "test": "interrupts a published remote Tool at reply_wait without claiming its process stopped",
+      "invariant": "Agent interruption ends the Loop, preserves truthful Tool uncertainty in the next Run, and never replays an accepted command."
     }
   ]
 }

@@ -329,7 +329,10 @@ export function createTrustedRemoteAgentTools(
       result: async () => {
         if (candidate.operation === "tool.execute") {
           const event = await pending.catch(async (error: unknown) => {
-            if (signal?.aborted) throw new Error("aborted");
+            if (signal?.aborted)
+              throw new Error(
+                "Agent stopped waiting for this Tool. The command may still be running in the workspace; inspect its state before retrying or stopping it.",
+              );
             const failure = {
               code: "tool_operation_outcome_unknown",
               message: "Tool reply could not be confirmed; do not automatically repeat the command",
@@ -377,6 +380,7 @@ export function createTrustedRemoteAgentTools(
       "## PiCloud execution context",
       `All file and command tools operate inside the selected machine directory ${runtime.workingDirectory}.`,
       "Large tool results are bounded in model context; omitted output is not archived.",
+      "Stopping the conversation interrupts the Agent, not accepted workspace processes. If a Tool was interrupted, inspect its effects before repeating it; use Bash to manage processes when requested.",
       "GitLab/GitHub authentication is already configured through Git's credential helper when the user connects a Code Host.",
       "Always use credential-free HTTPS clone and remote URLs. Never read .git-credentials or embed a token in a command, URL, output, file, or Git remote.",
     ].join("\n");
