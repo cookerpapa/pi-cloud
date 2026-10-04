@@ -1,0 +1,110 @@
+{
+  "checkedAt": "2026-10-04T13:27:28.730Z",
+  "accepted": true,
+  "topology": "single-host K3s and Cube KVM",
+  "schema": "174_recoverable_vm_allocation",
+  "inventory": {
+    "pendingOrActiveRuns": 0,
+    "unsealedIssuedRuns": 0,
+    "activeLeases": 0,
+    "liveWorkspaceRuntimes": 0,
+    "liveDevelopmentEnvironments": 0,
+    "liveTerminals": 0,
+    "historicalUnknownAllocations": 2,
+    "newUnknownAllocations": 0,
+    "observedCubeVMs": 0
+  },
+  "images": {
+    "deployment/pi-cloud-control-plane": {
+      "ready": 1,
+      "desired": 1,
+      "containers": [
+        {
+          "name": "control-plane",
+          "image": "pi-cloud/control-plane:vm-allocation-v6-cp3"
+        }
+      ]
+    },
+    "statefulset/pi-cloud-pi-worker-primary-v1": {
+      "ready": 2,
+      "desired": 2,
+      "containers": [
+        {
+          "name": "pi-worker",
+          "image": "pi-cloud/supervisor-host:vm-allocation-v6-app2"
+        }
+      ]
+    },
+    "deployment/pi-cloud-web": {
+      "ready": 1,
+      "desired": 1,
+      "containers": [
+        {
+          "name": "web",
+          "image": "pi-cloud/web-ui:vm-allocation-v6-app2"
+        }
+      ]
+    },
+    "deployment/cube-api": {
+      "ready": 1,
+      "desired": 1,
+      "containers": [
+        {
+          "name": "cube-api",
+          "image": "pi-cloud/cube-api:vm-allocation-v6"
+        }
+      ]
+    },
+    "deployment/cube-master": {
+      "ready": 1,
+      "desired": 1,
+      "containers": [
+        {
+          "name": "cube-master",
+          "image": "pi-cloud/cube-master:vm-allocation-v6"
+        }
+      ]
+    },
+    "daemonset/cube-node": {
+      "ready": 1,
+      "desired": 1,
+      "containers": [
+        {
+          "name": "network-agent",
+          "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/network-agent:v0.6.0"
+        },
+        {
+          "name": "cubelet",
+          "image": "pi-cloud/cubelet:vm-allocation-v6"
+        },
+        {
+          "name": "cube-egress",
+          "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress:v0.6.0"
+        },
+        {
+          "name": "cube-egress-net",
+          "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0"
+        }
+      ]
+    },
+    "deployment/pi-cloud-cube-api-authorizer": {
+      "ready": 2,
+      "desired": 2,
+      "containers": [
+        {
+          "name": "authorizer",
+          "image": "pi-cloud/cube-api-authorizer:vm-allocation-v6"
+        }
+      ]
+    }
+  },
+  "versions": {
+    "managedProtocol": 6,
+    "guestProtocol": 3,
+    "patchId": "602fa6575ee1ed5d",
+    "guestSource": "992bcf3ad59056d2eb43b87f623fd351661ae47f",
+    "completionSource": "f00ee60f199afa969a45f5cfca7e5e07e311571a",
+    "version": "0.6.0-picloud-602fa6575ee1ed5d",
+    "nodeMetadata": "synchronous"
+  }
+}

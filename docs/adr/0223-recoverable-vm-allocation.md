@@ -1,6 +1,7 @@
 # ADR-0223: Recoverable VM allocation and irreversible closure
 
-Status: accepted by the owner, 2026-10-04; implementation in progress.
+Status: implemented and deployed, 2026-10-04.
+[Verification and matched release](../reports/vm-allocation-20261004.md).
 
 ## Scope and authority
 

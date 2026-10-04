@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-10-04T12:59:54.476Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "uncapsuledAtCrash": true,
+  "processExit137": true,
+  "originalAllocationRecovered": true,
+  "creationWindowUnchanged": true,
+  "originalRunState": "failed",
+  "originalShellWrites": 0,
+  "lunaToolAfterRecovery": true,
+  "physicalAllocations": 1,
+  "cleanupCompleted": true
+}

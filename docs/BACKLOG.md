@@ -23,9 +23,13 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] Implement [ADR-0223](adr/0223-recoverable-vm-allocation.md) across Cube and
-      SandboxProvider: persist identity before creation, recover lost replies,
-      fence delayed creation after closure, and retain uncertain node evidence.
+[ADR-0223](adr/0223-recoverable-vm-allocation.md) is deployed: creation identity
+precedes the physical effect, lost replies recover the original allocation,
+closure excludes delayed creation, and unconfirmed node outcomes remain held.
+[Verification](reports/vm-allocation-20261004.md) includes 178 fault cases, real
+creation/closure races, Luna with Control Plane SIGKILL, and dedicated-machine
+takeover, pause/resume and Volume release. Historical untracked allocations and
+physical-node recovery limits remain in the operational items below.
 
 [ADR-0222](adr/0222-paused-inputs-after-stop.md) is deployed: Stop durably pauses
 pending human inputs; new input runs independently and explicit Send/Continue

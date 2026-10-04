@@ -1,0 +1,24 @@
+{
+  "checkedAt": "2026-10-04T12:58:42.104Z",
+  "accepted": true,
+  "cases": [
+    {
+      "name": "lost_reply_and_duplicate",
+      "sameVm": true,
+      "guestUsable": true,
+      "lateCreateRejected": true,
+      "nodeAbsenceConfirmed": true
+    },
+    {
+      "name": "close_before_create",
+      "lateCreateRejected": true
+    },
+    {
+      "name": "close_during_creation",
+      "observedPhase": "creating",
+      "nodeAbsenceConfirmed": true,
+      "lateCreateRejected": true
+    }
+  ],
+  "cleanupCompleted": true
+}

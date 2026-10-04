@@ -2,9 +2,10 @@
 
 ## Recoverable VM allocation
 
-- [ ] Deliver [ADR-0223](adr/0223-recoverable-vm-allocation.md): stable physical
+- [x] Deliver [ADR-0223](adr/0223-recoverable-vm-allocation.md): stable physical
       allocation, queryable creation, irreversible closure and matched recovery
       acceptance without resetting business data.
+      [Deployed verification](reports/vm-allocation-20261004.md).
 
 ## Paused input after Stop
 
