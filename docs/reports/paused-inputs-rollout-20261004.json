@@ -1,0 +1,81 @@
+{
+  "checkedAt": "2026-10-04T05:32:11.484Z",
+  "implementationSource": "1e8c83e7c94be4f5f947a34bae398582b22aadbb",
+  "workerSource": "dd3897e54565e09f191adfa418b4e8061353e83e",
+  "webSource": "b555f47b",
+  "images": {
+    "controlPlane": "pi-cloud/control-plane:paused-inputs-v1",
+    "worker": "pi-cloud/supervisor-host:paused-inputs-v2",
+    "web": "pi-cloud/web-ui:paused-inputs-v2-web",
+    "volumeGateway": "pi-cloud/workspace-volume-gateway:paused-inputs-v1",
+    "sshGateway": "pi-cloud/ssh-gateway:paused-inputs-v1",
+    "relay": "pi-cloud/provider-egress-relay:paused-inputs-v1",
+    "provider": "pi-cloud/cli-proxy-api:paused-inputs-v1"
+  },
+  "schema": "173_paused_inputs",
+  "managedCubeProtocol": 5,
+  "guestToolProtocol": 3,
+  "completionSource": "f30e189b09e7b51549ced7fe4e29ba5633cfe40b",
+  "guestSource": "83cca93d753fa6b2a0c4482e8e51ecbe3a981fa9",
+  "state": {
+    "active_or_pending_runs": 0,
+    "active_leases": 0,
+    "bindings": 0,
+    "missing_image_references": 0
+  },
+  "cubeInventoryCount": 0,
+  "workloads": [
+    {
+      "name": "cube-node-96p87",
+      "ready": true,
+      "images": [
+        "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/network-agent:v0.6.0",
+        "pi-cloud/cubelet:paused-inputs-v1",
+        "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress:v0.6.0",
+        "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0"
+      ]
+    },
+    {
+      "name": "pi-cloud-control-plane-78bf65d9b4-pqcrb",
+      "ready": true,
+      "images": ["pi-cloud/control-plane:paused-inputs-v1"]
+    },
+    {
+      "name": "pi-cloud-pi-worker-primary-v1-0",
+      "ready": true,
+      "images": ["pi-cloud/supervisor-host:paused-inputs-v2"]
+    },
+    {
+      "name": "pi-cloud-pi-worker-primary-v1-1",
+      "ready": true,
+      "images": ["pi-cloud/supervisor-host:paused-inputs-v2"]
+    },
+    {
+      "name": "pi-cloud-web-666b9d6bb6-pj7f6",
+      "ready": true,
+      "images": ["pi-cloud/web-ui:paused-inputs-v2-web"]
+    }
+  ],
+  "live": {
+    "checkedAt": "2026-10-04T05:29:25.533Z",
+    "model": "gpt-6-luna",
+    "accepted": true,
+    "revision": "cd24dbee8f01dbd7fe122d62af2532603b638c7c",
+    "scriptSha256": "b8998b03a1ee5b06122110c86409c4257a773cd7130d012a3c099a148e533a93",
+    "unconsumedSteerPaused": true,
+    "refreshPreservedPause": true,
+    "workerReplacementPreservedPause": true,
+    "freshInputBypassedPaused": true,
+    "singleSendPreservedOtherPauses": true,
+    "browserSendAndResume": true,
+    "executionAndHistoryOrder": true,
+    "executedRuns": 5,
+    "cleanupCompleted": true
+  },
+  "notes": [
+    "No business-data reset; schema 173 applied after admission and physical VM drain.",
+    "Existing native Cube protocol and Guest template retained; completion wrapper rebuilt against matched protocol sources.",
+    "Live restart is a graceful replacement of both Worker Pods, not a SIGKILL experiment.",
+    "Live fixtures removed their Sessions and Workspace; this is not an attachment inventory identity audit."
+  ]
+}

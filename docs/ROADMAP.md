@@ -2,8 +2,9 @@
 
 ## Paused input after Stop
 
-- [ ] Deliver [ADR-0222](adr/0222-paused-inputs-after-stop.md), including durable
+- [x] Deliver [ADR-0222](adr/0222-paused-inputs-after-stop.md), including durable
       pause, fresh-input bypass, explicit continuation and browser/recovery tests.
+      [Verification and release](reports/paused-inputs-20261004.md).
 
 ## Pi Tool cancellation
 

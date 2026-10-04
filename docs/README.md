@@ -5,7 +5,9 @@ ordered operation interruption, original-result settlement and bounded UNKNOWN
 outcomes. [Verification and matched release](reports/pi-tool-cancellation-20261004.md)
 include normal and unavailable-executor Luna/Cube acceptance.
 [ADR-0222](adr/0222-paused-inputs-after-stop.md) adds durable queue pause on Stop,
-independent fresh input and explicit continuation; implementation is in progress.
+independent fresh input and explicit continuation.
+[Verification and rollout](reports/paused-inputs-20261004.md) cover native input
+consumption, real Luna/browser behavior and Worker replacement.
 The earlier [detach-only acceptance](reports/agent-stop-correction-20261004.md)
 records ADR-0220's superseded behavior at its named revision.
 

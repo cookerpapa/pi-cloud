@@ -1,6 +1,7 @@
 # ADR-0222: Preserve and pause pending human input after Stop
 
-Status: accepted by the owner, 2026-10-04; implementation in progress.
+Status: implemented and deployed, 2026-10-04. See the
+[verification and live acceptance](../reports/paused-inputs-20261004.md).
 
 ## Behavior
 

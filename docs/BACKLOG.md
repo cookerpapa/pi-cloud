@@ -23,9 +23,10 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] Implement [ADR-0222](adr/0222-paused-inputs-after-stop.md): preserve and
-      pause pending inputs on Stop, allow independent new input and explicit
-      individual/queue continuation, and verify consumption races and restart.
+[ADR-0222](adr/0222-paused-inputs-after-stop.md) is deployed: Stop durably pauses
+pending human inputs; new input runs independently and explicit Send/Continue
+queue resumes old input. [Verification](reports/paused-inputs-20261004.md) includes
+172 fault cases and real Luna/browser/Worker-replacement acceptance.
 
 [ADR-0221](adr/0221-pi-tool-cancellation.md) is implemented and deployed: ordered
 operation cancellation, original native Tool settlement, bounded UNKNOWN and
