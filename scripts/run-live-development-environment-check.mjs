@@ -167,7 +167,7 @@ async function waitForWorkspacePurge(workspaceId) {
   throw new Error(`Development machine Workspace ${workspaceId} was not purged`);
 }
 
-async function waitForSandboxControlReady() {
+async function waitForSandboxControlReady(environmentId) {
   const deadline = Date.now() + 2 * 60_000;
   while (Date.now() < deadline) {
     try {
@@ -179,12 +179,15 @@ async function waitForSandboxControlReady() {
         "-e",
         "fetch('http://127.0.0.1:4300/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
       ]);
+      // Global readiness can precede takeover of a particular old owner's VM.
+      // A read-only directory query also proves its local handle was adopted.
+      await api.listDevelopmentEnvironmentDirectory(environmentId, "/");
       return;
     } catch {
       await wait(250);
     }
   }
-  throw new Error("Sandbox control did not become ready after restart");
+  throw new Error("Sandbox control did not recover the development machine after restart");
 }
 
 async function terminalCommand(path, command, marker) {
@@ -519,12 +522,13 @@ try {
     "EXCLUSIVE_SSH_OK",
   );
 
+  console.log(JSON.stringify({ event: "development_acceptance_stage", stage: "restart" }));
   await capture(
     process.execPath,
     ["scripts/production-kubernetes.mjs", "restart", "control-plane"],
     5 * 60_000,
   );
-  await waitForSandboxControlReady();
+  await waitForSandboxControlReady(development.environmentId);
   const recoveredAfterControlPlaneRestart = await waitForEnvironment(
     development.environmentId,
     "running",
@@ -555,6 +559,7 @@ try {
   );
 
   const pauseKey = newIdempotencyKey("environment");
+  console.log(JSON.stringify({ event: "development_acceptance_stage", stage: "pause_resume" }));
   const paused = await api.developmentEnvironmentAction(
     development.environmentId,
     "pause",
