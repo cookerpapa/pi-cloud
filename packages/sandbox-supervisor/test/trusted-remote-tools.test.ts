@@ -1,3 +1,4 @@
+import { ToolExecutionFailure } from "@pi-cloud/protocol";
 import {
   EventStream,
   validateToolArguments,
@@ -417,16 +418,13 @@ describe("whole-tool Worker adapter", () => {
     const unavailable = vi.fn();
     const { value } = configuration({
       onToolOperationUnavailable: unavailable,
-      waitForToolReply: async (request) => ({
-        type: "tool_execution_end",
-        toolCallId: "call",
-        toolName: request.toolName,
-        isError: true,
-        result: {
-          content: [{ type: "text", text: "cubesandbox_tool_result_unknown: No confirmed result" }],
-          details: undefined,
-        },
-      }),
+      waitForToolReply: async () => {
+        throw new ToolExecutionFailure({
+          code: "cubesandbox_tool_result_unknown",
+          message: "No confirmed result",
+          effect: "unknown",
+        });
+      },
       publishToolCommand: async (command) => ({
         operationId: command.request.operationId,
         accepted: true,
@@ -445,8 +443,16 @@ describe("whole-tool Worker adapter", () => {
     "reply Worker stopped",
     "image decode failed",
     "reply identity mismatch",
+    "structured failure",
   ])("stops native Agent sampling after transport rejection: %s", async (reason) => {
-    const cause = new Error(reason);
+    const cause =
+      reason === "structured failure"
+        ? new ToolExecutionFailure({
+            code: "ownership_lost",
+            message: "Executor no longer owns this operation",
+            effect: "unknown",
+          })
+        : new Error(reason);
     let failure: Error | undefined;
     const capture = createStepCapture();
     const unavailable = vi.fn((value: { code: string; message: string }) => {
@@ -515,11 +521,21 @@ describe("whole-tool Worker adapter", () => {
     expect(requests).toBe(1);
     expect(publish).toHaveBeenCalledOnce();
     expect(unavailable).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ code: "tool_operation_outcome_unknown", retryable: false }),
+      expect.objectContaining({
+        code: reason === "structured failure" ? "ownership_lost" : "tool_operation_outcome_unknown",
+        retryable: false,
+      }),
     );
     expect(agent.state.messages.find((message) => message.role === "toolResult")).toMatchObject({
       isError: true,
-      content: [{ type: "text", text: expect.stringContaining("tool_operation_outcome_unknown") }],
+      content: [
+        {
+          type: "text",
+          text: expect.stringContaining(
+            reason === "structured failure" ? "ownership_lost" : "tool_operation_outcome_unknown",
+          ),
+        },
+      ],
     });
   });
 

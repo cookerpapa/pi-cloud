@@ -4,9 +4,9 @@ import {
   type AcceptedToolCommand,
   type ExecutionLogPosition,
   type SandboxBindingChange,
-  type NativeToolEnd,
   type AcceptedToolCancellation,
 } from "@pi-cloud/protocol";
+import type { ToolReply } from "@pi-cloud/event-log";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
 import { Agent, fetch as internalFetch } from "undici";
 import {
@@ -52,7 +52,7 @@ export class ToolCommandDispatcher {
       workflow: WorkflowDelivery;
       publishReply(
         topic: string,
-        reply: { operationId: string; sequence: 1; event: NativeToolEnd },
+        reply: ToolReply,
         scope: AcceptedToolCommand["scope"],
       ): Promise<void>;
       quarantine(target: SandboxExecutionTarget): Promise<void>;
@@ -106,6 +106,7 @@ export class ToolCommandDispatcher {
         command,
         "cubesandbox_tool_unavailable",
         "The recorded Tool binding is unavailable.",
+        "not_started",
       );
       return;
     }
@@ -254,7 +255,14 @@ export class ToolCommandDispatcher {
         throw new Error("Workflow closure is unconfirmed");
     }
   }
-  async #fail(command: AcceptedToolCommand, code: string, text: string): Promise<void> {
+  async #fail(
+    command: AcceptedToolCommand,
+    code: string,
+    text: string,
+    effect: "not_started" | "unknown" = code === "tool_execution_not_started"
+      ? "not_started"
+      : "unknown",
+  ): Promise<void> {
     if (!command.replyTopic) return;
     try {
       await this.options.publishReply(
@@ -262,16 +270,13 @@ export class ToolCommandDispatcher {
         {
           operationId: command.request.operationId,
           sequence: 1,
-          event: {
-            type: "tool_execution_end",
-            toolCallId:
-              command.request.operation === "tool.execute"
-                ? command.request.toolCallId
-                : command.toolCallId,
-            toolName: command.request.toolName,
-            isError: true,
-            result: { content: [{ type: "text", text: `${code}: ${text}` }], details: undefined },
-          },
+          kind: "execution_failure",
+          toolCallId:
+            command.request.operation === "tool.execute"
+              ? command.request.toolCallId
+              : command.toolCallId,
+          toolName: command.request.toolName,
+          failure: { code, message: text, effect },
         },
         command.scope,
       );

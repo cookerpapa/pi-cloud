@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0225](0225-structured-tool-completion.md) — typed execution failures on
+   the boot reply transport; native Tool text cannot control Run liveness.
 1. [ADR-0224](0224-review-lifecycle-boundaries.md) — accepted cleanup budgets,
    staged recovery, PG decision time and shared native model request policy.
 1. [ADR-0223](0223-recoverable-vm-allocation.md) — stable VM creation identity,

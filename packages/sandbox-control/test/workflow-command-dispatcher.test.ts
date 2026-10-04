@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type AcceptedToolCommand,
-  type NativeToolEvent,
   type NativeToolUpdate,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
@@ -16,7 +15,7 @@ function command(): AcceptedToolCommand {
     kind: "tool_command",
     factId: crypto.randomUUID(),
     toolCallId,
-    replyTopic: "pi-cloud.tool-replies.v1.test",
+    replyTopic: "pi-cloud.tool-replies.v2.test",
     scope: {
       tenantId: crypto.randomUUID(),
       sessionId: crypto.randomUUID(),
@@ -72,7 +71,9 @@ function fixture(maximumActiveCommands = 32) {
   const publish = vi.fn(
     async (
       _topic: string,
-      _reply: { operationId: string; sequence: number; event: NativeToolEvent },
+      _reply: Parameters<
+        ConstructorParameters<typeof WorkflowCommandDispatcher>[0]["publishReply"]
+      >[1],
     ) => {},
   );
   const progress = vi.fn(),
@@ -138,7 +139,7 @@ describe("interactive workflow replies without completed-result retention", () =
       f.publish.mock.calls.map(([, reply]) => [
         reply.operationId,
         reply.sequence,
-        reply.event.type,
+        reply.kind === "tool_result" ? reply.event.type : reply.kind,
       ]),
     ).toEqual([[c.request.operationId, 1, "tool_execution_end"]]);
     expect(f.progress).toHaveBeenCalledWith(
@@ -211,9 +212,9 @@ describe("interactive workflow replies without completed-result retention", () =
     f.executor.receive(record(a));
     f.executor.receive(record(b, 1n));
     await vi.waitFor(() => expect(f.publish).toHaveBeenCalledOnce());
-    expect(f.publish.mock.calls[0]![1].event).toMatchObject({
-      isError: true,
-      result: { content: [{ text: expect.stringContaining("capacity") }] },
+    expect(f.publish.mock.calls[0]![1]).toMatchObject({
+      kind: "execution_failure",
+      failure: { code: "tool_command_capacity_exhausted", effect: "not_started" },
     });
     expect(f.execute).toHaveBeenCalledOnce();
     finish(output(a.request));

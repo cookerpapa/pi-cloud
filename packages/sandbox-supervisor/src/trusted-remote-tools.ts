@@ -1,5 +1,6 @@
 import {
   parseCloudToolCapabilitySnapshot,
+  ToolExecutionFailure,
   parseToolSandboxOperationRequest,
   CLOUD_TOOL_NAMES,
   MIN_TOOL_EXECUTION_TIMEOUT_MS,
@@ -374,6 +375,11 @@ export function createTrustedRemoteAgentTools(
           });
           const event = await final.catch(async (error: unknown) => {
             if (signal?.aborted) throw error;
+            if (error instanceof ToolExecutionFailure) {
+              if (error.effect === "unknown" || UNAVAILABLE_TOOL_CODES.has(error.code))
+                await runtime.onToolOperationUnavailable?.(error);
+              throw error;
+            }
             const failure = {
               code: "tool_operation_outcome_unknown",
               message: "Tool reply could not be confirmed; do not automatically repeat the command",
@@ -529,9 +535,6 @@ export function createTrustedRemoteAgentTools(
                   .filter((part) => part.type === "text")
                   .map((part) => part.text)
                   .join("\n");
-                const code = message.split(":", 1)[0]!;
-                if (UNAVAILABLE_TOOL_CODES.has(code))
-                  await runtime.onToolOperationUnavailable?.({ code, message, retryable: false });
                 throw new Error(message);
               }
               outcome = "completed";

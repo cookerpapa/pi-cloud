@@ -123,43 +123,59 @@ export class CubeCompletionAdapter {
     }
     if (packet.kind !== "result" || !packet.result) throw new Error("Missing execution result");
     this.options.progress.forget(packet.operationId);
-    let event: NativeToolEnd;
-    let guestCompleted = false;
+    const fail = async (
+      code: string,
+      message: string,
+      effect: "not_started" | "unknown" = "unknown",
+    ) => {
+      await this.options.publish(context.replyTopic, {
+        kind: "execution_failure",
+        operationId: packet.operationId,
+        sequence: 1,
+        toolCallId: context.nativeToolCallId,
+        toolName: context.toolName,
+        failure: { code, message: message.slice(0, 4096), effect },
+      });
+    };
     if (packet.result.failure) {
+      const notStarted = [
+        "execution_not_started",
+        "read_capacity_timeout",
+        "tool_cancelled",
+      ].includes(packet.result.failure);
       const code =
         packet.result.quarantine || packet.result.failure === "tool_sandbox_unavailable"
           ? "cubesandbox_tool_unavailable"
-          : ["execution_not_started", "read_capacity_timeout", "tool_cancelled"].includes(
-                packet.result.failure,
-              )
+          : notStarted
             ? packet.result.failure
             : "cubesandbox_tool_result_unknown";
-      event = errorEvent(
+      await fail(
         code,
         packet.result.quarantine
           ? "The execution scope could not be stopped; the runtime requires control-plane recovery."
           : "Tool execution did not provide a confirmed result; inspect effects before deciding to repeat it.",
+        notStarted && !packet.result.quarantine ? "not_started" : "unknown",
       );
-    } else {
-      const output = parseToolWorkerOutput(packet.result.output);
-      if (output.type === "worker.failed") event = errorEvent(output.code, output.message);
-      else {
-        if (
-          output.type !== "worker.operation_result" ||
-          output.response.operationId !== packet.operationId
-        )
-          throw new Error("Guest completion identity changed");
-        const response = output.response;
-        if (response.type === "tool_sandbox.operation_failed")
-          event = errorEvent(response.code, response.message);
-        else {
-          if (response.operation !== "tool.execute" || response.event.type !== "tool_execution_end")
-            throw new Error("Fixed tool completion requires a native final result");
-          event = response.event;
-          guestCompleted = true;
-        }
-      }
+      return;
     }
+    const output = parseToolWorkerOutput(packet.result.output);
+    if (output.type === "worker.failed") {
+      await fail(output.code, output.message);
+      return;
+    }
+    if (
+      output.type !== "worker.operation_result" ||
+      output.response.operationId !== packet.operationId
+    )
+      throw new Error("Guest completion identity changed");
+    const response = output.response;
+    if (response.type === "tool_sandbox.operation_failed") {
+      await fail(response.code, response.message);
+      return;
+    }
+    if (response.operation !== "tool.execute" || response.event.type !== "tool_execution_end")
+      throw new Error("Fixed tool completion requires a native final result");
+    const event = response.event;
     if (event.toolCallId !== context.nativeToolCallId || event.toolName !== context.toolName)
       throw new Error("Native completion identity changed");
     const images = event.result.content.filter((p) => p.type === "image");
@@ -182,12 +198,11 @@ export class CubeCompletionAdapter {
       ),
     );
     await this.options.publish(context.replyTopic, {
+      kind: "tool_result",
       operationId: packet.operationId,
       sequence: 1,
       event: encoded,
-      ...(guestCompleted && context.execution
-        ? { execution: { ...context.execution, observedAt } }
-        : {}),
+      ...(context.execution ? { execution: { ...context.execution, observedAt } } : {}),
     });
   }
 }

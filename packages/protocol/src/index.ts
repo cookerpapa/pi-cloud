@@ -631,3 +631,4 @@ export * from "./execution-probe.ts";
 export * from "./execution-position.ts";
 export * from "./publication-availability.ts";
 export * from "./tool-cancellation.ts";
+export * from "./tool-execution-failure.ts";

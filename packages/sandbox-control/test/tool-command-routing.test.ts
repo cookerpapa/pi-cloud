@@ -29,7 +29,7 @@ function fixture() {
     kind: "tool_command",
     factId: randomUUID(),
     toolCallId: "result-entry",
-    replyTopic: "pi-cloud.tool-replies.v1." + randomUUID(),
+    replyTopic: "pi-cloud.tool-replies.v2." + randomUUID(),
     occurredAt: new Date().toISOString(),
     scope,
     request: {
@@ -288,14 +288,10 @@ describe("Projector native Cube handoff", () => {
     expect(f.publishReply).toHaveBeenCalledWith(
       f.command.replyTopic,
       expect.objectContaining({
-        event: expect.objectContaining({
-          result: expect.objectContaining({
-            content: [
-              expect.objectContaining({
-                text: expect.stringContaining("cubesandbox_tool_result_unknown"),
-              }),
-            ],
-          }),
+        kind: "execution_failure",
+        failure: expect.objectContaining({
+          code: "cubesandbox_tool_result_unknown",
+          effect: "unknown",
         }),
       }),
       f.command.scope,

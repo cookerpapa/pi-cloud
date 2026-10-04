@@ -157,14 +157,19 @@ export async function createSandboxControl(options: {
     const workflows = new WorkflowCommandDispatcher({
       broker: controller,
       publishReply: async (topic, reply, scope) =>
-        replies.publish(topic, {
-          ...reply,
-          event: await encodeSessionImages(
-            options.images?.codec,
-            { tenantId: scope.tenantId, runId: scope.runId },
-            reply.event,
-          ),
-        }),
+        replies.publish(
+          topic,
+          reply.kind === "tool_result"
+            ? {
+                ...reply,
+                event: await encodeSessionImages(
+                  options.images?.codec,
+                  { tenantId: scope.tenantId, runId: scope.runId },
+                  reply.event,
+                ),
+              }
+            : reply,
+        ),
       maximumActiveCommands: config.maximumActiveCommands,
       metrics,
       progress,
@@ -249,11 +254,7 @@ export async function createSandboxControl(options: {
           route.instanceId === instanceId ? receive(delivery) : remoteWorkflow(route, delivery),
         { close: () => remoteWorkflow.close() },
       ),
-      publishReply: async (topic, reply, scope) =>
-        replies.publish(topic, {
-          ...reply,
-          event: await encodeSessionImages(undefined, { tenantId: scope.tenantId }, reply.event),
-        }),
+      publishReply: (topic, reply) => replies.publish(topic, reply),
       quarantine: async (target) => {
         // Failed scoped stopping is a control-plane resource decision. Preserve
         // identity/capsule and quota until explicit recovery confirms absence.

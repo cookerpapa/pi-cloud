@@ -1,3 +1,4 @@
+import type { ToolReply } from "@pi-cloud/event-log";
 import {
   createExecutionReference,
   parseToolSandboxOperationRequest,
@@ -28,7 +29,9 @@ export type ToolLogFact = {
     Partial<AcceptedToolCommand["scope"]>;
   closesWriter?: boolean;
 };
-type Reply = { operationId: string; sequence: 1; event: NativeToolEnd };
+type Reply =
+  | { kind: "tool_result"; operationId: string; sequence: 1; event: NativeToolEnd }
+  | Extract<ToolReply, { kind: "execution_failure" }>;
 
 /** Projector committed the dispatch boundary before delivery. No completed-result cache. */
 export class WorkflowCommandDispatcher {
@@ -117,6 +120,23 @@ export class WorkflowCommandDispatcher {
     const topic = command.replyTopic;
     let publicationFailure: unknown;
     let revision = 0;
+    const publish = async (reply: Reply) => {
+      if (this.#closedFor(command) || publicationFailure) return;
+      try {
+        await this.#publishReply(topic, reply, command.scope);
+      } catch (error) {
+        publicationFailure = error;
+        // A reply transport failure is not evidence that the Cube has died.
+        // Do not throw through the provider and destroy a healthy environment.
+        this.#metrics?.toolTransportRejected.inc({ reason: "reply_publication" });
+        operationalLog({
+          service: "pi-cloud-sandbox-control",
+          level: "error",
+          event: "tool.reply.failed",
+          attributes: { runId: command.scope.runId, operationId: request.operationId },
+        });
+      }
+    };
     const send = async (event: NativeToolEvent) => {
       if (this.#closedFor(command) || publicationFailure) return;
       if (event.type === "tool_execution_update") {
@@ -141,28 +161,7 @@ export class WorkflowCommandDispatcher {
           });
         return;
       }
-      try {
-        await this.#publishReply(
-          topic,
-          {
-            operationId: request.operationId,
-            sequence: 1,
-            event,
-          },
-          command.scope,
-        );
-      } catch (error) {
-        publicationFailure = error;
-        // A reply transport failure is not evidence that the Cube has died.
-        // Do not throw through the provider and destroy a healthy environment.
-        this.#metrics?.toolTransportRejected.inc({ reason: "reply_publication" });
-        operationalLog({
-          service: "pi-cloud-sandbox-control",
-          level: "error",
-          event: "tool.reply.failed",
-          attributes: { runId: command.scope.runId, operationId: request.operationId },
-        });
-      }
+      await publish({ kind: "tool_result", operationId: request.operationId, sequence: 1, event });
     };
     const parent = parseTraceCarrier(command.traceContext ?? {});
     this.#commands++;
@@ -230,12 +229,17 @@ export class WorkflowCommandDispatcher {
           error instanceof SandboxControlError
             ? error.message
             : "Tool execution result could not be confirmed; do not automatically repeat the command";
-        await send({
-          type: "tool_execution_end",
+        await publish({
+          kind: "execution_failure",
+          operationId: request.operationId,
+          sequence: 1,
           toolCallId: request.toolCallId,
           toolName: request.toolName,
-          result: { content: [{ type: "text", text: `${code}: ${message}` }], details: undefined },
-          isError: true,
+          failure: {
+            code,
+            message: message.slice(0, 4096),
+            effect: code === "tool_command_capacity_exhausted" ? "not_started" : "unknown",
+          },
         });
       })
       .finally(() => {

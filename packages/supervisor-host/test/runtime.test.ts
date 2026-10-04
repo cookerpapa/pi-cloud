@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("@pi-cloud/event-log", async (original) => ({
   ...(await original<typeof import("@pi-cloud/event-log")>()),
   KafkaToolReplyMailbox: class {
-    topic = "pi-cloud.tool-replies.v1.test";
+    topic = "pi-cloud.tool-replies.v2.test";
     async start() {}
     async shutdown() {}
     async wait() {

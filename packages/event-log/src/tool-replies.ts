@@ -1,6 +1,9 @@
 import kafkaNative from "@confluentinc/kafka-javascript";
 import {
   parseNativeToolEvent,
+  parseToolExecutionFailure,
+  ToolExecutionFailure,
+  type ToolExecutionFailureData,
   MAX_TOOL_EXECUTION_TIMEOUT_MS,
   MAX_TOOL_RESPONSE_BYTES,
   type NativeToolEnd,
@@ -14,37 +17,60 @@ import {
 import { KafkaLogConsumer } from "./kafka-log-consumer.ts";
 
 const { KafkaJS } = kafkaNative;
-export const TOOL_REPLY_TOPIC_PREFIX = "pi-cloud.tool-replies.v1.";
+export const TOOL_REPLY_TOPIC_PREFIX = "pi-cloud.tool-replies.v2.";
 const PREFIX = TOOL_REPLY_TOPIC_PREFIX;
 export const TOOL_REPLY_TOPIC_PATTERN =
-  /^pi-cloud\.tool-replies\.v1\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /^pi-cloud\.tool-replies\.v2\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const TOOL_REPLY_RETENTION_MS = 2 * (MAX_TOOL_EXECUTION_TIMEOUT_MS + 30_000);
 export function toolReplyTopic(bootId: string): string {
   if (!TOOL_REPLY_TOPIC_PATTERN.test(`${PREFIX}${bootId}`))
     throw new Error("Invalid Worker boot identity");
   return `${PREFIX}${bootId}`;
 }
-export type ToolReply = {
-  operationId: string;
-  sequence: 1;
-  event: ImagePacked<NativeToolEnd>;
-  execution?: ExecutionEvidence;
-};
+type ReplyIdentity = { operationId: string; sequence: 1 };
+export type ToolReply = ReplyIdentity &
+  (
+    | {
+        kind: "tool_result";
+        event: ImagePacked<NativeToolEnd>;
+        execution?: ExecutionEvidence;
+      }
+    | {
+        kind: "execution_failure";
+        toolCallId: string;
+        toolName: string;
+        failure: ToolExecutionFailureData;
+      }
+  );
 export type WorkerReply = ToolReply | ExecutionProbeReply;
 
 export function parseWorkerReply(value: string | Buffer): WorkerReply {
   const valueObject = JSON.parse(value.toString());
   if (valueObject?.kind === "execution_probe") return parseExecutionProbeReply(valueObject);
   const reply = valueObject as ToolReply;
-  if (
-    typeof reply.operationId !== "string" ||
-    reply.sequence !== 1 ||
-    reply.event?.type !== "tool_execution_end"
-  )
+  if (!reply || typeof reply.operationId !== "string" || !reply.operationId || reply.sequence !== 1)
     throw new Error("Invalid Tool reply identity");
+  if (reply.kind === "execution_failure") {
+    if (
+      typeof reply.toolCallId !== "string" ||
+      !reply.toolCallId ||
+      typeof reply.toolName !== "string" ||
+      !reply.toolName ||
+      "event" in reply ||
+      "execution" in reply
+    )
+      throw new Error("Invalid Tool failure identity");
+    return { ...reply, failure: parseToolExecutionFailure(reply.failure) };
+  }
+  if (
+    reply.kind !== "tool_result" ||
+    reply.event?.type !== "tool_execution_end" ||
+    "failure" in reply
+  )
+    throw new Error("Invalid Tool reply kind");
   validateImageReferencePayload(reply.event);
   if (reply.execution) parseExecutionEvidence(reply.execution);
-  return { ...reply, event: parseNativeToolEvent(reply.event) as ToolReply["event"] };
+  return { ...reply, event: parseNativeToolEvent(reply.event) as ImagePacked<NativeToolEnd> };
 }
 
 export class KafkaToolReplyPublisher {
@@ -66,13 +92,8 @@ export class KafkaToolReplyPublisher {
   }
   async publish(topic: string, reply: WorkerReply): Promise<void> {
     if (!TOOL_REPLY_TOPIC_PATTERN.test(topic)) throw new Error("Invalid Tool reply destination");
-    if ("kind" in reply) parseExecutionProbeReply(reply);
-    else {
-      if (reply.sequence !== 1 || reply.event.type !== "tool_execution_end")
-        throw new Error("Kafka Tool replies require one final result");
-      validateImageReferencePayload(reply.event);
-    }
     const value = Buffer.from(JSON.stringify(reply));
+    parseWorkerReply(value);
     if (this.#bytes + value.byteLength > 16 * 1024 * 1024)
       throw new Error("Tool reply producer capacity exhausted");
     this.#bytes += value.byteLength;
@@ -80,7 +101,11 @@ export class KafkaToolReplyPublisher {
       await this.#producer.send({
         topic,
         messages: [
-          { key: "kind" in reply ? reply.probeId : reply.operationId, value, partition: 0 },
+          {
+            key: reply.kind === "execution_probe" ? reply.probeId : reply.operationId,
+            value,
+            partition: 0,
+          },
         ],
       });
     } finally {
@@ -153,7 +178,7 @@ export class ToolReplyMailbox {
     return promise;
   }
   accept(reply: WorkerReply): void {
-    if ("kind" in reply) {
+    if (reply.kind === "execution_probe") {
       for (const bindingId of reply.bindingIds) {
         const key = `${reply.probeId}:${bindingId}`,
           pending = this.#probes.get(key);
@@ -166,13 +191,27 @@ export class ToolReplyMailbox {
     }
     const pending = this.#pending.get(reply.operationId);
     if (!pending) return;
+    const identity = reply.kind === "tool_result" ? reply.event : reply;
     if (
-      reply.event.toolCallId !== pending.toolCallId ||
-      reply.event.toolName !== pending.toolName ||
+      identity?.toolCallId !== pending.toolCallId ||
+      identity?.toolName !== pending.toolName ||
       reply.sequence !== 1 ||
-      reply.event.type !== "tool_execution_end"
+      (reply.kind !== "execution_failure" &&
+        (reply.kind !== "tool_result" || reply.event?.type !== "tool_execution_end"))
     ) {
       this.#finish(reply.operationId, pending, new Error("Tool reply identity/order changed"));
+      return;
+    }
+    if (reply.kind === "execution_failure") {
+      try {
+        this.#finish(
+          reply.operationId,
+          pending,
+          new ToolExecutionFailure(parseToolExecutionFailure(reply.failure)),
+        );
+      } catch (error) {
+        this.#finish(reply.operationId, pending, error);
+      }
       return;
     }
     this.#pending.delete(reply.operationId);

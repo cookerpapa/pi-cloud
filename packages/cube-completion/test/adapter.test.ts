@@ -18,7 +18,7 @@ function fixture() {
       leaseId: writerId,
       fencingToken: 1,
     },
-    replyTopic: `pi-cloud.tool-replies.v1.${randomUUID()}`,
+    replyTopic: `pi-cloud.tool-replies.v2.${randomUUID()}`,
     toolCallId: "result-entry",
     nativeToolCallId: "native-call",
     toolName: "read",
@@ -111,7 +111,9 @@ it("reports failed image storage without inserting an inline image or invented v
   const f = fixture();
   f.put.mockRejectedValueOnce(new Error("object store unavailable"));
   await f.adapter.accept(f.packet);
-  expect((f.publish.mock.calls[0]![1] as ToolReply).event).toMatchObject({
+  expect(
+    (f.publish.mock.calls[0]![1] as Extract<ToolReply, { kind: "tool_result" }>).event,
+  ).toMatchObject({
     isError: true,
     result: {
       content: [{ type: "text", text: expect.stringContaining("image_attachment_upload_failed") }],
@@ -161,9 +163,9 @@ it("marks an unconfirmed scope stop as runtime unavailable without destroying a 
     ...f.packet,
     result: { failure: "tool_scope_stop_unconfirmed", quarantine: true },
   });
-  expect((f.publish.mock.calls[0]![1] as ToolReply).event).toMatchObject({
-    isError: true,
-    result: { content: [{ text: expect.stringContaining("cubesandbox_tool_unavailable") }] },
+  expect(f.publish.mock.calls[0]![1]).toMatchObject({
+    kind: "execution_failure",
+    failure: { code: "cubesandbox_tool_unavailable", effect: "unknown" },
   });
 });
 

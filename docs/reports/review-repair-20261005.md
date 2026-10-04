@@ -37,5 +37,14 @@ for transport, timeout and frozen service tier. Summary session IDs, cache polic
 and output limits remain Pi-owned; hosted search is sampling-only. All 91 runtime,
 lifecycle and request-policy tests pass, including Standard/Fast compaction.
 
-Remaining slices: structured Tool
-failure envelope, Volume reference convergence, browser gate and measured cleanup.
+## Structured Tool failure slice — ADR-0225
+
+R04-06: v2 boot replies distinguish native `tool_result` from
+`execution_failure`. The mailbox validates callback identity and carries typed
+failure code/effect status to the Harness. Fixed Tools and workflow dispatch use
+the same classification; ordinary native error text is never parsed for control.
+Native Bash prefix regressions, mailbox wire/identity checks, real Agent failure
+settlement, completion images/probes and dispatch tests pass (82 assertions).
+Matched rollout and broad verification remain required.
+
+Remaining slices: Volume reference convergence, browser gate and measured cleanup.
