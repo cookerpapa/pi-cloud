@@ -47,4 +47,23 @@ Native Bash prefix regressions, mailbox wire/identity checks, real Agent failure
 settlement, completion images/probes and dispatch tests pass (82 assertions).
 Matched rollout and broad verification remain required.
 
-Remaining slices: Volume reference convergence, browser gate and measured cleanup.
+## Volume state slice — ADR-0226
+
+R04-03 replaces managed allocation reply deltas with durable Volume holds and
+versioned node reference state. Node metadata records unfinished detach before
+the plugin hook and synchronously commits its incarnation/revision. Master
+closes attachment admission before deletion, keeps node identity after allocation
+receipt collection and refuses unknown/changed metadata. Cube native protocol is
+7; guest Tool protocol remains 3. Migration `20261005000000` adds the Cube Volume
+state tables and removes the obsolete managed delta-application flags.
+
+Real Bolt/race tests cover a failed detach-state write, restart and the lost first
+allocation cleanup receipt. Six real MySQL/race tests cover shared references,
+duplicate/stale replies, metadata replacement, pending creation, receipt GC,
+historical untracked holds and concurrent placement/deletion. Native Volume/API
+targeted tests and paused-delete composition pass. A broader upstream snapshot
+test crashes in uninitialized node-cache fixture setup; the same named test
+also fails on unchanged `c3f5f6bd` native source. It is outside this repair's
+passing claims. Production build and real-VM acceptance remain pending.
+
+Remaining slices: browser gate and measured cleanup, then full/matched acceptance.

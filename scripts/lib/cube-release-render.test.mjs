@@ -23,6 +23,8 @@ const input = {
     create_deadline = "1m"
 [plugins."io.containerd.metadata.v1.bolt"]
     no_sync = true
+[plugins."io.cubelet.service.v1.cubebox"]
+    destroy_dead_line = "60s"
 [plugins."io.containerd.monitor.v1.cgroups"]
     no_prometheus = false
 `,

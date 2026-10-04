@@ -38,6 +38,8 @@ export function cubeletPluginConfiguration(base) {
     metadata,
     section.replace(/^([ \t]*no_sync[ \t]*=[ \t]*)(?:true|false)[ \t]*$/m, "$1false"),
   );
+  if (!/^[ \t]*destroy_dead_line[ \t]*=[ \t]*"60s"[ \t]*$/m.test(base))
+    throw new Error("Managed Cube cleanup transport requires the pinned native 60s destroy budget");
   const marker = `    [[plugins."io.cubelet.internal.v1.storage".volume_plugins]]
       name        = "cos"
       type        = "binary"

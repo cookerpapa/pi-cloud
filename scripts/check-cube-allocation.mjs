@@ -107,10 +107,40 @@ try {
         "-race",
         "-v",
         "./pkg/allocation",
+        ...(component === "Cubelet" ? ["./plugins/volume/..."] : []),
       ],
       { env: { ...process.env, PI_CLOUD_ALLOCATION_MYSQL_DSN: dsn } },
     );
   }
+  // This composes managed allocation cleanup with native paused destruction.
+  // The logic fixture needs no KVM or CGO cubecow library; production builds
+  // separately compile the CGO runtime and live tests exercise actual VMs.
+  await run("docker", [
+    "run",
+    "--rm",
+    "--network=host",
+    "--memory=2g",
+    "--cpus=2",
+    "-v",
+    `${directory}:/source:ro`,
+    "-w",
+    "/source/Cubelet",
+    "-e",
+    "CGO_ENABLED=0",
+    "-e",
+    `GOPROXY=${process.env.PI_CLOUD_GOPROXY ?? "https://goproxy.cn|https://proxy.golang.org|direct"}`,
+    ...["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]
+      .filter((k) => process.env[k])
+      .flatMap((k) => ["-e", k]),
+    manifest.buildImages.go,
+    "go",
+    "test",
+    "-mod=readonly",
+    "-count=1",
+    "./services/cubebox",
+    "-run",
+    "TestManagedCleanup|TestDestroyAuto",
+  ]);
 } finally {
   if (container) await exec("docker", ["stop", "-t", "5", container]).catch(() => {});
   await rm(directory, { recursive: true, force: true });

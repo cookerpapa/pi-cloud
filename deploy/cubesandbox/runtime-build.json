@@ -1,7 +1,7 @@
 {
   "upstreamRepository": "https://github.com/TencentCloud/CubeSandbox.git",
   "upstreamCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
-  "managedProtocolVersion": 6,
+  "managedProtocolVersion": 7,
   "guestProtocolVersion": 3,
   "patches": [
     {
@@ -18,7 +18,7 @@
     },
     {
       "file": "0004-recoverable-vm-allocation.patch",
-      "sha256": "09ca0b2af95124dbce113ea959291909901a9602b2c9d60088782ba6daa00cfe"
+      "sha256": "457aa3cfb361ec1b6b9a16a384cff85c0508f1a8394e25730627e195ce318f50"
     }
   ],
   "buildImages": {

@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0226](0226-recoverable-volume-reference-state.md) — durable node reference
+   state and attachment admission for managed Cube Volume deletion.
 1. [ADR-0225](0225-structured-tool-completion.md) — typed execution failures on
    the boot reply transport; native Tool text cannot control Run liveness.
 1. [ADR-0224](0224-review-lifecycle-boundaries.md) — accepted cleanup budgets,
