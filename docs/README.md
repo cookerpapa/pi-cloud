@@ -2,7 +2,9 @@
 
 [ADR-0221](adr/0221-pi-tool-cancellation.md) implements Pi-style Tool cancellation:
 ordered operation interruption, original-result settlement and bounded UNKNOWN
-outcomes. Queue/draft behavior remains under discussion.
+outcomes. [Verification and matched release](reports/pi-tool-cancellation-20261004.md)
+include normal and unavailable-executor Luna/Cube acceptance.
+Queue/draft behavior remains under discussion.
 The earlier [detach-only acceptance](reports/agent-stop-correction-20261004.md)
 records ADR-0220's superseded behavior at its named revision.
 

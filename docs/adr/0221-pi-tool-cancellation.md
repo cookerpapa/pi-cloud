@@ -1,6 +1,7 @@
 # ADR-0221: Pi Tool cancellation across the execution boundary
 
-Status: accepted by the owner, 2026-10-04; implementation in progress.
+Status: implemented and deployed, 2026-10-04. See the
+[verification and live acceptance](../reports/pi-tool-cancellation-20261004.md).
 
 ## Behavior
 

@@ -167,7 +167,7 @@ try {
   assert.equal(tools[0].status, "completed");
   assert(JSON.stringify(tools[0].output).includes("PI_CANCEL_BOUNDARY_CONFIRMED"));
   assert(JSON.stringify(tools[0].output).includes("EXPLICIT_PROCESS_CLEANUP"));
-  report.foregroundCancelled = !fault;
+  report.foregroundCancellationConfirmed = !fault;
   report.completedBackgroundSurvived = true;
   report.independentProcessGroupSurvived = true;
   report.explicitProcessStopInNextRun = true;

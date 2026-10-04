@@ -2,14 +2,16 @@
 
 ## Pi Tool cancellation
 
-- [ ] Deliver [ADR-0221](adr/0221-pi-tool-cancellation.md): ordered cancellation,
+- [x] Deliver [ADR-0221](adr/0221-pi-tool-cancellation.md): ordered cancellation,
       original-result settlement, bounded UNKNOWN and foreground/background isolation.
+      [Regression, fault and matched live acceptance](reports/pi-tool-cancellation-20261004.md).
 
 ## Agent Stop correction
 
 - [x] Implement and verify [ADR-0220](adr/0220-agent-stop-is-not-process-control.md):
       the chat Stop button interrupts the Agent Loop while accepted VM commands
-      retain their independent lifetime. [Verification and release](reports/agent-stop-correction-20261004.md).
+      retain their independent lifetime. Its detach-only semantics are superseded
+      by ADR-0221. [Historical verification](reports/agent-stop-correction-20261004.md).
 
 ## Completed follow-up review
 

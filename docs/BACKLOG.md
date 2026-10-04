@@ -23,18 +23,14 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
-- [ ] Implement [ADR-0221](adr/0221-pi-tool-cancellation.md): ordered operation
-      cancellation, native Tool result settlement, bounded UNKNOWN outcomes,
-      durable retirement fallback and matched live acceptance. Queue/draft
-      behavior remains under owner discussion.
 - [ ] Discuss queued follow-up/steer behavior after Stop. The owner requested
       discussion; this slice preserves current queue semantics.
 
-[ADR-0220](adr/0220-agent-stop-is-not-process-control.md) is implemented and
-deployed: Agent Stop preserves accepted Cube commands, removes process-stop
-settlement/receipts, and retains routing revocation. [Verification](reports/agent-stop-correction-20261004.md)
-includes native Pi interruption, PG/Kafka recovery, 156 fault cases and real Luna
-shared-VM process survival.
+[ADR-0221](adr/0221-pi-tool-cancellation.md) is implemented and deployed: ordered
+operation cancellation, original native Tool settlement, bounded UNKNOWN and
+durable abnormal retirement. It supersedes ADR-0220's detach-only semantics.
+[Verification](reports/pi-tool-cancellation-20261004.md) includes PG/RF3 Kafka,
+166 fault cases and real Luna/shared-VM normal and unavailable-API cancellation.
 
 The [follow-up review at `3dbf49fb`](reports/repository-review-20261003-r2.md)
 repairs are implemented under [ADR-0218](adr/0218-review-boundary-repairs.md) and

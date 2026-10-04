@@ -1,0 +1,95 @@
+{
+  "checkedAt": "2026-10-04T04:19:09.106Z",
+  "implementationSource": "599906ec4b2c1b6ad5e39d07f50dc8f2f45101ac",
+  "liveFixtureSource": "b92aa3ac685c7ddbdd926cd770f962ee4823848d",
+  "appImages": "pi-cancel-v5-bridge",
+  "nativeImages": "pi-cancel-v5",
+  "schema": "172_tool_cancellation_retirement",
+  "managedCubeProtocol": 5,
+  "guestToolProtocol": 3,
+  "cubePatchId": "8b1acdced1b54c4f",
+  "completionSource": "f44aa025390e04b2cd9e76ff15af007624c6880f",
+  "guestSource": "83cca93d753fa6b2a0c4482e8e51ecbe3a981fa9",
+  "state": {
+    "active_runs": 0,
+    "active_leases": 0,
+    "bindings": 0,
+    "missing_image_references": 0
+  },
+  "cubeInventoryCount": 0,
+  "workloads": [
+    {
+      "name": "cube-api-6f6979c5bf-fvqld",
+      "ready": true,
+      "images": ["pi-cloud/cube-api:pi-cancel-v5"]
+    },
+    {
+      "name": "cube-node-hmhzp",
+      "ready": true,
+      "images": [
+        "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/network-agent:v0.6.0",
+        "pi-cloud/cubelet:pi-cancel-v5",
+        "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress:v0.6.0",
+        "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0"
+      ]
+    },
+    {
+      "name": "pi-cloud-control-plane-cbc98f948-wcp7f",
+      "ready": true,
+      "images": ["pi-cloud/control-plane:pi-cancel-v5-bridge"]
+    },
+    {
+      "name": "pi-cloud-pi-worker-primary-v1-0",
+      "ready": true,
+      "images": ["pi-cloud/supervisor-host:pi-cancel-v5-bridge"]
+    },
+    {
+      "name": "pi-cloud-pi-worker-primary-v1-1",
+      "ready": true,
+      "images": ["pi-cloud/supervisor-host:pi-cancel-v5-bridge"]
+    }
+  ],
+  "live": [
+    {
+      "checkedAt": "2026-10-04T04:15:13.157Z",
+      "model": "gpt-6-luna",
+      "accepted": true,
+      "fault": "none",
+      "sharedVmVerified": true,
+      "cancelMs": 542,
+      "completedBackgroundSurvived": true,
+      "independentProcessGroupSurvived": true,
+      "explicitProcessStopInNextRun": true,
+      "partialOutputRetained": true,
+      "interruptionContextRetained": true,
+      "siblingCompleted": true,
+      "executionCount": 1,
+      "cleanupCompleted": true,
+      "foregroundCancellationConfirmed": true
+    },
+    {
+      "checkedAt": "2026-10-04T04:16:31.384Z",
+      "model": "gpt-6-luna",
+      "accepted": true,
+      "fault": "api_pause",
+      "sharedVmVerified": true,
+      "cancelMs": 22494,
+      "completedBackgroundSurvived": true,
+      "independentProcessGroupSurvived": true,
+      "explicitProcessStopInNextRun": true,
+      "unknownOutcomeRetained": true,
+      "interruptionContextRetained": true,
+      "siblingCompleted": true,
+      "executionCount": 1,
+      "cleanupCompleted": true,
+      "foregroundCancellationConfirmed": false
+    }
+  ],
+  "notes": [
+    "API-driven chat Stop path; no new browser click acceptance.",
+    "foregroundCancellationConfirmed=false records an unknown outcome, not evidence that the process continued or stopped. The fixture field was renamed for clarity after execution.",
+    "No business-data reset. Live fixtures deleted only their owned resources.",
+    "The 10-second default is the Tool-result grace, not the entire distributed Run settlement deadline.",
+    "Queue/draft behavior remains unchanged pending owner discussion."
+  ]
+}

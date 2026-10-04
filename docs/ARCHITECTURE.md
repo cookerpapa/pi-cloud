@@ -94,8 +94,8 @@ that Tool's AbortController. Bash cancels its process group, retaining partial
 output. Completed operations, completed background launches and setsid groups
 are not cancelled retroactively. Native Pi hooks finalize the original reply.
 
-The default cancellation-result grace is 10 seconds (the cancellation API's
-`gracePeriodMs` can select a shorter grace). Model interruption is immediate;
+The default cancellation-result grace is 10 seconds (configurable through the
+cancellation API's `gracePeriodMs`). Model interruption is immediate;
 Run/native publication still observes its durability boundaries. Missing final
 results become `tool_operation_outcome_unknown`, never invented stopping or
 shell replay. Late replies do not reopen a sealed Run. Binding retirement on
