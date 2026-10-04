@@ -140,6 +140,11 @@ it("changes the completion identity when its protocol or pinned native runtime c
     );
     await writeFile(join(root, "protocol.ts"), "budget: number");
     const before = await completionBuildIdentity(root);
+    await writeFile(
+      join(root, "deploy/cubesandbox/test-images.json"),
+      JSON.stringify({ mysql: "changed-test-only-image" }),
+    );
+    expect(await completionBuildIdentity(root)).toBe(before);
     await writeFile(join(root, "protocol.ts"), "budget: number | null");
     const nullable = await completionBuildIdentity(root);
     expect(nullable).not.toBe(before);

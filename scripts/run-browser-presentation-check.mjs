@@ -51,7 +51,7 @@ import { I18nProvider } from "/src/i18n.tsx";
 import { copyMessageText } from "/src/MessageCopyButton.tsx";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES, DEFAULT_NEW_CONVERSATION_MODEL,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE, DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256 } from "@pi-cloud/protocol";
+  DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256, parseInputQueueResource } from "@pi-cloud/protocol";
 import "/src/product.css";
 
 const nativeRaf = window.requestAnimationFrame, nativeCancelRaf = window.cancelAnimationFrame;
@@ -245,7 +245,10 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     readInputImage:async()=>({bytes:Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2uV8AAAAASUVORK5CYII='),c=>c.charCodeAt(0)),contentType:'image/png'}),
     getSessionModel:async()=>modelResource(),
     getConversation:async(sessionId)=>conversation(sessionId),
-    getInputQueue:async(sessionId)=>({...structuredClone(window.fixtureQueue),sessionId}),
+    getInputQueue:async(sessionId)=>parseInputQueueResource({...structuredClone(window.fixtureQueue),sessionId,
+      viewVersion:String(window.fixtureQueue.revision),afterPosition:0,hasMore:false,
+      hasPausedInputs:window.fixtureQueue.items.some(i=>i.paused===true),
+      items:window.fixtureQueue.items.map(i=>({...i,paused:i.paused??false}))}),
   });
   const nativeFetch=window.fetch;
   window.fetch=async (url,init={})=>{

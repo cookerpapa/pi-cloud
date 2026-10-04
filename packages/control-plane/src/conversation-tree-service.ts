@@ -13,7 +13,7 @@ import type {
   DelegatedSessionSummaryResource,
 } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
-import { ControlPlaneStoreError } from "./control-plane-store.ts";
+import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import {
   loadDelegatedSessionSummaries,
   loadDelegatedSessionTreeSummaries,

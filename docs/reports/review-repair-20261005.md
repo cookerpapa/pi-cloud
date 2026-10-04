@@ -66,4 +66,15 @@ test crashes in uninitialized node-cache fixture setup; the same named test
 also fails on unchanged `c3f5f6bd` native source. It is outside this repair's
 passing claims. Production build and real-VM acceptance remain pending.
 
-Remaining slices: browser gate and measured cleanup, then full/matched acceptance.
+## Verification and dependency cleanup
+
+Q04-01: the maintained browser fixture now supplies the current queue protocol
+and passes it through the production parser. The original browser command passes
+all recorded interactions. Test-only MySQL image pins moved out of the production
+runtime identity, verified against the real completion image input closure.
+Error-only imports use the existing leaf module and the final-seal comment now
+distinguishes prior cancellation settlement. Obsolete review characterizations
+were replaced by maintained regressions; their original source remains in the
+named review commit. Historical report results retain their original baseline.
+
+Full-repository verification, matched build/rollout and live acceptance remain.

@@ -96,7 +96,8 @@ export class SessionProjector {
       async (fact) => {
         const partition = this.publicationPartition(fact.scope.piSessionId);
         // Revoke routing admission before the final seal. Accepted Cube processes
-        // are not stopped and Run settlement never waits for their completion.
+        // are not stopped by sealing. Before this boundary, normal cancellation
+        // already waits for the original Tool result within ADR-0221's grace.
         await options.toolCommands.consume({ topic, partition, offset: 0n, fact }, () =>
           this.#consumer.ownsPartition(partition),
         );

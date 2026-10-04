@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+const testImages = JSON.parse(
+  await readFile(join(root, "deploy/cubesandbox/test-images.json"), "utf8"),
+);
 const manifest = JSON.parse(
   await readFile(join(root, "deploy/cubesandbox/runtime-build.json"), "utf8"),
 );
@@ -62,7 +65,7 @@ try {
       "MYSQL_DATABASE=allocation_test",
       "-p",
       "127.0.0.1::3306",
-      manifest.testImages.mysql,
+      testImages.mysql,
     ]);
     container = name;
     let ready = false;

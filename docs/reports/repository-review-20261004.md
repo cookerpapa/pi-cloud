@@ -87,9 +87,9 @@ Destroy。原生 Cube 删除暂停 VM 前，需要至少 1 秒恢复、5 秒清�
 控制器却报告它活跃。健康巡检枚举目标时调用 `executionIdentity`，实际 Provider 的
 `#localOwned` 会抛错；定时器对这一枚举异常没有隔离，错误可以退出整个控制面进程。
 
-证据：[两类恢复复现](../../scripts/review-20261004-recovery.test.ts)证明第一次恢复失败后
+证据：两类恢复复现（脚本归档于 `c3f5f6bd` 的 `scripts/review-20261004-recovery.test.ts`）证明第一次恢复失败后
 `activeCount=1`、Provider 已脱离，第二次恢复不再尝试 adoption，读取执行身份会抛错。
-[巡检子进程](../../scripts/review-20261004-health-crash.mjs)使用实际 `RuntimeHealthMonitor`，
+巡检子进程（脚本归档于 `c3f5f6bd` 的 `scripts/review-20261004-health-crash.mjs`）使用实际 `RuntimeHealthMonitor`，
 目标枚举失败导致退出码 1。后者不是在生产控制面注入崩溃。
 
 建议：把恢复当作分阶段提交，完成绑定与必要持久化后再发布本地可用状态；失败时撤销本次新增的
@@ -108,8 +108,8 @@ allocation journal 时失败。重试发现 VM 已不存在，直接返回记录
 Master 随后把 allocation 标成 `absent`，并把 `CloseRefsApplied` 标成 true，但没有执行引用
 计数减一。Volume 删除接口仍因 `refcount=1` 拒绝清理，普通 allocation 重试也不会修复该计数。
 
-[节点复现](../../scripts/review-20261004-cube/node_receipt_test.go)在真实 Bolt 上注入一次
-清理结果写入失败；物理清理回调被替身模拟。[Master 复现](../../scripts/review-20261004-cube/master_receipt_test.go)
+节点复现（脚本归档于 `c3f5f6bd` 的 `scripts/review-20261004-cube/node_receipt_test.go`）在真实 Bolt 上注入一次
+清理结果写入失败；物理清理回调被替身模拟。Master 复现（脚本归档于 `c3f5f6bd` 的 `scripts/review-20261004-cube/master_receipt_test.go`）
 用真实 MySQL 验证最终 `absent + CloseRefsApplied=true + refcount=1`。
 这给已有“Volume 引用漂移”待办补充了明确原因，不能声称已经定位所有历史漂移。
 
@@ -126,7 +126,7 @@ Master 随后把 allocation 标成 `absent`，并把 `CloseRefsApplied` 标成 t
 该读取没有锁住所有权记录，资源变更语句也没有重新验证租约。两条语句之间控制器被标记为
 lost，后一条语句仍能成功。
 
-[真实 PG 复现](../../scripts/review-20261004-owner.test.ts)使用完整 schema，在所有权读取返回前
+真实 PG 复现（脚本归档于 `c3f5f6bd` 的 `scripts/review-20261004-owner.test.ts`）使用完整 schema，在所有权读取返回前
 插入一个确定性交错：另一个连接把控制器标为 lost、租约设为已过期，随后原事务仍返回新的
 创建授权，或提交不可逆关闭。测试没有让继任者先取得同一资源，因此不把结果夸大为“旧控制器
 已经能覆盖新控制器的资源”。
@@ -147,7 +147,7 @@ Fast Run 的每次请求都携带该档位，因此第一次自动压缩会失�
 例子：短对话 Fast 使用正常，历史足够长触发压缩后，Run 因 `model_service_tier_mismatch`
 失败；原上下文保留，但继续使用 Fast 又会遇到同一问题。
 
-[复现](../../scripts/review-20261004-compaction.test.ts)运行实际固定版本 Pi Compactor 和
+复现（脚本归档于 `c3f5f6bd` 的 `scripts/review-20261004-compaction.test.ts`）运行实际固定版本 Pi Compactor 和
 CloudAgentRuntime：普通请求有 fast，压缩请求没有；模拟与网关源码相同的拒绝后，Run 为 failed，
 没有写入 Compaction Entry。没有为该复现发起付费模型请求。
 
@@ -163,7 +163,7 @@ Worker 从错误文本的第一个冒号前取“错误码”。普通 Bash 打�
 `ownership_lost: ordinary application log` 后退出 7，也会触发 `onToolOperationUnavailable`。
 Run 因而记录 Sandbox unavailable、停止后续采样，并安排未完成操作取消。
 
-[复现](../../scripts/review-20261004-tool-error.test.ts)执行实际固定 Bash Tool：同样的失败命令，
+复现（脚本归档于 `c3f5f6bd` 的 `scripts/review-20261004-tool-error.test.ts`）执行实际固定 Bash Tool：同样的失败命令，
 普通前缀只产生 Tool error，`ownership_lost` 前缀却触发基础设施不可用回调。
 这里只证明误分类和其确定的 Run 控制路径，不声称它直接销毁 VM。
 
@@ -179,7 +179,7 @@ Run 因而记录 Sandbox unavailable、停止后续采样，并安排未完成�
 签发与消费都使用各自进程的 Date 时间，消费端还在拿锁前采样。PG 已过期 60 秒的票据，
 在慢 120 秒的网关上仍会被消费。该问题依赖时钟偏差或锁等待，不是当前单机环境必然发生的故障。
 
-[复现](../../scripts/review-20261004-ssh-clock.test.ts)以真实 PG 的三张窄表隔离原查询：正常时钟
+复现（脚本归档于 `c3f5f6bd` 的 `scripts/review-20261004-ssh-clock.test.ts`）以真实 PG 的三张窄表隔离原查询：正常时钟
 拒绝过期票据，慢时钟接受，数据库最终同时满足 expired=true、consumed=true。
 没有连接真实 SSH 或 VM，也没有把窄表测试描述成完整认证验收。
 
@@ -192,7 +192,7 @@ Run 因而记录 Sandbox unavailable、停止后续采样，并安排未完成�
 `renderChat.getInputQueue` 返回旧结构，缺少 `viewVersion`、分页和暂停字段。
 `PendingInputQueue.apply` 第二次处理快照时需要 `BigInt(viewVersion)`，因此原入口等不到待发送消息。
 
-本轮原始 `npm run browser:presentation:check` 失败。[对照脚本](../../scripts/review-20261004-browser.mjs)
+本轮原始 `npm run browser:presentation:check` 失败。对照脚本（脚本归档于 `c3f5f6bd` 的 `scripts/review-20261004-browser.mjs`）
 只在临时副本中补齐队列结构，随后原脚本覆盖的交互通过，产品代码没有改变。
 这属于已有广泛浏览器验证待办的具体原因，不是新增的线上队列故障。
 

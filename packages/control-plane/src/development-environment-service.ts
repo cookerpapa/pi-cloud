@@ -20,7 +20,7 @@ import {
 } from "@pi-cloud/protocol";
 import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import { sql, type Kysely } from "kysely";
-import { ControlPlaneStoreError } from "./control-plane-store.ts";
+import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 import { Agent, fetch as internalFetch } from "undici";
 
