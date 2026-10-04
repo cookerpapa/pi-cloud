@@ -148,8 +148,10 @@ remain distinct. Public Run state stays settling until its seal is projected.
 
 ## Cancellation and failure
 
-Chat Stop interrupts that task's Agent Loop/model stream and pending Tool reply
-waits; it does not stop accepted VM processes or release siblings' shared owner lease. Task state and current
+Chat Stop interrupts that task's Agent Loop/model stream and requests cancellation
+of its unfinished Tools. Their original callbacks settle before ordinary closure;
+unconfirmed replies become UNKNOWN after a bounded grace. Siblings retain their
+shared owner lease. Task state and current
 Session authority are required for effects. The maintenance loop retires every
 task of an expired physical Session, while leaving unrelated Sessions on that
 Worker alone. The shared lease is removed only after its task scopes drain.
@@ -161,10 +163,12 @@ retry or output-free pre-start requeue. Running includes context preparation,
 not proof that a model or Tool has actually started.
 An execution seal in the same Kafka partition closes a retired Run. The
 control-plane ingress closes publication admission, requests PG binding closure,
-and installs routing revocation before appending the final seal (ADR-0220).
-There is no Cube stopping receipt. Accepted commands can continue, and late replies
-are discarded after their Worker waiter detaches. Native interruption context
-must not claim that a process was killed. Replaced ingress owners are transactionally
+and installs routing revocation before appending the final seal (ADR-0221).
+The Tool's original final reply proves normal cancellation; there is no separate
+PG process-stop receipt. On timeout, interruption context records UNKNOWN and
+late replies cannot rewrite the sealed Run. Unconfirmed commands may still run.
+Abnormal binding retirement retains an immutable cancellation target in its
+existing control Outbox, including after the binding row is deleted. Replaced ingress owners are transactionally
 fenced. Earlier accepted data is projected before the successor is allowed to
 claim; replayed records cannot reopen a sealed scope. A caught interruption writes Pi's minimal
 abort/reset boundary. A hard Worker loss is reconciled from the retained Kafka

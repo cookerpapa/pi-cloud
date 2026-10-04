@@ -3,6 +3,10 @@
 Status: implemented and deployed, 2026-10-04. See the
 [verification and live acceptance](../reports/agent-stop-correction-20261004.md).
 
+The detach-only behavior below describes its original release.
+[ADR-0221](0221-pi-tool-cancellation.md) supersedes it with Pi-style cancellation
+of unfinished Tools, while retaining VM lifecycle separation.
+
 ## Correction
 
 The chat Stop button means interrupt the current Agent Loop so the user can

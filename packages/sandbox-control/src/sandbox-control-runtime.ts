@@ -294,6 +294,7 @@ export async function createSandboxControl(options: {
       ) => {
         await bindingView.consume(change, current);
         if (change.entity !== "sandbox_binding" || !change.closed || !current()) return;
+        await dispatcher.cancelRetiredBinding(change, position, current);
         const route = bindingView.closure(change, current);
         if (!route) return; // Its controller already retired the local workflow channel.
         await dispatcher.closeWorkflowBinding(change, route, position, current);

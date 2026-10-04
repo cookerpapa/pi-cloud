@@ -274,7 +274,7 @@ try {
   await envdRun(baseUrl, "/usr/bin/pkill -f '^python3 -m http.server 5173 '");
 
   const initialization = {
-    toolWorkerProtocolVersion: 2,
+    toolWorkerProtocolVersion: 3,
     type: "worker.initialize",
     activationId,
     toolRoot: "/workspace",

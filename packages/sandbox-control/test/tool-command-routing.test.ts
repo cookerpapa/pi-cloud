@@ -63,7 +63,7 @@ function fixture() {
         bootId: randomUUID(),
       },
       initialization: {
-        toolWorkerProtocolVersion: 2,
+        toolWorkerProtocolVersion: 3,
         type: "worker.initialize",
         activationId: command.request.activationId,
         toolRoot: "/workspace",
@@ -103,6 +103,7 @@ function fixture() {
   });
   const cube = {
     submitTool: vi.fn<CubeSandboxRuntimeClient["submitTool"]>(async () => {}),
+    cancelTool: vi.fn<CubeSandboxRuntimeClient["cancelTool"]>(async () => {}),
   };
   const workflow = vi.fn(async () => {}),
     publishReply = vi.fn(async () => {}),
@@ -130,6 +131,73 @@ function fixture() {
 const record = (fact: any, offset = 0n) => ({ fact, topic: "session-log", partition: 0, offset });
 
 describe("Projector native Cube handoff", () => {
+  it("cancels the exact invocation even after new-command routing has closed", async () => {
+    const f = fixture();
+    f.find.mockResolvedValue([{ ...f.route, dispatchClosed: true }]);
+    const { leaseId: _lease, ...scope } = f.command.scope;
+    const cancel = {
+      kind: "tool_cancel",
+      factId: randomUUID(),
+      scope,
+      occurredAt: new Date().toISOString(),
+      request: { activationId: f.route.bindingId, operationId: f.command.request.operationId },
+    };
+    await f.router.consume(record(cancel, 101n));
+    await f.router.consume(record(cancel, 101n));
+    expect(f.cube.cancelTool).toHaveBeenCalledTimes(2);
+    expect(f.cube.cancelTool).toHaveBeenLastCalledWith(f.route.descriptor.target, {
+      source: { topic: "session-log", partition: 0, offset: "101" },
+      runId: scope.runId,
+      writerId: scope.writerId,
+      operationId: cancel.request.operationId,
+    });
+    expect(f.cube.submitTool).not.toHaveBeenCalled();
+    expect(f.publishReply).not.toHaveBeenCalled(); // Acceptance is not a final result.
+  });
+  it("bounds an unavailable cancellation endpoint without fabricating stopping or deleting a VM", async () => {
+    const f = fixture();
+    f.cube.cancelTool.mockRejectedValue(new Error("unreachable"));
+    const { leaseId: _lease, ...scope } = f.command.scope;
+    await f.router.consume(
+      record({
+        kind: "tool_cancel",
+        factId: randomUUID(),
+        scope,
+        request: { activationId: f.route.bindingId, operationId: f.command.request.operationId },
+      }),
+    );
+    expect(f.cube.cancelTool).toHaveBeenCalledTimes(2);
+    expect(f.cube.submitTool).not.toHaveBeenCalled();
+    expect(f.publishReply).not.toHaveBeenCalled();
+    expect(f.quarantine).not.toHaveBeenCalled();
+  });
+  it("retains a durable cancellation target after its binding row is removed", async () => {
+    const f = fixture();
+    f.find.mockResolvedValue([]);
+    const change = {
+      kind: "control_change" as const,
+      entity: "sandbox_binding" as const,
+      entityId: f.route.bindingId,
+      scope: f.command.scope,
+      runId: f.command.scope.runId,
+      factId: randomUUID(),
+      version: "2",
+      occurredAt: new Date().toISOString(),
+      closed: true,
+      cancelTarget: { ...f.route.descriptor.target, writerId: f.command.scope.writerId },
+    };
+    await f.router.cancelRetiredBinding(
+      change,
+      { topic: "session-log", partition: 0, offset: "102" },
+      () => true,
+    );
+    expect(f.cube.cancelTool).toHaveBeenCalledWith(f.route.descriptor.target, {
+      source: { topic: "session-log", partition: 0, offset: "102" },
+      runId: f.command.scope.runId,
+      writerId: f.command.scope.writerId,
+    });
+    expect(f.find).not.toHaveBeenCalled();
+  });
   it("dispatches repeated fixed Tools from the binding view without a per-Tool lookup", async () => {
     const f = fixture();
     const source = {
@@ -254,7 +322,7 @@ describe("Projector native Cube handoff", () => {
     const f = fixture();
     await f.router.consume(record(f.command));
     await f.router.consume(record({ kind: "execution_seal", scope: f.command.scope }));
-    expect(f.closeScope).toHaveBeenCalledExactlyOnceWith(f.command.scope, false);
+    expect(f.closeScope).toHaveBeenCalledExactlyOnceWith(f.command.scope, false, true);
     await f.router.closeWorkflowBinding(
       {
         kind: "control_change",
@@ -298,7 +366,7 @@ describe("Projector native Cube handoff", () => {
         sealed = true;
       });
     await Promise.resolve();
-    expect(f.closeScope).toHaveBeenCalledWith(f.command.scope, true);
+    expect(f.closeScope).toHaveBeenCalledWith(f.command.scope, true, true);
     expect(sealed).toBe(false);
     pending.resolve();
     await closing;

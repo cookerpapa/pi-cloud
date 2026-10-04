@@ -256,6 +256,10 @@ async function executeNativeBash(
   }, 1000);
   let force: NodeJS.Timeout | undefined;
   const abort = () => {
+    if (signal.reason?.name !== "TimeoutError") {
+      terminateProcessGroup(child, "SIGKILL");
+      return;
+    }
     terminateProcessGroup(child, "SIGTERM");
     force ??= setTimeout(() => terminateProcessGroup(child, "SIGKILL"), 250);
   };

@@ -1218,8 +1218,8 @@ export class CloudAgentRuntime {
                 { signal: executionSignal, ...(prepared ? { toolCommand: prepared.command } : {}) },
               );
             }
-            // A published remote invocation may already be dispatched. This
-            // check closes its local wait, not the accepted external effect.
+            // A published remote invocation may already be dispatched. Its adapter
+            // must forward cancellation and settle the original callback.
             if (!prepared) executionSignal.throwIfAborted();
             return await (prepared
               ? prepared.result()

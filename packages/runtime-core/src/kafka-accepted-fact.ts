@@ -1,4 +1,9 @@
-import { parsePiCloudEvent, parsePathProbe, parseSessionControlChange } from "@pi-cloud/protocol";
+import {
+  parsePiCloudEvent,
+  parsePathProbe,
+  parseSessionControlChange,
+  parseToolCancellation,
+} from "@pi-cloud/protocol";
 import type { AcceptedFact, SessionLogFact } from "./accepted-fact.ts";
 import { isNativeAppendFact, toolCommandForFact } from "./tool-invocation-fact.ts";
 export {
@@ -35,6 +40,7 @@ export function parseAcceptedFact(value: unknown): AcceptedFact {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
   if (parsed.kind === "path_probe") return parsePathProbe(parsed);
+  if (parsed.kind === "tool_cancel") return parseToolCancellation(parsed);
   if (
     parsed.kind === "execution_seal" ||
     parsed.kind === "tool_command" ||

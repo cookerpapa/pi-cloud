@@ -607,8 +607,8 @@ export class RunCancellationExecutor {
       payload: { reason: result.reason, forced: result.forced },
     } as const;
 
-    // The external stop already finished. Retry only certified SQL aborts of
-    // this settlement, never the model/Tool cancellation itself.
+    // The Agent interruption settled; a Tool may still be UNKNOWN. Retry only
+    // certified SQL aborts here, never model/Tool execution.
     await retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
       const now = await databaseTime(transaction);

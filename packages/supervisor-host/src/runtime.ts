@@ -543,6 +543,11 @@ export class PiWorkerRuntime {
         if (!channel) throw new Error("Tool command Fact Stream is unavailable");
         return channel.publishToolCommand({ ...command, replyTopic: toolReplies.topic });
       },
+      publishToolCancellation: (command) => {
+        const channel = executionLogResolver(executionLogs).resolve(command.executionReference);
+        if (!channel) throw new Error("Tool cancellation execution writer is unavailable");
+        return channel.publishToolCancellation(command);
+      },
       waitForToolReply: async (request, signal, toolCallId, imageScope) => {
         if (!toolCallId) throw new Error("Tool call identity is unavailable");
         const event = await toolReplies.wait(

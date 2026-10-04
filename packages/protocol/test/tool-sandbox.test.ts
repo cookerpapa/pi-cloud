@@ -94,7 +94,7 @@ describe("Tool Sandbox protocol", () => {
   it("carries deployment-owned direct private CIDRs into the Tool process environment", () => {
     expect(
       parseToolWorkerInput({
-        toolWorkerProtocolVersion: 2,
+        toolWorkerProtocolVersion: 3,
         type: "worker.initialize",
         activationId: "10000000-0000-4000-8000-000000000005",
         toolRoot: "/workspace",
@@ -150,7 +150,7 @@ describe("Tool Sandbox protocol", () => {
   it("binds every worker result to activation and operation identities", () => {
     expect(
       parseToolWorkerOutput({
-        toolWorkerProtocolVersion: 2,
+        toolWorkerProtocolVersion: 3,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -209,7 +209,7 @@ describe("Tool Sandbox protocol", () => {
     (type) => {
       expect(() =>
         parseToolWorkerInput({
-          toolWorkerProtocolVersion: 2,
+          toolWorkerProtocolVersion: 3,
           type,
           activationId: "10000000-0000-4000-8000-000000000008",
           ...(type === "worker.cancel"

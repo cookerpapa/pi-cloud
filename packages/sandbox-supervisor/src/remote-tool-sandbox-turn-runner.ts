@@ -66,7 +66,7 @@ export interface SandboxControlBoundary {
   release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition: { kind: "detach" } | { kind: "keep_warm" } | { kind: "destroy" },
+    disposition: { kind: "detach" | "keep_warm" | "destroy"; cancelOutstanding?: true },
   ): Promise<{ retained: boolean }>;
   workflowUrlFor(activationId: string): string;
 }
@@ -92,6 +92,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     readSignal?: AbortSignal,
   ) => Promise<PiCloudSessionHandle>;
   publishToolCommand?: import("@pi-cloud/protocol").ToolCommandPublisher["publishToolCommand"];
+  publishToolCancellation?: import("@pi-cloud/protocol").ToolCancellationPublisher["publishToolCancellation"];
   waitForToolReply?: TrustedRemoteToolsRuntimeConfiguration["waitForToolReply"];
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
@@ -153,6 +154,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
+  readonly #publishToolCancellation: RemoteToolSandboxTurnRunnerOptions["publishToolCancellation"];
   readonly #waitForToolReply: RemoteToolSandboxTurnRunnerOptions["waitForToolReply"];
   readonly #decodeInputImages: RemoteToolSandboxTurnRunnerOptions["decodeInputImages"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
@@ -184,6 +186,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
     this.#openAgentSession = options.openAgentSession;
     this.#publishToolCommand = options.publishToolCommand;
+    this.#publishToolCancellation = options.publishToolCancellation;
     this.#waitForToolReply = options.waitForToolReply;
     this.#decodeInputImages = options.decodeInputImages;
     this.#createTrustedTools = options.createTrustedTools;
@@ -378,6 +381,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     let activationPromise: Promise<ToolSandboxCreateResponse> | undefined;
     let executionError: unknown;
     let toolRuntimeFailure: PiTurnError | undefined;
+    let cancelOutstanding = false;
     const ensureActivation = async (): Promise<ToolSandboxCreateResponse> => {
       if (signal.aborted) throw signal.reason;
       if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
@@ -576,6 +580,21 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           recordPreparedInput = () => stepWorldState.recordActive(activation);
           let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
+            publishToolCancellation: async (request) => {
+              if (!this.#publishToolCancellation)
+                throw new Error("Tool cancellation publisher is unavailable");
+              await this.#publishToolCancellation(request);
+            },
+            cancellationTimeoutMs: () => {
+              const grace = (signal.reason as { gracePeriodMs?: number } | undefined)
+                ?.gracePeriodMs;
+              return Number.isSafeInteger(grace) && grace! >= 0
+                ? grace!
+                : TOOL_CANCELLATION_TIMEOUT_MS;
+            },
+            onToolCancellationUnconfirmed: () => {
+              cancelOutstanding = true;
+            },
             observeToolDuration: (seconds, outcome) =>
               this.#metrics?.toolDuration.observe({ tool: "tool.execute", outcome }, seconds),
             supportsImages: modelRuntimeLease.runtime.inputModalities.includes("image"),
@@ -623,6 +642,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               ),
             onToolOperationStarted: () => stepWorldState.recordActive(activation),
             onToolOperationUnavailable: async (failure) => {
+              cancelOutstanding = true;
               toolRuntimeFailure ??= new PiTurnError(failure.code, failure.message, false);
               await stepWorldState.recordUnavailable();
             },
@@ -706,10 +726,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       }
       let cleanupError: unknown;
       if (activation !== undefined) {
-        // Agent interruption releases its binding just like normal completion.
-        // Accepted commands and the VM keep their independent lifetimes.
+        // Tool callbacks have settled or recorded UNKNOWN. Preserve unconfirmed
+        // cleanup intent when retiring metadata; VM lifetime remains separate.
         await this.#broker
           .release(activation.activationId, toolAssignment, {
+            ...(cancelOutstanding ? { cancelOutstanding: true } : {}),
             kind:
               command.payload.executionMode === "development_environment" &&
               command.payload.computeSessionId === undefined
@@ -739,3 +760,4 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
   }
 }
+import { TOOL_CANCELLATION_TIMEOUT_MS } from "@pi-cloud/protocol";

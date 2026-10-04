@@ -145,6 +145,7 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
 }
 
 class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
+  readonly cancelTool = vi.fn<CubeSandboxRuntimeClient["cancelTool"]>(async () => {});
   readonly submitProbe = vi.fn<CubeSandboxRuntimeClient["submitProbe"]>(async () => {});
   async probeExecution(
     target: Awaited<ReturnType<CubeSandboxRuntimeClient["executionTarget"]>>,
@@ -361,7 +362,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       };
       if (request.mode === "initialize") {
         return this.#result({
-          toolWorkerProtocolVersion: 2,
+          toolWorkerProtocolVersion: 3,
           type: "worker.ready",
           activationId: initialization.activationId,
           environment: {
@@ -378,7 +379,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       const operation = request.operation as ToolSandboxOperationRequest;
       if (operation.operation !== "tool.execute") throw new Error("unexpected operation");
       const result = this.#result({
-        toolWorkerProtocolVersion: 2,
+        toolWorkerProtocolVersion: 3,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -1331,7 +1332,7 @@ describe("CubeSandbox Provider contract", () => {
       runtime.requestForCommand(input).mode === "initialize"
         ? {
             stdout: JSON.stringify({
-              toolWorkerProtocolVersion: 2,
+              toolWorkerProtocolVersion: 3,
               type: "worker.failed",
               code: "workspace_attach_invalid",
               message: "Preserved workspace could not be attached",

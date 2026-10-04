@@ -15,11 +15,14 @@ Session path. They rebuild binding, queue and Subagent read views, without
 creating Pi Entries or changing native sequence. New owners capture Kafka
 bounds before loading PG snapshots, then consume subsequent changes. Binding
 closure installs a synchronous dispatch barrier before its publication.
-Under ADR-0220 the final Run/writer seal follows routing revocation, without
-waiting for Cube process completion. Chat Stop interrupts the Agent Loop and its
-reply waits. Already accepted external effects may continue; late replies cannot
-reopen sealed native history. VM/partition progress rejects historical duplicate
-handoffs. There is no Cube Stop acknowledgement or process-stop replay.
+ADR-0221 adds an idempotent operation cancellation fact on that same Session
+path. It is control traffic, not native history. Projector replay may redeliver
+cancellation while never replaying the original Tool. Destination VM/partition
+progress prevents a delayed old submit from overtaking its cancellation.
+Normal interruption settles the original Tool result before sealing; unconfirmed
+results become UNKNOWN within the cancellation grace. Closed binding references
+retain immutable cleanup targets for abnormal retirement. There is no stopped
+receipt table. Cancellation transport ambiguity cannot poison native publication.
 The derived `input.queue` SSE snapshot is disposable presentation with its own
 `viewVersion`; reconnect obtains current PG state rather than replaying an old
 queue snapshot as conversation history.
@@ -147,7 +150,7 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 | PG commit succeeds, consumer ACK lost | idempotent semantic replay; Tool dispatch requires confirmed commit |
 | native/seal SQL exceeds its local lock/statement budget | server cancellation and rollback leave the offset pending; retry that partition in order, with no Tool dispatch |
 | binding revocation publication fails | retry its durable reference before sealing; preserve metadata and VM quota; do not kill processes |
-| Tool finishes after Agent Stop | original reply wait is gone; discard the late reply, preserve interruption context, never resubmit the Tool |
+| Tool finishes during Agent Stop | preserve its actual final reply while the waiter is open; after bounded UNKNOWN/sealing, discard late replies without rewriting history |
 | seal request before Kafka append | retry the same seal after ordered binding closure; next Run stays queued |
 | old data before first seal | valid historical input, even if PG already knows closure |
 | old data after first seal | no PG, UI or new execution effect |

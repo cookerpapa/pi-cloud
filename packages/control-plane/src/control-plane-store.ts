@@ -131,7 +131,7 @@ function isPostgresConstraint(error: unknown, constraint: string): boolean {
   );
 }
 
-const DEFAULT_CANCELLATION_GRACE_PERIOD_MS = 1_000;
+const DEFAULT_CANCELLATION_GRACE_PERIOD_MS = TOOL_CANCELLATION_TIMEOUT_MS;
 const MAX_WORKSPACE_SUMMARIES = 100;
 const TURN_ACCEPTING_SESSION_STATES = new Set<SessionState>([
   "cold",
@@ -2269,3 +2269,4 @@ export class ControlPlaneStore {
     };
   }
 }
+import { TOOL_CANCELLATION_TIMEOUT_MS } from "@pi-cloud/protocol";

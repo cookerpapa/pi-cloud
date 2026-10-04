@@ -34,7 +34,11 @@ export type BindingViewPage = Readonly<{
 export const BINDING_VIEW_PAGE_SIZE = 256;
 export interface SandboxBindingReader {
   find(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<readonly SandboxBinding[]>;
-  closeScope(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<void>;
+  closeScope(
+    scope: ToolLogFact["scope"],
+    wholeWriter: boolean,
+    cancelOutstanding?: boolean,
+  ): Promise<void>;
   isAlive(instanceId: string): Promise<boolean>;
 }
 export interface SandboxBindings extends SandboxBindingReader {
@@ -145,10 +149,17 @@ export class PostgresSandboxBindings implements SandboxBindings {
         : query.where("binding.run_id", "=", scope.runId)
     ).execute()) as unknown as SandboxBinding[];
   }
-  async closeScope(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<void> {
+  async closeScope(
+    scope: ToolLogFact["scope"],
+    wholeWriter: boolean,
+    cancelOutstanding = false,
+  ): Promise<void> {
     const query = this.database
       .updateTable("sandbox_tool_bindings")
-      .set({ dispatch_closed: true })
+      .set({
+        dispatch_closed: true,
+        cancel_outstanding: sql`cancel_outstanding or ${cancelOutstanding}`,
+      })
       .where("tenant_id", "=", scope.tenantId!);
     const closed = await (
       wholeWriter
@@ -158,8 +169,8 @@ export class PostgresSandboxBindings implements SandboxBindings {
       .returning("binding_id")
       .execute();
     try {
-      // Installs routing revocation before the seal. Accepted Cube processes
-      // are independent of Run settlement; there is no execution-stop receipt.
+      // Installs routing revocation before the seal. Abnormal retirement keeps
+      // its cancellation address in the Outbox, without a process-stop receipt.
       await this.publishChanges(closed.map((row) => row.binding_id));
     } catch (cause) {
       throw new BindingClosurePending(cause);

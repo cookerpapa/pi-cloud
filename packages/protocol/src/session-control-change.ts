@@ -26,6 +26,19 @@ export const SessionControlChangeSchema = Type.Union([
       entity: Type.Literal("sandbox_binding"),
       runId: Type.String({ format: "uuid" }),
       closed: Type.Boolean(),
+      /** Immutable cleanup address survives binding deletion/owner recovery. */
+      cancelTarget: Type.Optional(
+        Type.Object(
+          {
+            apiUrl: Type.String({ minLength: 1, maxLength: 2048 }),
+            sandboxId: Type.String({ minLength: 1, maxLength: 128 }),
+            nodeId: Type.String({ minLength: 1, maxLength: 512 }),
+            bootId: Type.String({ format: "uuid" }),
+            writerId: Type.String({ format: "uuid" }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
     },
     { additionalProperties: false },
   ),

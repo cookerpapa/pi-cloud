@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -42,6 +42,90 @@ function request(
 }
 
 describe("whole native tools at the execution source", () => {
+  it.each([false, true])(
+    "cancels only the Bash process group (separate session=%s)",
+    async (separate) => {
+      const root = await directory(),
+        cancel = new AbortController();
+      const childFile = join(root, "service.pid");
+      const cmd = `${separate ? "setsid" : "nohup"} sleep 60 >service.log 2>&1 </dev/null & echo $! > service.pid; echo partial-before-cancel; wait`;
+      const running = executeNativeTool(
+        request("bash", { command: cmd }),
+        root,
+        cancel.signal,
+        () => {},
+      );
+      let pid: number | undefined;
+      const alive = async () => {
+        try {
+          const s = await readFile(`/proc/${pid}/stat`, "utf8");
+          return !["Z", "X"].includes(s.slice(s.lastIndexOf(")") + 2).split(" ")[0]!);
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
+          throw e;
+        }
+      };
+      try {
+        await vi.waitFor(async () => {
+          pid = Number(await readFile(childFile, "utf8"));
+          expect(await alive()).toBe(true);
+        });
+        // Observe the session change before interrupting to avoid testing the
+        // unrelated race between fork and setsid itself.
+        if (separate)
+          await vi.waitFor(async () => {
+            const s = await readFile(`/proc/${pid}/stat`, "utf8");
+            const fields = s.slice(s.lastIndexOf(")") + 2).split(" ");
+            expect(Number(fields[2])).toBe(pid);
+          });
+        cancel.abort();
+        const result = await running;
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.result)).toContain("partial-before-cancel");
+        expect(JSON.stringify(result.result)).toContain("Command aborted");
+        await vi.waitFor(async () => expect(await alive()).toBe(separate));
+      } finally {
+        cancel.abort();
+        await running;
+        if (pid && (await alive())) process.kill(pid, "SIGKILL");
+      }
+    },
+  );
+
+  it("leaves a completed background launch alive when a later Bash is cancelled", async () => {
+    const root = await directory();
+    const launched = await executeNativeTool(
+      request("bash", {
+        command: "nohup sleep 60 >service.log 2>&1 </dev/null & echo $! > service.pid",
+      }),
+      root,
+      new AbortController().signal,
+      () => {},
+    );
+    expect(launched.isError).toBe(false);
+    const pid = Number(await readFile(join(root, "service.pid"), "utf8"));
+    const cancel = new AbortController();
+    const running = executeNativeTool(
+      request("bash", { command: "echo ready > next.ready; sleep 60" }),
+      root,
+      cancel.signal,
+      () => {},
+    );
+    try {
+      await vi.waitFor(async () =>
+        expect(await readFile(join(root, "next.ready"), "utf8")).toBe("ready\n"),
+      );
+      cancel.abort();
+      expect((await running).isError).toBe(true);
+      expect(() => process.kill(pid, 0)).not.toThrow();
+    } finally {
+      cancel.abort();
+      await running;
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    }
+  });
   it.each([
     { text: "first\nsecond\n", offset: 1 },
     { text: "first\nsecond\n", offset: 3 },

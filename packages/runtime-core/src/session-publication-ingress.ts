@@ -411,7 +411,8 @@ export class SessionPublicationIngress {
       sessionId: fact.scope.piSessionId,
       value: JSON.stringify(fact),
     };
-    const semantic = fact.kind !== "path_probe" && fact.kind !== "control_change";
+    const semantic =
+      fact.kind !== "path_probe" && fact.kind !== "control_change" && fact.kind !== "tool_cancel";
     const bytes = Buffer.byteLength(record.value);
     if (bytes > MAX_EXECUTION_FACT_BYTES) throw new PublicationIngressRejected("size");
     if (

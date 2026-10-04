@@ -23,6 +23,13 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
+- [ ] Implement [ADR-0221](adr/0221-pi-tool-cancellation.md): ordered operation
+      cancellation, native Tool result settlement, bounded UNKNOWN outcomes,
+      durable retirement fallback and matched live acceptance. Queue/draft
+      behavior remains under owner discussion.
+- [ ] Discuss queued follow-up/steer behavior after Stop. The owner requested
+      discussion; this slice preserves current queue semantics.
+
 [ADR-0220](adr/0220-agent-stop-is-not-process-control.md) is implemented and
 deployed: Agent Stop preserves accepted Cube commands, removes process-stop
 settlement/receipts, and retains routing revocation. [Verification](reports/agent-stop-correction-20261004.md)

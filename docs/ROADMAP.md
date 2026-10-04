@@ -1,5 +1,10 @@
 # Implementation roadmap
 
+## Pi Tool cancellation
+
+- [ ] Deliver [ADR-0221](adr/0221-pi-tool-cancellation.md): ordered cancellation,
+      original-result settlement, bounded UNKNOWN and foreground/background isolation.
+
 ## Agent Stop correction
 
 - [x] Implement and verify [ADR-0220](adr/0220-agent-stop-is-not-process-control.md):

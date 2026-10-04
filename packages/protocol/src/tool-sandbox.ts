@@ -32,7 +32,7 @@ const ToolSandboxEnvelope = {
 };
 
 const WorkerEnvelope = {
-  toolWorkerProtocolVersion: Type.Literal(2),
+  toolWorkerProtocolVersion: Type.Literal(3),
 };
 
 const SafeCodeSchema = Type.String({
@@ -129,6 +129,7 @@ export const ToolSandboxReleaseRequestSchema = Type.Object(
     requestId: UuidSchema,
     activationId: UuidSchema,
     assignment: ToolSandboxAssignmentSchema,
+    cancelOutstanding: Type.Optional(Type.Literal(true)),
     disposition: Type.Union([
       Type.Literal("detach"),
       Type.Literal("keep_warm"),

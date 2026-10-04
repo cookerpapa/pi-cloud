@@ -31,7 +31,7 @@ function fixture() {
     context,
     result: {
       output: {
-        toolWorkerProtocolVersion: 2,
+        toolWorkerProtocolVersion: 3,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {

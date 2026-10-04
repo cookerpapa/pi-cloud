@@ -75,6 +75,9 @@ class RemoteToolError extends Error {
 export type TrustedRemoteToolsRuntimeConfiguration = {
   observeToolDuration?: (seconds: number, outcome: "completed" | "failed") => void;
   publishToolCommand: ToolCommandPublisher["publishToolCommand"];
+  publishToolCancellation?: import("@pi-cloud/protocol").ToolCancellationPublisher["publishToolCancellation"];
+  cancellationTimeoutMs?: () => number;
+  onToolCancellationUnconfirmed?: () => void;
   waitForToolReply?: (
     request: ToolSandboxOperationRequest,
     signal: AbortSignal,
@@ -302,11 +305,18 @@ export function createTrustedRemoteAgentTools(
     const pendingAbort = new AbortController();
     const replySignal = AbortSignal.any([
       pendingAbort.signal,
-      ...(signal ? [signal] : []),
+      ...(signal && candidate.operation !== "tool.execute" ? [signal] : []),
       AbortSignal.timeout(MAX_TOOL_EXECUTION_TIMEOUT_MS + 120_000),
     ]);
     if (!runtime.waitForToolReply) throw new Error("Native Tool reply transport is unavailable");
     const pending = runtime.waitForToolReply(candidate, replySignal, toolCallId);
+    let received = false;
+    void pending.then(
+      () => {
+        received = true;
+      },
+      () => {},
+    );
     // The image-decoding adapter adds a Promise above the mailbox. Observe that
     // Promise now: failure/cancellation can precede the command's Kafka ACK.
     void pending.catch(() => {});
@@ -325,14 +335,33 @@ export function createTrustedRemoteAgentTools(
             }
           : {}),
       },
-      dispose: () => pendingAbort.abort(new Error("Tool reply wait closed")),
+      dispose: () => {
+        if (candidate.operation === "tool.execute" && signal?.aborted && !received)
+          runtime.onToolCancellationUnconfirmed?.();
+        pendingAbort.abort(new Error("Tool reply wait closed"));
+      },
       result: async () => {
         if (candidate.operation === "tool.execute") {
-          const event = await pending.catch(async (error: unknown) => {
-            if (signal?.aborted)
-              throw new Error(
-                "Agent stopped waiting for this Tool. The command may still be running in the workspace; inspect its state before retrying or stopping it.",
-              );
+          const final = awaitCancelledToolReply({
+            reply: pending,
+            ...(signal ? { signal } : {}),
+            received: () => received,
+            cancel: async () => {
+              if (!runtime.publishToolCancellation)
+                throw new Error("Tool cancellation publisher is unavailable");
+              await runtime.publishToolCancellation({
+                executionReference: runtime.executionReference,
+                activationId: candidate.activationId,
+                operationId: candidate.operationId,
+                occurredAt: new Date().toISOString(),
+              });
+            },
+            abortWait: (error) => pendingAbort.abort(error),
+            unconfirmed: () => runtime.onToolCancellationUnconfirmed?.(),
+            timeoutMs: runtime.cancellationTimeoutMs?.() ?? TOOL_CANCELLATION_TIMEOUT_MS,
+          });
+          const event = await final.catch(async (error: unknown) => {
+            if (signal?.aborted) throw error;
             const failure = {
               code: "tool_operation_outcome_unknown",
               message: "Tool reply could not be confirmed; do not automatically repeat the command",
@@ -380,7 +409,7 @@ export function createTrustedRemoteAgentTools(
       "## PiCloud execution context",
       `All file and command tools operate inside the selected machine directory ${runtime.workingDirectory}.`,
       "Large tool results are bounded in model context; omitted output is not archived.",
-      "Stopping the conversation interrupts the Agent, not accepted workspace processes. If a Tool was interrupted, inspect its effects before repeating it; use Bash to manage processes when requested.",
+      "Stopping the conversation requests cancellation of unfinished Tools. Completed background services keep running. If a Tool outcome is unknown, inspect its effects before repeating it.",
       "GitLab/GitHub authentication is already configured through Git's credential helper when the user connects a Code Host.",
       "Always use credential-free HTTPS clone and remote URLs. Never read .git-credentials or embed a token in a command, URL, output, file, or Git remote.",
     ].join("\n");
@@ -544,3 +573,5 @@ export function createTrustedRemoteAgentTools(
     }) satisfies WorkflowExecutor,
   };
 }
+import { awaitCancelledToolReply } from "./tool-cancellation.ts";
+import { TOOL_CANCELLATION_TIMEOUT_MS } from "@pi-cloud/protocol";

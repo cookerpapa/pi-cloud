@@ -270,7 +270,7 @@ export class SandboxControlClient {
   async release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition: { kind: "detach" } | { kind: "keep_warm" } | { kind: "destroy" },
+    disposition: { kind: "detach" | "keep_warm" | "destroy"; cancelOutstanding?: true },
   ): Promise<ToolSandboxReleaseResponse> {
     const requestId = this.#idGenerator();
     const response = await this.#service({
@@ -280,6 +280,7 @@ export class SandboxControlClient {
       activationId,
       assignment,
       disposition: disposition.kind,
+      ...(disposition.cancelOutstanding ? { cancelOutstanding: true } : {}),
     });
     if (
       response.type !== "tool_sandbox.released" ||
@@ -737,7 +738,7 @@ export class ReplicatedSandboxControlClient {
   async release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition: { kind: "detach" } | { kind: "keep_warm" } | { kind: "destroy" },
+    disposition: { kind: "detach" | "keep_warm" | "destroy"; cancelOutstanding?: true },
   ): Promise<ToolSandboxReleaseResponse> {
     try {
       if (disposition.kind === "destroy")

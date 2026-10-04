@@ -147,8 +147,8 @@ probe isolation, and 70,000 completions followed
 by new work. This is part of `npm run ci`.
 
 `agent-stop-binding-closure.integration.test.ts` uses the explicit test PG and RF3 Kafka
-endpoints. It proves routing revocation precedes the final seal without any
-Cube process-stop RPC or lifecycle receipt. The native Go
+endpoints. It proves routing revocation precedes the final seal without a separate
+process-stop receipt table. The native Go
 contract and matched live Cube acceptance cover the destination separately.
 
 ## Cube and real-model acceptance
@@ -352,9 +352,14 @@ the measurements; this is not fleet capacity or live provider latency evidence.
 
 Run `PI_CLOUD_LIVE_AGENT_STOP_CHECK=1 node --import tsx scripts/run-live-agent-stop-check.mjs`
 against the matched deployment to test two Luna Sessions sharing one VM. Chat
-Stop ends one Agent promptly; the next Run proves its command processes survived
-and then explicitly kills those fixture processes via Bash. Its sibling completes.
+Stop cancels the foreground group and retains partial output. A completed
+background launch and a setsid process survive; the next Run inspects and cleans
+those owned processes. Its sibling completes.
 The fixture checks only owned resources and requests cleanup.
+Set `PI_CLOUD_LIVE_TOOL_CANCEL_FAULT=api_pause` to pause the Cube API container
+while cancelling an owned Run and verify bounded UNKNOWN settlement. This mode
+refuses to pause infrastructure while any unrelated Run is active and always
+resumes the container before cleanup.
 
 The controller restart gate accepts
 `PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=process` for a local containerd-task SIGKILL and

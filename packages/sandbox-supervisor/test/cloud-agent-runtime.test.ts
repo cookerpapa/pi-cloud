@@ -975,15 +975,15 @@ describe.sequential("CloudAgentRuntime", () => {
   });
 
   it.each(["publication_ack", "reply_wait"] as const)(
-    "interrupts a published remote Tool at %s without claiming its process stopped",
+    "settles a published remote Tool cancellation at %s before ending the Run",
     async (boundary) => {
       const storage = await createStorage();
       const execution = await withNativeSession(storage);
       const entered = Promise.withResolvers<void>();
+      const finish = Promise.withResolvers<void>();
       let requests = 0,
         accepted = 0;
-      const message =
-        "Agent stopped waiting; the command may still be running. Inspect before retrying.";
+      const message = "partial output\nCommand aborted";
       const tool: PreparedAgentTool = {
         name: "remote",
         label: "Remote",
@@ -1004,6 +1004,7 @@ describe.sequential("CloudAgentRuntime", () => {
                 await new Promise<void>((resolve) =>
                   signal!.addEventListener("abort", () => resolve(), { once: true }),
                 );
+              await finish.promise;
               throw new Error(message);
             },
           };
@@ -1041,10 +1042,26 @@ describe.sequential("CloudAgentRuntime", () => {
         await entered.promise;
         runtime.abort();
       }
+      await entered.promise;
+      let ended = false;
+      void running.then(() => {
+        ended = true;
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(ended).toBe(false);
+      finish.resolve();
       expect(await running).toMatchObject({ kind: "aborted" });
       expect(accepted).toBe(1);
       expect(requests).toBe(1);
-      expect(JSON.stringify(await storage.findEntries())).toContain(message);
+      expect(await storage.findEntries()).toContainEqual(
+        expect.objectContaining({
+          type: "message",
+          message: expect.objectContaining({
+            role: "toolResult",
+            content: [{ type: "text", text: message }],
+          }),
+        }),
+      );
       expect(await storage.findOpenOperations("main")).toEqual([]);
       const contexts: Context[] = [];
       const next = new CloudAgentRuntime({
@@ -1059,7 +1076,9 @@ describe.sequential("CloudAgentRuntime", () => {
       expect(await next.run("Let's discuss before doing anything else")).toMatchObject({
         kind: "completed",
       });
-      expect(JSON.stringify(contexts[0]?.messages)).toContain(message);
+      expect(contexts[0]?.messages).toContainEqual(
+        expect.objectContaining({ role: "toolResult", content: [{ type: "text", text: message }] }),
+      );
     },
   );
 

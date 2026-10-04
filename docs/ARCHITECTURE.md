@@ -28,8 +28,9 @@ Browser → Control Plane → PostgreSQL accepted Run
 Control authority → PG binding close + Outbox → same ingress/Kafka
   → ingress routing revocation + Projector binding view
   → final Kafka seal → PG terminal/native closure → next Run eligible
-Chat Stop → durable PG request → Worker Agent.abort() / close reply waits
-  (accepted Cube processes keep their own lifetime)
+Chat Stop → durable PG request → Worker Agent.abort()
+  → tool_cancel → same Session Kafka → Projector → Cube → guest Tool AbortSignal
+  → original final reply → Pi Tool Result → seal (or bounded UNKNOWN)
 ```
 
 The Projector currently runs in the Control Plane process. Its modules remain
@@ -84,14 +85,24 @@ bounded held-scope index falls back to scoped reconciliation on overflow.
 Ordinary Subagent maintenance follows affected Run changes with indexed parent/child
 reads. Startup, known deadlines and bounded-scope overflow retain global recovery.
 
-Binding closure revokes routing admission; it does not stop Cube processes.
-PG revocation is installed before publishing the binding control reference and
-before final Run sealing. Chat Stop uses the existing durable cancellation request
-to interrupt Pi's Agent Loop and detach pending reply waits. Commands already
-handed off may continue, and their late replies cannot reopen the Run. The native
-Tool result states this uncertainty so the next Run can inspect effects rather
-than blindly repeat them. There is no Cube Stop RPC, lifecycle ACK or polling
-loop in settlement ([ADR-0220](adr/0220-agent-stop-is-not-process-control.md)).
+Chat Stop uses the existing durable PG request to interrupt Pi's Agent Loop.
+The remote Tool adapter keeps its original reply waiter and appends an
+operation-scoped `tool_cancel` through the same Session writer/ingress/Kafka path.
+Projector forwards its position to Cube; native acceptance only acknowledges
+that interruption was requested. The fixed guest pipe delivers the signal to
+that Tool's AbortController. Bash cancels its process group, retaining partial
+output. Completed operations, completed background launches and setsid groups
+are not cancelled retroactively. Native Pi hooks finalize the original reply.
+
+The default cancellation-result grace is 10 seconds (the cancellation API's
+`gracePeriodMs` can select a shorter grace). Model interruption is immediate;
+Run/native publication still observes its durability boundaries. Missing final
+results become `tool_operation_outcome_unknown`, never invented stopping or
+shell replay. Late replies do not reopen a sealed Run. Binding retirement on
+unknown outcomes or Worker loss writes a bounded immutable cancellation address
+into its existing control reference; it survives row deletion and selects only
+unfinished operations of that Run/writer. No stopped/quarantined ACK table or
+per-Tool PG execution ledger is added. See [ADR-0221](adr/0221-pi-tool-cancellation.md).
 
 Cube retains one source identity and per-partition progress per physical VM;
 active operation fingerprints disappear after bounded delivery. Boot changes,
@@ -588,13 +599,14 @@ canonical Tool Result. No raw-result GET/cache or PG operation ledger exists.
 Uncertain execution never causes automatic shell replay.
 
 Authorized closure revokes publication and binding routing admission before the
-seal. It does not join Cube processes. Stop interrupts the Worker Agent Loop,
-prevents later invocations and detaches pending reply waits; already handed-off
-commands may continue. Interactive workflow orchestration closes with its caller.
-A late native reply is discarded when its original waiter no longer exists.
+seal. Normal Stop waits for its original Tool result after requesting cancellation;
+a bounded transport failure records UNKNOWN. Binding closure itself has no
+process-stop receipt. Interactive workflow orchestration closes with its caller.
+A late reply is discarded when its original waiter no longer exists.
 
 The controller chooses, observes, adopts, quarantines and destroys physical VMs.
-A normal Tool error or user Stop does not destroy a VM. Explicit native Tool
+A normal Tool error or user Stop does not destroy a VM. User cancellation acts
+on unfinished Tool process groups. Explicit native Tool
 execution timeouts still stop the main process and clean its cgroup; ordinary
 completed Bash can leave background servers. Executor boot replacement or an
 unsafe native timeout outcome makes the VM unavailable for recovery. User-owned
@@ -890,8 +902,8 @@ The PG budgets cover native/seal transactions, not pool acquisition, every API
 query or external routing; a persistently failing record still blocks its partition.
 
 Cubelet enforces boot identity, active-operation fingerprints and monotonic
-partition admission. It owns accepted processes independently of the Agent's
-Run; chat Stop does not terminate them (ADR-0220). Explicit Tool timeouts retain
+partition admission. It owns accepted processes independently of Worker lifetime;
+ADR-0221 delivers cancellation to unfinished Tools. Explicit Tool timeouts retain
 native process/cgroup cleanup. This does not establish durable cross-boot
 process/result recovery or exactly-once effects. PG failover, Cube node
 drain and full multi-node HA remain

@@ -9,6 +9,7 @@ import type {
   SubagentCommandPublisher,
   SubagentControlRequest,
   ToolSandboxOperationRequest,
+  ToolCancellationPublisher,
 } from "@pi-cloud/protocol";
 
 export type CandidatePiSessionAppendFact = Readonly<{
@@ -31,6 +32,10 @@ export type CandidatePiSessionAppendFact = Readonly<{
 }>;
 
 export type CandidateFact =
+  | Readonly<{
+      kind: "tool_cancel";
+      command: import("@pi-cloud/protocol").CandidateToolCancellation;
+    }>
   | Omit<import("@pi-cloud/protocol").PathProbe, "scope">
   | Readonly<{ kind: "tool_command"; command: CandidateToolCommand }>
   | Readonly<{ kind: "subagent_command"; command: CandidateSubagentCommand }>
@@ -98,6 +103,7 @@ export type ExecutionPublication = Readonly<{
   scope: AcceptedFactScope & { leaseId: string; piSessionLane: string };
 }>;
 export type AcceptedFact =
+  | import("@pi-cloud/protocol").AcceptedToolCancellation
   | import("@pi-cloud/protocol").PathProbe
   | AcceptedToolCommand
   | AcceptedAgentEventFact
@@ -152,4 +158,8 @@ export interface ActiveExecutionLogResolver {
 }
 
 export interface AcceptedFactWriter
-  extends PiSessionLogAppender, ToolCommandPublisher, SubagentCommandPublisher {}
+  extends
+    PiSessionLogAppender,
+    ToolCommandPublisher,
+    SubagentCommandPublisher,
+    ToolCancellationPublisher {}

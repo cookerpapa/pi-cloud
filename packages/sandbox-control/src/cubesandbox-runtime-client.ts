@@ -113,6 +113,15 @@ export interface CubeSandboxRuntimeClient {
     request: { probeId: string; runId: string; writerId: string; completionContext: unknown },
   ): Promise<void>;
   submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void>;
+  cancelTool(
+    target: CubeExecutionTarget,
+    request: {
+      source: ExecutionLogPosition;
+      runId: string;
+      writerId: string;
+      operationId?: string;
+    },
+  ): Promise<void>;
 
   pause(sandboxId: string): Promise<void>;
   connect(sandboxId: string, timeoutSeconds: number): Promise<CubeSandboxInstance>;
@@ -721,7 +730,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
     if (
       value.enabled !== true ||
-      value.protocolVersion !== 4 ||
+      value.protocolVersion !== 5 ||
       typeof value.bootID !== "string" ||
       !/^[0-9a-f-]{36}$/.test(value.bootID)
     )
@@ -760,6 +769,36 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       value.bootID !== target.bootId
     )
       throw new CubeRuntimeClientError("Cube execution handoff could not be confirmed");
+  }
+
+  async cancelTool(
+    target: CubeExecutionTarget,
+    request: {
+      source: ExecutionLogPosition;
+      runId: string;
+      writerId: string;
+      operationId?: string;
+    },
+  ): Promise<void> {
+    const value = await this.#executionRequest(
+      target.sandboxId,
+      "cancel",
+      {
+        nodeID: target.nodeId,
+        bootID: target.bootId,
+        runID: request.runId,
+        writerID: request.writerId,
+        operationID: request.operationId,
+        source: parseExecutionLogPosition(request.source),
+      },
+      3000,
+      target.apiUrl,
+    );
+    if (value.accepted === false && typeof value.rejection === "string")
+      throw new CubeExecutionRejected(value.rejection);
+    if (value.accepted !== true || value.bootID !== target.bootId)
+      throw new CubeRuntimeClientError("Cube cancellation acceptance could not be confirmed");
+    // Accepted means the cancellation signal was scheduled, never process exit.
   }
 
   async probeExecution(target: CubeExecutionTarget, probeId: string): Promise<GuestProbeReply> {

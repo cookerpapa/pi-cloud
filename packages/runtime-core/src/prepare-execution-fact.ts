@@ -1,10 +1,30 @@
 import type { CandidateFact, AcceptedFact, ExecutionPublication } from "./accepted-fact.ts";
 import { prepareToolInvocationDispatch } from "./tool-invocation-fact.ts";
+import { randomUUID } from "node:crypto";
+import { parseToolCancellation } from "@pi-cloud/protocol";
 
 export function prepareExecutionFact(
   scope: ExecutionPublication["scope"] & { executionReference: string },
   candidate: CandidateFact,
 ): AcceptedFact {
+  if (candidate.kind === "tool_cancel") {
+    const { executionReference, occurredAt, ...request } = candidate.command;
+    if (executionReference !== scope.executionReference)
+      throw new Error("Tool cancellation does not belong to its ExecutionReference");
+    const {
+      leaseId: _lease,
+      piSessionLane: _lane,
+      executionReference: _reference,
+      ...identity
+    } = scope;
+    return parseToolCancellation({
+      kind: "tool_cancel",
+      factId: randomUUID(),
+      scope: identity,
+      request,
+      occurredAt,
+    });
+  }
   if (candidate.kind === "path_probe") {
     const {
       leaseId: _lease,

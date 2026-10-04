@@ -6,6 +6,7 @@ import {
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol/guest";
 import { executeNativeTool } from "./native-tools.ts";
+import { toolCancellationInput } from "./tool-cancellation-input.ts";
 import { once } from "node:events";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
@@ -65,7 +66,7 @@ function envelope(value: unknown): {
     return { initialization };
   }
   const operation = parseToolWorkerInput({
-    toolWorkerProtocolVersion: 2,
+    toolWorkerProtocolVersion: 3,
     type: "worker.operation",
     request: input.operation,
   });
@@ -86,65 +87,88 @@ async function main(): Promise<ToolWorkerOutput> {
   if (input.operation === undefined) {
     const environment = await initializeToolExecution(input.initialization);
     return {
-      toolWorkerProtocolVersion: 2,
+      toolWorkerProtocolVersion: 3,
       type: "worker.ready",
       activationId: input.initialization.activationId,
       environment,
     };
   }
-  const toolRoot = await attachToolExecution(input.initialization);
   const request = input.operation.request;
-  if (request.operation !== "tool.execute")
-    throw new ToolWorkerError(
-      "workflow_transport_required",
-      "Workflow execution requires the scoped duplex process transport",
-    );
-  let sequence = 0;
-  let draining: Promise<unknown> | undefined;
-  let latest: NativeToolUpdate | undefined;
-  const progress = (event: NativeToolUpdate): void => {
-    // onUpdate is synchronous in Pi. Keep only the newest progress snapshot
-    // while the transport is blocked, never an unbounded stdout write queue.
-    if (draining) {
-      latest = event;
-      return;
+  const control = toolCancellationInput(process.stdin, request.operationId);
+  try {
+    const toolRoot = await attachToolExecution(input.initialization);
+    if (request.operation !== "tool.execute")
+      throw new ToolWorkerError(
+        "workflow_transport_required",
+        "Workflow execution requires the scoped duplex process transport",
+      );
+    let sequence = 0;
+    let draining: Promise<unknown> | undefined;
+    let latest: NativeToolUpdate | undefined;
+    const progress = (event: NativeToolUpdate): void => {
+      // onUpdate is synchronous in Pi. Keep only the newest progress snapshot
+      // while the transport is blocked, never an unbounded stdout write queue.
+      if (draining) {
+        latest = event;
+        return;
+      }
+      if (
+        !process.stdout.write(
+          `${JSON.stringify({ operationId: request.operationId, sequence: ++sequence, event })}\n`,
+        )
+      ) {
+        draining = once(process.stdout, "drain").then(() => {
+          draining = undefined;
+          const event = latest;
+          latest = undefined;
+          if (event) progress(event);
+        });
+      }
+    };
+    const timeout = AbortSignal.timeout(request.timeoutMs);
+    const signal = AbortSignal.any([timeout, control.signal]);
+    const execution: Promise<ToolSandboxOperationResponse> = executeNativeTool(
+      request,
+      toolRoot,
+      signal,
+      progress,
+      input.initialization.webProxy,
+    ).then((event) => ({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.operation_result",
+      activationId: request.activationId,
+      operationId: request.operationId,
+      operation: "tool.execute",
+      event,
+    }));
+    let response = await execution.catch((error: unknown) => toolOperationFailure(request, error));
+    let controlFailed = false;
+    try {
+      control.check();
+    } catch {
+      controlFailed = true;
+      response = toolOperationFailure(
+        request,
+        new ToolWorkerError(
+          "tool_operation_outcome_unknown",
+          "Native Tool cancellation transport failed",
+          false,
+        ),
+      );
     }
-    if (
-      !process.stdout.write(
-        `${JSON.stringify({ operationId: request.operationId, sequence: ++sequence, event })}\n`,
-      )
-    ) {
-      draining = once(process.stdout, "drain").then(() => {
-        draining = undefined;
-        const event = latest;
-        latest = undefined;
-        if (event) progress(event);
-      });
-    }
-  };
-  const signal = AbortSignal.timeout(request.timeoutMs);
-  const execution: Promise<ToolSandboxOperationResponse> = executeNativeTool(
-    request,
-    toolRoot,
-    signal,
-    progress,
-    input.initialization.webProxy,
-  ).then((event) => ({
-    toolBrokerProtocolVersion: 1,
-    type: "tool_sandbox.operation_result",
-    activationId: request.activationId,
-    operationId: request.operationId,
-    operation: "tool.execute",
-    event,
-  }));
-  const response = await execution.catch((error: unknown) => toolOperationFailure(request, error));
-  while (draining) await draining;
-  return {
-    toolWorkerProtocolVersion: 2,
-    type: "worker.operation_result",
-    scopeStopRequired: signal.aborted,
-    response,
-  };
+    while (draining) await draining;
+    return {
+      toolWorkerProtocolVersion: 3,
+      type: "worker.operation_result",
+      // Normal Agent cancellation follows Pi's process-group boundary. A setsid
+      // child is deliberately outside that boundary; only timeout/fault cleanup
+      // requests the stronger whole-operation cgroup cleanup.
+      scopeStopRequired: timeout.aborted || controlFailed,
+      response,
+    };
+  } finally {
+    control.close();
+  }
 }
 
 try {
@@ -155,7 +179,7 @@ try {
       ? error
       : new ToolWorkerError("tool_worker_failed", "Tool worker failed", true);
   const output: ToolWorkerOutput = {
-    toolWorkerProtocolVersion: 2,
+    toolWorkerProtocolVersion: 3,
     type: "worker.failed",
     code: failure.code,
     message: failure.message,

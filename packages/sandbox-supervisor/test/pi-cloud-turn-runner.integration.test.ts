@@ -1430,7 +1430,7 @@ describe("PiCloudTurnRunner integration", () => {
           expect(release).toHaveBeenCalledWith(
             "99999999-9999-4999-8999-999999999998",
             expect.anything(),
-            { kind: "detach" },
+            { kind: "detach", cancelOutstanding: true },
           );
         else expect(release).not.toHaveBeenCalled();
         expect(modelLeaseRelease).toHaveBeenCalledTimes(1);

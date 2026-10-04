@@ -50,11 +50,13 @@ or known deadlines. Worker admission uses the available publication partitions;
 binding bootstrap pages only the owner’s state. Transaction-local queue/state
 notifications are coalesced, and independent Outbox sends prevent a slow request
 from holding an entire batch. Lifecycle mutations and recovery retain PG checks.
-Chat Stop interrupts the Worker's Agent Loop and reply waits. Accepted VM commands
-may continue; the next interaction can inspect or manage their processes. Binding
-revocation still travels through the Session log before the final seal, without
-Cube process-stop RPCs or lifecycle receipts. Cube's VM/partition progress rejects
-historical duplicates without retaining a permanent closed-task list (ADR-0220).
+Chat Stop interrupts the Worker Agent and sends operation-scoped cancellation
+through the same Session Kafka path. The original Tool result carries partial
+output and cancellation back to Pi; a bounded wait yields UNKNOWN if it cannot be
+confirmed. Completed background services and independent process groups survive.
+Routing revocation still precedes the final seal. Abnormal retirement carries a
+bounded cleanup target in the existing Outbox, without a process-stop receipt
+ledger (ADR-0221). Cube's VM/partition progress rejects delayed old submissions.
 Queue display refreshes coalesce outside ordered projection, using a separate
 two-connection read pool. Responses carry 20 inputs per page; all queued inputs
 remain accessible, with drafts preserved when queue changes invalidate a page.

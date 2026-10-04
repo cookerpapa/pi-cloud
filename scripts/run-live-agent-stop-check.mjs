@@ -5,7 +5,8 @@ import { randomUUID } from "node:crypto";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { sql } from "kysely";
-import { serviceAddress } from "./lib/production-kubernetes.mjs";
+import { serviceAddress, kubectl } from "./lib/production-kubernetes.mjs";
+import { execFileSync } from "node:child_process";
 
 if (process.env.PI_CLOUD_LIVE_AGENT_STOP_CHECK !== "1")
   throw new Error(
@@ -24,7 +25,9 @@ const database = createDatabase({ connectionString: pgurl.toString(), maxConnect
 const report = { checkedAt: new Date().toISOString(), model: "gpt-6-luna", accepted: false };
 const sessions = [],
   turns = [];
-let project, failure;
+let project, failure, pausedApi;
+const fault = process.env.PI_CLOUD_LIVE_TOOL_CANCEL_FAULT === "api_pause";
+report.fault = fault ? "api_pause" : "none";
 const terminal = (r) => ["completed", "failed", "cancelled", "timed_out"].includes(r.state);
 async function until(fn, label, ms = 180000) {
   const deadline = Date.now() + ms;
@@ -69,10 +72,11 @@ try {
     );
   const [first, sibling] = sessions;
   const prefix = `agent-stop-${randomUUID()}`;
-  const command = `printf 'started\\n' >> ${prefix}.count; printf '%s' $$ > ${prefix}.parent; sleep 120 & child=$!; printf '%s' "$child" > ${prefix}.child; wait "$child"; printf 'late\\n' > ${prefix}.late`;
+  const background = `nohup sleep 180 >${prefix}.background.log 2>&1 </dev/null & echo $! > ${prefix}.background; printf BACKGROUND_STARTED`;
+  const command = `printf 'started\\n' >> ${prefix}.count; printf '%s' $$ > ${prefix}.parent; sleep 120 & child=$!; printf '%s' "$child" > ${prefix}.child; setsid sleep 180 >${prefix}.independent.log 2>&1 </dev/null & printf '%s' "$!" > ${prefix}.independent; printf 'PARTIAL_BEFORE_CANCEL\\n'; wait "$child"; printf 'late\\n' > ${prefix}.late`;
   const cancelled = await run(
     first,
-    `只调用一次 bash，command 必须逐字使用这个 JSON 字符串：${JSON.stringify(command)}，timeout 为 180。不要使用其他工具。执行完简短回复。`,
+    `按顺序调用两次 bash。第一次 command 必须逐字使用这个 JSON 字符串：${JSON.stringify(background)}。等第一次返回后，第二次 command 必须逐字使用：${JSON.stringify(command)}，timeout 为 180。不要使用其他工具。第二次会由测试中断。`,
   );
   await until(async () => {
     try {
@@ -103,15 +107,52 @@ try {
     );
   assert.deepEqual(rows[0], { vms: 1, bindings: 2 });
   report.sharedVmVerified = true;
+  if (fault) {
+    const { rows: foreign } = await sql`select count(*)::int as active from runs
+      where state not in ('completed','failed','cancelled','timed_out') and not(id=any(${turns.map(({ turn }) => turn.runId)}::uuid[]))`.execute(
+      database,
+    );
+    assert.equal(foreign[0].active, 0, "Refuse to pause Cube API while another Run is active");
+    const pods = JSON.parse(
+      kubectl([
+        "get",
+        "pods",
+        "-l",
+        "app.kubernetes.io/component=api,app.kubernetes.io/instance=cube",
+        "-o",
+        "json",
+      ]),
+    );
+    assert.equal(pods.items.length, 1);
+    const id = pods.items[0].status.containerStatuses
+      .find((c) => c.name === "cube-api")
+      .containerID.replace(/^containerd:\/\//, "");
+    assert(/^[a-f0-9]{64}$/.test(id));
+    execFileSync("/usr/local/bin/k3s", ["ctr", "-n", "k8s.io", "tasks", "pause", id]);
+    pausedApi = id;
+  }
   const cancellationAt = Date.now();
   await api.cancelTurn(first.sessionId, cancelled.turnId, newIdempotencyKey("cancel-owned-scope"));
   const cancelledRun = await settled(cancelled);
   assert.equal(cancelledRun.state, "cancelled", JSON.stringify(cancelledRun.failure));
   report.cancelMs = Date.now() - cancellationAt;
-  assert(report.cancelMs < 15000, "Agent Stop waited for the running command");
-  // The next Agent invocation must see both processes still alive; only its
-  // explicit Bash command then terminates these owned fixture processes.
-  const verify = `for f in ${prefix}.parent ${prefix}.child; do pid=$(cat "$f"); state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true); case "$state" in ""|Z) printf 'PROCESS_DIED_ON_CHAT_STOP'; exit 1;; esac; done; printf 'SURVIVED_CHAT_STOP\\n'; kill "$(cat ${prefix}.child)" "$(cat ${prefix}.parent)"; printf 'EXPLICIT_PROCESS_STOP'`;
+  if (pausedApi) {
+    execFileSync("/usr/local/bin/k3s", ["ctr", "-n", "k8s.io", "tasks", "resume", pausedApi]);
+    pausedApi = undefined;
+  }
+  assert(
+    report.cancelMs < (fault ? 30000 : 15000),
+    "Cancellation did not settle within its transport budgets",
+  );
+  // Completed launches and setsid descendants survive. An unfinished ordinary
+  // Bash group must be gone after confirmed cancellation. Unknown makes no such
+  // assertion, because cancellation may have been delayed by the API outage.
+  const foreground = fault
+    ? ""
+    : `for f in ${prefix}.parent ${prefix}.child; do pid=$(cat "$f"); state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true); case "$state" in ""|Z) ;; *) printf 'FOREGROUND_STILL_RUNNING'; exit 1;; esac; done; `;
+  const verify =
+    foreground +
+    `for f in ${prefix}.background ${prefix}.independent; do pid=$(cat "$f"); state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true); case "$state" in ""|Z) printf 'BACKGROUND_DIED_ON_CHAT_STOP'; exit 1;; esac; done; printf 'PI_CANCEL_BOUNDARY_CONFIRMED\\n'; for f in ${prefix}.background ${prefix}.independent ${prefix}.child ${prefix}.parent; do kill "$(cat "$f")" 2>/dev/null || true; done; printf 'EXPLICIT_PROCESS_CLEANUP'`;
   const checked = await run(
     first,
     `只调用一次 bash，command 必须逐字使用这个 JSON 字符串：${JSON.stringify(verify)}。不要使用其他工具，完成后简短回复。`,
@@ -124,9 +165,11 @@ try {
   const tools = detail.transcript.items.filter((i) => i.kind === "tool");
   assert.equal(tools.length, 1);
   assert.equal(tools[0].status, "completed");
-  assert(JSON.stringify(tools[0].output).includes("SURVIVED_CHAT_STOP"));
-  assert(JSON.stringify(tools[0].output).includes("EXPLICIT_PROCESS_STOP"));
-  report.parentAndChildSurvivedChatStop = true;
+  assert(JSON.stringify(tools[0].output).includes("PI_CANCEL_BOUNDARY_CONFIRMED"));
+  assert(JSON.stringify(tools[0].output).includes("EXPLICIT_PROCESS_CLEANUP"));
+  report.foregroundCancelled = !fault;
+  report.completedBackgroundSurvived = true;
+  report.independentProcessGroupSurvived = true;
   report.explicitProcessStopInNextRun = true;
   const survived = await settled(peer);
   assert.equal(survived.state, "completed", JSON.stringify(survived.failure));
@@ -135,7 +178,16 @@ try {
   const cancelledDetail = (await api.getConversation(first.sessionId)).turns.find(
     (t) => t.runId === cancelled.runId,
   );
-  assert(JSON.stringify(cancelledDetail).includes("may still be running"));
+  const cancelledText = JSON.stringify(cancelledDetail);
+  if (fault) {
+    assert(cancelledText.includes("tool_operation_outcome_unknown"));
+    report.unknownOutcomeRetained = true;
+  } else {
+    assert(cancelledText.includes("PARTIAL_BEFORE_CANCEL"));
+    assert(cancelledText.includes("Command aborted"));
+    assert(!cancelledText.includes("tool_operation_outcome_unknown"));
+    report.partialOutputRetained = true;
+  }
   report.interruptionContextRetained = true;
   report.siblingCompleted = true;
   report.executionCount = 1;
@@ -144,6 +196,14 @@ try {
   failure = error;
 } finally {
   const errors = [];
+  if (pausedApi) {
+    try {
+      execFileSync("/usr/local/bin/k3s", ["ctr", "-n", "k8s.io", "tasks", "resume", pausedApi]);
+    } catch (error) {
+      errors.push(error);
+    }
+    pausedApi = undefined;
+  }
   for (const { session, turn } of turns)
     try {
       if (!terminal(await api.getRun(turn.runId))) {
@@ -175,6 +235,6 @@ try {
   if (failure || errors.length)
     throw new AggregateError(
       [...(failure ? [failure] : []), ...errors],
-      "Agent Stop survival acceptance failed",
+      "Pi Tool cancellation acceptance failed",
     );
 }

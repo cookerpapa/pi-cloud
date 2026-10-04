@@ -285,6 +285,7 @@ export interface SandboxControlWorkspaceRuntimeTable {
 }
 
 export interface SandboxToolBindingTable {
+  cancel_outstanding: Generated<boolean>;
   pi_session_id: Generated<string>;
   revision: GeneratedInt8;
   dispatch_closed: Generated<boolean>;

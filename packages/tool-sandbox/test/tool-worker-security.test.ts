@@ -196,7 +196,7 @@ describe("credential-free Tool Sandbox worker", () => {
   it("attaches an existing persistent Volume independently of its original seed kind", async () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-volume-authority-"));
     const base = {
-      toolWorkerProtocolVersion: 2 as const,
+      toolWorkerProtocolVersion: 3 as const,
       type: "worker.initialize" as const,
       activationId: "10000000-0000-4000-8000-000000000001",
       toolRoot: workspace,
@@ -224,7 +224,7 @@ describe("credential-free Tool Sandbox worker", () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-seed-safe-"));
     try {
       await attachToolExecution({
-        toolWorkerProtocolVersion: 2,
+        toolWorkerProtocolVersion: 3,
         type: "worker.initialize",
         activationId: "10000000-0000-4000-8000-000000000001",
         toolRoot: workspace,

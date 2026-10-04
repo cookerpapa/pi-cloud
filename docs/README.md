@@ -1,9 +1,10 @@
 # Documentation map
 
-[ADR-0220](adr/0220-agent-stop-is-not-process-control.md) corrects chat Stop to
-interrupt only the Worker Agent Loop, without Cube process-stop settlement.
-[Verification and deployed acceptance](reports/agent-stop-correction-20261004.md)
-include 156 fault cases and real Luna shared-VM process survival.
+[ADR-0221](adr/0221-pi-tool-cancellation.md) implements Pi-style Tool cancellation:
+ordered operation interruption, original-result settlement and bounded UNKNOWN
+outcomes. Queue/draft behavior remains under discussion.
+The earlier [detach-only acceptance](reports/agent-stop-correction-20261004.md)
+records ADR-0220's superseded behavior at its named revision.
 
 The [October 4 repair record](reports/review-repair-20261004.md) tracks the approved
 boundary fixes and the earlier Cube closure implementation (ADR-0218/0219);

@@ -172,6 +172,15 @@ export class SessionProjector {
         }
       },
       handler: async (raw, current, commitBeforeEffect) => {
+        if (raw.fact.kind === "tool_cancel") {
+          if (current?.() === false) return;
+          // Cancellation is idempotent. Replay it after owner loss even when
+          // the original shell dispatch offset was already committed.
+          await options.toolCommands.consume({ ...raw, fact: raw.fact }, current);
+          if (current?.() !== false)
+            await options.database.transaction().execute((tx) => recordFactProjection(tx, raw));
+          return;
+        }
         if (raw.fact.kind === "control_change") {
           if (current?.() === false) return;
           if (!options.controlChanges && raw.fact.entity === "sandbox_binding")

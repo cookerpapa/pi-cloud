@@ -82,11 +82,14 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Do not claim exactly-once semantics for arbitrary shell commands or external side effects.
 - Do not run untrusted tools in the control-plane or trusted Agent Runner process.
 - Control Plane owns VM lifecycle, binding admission and recovery. Cubelet owns
-  accepted fixed Tool lifetimes and boot/ordered-position fencing (ADR-0219/0220);
-  do not add per-Tool PG Run-lease checks. Chat Stop interrupts the Worker Agent
-  Loop and its reply waits, never VM processes. Revoke publication/routing admission
-  before sealing; do not wait for accepted commands to finish or for a Cube Stop
-  receipt. Late/ambiguous commands may continue and must never be replayed.
+  accepted fixed Tool lifetimes and boot/ordered-position fencing (ADR-0219/0221).
+  Do not add per-Tool PG Run-lease checks. Chat Stop aborts the Worker Agent and
+  sends operation cancellation through the same Session log. Await the original
+  Tool's result within a bounded grace, then retain UNKNOWN if unconfirmed.
+  Normal cancellation follows the guest Tool's process-group boundary, not whole
+  cgroup/VM cleanup. Completed background work is never cancelled retroactively.
+  Revoke routing before sealing; abnormal retirement retains its immutable cleanup
+  target in the existing control Outbox, with no process-stop receipt table.
   `SandboxProvider` owns Cube mechanics and exposes no native
   SDK or management credentials to the Worker. There is no independent Broker.
   Quota release requires confirmed absence on the recorded node, not a missing

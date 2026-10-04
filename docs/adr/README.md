@@ -10,8 +10,11 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
-1. [ADR-0220](0220-agent-stop-is-not-process-control.md) — chat Stop interrupts the
-   Worker Agent Loop; accepted Cube processes retain their independent lifetime.
+1. [ADR-0221](0221-pi-tool-cancellation.md) — Pi-style operation cancellation,
+   bounded result settlement and durable abnormal-retirement intent.
+1. [ADR-0220](0220-agent-stop-is-not-process-control.md) — removal of VM/process
+   lifecycle coupling and nullable Kafka metadata recovery; Tool cancellation is
+   superseded by ADR-0221.
 1. [ADR-0219](0219-ordered-cube-admission.md) — bounded Cube destination progress
    and controller replacement; Run/process stopping is superseded by ADR-0220.
 1. [ADR-0218](0218-review-boundary-repairs.md) — approved follow-up input, time,

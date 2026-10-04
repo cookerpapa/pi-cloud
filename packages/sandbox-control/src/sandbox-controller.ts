@@ -626,6 +626,7 @@ export class SandboxController {
             writerId: identity.leaseId,
           },
           false,
+          true,
         );
         await this.#bindings.release(bindingId, snapshot.assignment);
         continue;
@@ -2177,7 +2178,11 @@ export class SandboxController {
     request: ToolSandboxReleaseRequest,
   ): Promise<ToolSandboxReleaseResponse> {
     if (!this.#toolBindings.has(request.activationId)) {
-      await this.#releaseDetachedBinding(request.activationId, request.assignment);
+      await this.#releaseDetachedBinding(
+        request.activationId,
+        request.assignment,
+        request.cancelOutstanding === true,
+      );
       return {
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.released",
@@ -2205,6 +2210,7 @@ export class SandboxController {
         writerId: identityForRelease.leaseId,
       },
       false,
+      request.cancelOutstanding === true,
     );
     // These are interactive workflow/input-preparation channels. Fixed Tools
     // live in Cube and are not in this map; releasing their caller never kills them.
@@ -2345,6 +2351,7 @@ export class SandboxController {
   async #releaseDetachedBinding(
     activationId: string,
     assignment: ToolSandboxAssignment,
+    cancelOutstanding: boolean,
   ): Promise<void> {
     const identity = parseExecutionReference(assignment.executionReference);
     const routes = await this.#bindings.find(
@@ -2361,6 +2368,7 @@ export class SandboxController {
       await this.#bindings.closeScope(
         { tenantId: assignment.tenantId, runId: identity.runId, writerId: identity.leaseId },
         false,
+        cancelOutstanding,
       );
       await this.#bindings.release(activationId, assignment);
     }
@@ -2476,6 +2484,7 @@ export class SandboxController {
         requestId: this.#idGenerator(),
         activationId: route.bindingId,
         assignment: route.snapshot.assignment,
+        cancelOutstanding: true,
         disposition: route.snapshot.developmentEnvironmentId ? "detach" : "keep_warm",
       });
     }

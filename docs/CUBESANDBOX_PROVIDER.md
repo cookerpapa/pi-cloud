@@ -31,16 +31,18 @@ uses a deployment-owned Cube endpoint registry; metadata cannot select an
 unconfigured credential destination.
 
 PG binding revocation is installed at publication admission; its closed reference
-follows the same Kafka Session queue. Release retires this routing metadata without
-Cube process-stop RPCs or closure receipts. Already handed-off commands can still
-run after chat Stop. Their late replies cannot enter a sealed Run or another Run's
-callback. Completed operation entries are removed after bounded result delivery;
-partition progress rejects historical duplicates.
+follows the same Kafka Session queue. Normal cancellation carries an operation ID
+and position through that path to Cube. Cube acknowledges only signal acceptance;
+the guest Tool's original final reply carries cancellation/partial output to Pi.
+The Worker bounds its result wait and records UNKNOWN if unconfirmed. Abnormal
+retirement retains a bounded target/run/writer in the existing Outbox so a lost
+Worker or deleted binding cannot erase the cancellation address.
 
-Chat Stop interrupts the Worker Agent Loop and its reply waits. Native Tool
-timeout and explicit VM lifecycle are separate: a timed-out Tool joins its main
-process before cleaning the cgroup. A failed native cleanup makes the VM
-unavailable for recovery; a normal Tool error has no VM-destruction power.
+Normal Agent cancellation follows the Tool's process-group boundary. Completed
+background services and independent setsid groups remain alive. Native Tool
+execution timeout and explicit VM lifecycle retain separate cgroup cleanup; no
+PG process-stop receipt or completed-result cache is introduced. A normal Tool
+error or missing reply has no VM-destruction power.
 Controller replacement adopts
 persisted VM capsules and active binding descriptors. Controller expiry/shutdown
 preserves the last physical state of capsule-backed VMs; it does not quarantine
@@ -118,7 +120,7 @@ node observation before quota is released.
 
 ## Tool and terminal channels
 
-Managed execution protocol 3 includes `POST /sandboxes/:id/execution/probe`.
+Managed execution includes `POST /sandboxes/:id/execution/probe`.
 The recorded node and executor boot are required. A fixed guest program echoes
 a probe UUID and its kernel boot identity over the same native raw-PTY transport
 as Tools, without Workspace access or user commands. Controller probes return
@@ -130,10 +132,11 @@ retained Tool operation ledger. Failure has no quarantine or deletion authority.
 The provider replaces its former envd command-based execution probe with this
 single native implementation. Probes never advance Tool admission positions;
 late observations have no effect authority. Managed submit requires a source
-position. Protocol 4 removes the Run/process Stop endpoint, with no old-wire
-fallback. Guest Tool wire remains version 2.
+position. Protocol 5 adds idempotent `execution/cancel`; its accepted response
+does not assert process exit. Guest wire 3 forwards cancellation over the original
+operation pipe. There is no old-wire fallback.
 Cube/app upgrades require the drained, matched build in
-[ADR-0220](adr/0220-agent-stop-is-not-process-control.md); probe semantics remain those of
+[ADR-0221](adr/0221-pi-tool-cancellation.md); probe semantics remain those of
 [ADR-0211](adr/0211-execution-path-and-runtime-probes.md).
 
 Fixed Agent Tools use native Cubelet execution. The Web Terminal keeps its

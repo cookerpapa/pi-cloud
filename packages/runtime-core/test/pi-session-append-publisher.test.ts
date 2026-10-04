@@ -40,6 +40,7 @@ it("excludes attachment upload from Kafka acknowledgement timing", async () => {
     channels: {
       checkHealth: async () => {},
       resolve: () => ({
+        publishToolCancellation: async () => {},
         publishSubagentCommand: async () => {
           throw new Error("unused");
         },
@@ -92,6 +93,7 @@ it("excludes attachment upload from Kafka acknowledgement timing", async () => {
 it("finishes at Kafka ACK without a PG client, receipt reader or polling", async () => {
   const publications: CandidatePiSessionAppendFact[] = [];
   const channel: AcceptedFactWriter = {
+    publishToolCancellation: async () => {},
     publishSubagentCommand: async () => {
       throw new Error("unused");
     },
@@ -124,6 +126,7 @@ it("does not acknowledge a failed or mismatched durable append", async () => {
     .mockResolvedValueOnce({ mutationId: "different", accepted: true });
   const channel: AcceptedFactWriter = {
     mutate,
+    publishToolCancellation: async () => {},
     publishSubagentCommand: async () => {
       throw new Error("unused");
     },

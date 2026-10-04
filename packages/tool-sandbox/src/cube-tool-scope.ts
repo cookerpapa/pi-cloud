@@ -111,8 +111,31 @@ async function main(): Promise<void> {
       "/opt/pi-cloud/bin/envd-tool-exec.mjs",
       inputPath,
     ],
-    { stdio: ["ignore", "inherit", "ignore"] },
+    { stdio: ["pipe", "inherit", "ignore"] },
   );
+  child.stdin.on("error", () => {
+    /* A final result may race cancellation. */
+  });
+  const received = Promise.withResolvers<void>();
+  const control = (async () => {
+    for await (const frame of inputFrames) {
+      if (frame === '{"type":"scope.received"}') {
+        received.resolve();
+        return;
+      }
+      const message = JSON.parse(frame);
+      if (
+        message.type !== "scope.cancel" ||
+        message.operationId !== operationId ||
+        Object.keys(message).length !== 2
+      )
+        throw new Error("Invalid execution control frame");
+      if (!child.stdin.destroyed)
+        child.stdin.write(JSON.stringify({ type: "worker.cancel", operationId }) + "\n");
+    }
+  })();
+  void control.catch((error) => received.reject(error));
+  void received.promise.catch(() => {});
   const forward = () => {
     child.kill("SIGTERM");
   };
@@ -128,10 +151,21 @@ async function main(): Promise<void> {
       if (error.code !== "ENOENT") throw error;
     });
     await finishExecutionCgroup(operationId);
-    if (status === 0) await receipt();
+    if (status === 0) {
+      const deadline = setTimeout(
+        () => received.reject(new Error("Execution receipt expired")),
+        5000,
+      );
+      try {
+        await received.promise;
+      } finally {
+        clearTimeout(deadline);
+      }
+    }
   } finally {
     process.removeListener("SIGTERM", forward);
     process.removeListener("SIGINT", forward);
+    child.stdin.destroy();
     await unlink(inputPath).catch(() => {});
   }
 }

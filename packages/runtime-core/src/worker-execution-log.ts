@@ -289,7 +289,11 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       // A lost probe ACK must not pin native writes or Run drain indefinitely.
       if (fact.kind !== "path_probe")
         tail = pending.catch((error) => {
-          if (!(error instanceof PublicationNotSentError)) failure = error;
+          // Cancellation is an idempotent control request, not an uncertain
+          // shell invocation/native history append. Its lost ACK cannot poison
+          // the canonical cancellation result or sibling Lanes.
+          if (fact.kind !== "tool_cancel" && !(error instanceof PublicationNotSentError))
+            failure = error;
         });
       return pending;
     };
@@ -325,6 +329,9 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           throw new Error("Fixed Tool commands require an atomic native intent publication");
         await publish({ kind: "tool_command", command });
         return { operationId: command.request.operationId, accepted: true };
+      },
+      publishToolCancellation: async (command) => {
+        await publish({ kind: "tool_cancel", command });
       },
       publishSubagentCommand: async (command) => {
         await publish({ kind: "subagent_command", command });

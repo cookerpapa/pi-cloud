@@ -95,6 +95,7 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
   });
   const value: TrustedRemoteToolsRuntimeConfiguration = {
     publishToolCommand,
+    publishToolCancellation: async () => {},
     waitForToolReply: (_request, signal) =>
       new Promise((resolve, reject) => {
         pending = { resolve };
@@ -522,11 +523,12 @@ describe("whole-tool Worker adapter", () => {
     });
   });
 
-  it("keeps an explicitly cancelled reply wait separate from infrastructure loss", async () => {
+  it("records an unconfirmed cancellation without claiming infrastructure failure", async () => {
     const cancelled = new AbortController(),
       unavailable = vi.fn();
     const { value } = configuration({
       onToolOperationUnavailable: unavailable,
+      cancellationTimeoutMs: () => 20,
       publishToolCommand: async (command) => {
         cancelled.abort(new Error("user cancelled"));
         return { operationId: command.request.operationId, accepted: true };

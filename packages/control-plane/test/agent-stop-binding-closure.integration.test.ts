@@ -3,7 +3,7 @@ import { Admin } from "@platformatic/kafka";
 import { sql } from "kysely";
 import { expect, it, vi } from "vitest";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import type { ExecutionLogPosition } from "@pi-cloud/protocol";
+import { parseToolCancellation, type ExecutionLogPosition } from "@pi-cloud/protocol";
 import type { ExecutionPublication } from "../../runtime-core/src/accepted-fact.ts";
 import { SessionProjector } from "../../runtime-core/src/session-projector.ts";
 import { SessionControlOutbox } from "../../runtime-core/src/session-control-outbox.ts";
@@ -17,7 +17,7 @@ import { createTestWorker } from "./admit-test-execution.ts";
 const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 const brokers = process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS?.split(",");
 it.skipIf(!postgres || !brokers)(
-  "seals after routing revocation without waiting for a Cube process through real PG/Kafka",
+  "routes operation cancellation before sealing through real PG/Kafka without a stop-receipt table",
   async () => {
     const name = `ordered_cube_${randomUUID().replaceAll("-", "")}`,
       topic = `ordered-cube-${randomUUID()}`;
@@ -71,10 +71,11 @@ it.skipIf(!postgres || !brokers)(
       });
       const positions: ExecutionLogPosition[] = [];
       const submit = vi.fn(async () => {});
+      const cancel = vi.fn(async () => {});
       const dispatcher = new ToolCommandDispatcher({
         routes: view,
         // Cube receives no stop RPC. Run settlement depends only on routing revocation.
-        cube: { submitTool: submit },
+        cube: { submitTool: submit, cancelTool: cancel },
         workflow: async () => {},
         publishReply: async () => {},
         quarantine: async () => {
@@ -99,6 +100,8 @@ it.skipIf(!postgres || !brokers)(
           prepare: (change, c) => view.prepare(change, c),
           consume: async (change, current, position) => {
             await view.consume(change, current);
+            if (change.entity === "sandbox_binding")
+              await dispatcher.cancelRetiredBinding(change, position, current);
             if (change.entity !== "sandbox_binding" || !change.closed) return;
             const route = view.closure(change, current);
             if (!route) return;
@@ -163,6 +166,22 @@ it.skipIf(!postgres || !brokers)(
           sandboxProfileKey: "standard",
         },
       );
+      const { leaseId: _lease, piSessionLane: _lane, ...scope } = admission.publication.scope;
+      const operationId = randomUUID();
+      const cancellation = parseToolCancellation({
+        kind: "tool_cancel",
+        factId: randomUUID(),
+        scope,
+        request: { activationId: bindingId, operationId },
+        occurredAt: new Date().toISOString(),
+      });
+      await projector.appendPublication(cancellation);
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce(), { timeout: 15000 });
+      expect(cancel.mock.calls[0]).toEqual([
+        expect.anything(),
+        expect.objectContaining({ operationId, runId: accepted.runId }),
+      ]);
+      expect(submit).not.toHaveBeenCalled();
       finish.resolve();
       await execution;
       await vi.waitFor(() => expect(positions.length).toBe(1), { timeout: 15000 });
@@ -187,7 +206,8 @@ it.skipIf(!postgres || !brokers)(
           measurement: "agent_seal_without_cube_stop",
           realPostgresKafka: true,
           closeBeforeSeal: true,
-          cubeStopRequired: false,
+          cubeStopReceiptRequired: false,
+          orderedToolCancellation: true,
         }) + "\n",
       );
     } finally {

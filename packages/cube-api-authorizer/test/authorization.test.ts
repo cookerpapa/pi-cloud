@@ -11,6 +11,7 @@ describe("Cube API authorizer", () => {
     ["GET", `/sandboxes/${"a".repeat(32)}/observation`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/capabilities`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/submit`],
+    ["POST", `/sandboxes/${"a".repeat(32)}/execution/cancel`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/probe`],
     ["DELETE", `/sandboxes/${SANDBOX}`],
     ["POST", `/sandboxes/${SANDBOX}/pause`],

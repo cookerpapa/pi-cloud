@@ -5,6 +5,7 @@ import {
   type ExecutionLogPosition,
   type SandboxBindingChange,
   type NativeToolEnd,
+  type AcceptedToolCancellation,
 } from "@pi-cloud/protocol";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
 import { Agent, fetch as internalFetch } from "undici";
@@ -27,6 +28,7 @@ export type ToolLogDelivery = Readonly<{
 }>;
 export function toolDeliveryFact(fact: ToolLogFact): ToolLogFact | undefined {
   if (fact.kind === "tool_command") return fact;
+  if (fact.kind === "tool_cancel") return fact;
   if (fact.kind === "execution_seal")
     return { kind: fact.kind, scope: fact.scope, closesWriter: fact.closesWriter === true };
   return undefined;
@@ -46,7 +48,7 @@ export class ToolCommandDispatcher {
   constructor(
     readonly options: {
       routes: SandboxBindingReader;
-      cube: Pick<CubeSandboxRuntimeClient, "submitTool">;
+      cube: Pick<CubeSandboxRuntimeClient, "submitTool" | "cancelTool">;
       workflow: WorkflowDelivery;
       publishReply(
         topic: string,
@@ -66,7 +68,12 @@ export class ToolCommandDispatcher {
     if (!fact) return;
     const seal = fact.kind === "execution_seal";
     if (seal) {
-      await this.options.routes.closeScope(fact.scope, fact.closesWriter === true);
+      const terminal = (record.fact as { terminal?: { type: string } }).terminal;
+      await this.options.routes.closeScope(
+        fact.scope,
+        fact.closesWriter === true,
+        fact.closesWriter === true || terminal?.type !== "turn.completed",
+      );
       return;
     }
     const routes = await this.options.routes.find(fact.scope, false);
@@ -76,6 +83,22 @@ export class ToolCommandDispatcher {
       partition: record.partition,
       offset: record.offset.toString(),
     };
+    if (fact.kind === "tool_cancel") {
+      const cancel = fact as AcceptedToolCancellation;
+      const route = routes.find((r) => r.bindingId === cancel.request.activationId);
+      if (route)
+        await this.#cancel(
+          route.descriptor.target,
+          {
+            source,
+            runId: cancel.scope.runId,
+            writerId: cancel.scope.writerId,
+            operationId: cancel.request.operationId,
+          },
+          current,
+        );
+      return;
+    }
     const command = fact as AcceptedToolCommand;
     const route = routes.find((r) => r.bindingId === command.request.activationId);
     if (!route || route.dispatchClosed) {
@@ -168,6 +191,40 @@ export class ToolCommandDispatcher {
         (performance.now() - started) / 1000,
       );
     }
+  }
+  async cancelRetiredBinding(
+    change: SandboxBindingChange,
+    source: ExecutionLogPosition,
+    current: () => boolean,
+  ): Promise<void> {
+    if (!change.closed || !change.cancelTarget || !current()) return;
+    const { writerId, ...target } = change.cancelTarget;
+    await this.#cancel(target, { source, runId: change.runId, writerId }, current);
+  }
+  async #cancel(
+    target: SandboxExecutionTarget,
+    request: Parameters<CubeSandboxRuntimeClient["cancelTool"]>[1],
+    current?: () => boolean,
+  ): Promise<void> {
+    // Bound one partition's wait; the Worker independently bounds result
+    // settlement. Retry only cancellation, never the original shell command.
+    for (let attempt = 0; attempt < 2 && current?.() !== false; attempt++) {
+      try {
+        await this.options.cube.cancelTool(target, request);
+        return;
+      } catch (error) {
+        if (error instanceof CubeExecutionRejected) break;
+      }
+    }
+    operationalLog({
+      service: "pi-cloud-control-plane",
+      level: "warn",
+      event: "tool.cancellation.unconfirmed",
+      attributes: {
+        runId: request.runId,
+        ...(request.operationId ? { operationId: request.operationId } : {}),
+      },
+    });
   }
   /** Close interactive Agent orchestration, never accepted fixed Tool processes. */
   async closeWorkflowBinding(

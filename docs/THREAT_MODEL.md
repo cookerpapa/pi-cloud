@@ -29,8 +29,9 @@ scope closes before ordered seal publication. Projector preserves historical
 scope/position checks and commits dispatch before issuing effects. Cube checks
 executor boot, operation identity and monotonic partition positions. The control
 plane revokes binding eligibility before sealing, without per-Tool lease/fence
-SQL or a second channel lease. Chat Stop never manages VM processes. Already-issued
-Cube operations can continue and remain UNKNOWN when their result is unavailable.
+SQL or a second channel lease. Normal Stop cancels unfinished Tool process groups
+through the ordered operation transport; VM lifecycle is separate. Unconfirmed
+operations may continue and remain UNKNOWN when their result is unavailable.
 
 Workers consume their boot's Kafka replies. Control Plane publishes execution
 records; the trusted Cubelet host publishes Tool replies. The Tool guest and

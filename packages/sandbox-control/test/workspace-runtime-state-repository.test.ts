@@ -226,7 +226,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
           version: 1,
           target: { ...target, sandboxId },
           initialization: {
-            toolWorkerProtocolVersion: 2,
+            toolWorkerProtocolVersion: 3,
             type: "worker.initialize",
             activationId: bindingId,
             toolRoot: "/workspace",
@@ -961,7 +961,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
         bootId: crypto.randomUUID(),
       },
       initialization: {
-        toolWorkerProtocolVersion: 2 as const,
+        toolWorkerProtocolVersion: 3 as const,
         type: "worker.initialize" as const,
         activationId: activation.activationId,
         toolRoot: "/workspace",
@@ -1465,6 +1465,27 @@ it("retires routing without a Cube receipt and preserves a sibling with the same
   await f.bindings.release(f.bindingId, first.assignment);
   expect(await f.bindings.find(first.scope, false)).toEqual([]);
   expect((await sibling.row()).dispatch_closed).toBe(false);
+});
+
+it("keeps abnormal-retirement cancellation address durable after binding deletion", async () => {
+  const f = await orderedClosureFixture(),
+    first = await f.makeBinding();
+  const original = await first.row();
+  await f.bindings.closeScope(first.scope, false, true);
+  const change = await first.change();
+  expect(change).toMatchObject({
+    closed: true,
+    runId: first.scope.runId,
+    cancelTarget: { ...(original.descriptor as any).target, writerId: first.scope.writerId },
+  });
+  await f.bindings.release(f.bindingId, first.assignment);
+  expect(await f.bindings.find(first.scope, false)).toEqual([]);
+  const durable = await f.database
+    .selectFrom("outbox")
+    .select("payload")
+    .where("id", "=", change.factId)
+    .executeTakeFirstOrThrow();
+  expect(durable.payload).toEqual(change);
 });
 
 it("uses the explicit physical-absence path to retire all bindings for that VM", async () => {

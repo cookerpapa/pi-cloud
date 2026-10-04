@@ -1084,15 +1084,78 @@
       "id": "agent-stop-publication-ack",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/cloud-agent-runtime.test.ts",
-      "test": "interrupts a published remote Tool at publication_ack without claiming its process stopped",
-      "invariant": "Agent interruption ends the Loop, preserves truthful Tool uncertainty in the next Run, and never replays an accepted command."
+      "test": "settles a published remote Tool cancellation at publication_ack before ending the Run",
+      "invariant": "The Agent awaits cancellation settlement of an already-published Tool, retains its output, and makes no later model request."
     },
     {
       "id": "agent-stop-reply-wait",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/cloud-agent-runtime.test.ts",
-      "test": "interrupts a published remote Tool at reply_wait without claiming its process stopped",
-      "invariant": "Agent interruption ends the Loop, preserves truthful Tool uncertainty in the next Run, and never replays an accepted command."
+      "test": "settles a published remote Tool cancellation at reply_wait before ending the Run",
+      "invariant": "The Agent awaits cancellation settlement of an already-published Tool, retains its output, and makes no later model request."
+    },
+    {
+      "id": "tool-cancel-acceptance-not-result",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-cancellation.test.ts",
+      "test": "keeps waiting after cancel acceptance and returns the original Tool result",
+      "invariant": "A cancellation ACK cannot substitute for the original final Tool result."
+    },
+    {
+      "id": "tool-cancel-lost-publication-ack",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-cancellation.test.ts",
+      "test": "preserves a final reply despite a lost cancellation publication ACK",
+      "invariant": "A received final reply wins even if cancellation publication ACK was lost."
+    },
+    {
+      "id": "tool-cancel-missing-final",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-cancellation.test.ts",
+      "test": "bounds missing replies as UNKNOWN without fabricating a stopped process",
+      "invariant": "Missing cancellation results end within the grace and remain UNKNOWN, never invented stopping."
+    },
+    {
+      "id": "tool-cancel-completed-result",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-cancellation.test.ts",
+      "test": "does not send cancellation after the final result has already arrived",
+      "invariant": "A completed result is not retroactively cancelled."
+    },
+    {
+      "id": "tool-cancel-revoked-route",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/tool-command-routing.test.ts",
+      "test": "cancels the exact invocation even after new-command routing has closed",
+      "invariant": "Routing revocation blocks new work without blocking idempotent cancellation of an existing operation."
+    },
+    {
+      "id": "tool-cancel-unavailable-executor",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/tool-command-routing.test.ts",
+      "test": "bounds an unavailable cancellation endpoint without fabricating stopping or deleting a VM",
+      "invariant": "Executor communication failure never authorizes VM deletion or shell replay."
+    },
+    {
+      "id": "tool-cancel-retired-binding",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "keeps abnormal-retirement cancellation address durable after binding deletion",
+      "invariant": "Durable cleanup intent survives Worker loss and routing-row retirement without a process-stop receipt table."
+    },
+    {
+      "id": "tool-cancel-setsid-survival",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/native-tools.test.ts",
+      "test": "cancels only the Bash process group (separate session=true)",
+      "invariant": "Normal Agent cancellation preserves independent setsid processes rather than killing the whole operation cgroup."
+    },
+    {
+      "id": "tool-cancel-completed-background",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/native-tools.test.ts",
+      "test": "leaves a completed background launch alive when a later Bash is cancelled",
+      "invariant": "Esc targets unfinished Tools, never background services left by completed calls."
     }
   ]
 }

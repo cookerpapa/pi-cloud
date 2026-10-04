@@ -21,6 +21,8 @@ try {
     "manager_test.go",
     "probe_test.go",
     "ordered_admission_test.go",
+    "terminal_input.go",
+    "terminal_input_test.go",
   ];
   for (const patch of manifest.patches) {
     const path = join(root, "deploy/cubesandbox/patches", patch.file);

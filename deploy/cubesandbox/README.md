@@ -193,7 +193,7 @@ The gate creates real microVMs for isolated tenants and proves:
 - CubeAPI, platform endpoints, private/link-local networks and metadata are denied;
 - path, symlink, output, timeout and process limits;
 - persistent Volume file access without a per-Run archive;
-- Agent cancellation preserves accepted guest commands; explicit VM deletion remains separate;
+- Agent cancellation stops unfinished Tool groups, preserves completed background services and independent groups, and bounds unknown outcomes;
 - zero remaining PiCloud activation in Cube inventory.
 
 The local Docker template check is compatibility evidence only. It must never
