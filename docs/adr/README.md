@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0224](0224-review-lifecycle-boundaries.md) — accepted cleanup budgets,
+   staged recovery, PG decision time and shared native model request policy.
 1. [ADR-0223](0223-recoverable-vm-allocation.md) — stable VM creation identity,
    queryable outcomes, node boot fencing and irreversible allocation closure.
 1. [ADR-0222](0222-paused-inputs-after-stop.md) — durable pending-input pause on Stop,

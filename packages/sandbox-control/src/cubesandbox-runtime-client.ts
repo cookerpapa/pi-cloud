@@ -742,6 +742,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const response = await this.#control(`/allocations/${id}/${action}`, {
       method: "POST",
       body: JSON.stringify({ createBefore }),
+      ...(action === "close" ? { timeoutMs: Math.max(80_000, this.#requestTimeoutMs) } : {}),
     });
     const value = record(
       parseJson(await readBoundedResponse(response, 256 * 1024), "Cube allocation"),
@@ -1684,9 +1685,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         ...(init.body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(init.body === undefined ? {} : { body: init.body }),
-      signal: AbortSignal.timeout(
-        Math.min(this.#requestTimeoutMs, init.timeoutMs ?? this.#requestTimeoutMs),
-      ),
+      signal: AbortSignal.timeout(init.timeoutMs ?? this.#requestTimeoutMs),
     });
     if (!response.ok && !(allowNotFound && response.status === 404)) {
       await response.body?.cancel().catch(() => undefined);

@@ -16,6 +16,30 @@ function target(id: string): RuntimeHealthTarget {
     fail: vi.fn(async () => {}),
   };
 }
+it("contains timer enumeration failures and retries without fabricating physical loss", async () => {
+  vi.useFakeTimers();
+  const vm = target("survivor"),
+    onError = vi.fn();
+  const targets = vi
+    .fn()
+    .mockImplementationOnce(() => {
+      throw new Error("missing local handle");
+    })
+    .mockReturnValue([vm]);
+  const monitor = new RuntimeHealthMonitor({ targets, inventory: async () => new Map(), onError });
+  try {
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onError).toHaveBeenCalledOnce();
+    expect(vm.fail).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    await monitor.settle();
+    expect(vm.probe).toHaveBeenCalledOnce();
+    expect(vm.fail).not.toHaveBeenCalled();
+  } finally {
+    await monitor.close();
+    vi.useRealTimers();
+  }
+});
 it("covers 160 due VMs without a batch truncation and bounds concurrent execution", async () => {
   let release!: () => void,
     active = 0,

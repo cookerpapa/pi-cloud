@@ -1,8 +1,8 @@
 diff --git a/CubeAPI/src/cubemaster/mod.rs b/CubeAPI/src/cubemaster/mod.rs
-index 439c8a0..dc96b27 100644
+index 439c8a0..91dea09 100644
 --- a/CubeAPI/src/cubemaster/mod.rs
 +++ b/CubeAPI/src/cubemaster/mod.rs
-@@ -161,6 +161,21 @@ impl CubeMasterClient {
+@@ -161,6 +161,22 @@ impl CubeMasterClient {
          parse_response(response).await
      }
  
@@ -14,6 +14,7 @@ index 439c8a0..dc96b27 100644
 +        let response = self
 +            .inner
 +            .post(format!("{}/cube/allocation/{action}", self.base_url))
++            .timeout(std::time::Duration::from_secs(70))
 +            .json(body)
 +            .send()
 +            .await
@@ -24,7 +25,7 @@ index 439c8a0..dc96b27 100644
      /// POST /cube/sandbox/update — pause or resume a sandbox (action: "pause" | "resume").
      pub async fn update_sandbox(
          &self,
-@@ -1036,6 +1051,8 @@ pub struct CreateSandboxResponse {
+@@ -1036,6 +1052,8 @@ pub struct CreateSandboxResponse {
      pub request_id: String,
      #[serde(default)]
      pub sandbox_id: String,
@@ -77,20 +78,28 @@ index 11ffcea..d1ce507 100644
          handlers::sandboxes::pause_sandbox,
          handlers::sandboxes::resume_sandbox,
 diff --git a/CubeAPI/src/routes.rs b/CubeAPI/src/routes.rs
-index 18d37de..e5a18c8 100644
+index 18d37de..869e8f7 100644
 --- a/CubeAPI/src/routes.rs
 +++ b/CubeAPI/src/routes.rs
-@@ -76,6 +76,10 @@ fn build_e2b_snapshot_long_router(state: &AppState, auth_configured: bool) -> Ro
+@@ -47,6 +47,10 @@ pub fn build_router(state: AppState) -> Router {
+         Router::new().merge(build_e2b_router(&state, auth_configured)),
+         DEFAULT_ROUTE_TIMEOUT,
+     );
++    let allocation_router = apply_http_layers(
++        with_auth(Router::new().route("/allocations/:allocationID/:action", post(sandboxes::managed_allocation)), &state, auth_configured),
++        Duration::from_secs(75),
++    );
+     let snapshot_long_router = apply_http_layers(
+         Router::new().merge(build_e2b_snapshot_long_router(&state, auth_configured)),
+         SNAPSHOT_LONG_ROUTE_TIMEOUT,
+@@ -54,6 +58,7 @@ pub fn build_router(state: AppState) -> Router {
  
- fn build_sandbox_routes(state: &AppState, auth_configured: bool) -> Router<AppState> {
-     let routes = Router::new()
-+        .route(
-+            "/allocations/:allocationID/:action",
-+            post(sandboxes::managed_allocation),
-+        )
-         .route("/sandboxes", get(sandboxes::list_sandboxes))
-         .route("/sandboxes", post(sandboxes::create_sandbox))
-         .route("/v2/sandboxes", get(sandboxes::list_sandboxes_v2))
+     Router::new()
+         .merge(standard_router)
++        .merge(allocation_router)
+         .merge(snapshot_long_router)
+         .with_state(state)
+ }
 diff --git a/CubeAPI/src/services/sandboxes.rs b/CubeAPI/src/services/sandboxes.rs
 index 9b11d42..ac0f140 100644
 --- a/CubeAPI/src/services/sandboxes.rs
@@ -4093,10 +4102,10 @@ index 199e0e1..c32488e 100644
  
 diff --git a/CubeMaster/pkg/service/sandbox/allocation.go b/CubeMaster/pkg/service/sandbox/allocation.go
 new file mode 100644
-index 0000000..62e3ce7
+index 0000000..f81429d
 --- /dev/null
 +++ b/CubeMaster/pkg/service/sandbox/allocation.go
-@@ -0,0 +1,272 @@
+@@ -0,0 +1,278 @@
 +// Copyright (c) 2026 Tencent Inc.
 +// SPDX-License-Identifier: Apache-2.0
 +package sandbox
@@ -4277,7 +4286,13 @@ index 0000000..62e3ce7
 +	if !ok || !host.Healthy {
 +		return r, errors.New("allocation node unavailable")
 +	}
-+	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
++	budget := 5 * time.Second
++	if r.Closed {
++		// The managed profile uses Cubelet's native 60s destroy policy.
++		// Keep transport time outside the physical cleanup lifetime.
++		budget = 65 * time.Second
++	}
++	bounded, cancel := context.WithTimeout(ctx, budget)
 +	defer cancel()
 +	conn, err := grpcconn.GetWorkerConn(bounded, cubelet.GetCubeletAddr(host.HostIP()))
 +	if err != nil {
@@ -7756,10 +7771,10 @@ index 51fa049..1a52192 100644
  			Handler:    _CubeboxMgr_Create_Handler,
 diff --git a/Cubelet/pkg/allocation/manager.go b/Cubelet/pkg/allocation/manager.go
 new file mode 100644
-index 0000000..e6a0442
+index 0000000..48a4e34
 --- /dev/null
 +++ b/Cubelet/pkg/allocation/manager.go
-@@ -0,0 +1,157 @@
+@@ -0,0 +1,164 @@
 +// Copyright (c) 2026 Tencent Inc.
 +// SPDX-License-Identifier: Apache-2.0
 +package allocation
@@ -7868,7 +7883,7 @@ index 0000000..e6a0442
 +
 +// Close's durable admission precedes its wait for the original creation. A late
 +// Create can never reopen this identity, even while physical cleanup is blocked.
-+func (m *Manager) Close(ctx context.Context, i Identity, cleanup Cleanup) (*Record, error) {
++func (m *Manager) Close(ctx context.Context, i Identity, budget time.Duration, cleanup Cleanup) (*Record, error) {
 +	if err := i.Validate(); err != nil {
 +		return nil, err
 +	}
@@ -7904,7 +7919,14 @@ index 0000000..e6a0442
 +	if r == nil {
 +		return nil, ErrMissing
 +	}
-+	result, absent, err := cleanup(ctx, *r)
++	if r.Phase == "absent" {
++		return r, nil
++	}
++	// Admission is irreversible. Once physical cleanup starts its lifetime is
++	// owned by Cube, bounded by the native destroy policy, not the RPC caller.
++	run, cancel := context.WithTimeout(context.WithoutCancel(ctx), budget)
++	defer cancel()
++	result, absent, err := cleanup(run, *r)
 +	if err != nil || !absent {
 +		return r, err
 +	}
@@ -7919,10 +7941,10 @@ index 0000000..e6a0442
 +}
 diff --git a/Cubelet/pkg/allocation/manager_test.go b/Cubelet/pkg/allocation/manager_test.go
 new file mode 100644
-index 0000000..365807a
+index 0000000..d191d8f
 --- /dev/null
 +++ b/Cubelet/pkg/allocation/manager_test.go
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,237 @@
 +// Copyright (c) 2026 Tencent Inc.
 +// SPDX-License-Identifier: Apache-2.0
 +package allocation
@@ -8004,7 +8026,7 @@ index 0000000..365807a
 +func TestCloseBeforeCreateRejectsDelayedRequestAcrossRestartAndGC(t *testing.T) {
 +	m, _, now := fixture(t)
 +	i := identity()
-+	r, e := m.Close(context.Background(), i, absent)
++	r, e := m.Close(context.Background(), i, time.Second, absent)
 +	if e != nil || r.Phase != "absent" {
 +		t.Fatal(e, r)
 +	}
@@ -8041,7 +8063,7 @@ index 0000000..365807a
 +	defer cancel()
 +	var clean atomic.Int32
 +	cleanup := func(context.Context, Record) (json.RawMessage, bool, error) { clean.Add(1); return nil, true, nil }
-+	r, e := m.Close(ctx, i, cleanup)
++	r, e := m.Close(ctx, i, time.Second, cleanup)
 +	if e != nil || r.Phase != "closing" || clean.Load() != 0 {
 +		t.Fatal(e, r, clean.Load())
 +	}
@@ -8053,7 +8075,7 @@ index 0000000..365807a
 +	}
 +	close(release)
 +	<-done
-+	r, e = m.Close(context.Background(), i, cleanup)
++	r, e = m.Close(context.Background(), i, time.Second, cleanup)
 +	if e != nil || r.Phase != "absent" || clean.Load() != 1 {
 +		t.Fatal(e, r, clean.Load())
 +	}
@@ -8076,6 +8098,38 @@ index 0000000..365807a
 +	}
 +}
 +
++func TestCleanupOutlivesCallerButHonorsNativeBudget(t *testing.T) {
++	m, _, _ := fixture(t)
++	i := identity()
++	if _, err := m.Create(context.Background(), i, time.Second, success); err != nil {
++		t.Fatal(err)
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	r, err := m.Close(ctx, i, 25*time.Millisecond, func(c context.Context, _ Record) (json.RawMessage, bool, error) {
++		cancel()
++		if c.Err() != nil {
++			t.Fatal("caller cancelled accepted cleanup")
++		}
++		<-c.Done()
++		return nil, false, c.Err()
++	})
++	if !errors.Is(err, context.DeadlineExceeded) || r.Phase != "closing" || !r.Closed {
++		t.Fatal(r, err)
++	}
++	// Retry the original identity; no new creation or lost terminal result.
++	r, err = m.Close(context.Background(), i, time.Second, absent)
++	if err != nil || r.Phase != "absent" {
++		t.Fatal(r, err)
++	}
++	_, err = m.Close(context.Background(), i, time.Second, func(context.Context, Record) (json.RawMessage, bool, error) {
++		t.Fatal("repeated completed cleanup")
++		return nil, false, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++}
++
 +func TestMissingNodeJournalCannotAdmitAnOldBootCreate(t *testing.T) {
 +	m, _, _ := fixture(t)
 +	i := identity()
@@ -8083,7 +8137,7 @@ index 0000000..365807a
 +	if _, err := m.Create(context.Background(), i, time.Second, success); err == nil {
 +		t.Fatal("old boot created a VM")
 +	}
-+	r, err := m.Close(context.Background(), i, func(_ context.Context, r Record) (json.RawMessage, bool, error) {
++	r, err := m.Close(context.Background(), i, time.Second, func(_ context.Context, r Record) (json.RawMessage, bool, error) {
 +		if r.StartedBoot != "departed" || r.CreateFinished {
 +			t.Fatal("lost creation identity", r)
 +		}
@@ -8110,7 +8164,7 @@ index 0000000..365807a
 +	if e != nil || r.Phase != "creating" {
 +		t.Fatal(e, r)
 +	}
-+	r, e = m.Close(context.Background(), i, func(_ context.Context, r Record) (json.RawMessage, bool, error) {
++	r, e = m.Close(context.Background(), i, time.Second, func(_ context.Context, r Record) (json.RawMessage, bool, error) {
 +		if r.CreateFinished || r.StartedBoot != "departed" {
 +			t.Fatal(r)
 +		}
@@ -8332,7 +8386,7 @@ index 5c84d19..4809bb6 100644
  
 diff --git a/Cubelet/services/cubebox/allocation.go b/Cubelet/services/cubebox/allocation.go
 new file mode 100644
-index 0000000..a4b74ef
+index 0000000..ac6f33a
 --- /dev/null
 +++ b/Cubelet/services/cubebox/allocation.go
 @@ -0,0 +1,147 @@
@@ -8433,7 +8487,7 @@ index 0000000..a4b74ef
 +	var r *allocation.Record
 +	var e error
 +	if req.Close {
-+		r, e = s.allocations.Close(ctx, i, s.cleanupAllocation)
++		r, e = s.allocations.Close(ctx, i, s.config.destroyDeadline, s.cleanupAllocation)
 +	} else {
 +		r, e = s.allocations.Store.Get(i.ID)
 +	}
@@ -8467,7 +8521,7 @@ index 0000000..a4b74ef
 +	if r == nil {
 +		return nil, false, nil
 +	}
-+	r, err = s.allocations.Close(ctx, allocation.Identity{ID: r.ID, Digest: r.Digest, NotAfter: r.NotAfter, BootID: r.StartedBoot}, s.cleanupAllocation)
++	r, err = s.allocations.Close(ctx, allocation.Identity{ID: r.ID, Digest: r.Digest, NotAfter: r.NotAfter, BootID: r.StartedBoot}, s.config.destroyDeadline, s.cleanupAllocation)
 +	if err != nil {
 +		return nil, true, err
 +	}
@@ -8482,6 +8536,56 @@ index 0000000..a4b74ef
 +		return &reply, true, nil
 +	}
 +	return &cubebox.DestroyCubeSandboxResponse{SandboxID: r.SandboxID, RequestID: req.RequestID, Ret: &errorcode.Ret{RetCode: errorcode.ErrorCode_Success}}, true, nil
++}
+diff --git a/Cubelet/services/cubebox/allocation_cleanup_test.go b/Cubelet/services/cubebox/allocation_cleanup_test.go
+new file mode 100644
+index 0000000..f2e6e11
+--- /dev/null
++++ b/Cubelet/services/cubebox/allocation_cleanup_test.go
+@@ -0,0 +1,44 @@
++package cubebox
++
++import (
++	"context"
++	"encoding/json"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/require"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/api/services/cubebox/v1"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/api/services/errorcode/v1"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
++	cubeboxstore "github.com/tencentcloud/CubeSandbox/Cubelet/pkg/store/cubebox"
++	bolt "go.etcd.io/bbolt"
++)
++
++func TestManagedCleanupGivesPausedDestroyItsNativeBudget(t *testing.T) {
++	sb := newCubeboxWithStatusForTest("paused-managed-delete", cubeboxstore.Status{PausedAt: time.Now().Add(-time.Minute).UnixNano()})
++	sb.FirstContainer().Container = &fakeDestroyContainer{task: &fakeDestroyTask{}}
++	s, _, flow := newDestroyAutoResumeServiceForTest(sb)
++	db, err := bolt.Open(filepath.Join(t.TempDir(), "meta.db"), 0600, nil)
++	require.NoError(t, err)
++	defer db.Close()
++	store, err := allocation.NewStore(db, time.Now)
++	require.NoError(t, err)
++	m := allocation.NewManager(store, "test-boot")
++	i := allocation.Identity{ID: "12345678-1234-1234-1234-123456789abc", Digest: strings.Repeat("a", 64), NotAfter: time.Now().Add(time.Minute).UnixMilli(), BootID: "test-boot"}
++	_, err = m.Create(context.Background(), i, time.Second, func(context.Context) (json.RawMessage, bool, error) { return nil, true, nil })
++	require.NoError(t, err)
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++	defer cancel()
++	r, err := m.Close(ctx, i, s.config.destroyDeadline, func(c context.Context, _ allocation.Record) (json.RawMessage, bool, error) {
++		reply, e := s.destroyNative(c, &cubebox.DestroyCubeSandboxRequest{SandboxID: sb.ID, RequestID: "managed-close"})
++		require.NoError(t, e)
++		require.Equal(t, errorcode.ErrorCode_Success, reply.Ret.RetCode)
++		return nil, true, nil
++	})
++	require.NoError(t, err)
++	require.Equal(t, "absent", r.Phase)
++	require.Equal(t, 1, flow.destroyCalls)
++	require.Greater(t, time.Until(flow.destroyDeadline), 20*time.Second)
 +}
 diff --git a/Cubelet/services/cubebox/execution.go b/Cubelet/services/cubebox/execution.go
 index 750d07e..ad12fdc 100644

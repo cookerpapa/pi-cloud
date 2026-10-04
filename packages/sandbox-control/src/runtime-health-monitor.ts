@@ -41,6 +41,13 @@ export class RuntimeHealthMonitor {
     return (this.options.clock ?? Date.now)();
   }
   refresh(): void {
+    try {
+      this.#refresh();
+    } catch (error) {
+      this.options.onError(error);
+    }
+  }
+  #refresh(): void {
     if (this.#closed) return;
     const current = new Set<string>();
     for (const target of this.options.targets()) {
@@ -53,8 +60,8 @@ export class RuntimeHealthMonitor {
     if (!current.size) return;
     if (!this.#inventoryPending && this.#now() >= this.#inventoryDue) {
       this.#inventoryDue = this.#now() + 30_000;
-      this.#inventoryPending = this.options
-        .inventory()
+      this.#inventoryPending = Promise.resolve()
+        .then(() => this.options.inventory())
         .then((value) => {
           this.#inventory = new Map(value);
           this.#inventoryAt = this.#now();

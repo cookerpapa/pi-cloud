@@ -601,6 +601,7 @@ export class SandboxController {
     let recovered = 0;
     for (const candidate of recoverable) {
       let handle: SandboxHandle | undefined;
+      let physicalVerified = false;
       try {
         handle = await this.#recoverPhysical(candidate);
         const expected = developmentEnvironmentAssignment({
@@ -636,34 +637,24 @@ export class SandboxController {
             false,
           );
         }
+        physicalVerified = true;
         const recoveredState = inspection.state;
-        await this.#stateRepository.setDevelopmentEnvironmentState(
-          candidate.reservation.environmentId,
-          recoveredState,
-          { handle, runtimeCapsule: capsule },
-        );
-        this.#developmentEnvironments.set(candidate.reservation.environmentId, {
+        const environment: ManagedDevelopmentEnvironment = {
           reservation: candidate.reservation,
           assignment: expected,
           handle,
           bindingIds: new Set(),
-        });
-        await this.#restoreBindings(
-          handle,
-          undefined,
-          this.#developmentEnvironments.get(candidate.reservation.environmentId)!,
-        );
+        };
+        const restored = await this.#prepareRecoveredBindings(handle, undefined, environment);
         await this.#stateRepository.setDevelopmentEnvironmentState(
           candidate.reservation.environmentId,
           recoveredState,
-          {
-            handle,
-            runtimeCapsule: capsule,
-            agentActive:
-              this.#developmentEnvironments.get(candidate.reservation.environmentId)!.bindingIds
-                .size > 0,
-          },
+          { handle, runtimeCapsule: capsule, agentActive: environment.bindingIds.size > 0 },
         );
+        // No await after publishing local availability: all fallible preparation
+        // and required durable updates precede this synchronous installation.
+        this.#developmentEnvironments.set(candidate.reservation.environmentId, environment);
+        for (const binding of restored) this.#toolBindings.set(binding.activationId, binding);
         this.#admission.restore(candidate.reservation.environmentId, expected);
         recovered += 1;
       } catch (error: unknown) {
@@ -671,6 +662,10 @@ export class SandboxController {
           await this.#provider.detachPersistent?.(handle).catch(() => undefined);
         }
         if (error instanceof BindingClosurePending) continue;
+        if (physicalVerified) {
+          this.#onMaintenanceError?.(error);
+          continue;
+        }
         if (error instanceof SandboxCreationError && error.absenceConfirmed) {
           await this.#stateRepository.closeAllocation(
             candidate.reservation.environmentId,
@@ -695,11 +690,11 @@ export class SandboxController {
     return recovered;
   }
 
-  async #restoreBindings(
+  async #prepareRecoveredBindings(
     handle: SandboxHandle,
     runtime?: ManagedElasticRuntime,
     environment?: ManagedDevelopmentEnvironment,
-  ): Promise<void> {
+  ): Promise<ManagedToolBinding[]> {
     const restored: ManagedToolBinding[] = [];
     for (const route of await this.#bindings.adopt(handle.activationId)) {
       const { snapshot, descriptor, bindingId } = route;
@@ -759,10 +754,10 @@ export class SandboxController {
       restored.push(binding);
     }
     for (const binding of restored) {
-      this.#toolBindings.set(binding.activationId, binding);
       runtime?.bindingIds.add(binding.activationId);
       environment?.bindingIds.add(binding.activationId);
     }
+    return restored;
   }
 
   async #recoverElasticRuntimes(): Promise<number> {
@@ -776,12 +771,14 @@ export class SandboxController {
     let recovered = 0;
     for (const candidate of candidates) {
       let handle: SandboxHandle | undefined;
+      let physicalVerified = false;
       try {
         handle = await this.#recoverPhysical(candidate);
         if (handle.activationId !== candidate.activationId)
           throw new Error("Recovered runtime identity changed");
         const capsule = await this.#persistentCapsule(handle);
         if (!capsule) throw new Error("Recovered runtime capsule is unavailable");
+        physicalVerified = true;
         const workspaceKey =
           workspaceIdentityKey(handle.assignment) +
           (candidate.computeSessionId ? `:compute:${candidate.computeSessionId}` : "");
@@ -808,18 +805,23 @@ export class SandboxController {
           expiresAt: now + this.#warmTtlMs,
           lastUsedAt: now,
         };
-        await this.#restoreBindings(handle, runtime);
-        this.#admission.restore(candidate.activationId, handle.assignment);
-        if (!runtime.bindingIds.size) this.#warm.set(workspaceKey, runtime);
+        const restored = await this.#prepareRecoveredBindings(handle, runtime);
         await this.#stateRepository.setWorkspaceRuntimeState(
           candidate.activationId,
           runtime.bindingIds.size ? "active" : "warm",
           { handle, runtimeCapsule: capsule },
         );
+        for (const binding of restored) this.#toolBindings.set(binding.activationId, binding);
+        if (!runtime.bindingIds.size) this.#warm.set(workspaceKey, runtime);
+        this.#admission.restore(candidate.activationId, handle.assignment);
         recovered++;
       } catch (error) {
         if (handle) await this.#provider.detachPersistent?.(handle).catch(() => {});
         if (error instanceof BindingClosurePending) continue;
+        if (physicalVerified) {
+          this.#onMaintenanceError?.(error);
+          continue;
+        }
         if (error instanceof SandboxCreationError && error.absenceConfirmed) {
           await this.#stateRepository.closeAllocation(candidate.activationId, "workspace");
           await this.#stateRepository.setWorkspaceRuntimeState(candidate.activationId, "released");
@@ -3015,20 +3017,33 @@ export class SandboxController {
             fail: (error: Error) => this.#quarantineDevelopmentEnvironment(environment, error),
           })),
       );
-    return candidates.map((candidate) => ({
-      tenantId: candidate.handle.assignment.tenantId,
-      id: this.#provider.executionIdentity(candidate.handle),
-      observe: () => this.#provider.observeRuntime(candidate.handle),
-      probe: () => this.#provider.probeExecution(candidate.handle),
-      fail: () =>
-        candidate.fail(
-          new SandboxControlError(
-            "execution_stop_unconfirmed",
-            "Runtime execution is unavailable; control-plane recovery is required",
-            false,
-          ),
-        ),
-    }));
+    return candidates.flatMap((candidate) => {
+      let id: string;
+      try {
+        id = this.#provider.executionIdentity(candidate.handle);
+      } catch (error) {
+        // A missing local handle is not physical VM-loss evidence. Keep other
+        // targets observable and report the affected resource for recovery.
+        this.#onMaintenanceError?.(error);
+        return [];
+      }
+      return [
+        {
+          tenantId: candidate.handle.assignment.tenantId,
+          id,
+          observe: () => this.#provider.observeRuntime(candidate.handle),
+          probe: () => this.#provider.probeExecution(candidate.handle),
+          fail: () =>
+            candidate.fail(
+              new SandboxControlError(
+                "execution_stop_unconfirmed",
+                "Runtime execution is unavailable; control-plane recovery is required",
+                false,
+              ),
+            ),
+        },
+      ];
+    });
   }
 
   async reapWarm(): Promise<void> {
