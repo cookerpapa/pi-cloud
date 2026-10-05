@@ -1,5 +1,6 @@
 // Client-side SQL round trips in isolated PG. Fake execution; no model/Kafka/VM latency claim.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -154,7 +155,7 @@ try {
   finish.resolve();
   await running;
   const report = {
-    baseline: "8d8ee837",
+    baseline: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     scope:
       "isolated current-schema PG and actual control methods; client round trips include BEGIN/COMMIT, exclude trigger-internal SQL; Agent backend is simulated and includes its test drain UPDATE; no HTTP authentication, Kafka, Cube or provider latency",
     samples,

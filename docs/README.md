@@ -1,5 +1,11 @@
 # Documentation map
 
+The [October 5 whole-repository follow-up review](reports/repository-review-20261005.md)
+audits `5c2fcab4` across all 22 workspaces, pinned Pi/Cube, storage, UI and delivery.
+It records four confirmed behavior findings, one documentation finding, isolated
+reproducers and current SQL measurements. The runtime is unchanged; unfinished
+repairs are listed in [BACKLOG](BACKLOG.md).
+
 The [October 4 whole-repository review](reports/repository-review-20261004.md)
 audits `8d8ee837` across all 22 workspaces, pinned Pi/Cube, delivery and product
 paths. It records seven defects, a browser-fixture gap, SQL measurements and

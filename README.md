@@ -93,6 +93,12 @@ reproductions and SQL measurements. [The October 5 repairs](docs/reports/review-
 close those gaps with staged adoption, PG-time authorization, shared Compaction
 policy, structured Tool failures and recoverable Cube Volume reference state.
 
+The [October 5 follow-up review](docs/reports/repository-review-20261005.md)
+covers the current 22 workspaces and matched Cube release. It records four new
+behavior findings, a documentation inconsistency, isolated reproducers and SQL
+counts. These findings are pending repair; this review makes no runtime or
+deployment change.
+
 ## Quick start
 
 Requires x86_64 Debian/Ubuntu or WSL2 with systemd, writable `/dev/kvm`,

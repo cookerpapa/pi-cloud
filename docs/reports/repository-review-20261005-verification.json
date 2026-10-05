@@ -1,0 +1,228 @@
+{
+  "format": "pi-cloud.repository-review-verification.v1",
+  "revision": "5c2fcab4fc47dfde5ca69afdc4703248a78d0fee",
+  "generatedAt": "2026-10-04T23:57:14.380416+00:00",
+  "runtimeChanged": false,
+  "deployedChanges": false,
+  "productionActions": "read-only source/version/readiness inventory; no new live model/VM test",
+  "reviewArtifactsAreCharacterizations": true,
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/check.log"
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/build.log"
+    },
+    {
+      "command": "npm run browser:presentation:check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/browser.log"
+    },
+    {
+      "command": "npm run helm:check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/helm.log"
+    },
+    {
+      "command": "npm run production:install:check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/install.log"
+    },
+    {
+      "command": "npm run runtime-policy:check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/policy.log"
+    },
+    {
+      "command": "npm run image:closure-check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/image-closure.log"
+    },
+    {
+      "command": "npm run dependencies:check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/dependencies.log"
+    },
+    {
+      "command": "npm run cubesandbox:allocation-check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/native-contracts.log"
+    },
+    {
+      "command": "npm run eval:faults",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/faults.log"
+    },
+    {
+      "command": "node scripts/review-20261005-cube.mjs",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/volume-attach-docker.log"
+    },
+    {
+      "command": "npm run docs:check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/docs.log"
+    },
+    {
+      "command": "npm run format:check",
+      "exitCode": 0,
+      "localLog": "/tmp/pi-cloud-review-20261005/format.log"
+    }
+  ],
+  "check": {
+    "passedAssertions": 1760,
+    "optionalSkippedAssertions": 9,
+    "workspaces": 22,
+    "acceptanceHelperAssertionsIncluded": 63
+  },
+  "faults": {
+    "cases": 178,
+    "passed": 178,
+    "liveChaos": false,
+    "report": "repository-review-20261005-faults.json"
+  },
+  "browser": {
+    "accepted": true,
+    "directSteerRetryIdentity": true,
+    "directSteerPendingPresentation": true,
+    "machineWorkspaceRebind": true,
+    "rebindRetryUsesSameTargetAndKey": true,
+    "persistentRuntimeStatus": true,
+    "separateActivityAndPath": true,
+    "firstImageOnlyMessage": true,
+    "uploadIdentityOnRetry": true,
+    "debuggerDisconnect": true,
+    "strictModeAnimation": true,
+    "outputLimitVisible": true,
+    "reconnectSnapshotImmediate": true,
+    "initialPanelWidth": true,
+    "resizeUnmountCleanup": true,
+    "pointerCancellation": true,
+    "composerSessionSettings": true,
+    "providerSwitchClearsFast": true,
+    "compositionAndPendingDraft": true,
+    "inspectorSelectionAndTerminalLifetime": true,
+    "logoutLifecycle": true,
+    "branchSelectionAndManualJump": true,
+    "childHistoryReadOnlyAndParentActions": true,
+    "pendingInputNavigation": true,
+    "childWorkspaceReadOnly": true,
+    "unavailableIdentityRetry": true,
+    "staleConversationListAfterDelete": true,
+    "terminalSocketIsolation": true,
+    "directoryPickerLifecycle": true,
+    "responsivePageScrolling": true
+  },
+  "deploymentBaseline": {
+    "checkedAt": "2026-10-04T23:29:44.937Z",
+    "revision": "5c2fcab4",
+    "managedProtocol": 7,
+    "guestProtocol": 3,
+    "patchId": "0d27a51febdc87d9",
+    "completionSource": "0d36631cd419e04c29e52dc73d9d89d96c9d7e1b",
+    "workloads": [
+      {
+        "name": "pi-cloud-control-plane",
+        "ready": 1,
+        "images": [
+          {
+            "name": "control-plane",
+            "image": "pi-cloud/control-plane:review-boundaries-v7-app"
+          }
+        ]
+      },
+      {
+        "name": "pi-cloud-pi-worker-primary-v1",
+        "ready": 2,
+        "images": [
+          {
+            "name": "pi-worker",
+            "image": "pi-cloud/supervisor-host:review-boundaries-v7-app"
+          }
+        ]
+      },
+      {
+        "name": "cube-master",
+        "ready": 1,
+        "images": [
+          {
+            "name": "cube-master",
+            "image": "pi-cloud/cube-master:review-boundaries-v7"
+          }
+        ]
+      },
+      {
+        "name": "cube-api",
+        "ready": 1,
+        "images": [
+          {
+            "name": "cube-api",
+            "image": "pi-cloud/cube-api:review-boundaries-v7"
+          }
+        ]
+      },
+      {
+        "name": "cube-node",
+        "ready": 1,
+        "images": [
+          {
+            "name": "network-agent",
+            "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/network-agent:v0.6.0"
+          },
+          {
+            "name": "cubelet",
+            "image": "pi-cloud/cubelet:review-boundaries-v7"
+          },
+          {
+            "name": "cube-egress",
+            "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress:v0.6.0"
+          },
+          {
+            "name": "cube-egress-net",
+            "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0"
+          }
+        ]
+      }
+    ]
+  },
+  "reproductions": [
+    {
+      "finding": "R05-01",
+      "command": "node scripts/review-20261005-cube.mjs",
+      "exitCode": 0,
+      "assertions": "One canceled Attach leaves a PendingDetach with nil metadata; three actual-plugin recovery calls remain unconfirmed; subsequent Attach fails; canonical POSIX detach metadata succeeds. No real Workspace bytes or VM touched."
+    },
+    {
+      "finding": "R05-02",
+      "command": "node scripts/run-with-test-postgres.mjs -- npx vitest run scripts/review-20261005-owner.test.ts --maxWorkers=1",
+      "exitCode": 0,
+      "scope": "Real current-schema disposable PG, two independent Workspaces, 1500ms lease/100ms heartbeat, blocked resource mutation and blocked renewal; another resource subsequently denied. Production defaults are 15000ms/5000ms."
+    },
+    {
+      "finding": "R05-03",
+      "command": "npx vitest run scripts/review-20261005-cancellation.test.ts --maxWorkers=1",
+      "exitCode": 0,
+      "assertions": "Actual CompletionAdapter/Mailbox/cancellation-wait composition turns confirmed not_started into TOOL_CANCELLATION_UNKNOWN and calls unconfirmed once."
+    },
+    {
+      "finding": "R05-04",
+      "command": "npx vitest run scripts/review-20261005-workflow.test.ts --maxWorkers=1",
+      "exitCode": 0,
+      "assertions": "Same structured UNKNOWN reaches actual fixed and workflow adapters; unavailable callback count is 1 versus 0. Local WebSocket, no model call."
+    }
+  ],
+  "nativeContractScope": "Pinned Cube export; allocation and volume packages use real Bolt/MySQL and Go race detector; paused-destroy service composition uses CGO_ENABLED=0; no physical KVM failure injection in this review.",
+  "sqlScope": "Client round trips include BEGIN/COMMIT, exclude trigger SQL and HTTP auth; backend fixture simulates execution/one drain UPDATE; loaded binding source is a memory fixture; not end-to-end latency.",
+  "limitations": [
+    "Nine optional external tests skipped by npm run check",
+    "No paid provider traffic",
+    "No new VM or production process fault",
+    "No physical-node power-loss or multi-node HA test",
+    "No sustained mixed-load capacity claim",
+    "Native upstream coverage limited to maintained integration boundaries"
+  ]
+}
