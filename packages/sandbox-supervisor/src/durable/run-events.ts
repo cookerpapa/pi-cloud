@@ -23,6 +23,7 @@ export class DurableRunEvents {
   readonly #blocks = new Map<number, { text: string; phase?: AssistantMessagePhase }>();
   readonly #compactions = new Map<number, "manual" | "threshold" | "overflow">();
   #entryThrough = 0;
+  readonly #activeTools = new Set<string>();
   #assistantEntry: EntryRecord | undefined;
   lastAssistant: AssistantMessage | undefined;
   constructor(
@@ -108,9 +109,34 @@ export class DurableRunEvents {
       if (event.type === "snapshot") {
         // Overflow snapshots replace dropped frames. Reconcile complete entries
         // before the current partial; never replay the pre-attachment history.
-        for (const entry of event.entries)
-          if (entry.id > this.#entryThrough) {
-            await this.consume([{ type: "message_end", entry }]);
+        for (const entry of event.entries) {
+          if (entry.id <= this.#entryThrough) continue;
+          for (const message of entry.model ?? [])
+            if (message.role === "toolResult") {
+              await this.consume([
+                {
+                  type: "tool_execution_end",
+                  toolCallId: message.toolCallId,
+                  toolName: message.toolName,
+                  entry,
+                },
+              ]);
+            }
+          await this.consume([{ type: "message_end", entry }]);
+        }
+        for (const slot of event.tools)
+          if (slot.status === "running") {
+            const call = this.#assistantEntry?.model
+              ?.flatMap((message) => (message.role === "assistant" ? message.content : []))
+              .find((part) => part.type === "toolCall" && part.id === slot.callId);
+            await this.consume([
+              {
+                type: "tool_execution_start",
+                toolCallId: slot.callId,
+                toolName: slot.name,
+                args: call?.type === "toolCall" ? JSON.parse(JSON.stringify(call.arguments)) : {},
+              },
+            ]);
           }
         if (event.generation?.message) await this.#messageStart(event.generation.message);
       } else if (event.type === "message_start" && event.message.role === "assistant") {
@@ -178,16 +204,25 @@ export class DurableRunEvents {
           }
         }
       } else if (event.type === "tool_execution_start") {
+        const toolCallId = await this.options.toolId(event.toolCallId, this.#assistantEntry);
+        if (this.#activeTools.has(toolCallId)) continue;
+        this.#activeTools.add(toolCallId);
         await this.options.emit({
           type: "tool.started",
           payload: {
-            toolCallId: await this.options.toolId(event.toolCallId, this.#assistantEntry),
+            toolCallId,
             toolName: event.toolName,
             input: event.args,
             ...(this.#sampling ?? {}),
           },
         });
       } else if (event.type === "tool_execution_end") {
+        const toolCallId = await this.options.toolId(
+          event.toolCallId,
+          this.#assistantEntry,
+          event.entry,
+        );
+        this.#activeTools.delete(toolCallId);
         const result = event.entry?.model?.find((message) => message.role === "toolResult");
         const text =
           result?.content
@@ -201,11 +236,7 @@ export class DurableRunEvents {
         await this.options.emit({
           type: "tool.completed",
           payload: {
-            toolCallId: await this.options.toolId(
-              event.toolCallId,
-              this.#assistantEntry,
-              event.entry,
-            ),
+            toolCallId,
             outcome: !result || result.isError ? "failed" : "completed",
             output,
             ...(this.#sampling ?? {}),
@@ -240,8 +271,8 @@ export class DurableRunEvents {
           payload: {
             stepSequence: this.#sampling.stepSequence,
             stepSha256: this.#sampling.stepSha256,
-            completedSamplingAttempt: Math.max(1, event.attempt - 1),
-            nextSamplingAttempt: event.attempt,
+            completedSamplingAttempt: event.attempt,
+            nextSamplingAttempt: event.attempt + 1,
             maximumSamplingAttempts: this.options.retryAttempts,
             delayMs: Math.max(0, Math.min(300000, event.at - Date.now())),
           },

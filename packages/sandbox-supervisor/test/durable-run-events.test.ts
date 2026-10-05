@@ -120,3 +120,55 @@ it("does not invent a successful result when a native Tool task has no result en
     payload: { toolCallId: "task:3", outcome: "failed" },
   });
 });
+
+it("reconstructs a dropped Tool completion once from an overflow snapshot", async () => {
+  const f = fixture();
+  const entry = {
+    id: 9,
+    conversationId: 1,
+    kind: "pi.tool-result",
+    byTaskId: 3,
+    model: [
+      {
+        role: "toolResult",
+        toolCallId: "call",
+        toolName: "bash",
+        content: [{ type: "text", text: "persisted" }],
+        isError: false,
+        timestamp: 1,
+      },
+    ],
+  };
+  const snapshot = {
+    type: "snapshot",
+    entries: [entry],
+    tools: [],
+    compactions: [],
+    inbox: [],
+    agent: {},
+    usage: {},
+  } as unknown as SnapshotEvent;
+  await f.events.consume([snapshot, snapshot]);
+  expect(f.bodies.filter((body) => body.type === "tool.completed")).toEqual([
+    {
+      type: "tool.completed",
+      payload: { toolCallId: "task:3", outcome: "completed", output: "persisted" },
+    },
+  ]);
+});
+it("translates the native completed-attempt retry number into the next attempt", async () => {
+  const f = fixture();
+  await f.events.samplingStarted({
+    stepSequence: 1,
+    stepSha256: "a".repeat(64),
+    samplingAttempt: 1,
+  });
+  await f.events.consume([
+    { type: "message_start", message: fauxAssistantMessage("partial") },
+    { type: "auto_retry_start", attempt: 1, at: Date.now(), errorMessage: "transient" },
+  ]);
+  expect(f.bodies.at(-1)).toMatchObject({
+    type: "model.sampling.retry.scheduled",
+    payload: { completedSamplingAttempt: 1, nextSamplingAttempt: 2 },
+  });
+});
