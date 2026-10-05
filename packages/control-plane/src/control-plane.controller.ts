@@ -93,7 +93,7 @@ import { WorkspaceUploadService } from "./workspace-upload-service.ts";
 import { readWebSessionCookie, WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { QueuedInputService } from "./queued-input-service.ts";
-import { parseQueuedInputAction, parseResumeInputQueue } from "@pi-cloud/protocol";
+import { parseQueuedInputAction, parseAcknowledgeReturnedInputs } from "@pi-cloud/protocol";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
@@ -925,20 +925,27 @@ export class ControlPlaneController {
     );
   }
 
-  @Post("sessions/:sessionId/queued-inputs/resume")
-  @HttpCode(200)
-  async resumeInputQueue(
+  @Get("sessions/:sessionId/returned-inputs")
+  async getReturnedInputs(@Req() request: FastifyRequest, @Param("sessionId") sessionId: unknown) {
+    const identity = this.tenantRequestContext.resolve(request);
+    return this.queuedInputs.returned(
+      identity.tenantId,
+      parseUuidPathParameter(sessionId, "sessionId"),
+    );
+  }
+
+  @Post("sessions/:sessionId/returned-inputs/acknowledgements")
+  @HttpCode(204)
+  async acknowledgeReturnedInputs(
     @Req() request: FastifyRequest,
     @Param("sessionId") sessionId: unknown,
-    @Headers("idempotency-key") key: unknown,
     @Body() body: unknown,
   ) {
     const identity = this.tenantRequestContext.requireMutation(request);
-    return this.queuedInputs.resume(
+    return this.queuedInputs.acknowledgeReturned(
       identity.tenantId,
       parseUuidPathParameter(sessionId, "sessionId"),
-      parseIdempotencyKey(key),
-      parseResumeInputQueue(body),
+      parseAcknowledgeReturnedInputs(body),
     );
   }
 

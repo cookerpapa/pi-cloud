@@ -176,7 +176,7 @@ describe.sequential("pending conversation inputs", () => {
     await seal(run.first.runId);
   }
 
-  it("pauses Stop's existing inputs durably while new input and explicit sends retain execution history order", async () => {
+  it("withdraws exactly Stop's queue cut, retaining uploads and lost-response recovery", async () => {
     const f = await fixture();
     const run = await active(f, "cancel");
     try {
@@ -196,20 +196,13 @@ describe.sequential("pending conversation inputs", () => {
         .set({ input_uploads: sql`${JSON.stringify([upload])}::jsonb` })
         .where("id", "=", c.turnId)
         .execute();
-      const frozen = await database
-        .selectFrom("turns")
-        .select(["provider", "model_id", "credential_binding_id", "input_uploads"])
-        .where("id", "=", c.turnId)
-        .executeTakeFirstOrThrow();
       await f.store.acceptTurnCancellation(f.session.sessionId, run.first.turnId, "stop", {});
-      const snapshot = await f.list();
-      expect(snapshot.hasPausedInputs).toBe(true);
-      expect(snapshot.items.map((i) => i.paused)).toEqual([true, true]);
+      expect(await f.list()).toMatchObject({ items: [], hasReturnedInputs: true });
       const fresh = await f.accept("new conversation");
       expect(
         await f.store.acceptTurnCancellation(f.session.sessionId, run.first.turnId, "stop", {}),
       ).toMatchObject({ replayed: true });
-      expect((await f.list()).items.at(-1)).toMatchObject({ turnId: fresh.turnId, paused: false });
+      expect((await f.list()).items.map((i) => i.turnId)).toEqual([fresh.turnId]);
       await expect(
         f.store.acceptTurnSteer(f.session.sessionId, run.first.turnId, "late", {
           text: "too late",
@@ -217,10 +210,14 @@ describe.sequential("pending conversation inputs", () => {
       ).rejects.toMatchObject({ code: "conflict" });
       await cancelActive(f, run);
       const restarted = new QueuedInputService({ database, steering: f.steering });
-      await restarted.reconcileOnce();
-      expect((await restarted.list(f.tenant.tenantId, f.session.sessionId)).hasPausedInputs).toBe(
-        true,
-      );
+      const returned = await restarted.returned(f.tenant.tenantId, f.session.sessionId);
+      expect(returned.pending).toBe(false);
+      expect(returned.items.map((i) => i.text)).toEqual(["queued instruction", "old C"]);
+      expect(returned.items[1]?.uploads).toEqual([upload]);
+      expect(await restarted.returned(f.tenant.tenantId, f.session.sessionId)).toEqual(returned);
+      await expect(restarted.returned(randomUUID(), f.session.sessionId)).rejects.toMatchObject({
+        code: "not_found",
+      });
       const seen: string[] = [];
       const executor = run.worker.executor({
         execute: async (r) => {
@@ -229,52 +226,15 @@ describe.sequential("pending conversation inputs", () => {
         },
       });
       expect(await executor.dispatchRun(run.source.runId)).toMatchObject({ status: "idle" });
+      expect(await executor.dispatchRun(c.runId)).toMatchObject({ status: "idle" });
       expect(await executor.dispatchRun(fresh.runId)).toMatchObject({ status: "completed" });
       await seal(fresh.runId);
-      let q = await f.list();
-      await f.queue.mutate(f.tenant.tenantId, f.session.sessionId, c.turnId, "edit-paused", {
-        action: "edit",
-        revision: q.revision,
-        text: "edited C",
-      });
-      q = await f.list();
-      const send = { action: "send" as const, revision: q.revision };
-      await f.queue.mutate(f.tenant.tenantId, f.session.sessionId, c.turnId, "send-c", send);
-      expect(
-        await f.queue.mutate(f.tenant.tenantId, f.session.sessionId, c.turnId, "send-c", send),
-      ).toMatchObject({ replayed: true });
-      expect(await executor.dispatchRun(c.runId)).toMatchObject({ status: "completed" });
-      await seal(c.runId);
-      expect((await f.list()).items[0]).toMatchObject({ runId: run.source.runId, paused: true });
-      expect(
-        await database
-          .selectFrom("turns")
-          .select(["provider", "model_id", "credential_binding_id", "input_uploads"])
-          .where("id", "=", c.turnId)
-          .executeTakeFirstOrThrow(),
-      ).toEqual(frozen);
-      q = await f.list();
-      const resume = { revision: q.revision };
-      await f.queue.resume(f.tenant.tenantId, f.session.sessionId, "resume", resume);
-      expect(
-        await f.queue.resume(f.tenant.tenantId, f.session.sessionId, "resume", resume),
-      ).toMatchObject({ replayed: true });
-      expect(await executor.dispatchRun(run.source.runId)).toMatchObject({ status: "completed" });
-      await seal(run.source.runId);
-      expect(seen).toEqual(["new conversation", "edited C", "queued instruction"]);
-      const order = await database
-        .selectFrom("runs")
-        .select("id")
-        .where("session_id", "=", f.session.sessionId)
-        .orderBy("mailbox_position")
-        .execute();
-      expect(order.map((r) => r.id)).toEqual([
-        run.first.runId,
-        fresh.runId,
-        c.runId,
-        run.source.runId,
-      ]);
-      expect((await f.list()).hasPausedInputs).toBe(false);
+      expect(seen).toEqual(["new conversation"]);
+      const receipt = { turnIds: returned.items.map((i) => i.turnId) };
+      await restarted.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, receipt);
+      await restarted.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, receipt);
+      expect((await restarted.returned(f.tenant.tenantId, f.session.sessionId)).items).toEqual([]);
+      expect((await f.list()).hasReturnedInputs).toBe(false);
     } finally {
       run.finish.resolve();
       await run.execution;
@@ -298,12 +258,19 @@ describe.sequential("pending conversation inputs", () => {
         );
         await f.queue.reconcileOnce();
         await f.store.acceptTurnCancellation(f.session.sessionId, run.first.turnId, "stop", {});
+        expect(await f.queue.returned(f.tenant.tenantId, f.session.sessionId)).toMatchObject({
+          pending: true,
+          items: [],
+        });
         if (consumed) await recordInput(delivered);
         await cancelActive(f, run);
         await new QueuedInputService({ database, steering: f.steering }).reconcileOnce();
-        const source = (await f.list()).items.find((i) => i.runId === input.sourceRunId);
-        if (consumed) expect(source).toBeUndefined();
-        else expect(source).toMatchObject({ paused: true, status: "queued", text: "in flight" });
+        expect((await f.list()).items).toEqual([]);
+        const returned = await f.queue.returned(f.tenant.tenantId, f.session.sessionId);
+        expect(returned.pending).toBe(false);
+        expect(returned.items.map((i) => i.text)).toEqual(
+          consumed ? ["queued instruction"] : ["queued instruction", "in flight"],
+        );
         const backend = vi.fn(async () => ({ stopReason: "stop" }));
         expect(
           await run.worker.executor({ execute: backend }).dispatchRun(input.sourceRunId),
@@ -316,48 +283,36 @@ describe.sequential("pending conversation inputs", () => {
     },
   );
 
-  it("continues all paused pages in their edited order with stale and replayed commands isolated", async () => {
+  it("returns every page in edited order and isolates repeated acknowledgements", async () => {
     const f = await fixture(),
       run = await active(f, "cancel");
     try {
-      for (let i = 0; i < 24; i++) await f.accept(`paused ${i}`);
-      await cancelActive(f, run);
-      let q = await f.list();
-      expect(q.hasMore).toBe(true);
-      const second = q.items[1]!;
+      for (let i = 0; i < 44; i++) await f.accept(`message ${i}`);
+      const q = await f.list(),
+        second = q.items[1]!;
       await f.queue.mutate(f.tenant.tenantId, f.session.sessionId, second.turnId, "up", {
         action: "move",
         direction: "up",
         revision: q.revision,
       });
-      await expect(
-        f.queue.resume(f.tenant.tenantId, f.session.sessionId, "stale", { revision: q.revision }),
-      ).rejects.toMatchObject({ code: "conflict" });
-      q = await f.list();
-      await expect(
-        f.queue.resume(randomUUID(), f.session.sessionId, "foreign", { revision: q.revision }),
-      ).rejects.toMatchObject({ code: "not_found" });
-      const request = { revision: q.revision };
-      await f.queue.resume(f.tenant.tenantId, f.session.sessionId, "continue", request);
-      expect((await f.listAll()).every((i) => !i.paused)).toBe(true);
-      expect((await f.listAll())[0]?.turnId).toBe(second.turnId);
-      const ready = await database
-        .selectFrom("runs")
-        .select("id")
-        .where("session_id", "=", f.session.sessionId)
-        .where("ready_at", "is not", null)
-        .execute();
-      expect(ready).toEqual([{ id: second.runId }]);
-      // A later pause cannot be undone by retrying the already committed resume.
-      await database
-        .updateTable("runs")
-        .set({ input_paused: true, ready_at: null })
-        .where("id", "=", second.runId)
-        .execute();
-      expect(
-        await f.queue.resume(f.tenant.tenantId, f.session.sessionId, "continue", request),
-      ).toMatchObject({ replayed: true });
-      expect((await f.list()).items[0]?.paused).toBe(true);
+      const expected = (await f.listAll()).map((i) => i.turnId);
+      await cancelActive(f, run);
+      const found: string[] = [];
+      let reads = 0;
+      while (true) {
+        const page = await f.queue.returned(f.tenant.tenantId, f.session.sessionId);
+        expect(page.pending).toBe(false);
+        expect(page.items.length).toBeLessThanOrEqual(20);
+        if (!page.items.length) break;
+        found.push(...page.items.map((i) => i.turnId));
+        const ack = { turnIds: page.items.map((i) => i.turnId) };
+        await f.queue.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, ack);
+        await f.queue.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, ack);
+        reads++;
+      }
+      expect(reads).toBe(3);
+      expect(found).toEqual(expected);
+      expect((await f.list()).hasReturnedInputs).toBe(false);
     } finally {
       run.finish.resolve();
       await run.execution;
@@ -837,7 +792,7 @@ describe.sequential("pending conversation inputs", () => {
     }
   });
 
-  it("keeps direct Steer after active cancellation and permits removing its restored input", async () => {
+  it("returns unconsumed direct Steer only after ordered closure", async () => {
     const f = await fixture();
     const first = await f.accept("wait for cancellation");
     const worker = await createTestWorker(database);
@@ -882,22 +837,21 @@ describe.sequential("pending conversation inputs", () => {
       });
       await execution;
       await f.queue.reconcileOnce();
-      expect((await f.list()).items[0]?.status).toBe("steering");
+      expect(await f.queue.returned(f.tenant.tenantId, f.session.sessionId)).toMatchObject({
+        pending: true,
+        items: [],
+      });
       await seal(first.runId);
       await f.queue.reconcileOnce();
-      const q = await f.list();
-      expect(q.items[0]).toMatchObject({
+      expect(
+        (await f.queue.returned(f.tenant.tenantId, f.session.sessionId)).items[0],
+      ).toMatchObject({
         turnId: accepted.sourceTurnId,
         text: "survives stop",
-        status: "queued",
       });
-      await f.queue.mutate(
-        f.tenant.tenantId,
-        f.session.sessionId,
-        accepted.sourceTurnId,
-        "remove-restored",
-        { action: "cancel", revision: q.revision },
-      );
+      await f.queue.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, {
+        turnIds: [accepted.sourceTurnId],
+      });
       expect((await f.list()).items).toEqual([]);
       expect(
         await database

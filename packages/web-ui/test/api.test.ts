@@ -57,27 +57,27 @@ it("accepts committed permanent deletion with an empty 204 response", async () =
 });
 
 describe("tenant-aware browser API", () => {
-  it("resumes the persisted queue with a revision and retry identity", async () => {
+  it("reads returned inputs and acknowledges only the restored page", async () => {
     const sessionId = "10000000-0000-4000-8000-000000000001";
-    const queue = {
+    const turnId = "20000000-0000-4000-8000-000000000001";
+    const returned = {
       sessionId,
-      revision: 8,
-      viewVersion: "20",
-      afterPosition: 0,
+      pending: false,
       hasMore: false,
-      hasPausedInputs: false,
-      activeTurnId: null,
-      items: [],
+      items: [{ turnId, text: "draft", uploads: [], mailboxPosition: 2 }],
     };
     const transport = vi.fn<typeof fetch>(async (input, init) => {
-      expect(input).toBe(`/v1/sessions/${sessionId}/queued-inputs/resume`);
-      expect(new Headers(init?.headers).get("idempotency-key")).toBe("resume-queue");
-      expect(JSON.parse(String(init?.body))).toEqual({ revision: 7 });
-      return Response.json({ queue, replayed: true });
+      if (String(input).endsWith("/acknowledgements")) {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({ turnIds: [turnId] });
+        return new Response(null, { status: 204 });
+      }
+      expect(input).toBe(`/v1/sessions/${sessionId}/returned-inputs`);
+      return Response.json(returned);
     });
-    expect(
-      await new PiCloudApi(transport).resumeInputQueue(sessionId, { revision: 7 }, "resume-queue"),
-    ).toEqual({ queue, replayed: true });
+    const api = new PiCloudApi(transport);
+    expect(await api.getReturnedInputs(sessionId)).toEqual(returned);
+    await expect(api.acknowledgeReturnedInputs(sessionId, [turnId])).resolves.toBeUndefined();
   });
   it("sends versioned queue actions with their stable idempotency key", async () => {
     const sessionId = "10000000-0000-4000-8000-000000000001";
@@ -89,7 +89,7 @@ describe("tenant-aware browser API", () => {
       afterPosition: 0,
       hasMore: false,
       activeTurnId: turnId,
-      hasPausedInputs: false,
+      hasReturnedInputs: false,
       items: [],
     };
     const action = { action: "steer" as const, revision: 7, targetTurnId: turnId, text: "edited" };

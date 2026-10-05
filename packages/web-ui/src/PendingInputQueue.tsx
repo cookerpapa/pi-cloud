@@ -1,3 +1,4 @@
+import { restoreReturnedInputs } from "./returned-inputs.ts";
 import { UploadCards } from "./UploadCards.tsx";
 import type { UserUpload } from "@pi-cloud/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -8,8 +9,6 @@ import { useI18n } from "./i18n.tsx";
 type Action =
   | { action: "edit"; text: string }
   | { action: "cancel" }
-  | { action: "send" }
-  | { action: "resume" }
   | { action: "move"; direction: "up" | "down" }
   | { action: "steer"; text?: string };
 
@@ -21,6 +20,7 @@ export function PendingInputQueue({
   streamQueue,
   onSnapshot,
   onRestoreDraft,
+  restoredInputIds,
 }: {
   api: PiCloudApi;
   sessionId: string;
@@ -28,6 +28,7 @@ export function PendingInputQueue({
   refreshSignal: string;
   streamQueue: InputQueueResource | null;
   onSnapshot: (queue: InputQueueResource) => void;
+  restoredInputIds: Set<string>;
   onRestoreDraft: (text: string, uploads: UserUpload[]) => boolean | void;
 }) {
   const { t } = useI18n();
@@ -73,7 +74,7 @@ export function PendingInputQueue({
       const same =
         current.current?.revision === next.revision &&
         current.current.activeTurnId === next.activeTurnId &&
-        current.current.hasPausedInputs === next.hasPausedInputs &&
+        current.current.hasReturnedInputs === next.hasReturnedInputs &&
         current.current.hasMore === next.hasMore &&
         current.current.items.length === next.items.length &&
         current.current.items.every((item, index) => {
@@ -83,7 +84,6 @@ export function PendingInputQueue({
             item.text === other.text &&
             JSON.stringify(item.uploads ?? []) === JSON.stringify(other.uploads ?? []) &&
             item.status === other.status &&
-            item.paused === other.paused &&
             item.mailboxPosition === other.mailboxPosition
           );
         });
@@ -174,7 +174,7 @@ export function PendingInputQueue({
       setError("queue.noActive");
       return false;
     }
-    const request: QueuedInputAction | { action: "resume"; revision: number } =
+    const request: QueuedInputAction =
       action.action === "steer"
         ? { ...action, revision: snapshot.revision, targetTurnId: snapshot.activeTurnId! }
         : { ...action, revision: snapshot.revision };
@@ -185,10 +185,7 @@ export function PendingInputQueue({
     setBusy(turnId);
     setError(null);
     let succeeded = false;
-    const send = () =>
-      request.action === "resume"
-        ? api.resumeInputQueue(sessionId, { revision: request.revision }, key)
-        : api.mutateQueuedInput(sessionId, turnId, request, key);
+    const send = () => api.mutateQueuedInput(sessionId, turnId, request, key);
     try {
       let result;
       try {
@@ -218,9 +215,48 @@ export function PendingInputQueue({
     }
   }
 
+  const [returnStatus, setReturnStatus] = useState<"idle" | "pending" | "failed">("idle");
+  const [returnRetry, retryReturns] = useState(0);
+  useEffect(() => {
+    if (!queue?.hasReturnedInputs || !canMutate) return;
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const recover = async () => {
+      try {
+        const result = await restoreReturnedInputs(
+          api,
+          sessionId,
+          restoredInputIds,
+          (text, uploads) => callbacks.current.onRestoreDraft(text, uploads),
+          abort.signal,
+        );
+        if (abort.signal.aborted) return;
+        setReturnStatus(result === "pending" ? "pending" : "idle");
+        if (result === "pending") timer = setTimeout(() => void recover(), 1000);
+        else void refresh(undefined, true);
+      } catch {
+        if (!abort.signal.aborted) setReturnStatus("failed");
+      }
+    };
+    void recover();
+    return () => {
+      abort.abort();
+      clearTimeout(timer);
+    };
+  }, [
+    api,
+    sessionId,
+    canMutate,
+    queue?.hasReturnedInputs,
+    queue?.viewVersion,
+    restoredInputIds,
+    returnRetry,
+    refresh,
+  ]);
+
   const editingItem = editing && queue?.items.find((item) => item.turnId === editing.turnId);
   const editable = editingItem?.status === "queued";
-  if (!queue?.items.length && !editing && !error) return null;
+  if (!queue?.items.length && !editing && !error && returnStatus === "idle") return null;
   return (
     <section className="pending-input-queue" aria-label={t("queue.title")}>
       <header>
@@ -229,17 +265,17 @@ export function PendingInputQueue({
           {queue?.items.length ?? 0}
           {queue?.hasMore ? "+" : ""}
         </span>
-        <small>{t(queue?.hasPausedInputs ? "queue.pausedHint" : "queue.hint")}</small>
-        {queue?.hasPausedInputs ? (
-          <button
-            type="button"
-            disabled={!canMutate || busy !== null}
-            onClick={() => void perform("queue", { action: "resume" })}
-          >
-            {t("queue.resume")}
-          </button>
-        ) : null}
+        <small>{t("queue.hint")}</small>
       </header>
+      {returnStatus === "pending" ? <p role="status">{t("queue.returnPending")}</p> : null}
+      {returnStatus === "failed" ? (
+        <p role="alert">
+          {t("queue.returnError")}{" "}
+          <button type="button" onClick={() => retryReturns((n) => n + 1)}>
+            {t("queue.returnRetry")}
+          </button>
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="pending-input-error">
           {t(error)}{" "}
@@ -263,23 +299,10 @@ export function PendingInputQueue({
               </p>
               <UploadCards api={api} uploads={item.uploads ?? []} />
               {item.status === "steering" ? (
-                <small className="pending-input-status">
-                  {t(item.paused ? "queue.steeringPaused" : "queue.steering")}
-                </small>
-              ) : item.paused ? (
-                <small className="pending-input-status">{t("queue.paused")}</small>
+                <small className="pending-input-status">{t("queue.steering")}</small>
               ) : null}
             </div>
             <div className="pending-input-actions">
-              {item.paused ? (
-                <button
-                  type="button"
-                  disabled={!canMutate || busy !== null || item.status !== "queued"}
-                  onClick={() => void perform(item.turnId, { action: "send" })}
-                >
-                  {t("queue.send")}
-                </button>
-              ) : null}
               <button
                 type="button"
                 title={t("queue.up")}
@@ -289,8 +312,7 @@ export function PendingInputQueue({
                   busy !== null ||
                   index === 0 ||
                   item.status !== "queued" ||
-                  queue.items[index - 1]?.status !== "queued" ||
-                  item.paused !== queue.items[index - 1]?.paused
+                  queue.items[index - 1]?.status !== "queued"
                 }
                 onClick={() => void perform(item.turnId, { action: "move", direction: "up" })}
               >
@@ -305,8 +327,7 @@ export function PendingInputQueue({
                   busy !== null ||
                   (index === queue.items.length - 1 && !queue.hasMore) ||
                   item.status !== "queued" ||
-                  (index < queue.items.length - 1 && queue.items[index + 1]?.status !== "queued") ||
-                  (index < queue.items.length - 1 && item.paused !== queue.items[index + 1]?.paused)
+                  (index < queue.items.length - 1 && queue.items[index + 1]?.status !== "queued")
                 }
                 onClick={() => void perform(item.turnId, { action: "move", direction: "down" })}
               >

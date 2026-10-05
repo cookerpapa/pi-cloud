@@ -27,10 +27,14 @@ PiCloud deployment. Remaining operational limits are listed below.
       [ADR-0228](adr/0228-pi-durable-evaluation.md). The
       [executable evaluation](reports/pi-durable-evaluation-20261005.md) proves
       transport seams and records cancellation/recovery/queue mismatches.
-- [ ] Decide Pi Durable adoption only after defining confirmed-result cancellation,
-      PG Run-to-task recovery, new native batch projection, bounded cold reads and
-      image handling. Retain the Models-port sampling guard and explicit product
-      queue/observation policy; this evaluation is not a production upgrade.
+- [ ] Implement the owner-approved [Pi Durable adoption](adr/0229-native-durable-runtime.md):
+      native abort/recovery semantics, PG-authorized ownership, new native batch
+      projection, bounded cold reads and image handling. The queue withdrawal
+      source slice is implemented and locally verified (schema 176), but is not
+      yet deployed: Stop returns all unconsumed text and attachments to the
+      composer while preserving its draft. Replace the former loop
+      and storage after end-to-end verification; the evaluation itself is not a
+      production upgrade.
 
 The [October 5 follow-up review](reports/repository-review-20261005.md) is complete
 at `5c2fcab4`. Its original characterization tests are archived at `13344042`.

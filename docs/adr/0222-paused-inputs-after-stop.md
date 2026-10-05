@@ -1,6 +1,7 @@
 # ADR-0222: Preserve and pause pending human input after Stop
 
-Status: implemented and deployed, 2026-10-04. See the
+Status: historical deployed behavior, 2026-10-04. Source queue policy replaced
+by [ADR-0229](0229-native-durable-runtime.md); that migration is not deployed. See the
 [verification and live acceptance](../reports/paused-inputs-20261004.md).
 
 ## Behavior

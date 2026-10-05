@@ -954,7 +954,6 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
     mailboxPosition: 2,
     acceptedAt: CREATED_AT,
     status: "queued" as const,
-    paused: false,
   };
   const snapshot = {
     sessionId: SESSION_ID,
@@ -963,7 +962,7 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
     afterPosition: 0,
     hasMore: false,
     activeTurnId: null,
-    hasPausedInputs: false,
+    hasReturnedInputs: false,
     items: [item],
   };
   state = sessionViewReducer(state, { type: "queue.updated", queue: snapshot });

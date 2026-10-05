@@ -25,7 +25,6 @@ export const QueuedInputActionSchema = Type.Union([
     options,
   ),
   Type.Object({ action: Type.Literal("cancel"), revision: Revision }, options),
-  Type.Object({ action: Type.Literal("send"), revision: Revision }, options),
   Type.Object(
     {
       action: Type.Literal("move"),
@@ -53,7 +52,6 @@ export const QueuedInputResourceSchema = Type.Object(
     mailboxPosition: PositiveSafeIntegerSchema,
     acceptedAt: UtcTimestampSchema,
     status: Type.Union([Type.Literal("queued"), Type.Literal("steering")]),
-    paused: Type.Boolean(),
   },
   options,
 );
@@ -62,7 +60,7 @@ export const InputQueueResourceSchema = Type.Object(
     sessionId: UuidSchema,
     revision: Revision,
     activeTurnId: Type.Union([UuidSchema, Type.Null()]),
-    hasPausedInputs: Type.Boolean(),
+    hasReturnedInputs: Type.Boolean(),
     viewVersion: Type.String({ pattern: "^(0|[1-9][0-9]{0,18})$" }),
     afterPosition: NonNegativeSafeIntegerSchema,
     hasMore: Type.Boolean(),
@@ -83,8 +81,37 @@ export const InputQueueObservationSchema = Type.Object(
 );
 export type InputQueueObservation = Static<typeof InputQueueObservationSchema>;
 export type QueuedInputActionResult = Static<typeof QueuedInputActionResultSchema>;
-export const ResumeInputQueueSchema = Type.Object({ revision: Revision }, options);
-export type ResumeInputQueue = Static<typeof ResumeInputQueueSchema>;
+export const ReturnedInputSchema = Type.Object(
+  {
+    turnId: UuidSchema,
+    text: Text,
+    uploads: UserUploadsSchema,
+    mailboxPosition: PositiveSafeIntegerSchema,
+  },
+  options,
+);
+export const ReturnedInputsResourceSchema = Type.Object(
+  {
+    sessionId: UuidSchema,
+    pending: Type.Boolean(),
+    hasMore: Type.Boolean(),
+    items: Type.Array(ReturnedInputSchema, { maxItems: INPUT_QUEUE_PAGE_SIZE }),
+  },
+  options,
+);
+export const AcknowledgeReturnedInputsSchema = Type.Object(
+  {
+    turnIds: Type.Array(UuidSchema, {
+      minItems: 1,
+      maxItems: INPUT_QUEUE_PAGE_SIZE,
+      uniqueItems: true,
+    }),
+  },
+  options,
+);
+export type ReturnedInput = Static<typeof ReturnedInputSchema>;
+export type ReturnedInputsResource = Static<typeof ReturnedInputsResourceSchema>;
+export type AcknowledgeReturnedInputs = Static<typeof AcknowledgeReturnedInputsSchema>;
 function parse<T extends TSchema>(schema: T, value: unknown): Static<T> {
   if (!Value.Check(schema, value))
     throw new ControlPlaneApiValidationError("Invalid pending input request or response");
@@ -98,5 +125,7 @@ export const parseInputQueueObservation = (value: unknown): InputQueueObservatio
   parse(InputQueueObservationSchema, value);
 export const parseQueuedInputActionResult = (value: unknown): QueuedInputActionResult =>
   parse(QueuedInputActionResultSchema, value);
-export const parseResumeInputQueue = (value: unknown): ResumeInputQueue =>
-  parse(ResumeInputQueueSchema, value);
+export const parseReturnedInputsResource = (value: unknown): ReturnedInputsResource =>
+  parse(ReturnedInputsResourceSchema, value);
+export const parseAcknowledgeReturnedInputs = (value: unknown): AcknowledgeReturnedInputs =>
+  parse(AcknowledgeReturnedInputsSchema, value);

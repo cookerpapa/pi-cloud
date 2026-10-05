@@ -3,7 +3,8 @@ import {
   parseInputQueueResource,
   parseQueuedInputAction,
   parseTurnSteerResource,
-  parseResumeInputQueue,
+  parseAcknowledgeReturnedInputs,
+  parseReturnedInputsResource,
 } from "../src/index.ts";
 const id = "10000000-0000-4000-8000-000000000001";
 describe("pending input protocol", () => {
@@ -26,12 +27,14 @@ describe("pending input protocol", () => {
     expect(() => parseTurnSteerResource({ ...accepted, sourceTurnId: undefined })).toThrow();
   });
   it("accepts atomic edited steer and requires an explicit target and revision", () => {
-    expect(parseQueuedInputAction({ action: "send", revision: 4 })).toEqual({
-      action: "send",
-      revision: 4,
-    });
-    expect(parseResumeInputQueue({ revision: 4 })).toEqual({ revision: 4 });
-    expect(() => parseResumeInputQueue({})).toThrow();
+    expect(() => parseQueuedInputAction({ action: "send", revision: 4 })).toThrow();
+    expect(parseAcknowledgeReturnedInputs({ turnIds: [id] })).toEqual({ turnIds: [id] });
+    expect(() => parseAcknowledgeReturnedInputs({ turnIds: [id, id] })).toThrow();
+    expect(() => parseAcknowledgeReturnedInputs({ turnIds: [] })).toThrow();
+    expect(
+      parseReturnedInputsResource({ sessionId: id, pending: true, hasMore: false, items: [] })
+        .pending,
+    ).toBe(true);
     expect(
       parseQueuedInputAction({ action: "steer", revision: 4, targetTurnId: id, text: "updated" }),
     ).toMatchObject({ text: "updated" });
@@ -56,7 +59,6 @@ describe("pending input protocol", () => {
       mailboxPosition: 1,
       acceptedAt: "2026-09-26T00:00:00.000Z",
       status: "steering",
-      paused: true,
     };
     const queue = {
       sessionId: id,
@@ -65,7 +67,7 @@ describe("pending input protocol", () => {
       afterPosition: 0,
       hasMore: false,
       activeTurnId: null,
-      hasPausedInputs: true,
+      hasReturnedInputs: true,
       items: [item],
     };
     expect(parseInputQueueResource(queue).items[0]?.status).toBe("steering");

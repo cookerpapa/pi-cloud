@@ -11,7 +11,7 @@ export function laneDependenciesReady(
       and s.id=${sessionId}::uuid and s.state in ('cold','idle') and s.pruned_at is null)
     and not exists(select 1 from runs prior where prior.tenant_id=${tenantId}::uuid
       and prior.session_id=${sessionId}::uuid and prior.mailbox_position<${mailbox}
-      and not (prior.state='queued' and prior.input_paused)
+      and not (prior.state='queued' and prior.input_return_request_id is not null)
       and prior.state not in ('completed','failed','cancelled','timed_out'))
     and not exists(select 1 from runs prior
       where prior.tenant_id=${tenantId}::uuid and prior.session_id=${sessionId}::uuid
@@ -30,7 +30,7 @@ export async function advanceLaneReadiness(
     where candidate.tenant_id=${tenantId}::uuid and candidate.session_id=${sessionId}::uuid
       and candidate.state='queued' and candidate.ready_at is null
       and candidate.queued_steer_id is null
-      and not candidate.input_paused
+      and candidate.input_return_request_id is null
       and ${laneDependenciesReady(tenantId, sessionId, sql.ref("candidate.mailbox_position"))}
       and not exists(select 1 from subagent_executions child where child.child_run_id=candidate.id
         and child.state='preparing')`.execute(tx);

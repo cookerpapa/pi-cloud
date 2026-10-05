@@ -16,7 +16,7 @@ it("coalesces queue snapshots per subscriber, isolates tenants and clears on res
     afterPosition: 0,
     hasMore: false,
     activeTurnId: null,
-    hasPausedInputs: false,
+    hasReturnedInputs: false,
     items: [],
   });
   expect(hub.hasSubscribers(tenant, session)).toBe(true);

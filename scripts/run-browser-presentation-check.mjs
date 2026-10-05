@@ -247,8 +247,8 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     getConversation:async(sessionId)=>conversation(sessionId),
     getInputQueue:async(sessionId)=>parseInputQueueResource({...structuredClone(window.fixtureQueue),sessionId,
       viewVersion:String(window.fixtureQueue.revision),afterPosition:0,hasMore:false,
-      hasPausedInputs:window.fixtureQueue.items.some(i=>i.paused===true),
-      items:window.fixtureQueue.items.map(i=>({...i,paused:i.paused??false}))}),
+      hasReturnedInputs:false,
+      items:window.fixtureQueue.items}),
   });
   const nativeFetch=window.fetch;
   window.fetch=async (url,init={})=>{

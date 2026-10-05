@@ -400,21 +400,27 @@ snapshots independently of the existing optimistic edit `revision`, including
 Run transitions that change queue membership. Queue changes do not restart the
 execution SSE stream. Optimistic conflicts preserve the editing draft.
 
-Chat Stop pauses existing unowned input intents in the same PG transaction as
-cancellation admission. `runs.input_paused` keeps them out of readiness/admission
-and excludes them as predecessors of newly sent input. Queue snapshots expose
-`hasPausedInputs` and per-item `paused`; refresh or Worker replacement cannot
-clear these flags. Send resumes one paused item; Continue queue resumes all
-paused items across pages. Both use optimistic revision and existing idempotency
-receipts. Resumed intents receive fresh tail mailbox positions under the Session
-lock so execution, history and branch ordering agree. Their Run/Turn identities,
-text, attachments and frozen settings remain intact. Moves stay within the same
-paused/eligible group. Steer in flight stays held until canonical consumption or
-the target seal resolves it; unconsumed input returns paused after Stop. New
-deliveries to a cancelling target are rejected. The Worker uses Pi's public
-`clearAllQueues()` before `abort()` so the cancelled Tool's return cannot consume
-still-pending memory input. PG retains the original input for reconciliation. See
-[ADR-0222](adr/0222-paused-inputs-after-stop.md).
+Chat Stop withdraws the existing unowned inputs in the cancellation transaction.
+`runs.input_return_request_id` records that exact Stop's queue cut. Unconsumed
+ordinary inputs become cancelled; held Steers wait for canonical consumption or
+the target seal. Consumed input stays in history; only unconsumed input returns
+to the composer. A Stop retry cannot withdraw newly accepted messages.
+Readiness excludes inputs awaiting this decision. New deliveries to a cancelling
+target are rejected. The current 0.84.1 Worker still clears native memory queues
+before abort; replacement with Durable's native abort is tracked separately in
+[ADR-0229](adr/0229-native-durable-runtime.md).
+
+Queue snapshots expose `hasReturnedInputs`. GET
+`/v1/sessions/:sessionId/returned-inputs` waits for consumption reconciliation,
+then returns at most 20 withdrawn inputs in their original order. The browser
+appends their text and restores attachments without replacing its draft. POST
+`/v1/sessions/:sessionId/returned-inputs/acknowledgements` accepts the restored
+page's `turnIds`; it clears only return references after a committed update.
+Failed or lost acknowledgements do not duplicate text in the open composer.
+An unacknowledged return survives a browser/Control Plane restart in its original
+Turn. Once recovered, it has the same browser-local lifecycle as an ordinary
+unsent draft. Text and images never move into a control receipt or second queue.
+The former paused flag, Send action and queue-resume endpoint are removed.
 
 Queue display refresh is bounded asynchronous work in the same owner process,
 outside the ordered Projector handler. Two read slots and a separate two-connection

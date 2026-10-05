@@ -35,9 +35,9 @@ export async function readInputQueue(
     .selectFrom("sessions as s")
     .select((eb) => [
       "s.row_version",
-      sql<boolean>`exists(select 1 from runs paused where paused.tenant_id=s.tenant_id
-        and paused.session_id=s.id and paused.state='queued' and paused.input_paused)`.as(
-        "hasPausedInputs",
+      sql<boolean>`exists(select 1 from runs returned where returned.tenant_id=s.tenant_id
+        and returned.session_id=s.id and returned.input_return_request_id is not null)`.as(
+        "hasReturnedInputs",
       ),
       eb
         .selectFrom("outbox")
@@ -67,7 +67,6 @@ export async function readInputQueue(
             "r.mailbox_position",
             "r.created_at",
             "r.queued_steer_id",
-            "r.input_paused",
             "t.input_text",
             "t.input_uploads",
           ])
@@ -75,6 +74,7 @@ export async function readInputQueue(
           .whereRef("r.session_id", "=", "s.id")
           .where(sql<boolean>`r.state='queued'`)
           .where("r.lease_id", "is", null)
+          .where("r.input_return_request_id", "is", null)
           .where("t.state", "=", "queued")
           .where("r.mailbox_position", ">", String(afterPosition))
           .orderBy("r.mailbox_position", "asc")
@@ -96,7 +96,7 @@ export async function readInputQueue(
     afterPosition,
     hasMore: session.items.length > INPUT_QUEUE_PAGE_SIZE,
     activeTurnId: session.activeTurnId ?? null,
-    hasPausedInputs: session.hasPausedInputs,
+    hasReturnedInputs: session.hasReturnedInputs,
     items: session.items.slice(0, INPUT_QUEUE_PAGE_SIZE).map((item) => ({
       turnId: item.turn_id,
       runId: item.id,
@@ -105,7 +105,6 @@ export async function readInputQueue(
       mailboxPosition: number(item.mailbox_position),
       acceptedAt: new Date(item.created_at).toISOString(),
       status: item.queued_steer_id === null ? "queued" : "steering",
-      paused: item.input_paused,
     })),
   });
 }

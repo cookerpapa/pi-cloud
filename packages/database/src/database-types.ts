@@ -722,7 +722,7 @@ export interface TurnTable {
 }
 
 export interface RunTable {
-  input_paused: Generated<boolean>;
+  input_return_request_id: GeneratedNullable<string>;
   queued_steer_id: GeneratedNullable<string>;
   compute_session_id: GeneratedNullable<string>;
   id: string;

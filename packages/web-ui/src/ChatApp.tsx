@@ -215,6 +215,11 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [conversationLoading, setConversationLoading] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const draftRevision = useRef(0);
+  const restoredInputs = useRef(new Map<string, Set<string>>());
+  const restoredInputIds = state.session
+    ? (restoredInputs.current.get(state.session.sessionId) ?? new Set<string>())
+    : new Set<string>();
+  if (state.session) restoredInputs.current.set(state.session.sessionId, restoredInputIds);
   const filePickerRef = useRef<HTMLInputElement | null>(null);
   const uploads = useComposerUploads(
     api,
@@ -2230,6 +2235,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               api={api}
               sessionId={state.session.sessionId}
               canMutate={canMutate}
+              restoredInputIds={restoredInputIds}
               streamQueue={streamQueue}
               refreshSignal={String(queueRefreshGeneration)}
               onSnapshot={(queue) => update({ type: "queue.updated", queue })}

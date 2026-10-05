@@ -1,5 +1,10 @@
 # Documentation map
 
+[ADR-0229](adr/0229-native-durable-runtime.md) records the approved Pi Durable
+1.0 migration. Its first source slice withdraws stopped queued input back to
+the composer. The production runtime still uses Pi 0.84.1; the new Harness and
+native storage cutover remain unfinished.
+
 The [Pi Durable 1.0 evaluation](reports/pi-durable-evaluation-20261005.md) executes
 the Kafka/PG commit and Cube Tool boundaries under ADR-0228. It records usable
 interfaces and mismatched cancellation/recovery/queue semantics; it does not

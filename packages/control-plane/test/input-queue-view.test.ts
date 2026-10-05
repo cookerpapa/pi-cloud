@@ -12,7 +12,7 @@ function fixture(options: { concurrency?: number; maximumQueues?: number } = {})
     revision: 1,
     viewVersion,
     activeTurnId: null,
-    hasPausedInputs: false,
+    hasReturnedInputs: false,
     afterPosition: 0,
     hasMore: false,
     items: [],

@@ -7,7 +7,8 @@ import {
   type InputQueueResource,
   type QueuedInputAction,
   type QueuedInputActionResult,
-  type ResumeInputQueue,
+  parseReturnedInputsResource,
+  type ReturnedInputsResource,
   parseAcceptedTurnCancellationResource,
   parseAcceptedTurnResource,
   parseTurnSteerResource,
@@ -859,18 +860,30 @@ export class PiCloudApi {
     );
   }
 
-  async resumeInputQueue(
+  async getReturnedInputs(
     sessionId: string,
-    action: ResumeInputQueue,
-    idempotencyKey: string,
-  ): Promise<QueuedInputActionResult> {
-    return parseQueuedInputActionResult(
+    signal?: AbortSignal,
+  ): Promise<ReturnedInputsResource> {
+    return parseReturnedInputsResource(
       await request(
         this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs/resume`,
-        { ...jsonRequest(action, idempotencyKey), signal: AbortSignal.timeout(10_000) },
+        `/v1/sessions/${encodeURIComponent(sessionId)}/returned-inputs`,
+        { signal: signal ?? AbortSignal.timeout(10_000) },
         this.#authorizationToken,
       ),
+    );
+  }
+
+  async acknowledgeReturnedInputs(
+    sessionId: string,
+    turnIds: string[],
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await request(
+      this.#fetch,
+      `/v1/sessions/${encodeURIComponent(sessionId)}/returned-inputs/acknowledgements`,
+      { ...jsonRequest({ turnIds }), signal: signal ?? AbortSignal.timeout(10_000) },
+      this.#authorizationToken,
     );
   }
 
