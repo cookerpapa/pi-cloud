@@ -554,7 +554,14 @@ try {
       "After the Tool returns, reply briefly. Do not repeat the command and do not create a file.",
     ].join(" "),
   });
-  const storedResult = nativeMessages(await readNativeHistory(psql, { sessionId: session.sessionId, turnId: largeOutput.accepted.turnId })).filter(message => message.role === "toolResult").at(-1);
+  const storedResult = nativeMessages(
+    await readNativeHistory(psql, {
+      sessionId: session.sessionId,
+      turnId: largeOutput.accepted.turnId,
+    }),
+  )
+    .filter((message) => message.role === "toolResult")
+    .at(-1);
   assert(storedResult);
   const storedText = storedResult.content
     .filter((part) => part.type === "text")

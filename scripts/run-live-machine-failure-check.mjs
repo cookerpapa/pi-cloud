@@ -267,7 +267,7 @@ try {
     'cd /opt/recovery-check; python3 insertion_sort.py; python3 binary_search.py; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
   );
   const history = await readNativeHistory(sql, { sessionId: session.sessionId });
-  report.resetMarkers = history.filter(row => row.entry.kind === "pi-cloud.sandbox_reset").length;
+  report.resetMarkers = history.filter((row) => row.entry.kind === "pi-cloud.sandbox_reset").length;
   assert.equal(report.resetMarkers, 0);
   report.usage = nativeUsage(history);
   await terminal(

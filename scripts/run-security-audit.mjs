@@ -56,7 +56,6 @@ const replacements = new Map([
       version: "5.0.12",
     },
   ],
-
 ]);
 const { remediated, remaining } = classifyAuditFindings(
   auditReport.vulnerabilities,

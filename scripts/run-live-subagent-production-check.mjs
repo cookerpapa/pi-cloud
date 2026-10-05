@@ -387,7 +387,12 @@ async function parallelExecutionEvidence(parentRunId) {
 }
 
 async function childUsedLocalTools(childRunId) {
-  return nativeMessages(await readNativeHistory(psql, { runId: childRunId })).some(message => message.role === "toolResult" && ["read","write","edit","bash"].includes(message.toolName) && !message.isError);
+  return nativeMessages(await readNativeHistory(psql, { runId: childRunId })).some(
+    (message) =>
+      message.role === "toolResult" &&
+      ["read", "write", "edit", "bash"].includes(message.toolName) &&
+      !message.isError,
+  );
 }
 
 function assertNativeConversationBacked(evidence, rootPiSessionId) {
@@ -735,7 +740,9 @@ try {
       "return {cwd:process.cwd(), hostname:process.env.HOSTNAME||null, uid:process.getuid(), leakedKeys:Object.keys(process.env).filter(k=>/^(DATABASE_URL|KAFKA_BROKERS|OPENAI_API_KEY|DEEPSEEK_API_KEY|PI_CLOUD_SANDBOX_CONTROL_TOKEN)$/.test(k))};",
     ].join(" "),
   );
-  const boundaryEntries = nativeMessages(await readNativeHistory(psql, { turnId: boundary.accepted.turnId })).filter(message => message.role === "toolResult" && message.toolName === "subagent");
+  const boundaryEntries = nativeMessages(
+    await readNativeHistory(psql, { turnId: boundary.accepted.turnId }),
+  ).filter((message) => message.role === "toolResult" && message.toolName === "subagent");
   assert.equal(boundaryEntries.length, 1);
   const boundaryResult = JSON.parse(
     boundaryEntries[0].content.find((part) => part.type === "text").text,

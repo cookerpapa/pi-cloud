@@ -41,7 +41,6 @@ const patchSpecs = [
     version: "5.0.12",
     packageName: "brace-expansion",
   },
-
 ];
 const securityPatches = piRoots.flatMap((piRoot) =>
   patchSpecs.map((spec) => ({

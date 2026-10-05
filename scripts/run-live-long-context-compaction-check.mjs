@@ -209,9 +209,13 @@ async function waitForRun(runId) {
 
 async function usageForRun(runId) {
   const requests = nativeMessages(await readNativeHistory(psql, { tenantId, runId }))
-    .filter(message => message.role === "assistant" && message.usage).map((message, index) => ({
-      sequence: index + 1, inputTokens: message.usage.input, outputTokens: message.usage.output,
-      cacheReadTokens: message.usage.cacheRead, cacheWriteTokens: message.usage.cacheWrite,
+    .filter((message) => message.role === "assistant" && message.usage)
+    .map((message, index) => ({
+      sequence: index + 1,
+      inputTokens: message.usage.input,
+      outputTokens: message.usage.output,
+      cacheReadTokens: message.usage.cacheRead,
+      cacheWriteTokens: message.usage.cacheWrite,
       contextInputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite,
     }));
   assert(requests.length > 0, `Run ${runId} did not record a model request`);

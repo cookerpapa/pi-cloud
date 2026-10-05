@@ -117,16 +117,30 @@ async function auditKafka(runIds) {
     if (fact.kind === "tool_command") row.standaloneCommands++;
     if (fact.kind !== "durable_commit") continue;
     for (const write of fact.commit.writes) {
-      if (write.type === "entry" && write.value.model?.some(message => message.role === "assistant")) assistants.add(write.value.id);
+      if (
+        write.type === "entry" &&
+        write.value.model?.some((message) => message.role === "assistant")
+      )
+        assistants.add(write.value.id);
     }
     const commands = toolCommandsForFact(fact);
     for (const [index, command] of commands.entries()) {
       const taskId = fact.tools[index].taskId;
-      const task = fact.commit.writes.find(write => write.type === "task" && write.value.id === taskId)?.value;
-      assert(task && assistants.has(task.input.assistant), "Tool preceded its complete Assistant checkpoint");
+      const task = fact.commit.writes.find(
+        (write) => write.type === "task" && write.value.id === taskId,
+      )?.value;
+      assert(
+        task && assistants.has(task.input.assistant),
+        "Tool preceded its complete Assistant checkpoint",
+      );
       assert.equal(command.toolCallId, `task:${taskId}`);
-      row.invocations.push({ operationId: command.request.operationId, toolName: command.request.toolName,
-        nativeTaskId: taskId, nativeSequence: fact.commit.seq, kafkaBytes: Buffer.byteLength(line) });
+      row.invocations.push({
+        operationId: command.request.operationId,
+        toolName: command.request.toolName,
+        nativeTaskId: taskId,
+        nativeSequence: fact.commit.seq,
+        kafkaBytes: Buffer.byteLength(line),
+      });
     }
   }
   const code = await closed;

@@ -156,20 +156,17 @@ try {
       await api.cancelTurn(session.sessionId, accepted.turnId, newIdempotencyKey("cancel"));
     }
     const target = await finished(accepted.runId);
-    assert.equal(
-      target.state,
-      kind === "consumed" ? "completed" : kind === "cancelled" ? "cancelled" : "failed",
-    );
+    assert.equal(target.state, kind === "cancelled" ? "cancelled" : "completed");
     // Pi can consume queued input while unwinding an aborted Tool. A canonical
     // user Entry wins even if cancellation prevents its next model request.
     const consumedCount = await consumption(receipt);
     assert([0, 1].includes(consumedCount));
-    if (kind !== "cancelled") assert.equal(consumedCount, kind === "consumed" ? 1 : 0);
+    if (kind !== "cancelled") assert.equal(consumedCount, 1);
     const consumed = consumedCount === 1;
     const source = await finished(receipt.sourceRunId);
     assert.equal(
       source.state,
-      consumed ? "cancelled" : "completed",
+      consumed || kind === "cancelled" ? "cancelled" : "completed",
       JSON.stringify(source.failure),
     );
     const expectedControl = consumed ? "completed" : "failed";
@@ -189,7 +186,16 @@ try {
     const answered = conversation.turns.find(
       (t) => t.runId === (consumed ? target.runId : source.runId),
     );
-    const answeredBeforeStop = kind !== "cancelled" || !consumed;
+    if (kind === "cancelled" && !consumed) {
+      const returned = await until(async () => {
+        const page = await api.getReturnedInputs(session.sessionId);
+        return (
+          !page.pending && page.items.some((item) => item.turnId === receipt.sourceTurnId) && page
+        );
+      }, "Unconsumed Steer returned to composer");
+      assert(returned.items.some((item) => item.text.includes(marker)));
+    }
+    const answeredBeforeStop = kind !== "cancelled";
     if (answeredBeforeStop)
       assert(
         answered.transcript.items

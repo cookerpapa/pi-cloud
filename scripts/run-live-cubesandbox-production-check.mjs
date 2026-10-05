@@ -869,9 +869,12 @@ async function runLatencyEvidence(runId) {
     .split("|")
     .map(Number);
   const history = await readNativeHistory(psql, { runId });
-  const modelRequests = nativeMessages(history).filter(message => message.role === "assistant").length;
+  const modelRequests = nativeMessages(history).filter(
+    (message) => message.role === "assistant",
+  ).length;
   // PG commit timestamps measure the native task boundary, not provider latency.
-  const toolEvidence = await psql(`select count(*) || '|' || coalesce(sum(extract(epoch from (last_commit.committed_at-first_commit.committed_at))*1000),0)
+  const toolEvidence =
+    await psql(`select count(*) || '|' || coalesce(sum(extract(epoch from (last_commit.committed_at-first_commit.committed_at))*1000),0)
     from pi_durable_records task
     join lateral (select seq from pi_durable_log where tenant_id=task.tenant_id and session_id=task.session_id and record_id=task.id order by seq limit 1) first_write on true
     join pi_durable_commits first_commit on first_commit.tenant_id=task.tenant_id and first_commit.session_id=task.session_id and first_commit.seq=first_write.seq

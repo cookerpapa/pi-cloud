@@ -451,7 +451,11 @@ async function crashStreamingTurn(sessionId) {
       terminal = { type, seq: Number(sequence) };
     }
     assert(terminal, "Worker loss did not produce a terminal event");
-    assert.equal(terminal.type, "turn.completed", "Native recovery did not complete the original input");
+    assert.equal(
+      terminal.type,
+      "turn.completed",
+      "Native recovery did not complete the original input",
+    );
     const run = await waitForTerminalRun(accepted.runId);
     assert.equal(run.state, "completed");
     assert(
@@ -636,11 +640,17 @@ try {
     "The previous Run recovered. Do not call tools. Reply exactly RECOVERY-BARRIER-OK.",
   );
   assert(recovered.text.includes("RECOVERY-BARRIER-OK"));
-  const recoveredAdmissions = Number(await psql(`select count(*) from run_transitions where run_id=${sqlLiteral(crashed.runId)} and reason='native_execution_recovery'`));
+  const recoveredAdmissions = Number(
+    await psql(
+      `select count(*) from run_transitions where run_id=${sqlLiteral(crashed.runId)} and reason='native_execution_recovery'`,
+    ),
+  );
   assert(recoveredAdmissions >= 1, "No native recovery admission followed ordered owner closure");
-  const inputCount = Number(await psql(`select count(*) from pi_durable_records input
+  const inputCount = Number(
+    await psql(`select count(*) from pi_durable_records input
     where input.kind='submission' and input.session_id=${sqlLiteral(crashSession.sessionId)}
-      and input.fields->>'request'=${sqlLiteral(JSON.stringify(crashed.runId))}`));
+      and input.fields->>'request'=${sqlLiteral(JSON.stringify(crashed.runId))}`),
+  );
   assert.equal(inputCount, 1, "Worker replacement duplicated the accepted native input");
   await restoreWorker(stoppedWorker);
   stoppedWorker = undefined;

@@ -178,17 +178,22 @@ try {
   const cancelledDetail = (await api.getConversation(first.sessionId)).turns.find(
     (t) => t.runId === cancelled.runId,
   );
-  const cancelledText = JSON.stringify(cancelledDetail);
-  if (fault) {
-    assert(cancelledText.includes("tool_operation_outcome_unknown"));
-    report.unknownOutcomeRetained = true;
-  } else {
-    assert(cancelledText.includes("PARTIAL_BEFORE_CANCEL"));
-    assert(cancelledText.includes("Command aborted"));
-    assert(!cancelledText.includes("tool_operation_outcome_unknown"));
-    report.partialOutputRetained = true;
-  }
-  report.interruptionContextRetained = true;
+  const stoppedTools = cancelledDetail.transcript.items.filter((item) => item.kind === "tool");
+  assert.equal(stoppedTools.length, 2);
+  assert.equal(stoppedTools[0].status, "completed");
+  assert(
+    ["failed", "unknown"].includes(stoppedTools[1].status),
+    "Unfinished Tool was reported as successful",
+  );
+  // Native abort can discard a physical reply. Physical scope survival and
+  // cancellation were checked separately; no reply-preservation claim is made.
+  const retained = JSON.stringify(cancelledDetail.transcript);
+  await delay(1000);
+  const reloaded = (await api.getConversation(first.sessionId)).turns.find(
+    (t) => t.runId === cancelled.runId,
+  );
+  assert.equal(JSON.stringify(reloaded.transcript), retained, "Late reply overwrote native abort");
+  report.nativeAbortStable = true;
   report.siblingCompleted = true;
   report.executionCount = 1;
   report.accepted = true;

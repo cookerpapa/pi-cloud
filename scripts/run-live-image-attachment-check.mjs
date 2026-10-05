@@ -127,8 +127,17 @@ try {
         .join("")
         .includes("SEEN"),
     );
-    const records = await nativeHistory(db, { sessionId: session.sessionId, turnId: active.turnId });
-    const rows = records.flatMap(row => imageReferences(row.entry).map(ref => ({ tenant_id: row.tenant_id, ref, record_bytes: Buffer.byteLength(row.body) })));
+    const records = await nativeHistory(db, {
+      sessionId: session.sessionId,
+      turnId: active.turnId,
+    });
+    const rows = records.flatMap((row) =>
+      imageReferences(row.entry).map((ref) => ({
+        tenant_id: row.tenant_id,
+        ref,
+        record_bytes: Buffer.byteLength(row.body),
+      })),
+    );
     assert.equal(rows.length, 1);
     const row = rows[0];
     assert(row.ref.byteLength > 5 * 1024 * 1024);

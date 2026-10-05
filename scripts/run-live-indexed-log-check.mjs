@@ -7,7 +7,10 @@ import { sql } from "kysely";
 import { createSession } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createDatabase } from "../packages/database/src/index.ts";
-import { DurablePostgresProjection, PublishedDurableStorage } from "../packages/pi-session-postgres/src/durable/index.ts";
+import {
+  DurablePostgresProjection,
+  PublishedDurableStorage,
+} from "../packages/pi-session-postgres/src/durable/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_INDEXED_LOG_CHECK !== "1")
@@ -185,17 +188,44 @@ try {
   const marker = `COMPACTED-${randomUUID()}`;
   // This unowned fork is an administrative cold-read fixture. Generic Session
   // owns entry/head stamping; no Harness or model runs in the control plane.
-  const compaction = await db.transaction().execute(async tx => {
-    const projection = new DurablePostgresProjection(tx, { tenantId: scope.tenant_id, sessionId: fork.session.sessionId }, undefined, "references");
-    const native = await PublishedDurableStorage.open({ projection,
-      publish: batch => projection.applyIn(tx, batch).then(() => {}), waitProjected: async () => {} });
+  const compaction = await db.transaction().execute(async (tx) => {
+    const projection = new DurablePostgresProjection(
+      tx,
+      { tenantId: scope.tenant_id, sessionId: fork.session.sessionId },
+      undefined,
+      "references",
+    );
+    const native = await PublishedDurableStorage.open({
+      projection,
+      publish: (batch) => projection.applyIn(tx, batch).then(() => {}),
+      waitProjected: async () => {},
+    });
     const session = createSession(native);
     try {
-      const entry = await session.commit(change => change.appendEntry(1, { kind: "pi.compaction", head: "self", data: { reason: "manual" },
-        model: [{ role: "user", timestamp: Date.now(), content: `Storage acceptance context: exact marker ${marker}. Workspace contains indexed_log.txt with INDEXED_LOG_FILE_OK. One Child completed CHILD_LOG_OK.` }] }), BACKGROUND_CONTEXT);
-      assert.equal((await native.findLatestHeadMarker(1, undefined, BACKGROUND_CONTEXT)).entry.id, entry.id);
+      const entry = await session.commit(
+        (change) =>
+          change.appendEntry(1, {
+            kind: "pi.compaction",
+            head: "self",
+            data: { reason: "manual" },
+            model: [
+              {
+                role: "user",
+                timestamp: Date.now(),
+                content: `Storage acceptance context: exact marker ${marker}. Workspace contains indexed_log.txt with INDEXED_LOG_FILE_OK. One Child completed CHILD_LOG_OK.`,
+              },
+            ],
+          }),
+        BACKGROUND_CONTEXT,
+      );
+      assert.equal(
+        (await native.findLatestHeadMarker(1, undefined, BACKGROUND_CONTEXT)).entry.id,
+        entry.id,
+      );
       return entry;
-    } finally { await session.close(BACKGROUND_CONTEXT); }
+    } finally {
+      await session.close(BACKGROUND_CONTEXT);
+    }
   });
   const resumed = await run(
     fork.session.sessionId,

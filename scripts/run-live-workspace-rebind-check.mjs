@@ -204,7 +204,7 @@ try {
   report.modelSettingsPreserved = true;
   report.nextRunUsesMachineDirectory = true;
   const { rows: facts } =
-    await sql`select l.body from pi_durable_records r join pi_durable_log l using(tenant_id,session_id,seq,ordinal) where r.tenant_id=${tenant.tenantId}::uuid and r.session_id=${session.sessionId} and r.kind='entry' and r.fields->>'nativeKind'=${JSON.stringify('pi-cloud.workspace_changed')}`.execute(
+    await sql`select l.body from pi_durable_records r join pi_durable_log l using(tenant_id,session_id,seq,ordinal) where r.tenant_id=${tenant.tenantId}::uuid and r.session_id=${session.sessionId} and r.kind='entry' and r.fields->>'nativeKind'=${JSON.stringify("pi-cloud.workspace_changed")}`.execute(
       db,
     );
   assert.equal(facts.length, 1);

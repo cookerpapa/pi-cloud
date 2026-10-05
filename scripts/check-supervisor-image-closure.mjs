@@ -106,7 +106,7 @@ assert(
 );
 assert(
   dockerfile.includes("await import('./src/subagent-tool.ts')") &&
-    dockerfile.includes("await import('@earendil-works/pi-coding-agent')"),
+    dockerfile.includes("await import('@earendil-works/pi-durable')"),
   "Supervisor image must verify its native Subagent adapter closure",
 );
 

@@ -35,9 +35,7 @@ it.each(["", "packages/tool-sandbox"])(
   async (scope) => {
     await fixture(async ({ root, pkg, invoke }) => {
       await pkg("@earendil-works/pi-coding-agent", "1.0.0", scope);
-      const patches = [
-        ["brace-expansion", "5.0.12"],
-      ];
+      const patches = [["brace-expansion", "5.0.12"]];
       for (const [name, version] of patches) {
         await pkg(`@earendil-works/pi-coding-agent/node_modules/${name}`, "0.0.0", scope);
         await pkg(`pi-security-${name}`, version);
