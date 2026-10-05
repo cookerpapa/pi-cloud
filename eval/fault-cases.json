@@ -1296,6 +1296,13 @@
       "file": "test/durable-agent-session.test.ts",
       "test": "keeps child supervision across Tool completion and applies native parent abort",
       "invariant": "The native generation owns delegated Conversations: returning a blocked Tool permits a parent reply, while parent abort still cancels child work."
+    },
+    {
+      "id": "durable-active-tool-query",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/conversation-tree.postgres.test.ts",
+      "test": "reads a running native Tool after the covered assistant while its Tool result is still absent",
+      "invariant": "Plain conversation reads show the committed native Tool execute checkpoint without waiting for its final result or creating another Tool ledger."
     }
   ]
 }

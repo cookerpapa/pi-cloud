@@ -66,7 +66,12 @@ async function completed(accepted, target = session.sessionId) {
   const tools = turn.transcript.items
     .filter((i) => i.kind === "tool")
     .map((i) => ({ name: i.toolName, status: i.status }));
-  assert(tools.every((t) => t.status === "completed"));
+  assert(
+    tools.every((t) => t.status === "completed"),
+    JSON.stringify(
+      turn.transcript.items.filter((t) => t.kind === "tool" && t.status !== "completed"),
+    ).slice(0, 2500),
+  );
   report.runs.push({ runId: run.runId, workerId: run.workerId, tools });
   return {
     run,

@@ -204,3 +204,36 @@ it("retains faulted Tool and aborted compaction receipts even when no native ent
   ]);
   expect(JSON.stringify(view)).not.toContain("internal transport detail");
 });
+
+it("projects a native execute checkpoint as a running Tool before its final entry exists", () => {
+  const view = projectDurableTranscript(
+    [
+      row(
+        2,
+        assistant(
+          [{ type: "toolCall", id: "call", name: "bash", arguments: { command: "original" } }],
+          "toolUse",
+        ),
+      ),
+      row(3, {
+        kind: "pi.tool",
+        input: { assistant: 2, callId: "call" },
+        state: {
+          status: "running",
+          checkpoint: { phase: "execute", arguments: { command: "validated" } },
+        },
+      }),
+    ],
+    { ...terminal, terminalSequence: null },
+  );
+  expect(view.items).toEqual([
+    expect.objectContaining({
+      kind: "tool",
+      toolCallId: "task:3",
+      toolName: "bash",
+      input: { command: "validated" },
+      status: "running",
+    }),
+  ]);
+  expect(view.items[0]).not.toHaveProperty("completedAt");
+});

@@ -88,6 +88,10 @@ second active sequence allocator or per-commit PG receipt on the hot path.
 Implement the upstream Storage contract and conformance suite on PostgreSQL.
 Use indexed record/document state and native head markers for bounded context
 bootstrap. Never promote the evaluation's complete journal replay to production.
+Plain active-conversation reads include the committed native Tool execute
+checkpoint even before its live start event receives display coverage. Its stable
+native task ID merges with the SSE start; no Tool task/receipt table is added.
+
 Current document/task projections are derived from this same canonical log,
 not independent control queues or external-operation result ledgers.
 

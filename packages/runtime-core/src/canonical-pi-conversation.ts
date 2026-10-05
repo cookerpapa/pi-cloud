@@ -124,31 +124,38 @@ export function projectDurableTranscript(
             firstSequence: sequence,
             lastSequence: sequence,
           });
-      } else if (record(entry.state)?.status === "terminal" && entry.kind === "pi.tool") {
+      } else if (entry.kind === "pi.tool") {
         const proposal =
           typeof input?.callId === "string" ? proposals.get(input.callId) : undefined;
-        if (proposal)
+        const running =
+          record(entry.state)?.status === "running" && checkpoint?.phase === "execute";
+        const ended = record(entry.state)?.status === "terminal";
+        if (proposal && (running || ended))
           items.push({
             kind: "tool",
             toolCallId: `task:${row.id}`,
             toolName: proposal.name,
-            input: proposal.input,
-            status: "failed",
-            output: {
-              content: [
-                {
-                  type: "text",
-                  text:
-                    outcome?.status === "aborted"
-                      ? "Tool execution was aborted before a result was committed."
-                      : "Tool execution ended without a committed result.",
-                },
-              ],
-            },
+            input: running ? checkpoint.arguments : proposal.input,
+            status: running ? "running" : "failed",
+            ...(running
+              ? {}
+              : {
+                  output: {
+                    content: [
+                      {
+                        type: "text",
+                        text:
+                          outcome?.status === "aborted"
+                            ? "Tool execution was aborted before a result was committed."
+                            : "Tool execution ended without a committed result.",
+                      },
+                    ],
+                  },
+                  completedAt: timestamp(row.committed_at),
+                  lastSequence: sequence,
+                }),
             startedAt: timestamp(row.committed_at),
-            completedAt: timestamp(row.committed_at),
             firstSequence: sequence,
-            lastSequence: sequence,
           });
       }
       continue;
@@ -284,7 +291,7 @@ export async function readCanonicalPiTurnTranscripts(
       select r.id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,null::text as task_kind
       from own r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
         join pi_durable_commits c using(tenant_id,session_id,seq)
-      where r.kind='task' and r.fields->>'status'='terminal'
+      where r.kind='task' and (r.fields->>'status'='terminal' or (r.fields->>'nativeKind'=${JSON.stringify("pi.tool")} and r.fields->>'status'='running'))
         and r.fields->>'nativeKind'=any(${["pi.tool", "pi.compaction"].map((value) => JSON.stringify(value))}::text[])
         and not exists(select 1 from own result where result.kind='entry' and result.session_id=r.session_id and result.fields->>'task'=r.id::text)
     ) select * from history order by seq,ordinal`.execute(database);
@@ -323,7 +330,13 @@ export async function readCanonicalPiTurnTranscripts(
         turn,
         projectDurableTranscript(
           (grouped.get(turn) ?? []).filter(
-            (row) => Number(row.seq) <= Number(current.output_display_native_seq),
+            (row) =>
+              Number(row.seq) <= Number(current.output_display_native_seq) ||
+              // An already projected execute checkpoint is current native state.
+              // It can show a Tool in a plain GET before its lossy/live start is
+              // covered. The stable native task ID merges with the SSE start.
+              (row.fields.nativeKind === JSON.stringify("pi.tool") &&
+                row.fields.status === "running"),
           ),
           {
             throughSequence: Number(current.output_display_seq),

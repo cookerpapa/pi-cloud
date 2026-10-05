@@ -221,6 +221,84 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     expect(tree.branches[1]!.entries).toEqual([]);
   });
 
+  it("reads a running native Tool after the covered assistant while its Tool result is still absent", async () => {
+    const f = await fixture(),
+      accepted = await f.turn("active Tool", "queued");
+    const scope = {
+      tenantId: f.tenantId,
+      sessionId: f.session.sessionId,
+      turnId: accepted.turnId,
+      runId: accepted.runId,
+    };
+    const call = (
+      await appendNativeFixture(db, scope, [
+        {
+          kind: "pi.assistant",
+          model: [
+            {
+              role: "assistant",
+              content: [
+                { type: "toolCall", id: "call", name: "bash", arguments: { command: "sleep 30" } },
+              ],
+              stopReason: "toolUse",
+              timestamp: Date.now(),
+            },
+          ],
+        },
+      ])
+    )[0]!;
+    const projection = new DurablePostgresProjection(db, scope),
+      head = await projection.head(),
+      taskId = head.nextId;
+    await projection.apply(
+      {
+        seq: head.seq + 1,
+        nextId: taskId + 1,
+        writes: [
+          {
+            type: "task",
+            value: {
+              id: taskId,
+              conversationId: 1,
+              kind: "pi.tool",
+              version: 1,
+              input: { assistant: call.id, callId: "call" },
+              background: false,
+              abortRequested: false,
+              state: {
+                status: "running",
+                checkpoint: {
+                  phase: "execute",
+                  arguments: { command: "sleep 30" },
+                  replay: "unsafe",
+                },
+              },
+            },
+          },
+        ],
+      } as unknown as import("@pi-cloud/pi-session-postgres/durable").DurableBatch,
+      [{ recordId: taskId, sessionId: scope.sessionId, runId: scope.runId, turnId: scope.turnId }],
+    );
+    await db
+      .updateTable("runs")
+      .set({ output_display_seq: "10", output_display_native_seq: String(head.seq) })
+      .where("id", "=", accepted.runId)
+      .execute();
+    const views = await readCanonicalPiTurnTranscripts(db, {
+      tenantId: f.tenantId,
+      turnIds: [accepted.turnId],
+    });
+    expect(views.get(accepted.turnId)?.items).toContainEqual(
+      expect.objectContaining({
+        kind: "tool",
+        toolName: "bash",
+        toolCallId: `task:${taskId}`,
+        status: "running",
+        input: { command: "sleep 30" },
+      }),
+    );
+  });
+
   it("copies native fork document policies without carrying execution or task state", async () => {
     const f = await fixture();
     await f.turn("setup", "completed");

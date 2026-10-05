@@ -84,7 +84,11 @@ try {
   );
   project = await api.createProject("Direct Steer acceptance", { kind: "empty" });
   report.workspaceId = project.workspaceId;
-  for (const kind of ["consumed", "worker-loss", "cancelled"]) {
+  const selectedCases = ["consumed", "worker-loss", "cancelled"].filter(
+    (kind) => !process.env.PI_CLOUD_STEER_CASE || kind === process.env.PI_CLOUD_STEER_CASE,
+  );
+  assert(selectedCases.length, "Unknown Steer acceptance scenario");
+  for (const kind of selectedCases) {
     const session = await api.createSession(
       project.projectId,
       project.workspaceId,
@@ -196,15 +200,27 @@ try {
       assert(returned.items.some((item) => item.text.includes(marker)));
     }
     const answeredBeforeStop = kind !== "cancelled";
-    if (answeredBeforeStop)
+    if (answeredBeforeStop) {
+      const answer = answered.transcript.items
+        .filter((i) => i.kind === "text")
+        .map((i) => i.text)
+        .join("");
+      if (!answer.includes(marker)) {
+        const native =
+          await sql`select l.seq,l.record_kind,l.body,l.cloud_origin from pi_durable_log l where l.session_id=${session.sessionId} and l.record_kind in ('entry','task') order by l.seq,l.ordinal`.execute(
+            db,
+          );
+        await writeFile(
+          "/tmp/pi-cloud-durable-recovery-debug.json",
+          JSON.stringify({ accepted, receipt, answer, rows: native.rows }),
+          { mode: 0o600 },
+        );
+      }
       assert(
-        answered.transcript.items
-          .filter((i) => i.kind === "text")
-          .map((i) => i.text)
-          .join("")
-          .includes(marker),
-        "Recovered instruction was not answered",
+        answer.includes(marker),
+        `Recovered instruction was not answered: ${answer.slice(0, 2000)}`,
       );
+    }
     assert.equal(
       Buffer.from((await api.readWorkspaceFile(session.sessionId, witness)).bytes).toString(),
       "once\n",

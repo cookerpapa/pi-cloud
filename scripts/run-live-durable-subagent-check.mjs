@@ -67,6 +67,21 @@ try {
       count: 2,
     },
   ];
+  scenarios.push({
+    name: "cancellation",
+    count: 1,
+    childState: "cancelled",
+    marker: "SUBAGENT-CANCEL-OK",
+    prompt:
+      'Call subagent action:workflow exactly once with this script: const child=runs.run("cancel-me", {context:"fresh",tools:[],task:"Write a detailed 6000-word comparison of sorting algorithms. Do not use tools."}).catch(error => error.result || {state:"failed",error:error.message}); await new Promise(resolve=>setTimeout(resolve,2000)); const cancellation=await runs.cancel("cancel-me"); return {cancellation,child:await child}; After it returns, reply SUBAGENT-CANCEL-OK. Do not start replacement work.',
+  });
+  scenarios.push({
+    name: "guest-boundary",
+    count: 0,
+    marker: "GUEST-BOUNDARY-OK",
+    prompt:
+      "Call subagent action:workflow once with exactly this script: return {cwd:process.cwd(),uid:process.getuid(),leakedKeys:Object.keys(process.env).filter(k=>/^(DATABASE_URL|KAFKA_BROKERS|OPENAI_API_KEY|DEEPSEEK_API_KEY|PI_CLOUD_SANDBOX_CONTROL_TOKEN)$/.test(k))}; Then reply GUEST-BOUNDARY-OK.",
+  });
   const selected = scenarios.filter(
     (scenario) =>
       !process.env.PI_CLOUD_LIVE_SUBAGENT_SCENARIO ||
@@ -118,7 +133,10 @@ try {
     assert(
       children.every(
         (c) =>
-          c.runState === "completed" && c.sameOwner && c.samePhysical && Number(c.conversation) > 1,
+          c.runState === (scenario.childState ?? "completed") &&
+          c.sameOwner &&
+          c.samePhysical &&
+          Number(c.conversation) > 1,
       ),
       JSON.stringify({ children, errors }),
     );
@@ -128,6 +146,15 @@ try {
         `select count(*)::int from subagent_supervisor_requests q join subagent_executions e on e.id=q.execution_id where e.parent_run_id='${accepted.runId}' and q.reply_message='APPROVED-TEAL'`,
       );
       assert.equal(answered, 1);
+    }
+    if (scenario.name === "guest-boundary") {
+      const tool = turn.transcript.items.find(
+        (item) => item.kind === "tool" && item.toolName === "subagent",
+      );
+      const value = JSON.parse(tool.output.content.find((part) => part.type === "text").text);
+      assert.equal(value.cwd, "/workspace");
+      assert.equal(value.uid, 1000);
+      assert.deepEqual(value.leakedKeys, []);
     }
     report.scenarios.push({
       name: scenario.name,

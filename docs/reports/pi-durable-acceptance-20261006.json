@@ -1,0 +1,149 @@
+{
+  "format": "pi-cloud.durable-migration-acceptance.v1",
+  "sdk": "1.0.0",
+  "schema": 180,
+  "executionTopic": "pi-cloud.execution-log.v14",
+  "deployedControlAndBaseWorkerRevision": "3cd29f3aca1258efaf4a5c9cc211175aeb39ef7e",
+  "deployedWorkerSupervisionRevision": "cba74557c766e685dea512415f950a542104a813",
+  "guestBundlingRevision": "7aa9504c",
+  "verification": {
+    "workspaceTestsBeforeSupervisionFix": 1578,
+    "workspaceSkipped": 9,
+    "currentSupervisorTests": 157,
+    "faultCases": 185,
+    "acceptanceHelpers": 53,
+    "rf3IntegrationCases": 2,
+    "freshNpmCi": true,
+    "dependencyAuditRemainingVulnerabilities": 0
+  },
+  "live": {
+    "nativeTools": {
+      "accepted": true,
+      "rounds": 4,
+      "scope": "write/read/edit/bash, bounded output, symlink semantics, ordinary application-error recovery"
+    },
+    "subagentInteractions": {
+      "accepted": true,
+      "scenarios": ["supervisor", "messaging", "parallel"]
+    },
+    "userUploads": {
+      "accepted": true,
+      "unlimitedAttachments": {
+        "count": 6,
+        "totalBytes": 60861227,
+        "imageBytes": 24161067,
+        "executionMode": "elastic"
+      },
+      "browser": {
+        "uploadedBytes": 24161067,
+        "previewAfterReload": true,
+        "originalTextSeparate": true,
+        "imageSeenWithoutTool": true
+      },
+      "referencesOnly": {
+        "bytes": 1766,
+        "count": 1
+      },
+      "mutableSourceChanged": true,
+      "coldRecovery": true
+    },
+    "readImages": {
+      "accepted": true,
+      "images": [
+        {
+          "bytes": 6294337,
+          "recordBytes": 596,
+          "detail": "high"
+        },
+        {
+          "bytes": 6294410,
+          "recordBytes": 596,
+          "detail": "high"
+        },
+        {
+          "bytes": 25130168,
+          "recordBytes": 597,
+          "detail": "original"
+        }
+      ],
+      "coldRecovery": true
+    },
+    "workerRecovery": {
+      "accepted": true,
+      "cases": [
+        {
+          "kind": "worker-loss",
+          "targetState": "completed",
+          "sourceState": "cancelled",
+          "acknowledgedBeforeFault": true,
+          "consumptionCount": 1,
+          "instructionRetained": true,
+          "instructionAnswered": true,
+          "noToolReplay": true,
+          "replayAfterClosure": true
+        }
+      ]
+    },
+    "stopReturnsSteer": {
+      "accepted": true,
+      "cases": [
+        {
+          "kind": "cancelled",
+          "targetState": "cancelled",
+          "sourceState": "cancelled",
+          "acknowledgedBeforeFault": true,
+          "consumptionCount": 0,
+          "instructionRetained": true,
+          "instructionAnswered": false,
+          "noToolReplay": true,
+          "replayAfterClosure": true
+        }
+      ]
+    },
+    "normalStop": {
+      "accepted": true,
+      "fault": "none",
+      "sharedVmVerified": true,
+      "cancelMs": 541,
+      "foregroundCancellationConfirmed": true,
+      "completedBackgroundSurvived": true,
+      "independentProcessGroupSurvived": true,
+      "explicitProcessStopInNextRun": true,
+      "nativeAbortStable": true,
+      "siblingCompleted": true,
+      "executionCount": 1,
+      "cleanupCompleted": true
+    },
+    "unavailableCubeStop": {
+      "accepted": true,
+      "fault": "api_pause",
+      "sharedVmVerified": true,
+      "cancelMs": 18393,
+      "foregroundCancellationConfirmed": false,
+      "completedBackgroundSurvived": true,
+      "independentProcessGroupSurvived": true,
+      "explicitProcessStopInNextRun": true,
+      "nativeAbortStable": true,
+      "siblingCompleted": true,
+      "executionCount": 1,
+      "cleanupCompleted": true
+    },
+    "foregroundCompaction": {
+      "accepted": true,
+      "requests": [
+        {
+          "purpose": "context_maintenance",
+          "serviceTier": "fast",
+          "model": "gpt-6-luna"
+        },
+        {
+          "purpose": "agent",
+          "serviceTier": "fast",
+          "model": "gpt-6-luna"
+        }
+      ],
+      "scope": "Real Gateway/Durable/Luna with a 4096-token fixture window; no PG/Kafka Run or production catalog mutation"
+    }
+  },
+  "releaseStatus": "final product acceptance in progress"
+}
