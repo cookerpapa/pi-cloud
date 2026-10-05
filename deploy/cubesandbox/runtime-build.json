@@ -18,7 +18,7 @@
     },
     {
       "file": "0004-recoverable-vm-allocation.patch",
-      "sha256": "457aa3cfb361ec1b6b9a16a384cff85c0508f1a8394e25730627e195ce318f50"
+      "sha256": "8869d15a276cadfe60852c57a0965a5829e24d75185e584d74ea84b94bbdc7e5"
     }
   ],
   "buildImages": {

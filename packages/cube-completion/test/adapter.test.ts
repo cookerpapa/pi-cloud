@@ -72,6 +72,25 @@ function fixture() {
   return { packet, context, adapter, put, publish, progress };
 }
 
+it.each([
+  ["tool_cancelled_before_start", "not_started"],
+  ["tool_cancelled", "unknown"],
+  ["read_capacity_timeout", "not_started"],
+] as const)(
+  "keeps native pre-start and in-flight interruption distinct: %s",
+  async (code, effect) => {
+    const f = fixture();
+    await f.adapter.accept({ ...f.packet, result: { failure: code } });
+    expect(f.publish.mock.calls[0]![1]).toMatchObject({
+      kind: "execution_failure",
+      failure: { effect },
+    });
+    const reply = f.publish.mock.calls[0]![1] as Extract<ToolReply, { kind: "execution_failure" }>;
+    if (effect === "not_started") expect(reply.failure.message).toContain("did not start");
+    else expect(reply.failure.message).toContain("inspect effects");
+  },
+);
+
 it("externalizes the guest image before the boot reply and preserves the original callback identity", async () => {
   const f = fixture();
   await f.adapter.accept(f.packet);

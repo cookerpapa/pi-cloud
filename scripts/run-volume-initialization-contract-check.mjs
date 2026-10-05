@@ -92,6 +92,10 @@ try {
   await docker(
     `/bin/bash /plugin --op detach --volume-id ${shared.id} --sandbox-id test-guest --namespace test --ref-count 0 --metadata '{"driver":"picloud-posix-v2"}'`,
   );
+  // The native binary adapter serializes missing failed-Attach metadata as {}.
+  await docker(
+    `/bin/bash /plugin --op detach --volume-id ${shared.id} --sandbox-id failed-guest --namespace test --ref-count 1 --metadata '{}'`,
+  );
   assert.equal(await readIdentity(shared), original);
   await docker(
     `printf 'USER-DATA' > '${shared.path}/workspace/keep.txt'; chmod 0400 '${shared.path}/workspace/keep.txt'; ${create(shared)}`,

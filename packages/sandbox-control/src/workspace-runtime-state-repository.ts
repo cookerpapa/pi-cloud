@@ -164,6 +164,7 @@ export interface WorkspaceRuntimeStateRepository {
   ): Promise<readonly RecoverableWorkspaceRuntime[]>;
   authorizeWorkspaceUpload?(request: WorkspaceUploadRequest, byteLength: number): Promise<void>;
   start(): Promise<void>;
+  reconcileOwnership(): Promise<void>;
   checkHealth(): Promise<void>;
   assertLocalOwnership(): void;
   reserve(input: WorkspaceRuntimeReservation): Promise<WorkspaceRuntimeReservationResult>;
@@ -229,8 +230,12 @@ export interface WorkspaceRuntimeStateRepository {
 export class WorkspaceRuntimeStateRepositoryError extends Error {
   readonly code: "ownership_lost" | "state_conflict" | "unavailable";
 
-  constructor(code: WorkspaceRuntimeStateRepositoryError["code"], message: string) {
-    super(message);
+  constructor(
+    code: WorkspaceRuntimeStateRepositoryError["code"],
+    message: string,
+    cause?: unknown,
+  ) {
+    super(message, cause === undefined ? undefined : { cause });
     this.name = "WorkspaceRuntimeStateRepositoryError";
     this.code = code;
   }
@@ -303,6 +308,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   readonly #monotonicNow: () => number;
   #heartbeat: NodeJS.Timeout | undefined;
   #heartbeatTask: Promise<void> | undefined;
+  #reconciliation: Promise<void> | undefined;
   #closed = false;
   #ownershipDeadline = 0;
 
@@ -352,8 +358,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         continue;
       }
       try {
-        const issued = await this.#database.transaction().execute(async (transaction) => {
-          await this.#markExpiredOwnersLost(transaction, now);
+        const issued = await this.#transaction(async (transaction) => {
+          await this.#markExpiredOwnersLost(transaction);
           return transaction
             .insertInto("sandbox_control_instances")
             .values({
@@ -402,6 +408,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         });
     }, this.#heartbeatMs);
     this.#heartbeat.unref();
+    await this.reconcileOwnership();
   }
 
   async checkHealth(): Promise<void> {
@@ -765,7 +772,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     input: WorkspaceTerminalReservation,
   ): Promise<WorkspaceTerminalReservationResult> {
     const now = validDate(this.#clock);
-    const leaseExpiresAt = new Date(now.valueOf() + this.#leaseMs);
     return this.#ownedTransaction(async (transaction) => {
       const workspace = await transaction
         .selectFrom("workspaces")
@@ -902,8 +908,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           runtime_id: null,
           runtime_name: null,
           state: "reserved",
-          lease_expires_at: leaseExpiresAt,
-          last_heartbeat_at: now,
           failure_code: null,
           updated_at: now,
         })
@@ -1533,8 +1537,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           state,
           runtime_id: detail.handle?.runtimeId ?? null,
           runtime_name: detail.handle?.runtimeName ?? null,
-          lease_expires_at: sql<Date>`clock_timestamp() + ${this.#leaseMs} * interval '1 millisecond'`,
-          last_heartbeat_at: now,
           failure_code: failureCode(detail.failureCode),
           updated_at: now,
         })
@@ -1590,8 +1592,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             owner_instance_id: this.#instanceId,
             owner_base_url: this.#ownerBaseUrl,
             state: "cleaning",
-            lease_expires_at: sql<Date>`clock_timestamp() + ${this.#leaseMs} * interval '1 millisecond'`,
-            last_heartbeat_at: now,
             updated_at: now,
           })
           .where("terminal_id", "=", row.terminal_id)
@@ -1925,8 +1925,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     this.#ownershipDeadline = 0;
     if (this.#heartbeat !== undefined) clearInterval(this.#heartbeat);
     await this.#heartbeatTask;
-    const now = validDate(this.#clock);
-    await this.#database.transaction().execute(async (transaction) => {
+    await this.#reconciliation;
+    // Revoke this identity before touching any resource. A locked resource
+    // cannot keep a departing controller's identity Ready.
+    await this.#transaction(async (transaction) => {
       await transaction
         .selectFrom("sandbox_control_instances")
         .select("instance_id")
@@ -1934,112 +1936,142 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .forUpdate()
         .execute();
       await transaction
-        .updateTable("workspace_runtimes")
-        .set({ state: "unknown", failure_code: "tool_broker_stopped", updated_at: now })
-        .where("owner_instance_id", "=", this.#instanceId)
-        .where("state", "in", ["reserved", "materializing", "active", "warm"])
-        // Controller departure is not evidence against an independently owned
-        // Cube execution. A recorded capsule allows the next owner to verify it.
-        .where("runtime_capsule", "is", null)
-        .execute();
-      await transaction
-        .updateTable("workspace_terminal_sessions")
-        .set({
-          state: "unknown",
-          failure_code: "tool_broker_stopped",
-          lease_expires_at: now,
-          updated_at: now,
-        })
-        .where("owner_instance_id", "=", this.#instanceId)
-        .where("state", "in", ["reserved", "materializing", "active", "cleaning"])
-        .execute();
-      await transaction
-        .updateTable("development_environments")
-        .set({
-          state: "unknown",
-          runtime_id: null,
-          runtime_name: null,
-          failure_code: "tool_broker_stopped",
-          updated_at: now,
-        })
-        .where("owner_instance_id", "=", this.#instanceId)
-        .where("state", "in", ["provisioning", "running", "paused", "releasing"])
-        .where("runtime_capsule", "is", null)
-        .execute();
-      await transaction
         .updateTable("sandbox_control_instances")
-        .set({ state: "stopped", lease_expires_at: now, updated_at: now })
+        .set({
+          state: "stopped",
+          lease_expires_at: sql<Date>`clock_timestamp()`,
+          updated_at: sql<Date>`clock_timestamp()`,
+        })
         .where("instance_id", "=", this.#instanceId)
         .where("state", "=", "ready")
         .execute();
     });
+    await this.reconcileOwnership();
+  }
+
+  /** Metadata-only maintenance. Permanent lost/stopped identities cannot renew.
+   * SKIP LOCKED leaves busy resources for the existing next maintenance pass. */
+  reconcileOwnership(): Promise<void> {
+    return (this.#reconciliation ??= (async () => {
+      await this.#transaction((tx) => this.#markExpiredOwnersLost(tx));
+      for (const [table, key, states, capsule] of [
+        [
+          "workspace_runtimes",
+          "workspace_runtime_id",
+          ["reserved", "materializing", "active", "warm"],
+          true,
+        ],
+        [
+          "workspace_terminal_sessions",
+          "terminal_id",
+          ["reserved", "materializing", "active", "cleaning"],
+          false,
+        ],
+        [
+          "development_environments",
+          "id",
+          ["provisioning", "running", "paused", "releasing"],
+          true,
+        ],
+      ] as const) {
+        await this.#transaction(async (tx) => {
+          await sql`with candidates as materialized (
+            select r.${sql.ref(key)} as id,r.owner_instance_id,o.state as owner_state
+            from ${sql.table(table)} r join sandbox_control_instances o on o.instance_id=r.owner_instance_id
+            where r.sandbox_domain_id=${this.#sandboxDomainId} and o.state in ('lost','stopped')
+              and r.state in (${sql.join(states)})
+              ${capsule ? sql`and r.runtime_capsule is null` : sql``}
+            order by r.updated_at,r.${sql.ref(key)} limit 128 for update of r skip locked
+          ) update ${sql.table(table)} as r set state='unknown',
+            failure_code=case when c.owner_state='stopped' then 'tool_broker_stopped' else 'tool_broker_owner_lost' end,
+            updated_at=clock_timestamp()
+            from candidates c where r.${sql.ref(key)}=c.id and r.owner_instance_id=c.owner_instance_id`.execute(
+            tx,
+          );
+        });
+      }
+    })().finally(() => {
+      this.#reconciliation = undefined;
+    }));
   }
 
   async #renew(): Promise<void> {
     const requestedAt = this.#monotonicNow();
-    const renewed = await this.#database.transaction().execute(async (transaction) => {
-      await transaction
-        .selectFrom("sandbox_control_instances")
-        .select("instance_id")
-        .where("instance_id", "=", this.#instanceId)
-        .forNoKeyUpdate()
-        .execute();
-      const now = await databaseTime(transaction);
-      await this.#markExpiredOwnersLost(transaction, now);
-      const owner = await transaction
-        .updateTable("sandbox_control_instances")
-        .set({
-          last_heartbeat_at: sql<Date>`clock_timestamp()`,
-          lease_expires_at: sql<Date>`clock_timestamp() + ${this.#leaseMs} * interval '1 millisecond'`,
-          updated_at: now,
-        })
-        .where("instance_id", "=", this.#instanceId)
-        .where("state", "=", "ready")
-        .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
-        .returning(["lease_expires_at", "last_heartbeat_at"])
-        .executeTakeFirst();
-      if (owner) {
-        await transaction
-          .updateTable("workspace_terminal_sessions")
-          .set({
-            lease_expires_at: owner.lease_expires_at,
-            last_heartbeat_at: now,
-            updated_at: now,
-          })
-          .where("owner_instance_id", "=", this.#instanceId)
-          .where("state", "in", ["reserved", "materializing", "active", "cleaning"])
-          .execute();
-      }
-      return owner;
+    const renewed = await this.#transaction(async (transaction) => {
+      // Materialize the row lock BEFORE evaluating PG expiry. Renewal never
+      // depends on terminal rows or another controller's resource cleanup.
+      const result = await sql<{ lease_expires_at: Date; last_heartbeat_at: Date }>`
+        with owner as materialized (
+          select instance_id,state,lease_expires_at from sandbox_control_instances
+          where instance_id=${this.#instanceId}::uuid for no key update
+        ) update sandbox_control_instances i set last_heartbeat_at=clock_timestamp(),
+          lease_expires_at=clock_timestamp()+${this.#leaseMs}*interval '1 millisecond',
+          updated_at=clock_timestamp() from owner o
+        where i.instance_id=o.instance_id and o.state='ready' and o.lease_expires_at>clock_timestamp()
+        returning i.lease_expires_at,i.last_heartbeat_at`.execute(transaction);
+      return result.rows[0];
     });
-    if (!renewed) {
+    if (!renewed)
       throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Sandbox control ownership heartbeat was fenced",
       );
-    }
     this.#ownershipDeadline =
       requestedAt + renewed.lease_expires_at.valueOf() - renewed.last_heartbeat_at.valueOf();
   }
 
+  get #transactionBudgetMs(): number {
+    return Math.max(1, Math.min(3000, Math.floor(this.#leaseMs / 5)));
+  }
+
+  async #transaction<T>(work: (transaction: Transaction<Database>) => Promise<T>): Promise<T> {
+    const total = this.#transactionBudgetMs;
+    let bodyCompleted = false;
+    try {
+      return await this.#database.transaction().execute(async (transaction) => {
+        await sql`select
+          set_config('lock_timeout',${`${Math.max(1, Math.min(500, Math.floor(total / 6)))}ms`},true),
+          set_config('statement_timeout',${`${Math.max(1, Math.min(2000, Math.floor((total * 2) / 3)))}ms`},true),
+          set_config('transaction_timeout',${`${total}ms`},true)`.execute(transaction);
+        const result = await work(transaction);
+        bodyCompleted = true;
+        return result;
+      });
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+      // No Cube effects occur inside work. Do not classify a lost COMMIT reply
+      // as proved rollback or transparently retry a possibly committed mutation.
+      if (!bodyCompleted && ["55P03", "57014", "25P04"].includes(String(code)))
+        throw new WorkspaceRuntimeStateRepositoryError(
+          "unavailable",
+          "Sandbox lifecycle database work is busy; reconcile and retry",
+          error,
+        );
+      throw error;
+    }
+  }
+
   async #ownedTransaction<T>(work: (transaction: Transaction<Database>) => Promise<T>): Promise<T> {
-    return this.#database.transaction().execute(async (transaction) => {
-      // Materialization forces the lock to complete before PG decision time is
-      // sampled. SHARE conflicts with owner expiry/renewal's non-key updates.
-      const locked = await sql<{ instance_id: string }>`
+    return this.#transaction(async (transaction) => {
+      const locked = await sql<{ remaining_ms: string }>`
         with owner as materialized (
           select instance_id,state,lease_expires_at from sandbox_control_instances
           where instance_id=${this.#instanceId}::uuid for share
-        ) select instance_id from owner where state='ready' and lease_expires_at>clock_timestamp()
+        ) select extract(epoch from (lease_expires_at-clock_timestamp()))*1000 as remaining_ms
+          from owner where state='ready' and lease_expires_at>clock_timestamp()
       `.execute(transaction);
       if (!locked.rows.length)
         throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
           "Sandbox control database ownership lease is not current",
         );
+      if (Number(locked.rows[0]!.remaining_ms) <= this.#transactionBudgetMs + this.#heartbeatMs)
+        throw new WorkspaceRuntimeStateRepositoryError(
+          "unavailable",
+          "Sandbox lifecycle admission is waiting for owner renewal",
+        );
       const result = await work(transaction);
-      // Resource locks may have waited past lease expiry. Roll back all writes
-      // in that case; no external effects are performed within this transaction.
       const current = await transaction
         .selectFrom("sandbox_control_instances")
         .select("instance_id")
@@ -2072,50 +2104,13 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     return Number(result.rows[0]!.count);
   }
 
-  async #markExpiredOwnersLost(transaction: Transaction<Database>, now: Date): Promise<void> {
-    const lostInstances = (
-      await sql<{ instance_id: string }>`
-      with candidates as materialized (
-        select instance_id from sandbox_control_instances
-        where sandbox_domain_id=${this.#sandboxDomainId} and state='ready'
-          and lease_expires_at<=clock_timestamp()
-        order by instance_id for update skip locked
-      )
-      update sandbox_control_instances i set state='lost',updated_at=clock_timestamp()
+  async #markExpiredOwnersLost(transaction: Transaction<Database>): Promise<void> {
+    await sql`with candidates as materialized (
+      select instance_id from sandbox_control_instances
+      where sandbox_domain_id=${this.#sandboxDomainId} and state='ready' and lease_expires_at<=clock_timestamp()
+      order by instance_id limit 128 for update skip locked
+    ) update sandbox_control_instances i set state='lost',updated_at=clock_timestamp()
       from candidates c where i.instance_id=c.instance_id and i.state='ready'
-        and i.lease_expires_at<=clock_timestamp() returning i.instance_id
-    `.execute(transaction)
-    ).rows;
-    const lostIds = lostInstances.map((instance) => instance.instance_id);
-    if (lostIds.length === 0) return;
-    await transaction
-      .updateTable("workspace_runtimes")
-      .set({ state: "unknown", failure_code: "tool_broker_owner_lost", updated_at: now })
-      .where("owner_instance_id", "in", lostIds)
-      .where("state", "in", ["reserved", "materializing", "active", "warm"])
-      .where("runtime_capsule", "is", null)
-      .execute();
-    await transaction
-      .updateTable("workspace_terminal_sessions")
-      .set({
-        state: "unknown",
-        failure_code: "tool_broker_owner_lost",
-        lease_expires_at: now,
-        updated_at: now,
-      })
-      .where("owner_instance_id", "in", lostIds)
-      .where("state", "in", ["reserved", "materializing", "active", "cleaning"])
-      .execute();
-    await transaction
-      .updateTable("development_environments")
-      .set({
-        state: "unknown",
-        failure_code: "tool_broker_owner_lost",
-        updated_at: now,
-      })
-      .where("owner_instance_id", "in", lostIds)
-      .where("state", "in", ["provisioning", "running", "paused", "releasing"])
-      .where("runtime_capsule", "is", null)
-      .execute();
+      and i.lease_expires_at<=clock_timestamp()`.execute(transaction);
   }
 }

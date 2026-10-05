@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0227](0227-review-recovery-and-tool-outcomes.md) — recoverable POSIX
+   cleanup, bounded controller ownership, consistent Tool outcomes and wider Read concurrency.
 1. [ADR-0226](0226-recoverable-volume-reference-state.md) — durable node reference
    state and attachment admission for managed Cube Volume deletion.
 1. [ADR-0225](0225-structured-tool-completion.md) — typed execution failures on

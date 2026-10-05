@@ -167,8 +167,6 @@ describe("WorkspaceVolumeDeletionReaper", () => {
           runtime_id: "terminal-runtime",
           runtime_name: "terminal-runtime",
           state: "active",
-          lease_expires_at: new Date(Date.now() + 60_000),
-          last_heartbeat_at: new Date(),
           failure_code: null,
         })
         .execute();

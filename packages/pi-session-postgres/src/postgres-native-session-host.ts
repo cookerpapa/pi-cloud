@@ -60,6 +60,7 @@ export class PostgresNativeSessionHost {
   >();
   readonly #leases: PostgresSessionLeaseObserver;
   readonly #reaper: NodeJS.Timeout;
+  #reaping: Promise<void> | undefined;
   #closed = false;
 
   constructor(options: {
@@ -75,23 +76,52 @@ export class PostgresNativeSessionHost {
     this.#cache = options.entryPayloadCache;
     this.#onViewRead = options.onViewRead;
     this.#onTiming = options.onTiming;
-    this.#reaper = setInterval(() => void this.#reap().catch(() => {}), 60_000);
+    this.#reaper = setInterval(() => {
+      if (!this.#closed && !this.#reaping)
+        this.#reaping = this.#reap()
+          .catch(() => {})
+          .finally(() => {
+            this.#reaping = undefined;
+          });
+    }, 60_000);
     this.#reaper.unref();
   }
 
   async #reap() {
-    for (const [key, pending] of this.#writers) {
-      const writer = await pending;
-      if (writer.activeLanes) continue;
-      const active = await this.#database
-        .selectFrom("runs")
-        .select("id")
-        .where("lease_id", "=", writer.id)
-        .where("state", "in", ["running", "settling", "cancel_requested"])
-        .limit(1)
-        .executeTakeFirst();
-      if (!active && !writer.activeLanes && this.#writers.get(key) === pending)
-        this.#writers.delete(key);
+    const entries = [...this.#writers];
+    for (let offset = 0; offset < entries.length && !this.#closed; offset += 256) {
+      const candidates = (
+        await Promise.all(
+          entries.slice(offset, offset + 256).map(async ([key, pending]) => {
+            const writer = await pending.catch(() => undefined);
+            return writer && !writer.activeLanes ? { key, pending, writer } : undefined;
+          }),
+        )
+      ).filter((value) => value !== undefined);
+      if (!candidates.length || this.#closed) continue;
+      const active = new Set(
+        (
+          await this.#database
+            .selectFrom("runs")
+            .select("lease_id")
+            .distinct()
+            .where(
+              "lease_id",
+              "in",
+              candidates.map(({ writer }) => writer.id),
+            )
+            .where("state", "in", ["running", "settling", "cancel_requested"])
+            .execute()
+        ).map((row) => row.lease_id),
+      );
+      for (const { key, pending, writer } of candidates)
+        if (
+          !this.#closed &&
+          !active.has(writer.id) &&
+          !writer.activeLanes &&
+          this.#writers.get(key) === pending
+        )
+          this.#writers.delete(key);
     }
   }
 
@@ -437,5 +467,6 @@ export class PostgresNativeSessionHost {
     for (const { authority } of this.#owners.values()) void authority.close();
     this.#owners.clear();
     await this.#leases.close();
+    await this.#reaping;
   }
 }

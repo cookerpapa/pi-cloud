@@ -494,8 +494,6 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         runtime_id: "workspace-terminal-runtime",
         runtime_name: "workspace-terminal-runtime",
         state: "active",
-        lease_expires_at: new Date(Date.now() + 60_000),
-        last_heartbeat_at: new Date(),
         failure_code: null,
       })
       .executeTakeFirstOrThrow();

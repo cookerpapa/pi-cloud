@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import { toolTransportFailure } from "./tool-execution-outcome.ts";
 import {
   TOOL_WORKFLOW_PATH,
   type NativeToolEnd,
@@ -52,16 +53,15 @@ export async function readWorkflowResult(input: {
       if (error) reject(error);
       else resolve(result!);
     };
-    const abort = () => finish(new Error("Workflow interrupted"));
+    const fail = (cause: unknown) => finish(toolTransportFailure(cause, "workflow_result_unknown"));
+    const abort = () => fail(new Error("Workflow interrupted"));
     signal.addEventListener("abort", abort, { once: true });
-    socket.on("error", (error) => finish(new Error(`workflow_result_unknown: ${error.message}`)));
-    socket.on("close", () =>
-      finish(new Error("workflow_result_unknown: Workflow connection ended before its result")),
-    );
+    socket.on("error", fail);
+    socket.on("close", () => fail(new Error("Workflow connection ended before its result")));
     socket.on("message", (bytes) => {
       try {
         const frame = JSON.parse(bytes.toString());
-        if (frame.type === "error") finish(new Error(frame.message));
+        if (frame.type === "error") fail(new Error(String(frame.message)));
         else if (frame.type === "call") {
           const fingerprint = JSON.stringify([frame.method, frame.args]);
           let call = calls.get(frame.id);
@@ -92,37 +92,38 @@ export async function readWorkflowResult(input: {
                 }),
             )
             .finally(() => calls.delete(frame.id))
-            .catch((error) => finish(error));
+            .catch(fail);
         } else throw new Error("Unknown workflow frame");
       } catch (error) {
-        finish(error instanceof Error ? error : new Error("Invalid workflow frame"));
+        fail(error);
       }
     });
-    void input.completion.then(
-      (event) => {
-        if (event.isError) {
-          finish(
-            new Error(
-              event.result.content
-                .filter((part) => part.type === "text")
-                .map((part) => part.text)
-                .join("\n"),
-            ),
-          );
-          return;
-        }
+    void input.completion.then((event) => {
+      if (event.isError) {
         finish(undefined, {
           toolBrokerProtocolVersion: 1,
           type: "tool_sandbox.operation_result",
           activationId: input.activationId,
           operationId: input.operationId,
           operation: "workflow.exec",
-          ok: true,
-          value: event.result.details,
+          ok: false,
+          value: null,
+          error: event.result.content
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n"),
         });
-      },
-      (error: unknown) =>
-        finish(error instanceof Error ? error : new Error("Workflow result unavailable")),
-    );
+        return;
+      }
+      finish(undefined, {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.operation_result",
+        activationId: input.activationId,
+        operationId: input.operationId,
+        operation: "workflow.exec",
+        ok: true,
+        value: event.result.details,
+      });
+    }, fail);
   });
 }

@@ -22,8 +22,8 @@ export class ToolExecutionFailure extends Error {
   readonly code: string;
   readonly effect: ToolExecutionFailureData["effect"];
   readonly retryable = false;
-  constructor(failure: ToolExecutionFailureData) {
-    super(`${failure.code}: ${failure.message}`);
+  constructor(failure: ToolExecutionFailureData, options?: ErrorOptions) {
+    super(`${failure.code}: ${failure.message}`, options);
     this.name = "ToolExecutionFailure";
     this.code = failure.code;
     this.effect = failure.effect;

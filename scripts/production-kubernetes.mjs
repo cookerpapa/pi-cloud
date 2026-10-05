@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readyCubeletPod } from "./lib/cube-execution-deployment.mjs";
+import { waitForReadyCubelet } from "./lib/cube-execution-deployment.mjs";
 import {
   assertCubeWorkspaceContract,
   assertCubeCompletionVersion,
@@ -203,17 +203,19 @@ function installSecrets() {
   });
 }
 async function deploy() {
+  const cubeNode = JSON.parse(kubectl(["get", "daemonset", "cube-node", "-o", "json"]));
   assertCubeWorkspaceContract(
     JSON.parse(kubectl(["get", "deployment", "cube-master", "-o", "json"])),
-    JSON.parse(kubectl(["get", "daemonset", "cube-node", "-o", "json"])),
+    cubeNode,
     resolve(runtimeDirectory, "state/cube-shared"),
   );
-  const cubelet = readyCubeletPod(
-    JSON.parse(
-      kubectl(["get", "pods", "-l", "app.kubernetes.io/component=cube-node", "-o", "json"]),
-    ).items,
-  );
-  if (!cubelet) throw new Error("A ready Cubelet is required before deploying the platform");
+  const cubelet = await waitForReadyCubelet({
+    expectedImage: cubeNode.spec.template.spec.containers.find((c) => c.name === "cubelet")?.image,
+    readPods: async () =>
+      JSON.parse(
+        kubectl(["get", "pods", "-l", "app.kubernetes.io/component=cube-node", "-o", "json"]),
+      ).items,
+  });
   const installed = JSON.parse(
     kubectl([
       "exec",

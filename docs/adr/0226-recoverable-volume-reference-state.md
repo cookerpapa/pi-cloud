@@ -63,7 +63,8 @@ bounded by Volume/node lifetimes, not historical Tools.
 ## Cutover and acceptance
 
 Replace managed reference deltas, without a legacy managed fallback. Apply
-additive Cube metadata migration and matching native/application protocol
+Cube metadata migration (new reference-state tables and removal of obsolete
+delta-application columns) and matching native/application protocol
 versions after draining; preserve PG sessions, Workspace bytes and historical
 UNKNOWN allocations. Old allocations lacking recoverable Volume/node evidence
 remain conservative. Rollback requires a drained matched metadata/binary restore.

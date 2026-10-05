@@ -343,8 +343,6 @@ export interface WorkspaceTerminalSessionTable {
   runtime_id: string | null;
   runtime_name: string | null;
   state: WorkspaceTerminalState;
-  lease_expires_at: Timestamp;
-  last_heartbeat_at: Timestamp;
   failure_code: string | null;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;

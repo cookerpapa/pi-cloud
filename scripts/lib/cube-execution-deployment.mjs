@@ -1,13 +1,41 @@
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
-export function readyCubeletPod(pods) {
+export function readyCubeletPod(pods, expectedImage) {
   return pods?.find(
     (pod) =>
       !pod.metadata?.deletionTimestamp &&
+      (!expectedImage ||
+        pod.spec?.containers?.some((c) => c.name === "cubelet" && c.image === expectedImage)) &&
       pod.status?.containerStatuses?.some(
-        (container) => container.name === "cubelet" && container.ready && container.state?.running,
+        (container) =>
+          container.name === "cubelet" &&
+          container.ready &&
+          container.state?.running &&
+          (!expectedImage ||
+            container.image === expectedImage ||
+            container.image?.endsWith(`/${expectedImage}`)),
       ),
   )?.metadata?.name;
+}
+
+/** Wait for the requested release, never a healthy predecessor being replaced. */
+export async function waitForReadyCubelet({
+  readPods,
+  expectedImage,
+  timeoutMs = 180_000,
+  now = Date.now,
+  sleep = delay,
+}) {
+  if (!expectedImage || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1)
+    throw new Error("Cubelet readiness target is invalid");
+  const deadline = now() + timeoutMs;
+  for (;;) {
+    const pod = readyCubeletPod(await readPods(), expectedImage);
+    if (pod) return pod;
+    if (now() >= deadline) throw new Error(`Cubelet did not become ready for ${expectedImage}`);
+    await sleep(Math.min(1000, deadline - now()));
+  }
 }
 
 export const CUBE_COMPLETION_COMMAND = [

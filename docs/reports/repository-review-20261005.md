@@ -4,6 +4,8 @@
 本轮完成全仓边界审查、固定版本 Pi 对照、隔离复现、SQL 计数及部署来源核对。
 交付内容是审查报告和复现工具；没有修改运行时代码、Cube 补丁或线上部署。
 
+后续实施与当前状态见[改善记录](review-improvements-20261005.md)。本报告保留审查时的基线和结论。
+
 ## 结论
 
 确认 **4 项行为问题，均为 P2；另有 1 项 P3 文档问题**。
@@ -87,7 +89,7 @@ completion source `0d36631cd419e04c29e52dc73d9d89d96c9d7e1b`。
 重试创建时，该 Workspace 会一直卡在恢复清理；等待更久不能补出丢失的元数据。
 这里不是说普通 HTTP 客户端取消必然中止已由 Cube 接管的创建。
 
-[复现](../../scripts/review-20261005-cube/attach_recovery_test.go)：真实 Bolt 上使用实际
+复现（归档于 `13344042` 的 `scripts/review-20261005-cube/attach_recovery_test.go`）：真实 Bolt 上使用实际
 Manager 和 binary adapter，以已经取消的 context 触发首次 Attach 失败；连续三次观察都
 得到零持有者但不能确认清理，第二个 Attach 也失败。直接传入正确 metadata 的 POSIX
 Detach 成功，排除了插件本身不可执行。实验不创建 VM、不触碰真实 Workspace 字节。
@@ -118,7 +120,7 @@ Detach 成功，排除了插件本身不可执行。实验不创建 VM、不触�
 4. 等待超过租期后，Close 被最终校验正确回滚，但 heartbeat 也无法续活过期 owner。
 5. 完全没有被锁住的 Workspace B，其生命周期操作同样被 `ownership_lost` 拒绝。
 
-[真实 PG 复现](../../scripts/review-20261005-owner.test.ts)使用完整迁移和两个独立 Workspace，
+真实 PG 复现（归档于 `13344042` 的 `scripts/review-20261005-owner.test.ts`）使用完整迁移和两个独立 Workspace，
 缩短到 1.5 秒租期、100ms heartbeat，观察到资源操作和续租两个锁等待。PG 本身仍能正常
 执行查询；释放 A 的锁后，B 的 Close 与 owner health 检查仍失败。生产默认是 15 秒租期、
 5 秒 heartbeat；复现缩短了时间，没有改变锁冲突关系。
@@ -153,7 +155,7 @@ Cube 对尚未进入 driver 的取消会返回 `tool_cancelled`。例如两条�
 例子：用户停止一条尚未开始的 Read，系统已经知道文件读取没有执行，下一轮上下文仍说
 结果/效果不确定，并走额外的未确认收尾。这不符合当前的结构化失败契约。
 
-[复现](../../scripts/review-20261005-cancellation.test.ts)串起实际 CompletionAdapter、Mailbox
+复现（归档于 `13344042` 的 `scripts/review-20261005-cancellation.test.ts`）串起实际 CompletionAdapter、Mailbox
 和取消等待器，断言最终 UNKNOWN 的 cause 正是 `effect: not_started`，且未确认回调触发。
 原生未进入 driver 的分支来自固定 Cube 源码；本轮没有为此新建真实 VM。
 
@@ -179,7 +181,7 @@ Cube 对尚未进入 driver 的取消会返回 `tool_cancelled`。例如两条�
 会设置的采样阻断；模型可能继续请求或生成新的工作，尽管该 Workflow 的效果还没有确认。
 这不是证明 Projector 自动重放了旧 Shell，也不是断言所有 Workflow 业务错误都该终止 Run。
 
-[复现](../../scripts/review-20261005-workflow.test.ts)把同一个结构化 unknown 分别交给两条
+复现（归档于 `13344042` 的 `scripts/review-20261005-workflow.test.ts`）把同一个结构化 unknown 分别交给两条
 实际适配路径。固定 Tool 调用不可用回调一次，Workflow 零次；Workflow 使用真实本地
 WebSocket 连接。后续采样阻断依赖该回调的事实已从 Turn Runner 核对。本轮复现没有请求付费模型。
 
@@ -296,8 +298,8 @@ MySQL/Bolt 状态、固定插件和回包协议一起升级的成本。后续应
 - `npm run eval:faults`：178/178 个定向故障用例通过；
   [版本化结果](repository-review-20261005-faults.json)单列，不把定向夹具称为线上混沌试验。
 
-新增加的 review 测试是**现状复现**：它们通过表示缺陷在基线可重现，不表示问题已修好。
-它们放在默认产品测试集外。正式修复时应把期望行为纳入相应组件的回归套件。
+当时新增的 review 测试是**现状复现**：它们通过表示缺陷在基线可重现，不表示问题已修好。
+它们当时放在默认产品测试集外。后续修复已把期望行为纳入相应组件的回归套件；以下旧复现命令需在归档版本 `13344042` 上执行。
 
 ```bash
 # R05-01：需要 Docker 和包含固定提交的 Cube 源码目录；只读导出，不修改该目录。

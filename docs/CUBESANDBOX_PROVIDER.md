@@ -62,8 +62,10 @@ The guest receives no model, PG, S3, Kubernetes or control-plane credential.
 The trusted Cube host completion adapter holds only its required PG/S3/Kafka
 and observation credentials. It stores images in S3 before sending references;
 the Worker verifies tenant/length/hash and restores ordinary Pi ImageContent.
-Two large-read permits bound image materialization independently of ordinary
-execution capacity.
+Eight large-read permits bound image materialization independently of ordinary
+execution capacity (ADR-0227). They include final delivery; source limits and
+64 MiB framing remain. Immutable final buffers are transferred without redundant
+Cubelet copies. Actual-image streaming/backpressure is a separate future change.
 
 Chat image preparation uses the same processor through fixed `envd-input-files.mjs`
 under the current Run binding. It reads immutable source references, normalizes in

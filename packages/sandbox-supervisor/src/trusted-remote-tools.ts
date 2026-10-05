@@ -1,6 +1,5 @@
 import {
   parseCloudToolCapabilitySnapshot,
-  ToolExecutionFailure,
   parseToolSandboxOperationRequest,
   CLOUD_TOOL_NAMES,
   MIN_TOOL_EXECUTION_TIMEOUT_MS,
@@ -33,18 +32,11 @@ import {
   type WorkflowExecutor,
 } from "./workflow-transport.ts";
 
-const UNAVAILABLE_TOOL_CODES = new Set([
-  "cubesandbox_tool_result_unknown",
-  "cubesandbox_tool_unavailable",
-  "tool_sandbox_identity_mismatch",
-  "tool_command_delivery_unknown",
-  "tool_command_executor_closed",
-  "tool_command_sealed",
-  "tool_operation_outcome_unknown",
-  "tool_result_released",
-  "stale_session_lease",
-  "ownership_lost",
-]);
+import {
+  blocksToolSampling,
+  confirmsNoToolEffect,
+  toolTransportFailure,
+} from "./tool-execution-outcome.ts";
 
 type RemoteOperationInput<T = ToolSandboxOperationRequest> = T extends unknown
   ? Omit<
@@ -330,11 +322,22 @@ export function createTrustedRemoteAgentTools(
       () => {
         received = true;
       },
-      () => {},
+      (error) => {
+        received = confirmsNoToolEffect(error);
+      },
     );
     // The image-decoding adapter adds a Promise above the mailbox. Observe that
     // Promise now: failure/cancellation can precede the command's Kafka ACK.
     void pending.catch(() => {});
+    const failTransport = async (error: unknown): Promise<never> => {
+      if (signal?.aborted) {
+        if (!confirmsNoToolEffect(error)) markCancellationUnconfirmed();
+        throw error;
+      }
+      const failure = toolTransportFailure(error);
+      if (blocksToolSampling(failure)) await runtime.onToolOperationUnavailable?.(failure);
+      throw failure;
+    };
     return {
       command: {
         executionReference: runtime.executionReference,
@@ -373,21 +376,7 @@ export function createTrustedRemoteAgentTools(
             unconfirmed: markCancellationUnconfirmed,
             timeoutMs: runtime.cancellationTimeoutMs?.() ?? TOOL_CANCELLATION_TIMEOUT_MS,
           });
-          const event = await final.catch(async (error: unknown) => {
-            if (signal?.aborted) throw error;
-            if (error instanceof ToolExecutionFailure) {
-              if (error.effect === "unknown" || UNAVAILABLE_TOOL_CODES.has(error.code))
-                await runtime.onToolOperationUnavailable?.(error);
-              throw error;
-            }
-            const failure = {
-              code: "tool_operation_outcome_unknown",
-              message: "Tool reply could not be confirmed; do not automatically repeat the command",
-              retryable: false,
-            } as const;
-            await runtime.onToolOperationUnavailable?.(failure);
-            throw new Error(`${failure.code}: ${failure.message}`, { cause: error });
-          });
+          const event = await final.catch(failTransport);
           return {
             toolBrokerProtocolVersion: 1,
             type: "tool_sandbox.operation_result",
@@ -410,7 +399,7 @@ export function createTrustedRemoteAgentTools(
             call: workflowCall,
             completion: pending,
             ...(signal ? { signal } : {}),
-          });
+          }).catch(failTransport);
         }
         throw new Error("Unsupported remote Tool operation");
       },

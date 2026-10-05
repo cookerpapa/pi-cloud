@@ -141,7 +141,7 @@ export class CubeCompletionAdapter {
       const notStarted = [
         "execution_not_started",
         "read_capacity_timeout",
-        "tool_cancelled",
+        "tool_cancelled_before_start",
       ].includes(packet.result.failure);
       const code =
         packet.result.quarantine || packet.result.failure === "tool_sandbox_unavailable"
@@ -153,7 +153,9 @@ export class CubeCompletionAdapter {
         code,
         packet.result.quarantine
           ? "The execution scope could not be stopped; the runtime requires control-plane recovery."
-          : "Tool execution did not provide a confirmed result; inspect effects before deciding to repeat it.",
+          : notStarted
+            ? "The Tool did not start; it performed no file or shell action."
+            : "Tool execution did not provide a confirmed result; inspect effects before deciding to repeat it.",
         notStarted && !packet.result.quarantine ? "not_started" : "unknown",
       );
       return;

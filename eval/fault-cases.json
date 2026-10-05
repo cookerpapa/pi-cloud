@@ -1247,6 +1247,62 @@
       "file": "test/sandbox-controller.test.ts",
       "test": "requires durable allocation closure even after a retry reports a preflight rejection",
       "invariant": "Local preflight rejection cannot release an earlier uncertain same-ID allocation; closure and physical confirmation remain required."
+    },
+    {
+      "id": "controller-resource-renewal-isolation",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/controller-renewal-isolation.test.ts",
+      "test": "renews its owner and serves another Workspace while a workspace row stays locked",
+      "invariant": "A blocked resource cannot revoke a healthy controller or block unrelated Workspace lifecycle work."
+    },
+    {
+      "id": "controller-terminal-renewal-isolation",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/controller-renewal-isolation.test.ts",
+      "test": "renews its owner and serves another Workspace while a terminal row stays locked",
+      "invariant": "Owner renewal does not depend on terminal resource-row maintenance."
+    },
+    {
+      "id": "controller-total-transaction-budget",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "releases owner locks and retires a connection after the PG whole-transaction deadline",
+      "invariant": "PG terminates overlong lifecycle transactions, frees ownership locks and retires the failed connection."
+    },
+    {
+      "id": "cancel-confirmed-before-start",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-cancellation-reply.test.ts",
+      "test": "keeps the confirmed no-effect reply through cancellation: after-stop",
+      "invariant": "Confirmed non-execution survives completion/mailbox/cancellation composition without UNKNOWN cleanup."
+    },
+    {
+      "id": "workflow-unknown-stops-sampling",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/workflow-outcomes.test.ts",
+      "test": "applies the Workflow outcome to the actual next Pi sampling boundary: unknown",
+      "invariant": "Unknown Workflow effects prevent a second model request without shell replay."
+    },
+    {
+      "id": "workflow-socket-loss-stops-sampling",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/workflow-outcomes.test.ts",
+      "test": "applies the Workflow outcome to the actual next Pi sampling boundary: socket-lost",
+      "invariant": "An unconfirmed Workflow connection close is a typed infrastructure failure."
+    },
+    {
+      "id": "workflow-business-error-continues",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/workflow-outcomes.test.ts",
+      "test": "applies the Workflow outcome to the actual next Pi sampling boundary: business-error",
+      "invariant": "Ordinary script errors cannot be mistaken for infrastructure loss by their text."
+    },
+    {
+      "id": "started-cancel-outcome-unknown",
+      "workspace": "@pi-cloud/cube-completion",
+      "file": "test/adapter.test.ts",
+      "test": "keeps native pre-start and in-flight interruption distinct: tool_cancelled",
+      "invariant": "Interruption after native execution may have effects; only explicit before-start cancellation proves no execution."
     }
   ]
 }

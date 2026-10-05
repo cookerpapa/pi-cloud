@@ -425,7 +425,7 @@ export class SandboxController {
       if (!this.#controlReady()) return;
       void Promise.all([
         this.recoverPersistentDevelopmentEnvironments(),
-        this.#reapOrphanedTerminals(),
+        this.#stateRepository.reconcileOwnership().then(() => this.#reapOrphanedTerminals()),
         this.#markUnrecoverableDevelopmentEnvironments(),
       ]).catch((error: unknown) => this.#onMaintenanceError?.(error));
     }, 30_000);

@@ -1,4 +1,5 @@
 import { TOOL_CANCELLATION_UNKNOWN } from "@pi-cloud/protocol";
+import { confirmsNoToolEffect } from "./tool-execution-outcome.ts";
 
 /** Pi still awaits the original Tool promise. Cancellation acceptance is never
  * substituted for its final result, and publication loss cannot replay Bash. */
@@ -31,7 +32,7 @@ export async function awaitCancelledToolReply<T>(options: {
   try {
     return await options.reply;
   } catch (cause) {
-    if (!options.signal?.aborted) throw cause;
+    if (!options.signal?.aborted || confirmsNoToolEffect(cause)) throw cause;
     options.unconfirmed();
     throw new Error(TOOL_CANCELLATION_UNKNOWN, { cause });
   } finally {

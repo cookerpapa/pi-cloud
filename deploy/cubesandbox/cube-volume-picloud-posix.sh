@@ -208,7 +208,9 @@ case "$operation" in
     ;;
   detach)
     [[ -n "$sandbox_id" && -n "$namespace" && "$ref_count" =~ ^[0-9]+$ ]] || fail
-    [[ -z "$metadata" || "$metadata" == '{"driver":"picloud-posix-v2"}' ]] || fail
+    # Attach only returns an existing POSIX path; there is no host mount to undo.
+    # Failed Attach may have returned no metadata. Cleanup depends on the
+    # validated request identity, not the success-only informational driver tag.
     printf '%s\n' '{"error":""}'
     ;;
   *)

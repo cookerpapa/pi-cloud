@@ -35,6 +35,7 @@ import type {
 
 /** Test fixture only. Production effects always use PostgreSQL ownership. */
 export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntimeStateRepository {
+  async reconcileOwnership(): Promise<void> {}
   readonly creations = new Map<
     string,
     { spec: SandboxCreateSpec; authorization: SandboxAllocationAuthorization }

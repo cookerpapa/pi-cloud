@@ -668,13 +668,23 @@ Cleanup atomically marks the PG allocation closed before contacting Cube. Closin
 at the node excludes future creation and joins any accepted creator before
 physical absence can be confirmed. No-handle cleanup uses the allocation catalog,
 not a missing inventory entry. Newer PG completions cannot reopen a closed intent.
-Master allocation receipts and Volume-reference transitions co-commit so retrieving
-an original reply cannot apply its counters again. Confirmed closed receipts may
+Master records admission holds before creation and reconciles versioned node
+holder/cleanup state independently of allocation reply persistence (ADR-0226).
+The fixed POSIX Detach requires no success-only metadata after failed Attach;
+pending cleanup and shared-holder protection remain durable (ADR-0227).
+Confirmed closed receipts may
 expire after their immutable authorization window plus one hour; node boot checks
 and durable clock floors continue rejecting old requests. Uncertain creations and
 unfinished cleanup never expire merely to free capacity. Historical untracked
 allocations retain independent-verification requirements. No VM deletion follows
 ordinary Agent Stop or an ordinary Tool error.
+
+Controller lifecycle transactions retain owner SHARE locking, resource CAS and
+PG-time checks, with server-side lock/statement/whole-transaction budgets.
+Renewal only updates the controller identity; resource invalidation runs in
+bounded maintenance batches with SKIP LOCKED. Terminal ownership follows that
+identity directly, without copied per-terminal lease timestamps. Cold native
+writer cleanup batches active-Run queries and never overlaps itself (ADR-0227).
 
 The guest executes the whole fixed Tool, with native edit/write logic and source
 output bounds. Internal reads/writes are not separate RPCs. The trusted Cube
@@ -684,6 +694,14 @@ not authority. The final reply resolves or
 rejects `execute`. Pi still owns after-Tool hooks, its lifecycle events and the
 canonical Tool Result appended to the execution log. Kafka reply ACK releases transport buffers, with
 no completed-result cache or per-result retirement notification.
+Eight large-reply permits replace the former two; source truncation and the
+64 MiB per-reply framing remain. Cube transfers immutable final buffers to
+delivery without two extra full-frame copies. Read remains conservatively
+classified before execution; actual-image streaming is a separate future change.
+Explicit before-start cancellation is distinct from interrupted execution.
+Confirmed `not_started` survives Stop; fixed Tools and Workflow share typed
+infrastructure failure policy, blocking further sampling on UNKNOWN while
+ordinary native/business errors stay on Pi's normal Tool error path (ADR-0227).
 Kafka Tool replies accept only the final result; typed observation probe replies
 share that mailbox without resolving native Tool callbacks. Guest updates use the separate HTTP
 observation path. The Worker observes its reply Promise before awaiting command

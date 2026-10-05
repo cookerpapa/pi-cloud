@@ -566,6 +566,38 @@ describe("whole-tool Worker adapter", () => {
     expect(unconfirmed).toHaveBeenCalledOnce();
   });
 
+  it.each(["before-stop", "after-stop"])(
+    "preserves a confirmed not-started reply during cancellation and disposal: %s",
+    async (ordering) => {
+      const cancelled = new AbortController();
+      const pending = Promise.withResolvers<NativeToolEnd>();
+      const unconfirmed = vi.fn();
+      const failure = new ToolExecutionFailure({
+        code: "tool_cancelled",
+        effect: "not_started",
+        message: "The Tool did not start",
+      });
+      const { value } = configuration({
+        waitForToolReply: async () => pending.promise,
+        onToolCancellationUnconfirmed: unconfirmed,
+        publishToolCommand: async (command) => {
+          if (ordering === "before-stop") pending.reject(failure);
+          cancelled.abort();
+          if (ordering === "after-stop") pending.reject(failure);
+          return { operationId: command.request.operationId, accepted: true };
+        },
+      });
+      const runtime = createTrustedRemoteAgentTools(value);
+      await runtime.transformContext([]);
+      await expect(
+        runtime.tools
+          .find((t) => t.name === "read")!
+          .execute("cancelled", { path: "file.txt" }, cancelled.signal),
+      ).rejects.toBe(failure);
+      expect(unconfirmed).not.toHaveBeenCalled();
+    },
+  );
+
   it("forwards cancellation through the validated adapter and waits for its original final reply", async () => {
     const cancelled = new AbortController(),
       reply = Promise.withResolvers<NativeToolEnd>();

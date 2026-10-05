@@ -211,7 +211,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
   );
 
   it.each(["create", "close"] as const)(
-    "rolls back %s after waiting past the PG owner deadline",
+    "refuses %s admission without a full PG renewal margin",
     async (action) => {
       const f = await allocationFixture();
       if (action === "close") await f.repository.beginCreation(f.spec);
@@ -243,18 +243,9 @@ describe("PostgreSQL Sandbox control ownership", () => {
             ? f.repository.beginCreation(f.spec)
             : f.repository.closeAllocation(f.spec.activationId, "workspace")
         ).catch((e) => e);
-        await vi.waitFor(async () => {
-          const waits = await sql<{
-            n: number;
-          }>`select count(*)::int as n from pg_stat_activity where datname=current_database() and wait_event_type='Lock'`.execute(
-            f.database,
-          );
-          expect(waits.rows[0]!.n).toBe(1);
-        });
-        await sql`select pg_sleep(0.55)`.execute(f.database);
+        expect(await mutation).toMatchObject({ code: "unavailable" });
         release();
         await blocker;
-        expect(await mutation).toMatchObject({ code: "ownership_lost" });
         const row = await f.database
           .selectFrom("workspace_runtimes")
           .select(["allocation_closed", "creation_spec"])
@@ -269,6 +260,39 @@ describe("PostgreSQL Sandbox control ownership", () => {
       }
     },
   );
+
+  it("releases owner locks and retires a connection after the PG whole-transaction deadline", async () => {
+    const database = await fixtureDatabase();
+    let armed = false;
+    const traced = database.withPlugin({
+      transformQuery: (args) => args.node,
+      async transformResult(args) {
+        if (armed && args.result.rows.some((row) => "remaining_ms" in row)) {
+          armed = false;
+          // Idle between SQL statements: statement_timeout cannot cover this.
+          await new Promise((resolve) => setTimeout(resolve, 700));
+        }
+        return args.result;
+      },
+    });
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
+      database: traced,
+      instanceId: randomUUID(),
+      sandboxDomainId: "sandbox-domain-0001",
+      ownerBaseUrl: "http://transaction-budget.test",
+      leaseMs: 2000,
+      heartbeatMs: 100,
+    });
+    resources.push(() => repository.close());
+    await repository.start();
+    armed = true;
+    await expect(repository.claimOrphanedTerminals(1)).rejects.toMatchObject({
+      code: "unavailable",
+      cause: { code: "25P04" },
+    });
+    await expect(repository.checkHealth()).resolves.toBeUndefined();
+    await expect(repository.claimOrphanedTerminals(1)).resolves.toEqual([]);
+  });
 
   it("rejects a late terminal activation after its physical allocation was closed", async () => {
     const f = await allocationFixture();

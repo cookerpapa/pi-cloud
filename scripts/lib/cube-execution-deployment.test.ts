@@ -4,6 +4,7 @@ import {
   cubeCompletionPatch,
   cubeCompletionSecret,
   readyCubeletPod,
+  waitForReadyCubelet,
 } from "./cube-execution-deployment.mjs";
 
 it("selects a live Cubelet container during a DaemonSet replacement", () => {
@@ -16,6 +17,42 @@ it("selects a live Cubelet container during a DaemonSet replacement", () => {
   const sidecar = pod("sidecar-only", undefined, true, { running: {} }, "network-agent");
   expect(readyCubeletPod([stale, restarting, sidecar])).toBeUndefined();
   expect(readyCubeletPod([stale, pod("ready", undefined, true, { running: {} })])).toBe("ready");
+});
+
+it("waits past an old ready Pod and a not-yet-ready replacement", async () => {
+  const pod = (name, image, ready) => ({
+    metadata: { name },
+    spec: { containers: [{ name: "cubelet", image }] },
+    status: { containerStatuses: [{ name: "cubelet", image, ready, state: { running: {} } }] },
+  });
+  const old = pod("old", "cube:v1", true),
+    next = pod("next", "cube:v2", false);
+  let attempt = 0,
+    now = 0;
+  expect(
+    await waitForReadyCubelet({
+      expectedImage: "cube:v2",
+      timeoutMs: 5000,
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+      readPods: async () => (++attempt < 3 ? [old, next] : [old, pod("next", "cube:v2", true)]),
+    }),
+  ).toBe("next");
+  expect(attempt).toBe(3);
+  now = 0;
+  await expect(
+    waitForReadyCubelet({
+      expectedImage: "cube:v2",
+      timeoutMs: 2000,
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+      readPods: async () => [old, next],
+    }),
+  ).rejects.toThrow("cube:v2");
 });
 
 it("installs one fixed completion command in the Cubelet service section", () => {
