@@ -1,0 +1,28 @@
+{
+  "revision": "f6b9c766",
+  "checkedAt": "2026-10-05T02:11:47.373Z",
+  "scriptSha256": "879b0ad3957dad9652fb902a8f3cb483668435024df77da3c4485cbeb24fbca7",
+  "scope": "Isolated actual completion parser/adapter/image codec. Synthetic high image, blocked in-memory blob writes; excludes Cubelet, guest/Worker and real S3/Kafka. Not a fleet capacity or full node memory bound.",
+  "samples": [
+    {
+      "count": 2,
+      "base64Bytes": 13679752,
+      "storedBytes": 20519628,
+      "publications": 2,
+      "rssBeforeBytes": 190148608,
+      "rssWhileUploadsBlockedBytes": 313958400,
+      "peakRssBytes": 313958400,
+      "scope": "Actual completion framing/adapter/codec; normalized synthetic high image; delayed in-memory blob sink and reply sink, no real S3/Kafka/VM or aggregate host-memory bound"
+    },
+    {
+      "count": 8,
+      "base64Bytes": 13679752,
+      "storedBytes": 82078512,
+      "publications": 8,
+      "rssBeforeBytes": 184922112,
+      "rssWhileUploadsBlockedBytes": 485081088,
+      "peakRssBytes": 526991360,
+      "scope": "Actual completion framing/adapter/codec; normalized synthetic high image; delayed in-memory blob sink and reply sink, no real S3/Kafka/VM or aggregate host-memory bound"
+    }
+  ]
+}

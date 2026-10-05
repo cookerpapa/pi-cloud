@@ -3,6 +3,46 @@ import { once } from "node:events";
 import { WebSocketServer } from "ws";
 import { readWorkflowResult } from "../src/workflow-transport.ts";
 import type { NativeToolEnd } from "@pi-cloud/protocol";
+import { ToolExecutionFailure } from "@pi-cloud/protocol";
+
+it.each(["completed", "business-error", "not-started"] as const)(
+  "preserves a known %s reply when Workflow observation begins after Stop",
+  async (kind) => {
+    const stopped = new AbortController();
+    stopped.abort();
+    const failure = new ToolExecutionFailure({
+      code: "tool_cancelled_before_start",
+      effect: "not_started",
+      message: "Did not start",
+    });
+    const completion =
+      kind === "not-started"
+        ? Promise.reject(failure)
+        : Promise.resolve<NativeToolEnd>({
+            type: "tool_execution_end",
+            toolCallId: "call",
+            toolName: "bash",
+            isError: kind === "business-error",
+            result: { content: [{ type: "text", text: "business failure" }], details: 42 },
+          });
+    const result = readWorkflowResult({
+      resultUrl: new URL("http://127.0.0.1:1/result"),
+      executionReference: "test",
+      activationId: crypto.randomUUID(),
+      operationId: crypto.randomUUID(),
+      call: async () => null,
+      completion,
+      signal: stopped.signal,
+    });
+    if (kind === "not-started") await expect(result).rejects.toBe(failure);
+    else
+      await expect(result).resolves.toMatchObject({
+        operation: "workflow.exec",
+        ok: kind === "completed",
+        ...(kind === "completed" ? { value: 42 } : { error: "business failure" }),
+      });
+  },
+);
 
 it("streams many sequential workflow calls without retaining completed replies", async () => {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });

@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareCubeRelease, cubeAdoptionFlags } from "./lib/cube-release-inputs.mjs";
+import { cubeNativeImageArguments } from "./lib/cube-execution-deployment.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const runtimeDirectory = resolve(
@@ -19,6 +20,7 @@ const kubeconfig =
 const kubectl = process.env.PI_CLOUD_KUBECTL_BIN ?? "/usr/local/bin/k3s";
 const prefix = process.env.PI_CLOUD_KUBECTL_BIN ? [] : ["kubectl"];
 const env = { ...process.env, KUBECONFIG: kubeconfig };
+const images = cubeNativeImageArguments(process.env.PI_CLOUD_CUBE_IMAGE_VERSION);
 const execute = promisify(execFile);
 async function capture(args) {
   try {
@@ -69,6 +71,7 @@ try {
         "--kubeconfig",
         kubeconfig,
         "--reuse-values",
+        ...images,
         ...release.rendererArgs,
         ...adoption,
         "--wait",

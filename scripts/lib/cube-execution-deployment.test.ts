@@ -5,6 +5,7 @@ import {
   cubeCompletionSecret,
   readyCubeletPod,
   waitForReadyCubelet,
+  cubeNativeImageArguments,
 } from "./cube-execution-deployment.mjs";
 
 it("selects a live Cubelet container during a DaemonSet replacement", () => {
@@ -17,6 +18,16 @@ it("selects a live Cubelet container during a DaemonSet replacement", () => {
   const sidecar = pod("sidecar-only", undefined, true, { running: {} }, "network-agent");
   expect(readyCubeletPod([stale, restarting, sidecar])).toBeUndefined();
   expect(readyCubeletPod([stale, pod("ready", undefined, true, { running: {} })])).toBe("ready");
+});
+
+it("selects all native images as one release without replacing retained configuration", () => {
+  expect(cubeNativeImageArguments(undefined)).toEqual([]);
+  const selected = cubeNativeImageArguments("review-v7");
+  for (const component of ["api", "master", "cubelet"])
+    expect(selected).toContain(`images.${component}.tag=review-v7`);
+  expect(selected).toContain("images.master.repository=pi-cloud/cube-master");
+  expect(selected).toContain("images.cubelet.repository=pi-cloud/cubelet");
+  expect(() => cubeNativeImageArguments("v7,other=bad")).toThrow("Invalid");
 });
 
 it("waits past an old ready Pod and a not-yet-ready replacement", async () => {

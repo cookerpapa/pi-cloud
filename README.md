@@ -96,8 +96,9 @@ policy, structured Tool failures and recoverable Cube Volume reference state.
 The [October 5 follow-up review](docs/reports/repository-review-20261005.md)
 covers the current 22 workspaces and matched Cube release. It records four new
 behavior findings, a documentation inconsistency, isolated reproducers and SQL
-counts. These findings are pending repair; this review makes no runtime or
-deployment change.
+counts. The [approved improvements](docs/reports/review-improvements-20261005.md)
+track recovery isolation, consistent Tool outcomes, eight large-reply permits
+and matched verification/release status.
 
 ## Quick start
 

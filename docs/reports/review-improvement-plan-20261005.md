@@ -1,6 +1,9 @@
 # October 5 review: proposed improvement slices
 
-Status: proposed, not implemented. Baseline: `5c2fcab4`.
+Status: accepted under ADR-0227. Baseline: `5c2fcab4`.
+See the [improvement record](review-improvements-20261005.md) for implementation
+and verification. The owner chose widening Read concurrency for this release;
+the separately described streaming transport remains future work.
 This refines [R05-01–05](repository-review-20261005.md) after source and ADR rechecks.
 Existing review files and runtime/deployment state are unchanged by this proposal.
 

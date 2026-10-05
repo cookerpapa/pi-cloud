@@ -28,14 +28,15 @@ export async function readWorkflowResult(input: {
   completion: Promise<NativeToolEnd>;
   signal?: AbortSignal;
 }): Promise<ToolSandboxOperationResponse> {
-  input.signal?.throwIfAborted();
   const url = new URL(input.resultUrl);
   url.pathname = TOOL_WORKFLOW_PATH;
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  const socket = new WebSocket(url, {
-    headers: { authorization: `Bearer ${input.executionReference}` },
-    maxPayload: 5 * 1024 * 1024,
-  });
+  const socket = input.signal?.aborted
+    ? undefined
+    : new WebSocket(url, {
+        headers: { authorization: `Bearer ${input.executionReference}` },
+        maxPayload: 5 * 1024 * 1024,
+      });
   const controller = new AbortController();
   const signal = input.signal
     ? AbortSignal.any([input.signal, controller.signal])
@@ -49,16 +50,17 @@ export async function readWorkflowResult(input: {
       settled = true;
       signal.removeEventListener("abort", abort);
       controller.abort();
-      socket.close();
+      socket?.close();
       if (error) reject(error);
       else resolve(result!);
     };
     const fail = (cause: unknown) => finish(toolTransportFailure(cause, "workflow_result_unknown"));
-    const abort = () => fail(new Error("Workflow interrupted"));
+    // A completion already queued on this tick wins a later cancellation.
+    const abort = () => queueMicrotask(() => fail(new Error("Workflow interrupted")));
     signal.addEventListener("abort", abort, { once: true });
-    socket.on("error", fail);
-    socket.on("close", () => fail(new Error("Workflow connection ended before its result")));
-    socket.on("message", (bytes) => {
+    socket?.on("error", fail);
+    socket?.on("close", () => fail(new Error("Workflow connection ended before its result")));
+    socket?.on("message", (bytes) => {
       try {
         const frame = JSON.parse(bytes.toString());
         if (frame.type === "error") fail(new Error(String(frame.message)));
@@ -78,7 +80,7 @@ export async function readWorkflowResult(input: {
             calls.set(frame.id, call);
           }
           const send = (response: unknown) => {
-            if (!settled && socket.readyState === WebSocket.OPEN)
+            if (!settled && socket?.readyState === WebSocket.OPEN)
               socket.send(JSON.stringify(response));
           };
           void call.result
@@ -98,32 +100,35 @@ export async function readWorkflowResult(input: {
         fail(error);
       }
     });
-    void input.completion.then((event) => {
-      if (event.isError) {
+    void input.completion
+      .then((event) => {
+        if (event.isError) {
+          finish(undefined, {
+            toolBrokerProtocolVersion: 1,
+            type: "tool_sandbox.operation_result",
+            activationId: input.activationId,
+            operationId: input.operationId,
+            operation: "workflow.exec",
+            ok: false,
+            value: null,
+            error: event.result.content
+              .filter((part) => part.type === "text")
+              .map((part) => part.text)
+              .join("\n"),
+          });
+          return;
+        }
         finish(undefined, {
           toolBrokerProtocolVersion: 1,
           type: "tool_sandbox.operation_result",
           activationId: input.activationId,
           operationId: input.operationId,
           operation: "workflow.exec",
-          ok: false,
-          value: null,
-          error: event.result.content
-            .filter((part) => part.type === "text")
-            .map((part) => part.text)
-            .join("\n"),
+          ok: true,
+          value: event.result.details,
         });
-        return;
-      }
-      finish(undefined, {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.operation_result",
-        activationId: input.activationId,
-        operationId: input.operationId,
-        operation: "workflow.exec",
-        ok: true,
-        value: event.result.details,
-      });
-    }, fail);
+      }, fail)
+      .catch(fail);
+    if (signal.aborted) abort();
   });
 }

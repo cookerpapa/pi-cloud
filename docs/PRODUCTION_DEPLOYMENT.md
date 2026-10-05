@@ -19,12 +19,11 @@ local volumes, builds/imports images and installs two Helm releases in
 `cube-system`: `pi-cloud-infrastructure` followed by `pi-cloud`. The second release
 runs a database migration/bootstrap Job before application rollout. Worker boot
 claims use the K3s local-path provisioner; its helper image is prefetched too.
-Workers retain the former 2 GiB memory limit for large native image payloads;
-1 GiB failed the 25 MB image acceptance. The provider gateway uses 1 GiB with
-`GOMEMLIMIT=768MiB`: its former 512 MiB limit also failed the multi-image request
-on K3s without container swap. This is a measured local-profile budget, not a
-guarantee for arbitrary concurrent large-context requests. The kubelet permits 1,024 tasks per Pod because the Control Plane's partitioned
-Kafka producers require native threads; a 128-task limit prevents ingress readiness.
+Under ADR-0215 the current self-hosted profile has no fixed Pod CPU/memory limits,
+Go memory ceiling or kubelet task ceiling. Scheduling requests and measured Worker
+memory-pressure admission remain. Native image processing still needs real memory;
+source/transport bounds are documented in the Cube provider contract. Older fixed
+limits and their failures are historical acceptance evidence, not current settings.
 
 Open `http://127.0.0.1:8080`, register an account, then designate the administrator:
 
@@ -83,6 +82,21 @@ after rejecting foreign Helm ownership. Preserve intended image values during
 that cutover if earlier manual updates diverged from Helm's stored values.
 Subsequent rollbacks use the stored rendered release; a pre-cutover rollback needs
 the old complete installer. See [ADR-0217](adr/0217-declarative-cube-release.md).
+
+On an already prepared cluster, a matched runtime upgrade can reuse the same
+renderer with retained Helm values, without repeating root-only host preparation:
+
+```bash
+PI_CLOUD_IMAGE_VERSION=<release> node scripts/build-cubesandbox-runtime.mjs
+# Import the matching cube-api, cube-master and cubelet images into K3s first.
+PI_CLOUD_CUBE_IMAGE_VERSION=<release> node scripts/configure-cube-completion.mjs
+```
+
+This changes all three native image values in one rendered Helm release. Existing
+VMs must be drained before Node replacement. Application deployment waits for a
+ready Cubelet of the desired image and then verifies native/completion identities.
+Migration 175 removes obsolete terminal lease mirrors; drain the old Control Plane
+before applying it and use matching schema/application state for rollback.
 The completion image build requires `PI_CLOUD_CUBE_PATCH_ID` matching the actual
 base image, so a stale local `production` tag cannot silently produce a release.
 Platform deployment checks the actual CubeMaster/Cubelet shared path, Cubelet

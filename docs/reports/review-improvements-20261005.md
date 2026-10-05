@@ -44,6 +44,23 @@ discussed streaming image transport or claim constant-memory image decoding.
   blocked delivery, ordinary-operation progress, pre-start cancellation and reuse.
 - Native Session Host and desired-image readiness tests: five assertions passed.
 
+The combined CI run passed native/build/type checks and all workspace assertions
+except a schema-snapshot assertion still naming migration 174. That test now
+expects 175 and checks that terminal ownership has no copied lease columns; all
+41 database assertions pass on rerun. The remaining CI gates passed separately:
+65 acceptance-helper assertions, 186/186 fault cases and the high-severity audit
+(two moderate dependency findings remain). The final Workflow cancellation-race
+change passed all 278 supervisor assertions and its type check. This records the
+actual command sequence rather than claiming the initial CI exited successfully.
+
+An already received Workflow completion now wins a later Stop, including when
+observation begins after cancellation. Missing completion still becomes UNKNOWN.
+The [reply-memory fixture](review-reply-memory-20261005.json) uses the actual
+completion parser/adapter/codec with delayed in-memory blob/reply sinks. Eight
+13.7 MB base64 replies complete; the observed process peak is about 503 MiB.
+This excludes Cubelet, Guest, Worker and real S3/Kafka costs and is not a fleet
+capacity claim. The maintained measurement script records its scope explicitly.
+
 The first expanded native suite hit ETXTBSY while executing a freshly created
 binary-plugin test stub on Docker overlay storage. The test runner now places
 temporary fixture files on an executable tmpfs, with compiler scratch separate.

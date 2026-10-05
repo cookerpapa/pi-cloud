@@ -1,6 +1,20 @@
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
+/** One matched native release; ordinary configuration reconciliation retains
+ * installed image values unless an explicit new build is selected. */
+export function cubeNativeImageArguments(tag) {
+  if (tag === undefined) return [];
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(tag))
+    throw new Error("Invalid native Cube image tag");
+  return ["api", "master", "cubelet"].flatMap((component) => [
+    "--set",
+    `images.${component}.repository=pi-cloud/${component === "cubelet" ? "cubelet" : `cube-${component}`}`,
+    "--set",
+    `images.${component}.tag=${tag}`,
+  ]);
+}
+
 export function readyCubeletPod(pods, expectedImage) {
   return pods?.find(
     (pod) =>
