@@ -35,8 +35,12 @@ export async function up<DB>(database: Kysely<DB>): Promise<void> {
       from withdrawn w where t.id=w.turn_id and t.tenant_id=w.tenant_id
     ) insert into run_transitions(id,tenant_id,run_id,from_state,to_state,reason,occurred_at)
       select gen_random_uuid(),tenant_id,id,'queued','cancelled','queued_input_withdrawn',clock_timestamp() from withdrawn;
+    update turn_control_requests set payload=payload || '{"inputReturnPending":true}'::jsonb
+      where id in (select distinct input_return_request_id from runs where input_return_request_id is not null);
     alter table runs drop column input_paused;
-    create index runs_returned_inputs on runs (tenant_id,session_id,mailbox_position)
+    create index input_return_pending on turn_control_requests(tenant_id,session_id,created_at,id)
+      where kind='cancel' and payload->>'inputReturnPending'='true';
+    create index runs_returned_inputs on runs (tenant_id,session_id,input_return_request_id,mailbox_position)
       where input_return_request_id is not null;
     create or replace function pi_cloud_input_queue_run_change() returns trigger language plpgsql as $$
     begin

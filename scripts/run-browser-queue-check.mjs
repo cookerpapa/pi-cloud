@@ -11,6 +11,7 @@ const fixture = `
 import React from "react";
 import {createRoot} from "react-dom/client";
 import {PendingInputQueue} from "/src/PendingInputQueue.tsx";
+import {inputReturnRecovery} from "/src/returned-inputs.ts";
 import {PiCloudApiError} from "/src/api.ts";
 import {I18nProvider} from "/src/i18n.tsx";
 import "/src/product.css";
@@ -20,12 +21,12 @@ window.queueId=id;
 window.actions=[];window.snapshots=[];window.restored=[];
 let generation=0, receipts=new Map();
 const reset = (count=3) => ({sessionId:id(90),revision:1,viewVersion:"1",afterPosition:0,hasMore:false,hasReturnedInputs:false,activeTurnId:id(99),items:Array.from({length:count},(_,i)=>({text:["A","B","C"][i]??"Input "+(i+1),i})).map(({text,i})=>({turnId:id(i+1),runId:id(i+11),text,mailboxPosition:i+1,acceptedAt:"2026-09-26T00:00:00.000Z",status:"queued"}))});
-window.queue=reset();window.queueReads=0;window.returned=[];window.returnPending=false;
+window.queue=reset();window.queueReads=0;window.returned=[];window.returnPending=false;window.returnAcknowledged=true;
 const pageOf = (page) => {
   if(page && window.conflictPage){window.conflictPage=false;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);}
   if(page && page.viewVersion!==window.queue.viewVersion)throw new PiCloudApiError(409,"conflict","page changed");
   const afterPosition=page?.afterPosition??0, items=window.queue.items.filter(i=>i.mailboxPosition>afterPosition);
-  return {...structuredClone(window.queue),hasReturnedInputs:window.returned.length>0||window.returnPending,afterPosition,hasMore:items.length>20,items:structuredClone(items.slice(0,20))};
+  return {...structuredClone(window.queue),hasReturnedInputs:!window.returnAcknowledged,afterPosition,hasMore:items.length>20,items:structuredClone(items.slice(0,20))};
 };
 const api = {
   async getInputQueue(_session,_signal,page) {
@@ -52,21 +53,26 @@ const api = {
     if(window.loseReply){window.loseReply=false;throw new TypeError("reply lost");}
     return result;
   },
-  async getReturnedInputs(sessionId){
-    return {sessionId,pending:window.returnPending,hasMore:window.returned.length>20,
-      items:window.returnPending?[]:structuredClone(window.returned.slice(0,20))};
+  async getReturnedInputs(sessionId,_signal,page={}){
+    const requestId=page.requestId??(!window.returnAcknowledged?id(88):null), afterPosition=page.afterPosition??0;
+    const items=window.returned.filter(i=>i.mailboxPosition>afterPosition);
+    return {sessionId,requestId,afterPosition,pending:!!requestId&&window.returnPending,
+      hasMore:!!requestId&&!window.returnPending&&items.length>20,
+      items:!requestId||window.returnPending?[]:structuredClone(items.slice(0,20))};
   },
-  async acknowledgeReturnedInputs(sessionId,turnIds){
+  async acknowledgeReturnedInputs(sessionId,requestId){
     if(window.loseReturnAck){window.loseReturnAck=false;throw new TypeError("reply lost");}
-    window.returned=window.returned.filter(i=>!turnIds.includes(i.turnId));
+    if(window.returnAcknowledged)return;
+    window.returnAcknowledged=true;
+    if(window.earlyReturnSnapshot){window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue();await new Promise(resolve=>setTimeout(resolve,60));}
   }
 
 };
 window.renderQueue=(canMutate=true,count=3)=>{
-  window.queue=reset(count);window.queueReads=0;window.returned=[];window.returnPending=false;receipts=new Map();window.actions=[];window.restored=[];window.snapshots=[];
+  window.queue=reset(count);window.queueReads=0;window.returned=[];window.returnPending=false;window.returnAcknowledged=true;receipts=new Map();window.actions=[];window.restored=[];window.snapshots=[];
   root.render(React.createElement(React.StrictMode,null,React.createElement(I18nProvider,{initialLanguage:"zh-CN"},
     React.createElement(PendingInputQueue,{key:++generation,api,sessionId:window.queue.sessionId,canMutate,refreshSignal:String(generation),streamQueue:null,
-      restoredInputIds:new Set(),onSnapshot:q=>window.snapshots.push(q),onRestoreDraft:text=>window.restored.push(text)}))));
+      returnRecovery:inputReturnRecovery(),onSnapshot:q=>window.snapshots.push(q),onRestoreDraft:text=>window.restored.push(text)}))));
 };
 window.refreshQueue=()=>window.dispatchEvent(new Event("focus"));
 window.renderQueue();window.fixtureReady=true;
@@ -222,15 +228,19 @@ try {
     await click(row(2), "编辑");
     await draft("draft before Stop");
     await page.evaluate(
-      "window.returned=Array.from({length:45},(_,i)=>({turnId:window.queueId(i+1),text:'Returned '+i,mailboxPosition:i+1,uploads:[]}));window.queue.items=[];window.returnPending=true;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue()",
+      "window.returned=Array.from({length:45},(_,i)=>({turnId:window.queueId(i+1),text:'Returned '+i,mailboxPosition:i+1,uploads:[]}));window.queue.items=[];window.returnPending=true;window.returnAcknowledged=false;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue()",
     );
     await page.waitFor("document.body.textContent.includes('确认哪些消息尚未执行')");
     assert.deepEqual(await page.evaluate("window.restored"), []);
-    await page.evaluate("window.returnPending=false;window.loseReturnAck=true");
+    await page.evaluate(
+      "window.returnPending=false;window.loseReturnAck=true;window.earlyReturnSnapshot=true",
+    );
     await page.waitFor("document.body.textContent.includes('暂时无法取回')");
-    assert.equal(await page.evaluate("window.restored.length"), 1);
+    assert.equal(await page.evaluate("window.restored.length"), 3);
     await click(".pending-input-queue", "重新取回");
-    await page.waitFor("window.returned.length===0 && window.restored.length===3");
+    await page.waitFor(
+      "window.returnAcknowledged && window.restored.length===3 && !document.body.textContent.includes('确认哪些消息尚未执行') && !document.body.textContent.includes('暂时无法取回')",
+    );
     assert.deepEqual(
       await page.evaluate("window.restored.join('\\n\\n').split('\\n\\n')"),
       Array.from({ length: 45 }, (_, i) => "Returned " + i),

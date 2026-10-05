@@ -926,11 +926,27 @@ export class ControlPlaneController {
   }
 
   @Get("sessions/:sessionId/returned-inputs")
-  async getReturnedInputs(@Req() request: FastifyRequest, @Param("sessionId") sessionId: unknown) {
+  async getReturnedInputs(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionId: unknown,
+    @Query("requestId") requestId: unknown,
+    @Query("afterPosition") afterPosition: unknown,
+  ) {
     const identity = this.tenantRequestContext.resolve(request);
+    if (
+      afterPosition !== undefined &&
+      (typeof afterPosition !== "string" || !/^(0|[1-9][0-9]*)$/.test(afterPosition))
+    )
+      throw new ControlPlaneApiValidationError("Invalid returned input page");
     return this.queuedInputs.returned(
       identity.tenantId,
       parseUuidPathParameter(sessionId, "sessionId"),
+      {
+        ...(requestId === undefined
+          ? {}
+          : { requestId: parseUuidPathParameter(requestId, "requestId") }),
+        ...(afterPosition === undefined ? {} : { afterPosition: Number(afterPosition) }),
+      },
     );
   }
 

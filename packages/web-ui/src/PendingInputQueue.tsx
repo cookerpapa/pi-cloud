@@ -1,4 +1,4 @@
-import { restoreReturnedInputs } from "./returned-inputs.ts";
+import { restoreReturnedInputs, type InputReturnRecovery } from "./returned-inputs.ts";
 import { UploadCards } from "./UploadCards.tsx";
 import type { UserUpload } from "@pi-cloud/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,7 +20,7 @@ export function PendingInputQueue({
   streamQueue,
   onSnapshot,
   onRestoreDraft,
-  restoredInputIds,
+  returnRecovery,
 }: {
   api: PiCloudApi;
   sessionId: string;
@@ -28,7 +28,7 @@ export function PendingInputQueue({
   refreshSignal: string;
   streamQueue: InputQueueResource | null;
   onSnapshot: (queue: InputQueueResource) => void;
-  restoredInputIds: Set<string>;
+  returnRecovery: InputReturnRecovery;
   onRestoreDraft: (text: string, uploads: UserUpload[]) => boolean | void;
 }) {
   const { t } = useI18n();
@@ -218,7 +218,12 @@ export function PendingInputQueue({
   const [returnStatus, setReturnStatus] = useState<"idle" | "pending" | "failed">("idle");
   const [returnRetry, retryReturns] = useState(0);
   useEffect(() => {
-    if (!queue?.hasReturnedInputs || !canMutate) return;
+    if ((!queue?.hasReturnedInputs && !returnRecovery.requestId) || !canMutate) {
+      // SSE may report the committed acknowledgement before its HTTP reply.
+      // Cancelling that request must not leave the old waiting/error notice.
+      setReturnStatus("idle");
+      return;
+    }
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const recover = async () => {
@@ -226,7 +231,7 @@ export function PendingInputQueue({
         const result = await restoreReturnedInputs(
           api,
           sessionId,
-          restoredInputIds,
+          returnRecovery,
           (text, uploads) => callbacks.current.onRestoreDraft(text, uploads),
           abort.signal,
         );
@@ -249,7 +254,7 @@ export function PendingInputQueue({
     canMutate,
     queue?.hasReturnedInputs,
     queue?.viewVersion,
-    restoredInputIds,
+    returnRecovery,
     returnRetry,
     refresh,
   ]);

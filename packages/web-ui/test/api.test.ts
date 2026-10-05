@@ -62,6 +62,8 @@ describe("tenant-aware browser API", () => {
     const turnId = "20000000-0000-4000-8000-000000000001";
     const returned = {
       sessionId,
+      requestId: turnId,
+      afterPosition: 0,
       pending: false,
       hasMore: false,
       items: [{ turnId, text: "draft", uploads: [], mailboxPosition: 2 }],
@@ -69,7 +71,7 @@ describe("tenant-aware browser API", () => {
     const transport = vi.fn<typeof fetch>(async (input, init) => {
       if (String(input).endsWith("/acknowledgements")) {
         expect(init?.method).toBe("POST");
-        expect(JSON.parse(String(init?.body))).toEqual({ turnIds: [turnId] });
+        expect(JSON.parse(String(init?.body))).toEqual({ requestId: turnId });
         return new Response(null, { status: 204 });
       }
       expect(input).toBe(`/v1/sessions/${sessionId}/returned-inputs`);
@@ -77,7 +79,7 @@ describe("tenant-aware browser API", () => {
     });
     const api = new PiCloudApi(transport);
     expect(await api.getReturnedInputs(sessionId)).toEqual(returned);
-    await expect(api.acknowledgeReturnedInputs(sessionId, [turnId])).resolves.toBeUndefined();
+    await expect(api.acknowledgeReturnedInputs(sessionId, turnId)).resolves.toBeUndefined();
   });
   it("sends versioned queue actions with their stable idempotency key", async () => {
     const sessionId = "10000000-0000-4000-8000-000000000001";

@@ -230,7 +230,7 @@ describe.sequential("pending conversation inputs", () => {
       expect(await executor.dispatchRun(fresh.runId)).toMatchObject({ status: "completed" });
       await seal(fresh.runId);
       expect(seen).toEqual(["new conversation"]);
-      const receipt = { turnIds: returned.items.map((i) => i.turnId) };
+      const receipt = { requestId: returned.requestId! };
       await restarted.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, receipt);
       await restarted.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, receipt);
       expect((await restarted.returned(f.tenant.tenantId, f.session.sessionId)).items).toEqual([]);
@@ -262,6 +262,12 @@ describe.sequential("pending conversation inputs", () => {
           pending: true,
           items: [],
         });
+        const pendingReturn = await f.queue.returned(f.tenant.tenantId, f.session.sessionId);
+        await expect(
+          f.queue.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, {
+            requestId: pendingReturn.requestId!,
+          }),
+        ).rejects.toMatchObject({ code: "conflict" });
         if (consumed) await recordInput(delivered);
         await cancelActive(f, run);
         await new QueuedInputService({ database, steering: f.steering }).reconcileOnce();
@@ -299,19 +305,34 @@ describe.sequential("pending conversation inputs", () => {
       await cancelActive(f, run);
       const found: string[] = [];
       let reads = 0;
+      let page = await f.queue.returned(f.tenant.tenantId, f.session.sessionId);
+      const requestId = page.requestId!;
       while (true) {
-        const page = await f.queue.returned(f.tenant.tenantId, f.session.sessionId);
         expect(page.pending).toBe(false);
         expect(page.items.length).toBeLessThanOrEqual(20);
-        if (!page.items.length) break;
         found.push(...page.items.map((i) => i.turnId));
-        const ack = { turnIds: page.items.map((i) => i.turnId) };
-        await f.queue.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, ack);
-        await f.queue.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, ack);
         reads++;
+        if (!page.hasMore) break;
+        page = await f.queue.returned(f.tenant.tenantId, f.session.sessionId, {
+          requestId,
+          afterPosition: page.items.at(-1)!.mailboxPosition,
+        });
       }
       expect(reads).toBe(3);
       expect(found).toEqual(expected);
+      const ack = { requestId };
+      await f.queue.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, ack);
+      await f.queue.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, ack);
+      // Another tab's acknowledgement cannot remove an in-progress reader's
+      // immutable later pages or make that tab skip part of the stopped queue.
+      const concurrent = await f.queue.returned(f.tenant.tenantId, f.session.sessionId, {
+        requestId,
+        afterPosition: 20,
+      });
+      expect(concurrent.items.map((i) => i.turnId)).toEqual(expected.slice(19, 39));
+      await expect(
+        f.queue.returned(randomUUID(), f.session.sessionId, { requestId }),
+      ).rejects.toMatchObject({ code: "not_found" });
       expect((await f.list()).hasReturnedInputs).toBe(false);
     } finally {
       run.finish.resolve();
@@ -850,7 +871,7 @@ describe.sequential("pending conversation inputs", () => {
         text: "survives stop",
       });
       await f.queue.acknowledgeReturned(f.tenant.tenantId, f.session.sessionId, {
-        turnIds: [accepted.sourceTurnId],
+        requestId: (await f.queue.returned(f.tenant.tenantId, f.session.sessionId)).requestId!,
       });
       expect((await f.list()).items).toEqual([]);
       expect(

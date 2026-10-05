@@ -20,7 +20,7 @@ it("converts drained paused drafts without resuming them or deciding held Steer 
     await sql`
       create table session_leases(released_at timestamptz);
       create table outbox(aggregate_type text,published_at timestamptz);
-      create table turn_control_requests(id uuid primary key,tenant_id uuid,session_id uuid,kind text,created_at timestamptz);
+      create table turn_control_requests(id uuid primary key,tenant_id uuid,session_id uuid,kind text,created_at timestamptz,payload jsonb);
       create table turns(id uuid primary key,tenant_id uuid,state text,stop_reason text,settled_at timestamptz,input_text text);
       create table runs(id uuid primary key,tenant_id uuid,session_id uuid,turn_id uuid,state text,
         lease_id uuid,output_sealed_at timestamptz,ready_at timestamptz,queued_steer_id uuid,
@@ -31,7 +31,7 @@ it("converts drained paused drafts without resuming them or deciding held Steer 
       create function pi_cloud_input_queue_run_change() returns trigger language plpgsql as $$begin return NEW; end$$;
       create trigger input_queue_run_change after update on runs for each row execute function pi_cloud_input_queue_run_change();
       insert into turn_control_requests values('00000000-0000-4000-8000-000000000004',
-        '00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','cancel',now());
+        '00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','cancel',now(),'{}'::jsonb);
       insert into turns select ('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
         '00000000-0000-4000-8000-000000000001','queued',null,null,'draft '||n from generate_series(10,12) n;
       insert into runs select id,tenant_id,'00000000-0000-4000-8000-000000000002',id,'queued',

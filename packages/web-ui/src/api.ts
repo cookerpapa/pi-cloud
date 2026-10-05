@@ -863,12 +863,21 @@ export class PiCloudApi {
   async getReturnedInputs(
     sessionId: string,
     signal?: AbortSignal,
+    page: { requestId?: string; afterPosition?: number } = {},
   ): Promise<ReturnedInputsResource> {
+    const params = new URLSearchParams();
+    if (page.requestId) params.set("requestId", page.requestId);
+    if (page.afterPosition) params.set("afterPosition", String(page.afterPosition));
+    const query = params.size ? `?${params.toString()}` : "";
     return parseReturnedInputsResource(
       await request(
         this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/returned-inputs`,
-        { signal: signal ?? AbortSignal.timeout(10_000) },
+        `/v1/sessions/${encodeURIComponent(sessionId)}/returned-inputs${query}`,
+        {
+          signal: signal
+            ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+            : AbortSignal.timeout(10_000),
+        },
         this.#authorizationToken,
       ),
     );
@@ -876,13 +885,18 @@ export class PiCloudApi {
 
   async acknowledgeReturnedInputs(
     sessionId: string,
-    turnIds: string[],
+    requestId: string,
     signal?: AbortSignal,
   ): Promise<void> {
     await request(
       this.#fetch,
       `/v1/sessions/${encodeURIComponent(sessionId)}/returned-inputs/acknowledgements`,
-      { ...jsonRequest({ turnIds }), signal: signal ?? AbortSignal.timeout(10_000) },
+      {
+        ...jsonRequest({ requestId }),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+          : AbortSignal.timeout(10_000),
+      },
       this.#authorizationToken,
     );
   }

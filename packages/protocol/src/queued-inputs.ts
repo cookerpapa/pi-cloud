@@ -93,22 +93,15 @@ export const ReturnedInputSchema = Type.Object(
 export const ReturnedInputsResourceSchema = Type.Object(
   {
     sessionId: UuidSchema,
+    requestId: Type.Union([UuidSchema, Type.Null()]),
+    afterPosition: NonNegativeSafeIntegerSchema,
     pending: Type.Boolean(),
     hasMore: Type.Boolean(),
     items: Type.Array(ReturnedInputSchema, { maxItems: INPUT_QUEUE_PAGE_SIZE }),
   },
   options,
 );
-export const AcknowledgeReturnedInputsSchema = Type.Object(
-  {
-    turnIds: Type.Array(UuidSchema, {
-      minItems: 1,
-      maxItems: INPUT_QUEUE_PAGE_SIZE,
-      uniqueItems: true,
-    }),
-  },
-  options,
-);
+export const AcknowledgeReturnedInputsSchema = Type.Object({ requestId: UuidSchema }, options);
 export type ReturnedInput = Static<typeof ReturnedInputSchema>;
 export type ReturnedInputsResource = Static<typeof ReturnedInputsResourceSchema>;
 export type AcknowledgeReturnedInputs = Static<typeof AcknowledgeReturnedInputsSchema>;

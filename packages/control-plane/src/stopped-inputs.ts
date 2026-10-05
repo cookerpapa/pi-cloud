@@ -29,40 +29,62 @@ export async function withdrawStoppedInputs(
     ), turns_updated as (
       update turns t set state='cancelled', stop_reason='queued_input_withdrawn', settled_at=clock_timestamp()
       from withdrawn w where w.state='cancelled' and t.id=w.turn_id and t.tenant_id=${tenantId}::uuid
-    ) insert into run_transitions(id,tenant_id,run_id,from_state,to_state,reason,occurred_at)
+    ), transitions as (
+      insert into run_transitions(id,tenant_id,run_id,from_state,to_state,reason,occurred_at)
       select gen_random_uuid(),${tenantId}::uuid,id,'queued','cancelled','queued_input_withdrawn',clock_timestamp()
       from withdrawn where state='cancelled'
+    ) update turn_control_requests set payload=payload || '{"inputReturnPending":true}'::jsonb
+      where id=${requestId}::uuid and exists(select 1 from withdrawn)
   `.execute(tx);
 }
 
-/** Wait for the whole captured queue's consumption decision before exposing
- * its first page. Return acknowledgements delete only references, never text. */
+/** Each Stop has immutable pages. Acknowledging a recovered batch never hides
+ * later pages from another browser already reading that same Stop. */
 export async function readReturnedInputs(
   database: Kysely<Database>,
   tenantId: string,
   sessionId: string,
+  page: { requestId?: string; afterPosition?: number } = {},
 ): Promise<ReturnedInputsResource> {
+  const afterPosition = page.afterPosition ?? 0;
+  if (
+    !Number.isSafeInteger(afterPosition) ||
+    afterPosition < 0 ||
+    (afterPosition > 0 && !page.requestId)
+  )
+    throw new ControlPlaneStoreError("invalid_request", "Invalid returned input page");
   const { rows } = await sql<{
+    requestId: string | null;
     pending: boolean;
     items: { turnId: string; text: string; uploads: unknown; mailboxPosition: number }[];
-  }>`select
+  }>`select batch.id as "requestId",
     exists(select 1 from runs r where r.tenant_id=s.tenant_id and r.session_id=s.id
-      and r.input_return_request_id is not null and r.state='queued') as pending,
+      and r.input_return_request_id=batch.id and r.state='queued') as pending,
     coalesce((select json_agg(item) from (
       select r.turn_id as "turnId",t.input_text as text,t.input_uploads as uploads,
         r.mailbox_position as "mailboxPosition"
       from runs r join turns t on t.id=r.turn_id and t.tenant_id=r.tenant_id
       where r.tenant_id=s.tenant_id and r.session_id=s.id
-        and r.input_return_request_id is not null and r.state='cancelled'
-        and r.stop_reason='queued_input_withdrawn'
+        and r.input_return_request_id=batch.id and r.state='cancelled'
+        and r.stop_reason='queued_input_withdrawn' and r.mailbox_position>${afterPosition}
       order by r.mailbox_position limit ${INPUT_QUEUE_PAGE_SIZE + 1}
     ) item),'[]'::json) as items
-    from sessions s where s.tenant_id=${tenantId}::uuid and s.id=${sessionId}::uuid
-      and s.pruned_at is null`.execute(database);
+    from sessions s left join lateral (
+      select c.id from turn_control_requests c where c.tenant_id=s.tenant_id and c.session_id=s.id
+        and c.kind='cancel'
+        ${page.requestId ? sql`and c.id=${page.requestId}::uuid` : sql`and c.payload->>'inputReturnPending'='true'`}
+      order by c.created_at,c.id limit 1
+    ) batch on true
+    where s.tenant_id=${tenantId}::uuid and s.id=${sessionId}::uuid and s.pruned_at is null`.execute(
+    database,
+  );
   const row = rows[0];
-  if (!row) throw new ControlPlaneStoreError("not_found", "Session was not found");
+  if (!row || (page.requestId && !row.requestId))
+    throw new ControlPlaneStoreError("not_found", "Session or input return was not found");
   return parseReturnedInputsResource({
     sessionId,
+    requestId: row.requestId,
+    afterPosition,
     pending: row.pending,
     hasMore: !row.pending && row.items.length > INPUT_QUEUE_PAGE_SIZE,
     items: row.pending

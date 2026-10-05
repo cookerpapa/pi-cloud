@@ -28,12 +28,18 @@ describe("pending input protocol", () => {
   });
   it("accepts atomic edited steer and requires an explicit target and revision", () => {
     expect(() => parseQueuedInputAction({ action: "send", revision: 4 })).toThrow();
-    expect(parseAcknowledgeReturnedInputs({ turnIds: [id] })).toEqual({ turnIds: [id] });
-    expect(() => parseAcknowledgeReturnedInputs({ turnIds: [id, id] })).toThrow();
-    expect(() => parseAcknowledgeReturnedInputs({ turnIds: [] })).toThrow();
+    expect(parseAcknowledgeReturnedInputs({ requestId: id })).toEqual({ requestId: id });
+    expect(() => parseAcknowledgeReturnedInputs({ requestId: id, turnIds: [id] })).toThrow();
+    expect(() => parseAcknowledgeReturnedInputs({})).toThrow();
     expect(
-      parseReturnedInputsResource({ sessionId: id, pending: true, hasMore: false, items: [] })
-        .pending,
+      parseReturnedInputsResource({
+        sessionId: id,
+        requestId: id,
+        afterPosition: 0,
+        pending: true,
+        hasMore: false,
+        items: [],
+      }).pending,
     ).toBe(true);
     expect(
       parseQueuedInputAction({ action: "steer", revision: 4, targetTurnId: id, text: "updated" }),

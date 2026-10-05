@@ -280,8 +280,12 @@ export class QueuedInputService {
     return session;
   }
 
-  returned(tenantId: string, sessionId: string) {
-    return readReturnedInputs(this.#database, tenantId, sessionId);
+  returned(
+    tenantId: string,
+    sessionId: string,
+    page: { requestId?: string; afterPosition?: number } = {},
+  ) {
+    return readReturnedInputs(this.#database, tenantId, sessionId, page);
   }
 
   async acknowledgeReturned(
@@ -291,20 +295,35 @@ export class QueuedInputService {
   ): Promise<void> {
     await this.#database.transaction().execute(async (tx) => {
       await this.#lockSession(tx, tenantId, sessionId);
-      await tx
-        .updateTable("runs")
-        .set({
-          input_return_request_id: null,
-          row_version: sql`row_version+1`,
-          updated_at: sql`clock_timestamp()`,
-        })
+      const requestRow = await tx
+        .selectFrom("turn_control_requests")
+        .select([
+          "id",
+          sql<boolean>`exists(select 1 from runs pending
+          where pending.tenant_id=turn_control_requests.tenant_id
+            and pending.session_id=turn_control_requests.session_id
+            and pending.input_return_request_id=turn_control_requests.id
+            and pending.state='queued')`.as("pending"),
+        ])
         .where("tenant_id", "=", tenantId)
         .where("session_id", "=", sessionId)
-        .where("turn_id", "in", request.turnIds)
-        .where("state", "=", "cancelled")
-        .where("stop_reason", "=", "queued_input_withdrawn")
-        .where("input_return_request_id", "is not", null)
-        .execute();
+        .where("id", "=", request.requestId)
+        .where("kind", "=", "cancel")
+        .executeTakeFirst();
+      if (!requestRow) throw new ControlPlaneStoreError("not_found", "Input return was not found");
+      if (requestRow.pending)
+        throw new ControlPlaneStoreError("conflict", "Steer consumption is not resolved");
+      const changed = await tx
+        .updateTable("turn_control_requests")
+        .set({ payload: sql`payload || '{"inputReturnPending":false}'::jsonb` })
+        .where("id", "=", request.requestId)
+        .where(sql<boolean>`payload->>'inputReturnPending'='true'`)
+        .returning("id")
+        .executeTakeFirst();
+      if (changed)
+        await sql`select pi_cloud_input_queue_change(${tenantId}::uuid,${sessionId}::uuid)`.execute(
+          tx,
+        );
     });
   }
 

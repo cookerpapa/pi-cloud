@@ -35,8 +35,8 @@ export async function readInputQueue(
     .selectFrom("sessions as s")
     .select((eb) => [
       "s.row_version",
-      sql<boolean>`exists(select 1 from runs returned where returned.tenant_id=s.tenant_id
-        and returned.session_id=s.id and returned.input_return_request_id is not null)`.as(
+      sql<boolean>`exists(select 1 from turn_control_requests returned where returned.tenant_id=s.tenant_id
+        and returned.session_id=s.id and returned.kind='cancel' and returned.payload->>'inputReturnPending'='true')`.as(
         "hasReturnedInputs",
       ),
       eb

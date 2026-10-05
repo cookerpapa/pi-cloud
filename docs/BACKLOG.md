@@ -30,7 +30,7 @@ PiCloud deployment. Remaining operational limits are listed below.
 - [ ] Implement the owner-approved [Pi Durable adoption](adr/0229-native-durable-runtime.md):
       native abort/recovery semantics, PG-authorized ownership, new native batch
       projection, bounded cold reads and image handling. The queue withdrawal
-      source slice is implemented and locally verified (schema 176), but is not
+      [source slice](reports/stopped-input-returns-20261005.md) is implemented and locally verified (schema 176), but is not
       yet deployed: Stop returns all unconsumed text and attachments to the
       composer while preserving its draft. Replace the former loop
       and storage after end-to-end verification; the evaluation itself is not a

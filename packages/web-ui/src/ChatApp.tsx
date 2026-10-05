@@ -1,3 +1,4 @@
+import { inputReturnRecovery, type InputReturnRecovery } from "./returned-inputs.ts";
 import { InheritedContext } from "./InheritedContext.tsx";
 import { useComposerUploads } from "./useComposerUploads.ts";
 import { ComposerUploadCards } from "./UploadCards.tsx";
@@ -215,11 +216,11 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [conversationLoading, setConversationLoading] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const draftRevision = useRef(0);
-  const restoredInputs = useRef(new Map<string, Set<string>>());
-  const restoredInputIds = state.session
-    ? (restoredInputs.current.get(state.session.sessionId) ?? new Set<string>())
-    : new Set<string>();
-  if (state.session) restoredInputs.current.set(state.session.sessionId, restoredInputIds);
+  const restoredInputs = useRef(new Map<string, InputReturnRecovery>());
+  const returnRecovery = state.session
+    ? (restoredInputs.current.get(state.session.sessionId) ?? inputReturnRecovery())
+    : inputReturnRecovery();
+  if (state.session) restoredInputs.current.set(state.session.sessionId, returnRecovery);
   const filePickerRef = useRef<HTMLInputElement | null>(null);
   const uploads = useComposerUploads(
     api,
@@ -2235,11 +2236,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               api={api}
               sessionId={state.session.sessionId}
               canMutate={canMutate}
-              restoredInputIds={restoredInputIds}
+              returnRecovery={returnRecovery}
               streamQueue={streamQueue}
               refreshSignal={String(queueRefreshGeneration)}
               onSnapshot={(queue) => update({ type: "queue.updated", queue })}
               onRestoreDraft={(text, attached) => {
+                if (currentStreamSession.current !== state.session?.sessionId) return false;
                 if (!uploads.restore(attached)) return false;
                 draftRevision.current++;
                 setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text));

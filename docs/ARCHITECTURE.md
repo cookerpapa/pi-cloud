@@ -412,11 +412,13 @@ before abort; replacement with Durable's native abort is tracked separately in
 
 Queue snapshots expose `hasReturnedInputs`. GET
 `/v1/sessions/:sessionId/returned-inputs` waits for consumption reconciliation,
-then returns at most 20 withdrawn inputs in their original order. The browser
-appends their text and restores attachments without replacing its draft. POST
-`/v1/sessions/:sessionId/returned-inputs/acknowledgements` accepts the restored
-page's `turnIds`; it clears only return references after a committed update.
-Failed or lost acknowledgements do not duplicate text in the open composer.
+then returns at most 20 withdrawn inputs in their original order. Subsequent
+pages use that Stop's `requestId` and `afterPosition`; their immutable membership
+survives another browser's acknowledgement. The browser appends their text and
+restores attachments without replacing its draft. POST
+`/v1/sessions/:sessionId/returned-inputs/acknowledgements` accepts the fully
+recovered `requestId` and clears its bounded pending-return marker in the existing
+control receipt. Failed or lost acknowledgements do not duplicate draft text.
 An unacknowledged return survives a browser/Control Plane restart in its original
 Turn. Once recovered, it has the same browser-local lifecycle as an ordinary
 unsent draft. Text and images never move into a control receipt or second queue.

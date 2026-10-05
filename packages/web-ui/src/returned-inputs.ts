@@ -1,23 +1,45 @@
 import type { UserUpload } from "@pi-cloud/protocol";
 import type { PiCloudApi } from "./api.ts";
 
-/** Restore before acknowledging. A failed/lost acknowledgement may return the
- * same page again; never append its text twice to the still-open draft. */
+export type InputReturnRecovery = {
+  restored: Set<string>;
+  requestId: string | null;
+  afterPosition: number;
+};
+export const inputReturnRecovery = (): InputReturnRecovery => ({
+  restored: new Set(),
+  requestId: null,
+  afterPosition: 0,
+});
+
+/** Cursor and restored identities belong to the open composer. Read immutable
+ * pages for one Stop; acknowledge that batch only after all its inputs arrive. */
 export async function restoreReturnedInputs(
   api: Pick<PiCloudApi, "getReturnedInputs" | "acknowledgeReturnedInputs">,
   sessionId: string,
-  restored: Set<string>,
+  recovery: InputReturnRecovery,
   append: (text: string, uploads: UserUpload[]) => boolean | void,
   signal: AbortSignal,
 ): Promise<"pending" | "done"> {
   while (true) {
     signal.throwIfAborted();
-    const page = await api.getReturnedInputs(sessionId, signal);
+    const page = await api.getReturnedInputs(
+      sessionId,
+      signal,
+      recovery.requestId
+        ? { requestId: recovery.requestId, afterPosition: recovery.afterPosition }
+        : {},
+    );
     signal.throwIfAborted();
-    if (page.sessionId !== sessionId) throw new Error("Returned input scope changed");
+    if (
+      page.sessionId !== sessionId ||
+      (recovery.requestId && page.requestId !== recovery.requestId)
+    )
+      throw new Error("Returned input scope changed");
+    if (!page.requestId) return "done";
+    recovery.requestId = page.requestId;
     if (page.pending) return "pending";
-    if (!page.items.length) return "done";
-    const fresh = page.items.filter((item) => !restored.has(item.turnId));
+    const fresh = page.items.filter((item) => !recovery.restored.has(item.turnId));
     if (fresh.length) {
       if (
         append(
@@ -29,14 +51,18 @@ export async function restoreReturnedInputs(
         ) === false
       )
         throw new Error("Could not restore input attachments");
-      for (const item of fresh) restored.add(item.turnId);
+      for (const item of fresh) recovery.restored.add(item.turnId);
     }
-    await api.acknowledgeReturnedInputs(
-      sessionId,
-      page.items.map((i) => i.turnId),
-      signal,
-    );
+    const last = page.items.at(-1);
+    if (last) recovery.afterPosition = last.mailboxPosition;
+    if (page.hasMore) {
+      if (!last || last.mailboxPosition <= page.afterPosition)
+        throw new Error("Returned input page did not advance");
+      continue;
+    }
+    await api.acknowledgeReturnedInputs(sessionId, page.requestId, signal);
     signal.throwIfAborted();
-    if (!page.hasMore) return "done";
+    recovery.requestId = null;
+    recovery.afterPosition = 0;
   }
 }
