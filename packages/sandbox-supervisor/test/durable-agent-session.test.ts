@@ -255,3 +255,140 @@ it("rejects duplicate provider call IDs within one response before executing eit
     await f.runtime.close();
   }
 });
+
+it.each(["reply", "abort"] as const)(
+  "keeps child supervision across Tool completion and applies native parent %s",
+  async (mode) => {
+    const models = createModels(),
+      parentModel = fauxProvider({ provider: "parent-fixture", tokensPerSecond: 1000000 }),
+      childModel = fauxProvider({ provider: "child-fixture", tokensPerSecond: 1000000 });
+    models.setProvider(parentModel.provider);
+    models.setProvider(childModel.provider);
+    parentModel.setResponses([
+      fauxAssistantMessage(fauxToolCall("delegate", {}), { stopReason: "toolUse" }),
+      fauxAssistantMessage(fauxToolCall("reply", {}), { stopReason: "toolUse" }),
+      fauxAssistantMessage("PARENT DONE"),
+    ]);
+    childModel.setResponses([
+      fauxAssistantMessage(fauxToolCall("ask", {}), { stopReason: "toolUse" }),
+      fauxAssistantMessage("CHILD DONE"),
+    ]);
+    const asked = Promise.withResolvers<void>(),
+      reply = Promise.withResolvers<void>(),
+      reached = Promise.withResolvers<void>();
+    const storage = new MemoryStorage();
+    let runtime!: DurableAgentSession,
+      childInput: import("@earendil-works/pi-durable").Submission | undefined;
+    let childId = 0,
+      callerId = 0;
+    const childRun = randomUUID(),
+      parentRun = randomUUID();
+    const ask = {
+      name: "ask",
+      description: "request a decision",
+      parameters: Type.Object({}),
+      execute: async (_args: unknown, _api: unknown, context: Context) => {
+        asked.resolve();
+        await awaitWithContext(reply.promise, context);
+        return { content: [{ type: "text" as const, text: "TEAL" }] };
+      },
+    };
+    const tools: import("@earendil-works/pi-durable").ToolRegistration[] = [
+      {
+        name: "delegate",
+        description: "start a child",
+        parameters: Type.Object({}),
+        execute: async (_args, api) => {
+          callerId = api.taskId;
+          childId = await runtime.createConversation({
+            requestId: "child",
+            ownerTaskId: api.taskId,
+            parentConversationId: api.conversationId,
+          });
+          const child = await runtime.bind(config(childRun, childId, childModel.getModel(), [ask]));
+          childInput = await child.submit(
+            { type: "input", content: "ask", requestId: childRun },
+            BACKGROUND_CONTEXT,
+          );
+          await asked.promise;
+          return { content: [{ type: "text", text: "blocked: reply requested" }] };
+        },
+      },
+      {
+        name: "reply",
+        description: "reply to the existing child",
+        parameters: Type.Object({}),
+        execute: async (_args, _api, context) => {
+          reached.resolve();
+          if (mode === "abort") await awaitWithContext(new Promise<void>(() => {}), context);
+          reply.resolve();
+          expect((await childInput!.wait(BACKGROUND_CONTEXT)).status).toBe("done");
+          return { content: [{ type: "text", text: "child completed" }] };
+        },
+      },
+    ];
+    function config(
+      runId: string,
+      conversationId: number,
+      model: import("@earendil-works/pi-ai").Model<import("@earendil-works/pi-ai").Api>,
+      definitions: import("@earendil-works/pi-durable").ToolRegistration[],
+    ) {
+      return {
+        runId,
+        conversationId,
+        model,
+        agent: {},
+        context: {},
+        remoteTools: [],
+        tools: definitions,
+        assertCurrent: async () => {},
+        prepareRemote: async () => {
+          throw new Error("no remote effect");
+        },
+        openModel: async ({ options }: { options: Record<string, unknown> }) => ({
+          model,
+          options: { ...options, apiKey: "fixture" },
+          release() {},
+        }),
+      };
+    }
+    runtime = await DurableAgentSession.open(storage, {
+      models,
+      remoteTools: [],
+      infrastructureTools: [...tools, ask],
+      settings: { compaction: { enabled: false }, retry: { maxRetries: 0 } },
+    });
+    try {
+      const parent = await runtime.bind(config(parentRun, 1, parentModel.getModel(), tools));
+      const input = await parent.submit(
+        { type: "input", content: "delegate and supervise", requestId: parentRun },
+        BACKGROUND_CONTEXT,
+      );
+      await reached.promise;
+      const conversation = await storage.conversation(
+        childId as import("@earendil-works/pi-durable").ConversationId,
+        BACKGROUND_CONTEXT,
+      );
+      const caller = await storage.task(
+        callerId as import("@earendil-works/pi-durable").TaskId,
+        BACKGROUND_CONTEXT,
+      );
+      expect(conversation?.owner?.taskId).toBe(caller?.owner);
+      if (mode === "abort") {
+        await parent.abort(BACKGROUND_CONTEXT);
+        expect(await input.wait(BACKGROUND_CONTEXT)).toMatchObject({
+          status: "unanswered",
+          reason: "aborted",
+        });
+        expect(await childInput!.wait(BACKGROUND_CONTEXT)).toMatchObject({
+          status: "unanswered",
+          reason: "aborted",
+        });
+      } else expect((await input.wait(BACKGROUND_CONTEXT)).status).toBe("done");
+    } finally {
+      reply.resolve();
+      await runtime.close();
+    }
+  },
+  15000,
+);

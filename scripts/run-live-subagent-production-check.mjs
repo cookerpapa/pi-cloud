@@ -308,6 +308,7 @@ async function recursiveTreeEvidence(rootRunId) {
     select coalesce(json_agg(json_build_object(
       'executionId', execution.id,
       'parentExecutionId', execution.parent_execution_id,
+      'parentToolCallId', execution.parent_tool_call_id,
       'rootSessionId', execution.root_session_id,
       'rootRunId', execution.root_run_id,
       'depth', execution.depth,
@@ -640,9 +641,10 @@ try {
   const recursive = await runTurn(
     session.sessionId,
     [
-      "Create a two-level recursive Agent tree.",
-      `Call the subagent Tool exactly once with action:"run", context:"fresh", tools:[], task:${JSON.stringify(nestedTask)}.`,
-      "After it finishes, reply exactly SUBAGENT-RECURSIVE-OK.",
+      "Create exactly ONE direct child. That child creates exactly ONE grandchild, so there are two descendants total. Do not create the grandchild yourself or make a second delegation.",
+      "Use action:run, context:fresh, tools:[] and give your direct child this task verbatim:",
+      `<child_task>\n${nestedTask}\n</child_task>`,
+      "After your direct child returns SUBAGENT-NESTED-PARENT-OK, make no more tool calls and reply exactly SUBAGENT-RECURSIVE-OK.",
     ].join(" "),
   );
   const recursiveEvidence = await recursiveTreeEvidence(recursive.accepted.runId);
@@ -657,8 +659,10 @@ try {
   assert(recursiveEvidence.every((execution) => execution.sameWorker === true));
   assert(recursiveEvidence.every((execution) => execution.sameOwnerLease === true));
   assert(
-    recursiveEvidence.every((execution) =>
-      /^subagent-[0-9a-f-]{36}$/u.test(execution.nativeConversationId),
+    recursiveEvidence.every(
+      (execution) =>
+        Number.isSafeInteger(Number(execution.nativeConversationId)) &&
+        Number(execution.nativeConversationId) > 1,
     ),
   );
   assert.equal(recursiveEvidence[0].parentExecutionId, null);
@@ -668,10 +672,10 @@ try {
     session.sessionId,
     [
       'Use subagent action:"workflow" and runs.all to delegate two parallel fresh/shared coding tasks.',
-      "One child must create insertion_sort.py with an insertion_sort function and executable unittest cases for empty, sorted, reversed, negative and duplicate inputs.",
-      "The other must create binary_search.py with binary_search returning an index or -1, with executable unittest cases for hits, misses, empty and duplicate inputs.",
-      "Each child must write its own file and run python3 on that file. The workflow must return both child results.",
-      "Then YOU must use bash to run python3 insertion_sort.py && python3 binary_search.py in the current workspace.",
+      "One child must create /workspace/insertion_sort.py (not inside project/) with an insertion_sort function and executable unittest cases for empty, sorted, reversed, negative and duplicate inputs.",
+      "The other must create /workspace/binary_search.py with binary_search returning an index or -1, with executable unittest cases for hits, misses, empty and duplicate inputs.",
+      "Each child must write its own file at the specified absolute path and run python3 on that absolute path. The workflow must return both child results.",
+      "Then YOU must use bash to run python3 /workspace/insertion_sort.py && python3 /workspace/binary_search.py.",
       "Only after observing both pass, answer SUBAGENT-CODING-OK. Do not recreate the files yourself.",
     ].join(" "),
   );
@@ -846,7 +850,8 @@ try {
   report.cleanupCompleted = process.env.PI_CLOUD_LIVE_KEEP_FIXTURES !== "1";
   await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
   await writeFile(
-    resolve(repositoryRoot, "docs/reports/subagent-production-acceptance-latest.json"),
+    process.env.PI_CLOUD_LIVE_SUBAGENT_REPORT ??
+      resolve(repositoryRoot, "docs/reports/subagent-production-acceptance-latest.json"),
     await format(JSON.stringify(report), {
       ...(await resolveConfig(
         resolve(repositoryRoot, "docs/reports/subagent-production-acceptance-latest.json"),

@@ -21,6 +21,11 @@ and the [production cutover](reports/cube-execution-rollout-20261001.md) are
 complete. The owner confirmed dsh-cloud is retired; it no longer constrains
 PiCloud deployment. Remaining operational limits are listed below.
 
+The Durable cutover also exposed repeated timeouts while Cube deletes old
+Template replicas. New registered templates remain usable; failed cleanup keeps
+its recorded targets. Diagnose the historical locator/address path and bound
+release-time cleanup before changing target identity or deleting metadata.
+
 ## Reliability and capacity
 
 - [x] Verify Pi Durable 1.0 commit, recovery and remote Tool contracts under

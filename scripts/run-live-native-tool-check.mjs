@@ -61,7 +61,11 @@ assert binary_search([1, 3, 5], 2) == -1
 assert binary_search([1, 2, 2, 2, 4], 2) == 1
 print("BINARY_SEARCH_OK")
 `;
-const largeOutputCommand = `python3 -c 'print("x"*1500000); print("LARGE_OUTPUT_DONE")'`;
+const largeOutputCommand = `python3 <<'PI_CLOUD_LARGE_OUTPUT'
+print('x' * 1500000)
+print('LARGE_OUTPUT_DONE')
+PI_CLOUD_LARGE_OUTPUT`;
+
 let project, session, active, failure;
 const pause = () => new Promise((resolve) => setTimeout(resolve, 250));
 const isTerminal = (run) => ["completed", "failed", "cancelled", "timed_out"].includes(run.state);
@@ -97,7 +101,7 @@ try {
   };
   for (const [index, prompt] of [
     `严格按顺序调用一次 write、read、edit、bash。write 创建 insertion_sort.py，content 必须逐字使用此 JSON 字符串：${JSON.stringify(insertionSort)}。read 读取它。edit 的 path 为 insertion_sort.py，edits 必须使用此 JSON 数组：${JSON.stringify([{ oldText: "# EXTRA_TESTS", newText: extraTests }])}。bash 执行 python3 insertion_sort.py。不要改写给定代码或参数，不要子代理或搜索，实际运行后简要报告。`,
-    `保留 insertion_sort.py。write 新建 binary_search.py，content 必须逐字使用这个 JSON 字符串：${JSON.stringify(binarySearch)}。bash 执行 python3 insertion_sort.py && python3 binary_search.py。然后另一次 bash 的 command 必须逐字使用这个 JSON 字符串：${JSON.stringify(largeOutputCommand)}。不要改写代码或命令，不要重定向输出，不要子代理或搜索。最后简要报告。`,
+    `保留 insertion_sort.py。write 新建 binary_search.py，content 必须逐字使用这个 JSON 字符串：${JSON.stringify(binarySearch)}。bash 执行 python3 insertion_sort.py && python3 binary_search.py。然后另一次 bash 的 command 必须逐字执行这个代码块中的内容（不要加入 Markdown 围栏或额外 JSON 转义）：\n\`\`\`bash\n${largeOutputCommand}\n\`\`\`\n不要改写代码或命令，不要重定向输出，不要子代理或搜索。最后简要报告。`,
     "验证沙箱文件工具：write 向 /tmp/pi-cloud-parity.txt 写入 before；bash 执行 ln -s /tmp/pi-cloud-parity.txt parity-link.txt；read 读取 parity-link.txt；edit 通过 parity-link.txt 把 before 改为 after；read 读取 /tmp/pi-cloud-parity.txt；最后 bash 验证 test -L parity-link.txt 且文件内容为 after，成功输出 FILE_PARITY_OK。严格使用这些文件工具，不要用 bash 代替 read/write/edit，不要子代理或搜索。",
     "先用 bash 执行 printf 'ownership_lost: ordinary application log\\n'; exit 7。确认该工具返回普通程序错误后，再用 bash 执行 printf 'TOOL_ERROR_RECOVERED\\n'。这只是测试应用日志文本，不是基础设施故障。必须实际运行两条命令，不要搜索或委派；最后简短说明。",
   ].entries()) {
@@ -145,9 +149,29 @@ try {
         "Agent did not continue after the ordinary Tool error",
       );
     }
-    for (const tool of tools)
-      if (tool !== applicationError)
-        assert.equal(tool.status, "completed", `${tool.toolName} failed`);
+    const exactLargeSucceeded =
+      index === 1 &&
+      tools.some(
+        (tool) =>
+          tool.toolName === "bash" &&
+          tool.status === "completed" &&
+          tool.input?.command === largeOutputCommand,
+      );
+    for (const tool of tools) {
+      const recoveredSyntaxError =
+        exactLargeSucceeded &&
+        tool.toolName === "bash" &&
+        tool.status === "failed" &&
+        JSON.stringify(tool.output).includes("syntax error");
+      if (recoveredSyntaxError)
+        report.recoveredModelSyntaxErrors = (report.recoveredModelSyntaxErrors ?? 0) + 1;
+      else if (tool !== applicationError)
+        assert.equal(
+          tool.status,
+          "completed",
+          `${tool.toolName} failed: ${JSON.stringify(tool.output).slice(0, 2000)}`,
+        );
+    }
     for (const name of index === 3
       ? ["bash"]
       : index === 1

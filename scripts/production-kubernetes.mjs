@@ -141,9 +141,13 @@ async function importImages() {
       ["save", ...Object.values(images), ...aliases.map((x) => x.alias)],
       { stdio: ["ignore", "pipe", "inherit"] },
     );
-    const load = spawn("/usr/local/bin/k3s", ["ctr", "images", "import", "-"], {
-      stdio: ["pipe", "inherit", "inherit"],
-    });
+    const load = spawn(
+      "/usr/local/bin/k3s",
+      ["ctr", "images", "import", "--label", "io.cri-containerd.pinned=pinned", "-"],
+      {
+        stdio: ["pipe", "inherit", "inherit"],
+      },
+    );
     save.stdout.pipe(load.stdin);
     save.on("error", fail);
     load.on("error", fail);

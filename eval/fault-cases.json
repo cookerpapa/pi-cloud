@@ -1282,6 +1282,20 @@
       "file": "test/durable-storage-conformance.test.ts",
       "test": "retains a conservative Run budget floor across duplicate checkpoint and abort writes",
       "invariant": "Recovery cannot refill finite Run budgets; abort-mark duplicates do not consume another native intent."
+    },
+    {
+      "id": "durable-child-generation-reply",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-agent-session.test.ts",
+      "test": "keeps child supervision across Tool completion and applies native parent reply",
+      "invariant": "The native generation owns delegated Conversations: returning a blocked Tool permits a parent reply, while parent abort still cancels child work."
+    },
+    {
+      "id": "durable-child-generation-abort",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-agent-session.test.ts",
+      "test": "keeps child supervision across Tool completion and applies native parent abort",
+      "invariant": "The native generation owns delegated Conversations: returning a blocked Tool permits a parent reply, while parent abort still cancels child work."
     }
   ]
 }

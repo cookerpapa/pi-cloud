@@ -38,6 +38,14 @@ attempt entity. Stop, deletion and an actual native terminal outcome remain
 logical termination. Native task checkpoints own continuation; the cloud queue
 owns admission, never an independent replay decision for each native task.
 
+Delegated Conversations are owned by the requesting native generation, not by
+its delegation Tool task. Durable holds a completing task while its owned work
+is live; Tool ownership deadlocks a child decision request because the parent
+cannot leave that Tool to call the reply Tool. Generation ownership spans those
+successive calls and still cascades native parent abort to the child. The public
+creation receipt remains keyed by the original delegation request; no ownerless
+or extra scheduling authority is introduced.
+
 The storage adapter retains one canonical append record per native write, grouped
 by atomic commit. Indexed current-record pointers and document reconstruction
 indexes are derived from that log. Native JSON is serialized losslessly as text,

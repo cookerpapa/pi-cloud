@@ -341,7 +341,18 @@ export class DurableAgentSession {
           throw new Error("Native creation receipt is corrupt");
         return stored.value.conversationId;
       }
-      const ownership = { kind: "task" as const, taskId: input.ownerTaskId as TaskId };
+      const caller = await tx.task(input.ownerTaskId as TaskId);
+      const generation = caller?.owner === undefined ? undefined : await tx.task(caller.owner);
+      if (
+        caller?.kind !== "pi.tool" ||
+        caller.conversationId !== input.parentConversationId ||
+        generation?.kind !== "pi.generation" ||
+        generation.conversationId !== input.parentConversationId
+      )
+        throw new Error("Child creation requires the calling Tool's native generation");
+      // A completing task waits for its owned work. Owning the child under the
+      // delegation Tool would prevent the parent from reaching its reply Tool.
+      const ownership = { kind: "task" as const, taskId: generation.id };
       const created =
         input.at === undefined
           ? await tx.createConversation({ ownership })

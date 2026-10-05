@@ -513,7 +513,10 @@ The public Pi Durable Storage port owns atomic batches of Conversations, Tasks,
 Submissions, Entries and Chord document writes. One physical Session has one
 Harness and one renewable PG execution lease. A native Conversation is the
 execution Lane; its numeric ID comes from Pi, never PG admission. Child creation
-has an atomic native receipt before the product binding becomes ready.
+has an atomic native receipt before the product binding becomes ready. A child
+Conversation belongs to the requesting generation, allowing its delegation Tool
+to return a blocked result and the parent to issue a later reply Tool. Native
+parent abort still cascades to that child.
 
 `pi_durable_log` retains each exact native write once as JSON text. Text storage
 preserves native NUL and lone-surrogate strings without PostgreSQL JSONB coercion.

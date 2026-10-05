@@ -94,6 +94,16 @@ Existing bind/port/Worker mode is never silently overwritten. Use
 `./install.sh --print-plan` or `./install.sh --check-only` before changing a
 host.
 
+Locally imported application and infrastructure images are marked
+`io.cri-containerd.pinned=pinned`, so Kubelet image GC cannot remove the release
+while it is waiting for rollout or scaled to zero. This is the CRI's standard
+[image pinning behavior](https://github.com/containerd/containerd/discussions/12156).
+Remove the pin from retired release tags only after confirming that neither the
+current desired deployment nor the retained rollback needs them. Imported base
+Pod images (such as K3s's configured `pause` image) also need their system-image pin;
+a missing base image can prevent every new Pod from starting even when the
+application image is present.
+
 ## Restart-bound one-host settings
 
 `npm run production:init` creates
