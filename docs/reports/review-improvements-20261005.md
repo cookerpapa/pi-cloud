@@ -44,10 +44,12 @@ discussed streaming image transport or claim constant-memory image decoding.
   blocked delivery, ordinary-operation progress, pre-start cancellation and reuse.
 - Native Session Host and desired-image readiness tests: five assertions passed.
 
-The combined CI run passed native/build/type checks and all workspace assertions
-except a schema-snapshot assertion still naming migration 174. That test now
-expects 175 and checks that terminal ownership has no copied lease columns; all
-41 database assertions pass on rerun. The remaining CI gates passed separately:
+The combined CI run passed native/build/type checks and found two outdated test
+expectations: the schema snapshot still named migration 174, and a heartbeat test
+expected renewal itself to mark the owner lost. The schema test now expects 175
+and verifies no copied terminal lease columns; all 41 database assertions pass on
+rerun. The heartbeat test now separately proves expiry cannot be renewed and the
+maintenance path marks it lost. The remaining CI gates passed separately:
 65 acceptance-helper assertions, 186/186 fault cases and the high-severity audit
 (two moderate dependency findings remain). The final Workflow cancellation-race
 change passed all 278 supervisor assertions and its type check. This records the

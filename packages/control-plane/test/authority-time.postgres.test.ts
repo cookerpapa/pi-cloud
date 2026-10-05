@@ -412,7 +412,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
         .execute(),
     ).toHaveLength(1);
   });
-  it("does not revive a Broker owner after a delayed heartbeat", async () => {
+  it("does not revive a controller after delayed renewal and reconciles expiry separately", async () => {
     const instanceId = randomUUID();
     const broker = new PostgresWorkspaceRuntimeStateRepository({
       database: db,
@@ -438,6 +438,11 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
         await release.promise;
       });
       await locked.promise;
+      const beforeRenewal = await db
+        .selectFrom("sandbox_control_instances")
+        .select("lease_expires_at")
+        .where("instance_id", "=", instanceId)
+        .executeTakeFirstOrThrow();
       await vi.waitFor(async () => {
         const waiting = await sql<{
           n: number;
@@ -459,6 +464,17 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       );
       release.resolve();
       await blocker;
+      // Renewal no longer performs lifecycle maintenance. Give delayed renewal
+      // another tick and prove it cannot extend an already expired identity.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const afterRenewal = await db
+        .selectFrom("sandbox_control_instances")
+        .select("lease_expires_at")
+        .where("instance_id", "=", instanceId)
+        .executeTakeFirstOrThrow();
+      expect(afterRenewal.lease_expires_at).toEqual(beforeRenewal.lease_expires_at);
+      await expect(broker.checkHealth()).rejects.toMatchObject({ code: "ownership_lost" });
+      await broker.reconcileOwnership();
       await vi.waitFor(async () => {
         const row = await db
           .selectFrom("sandbox_control_instances")
