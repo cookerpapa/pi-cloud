@@ -1,0 +1,13 @@
+{
+  "checkedAt": "2026-10-05T08:25:12.067Z",
+  "ownedReplyTopicAbsent": true,
+  "privateProbeTopicsRemaining": 0,
+  "workerReplyTopicCount": 2,
+  "remainingReplyTopicsBelongToLiveWorkers": true,
+  "productionPiVersions": ["0.84.1"],
+  "exactNodeVMCount": 0,
+  "allRunningPodsReady": true,
+  "historical_unknown_allocations": 2,
+  "existing_image_objects": 3,
+  "schema_version": 175
+}

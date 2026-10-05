@@ -1,5 +1,11 @@
 # Implementation roadmap
 
+## Pi Durable 1.0 evaluation
+
+- [x] Execute isolated storage, Kafka/PG, crash and actual Cube Tool verification
+      under ADR-0228. [Results and migration boundaries](reports/pi-durable-evaluation-20261005.md).
+      Production remains on Pi 0.84.1; runtime adoption requires a separate decision.
+
 ## October 5 whole-repository follow-up review
 
 - [x] Review `5c2fcab4`: current 22 workspaces, pinned Pi/Cube, recovery,

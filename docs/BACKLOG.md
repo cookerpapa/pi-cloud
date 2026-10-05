@@ -23,6 +23,15 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 ## Reliability and capacity
 
+- [x] Verify Pi Durable 1.0 commit, recovery and remote Tool contracts under
+      [ADR-0228](adr/0228-pi-durable-evaluation.md). The
+      [executable evaluation](reports/pi-durable-evaluation-20261005.md) proves
+      transport seams and records cancellation/recovery/queue mismatches.
+- [ ] Decide Pi Durable adoption only after defining confirmed-result cancellation,
+      PG Run-to-task recovery, new native batch projection, bounded cold reads and
+      image handling. Retain the Models-port sampling guard and explicit product
+      queue/observation policy; this evaluation is not a production upgrade.
+
 The [October 5 follow-up review](reports/repository-review-20261005.md) is complete
 at `5c2fcab4`. Its original characterization tests are archived at `13344042`.
 The [approved improvements and release evidence](reports/review-improvements-20261005.md)

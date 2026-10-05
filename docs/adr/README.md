@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0228](0228-pi-durable-evaluation.md) — isolated Pi Durable 1.0 commit and
+   remote Tool verification; no production runtime adoption.
 1. [ADR-0227](0227-review-recovery-and-tool-outcomes.md) — recoverable POSIX
    cleanup, bounded controller ownership, consistent Tool outcomes and wider Read concurrency.
 1. [ADR-0226](0226-recoverable-volume-reference-state.md) — durable node reference

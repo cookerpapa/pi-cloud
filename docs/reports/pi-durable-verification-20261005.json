@@ -1,0 +1,166 @@
+{
+  "format": "pi-cloud.pi-durable-evaluation.v1",
+  "checkedAt": "2026-10-05T08:17:46.212Z",
+  "baselineRevision": "fe8226dd24baa4a5ed269ce9f1f1cfa5fe8beeb8",
+  "upstreamVersion": "1.0.0",
+  "productionPiVersion": "0.84.1",
+  "acceptanceCompleted": true,
+  "productionAdoption": false,
+  "topology": "disposable PostgreSQL and three RF3 Kafka brokers; controlled remote endpoint",
+  "results": [
+    {
+      "name": "Kafka ACK precedes view publication; PG projection is asynchronous",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 171,
+      "visibleBeforeAck": 0,
+      "rowsAtAck": 0,
+      "atomicBatches": 1,
+      "duplicateProjectionIgnored": true
+    },
+    {
+      "name": "Ambiguous commit poisons the old Session but PG recovers committed bytes",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 848,
+      "observableBeforeConfirmation": false,
+      "oldWriterRejected": true,
+      "recoveredBatches": 1
+    },
+    {
+      "name": "Proved pre-admission rejection does not poison the Session",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 998,
+      "rejectedBatchPersisted": false,
+      "sameSessionRemainsUsable": true,
+      "scope": "real ingress size rejection; no truncation or retry of an uncertain append"
+    },
+    {
+      "name": "An ordered writer seal rejects subsequent Durable commits",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 1000,
+      "oldWriterRejected": true,
+      "acknowledgedBatches": 1,
+      "scope": "real ingress seal under fixture grant; not PG lease takeover"
+    },
+    {
+      "name": "One durable intent carries the remote handoff and original callback identity",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 3041,
+      "executions": 1,
+      "modelRequests": 2,
+      "intentBatch": 9,
+      "resultIdentityPreserved": true,
+      "commits": 16
+    },
+    {
+      "name": "Remote ordinary-error sampling policy",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 6969,
+      "modelRequests": 2,
+      "effect": "completed",
+      "policy": "PiCloud-owned adapter; no parsing of business output"
+    },
+    {
+      "name": "Remote not-started sampling policy",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 2045,
+      "modelRequests": 2,
+      "effect": "not_started",
+      "policy": "PiCloud-owned adapter; no parsing of business output"
+    },
+    {
+      "name": "Remote unknown sampling policy",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 1975,
+      "modelRequests": 1,
+      "effect": "unknown",
+      "policy": "PiCloud-owned adapter; no parsing of business output"
+    },
+    {
+      "name": "SIGKILL and reopen: unsafe",
+      "verified": true,
+      "compatible": false,
+      "elapsedMs": 4028,
+      "effects": 1,
+      "restoredBatches": 8,
+      "modelRequestsAfterReopen": 1,
+      "gap": "Upstream resumes sampling after an interrupted unsafe Tool; PiCloud must gate recovery under a new PG-authorized execution and preserve UNKNOWN."
+    },
+    {
+      "name": "SIGKILL and reopen: safe",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 3980,
+      "effects": 2,
+      "restoredBatches": 8,
+      "modelRequestsAfterReopen": 1
+    },
+    {
+      "name": "SIGKILL and reopen: completed",
+      "verified": true,
+      "compatible": true,
+      "elapsedMs": 8010,
+      "effects": 1,
+      "restoredBatches": 9,
+      "modelRequestsAfterReopen": 1
+    },
+    {
+      "name": "Agent abort and original result: cancelled",
+      "verified": true,
+      "compatible": false,
+      "elapsedMs": 7003,
+      "cancelThroughSameLog": true,
+      "receivedOriginalReply": true,
+      "originalFinalResultPreserved": false,
+      "gap": "Native abort settlement replaces the confirmed remote final result with the retained live slot; current PiCloud cancellation contract is not preserved."
+    },
+    {
+      "name": "Agent abort and original result: completed-race",
+      "verified": true,
+      "compatible": false,
+      "elapsedMs": 13023,
+      "cancelThroughSameLog": true,
+      "receivedOriginalReply": true,
+      "originalFinalResultPreserved": false,
+      "gap": "Native abort settlement replaces the confirmed remote final result with the retained live slot; current PiCloud cancellation contract is not preserved."
+    },
+    {
+      "name": "Agent abort and original result: not-started-race",
+      "verified": true,
+      "compatible": false,
+      "elapsedMs": 5002,
+      "cancelThroughSameLog": true,
+      "receivedOriginalReply": true,
+      "originalFinalResultPreserved": false,
+      "gap": "Native abort settlement replaces the confirmed remote final result with the retained live slot; current PiCloud cancellation contract is not preserved."
+    },
+    {
+      "name": "Stop policy for persisted human follow-ups",
+      "verified": true,
+      "compatible": false,
+      "elapsedMs": 4025,
+      "withdrawalSupported": true,
+      "afterStop": "unanswered",
+      "gap": "Upstream abort withdraws queued inputs; PiCloud pauses them for explicit Continue queue."
+    }
+  ],
+  "limitations": [
+    "Fixture grants exercise the existing ingress, not production PG admission or its HTTP routing",
+    "Private probe envelopes require a production schema and projection design before adoption",
+    "Cold fixture restore replays all PG batches; bounded production bootstrap is not implemented",
+    "No real model or physical-node HA claim"
+  ],
+  "cleanupConfirmed": true,
+  "storage": {
+    "projectedBatches": 167,
+    "totalBatchBytes": 91158
+  },
+  "compatibilityGaps": 5
+}

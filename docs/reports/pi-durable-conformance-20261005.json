@@ -1,0 +1,101 @@
+{
+  "format": "pi-cloud.durable-storage-conformance.v1",
+  "version": "1.0.0",
+  "passed": 23,
+  "total": 23,
+  "scope": "Official upstream storage conformance on the public prepare/apply adapter, with an immediate in-memory publication ACK. RF3/PG transport is tested separately.",
+  "cases": [
+    {
+      "name": "reserves ID 1 for the immutable root conversation",
+      "passed": true
+    },
+    {
+      "name": "commits mixed table writes atomically and rolls all of them back on failure",
+      "passed": true
+    },
+    {
+      "name": "detaches retained writes and every returned record",
+      "passed": true
+    },
+    {
+      "name": "detaches prototype-like JSON keys without changing object prototypes",
+      "passed": true
+    },
+    {
+      "name": "indexes entries committed out of ID order",
+      "passed": true
+    },
+    {
+      "name": "continues an entry cursor below its last item after a newer commit",
+      "passed": true
+    },
+    {
+      "name": "paginates conversations by opaque cursor in ascending ID order",
+      "passed": true
+    },
+    {
+      "name": "filters and pages conversations by durable owner edges",
+      "passed": true
+    },
+    {
+      "name": "scans deep fork history newest-first through every ancestor cap",
+      "passed": true
+    },
+    {
+      "name": "replaces complete task records and pages filtered task scans",
+      "passed": true
+    },
+    {
+      "name": "stores owners and scans waiting and completing tasks by status",
+      "passed": true
+    },
+    {
+      "name": "indexes request IDs per conversation and replaces complete submission records",
+      "passed": true
+    },
+    {
+      "name": "stores passive write submissions without input-only lifecycle states",
+      "passed": true
+    },
+    {
+      "name": "reconstructs rewindable documents and preserves half-open incarnations",
+      "passed": true
+    },
+    {
+      "name": "streams long document tails across root replacement deltas",
+      "passed": true
+    },
+    {
+      "name": "copies stored document bases independently and rejects ambiguous sources",
+      "passed": true
+    },
+    {
+      "name": "uses bases for version transitions and rejects historical reads of current-only documents",
+      "passed": true
+    },
+    {
+      "name": "indexes logical addresses and exact-scope scans independently",
+      "passed": true
+    },
+    {
+      "name": "keeps document lifecycle failures atomic and gives create-plus-retire an empty lifetime",
+      "passed": true
+    },
+    {
+      "name": "rolls back record tables and secondary indexes when a document command fails",
+      "passed": true
+    },
+    {
+      "name": "keeps indexed string identities lossless",
+      "passed": true
+    },
+    {
+      "name": "keeps one global record ID namespace and rejects exhausted ID minting",
+      "passed": true
+    },
+    {
+      "name": "rejects every operation after close",
+      "passed": true
+    }
+  ]
+}

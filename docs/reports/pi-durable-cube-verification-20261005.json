@@ -1,0 +1,35 @@
+{
+  "format": "pi-cloud.durable-cube-probe.v1",
+  "checkedAt": "2026-10-05T08:01:53.974Z",
+  "durableVersion": "1.0.0",
+  "guestProtocol": 3,
+  "nativeProtocol": 7,
+  "model": "scripted upstream faux provider",
+  "accepted": true,
+  "allocationId": "b40c50fe-e7ab-4673-88d1-a2cd6f5e10d1",
+  "checks": [
+    {
+      "case": "complete",
+      "accepted": true,
+      "operationId": "4e43ed31-178f-48c2-8533-4c8f1c273ce3",
+      "modelRequests": 2,
+      "realCubeReplyReceived": true,
+      "sourceIsCommittedKafkaPosition": true,
+      "originalResultPreserved": true
+    },
+    {
+      "case": "cancel",
+      "accepted": true,
+      "operationId": "8e514968-e644-4e09-a907-9bf4a71ef9d8",
+      "modelRequests": 1,
+      "realCubeReplyReceived": true,
+      "sourceIsCommittedKafkaPosition": true,
+      "originalResultPreserved": false
+    }
+  ],
+  "cleanupConfirmed": true,
+  "replyTopic": "pi-cloud.tool-replies.v2.c11d7c23-bedd-4e14-a9f0-5017d944ea28",
+  "sandboxId": "b40c50fee7ab467388d1a2cd6f5e10d1",
+  "physicalAbsenceConfirmed": true,
+  "probeContainerImage": "sha256:c73bcefa9c2e5a8f4bd6504abd4d6fa9c5b4f02e380c684f8685769bec945f8e"
+}

@@ -1,5 +1,10 @@
 # Documentation map
 
+The [Pi Durable 1.0 evaluation](reports/pi-durable-evaluation-20261005.md) executes
+the Kafka/PG commit and Cube Tool boundaries under ADR-0228. It records usable
+interfaces and mismatched cancellation/recovery/queue semantics; it does not
+upgrade the production runtime.
+
 The [October 5 whole-repository follow-up review](reports/repository-review-20261005.md)
 audits `5c2fcab4` across all 22 workspaces, pinned Pi/Cube, storage, UI and delivery.
 It records four confirmed behavior findings, one documentation finding, isolated

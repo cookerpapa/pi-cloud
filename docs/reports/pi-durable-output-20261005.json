@@ -1,0 +1,23 @@
+{
+  "format": "pi-cloud.durable-output-probe.v1",
+  "version": "1.0.0",
+  "accepted": true,
+  "model": "scripted upstream faux provider",
+  "emittedPreviewChunks": 8,
+  "commits": 23,
+  "totalBatchBytes": 9533,
+  "commitsContainingPreview": 8,
+  "previewPresentInFinalToolContent": false,
+  "mixedToolRoundHookGuard": {
+    "executions": 2,
+    "modelRequests": 2,
+    "compatible": false,
+    "finding": "Throwing from beforeRequest is reported and ignored; one terminating Tool does not end a mixed result round."
+  },
+  "mixedToolRoundModelPortGuard": {
+    "executions": 2,
+    "modelRequests": 1,
+    "passed": true
+  },
+  "interpretation": "api.output() persists previews even when execute() supplies a different final result. Preserve PiCloud's lossy observation port; do not blindly bridge guest previews to this API. Counts are an immediate-ACK fixture, not fleet throughput."
+}
