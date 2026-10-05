@@ -5,8 +5,10 @@
 - [x] Review `5c2fcab4`: current 22 workspaces, pinned Pi/Cube, recovery,
       cancellation, storage/assets, product flows and delivery.
       [Findings, reproductions and evidence](reports/repository-review-20261005.md).
-- [ ] Repair R05-01–04 and correct R05-05 in complete vertical slices. Preserve
-      owner fencing and physical cleanup evidence; this review does not deploy fixes.
+- [x] Repair R05-01–04 and correct R05-05 under ADR-0227, widen large replies to
+      eight and retain owner fencing/physical evidence. Matched rollout and
+      [verification](reports/review-improvements-20261005.md) include real Luna,
+      Volume, cancellation, Worker image recovery and development-machine takeover.
 
 ## October 4 whole-repository review
 

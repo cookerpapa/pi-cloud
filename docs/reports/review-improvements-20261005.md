@@ -1,8 +1,15 @@
 # October 5 review improvements
 
 Started from review commit `13344042`, under ADR-0227. The owner approved R05
-repairs and widening the two large-reply permits. Implementation is complete;
-combined verification and matched release acceptance are in progress.
+repairs and widening the two large-reply permits. Implementation and the matched
+release are complete. Final fault acceptance and resource inventory are recorded below.
+
+The [verification index](review-improvements-verification-20261005.json) records
+1,717 workspace cases plus 65 helper cases passed, with nine optional external
+cases skipped. This combines the full run with the corrected suites and final
+Workflow regression suite; it is not a claim of one uninterrupted green CI run.
+The [186-case fault report](review-improvements-faults-20261005.json) overlaps
+the package tests and is not an additional count of unique cases.
 
 ## Implemented behavior
 
@@ -71,3 +78,54 @@ There is no runtime retry around plugin effects. The rerun is recorded separatel
 Review-only characterizations were retired after conversion into maintained
 tests; their original source remains at `13344042`. Historical review evidence
 retains its baseline instead of being rewritten as post-repair proof.
+
+## Matched release and owned live acceptance
+
+Cube API/Master/Cubelet use `review-outcomes-v7`, patch identity `e22ef09aace2b280`
+and completion source `139771883a383216c2425937f8156ec2ddf0fae4`. Applications use
+`review-outcomes-v7-app`, runtime source `a14e4727`; subsequent changes are tests,
+acceptance fixtures and documentation. Managed protocol remains 7, Guest wire 3
+and Guest source `992bcf3ad59056d2eb43b87f623fd351661ae47f`. PG schema is 175.
+
+Images were imported through the existing authorized K3s containerd socket.
+The existing-cluster Helm reconciliation used the shared renderer and retained
+values, with an explicit matched native image selection; root-only host
+preparation was unnecessary. Workers and the old Control Plane were drained
+before migration 175. No business-data reset was performed. The private PG
+backup is retained under the runtime backup directory.
+
+- [Volume and allocation](review-volume-acceptance-20261005.json): actual VMs share
+  bytes; direct paused release succeeds; a live sibling prevents Volume deletion;
+  delayed creation is rejected; final owned Volume cleanup is confirmed.
+- [Native Tools](review-native-tools-20261005.json): four Luna Runs pass fixed
+  read/write/edit/bash, source truncation, symlink behavior and ordinary error
+  continuation. The first fixture attempt failed because Luna omitted a quote in
+  a supplied Python command. Read-only Kafka diagnosis scoped to that disposable
+  Session confirmed a Bash syntax error and a completed Run. The fixture now
+  supplies exact JSON source/commands and validates actual bytes/commands; all
+  original output/status assertions remain. Initial failure is not counted as a pass.
+- [Cancellation](review-cancellation-20261005.json): foreground cancellation in
+  552ms retains partial output and context. Completed background work, independent
+  process groups and a shared-VM sibling survive; explicit later cleanup succeeds.
+- [Unavailable execution API](review-cancellation-fault-20261005.json): pausing
+  Cube API makes cancellation unconfirmed; after 22.52 seconds the Run retains
+  UNKNOWN and interruption context. Exactly one execution was observed. Shared
+  VM work survives, the API is resumed and explicit later cleanup succeeds.
+- [Images and Worker replacement](review-images-20261005.json): 6.3/6.3/25.1 MB
+  normalized images become 778/778/779-byte native references. A replacement
+  Worker recalls all three immutable images after the source path changed.
+- [Development machine](review-development-20261005.json): terminal reconnect,
+  one-time SSH, shared/temporary Subagents, preview isolation, Control Plane
+  replacement, pause/resume, release and conversation/Workspace separation pass.
+
+Fixture cleanup is scoped to the created resources. Three recorded test-image
+objects were deleted only after locked identity/reachability checks; all three
+pre-existing image identities were verified unchanged. Historical untracked
+UNKNOWN allocations remain subject to their existing physical-proof requirements.
+
+The [final release inventory](review-improvements-rollout-20261005.json) was
+captured after fault recovery and cleanup: all 31 running Pods are ready, exact
+Cubelet inventory has zero VMs, and no active Runs, terminals, development
+machines, live Workspace allocations or test conversations remain. The three
+original image identities are unchanged and the two historical UNKNOWN
+allocations remain recorded. Schema 175 has no duplicated terminal lease fields.

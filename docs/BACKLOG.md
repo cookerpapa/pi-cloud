@@ -24,26 +24,31 @@ PiCloud deployment. Remaining operational limits are listed below.
 ## Reliability and capacity
 
 The [October 5 follow-up review](reports/repository-review-20261005.md) is complete
-at `5c2fcab4`. Runtime and deployment are unchanged. Its isolated characterization
-tests reproduce the baseline defects; passing them does not mean the defects
-are repaired.
+at `5c2fcab4`. Its original characterization tests are archived at `13344042`.
+The [approved improvements and release evidence](reports/review-improvements-20261005.md)
+record the matched implementation under ADR-0227.
 
 The [proposed improvement slices](reports/review-improvement-plan-20261005.md)
 specify executable POSIX recovery, bounded owner transactions/renewal, and shared
-Tool outcome classification. They are a proposal, not implemented repairs.
+Tool outcome classification. Read concurrency was widened from two to eight as
+requested; streaming image transport remains a separate future change.
 
-- [ ] R05-01: make failed Attach recovery executable through the actual POSIX
+- [x] R05-01: make failed Attach recovery executable through the actual POSIX
       Volume plugin, retaining pending-cleanup and shared-holder protection.
-- [ ] R05-02: bound lifecycle resource-lock waits so one resource cannot prevent
+- [x] R05-02: bound lifecycle resource-lock waits so one resource cannot prevent
       controller-owner renewal; retain PG-time fencing and retirement serialization.
-- [ ] R05-03: preserve confirmed `not_started` replies during Agent Stop instead
+- [x] R05-03: preserve confirmed `not_started` replies during Agent Stop instead
       of relabeling them as an unconfirmed UNKNOWN outcome.
-- [ ] R05-04: apply infrastructure-failure classification and sampling refusal
+- [x] R05-04: apply infrastructure-failure classification and sampling refusal
       consistently to Workflow and fixed Tool paths, preserving business Tool errors.
-- [ ] R05-05: correct old Volume delta/co-commit comments and the migration's
+- [x] R05-05: correct old Volume delta/co-commit comments and the migration's
       misleading `additive` description; document matched metadata/binary rollback.
-- [ ] Evaluate cold native-writer sweep batching, Volume-lock lifecycle cleanup
-      and bounded readiness waiting using the review's explicit scope/limitations.
+- [x] Batch cold native-writer sweeps, collect Volume locks and wait for the
+      desired Cubelet image before release checks. Preserve reference checks and
+      the existing read/ownership authorities.
+- [ ] Measure mixed fleet load before replacing the widened Read gate with
+      actual-image streaming/backpressure; source sizing and transfer buffering
+      remain distinct concerns.
 
 The [October 4 whole-repository review](reports/repository-review-20261004.md)
 is complete at `8d8ee837`. R04-01–07 and Q04-01 are implemented and deployed

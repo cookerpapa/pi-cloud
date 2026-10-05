@@ -1,6 +1,7 @@
 # ADR-0227: Recovery isolation and consistent Tool outcomes
 
-Status: accepted, implementation in progress, 2026-10-05.
+Status: implemented and deployed, 2026-10-05.
+[Verification and matched release](../reports/review-improvements-20261005.md).
 
 The owner approved the [October 5 review improvements](../reports/review-improvement-plan-20261005.md)
 and explicitly requested relaxing the two large-reply permits. Preserve the

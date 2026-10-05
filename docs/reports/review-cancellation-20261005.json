@@ -1,0 +1,17 @@
+{
+  "checkedAt": "2026-10-05T02:40:25.776Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "fault": "none",
+  "sharedVmVerified": true,
+  "cancelMs": 552,
+  "foregroundCancellationConfirmed": true,
+  "completedBackgroundSurvived": true,
+  "independentProcessGroupSurvived": true,
+  "explicitProcessStopInNextRun": true,
+  "partialOutputRetained": true,
+  "interruptionContextRetained": true,
+  "siblingCompleted": true,
+  "executionCount": 1,
+  "cleanupCompleted": true
+}

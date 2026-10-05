@@ -1,0 +1,139 @@
+{
+  "format": "pi-cloud.review-improvements-verification.v1",
+  "runtimeRevision": "a14e4727",
+  "nativeRevision": "f6b9c766",
+  "reviewRevision": "13344042",
+  "regularTests": {
+    "workspaceCases": 1717,
+    "helperCases": 65,
+    "totalPassedCases": 1782,
+    "optionalSkipped": 9,
+    "method": "Combine initial full workspace run with repaired database/authority cases and the final complete supervisor suite. Fault cases overlap these tests."
+  },
+  "ci": {
+    "initialExitCode": 1,
+    "failures": [
+      "schema ledger expected 174 instead of 175",
+      "heartbeat test expected owner maintenance in renewal transaction"
+    ],
+    "resolution": "Fixed expectations and retained expiry/no-revival assertions; relevant suites and remaining CI gates rerun successfully. The original ci command exited 1."
+  },
+  "checks": [
+    {
+      "name": "full workspace tests",
+      "result": "initial two outdated assertions, repaired with complete database and authority suites",
+      "log": "/tmp/pi-cloud-repair-20261005/ci.log"
+    },
+    {
+      "name": "database recheck",
+      "result": "41 passed",
+      "log": "/tmp/pi-cloud-repair-20261005/database-recheck.log"
+    },
+    {
+      "name": "authority decision time",
+      "result": "9 passed",
+      "log": "/tmp/pi-cloud-repair-20261005/authority-recheck.log"
+    },
+    {
+      "name": "final supervisor suite",
+      "result": "278 passed",
+      "log": "/tmp/pi-cloud-repair-20261005/workflow-race-tests.log"
+    },
+    {
+      "name": "acceptance helpers",
+      "result": "65 passed",
+      "log": "/tmp/pi-cloud-repair-20261005/helpers.log"
+    },
+    {
+      "name": "native allocation/Volume/execution contracts",
+      "result": "passed real Bolt/MySQL/POSIX, race and paused-destroy composition",
+      "log": "/tmp/pi-cloud-repair-20261005/native-contracts-recheck.log"
+    },
+    {
+      "name": "native admission",
+      "result": "passed eight in-flight large replies, blocked delivery and scoped cancellation",
+      "log": "/tmp/pi-cloud-repair-20261005/admission.log"
+    },
+    {
+      "name": "browser",
+      "result": "passed",
+      "log": "/tmp/pi-cloud-repair-20261005/browser.log"
+    },
+    {
+      "name": "dependency high-severity gate",
+      "result": "passed; two moderate findings remain",
+      "log": "/tmp/pi-cloud-repair-20261005/security.log"
+    },
+    {
+      "name": "final formatting",
+      "result": "passed",
+      "log": "/tmp/pi-cloud-repair-20261005/final-format.log"
+    },
+    {
+      "name": "final documentation and acceptance-script syntax",
+      "result": "passed documentation_check_passed files=27; both changed scripts pass node --check; git diff --check passed"
+    },
+    {
+      "name": "report consistency",
+      "result": "all six live reports accepted; initial/final aggregate counts verified; final rollout inventory verified"
+    }
+  ],
+  "faultCases": {
+    "passed": 186,
+    "total": 186,
+    "report": "review-improvements-faults-20261005.json"
+  },
+  "images": {
+    "native": "review-outcomes-v7",
+    "applications": "review-outcomes-v7-app",
+    "patchId": "e22ef09aace2b280",
+    "completionSource": "139771883a383216c2425937f8156ec2ddf0fae4",
+    "guestSource": "992bcf3ad59056d2eb43b87f623fd351661ae47f"
+  },
+  "nativeProtocol": 7,
+  "guestProtocol": 3,
+  "pgSchema": 175,
+  "readPermits": 8,
+  "limitations": [
+    "Single-host verification is not physical-node HA",
+    "Large-reply framing remains 64 MiB and image processing still materializes data",
+    "Reply-memory fixture uses in-memory slow stores, excludes Guest/Worker/Cubelet and real S3/Kafka"
+  ],
+  "rollout": {
+    "status": "ready",
+    "report": "review-improvements-rollout-20261005.json"
+  },
+  "liveAcceptance": [
+    {
+      "name": "Volume and allocation",
+      "accepted": true,
+      "report": "review-volume-acceptance-20261005.json"
+    },
+    {
+      "name": "Native Tools and source truncation",
+      "accepted": true,
+      "report": "review-native-tools-20261005.json"
+    },
+    {
+      "name": "Normal cancellation",
+      "accepted": true,
+      "report": "review-cancellation-20261005.json"
+    },
+    {
+      "name": "Unavailable Cube API during cancellation",
+      "accepted": true,
+      "report": "review-cancellation-fault-20261005.json"
+    },
+    {
+      "name": "Images and Worker replacement",
+      "accepted": true,
+      "report": "review-images-20261005.json"
+    },
+    {
+      "name": "Development machine and Control Plane replacement",
+      "accepted": true,
+      "report": "review-development-20261005.json"
+    }
+  ],
+  "checkedAt": "2026-10-05T03:04:17.359Z"
+}

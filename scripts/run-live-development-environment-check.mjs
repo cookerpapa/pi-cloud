@@ -523,6 +523,15 @@ try {
   );
 
   console.log(JSON.stringify({ event: "development_acceptance_stage", stage: "restart" }));
+  assert.equal(
+    Number(
+      await psql(
+        "select count(*) from runs where state in ('queued','running','settling','cancel_requested')",
+      ),
+    ),
+    0,
+    "Refuse Control Plane replacement while another Run remains active",
+  );
   await capture(
     process.execPath,
     ["scripts/production-kubernetes.mjs", "restart", "control-plane"],
@@ -670,7 +679,11 @@ try {
   };
   await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
   await writeFile(
-    resolve(repositoryRoot, "docs/reports/development-environment-acceptance-latest.json"),
+    resolve(
+      repositoryRoot,
+      process.env.PI_CLOUD_DEVELOPMENT_REPORT ??
+        "docs/reports/development-environment-acceptance-latest.json",
+    ),
     `${JSON.stringify(report, null, 2)}\n`,
     "utf8",
   );

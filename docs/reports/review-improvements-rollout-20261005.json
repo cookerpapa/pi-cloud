@@ -1,0 +1,149 @@
+{
+  "format": "pi-cloud.review-rollout.v1",
+  "runtimeRevision": "a14e4727",
+  "nativeRevision": "f6b9c766",
+  "nativeProtocol": 7,
+  "guestProtocol": 3,
+  "guestSource": "992bcf3ad59056d2eb43b87f623fd351661ae47f",
+  "rollout": {
+    "startedAt": "2026-10-05T02:29:48.091Z",
+    "stage": "ready",
+    "nativeVersion": "review-outcomes-v7",
+    "appVersion": "review-outcomes-v7-app",
+    "before": {
+      "active": 0,
+      "terminals": 0
+    },
+    "nodeVMs": 0,
+    "completedAt": "2026-10-05T02:32:20.659Z"
+  },
+  "before": {
+    "checkedAt": "2026-10-05T01:23:23.406Z",
+    "active_runs": 0,
+    "active_terminals": 0,
+    "machines": 0,
+    "live_workspace_runtimes": 0,
+    "unknown_workspace_runtimes": 2,
+    "native_log_rows": 0,
+    "image_objects": 3,
+    "sessions": 0,
+    "migrations": 174,
+    "exactNodeVMCount": 0,
+    "nodeInventoryMethod": "Cubelet cubecli cubebox ls --all --quiet; successful response with zero IDs",
+    "imageIdentityDigest": "53ac624ff6d2de65eb7737bbfc1ea03c32ee564cacfd17cee7e7bc54d6645043"
+  },
+  "after": {
+    "checkedAt": "2026-10-05T03:04:17.359Z",
+    "active_runs": 0,
+    "active_terminals": 0,
+    "machines": 0,
+    "live_workspace_runtimes": 0,
+    "unknown_workspace_runtimes": 2,
+    "native_log_rows": 0,
+    "image_objects": 3,
+    "sessions": 0,
+    "migrations": 175,
+    "exactNodeVMCount": 0,
+    "nodeInventoryMethod": "Cubelet cubecli cubebox ls --all --quiet; successful response with zero IDs",
+    "baselineImageIdentitiesPreserved": true,
+    "imageIdentityDigest": "53ac624ff6d2de65eb7737bbfc1ea03c32ee564cacfd17cee7e7bc54d6645043",
+    "terminalLeaseMirrorsAbsent": true,
+    "allRunningPodsReady": true,
+    "readyPodCount": 31,
+    "native": {
+      "source": "139771883a383216c2425937f8156ec2ddf0fae4",
+      "version": "0.6.0-picloud-e22ef09aace2b280"
+    },
+    "workloads": [
+      {
+        "name": "cube-api",
+        "ready": 1,
+        "images": [
+          {
+            "name": "cube-api",
+            "image": "pi-cloud/cube-api:review-outcomes-v7"
+          }
+        ]
+      },
+      {
+        "name": "cube-master",
+        "ready": 1,
+        "images": [
+          {
+            "name": "cube-master",
+            "image": "pi-cloud/cube-master:review-outcomes-v7"
+          }
+        ]
+      },
+      {
+        "name": "pi-cloud-control-plane",
+        "ready": 1,
+        "images": [
+          {
+            "name": "control-plane",
+            "image": "pi-cloud/control-plane:review-outcomes-v7-app"
+          }
+        ]
+      },
+      {
+        "name": "pi-cloud-ssh-gateway",
+        "ready": 1,
+        "images": [
+          {
+            "name": "ssh-gateway",
+            "image": "pi-cloud/ssh-gateway:review-outcomes-v7-app"
+          }
+        ]
+      },
+      {
+        "name": "pi-cloud-web",
+        "ready": 1,
+        "images": [
+          {
+            "name": "web",
+            "image": "pi-cloud/web-ui:review-outcomes-v7-app"
+          }
+        ]
+      },
+      {
+        "name": "pi-cloud-pi-worker-primary-v1",
+        "ready": 2,
+        "images": [
+          {
+            "name": "pi-worker",
+            "image": "pi-cloud/supervisor-host:review-outcomes-v7-app"
+          }
+        ]
+      },
+      {
+        "name": "cube-node",
+        "ready": 1,
+        "images": [
+          {
+            "name": "network-agent",
+            "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/network-agent:v0.6.0"
+          },
+          {
+            "name": "cubelet",
+            "image": "pi-cloud/cubelet:review-outcomes-v7"
+          },
+          {
+            "name": "cube-egress",
+            "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress:v0.6.0"
+          },
+          {
+            "name": "cube-egress-net",
+            "image": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0"
+          }
+        ]
+      }
+    ]
+  },
+  "fixtureImageCleanup": {
+    "removedFixtureImages": 3,
+    "preservedBaselineImages": 3,
+    "scope": "Only recorded fixture image IDs, after locked reachability/identity checks. No global reap."
+  },
+  "privateDatabaseBackup": "deploy/production/runtime/backups/review-outcomes-20261005/postgres-before.sql.gz",
+  "dataReset": false
+}
