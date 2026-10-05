@@ -86,6 +86,8 @@ const AssistantTextDeltaEventSchema = Type.Object(
     payload: Type.Object(
       {
         text: Type.String(),
+        messageId: Type.Optional(OpaqueIdSchema),
+        replace: Type.Optional(Type.Boolean()),
         phase: Type.Optional(AssistantMessagePhaseSchema),
       },
       { additionalProperties: false },

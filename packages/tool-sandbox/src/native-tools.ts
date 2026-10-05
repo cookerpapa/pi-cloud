@@ -1,16 +1,13 @@
+import { createEditTool, createWriteTool } from "@earendil-works/pi-durable/tools";
+import { FileError, err, ok, getOrThrow } from "@earendil-works/pi-durable/env";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import type { ToolExecutionApi, ToolExecutionResult } from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import {
-  createEditTool,
-  createReadTool,
-  createWriteTool,
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
-  FileError,
-  err,
-  ok,
-  getOrThrow,
   truncateHead,
-} from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+} from "@earendil-works/pi-coding-agent";
 import {
   MAX_TOOL_COMMAND_BYTES,
   MAX_TOOL_MUTATION_FILE_BYTES,
@@ -31,7 +28,7 @@ import {
   terminateProcessGroup,
 } from "./tool-worker.ts";
 import { NativeToolOutput, redactToolText } from "./native-tool-output.ts";
-import { processReadImage } from "./image-processor.ts";
+import { processImageSource } from "./image-processor.ts";
 
 export type NativeToolRequest = Extract<ToolSandboxOperationRequest, { operation: "tool.execute" }>;
 
@@ -58,11 +55,19 @@ export async function executeNativeTool(
       if (typeof path !== "string") throw new Error("Tool path is required");
       if (path.split(/[\\/]/u).includes(".git-credentials"))
         throw new Error("Code Host credentials are not available through file tools");
+      const context = withAbortSignal(signal, BACKGROUND_CONTEXT);
       const env = new NodeExecutionEnv({ cwd });
-      const absolutePath = getOrThrow(await env.absolutePath(path));
+      // Fixed file tools need only an environment. No Agent, task scheduler,
+      // extension loader or platform capability is present in the guest.
+      const api = { env, diagnostic: () => {} } as unknown as ToolExecutionApi;
+      const asResult = (value: ToolExecutionResult): NativeToolEnd["result"] => ({
+        content: [...(value.content ?? [])],
+        ...(value.details === undefined ? {} : { details: value.details }),
+      });
+      const absolutePath = getOrThrow(await env.absolutePath(path, context));
       const canonicalPath = async (target: string) => {
         signal.throwIfAborted();
-        return getOrThrow(await env.canonicalPath(target));
+        return getOrThrow(await env.canonicalPath(target, context));
       };
       const nativeWrite = env.writeFile.bind(env);
       let digest: string | undefined;
@@ -92,7 +97,7 @@ export async function executeNativeTool(
             (await readWorkspaceFile(await canonicalPath(target), "/")).sha256 !== digest
           )
             throw new Error("Tool file changed before it was written");
-          getOrThrow(await nativeWrite(target, content, signal));
+          getOrThrow(await nativeWrite(target, content, context));
           // Native Node file semantics (including symlinks) inside the guest;
           // retain a durable file/parent acknowledgement before Tool success.
           const file = await open(target, constants.O_WRONLY);
@@ -113,12 +118,12 @@ export async function executeNativeTool(
         }
       };
       if (request.toolName === "edit") {
-        result = await createEditTool().execute(
-          request.toolCallId,
-          { path, edits: request.args.edits as { oldText: string; newText: string }[] },
-          signal,
-          update,
-          { env },
+        result = asResult(
+          await createEditTool().execute(
+            { path, edits: request.args.edits as { oldText: string; newText: string }[] },
+            api,
+            context,
+          ),
         );
         const details = result.details as { diff: string; patch: string };
         for (const key of ["diff", "patch"] as const) {
@@ -132,12 +137,8 @@ export async function executeNativeTool(
         }
       } else if (request.toolName === "write") {
         if (typeof request.args.content !== "string") throw new Error("Write content is required");
-        result = await createWriteTool().execute(
-          request.toolCallId,
-          { path, content: request.args.content },
-          signal,
-          update,
-          { env },
+        result = asResult(
+          await createWriteTool().execute({ path, content: request.args.content }, api, context),
         );
       } else if (await isImageFile(await canonicalPath(absolutePath))) {
         if (
@@ -145,12 +146,16 @@ export async function executeNativeTool(
           !["high", "original"].includes(String(request.args.detail))
         )
           throw new Error("Image detail must be high or original");
-        result = await createReadTool({
+        const image = await processImageSource(await canonicalPath(absolutePath), {
           autoResizeImages: request.args.detail !== "original",
-          imageProcessor: processReadImage,
-        }).execute(request.toolCallId, { path }, signal, update, {
-          env,
         });
+        if (!image.ok) throw new Error(image.message);
+        result = {
+          content: [
+            ...image.hints.map((text) => ({ type: "text" as const, text })),
+            { type: "image", data: image.data, mimeType: image.mimeType },
+          ],
+        };
       } else {
         const offset = request.args.offset ?? 1,
           limit = request.args.limit ?? DEFAULT_MAX_LINES;
@@ -175,7 +180,7 @@ export async function executeNativeTool(
             : `[Line ${range.startLine} is ${range.firstLineBytes} bytes, exceeds ${maximum} byte limit. Use bash with sed/head to inspect a bounded slice.]`;
         if (range.nextOffsetLine !== undefined)
           text += `\n\n[Showing lines ${range.startLine}-${range.endLine}. Use offset=${range.nextOffsetLine} to continue.]`;
-        result = { content: [{ type: "text", text }], details: undefined };
+        result = { content: text.length ? [{ type: "text", text }] : [], details: undefined };
       }
     }
     signal.throwIfAborted();

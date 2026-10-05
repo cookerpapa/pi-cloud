@@ -1,5 +1,5 @@
 /** Shared management contract; it does not import or construct a Pi Runner. */
-export const PINNED_PI_CODING_AGENT_VERSION = "0.84.1";
+export const PINNED_PI_DURABLE_VERSION = "1.0.0";
 
 export type SandboxRuntimeIdentity = {
   supervisorId: string;

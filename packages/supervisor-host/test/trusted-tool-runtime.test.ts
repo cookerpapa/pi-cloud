@@ -1,3 +1,5 @@
+import { nativeToolApi } from "./tool-api.ts";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Database } from "@pi-cloud/database";
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
@@ -33,7 +35,10 @@ describe("PostgresTrustedToolRuntime", () => {
     const starts: string[] = [];
     const runtime = new PostgresTrustedToolRuntime({
       database: rootSessionDatabase(),
-      nativeLanes: { childAnchor: () => null, createChildLane: async () => {} },
+      nativeConversations: {
+        childAnchor: async () => null,
+        createChildConversation: async () => 2,
+      },
       control: {
         async request(input: Parameters<SubagentControlClient["request"]>[0]) {
           input.onPublished?.();
@@ -49,7 +54,7 @@ describe("PostgresTrustedToolRuntime", () => {
     const tool = bindings.find(({ tool }) => tool.name === "subagent")!.tool;
     const invoke = (id: string, task: string) =>
       withToolInvocation({ id, nativeToolCallId: "provider-reused" }, () =>
-        tool.execute("provider-reused", { action: "run", task }),
+        tool.execute({ action: "run", task }, nativeToolApi("provider-reused"), BACKGROUND_CONTEXT),
       );
     const first = await invoke("result-one", "first task");
     expect(await invoke("result-one", "first task")).toEqual(first);
@@ -62,11 +67,11 @@ describe("PostgresTrustedToolRuntime", () => {
     const runtime = new PostgresTrustedToolRuntime({
       database: rootSessionDatabase(),
       control: new SubagentControlClient(() => undefined),
-      nativeLanes: {
+      nativeConversations: {
         childAnchor() {
           throw new Error("unused");
         },
-        async createChildLane() {
+        async createChildConversation() {
           throw new Error("unused");
         },
       },
@@ -76,7 +81,11 @@ describe("PostgresTrustedToolRuntime", () => {
       refreshServices: async () => undefined,
     });
 
-    expect(tools.map(({ executionPlane, tool }) => [tool.name, executionPlane])).toEqual([
+    expect(
+      tools
+        .filter((binding) => binding.offered !== false)
+        .map(({ executionPlane, tool }) => [tool.name, executionPlane]),
+    ).toEqual([
       ["preview", "platform"],
       ["subagent", "orchestration"],
       ["subagent_supervisor", "orchestration"],

@@ -1,3 +1,6 @@
+import { appendNativeFixture } from "./fixtures/durable-native.ts";
+import { readDurableEntries } from "@pi-cloud/pi-session-postgres/durable";
+import { sql } from "kysely";
 import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { PGlite } from "@electric-sql/pglite";
@@ -614,8 +617,8 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
   });
 
   it("forks a settled Pi branch transactionally and renders inherited history", async () => {
-    const userEntryId = "pc-10000000-0000-4000-8000-000000000001-1";
-    const assistantEntryId = "pc-10000000-0000-4000-8000-000000000001-2";
+    const userEntryId = "2";
+    const assistantEntryId = "3";
     await database.transaction().execute(async (transaction) => {
       await transaction
         .updateTable("turns")
@@ -651,80 +654,45 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
           occurred_at: NOW,
         })
         .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("pi_sessions")
-        .set({ next_seq: 3, name: "Test conversation" })
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("id", "=", alphaSession.sessionId)
-        .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("pi_session_lanes")
-        .set({ leaf_id: assistantEntryId })
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("session_id", "=", alphaSession.sessionId)
-        .where("lane", "=", "main")
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("pi_session_log")
-        .values([
+      await appendNativeFixture(
+        transaction,
+        {
+          tenantId: alpha.tenantId,
+          sessionId: alphaSession.sessionId,
+          turnId: alphaTurn.turnId,
+          runId: alphaTurn.runId,
+        },
+        [
           {
-            tenant_id: alpha.tenantId,
-            session_id: alphaSession.sessionId,
-            seq: 1,
-            kind: "entry",
-            payload: {
-              lane: "main",
-              turnId: alphaTurn.turnId,
-              entry: {
-                id: userEntryId,
-                seq: 1,
-                parentId: null,
-                timestamp: NOW.valueOf(),
-                type: "message",
-                message: {
-                  role: "user",
-                  content: "alpha private prompt",
-                  timestamp: NOW.valueOf(),
-                },
-              },
-            },
+            id: Number(userEntryId),
+            kind: "pi.user",
+            model: [{ role: "user", content: "alpha private prompt", timestamp: NOW.valueOf() }],
           },
           {
-            tenant_id: alpha.tenantId,
-            session_id: alphaSession.sessionId,
-            seq: 2,
-            kind: "entry",
-            payload: {
-              lane: "main",
-              turnId: alphaTurn.turnId,
-              entry: {
-                id: assistantEntryId,
-                seq: 2,
-                parentId: userEntryId,
+            id: Number(assistantEntryId),
+            kind: "pi.assistant",
+            model: [
+              {
+                role: "assistant",
+                content: [{ type: "text", text: "alpha final answer" }],
+                api: "test",
+                provider: "test",
+                model: "test",
+                stopReason: "stop",
                 timestamp: NOW.valueOf() + 1,
-                type: "message",
-                message: {
-                  role: "assistant",
-                  content: [{ type: "text", text: "alpha final answer" }],
-                  provider: "test",
-                  model: "test",
-                  api: "test",
-                  usage: {
-                    input: 1,
-                    output: 1,
-                    cacheRead: 0,
-                    cacheWrite: 0,
-                    totalTokens: 2,
-                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-                  },
-                  stopReason: "stop",
-                  timestamp: NOW.valueOf() + 1,
+                usage: {
+                  input: 1,
+                  output: 1,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  totalTokens: 2,
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
                 },
               },
-            },
+            ],
           },
-        ])
-        .execute();
+        ],
+      );
     });
 
     const beforeFork = await http.inject({
@@ -814,39 +782,26 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         current: true,
       }),
     ]);
-    const copiedEntries = await database
-      .selectFrom("pi_session_log")
-      .where("kind", "=", "entry")
-      .select("id")
-      .where("tenant_id", "=", alpha.tenantId)
-      .where("session_id", "=", forked.session.sessionId)
-      .orderBy("seq")
-      .execute();
-    expect(copiedEntries.map((entry) => entry.id)).toEqual([userEntryId, assistantEntryId]);
-    expect(
-      await database
-        .selectFrom("pi_session_log")
-        .select(["seq", "kind"])
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("session_id", "=", forked.session.sessionId)
-        .orderBy("seq")
-        .execute(),
-    ).toEqual([
-      { seq: "1", kind: "entry" },
-      { seq: "2", kind: "entry" },
-      { seq: "3", kind: "lane" },
-      { seq: "4", kind: "fact" },
+    const copiedEntries = (
+      await readDurableEntries(database, {
+        tenantId: alpha.tenantId,
+        sessionId: forked.session.sessionId,
+        conversationId: 1,
+        limit: 10,
+      })
+    ).reverse();
+    expect(copiedEntries.map((row) => String(row.entry.id))).toEqual([
+      userEntryId,
+      assistantEntryId,
     ]);
     expect(
-      await database
-        .selectFrom("pi_session_log")
-        .where("kind", "=", "record")
-        .select("id")
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("session_id", "=", forked.session.sessionId)
-        .execute(),
-    ).toEqual([]);
-
+      (
+        await sql<{
+          kind: string;
+        }>`select record_kind as kind from pi_durable_log where tenant_id=${alpha.tenantId}::uuid
+      and session_id=${forked.session.sessionId} order by seq,ordinal`.execute(database)
+      ).rows,
+    ).toEqual([{ kind: "conversation" }, { kind: "entry" }, { kind: "entry" }]);
     const foreignTree = await http.inject({
       method: "GET",
       url: `/v1/conversations/${forked.session.sessionId}/tree`,
@@ -865,8 +820,8 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     });
     expect(laterTurnResponse.statusCode).toBe(202);
     const laterTurn = laterTurnResponse.json<AcceptedTurnResource>();
-    const laterUserEntryId = "10000000-0000-4000-8000-000000000003";
-    const laterAssistantEntryId = "10000000-0000-4000-8000-000000000004";
+    const laterUserEntryId = "4";
+    const laterAssistantEntryId = "5";
     await database.transaction().execute(async (transaction) => {
       await transaction
         .updateTable("turns")
@@ -922,42 +877,20 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
           },
         },
       ];
-      await transaction
-        .insertInto("pi_session_log")
-        .values(
-          laterEntries.map((entry) => ({
-            tenant_id: alpha.tenantId,
-            session_id: alphaSession.sessionId,
-            seq: entry.seq,
-            kind: "entry",
-            payload: {
-              lane: "main",
-              turnId: laterTurn.turnId,
-              entry: {
-                id: entry.id,
-                seq: entry.seq,
-                type: "message",
-                parentId: entry.parentId,
-                timestamp: entry.timestamp,
-                message: entry.message,
-              },
-            },
-          })),
-        )
-        .execute();
-      await transaction
-        .updateTable("pi_session_lanes")
-        .set({ leaf_id: laterAssistantEntryId })
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("session_id", "=", alphaSession.sessionId)
-        .where("lane", "=", "main")
-        .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("pi_sessions")
-        .set({ next_seq: 5 })
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("id", "=", alphaSession.sessionId)
-        .executeTakeFirstOrThrow();
+      await appendNativeFixture(
+        transaction,
+        {
+          tenantId: alpha.tenantId,
+          sessionId: alphaSession.sessionId,
+          turnId: laterTurn.turnId,
+          runId: laterTurn.runId,
+        },
+        laterEntries.map((entry) => ({
+          id: Number(entry.id),
+          kind: entry.message.role === "user" ? "pi.user" : "pi.assistant",
+          model: [entry.message],
+        })),
+      );
     });
 
     const pruneRequest = {
@@ -988,15 +921,18 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         .where("id", "=", laterTurn.turnId)
         .executeTakeFirstOrThrow(),
     ).toMatchObject({ prunedAt: expect.anything() });
-    expect(
-      await database
-        .selectFrom("pi_session_lanes")
-        .select("leaf_id as leafId")
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("session_id", "=", alphaSession.sessionId)
-        .where("lane", "=", "main")
-        .executeTakeFirstOrThrow(),
-    ).toEqual({ leafId: assistantEntryId });
+    const nativeBinding = await database
+      .selectFrom("sessions")
+      .select("pi_conversation_id")
+      .where("id", "=", alphaSession.sessionId)
+      .executeTakeFirstOrThrow();
+    const activeNative = await readDurableEntries(database, {
+      tenantId: alpha.tenantId,
+      sessionId: alphaSession.sessionId,
+      conversationId: Number(nativeBinding.pi_conversation_id),
+      limit: 1,
+    });
+    expect(String(activeNative[0]?.entry.id)).toBe(assistantEntryId);
     expect(
       await database
         .selectFrom("sessions")

@@ -1,11 +1,11 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
-import { projectNativeSessionAppend } from "@pi-cloud/pi-session-postgres";
+import { appendNativeFixture } from "./fixtures/durable-native.ts";
 import { MAX_INHERITED_CONTEXT_ENTRIES, parseConversationDetailResource } from "@pi-cloud/protocol";
-import type { StoredPiCommittedItem } from "@pi-cloud/protocol/native-session";
+
 import { PostgresSubagentJobProvider } from "@pi-cloud/subagent-control";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
@@ -50,52 +50,34 @@ it.each([true, false])(
       .select("pi_session_id")
       .where("id", "=", parent.sessionId)
       .executeTakeFirstOrThrow();
-    const items: StoredPiCommittedItem[] = [];
+    const entries: Record<string, unknown>[] = [];
+    for (let n = 1; n <= 10001; n++)
+      entries.push({
+        kind: "pi.user",
+        model: [
+          {
+            role: "user",
+            content: compacted && n === 10001 ? "Retained question" : `old ${n}`,
+            timestamp: n,
+          },
+        ],
+      });
+    if (compacted)
+      entries.push({
+        kind: "pi.compaction",
+        head: 10002,
+        data: { reason: "threshold" },
+        model: [{ role: "user", content: "Earlier work is summarized", timestamp: 10002 }],
+      });
     let anchor: string | null = null;
-    for (let i = 1; i <= 10_001; i++) {
-      const id = `old-${i}`;
-      items.push({
-        kind: "entry",
-        lane: "main",
-        turnId: null,
-        entry: {
-          id,
-          parentId: anchor,
-          seq: i,
-          timestamp: i,
-          type: "message",
-          message: { role: "user", content: `old ${i}`, timestamp: i },
-        },
-      });
-      anchor = id;
+    for (let at = 0; at < entries.length; at += 500) {
+      const added = await appendNativeFixture(
+        database,
+        { tenantId: tenant.tenantId, sessionId: session.pi_session_id },
+        entries.slice(at, at + 500),
+      );
+      anchor = String(added.at(-1)!.id);
     }
-    if (compacted) {
-      items.push({
-        kind: "entry",
-        lane: "main",
-        turnId: null,
-        entry: {
-          id: "compact",
-          parentId: anchor,
-          seq: 10_002,
-          timestamp: 10_002,
-          type: "compaction",
-          summary: "Earlier work is summarized",
-          tokensBefore: 50_000,
-          retainedTail: [{ role: "user", content: "Retained question", timestamp: 10_001 }],
-        },
-      });
-      anchor = "compact";
-    }
-    // Seed historical native rows directly; this is not one oversized Kafka fact.
-    await database.transaction().execute((tx) =>
-      projectNativeSessionAppend(tx, {
-        tenantId: tenant.tenantId,
-        sessionId: session.pi_session_id,
-        appendId: crypto.randomUUID(),
-        items,
-      }),
-    );
     const accepted = await store.acceptTurn(parent.sessionId, "parent-task", {
       prompt: "Delegate a short task",
     });
@@ -116,9 +98,11 @@ it.each([true, false])(
       const reference = await entered.promise;
       const provider = new PostgresSubagentJobProvider({
         database,
-        nativeLanes: {
-          childAnchor: () => anchor,
-          createChildLane: async () => {},
+        nativeConversations: {
+          childAnchor: async () => anchor,
+          createChildConversation: async () => {
+            throw new Error("Creation is deferred in this read fixture");
+          },
         },
       });
       const child = await provider.start(
@@ -127,7 +111,7 @@ it.each([true, false])(
           parentSessionId: parent.sessionId,
           parentRunId: accepted.runId,
           parentExecutionReference: reference,
-          parentToolCallId: "preview",
+          parentToolCallId: "task:2",
           workflowRunId: "preview",
           stepIndex: 0,
           agentName: "preview",
@@ -143,11 +127,11 @@ it.each([true, false])(
       );
       if (compacted) {
         expect(detail.inheritedContextSummary).toMatchObject({
-          entryId: "compact",
+          entryId: "10003",
           text: "Earlier work is summarized",
         });
         expect(detail.inheritedMessages).toMatchObject([
-          { entryId: "compact", messageIndex: 0, text: "Retained question" },
+          { entryId: "10002", messageIndex: 0, text: "Retained question" },
         ]);
         expect(detail.inheritedMessagesTruncated).toBeUndefined();
       } else {
@@ -156,16 +140,15 @@ it.each([true, false])(
         expect(detail.inheritedMessagesTruncated).toBe(true);
       }
       expect(detail.turns).toEqual([]);
-      const count = await database
-        .selectFrom("pi_session_log")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", tenant.tenantId)
-        .where("session_id", "=", session.pi_session_id)
-        .executeTakeFirstOrThrow();
-      expect(Number(count.count)).toBe(items.length);
+      const count = await sql<{ count: string }>`select count(*) as count from pi_durable_records
+        where tenant_id=${tenant.tenantId}::uuid and session_id=${session.pi_session_id} and kind='entry'`.execute(
+        database,
+      );
+      expect(Number(count.rows[0]!.count)).toBe(entries.length);
     } finally {
       finished.resolve();
       await execution;
     }
   },
+  120000,
 );

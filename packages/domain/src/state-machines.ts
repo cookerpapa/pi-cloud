@@ -50,8 +50,8 @@ const sessionTransitions = {
 
 const turnTransitions = {
   queued: ["running", "cancelling", "failed", "cancelled"],
-  running: ["cancelling", "completed", "failed"],
-  cancelling: ["cancelled", "failed"],
+  running: ["queued", "cancelling", "completed", "failed"],
+  cancelling: ["queued", "cancelled", "failed"],
   completed: [],
   failed: [],
   cancelled: [],
@@ -75,9 +75,9 @@ const controlRequestTransitions = {
 
 const runTransitions = {
   queued: ["running", "cancel_requested", "failed", "cancelled"],
-  running: ["settling", "cancel_requested", "completed", "failed", "timed_out"],
-  settling: ["cancel_requested", "completed", "failed", "timed_out"],
-  cancel_requested: ["cancelled", "failed", "timed_out"],
+  running: ["queued", "settling", "cancel_requested", "completed", "failed", "timed_out"],
+  settling: ["queued", "cancel_requested", "completed", "failed", "timed_out"],
+  cancel_requested: ["queued", "cancelled", "failed", "timed_out"],
   completed: [],
   failed: [],
   cancelled: [],

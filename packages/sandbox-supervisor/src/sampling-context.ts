@@ -1,4 +1,5 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
+import { worldStateMessage } from "./pi-sandbox-continuity.ts";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
 import { modelSamplingHeaders } from "@pi-cloud/protocol";
 import type { FrozenCloudStep } from "./cloud-context.ts";
@@ -47,25 +48,25 @@ export class SamplingContext {
     return captured;
   }
 
+  async ensureToolContext(): Promise<void> {
+    if (!this.step) await this.#capture("agent");
+  }
+
   transformContext = async (
-    input: readonly AgentMessage[],
+    input: readonly Message[],
     purpose: "agent" | "context_maintenance" = "agent",
-  ): Promise<AgentMessage[]> => {
+  ): Promise<Message[]> => {
     this.step = undefined;
     this.#attempt = undefined;
     const captured = await this.#capture(purpose);
     const messages = [...input];
     for (const message of captured.modelMessages) {
+      const key = `pi-cloud-change:${message.details.changeSha256}`;
       const present = messages.some(
         (candidate) =>
-          candidate.role === "custom" &&
-          candidate.customType === message.customType &&
-          typeof candidate.details === "object" &&
-          candidate.details !== null &&
-          (candidate.details as { changeSha256?: unknown }).changeSha256 ===
-            message.details.changeSha256,
+          candidate.role === "system" && candidate.sections && key in candidate.sections,
       );
-      if (!present) messages.push({ ...message, role: "custom", timestamp: Date.now() });
+      if (!present) messages.push(worldStateMessage(message));
     }
     return messages;
   };

@@ -30,7 +30,7 @@ it.each([
     remainingToolCalls: null,
     maximumToolOutputBytes: 4096,
     onToolOperationUnavailable: unavailable,
-    publishToolCancellation: async () => {},
+    trackWorkflowOperation: () => {},
     waitForToolReply: async () => pending.promise,
     publishToolCommand: async (c) => ({ operationId: c.request.operationId, accepted: true }),
     captureStepContext: (activeTools) => {
@@ -74,7 +74,10 @@ it.each([
         );
         expect(event.isError).toBe(true);
         pending.resolve(event);
-        await expect(prepared.result()).rejects.toThrow("ordinary application log");
+        await expect(prepared.result()).resolves.toMatchObject({
+          isError: true,
+          content: [{ type: "text", text: expect.stringContaining("ordinary application log") }],
+        });
         expect(unavailable).not.toHaveBeenCalled();
       } finally {
         prepared.dispose();

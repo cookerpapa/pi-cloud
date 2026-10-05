@@ -1,17 +1,26 @@
-import type { AgentEvent, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-/** Native Pi payloads, not a second Tool lifecycle. The receiving Pi owns its hooks. */
-export type NativeToolUpdate = Omit<
-  Extract<AgentEvent, { type: "tool_execution_update" }>,
-  "args" | "partialResult"
-> & { args: Record<string, unknown>; partialResult: NativeToolResult };
-export type NativeToolEnd = Omit<Extract<AgentEvent, { type: "tool_execution_end" }>, "result"> & {
+/** PiCloud's fixed guest transport; only the trusted Harness makes the result canonical. */
+export type NativeToolResult = {
+  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
+  details?: unknown;
+};
+export type NativeToolUpdate = {
+  type: "tool_execution_update";
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  partialResult: NativeToolResult;
+};
+export type NativeToolEnd = {
+  type: "tool_execution_end";
+  toolCallId: string;
+  toolName: string;
   result: NativeToolResult;
+  isError: boolean;
 };
 export type NativeToolEvent = NativeToolUpdate | NativeToolEnd;
-export type NativeToolResult = AgentToolResult<unknown>;
 
 const result = Type.Unsafe<NativeToolResult>(
   Type.Object({ content: Type.Array(Type.Unknown()), details: Type.Optional(Type.Unknown()) }),

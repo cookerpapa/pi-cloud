@@ -50,11 +50,11 @@ async function finished(id) {
   }, "Run closure");
 }
 async function consumption(receipt) {
-  const { rows } = await sql`select count(*)::int n from pi_session_log e
-    join sessions s on s.pi_session_id=e.session_id and s.tenant_id=e.tenant_id
-    where s.id=${receipt.sessionId}::uuid and e.tenant_id=${tenant.tenantId}::uuid
-      and e.kind='entry' and e.turn_id=${receipt.targetTurnId}::uuid
-      and e.id=${`pc-agent-input-${receipt.controlRequestId}`}`.execute(db);
+  const { rows } = await sql`select count(*)::int n from pi_durable_records submission
+    join sessions s on s.pi_session_id=submission.session_id and s.tenant_id=submission.tenant_id
+    where s.id=${receipt.sessionId}::uuid and submission.tenant_id=${tenant.tenantId}::uuid
+      and submission.kind='submission' and submission.fields->>'request'=${JSON.stringify(receipt.controlRequestId)}
+      and submission.fields ? 'entry'`.execute(db);
   return rows[0].n;
 }
 async function noForeignExecution() {

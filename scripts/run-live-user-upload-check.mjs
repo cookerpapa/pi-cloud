@@ -156,7 +156,7 @@ async function queuedImageScenario() {
   );
   assert.equal((await api.getInputQueue(session.sessionId)).items.length, 0);
   const { rows } =
-    await sql`select count(*)::int n from pi_session_log where session_id=${session.sessionId} and kind='entry' and id like 'pc-agent-input-%' and payload::text like '%pi_cloud_image_v1%'`.execute(
+    await sql`select count(*)::int n from pi_durable_records r join pi_durable_records e on e.tenant_id=r.tenant_id and e.session_id=r.session_id and e.id=(r.fields->>'entry')::bigint join pi_durable_log l on l.tenant_id=e.tenant_id and l.session_id=e.session_id and l.seq=e.seq and l.ordinal=e.ordinal where r.session_id=${session.sessionId} and r.kind='submission' and exists(select 1 from turn_control_requests c where c.tenant_id=r.tenant_id and to_jsonb(c.id::text)::text=r.fields->>'request') and l.body like '%pi_cloud_image_v1%'`.execute(
       db,
     );
   assert.equal(rows[0].n, 1);
@@ -328,7 +328,7 @@ try {
       );
     const source = sourceRows[0];
     const canonical =
-      await sql`select max(octet_length(payload::text))::int as bytes,count(*)::int as count from pi_session_log where session_id=${session.sessionId} and payload::text like '%pi_cloud_image_v1%'`.execute(
+      await sql`select max(octet_length(body))::int as bytes,count(*)::int as count from pi_durable_log where session_id=${session.sessionId} and body like '%pi_cloud_image_v1%'`.execute(
         db,
       );
     assert(canonical.rows[0].count > 0);

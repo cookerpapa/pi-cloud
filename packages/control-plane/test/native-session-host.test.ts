@@ -1,511 +1,233 @@
-import { admitTestExecution } from "./admit-test-execution.ts";
-import { PGlite } from "@electric-sql/pglite";
-import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
-import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { PostgresNativeSessionHost } from "@pi-cloud/pi-session-postgres";
-import { CloudAgentRuntime } from "@pi-cloud/sandbox-supervisor";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { beforeAll, afterAll, expect, it } from "vitest";
+import { Pool } from "pg";
+import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
+import type { Kysely } from "kysely";
 import {
-  EventStream,
-  type AssistantMessageEvent,
-  type AssistantMessage,
-} from "@earendil-works/pi-ai";
-import { getModel } from "@earendil-works/pi-ai/compat";
-import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
-import { RunExecutor, TurnExecutionBackendError } from "../../runtime-core/src/run-executor.ts";
-import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
-import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
-import { NativeSessionLogPublisher } from "../../runtime-core/src/native-session-log-publisher.ts";
+  Harness,
+  createRegistry,
+  type Session,
+  type ConversationId,
+} from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { PostgresDurableSessionHost } from "@pi-cloud/pi-session-postgres/durable";
+import { DurableSessionPublisher } from "@pi-cloud/runtime-core/durable-session-publisher";
+import type {
+  AcceptedFactWriter,
+  AcceptedDurableCommitFact,
+  AcceptedExecutionSealFact,
+} from "@pi-cloud/runtime-core/accepted-fact";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
-import type { AcceptedFact, AcceptedFactWriter } from "../../runtime-core/src/accepted-fact.ts";
-import { PostgresSubagentJobProvider } from "../../subagent-control/src/postgres-subagent-job-provider.ts";
-import { expect, it, vi } from "vitest";
+import { parseExecutionReference } from "@pi-cloud/protocol";
+import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
+import { createTestWorker } from "./admit-test-execution.ts";
+let db: Kysely<Database>, admin: Pool, name: string;
+beforeAll(async () => {
+  const url = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL!;
+  admin = new Pool({ connectionString: url, max: 1 });
+  name = `native_host_${crypto.randomUUID().replaceAll("-", "")}`;
+  await admin.query(`create database "${name}"`);
+  const endpoint = new URL(url);
+  endpoint.pathname = `/${name}`;
+  db = createDatabase({ connectionString: endpoint.toString(), maxConnections: 5 });
+  await runMigrations(db, "up");
+}, 60000);
+afterAll(async () => {
+  await db?.destroy();
+  if (admin) {
+    await admin.query(`drop database "${name}"`);
+    await admin.end();
+  }
+});
 
-it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restores on a replacement Host", async () => {
-  const pg = await PGlite.create(),
-    socket = new PGLiteSocketServer({ db: pg, host: "127.0.0.1", port: 0 });
-  await socket.start();
-  const db = createDatabase({
-    connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
-    maxConnections: 2,
+it("shares one acknowledged native writer with paused PG projection, closes one scope independently, and cold restores", async () => {
+  const tenant = await createPrivateTenant(db, {
+    slug: "native-host",
+    ownerDisplayName: "Host fixture",
   });
-  const hostQueries: string[] = [];
-  const hostDatabase = db.withPlugin({
-    transformQuery({ node, queryId }) {
-      hostQueries.push(db.getExecutor().compileQuery(node, queryId).sql);
-      return node;
-    },
-    async transformResult({ result }) {
-      return result;
-    },
+  const control = new ControlPlaneStore({ database: db, ...tenant });
+  const project = await control.createProject({ name: "Family", source: { kind: "empty" } });
+  await db
+    .updateTable("environment_versions")
+    .set({ state: "validated", validated_at: new Date() })
+    .where("id", "=", project.environment.environmentVersionId)
+    .execute();
+  const parent = await control.createSession(
+    project.projectId,
+    project.workspaceId,
+    "Parent",
+    "elastic",
+  );
+  const child = await control.createSession(
+    project.projectId,
+    project.workspaceId,
+    "Child",
+    "elastic",
+  );
+  const worker = await createTestWorker(db),
+    host = new PostgresDurableSessionHost({ database: db });
+  const channels = new Map<string, AcceptedFactWriter>(),
+    facts: AcceptedDurableCommitFact[] = [];
+  const publisher = new DurableSessionPublisher({
+    channels: { resolve: (reference) => channels.get(reference), checkHealth: async () => {} },
+    replyTopic: "unused",
   });
-  let host = new PostgresNativeSessionHost({ database: hostDatabase });
-  const facts: AcceptedFact[] = [],
-    channels = new Map<string, AcceptedFactWriter>();
-  const service = new WorkerExecutionLog(db, {
-    append: async (fact) => {
-      facts.push(fact);
-      return { factId: fact.factId, durable: true };
-    },
-    checkHealth: async () => {},
-  });
-  const publisher = new NativeSessionLogPublisher({
-    channels: { resolve: (lease) => channels.get(lease), checkHealth: async () => {} },
-  });
-  try {
-    await runMigrations(db, "up");
-    const tenant = await createPrivateTenant(db, {
-      slug: "native-host",
-      ownerDisplayName: "Native host",
-    });
-    const store = new ControlPlaneStore({
-      database: db,
-      tenantId: tenant.tenantId,
-      defaultModelProfileId: tenant.defaultModelProfileId,
-    });
-    const project = await store.createProject({ name: "native-host", source: { kind: "empty" } });
-    await db
-      .updateTable("environment_versions")
-      .set({ state: "validated", validated_at: new Date() })
-      .where("id", "=", project.environment.environmentVersionId)
-      .execute();
-    const conversation = await store.createSession(
-      project.projectId,
-      project.workspaceId,
-      "Native host",
-      "elastic",
-    );
-    let childId: string | undefined,
-      childExecutionId: string | undefined,
-      phase = 1;
-    let parentWriterId: string | undefined;
-    const failures: unknown[] = [];
-    const makeExecutor = async (owner: string) => {
-      const sandboxId = crypto.randomUUID();
-      await db
-        .insertInto("sandboxes")
-        .values({
-          id: sandboxId,
-          supervisor_id: owner,
-          boot_id: crypto.randomUUID(),
-          state: "ready",
-          max_concurrent_sessions: 8,
-        })
-        .execute();
-      const coordinator = new SessionLeaseCoordinator({ database: db, sandboxId });
-      return new RunExecutor({
-        database: db,
-        workerId: sandboxId,
-        executionAuthority: coordinator,
-        backend: {
-          admit: (tx, request, _mark, facts) => admitTestExecution(coordinator, tx, request, facts),
-          async execute(request, _lifecycle, admission) {
-            try {
-              const grant = admission!;
-              const scope = {
-                tenantId: request.tenantId,
-                sessionId: request.sessionId,
-                piSessionId: request.piSessionId,
-                piSessionLane: request.piSessionLane,
-                turnId: request.turnId,
-                runId: request.runId,
-              };
-              const opening = {
-                executionReference: grant.executionReference,
-                sessionId: request.sessionId,
-                turnId: request.turnId,
-                nextEventSeq: Number(request.nextEventSeq),
-                piSession: {
-                  id: request.piSessionId,
-                  lane: request.piSessionLane,
-                  writerId: grant.publication.scope.writerId,
-                },
-              };
-              const publication = admission!.publication;
-              const channel = await service.open({ ...opening, publication });
-              channels.set(grant.executionReference, channel);
-              const readCancellation = new AbortController();
-              hostQueries.length = 0;
-              const session = await host.open({
-                scope,
-                writerId: grant.publication.scope.writerId,
-                executionReference: grant.executionReference,
-                readSignal: readCancellation.signal,
-                publisher: publisher.scoped({
-                  ...scope,
-                  writerId: grant.publication.scope.writerId,
-                  executionReference: grant.executionReference,
-                }),
-              });
-              try {
-                expect(await session.session.getMetadata()).toMatchObject({
-                  id: request.piSessionId,
-                  tenantId: request.tenantId,
-                });
-                if (phase === 1) {
-                  const bootstrapReads = hostQueries.filter((query) =>
-                    /from "(?:pi_sessions|pi_session_lanes)"/.test(query),
-                  );
-                  expect(bootstrapReads).toHaveLength(request.piSessionLane === "main" ? 1 : 0);
-                }
-                if (phase === 4 || phase === 6 || phase === 7) {
-                  const runtime = new CloudAgentRuntime({
-                    session: session.session,
-                    lane: session.lane,
-                    authority: session.authority,
-                    idGenerator: () => session.session.idGenerator.next(),
-                    model: getModel("openai", "gpt-4o-mini"),
-                    systemPrompt: "test",
-                    compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
-                    commitCheckpoint: async (operation) => {
-                      await session.mutationPublisher.mutate(operation);
-                    },
-                    streamFn: (_model, context) => {
-                      const text = JSON.stringify(context.messages);
-                      expect(text.match(/visible-interrupted-prefix/g)).toHaveLength(1);
-                      expect(text).toContain("turn_aborted");
-                      expect(text).toContain("Worker became unavailable");
-                      if (phase >= 6) {
-                        expect(
-                          text.match(/Tool was submitted, but its result could not be confirmed/g),
-                        ).toHaveLength(1);
-                        expect(text).not.toContain("PRIVATE_DIAGNOSTIC_CANARY");
-                      }
-                      const stream = new EventStream<AssistantMessageEvent, AssistantMessage>(
-                        (e) => e.type === "done" || e.type === "error",
-                        (e) => {
-                          if (e.type === "done") return e.message;
-                          if (e.type === "error") return e.error;
-                          throw new Error("unexpected event");
-                        },
-                      );
-                      const message: AssistantMessage = {
-                        role: "assistant",
-                        api: "openai-completions",
-                        provider: "openai",
-                        model: "gpt-4o-mini",
-                        content: [{ type: "text", text: "Recovered" }],
-                        stopReason: "stop",
-                        timestamp: Date.now(),
-                        usage: {
-                          input: 0,
-                          output: 0,
-                          cacheRead: 0,
-                          cacheWrite: 0,
-                          totalTokens: 0,
-                          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-                        },
-                      };
-                      queueMicrotask(() => stream.push({ type: "done", reason: "stop", message }));
-                      return stream;
-                    },
-                  });
-                  expect(await runtime.run(request.input.prompt)).toMatchObject({
-                    kind: "completed",
-                  });
-                  return { stopReason: "stop" };
-                }
-                if (request.piSessionLane === "main" && phase === 2) {
-                  expect(grant.publication.scope.writerId).not.toBe(parentWriterId);
-                  const path = await session.session
-                    .view("main")
-                    .findEntriesOnBranch({ stopAtType: "compaction", order: "newestFirst" });
-                  path.reverse();
-                  expect(path[0]?.type).toBe("compaction");
-                  expect(JSON.stringify(path)).toContain("parent-answer");
-                  expect(JSON.stringify(path)).not.toContain("child-answer");
-                }
-                const op = session.session.idGenerator.next();
-                await session.session.appendRecord({
-                  id: op,
-                  lane: session.lane,
-                  type: "operation_started",
-                  sourceLeafId: await session.session.view(session.lane).getLeafId(),
-                  intent: { kind: "run", originalPrompt: [], initialMessages: [] },
-                });
-                await session.session.view(session.lane).appendMessage({
-                  role: "user",
-                  content: request.input.prompt,
-                  timestamp: Date.now(),
-                });
-                if (phase === 5)
-                  throw new TurnExecutionBackendError(
-                    "cubesandbox_tool_result_unknown",
-                    "PRIVATE_DIAGNOSTIC_CANARY",
-                    false,
-                  );
-                if (phase === 3) {
-                  const id = crypto.randomUUID();
-                  await channel.ingest({
-                    protocolVersion: 1,
-                    messageId: id,
-                    sentAt: new Date().toISOString(),
-                    type: "event.publish",
-                    payload: {
-                      executionReference: grant.executionReference,
-                      event: {
-                        schemaVersion: 1,
-                        eventId: id,
-                        sessionId: request.sessionId,
-                        turnId: request.turnId,
-                        agentId: "root",
-                        seq: Number(request.nextEventSeq),
-                        occurredAt: new Date().toISOString(),
-                        type: "assistant.text.delta",
-                        payload: { text: "visible-interrupted-prefix" },
-                      },
-                    },
-                  });
-                  throw new TurnExecutionBackendError(
-                    "worker_lost",
-                    "Injected Worker loss during a response",
-                    false,
-                  );
-                }
-                if (request.piSessionLane === "main" && phase === 1) {
-                  parentWriterId = grant.publication.scope.writerId;
-                  const jobs = new PostgresSubagentJobProvider({ database: db, nativeLanes: host });
-                  const child = await jobs.start({
-                    tenantId: request.tenantId,
-                    parentSessionId: request.sessionId,
-                    parentRunId: request.runId,
-                    parentExecutionReference: grant.executionReference,
-                    parentToolCallId: "delegate",
-                    workflowRunId: "workflow",
-                    stepIndex: 0,
-                    agentName: "cloud-child",
-                    prompt: "child task",
-                    contextMode: "branch",
-                    sandboxMode: "none",
-                  });
-                  childId = child.childSessionId;
-                  childExecutionId = child.executionId;
-                  expect(
-                    await db
-                      .selectFrom("pi_session_lanes")
-                      .select("lane")
-                      .where("lane", "=", `subagent-${child.executionId}`)
-                      .executeTakeFirst(),
-                  ).toBeUndefined();
-                  await new Promise((resolve) => setTimeout(resolve, 90));
-                  expect(await executor.dispatchRun(child.childRunId)).toMatchObject({
-                    status: "completed",
-                  });
-                  expect(await jobs.status(request.tenantId, child.executionId)).toMatchObject({
-                    state: "running",
-                  });
-                  await session.session.appendEntry(
-                    {
-                      id: session.session.idGenerator.next(),
-                      type: "compaction",
-                      summary: "parent summary",
-                      retainedTail: [],
-                      tokensBefore: 100,
-                    },
-                    session.lane,
-                  );
-                } else if (request.piSessionLane !== "main") {
-                  expect(grant.publication.scope.writerId).toBe(parentWriterId);
-                  // Projection is deliberately stopped. Cancel only this task's
-                  // cold read, then complete its native writes and the parent.
-                  let readOutcome: unknown = "pending";
-                  const history = session.session.getLog().then(
-                    () => {
-                      readOutcome = "resolved";
-                    },
-                    (error) => {
-                      readOutcome = error;
-                    },
-                  );
-                  await new Promise((resolve) => setTimeout(resolve, 50));
-                  expect(readOutcome).toBe("pending");
-                  const reason = new Error("Child history read cancelled");
-                  readCancellation.abort(reason);
-                  await vi.waitFor(() => expect(readOutcome).toBe(reason));
-                  await history;
-                }
-                await session.session.view(session.lane).appendMessage({
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "text",
-                      text: request.piSessionLane === "main" ? "parent-answer" : "child-answer",
-                    },
-                  ],
-                  api: "openai-completions",
-                  provider: "test",
-                  model: "test",
-                  stopReason: "stop",
-                  timestamp: Date.now(),
-                  usage: {
-                    input: 0,
-                    output: 0,
-                    cacheRead: 0,
-                    cacheWrite: 0,
-                    totalTokens: 0,
-                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-                  },
-                });
-                await session.session.appendRecord({
-                  id: session.session.idGenerator.next(),
-                  lane: session.lane,
-                  type: "operation_finished",
-                  runId: op,
-                  outcome: "completed",
-                });
-              } finally {
-                await session.authority.close();
-                await channel.close();
-                channels.delete(grant.executionReference);
-              }
-              return { stopReason: "stop" };
-            } catch (error) {
-              failures.push(error instanceof Error ? error.stack : error);
-              throw error;
-            }
-          },
+  let constructors = 0,
+    childConversation = 0,
+    native: Session | undefined;
+  const parentReady = Promise.withResolvers<void>(),
+    childReady = Promise.withResolvers<void>();
+  const releaseParent = Promise.withResolvers<void>(),
+    parentClosed = Promise.withResolvers<void>(),
+    releaseChild = Promise.withResolvers<void>();
+  let mode: "live" | "cold" = "live";
+  const backend = worker.executor({
+    execute: async (request, _life, admission) => {
+      const writerId = parseExecutionReference(admission!.executionReference).leaseId;
+      channels.set(admission!.executionReference, {
+        publication: admission!.publication,
+        commitNative: async (fact) => {
+          facts.push(fact);
+        },
+        publishSubagentCommand: async () => {},
+        publishToolCancellation: async () => {},
+        publishToolCommand: async () => {
+          throw new Error("Data-only native fixture");
         },
       });
-    };
-    let executor = await makeExecutor("worker-one");
-    const first = await store.acceptTurn(conversation.sessionId, "first", {
-      prompt: "parent task",
+      const handle = await host.open({
+        binding: {
+          tenantId: tenant.tenantId,
+          piSessionId: parent.sessionId,
+          sessionId: request.sessionId,
+          conversationId: request.piConversationId,
+          runId: request.runId,
+          turnId: request.turnId,
+          executionReference: admission!.executionReference,
+          writerId,
+        },
+        publish: (value) => publisher.scoped(admission!.executionReference).publish(value),
+      });
+      try {
+        const runtime = await handle.runtime(async () => {
+          constructors++;
+          const session = await Harness.open(
+            handle.storage,
+            { models: createModels(), registry: createRegistry() },
+            BACKGROUND_CONTEXT,
+          );
+          await session.root(BACKGROUND_CONTEXT);
+          return { session, close: () => session.close(BACKGROUND_CONTEXT) };
+        });
+        if (mode === "cold") {
+          const rootEntries = await handle.storage.scanEntries(
+            { conversationId: 1 as ConversationId },
+            20,
+            undefined,
+            BACKGROUND_CONTEXT,
+          );
+          const childEntries = await handle.storage.scanEntries(
+            { conversationId: childConversation as ConversationId },
+            20,
+            undefined,
+            BACKGROUND_CONTEXT,
+          );
+          expect(rootEntries.items.map((entry) => entry.data)).toEqual(["parent"]);
+          expect(childEntries.items.map((entry) => entry.data)).toEqual([
+            "after parent closed",
+            "child",
+          ]);
+          return { stopReason: "stop" };
+        }
+        if (request.sessionId === parent.sessionId) {
+          native = runtime.session;
+          await native.commit(async (tx) => {
+            childConversation = (await tx.createConversation({ ownership: { kind: "ownerless" } }))
+              .id;
+            await tx.appendEntry(1 as ConversationId, { kind: "test", data: "parent" });
+          }, BACKGROUND_CONTEXT);
+          parentReady.resolve();
+          await releaseParent.promise;
+        } else {
+          expect(runtime.session).toBe(native);
+          await runtime.session.commit(async (tx) => {
+            await tx.appendEntry(childConversation as ConversationId, {
+              kind: "test",
+              data: "child",
+            });
+          }, BACKGROUND_CONTEXT);
+          childReady.resolve();
+          await parentClosed.promise;
+          await runtime.session.commit(async (tx) => {
+            await tx.appendEntry(childConversation as ConversationId, {
+              kind: "test",
+              data: "after parent closed",
+            });
+          }, BACKGROUND_CONTEXT);
+          await releaseChild.promise;
+        }
+        return { stopReason: "stop" };
+      } finally {
+        await handle.close();
+        if (request.sessionId === parent.sessionId) parentClosed.resolve();
+        channels.delete(admission!.executionReference);
+      }
+    },
+  });
+  const parentInput = await control.acceptTurn(parent.sessionId, "parent", {
+    prompt: "data fixture",
+  });
+  const parentRun = backend.dispatchRun(parentInput.runId);
+  void parentRun.catch(parentReady.reject);
+  let childRun: Promise<unknown> | undefined;
+  try {
+    await parentReady.promise;
+    await db
+      .updateTable("sessions")
+      .set({ pi_session_id: parent.sessionId, pi_conversation_id: String(childConversation) })
+      .where("id", "=", child.sessionId)
+      .execute();
+    const childInput = await control.acceptTurn(child.sessionId, "child", {
+      prompt: "child fixture",
     });
-    const outcome = await executor.dispatchRun(first.runId);
-    expect(outcome, JSON.stringify({ outcome, failures })).toMatchObject({ status: "completed" });
-    expect(
-      await db
-        .selectFrom("pi_session_log")
-        .select("seq")
-        .where("session_id", "=", conversation.sessionId)
-        .execute(),
-    ).toEqual([]);
-    expect(new Set(facts.map((f) => f.scope.piSessionId))).toEqual(
-      new Set([conversation.sessionId]),
-    );
-    expect(new Set(facts.map((f) => f.scope.writerId))).toEqual(new Set([parentWriterId]));
-    const projector = new ExecutionStreamProjector(db);
+    childRun = backend.dispatchRun(childInput.runId);
+    void childRun.catch(childReady.reject);
+    await childReady.promise;
+    expect(constructors).toBe(1);
+    releaseParent.resolve();
+    await parentRun;
+    releaseChild.resolve();
+    await childRun;
+    const projection = new ExecutionStreamProjector(db);
     let offset = 0n;
-    const projectReady = async () => {
-      const pending = facts.splice(0);
-      for (const fact of pending) {
-        const record = { fact, topic: "native-host", partition: 0, offset: offset++ };
-        expect(fact).not.toHaveProperty("signature");
-        await projector.project(record);
-      }
-      const terminals = await db
-        .selectFrom("outbox")
-        .select("payload")
-        .where("aggregate_type", "=", "session_terminal_event")
-        .orderBy("created_at")
-        .execute();
-      for (const row of terminals) {
-        const record = {
-          fact: row.payload as unknown as AcceptedFact,
-          topic: "native-host",
-          partition: 0,
-          offset: offset++,
-        };
-        await projector.project(record);
-      }
-      const late = pending.find((f) => f.kind === "pi_session_append")!;
-      const lateRecord = { fact: late, topic: "native-host", partition: 0, offset: offset++ };
-      // Recovery still honors canonical closure even for a genuine old identity.
-      expect(await projector.accepts(lateRecord)).toBe(false);
-      expect(await projector.project(lateRecord)).toBeUndefined();
-    };
-    await projectReady();
-    expect(childId).toBeDefined();
-    expect(
-      await new PostgresSubagentJobProvider({ database: db, nativeLanes: host }).result(
-        tenant.tenantId,
-        childExecutionId!,
-      ),
-    ).toMatchObject({ state: "completed", output: "child-answer" });
-    host.close();
-    host = new PostgresNativeSessionHost({ database: hostDatabase });
-    phase = 2;
-    executor = await makeExecutor("worker-two");
-    const next = await store.acceptTurn(conversation.sessionId, "second", { prompt: "continue" });
-    expect(await executor.dispatchRun(next.runId)).toMatchObject({ status: "completed" });
-    await projectReady();
-    phase = 3;
-    const interrupted = await store.acceptTurn(conversation.sessionId, "interrupt", {
-      prompt: "interrupt me",
-    });
-    expect(await executor.dispatchRun(interrupted.runId)).toMatchObject({ status: "failed" });
-    await projectReady();
-    expect(
-      (
-        await db
-          .selectFrom("session_terminal_events")
-          .select("interrupted_prefix")
-          .where("turn_id", "=", interrupted.turnId)
-          .executeTakeFirst()
-      )?.interrupted_prefix,
-    ).toBe("visible-interrupted-prefix");
-    host.close();
-    host = new PostgresNativeSessionHost({ database: hostDatabase });
-    phase = 4;
-    executor = await makeExecutor("worker-three");
-    const recover = await store.acceptTurn(conversation.sessionId, "recover", {
-      prompt: "continue after interruption",
-    });
-    const recovered = await executor.dispatchRun(recover.runId);
-    expect(recovered, JSON.stringify(failures)).toMatchObject({ status: "completed" });
-    await projectReady();
-    expect(
-      (
-        await db
-          .selectFrom("session_terminal_events")
-          .select("interrupted_prefix")
-          .where("turn_id", "=", interrupted.turnId)
-          .executeTakeFirst()
-      )?.interrupted_prefix,
-    ).toBeNull();
-    expect(
-      await db
-        .selectFrom("pi_session_log")
-        .where("kind", "=", "entry")
-        .select("id")
-        .where("turn_id", "=", interrupted.turnId)
-        .where("custom_type", "=", "pi-cloud.interrupted_assistant_prefix")
-        .execute(),
-    ).toHaveLength(1);
-    phase = 5;
-    const silentFailure = await store.acceptTurn(conversation.sessionId, "silent-failure", {
-      prompt: "Fail before producing text",
-    });
-    expect(await executor.dispatchRun(silentFailure.runId)).toMatchObject({ status: "failed" });
-    await projectReady();
-    for (const recoveryPhase of [6, 7]) {
-      await host.close();
-      host = new PostgresNativeSessionHost({ database: hostDatabase });
-      phase = recoveryPhase;
-      executor = await makeExecutor(`worker-recovery-${phase}`);
-      const next = await store.acceptTurn(conversation.sessionId, `silent-recover-${phase}`, {
-        prompt: "Continue after the known failure",
+    for (const fact of facts)
+      await projection.project({ fact, topic: "native-host", partition: 0, offset: offset++ });
+    const seals = await db
+      .selectFrom("outbox")
+      .select("payload")
+      .where("tenant_id", "=", tenant.tenantId)
+      .where("aggregate_type", "=", "session_terminal_event")
+      .orderBy("created_at")
+      .execute();
+    for (const seal of seals)
+      await projection.project({
+        fact: seal.payload as unknown as AcceptedExecutionSealFact,
+        topic: "native-host",
+        partition: 0,
+        offset: offset++,
       });
-      expect(await executor.dispatchRun(next.runId), JSON.stringify(failures)).toMatchObject({
-        status: "completed",
-      });
-      await projectReady();
-    }
-    expect(
-      await db
-        .selectFrom("pi_session_log")
-        .select("id")
-        .where("tenant_id", "=", tenant.tenantId)
-        .where("turn_id", "=", silentFailure.turnId)
-        .where("kind", "=", "entry")
-        .where("custom_type", "=", "pi-cloud.run_interrupted")
-        .execute(),
-    ).toHaveLength(1);
+    mode = "cold";
+    const next = await control.acceptTurn(parent.sessionId, "cold", {
+      prompt: "read existing history",
+    });
+    expect((await backend.dispatchRun(next.runId)).status).toBe("completed");
+    expect(constructors).toBe(2);
   } finally {
-    host.close();
+    releaseParent.resolve();
+    parentClosed.resolve();
+    releaseChild.resolve();
+    await Promise.allSettled([parentRun, ...(childRun ? [childRun] : [])]);
+    await host.close();
     await publisher.close();
-    await service.close();
-    await db.destroy();
-    await socket.stop();
-    await pg.close();
   }
-}, 30_000);
+}, 30000);

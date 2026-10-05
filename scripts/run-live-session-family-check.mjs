@@ -1,3 +1,4 @@
+import { readNativeHistory, nativeUsage } from "./lib/native-session-history.mjs";
 import { kubectlAsync } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -400,11 +401,7 @@ try {
       explicitInspectionWithoutScriptReplay: true,
     };
   }
-  report.usage = JSON.parse(
-    await sql(`select json_build_object('input',coalesce(sum((payload->'entry'->'message'->'usage'->>'input')::bigint),0),
-    'cacheRead',coalesce(sum((payload->'entry'->'message'->'usage'->>'cacheRead')::bigint),0),'output',coalesce(sum((payload->'entry'->'message'->'usage'->>'output')::bigint),0))
-    from pi_session_log where kind='entry' and tenant_id=${quote(tenantId)} and type='message' and payload->'entry'->'message'->>'role'='assistant'`),
-  );
+  report.usage = nativeUsage(await readNativeHistory(sql, { tenantId }));
   report.accepted = true;
 } catch (error) {
   report.failure = error.message;

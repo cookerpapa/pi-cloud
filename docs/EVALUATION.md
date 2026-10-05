@@ -1,8 +1,16 @@
 # Evaluation
 
+Current runtime acceptance follows [ADR-0229](adr/0229-native-durable-runtime.md)
+and the [Durable migration record](reports/pi-durable-migration-20261006.md).
+Older measured results below describe their recorded revisions. The former
+Lane-view ablation/control-budget investigation scripts were retired with the
+0.84 runtime; their evidence remains in Git. Current native storage verification
+uses upstream Storage conformance, the PG projection benchmark and RF3 tests.
+
+
 Pi Cloud separates deterministic protocol checks, live infrastructure
 acceptance and model-quality experiments. A checked-in report is current only
-when its workload exercises the PostgreSQL queue/SessionStorage, Kafka AcceptedFact
+when its workload exercises the PostgreSQL queue/Durable Storage, Kafka AcceptedFact
 path, persistent Cube Volume and CubeSandbox KVM runtime described in the
 current architecture ADR.
 
@@ -15,7 +23,7 @@ npm run browser:presentation:check
 ```
 
 The ordinary test suite covers queue claims, Session ordering, leases/fences,
-Pi SessionStorage, event ordering, cancellation, Tool ambiguity, Volume lifecycle
+Pi Durable Storage, event ordering, cancellation, Tool ambiguity, Volume lifecycle
 and tenant isolation without spending model tokens.
 
 Control-plane integration tests and the fault gate use real PostgreSQL for queue
@@ -98,7 +106,7 @@ The production stream is:
 Pi event / native Entry / Tool command
     -> trusted Worker -> control-plane ingress -> Kafka transaction commit
     -> one Session Projector group
-         ├-> PostgreSQL SessionStorage
+         ├-> PostgreSQL Durable Storage
          ├-> live view -> snapshot-first SSE
          └-> owning Tool executor -> Cube
 ```
@@ -283,7 +291,7 @@ PI_CLOUD_LIVE_LONG_CONTEXT_CHECK=1 \
 
 This expensive gate performs real coding Turns until Pi completes at least two
 native Compactions, then verifies early-context recall, further Tool use and
-recovery on a different Worker. It proves bounded PostgreSQL SessionStorage
+recovery on a different Worker. It proves bounded PostgreSQL Durable Storage
 restoration rather than lifetime JSONL download. See
 [the compaction report](reports/long-context-compaction-acceptance-latest.md).
 

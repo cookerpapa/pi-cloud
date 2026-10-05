@@ -69,11 +69,13 @@ describe.skipIf(!endpoint)("Subagent PG clock decisions", () => {
       try {
         const jobs = new PostgresSubagentJobProvider({
           database,
-          nativeLanes: {
-            childAnchor() {
+          nativeConversations: {
+            async childAnchor() {
               return null;
             },
-            async createChildLane() {},
+            async createChildConversation() {
+              return 2;
+            },
           },
         });
         await jobs.cancel(tenant, execution);

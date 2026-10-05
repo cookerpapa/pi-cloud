@@ -1,4 +1,4 @@
-import { SessionError } from "@earendil-works/pi-agent-core";
+import { NativeSessionError } from "./native-session-error.ts";
 import type { Database } from "@pi-cloud/database";
 import type { SupervisorHeartbeatMessage, SupervisorHeartbeatAckMessage } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
@@ -77,7 +77,9 @@ export class PostgresSessionLeaseObserver {
         this.#schedule();
       },
       close: async () => {
-        owner.abort.abort(new SessionError("storage", "Pi Session execution authority closed"));
+        owner.abort.abort(
+          new NativeSessionError("storage", "Pi Session execution authority closed"),
+        );
         if (this.#owners.get(id) === owner) this.#owners.delete(id);
         if (![...this.#owners.values()].some((o) => o.watching && !o.abort.signal.aborted)) {
           clearTimeout(this.#timer);
@@ -124,7 +126,7 @@ export class PostgresSessionLeaseObserver {
     const deadline = remaining === undefined ? NaN : requestedAt + remaining;
     if (!Number.isFinite(deadline) || deadline <= this.#now()) {
       owner.abort.abort(
-        new SessionError(
+        new NativeSessionError(
           "storage",
           "Pi Session mutation was rejected by a stale ExecutionReference",
         ),
@@ -226,7 +228,7 @@ export class PostgresSessionLeaseObserver {
     clearTimeout(this.#timer);
     this.#timer = undefined;
     for (const owner of this.#owners.values())
-      owner.abort.abort(new SessionError("storage", "Session lease observer closed"));
+      owner.abort.abort(new NativeSessionError("storage", "Session lease observer closed"));
     this.#owners.clear();
     await this.#pending?.catch(() => {});
   }

@@ -131,7 +131,7 @@ async function seed(database: Kysely<Database>, sandboxControlBaseUrl: string): 
     .values({
       id: IDS.session,
       pi_session_id: IDS.session,
-      pi_session_lane: "main",
+      pi_conversation_id: "1",
       tenant_id: IDS.tenant,
       project_id: IDS.project,
       workspace_id: IDS.workspace,

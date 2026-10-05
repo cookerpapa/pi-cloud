@@ -29,7 +29,7 @@ export async function admitTestExecution(
     turnId: request.turnId,
     piSession: {
       id: request.piSessionId,
-      lane: request.piSessionLane,
+      conversationId: request.piConversationId,
       writerId: parseExecutionReference(reference.executionReference).leaseId,
     },
     nextEventSeq: Number(request.nextEventSeq),

@@ -14,7 +14,7 @@ import {
   type CloudToolCapabilitySnapshot,
   type RunState,
 } from "@pi-cloud/protocol";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
 import { sql, type Kysely } from "kysely";
 
 export type StartCloudSubagentJobInput = Readonly<{
@@ -90,13 +90,14 @@ export type SubagentDirectoryTarget = Readonly<{
   developmentEnvironmentId: string | null;
   userId: string | null;
 }>;
-export interface NativeSubagentLanes {
-  childAnchor(executionReference: string, inherit: boolean): string | null;
-  createChildLane(input: {
+export interface NativeSubagentConversations {
+  childAnchor(executionReference: string, inherit: boolean): Promise<string | null>;
+  createChildConversation(input: {
     executionReference: string;
-    lane: string;
+    requestId: string;
+    ownerTaskId: number;
     at: string | null;
-  }): Promise<void>;
+  }): Promise<number>;
 }
 
 const CLOUD_SUBAGENT_EXECUTION_BOUNDARY = [
@@ -194,7 +195,7 @@ function mapRunState(state: RunState): SubagentExecutionState {
   }
 }
 
-function assistantText(message: AgentMessage): string | undefined {
+function assistantText(message: Message): string | undefined {
   if (message.role !== "assistant") return undefined;
   const text = message.content
     .filter((part): part is { type: "text"; text: string } => part.type === "text")
@@ -209,17 +210,17 @@ export class PostgresSubagentJobProvider {
   readonly #id: IdGenerator;
   readonly #validateDirectory: ((target: SubagentDirectoryTarget) => Promise<void>) | undefined;
   readonly #treePolicy: CloudSubagentTreePolicy;
-  readonly #nativeLanes: NativeSubagentLanes;
+  readonly #nativeConversations: NativeSubagentConversations;
 
   constructor(options: {
     database: Kysely<Database>;
-    nativeLanes: NativeSubagentLanes;
+    nativeConversations: NativeSubagentConversations;
     idGenerator?: IdGenerator;
     validateDirectory?: (target: SubagentDirectoryTarget) => Promise<void>;
     treePolicy?: CloudSubagentTreePolicy;
   }) {
     this.#database = options.database;
-    this.#nativeLanes = options.nativeLanes;
+    this.#nativeConversations = options.nativeConversations;
     this.#id = options.idGenerator ?? randomUUID;
     this.#validateDirectory = options.validateDirectory;
     const treePolicy = options.treePolicy ?? DEFAULT_CLOUD_SUBAGENT_TREE_POLICY;
@@ -460,12 +461,11 @@ export class PostgresSubagentJobProvider {
       const childLaneStart =
         input.contextAnchor !== undefined
           ? input.contextAnchor
-          : this.#nativeLanes.childAnchor(
+          : await this.#nativeConversations.childAnchor(
               input.parentExecutionReference,
               input.contextMode === "branch",
             );
       const childSessionId = this.#id();
-      const childPiSessionLane = `subagent-${executionId}`;
       const childTurnId = this.#id();
       const childRunId = this.#id();
       const childWorkspaceId = parent.workspaceId;
@@ -489,7 +489,7 @@ export class PostgresSubagentJobProvider {
         .values({
           id: childSessionId,
           pi_session_id: parent.piSessionId,
-          pi_session_lane: childPiSessionLane,
+          pi_conversation_id: null,
           title: "Subagent",
           tenant_id: input.tenantId,
           project_id: parent.projectId,
@@ -640,7 +640,6 @@ export class PostgresSubagentJobProvider {
         "child.created_by_user_id as userId",
         "child.project_id as projectId",
         "child.id as sessionId",
-        "child.pi_session_lane as lane",
         "execution.pi_context_base_entry_id as anchor",
       ])
       .where("execution.tenant_id", "=", input.tenantId)
@@ -670,9 +669,10 @@ export class PostgresSubagentJobProvider {
           );
         }
       }
-      await this.#nativeLanes.createChildLane({
+      const conversationId = await this.#nativeConversations.createChildConversation({
         executionReference: input.parentExecutionReference,
-        lane: target.lane,
+        requestId: pending.executionId,
+        ownerTaskId: nativeTaskId(input.parentToolCallId),
         at: target.anchor,
       });
       return await this.#database.transaction().execute(async (transaction) => {
@@ -709,6 +709,12 @@ export class PostgresSubagentJobProvider {
             "Parent Agent Run lost authority while preparing the child",
           );
         }
+        await transaction
+          .updateTable("sessions")
+          .set({ pi_conversation_id: String(conversationId) })
+          .where("tenant_id", "=", input.tenantId)
+          .where("id", "=", execution.child_session_id)
+          .executeTakeFirstOrThrow();
         await transaction
           .updateTable("runs")
           .set({
@@ -918,29 +924,15 @@ export class PostgresSubagentJobProvider {
   async result(tenantId: string, executionId: string): Promise<CloudSubagentJobResult> {
     const status = await this.status(tenantId, executionId);
     if (status.state !== "completed") return status;
-    const final = await this.#database
-      .selectFrom("runs as run")
-      .innerJoin("sessions as session", (join) =>
-        join
-          .onRef("session.tenant_id", "=", "run.tenant_id")
-          .onRef("session.id", "=", "run.session_id"),
-      )
-      .innerJoin("pi_session_log as entry", (join) =>
-        join
-          .onRef("entry.tenant_id", "=", "run.tenant_id")
-          .onRef("entry.session_id", "=", "session.pi_session_id")
-          .onRef("entry.turn_id", "=", "run.turn_id"),
-      )
-      .select(sql<Record<string, unknown>>`entry.payload->'entry'`.as("payload"))
-      .where("run.tenant_id", "=", tenantId)
-      .where("run.id", "=", status.childRunId)
-      .where("entry.kind", "=", sql.lit("entry"))
-      .where("entry.type", "=", "message")
-      .where(sql<string>`entry.payload->'entry'->'message'->>'role'`, "=", "assistant")
-      .orderBy("entry.seq", "desc")
-      .limit(1)
-      .executeTakeFirst();
-    const message = (final?.payload as { message?: AgentMessage } | undefined)?.message;
+    const final = await sql<{ body: string }>`select l.body from pi_durable_records r
+      join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+      where r.tenant_id=${tenantId}::uuid and r.kind='entry' and r.fields->>'run'=${status.childRunId}
+        and r.fields->>'role'='assistant' order by r.id desc limit 1`.execute(this.#database);
+    const message = final.rows[0]
+      ? JSON.parse(final.rows[0].body).value.model?.find(
+          (value: { role: string }) => value.role === "assistant",
+        )
+      : undefined;
     const assistantOutput = message?.role === "assistant" ? assistantText(message) : undefined;
     return { ...status, ...(assistantOutput === undefined ? {} : { output: assistantOutput }) };
   }
@@ -1118,4 +1110,11 @@ export class PostgresSubagentJobProvider {
     }
     return reaped;
   }
+}
+
+function nativeTaskId(value: string): number {
+  if (!/^task:[1-9][0-9]*$/.test(value)) throw new Error("Child owner is not a native Tool task");
+  const id = Number(value.slice(5));
+  if (!Number.isSafeInteger(id)) throw new Error("Native Tool task ID is invalid");
+  return id;
 }

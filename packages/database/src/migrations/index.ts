@@ -1,3 +1,7 @@
+import * as durableRuntimeRevision from "./180_durable_runtime_revision.ts";
+import * as durableExecutionRecovery from "./179_durable_execution_recovery.ts";
+import * as durableConversationBinding from "./178_durable_conversation_binding.ts";
+import * as durableNativeStorage from "./177_durable_native_storage.ts";
 import * as returnStoppedInputs from "./176_return_stopped_inputs.ts";
 import * as toolCancellationRetirement from "./172_tool_cancellation_retirement.ts";
 import * as pausedInputs from "./173_paused_inputs.ts";
@@ -355,6 +359,10 @@ export const migrationProvider: MigrationProvider = {
       "174_recoverable_vm_allocation": recoverableVmAllocation,
       "175_controller_owned_terminals": controllerOwnedTerminals,
       "176_return_stopped_inputs": returnStoppedInputs,
+      "177_durable_native_storage": durableNativeStorage,
+      "178_durable_conversation_binding": durableConversationBinding,
+      "179_durable_execution_recovery": durableExecutionRecovery,
+      "180_durable_runtime_revision": durableRuntimeRevision,
     };
   },
 };

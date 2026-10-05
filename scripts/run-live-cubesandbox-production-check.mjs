@@ -1,3 +1,4 @@
+import { readNativeHistory, nativeMessages, runUsage } from "./lib/native-session-history.mjs";
 import { kubectl, podFor } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -314,29 +315,7 @@ async function kafkaState() {
 }
 
 async function runUsageEvidence(runId) {
-  const value = await psql(
-    `select count(*) || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,input}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,output}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheRead}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheWrite}')::bigint), 0)
-       from runs run
-       join pi_session_log entry
-         on entry.kind='entry' and entry.tenant_id = run.tenant_id
-        and entry.turn_id = run.turn_id
-      where run.tenant_id = ${sqlLiteral(tenantId)}
-        and run.id = ${sqlLiteral(runId)}
-        and entry.type = 'message'
-        and entry.payload #>> '{entry,message,role}' = 'assistant'
-        and entry.payload #> '{entry,message,usage}' is not null`,
-  );
-  const [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens] = value
-    .split("|")
-    .map(Number);
-  for (const number of [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens]) {
-    assert(Number.isSafeInteger(number) && number >= 0, "Run usage evidence is invalid");
-  }
-  return { requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens };
+  return runUsage(await readNativeHistory(psql, { runId }));
 }
 
 function wait(delayMs, signal) {
@@ -889,34 +868,22 @@ async function runLatencyEvidence(runId) {
   const [acceptedToExecutionMs, executionToSettlementMs] = transitionEvidence
     .split("|")
     .map(Number);
-  const modelEvidence = await psql(
-    `select count(*)::text || '|' ||
-            coalesce(sum(greatest(0, entry.timestamp_ms -
-              (entry.payload #>> '{entry,message,timestamp}')::bigint)), 0)::text
-       from runs run
-       join pi_session_log entry
-         on entry.kind='entry' and entry.tenant_id = run.tenant_id
-        and entry.turn_id = run.turn_id
-      where run.id = ${sqlLiteral(runId)}
-        and entry.type = 'message'
-        and entry.payload #>> '{entry,message,role}' = 'assistant'
-        and entry.payload #>> '{entry,message,timestamp}' is not null`,
-  );
-  const [modelRequests, modelTotalMs] = modelEvidence.split("|").map(Number);
-  const toolEvidence = await psql(
-    `select count(*)::text || '|' || coalesce(sum(result.timestamp_ms - intent.timestamp_ms), 0)::text
-       from runs run
-       join pi_session_log intent on intent.kind='record' and intent.tenant_id=run.tenant_id and intent.turn_id=run.turn_id and intent.type='tool_started'
-       join pi_session_log result on result.kind='entry' and result.tenant_id=intent.tenant_id and result.session_id=intent.session_id and result.id=intent.payload->'record'->>'resultEntryId'
-      where run.id=${sqlLiteral(runId)}`,
-  );
+  const history = await readNativeHistory(psql, { runId });
+  const modelRequests = nativeMessages(history).filter(message => message.role === "assistant").length;
+  // PG commit timestamps measure the native task boundary, not provider latency.
+  const toolEvidence = await psql(`select count(*) || '|' || coalesce(sum(extract(epoch from (last_commit.committed_at-first_commit.committed_at))*1000),0)
+    from pi_durable_records task
+    join lateral (select seq from pi_durable_log where tenant_id=task.tenant_id and session_id=task.session_id and record_id=task.id order by seq limit 1) first_write on true
+    join pi_durable_commits first_commit on first_commit.tenant_id=task.tenant_id and first_commit.session_id=task.session_id and first_commit.seq=first_write.seq
+    join pi_durable_commits last_commit on last_commit.tenant_id=task.tenant_id and last_commit.session_id=task.session_id and last_commit.seq=task.seq
+    where task.kind='task' and task.fields->>'nativeKind'='"pi.tool"' and task.fields->>'run'=${sqlLiteral(runId)}`);
   const [toolOperations, toolBoundaryMs] = toolEvidence.split("|").map(Number);
-  assert(toolBoundaryMs >= 0, "Native Tool boundary timestamps used inconsistent clocks");
+  assert(toolBoundaryMs >= 0);
+
   return {
     acceptedToExecutionMs,
     executionToSettlementMs,
     modelRequests,
-    modelMessageLifecycleMs: modelTotalMs,
     toolOperations,
     toolBoundaryMs,
   };
@@ -1118,9 +1085,10 @@ try {
   const canonicalEvidence = await psql(
     `select count(distinct terminal.turn_id) || '|' || count(entry.id) || '|' ||
             coalesce(max(terminal.seq), 0) || '|' ||
-            coalesce(sum(octet_length((entry.payload->'entry')::text)), 0)
+            coalesce(sum(octet_length(log.body)), 0)
        from session_terminal_events terminal
-       left join pi_session_log entry on entry.kind='entry' and entry.turn_id = terminal.turn_id
+       left join pi_durable_records entry on entry.kind='entry' and entry.tenant_id=terminal.tenant_id and entry.fields->>'turn' = terminal.turn_id::text
+       left join pi_durable_log log on log.tenant_id=entry.tenant_id and log.session_id=entry.session_id and log.seq=entry.seq and log.ordinal=entry.ordinal
       where terminal.tenant_id = ${sqlLiteral(tenantId)}
         and terminal.session_id = ${sqlLiteral(session.sessionId)}`,
   );
@@ -1132,8 +1100,8 @@ try {
   assert(terminalThroughSequence <= processCheck.throughSequence);
   const eventPlaneEvidence = await psql(
     `select (to_regclass('public.session_events') is null)::int || '|' ||
-            (select count(*) from pi_session_log
-              where tenant_id = ${sqlLiteral(tenantId)} and append_id is not null) || '|' ||
+            (select count(*) from pi_durable_commits
+              where tenant_id = ${sqlLiteral(tenantId)}) || '|' ||
             (select count(*)
                from outbox terminal_outbox
                join session_terminal_events terminal
@@ -1381,8 +1349,8 @@ try {
         `- Pure-chat Tool calls / Cube activations: ${String(report.pureChat.toolCalls)} / ${String(report.pureChat.cubeActivations)}`,
         `- First coding first activity / Tool / assistant text / settled: ${String(report.firstCoding.firstDurableActivityMs)} / ${String(report.firstCoding.firstToolStartedMs)} / ${String(report.firstCoding.firstAssistantTextMs)} / ${String(report.firstCoding.settledMs)} ms`,
         `- Follow-up first activity / Tool / assistant text / settled: ${String(report.followUpCoding.firstDurableActivityMs)} / ${String(report.followUpCoding.firstToolStartedMs)} / ${String(report.followUpCoding.firstAssistantTextMs)} / ${String(report.followUpCoding.settledMs)} ms`,
-        `- First coding accepted-to-execution / model-message lifecycle / native Tool boundaries: ${report.firstCoding.latency.acceptedToExecutionMs} / ${report.firstCoding.latency.modelMessageLifecycleMs} / ${report.firstCoding.latency.toolBoundaryMs} ms`,
-        `- Follow-up accepted-to-execution / model-message lifecycle / native Tool boundaries: ${report.followUpCoding.latency.acceptedToExecutionMs} / ${report.followUpCoding.latency.modelMessageLifecycleMs} / ${report.followUpCoding.latency.toolBoundaryMs} ms`,
+        `- First coding accepted-to-execution / native Tool boundaries: ${report.firstCoding.latency.acceptedToExecutionMs} / ${report.firstCoding.latency.toolBoundaryMs} ms`,
+        `- Follow-up accepted-to-execution / native Tool boundaries: ${report.followUpCoding.latency.acceptedToExecutionMs} / ${report.followUpCoding.latency.toolBoundaryMs} ms`,
         `- Coding Tool calls: ${String(report.firstCoding.toolCalls)} + ${String(report.followUpCoding.toolCalls)}`,
         `- Same running Workspace Cube KVM guest reused: ${String(report.multiRound.sameCubeMicroVm)}`,
         `- Agent Preview / background process survived cross-Run Tool bindings: ${String(report.multiRound.agentPreviewPublished)} / ${String(report.multiRound.backgroundProcessSurvived)}`,

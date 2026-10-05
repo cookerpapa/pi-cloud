@@ -1,7 +1,7 @@
 # Architecture
 
-PiCloud is a private/self-hosted multi-tenant Coding Agent. Pi owns the Agent
-Loop, model context, Tool selection and Compaction. PiCloud owns durable input,
+PiCloud is a private/self-hosted multi-tenant Coding Agent. Pi Durable 1.0.0 owns the Harness,
+native tasks, model context, input placement, Tool selection and Compaction. PiCloud owns durable input,
 execution authority, distributed placement, output projection and Cube lifetimes.
 CubeSandbox KVM is the only untrusted execution backend.
 
@@ -33,8 +33,8 @@ Control authority → PG binding close + Outbox → same ingress/Kafka
   → ingress routing revocation + Projector binding view
   → final Kafka seal → PG terminal/native closure → next Run eligible
 Chat Stop → durable PG request → Worker Agent.abort()
-  → tool_cancel → same Session Kafka → Projector → Cube → guest Tool AbortSignal
-  → original final reply → Pi Tool Result → seal (or bounded UNKNOWN)
+  → native abort + tool cancellation → same Session Kafka → Projector → Cube
+  → native abort settlement → seal; physical cancellation is independently delivered
 ```
 
 The Projector currently runs in the Control Plane process. Its modules remain
@@ -63,7 +63,7 @@ this bounds transferred payloads and memory, not all database work.
 Image bytes travel over Cube's native execution transport and a private S3 attachment
 port. The trusted Cube completion adapter externalizes image parts before Kafka replies; Worker restores them
 before native Tool completion. The Session append codec externalizes the final
-after-hook content too. PG native-log rows retain references; public SessionStorage
+after-hook content too. PG native-log rows retain references; native Storage
 reads reconstruct the exact native images. PG plus retained attachments is the
 lossless native history (ADR-0192), while Cube Volume remains Workspace authority.
 Each decode fetches an identical immutable image reference once, preserving
@@ -291,11 +291,11 @@ All Lanes of a physical Session share one publication queue. A seal first closes
 admission, drains earlier accepted records, then enters that same queue. A normal
 Run seal leaves sibling Lanes open. Uncertain semantic publication retires the
 writer and prevents queued semantic records from starting; its closing seals can
-still drain. A replacement execution uses a new Run and waits for projected
-closure. The HTTP success receipt is Kafka durable commit, not volatile acceptance.
+still drain. A replacement owner waits for projected closure, acquires a new lease and
+resumes the same logical Run/Turn/native submission (ADR-0229). The HTTP success receipt is Kafka durable commit, not volatile acceptance.
 Lost commit responses never trigger automatic semantic publication replay.
 
-The code-owned topic is `pi-cloud.execution-log.v13`. Physical Session ID remains
+The code-owned topic is `pi-cloud.execution-log.v14`. Physical Session ID remains
 the immutable key and fixes the partition; do not change the partition count in
 place. One Kafka transactional producer identity per partition fences replaced
 ingress processes. Transactions use RF3/acks-all and include current consumer-group
@@ -326,13 +326,13 @@ live view and the Tool routing module as applicable. Guest execution itself is
 never awaited by the partition handler. PG or live-owner delivery failure stalls
 that partition; it does not serialize unrelated partitions.
 
-Native Entry/Record IDs, parents, sequence and timestamps are assigned by the
-Worker before Kafka publication. PostgreSQL applies those exact records and
+Native record IDs, Conversation ancestry and commit sequence are assigned by
+the Worker before Kafka publication. PostgreSQL applies those exact records and
 updates projection progress in the same transaction. A crash before commit
 replays the record; a crash after commit can redeliver it without changing its
 meaning. Native sequence conflicts stop recovery rather than being skipped.
-Projection reads its prior append, affected Lane heads and identity conflicts together,
-but only after acquiring the physical Session lock in a separate statement.
+Projection checks the commit fingerprint, sequence and current-record identity
+only after acquiring the physical Session lock in a separate statement.
 This preserves a fresh snapshot after waiting for another projection.
 Native message/Tool-intent projection co-commits display event/native positions
 on the Run. Active conversation reads stop at that semantic boundary. A
@@ -354,8 +354,9 @@ message/seal transactions advance PG progress; token fragments create no PG rows
 Rebalance invalidates old subscriptions and rebuilds the assigned prefix before
 its Projector serves snapshots.
 
-At a seal, one PG transaction stores the exact public terminal, interrupted
-visible prefix, Run closure and recovery progress. The Projector then updates
+At a terminal seal, one PG transaction stores the exact public terminal, Run
+closure and recovery progress. A recoverable seal closes only the old execution
+incarnation and re-readies the original Run, without an invented terminal event. The Projector then updates
 the local live view directly. There is no second Kafka commit notice or buffer
 waiting for such a notice. A successor is released by the PG closure, not by a
 browser ACK. Incomplete Tools remain UNKNOWN; no successful result is invented.
@@ -364,8 +365,10 @@ A quarantined Session becomes idle only after its latest failed execution has
 both positive Agent exit evidence and a committed seal (ADR-0169). Exit is recorded
 after the local Runner settles, or after an exact Worker-stop confirmation;
 lease expiry and an unreachable management endpoint do not establish that fact.
-The two facts may arrive in either order. Recovery accepts a new Run, retains the
-old failure, and never replays its Tool calls. This adds no per-delta or per-Step
+The two facts may arrive in either order. Recoverable owner loss re-admits the
+same logical Run only after old-writer closure. Durable resumes its checkpoints;
+unsafe interrupted Tools are never automatically replayed. A native terminal
+outcome or explicit Stop terminates the logical Run. This adds no per-delta or per-Step
 database barrier. A stale browser failure state may submit a new-message request,
 but admission remains server-authoritative until recovery actually completes.
 
@@ -406,9 +409,9 @@ ordinary inputs become cancelled; held Steers wait for canonical consumption or
 the target seal. Consumed input stays in history; only unconsumed input returns
 to the composer. A Stop retry cannot withdraw newly accepted messages.
 Readiness excludes inputs awaiting this decision. New deliveries to a cancelling
-target are rejected. The current 0.84.1 Worker still clears native memory queues
-before abort; replacement with Durable's native abort is tracked separately in
-[ADR-0229](adr/0229-native-durable-runtime.md).
+target are rejected. Native submission records distinguish accepted input from
+consumed input. Durable abort settles the native queue; PG returns only inputs
+whose consumption is unconfirmed after ordered closure (ADR-0229).
 
 Queue snapshots expose `hasReturnedInputs`. GET
 `/v1/sessions/:sessionId/returned-inputs` waits for consumption reconciliation,
@@ -506,97 +509,57 @@ and [ADR-0211](adr/0211-execution-path-and-runtime-probes.md).
 
 ## Native Pi state and Harness
 
-The pinned public Pi SessionRepo/SessionStorage adapter stores one self-contained
-append-only `pi_session_log` per physical Session. Entries, operation Records,
-Lane moves and facts share a Session-local sequence. Stored generated metadata
-and scoped indexes serve Entry/Record reads directly from that log; no separate
-Entry/Record body tables or COW references remain. Branch reads walk metadata by
-parent ID before fetching only the selected bodies. Official Pi backend
-conformance tests define the base contract; tenant and cloud ownership checks
-are additional constraints (ADR-0197).
+The public Pi Durable Storage port owns atomic batches of Conversations, Tasks,
+Submissions, Entries and Chord document writes. One physical Session has one
+Harness and one renewable PG execution lease. A native Conversation is the
+execution Lane; its numeric ID comes from Pi, never PG admission. Child creation
+has an atomic native receipt before the product binding becomes ready.
 
-Names, Lane heads, labels and references to currently unfinished operations are
-transactional current state. A log-insert statement trigger applies operation
-starts/finishes as one batch; recovery reads this small state instead of joining
-lifetime operation history. Multiple open starts remain visible as corruption.
-Rebuild requires quiescence and reconstructs only current state, without rewriting
-native bodies or executing Tools. Immutable `payload.turnId` retains origin;
-the live `turn_id` FK can become null on control-row deletion and stays null
-through a rebuild. Native Fork copies own their bodies and image references,
-so deleting their native source does not invalidate them. Product subtree
-permanent deletion and branch-pruning rules govern the human conversation tree (ADR-0207).
-Image parts have a `pi_cloud_image_v1` storage representation. Their immutable
-objects are retained transactionally when native log rows commit, including Fork
-copies and Compaction retained tails. Reachability follows retained native history,
-not a mutable Workspace path or an expiring provider URL. Pending attachments of
-unsealed Runs survive projection lag. Cleanup claims unreferenced inventory under
-PG row locks, then deletes S3 objects outside the transaction; failures are retryable.
-`pi-session-postgres` owns this storage contract. Concrete Pi execution lives in
-`sandbox-supervisor`; Worker execution wiring lives in `supervisor-host`, so
-`runtime-core` no longer depends on the concrete Pi Runner. Fake models are test-injected only.
+`pi_durable_log` retains each exact native write once as JSON text. Text storage
+preserves native NUL and lone-surrogate strings without PostgreSQL JSONB coercion.
+`pi_durable_commits` stores sequence, next ID and duplicate/conflict fingerprints.
+`pi_durable_records` contains current record pointers and thin query fields;
+`pi_durable_document_revisions` reconstructs documents with derived checkpoints
+every 64 deltas. These are indexes of the canonical log, not another authority.
+Rebuild requires quiescence and never executes Tools or rewrites native bodies.
+Cloud Session/Run/Turn origins remain in the canonical log through rebuilds.
 
-Cold restore reads the newest Compaction and active suffix, not lifetime JSONL.
-Writer metadata, next sequence and Lane heads load in one owner-scoped SQL
-snapshot. Worker management identities and the pinned Pi version belong to the
-shared protocol package; the Control Plane does not import those contracts from
-the concrete Runner.
-Native append/checkpoint ports live in the internal `protocol/native-session`
-entry point. Runner code depends on that contract, not on the PG implementation;
-the PG adapter implements it without re-exporting a compatibility alias.
-The active native writer maintains acknowledged Lane views. Each Step reads that
-view and returns from writes at Kafka ACK, without PG receipt polling. Pi's
-public Agent and Compaction primitives implement the loop; PiCloud does not fork
-the unfinished upstream high-level Harness implementation.
+The Worker prepares and validates a detached batch, publishes it through ingress,
+waits for RF3 Kafka ACK and only then exposes it to Pi. A bounded acknowledged
+overlay handles PG lag. Eviction waits for the existing projection watermark in
+batches, not a receipt per Step. A proved pre-enqueue refusal leaves the writer
+usable; an ambiguous commit poisons that owner until ordered closure. Cold reads
+use native head markers, scoped record indexes and bounded document tails.
+Both overlay and cold modes run the official upstream Storage conformance suite.
 
-Complete model output/usage form one native boundary. After Pi validation and
-before-hooks, fixed remote Tools prepare their binding and reply callback; one
-`tool_invocation` record then carries native intent, display start and dispatch.
-The command reuses the intent's arguments and identities. One Kafka ACK covers
-that second boundary; Projector still commits dispatch before Cube handoff
-(ADR-0198). Invalid arguments never create execution intent. Native
-Compaction retains relevant interruption/World State facts and refuses truncated
-or empty summaries. Model retries do not replay completed Tools.
+The trusted `DurableAgentSession` supplies live model and remote-effect grants;
+Pi owns scheduling, retry, foreground Compaction and abort. Stored model
+references have no credentials. Compaction uses the same model authority port.
+Automatic background Compaction is disabled through the public setting because
+cloud background admission is not yet a product capability. The API uses generic
+Session data operations while quiescent, never a Harness or model/Tool executor.
 
-Native Step attempt numbers restart after a completed response; only retries of
-an unfinished Step increment them. Tool ordinals refer to the original Assistant
-Tool-call list, including rejected calls. Code-owned before/after policies use
-Pi's hooks: rejection precedes intent, and the after-hook result becomes native
-history. No user extension or durable approval UI is introduced.
+After native argument validation and before-hooks, the fixed remote Tool prepares
+its binding/callback. Its native execute checkpoint and compressed Cube dispatch
+co-commit in one Kafka record. Arguments occur once, in that checkpoint. Projector
+confirms dispatch progress before Cube handoff. The display identity is the native
+Tool task ID (`task:<id>`); provider call IDs stay in native messages, and a separate
+operation UUID correlates physical replies. Unoffered calls have their native
+result-entry identity. A late physical reply cannot overwrite native abort.
 
-The native Tool Result Entry ID is also the cloud invocation identity used by
-public Tool events, progress and Subagent deduplication. Provider Tool IDs remain
-unchanged in Pi messages and guest replies. The remote operation UUID separately
-correlates Kafka callbacks. Cold projection uses the result Entry identity too;
-Compaction reason and size presentation come from its native Step and context.
+Independent human forks own copied entries, document bases and image references.
+Native `asOf`/`current` document fork policies are honored; `initial`, task and
+Session documents do not copy execution grants. Deleting the source cannot break
+the copied history. World State compares against its native document baseline.
+A verification reminder is derived from committed current-Run entries at native
+yield; neither delayed display callbacks nor Worker replacement can duplicate it.
 
-An explicit current-model context-overflow error forces one native Compaction
-and sampling continuation even below the estimated threshold (ADR-0176).
-The summary is acknowledged before a fresh model Step; completed Tools and the
-accepted input are not replayed. Another overflow without successful sampling,
-failed/canceled summary or lost authority stops recovery. This is separate from
-transport retries against an unchanged frozen Step. Window/threshold settings
-remain unchanged, and irreducible context errors remain visible to the user.
-
-The Harness compares credential-free World State at clean sampling boundaries.
-Renewing a lease against the same Cube is not a reset. Recreated compute around
-the same Volume emits `sandbox_reset`; replacing the Workspace emits
-`workspace_changed`. Facts are minimal, hidden from ordinary UI messages and
-preserved through Compaction. A hard interruption's visible prefix is materialized
-into the next native context before sampling, together with an interruption fact.
-Errored/aborted native Assistant entries retain their exact stored payload, while
-their ordinary text becomes explicitly incomplete context before provider
-conversion. The same rule applies to native Compaction preparation and retained
-tails. Known cancellation, timeout, Worker and Tool failures use fixed safe
-explanations; raw diagnostics and partial Tool arguments are excluded. Cold
-recovery materializes a missing predecessor failure fact once, even when that
-Run produced no visible prefix (ADR-0206).
-
-Human Fork creates an independent Session with inherited history; delegated
-Branch creates a Lane. Cold administrative mutations require Session quiescence.
-Child task views are read-only; human Fork/prune actions remain available only
-in ordinary conversation views.
-Pruning hides later immutable history and moves a Lane head; it never rolls back
-Workspace bytes. Deleting a parent includes its descendant transcript views.
+Images in native records and documents use immutable `pi_cloud_image_v1` references.
+Only the trusted Worker hydrates pixels; Projector retains references atomically.
+Unsealed source Runs protect unprojected uploads. Cleanup claims reachability in
+PG and deletes S3 bytes outside the transaction. Workspace bytes remain solely on
+Cube Volumes. There is no old SessionStorage backend, operation ledger, JSONL
+replay, or patched Agent loop. See [ADR-0229](adr/0229-native-durable-runtime.md).
 
 ## Tools and Cube
 
@@ -627,8 +590,8 @@ canonical Tool Result. No raw-result GET/cache or PG operation ledger exists.
 Uncertain execution never causes automatic shell replay.
 
 Authorized closure revokes publication and binding routing admission before the
-seal. Normal Stop waits for its original Tool result after requesting cancellation;
-a bounded transport failure records UNKNOWN. Binding closure itself has no
+seal. Normal Stop co-commits native abort and cancellation for unfinished fixed
+Tools or workflow scripts; a late reply cannot replace the native outcome. Binding closure itself has no
 process-stop receipt. Interactive workflow orchestration closes with its caller.
 A late reply is discarded when its original waiter no longer exists.
 
@@ -868,7 +831,7 @@ retain images independently of mutable Workspace files. See
 [chat attachment contracts](CHAT_ATTACHMENTS.md) and ADR-0200. Generated-image
 results remain outside the public feature boundary.
 
-CloudAgentRuntime owns bounded sampling retries; Model Gateway forwards one
+The native Durable Harness owns bounded sampling retries; Model Gateway forwards one
 send per admitted request. Generated CLIProxyAPI settings disable extra retry
 rounds while keeping its account selection/failover responsibility. Logical
 model-request limits do not claim to count every provider-account attempt.

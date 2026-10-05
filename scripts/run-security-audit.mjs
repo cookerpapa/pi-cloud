@@ -56,17 +56,7 @@ const replacements = new Map([
       version: "5.0.12",
     },
   ],
-  [
-    "undici",
-    { node: "node_modules/@earendil-works/pi-coding-agent/node_modules/undici", version: "8.10.2" },
-  ],
-  [
-    "protobufjs",
-    {
-      node: "node_modules/@earendil-works/pi-coding-agent/node_modules/protobufjs",
-      version: "7.6.5",
-    },
-  ],
+
 ]);
 const { remediated, remaining } = classifyAuditFindings(
   auditReport.vulnerabilities,

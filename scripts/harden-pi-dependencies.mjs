@@ -8,7 +8,7 @@ const piRoots = [
   join(
     repositoryRoot,
     "packages",
-    "sandbox-supervisor",
+    "tool-sandbox",
     "node_modules",
     "@earendil-works",
     "pi-coding-agent",
@@ -41,18 +41,7 @@ const patchSpecs = [
     version: "5.0.12",
     packageName: "brace-expansion",
   },
-  {
-    name: "undici",
-    sourcePackage: "pi-security-undici",
-    version: "8.10.2",
-    packageName: "undici",
-  },
-  {
-    name: "protobufjs",
-    sourcePackage: "pi-security-protobufjs",
-    version: "7.6.5",
-    packageName: "protobufjs",
-  },
+
 ];
 const securityPatches = piRoots.flatMap((piRoot) =>
   patchSpecs.map((spec) => ({
@@ -79,7 +68,7 @@ if (securityPatches.length === 0) {
   process.exit(0);
 }
 
-if (piVersions.length > 0 && (piVersions.length !== 1 || piVersions[0] !== "0.84.1")) {
+if (piVersions.length > 0 && (piVersions.length !== 1 || piVersions[0] !== "1.0.0")) {
   throw new Error(
     `Pi dependency hardening has not been reviewed for pi-coding-agent ${piVersions.join(",")}`,
   );

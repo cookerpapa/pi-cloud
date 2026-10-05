@@ -27,11 +27,13 @@ const record = (
   extra: Partial<typeof scope> = {},
 ): KafkaAcceptedFactRecord => ({
   fact: {
-    kind: "pi_session_append",
+    kind: "durable_commit",
     factId: `fact-${offset}`,
     scope: { ...scope, ...extra },
-    piSession: { id: "physical", lane: "main", writerId: "writer" },
-    items: [],
+    commit: { seq: 1, nextId: 2, writes: [] },
+    origins: [],
+    tools: [],
+    cancellations: [],
     events: [],
     occurredAt: new Date(at).toISOString(),
   },

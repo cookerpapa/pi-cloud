@@ -14,7 +14,7 @@ import {
 import type { Kysely } from "kysely";
 import {
   PostgresSubagentJobProvider,
-  type NativeSubagentLanes,
+  type NativeSubagentConversations,
   type CloudSubagentTreePolicy,
 } from "@pi-cloud/subagent-control";
 import {
@@ -30,7 +30,7 @@ type TrustedToolRunContext = Readonly<{
 }>;
 type PostgresTrustedToolRuntimeOptions = Readonly<{
   database: Kysely<Database>;
-  nativeLanes: NativeSubagentLanes;
+  nativeConversations: NativeSubagentConversations;
   control: SubagentControlClient;
   treePolicy?: CloudSubagentTreePolicy;
 }>;
@@ -86,14 +86,15 @@ export class PostgresTrustedToolRuntime {
       scope.sessionKind === "subagent"
         ? await this.#jobs.treeContext(scope.tenantId, scope.runId)
         : undefined;
-    const contact = tree
-      ? trusted("orchestration", createCloudContactSupervisorTool(nativeControl))
-      : undefined;
+    const contact = {
+      ...trusted("orchestration", createCloudContactSupervisorTool(nativeControl)),
+      offered: tree !== undefined,
+    };
     const supervisor = trusted("orchestration", createCloudSubagentSupervisorTool(nativeControl));
-    const tools = [preview, ...(contact ? [contact] : [])];
+    const tools = [preview, contact];
     if (tree && !tree.canSpawnChildren) return [...tools, supervisor];
 
-    const run: CloudSubagentToolRuntime["run"] = (toolCallId, task, signal) => {
+    const run: CloudSubagentToolRuntime["run"] = async (toolCallId, task, signal) => {
       validateSubagentTask(task);
       const key = JSON.stringify([toolCallId, task.key]);
       const specification = JSON.stringify({
@@ -109,10 +110,6 @@ export class PostgresTrustedToolRuntime {
           return Promise.reject(new Error("Workflow key reused with different task arguments"));
         return previous.promise;
       }
-      const anchor = this.options.nativeLanes.childAnchor(
-        scope.executionReference,
-        task.context === "branch",
-      );
       let published!: () => void, failed!: (error: unknown) => void;
       const publication = new Promise<void>((resolve, reject) => {
         published = resolve;
@@ -120,6 +117,10 @@ export class PostgresTrustedToolRuntime {
       });
       void publication.catch(() => {});
       const promise = (async () => {
+        const anchor = await this.options.nativeConversations.childAnchor(
+          scope.executionReference,
+          task.context === "branch",
+        );
         const started = await control(
           toolCallId,
           {

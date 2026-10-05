@@ -1,3 +1,4 @@
+import { readNativeHistory, nativeMessages } from "./lib/native-session-history.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -207,50 +208,12 @@ async function waitForRun(runId) {
 }
 
 async function usageForRun(runId) {
-  const rows = await psql(
-    `select row_number() over (order by entry.seq) || '|' ||
-            coalesce((entry.payload #>> '{entry,message,usage,input}')::bigint, 0) || '|' ||
-            coalesce((entry.payload #>> '{entry,message,usage,output}')::bigint, 0) || '|' ||
-            coalesce((entry.payload #>> '{entry,message,usage,cacheRead}')::bigint, 0) || '|' ||
-            coalesce((entry.payload #>> '{entry,message,usage,cacheWrite}')::bigint, 0)
-       from runs run
-       join pi_session_log entry
-         on entry.kind='entry' and entry.tenant_id = run.tenant_id
-        and entry.turn_id = run.turn_id
-      where run.tenant_id = ${sqlLiteral(tenantId)}
-        and run.id = ${sqlLiteral(runId)}
-        and entry.type = 'message'
-        and entry.payload #>> '{entry,message,role}' = 'assistant'
-        and entry.payload #> '{entry,message,usage}' is not null
-      order by entry.seq`,
-  );
-  const requests =
-    rows.length === 0
-      ? []
-      : rows.split(/\r?\n/).map((row) => {
-          const [sequence, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens] =
-            row.split("|");
-          const parsed = {
-            sequence: Number(sequence),
-            inputTokens: Number(inputTokens),
-            outputTokens: Number(outputTokens),
-            cacheReadTokens: Number(cacheReadTokens),
-            cacheWriteTokens: Number(cacheWriteTokens),
-          };
-          assert(
-            [
-              parsed.sequence,
-              parsed.inputTokens,
-              parsed.outputTokens,
-              parsed.cacheReadTokens,
-              parsed.cacheWriteTokens,
-            ].every((value) => Number.isSafeInteger(value) && value >= 0),
-            "Model request usage is invalid",
-          );
-          parsed.contextInputTokens =
-            parsed.inputTokens + parsed.cacheReadTokens + parsed.cacheWriteTokens;
-          return parsed;
-        });
+  const requests = nativeMessages(await readNativeHistory(psql, { tenantId, runId }))
+    .filter(message => message.role === "assistant" && message.usage).map((message, index) => ({
+      sequence: index + 1, inputTokens: message.usage.input, outputTokens: message.usage.output,
+      cacheReadTokens: message.usage.cacheRead, cacheWriteTokens: message.usage.cacheWrite,
+      contextInputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite,
+    }));
   assert(requests.length > 0, `Run ${runId} did not record a model request`);
   return {
     requests,
@@ -282,24 +245,14 @@ async function runEvidence(runId) {
         and activation.workspace_id = run.workspace_id
         and activation.state in ('reserved', 'materializing', 'active', 'warm', 'cleaning')
        left join lateral (
-         select coalesce(sum(pg_column_size(entry.payload)), 0)::bigint as total_bytes,
-                count(*)::bigint as total_entries,
-                coalesce(sum(pg_column_size(entry.payload)) filter (
-                  where entry.seq >= coalesce(compaction.latest_seq, 0)
-                ), 0)::bigint as active_bytes,
-                count(*) filter (
-                  where entry.seq >= coalesce(compaction.latest_seq, 0)
-                )::bigint as active_entries
-           from pi_session_log entry
-           cross join lateral (
-             select max(candidate.seq) as latest_seq
-               from pi_session_log candidate
-              where candidate.kind='entry' and candidate.tenant_id = run.tenant_id
-                and candidate.session_id = product_session.pi_session_id
-                and candidate.type = 'compaction'
-           ) compaction
-          where entry.kind='entry' and entry.tenant_id = run.tenant_id
-            and entry.session_id = product_session.pi_session_id
+         select coalesce(sum(octet_length(log.body)),0)::bigint total_bytes, count(*)::bigint total_entries,
+           coalesce(sum(octet_length(log.body)) filter(where entry.id>=coalesce(head.first_kept,0)),0)::bigint active_bytes,
+           count(*) filter(where entry.id>=coalesce(head.first_kept,0))::bigint active_entries
+         from pi_durable_records entry join pi_durable_log log using(tenant_id,session_id,seq,ordinal)
+         left join lateral (select (fields->>'head')::bigint first_kept from pi_durable_records
+           where tenant_id=run.tenant_id and session_id=product_session.pi_session_id and kind='entry'
+             and fields->>'conversation'=product_session.pi_conversation_id::text and fields ? 'head' order by id desc limit 1) head on true
+         where entry.kind='entry' and entry.tenant_id=run.tenant_id and entry.session_id=product_session.pi_session_id
        ) pi on true
       where run.id = ${sqlLiteral(runId)}
       order by activation.created_at desc nulls last
@@ -1204,8 +1157,8 @@ try {
   const compactions = rounds.flatMap((round) => round.eventCompactions);
   const totalNativeCompactions = Number(
     await psql(`select count(*)
-    from pi_session_log e join sessions s on e.kind='entry' and s.pi_session_id=e.session_id and s.tenant_id=e.tenant_id
-    where s.id=${sqlLiteral(session.sessionId)} and e.tenant_id=${sqlLiteral(tenantId)} and e.type='compaction'`),
+    from pi_durable_records e join sessions s on e.kind='entry' and s.pi_session_id=e.session_id and s.tenant_id=e.tenant_id
+    where s.id=${sqlLiteral(session.sessionId)} and e.tenant_id=${sqlLiteral(tenantId)} and e.fields ? 'head'`),
   );
   const totalUsage = [
     ...rounds.map((round) => round.usage),
@@ -1244,7 +1197,7 @@ try {
       workerDeployment,
       scheduler: "postgresql-run-queue",
       sandbox: "CubeSandbox KVM",
-      sessionRuntime: "Pi SDK 0.84.1 PostgreSQL SessionStorage runtime",
+      sessionRuntime: "Pi Durable 1.0.0 PostgreSQL Storage runtime",
     },
     model: {
       provider: model.provider,
@@ -1390,7 +1343,7 @@ try {
         `- Post-compaction Hosted Web Search first-response/settled: ${String(report.postCompaction.providerSwitch.firstResponseMs)} / ${String(report.postCompaction.providerSwitch.settledMs)} ms`,
         `- Pi-native assistant usage records: ${String(report.totalUsage.modelRequests)} (excludes unrecorded retry and Compaction usage)`,
         `- Real input/output/cache-read/cache-write tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)} / ${String(report.totalUsage.cacheWriteTokens)}`,
-        `- Final Pi SessionStorage bytes/entries: ${String(report.postCompaction.crossWorker.sessionBytes)} / ${String(report.postCompaction.crossWorker.sessionEntries)}`,
+        `- Final Pi native context bytes/entries: ${String(report.postCompaction.crossWorker.sessionBytes)} / ${String(report.postCompaction.crossWorker.sessionEntries)}`,
         `- Final active context bytes/entries: ${String(report.postCompaction.crossWorker.activeContextBytes)} / ${String(report.postCompaction.crossWorker.activeContextEntries)}`,
         "",
         "The workload used real multi-round Python coding tasks, remote Tool calls, deterministic tests and a bounded-warm CubeSandbox KVM over a persistent Workspace Volume. Pi completed two native threshold/overflow Compactions, retained an early conversation invariant, continued coding afterward, restored the compacted native Session on a different Worker, then switched the Session to GPT Fast on another Worker and completed Provider-hosted Web Search without a Pi Tool call.",

@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { assertSubagentResultBudget, type SubagentControlRequest } from "@pi-cloud/protocol";
 import { Type } from "typebox";
 
@@ -29,14 +29,15 @@ const supervisorSchema = Type.Object(
 );
 export function createCloudContactSupervisorTool(
   request: Request,
-): AgentTool<typeof contactSchema> {
+): ToolRegistration<typeof contactSchema> {
   return {
     name: "contact_supervisor",
-    label: "Contact Supervisor",
     description:
       "Send a durable progress update or request a decision from the parent Agent. A decision request waits for its reply.",
     parameters: contactSchema,
-    async execute(id, args, signal) {
+    async execute(args, api, context) {
+      const id = api.callId,
+        signal = context.abortSignal;
       const result = await request(id, { action: "contact", ...args }, signal);
       const output = {
         content: [
@@ -48,7 +49,7 @@ export function createCloudContactSupervisorTool(
                 : "Supervisor progress update persisted.",
           },
         ],
-        details: result,
+        details: JSON.parse(JSON.stringify(result)),
       };
       assertSubagentResultBudget(output);
       return output;
@@ -57,14 +58,15 @@ export function createCloudContactSupervisorTool(
 }
 export function createCloudSubagentSupervisorTool(
   request: Request,
-): AgentTool<typeof supervisorSchema> {
+): ToolRegistration<typeof supervisorSchema> {
   return {
     name: "subagent_supervisor",
-    label: "Subagent Supervisor",
     description:
       "Inspect pending Child requests, reply, and wait for the Child result. This does not start another Child.",
     parameters: supervisorSchema,
-    async execute(id, args, signal) {
+    async execute(args, api, context) {
+      const id = api.callId,
+        signal = context.abortSignal;
       const result = await request(
         id,
         {
@@ -82,7 +84,7 @@ export function createCloudSubagentSupervisorTool(
             text: typeof result.output === "string" ? result.output : JSON.stringify(result),
           },
         ],
-        details: result,
+        details: JSON.parse(JSON.stringify(result)),
       };
       assertSubagentResultBudget(output);
       return output;

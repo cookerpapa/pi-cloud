@@ -19,10 +19,10 @@
     "@pi-cloud/domain": "0.1.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.84.1",
+    "@earendil-works/pi-ai": "1.0.0",
     "@electric-sql/pglite": "0.5.4",
     "@electric-sql/pglite-socket": "0.2.7",
     "@pi-cloud/control-plane": "0.1.0",
-    "@earendil-works/pi-agent-core": "0.84.1"
+    "@earendil-works/pi-agent-core": "1.0.0"
   }
 }

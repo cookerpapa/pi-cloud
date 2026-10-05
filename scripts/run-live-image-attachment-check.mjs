@@ -1,3 +1,4 @@
+import { nativeHistory, imageReferences } from "./lib/native-session-history.mjs";
 import { serviceAddress, kubectlAsync } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFile as execFileCallback, execFileSync } from "node:child_process";
@@ -126,15 +127,10 @@ try {
         .join("")
         .includes("SEEN"),
     );
-    const { rows } =
-      await sql`select l.tenant_id, p.value as ref, octet_length(l.payload::text) as record_bytes from pi_session_log l,
-      lateral jsonb_path_query(l.payload,'$.** ? (@.type == "pi_cloud_image_v1").attachment') p(value)
-      where l.session_id=${session.sessionId} and l.payload->>'turnId'=${active.turnId}`.execute(
-        db,
-      );
-    const refs = [...new Map(rows.map((r) => [r.ref.id, r])).values()];
-    assert.equal(refs.length, 1);
-    const row = refs[0];
+    const records = await nativeHistory(db, { sessionId: session.sessionId, turnId: active.turnId });
+    const rows = records.flatMap(row => imageReferences(row.entry).map(ref => ({ tenant_id: row.tenant_id, ref, record_bytes: Buffer.byteLength(row.body) })));
+    assert.equal(rows.length, 1);
+    const row = rows[0];
     assert(row.ref.byteLength > 5 * 1024 * 1024);
     assert(Number(row.record_bytes) < 16384);
     const bytes = await images.get(row.tenant_id, row.ref);

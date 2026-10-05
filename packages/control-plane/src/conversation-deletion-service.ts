@@ -1,5 +1,8 @@
 import type { Database } from "@pi-cloud/database";
-import { deletePostgresPiSessionsInTransaction } from "@pi-cloud/pi-session-postgres";
+import {
+  deletePostgresPiSessionsInTransaction,
+  NativeSessionError,
+} from "@pi-cloud/pi-session-postgres";
 import { sql, type Kysely, type Transaction } from "kysely";
 
 export class ConversationDeletionError extends Error {
@@ -102,8 +105,7 @@ export class ConversationDeletionService {
         throw new ConversationDeletionError(
           "Conversation is changing; retry deletion after it settles",
         );
-      if (error instanceof Error && error.name === "SessionError")
-        throw new ConversationDeletionError(error.message);
+      if (error instanceof NativeSessionError) throw new ConversationDeletionError(error.message);
       throw error;
     }
   }

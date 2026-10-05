@@ -1,148 +1,39 @@
 import type { Database } from "@pi-cloud/database";
-import { PI_MODEL_RETRY_CUSTOM_TYPE } from "@pi-cloud/protocol/native-session";
+import { sql, type Kysely } from "kysely";
 import {
   parseConversationTurnTranscriptResource,
-  type ConversationTranscriptItemResource,
+  normalizeProviderHostedWebSearchAction,
+  toolResultIsUnknown,
   type ConversationTurnTranscriptResource,
+  type ConversationTranscriptItemResource,
   type AssistantMessagePhase,
 } from "@pi-cloud/protocol";
-import { normalizeProviderHostedWebSearchAction, toolResultIsUnknown } from "@pi-cloud/protocol";
-import { sql, type Kysely, type Transaction } from "kysely";
-import {
-  buildSessionContext,
-  estimateTokens,
-  type AgentMessage,
-  type Entry,
-} from "@earendil-works/pi-agent-core";
-
-export const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";
-
 type JsonRecord = Record<string, unknown>;
 type TerminalProjectionMetadata = Pick<
   ConversationTurnTranscriptResource,
   "throughSequence" | "terminalSequence" | "stopReason" | "failure" | "cancellation"
 > & { occurredAt: string };
-type DraftItem =
-  | { kind: "text"; text: string; phase?: AssistantMessagePhase }
-  | {
-      kind: "hosted_search";
-      activityId: string;
-      status: "completed" | "failed";
-      action?: import("@pi-cloud/protocol").ProviderHostedWebSearchAction;
-    }
-  | {
-      kind: "tool";
-      toolCallId: string;
-      toolName: string;
-      input: unknown;
-      output?: unknown;
-      status: "running" | "completed" | "failed" | "unknown";
-      startedAt: string;
-      completedAt?: string;
-    }
-  | {
-      kind: "compaction";
-      reason: "manual" | "threshold" | "overflow";
-      status: "completed";
-      willRetry: false;
-      tokensBefore?: number;
-      estimatedTokensAfter: number;
-    }
-  | {
-      kind: "retry";
-      nextSamplingAttempt: number;
-      maximumSamplingAttempts?: number;
-      delayMs?: number;
-    };
-
-function record(value: unknown): JsonRecord | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
+const record = (value: unknown): JsonRecord | undefined =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
     : undefined;
+function timestamp(value: Date | string | number): string {
+  return new Date(value).toISOString();
 }
-
 function safeInteger(value: string | number | bigint, name: string): number {
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`${name} is invalid`);
-  return parsed;
+  const n = Number(value);
+  if (!Number.isSafeInteger(n) || n < 0) throw new Error(`${name} is invalid`);
+  return n;
 }
-
-function timestamp(value: string | Date | number): string {
-  const parsed = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(parsed.valueOf()))
-    throw new Error("Canonical conversation timestamp is invalid");
-  return parsed.toISOString();
-}
-
-function messageFromEntry(payload: unknown): JsonRecord | undefined {
-  const entry = record(payload);
-  return entry?.type === "message" ? record(entry.message) : undefined;
-}
-
-function textParts(message: JsonRecord | undefined): string[] {
-  if (!Array.isArray(message?.content)) return [];
-  return message.content.flatMap((part) => {
-    const candidate = record(part);
-    return candidate?.type === "text" && typeof candidate.text === "string" ? [candidate.text] : [];
-  });
-}
-
-function textPhase(part: JsonRecord): AssistantMessagePhase | undefined {
-  if (typeof part.textSignature !== "string" || !part.textSignature.startsWith("{")) return;
-  // Pi signatures may also be opaque provider IDs, not versioned metadata.
+function textPhase(value: JsonRecord): AssistantMessagePhase | undefined {
+  if (typeof value.textSignature !== "string" || !value.textSignature.startsWith("{")) return;
   try {
-    const signature = record(JSON.parse(part.textSignature));
-    if (
-      signature?.v === 1 &&
-      (signature.phase === "commentary" || signature.phase === "final_answer")
-    )
-      return signature.phase;
+    const s = JSON.parse(value.textSignature);
+    if (s.v === 1 && ["commentary", "final_answer"].includes(s.phase)) return s.phase;
   } catch {
-    /* A provider-owned signature is not necessarily JSON. */
+    /* Opaque provider signature. */
   }
 }
-
-function interruptedPrefix(payload: unknown): string | undefined {
-  const entry = record(payload);
-  if (entry?.type !== "custom" || entry.customType !== INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE) {
-    return undefined;
-  }
-  const data = record(entry.data);
-  return typeof data?.text === "string" && data.text.length > 0 ? data.text : undefined;
-}
-
-function retryFact(payload: unknown): Extract<DraftItem, { kind: "retry" }> | undefined {
-  const entry = record(payload);
-  if (entry?.type !== "custom" || entry.customType !== PI_MODEL_RETRY_CUSTOM_TYPE) return undefined;
-  const data = record(entry.data);
-  if (
-    typeof data?.nextSamplingAttempt !== "number" ||
-    !Number.isSafeInteger(data.nextSamplingAttempt) ||
-    data.nextSamplingAttempt < 1
-  ) {
-    return undefined;
-  }
-  const maximumSamplingAttempts =
-    typeof data.maximumSamplingAttempts === "number" &&
-    Number.isSafeInteger(data.maximumSamplingAttempts) &&
-    data.maximumSamplingAttempts >= data.nextSamplingAttempt
-      ? data.maximumSamplingAttempts
-      : undefined;
-  const delayMs =
-    typeof data.delayMs === "number" &&
-    Number.isSafeInteger(data.delayMs) &&
-    data.delayMs >= 0 &&
-    data.delayMs <= 300_000
-      ? data.delayMs
-      : undefined;
-  return {
-    kind: "retry",
-    nextSamplingAttempt: data.nextSamplingAttempt,
-    ...(maximumSamplingAttempts === undefined ? {} : { maximumSamplingAttempts }),
-    ...(delayMs === undefined ? {} : { delayMs }),
-  };
-}
-
 function terminalMetadata(row: {
   seq: string;
   type: string;
@@ -188,412 +79,262 @@ function terminalMetadata(row: {
   };
 }
 
-function outputValue(message: JsonRecord): unknown {
-  const content = Array.isArray(message.content) ? message.content : [];
-  return {
-    content,
-    ...(message.details === undefined ? {} : { details: message.details }),
-  };
-}
-
-function estimateStoredMessageTokens(message: AgentMessage): number {
-  if (!("content" in message) || !Array.isArray(message.content)) return estimateTokens(message);
-  // Pi's heuristic counts an image by its content type, without reading bytes.
-  // Normalize only this local estimate; never fetch blobs or expose placeholders
-  // as model context or canonical history.
-  const content = message.content.map((part) =>
-    record(part)?.type === "pi_cloud_image_v1"
-      ? { type: "image", mimeType: "image/png", data: "" }
-      : part,
-  );
-  return estimateTokens({ ...message, content } as AgentMessage);
-}
-
-function projectPiEntries(
-  rows: readonly { seq: string; timestamp_ms: string; payload: JsonRecord }[],
-  terminal: ReturnType<typeof terminalMetadata>,
+export type NativeHistoryRow = {
+  id: string;
+  task_kind?: string | null;
+  seq: string;
+  fields: Record<string, string>;
+  body: string;
+  committed_at: Date;
+};
+export function projectDurableTranscript(
+  rows: readonly NativeHistoryRow[],
+  terminal: TerminalProjectionMetadata,
 ): ConversationTurnTranscriptResource {
-  const drafts: DraftItem[] = [];
-  const tools = new Map<string, number>();
-  const proposed = new Map<string, { name: string; input: unknown }>();
-  const compactionReasons = new Map<string, "manual" | "threshold" | "overflow">();
+  const items: ConversationTranscriptItemResource[] = [],
+    proposals = new Map<string, { name: string; input: unknown }>();
+  const sequence = terminal.throughSequence;
   for (const row of rows) {
-    const value = record(row.payload);
-    if (
-      value?.type === "step_attempt" &&
-      value.step === "compaction" &&
-      typeof value.resultEntryId === "string" &&
-      (value.compactionReason === "manual" ||
-        value.compactionReason === "threshold" ||
-        value.compactionReason === "overflow")
-    )
-      compactionReasons.set(value.resultEntryId, value.compactionReason);
-  }
-  for (const row of rows) {
-    const payload = record(row.payload);
-    const occurredAt = timestamp(safeInteger(row.timestamp_ms, "Pi entry timestamp"));
-    if (
-      payload?.type === "tool_started" &&
-      typeof payload.toolCallId === "string" &&
-      typeof payload.resultEntryId === "string" &&
-      typeof payload.toolName === "string"
-    ) {
-      if (!tools.has(payload.resultEntryId)) {
-        tools.set(payload.resultEntryId, drafts.length);
-        drafts.push({
-          kind: "tool",
-          toolCallId: payload.resultEntryId,
-          toolName: payload.toolName,
-          input: payload.effectiveArgs ?? null,
-          status: "running",
-          startedAt: occurredAt,
-        });
+    const entry = record(JSON.parse(row.body).value);
+    if (!entry) throw new Error("Native history pointer is invalid");
+    if (record(entry.state)?.status !== undefined) {
+      const checkpoint = record(record(entry.state)?.checkpoint);
+      if (
+        checkpoint?.phase === "retry" &&
+        typeof checkpoint.attempt === "number" &&
+        checkpoint.attempt >= 1
+      ) {
+        items.push({ kind: "retry", nextSamplingAttempt: checkpoint.attempt + 1, sequence });
       }
-      continue;
-    }
-    if (payload?.type === "compaction") {
-      const reason = compactionReasons.get(String(payload.id));
-      if (!reason) throw new Error("Native Compaction is missing its Step reason");
-      drafts.push({
-        kind: "compaction",
-        reason,
-        status: "completed",
-        willRetry: false,
-        estimatedTokensAfter: buildSessionContext([payload as unknown as Entry]).messages.reduce(
-          (total, message) => total + estimateStoredMessageTokens(message),
-          0,
-        ),
-        ...(typeof payload.tokensBefore === "number" &&
-        Number.isSafeInteger(payload.tokensBefore) &&
-        payload.tokensBefore >= 0
-          ? { tokensBefore: payload.tokensBefore }
-          : {}),
-      });
-      continue;
-    }
-    const retry = retryFact(payload);
-    if (retry !== undefined) {
-      drafts.push(retry);
-      continue;
-    }
-    const message = messageFromEntry(row.payload);
-    if (message?.role === "assistant") {
-      proposed.clear();
-      if (!Array.isArray(message.content)) continue;
-      for (const part of message.content) {
-        const candidate = record(part);
-        if (
-          candidate?.type === "text" &&
-          typeof candidate.text === "string" &&
-          candidate.text.length > 0
-        ) {
-          const last = drafts.at(-1);
-          const phase = textPhase(candidate);
-          if (
-            last?.kind === "text" &&
-            last.phase !== "commentary" &&
-            phase !== "commentary" &&
-            last.phase === phase
-          )
-            last.text += candidate.text;
-          else
-            drafts.push({
-              kind: "text",
-              text: candidate.text,
-              ...(phase === undefined ? {} : { phase }),
-            });
-          continue;
-        }
-        if (candidate?.type === "providerHostedToolCall" && candidate.toolName === "web_search") {
-          const nativeItem = record(candidate.nativeItem);
-          if (typeof nativeItem?.id !== "string" || nativeItem.id.length === 0) continue;
-          const action = normalizeProviderHostedWebSearchAction(nativeItem);
-          drafts.push({
-            kind: "hosted_search",
-            activityId: nativeItem.id,
-            status: nativeItem.status === "failed" ? "failed" : "completed",
-            ...(action === undefined ? {} : { action }),
+      const outcome = record(record(entry.state)?.outcome),
+        input = record(entry.input);
+      if (record(entry.state)?.status === "terminal" && entry.kind === "pi.compaction") {
+        const reason = input?.reason;
+        if (reason === "manual" || reason === "threshold" || reason === "overflow")
+          items.push({
+            kind: "compaction",
+            reason,
+            status:
+              outcome?.status === "completed"
+                ? "completed"
+                : outcome?.status === "aborted"
+                  ? "aborted"
+                  : "failed",
+            willRetry: false,
+            firstSequence: sequence,
+            lastSequence: sequence,
           });
-          continue;
-        }
-        if (
-          candidate?.type === "toolCall" &&
-          typeof candidate.id === "string" &&
-          typeof candidate.name === "string"
-        ) {
-          // A proposed call is not an execution intent. Its arguments can still
-          // explain a validation-failure result which never acquired an intent.
-          proposed.set(candidate.id, { name: candidate.name, input: candidate.arguments ?? null });
-        }
+      } else if (record(entry.state)?.status === "terminal" && entry.kind === "pi.tool") {
+        const proposal =
+          typeof input?.callId === "string" ? proposals.get(input.callId) : undefined;
+        if (proposal)
+          items.push({
+            kind: "tool",
+            toolCallId: `task:${row.id}`,
+            toolName: proposal.name,
+            input: proposal.input,
+            status: "failed",
+            output: {
+              content: [
+                {
+                  type: "text",
+                  text:
+                    outcome?.status === "aborted"
+                      ? "Tool execution was aborted before a result was committed."
+                      : "Tool execution ended without a committed result.",
+                },
+              ],
+            },
+            startedAt: timestamp(row.committed_at),
+            completedAt: timestamp(row.committed_at),
+            firstSequence: sequence,
+            lastSequence: sequence,
+          });
       }
       continue;
     }
-    if (
-      message?.role === "toolResult" &&
-      typeof message.toolCallId === "string" &&
-      typeof message.toolName === "string"
-    ) {
-      if (typeof payload?.id !== "string")
-        throw new Error("Native Tool result Entry identity is missing");
-      const invocationId = payload.id;
-      const index = tools.get(invocationId);
-      const status =
-        message.isError === true
-          ? toolResultIsUnknown(message)
-            ? "unknown"
-            : "failed"
-          : "completed";
-      if (index === undefined) {
-        tools.set(invocationId, drafts.length);
-        drafts.push({
-          kind: "tool",
-          toolCallId: invocationId,
-          toolName: message.toolName,
-          input: proposed.get(message.toolCallId)?.input ?? null,
-          output: outputValue(message),
-          status,
-          startedAt: occurredAt,
-          completedAt: occurredAt,
+    const messages = Array.isArray(entry.model) ? entry.model : [];
+    if (entry.kind === "pi.compaction") {
+      const reason = record(entry.data)?.reason;
+      if (reason === "manual" || reason === "threshold" || reason === "overflow")
+        items.push({
+          kind: "compaction",
+          reason,
+          status: "completed",
+          willRetry: false,
+          firstSequence: sequence,
+          lastSequence: sequence,
         });
-      } else {
-        const current = drafts[index];
-        if (current?.kind === "tool") {
-          drafts[index] = {
-            ...current,
-            output: outputValue(message),
-            status,
-            completedAt: occurredAt,
-          };
-        }
-      }
       continue;
     }
-    const prefix = interruptedPrefix(row.payload);
-    if (prefix !== undefined) {
-      const last = drafts.at(-1);
-      if (last?.kind === "text" && last.phase === undefined) last.text += prefix;
-      else drafts.push({ kind: "text", text: prefix });
-    }
-  }
-
-  const firstSequence = Math.max(1, terminal.throughSequence - drafts.length);
-  const items = drafts.map((item, index): ConversationTranscriptItemResource => {
-    const sequence = Math.min(terminal.throughSequence, firstSequence + index);
-    if (item.kind === "text") {
-      return { ...item, firstSequence: sequence, lastSequence: sequence };
-    }
-    if (item.kind === "hosted_search") {
-      return { ...item, firstSequence: sequence, lastSequence: sequence };
-    }
-    if (item.kind === "compaction") {
-      return { ...item, firstSequence: sequence, lastSequence: sequence };
-    }
-    if (item.kind === "retry") return { ...item, sequence };
-    return {
-      ...item,
-      firstSequence: sequence,
-      ...(item.completedAt === undefined ? {} : { lastSequence: sequence }),
-    };
-  });
-  if (terminal.failure !== null || terminal.cancellation !== null) {
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index]!;
-      if (item.kind === "tool" && item.status === "running") {
-        items[index] = {
-          ...item,
-          status: "unknown",
-          lastSequence: terminal.throughSequence,
-          completedAt: terminal.occurredAt,
-        };
+    for (const raw of messages) {
+      const message = record(raw);
+      if (!message) continue;
+      const content = Array.isArray(message.content) ? message.content : [];
+      if (message.role === "assistant") {
+        proposals.clear();
+        for (const [index, part] of content.entries()) {
+          const block = record(part);
+          if (!block) continue;
+          if (block.type === "text" && typeof block.text === "string" && block.text) {
+            const phase = textPhase(block);
+            items.push({
+              kind: "text",
+              messageId: `entry:${row.id}:${index}`,
+              text: block.text,
+              ...(phase ? { phase } : {}),
+              firstSequence: sequence,
+              lastSequence: sequence,
+            });
+          } else if (
+            block.type === "toolCall" &&
+            typeof block.id === "string" &&
+            typeof block.name === "string"
+          ) {
+            proposals.set(block.id, { name: block.name, input: block.arguments ?? null });
+          } else if (block.type === "providerHostedToolCall" && block.toolName === "web_search") {
+            const native = record(block.nativeItem);
+            if (typeof native?.id !== "string") continue;
+            const action = normalizeProviderHostedWebSearchAction(native);
+            items.push({
+              kind: "hosted_search",
+              activityId: native.id,
+              status: native.status === "failed" ? "failed" : "completed",
+              ...(action ? { action } : {}),
+              firstSequence: sequence,
+              lastSequence: sequence,
+            });
+          }
+        }
+      } else if (
+        message.role === "toolResult" &&
+        typeof message.toolCallId === "string" &&
+        typeof message.toolName === "string"
+      ) {
+        const at =
+          typeof message.timestamp === "number"
+            ? timestamp(message.timestamp)
+            : timestamp(row.committed_at);
+        items.push({
+          kind: "tool",
+          toolCallId:
+            row.task_kind === JSON.stringify("pi.tool")
+              ? `task:${entry.byTaskId}`
+              : `entry:${row.id}`,
+          toolName: message.toolName,
+          input: proposals.get(message.toolCallId)?.input ?? null,
+          output: {
+            content,
+            ...(message.details === undefined ? {} : { details: message.details }),
+          },
+          status: message.isError
+            ? toolResultIsUnknown(message)
+              ? "unknown"
+              : "failed"
+            : "completed",
+          startedAt: at,
+          completedAt: at,
+          firstSequence: sequence,
+          lastSequence: sequence,
+        });
       }
     }
   }
-  const { occurredAt: _occurredAt, ...terminalResource } = terminal;
+  const { occurredAt: _at, ...metadata } = terminal;
   return parseConversationTurnTranscriptResource({
     schemaVersion: 1,
-    ...terminalResource,
+    ...metadata,
     items,
-    startedSequence: firstSequence,
+    startedSequence: Math.max(1, sequence - items.length),
   });
 }
 
-// Fork copies retain origin Turn IDs. They are inherited history, not additional
-// output from that Turn's execution Session, even after projection rebuild.
-function ownedTurnSession() {
-  return sql<boolean>`exists (
-    select 1 from turns as owner_turn
-      join sessions as owner_session
-        on owner_session.tenant_id = owner_turn.tenant_id
-       and owner_session.id = owner_turn.session_id
-     where owner_turn.tenant_id = pi_session_log.tenant_id
-       and owner_turn.id = pi_session_log.turn_id
-       and owner_session.pi_session_id = pi_session_log.session_id
-  )`;
-}
-
+/** PG's thin Turn index points into the native JSON-text log. No second copy of
+ * messages and no SDK execution is needed to reconstruct the public transcript. */
 export async function readCanonicalPiTurnTranscripts(
   database: Kysely<Database>,
   input: { tenantId: string; turnIds: readonly string[] },
 ): Promise<ReadonlyMap<string, ConversationTurnTranscriptResource>> {
+  if (!input.turnIds.length) return new Map();
   if (!database.isTransaction)
     return database
       .transaction()
       .setIsolationLevel("repeatable read")
       .execute((tx) => readCanonicalPiTurnTranscripts(tx, input));
   const turnIds = [...new Set(input.turnIds)];
-  if (turnIds.length === 0) return new Map();
-  // Keep two index-compatible branches, but fetch the native bodies once over
-  // this transaction's single connection. Promise.all cannot parallelize it.
-  const entryQuery = database
-    .selectFrom("pi_session_log")
-    .where("kind", "=", sql.lit("entry"))
-    .select([
-      "turn_id",
-      "seq",
-      sql<string>`timestamp_ms`.as("timestamp_ms"),
-      sql<Record<string, unknown>>`payload->'entry'`.as("payload"),
-    ])
+  const rows = await sql<NativeHistoryRow>`with own as (
+      select r.* from pi_durable_records r
+      where r.tenant_id=${input.tenantId}::uuid and r.fields->>'turn'=any(${turnIds}::text[])
+        and (r.kind='entry' or (r.kind='task' and r.fields->>'nativeKind'=any(${["pi.generation", "pi.tool", "pi.compaction"].map((value) => JSON.stringify(value))}::text[])))
+        and exists(select 1 from turns t join sessions s on s.tenant_id=t.tenant_id and s.id=t.session_id
+          where t.tenant_id=r.tenant_id and t.id::text=r.fields->>'turn' and s.pi_session_id=r.session_id)
+    ), history as (
+      select r.id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,task.fields->>'nativeKind' as task_kind
+      from own r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+        join pi_durable_commits c using(tenant_id,session_id,seq)
+        left join pi_durable_records task on task.tenant_id=r.tenant_id and task.session_id=r.session_id
+          and task.id=(r.fields->>'task')::bigint and task.kind='task'
+      where r.kind='entry'
+      union all
+      select r.id,l.seq,l.ordinal,r.fields,l.body,c.committed_at,null::text as task_kind
+      from own r join pi_durable_log l on l.tenant_id=r.tenant_id and l.session_id=r.session_id and l.record_id=r.id
+        join pi_durable_commits c on c.tenant_id=l.tenant_id and c.session_id=l.session_id and c.seq=l.seq
+      where r.kind='task' and l.record_kind='task' and l.phase=${JSON.stringify("retry")}
+      union all
+      select r.id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,null::text as task_kind
+      from own r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+        join pi_durable_commits c using(tenant_id,session_id,seq)
+      where r.kind='task' and r.fields->>'status'='terminal'
+        and r.fields->>'nativeKind'=any(${["pi.tool", "pi.compaction"].map((value) => JSON.stringify(value))}::text[])
+        and not exists(select 1 from own result where result.kind='entry' and result.session_id=r.session_id and result.fields->>'task'=r.id::text)
+    ) select * from history order by seq,ordinal`.execute(database);
+  const terminalRows = await database
+    .selectFrom("session_terminal_events")
+    .select(["turn_id", "seq", "type", "payload", "occurred_at"])
     .where("tenant_id", "=", input.tenantId)
     .where("turn_id", "in", turnIds)
-    .where(ownedTurnSession());
-  const recordQuery = database
-    .selectFrom("pi_session_log")
-    .where("kind", "=", sql.lit("record"))
-    .select([
-      "turn_id",
-      "seq",
-      sql<string>`timestamp_ms`.as("timestamp_ms"),
-      sql<Record<string, unknown>>`payload->'record'`.as("payload"),
-    ])
+    .execute();
+  const activeRows = await database
+    .selectFrom("runs")
+    .select(["turn_id", "output_display_seq", "output_display_native_seq"])
     .where("tenant_id", "=", input.tenantId)
     .where("turn_id", "in", turnIds)
-    .where(ownedTurnSession())
-    .where((eb) =>
-      eb.or([
-        eb("type", "=", "tool_started"),
-        eb.and([
-          eb("type", "=", "step_attempt"),
-          sql<boolean>`payload->'record'->>'step'='compaction'`,
-        ]),
-      ]),
-    );
-  const [nativeItems, durableTerminalRows, activeRows] = await Promise.all([
-    entryQuery.unionAll(recordQuery).orderBy("seq", "asc").execute(),
-    database
-      .selectFrom("session_terminal_events")
-      .select(["turn_id", "seq", "type", "payload", "occurred_at", "interrupted_prefix"])
-      .where("tenant_id", "=", input.tenantId)
-      .where("turn_id", "in", turnIds)
-      .execute(),
-    database
-      .selectFrom("runs as run")
-      .select(["run.turn_id", "run.output_display_seq", "run.output_display_native_seq"])
-      .where("run.tenant_id", "=", input.tenantId)
-      .where("run.turn_id", "in", turnIds)
-      .execute(),
-  ]);
-  const activeByTurn = new Map(activeRows.map((r) => [r.turn_id, r]));
-  const terminalByTurn = new Map<string, (typeof durableTerminalRows)[number]>(
-    durableTerminalRows.map((row) => [row.turn_id, row]),
-  );
-  const entriesByTurn = new Map<string, typeof nativeItems>();
-  for (const entry of nativeItems) {
-    if (entry.turn_id === null) continue;
-    if (
-      !terminalByTurn.has(entry.turn_id) &&
-      Number(entry.seq) > Number(activeByTurn.get(entry.turn_id)?.output_display_native_seq ?? 0)
-    )
-      continue;
-    const existing = entriesByTurn.get(entry.turn_id) ?? [];
-    existing.push(entry);
-    entriesByTurn.set(entry.turn_id, existing);
+    .execute();
+  const terminals = new Map(terminalRows.map((row) => [row.turn_id, row])),
+    active = new Map(activeRows.map((row) => [row.turn_id, row]));
+  const grouped = new Map<string, NativeHistoryRow[]>();
+  for (const row of rows.rows) {
+    const turn = row.fields.turn!;
+    const list = grouped.get(turn) ?? [];
+    list.push(row);
+    grouped.set(turn, list);
   }
   const result = new Map<string, ConversationTurnTranscriptResource>();
-  for (const turnId of turnIds) {
-    const terminalRow = terminalByTurn.get(turnId);
-    const piEntries = entriesByTurn.get(turnId) ?? [];
-    if (terminalRow === undefined) {
-      const active = activeByTurn.get(turnId);
-      if (active && Number(active.output_display_seq) > 0)
-        result.set(
-          turnId,
-          projectPiEntries(piEntries, {
-            throughSequence: Number(active.output_display_seq),
+  for (const turn of turnIds) {
+    const terminal = terminals.get(turn),
+      current = active.get(turn);
+    if (terminal)
+      result.set(
+        turn,
+        projectDurableTranscript(grouped.get(turn) ?? [], terminalMetadata(terminal)),
+      );
+    else if (current && Number(current.output_display_seq) > 0)
+      result.set(
+        turn,
+        projectDurableTranscript(
+          (grouped.get(turn) ?? []).filter(
+            (row) => Number(row.seq) <= Number(current.output_display_native_seq),
+          ),
+          {
+            throughSequence: Number(current.output_display_seq),
             terminalSequence: null,
             stopReason: null,
             failure: null,
             cancellation: null,
             occurredAt: new Date().toISOString(),
-          }),
-        );
-      continue;
-    }
-    if (terminalRow.interrupted_prefix !== null)
-      piEntries.push({
-        turn_id: turnId,
-        seq: String(Number(piEntries.at(-1)?.seq ?? 0) + 1),
-        timestamp_ms: String(terminalRow.occurred_at.valueOf()),
-        payload: {
-          type: "custom",
-          customType: INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
-          data: { text: terminalRow.interrupted_prefix },
-        },
-      });
-    if (piEntries.length > 0) {
-      result.set(turnId, projectPiEntries(piEntries, terminalMetadata(terminalRow)));
-      continue;
-    }
-    const terminal = terminalMetadata(terminalRow);
-    const { occurredAt: _occurredAt, ...terminalResource } = terminal;
-    result.set(
-      turnId,
-      parseConversationTurnTranscriptResource({
-        schemaVersion: 1,
-        ...terminalResource,
-        items: [],
-        startedSequence: terminal.throughSequence,
-      }),
-    );
+          },
+        ),
+      );
   }
   return result;
-}
-
-export async function readInterruptedAssistantPrefix(
-  transaction: Transaction<Database>,
-  input: {
-    tenantId: string;
-    sessionId: string;
-    turnId: string;
-    transcript: ConversationTurnTranscriptResource;
-  },
-): Promise<string | null> {
-  const visibleText = input.transcript.items
-    .filter(
-      (item): item is Extract<ConversationTranscriptItemResource, { kind: "text" }> =>
-        item.kind === "text",
-    )
-    .map((item) => item.text)
-    .join("");
-  if (visibleText.length === 0) return null;
-  const existingRows = await transaction
-    .selectFrom("pi_session_log")
-    .where("kind", "=", sql.lit("entry"))
-    .select(sql<Record<string, unknown>>`payload->'entry'`.as("payload"))
-    .where("tenant_id", "=", input.tenantId)
-    .where("turn_id", "=", input.turnId)
-    .where(ownedTurnSession())
-    .orderBy("seq", "asc")
-    .execute();
-  const canonicalText = existingRows
-    .flatMap((row) => {
-      const message = messageFromEntry(row.payload);
-      return message?.role === "assistant"
-        ? textParts(message)
-        : (interruptedPrefix(row.payload) ?? []);
-    })
-    .join("");
-  const missingText = visibleText.startsWith(canonicalText)
-    ? visibleText.slice(canonicalText.length)
-    : visibleText;
-  return missingText || null;
 }

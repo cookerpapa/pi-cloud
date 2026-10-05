@@ -1,3 +1,4 @@
+import { readNativeHistory, nativeMessages, runUsage } from "./lib/native-session-history.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -125,28 +126,7 @@ async function psql(query) {
 }
 
 async function runUsageEvidence(runId) {
-  const value = await psql(
-    `select count(*) || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,input}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,output}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheRead}')::bigint), 0) || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheWrite}')::bigint), 0)
-       from runs run
-       join pi_session_log entry
-         on entry.kind='entry' and entry.tenant_id = run.tenant_id
-        and entry.turn_id = run.turn_id
-      where run.id = ${sqlLiteral(runId)}
-        and entry.type = 'message'
-        and entry.payload #>> '{entry,message,role}' = 'assistant'
-        and entry.payload #> '{entry,message,usage}' is not null`,
-  );
-  const [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens] = value
-    .split("|")
-    .map(Number);
-  for (const number of [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens]) {
-    assert(Number.isSafeInteger(number) && number >= 0, "Run usage evidence is invalid");
-  }
-  return { requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens };
+  return runUsage(await readNativeHistory(psql, { runId }));
 }
 
 function wait(delayMs, signal) {
@@ -471,9 +451,9 @@ async function crashStreamingTurn(sessionId) {
       terminal = { type, seq: Number(sequence) };
     }
     assert(terminal, "Worker loss did not produce a terminal event");
-    assert.notEqual(terminal.type, "turn.completed", "The killed Worker completed unexpectedly");
+    assert.equal(terminal.type, "turn.completed", "Native recovery did not complete the original input");
     const run = await waitForTerminalRun(accepted.runId);
-    assert.notEqual(run.state, "completed");
+    assert.equal(run.state, "completed");
     assert(
       visibleText.join("").includes(marker),
       "The Accepted prefix before Worker loss omitted its marker",
@@ -653,49 +633,15 @@ try {
   }
   const recovered = await runTurn(
     crashSession.sessionId,
-    "The previous Run was interrupted. Do not call tools. Reply exactly RECOVERY-BARRIER-OK.",
+    "The previous Run recovered. Do not call tools. Reply exactly RECOVERY-BARRIER-OK.",
   );
   assert(recovered.text.includes("RECOVERY-BARRIER-OK"));
-  const sealedPredecessors = Number(
-    await psql(
-      `select count(*) from runs old_attempt
-       join runs successor on successor.id = ${sqlLiteral(recovered.runId)}
-       where old_attempt.run_id = ${sqlLiteral(crashed.runId)}
-         and old_attempt.output_sealed_at <= successor.started_at`,
-    ),
-  );
-  assert(sealedPredecessors >= 1, "Replacement ran before the old execution seal was projected");
-  const interruptedPrefixCount = Number(
-    await psql(
-      `select count(*)
-         from pi_session_log
-        where kind='entry' and session_id = ${sqlLiteral(crashSession.sessionId)}
-          and custom_type = 'pi-cloud.interrupted_assistant_prefix'`,
-    ),
-  );
-  assert(
-    interruptedPrefixCount >= 1,
-    "The Accepted prefix was not projected into Pi context after Worker loss",
-  );
-  const recoveredPrefixes = JSON.parse(
-    await psql(
-      `select coalesce(json_agg(payload #>> '{entry,data,text}'), '[]'::json)
-       from pi_session_log
-      where kind='entry' and session_id = (select pi_session_id from sessions where id = ${sqlLiteral(crashSession.sessionId)})
-        and custom_type = 'pi-cloud.interrupted_assistant_prefix'`,
-    ),
-  );
-  assert(
-    recoveredPrefixes.includes(crashed.visibleText),
-    "Pi context did not retain the exact already-visible interrupted prefix",
-  );
-  const interruptionText =
-    await psql(`select coalesce(string_agg(payload #>> '{entry,data,content}', E'\\n'), '')
-    from pi_session_log where kind='entry' and session_id=(select pi_session_id from sessions where id=${sqlLiteral(crashSession.sessionId)})
-      and custom_type='pi-cloud.run_interrupted'`);
-  assert(interruptionText.includes("<turn_aborted>"), "Recovery omitted its interruption fact");
-  assert(!interruptionText.includes("Reason:"), "Recovery exposed raw failure diagnostics");
-  assert(!interruptionText.includes(crashed.runId), "Recovery exposed internal Run identity");
+  const recoveredAdmissions = Number(await psql(`select count(*) from run_transitions where run_id=${sqlLiteral(crashed.runId)} and reason='native_execution_recovery'`));
+  assert(recoveredAdmissions >= 1, "No native recovery admission followed ordered owner closure");
+  const inputCount = Number(await psql(`select count(*) from pi_durable_records input
+    where input.kind='submission' and input.session_id=${sqlLiteral(crashSession.sessionId)}
+      and input.fields->>'request'=${sqlLiteral(JSON.stringify(crashed.runId))}`));
+  assert.equal(inputCount, 1, "Worker replacement duplicated the accepted native input");
   await restoreWorker(stoppedWorker);
   stoppedWorker = undefined;
 
@@ -771,11 +717,11 @@ try {
       terminalState: crashed.run.state,
       firstVisibleSequence: crashed.firstVisibleSequence,
       terminalSequence: crashed.terminal.seq,
-      acceptedPrefixProjected: interruptedPrefixCount >= 1,
-      exactVisiblePrefixPreservedInContext: true,
-      minimalInterruptionFact: true,
-      sealedPredecessors,
-      replacementRunId: recovered.runId,
+      recoveredAdmissions,
+      sameLogicalRun: true,
+      originalInputCount: inputCount,
+      recoveredRunId: crashed.runId,
+      followUpRunId: recovered.runId,
     },
     concurrency: {
       runs: concurrent.length,
@@ -813,13 +759,13 @@ try {
       `- PostgreSQL Pi Session restored: ${String(report.failover.postgresSessionRestored)}`,
       `- Previous-turn marker recovered: ${String(report.failover.markerRecovered)}`,
       `- Active Worker crash terminal state: ${report.activeCrashRecovery.terminalState}`,
-      `- Accepted prefix projected after crash: ${String(report.activeCrashRecovery.acceptedPrefixProjected)}`,
-      `- Projected predecessor seals: ${String(report.activeCrashRecovery.sealedPredecessors)}`,
+      `- Original input retained across native recovery: ${String(report.activeCrashRecovery.originalInputCount)}`,
+      `- Native recoveries after ordered closure: ${String(report.activeCrashRecovery.recoveredAdmissions)}`,
       `- Concurrent Runs / distinct Workers: ${String(report.concurrency.runs)} / ${String(report.concurrency.distinctWorkers)}`,
       `- Concurrent assignment: ${report.concurrency.workerIds.join(", ")}`,
       `- Real requests/input/output tokens: ${String(report.totalUsage.requests)} / ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)}`,
       "",
-      "The owning Pi Worker was stopped after the first real-model Turn. The surviving Worker rebuilt Pi's active model context directly from PostgreSQL SessionStorage, recovered the previous-turn marker and appended the follow-up incrementally. Further concurrent real-model Runs completed through the independently ready Worker pool; allocation is reported as evidence rather than assumed to be round-robin.",
+      "The owning Pi Worker was stopped after the first real-model Turn. The surviving Worker rebuilt Pi's active model context directly from PostgreSQL Durable Storage, recovered the previous-turn marker and appended the follow-up incrementally. Further concurrent real-model Runs completed through the independently ready Worker pool; allocation is reported as evidence rather than assumed to be round-robin.",
       "",
     ].join("\n"),
     "utf8",

@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
-import { assertIdleNativeSession, PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
+import {
+  readDurableEntries,
+  forkIdleConversation,
+  copyDurableHistory,
+  type StoredHistoryEntry,
+} from "@pi-cloud/pi-session-postgres/durable";
 import type {
   ConversationForkResource,
   ConversationPruneResource,
@@ -37,7 +42,7 @@ type PiEntryRow = {
   seq: string;
   parentId: string | null;
   type: string;
-  customType: string | null;
+  native: StoredHistoryEntry;
   timestampMs: string;
   payload: Record<string, unknown>;
 };
@@ -51,7 +56,7 @@ type CompletedTurnRow = {
 type PiSessionBinding = {
   productSessionId: string;
   piSessionId: string;
-  piSessionLane: string;
+  piConversationId: string | null;
   contextBaseEntryId: string | null;
 };
 
@@ -66,7 +71,11 @@ function safeInteger(value: string | number, description: string): number {
 }
 
 function messageFromPayload(payload: Record<string, unknown>): Record<string, unknown> | null {
-  const message = payload.message;
+  const message = Array.isArray(payload.model)
+    ? payload.model.find(
+        (item: { role?: string }) => item.role === "user" || item.role === "assistant",
+      )
+    : undefined;
   return typeof message === "object" && message !== null && !Array.isArray(message)
     ? (message as Record<string, unknown>)
     : null;
@@ -151,7 +160,7 @@ function mappedConversationEntries(
   const users = new Map<string, MappedEntry>();
   const finals = new Map<string, MappedEntry>();
   for (const [index, entry] of branch.entries()) {
-    if (entry.type !== "message" || entry.turnId === null || !completed.has(entry.turnId)) continue;
+    if (entry.turnId === null || !completed.has(entry.turnId)) continue;
     const message = messageFromPayload(entry.payload);
     if (message === null) continue;
     const finalAssistant = isFinalAssistant(message);
@@ -183,85 +192,35 @@ async function sessionEntries(
   tenantId: string,
   bindings: readonly PiSessionBinding[],
 ): Promise<Map<string, PiEntryRow[]>> {
-  if (bindings.length === 0) return new Map();
-  const requested = bindings.map((binding) => ({
-    piSessionId: binding.piSessionId,
-    piSessionLane: binding.piSessionLane,
-  }));
-  const rows = (
-    await sql<{
-      session_id: string;
-      id: string;
-      turn_id: string | null;
-      seq: string;
-      parent_id: string | null;
-      type: string;
-      custom_type: string | null;
-      timestamp_ms: string;
-      payload: Record<string, unknown>;
-    }>`
-      with recursive requested as (
-        select distinct "piSessionId" as session_id, "piSessionLane" as lane
-          from jsonb_to_recordset(${JSON.stringify(requested)}::jsonb) as binding(
-            "piSessionId" text,
-            "piSessionLane" text
-          )
-      ), reachable as (
-        select lane.session_id, lane.leaf_id as id
-          from pi_session_lanes lane
-          join requested
-            on requested.session_id = lane.session_id
-           and requested.lane = lane.lane
-         where lane.tenant_id = ${tenantId}::uuid
-           and lane.leaf_id is not null
-        union
-        select parent.session_id, parent.parent_id
-          from pi_session_log parent
-          join reachable child
-            on child.session_id = parent.session_id
-           and child.id = parent.id
-           and parent.kind = 'entry'
-         where parent.tenant_id = ${tenantId}::uuid
-           and parent.parent_id is not null
-      )
-      select entry.session_id,
-             entry.id,
-             entry.turn_id,
-             entry.seq,
-             entry.parent_id,
-             entry.type,
-             entry.custom_type,
-             entry.timestamp_ms,
-             entry.payload->'entry' as payload
-        from pi_session_log entry
-        join reachable
-          on reachable.session_id = entry.session_id
-         and reachable.id = entry.id
-       where entry.tenant_id = ${tenantId}::uuid and entry.kind = 'entry'
-       order by entry.session_id, entry.seq
-    `.execute(database)
-  ).rows;
-  const groupedByPiSession = new Map<string, PiEntryRow[]>();
-  for (const row of rows) {
-    const entries = groupedByPiSession.get(row.session_id) ?? [];
-    entries.push({
-      id: row.id,
-      turnId: row.turn_id,
-      seq: row.seq,
-      parentId: row.parent_id,
-      type: row.type,
-      customType: row.custom_type,
-      timestampMs: row.timestamp_ms,
-      payload: row.payload,
-    });
-    groupedByPiSession.set(row.session_id, entries);
-  }
-  return new Map(
-    bindings.map((binding) => [
+  const result = new Map<string, PiEntryRow[]>();
+  for (const binding of bindings) {
+    if (binding.piConversationId === null) {
+      result.set(binding.productSessionId, []);
+      continue;
+    }
+    const entries = (
+      await readDurableEntries(database, {
+        tenantId,
+        sessionId: binding.piSessionId,
+        conversationId: Number(binding.piConversationId),
+        limit: Number.MAX_SAFE_INTEGER,
+      })
+    ).reverse();
+    result.set(
       binding.productSessionId,
-      groupedByPiSession.get(binding.piSessionId) ?? [],
-    ]),
-  );
+      entries.map((row, index) => ({
+        id: String(row.entry.id),
+        turnId: row.turnId,
+        seq: String(row.seq),
+        parentId: index ? String(entries[index - 1]!.entry.id) : null,
+        type: row.entry.kind,
+        timestampMs: String(Date.parse(row.createdAt)),
+        payload: row.entry as unknown as Record<string, unknown>,
+        native: row,
+      })),
+    );
+  }
+  return result;
 }
 
 async function sessionBindings(
@@ -280,7 +239,7 @@ async function sessionBindings(
     .select([
       "session.id as productSessionId",
       "session.pi_session_id as piSessionId",
-      "session.pi_session_lane as piSessionLane",
+      "session.pi_conversation_id as piConversationId",
       "execution.pi_context_base_entry_id as contextBaseEntryId",
     ])
     .where("session.tenant_id", "=", tenantId)
@@ -325,28 +284,10 @@ async function completedTurns(
   return grouped;
 }
 
-async function laneLeaves(
-  database: Kysely<Database> | Transaction<Database>,
-  tenantId: string,
-  bindings: readonly PiSessionBinding[],
-): Promise<Map<string, string | null>> {
-  if (bindings.length === 0) return new Map();
-  const piSessionIds = [...new Set(bindings.map((binding) => binding.piSessionId))];
-  const rows = await database
-    .selectFrom("pi_session_lanes")
-    .select(["session_id", "lane", "leaf_id"])
-    .where("tenant_id", "=", tenantId)
-    .where("session_id", "in", piSessionIds)
-    .execute();
-  const byLane = new Map(
-    rows.map((row) => [`${row.session_id}\0${row.lane}`, row.leaf_id] as const),
-  );
-  return new Map(
-    bindings.map((binding) => [
-      binding.productSessionId,
-      byLane.get(`${binding.piSessionId}\0${binding.piSessionLane}`) ?? null,
-    ]),
-  );
+function conversationLeaves(
+  entries: ReadonlyMap<string, readonly PiEntryRow[]>,
+): Map<string, string | null> {
+  return new Map([...entries].map(([id, rows]) => [id, rows.at(-1)?.id ?? null]));
 }
 
 export class ConversationTreeService {
@@ -450,11 +391,11 @@ export class ConversationTreeService {
     const bindingBySession = new Map(
       bindings.map((binding) => [binding.productSessionId, binding] as const),
     );
-    const [entriesBySession, turnsBySession, leaves] = await Promise.all([
+    const [entriesBySession, turnsBySession] = await Promise.all([
       sessionEntries(database, tenantId, bindings),
       completedTurns(database, tenantId, uniqueSessionIds),
-      laneLeaves(database, tenantId, bindings),
     ]);
+    const leaves = conversationLeaves(entriesBySession);
     let entryCount = 0;
     const humanBranches: ConversationTreeBranchResource[] = humanSessions.map((session, index) => {
       const allEntries = entriesBySession.get(session.id) ?? [];
@@ -807,11 +748,11 @@ export class ConversationTreeService {
         }
 
         const bindings = await sessionBindings(transaction, tenantId, [sessionId]);
-        const [entriesBySession, turnsBySession, leaves] = await Promise.all([
+        const [entriesBySession, turnsBySession] = await Promise.all([
           sessionEntries(transaction, tenantId, bindings),
           completedTurns(transaction, tenantId, [sessionId]),
-          laneLeaves(transaction, tenantId, bindings),
         ]);
+        const leaves = conversationLeaves(entriesBySession);
         const branch = ownBranch(
           activeBranch(entriesBySession.get(sessionId) ?? [], leaves.get(sessionId) ?? null),
           session.forkEntryId,
@@ -973,65 +914,18 @@ export class ConversationTreeService {
             .execute();
         }
 
-        await assertIdleNativeSession(transaction, tenantId, sessionId);
-        if (prunedTurnIds.length) {
-          const native = new PostgresPiSessionStorage({
-            database: transaction,
-            tenantId,
-            sessionId,
-          });
-          const open = await native.findOpenOperations("main");
-          const pruned = await transaction
-            .selectFrom("pi_session_log")
-            .where("kind", "=", sql.lit("record"))
-            .select("id")
-            .where("tenant_id", "=", tenantId)
-            .where("session_id", "=", sessionId)
-            .where("type", "=", "operation_started")
-            .where("turn_id", "in", prunedTurnIds)
-            .execute();
-          const ids = new Set(pruned.map((r) => r.id));
-          for (const operation of open)
-            if (ids.has(operation.id))
-              await native.appendRecord({
-                id: randomUUID(),
-                lane: "main",
-                type: "operation_finished",
-                runId: operation.id,
-                outcome: "aborted",
-                error: {
-                  code: "history_pruned",
-                  message: "The user pruned this operation from the active branch",
-                },
-              });
-        }
-        const piSession = await transaction
-          .selectFrom("pi_sessions")
-          .select("next_seq as nextSequence")
-          .where("tenant_id", "=", tenantId)
-          .where("id", "=", sessionId)
-          .forUpdate()
-          .executeTakeFirstOrThrow();
+        const binding = bindings.find((candidate) => candidate.productSessionId === sessionId);
+        if (!binding?.piConversationId)
+          throw new ControlPlaneStoreError("conflict", "Conversation has no native branch");
+        const conversationId = await forkIdleConversation(
+          transaction,
+          { tenantId, sessionId: binding.piSessionId },
+          Number(binding.piConversationId),
+          Number(request.entryId),
+        );
         await transaction
-          .updateTable("pi_session_lanes")
-          .set({ leaf_id: request.entryId })
-          .where("tenant_id", "=", tenantId)
-          .where("session_id", "=", sessionId)
-          .where("lane", "=", "main")
-          .executeTakeFirstOrThrow();
-        await transaction
-          .insertInto("pi_session_log")
-          .values({
-            tenant_id: tenantId,
-            session_id: sessionId,
-            seq: piSession.nextSequence,
-            kind: "lane",
-            payload: { lane: "main", leafId: request.entryId },
-          })
-          .executeTakeFirstOrThrow();
-        await transaction
-          .updateTable("pi_sessions")
-          .set({ next_seq: sql<string>`${sql.ref("next_seq")} + 1` })
+          .updateTable("sessions")
+          .set({ pi_conversation_id: String(conversationId) })
           .where("tenant_id", "=", tenantId)
           .where("id", "=", sessionId)
           .executeTakeFirstOrThrow();
@@ -1220,25 +1114,15 @@ export class ConversationTreeService {
             );
           }
         }
-        const leaf = await transaction
-          .selectFrom("pi_session_lanes")
-          .select("leaf_id")
-          .where("tenant_id", "=", tenantId)
-          .where("session_id", "=", sourceSessionId)
-          .where("lane", "=", "main")
-          .executeTakeFirst();
-        if (leaf?.leaf_id === null || leaf === undefined) {
-          throw new ControlPlaneStoreError("conflict", "Conversation has no forkable Pi history");
-        }
         const bindings = await sessionBindings(transaction, tenantId, [sourceSessionId]);
         const [entriesBySession, turnsBySession] = await Promise.all([
           sessionEntries(transaction, tenantId, bindings),
           completedTurns(transaction, tenantId, [sourceSessionId]),
         ]);
-        const sourceBranch = activeBranch(
-          entriesBySession.get(sourceSessionId) ?? [],
-          leaf.leaf_id,
-        );
+        const leafId = entriesBySession.get(sourceSessionId)?.at(-1)?.id;
+        if (!leafId)
+          throw new ControlPlaneStoreError("conflict", "Conversation has no forkable Pi history");
+        const sourceBranch = activeBranch(entriesBySession.get(sourceSessionId) ?? [], leafId);
         const sourceOwnBranch = ownBranch(sourceBranch, source.conversation_fork_entry_id);
         const mapped = mappedConversationEntries(
           sourceOwnBranch,
@@ -1280,7 +1164,7 @@ export class ConversationTreeService {
           .values({
             id: childSessionId,
             pi_session_id: childSessionId,
-            pi_session_lane: "main",
+            pi_conversation_id: "1",
             title,
             tenant_id: tenantId,
             project_id: source.project_id,
@@ -1307,103 +1191,19 @@ export class ConversationTreeService {
             id: childSessionId,
             created_at_ms: createdAt.valueOf(),
             parent_session_id: sourceSessionId,
-            next_seq: 1,
             name: title,
           })
           .executeTakeFirstOrThrow();
-        let nextSequence = copiedEntries.length + 1;
-        await transaction
-          .insertInto("pi_session_log")
-          .values(
-            copiedEntries.map((entry) => ({
-              tenant_id: tenantId,
-              session_id: childSessionId,
-              seq: entry.sequence,
-              kind: "entry",
-              payload: {
-                lane: "main",
-                turnId: entry.turnId,
-                entry: {
-                  ...entry.payload,
-                  seq: entry.sequence,
-                  parentId: entry.parentId,
-                  timestamp: safeInteger(entry.timestampMs, "Pi entry timestamp"),
-                },
-              },
-            })),
-          )
-          .execute();
-        const laneSequence = nextSequence++;
-        await transaction
-          .insertInto("pi_session_lanes")
-          .values({
-            tenant_id: tenantId,
-            session_id: childSessionId,
-            lane: "main",
-            leaf_id: request.entryId,
-          })
-          .executeTakeFirstOrThrow();
-        await transaction
-          .insertInto("pi_session_log")
-          .values({
-            tenant_id: tenantId,
-            session_id: childSessionId,
-            seq: laneSequence,
-            kind: "lane",
-            payload: { lane: "main", leafId: request.entryId },
-          })
-          .executeTakeFirstOrThrow();
-        const nameSequence = nextSequence++;
-        await transaction
-          .insertInto("pi_session_log")
-          .values({
-            tenant_id: tenantId,
-            session_id: childSessionId,
-            seq: nameSequence,
-            kind: "fact",
-            payload: { fact: "name", name: title },
-          })
-          .executeTakeFirstOrThrow();
-        const copiedEntryIds = copiedEntries.map((entry) => entry.id);
-        const labels = await transaction
-          .selectFrom("pi_session_labels")
-          .select(["target_id", "label"])
-          .where("tenant_id", "=", tenantId)
-          .where("session_id", "=", sourceSessionId)
-          .where("target_id", "in", copiedEntryIds)
-          .execute();
-        const labelsByTarget = new Map(labels.map((label) => [label.target_id, label.label]));
-        for (const entry of copiedEntries) {
-          const label = labelsByTarget.get(entry.id);
-          if (label === undefined) continue;
-          const labelSequence = nextSequence++;
-          await transaction
-            .insertInto("pi_session_labels")
-            .values({
-              tenant_id: tenantId,
-              session_id: childSessionId,
-              target_id: entry.id,
-              label,
-              updated_seq: labelSequence,
-            })
-            .executeTakeFirstOrThrow();
-          await transaction
-            .insertInto("pi_session_log")
-            .values({
-              tenant_id: tenantId,
-              session_id: childSessionId,
-              seq: labelSequence,
-              kind: "fact",
-              payload: { fact: "label", targetId: entry.id, label },
-            })
-            .executeTakeFirstOrThrow();
-        }
-        await transaction
-          .updateTable("pi_sessions")
-          .set({ next_seq: nextSequence })
-          .where("tenant_id", "=", tenantId)
-          .where("id", "=", childSessionId)
-          .executeTakeFirstOrThrow();
+        await copyDurableHistory(
+          transaction,
+          { tenantId, sessionId: childSessionId },
+          copiedEntries.map((entry) => entry.native),
+          {
+            tenantId,
+            sessionId: bindings[0]!.piSessionId,
+            conversationId: Number(bindings[0]!.piConversationId),
+          },
+        );
         await transaction
           .insertInto("conversation_fork_operations")
           .values({

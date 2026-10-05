@@ -46,17 +46,8 @@ async function fixture(capacity = 1, leaseMs = 60000) {
     "elastic",
   );
   await db
-    .insertInto("pi_session_lanes")
-    .values({
-      tenant_id: tenant.tenantId,
-      session_id: main.sessionId,
-      lane: "child",
-      leaf_id: null,
-    })
-    .execute();
-  await db
     .updateTable("sessions")
-    .set({ pi_session_id: main.sessionId, pi_session_lane: "child" })
+    .set({ pi_session_id: main.sessionId, pi_conversation_id: "2" })
     .where("id", "=", child.sessionId)
     .execute();
   const workerId = crypto.randomUUID();

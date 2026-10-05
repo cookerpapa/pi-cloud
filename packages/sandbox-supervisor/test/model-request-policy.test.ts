@@ -1,135 +1,104 @@
-import { expect, it } from "vitest";
-import { InMemorySessionRepo } from "@earendil-works/pi-agent-core";
-import {
-  EventStream,
-  type Models,
-  type AssistantMessage,
-  type AssistantMessageEvent,
-  type Model,
-  type Api,
-  type SimpleStreamOptions,
-} from "@earendil-works/pi-ai";
-import { CloudAgentRuntime } from "../src/cloud-agent-runtime.ts";
+import { expect, it, vi } from "vitest";
+import { MemoryStorage } from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+import { DurableAgentSession } from "../src/durable/agent-session.ts";
 import { mergeProviderServiceTier } from "../src/provider-hosted-tools.ts";
 
-const model = {
-  id: "gpt-6-luna",
-  name: "Synthetic Luna",
-  api: "openai-codex-responses",
-  provider: "openai-codex",
-  baseUrl: "http://127.0.0.1:1",
-  reasoning: false,
-  input: ["text"],
-  contextWindow: 256,
-  maxTokens: 64,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-} as Model<Api>;
-function assistant(text: string): AssistantMessage {
-  return {
-    role: "assistant",
-    content: [{ type: "text", text }],
-    api: model.api,
-    provider: model.provider,
-    model: model.id,
-    stopReason: "stop",
-    timestamp: Date.now(),
-    usage: {
-      input: 1,
-      output: 1,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 2,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-  };
-}
 it.each(["fast", null] as const)(
-  "shares %s request policy with native compaction without copying sampling tools or budgets",
+  "carries %s request policy through native compaction and sampling",
   async (tier) => {
-    const requests: Array<{ purpose: string; tier: unknown }> = [];
-    async function payload(purpose: string, options?: SimpleStreamOptions) {
-      const body = { model: model.id, stream: true };
-      const value = (await options?.onPayload?.(body, model)) ?? body;
-      requests.push({ purpose, tier: (value as Record<string, unknown>).service_tier ?? null });
-      return value as Record<string, unknown>;
-    }
-    for (const purpose of ["sampling", "compaction"]) {
-      const session = await new InMemorySessionRepo().create();
-      if (purpose === "compaction")
-        for (let i = 0; i < 4; i++) {
-          await session.appendMessage({
-            role: "user",
-            content: "old ".repeat(300),
-            timestamp: Date.now(),
+    const provider = fauxProvider({ tokensPerSecond: 1000000 }),
+      models = createModels();
+    models.setProvider(provider.provider);
+    provider.setResponses([
+      fauxAssistantMessage("Condensed prior work"),
+      fauxAssistantMessage("done"),
+    ]);
+    const requests: Array<{
+      purpose: string;
+      tier: unknown;
+      timeout: unknown;
+      transport: unknown;
+    }> = [];
+    let purpose = "";
+    const stream = models.streamSimple.bind(models);
+    vi.spyOn(models, "streamSimple").mockImplementation((model, context, options) => {
+      requests.push({
+        purpose,
+        tier: options?.onPayload?.({}, model),
+        timeout: options?.timeoutMs,
+        transport: options?.transport,
+      });
+      return stream(model, context, options);
+    });
+    const model = { ...provider.getModel(), contextWindow: 1024, maxTokens: 128 };
+    const runtime = await DurableAgentSession.open(new MemoryStorage(), {
+      models,
+      remoteTools: [],
+      settings: {
+        stream: { timeoutMs: 4321, transport: "sse" },
+        retry: { maxRetries: 0 },
+        compaction: { enabled: true, reserveTokens: 128, keepRecentTokens: 64 },
+      },
+    });
+    try {
+      const root = await runtime.bind({
+        runId: crypto.randomUUID(),
+        conversationId: 1,
+        model,
+        agent: {},
+        context: {},
+        tools: [],
+        remoteTools: [],
+        assertCurrent: async () => {},
+        prepareRemote: async () => {
+          throw new Error("No effect expected");
+        },
+        openModel: async (request, native) => {
+          purpose = native!.purpose;
+          return {
+            model,
+            options: {
+              ...request.options,
+              onPayload: (payload: unknown) => mergeProviderServiceTier(payload, tier),
+            },
+            release: () => {},
+          };
+        },
+      });
+      await root.commit(async (tx) => {
+        for (let index = 0; index < 5; index++) {
+          await tx.appendEntry(root.id, {
+            kind: "pi.user",
+            model: [{ role: "user", content: "old context ".repeat(400), timestamp: index }],
           });
-          await session.appendMessage({
-            ...assistant("old response"),
-            usage: { ...assistant("").usage, input: 50000, totalTokens: 50001 },
+          await tx.appendEntry(root.id, {
+            kind: "pi.assistant",
+            model: [fauxAssistantMessage("old answer")],
           });
         }
-      const runtime = new CloudAgentRuntime({
-        session,
-        lane: "main",
-        authority: {
-          signal: new AbortController().signal,
-          assertCurrent: async () => {},
-          close: async () => {},
-        },
-        model,
-        systemPrompt: "review",
-        commonModelOptions: {
-          timeoutMs: 4321,
-          transport: "sse",
-          onPayload: (value) => mergeProviderServiceTier(value, tier),
-        },
-        streamOptions: {
-          sessionId: "sampling-session",
-          maxTokens: 64,
-          onPayload: (value) => ({ ...(value as object), tools: [{ type: "web_search" }] }),
-        },
-        retry: { enabled: false, maxRetries: 0, baseDelayMs: 1 },
-        compaction: { enabled: purpose === "compaction", reserveTokens: 32, keepRecentTokens: 32 },
-        streamFn: async (_model, _context, options) => {
-          await payload("sampling", options);
-          const stream = new EventStream<AssistantMessageEvent, AssistantMessage>(
-            (e) => e.type === "done" || e.type === "error",
-            (e) => (e.type === "done" ? e.message : (e as { error: AssistantMessage }).error),
-          );
-          queueMicrotask(() =>
-            stream.push({ type: "done", reason: "stop", message: assistant("done") }),
-          );
-          return stream;
-        },
-        models: {
-          completeSimple: async (
-            _model: unknown,
-            _context: unknown,
-            options?: SimpleStreamOptions,
-          ) => {
-            const body = await payload("compaction", options);
-            expect(options?.timeoutMs).toBe(4321);
-            expect(options?.transport).toBe("sse");
-            expect(options?.sessionId).not.toBe("sampling-session");
-            expect(options?.maxTokens).not.toBe(64);
-            expect(body.tools).toBeUndefined();
-            return (body.service_tier ?? null) === tier
-              ? assistant("summary")
-              : {
-                  ...assistant(""),
-                  stopReason: "error",
-                  errorMessage: "403 model_service_tier_mismatch",
-                };
-          },
-        } as unknown as Models,
-      });
-      if (purpose === "sampling") expect((await runtime.run("hello")).kind).toBe("completed");
-      else {
-        await expect(runtime.run("continue")).resolves.toMatchObject({ kind: "completed" });
-        expect(await session.findEntries({ type: "compaction" })).toHaveLength(1);
-      }
+      }, BACKGROUND_CONTEXT);
+      const submitted = await root.submit(
+        { type: "input", content: "continue" },
+        BACKGROUND_CONTEXT,
+      );
+      expect((await submitted.wait(BACKGROUND_CONTEXT)).status).toBe("done");
+      expect(requests.map((request) => request.purpose)).toEqual(["context_maintenance", "agent"]);
+      expect(
+        requests.every((request) => request.timeout === 4321 && request.transport === "sse"),
+      ).toBe(true);
+      expect(await Promise.all(requests.map((request) => Promise.resolve(request.tier)))).toEqual(
+        requests.map(() => (tier ? { service_tier: "fast" } : {})),
+      );
+      expect(
+        (await root.entries({}, 100, undefined, BACKGROUND_CONTEXT)).items.some(
+          (entry) => entry.kind === "pi.compaction",
+        ),
+      ).toBe(true);
+    } finally {
+      await runtime.close();
     }
-    expect(requests.some((r) => r.purpose === "sampling")).toBe(true);
-    expect(requests.some((r) => r.purpose === "compaction")).toBe(true);
-    expect(requests.every((r) => r.tier === tier)).toBe(true);
   },
 );

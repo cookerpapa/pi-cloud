@@ -1,5 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { Kysely } from "kysely";
 
@@ -18,14 +18,13 @@ export function createCloudPreviewTool(options: {
   tenantId: string;
   sessionId: string;
   refreshServices(): Promise<void>;
-}): AgentTool {
+}): ToolRegistration {
   return {
     name: "preview",
-    label: "Open Application",
     description:
       "Publish a verified HTTP service already listening inside the current Sandbox as an authenticated PiCloud application link. Call this after starting and validating a Web server. This Tool does not start or restart the server.",
     parameters: PreviewToolSchema,
-    async execute(_toolCallId, raw) {
+    async execute(raw) {
       const input = raw as { port: number; path?: string };
       await options.refreshServices();
       const session = await options.database

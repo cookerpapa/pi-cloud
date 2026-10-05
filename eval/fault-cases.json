@@ -136,13 +136,6 @@
       "invariant": "Input preparation is fenced independently of Agent Tool execution and remains tracked until guest cancellation finishes."
     },
     {
-      "id": "native-proved-rejection",
-      "workspace": "@pi-cloud/pi-session-postgres",
-      "file": "test/native-session-writer.test.ts",
-      "test": "restores a proved unpublished append without stopping a sibling or consuming sequence",
-      "invariant": "A proved pre-enqueue rejection restores committed state and preserves sibling publication and contiguous sequence."
-    },
-    {
       "id": "projection-independent-cancel",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/native-projection-progress.test.ts",
@@ -213,48 +206,6 @@
       "invariant": "An invocation after its scope seal cannot dispatch a Tool command."
     },
     {
-      "id": "cancel-queued-native-publication",
-      "workspace": "@pi-cloud/pi-session-postgres",
-      "file": "test/native-session-writer.test.ts",
-      "test": "drops a cancelled queued publication without consuming native sequence or poisoning sibling Lanes",
-      "invariant": "Cancellation while waiting for the Session writer neither publishes the invocation nor consumes a native sequence."
-    },
-    {
-      "id": "native-late-input-drain",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
-      "test": "consumes steer accepted at agent_end within the same operation",
-      "invariant": "Accepted late native input continues within the same operation before successful Run closure."
-    },
-    {
-      "id": "native-final-append-input-fence",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
-      "test": "rejects input while final persistence is still waiting",
-      "invariant": "Waiting for final durable append cannot reopen control-input admission."
-    },
-    {
-      "id": "native-followup-retry-reset",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
-      "test": "resets sampling retries after ordinary success before an in-Run follow-up",
-      "invariant": "A successful sampling response resets retry state before a subsequent input's sampling."
-    },
-    {
-      "id": "native-compaction-usage-freshness",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
-      "test": "uses the Compaction entry boundary when deciding thresholds: stale",
-      "invariant": "A retained pre-compaction usage value cannot force another threshold compaction."
-    },
-    {
-      "id": "native-cancel-retry-backoff",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime-lifecycle.test.ts",
-      "test": "cancels backoff immediately, reports failure and preserves shared authority",
-      "invariant": "Run cancellation interrupts retry backoff without another model call or shared-authority revocation."
-    },
-    {
       "id": "expired-owner-at-run-admission",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",
@@ -311,13 +262,6 @@
       "invariant": "A ready main Lane cannot acquire a new owner until the old sibling's final seal commits."
     },
     {
-      "id": "message-level-display-recovery",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/execution-stream-seal.test.ts",
-      "test": "evicts committed message spans before Run completion and preserves a repeated unfinished prefix",
-      "invariant": "Committed text leaves live memory before the Run ends; an unfinished suffix remains exact after failure."
-    },
-    {
       "id": "interrupted-framed-snapshot",
       "workspace": "@pi-cloud/web-ui",
       "file": "test/sse.test.ts",
@@ -346,46 +290,11 @@
       "invariant": "A record cannot install its own authority or bypass the PG-issued publication scope."
     },
     {
-      "id": "session-mutation-redelivery",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/execution-stream-seal.test.ts",
-      "test": "does not rewind canonical state on old append replay without a second receipt ledger",
-      "invariant": "Kafka redelivery creates one canonical Pi Session mutation."
-    },
-    {
-      "id": "seal-before-successor-read",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/execution-stream-seal.test.ts",
-      "test": "waits for ordered projection, saves the visible prefix and rejects a late old writer in both paths",
-      "invariant": "A replacement Worker observes every older accepted Session mutation before reading context."
-    },
-    {
-      "id": "message-stream-independence",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime.test.ts",
-      "test": "commits a complete assistant message independently of public event delivery",
-      "invariant": "A live-stream failure cannot roll back a complete native Pi message."
-    },
-    {
-      "id": "interrupted-visible-prefix",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/native-session-host.test.ts",
-      "test": "runs claimed Parent/Child Lanes with PG projection paused, then cold-restores on a replacement Host",
-      "invariant": "A browser-visible interrupted prefix remains model-visible after Worker replacement."
-    },
-    {
       "id": "terminal-tail-unload",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/session-live-view.test.ts",
       "test": "keeps an in-flight snapshot when committed content is evicted",
       "invariant": "Terminal projection unloads shared live-tail memory without invalidating an in-flight browser snapshot."
-    },
-    {
-      "id": "projector-prefix-rebuild",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/execution-stream-seal.test.ts",
-      "test": "rebuilds an interrupted prefix after consumer restart, never duplicates a semantic append",
-      "invariant": "A replacement Projector reconstructs the unsealed prefix without repeating native mutations."
     },
     {
       "id": "first-record-commit-reply-loss",
@@ -682,13 +591,6 @@
       "invariant": "A completed oversized workflow return becomes an explicit bounded error without repeating effects."
     },
     {
-      "id": "native-subagent-result-budget",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime.test.ts",
-      "test": "persists bounded Subagent completion and continues (oversized=true)",
-      "invariant": "The native Harness persists a result-size Tool error and can finish the next model Step normally."
-    },
-    {
       "id": "lease-batch-renewal-race",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/session-lease-observer.test.ts",
@@ -731,13 +633,6 @@
       "invariant": "An unsettled Session prevents schema cutover; settled cutover retains immutable bodies and never resurrects deleted Turn bindings."
     },
     {
-      "id": "native-open-operation-rollback",
-      "workspace": "@pi-cloud/pi-session-postgres",
-      "file": "test/indexed-log.postgres.test.ts",
-      "test": "settles a whole batch independent of physical insert order and rolls state back with its log",
-      "invariant": "Native open-operation references share the log transaction, preserve Lane/tenant scope and rebuild without re-executing effects."
-    },
-    {
       "id": "direct-steer-unconsumed-recovery",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/queued-inputs.test.ts",
@@ -757,13 +652,6 @@
       "file": "test/queued-inputs.test.ts",
       "test": "preserves direct Steer reconciliation against a late delivery outcome (restored-success)",
       "invariant": "A late Worker reply cannot overwrite a sealed-target restoration decision."
-    },
-    {
-      "id": "direct-steer-cancel-recovery",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "keeps direct Steer after active cancellation and permits removing its restored input",
-      "invariant": "Stopping the active Run retains unconsumed direct input and leaves its restored queue entry removable."
     },
     {
       "id": "direct-steer-acceptance-race",
@@ -1018,13 +906,6 @@
       "invariant": "Paging never mixes queue orders or limits the count of durable inputs."
     },
     {
-      "id": "projection-lane-read-scope",
-      "workspace": "@pi-cloud/pi-session-postgres",
-      "file": "test/native-session-projection.test.ts",
-      "test": "does not transfer unrelated historical Lane heads for Entry or metadata appends",
-      "invariant": "Historical Lane count cannot amplify unrelated native append head reads."
-    },
-    {
       "id": "presentation-pool-deadline",
       "workspace": "@pi-cloud/database",
       "file": "test/read-pool-budget.postgres.test.ts",
@@ -1081,48 +962,6 @@
       "invariant": "Pending ordered closure neither quarantines a verified shared VM nor exposes partial local binding restoration."
     },
     {
-      "id": "agent-stop-publication-ack",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime.test.ts",
-      "test": "settles a published remote Tool cancellation at publication_ack before ending the Run",
-      "invariant": "The Agent awaits cancellation settlement of an already-published Tool, retains its output, and makes no later model request."
-    },
-    {
-      "id": "agent-stop-reply-wait",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime.test.ts",
-      "test": "settles a published remote Tool cancellation at reply_wait before ending the Run",
-      "invariant": "The Agent awaits cancellation settlement of an already-published Tool, retains its output, and makes no later model request."
-    },
-    {
-      "id": "tool-cancel-acceptance-not-result",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/tool-cancellation.test.ts",
-      "test": "keeps waiting after cancel acceptance and returns the original Tool result",
-      "invariant": "A cancellation ACK cannot substitute for the original final Tool result."
-    },
-    {
-      "id": "tool-cancel-lost-publication-ack",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/tool-cancellation.test.ts",
-      "test": "preserves a final reply despite a lost cancellation publication ACK",
-      "invariant": "A received final reply wins even if cancellation publication ACK was lost."
-    },
-    {
-      "id": "tool-cancel-missing-final",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/tool-cancellation.test.ts",
-      "test": "bounds missing replies as UNKNOWN without fabricating a stopped process",
-      "invariant": "Missing cancellation results end within the grace and remain UNKNOWN, never invented stopping."
-    },
-    {
-      "id": "tool-cancel-completed-result",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/tool-cancellation.test.ts",
-      "test": "does not send cancellation after the final result has already arrived",
-      "invariant": "A completed result is not retroactively cancelled."
-    },
-    {
       "id": "tool-cancel-revoked-route",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/tool-command-routing.test.ts",
@@ -1158,20 +997,6 @@
       "invariant": "Esc targets unfinished Tools, never background services left by completed calls."
     },
     {
-      "id": "tool-cancel-adapter-wiring",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/trusted-remote-tools.test.ts",
-      "test": "forwards cancellation through the validated adapter and waits for its original final reply",
-      "invariant": "Runtime normalization must retain the cancellation publisher and settlement budget; transport acceptance never replaces the final result."
-    },
-    {
-      "id": "queue-stop-durable-pause",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "pauses Stop's existing inputs durably while new input and explicit sends retain execution history order",
-      "invariant": "Stop is durable; new input bypasses paused intents and explicit continuation preserves execution/history order and frozen attachments."
-    },
-    {
       "id": "queue-stop-steer-unconsumed",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/queued-inputs.test.ts",
@@ -1184,27 +1009,6 @@
       "file": "test/queued-inputs.test.ts",
       "test": "settles Stop's in-flight Steer by canonical consumption (consumed=true)",
       "invariant": "Canonical consumption wins a Stop race; consumed input is not restored or executed again."
-    },
-    {
-      "id": "queue-resume-retry-isolation",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "continues all paused pages in their edited order with stale and replayed commands isolated",
-      "invariant": "Server-side continuation covers all pages; stale commands conflict and old retries cannot undo a later pause."
-    },
-    {
-      "id": "queue-stop-native-steer",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime.test.ts",
-      "test": "does not consume queued steer when a cancelled Tool returns",
-      "invariant": "A cancelled Tool cannot drain pending native input into history; the durable source remains available for consumption-confirmed restoration."
-    },
-    {
-      "id": "queue-stop-native-follow-up",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/cloud-agent-runtime.test.ts",
-      "test": "does not consume queued follow_up when a cancelled Tool returns",
-      "invariant": "A cancelled Tool cannot drain pending native input into history; the durable source remains available for consumption-confirmed restoration."
     },
     {
       "id": "allocation-intent-recovery",
@@ -1270,13 +1074,6 @@
       "invariant": "PG terminates overlong lifecycle transactions, frees ownership locks and retires the failed connection."
     },
     {
-      "id": "cancel-confirmed-before-start",
-      "workspace": "@pi-cloud/sandbox-supervisor",
-      "file": "test/tool-cancellation-reply.test.ts",
-      "test": "keeps the confirmed no-effect reply through cancellation: after-stop",
-      "invariant": "Confirmed non-execution survives completion/mailbox/cancellation composition without UNKNOWN cleanup."
-    },
-    {
       "id": "workflow-unknown-stops-sampling",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/workflow-outcomes.test.ts",
@@ -1303,6 +1100,188 @@
       "file": "test/adapter.test.ts",
       "test": "keeps native pre-start and in-flight interruption distinct: tool_cancelled",
       "invariant": "Interruption after native execution may have effects; only explicit before-start cancellation proves no execution."
+    },
+    {
+      "id": "durable-ack-visibility",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "does not expose a projected but unacknowledged commit, then rejects uncertain ownership",
+      "invariant": "Projection visibility cannot turn an unacknowledged publication into adopted native state; ambiguous ownership refuses further commits."
+    },
+    {
+      "id": "durable-proved-refusal",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "keeps proved refusal usable and rejects conflicting projection bytes atomically",
+      "invariant": "Certified pre-enqueue refusal preserves sequence; conflicting duplicate bodies cannot change native state."
+    },
+    {
+      "id": "durable-document-tail",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "keeps long native document tails bounded after cold reopen without changing native delta counts",
+      "invariant": "Derived document checkpoints bound cold reconstruction without changing native history or delta counts."
+    },
+    {
+      "id": "durable-paused-projection",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "retains acknowledged batches while projection is paused and reads only the requested cold suffix",
+      "invariant": "ACKed progress remains available through PG lag and cold reads remain scoped to the requested suffix."
+    },
+    {
+      "id": "durable-no-hot-sql",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "validates warm native writes without per-commit PostgreSQL reads",
+      "invariant": "Ordinary warm native commits do not add per-Step PG receipts."
+    },
+    {
+      "id": "durable-native-image-locations",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "externalizes every image in real Harness submissions, Tool results and copied documents",
+      "invariant": "Native images remain immutable references across new record and document locations and cold decoding."
+    },
+    {
+      "id": "durable-origin-recovery",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "keeps task and result origins when cleanup runs under a later admitted Turn",
+      "invariant": "A cleanup owner cannot reassign the original task/result provenance."
+    },
+    {
+      "id": "durable-shared-host",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/native-session-host.test.ts",
+      "test": "shares one acknowledged native writer with paused PG projection, closes one scope independently, and cold restores",
+      "invariant": "One physical writer serves sibling Conversations and preserves acknowledged native state during scoped close and cold restore."
+    },
+    {
+      "id": "durable-display-coverage",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "test": "covers display only after its referenced native commit and retains immutable borrowed tails",
+      "invariant": "Display coverage requires its committed native sequence and cannot mutate an existing snapshot."
+    },
+    {
+      "id": "durable-projection-replay",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "test": "replays a native prefix idempotently after consumer replacement",
+      "invariant": "Native projection redelivery preserves one exact canonical commit."
+    },
+    {
+      "id": "durable-post-seal-refusal",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "test": "rejects late native writes at the PG boundary after a seal (drained=false)",
+      "invariant": "A sealed writer cannot append late native state."
+    },
+    {
+      "id": "durable-unsafe-recovery",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-agent-session.test.ts",
+      "test": "restores an interrupted unsafe Tool without replay and waits for the recovered cloud grant before sampling",
+      "invariant": "Native recovery never replays unsafe Tool effects and cannot request a model before PG-authorized binding."
+    },
+    {
+      "id": "durable-native-cancel",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-agent-session.test.ts",
+      "test": "co-commits operation cancellation with native abort and adopts native late-result semantics",
+      "invariant": "Ordered physical cancellation accompanies native abort; late physical results never overwrite that settlement."
+    },
+    {
+      "id": "durable-validated-intent",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-agent-session.test.ts",
+      "test": "executes a remote Tool only with the native post-validation intent and keeps secrets outside storage",
+      "invariant": "One native execute checkpoint authorizes the exact validated remote arguments without persisting model credentials."
+    },
+    {
+      "id": "durable-invalid-arguments",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-agent-session.test.ts",
+      "test": "leaves invalid arguments to native Pi validation without preparing or dispatching an effect",
+      "invariant": "Native validation failure does not prepare or dispatch external effects."
+    },
+    {
+      "id": "durable-same-run-recovery",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/durable-execution-recovery.test.ts",
+      "test": "re-admits the same Run after closure and preserves Stop (none)",
+      "invariant": "Replacement retains logical Run/Turn identity, waits for old closure and rejects stale owner callbacks."
+    },
+    {
+      "id": "durable-stop-before-recovery-seal",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/durable-execution-recovery.test.ts",
+      "test": "re-admits the same Run after closure and preserves Stop (before_seal)",
+      "invariant": "A Stop racing old-owner closure is preserved for the replacement owner without consuming the queued input."
+    },
+    {
+      "id": "durable-stop-after-recovery-seal",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/durable-execution-recovery.test.ts",
+      "test": "re-admits the same Run after closure and preserves Stop (after_seal)",
+      "invariant": "A Stop after recovery closure cannot be lost between queued and admitted native ownership."
+    },
+    {
+      "id": "durable-return-stop-cut",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "withdraws exactly Stop's queue cut, retaining uploads and lost-response recovery",
+      "invariant": "Repeated Stop returns the original unconsumed queue cut with uploads without withdrawing newly accepted messages."
+    },
+    {
+      "id": "durable-return-stop-pages",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "returns every page in edited order and isolates repeated acknowledgements",
+      "invariant": "All withdrawn pages preserve edited order and remain recoverable after lost acknowledgement."
+    },
+    {
+      "id": "durable-stop-steer-consumed",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "settles Stop's in-flight Steer by canonical consumption (consumed=true)",
+      "invariant": "Consumed Steer remains history and is not returned to the composer."
+    },
+    {
+      "id": "durable-stop-steer-unconsumed",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "settles Stop's in-flight Steer by canonical consumption (consumed=false)",
+      "invariant": "Unconsumed Steer returns only after ordered native closure proves nonconsumption."
+    },
+    {
+      "id": "durable-model-slot-release",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-cloud-turn-runner.integration.test.ts",
+      "test": "executes one native post-validation handoff and releases the model permit during the tool wait",
+      "invariant": "A remote Tool wait does not hold a model permit or create a second handoff."
+    },
+    {
+      "id": "durable-verification-recovery",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-cloud-turn-runner.integration.test.ts",
+      "test": "decides the project verification reminder from native progress and consumes it only once",
+      "invariant": "Verification is derived from native history at yield and its continuation cannot duplicate after recovery."
+    },
+    {
+      "id": "durable-fork-documents",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/conversation-tree.postgres.test.ts",
+      "test": "copies native fork document policies without carrying execution or task state",
+      "invariant": "Independent forks honor native document cutoff/current semantics without copying execution grants."
+    },
+    {
+      "id": "durable-budget-floor",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "retains a conservative Run budget floor across duplicate checkpoint and abort writes",
+      "invariant": "Recovery cannot refill finite Run budgets; abort-mark duplicates do not consume another native intent."
     }
   ]
 }

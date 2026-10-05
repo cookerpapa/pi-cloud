@@ -76,7 +76,7 @@ describe("PostgreSQL Sandbox HTTP service registry", () => {
       .values({
         id: sessionId,
         pi_session_id: sessionId,
-        pi_session_lane: "main",
+        pi_conversation_id: "1",
         tenant_id: tenantId,
         project_id: projectId,
         workspace_id: workspaceId,

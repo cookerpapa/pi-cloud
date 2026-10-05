@@ -63,9 +63,10 @@ export type SubagentHostRequest =
       delivery: "notify" | "steer" | "follow_up";
     }>
   | Readonly<{
-      action: "prepare_lane";
+      action: "prepare_conversation";
       executionReference: string;
-      lane: string;
+      requestId: string;
+      ownerTaskId: number;
       anchor: string | null;
     }>
   | Readonly<{ action: "schedule"; runId: string }>

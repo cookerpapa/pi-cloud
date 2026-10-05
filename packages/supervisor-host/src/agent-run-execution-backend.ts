@@ -299,7 +299,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       turnId: request.turnId,
       piSession: {
         id: request.piSessionId,
-        lane: request.piSessionLane,
+        conversationId: request.piConversationId,
         writerId: parseExecutionReference(reference.executionReference).leaseId,
       },
       nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
@@ -340,7 +340,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
             sessionId: request.sessionId,
             piSession: {
               id: request.piSessionId,
-              lane: request.piSessionLane,
+              conversationId: request.piConversationId,
               writerId: parseExecutionReference(admission.executionReference).leaseId,
             },
             turnId: request.turnId,
@@ -362,7 +362,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           sessionId: request.sessionId,
           piSession: {
             id: request.piSessionId,
-            lane: request.piSessionLane,
+            conversationId: request.piConversationId,
             writerId: parseExecutionReference(admission.executionReference).leaseId,
           },
           runId: request.runId,
@@ -371,6 +371,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           executionReference: acknowledgement.executionReference,
           nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
           agent: request.agent,
+          ...(request.stopOnResume ? { stopOnResume: true as const } : {}),
           input: {
             kind: "prompt",
             text: request.input.prompt,

@@ -47,7 +47,7 @@ proceed without reserving a second family slot.
 
 - the Run is still eligible;
 - cancellation has not won;
-- the Run has never been admitted before;
+- this is initial admission or ordered old-writer closure permits native recovery;
 - all active Lanes of the physical Pi Session have this Worker as owner;
 - a new owner sees zero `pi_sessions.unsealed_runs`;
 - a delegated task still belongs to its live parent execution.
@@ -80,8 +80,9 @@ any new execution. This cleanup never deletes conversation history.
 
 ## Pi and Tools
 
-The Worker opens Pi's native Session state and appends the accepted user
-message. Pi may perform multiple model sampling steps. Pure chat never contacts
+The Worker opens the native Durable Session/Harness and submits the input using
+the logical Run as request ID. Recovery finds that same submission instead of
+appending another user message. Native Tasks own continuation; PG owns admission. Pi may perform multiple model sampling steps. Pure chat never contacts
 Cube.
 
 Before that prompt is appended, the Worker compares the current execution
@@ -100,15 +101,12 @@ Sessions may execute Tools concurrently there. The control plane owns lifecycle
 and binding closure, while Cube enforces boot identity, active-operation identity
 and per-VM Kafka partition progress.
 
-There are two native post-sampling commits. First, an AcceptedFact carries the
-complete Pi Assistant Entry, its usage Record and `model.sampling.completed`.
-Pi validates the Tool name and arguments. Second, one combined invocation fact
-carries `tool_started`, the public `tool.started` and the concrete prepared
-command. This single commit replaces separate intent and command acknowledgements.
-A rejected Tool call never writes execution intent. The Projector materializes
-that intent, confirms its dispatch offset and issues the bounded Cube handoff.
-Cube owns execution and final Kafka delivery; Pi's Worker-side processing makes
-the returned Tool Result canonical.
+Native Durable commits the Assistant entry and Tool tasks before execution.
+After argument validation and before-hooks, a fixed Tool's execute checkpoint
+and compressed dispatch co-commit through Kafka. Arguments occur once, in the
+checkpoint. Projector materializes it and confirms the dispatch offset before
+Cube handoff. Cube owns execution and final Kafka delivery; native Worker
+processing owns the canonical result. Invalid arguments admit no external effect.
 
 An ambiguous handoff is not replayed or compensated by killing its process. Cube rejects
 a changed active duplicate and recognizes an identical active operation within
@@ -137,8 +135,9 @@ partial transport values never become user-visible messages.
 
 Complete native state and projection position commit atomically. At completion,
 the Worker drains its append queue, persists that drained-output proof and the
-authority requests a seal through Outbox. Projector commits the seal, interrupted
-prefix if any and public terminal, then updates its live view directly. A queued
+authority requests a seal through Outbox. Projector commits the seal and public
+terminal, then updates its live view directly. Recoverable owner loss instead
+closes the old incarnation and re-admits the original Run without a terminal. A queued
 successor waits for this PG closure. No second Kafka commit notice is needed.
 
 Lanes share one native append sequence while their Agent Loops remain concurrent.
@@ -148,33 +147,29 @@ remain distinct. Public Run state stays settling until its seal is projected.
 
 ## Cancellation and failure
 
-Chat Stop interrupts that task's Agent Loop/model stream and requests cancellation
-of its unfinished Tools. Their original callbacks settle before ordinary closure;
-unconfirmed replies become UNKNOWN after a bounded grace. Siblings retain their
-shared owner lease. Task state and current
-Session authority are required for effects. The maintenance loop retires every
-task of an expired physical Session, while leaving unrelated Sessions on that
-Worker alone. The shared lease is removed only after its task scopes drain.
-Already admitted shell effects
-remain UNKNOWN. SQL-only lifecycle retries cannot re-execute the Agent Loop.
-Before admission commits, no output or Agent execution is allowed. After admission,
-even preparation failure or a lost first Kafka ACK requires a seal, not a blind
-retry or output-free pre-start requeue. Running includes context preparation,
-not proof that a model or Tool has actually started.
-An execution seal in the same Kafka partition closes a retired Run. The
-control-plane ingress closes publication admission, requests PG binding closure,
-and installs routing revocation before appending the final seal (ADR-0221).
-The Tool's original final reply proves normal cancellation; there is no separate
-PG process-stop receipt. On timeout, interruption context records UNKNOWN and
-late replies cannot rewrite the sealed Run. Unconfirmed commands may still run.
-Abnormal binding retirement retains an immutable cancellation target in its
-existing control Outbox, including after the binding row is deleted. Replaced ingress owners are transactionally
-fenced. Earlier accepted data is projected before the successor is allowed to
-claim; replayed records cannot reopen a sealed scope. A caught interruption writes Pi's minimal
-abort/reset boundary. A hard Worker loss is reconciled from the retained Kafka
-prefix plus a factual interruption marker; no Tool result is invented. A
-normal failure/cancellation uses the same ordered seal reducer, with no best-effort
-HTTP prefix fetch and no guessed terminal sequence.
+Chat Stop aborts the native Conversation and its owned tasks. Fixed Tool and
+Workflow operation cancellations enter the same ordered Session log with native
+abort state. The Harness may settle `aborted` without awaiting an uncertain guest
+result; late replies cannot rewrite that decision. Cancellation acceptance does
+not prove process termination. Sibling Conversations keep their shared lease.
+Completed background work is never cancelled retroactively.
+
+Recoverable Worker loss revokes routing, closes the old writer incarnation and
+re-admits the same Run/Turn/native submission under a new PG lease. A stopped
+recovering Run is admitted only to record native abort; model and effect ports
+remain gated. Native pending tasks cannot self-authorize a replacement Worker.
+Unsafe Tool checkpoints produce native interruption results instead of replaying
+shell effects. Provider requests may be retried under the new grant. Finite
+configured budgets retain a conservative floor from committed native intents;
+unlimited defaults add no admission query. No RunAttempt or operation ledger is
+introduced, and external effects are not exactly once.
+
+A normal failure/Stop is logical termination. Its seal still waits for ordered
+publication and binding revocation. Abnormal retirement retains its immutable
+cleanup target in the existing control Outbox. Replaced ingress owners are Kafka
+transactionally fenced; old callbacks cannot mutate the new lease. Native progress
+owns the retained text and abort messages, not a fabricated prefix Entry from the
+Projector. No guessed Tool result or physical VM absence is inferred from failure.
 
 Cube loss discards processes, memory, sockets and PTYs. The persistent Workspace
 Volume survives and can attach to a fresh KVM. The next Pi step is told only

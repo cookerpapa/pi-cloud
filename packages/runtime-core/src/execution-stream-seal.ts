@@ -13,10 +13,19 @@ export type RequestExecutionStreamSealInput = {
   turnId: string;
   runId: string;
   agentId: string;
-  body: Extract<PiCloudEventBody, { type: "turn.completed" | "turn.failed" | "turn.cancelled" }>;
+
   now: Date;
   eventId: string;
-};
+} & (
+  | { recover: true; body?: never }
+  | {
+      recover?: false;
+      body: Extract<
+        PiCloudEventBody,
+        { type: "turn.completed" | "turn.failed" | "turn.cancelled" }
+      >;
+    }
+);
 
 /** Request closure in the business terminal transaction. Only the ordered Kafka
  * projector may allocate the public terminal sequence or release the next Run. */
@@ -45,7 +54,10 @@ export async function requestExecutionStreamSeal(
     .forNoKeyUpdate("run")
     .executeTakeFirstOrThrow();
   if (execution.output_seal_id !== null) return;
-  const closesWriter = !execution.native_output_drained || execution.writer_failed_at !== null;
+  const closesWriter =
+    input.recover === true ||
+    !execution.native_output_drained ||
+    execution.writer_failed_at !== null;
   if (closesWriter)
     await transaction
       .updateTable("session_leases")
@@ -68,12 +80,15 @@ export async function requestExecutionStreamSeal(
     agentId: input.agentId,
     closesWriter,
     baseSequence: Number(execution.next_event_seq) - 1,
-    terminal: input.body,
+    ...(input.recover ? { recover: true as const } : { terminal: input.body }),
     occurredAt: input.now.toISOString(),
   };
   await transaction
     .updateTable("runs")
-    .set({ output_seal_id: fact.factId })
+    .set({
+      output_seal_id: fact.factId,
+      ...(input.recover ? { recovery_requested_at: input.now } : {}),
+    })
     .where("id", "=", execution.id)
     .executeTakeFirstOrThrow();
   const queuedSeal = transaction

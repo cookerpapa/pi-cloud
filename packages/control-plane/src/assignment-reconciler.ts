@@ -4,22 +4,13 @@ import {
   releaseIdleSessionLease,
 } from "@pi-cloud/runtime-core/session-lease-release";
 import { databaseTime, retryTransaction } from "@pi-cloud/database";
-import {
-  transitionSandbox,
-  transitionSession,
-  transitionTurn,
-  type SandboxState,
-} from "@pi-cloud/domain";
+import { transitionSandbox, type SandboxState } from "@pi-cloud/domain";
 import type { SandboxAssignmentInventory, SandboxRuntimeAssignment } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
-import { transitionCurrentRun } from "@pi-cloud/runtime-core/run-state";
 import { requestExecutionStreamSeal } from "@pi-cloud/runtime-core/execution-stream-seal";
 import { createExecutionReference, parseExecutionReference } from "@pi-cloud/protocol";
 
-const ASSIGNMENT_LOST = "assignment_lost";
-const ASSIGNMENT_LOST_MESSAGE =
-  "The Worker lost its active Run assignment before durable completion";
 const DEFAULT_RECONCILIATION_LIMIT = 100;
 
 const ACTIVE_SESSION_STATES = new Set(["running", "cancelling"]);
@@ -383,73 +374,15 @@ export class AssignmentReconciler {
         false,
       );
     }
-    await transitionCurrentRun(
-      transaction,
-      {
-        tenantId: session.tenant_id,
-        runId: run.runId,
-      },
-      {
-        runState: "failed",
-        reason: "assignment_lost_after_ack",
-        now,
-        failure: {
-          code: ASSIGNMENT_LOST,
-          message: ASSIGNMENT_LOST_MESSAGE,
-          retryable: false,
-        },
-        transitionId: randomUUID(),
-      },
-    );
-    await transaction
-      .updateTable("turn_control_requests")
-      .set({ state: "failed", completed_at: now, failure_code: ASSIGNMENT_LOST })
-      .where("tenant_id", "=", session.tenant_id)
-      .where("target_run_id", "=", run.runId)
-      .where("state", "in", ["pending", "dispatched", "acknowledged"])
-      .execute();
-    await transaction
-      .updateTable("turns")
-      .set({
-        state: transitionTurn(turn.state, "failed"),
-        failure_code: ASSIGNMENT_LOST,
-        failure_message: ASSIGNMENT_LOST_MESSAGE,
-        failure_retryable: false,
-        settled_at: now,
-      })
-      .where("id", "=", turn.id)
-      .where("state", "=", turn.state)
-      .executeTakeFirstOrThrow();
-    await transaction
-      .updateTable("sessions")
-      .set({
-        state: transitionSession(session.state, "idle"),
-        row_version: sql<string>`${sql.ref("row_version")} + 1`,
-        updated_at: now,
-        last_active_at: now,
-      })
-      .where("id", "=", candidate.sessionId)
-      .where("state", "=", session.state)
-      .executeTakeFirstOrThrow();
-    const terminalEventId = randomUUID();
-    const terminalBody = {
-      type: "turn.failed",
-      payload: {
-        code: ASSIGNMENT_LOST,
-        message: ASSIGNMENT_LOST_MESSAGE,
-        retryable: false,
-      },
-    } as const;
-
     await requestExecutionStreamSeal(transaction, {
       tenantId: session.tenant_id,
       sessionId: candidate.sessionId,
       turnId: turn.id,
       runId: run.runId,
       agentId: "root",
-      body: terminalBody,
+      recover: true,
       now,
-      eventId: terminalEventId,
+      eventId: randomUUID(),
     });
     await this.#deleteLease(transaction, candidate, now);
     return "settled";

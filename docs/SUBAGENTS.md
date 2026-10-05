@@ -88,8 +88,9 @@ the control log.
 
 Requests go through the owning Worker's existing Kafka publication. One
 Projector orders admission/control, PostgreSQL retains dispatch/result and
-consumption state, and the Worker Session Host owns all active Lanes and native
-sequence allocation. Ordinary child output uses the same native log as parent
+consumption state, and the Worker Session Host owns all native Conversations
+(Lanes) and commit sequence allocation. Pi mints each Conversation ID and its
+creation receipt; child PG admission cannot allocate that native identity. Ordinary child output uses the same native log as parent
 output. Internal notifications never use the public model egress proxy.
 
 The partition owner retains bounded pending references and caches Worker routes,
@@ -106,7 +107,8 @@ A family occupies one Worker slot and one owner lease. Child Runs keep task
 identities, not independently renewed leases. Quiet tasks are managed by task/
 model/Tool deadlines. Actual model requests (including Compaction) take a fair
 permit and release it before waiting for children or Tools. Cancelling one task
-does not revoke the common owner; losing the owner retires the whole family.
+does not revoke the common owner. Losing the owner closes that incarnation
+before PG can authorize native recovery of the family under a new lease.
 
 Duplicate delivery cannot create another child or duplicate a consumed Agent
 message. Lost notifications are redelivered from persisted state. Seals and

@@ -11,7 +11,7 @@ import { HttpPublicationClient } from "../../runtime-core/src/http-publication-c
 import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
 import type {
   ExecutionPublication,
-  AcceptedPiSessionAppendFact,
+  AcceptedDurableCommitFact,
   AcceptedExecutionSealFact,
 } from "../../runtime-core/src/accepted-fact.ts";
 import { SessionPublicationService } from "../src/session-publication-service.ts";
@@ -147,45 +147,45 @@ it.skipIf(!postgres || !brokers)(
         nextEventSeq: 1,
         piSession: {
           id: session.sessionId,
-          lane: "main",
+          conversationId: 1,
           writerId: first.publication.scope.writerId,
         },
       });
       await expect(
         database.transaction().execute((transaction) => publicationCutover<Database>(transaction)),
       ).rejects.toThrow("Drain Runs, Session leases and seals");
-      const nativeId = randomUUID();
+      const nativeId = 2;
       const data = JSON.parse('{"__proto__":{"kept":"opaque"},"constructor":"ordinary"}') as Record<
         string,
         unknown
       >;
-      const fact: AcceptedPiSessionAppendFact = {
-        kind: "pi_session_append",
+      const fact: AcceptedDurableCommitFact = {
+        kind: "durable_commit",
         factId: randomUUID(),
-        scope: (({ leaseId: _l, piSessionLane: _lane, ...scope }) => scope)(
+        scope: (({ leaseId: _lease, piConversationId: _conversation, ...scope }) => scope)(
           first.publication.scope,
         ),
-        piSession: {
-          id: session.sessionId,
-          lane: "main",
-          writerId: first.publication.scope.writerId,
-        },
-        items: [
-          {
-            kind: "entry",
-            lane: "main",
-            turnId: first.turnId,
-            entry: {
-              id: nativeId,
-              seq: 1,
-              parentId: null,
-              timestamp: Date.now(),
-              type: "custom",
-              customType: "publication-test",
-              data,
+        commit: {
+          seq: 1,
+          nextId: 3,
+          writes: [
+            { type: "conversation", value: { id: 1 } },
+            {
+              type: "entry",
+              value: { id: nativeId, conversationId: 1, kind: "publication-test", data },
             },
+          ],
+        },
+        origins: [
+          {
+            recordId: nativeId,
+            sessionId: session.sessionId,
+            runId: first.runId,
+            turnId: first.turnId,
           },
         ],
+        tools: [],
+        cancellations: [],
         events: [],
         occurredAt: new Date().toISOString(),
       };
@@ -194,20 +194,20 @@ it.skipIf(!postgres || !brokers)(
       await eventually(
         async () =>
           (
-            await database
-              .selectFrom("pi_session_log")
-              .select("id")
-              .where("id", "=", nativeId)
-              .execute()
-          ).length === 1,
+            await sql`select id from pi_durable_records where tenant_id=${tenant.tenantId}::uuid
+        and session_id=${session.sessionId} and kind='entry' and id=${nativeId}`.execute(database)
+          ).rows.length === 1,
       );
       expect(queries).toEqual([]);
-      const row = await database
-        .selectFrom("pi_session_log")
-        .select("payload")
-        .where("id", "=", nativeId)
-        .executeTakeFirstOrThrow();
-      expect(row.payload).toMatchObject({ entry: { data } });
+      const row = (
+        await sql<{
+          body: string;
+        }>`select body from pi_durable_log where tenant_id=${tenant.tenantId}::uuid
+        and session_id=${session.sessionId} and record_kind='entry' and record_id=${nativeId}`.execute(
+          database,
+        )
+      ).rows[0]!;
+      expect(JSON.parse(row.body)).toMatchObject({ value: { data } });
       const probe = () => ({
         kind: "path_probe" as const,
         factId: randomUUID(),
@@ -291,11 +291,11 @@ it.skipIf(!postgres || !brokers)(
           )?.output_sealed_at != null,
       );
       expect(
-        await database
-          .selectFrom("pi_session_log")
-          .select("id")
-          .where("session_id", "=", session.sessionId)
-          .execute(),
+        (
+          await sql`select id from pi_durable_records where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId} and kind='entry'`.execute(
+            database,
+          )
+        ).rows,
       ).toHaveLength(1);
       await eventually(
         async () =>

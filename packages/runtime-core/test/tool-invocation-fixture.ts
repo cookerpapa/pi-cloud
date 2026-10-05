@@ -1,6 +1,6 @@
 import { createExecutionReference, type CandidateToolCommand } from "@pi-cloud/protocol";
-import type { CandidatePiSessionAppendFact, ExecutionPublication } from "../src/accepted-fact.ts";
-import { prepareExecutionFact } from "../src/prepare-execution-fact.ts";
+import type { AcceptedDurableCommitFact, ExecutionPublication } from "../src/accepted-fact.ts";
+import type { DurableCommitPublication } from "@pi-cloud/protocol";
 
 export function toolInvocationFixture(content = "hello") {
   const runId = "20000000-0000-4000-8000-000000000001";
@@ -15,12 +15,12 @@ export function toolInvocationFixture(content = "hello") {
     leaseId,
     writerId: leaseId,
     fencingToken: 3,
-    piSessionLane: "main",
+    piConversationId: 1,
   } satisfies ExecutionPublication["scope"];
   const args = { path: "large.txt", content };
   const command: CandidateToolCommand = {
     executionReference,
-    toolCallId: "result-1",
+    toolCallId: "task:4",
     replyTopic: "reply-worker-boot",
     occurredAt: "2026-09-28T00:00:00.000Z",
     request: {
@@ -40,52 +40,61 @@ export function toolInvocationFixture(content = "hello") {
       maximumOutputBytes: 65536,
     },
   };
-  const { leaseId: _lease, fencingToken: _fence, ...nativeScope } = scope;
-  const mutation: CandidatePiSessionAppendFact = {
-    schemaVersion: 1,
-    mutationId: "mutation-1",
-    scope: { ...nativeScope, executionReference },
-    items: [
-      {
-        kind: "record",
-        turnId: scope.turnId,
-        record: {
-          id: "intent-1",
-          type: "tool_started",
-          lane: "main",
-          seq: 8,
-          timestamp: 1,
-          runId: "native-operation-1",
-          assistantEntryId: "assistant-1",
-          toolIndex: 0,
-          toolCallId: "provider-1",
-          toolName: "write",
-          effectiveArgs: args,
-          resultEntryId: "result-1",
-          replay: "never",
+  const { leaseId: _lease, piConversationId: _conversation, ...identity } = scope;
+  const publication: DurableCommitPublication = {
+    commit: {
+      seq: 8,
+      nextId: 5,
+      writes: [
+        {
+          type: "task",
+          value: {
+            id: 4,
+            conversationId: 1,
+            kind: "pi.tool",
+            version: 1,
+            input: { assistant: 2, callId: "provider-1" },
+            owner: 3,
+            background: false,
+            abortRequested: false,
+            state: {
+              status: "running",
+              checkpoint: { phase: "execute", arguments: args, replay: "unsafe" },
+            },
+          },
         },
-      },
-    ],
-    events: [
+      ],
+    },
+    origins: [{ recordId: 4, sessionId: scope.sessionId, runId, turnId: scope.turnId }],
+    tools: [{ taskId: 4, command }],
+    cancellations: [],
+    events: [],
+  };
+  const {
+    args: _args,
+    toolCallId: _providerId,
+    ...request
+  } = command.request as Extract<CandidateToolCommand["request"], { operation: "tool.execute" }>;
+  const fact: AcceptedDurableCommitFact = {
+    kind: "durable_commit",
+    factId: "20000000-0000-4000-8000-000000000009",
+    scope: identity,
+    commit: publication.commit,
+    origins: publication.origins,
+    events: [],
+    cancellations: [],
+    tools: [
       {
-        schemaVersion: 1,
-        eventId: "20000000-0000-4000-8000-000000000009",
-        agentId: "root",
-        seq: 5,
-        sessionId: scope.sessionId,
-        turnId: scope.turnId,
+        taskId: 4,
+        factId: command.request.operationId,
+        scope: { ...identity, leaseId },
+        request,
+        toolCallId: command.toolCallId,
+        replyTopic: command.replyTopic!,
         occurredAt: command.occurredAt,
-        type: "tool.started",
-        payload: { toolCallId: "result-1", toolName: "write", input: args },
       },
     ],
     occurredAt: command.occurredAt,
-    toolCommand: command,
   };
-  const fact = prepareExecutionFact(
-    { ...scope, executionReference },
-    { kind: "pi_session_append", mutation },
-  );
-  if (fact.kind !== "tool_invocation") throw new Error("Expected combined invocation");
-  return { scope, executionReference, mutation, command, fact };
+  return { scope, executionReference, publication, command, fact };
 }

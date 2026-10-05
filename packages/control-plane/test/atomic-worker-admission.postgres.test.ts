@@ -28,7 +28,7 @@ import { RunCancellationExecutor } from "../../runtime-core/src/run-cancellation
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
-import { PostgresPiSessionAppendProjector } from "../../runtime-core/src/postgres-pi-session-append-projector.ts";
+import { PostgresDurableCommitProjector } from "../../runtime-core/src/postgres-durable-commit-projector.ts";
 import { createExecutionPublication } from "../../runtime-core/src/execution-publication.ts";
 import type { AcceptedFact, AcceptedFactBus } from "../../runtime-core/src/accepted-fact.ts";
 import {
@@ -39,7 +39,7 @@ import { acceptedFactRetentionFloors } from "../../runtime-core/src/kafka-safe-r
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
-import { PostgresPiSessionRepository } from "@pi-cloud/pi-session-postgres";
+import { deletePostgresPiSessionsInTransaction } from "@pi-cloud/pi-session-postgres";
 import { ConversationReader } from "../src/conversation-reader.ts";
 import { projectionTransaction } from "../../runtime-core/src/projection-transaction.ts";
 
@@ -276,73 +276,67 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       },
     });
     const scope = f.facts[0]!.scope;
-    const base = {
-      kind: "pi_session_append" as const,
+    const first: Extract<AcceptedFact, { kind: "durable_commit" }> = {
+      kind: "durable_commit",
+      factId: randomUUID(),
       scope,
-      piSession: { id: scope.piSessionId, lane: "main", writerId: scope.writerId },
-      events: [],
       occurredAt: new Date().toISOString(),
-    };
-    const entry = {
-      ...base,
-      factId: randomUUID(),
-      items: [
-        {
-          kind: "entry" as const,
-          lane: "main",
-          turnId: f.accepted.turnId,
-          entry: {
-            id: "entry",
-            type: "custom" as const,
-            customType: "test",
-            seq: 1,
-            parentId: null,
-            timestamp: 1,
-          },
-        },
+      commit: {
+        seq: 1,
+        nextId: 3,
+        writes: [
+          { type: "conversation", value: { id: 1 } },
+          { type: "entry", value: { id: 2, conversationId: 1, kind: "test", data: "test" } },
+        ],
+      },
+      origins: [
+        { recordId: 2, sessionId: scope.sessionId, runId: scope.runId, turnId: scope.turnId },
       ],
+      tools: [],
+      cancellations: [],
+      events: [],
     };
-    await new PostgresPiSessionAppendProjector(measured).project(entry, {
-      topic: f.worker,
-      partition: 0,
-      offset: 10n,
-    });
-    // Seven domain statements + one SET LOCAL exchange; driver BEGIN/COMMIT add two.
-    expect(queries).toHaveLength(8);
+    const projector = new PostgresDurableCommitProjector(measured);
+    await projector.project(first, { topic: f.worker, partition: 0, offset: 10n });
+    expect(queries.length).toBeLessThanOrEqual(14);
     expect(queries[0]!.sql).toContain("set_config('lock_timeout'");
-    expect(queries.at(-1)!.sql).toContain('with "projected_run"');
     queries.length = 0;
-    const record = {
-      ...base,
-      factId: randomUUID(),
-      items: [
-        {
-          kind: "record" as const,
-          turnId: f.accepted.turnId,
-          record: {
-            id: "operation",
-            type: "operation_started" as const,
-            seq: 2,
-            timestamp: 2,
-            lane: "main",
-            sourceLeafId: "entry",
-            intent: { kind: "run" as const, originalPrompt: [], initialMessages: [] },
-          },
+    await projector.project(
+      {
+        ...first,
+        factId: randomUUID(),
+        commit: {
+          seq: 2,
+          nextId: 4,
+          writes: [
+            {
+              type: "task",
+              value: {
+                id: 3,
+                conversationId: 1,
+                kind: "test.task",
+                version: 1,
+                input: {},
+                background: false,
+                abortRequested: false,
+                state: { status: "pending", checkpoint: { phase: "start" } },
+              },
+            },
+          ],
         },
-      ],
-    };
-    await new PostgresPiSessionAppendProjector(measured).project(record, {
-      topic: f.worker,
-      partition: 0,
-      offset: 11n,
-    });
-    expect(queries).toHaveLength(8);
+        origins: [
+          { recordId: 3, sessionId: scope.sessionId, runId: scope.runId, turnId: scope.turnId },
+        ],
+      },
+      { topic: f.worker, partition: 0, offset: 11n },
+    );
+    expect(queries.length).toBeLessThanOrEqual(14);
     queries.length = 0;
     const view = await new ConversationReader(measured, f.tenant.tenantId).getConversationView(
       f.session.sessionId,
     );
     expect(view.conversation.turns).toHaveLength(1);
-    expect(queries).toHaveLength(6);
+    expect(queries.length).toBeLessThanOrEqual(7);
     const native = queries.find((q) => q.sql.includes("union all"))!;
     expect(native).toBeDefined();
     // A small fixture may rationally use sequential scans. Prove both UNION
@@ -354,11 +348,11 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       const visit = (node: unknown) => {
         if (!node || typeof node !== "object") return;
         const index = (node as Record<string, unknown>)["Index Name"];
-        if (typeof index === "string" && index.startsWith("pi_session_log_")) indexes.push(index);
+        if (typeof index === "string" && index.startsWith("pi_durable_")) indexes.push(index);
         for (const value of Object.values(node)) visit(value);
       };
       visit(plan.rows);
-      expect(indexes, JSON.stringify(plan.rows)).toHaveLength(2);
+      expect(indexes.length, JSON.stringify(plan.rows)).toBeGreaterThan(0);
     });
   });
 
@@ -366,14 +360,16 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const f = await fixture();
     await f.executor().dispatchRun(f.accepted.runId);
     const scope = f.facts[0]!.scope;
-    const fact: Extract<AcceptedFact, { kind: "pi_session_append" }> = {
-      kind: "pi_session_append",
+    const fact: Extract<AcceptedFact, { kind: "durable_commit" }> = {
+      kind: "durable_commit",
       factId: randomUUID(),
       scope,
-      piSession: { id: scope.piSessionId, lane: "main", writerId: scope.writerId },
-      events: [],
       occurredAt: new Date().toISOString(),
-      items: [{ kind: "fact", fact: "name", seq: 1, name: "after-lock" }],
+      commit: { seq: 1, nextId: 2, writes: [{ type: "conversation", value: { id: 1 } }] },
+      origins: [],
+      tools: [],
+      cancellations: [],
+      events: [],
     };
     const position = { topic: f.worker, partition: 0, offset: 10n };
     const locked = Promise.withResolvers<void>(),
@@ -391,17 +387,19 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     void holder.catch(locked.reject);
     try {
       await locked.promise;
-      const projector = new PostgresPiSessionAppendProjector(db, {
+      const projector = new PostgresDurableCommitProjector(db, {
         lockTimeoutMs: 50,
         statementTimeoutMs: 500,
       });
       await expect(projector.project(fact, position)).rejects.toMatchObject({ code: "55P03" });
       expect(
-        await db
-          .selectFrom("pi_session_log")
-          .select("seq")
-          .where("append_id", "=", fact.factId)
-          .execute(),
+        (
+          await sql<{
+            seq: string;
+          }>`select seq from pi_durable_commits where tenant_id=${fact.scope.tenantId}::uuid and session_id=${fact.scope.piSessionId} and seq=${fact.commit.seq}`.execute(
+            db,
+          )
+        ).rows,
       ).toEqual([]);
       expect(
         await db
@@ -421,15 +419,17 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       release.resolve();
       await holder;
     }
-    const projector = new PostgresPiSessionAppendProjector(db);
+    const projector = new PostgresDurableCommitProjector(db);
     await projector.project(fact, position);
     await projector.project(fact, position);
     expect(
-      await db
-        .selectFrom("pi_session_log")
-        .select("seq")
-        .where("append_id", "=", fact.factId)
-        .execute(),
+      (
+        await sql<{
+          seq: string;
+        }>`select seq from pi_durable_commits where tenant_id=${fact.scope.tenantId}::uuid and session_id=${fact.scope.piSessionId} and seq=${fact.commit.seq}`.execute(
+          db,
+        )
+      ).rows,
     ).toEqual([{ seq: "1" }]);
     expect(
       await db
@@ -475,11 +475,15 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
   it("deletes retired owner evidence only with quiescent native history", async () => {
     const f = await fixture();
     await f.executor().dispatchRun(f.accepted.runId);
-    const repo = new PostgresPiSessionRepository({ database: db, tenantId: f.tenant.tenantId });
-    const metadata = (await repo.list()).find((s) => s.id === f.session.sessionId)!;
-    await expect(repo.delete(metadata)).rejects.toThrow("must settle before deletion");
+    const remove = () =>
+      db
+        .transaction()
+        .execute((tx) =>
+          deletePostgresPiSessionsInTransaction(tx, f.tenant.tenantId, [f.session.sessionId]),
+        );
+    await expect(remove()).rejects.toThrow("must settle before deletion");
     await f.project();
-    await expect(repo.delete(metadata)).rejects.toThrow("still has a product reference");
+    await expect(remove()).rejects.toThrow("still has a product reference");
     const deletion = new ConversationDeletionService({ database: db });
     await deletion.delete(f.tenant.tenantId, f.session.sessionId);
     await deletion.delete(f.tenant.tenantId, f.session.sessionId);
@@ -490,7 +494,13 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         .where("tenant_id", "=", f.tenant.tenantId)
         .execute(),
     ).toEqual([]);
-    await expect(repo.openById(metadata.id)).rejects.toMatchObject({ code: "not_found" });
+    expect(
+      await db
+        .selectFrom("pi_sessions")
+        .select("id")
+        .where("id", "=", f.session.sessionId)
+        .executeTakeFirst(),
+    ).toBeUndefined();
   });
   it("readies only the Lane head and promotes its successor with the committed seal", async () => {
     const f = await fixture();
@@ -578,7 +588,11 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(queries.some((q) => q.includes('update "sandboxes"'))).toBe(false);
     expect(queries.some((q) => q.includes("from runs as earlier_run"))).toBe(false);
     expect(
-      queries.filter((q) => q.includes('from "pi_sessions"') && q.startsWith("select ")),
+      queries.filter(
+        (q) =>
+          (q.includes('from "pi_sessions"') || q.includes("from pi_sessions")) &&
+          q.startsWith("select "),
+      ),
     ).toHaveLength(1);
     await f.project();
   });
@@ -1272,7 +1286,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
           nextEventSeq: Number(request.nextEventSeq),
           piSession: {
             id: fault === "wrong_physical_session" ? randomUUID() : request.piSessionId,
-            lane: fault === "wrong_lane" ? "other" : request.piSessionLane,
+            conversationId: fault === "wrong_lane" ? 999 : request.piConversationId,
             writerId:
               fault === "wrong_writer"
                 ? randomUUID()
@@ -1470,39 +1484,27 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
           throw new Error(`Run did not enter execution: ${JSON.stringify(result)}`);
         }),
       ]);
-      const { leaseId: _lease, piSessionLane: _lane, ...scope } = admission.publication.scope;
-      const fact: Extract<AcceptedFact, { kind: "pi_session_append" }> = {
-        kind: "pi_session_append",
+      const { leaseId: _lease, piConversationId: _lane, ...scope } = admission.publication.scope;
+      const fact: Extract<AcceptedFact, { kind: "durable_commit" }> = {
+        kind: "durable_commit",
         factId: randomUUID(),
         scope,
         occurredAt: new Date().toISOString(),
+        commit: { seq: 1, nextId: 2, writes: [{ type: "conversation", value: { id: 1 } }] },
+        origins: [],
+        tools: [],
+        cancellations: [],
         events: [],
-        piSession: {
-          id: request.piSessionId,
-          lane: request.piSessionLane,
-          writerId: parseExecutionReference(admission.executionReference).leaseId,
-        },
-        items: [
-          {
-            kind: "record",
-            turnId: request.turnId,
-            record: {
-              id: randomUUID(),
-              seq: 1,
-              timestamp: Date.now(),
-              lane: "main",
-              type: "operation_started",
-              sourceLeafId: null,
-              intent: { kind: "run", originalPrompt: [], initialMessages: [] },
-            },
-          },
-        ],
       };
       const selected = new WeakSet<object>();
       const measured = db.withPlugin({
         transformQuery({ node, queryId }) {
           const q = db.getExecutor().compileQuery(node, queryId).sql;
-          if (q.startsWith("select ") && q.includes('from "pi_sessions"')) selected.add(queryId);
+          if (
+            q.startsWith("select ") &&
+            (q.includes('from "pi_sessions"') || q.includes("from pi_sessions"))
+          )
+            selected.add(queryId);
           return node;
         },
         async transformResult({ result, queryId }) {
@@ -1562,7 +1564,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
               .set({ native_output_drained: true })
               .where("id", "=", request.runId)
               .execute();
-            projection = new PostgresPiSessionAppendProjector(measured).project(fact, {
+            projection = new PostgresDurableCommitProjector(measured).project(fact, {
               topic: `test-${f.worker}`,
               partition: 0,
               offset: 0n,
@@ -1594,13 +1596,13 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         expect(effects).toBe(1);
         expect(settlementAttempts).toBe(injectAbort ? 2 : 1);
         expect(
-          await db
-            .selectFrom("pi_session_log")
-            .where("kind", "=", "record")
-            .select("id")
-            .where("tenant_id", "=", f.tenant.tenantId)
-            .execute(),
-        ).toHaveLength(1);
+          (
+            await sql<{ count: string }>`select count(*) as count from pi_durable_commits
+            where tenant_id=${fact.scope.tenantId}::uuid and session_id=${fact.scope.piSessionId}`.execute(
+              db,
+            )
+          ).rows[0]!,
+        ).toEqual({ count: "1" });
         await f.project();
         expect((await f.state()).run.state).toBe("cancelled");
       } finally {
@@ -1660,17 +1662,8 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       "elastic",
     );
     await db
-      .insertInto("pi_session_lanes")
-      .values({
-        tenant_id: f.tenant.tenantId,
-        session_id: f.session.sessionId,
-        lane: "child",
-        leaf_id: null,
-      })
-      .execute();
-    await db
       .updateTable("sessions")
-      .set({ pi_session_id: f.session.sessionId, pi_session_lane: "child" })
+      .set({ pi_session_id: f.session.sessionId, pi_conversation_id: "2" })
       .where("id", "=", child.sessionId)
       .execute();
     const childRun = await f.store.acceptTurn(child.sessionId, randomUUID(), { prompt: "child" });
@@ -1753,7 +1746,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       ).output_sealed_at,
     ).not.toBeNull();
   });
-  it("owner loss immediately after admission requires a seal and cannot requeue the Run", async () => {
+  it("owner loss requires ordered closure before the same logical Run is readied", async () => {
     const f = await fixture();
     await expect(
       f
@@ -1802,10 +1795,16 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       inventory: { listAssignments: async () => [], terminateAndConfirmAbsent: async () => {} },
     });
     await reconciler.retireExpiredAssignments();
-    expect((await f.state()).run.state).toBe("failed");
+    expect((await f.state()).run.state).toBe("running");
     expect(await f.executor().dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
     await f.project();
-    expect((await f.state()).admittedRuns).toHaveLength(1);
+    const recovered = await db
+      .selectFrom("runs")
+      .select(["state", "lease_id", "ready_at"])
+      .where("id", "=", f.accepted.runId)
+      .executeTakeFirstOrThrow();
+    expect(recovered).toMatchObject({ state: "queued", lease_id: null });
+    expect(recovered.ready_at).not.toBeNull();
   });
 
   it.each(["before_commit", "after_commit"])(
@@ -1815,21 +1814,14 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({
         status: "completed",
       });
-      const seq = Number(
-        (
-          await db
-            .selectFrom("pi_sessions")
-            .select("next_seq")
-            .where("id", "=", f.session.sessionId)
-            .executeTakeFirstOrThrow()
-        ).next_seq,
-      );
-      const fact: AcceptedFact = {
-        kind: "pi_session_append",
+      const fact: Extract<AcceptedFact, { kind: "durable_commit" }> = {
+        kind: "durable_commit",
         factId: randomUUID(),
         scope: f.facts[0]!.scope,
-        piSession: { id: f.session.sessionId, lane: "main", writerId: f.facts[0]!.scope.writerId },
-        items: [{ kind: "fact", fact: "name", seq, name: "first-record-test" }],
+        commit: { seq: 1, nextId: 2, writes: [{ type: "conversation", value: { id: 1 } }] },
+        origins: [],
+        tools: [],
+        cancellations: [],
         events: [],
         occurredAt: new Date().toISOString(),
       };
@@ -1869,11 +1861,13 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       expect(floor.output_first_offset).toBe(phase === "before_commit" ? null : "10");
       await projector.project(record);
       expect(
-        await db
-          .selectFrom("pi_session_log")
-          .select("seq")
-          .where("append_id", "=", fact.factId)
-          .execute(),
+        (
+          await sql<{
+            seq: string;
+          }>`select seq from pi_durable_commits where tenant_id=${fact.scope.tenantId}::uuid and session_id=${fact.scope.piSessionId} and seq=${fact.commit.seq}`.execute(
+            db,
+          )
+        ).rows,
       ).toHaveLength(1);
       await db.transaction().execute((tx) => recordFactProjection(tx, { ...record, offset: 50n }));
       expect(

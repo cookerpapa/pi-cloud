@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql } from "kysely";
 import { expect, it } from "vitest";
-import { createDatabase, runMigrations } from "../src/index.ts";
+import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
+import { insertHistoricalSession } from "./fixtures/historical-turn.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
@@ -32,17 +33,20 @@ it.skipIf(!endpoint)(
       });
       const store = new ControlPlaneStore({ database: db, ...tenant });
       const project = await store.createProject({ name: "retained", source: { kind: "empty" } });
-      const session = await store.createSession(
-        project.projectId,
-        project.workspaceId,
-        "retained",
-        "elastic",
-      );
+      const session = await insertHistoricalSession(db, { ...tenant, ...project });
+      const migrateLifecycle = async () => {
+        const result = await new Migrator({
+          db,
+          provider: migrationProvider,
+          allowUnorderedMigrations: true,
+        }).migrateTo("157_atomic_session_lifecycle");
+        if (result.error) throw result.error;
+      };
       for (const retired of ["starting", "evicting", "recovering"]) {
         await sql`update sessions set state=${retired} where id=${session.sessionId}::uuid`.execute(
           db,
         );
-        await expect(runMigrations(db, "up")).rejects.toThrow("Unsupported Session lifecycle rows");
+        await expect(migrateLifecycle()).rejects.toThrow("Unsupported Session lifecycle rows");
         expect(
           await db
             .selectFrom("sessions")
@@ -56,7 +60,7 @@ it.skipIf(!endpoint)(
         .set({ state: "cold" })
         .where("id", "=", session.sessionId)
         .execute();
-      await runMigrations(db, "up");
+      await migrateLifecycle();
       for (const retired of ["starting", "evicting", "recovering"]) {
         await expect(
           sql`update sessions set state=${retired} where id=${session.sessionId}::uuid`.execute(db),

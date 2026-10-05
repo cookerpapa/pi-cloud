@@ -70,6 +70,9 @@ export class CompactEventTail {
       !right ||
       left.event.type !== "assistant.text.delta" ||
       right.event.type !== "assistant.text.delta" ||
+      left.event.payload.replace ||
+      right.event.payload.replace ||
+      left.event.payload.messageId !== right.event.payload.messageId ||
       left.event.payload.phase === "commentary" ||
       right.event.payload.phase === "commentary" ||
       left.event.payload.phase !== right.event.payload.phase ||

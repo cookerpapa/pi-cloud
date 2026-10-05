@@ -20,14 +20,10 @@ import type { SupervisorTurnRunner } from "./agent-run-supervisor.ts";
 import { PiTurnError, type PiEventPublisher, type PiTurnResult } from "./pi-turn-runtime.ts";
 import {
   PiCloudTurnRunner,
-  PiModelRuntimePool,
   type PiCloudSessionHandle,
   type PiCloudTurnRunnerOptions,
 } from "./pi-cloud-turn-runner.ts";
-import {
-  PiSettlementGateController,
-  settlementGatePolicyFromCommand,
-} from "./pi-settlement-gate.ts";
+import { settlementGatePolicyFromCommand } from "./pi-settlement-gate.ts";
 import { validateSandboxRuntimeIdentity, type SandboxRuntimeIdentity } from "@pi-cloud/protocol";
 import type {
   AgentWorkspaceSeedResolver,
@@ -92,7 +88,6 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     readSignal?: AbortSignal,
   ) => Promise<PiCloudSessionHandle>;
   publishToolCommand?: import("@pi-cloud/protocol").ToolCommandPublisher["publishToolCommand"];
-  publishToolCancellation?: import("@pi-cloud/protocol").ToolCancellationPublisher["publishToolCancellation"];
   waitForToolReply?: TrustedRemoteToolsRuntimeConfiguration["waitForToolReply"];
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
@@ -154,7 +149,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
-  readonly #publishToolCancellation: RemoteToolSandboxTurnRunnerOptions["publishToolCancellation"];
   readonly #waitForToolReply: RemoteToolSandboxTurnRunnerOptions["waitForToolReply"];
   readonly #decodeInputImages: RemoteToolSandboxTurnRunnerOptions["decodeInputImages"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
@@ -165,7 +159,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #turnTimeoutMs: number | undefined;
   readonly #idGenerator: () => string;
   readonly #metrics: PiCloudMetrics | undefined;
-  readonly #modelRuntimePool = new PiModelRuntimePool(2);
   readonly #activePiRunners = new Map<
     string,
     {
@@ -186,7 +179,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
     this.#openAgentSession = options.openAgentSession;
     this.#publishToolCommand = options.publishToolCommand;
-    this.#publishToolCancellation = options.publishToolCancellation;
     this.#waitForToolReply = options.waitForToolReply;
     this.#decodeInputImages = options.decodeInputImages;
     this.#createTrustedTools = options.createTrustedTools;
@@ -198,7 +190,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   }
 
   warm(): Promise<void> {
-    return this.#modelRuntimePool.ready();
+    return Promise.resolve();
   }
 
   async run(
@@ -305,7 +297,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   ): Promise<PiTurnResult> {
     if (
       command.payload.agent.runtimeKind !== "pi_sdk" ||
-      command.payload.agent.sessionStorageKind !== "pi_session_storage_v1"
+      command.payload.agent.sessionStorageKind !== "pi_durable_storage_v1"
     ) {
       throw new PiTurnError(
         "agent_runtime_unsupported",
@@ -451,10 +443,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
       };
       const settlementPolicy = settlementGatePolicyFromCommand(command);
-      const settlementGate =
-        settlementPolicy === undefined
-          ? undefined
-          : new PiSettlementGateController(settlementPolicy);
       let executeWorkflow: WorkflowExecutor | undefined;
       const trustedToolBindings =
         (await this.#createTrustedTools?.(command, {
@@ -467,15 +455,17 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             await this.#broker.refreshServices(active.activationId, toolAssignment);
           },
         })) ?? ([] as readonly TrustedAgentTool[]);
-      const trustedTools = trustedToolBindings.map((binding) => binding.tool);
+      const trustedTools = trustedToolBindings
+        .filter((binding) => binding.offered !== false)
+        .map((binding) => binding.tool);
       const hasDelegationTool = trustedTools.some((tool) => tool.name === "subagent");
       const hasSupervisorContact = trustedTools.some((tool) => tool.name === "contact_supervisor");
       const commonRunnerOptions = {
+        trustedToolDefinitions: trustedToolBindings.map((binding) => binding.tool),
         onActivity: (update: import("@pi-cloud/protocol").RunActivityUpdate | undefined) =>
           this.#onActivity?.(command, update),
         resolveModelRuntime,
         openSession: this.#openAgentSession,
-        modelRuntimePool: this.#modelRuntimePool,
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
         sandboxContinuity: {
           continuityId:
@@ -576,22 +566,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : {}),
         ...commonRunnerOptions,
         interruptionReason: () => interruptionReasonForFailureCode(toolRuntimeFailure?.code),
-        createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
+        createAgentTools: ({ stepWorldState, captureSamplingStep, trackWorkflowOperation }) => {
           recordPreparedInput = () => stepWorldState.recordActive(activation);
-          let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
-            publishToolCancellation: async (request) => {
-              if (!this.#publishToolCancellation)
-                throw new Error("Tool cancellation publisher is unavailable");
-              await this.#publishToolCancellation(request);
-            },
-            cancellationTimeoutMs: () => {
-              const grace = (signal.reason as { gracePeriodMs?: number } | undefined)
-                ?.gracePeriodMs;
-              return Number.isSafeInteger(grace) && grace! >= 0
-                ? grace!
-                : TOOL_CANCELLATION_TIMEOUT_MS;
-            },
+            trackWorkflowOperation,
             onToolCancellationUnconfirmed: () => {
               cancelOutstanding = true;
             },
@@ -625,11 +603,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             allowedTools: cloudTurn.context.tools.names,
             captureStepContext: (activeTools, purpose = "agent") =>
               captureSamplingStep(
-                async () => {
+                async (sequence) => {
                   if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
                   const captured = await stepWorldState.capture();
                   const step = createCloudStepContext({
-                    sequence: (stepSequence += 1),
+                    sequence,
                     turnContextSha256: cloudTurn.sha256,
                     executionContextSha256: cloudExecution.sha256,
                     allowedTools: cloudTurn.context.tools.names,
@@ -683,22 +661,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             },
           };
         },
-        ...(settlementGate === undefined
-          ? {}
-          : {
-              observeEvent: (event) => {
-                if (
-                  event.type !== "compaction_start" &&
-                  event.type !== "sampling_start" &&
-                  event.type !== "compaction_end" &&
-                  event.type !== "auto_retry_start" &&
-                  event.type !== "auto_retry_end"
-                ) {
-                  settlementGate.observe(event);
-                }
-              },
-              prepareFollowUp: () => settlementGate.prepareFollowUp(),
-            }),
+        ...(settlementPolicy ? { settlementPolicy } : {}),
       });
       onPiRunnerReady(runner);
       const result = await runner.run(command, publishEvent, signal);
@@ -760,4 +723,3 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
   }
 }
-import { TOOL_CANCELLATION_TIMEOUT_MS } from "@pi-cloud/protocol";

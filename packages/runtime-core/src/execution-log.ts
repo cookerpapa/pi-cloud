@@ -4,7 +4,7 @@ import type { AcceptedFactWriter, ExecutionPublication } from "./accepted-fact.t
 export type ExecutionLogOpenRequest = Readonly<{
   executionReference: string;
   sessionId: string;
-  piSession: Readonly<{ id: string; lane: string; writerId: string }>;
+  piSession: Readonly<{ id: string; conversationId: number; writerId: string }>;
   turnId: string;
   nextEventSeq: number;
   publication: ExecutionPublication;

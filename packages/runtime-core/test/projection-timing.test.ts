@@ -9,7 +9,7 @@ it("reports the blocked phase and SQLSTATE without logging record bodies or erro
     partition: 2,
     offset: 19n,
     fact: {
-      kind: "pi_session_append",
+      kind: "durable_commit",
       scope: { runId: "run", piSessionId: "session" },
       items: [{ content: "private body" }],
     },

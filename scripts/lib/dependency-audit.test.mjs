@@ -3,7 +3,7 @@ import { classifyAuditFindings } from "./dependency-audit.mjs";
 
 const node = "node_modules/@earendil-works/pi-coding-agent/node_modules/undici";
 const replacements = new Map([["undici", { node, version: "8.10.2" }]]);
-const installed = (path) => (path === node ? "8.10.2" : "0.84.1");
+const installed = (path) => (path === node ? "8.10.2" : "1.0.0");
 function report(range = ">=8.0.0 <8.10.2", nodes = [node]) {
   return {
     "@earendil-works/pi-coding-agent": { name: "@earendil-works/pi-coding-agent", via: ["undici"] },

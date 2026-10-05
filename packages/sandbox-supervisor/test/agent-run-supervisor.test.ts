@@ -38,7 +38,7 @@ function command(
     generation?: number;
     sessionId?: string;
     piSessionId?: string;
-    lane?: string;
+    conversationId?: number;
   } = {},
 ): ExecuteTurnCommandMessage {
   return {
@@ -54,7 +54,7 @@ function command(
       sessionId: overrides.sessionId ?? "session-1",
       piSession: {
         id: overrides.piSessionId ?? overrides.sessionId ?? "session-1",
-        lane: overrides.lane ?? "main",
+        conversationId: overrides.conversationId ?? 1,
         writerId: "00000000-0000-4000-8000-000000000001",
       },
       runId: overrides.runId ?? "40000000-0000-4000-8000-000000000001",
@@ -70,9 +70,9 @@ function command(
         revisionId: "84041f7b-5052-4abf-8bfd-16adf083c67e",
         definitionKey: "pi-coding",
         runtimeKind: "pi_sdk",
-        runtimeVersion: "0.84.1",
+        runtimeVersion: "1.0.0",
         harnessVersion: "pi-cloud-harness-v1",
-        sessionStorageKind: "pi_session_storage_v1",
+        sessionStorageKind: "pi_durable_storage_v1",
       },
       input: { kind: "prompt", text: "hello" },
       executionMode: "elastic",
@@ -262,7 +262,7 @@ describe("AgentRunSupervisor", () => {
       runId: IDS.command,
       sessionId: "late-child",
       piSessionId: "session-1",
-      lane: "late",
+      conversationId: 3,
     });
     expect(supervisor.prepare(stale, rejectUnexpectedEvent).ack.payload).toMatchObject({
       status: "rejected",
@@ -713,7 +713,7 @@ describe("AgentRunSupervisor", () => {
         runId: IDS.command2,
         sessionId: "child-scope",
         piSessionId: "session-1",
-        lane: "child",
+        conversationId: 2,
       });
     const parent = runtime.prepare(parentCommand, rejectUnexpectedEvent),
       child = runtime.prepare(childCommand, rejectUnexpectedEvent);

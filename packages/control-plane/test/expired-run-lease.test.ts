@@ -136,7 +136,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
         .where("released_at", "is", null)
         .execute(),
     ).toEqual([{ pi_session_id: b.sessionId }]);
-    expect(await store.getRun(first.runId)).toMatchObject({ state: "settling" });
+    expect(await store.getRun(first.runId)).toMatchObject({ state: "running" });
     const row = await db
       .selectFrom("outbox")
       .select("payload")
@@ -148,10 +148,10 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
       partition: 0,
       offset: 0n,
     });
-    expect(await store.getRun(first.runId)).toMatchObject({ state: "failed" });
+    expect(await store.getRun(first.runId)).toMatchObject({ state: "queued" });
     released.get(first.runId)!();
     released.get(second.runId)!();
-    await firstRun;
+    expect(await firstRun).toMatchObject({ status: "recovering" });
     expect(await secondRun).toMatchObject({ status: "completed" });
   } finally {
     await db.destroy();

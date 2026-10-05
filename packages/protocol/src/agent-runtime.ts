@@ -3,7 +3,7 @@ import { DeepSeekModelIdSchema, OpenAICodexModelIdSchema } from "./control-plane
 import { UuidSchema } from "./protocol-primitives.ts";
 
 export const AgentRuntimeKindSchema = Type.Union([Type.Literal("pi_sdk")]);
-export const SessionStorageKindSchema = Type.Union([Type.Literal("pi_session_storage_v1")]);
+export const SessionStorageKindSchema = Type.Union([Type.Literal("pi_durable_storage_v1")]);
 
 export const AgentRevisionSnapshotSchema = Type.Object(
   {

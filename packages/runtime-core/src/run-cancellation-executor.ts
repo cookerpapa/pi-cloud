@@ -374,7 +374,7 @@ export class RunCancellationExecutor {
           "turn.credential_binding_version as credentialBindingVersion",
           "session_row.id as sessionId",
           "session_row.pi_session_id as piSessionId",
-          "session_row.pi_session_lane as piSessionLane",
+          "session_row.pi_conversation_id as piConversationId",
           "session_row.project_id as projectId",
           "session_row.workspace_id as workspaceId",
           "session_row.execution_mode as executionMode",
@@ -398,6 +398,10 @@ export class RunCancellationExecutor {
         .where("cancellation.kind", "=", "cancel")
         .where("cancellation.state", "in", ["pending", "dispatched"])
         .where("run.id", "=", targetRunId)
+        .where("run.state", "in", ["running", "settling", "cancel_requested"])
+        .where("run.lease_id", "is not", null)
+        .where("run.execution_released_at", "is", null)
+        .where("run.output_seal_id", "is", null)
         .orderBy("cancellation.available_at", "asc")
         .orderBy("cancellation.created_at", "asc")
         .orderBy("cancellation.id", "asc")
@@ -458,7 +462,7 @@ export class RunCancellationExecutor {
             workspaceId: row.workspaceId,
             sessionId: row.sessionId,
             piSessionId: row.piSessionId,
-            piSessionLane: row.piSessionLane,
+            piConversationId: Number(row.piConversationId),
             runId: row.runId,
             turnId: row.turnId,
             agent: {

@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
+import { createSession, defineDoc, type ConversationId } from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
-  PostgresPiSessionStorage,
-  rebuildPostgresPiSessionProjections,
-} from "@pi-cloud/pi-session-postgres";
-import type { MessageEntry } from "@earendil-works/pi-agent-core";
+  DurablePostgresProjection,
+  PublishedDurableStorage,
+} from "@pi-cloud/pi-session-postgres/durable";
+import { appendNativeFixture } from "./fixtures/durable-native.ts";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { sql, type Kysely, type QueryId } from "kysely";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
@@ -58,46 +60,47 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     const service = new ConversationTreeService({ database: db });
     async function turn(prompt: string, state: "completed" | "failed" | "queued") {
       const accepted = await store.acceptTurn(session.sessionId, randomUUID(), { prompt });
-      const storage = new PostgresPiSessionStorage({
-        database: db,
+      const scope = {
         tenantId: tenant.tenantId,
         sessionId: session.sessionId,
         turnId: accepted.turnId,
-      });
-      const user = await storage.appendEntry<MessageEntry>(
-        {
-          id: randomUUID(),
-          type: "message",
-          message: { role: "user", content: prompt, timestamp: Date.now() },
-        },
-        "main",
-      );
-      let answer: MessageEntry | undefined;
+        runId: accepted.runId,
+      };
+      const nativeUser = (
+        await appendNativeFixture(db, scope, [
+          { kind: "pi.user", model: [{ role: "user", content: prompt, timestamp: Date.now() }] },
+        ])
+      )[0]!;
+      const user = { id: String(nativeUser.id) };
+      let answer: { id: string } | undefined;
       async function respond(text: string, stopReason: AssistantMessage["stopReason"] = "stop") {
-        answer = await storage.appendEntry<MessageEntry>(
-          {
-            id: randomUUID(),
-            type: "message",
-            message: {
-              role: "assistant",
-              content: [{ type: "text", text }],
-              api: "openai-completions",
-              provider: "test",
-              model: "test",
-              stopReason,
-              timestamp: Date.now(),
-              usage: {
-                input: 1,
-                output: 1,
-                cacheRead: 0,
-                cacheWrite: 0,
-                totalTokens: 2,
-                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-              },
+        const value = (
+          await appendNativeFixture(db, scope, [
+            {
+              kind: "pi.assistant",
+              model: [
+                {
+                  role: "assistant",
+                  content: [{ type: "text", text }],
+                  api: "openai-completions",
+                  provider: "test",
+                  model: "test",
+                  stopReason,
+                  timestamp: Date.now(),
+                  usage: {
+                    input: 1,
+                    output: 1,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                    totalTokens: 2,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                  },
+                },
+              ],
             },
-          },
-          "main",
-        );
+          ])
+        )[0]!;
+        answer = { id: String(value.id) };
         return answer;
       }
       if (state !== "failed") await respond(`${prompt} answer`);
@@ -187,32 +190,125 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       turnId: first.turnId,
       entryId: first.answer!.id,
     });
-    const logs = await db
-      .selectFrom("pi_session_log")
-      .select("payload")
-      .where("tenant_id", "=", f.tenantId)
-      .where("session_id", "=", fork.session.sessionId)
-      .where("kind", "=", "entry")
-      .execute();
-    expect(logs.map((row) => row.payload.turnId)).toEqual([first.turnId, first.turnId]);
-    await rebuildPostgresPiSessionProjections(db, {
-      tenantId: f.tenantId,
-      sessionId: fork.session.sessionId,
-    });
-    const entries = await db
-      .selectFrom("pi_session_log")
-      .where("kind", "=", "entry")
-      .select("turn_id")
-      .where("tenant_id", "=", f.tenantId)
-      .where("session_id", "=", fork.session.sessionId)
-      .execute();
-    expect(entries.map((row) => row.turn_id)).toEqual([first.turnId, first.turnId]);
+    const nativeScope = { tenantId: f.tenantId, sessionId: fork.session.sessionId };
+    const original = (
+      await sql<{
+        body: string;
+      }>`select body from pi_durable_log where tenant_id=${f.tenantId}::uuid
+      and session_id=${fork.session.sessionId} order by seq,ordinal`.execute(db)
+    ).rows;
+    await new DurablePostgresProjection(db, nativeScope).rebuild();
+    const entries = await sql<{
+      turn_id: string;
+    }>`select fields->>'turn' as turn_id from pi_durable_records
+      where tenant_id=${f.tenantId}::uuid and session_id=${fork.session.sessionId} and kind='entry' order by id`.execute(
+      db,
+    );
+    expect(entries.rows.map((row) => row.turn_id)).toEqual([first.turnId, first.turnId]);
+    expect(
+      (
+        await sql<{
+          body: string;
+        }>`select body from pi_durable_log where tenant_id=${f.tenantId}::uuid
+      and session_id=${fork.session.sessionId} order by seq,ordinal`.execute(db)
+      ).rows,
+    ).toEqual(original);
     expect(
       await readCanonicalPiTurnTranscripts(db, { tenantId: f.tenantId, turnIds: [first.turnId] }),
     ).toEqual(before);
     const tree = await f.service.tree(f.tenantId, fork.session.sessionId, "focus");
     expect(tree.branches[0]!.entries.map((e) => e.turnId)).toEqual([first.turnId, first.turnId]);
     expect(tree.branches[1]!.entries).toEqual([]);
+  });
+
+  it("copies native fork document policies without carrying execution or task state", async () => {
+    const f = await fixture();
+    await f.turn("setup", "completed");
+    const docs = [
+      defineDoc<{ value: string }>({
+        kind: "fixture.as-of",
+        version: 1,
+        scope: "conversation",
+        history: "rewindable",
+        fork: "asOf",
+        initial: () => ({ value: "initial" }),
+      }),
+      defineDoc<{ value: string }>({
+        kind: "fixture.world",
+        version: 1,
+        scope: "conversation",
+        history: "rewindable",
+        fork: "current",
+        initial: () => ({ value: "initial" }),
+      }),
+      defineDoc<{ value: string }>({
+        kind: "fixture.grant",
+        version: 1,
+        scope: "conversation",
+        history: "rewindable",
+        fork: "initial",
+        initial: () => ({ value: "initial" }),
+      }),
+    ];
+    async function change(value: string) {
+      const projection = new DurablePostgresProjection(db, {
+        tenantId: f.tenantId,
+        sessionId: f.session.sessionId,
+      });
+      const storage = await PublishedDurableStorage.open({
+        projection,
+        publish: async (batch) => {
+          await projection.apply(batch);
+        },
+        waitProjected: async () => {},
+      });
+      const session = createSession(storage);
+      try {
+        await session.commit(async (tx) => {
+          for (const doc of docs) (await tx.doc(doc, 1 as ConversationId)).value = value;
+        }, BACKGROUND_CONTEXT);
+      } finally {
+        await session.close(BACKGROUND_CONTEXT);
+      }
+    }
+    await change("at-cutoff");
+    const anchor = await f.turn("fork here", "completed");
+    await change("current");
+    const fork = await f.service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
+      turnId: anchor.turnId,
+      entryId: anchor.answer!.id,
+    });
+    const projection = new DurablePostgresProjection(db, {
+      tenantId: f.tenantId,
+      sessionId: fork.session.sessionId,
+    });
+    const storage = await PublishedDurableStorage.open({
+      projection,
+      publish: async () => {
+        throw new Error("read-only");
+      },
+      waitProjected: async () => {},
+    });
+    try {
+      for (const [index, expected] of ["at-cutoff", "current", undefined].entries()) {
+        const record = await storage.findDocument(
+          {
+            kind: docs[index]!.definition.kind,
+            scope: { kind: "conversation", conversationId: 1 as ConversationId },
+          },
+          "current",
+          BACKGROUND_CONTEXT,
+        );
+        expect(
+          record
+            ? (await storage.document(record.id, "current", BACKGROUND_CONTEXT))?.value.value
+            : undefined,
+        ).toBe(expected);
+      }
+      expect((await storage.scanTasks({}, 100, undefined, BACKGROUND_CONTEXT)).items).toEqual([]);
+    } finally {
+      await storage.close(BACKGROUND_CONTEXT);
+    }
   });
 
   it("reports a missing Workspace when forking retained conversation history", async () => {

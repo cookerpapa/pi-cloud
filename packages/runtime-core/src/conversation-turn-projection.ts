@@ -55,9 +55,26 @@ export function projectConversationTurnTranscript(
       continue;
     }
     if (event.type === "assistant.text.delta") {
+      if (event.payload.messageId !== undefined) {
+        const at = items.findIndex(
+          (item) => item.kind === "text" && item.messageId === event.payload.messageId,
+        );
+        const old = items[at];
+        if (old?.kind === "text") {
+          items[at] = {
+            ...old,
+            text: event.payload.replace ? event.payload.text : old.text + event.payload.text,
+            lastSequence: event.seq,
+            ...(event.payload.phase === undefined ? {} : { phase: event.payload.phase }),
+          };
+          continue;
+        }
+      }
       const last = items.at(-1);
       if (
         last?.kind === "text" &&
+        event.payload.messageId === undefined &&
+        last.messageId === undefined &&
         last.phase !== "commentary" &&
         event.payload.phase !== "commentary" &&
         last.phase === event.payload.phase
@@ -71,6 +88,7 @@ export function projectConversationTurnTranscript(
         items.push({
           kind: "text",
           text: event.payload.text,
+          ...(event.payload.messageId === undefined ? {} : { messageId: event.payload.messageId }),
           ...(event.payload.phase === undefined ? {} : { phase: event.payload.phase }),
           firstSequence: event.seq,
           lastSequence: event.seq,

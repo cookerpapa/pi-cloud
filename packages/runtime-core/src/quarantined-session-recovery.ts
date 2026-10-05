@@ -55,13 +55,17 @@ export async function recoverQuarantinedSession(
 
 /** Only the local settled Runner or a positively confirmed stopped Worker may
  * call this. A disconnected management endpoint is not sufficient evidence. */
-export async function confirmAgentExit(db: Kysely<Database>, execution: Execution): Promise<void> {
+export async function confirmAgentExit(
+  db: Kysely<Database>,
+  execution: Execution & { leaseId: string },
+): Promise<void> {
   await retryTransaction(db, async (tx) => {
     const updated = await tx
       .updateTable("runs")
       .set({ agent_exited_at: sql<Date>`coalesce(agent_exited_at, now())` })
       .where("tenant_id", "=", execution.tenantId)
       .where("id", "=", execution.runId)
+      .where("lease_id", "=", execution.leaseId)
       .returning("id")
       .executeTakeFirst();
     if (updated) await recoverQuarantinedSession(tx, execution);
@@ -71,10 +75,16 @@ export async function confirmAgentExit(db: Kysely<Database>, execution: Executio
 export async function confirmStoppedWorkerExecutions(db: Kysely<Database>, sandboxId: string) {
   const runs = await db
     .selectFrom("runs as a")
-    .select(["a.tenant_id as tenantId", "a.session_id as sessionId", "a.id as runId"])
+    .select([
+      "a.tenant_id as tenantId",
+      "a.session_id as sessionId",
+      "a.id as runId",
+      "a.lease_id as leaseId",
+    ])
     .where("a.sandbox_id", "=", sandboxId)
     .where("a.agent_exited_at", "is", null)
     .where("a.state", "in", ["failed", "cancelled", "timed_out"])
     .execute();
-  for (const run of runs) await confirmAgentExit(db, run);
+  for (const run of runs)
+    if (run.leaseId) await confirmAgentExit(db, { ...run, leaseId: run.leaseId });
 }

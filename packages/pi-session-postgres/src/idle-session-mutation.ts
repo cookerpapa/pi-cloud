@@ -1,5 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import { SessionError } from "@earendil-works/pi-agent-core";
+import { NativeSessionError } from "./native-session-error.ts";
 import { type Transaction } from "kysely";
 
 /** Cold administrative writes share Run claim's physical Session lock. They
@@ -16,7 +16,10 @@ export async function assertIdleNativeSession(
     .where("id", "=", sessionId)
     .forUpdate()
     .executeTakeFirst();
-  if (!session) throw new SessionError("not_found", "Pi Session was not found");
+  if (!session) throw new NativeSessionError("not_found", "Pi Session was not found");
   if (session.unsealed_runs !== "0")
-    throw new SessionError("storage", "Native Session must settle before administrative changes");
+    throw new NativeSessionError(
+      "storage",
+      "Native Session must settle before administrative changes",
+    );
 }

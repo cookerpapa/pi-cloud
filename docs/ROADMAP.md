@@ -7,7 +7,8 @@
       recovery behavior, then perform a matched cutover.
 - [x] Execute isolated storage, Kafka/PG, crash and actual Cube Tool verification
       under ADR-0228. [Results and migration boundaries](reports/pi-durable-evaluation-20261005.md).
-      Production remains on Pi 0.84.1; runtime adoption requires a separate decision.
+      The owner subsequently approved native adoption under ADR-0229; the evaluation
+      alone was not a deployment.
 
 ## October 5 whole-repository follow-up review
 

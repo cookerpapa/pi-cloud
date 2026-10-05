@@ -1,3 +1,4 @@
+import { readDurableEntries } from "@pi-cloud/pi-session-postgres/durable";
 import type { Database } from "@pi-cloud/database";
 import type {
   ConversationDetailResource,
@@ -18,7 +19,6 @@ import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import {
   inheritedContextPreview,
   type InheritedContextPreview,
-  type InheritedContextEntry,
 } from "./inherited-context-preview.ts";
 import {
   environmentSnapshot,
@@ -470,6 +470,7 @@ export class ConversationReader {
         "execution.context_mode as contextMode",
         "execution.pi_context_base_entry_id as contextBaseEntryId",
         "child.pi_session_id as piSessionId",
+        "child.pi_conversation_id as conversationId",
       ])
       .where("execution.tenant_id", "=", this.#tenantId)
       .where("execution.child_session_id", "=", sessionId)
@@ -482,33 +483,22 @@ export class ConversationReader {
     }
     if (execution.contextMode !== "branch" || execution.contextBaseEntryId === null)
       return { inheritedMessages: [] };
-    const rows = (
-      await sql<InheritedContextEntry>`
-        with recursive branch as (
-          select id, parent_id, seq, type, timestamp_ms, 0 as depth
-            from pi_session_log
-           where tenant_id = ${this.#tenantId}::uuid
-             and session_id = ${execution.piSessionId}
-             and kind = 'entry' and id = ${execution.contextBaseEntryId}
-          union all
-          select parent.id,
-                 parent.parent_id,
-                 parent.seq,
-                 parent.type,
-                 parent.timestamp_ms,
-                 child.depth + 1 as depth
-            from pi_session_log parent
-            join branch child on child.parent_id = parent.id and parent.seq < child.seq
-           where parent.tenant_id = ${this.#tenantId}::uuid
-             and parent.kind = 'entry' and parent.session_id = ${execution.piSessionId}
-             and child.type <> 'compaction' and child.depth < ${MAX_INHERITED_CONTEXT_ENTRIES}
-        )
-        select branch.id, branch.type, branch.timestamp_ms as "timestampMs", log.payload->'entry' as payload
-         from branch join pi_session_log log on log.tenant_id=${this.#tenantId}::uuid
-           and log.session_id=${execution.piSessionId} and log.seq=branch.seq
-         order by branch.seq desc
-      `.execute(this.#database)
-    ).rows;
+    const conversationId =
+      execution.conversationId ??
+      (
+        await sql<{ conversation_id: string }>`select fields->>'conversation' as conversation_id
+      from pi_durable_records where tenant_id=${this.#tenantId}::uuid and session_id=${execution.piSessionId}
+        and kind='entry' and id=${Number(execution.contextBaseEntryId)}`.execute(this.#database)
+      ).rows[0]?.conversation_id;
+    if (conversationId === undefined) return { inheritedMessages: [] };
+    const rows = await readDurableEntries(this.#database, {
+      tenantId: this.#tenantId,
+      sessionId: execution.piSessionId,
+      conversationId: Number(conversationId),
+      through: Number(execution.contextBaseEntryId),
+      activeOnly: true,
+      limit: MAX_INHERITED_CONTEXT_ENTRIES + 1,
+    });
     return inheritedContextPreview(rows);
   }
 

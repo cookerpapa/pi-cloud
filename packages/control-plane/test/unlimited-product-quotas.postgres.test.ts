@@ -1,3 +1,4 @@
+import { insertHistoricalSession } from "../../database/test/fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { Migrator } from "kysely/migration";
@@ -50,11 +51,12 @@ describe.skipIf(!endpoint)("unlimited product quotas", () => {
         .execute();
       const store = new ControlPlaneStore({ database: db, ...tenant });
       const first = await store.createProject({ name: "first", source: { kind: "empty" } });
-      await store.createSession(first.projectId, first.workspaceId, "first", "elastic");
+      await insertHistoricalSession(db, { ...tenant, ...first });
       await expect(
         store.createProject({ name: "blocked", source: { kind: "empty" } }),
       ).rejects.toMatchObject({ code: "tenant_quota_exceeded" });
-      await runMigrations(db, "up");
+      const updated = await migrator.migrateTo("166_unlimited_product_quotas");
+      if (updated.error) throw updated.error;
       expect(
         await db
           .selectFrom("tenant_runtime_policies")
@@ -71,13 +73,16 @@ describe.skipIf(!endpoint)("unlimited product quotas", () => {
         ).maximum_active_sandboxes,
       ).toBeNull();
       const second = await store.createProject({ name: "second", source: { kind: "empty" } });
-      const session = await store.createSession(
-        second.projectId,
-        second.workspaceId,
-        "second",
-        "elastic",
-      );
-      expect(session.projectId).toBe(second.projectId);
+      const { sessionId } = await insertHistoricalSession(db, { ...tenant, ...second });
+      expect(
+        (
+          await db
+            .selectFrom("sessions")
+            .select("project_id")
+            .where("id", "=", sessionId)
+            .executeTakeFirstOrThrow()
+        ).project_id,
+      ).toBe(second.projectId);
       expect(
         (
           await db

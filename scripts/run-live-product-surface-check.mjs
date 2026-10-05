@@ -1,3 +1,4 @@
+import { readNativeHistory, nativeMessages } from "./lib/native-session-history.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
@@ -553,11 +554,8 @@ try {
       "After the Tool returns, reply briefly. Do not repeat the command and do not create a file.",
     ].join(" "),
   });
-  const storedResult = JSON.parse(
-    await psql(`select payload->'entry'->'message' from pi_session_log
-    where kind='entry' and session_id='${session.sessionId}' and turn_id='${largeOutput.accepted.turnId}'
-      and payload->'entry'->'message'->>'role'='toolResult' order by seq desc limit 1`),
-  );
+  const storedResult = nativeMessages(await readNativeHistory(psql, { sessionId: session.sessionId, turnId: largeOutput.accepted.turnId })).filter(message => message.role === "toolResult").at(-1);
+  assert(storedResult);
   const storedText = storedResult.content
     .filter((part) => part.type === "text")
     .map((part) => part.text)

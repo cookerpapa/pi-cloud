@@ -1,13 +1,18 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration, ToolExecutionResult } from "@earendil-works/pi-durable";
 import type { CandidateToolCommand } from "@pi-cloud/protocol";
 
 /** Owned adapter boundary, reached by the Runner only after native Pi validation. */
 export type PreparedToolExecution = Readonly<{
   command: CandidateToolCommand;
-  result(): ReturnType<AgentTool["execute"]>;
+  result(): Promise<ToolExecutionResult>;
+  completed(): boolean;
   dispose(): void;
 }>;
 
-export type PreparedAgentTool = AgentTool & {
-  prepareExecution?: (...args: Parameters<AgentTool["execute"]>) => Promise<PreparedToolExecution>;
+export type PreparedAgentTool = ToolRegistration & {
+  prepareExecution?: (
+    callId: string,
+    args: unknown,
+    signal?: AbortSignal,
+  ) => Promise<PreparedToolExecution>;
 };

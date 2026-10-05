@@ -1,9 +1,6 @@
-export { PiAgentEventAdapter, type PiAgentEventAdapterOutcome } from "./pi-agent-event-adapter.ts";
-
 export {
   PiTurnCancelledError,
   PiTurnError,
-  resolveCompactionReserveTokens,
   type PiModelRuntimeConfig,
   type PiCancellationSignal,
   type PiEventPublisher,
@@ -19,7 +16,6 @@ export {
   PI_WORKSPACE_CHANGED_MESSAGE,
   PI_TOOL_POLICY_CHANGED_CUSTOM_TYPE,
   PI_TOOL_POLICY_CHANGED_MESSAGE,
-  PI_WORLD_STATE_ENTRY_PROJECTORS,
   PiSessionWorldStateController,
   type PiRuntimeWorldState,
   type PiSandboxContinuity,
@@ -28,9 +24,7 @@ export {
 
 export {
   PiCloudTurnRunner,
-  PiModelRuntimePool,
   type PiCloudSessionHandle,
-  type PiModelRuntimeLease,
   type PiCloudTurnRunnerOptions,
 } from "./pi-cloud-turn-runner.ts";
 
@@ -64,7 +58,7 @@ export {
   type FrozenCloudStep,
   type FrozenCloudTurn,
 } from "./cloud-context.ts";
-export { PiSamplingStepController, type PiSamplingStepCapture } from "./pi-sampling-step.ts";
+export { DurableSampling, type PiSamplingStepCapture } from "./durable/sampling.ts";
 export {
   PI_SETTLEMENT_GATE_CUSTOM_TYPE,
   SETTLEMENT_GATE_COMMAND_ID,
@@ -135,16 +129,4 @@ export {
 } from "./reconnecting-supervisor-websocket-client.ts";
 export { SubagentControlClient } from "./subagent-control-client.ts";
 export type { WorkflowExecutor, WorkflowHostCall } from "./workflow-transport.ts";
-export {
-  CloudAgentRuntime,
-  type CloudAgentExecutionAuthority,
-  type CloudAgentRunResult,
-  type CloudAgentRuntimeEvent,
-  type CloudAgentRuntimeOptions,
-} from "./cloud-agent-runtime.ts";
-export {
-  ToolInvocations,
-  toolInvocationId,
-  withToolInvocation,
-  type ToolInvocation,
-} from "./tool-invocation.ts";
+export { toolInvocationId, withToolInvocation, type ToolInvocation } from "./tool-invocation.ts";

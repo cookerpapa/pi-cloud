@@ -1,3 +1,4 @@
+import { readNativeHistory, nativeMessages, runUsage } from "./lib/native-session-history.mjs";
 import { kubectl } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -131,29 +132,7 @@ async function psql(query) {
 }
 
 async function readRunUsage(runId) {
-  const row = await psql(
-    `select count(*)::text || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,input}')::bigint), 0)::text || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,output}')::bigint), 0)::text || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheRead}')::bigint), 0)::text || '|' ||
-            coalesce(sum((entry.payload #>> '{entry,message,usage,cacheWrite}')::bigint), 0)::text
-       from runs run
-       join pi_session_log entry
-         on entry.kind='entry' and entry.tenant_id = run.tenant_id
-        and entry.turn_id = run.turn_id
-      where run.id = ${sqlLiteral(runId)}
-        and entry.type = 'message'
-        and entry.payload #>> '{entry,message,role}' = 'assistant'
-        and entry.payload #> '{entry,message,usage}' is not null`,
-  );
-  const [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens] = row
-    .trim()
-    .split("|")
-    .map((value) => Number(value));
-  for (const value of [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens]) {
-    assert(Number.isSafeInteger(value) && value >= 0, "Run usage evidence is invalid");
-  }
-  return { requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens };
+  return runUsage(await readNativeHistory(psql, { runId }));
 }
 
 async function readStreamEvidence(runIds) {
@@ -161,11 +140,12 @@ async function readStreamEvidence(runIds) {
   const row = await psql(
     `select count(distinct terminal.turn_id)::text || '|' ||
             count(entry.id)::text || '|' ||
-            (count(entry.id) filter (where entry.type = 'message'))::text || '|' ||
-            coalesce(sum(octet_length((entry.payload->'entry')::text)), 0)::text
+            (count(entry.id) filter (where entry.fields->>'role' is not null))::text || '|' ||
+            coalesce(sum(octet_length(log.body)), 0)::text
        from runs r
        join session_terminal_events terminal on terminal.turn_id = r.turn_id
-       left join pi_session_log entry on entry.kind='entry' and entry.turn_id = r.turn_id
+       left join pi_durable_records entry on entry.kind='entry' and entry.tenant_id=r.tenant_id and entry.fields->>'turn'=r.turn_id::text
+       left join pi_durable_log log on log.tenant_id=entry.tenant_id and log.session_id=entry.session_id and log.seq=entry.seq and log.ordinal=entry.ordinal
       where r.id in (${runIds.map(sqlLiteral).join(", ")})`,
   );
   const [terminalCount, piEntryCount, messageCount, canonicalPayloadBytes] = row

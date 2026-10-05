@@ -1,3 +1,5 @@
+import { transitionCurrentRun } from "./run-state.ts";
+import { PostgresDurableCommitProjector } from "./postgres-durable-commit-projector.ts";
 import type { Database } from "@pi-cloud/database";
 import { recoverQuarantinedSession } from "./quarantined-session-recovery.ts";
 import { advanceLaneReadiness } from "./run-readiness.ts";
@@ -5,12 +7,8 @@ import { parsePiCloudEvent, type PiCloudEvent } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { AcceptedExecutionSealFact, AcceptedFact } from "./accepted-fact.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
-import { readInterruptedAssistantPrefix } from "./canonical-pi-conversation.ts";
-import { projectConversationTurnTranscript } from "./conversation-turn-projection.ts";
-import { PostgresPiSessionAppendProjector } from "./postgres-pi-session-append-projector.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
 import { CompactEventTail } from "./compact-event-tail.ts";
-import { isNativeAppendFact } from "./tool-invocation-fact.ts";
 import { projectionTransaction } from "./projection-transaction.ts";
 
 export type ExecutionProjectionResult = {
@@ -18,39 +16,12 @@ export type ExecutionProjectionResult = {
   canonicalThroughSequence?: number;
 };
 
-function displayCoverage(fact: AcceptedFact, tail: CompactEventTail): number | undefined {
-  if (!isNativeAppendFact(fact) || tail.highWaterMark === 0) return;
-  let visible = false;
-  const texts: string[] = [];
-  for (const item of fact.items) {
-    if (item.kind === "record" && item.record.type === "tool_started") visible = true;
-    if (item.kind !== "entry") continue;
-    const entry = item.entry;
-    if (entry.type === "compaction") visible = true;
-    if (
-      entry.type === "message" &&
-      (entry.message.role === "assistant" || entry.message.role === "toolResult")
-    ) {
-      visible = true;
-      if (entry.message.role === "assistant")
-        for (const part of entry.message.content) if (part.type === "text") texts.push(part.text);
-    }
-    if (entry.type === "custom" && entry.customType === "pi-cloud.interrupted_assistant_prefix") {
-      const data = entry.data as { text?: unknown };
-      if (typeof data?.text === "string") {
-        visible = true;
-        texts.push(data.text);
-      }
-    }
-  }
-  const pending = tail.text();
-  // Never evict displayed text merely because an unrelated native write landed.
-  if (!visible || (pending.length > 0 && !texts.join("").startsWith(pending))) return;
-  return tail.highWaterMark;
-}
-
 export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
-  return fact.kind === "agent_event" ? [fact.event] : isNativeAppendFact(fact) ? fact.events : [];
+  return fact.kind === "agent_event"
+    ? [fact.event]
+    : fact.kind === "durable_commit"
+      ? fact.events
+      : [];
 }
 
 /** Durable closure is checked once per execution, not once per token. Closed
@@ -82,10 +53,15 @@ export class ExecutionStreamBoundary {
   }
 
   observes(runId: string, writerId: string): boolean {
-    return this.#open.has(runId) && !this.#closed.has(runId) && !this.#writers.has(writerId);
+    return (
+      this.#open.has(`${writerId}:${runId}`) &&
+      !this.#closed.has(`${writerId}:${runId}`) &&
+      !this.#writers.has(writerId)
+    );
   }
 
-  close(runId: string, offset: bigint): void {
+  close(runId: string, writerId: string, offset: bigint): void {
+    runId = `${writerId}:${runId}`;
     this.#open.delete(runId);
     const previous = this.#closed.get(runId);
     this.#closed.delete(runId);
@@ -98,18 +74,23 @@ export class ExecutionStreamBoundary {
 
   async isOpen(record: KafkaAcceptedFactRecord, canonical: boolean): Promise<boolean> {
     const { scope } = record.fact;
+    const identity = `${scope.writerId}:${scope.runId}`;
     const writerCutoff = this.#writers.get(scope.writerId);
     if (writerCutoff !== undefined && record.offset >= writerCutoff) return false;
-    const cutoff = this.#closed.get(scope.runId);
+    const cutoff = this.#closed.get(identity);
     if (cutoff !== undefined) {
-      this.#closed.delete(scope.runId);
-      this.#closed.set(scope.runId, cutoff);
+      this.#closed.delete(identity);
+      this.#closed.set(identity, cutoff);
       return !canonical && record.offset < cutoff;
     }
-    if (this.#open.has(scope.runId)) return true;
+    if (this.#open.has(identity)) return true;
     const run = await this.#database
       .selectFrom("runs as run")
-      .innerJoin("session_leases as writer", "writer.lease_id", "run.lease_id")
+      .innerJoin("session_leases as writer", (join) =>
+        join
+          .on("writer.lease_id", "=", scope.writerId)
+          .onRef("writer.tenant_id", "=", "run.tenant_id"),
+      )
       .select([
         "run.started_at",
         "run.output_sealed_at",
@@ -125,8 +106,12 @@ export class ExecutionStreamBoundary {
       .where("run.session_id", "=", scope.sessionId)
       .where("run.turn_id", "=", scope.turnId)
       .executeTakeFirst();
-    if (run && run.lease_id !== scope.writerId)
-      throw new Error("Execution native writer identity changed");
+    if (run && run.lease_id !== scope.writerId) {
+      if (run.writer_seal_offset === null)
+        throw new Error("Previous execution owner has no closure proof");
+      this.closeWriter(scope.writerId, BigInt(run.writer_seal_offset));
+      return false;
+    }
     if (run?.writer_seal_offset != null) {
       const offset = BigInt(run.writer_seal_offset);
       this.closeWriter(scope.writerId, offset);
@@ -134,7 +119,7 @@ export class ExecutionStreamBoundary {
     }
     if (!run || run.output_sealed_at !== null) {
       const cutoff = run?.output_seal_offset == null ? -1n : BigInt(run.output_seal_offset);
-      this.close(scope.runId, cutoff);
+      this.close(scope.runId, scope.writerId, cutoff);
       return !canonical && record.offset < cutoff;
     }
     if (canonical) {
@@ -147,7 +132,7 @@ export class ExecutionStreamBoundary {
           throw new Error("Unsealed execution prefix is missing or changed Kafka partition");
       }
     }
-    this.#open.add(scope.runId);
+    this.#open.add(identity);
     return true;
   }
 }
@@ -156,13 +141,13 @@ export class ExecutionStreamBoundary {
 export class ExecutionStreamProjector {
   readonly #database: Kysely<Database>;
   readonly #boundary: ExecutionStreamBoundary;
-  readonly #mutations: PostgresPiSessionAppendProjector;
+  readonly #durable: PostgresDurableCommitProjector;
   readonly #prefixes = new Map<string, CompactEventTail>();
 
   constructor(database: Kysely<Database>) {
     this.#database = database;
     this.#boundary = new ExecutionStreamBoundary(database);
-    this.#mutations = new PostgresPiSessionAppendProjector(database);
+    this.#durable = new PostgresDurableCommitProjector(database);
   }
 
   reset(): void {
@@ -183,35 +168,52 @@ export class ExecutionStreamProjector {
     if (fact.kind === "path_probe") return;
     if (!(await this.#boundary.isOpen(record, true))) {
       if (fact.kind === "execution_seal") {
-        const prefix = this.#prefixes.get(fact.scope.runId);
+        const prefix = this.#prefixes.get(`${fact.scope.writerId}:${fact.scope.runId}`);
         const terminal = await this.#seal(fact, record, prefix);
-        this.#boundary.close(fact.scope.runId, record.offset);
+        this.#boundary.close(fact.scope.runId, fact.scope.writerId, record.offset);
         if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
-        this.#prefixes.delete(fact.scope.runId);
+        this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}`);
         return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
       }
       return;
     }
-    const existingPrefix = this.#prefixes.get(fact.scope.runId);
+    const existingPrefix = this.#prefixes.get(`${fact.scope.writerId}:${fact.scope.runId}`);
     const prefix = existingPrefix ?? new CompactEventTail();
     for (const event of factEvents(fact)) {
       prefix.accept(event);
     }
-    if (isNativeAppendFact(fact)) {
-      const through = displayCoverage(fact, prefix);
-      await this.#mutations.project(fact, record, through);
-      this.#prefixes.set(fact.scope.runId, prefix);
-      if (through !== undefined) {
-        prefix.cover(through);
-        return { canonicalThroughSequence: through };
-      }
+    if (fact.kind === "durable_commit") {
+      await this.#durable.project(fact, record);
+      this.#prefixes.set(`${fact.scope.writerId}:${fact.scope.runId}`, prefix);
     } else if (fact.kind === "execution_seal") {
       const terminal = await this.#seal(fact, record, prefix);
-      this.#boundary.close(fact.scope.runId, record.offset);
+      this.#boundary.close(fact.scope.runId, fact.scope.writerId, record.offset);
       if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
-      this.#prefixes.delete(fact.scope.runId);
+      this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}`);
       return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
     } else {
+      if (fact.kind === "agent_event" && fact.nativeSequence !== undefined) {
+        const covered = await this.#database
+          .updateTable("runs")
+          .set({
+            output_display_seq: sql`greatest(output_display_seq,${fact.event.seq})`,
+            output_display_native_seq: sql`greatest(output_display_native_seq,${fact.nativeSequence})`,
+            output_projected_offset: record.offset.toString(),
+          })
+          .where("tenant_id", "=", fact.scope.tenantId)
+          .where("id", "=", fact.scope.runId)
+          .where("lease_id", "=", fact.scope.writerId)
+          .where(
+            sql<boolean>`exists(select 1 from pi_durable_commits c where c.tenant_id=${fact.scope.tenantId}::uuid
+            and c.session_id=${fact.scope.piSessionId} and c.seq=${fact.nativeSequence})`,
+          )
+          .executeTakeFirst();
+        if (covered.numUpdatedRows !== 1n)
+          throw new Error("Display checkpoint preceded its native commit");
+        prefix.cover(fact.event.seq);
+        this.#prefixes.set(`${fact.scope.writerId}:${fact.scope.runId}`, prefix);
+        return { canonicalThroughSequence: fact.event.seq };
+      }
       if (!existingPrefix) {
         // Normally the first record is a native append and anchors in that
         // transaction. A display/control-only prefix must also survive recovery
@@ -228,7 +230,7 @@ export class ExecutionStreamProjector {
           .where("output_first_offset", "is", null)
           .execute();
       }
-      this.#prefixes.set(fact.scope.runId, prefix);
+      this.#prefixes.set(`${fact.scope.writerId}:${fact.scope.runId}`, prefix);
     }
   }
 
@@ -242,6 +244,8 @@ export class ExecutionStreamProjector {
         .selectFrom("runs")
         .select([
           "output_seal_id",
+          "lease_id",
+          "state",
           "output_sealed_at",
           "fencing_token",
           "output_seal_offset",
@@ -263,6 +267,10 @@ export class ExecutionStreamProjector {
         .forNoKeyUpdate()
         .executeTakeFirst();
       if (!writer) return;
+      if (run.lease_id !== fact.scope.writerId && writer.writer_seal_offset !== null) {
+        await recordFactProjection(transaction, position);
+        return;
+      }
       if (
         run.output_seal_id !== fact.factId ||
         Number(run.fencing_token ?? 0) !== fact.scope.fencingToken
@@ -296,7 +304,7 @@ export class ExecutionStreamProjector {
       }
       if (
         run.output_first_offset !== null &&
-        !this.#prefixes.has(fact.scope.runId) &&
+        !this.#prefixes.has(`${fact.scope.writerId}:${fact.scope.runId}`) &&
         BigInt(run.output_first_offset) !== position.offset
       )
         throw new Error("Unsealed execution prefix is missing before writer closure");
@@ -309,6 +317,83 @@ export class ExecutionStreamProjector {
           })
           .where("lease_id", "=", fact.scope.writerId)
           .execute();
+      if (fact.recover) {
+        const now = new Date(),
+          through = Math.max(fact.baseSequence, prefix?.highWaterMark ?? 0);
+        // Release/count the old incarnation before clearing its binding. The
+        // database trigger requires the immutable writer seal above.
+        await transaction
+          .updateTable("runs")
+          .set({
+            output_sealed_at: now,
+            output_seal_offset: position.offset.toString(),
+            last_event_seq: through,
+          })
+          .where("tenant_id", "=", fact.scope.tenantId)
+          .where("id", "=", fact.scope.runId)
+          .execute();
+        await transaction
+          .updateTable("turn_control_requests")
+          .set({
+            state: "pending",
+            dispatched_at: null,
+            acknowledged_at: null,
+            available_at: now,
+            failure_code: null,
+          })
+          .where("tenant_id", "=", fact.scope.tenantId)
+          .where("target_run_id", "=", fact.scope.runId)
+          .where("kind", "=", "cancel")
+          .where("state", "in", ["dispatched", "acknowledged"])
+          .execute();
+        await transitionCurrentRun(
+          transaction,
+          { tenantId: fact.scope.tenantId, runId: fact.scope.runId },
+          { runState: "queued", reason: "native_execution_recovery", now },
+        );
+        await transaction
+          .updateTable("runs")
+          .set({
+            sandbox_id: null,
+            lease_id: null,
+            fencing_token: null,
+            execution_released_at: null,
+            agent_exited_at: null,
+            output_seal_id: null,
+            output_sealed_at: null,
+            output_seal_offset: null,
+            output_first_topic: null,
+            output_first_partition: null,
+            output_first_offset: null,
+            output_projected_offset: null,
+            output_publication: null,
+            native_output_drained: false,
+            ready_at: null,
+          })
+          .where("tenant_id", "=", fact.scope.tenantId)
+          .where("id", "=", fact.scope.runId)
+          .execute();
+        await transaction
+          .updateTable("turns")
+          .set({ state: "queued" })
+          .where("tenant_id", "=", fact.scope.tenantId)
+          .where("id", "=", fact.scope.turnId)
+          .execute();
+        await transaction
+          .updateTable("sessions")
+          .set({
+            state: "idle",
+            row_version: sql`row_version+1`,
+            next_event_seq: sql`greatest(next_event_seq,${through + 1})`,
+            updated_at: now,
+          })
+          .where("tenant_id", "=", fact.scope.tenantId)
+          .where("id", "=", fact.scope.sessionId)
+          .execute();
+        await recordFactProjection(transaction, position);
+        await advanceLaneReadiness(transaction, fact.scope.tenantId, fact.scope.sessionId);
+        return;
+      }
       const event = parsePiCloudEvent({
         schemaVersion: 1,
         eventId: fact.factId,
@@ -320,17 +405,6 @@ export class ExecutionStreamProjector {
         ...fact.terminal,
       });
       const now = new Date();
-      const interruptedPrefix =
-        event.type !== "turn.completed"
-          ? prefix && prefix.coveredThrough > 0
-            ? prefix.text() || null
-            : await readInterruptedAssistantPrefix(transaction, {
-                tenantId: fact.scope.tenantId,
-                sessionId: fact.scope.sessionId,
-                turnId: fact.scope.turnId,
-                transcript: projectConversationTurnTranscript([...(prefix?.events ?? []), event]),
-              })
-          : null;
       await transaction
         .insertInto("session_terminal_events")
         .values({
@@ -346,7 +420,7 @@ export class ExecutionStreamProjector {
           payload: event.payload,
           occurred_at: new Date(fact.occurredAt),
           persisted_at: now,
-          interrupted_prefix: interruptedPrefix,
+          interrupted_prefix: null,
         })
         .execute();
       await transaction

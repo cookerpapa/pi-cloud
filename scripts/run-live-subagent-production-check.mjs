@@ -1,3 +1,4 @@
+import { readNativeHistory, nativeMessages, nativeUsage } from "./lib/native-session-history.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readPrivateRuntimeFile as readPrivate } from "./lib/runtime-file-policy.mjs";
@@ -251,7 +252,7 @@ async function executionEvidence(parentRunId, executionId) {
       'sameOwnerLease', parent_run.lease_id = child_run.lease_id
         and parent_run.fencing_token = child_run.fencing_token,
       'piSessionId', child.pi_session_id,
-      'piSessionLane', child.pi_session_lane,
+      'nativeConversationId', child.pi_conversation_id,
       'contextBaseEntryId', execution.pi_context_base_entry_id,
       'childPhysicalSessionExists', exists (
         select 1
@@ -259,20 +260,20 @@ async function executionEvidence(parentRunId, executionId) {
         where physical.tenant_id = execution.tenant_id
           and physical.id = execution.child_session_id::text
       ),
-      'laneExists', exists (
+      'nativeConversationExists', exists (
         select 1
-        from pi_session_lanes lane
+        from pi_durable_records lane
         where lane.tenant_id = execution.tenant_id
           and lane.session_id = child.pi_session_id
-          and lane.lane = child.pi_session_lane
+          and lane.kind='conversation' and lane.id = child.pi_conversation_id
       ),
       'childOwnedEntryCount', (
         select count(*)
-        from pi_session_log entry
+        from pi_durable_records entry
         where entry.kind='entry' and entry.tenant_id = execution.tenant_id
           and entry.session_id = child.pi_session_id
-          and entry.turn_id in (
-            select turn.id
+          and entry.fields->>'turn' in (
+            select turn.id::text
             from turns turn
             where turn.tenant_id = execution.tenant_id
               and turn.session_id = execution.child_session_id
@@ -323,7 +324,7 @@ async function recursiveTreeEvidence(rootRunId) {
       'sameOwnerLease', root_run.lease_id = child_run.lease_id
         and root_run.fencing_token = child_run.fencing_token,
       'piSessionId', child.pi_session_id,
-      'piSessionLane', child.pi_session_lane,
+      'nativeConversationId', child.pi_conversation_id,
       'contextBaseEntryId', execution.pi_context_base_entry_id
     ) order by execution.depth, execution.created_at), '[]'::json)::text
     from subagent_executions as execution
@@ -350,25 +351,25 @@ async function parallelExecutionEvidence(parentRunId) {
       'piSessionId', child.pi_session_id,
       'sameOwnerLease', parent_run.lease_id = child_run.lease_id
         and parent_run.fencing_token = child_run.fencing_token,
-      'piSessionLane', child.pi_session_lane,
+      'nativeConversationId', child.pi_conversation_id,
       'contextBaseEntryId', execution.pi_context_base_entry_id,
       'childPhysicalSessionExists', exists (
         select 1 from pi_sessions physical
         where physical.tenant_id = execution.tenant_id
           and physical.id = execution.child_session_id::text
       ),
-      'laneExists', exists (
-        select 1 from pi_session_lanes lane
+      'nativeConversationExists', exists (
+        select 1 from pi_durable_records lane
         where lane.tenant_id = execution.tenant_id
           and lane.session_id = child.pi_session_id
-          and lane.lane = child.pi_session_lane
+          and lane.kind='conversation' and lane.id = child.pi_conversation_id
       ),
       'childOwnedEntryCount', (
-        select count(*) from pi_session_log entry
+        select count(*) from pi_durable_records entry
         where entry.kind='entry' and entry.tenant_id = execution.tenant_id
           and entry.session_id = child.pi_session_id
-          and entry.turn_id in (
-            select turn.id from turns turn
+          and entry.fields->>'turn' in (
+            select turn.id::text from turns turn
             where turn.tenant_id = execution.tenant_id
               and turn.session_id = execution.child_session_id
           )
@@ -386,24 +387,14 @@ async function parallelExecutionEvidence(parentRunId) {
 }
 
 async function childUsedLocalTools(childRunId) {
-  const value = await psql(`
-    select exists (
-      select 1
-      from pi_session_log pe join runs r on pe.kind='entry' and r.turn_id=pe.turn_id
-      where r.id = ${sqlLiteral(childRunId)} and pe.type='message'
-        and pe.payload->'entry'->'message'->>'role'='toolResult'
-        and pe.payload->'entry'->'message'->>'toolName' in ('read','write','edit','bash')
-        and pe.payload->'entry'->'message'->>'isError'='false'
-    )::text
-  `);
-  return value === "true";
+  return nativeMessages(await readNativeHistory(psql, { runId: childRunId })).some(message => message.role === "toolResult" && ["read","write","edit","bash"].includes(message.toolName) && !message.isError);
 }
 
-function assertLaneBacked(evidence, rootPiSessionId) {
+function assertNativeConversationBacked(evidence, rootPiSessionId) {
   assert.equal(evidence.piSessionId, rootPiSessionId);
-  assert.match(evidence.piSessionLane, /^subagent-[0-9a-f-]{36}$/u);
+  assert(Number(evidence.nativeConversationId) > 1);
   assert.equal(evidence.childPhysicalSessionExists, false);
-  assert.equal(evidence.laneExists, true);
+  assert.equal(evidence.nativeConversationExists, true);
   assert(evidence.childOwnedEntryCount > 0);
   assert.equal(evidence.sameWorker, true);
   assert.equal(evidence.sameOwnerLease, true);
@@ -495,7 +486,7 @@ try {
   assert.equal(noneEvidence.sandboxMode, "none");
   assert.equal(noneEvidence.childRunState, "completed");
   assert.equal(noneEvidence.contextBaseEntryId, null);
-  assertLaneBacked(noneEvidence, session.sessionId);
+  assertNativeConversationBacked(noneEvidence, session.sessionId);
 
   const lazy = await runTurn(
     session.sessionId,
@@ -509,7 +500,7 @@ try {
   assert.equal(lazyEvidence.sandboxMode, "ephemeral");
   assert.equal(lazyEvidence.childRunState, "completed");
   assert.equal(lazyEvidence.contextBaseEntryId, null);
-  assertLaneBacked(lazyEvidence, session.sessionId);
+  assertNativeConversationBacked(lazyEvidence, session.sessionId);
   assert.equal(
     await childUsedLocalTools(lazyEvidence.childRunId),
     false,
@@ -536,9 +527,9 @@ try {
   for (const child of parallelEvidence) {
     assert.equal(child.childRunState, "completed");
     assert.equal(child.contextBaseEntryId, null);
-    assertLaneBacked(child, session.sessionId);
+    assertNativeConversationBacked(child, session.sessionId);
   }
-  assert.equal(new Set(parallelEvidence.map((child) => child.piSessionLane)).size, 2);
+  assert.equal(new Set(parallelEvidence.map((child) => child.nativeConversationId)).size, 2);
 
   const shared = await runTurn(
     session.sessionId,
@@ -556,7 +547,7 @@ try {
   assert.equal(sharedEvidence.contextBaseEntryId, null);
   assert(sharedEvidence.parentRuntimeId);
   assert.equal(sharedEvidence.childRuntimeId, sharedEvidence.parentRuntimeId);
-  assertLaneBacked(sharedEvidence, session.sessionId);
+  assertNativeConversationBacked(sharedEvidence, session.sessionId);
 
   const ephemeral = await runTurn(
     session.sessionId,
@@ -578,7 +569,7 @@ try {
   assert.notEqual(ephemeralEvidence.childRuntimeId, ephemeralEvidence.parentRuntimeId);
   assert(ephemeralEvidence.contextBaseEntryId);
   assert.match(ephemeral.text, /WORKTREE-MERGED-OK/u);
-  assertLaneBacked(ephemeralEvidence, session.sessionId);
+  assertNativeConversationBacked(ephemeralEvidence, session.sessionId);
 
   const parallelCompute = await runTurn(
     session.sessionId,
@@ -599,7 +590,7 @@ try {
     assert.equal(evidence.computeSessionId, evidence.childSessionId);
     assert(evidence.childRuntimeId && evidence.parentRuntimeId);
     assert.notEqual(evidence.childRuntimeId, evidence.parentRuntimeId);
-    assertLaneBacked(evidence, session.sessionId);
+    assertNativeConversationBacked(evidence, session.sessionId);
     parallelComputeEvidence.push(evidence);
   }
   assert.equal(new Set(parallelComputeEvidence.map((child) => child.childRuntimeId)).size, 2);
@@ -662,7 +653,7 @@ try {
   assert(recursiveEvidence.every((execution) => execution.sameOwnerLease === true));
   assert(
     recursiveEvidence.every((execution) =>
-      /^subagent-[0-9a-f-]{36}$/u.test(execution.piSessionLane),
+      /^subagent-[0-9a-f-]{36}$/u.test(execution.nativeConversationId),
     ),
   );
   assert.equal(recursiveEvidence[0].parentExecutionId, null);
@@ -684,7 +675,7 @@ try {
   assert(codingEvidence.every((child) => child.childRunState === "completed"));
   assert.match(coding.text, /SUBAGENT-CODING-OK/u);
   for (const child of codingEvidence) {
-    assertLaneBacked(child, session.sessionId);
+    assertNativeConversationBacked(child, session.sessionId);
     assert.equal(await childUsedLocalTools(child.childRunId), true);
   }
 
@@ -699,8 +690,8 @@ try {
   const mailboxEvidence = JSON.parse(
     await psql(`select json_build_object(
     'commands', count(*), 'consumed', count(input_consumed_at),
-    'nativeEntries', (select count(*) from pi_session_log where kind='entry' and session_id=${sqlLiteral(session.sessionId)}
-      and id like 'pc-agent-input-%')) from subagent_control_commands
+    'nativeEntries', (select count(*) from pi_durable_records input where input.kind='submission' and input.session_id=${sqlLiteral(session.sessionId)}
+      and input.fields ? 'entry' and input.fields->>'request' in (select to_jsonb(id::text)::text from subagent_control_commands where run_id=${sqlLiteral(messaging.accepted.runId)} and command->'request'->>'action'='send'))) from subagent_control_commands
     where run_id=${sqlLiteral(messaging.accepted.runId)} and command->'request'->>'action'='send'`),
   );
   assert.equal(mailboxEvidence.commands, 1);
@@ -744,11 +735,7 @@ try {
       "return {cwd:process.cwd(), hostname:process.env.HOSTNAME||null, uid:process.getuid(), leakedKeys:Object.keys(process.env).filter(k=>/^(DATABASE_URL|KAFKA_BROKERS|OPENAI_API_KEY|DEEPSEEK_API_KEY|PI_CLOUD_SANDBOX_CONTROL_TOKEN)$/.test(k))};",
     ].join(" "),
   );
-  const boundaryEntries = JSON.parse(
-    await psql(`select coalesce(json_agg(payload->'entry'->'message'),'[]') from pi_session_log
-    where kind='entry' and turn_id=${sqlLiteral(boundary.accepted.turnId)} and type='message'
-      and payload->'entry'->'message'->>'role'='toolResult' and payload->'entry'->'message'->>'toolName'='subagent'`),
-  );
+  const boundaryEntries = nativeMessages(await readNativeHistory(psql, { turnId: boundary.accepted.turnId })).filter(message => message.role === "toolResult" && message.toolName === "subagent");
   assert.equal(boundaryEntries.length, 1);
   const boundaryResult = JSON.parse(
     boundaryEntries[0].content.find((part) => part.type === "text").text,
@@ -821,14 +808,7 @@ try {
     workerImages,
     testRevision,
     timings: measurements,
-    usage: JSON.parse(
-      await psql(`select json_build_object(
-      'input',coalesce(sum((payload->'entry'->'message'->'usage'->>'input')::bigint),0),
-      'output',coalesce(sum((payload->'entry'->'message'->'usage'->>'output')::bigint),0),
-      'cacheRead',coalesce(sum((payload->'entry'->'message'->'usage'->>'cacheRead')::bigint),0),
-      'cacheWrite',coalesce(sum((payload->'entry'->'message'->'usage'->>'cacheWrite')::bigint),0))
-      from pi_session_log where kind='entry' and session_id=${sqlLiteral(session.sessionId)} and type='message' and payload->'entry'->'message'->>'role'='assistant'`),
-    ),
+    usage: nativeUsage(await readNativeHistory(psql, { sessionId: session.sessionId })),
     accepted: true,
     checkedAt: new Date().toISOString(),
     model: acceptanceModel,

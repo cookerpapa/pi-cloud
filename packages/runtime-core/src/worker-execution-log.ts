@@ -25,7 +25,7 @@ import type {
 import { prepareExecutionFact } from "./prepare-execution-fact.ts";
 import { DEFAULT_PRODUCER_CAPACITY, type ProducerCapacity } from "@pi-cloud/event-log";
 import { AcceptedFactCapacityError } from "./accepted-fact.ts";
-import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
+import { PublicationNotSentError } from "@pi-cloud/protocol";
 import type { AcceptedFact } from "./accepted-fact.ts";
 
 export type WorkerExecutionProbeTransport = {
@@ -218,7 +218,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       this.#opening.delete(request.executionReference);
     }
     const permit = request.publication;
-    const { leaseId: _lease, piSessionLane: _lane, ...observationScope } = permit.scope;
+    const { leaseId: _lease, piConversationId: _lane, ...observationScope } = permit.scope;
     const runtimeBinding = { scope: observationScope, successAt: 0 } as {
       scope: RuntimeObservationScope;
       bindingId?: string;
@@ -318,12 +318,8 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           },
         };
       },
-      mutate: async (mutation) => {
-        await publish({ kind: "pi_session_append", mutation });
-        for (const event of mutation.events)
-          acknowledgedThroughSeq = Math.max(acknowledgedThroughSeq, event.seq);
-        return { mutationId: mutation.mutationId, accepted: true };
-      },
+      publication: permit,
+      commitNative: (fact) => publish({ kind: "durable_commit", fact }),
       publishToolCommand: async (command) => {
         if (command.request.operation === "tool.execute")
           throw new Error("Fixed Tool commands require an atomic native intent publication");
@@ -350,6 +346,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           .updateTable("runs")
           .set({ native_output_drained: true, last_event_seq: acknowledgedThroughSeq })
           .where("id", "=", permit.scope.runId)
+          .where("lease_id", "=", permit.scope.writerId)
           .where("output_sealed_at", "is", null)
           .execute();
       },

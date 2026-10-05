@@ -4,7 +4,7 @@ import {
   parseExecutionReference,
   validateImageReferencePayload,
 } from "@pi-cloud/protocol";
-import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
+import { PublicationNotSentError } from "@pi-cloud/protocol";
 import { DEFAULT_PRODUCER_CAPACITY, type ProducerCapacity } from "@pi-cloud/event-log";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import type {
@@ -15,7 +15,7 @@ import type {
   SessionLogFact,
 } from "./accepted-fact.ts";
 import type { SessionControlChange } from "@pi-cloud/protocol";
-import { isNativeAppendFact, toolCommandForFact } from "./tool-invocation-fact.ts";
+import { toolCommandsForFact } from "./tool-invocation-fact.ts";
 
 export type PublicationRecord = Readonly<{
   factId: string;
@@ -251,7 +251,7 @@ export class SessionPublicationIngress {
       const run = writer.runs.get(fact.scope.runId);
       if (!run) throw new PublicationIngressRejected("not_open");
       if (writer.closing || run.closed || run.seal) throw new PublicationIngressRejected("closed");
-      this.#validate(run.permit, fact);
+      this.#validate(run.permit, fact, writer);
       return this.#enqueue(partition, writer, fact);
     } catch (error) {
       return Promise.reject(
@@ -287,7 +287,7 @@ export class SessionPublicationIngress {
       let run = writer.runs.get(fact.scope.runId);
       if (!run) {
         run = {
-          permit: { scope: { ...fact.scope, leaseId: fact.scope.writerId, piSessionLane: "" } },
+          permit: { scope: { ...fact.scope, leaseId: fact.scope.writerId, piConversationId: 1 } },
           closed: false,
           sealed: false,
         };
@@ -351,8 +351,8 @@ export class SessionPublicationIngress {
     return this.#enqueue(this.#owned(owner), undefined, fact);
   }
 
-  #validate(permit: ExecutionPublication, fact: AcceptedFact): void {
-    const { leaseId, piSessionLane, ...scope } = permit.scope;
+  #validate(permit: ExecutionPublication, fact: AcceptedFact, writer?: Writer): void {
+    const { leaseId, piConversationId: _conversation, ...scope } = permit.scope;
     if (
       !isDeepStrictEqual(fact.scope, fact.kind === "tool_command" ? { ...scope, leaseId } : scope)
     )
@@ -371,33 +371,19 @@ export class SessionPublicationIngress {
       )
         throw new PublicationIngressRejected("scope");
     }
-    if (isNativeAppendFact(fact)) {
-      validateImageReferencePayload(fact.items);
-      if (
-        fact.piSession.id !== scope.piSessionId ||
-        fact.piSession.lane !== piSessionLane ||
-        fact.piSession.writerId !== scope.writerId
-      )
-        throw new PublicationIngressRejected("scope");
-      toolCommandForFact(fact);
-      if (
-        fact.items.some((item) =>
-          item.kind === "entry"
-            ? item.lane !== piSessionLane
-            : item.kind === "record"
-              ? item.record.lane !== piSessionLane
-              : item.kind === "lane"
-                ? !item.create && item.lane !== piSessionLane
-                : piSessionLane !== "main",
-        )
-      )
-        throw new PublicationIngressRejected("scope");
-      if (
-        fact.events.some(
-          (event) => event.sessionId !== scope.sessionId || event.turnId !== scope.turnId,
-        )
-      )
-        throw new PublicationIngressRejected("scope");
+    if (fact.kind === "durable_commit") {
+      validateImageReferencePayload(fact.commit);
+      if (!writer) throw new PublicationIngressRejected("scope");
+      for (const tool of toolCommandsForFact(fact)) {
+        const target = writer.runs.get(tool.scope.runId);
+        if (!target || target.closed || target.seal) throw new PublicationIngressRejected("closed");
+        this.#validate(target.permit, tool, writer);
+      }
+      for (const cancellation of fact.cancellations) {
+        const target = writer.runs.get(cancellation.scope.runId);
+        if (!target) throw new PublicationIngressRejected("scope");
+        this.#validate(target.permit, cancellation, writer);
+      }
     }
   }
 

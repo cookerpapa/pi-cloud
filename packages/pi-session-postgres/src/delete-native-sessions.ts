@@ -1,4 +1,4 @@
-import { SessionError } from "@earendil-works/pi-agent-core";
+import { NativeSessionError } from "./native-session-error.ts";
 import type { Database } from "@pi-cloud/database";
 import { sql, type Transaction } from "kysely";
 
@@ -19,7 +19,7 @@ export async function deletePostgresPiSessionsInTransaction(
     .noWait()
     .execute();
   if (sessions.some((row) => row.unsealed_runs !== "0"))
-    throw new SessionError("storage", "Native Session must settle before deletion");
+    throw new NativeSessionError("storage", "Native Session must settle before deletion");
   const referenced = await transaction
     .selectFrom("sessions")
     .select("id")
@@ -27,7 +27,8 @@ export async function deletePostgresPiSessionsInTransaction(
     .where(sql<boolean>`pi_session_id=any(${[...ids]}::text[])`)
     .limit(1)
     .executeTakeFirst();
-  if (referenced) throw new SessionError("storage", "Native Session still has a product reference");
+  if (referenced)
+    throw new NativeSessionError("storage", "Native Session still has a product reference");
   const current = await transaction
     .selectFrom("session_leases")
     .select("lease_id")
@@ -36,7 +37,7 @@ export async function deletePostgresPiSessionsInTransaction(
     .where("released_at", "is", null)
     .limit(1)
     .executeTakeFirst();
-  if (current) throw new SessionError("storage", "Native Session still has a current writer");
+  if (current) throw new NativeSessionError("storage", "Native Session still has a current writer");
   await transaction
     .deleteFrom("session_leases")
     .where("tenant_id", "=", tenantId)

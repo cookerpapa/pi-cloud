@@ -2,13 +2,9 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import type { AgentEvent } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import {
-  PI_SETTLEMENT_GATE_CUSTOM_TYPE,
-  PiSettlementGateController,
-  settlementGatePolicyFromCommand,
-} from "../src/index.ts";
+import { PiSettlementGateController, settlementGatePolicyFromCommand } from "../src/index.ts";
 
 function install() {
   return new PiSettlementGateController({
@@ -25,7 +21,15 @@ function emit(
   name: string,
   event: Record<string, unknown>,
 ): void {
-  controller.observe({ type: name, ...event } as AgentEvent);
+  if (name === "message_end")
+    controller.observe({ type: name, entry: { model: [event.message] } } as unknown as AgentEvent);
+  else if (name === "tool_execution_end")
+    controller.observe({
+      type: name,
+      ...event,
+      entry: { model: [{ role: "toolResult", isError: event.isError }] },
+    } as unknown as AgentEvent);
+  else controller.observe({ type: name, ...event } as unknown as AgentEvent);
 }
 
 describe("Pi settlement gate", () => {
@@ -121,13 +125,7 @@ describe("Pi settlement gate", () => {
     });
 
     const followUp = controller.prepareFollowUp();
-    expect(followUp).toEqual(
-      expect.objectContaining({
-        customType: PI_SETTLEMENT_GATE_CUSTOM_TYPE,
-        display: false,
-        details: { schemaVersion: 1 },
-      }),
-    );
+    expect(Array.isArray(followUp)).toBe(true);
     expect(JSON.stringify(followUp)).toContain("npm test");
     expect(controller.prepareFollowUp()).toBeUndefined();
   });

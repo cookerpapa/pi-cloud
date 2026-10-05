@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
-import type {
-  AgentMessage,
-  CustomEntryContextMessageProjector,
-  Session,
-} from "@earendil-works/pi-agent-core";
+import { defineDoc, type Harness, type ConversationId } from "@earendil-works/pi-durable";
+import type { JsonValue } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { SystemMessage } from "@earendil-works/pi-ai";
 import type { CloudStepWorldState } from "./cloud-context.ts";
 
 export const PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE = "pi-cloud.runtime_world_state";
@@ -70,15 +69,7 @@ function sha256(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
-function runtimeWorldState(entry: {
-  type: string;
-  customType?: string;
-  data?: unknown;
-}): PiRuntimeWorldState | undefined {
-  if (entry.type !== "custom" || entry.customType !== PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE) {
-    return undefined;
-  }
-  const data = entry.data;
+function runtimeWorldState(data: unknown): PiRuntimeWorldState | undefined {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return undefined;
   const candidate = data as Record<string, unknown>;
   const sandbox = candidate.sandbox;
@@ -135,92 +126,60 @@ function modelMessage(
   return { customType, content: PI_TOOL_POLICY_CHANGED_MESSAGE, display: false, details };
 }
 
-function customWorldStateProjector(entry: {
-  customType: string;
-  data?: unknown;
-  timestamp: number;
-}): AgentMessage[] | undefined {
-  if (
-    entry.customType !== PI_SANDBOX_RESET_CUSTOM_TYPE &&
-    entry.customType !== PI_WORKSPACE_CHANGED_CUSTOM_TYPE &&
-    entry.customType !== PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE &&
-    entry.customType !== PI_TOOL_POLICY_CHANGED_CUSTOM_TYPE
-  ) {
-    return undefined;
-  }
-  const data = entry.data;
-  if (!isModelMessageData(data)) return undefined;
-  return [
-    {
-      role: "custom",
-      customType: entry.customType,
-      content: data.content,
-      display: false,
-      details: data.details,
-      timestamp: entry.timestamp,
-    } as AgentMessage,
-  ];
-}
-
-function isModelMessageData(
-  value: unknown,
-): value is Pick<PiWorldStateModelMessage, "content" | "details"> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.content === "string" &&
-    typeof candidate.details === "object" &&
-    candidate.details !== null
-  );
-}
-
-export const PI_WORLD_STATE_ENTRY_PROJECTORS: Readonly<
-  Record<string, CustomEntryContextMessageProjector>
-> = Object.freeze({
-  [PI_SANDBOX_RESET_CUSTOM_TYPE]: customWorldStateProjector,
-  [PI_WORKSPACE_CHANGED_CUSTOM_TYPE]: customWorldStateProjector,
-  [PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE]: customWorldStateProjector,
-  [PI_TOOL_POLICY_CHANGED_CUSTOM_TYPE]: customWorldStateProjector,
+const WorldState = defineDoc<{ state: JsonValue | null }>({
+  kind: PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
+  version: 1,
+  scope: "conversation",
+  history: "rewindable",
+  fork: "current",
+  initial: () => ({ state: null }),
 });
+export function worldStateMessage(message: PiWorldStateModelMessage): SystemMessage {
+  return {
+    role: "system",
+    content: message.content,
+    sections: { [`pi-cloud-change:${message.details.changeSha256}`]: "" },
+    timestamp: Date.now(),
+  };
+}
 
 /** PostgreSQL SessionStorage variant used by the cloud-native Pi runtime. */
 export class PiSessionWorldStateController {
-  readonly #session: Session;
-  readonly #lane: string;
+  readonly #session: Harness;
+  readonly #conversationId: ConversationId;
   #continuity: PiSandboxContinuity;
   readonly #messagesAppendedDuringRun: PiWorldStateModelMessage[] = [];
   #status: PiRuntimeWorldState["sandbox"]["status"];
   #previous: PiRuntimeWorldState | undefined;
 
   private constructor(
-    session: Session,
-    lane: string,
+    session: Harness,
+    conversationId: number,
     continuity: PiSandboxContinuity,
     previous: PiRuntimeWorldState | undefined,
   ) {
     this.#session = session;
-    this.#lane = lane;
+    this.#conversationId = conversationId as ConversationId;
     this.#continuity = continuity;
     this.#status = continuity.continuity === "warm_reuse" ? "active" : "inactive";
     this.#previous = previous;
   }
 
   static async create(
-    session: Session,
-    lane: string,
+    session: Harness,
+    conversationId: number,
     continuity: PiSandboxContinuity,
   ): Promise<PiSessionWorldStateController> {
-    const [latest] = await session.view(lane).findEntriesOnBranch({
-      type: "custom",
-      customType: PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
-      order: "newestFirst",
-      limit: 1,
-    });
+    const state = await session.snapshot(
+      WorldState,
+      conversationId as ConversationId,
+      BACKGROUND_CONTEXT,
+    );
     return new PiSessionWorldStateController(
       session,
-      lane,
+      conversationId,
       continuity,
-      latest === undefined ? undefined : runtimeWorldState(latest),
+      runtimeWorldState(state?.state),
     );
   }
 
@@ -300,17 +259,19 @@ export class PiSessionWorldStateController {
     if (previous !== undefined && previous.toolPolicySha256 !== current.toolPolicySha256) {
       material.push(PI_TOOL_POLICY_CHANGED_CUSTOM_TYPE);
     }
-    for (const customType of material) {
-      const message = modelMessage(customType, previous!, current);
-      await this.#session.view(this.#lane).appendCustomEntry(customType, {
-        content: message.content,
-        details: message.details,
-      });
-      this.#messagesAppendedDuringRun.push(message);
-    }
-    await this.#session
-      .view(this.#lane)
-      .appendCustomEntry(PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE, current);
+    const messages = material.map((customType) => modelMessage(customType, previous!, current));
+    await this.#session.commit(async (tx) => {
+      for (const message of messages)
+        await tx.appendEntry(this.#conversationId, {
+          kind: message.customType,
+          model: [worldStateMessage(message)],
+          data: { ...message.details },
+        });
+      (await tx.doc(WorldState, this.#conversationId)).state = JSON.parse(
+        JSON.stringify(current),
+      ) as JsonValue;
+    }, BACKGROUND_CONTEXT);
+    this.#messagesAppendedDuringRun.push(...messages);
     this.#previous = current;
     return current;
   }

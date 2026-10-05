@@ -4,15 +4,18 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./durable": "./src/durable/index.ts",
+    "./testing": "./testing/durable-family.ts"
   },
   "dependencies": {
+    "@earendil-works/chord": "1.0.0",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-durable": "1.0.0",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/protocol": "0.1.0",
-    "@earendil-works/pi-agent-core": "0.84.1",
-    "@earendil-works/pi-ai": "0.84.1",
-    "kysely": "0.29.4",
-    "@pi-cloud/session-attachments": "0.1.0"
+    "@pi-cloud/session-attachments": "0.1.0",
+    "kysely": "0.29.4"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.4",
@@ -20,6 +23,6 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest --run --maxWorkers=1"
+    "test": "node ../../scripts/run-with-test-postgres.mjs -- node ../../node_modules/vitest/vitest.mjs --run --maxWorkers=1 --testTimeout=30000 --hookTimeout=60000"
   }
 }

@@ -11,7 +11,7 @@ it("binds publication identity to the admitted Run and physical Session writer",
     turnId: crypto.randomUUID(),
     runId,
     executionReference: createExecutionReference(leaseId, runId, 3),
-    piSession: { id: "physical", lane: "child", writerId: leaseId },
+    piSession: { id: "physical", conversationId: 2, writerId: leaseId },
     nextEventSeq: 1,
   };
   expect(createExecutionPublication(input).scope).toMatchObject({
@@ -20,7 +20,7 @@ it("binds publication identity to the admitted Run and physical Session writer",
     writerId: leaseId,
     fencingToken: 3,
     piSessionId: "physical",
-    piSessionLane: "child",
+    piConversationId: 2,
   });
   expect(() => createExecutionPublication({ ...input, runId: crypto.randomUUID() })).toThrow(
     "does not match",

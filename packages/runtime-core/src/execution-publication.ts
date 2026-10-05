@@ -16,7 +16,7 @@ export function createExecutionPublication(
       leaseId: lease.leaseId,
       fencingToken: lease.fencingToken,
       piSessionId: request.piSession.id,
-      piSessionLane: request.piSession.lane,
+      piConversationId: request.piSession.conversationId,
       writerId: lease.leaseId,
     },
   };

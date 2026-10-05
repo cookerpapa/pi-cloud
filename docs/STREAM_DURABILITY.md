@@ -19,8 +19,9 @@ ADR-0221 adds an idempotent operation cancellation fact on that same Session
 path. It is control traffic, not native history. Projector replay may redeliver
 cancellation while never replaying the original Tool. Destination VM/partition
 progress prevents a delayed old submit from overtaking its cancellation.
-Normal interruption settles the original Tool result before sealing; unconfirmed
-results become UNKNOWN within the cancellation grace. Closed binding references
+ADR-0229 adopts native Durable abort settlement; uncommitted late results cannot
+replace it. Operation cancellation co-commits with the native abort. Neither its
+transport ACK nor absent reply proves that the physical process stopped. Closed binding references
 retain immutable cleanup targets for abnormal retirement. There is no stopped
 receipt table. Cancellation transport ambiguity cannot poison native publication.
 The derived `input.queue` SSE snapshot is disposable presentation with its own
@@ -41,7 +42,7 @@ can decide retention. A missing/corrupt object causes an explicit read failure.
 - `V`: a browser observed valid output through Projector SSE;
 - `P`: complete native state and its PG projection position committed together;
 - `T`: authority requested an immutable execution seal in the PG Outbox;
-- `C`: Projector committed that seal, interrupted prefix and public terminal;
+- `C`: Projector committed the incarnation seal and either logical termination or recovery admission;
 - `S`: a replacement snapshot contains canonical history plus materialized tail.
 
 ```text
@@ -97,9 +98,9 @@ A seal may be the only record of an admitted execution that produced no output.
 
 Active text fragments stay in Kafka/rebuildable memory, not PG token rows. A later
 complete message in another Session cannot move recovery beyond an older unsealed
-prefix. At a seal, Projector folds visible partial text into the durable terminal;
-the next native writer incorporates it and an interruption marker before
-sampling. It does not invent a successful Tool result.
+prefix. Native committed progress and final entries own retained text; Projector does not manufacture a native interrupted-prefix entry at a seal;
+the replacement Harness resumes its native checkpoints and interruption
+semantics after PG authorization. It does not invent a successful Tool result.
 
 ## Snapshot-first browser delivery
 
@@ -128,14 +129,14 @@ than pin shared buffers indefinitely. Heartbeats reuse the outstanding read.
 
 Pi text can coalesce for 25 ms after an immediate first delta. Producer batching
 does not change record identity. Thinking, partial Tool arguments and partial
-Tool stdout are not public streams. One durable preparation event makes long
-Tool argument generation visible; the complete Tool boundary replaces it.
+Tool stdout are not public streams. The lossy runtime activity channel reports Tool argument preparation; the
+complete native Tool boundary supplies durable Tool identity and history.
 
 ## Crash matrix
 
 | Failure point | Required outcome |
 | --- | --- |
-| Worker and control processes die before requesting a seal, storage survives | owner retirement requests the seal after expiry/fencing; replay its prefix and commit closure before a successor; do not resume the old Agent automatically |
+| Worker and control processes die before requesting a seal, storage survives | ordered old-writer closure precedes a new PG lease; Durable resumes the same logical Run with no unsafe Tool replay |
 | first-record PG commit succeeds, reply lost | replay idempotently with the same first position; do not advance past uncommitted work |
 | semantic message PG commit | retire covered live spans, preserve borrowed reader references and uncovered suffix |
 | connection lost mid-snapshot | discard only the partial browser value; request a new snapshot without a cursor |
@@ -143,14 +144,14 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 | submission/ACK outcome is uncertain | fail the shared native writer; no local rollback or invented non-publication proof |
 | Kafka accepted the record but the publisher lost its ACK | it may project before the seal; do not infer it was absent or replay the Agent |
 | after ACK, before Projector | replay accepted positions; a matching execution identity does not bypass its seal |
-| visible partial output, before complete message | rebuild from Kafka; closure saves interrupted text |
+| visible partial output, before complete message | rebuild from Kafka; native committed progress determines retained text |
 | model message before validated intent | no effect admitted for that Tool |
 | intent without durable Tool result | that Tool may be UNKNOWN; later unstarted Tools stay unstarted |
 | during PG transaction | rollback state and position; re-read the record |
 | PG commit succeeds, consumer ACK lost | idempotent semantic replay; Tool dispatch requires confirmed commit |
 | native/seal SQL exceeds its local lock/statement budget | server cancellation and rollback leave the offset pending; retry that partition in order, with no Tool dispatch |
 | binding revocation publication fails | retry its durable reference before sealing; preserve metadata and VM quota; do not kill processes |
-| Tool finishes during Agent Stop | preserve its actual final reply while the waiter is open; after bounded UNKNOWN/sealing, discard late replies without rewriting history |
+| Tool finishes during Agent Stop | native abort owns settlement; results committed before abort remain, late physical replies cannot overwrite it |
 | seal request before Kafka append | retry the same seal after ordered binding closure; next Run stays queued |
 | old data before first seal | valid historical input, even if PG already knows closure |
 | old data after first seal | no PG, UI or new execution effect |

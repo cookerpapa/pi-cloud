@@ -1,34 +1,28 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
-import { PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
-import {
-  TurnExecutionBackendError,
-  type TurnExecutionRequest,
-} from "@pi-cloud/runtime-core/run-executor";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DurablePostgresProjection } from "@pi-cloud/pi-session-postgres/durable";
+import { TurnExecutionBackendError } from "@pi-cloud/runtime-core/run-executor";
+import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { sql, type Kysely } from "kysely";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
+import { createTestWorker } from "./admit-test-execution.ts";
 import {
   ExecutionStreamProjector,
   ExecutionStreamBoundary,
 } from "../../runtime-core/src/execution-stream-projection.ts";
+import { PostgresDurableCommitProjector } from "../../runtime-core/src/postgres-durable-commit-projector.ts";
 import { SessionLiveView } from "../../runtime-core/src/session-live-view.ts";
-import { factEvents } from "../../runtime-core/src/execution-stream-projection.ts";
 import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fact.ts";
-import { PostgresPiSessionAppendProjector } from "../../runtime-core/src/postgres-pi-session-append-projector.ts";
 import { loadFactReplayOffsets } from "../../runtime-core/src/accepted-fact-recovery.ts";
-import type {
-  AcceptedAgentEventFact,
-  AcceptedExecutionSealFact,
-  AcceptedPiSessionAppendFact,
-  AcceptedFact,
-} from "../../runtime-core/src/accepted-fact.ts";
-import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
 import { KafkaSafeRetention } from "../../runtime-core/src/kafka-safe-retention.ts";
-import { vi } from "vitest";
-import { createTestWorker } from "./admit-test-execution.ts";
-
+import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
+import type {
+  AcceptedFact,
+  AcceptedAgentEventFact,
+  AcceptedDurableCommitFact,
+  AcceptedExecutionSealFact,
+} from "../../runtime-core/src/accepted-fact.ts";
 let pg: PGlite,
   socket: PGLiteSocketServer,
   db: Kysely<Database>,
@@ -43,32 +37,16 @@ beforeAll(async () => {
     maxConnections: 1,
   });
   await runMigrations(db, "up");
-  const tenant = await createPrivateTenant(db, {
-    slug: "seal-tests",
-    ownerDisplayName: "Seal tests",
-  });
+  const tenant = await createPrivateTenant(db, { slug: "native-seals", ownerDisplayName: "Seals" });
   tenantId = tenant.tenantId;
-  store = new ControlPlaneStore({
-    database: db,
-    tenantId,
-    defaultModelProfileId: tenant.defaultModelProfileId,
-  });
-}, 30000);
+  store = new ControlPlaneStore({ database: db, ...tenant });
+}, 60000);
 afterAll(async () => {
   await db?.destroy();
   await socket?.stop();
   await pg?.close();
 });
-
-type TestWorker = Awaited<ReturnType<typeof createTestWorker>>;
-async function fixture(
-  options: {
-    worker?: TestWorker;
-    physicalSessionId?: string;
-    drained?: boolean;
-    beforeFailure?: (live: { worker: TestWorker; piSessionId: string }) => Promise<void>;
-  } = {},
-) {
+async function fixture(drained = false) {
   const project = await store.createProject({
     name: `seal-${crypto.randomUUID()}`,
     source: { kind: "empty" },
@@ -87,85 +65,79 @@ async function fixture(
   const first = await store.acceptTurn(session.sessionId, "first", {
     prompt: "keep this accepted input",
   });
-  if (options.physicalSessionId)
-    await db
-      .updateTable("sessions")
-      .set({ pi_session_id: options.physicalSessionId, pi_session_lane: "child" })
-      .where("id", "=", session.sessionId)
-      .execute();
-  const worker = options.worker ?? (await createTestWorker(db));
-  let request!: TurnExecutionRequest;
+  const worker = await createTestWorker(db);
   const executor = worker.executor({
-    async execute(input) {
-      request = input;
-      await options.beforeFailure?.({ worker, piSessionId: input.piSessionId });
-      if (options.drained)
+    execute: async (request) => {
+      if (drained)
         await db
           .updateTable("runs")
           .set({ native_output_drained: true })
-          .where("id", "=", input.runId)
+          .where("id", "=", request.runId)
           .execute();
-      throw new TurnExecutionBackendError("worker_lost", "Worker stopped", false);
+      throw new TurnExecutionBackendError("fixture_failure", "Synthetic terminal failure", false);
     },
   });
-  await expect(executor.dispatchRun(first.runId)).resolves.toMatchObject({ status: "failed" });
+  expect((await executor.dispatchRun(first.runId)).status).toBe("failed");
   const second = await store.acceptTurn(session.sessionId, "second", { prompt: "continue" });
-  const outbox = await db
+  const row = await db
     .selectFrom("outbox")
     .select("payload")
-    .where(sql<boolean>`payload #>> '{scope,runId}' = ${first.runId}`)
+    .where(sql<boolean>`payload#>>'{scope,runId}'=${first.runId}`)
     .executeTakeFirstOrThrow();
-  const seal = parseKafkaAcceptedFact(JSON.stringify(outbox.payload)) as AcceptedExecutionSealFact;
-  const storage = new PostgresPiSessionStorage({
-    database: db,
-    tenantId,
-    sessionId: request.piSessionId,
-  });
-  let nextSeq = 1,
-    head: string | null = null;
-  const mutation = (name: string): AcceptedPiSessionAppendFact => {
-    const id = crypto.randomUUID(),
-      parentId = head;
-    head = id;
+  const seal = parseKafkaAcceptedFact(JSON.stringify(row.payload)) as AcceptedExecutionSealFact;
+  let seq = 0,
+    nextId = 2;
+  const mutation = (text: string, stopReason?: string): AcceptedDurableCommitFact => {
+    const id = nextId++,
+      writes: Record<string, unknown>[] = [];
+    if (seq === 0) writes.push({ type: "conversation", value: { id: 1 } });
+    writes.push({
+      type: "entry",
+      value: {
+        id,
+        conversationId: 1,
+        kind: stopReason ? "pi.assistant" : "test.fact",
+        ...(stopReason
+          ? {
+              model: [
+                {
+                  role: "assistant",
+                  content: [{ type: "text", text }],
+                  stopReason,
+                  timestamp: Date.now(),
+                  api: "test",
+                  provider: "test",
+                  model: "test",
+                },
+              ],
+            }
+          : { data: text }),
+      },
+    });
     return {
-      kind: "pi_session_append",
+      kind: "durable_commit",
       factId: crypto.randomUUID(),
       scope: seal.scope,
-      piSession: {
-        id: request.piSessionId,
-        lane: request.piSessionLane,
-        writerId: seal.scope.writerId,
-      },
+      commit: { seq: ++seq, nextId, writes },
+      origins: [
+        { recordId: id, sessionId: session.sessionId, turnId: first.turnId, runId: first.runId },
+      ],
+      tools: [],
+      cancellations: [],
       events: [],
       occurredAt: seal.occurredAt,
-      items: [
-        {
-          kind: "entry",
-          lane: "main",
-          turnId: first.turnId,
-          entry: {
-            id,
-            seq: nextSeq++,
-            parentId,
-            timestamp: Date.now(),
-            type: "custom",
-            customType: "test.fact",
-            data: name,
-          },
-        },
-      ],
     };
   };
   const delta = (seq: number, text: string): AcceptedAgentEventFact => {
-    const id = crypto.randomUUID();
+    const eventId = crypto.randomUUID();
     return {
       kind: "agent_event",
-      factId: id,
+      factId: eventId,
       scope: seal.scope,
       occurredAt: seal.occurredAt,
       event: {
         schemaVersion: 1,
-        eventId: id,
+        eventId,
         sessionId: session.sessionId,
         turnId: first.turnId,
         agentId: "root",
@@ -178,239 +150,120 @@ async function fixture(
   };
   const record = (fact: AcceptedFact, offset: bigint) => ({
     fact,
+    offset,
     topic: "seals-test",
     partition: 0,
-    offset,
   });
-  const tail = () => {
-    const view = new SessionLiveView(async () => {});
-    const boundary = new ExecutionStreamBoundary(db);
-    return Object.assign(view, {
-      async projectRecord(r: ReturnType<typeof record>) {
-        if (r.fact.kind === "execution_seal") {
-          const result = await new ExecutionStreamProjector(db).project(r);
-          if (result?.terminal) view.accept(tenantId, result.terminal);
-        } else if (await boundary.isOpen(r, false)) {
-          for (const event of factEvents(r.fact)) view.accept(r.fact.scope.tenantId, event);
-        }
-      },
-    });
-  };
-  return { first, second, session, executor, seal, storage, mutation, delta, record, tail };
+  const projection = new DurablePostgresProjection(db, { tenantId, sessionId: session.sessionId });
+  return { first, second, session, executor, seal, mutation, delta, record, projection };
 }
-
-describe.sequential("Execution stream closure", () => {
-  it("evicts committed message spans before Run completion and preserves a repeated unfinished prefix", async () => {
+describe.sequential("native execution closure", () => {
+  it("covers display only after its referenced native commit and retains immutable borrowed tails", async () => {
     const f = await fixture(),
-      projector = new ExecutionStreamProjector(db),
+      p = new ExecutionStreamProjector(db),
       view = new SessionLiveView(async () => {});
-    const count = 2048,
-      piece = "hello ",
-      text = piece.repeat(count);
-    // This fixture stops before any environment attestation. Keep its product
-    // view in the honest pending state rather than inventing validation evidence.
-    await db
-      .updateTable("environment_versions")
-      .set({ state: "pending", validated_at: null })
-      .where("project_id", "=", f.session.projectId)
-      .execute();
     try {
-      for (let seq = 1; seq <= count; seq++) {
-        const fact = f.delta(seq, piece);
-        await projector.project(f.record(fact, BigInt(seq)));
+      for (let seq = 1; seq <= 100; seq++) {
+        const fact = f.delta(seq, "hello ");
+        await p.project(f.record(fact, BigInt(seq)));
         view.accept(tenantId, fact.event);
       }
-      expect(view.statistics().cachedEvents).toBe(1);
-      const borrowed = view.snapshot(tenantId, f.session.sessionId);
-      const fact = f.mutation("message"),
-        old = fact.items[0]!;
-      if (old.kind !== "entry") throw new Error("Missing Entry");
-      const message: AcceptedPiSessionAppendFact = {
-        ...fact,
-        items: [
-          {
-            ...old,
-            entry: {
-              id: old.entry.id,
-              parentId: old.entry.parentId,
-              seq: old.entry.seq,
-              timestamp: old.entry.timestamp,
-              type: "message",
-              message: {
-                role: "assistant",
-                content: [{ type: "text", text }],
-                api: "openai-completions",
-                provider: "test",
-                model: "test",
-                stopReason: "stop",
-                timestamp: Date.now(),
-                usage: {
-                  input: 1,
-                  output: 1,
-                  cacheRead: 0,
-                  cacheWrite: 0,
-                  totalTokens: 2,
-                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-                },
-              },
-            },
-          },
-        ],
-      };
-      const result = await projector.project(f.record(message, BigInt(count + 1)));
-      expect(result).toEqual({ canonicalThroughSequence: count });
-      view.cover(tenantId, f.session.sessionId, result!.canonicalThroughSequence!);
+      const borrowed = view.snapshot(tenantId, f.session.sessionId),
+        native = f.mutation("hello ".repeat(100), "stop");
+      await p.project(f.record(native, 101n));
+      const checkpoint = { ...f.delta(101, ""), nativeSequence: native.commit.seq };
+      const covered = await p.project(f.record(checkpoint, 102n));
+      expect(covered?.canonicalThroughSequence).toBe(101);
+      view.cover(tenantId, f.session.sessionId, 101);
       expect(view.statistics().cachedBytes).toBe(0);
-      expect(borrowed.events[0]).toMatchObject({ payload: { text } });
-      const active = await store.getConversation(f.session.sessionId);
-      expect(active.turns[0]).toMatchObject({
-        state: "running",
-        transcript: {
-          terminalSequence: null,
-          throughSequence: count,
-          items: [{ kind: "text", text }],
-        },
-      });
-      const pending = text + "unfinished";
-      await projector.project(f.record(f.delta(count + 1, pending), BigInt(count + 2)));
-      await projector.project(f.record(f.seal, BigInt(count + 3)));
-      const terminal = await db
-        .selectFrom("session_terminal_events")
-        .select("interrupted_prefix")
-        .where("event_id", "=", f.seal.factId)
-        .executeTakeFirstOrThrow();
-      expect(terminal.interrupted_prefix).toBe(pending);
-      const recovered = await store.getConversation(f.session.sessionId);
+      expect(borrowed.events[0]).toMatchObject({ payload: { text: "hello ".repeat(100) } });
       expect(
-        recovered.turns[0]?.transcript?.items
-          .filter((i) => i.kind === "text")
-          .map((i) => i.text)
-          .join(""),
-      ).toBe(text + pending);
+        (await readCanonicalPiTurnTranscripts(db, { tenantId, turnIds: [f.first.turnId] })).get(
+          f.first.turnId,
+        )?.items,
+      ).toMatchObject([{ kind: "text", text: "hello ".repeat(100) }]);
     } finally {
       view.close();
     }
   });
-
   it.each([false, true])(
-    "keeps sibling prefixes and closes the shared writer only when uncertain=%s",
-    async (closesWriter) => {
-      let child!: Awaited<ReturnType<typeof fixture>>;
-      const parent = await fixture({
-          drained: true,
-          beforeFailure: async (live) => {
-            child = await fixture({
-              worker: live.worker,
-              physicalSessionId: live.piSessionId,
-              drained: !closesWriter,
-            });
-          },
-        }),
-        projector = new ExecutionStreamProjector(db),
-        tail = parent.tail();
-      const writerId = parent.seal.scope.writerId,
-        piSessionId = parent.seal.scope.piSessionId;
-      expect(child.seal.scope.writerId).toBe(writerId);
-      const childScope = { ...child.seal.scope, writerId, piSessionId };
-      const root = parent.mutation("root");
-      const rootEntry = root.items[0]!;
-      if (rootEntry.kind !== "entry") throw new Error("fixture");
-      const rootWithLane = {
-        ...root,
-        items: [
-          ...root.items,
-          {
-            kind: "lane" as const,
-            seq: 2,
-            lane: "child",
-            leafId: rootEntry.entry.id,
-            create: true,
-          },
-        ],
-      };
-      const childFact: AcceptedPiSessionAppendFact = {
-        kind: "pi_session_append",
-        factId: crypto.randomUUID(),
-        scope: childScope,
-        piSession: { id: piSessionId, lane: "child", writerId },
-        events: [child.delta(1, "child-prefix").event],
-        occurredAt: root.occurredAt,
-        items: [
-          {
-            kind: "entry",
-            lane: "child",
-            turnId: child.first.turnId,
-            entry: {
-              ...rootEntry.entry,
-              id: crypto.randomUUID(),
-              seq: 3,
-              parentId: rootEntry.entry.id,
-            },
-          },
-        ],
-      };
-      const childSeal = { ...child.seal, scope: childScope, closesWriter };
-      const records = [
-        parent.record(rootWithLane, 10n),
-        parent.record(parent.delta(1, "parent-prefix"), 11n),
-        parent.record(childFact, 12n),
-        parent.record(childSeal, 13n),
-      ];
-      for (const record of records) {
-        await projector.project(record);
-        await tail.projectRecord(record);
-      }
-      const late: AcceptedPiSessionAppendFact = {
-        ...root,
-        factId: crypto.randomUUID(),
-        items: [
-          {
-            kind: "entry",
-            lane: "main",
-            turnId: parent.first.turnId,
-            entry: {
-              ...rootEntry.entry,
-              id: crypto.randomUUID(),
-              seq: 4,
-              parentId: rootEntry.entry.id,
-            },
-          },
-        ],
-        events: [],
-      };
-      await projector.project(parent.record(late, 14n));
-      await new PostgresPiSessionAppendProjector(db).project(late, parent.record(late, 14n));
-      await projector.project(parent.record(parent.seal, 15n));
-      expect(await parent.storage.getLog()).toHaveLength(closesWriter ? 3 : 4);
-      expect(
-        (
-          await db
-            .selectFrom("session_terminal_events")
-            .select("interrupted_prefix")
-            .where("event_id", "=", parent.seal.factId)
-            .executeTakeFirst()
-        )?.interrupted_prefix,
-      ).toBe("parent-prefix");
-      const closed = await db
-        .selectFrom("session_leases")
-        .select("writer_seal_offset")
-        .where("lease_id", "=", writerId)
-        .executeTakeFirstOrThrow();
-      expect(closed.writer_seal_offset).toBe(closesWriter ? "13" : null);
-      // Replaying after PG closure retains only the original valid live prefix.
-      if (closesWriter) {
-        const boundary = new ExecutionStreamBoundary(db);
-        expect(
-          await boundary.isOpen(
-            parent.record({ ...parent.delta(2, "late"), scope: parent.seal.scope }, 14n),
-            false,
-          ),
-        ).toBe(false);
-        expect(await boundary.isOpen(records[1]!, false)).toBe(true);
-      }
+    "rejects late native writes at the PG boundary after a seal (drained=%s)",
+    async (drained) => {
+      const f = await fixture(drained),
+        p = new ExecutionStreamProjector(db);
+      const native = f.mutation("retained interrupted text", "aborted");
+      await p.project(f.record(native, 10n));
+      await p.project(f.record(f.delta(1, "retained interrupted text"), 11n));
+      expect(await f.executor.dispatchRun(f.second.runId)).toEqual({ status: "idle" });
+      const result = await p.project(f.record(f.seal, 12n));
+      expect(result?.terminal?.seq).toBe(2);
+      const late = f.mutation("must not enter history", "stop");
+      await p.project(f.record(late, 13n));
+      await new PostgresDurableCommitProjector(db).project(late, f.record(late, 13n));
+      expect((await f.projection.head()).seq).toBe(1);
+      const transcript = (
+        await readCanonicalPiTurnTranscripts(db, { tenantId, turnIds: [f.first.turnId] })
+      ).get(f.first.turnId)!;
+      expect(transcript.items).toMatchObject([{ kind: "text", text: "retained interrupted text" }]);
+      expect(JSON.stringify(transcript)).not.toContain("must not enter");
+      expect((await f.executor.dispatchRun(f.second.runId)).status).toBe("failed");
     },
   );
-
+  it("replays a native prefix idempotently after consumer replacement", async () => {
+    const f = await fixture(),
+      record = f.record(f.mutation("complete native text", "aborted"), 20n),
+      delta = f.record(f.delta(1, "complete native text"), 21n);
+    const old = new ExecutionStreamProjector(db);
+    await old.project(record);
+    await old.project(delta);
+    const fresh = new ExecutionStreamProjector(db);
+    await fresh.project(record);
+    await fresh.project(delta);
+    await fresh.project(f.record(f.seal, 22n));
+    expect((await f.projection.head()).seq).toBe(1);
+    expect(
+      (await readCanonicalPiTurnTranscripts(db, { tenantId, turnIds: [f.first.turnId] })).get(
+        f.first.turnId,
+      )?.items,
+    ).toHaveLength(1);
+  });
+  it("rejects a native sequence hole without advancing projection progress", async () => {
+    const f = await fixture(),
+      fact = f.mutation("hole");
+    const invalid = { ...fact, commit: { ...fact.commit, seq: 2 } };
+    await expect(new ExecutionStreamProjector(db).project(f.record(invalid, 30n))).rejects.toThrow(
+      "not contiguous",
+    );
+    expect((await f.projection.head()).seq).toBe(0);
+  });
+  it("rejects a display checkpoint that precedes native persistence", async () => {
+    const f = await fixture();
+    await expect(
+      new ExecutionStreamProjector(db).project(
+        f.record({ ...f.delta(1, "uncommitted"), nativeSequence: 99 }, 30n),
+      ),
+    ).rejects.toThrow("preceded its native commit");
+  });
+  it("reloads durable closure after an assignment reset", async () => {
+    const f = await fixture(),
+      p = new ExecutionStreamProjector(db);
+    await p.project(f.record(f.seal, 40n));
+    expect(
+      await new ExecutionStreamBoundary(db).isOpen(f.record(f.delta(2, "late"), 41n), false),
+    ).toBe(false);
+  });
+  it("fails closed if retention removed an unsealed prefix", async () => {
+    const f = await fixture();
+    await new ExecutionStreamProjector(db).project(f.record(f.delta(1, "prefix"), 50n));
+    await expect(new ExecutionStreamProjector(db).project(f.record(f.seal, 60n))).rejects.toThrow(
+      "prefix is missing",
+    );
+    expect(
+      (await loadFactReplayOffsets(db, "seals-test", [{ partition: 0, low: 51n, high: 61n }])).get(
+        0,
+      ),
+    ).toBeInstanceOf(Error);
+  });
   it("retains unsealed data beyond the grace, then deletes only behind PG and broker time", async () => {
     const f = await fixture(),
       topic = `gc-${crypto.randomUUID()}`,
@@ -519,324 +372,5 @@ describe.sequential("Execution stream closure", () => {
       .where("tenant_id", "=", tenantId)
       .execute();
     expect(rows.some((r) => r.payload.kind === "execution_committed")).toBe(false);
-  });
-
-  it("stops projection at an invalid prepared append instead of advancing past a native log hole", async () => {
-    const f = await fixture(),
-      target = crypto.randomUUID();
-    const fact: AcceptedPiSessionAppendFact = {
-      ...f.mutation("rejected"),
-      items: [{ kind: "lane", lane: "main", leafId: target, create: false, seq: 1 }],
-    };
-    const record = f.record(fact, 80n);
-    await expect(new PostgresPiSessionAppendProjector(db).project(fact, record)).rejects.toThrow(
-      "target is missing",
-    );
-    expect(await f.storage.getLog()).toHaveLength(0);
-    expect(
-      await db
-        .selectFrom("runs")
-        .select("output_projected_offset")
-        .where("id", "=", fact.scope.runId)
-        .executeTakeFirst(),
-    ).toEqual({ output_projected_offset: null });
-  });
-  it("reloads durable closure after a Projector assignment reset", async () => {
-    const f = await fixture(),
-      boundary = new ExecutionStreamBoundary(db),
-      projector = new ExecutionStreamProjector(db);
-    const text = f.record(f.delta(1, "prefix"), 90n);
-    expect(await boundary.isOpen(text, false)).toBe(true);
-    await projector.project(text);
-    await projector.project(f.record(f.seal, 91n));
-    boundary.reset();
-    expect(await boundary.isOpen(f.record(f.delta(2, "late"), 92n), false)).toBe(false);
-    expect(await boundary.isOpen(text, false)).toBe(true);
-  });
-  it("projects two already-available semantic items with bounded SQL round trips", async () => {
-    const f = await fixture(),
-      statements: string[] = [];
-    const operationId = crypto.randomUUID();
-    const measured = db.withPlugin({
-      transformQuery({ node, queryId }) {
-        statements.push(db.getExecutor().compileQuery(node, queryId).sql);
-        return node;
-      },
-      async transformResult({ result }) {
-        return result;
-      },
-    });
-    const candidate = f.mutation("batch");
-    const entry = candidate.items[0]!;
-    if (entry.kind !== "entry") throw new Error("fixture");
-    const fact: AcceptedPiSessionAppendFact = {
-      ...candidate,
-      items: [
-        {
-          kind: "record",
-          turnId: f.first.turnId,
-          record: {
-            id: operationId,
-            seq: 1,
-            timestamp: 1,
-            lane: "main",
-            type: "operation_started",
-            sourceLeafId: null,
-            intent: { kind: "run", originalPrompt: [], initialMessages: [] },
-          },
-        },
-        { ...entry, entry: { ...entry.entry, seq: 2 } },
-        {
-          kind: "record",
-          turnId: f.first.turnId,
-          record: {
-            id: crypto.randomUUID(),
-            seq: 3,
-            timestamp: 1,
-            lane: "main",
-            type: "operation_finished",
-            runId: operationId,
-            outcome: "completed",
-          },
-        },
-      ],
-    };
-    await new PostgresPiSessionAppendProjector(measured).project(fact, f.record(fact, 10n));
-    expect(statements.length).toBeLessThanOrEqual(17);
-    expect(
-      statements.filter((query) => query.startsWith('insert into "pi_session_log"')),
-    ).toHaveLength(1);
-  });
-  it("shows valid pre-seal records when the live consumer starts behind PG projection", async () => {
-    const f = await fixture(),
-      projector = new ExecutionStreamProjector(db);
-    const text = f.record(f.delta(1, "valid before seal"), 100n),
-      seal = f.record(f.seal, 101n);
-    await projector.project(text);
-    await projector.project(seal);
-    const tail = f.tail(),
-      subscription = tail.eventHub.subscribe(tenantId, f.session.sessionId);
-    await tail.projectRecord(text);
-    await tail.projectRecord(seal);
-    expect((await subscription.next())?.event).toMatchObject({
-      seq: 1,
-      type: "assistant.text.delta",
-    });
-    expect((await subscription.next())?.event).toMatchObject({ seq: 2, type: "turn.failed" });
-    await tail.projectRecord(f.record(f.delta(3, "late"), 102n));
-    expect(tail.snapshot(tenantId, f.session.sessionId).events).toEqual([]);
-    subscription.close();
-  });
-
-  it("recovers from the oldest unsealed start, then advances past closed history", async () => {
-    const f = await fixture(),
-      topic = `recovery-${crypto.randomUUID()}`,
-      projector = new ExecutionStreamProjector(db);
-    const at = (fact: AcceptedFact, offset: bigint) => ({ ...f.record(fact, offset), topic });
-    await projector.project(at(f.delta(1, "prefix"), 100n));
-    await projector.project(at(f.mutation("semantic"), 101n));
-    const before = await loadFactReplayOffsets(db, topic, [{ partition: 0, low: 0n, high: 150n }]);
-    expect(before.get(0)).toBe(100n);
-    expect(
-      (await loadFactReplayOffsets(db, topic, [{ partition: 0, low: 101n, high: 150n }])).get(0),
-    ).toBeInstanceOf(Error);
-    await projector.project(at(f.seal, 102n));
-    expect(
-      (await loadFactReplayOffsets(db, topic, [{ partition: 0, low: 0n, high: 150n }])).get(0),
-    ).toBe(103n);
-    // A newer PG commit must not skip records appended after the captured Kafka H.
-    expect(
-      (await loadFactReplayOffsets(db, topic, [{ partition: 0, low: 0n, high: 102n }])).get(0),
-    ).toBe(102n);
-  });
-  it("waits for ordered projection, saves the visible prefix and rejects a late old writer in both paths", async () => {
-    const f = await fixture(),
-      projector = new ExecutionStreamProjector(db),
-      tail = f.tail();
-    const before = f.record(f.mutation("before seal"), 10n),
-      text = f.record(f.delta(1, "visible prefix"), 11n),
-      seal = f.record(f.seal, 12n);
-    await projector.project(before);
-    await projector.project(text);
-    await tail.projectRecord(text);
-    const snapshot = tail.snapshot(tenantId, f.session.sessionId);
-    await expect(f.executor.dispatchRun(f.second.runId)).resolves.toMatchObject({ status: "idle" });
-    // Periodic progress deliberately remains zero, behind the actual Kafka seq=1.
-    await projector.project(seal);
-    await tail.projectRecord(seal);
-    expect(tail.snapshot(tenantId, f.session.sessionId)).toMatchObject({
-      canonicalThroughSequence: 2,
-      events: [],
-    });
-    expect(snapshot.events).toHaveLength(1);
-    const entries = await db
-      .selectFrom("pi_session_log")
-      .where("kind", "=", "entry")
-      .select(["id", sql<Record<string, unknown>>`payload->'entry'`.as("payload")])
-      .where("session_id", "=", f.session.sessionId)
-      .orderBy("seq")
-      .execute();
-    expect(entries.map((row) => row.payload.customType)).toEqual(["test.fact"]);
-    expect(
-      (
-        await db
-          .selectFrom("session_terminal_events")
-          .select("interrupted_prefix")
-          .where("event_id", "=", f.seal.factId)
-          .executeTakeFirst()
-      )?.interrupted_prefix,
-    ).toBe("visible prefix");
-    expect(
-      (await readCanonicalPiTurnTranscripts(db, { tenantId, turnIds: [f.first.turnId] })).get(
-        f.first.turnId,
-      )?.items,
-    ).toEqual(
-      expect.arrayContaining([expect.objectContaining({ kind: "text", text: "visible prefix" })]),
-    );
-    const late = f.record(f.mutation("after seal"), 13n);
-    await projector.project(late);
-    // A stale consumer that already cached OPEN must also lose at the DB write boundary.
-    await new PostgresPiSessionAppendProjector(db).project(
-      late.fact as AcceptedPiSessionAppendFact,
-      late,
-    );
-    await tail.projectRecord(f.record(f.delta(1, "late conflicting sequence"), 14n));
-    await projector.project(f.record(f.seal, 15n)); // lost seal ACK / duplicate publication
-    expect(
-      await db
-        .selectFrom("pi_session_log")
-        .where("kind", "=", "entry")
-        .select("id")
-        .where("session_id", "=", f.session.sessionId)
-        .execute(),
-    ).toHaveLength(1);
-    expect(tail.snapshot(tenantId, f.session.sessionId).events).toEqual([]);
-    await expect(f.executor.dispatchRun(f.second.runId)).resolves.toMatchObject({
-      status: "failed",
-      runId: f.second.runId,
-    });
-    expect(
-      await db
-        .selectFrom("turns")
-        .select("input_text")
-        .where("id", "=", f.first.turnId)
-        .executeTakeFirst(),
-    ).toEqual({ input_text: "keep this accepted input" });
-  });
-
-  it("rebuilds an interrupted prefix after consumer restart, never duplicates a semantic append", async () => {
-    const f = await fixture();
-    const facts = [
-      f.record(f.mutation("once"), 20n),
-      f.record(f.delta(1, "one "), 21n),
-      f.record(f.delta(2, "two"), 22n),
-    ];
-    const first = new ExecutionStreamProjector(db);
-    for (const record of facts) await first.project(record);
-    const recovered = new ExecutionStreamProjector(db);
-    for (const record of facts) await recovered.project(record);
-    await recovered.project(f.record(f.seal, 23n));
-    const rows = await db
-      .selectFrom("pi_session_log")
-      .where("kind", "=", "entry")
-      .select("payload")
-      .where("session_id", "=", f.session.sessionId)
-      .orderBy("seq")
-      .execute();
-    expect(rows).toHaveLength(1);
-    expect(
-      (
-        await db
-          .selectFrom("session_terminal_events")
-          .select("interrupted_prefix")
-          .where("event_id", "=", f.seal.factId)
-          .executeTakeFirst()
-      )?.interrupted_prefix,
-    ).toBe("one two");
-    // Even if Kafka no longer retains the seal, durable closure rejects late data.
-    await new ExecutionStreamProjector(db).project(f.record(f.mutation("late after restart"), 90n));
-    const tail = f.tail();
-    await tail.projectRecord(f.record(f.delta(1, "late"), 91n));
-    expect(tail.snapshot(tenantId, f.session.sessionId).events).toEqual([]);
-  });
-
-  it("fails closed when restart has lost the recorded unsealed prefix to retention", async () => {
-    const f = await fixture();
-    await new ExecutionStreamProjector(db).project(f.record(f.delta(1, "retained?"), 30n));
-    await expect(new ExecutionStreamProjector(db).project(f.record(f.seal, 40n))).rejects.toThrow(
-      "prefix is missing",
-    );
-    await expect(f.executor.dispatchRun(f.second.runId)).resolves.toMatchObject({ status: "idle" });
-  });
-
-  it("does not rewind canonical state on old append replay without a second receipt ledger", async () => {
-    const f = await fixture(),
-      projector = new ExecutionStreamProjector(db);
-    const a = f.record(
-      {
-        ...f.mutation("a"),
-        items: [{ kind: "fact", fact: "name", name: "A", seq: 1 }],
-      } as AcceptedPiSessionAppendFact,
-      60n,
-    );
-    const b = f.record(
-      {
-        ...f.mutation("b"),
-        items: [{ kind: "fact", fact: "name", name: "B", seq: 2 }],
-      } as AcceptedPiSessionAppendFact,
-      61n,
-    );
-    await projector.project(a);
-    await projector.project(b);
-    const recovered = new ExecutionStreamProjector(db);
-    await recovered.project(a);
-    expect(await f.storage.getName()).toBe("B");
-    await recovered.project(b);
-    await recovered.project(f.record(f.seal, 62n));
-    expect(await f.storage.getName()).toBe("B");
-  });
-
-  it("does not expire an unprojected execution merely because wall time exceeds retention grace", async () => {
-    const f = await fixture();
-    await db
-      .updateTable("runs")
-      .set({ started_at: new Date(Date.now() - 86400000) })
-      .where("id", "=", f.seal.scope.runId)
-      .execute();
-    await expect(
-      new ExecutionStreamProjector(db).project(f.record(f.seal, 80n)),
-    ).resolves.toMatchObject({ terminal: { type: "turn.failed" } });
-  });
-
-  it("does not close a new Run when a duplicate old seal arrives", async () => {
-    const f = await fixture(),
-      projector = new ExecutionStreamProjector(db);
-    await projector.project(f.record(f.seal, 50n));
-    await f.executor.dispatchRun(f.second.runId);
-    const newSeal = await db
-      .selectFrom("outbox")
-      .select("payload")
-      .where(sql<boolean>`payload #>> '{scope,runId}' = ${f.second.runId}`)
-      .executeTakeFirstOrThrow();
-    const fact = parseKafkaAcceptedFact(
-      JSON.stringify(newSeal.payload),
-    ) as AcceptedExecutionSealFact;
-    await projector.project(f.record(f.seal, 51n));
-    expect(
-      await db
-        .selectFrom("runs")
-        .select("output_sealed_at")
-        .where("id", "=", fact.scope.runId)
-        .executeTakeFirst(),
-    ).toEqual({ output_sealed_at: null });
-    await projector.project(f.record(fact, 52n));
-    expect(
-      await db
-        .selectFrom("session_terminal_events")
-        .select("seq")
-        .where("session_id", "=", f.session.sessionId)
-        .orderBy("seq")
-        .execute(),
-    ).toEqual([{ seq: "1" }, { seq: "2" }]);
   });
 });

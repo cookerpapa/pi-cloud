@@ -1,10 +1,12 @@
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
+import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { createBashTool, createEditTool, createReadTool } from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+import { createBashTool, createEditTool, createReadTool } from "@earendil-works/pi-durable/tools";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { executeNativeTool, type NativeToolRequest } from "../src/native-tools.ts";
 import { NativeToolOutput } from "../src/native-tool-output.ts";
 import type { NativeToolUpdate } from "@pi-cloud/protocol";
@@ -138,9 +140,14 @@ describe("whole native tools at the execution source", () => {
     await writeFile(join(root, "lines.txt"), text);
     const args = { path: "lines.txt", offset };
     const signal = new AbortController().signal;
-    const native = await createReadTool().execute("native", args, signal, undefined, {
-      env: new NodeExecutionEnv({ cwd: root }),
-    });
+    const native = await createReadTool().execute(
+      args,
+      {
+        env: new NodeExecutionEnv({ cwd: root }),
+        diagnostic: () => {},
+      } as unknown as ToolExecutionApi,
+      withAbortSignal(signal, BACKGROUND_CONTEXT),
+    );
     const remote = await executeNativeTool(request("read", args), root, signal, () => {});
     expect(remote.isError).toBe(false);
     expect(remote.result.content).toEqual(native.content);
@@ -205,7 +212,7 @@ describe("whole native tools at the execution source", () => {
     await writeFile(join(cwd, "empty.txt"), "");
     expect(await execute("read", { path: "empty.txt" })).toMatchObject({
       isError: false,
-      result: { content: [{ text: "" }] },
+      result: { content: [] },
     });
   });
 
@@ -218,13 +225,23 @@ describe("whole native tools at the execution source", () => {
           execution.inheritEnv = false;
         },
       });
-      let expected;
+      let expected,
+        output = "";
       try {
-        expected = {
-          result: await native.execute("call_native", { command }, undefined, undefined, {
+        await native.execute(
+          { command },
+          {
             env: new NodeExecutionEnv({ cwd, shellPath: "/bin/bash", shellEnv: {} }),
-          }),
+            output: (text: string) => {
+              output += text;
+            },
+            diagnostic: () => {},
+          } as unknown as ToolExecutionApi,
+          BACKGROUND_CONTEXT,
+        );
+        expected = {
           isError: false,
+          result: { content: [{ type: "text", text: output || "(no output)" }] },
         };
       } catch (error) {
         expected = {
@@ -267,9 +284,14 @@ describe("whole native tools at the execution source", () => {
       writeFile(join(native, "a.txt"), content),
     ]);
     const args = { path: "a.txt", edits: [{ oldText: "second", newText: "changed" }] };
-    const expected = await createEditTool().execute("call_native", args, undefined, undefined, {
-      env: new NodeExecutionEnv({ cwd: native }),
-    });
+    const expected = await createEditTool().execute(
+      args,
+      {
+        env: new NodeExecutionEnv({ cwd: native }),
+        diagnostic: () => {},
+      } as unknown as ToolExecutionApi,
+      BACKGROUND_CONTEXT,
+    );
     const actual = await executeNativeTool(
       request("edit", args),
       cwd,

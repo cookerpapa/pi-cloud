@@ -38,10 +38,10 @@ const CommandIdentityProperties = {
   executionReference: ExecutionReferenceSchema,
 };
 
-const PiSessionLaneBindingSchema = Type.Object(
+const PiSessionConversationBindingSchema = Type.Object(
   {
     id: OpaqueIdSchema,
-    lane: Type.String({ minLength: 1, maxLength: 128 }),
+    conversationId: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     writerId: UuidSchema,
   },
   { additionalProperties: false },
@@ -94,6 +94,7 @@ const TurnModelSnapshotSchema = Type.Object(
 export const TurnBudgetSnapshotSchema = Type.Object(
   {
     maximumModelRequests: ResourceLimitSchema,
+    consumedModelRequests: Type.Optional(Type.Integer({ minimum: 0 })),
     maximumToolCalls: ResourceLimitSchema,
     remainingToolCalls: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
     maximumToolOutputBytes: Type.Integer({ minimum: 1_024, maximum: 1_048_576 }),
@@ -167,8 +168,9 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
     payload: Type.Object(
       {
         ...CommandIdentityProperties,
-        piSession: PiSessionLaneBindingSchema,
+        piSession: PiSessionConversationBindingSchema,
         nextEventSeq: PositiveSafeIntegerSchema,
+        stopOnResume: Type.Optional(Type.Literal(true)),
         agent: AgentRevisionSnapshotSchema,
         input: PromptInputSchema,
         sessionKind: Type.Union([Type.Literal("conversation"), Type.Literal("subagent")]),
@@ -281,6 +283,7 @@ export const EventPublishMessageSchema = Type.Object(
       {
         executionReference: ExecutionReferenceSchema,
         event: PiCloudEventSchema,
+        nativeSequence: Type.Optional(PositiveSafeIntegerSchema),
       },
       { additionalProperties: false },
     ),

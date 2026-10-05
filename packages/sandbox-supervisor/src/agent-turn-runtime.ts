@@ -4,7 +4,7 @@ import type {
   ExecuteTurnCommandMessage,
   ProviderHostedWebSearchAction,
 } from "@pi-cloud/protocol";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 
 export type AgentWorkspaceSeedResolver = (
   command: ExecuteTurnCommandMessage,
@@ -51,8 +51,9 @@ export type ProviderHostedTranscriptSubscriber = (
 export type TrustedToolExecutionPlane = "platform" | "orchestration" | "integration";
 
 export type TrustedAgentTool = Readonly<{
+  offered?: boolean;
   executionPlane: TrustedToolExecutionPlane;
-  tool: AgentTool;
+  tool: ToolRegistration;
 }>;
 
 export type TrustedModelRuntimeLease = Readonly<{

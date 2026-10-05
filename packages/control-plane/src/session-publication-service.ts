@@ -6,7 +6,7 @@ import { parseAcceptedFact } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import type { ExecutionPublication } from "@pi-cloud/runtime-core/accepted-fact";
 import { PUBLICATION_PATH } from "@pi-cloud/runtime-core/http-publication-client";
 import { PublicationIngressRejected } from "@pi-cloud/runtime-core/session-publication-ingress";
-import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
+import { PublicationNotSentError } from "@pi-cloud/protocol";
 
 /** Private transport of the existing control-plane publication module. */
 export class SessionPublicationService {

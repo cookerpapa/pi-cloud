@@ -2,7 +2,7 @@ export {
   DEFAULT_CLOUD_SUBAGENT_TREE_POLICY,
   PostgresSubagentJobError,
   PostgresSubagentJobProvider,
-  type NativeSubagentLanes,
+  type NativeSubagentConversations,
   type CloudSubagentJobHandle,
   type CloudSubagentJobResult,
   type CloudSubagentTreeContext,

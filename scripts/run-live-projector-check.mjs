@@ -1,3 +1,4 @@
+import { readNativeHistory, nativeUsage } from "./lib/native-session-history.mjs";
 import { kubectl } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -173,11 +174,8 @@ try {
   report.remoteDeliveries = after.count - before.count;
   report.remoteAdmissionMeanMs =
     ((after.seconds - before.seconds) * 1000) / report.remoteDeliveries;
-  report.usage = JSON.parse(
-    await sql(
-      `select json_build_object('requests',count(*),'input',coalesce(sum((e.payload#>>'{entry,message,usage,input}')::bigint),0),'output',coalesce(sum((e.payload#>>'{entry,message,usage,output}')::bigint),0),'cacheRead',coalesce(sum((e.payload#>>'{entry,message,usage,cacheRead}')::bigint),0)) from pi_session_log e join sessions s on e.kind='entry' and s.pi_session_id=e.session_id and s.tenant_id=e.tenant_id where s.id='${session.sessionId}' and e.payload#>>'{entry,message,role}'='assistant'`,
-    ),
-  );
+  report.usage = nativeUsage(await readNativeHistory(sql, { sessionId: session.sessionId }));
+
   assert(report.usage.output > 0);
   report.accepted = true;
 } finally {

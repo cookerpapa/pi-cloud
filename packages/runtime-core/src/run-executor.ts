@@ -1,3 +1,4 @@
+import { readDurableRunUsage } from "@pi-cloud/pi-session-postgres/durable";
 import { resourceLimit } from "@pi-cloud/domain";
 import type { PublicationAvailability } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
@@ -40,12 +41,13 @@ import { createExecutionPublication } from "./execution-publication.ts";
 import { SessionLeaseCoordinatorError } from "./session-lease-coordinator.ts";
 
 export type TurnExecutionRequest = {
+  stopOnResume?: true;
   tenantId: string;
   projectId: string;
   workspaceId: string;
   sessionId: string;
   piSessionId: string;
-  piSessionLane: string;
+  piConversationId: number;
   runId: string;
   turnId: string;
   agent: AgentRevisionSnapshot;
@@ -199,7 +201,7 @@ export class RunExecutorInvariantError extends Error {
 export type RunExecutionResult =
   | { status: "idle" }
   | {
-      status: "cancellation_pending" | "cancelled";
+      status: "cancellation_pending" | "cancelled" | "recovering";
       runId: string;
       sessionId: string;
       turnId: string;
@@ -237,6 +239,8 @@ type ClaimedTurn = {
 };
 
 type LifecycleRows = {
+  currentLeaseId: string | null;
+  recoveryRequestedAt: Date | null;
   turnState: TurnState;
   sessionState: SessionState;
   runState: import("@pi-cloud/domain").RunState;
@@ -438,7 +442,14 @@ export class RunExecutor {
                 "Cancellation confirmation arrived before its durable lifecycle",
               );
             }
-            return this.#recordFailure(claim, normalizeFailure(error), acknowledgement);
+            const failure = normalizeFailure(error);
+            if (["worker_shutdown", "session_lease_revoked"].includes(failure.code))
+              return this.#requestRecovery(claim, acknowledgement);
+            if (failure.code === "native_task_aborted") {
+              const cancelled = await this.#recordOwnedAbort(claim, failure, acknowledgement);
+              if (cancelled) return cancelled;
+            }
+            return this.#recordFailure(claim, failure, acknowledgement);
           }
 
           const status = await this.#complete(claim, executionResult, acknowledgement);
@@ -468,13 +479,28 @@ export class RunExecutor {
       this.#metrics?.activeRuns.dec();
       // Normal completion already leaves the Session idle. Failure/cancellation
       // may race the seal, so retain positive exit evidence for either order.
-      if (agentExited && !completed) await confirmAgentExit(this.#database, claim.request);
+      if (agentExited && !completed)
+        await confirmAgentExit(this.#database, {
+          ...claim.request,
+          leaseId: parseExecutionReference(claim.admission.executionReference).leaseId,
+        });
     }
   }
 
   async #observeCancellation(claim: ClaimedTurn): Promise<RunExecutionResult | undefined> {
     return this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
+      if (
+        rows.currentLeaseId !==
+          parseExecutionReference(claim.admission.executionReference).leaseId ||
+        rows.recoveryRequestedAt !== null
+      )
+        return {
+          status: "recovering" as const,
+          runId: claim.request.runId,
+          sessionId: claim.request.sessionId,
+          turnId: claim.request.turnId,
+        };
       if (
         rows.runState === "cancel_requested" &&
         rows.turnState === "cancelling" &&
@@ -586,6 +612,7 @@ export class RunExecutor {
         .where("candidate.queued_steer_id", "is", null)
         .where("candidate.input_return_request_id", "is", null)
         .where("candidate_session.state", "in", ["cold", "idle"])
+        .where("candidate_session.pi_conversation_id", "is not", null)
         .where(this.#familyAdmission("candidate_session", admission))
         .where(this.#taskOwnerAvailable("candidate"))
         .where("candidate_policy.enabled", "=", true)
@@ -647,7 +674,7 @@ export class RunExecutor {
           "turn.credential_binding_version as credentialBindingVersion",
           "session_row.id as sessionId",
           "session_row.pi_session_id as piSessionId",
-          "session_row.pi_session_lane as piSessionLane",
+          "session_row.pi_conversation_id as piConversationId",
           "session_row.state as sessionState",
           "session_row.session_kind as sessionKind",
           "workspace_row.seed_kind as workspaceSeedKind",
@@ -656,6 +683,10 @@ export class RunExecutor {
           "session_row.workspace_id as workspaceId",
           "session_row.next_event_seq as nextEventSeq",
           "run.id as runId",
+          sql<boolean>`exists(select 1 from turn_control_requests c where c.tenant_id=run.tenant_id and c.target_run_id=run.id
+            and c.kind='cancel' and c.state in ('pending','dispatched','acknowledged'))`.as(
+            "stopOnResume",
+          ),
           "run.trace_id as traceId",
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
           "run.agent_system_prompt as agentSystemPrompt",
@@ -664,6 +695,8 @@ export class RunExecutor {
           "run.sandbox_profile_key as sandboxProfileKey",
           "run.queued_at as runQueuedAt",
           "run.state as runState",
+          "run.lease_id as currentLeaseId",
+          "run.recovery_requested_at as recoveryRequestedAt",
           "run.row_version as runVersion",
         ])
         .where("workspace_row.deleted_at", "is", null)
@@ -750,19 +783,24 @@ export class RunExecutor {
       safeMailboxPosition(row.mailboxPosition);
 
       const maximumToolCalls = resourceLimit(row.maximumToolCalls, "tool-call budget");
-      // Each newly admitted Run starts with its frozen budget. Recovery does
-      // not replay an admitted Run; the Runner decrements this budget locally.
-      const remainingToolCalls = maximumToolCalls;
+      const maximumModelRequests = resourceLimit(row.maximumModelRequests, "model-request budget");
+      const used =
+        row.recoveryRequestedAt && (maximumToolCalls !== null || maximumModelRequests !== null)
+          ? await readDurableRunUsage(transaction, row.tenantId, row.runId)
+          : { toolCalls: 0, modelRequests: 0 };
+      const remainingToolCalls =
+        maximumToolCalls === null ? null : Math.max(0, maximumToolCalls - used.toolCalls);
       const toolCapabilities = parseCloudToolCapabilitySnapshot(row.toolCapabilitySnapshot);
 
       mark("ownership");
       const request: TurnExecutionRequest = {
+        ...(row.stopOnResume ? { stopOnResume: true as const } : {}),
         tenantId: row.tenantId,
         projectId: row.projectId,
         workspaceId: row.workspaceId,
         sessionId: row.sessionId,
         piSessionId: row.piSessionId,
-        piSessionLane: row.piSessionLane,
+        piConversationId: Number(row.piConversationId),
         runId: row.runId,
         turnId: row.turnId,
         agent: {
@@ -808,7 +846,8 @@ export class RunExecutor {
           recipeSha256: row.environmentRecipeSha256,
         }),
         budgets: {
-          maximumModelRequests: resourceLimit(row.maximumModelRequests, "model-request budget"),
+          maximumModelRequests,
+          consumedModelRequests: used.modelRequests,
           maximumToolCalls,
           remainingToolCalls,
           maximumToolOutputBytes: safeNonNegativeInteger(
@@ -916,7 +955,7 @@ export class RunExecutor {
       turnId: r.turnId,
       executionReference: claim.admission.executionReference,
       nextEventSeq: Number(r.nextEventSeq),
-      piSession: { id: r.piSessionId, lane: r.piSessionLane, writerId: ref.leaseId },
+      piSession: { id: r.piSessionId, conversationId: r.piConversationId, writerId: ref.leaseId },
     });
     if (!isDeepStrictEqual(claim.admission.publication, expected))
       throw new RunExecutorInvariantError("Admission publication does not match its Run");
@@ -926,7 +965,7 @@ export class RunExecutor {
       runs: number;
       transitions: number;
     }>`with "started_turn" as (
-      update turns set state='running',started_at=${now}
+      update turns set state='running',started_at=coalesce(started_at,${now})
         where tenant_id=${r.tenantId}::uuid and id=${r.turnId}::uuid and state='queued'
         returning id
     ), "started_session" as (
@@ -935,7 +974,7 @@ export class RunExecutor {
         where tenant_id=${r.tenantId}::uuid and id=${r.sessionId}::uuid and state in ('cold','idle')
         returning id
     ), started_run as (
-      update runs set state='running',ready_at=null,started_at=${now},
+      update runs set state='running',ready_at=null,started_at=coalesce(started_at,${now}), recovery_requested_at=null,
         updated_at=${now},last_heartbeat_at=${now},row_version=row_version+1,
         sandbox_id=${this.#workerId}::uuid,lease_id=${ref.leaseId}::uuid,
         fencing_token=${ref.fencingToken},last_event_seq=${Math.max(0, Number(r.nextEventSeq) - 1)},
@@ -968,7 +1007,7 @@ export class RunExecutor {
     claim: ClaimedTurn,
     result: TurnExecutionResult,
     acknowledgement: TurnExecutionReference,
-  ): Promise<"completed" | "cancelled" | "cancellation_pending"> {
+  ): Promise<"completed" | "cancelled" | "cancellation_pending" | "recovering"> {
     const now = safeDate(this.#clock);
     const terminalEventId = this.#idGenerator();
     const terminalBody = {
@@ -979,6 +1018,12 @@ export class RunExecutor {
     } as const;
     return retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
+      if (
+        rows.currentLeaseId !==
+          parseExecutionReference(acknowledgement.executionReference).leaseId ||
+        rows.recoveryRequestedAt !== null
+      )
+        return "recovering";
       // Cancellation may win after admission but before the local Runner exists.
       // Its control request owns settlement; don't overwrite it with success.
       if (rows.runState === "cancel_requested" && rows.turnState === "cancelling")
@@ -1067,6 +1112,126 @@ export class RunExecutor {
       );
       return "completed";
     });
+  }
+
+  async #requestRecovery(
+    claim: ClaimedTurn,
+    grant: TurnExecutionReference,
+  ): Promise<RunExecutionResult> {
+    const now = safeDate(this.#clock),
+      ref = parseExecutionReference(grant.executionReference);
+    await retryTransaction(this.#database, async (tx) => {
+      const run = await tx
+        .selectFrom("runs")
+        .select(["lease_id", "execution_released_at", "output_seal_id"])
+        .where("tenant_id", "=", claim.request.tenantId)
+        .where("id", "=", claim.request.runId)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      // A remote controller may already have closed this incarnation. An old
+      // local completion must never alter the new owner's logical work.
+      if (!run || run.lease_id !== ref.leaseId || run.output_seal_id !== null) return;
+      await this.#executionAuthority.assertCurrentOrExpired(tx, claim.request, grant);
+      await requestExecutionStreamSeal(tx, {
+        tenantId: claim.request.tenantId,
+        sessionId: claim.request.sessionId,
+        turnId: claim.request.turnId,
+        runId: claim.request.runId,
+        agentId: "root",
+        recover: true,
+        now,
+        eventId: this.#idGenerator(),
+      });
+      if (run.execution_released_at === null)
+        await this.#executionAuthority.releaseCurrent(tx, claim.request, grant, now);
+    });
+    return {
+      status: "recovering",
+      runId: claim.request.runId,
+      sessionId: claim.request.sessionId,
+      turnId: claim.request.turnId,
+    };
+  }
+
+  async #recordOwnedAbort(
+    claim: ClaimedTurn,
+    failure: ExecutionFailure,
+    grant: TurnExecutionReference,
+  ): Promise<RunExecutionResult | undefined> {
+    const now = safeDate(this.#clock);
+    const cancelled = await retryTransaction(this.#database, async (tx) => {
+      const rows = await this.#lockLifecycleRows(tx, claim);
+      if (rows.runState !== "running" || rows.turnState !== "running") return false;
+      await this.#executionAuthority.assertCurrentOrExpired(tx, claim.request, grant);
+      // Native ownership propagates Esc before every child gets an individual
+      // management RPC. The already-persisted ancestor Stop authorizes this
+      // child's cancellation; no synthetic control receipt or second scheduler.
+      const ancestor = await sql<{ id: string }>`with recursive ancestors(id) as (
+        select parent_run_id from subagent_executions where tenant_id=${claim.request.tenantId}::uuid and child_run_id=${claim.request.runId}::uuid
+        union select e.parent_run_id from subagent_executions e join ancestors a on e.child_run_id=a.id
+          where e.tenant_id=${claim.request.tenantId}::uuid
+      ) select r.id from ancestors a join runs r on r.id=a.id and r.tenant_id=${claim.request.tenantId}::uuid
+        where r.state in ('cancel_requested','cancelled') limit 1`.execute(tx);
+      if (!ancestor.rows.length) return false;
+      await this.#storeEventBoundary(
+        tx,
+        claim,
+        failure.lastEventSeq ?? Number(claim.request.nextEventSeq) - 1,
+        now,
+      );
+      const identity = { tenantId: claim.request.tenantId, runId: claim.request.runId };
+      await transitionCurrentRun(tx, identity, {
+        runState: "cancel_requested",
+        reason: "native_ancestor_abort",
+        now,
+      });
+      await transitionCurrentRun(tx, identity, {
+        runState: "cancelled",
+        reason: "native_ancestor_abort",
+        now,
+        stopReason: "cancelled",
+      });
+      await tx
+        .updateTable("turns")
+        .set({
+          state: transitionTurn(transitionTurn(rows.turnState, "cancelling"), "cancelled"),
+          stop_reason: "cancelled",
+          settled_at: now,
+        })
+        .where("tenant_id", "=", identity.tenantId)
+        .where("id", "=", claim.request.turnId)
+        .execute();
+      await tx
+        .updateTable("sessions")
+        .set({
+          state: "idle",
+          row_version: sql`row_version+1`,
+          updated_at: now,
+          last_active_at: now,
+        })
+        .where("tenant_id", "=", identity.tenantId)
+        .where("id", "=", claim.request.sessionId)
+        .execute();
+      await requestExecutionStreamSeal(tx, {
+        ...identity,
+        sessionId: claim.request.sessionId,
+        turnId: claim.request.turnId,
+        agentId: "root",
+        body: { type: "turn.cancelled", payload: { reason: "user_request", forced: false } },
+        now,
+        eventId: this.#idGenerator(),
+      });
+      await this.#executionAuthority.releaseCurrent(tx, claim.request, grant, now);
+      return true;
+    });
+    return cancelled
+      ? {
+          status: "cancelled",
+          runId: claim.request.runId,
+          sessionId: claim.request.sessionId,
+          turnId: claim.request.turnId,
+        }
+      : undefined;
   }
 
   async #recordFailure(
@@ -1271,6 +1436,8 @@ export class RunExecutor {
         "turn.state as turnState",
         "session_row.state as sessionState",
         "run.state as runState",
+        "run.lease_id as currentLeaseId",
+        "run.recovery_requested_at as recoveryRequestedAt",
         "run.failure_code as runFailureCode",
         "run.row_version as runVersion",
       ])

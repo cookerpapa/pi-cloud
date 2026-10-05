@@ -104,10 +104,10 @@ function transcriptText(turn) {
 function countPiSessionPayloads(sessionId, marker) {
   const query = [
     "select count(*)",
-    "from pi_session_log",
+    "from pi_durable_log",
     `where session_id = '${sessionId}'`,
-    "and kind = 'entry' and type = 'message'",
-    `and payload::text like '%${marker}%'`,
+    "and record_kind = 'entry'",
+    `and body like '%${marker}%'`,
   ].join(" ");
   return Number(
     execFileSync(

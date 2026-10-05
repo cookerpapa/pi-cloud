@@ -3,7 +3,7 @@ export { toolResultIsUnknown } from "./tool-result-outcome.ts";
 export * from "./user-upload.ts";
 
 export {
-  PINNED_PI_CODING_AGENT_VERSION,
+  PINNED_PI_DURABLE_VERSION,
   SandboxAssignmentInventoryError,
   validateSandboxRuntimeIdentity,
   type SandboxAssignmentInventory,
@@ -632,3 +632,6 @@ export * from "./execution-position.ts";
 export * from "./publication-availability.ts";
 export * from "./tool-cancellation.ts";
 export * from "./tool-execution-failure.ts";
+
+export * from "./durable-session.ts";
+export { PublicationNotSentError } from "./publication-error.ts";

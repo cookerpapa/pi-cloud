@@ -1,4 +1,3 @@
-import { encodeSessionImages } from "@pi-cloud/session-attachments";
 import { beforeAll, afterAll, afterEach, describe, it, expect, vi } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -11,13 +10,9 @@ import {
   type SubagentControlRequest,
   parseSessionControlChange,
 } from "@pi-cloud/protocol";
-import {
-  NativeSessionWriter,
-  PostgresPiSessionRepository,
-  PostgresPiSessionStorage,
-  projectNativeSessionAppend,
-  type NativeLaneSessionStorage,
-} from "@pi-cloud/pi-session-postgres";
+import { durableFamilyFixture } from "@pi-cloud/pi-session-postgres/testing";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { StorageWrite, ConversationId } from "@earendil-works/pi-durable";
 import type {
   AcceptedSubagentCommand,
   AcceptedExecutionSealFact,
@@ -29,7 +24,8 @@ import { SubagentController } from "../src/subagent-controller.ts";
 
 let pg: PGlite, socket: PGLiteSocketServer, db: Kysely<Database>;
 let tenantId: string, sessionId: string, runId: string, turnId: string, lease: string;
-let writer: NativeSessionWriter, parent: NativeLaneSessionStorage;
+let family: Awaited<ReturnType<typeof durableFamilyFixture>>;
+let nextTool = 1;
 const hosts: SubagentController[] = [],
   results = new Map<string, SubagentControlResult>();
 const scheduled: string[] = [];
@@ -38,10 +34,14 @@ let prepareGate: Promise<void> | undefined;
 let failNotifications = 0,
   offset = 0n;
 async function deliver(_lease: string, request: SubagentHostRequest) {
-  if (request.action === "prepare_lane") {
+  if (request.action === "prepare_conversation") {
     await prepareGate;
-    if (!writer.lanes().some((l) => l.lane === request.lane))
-      await parent.createLane(request.lane, request.anchor);
+    return family.nativeConversations.createChildConversation({
+      executionReference: request.executionReference,
+      requestId: request.requestId,
+      ownerTaskId: request.ownerTaskId,
+      at: request.anchor,
+    });
   } else if (request.action === "result") {
     if (failNotifications > 0) {
       failNotifications--;
@@ -83,7 +83,7 @@ function command(
       writerId: parseExecutionReference(lease).leaseId,
     },
     executionReference: lease,
-    toolCallId: workflowId,
+    toolCallId: `task:${nextTool++ * 10000000}`,
     workflowId,
     request,
     occurredAt: new Date().toISOString(),
@@ -213,38 +213,8 @@ beforeAll(async () => {
     })
     .execute();
   await db.updateTable("turns").set({ state: "running" }).where("id", "=", turnId).execute();
-  const reader = new PostgresPiSessionStorage({ database: db, tenantId, sessionId });
-  const repo = new PostgresPiSessionRepository({ database: db, tenantId });
-  await repo.openById(sessionId);
-  const seq = await db
-    .selectFrom("pi_sessions")
-    .select("next_seq")
-    .where("id", "=", sessionId)
-    .executeTakeFirstOrThrow();
-  writer = new NativeSessionWriter({
-    id: leaseId,
-    metadata: await reader.getMetadata(),
-    nextSequence: Number(seq.next_seq),
-    lanes: await reader.getLanes(),
-    hasId: async (id) => !!(await reader.getEntry(id)),
-    waitProjected: async () => {},
-    fail: async () => {},
-  });
-  parent = await writer.open(
-    { lane: "main", turnId, runId },
-    { branch: [], reader, openOperations: [] },
-    {
-      publish: (items) =>
-        db.transaction().execute(async (tx) =>
-          projectNativeSessionAppend(tx, {
-            tenantId,
-            sessionId,
-            appendId: crypto.randomUUID(),
-            items: await encodeSessionImages(undefined, { tenantId }, items),
-          }),
-        ),
-    },
-  );
+  family = await durableFamilyFixture(db, tenantId, sessionId);
+  await family.bind(1, turnId, lease);
 }, 60000);
 afterEach(async () => {
   prepareGate = undefined;
@@ -252,7 +222,7 @@ afterEach(async () => {
   for (const host of hosts.splice(0)) await host.close();
 });
 afterAll(async () => {
-  parent?.close();
+  await family?.close();
   await db?.destroy();
   await socket?.stop();
   await pg?.close();
@@ -342,7 +312,12 @@ describe("ordered Subagent admission and delivery", () => {
       .where("id", "=", result.childSessionId as string)
       .executeTakeFirstOrThrow();
     expect(child.pi_session_id).toBe(sessionId);
-    expect(writer.lanes().some((l) => l.lane === child.pi_session_lane)).toBe(true);
+    expect(
+      await family.storage.conversation(
+        Number(child.pi_conversation_id) as ConversationId,
+        BACKGROUND_CONTEXT,
+      ),
+    ).toBeDefined();
     await consume(host, fact);
     const rows = await db
       .selectFrom("subagent_executions")
@@ -410,20 +385,23 @@ describe("ordered Subagent admission and delivery", () => {
   it("does not start a child for a late request after its parent Tool result", async () => {
     const host = controller(),
       fact = start("late");
-    await parent.appendEntry(
-      {
-        id: fact.toolCallId,
-        type: "message",
-        message: {
-          role: "toolResult",
-          toolCallId: fact.toolCallId,
-          toolName: "subagent",
-          content: [{ type: "text", text: "interrupted" }],
-          isError: true,
-          timestamp: Date.now(),
+    await family.storage.commit(
+      [
+        {
+          type: "task",
+          value: {
+            id: Number(fact.toolCallId.slice(5)),
+            conversationId: 1,
+            kind: "pi.tool",
+            version: 1,
+            input: { assistant: 2, callId: "provider" },
+            background: false,
+            abortRequested: true,
+            state: { status: "terminal", outcome: { status: "aborted" } },
+          },
         },
-      },
-      "main",
+      ] as unknown as StorageWrite[],
+      BACKGROUND_CONTEXT,
     );
     await consume(host, fact);
     expect((await response(fact.factId)).ok).toBe(false);

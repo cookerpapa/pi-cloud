@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { readFile, writeFile } from "node:fs/promises";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
-import { toolCommandForFact } from "../packages/runtime-core/src/tool-invocation-fact.ts";
+import { toolCommandsForFact } from "../packages/runtime-core/src/tool-invocation-fact.ts";
 
 if (process.env.PI_CLOUD_LIVE_TOOL_INVOCATION_CHECK !== "1")
   throw new Error(
@@ -115,36 +115,18 @@ async function auditKafka(runIds) {
     const row = rows.get(fact.scope?.runId);
     if (!row || !wanted.has(fact.scope.runId)) continue;
     if (fact.kind === "tool_command") row.standaloneCommands++;
-    for (const item of fact.items ?? []) {
-      if (
-        item.kind === "entry" &&
-        item.entry.type === "message" &&
-        item.entry.message.role === "assistant"
-      )
-        assistants.add(item.entry.id);
-      if (
-        fact.kind === "pi_session_append" &&
-        item.kind === "record" &&
-        item.record.type === "tool_started" &&
-        ["read", "write", "edit", "bash"].includes(item.record.toolName)
-      )
-        row.separateFixedIntents++;
+    if (fact.kind !== "durable_commit") continue;
+    for (const write of fact.commit.writes) {
+      if (write.type === "entry" && write.value.model?.some(message => message.role === "assistant")) assistants.add(write.value.id);
     }
-    if (fact.kind === "tool_invocation") {
-      const intent = fact.items[0].record;
-      assert(
-        assistants.has(intent.assistantEntryId),
-        "Tool preceded its complete Assistant checkpoint",
-      );
-      const command = toolCommandForFact(fact);
-      assert.equal(command.toolCallId, intent.resultEntryId);
-      row.invocations.push({
-        operationId: command.request.operationId,
-        toolName: command.request.toolName,
-        resultEntryId: intent.resultEntryId,
-        nativeSequence: intent.seq,
-        kafkaBytes: Buffer.byteLength(line),
-      });
+    const commands = toolCommandsForFact(fact);
+    for (const [index, command] of commands.entries()) {
+      const taskId = fact.tools[index].taskId;
+      const task = fact.commit.writes.find(write => write.type === "task" && write.value.id === taskId)?.value;
+      assert(task && assistants.has(task.input.assistant), "Tool preceded its complete Assistant checkpoint");
+      assert.equal(command.toolCallId, `task:${taskId}`);
+      row.invocations.push({ operationId: command.request.operationId, toolName: command.request.toolName,
+        nativeTaskId: taskId, nativeSequence: fact.commit.seq, kafkaBytes: Buffer.byteLength(line) });
     }
   }
   const code = await closed;

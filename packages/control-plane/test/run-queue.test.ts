@@ -1,3 +1,4 @@
+import { parseExecutionReference } from "@pi-cloud/protocol";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import {
   TurnExecutionCancelledError,
@@ -55,11 +56,12 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     const p = await store.createProject({ name: label, source: { kind: "empty" } });
     return store.createSession(p.projectId, p.workspaceId, label, "elastic");
   }
+  let nextConversationId = 2;
   async function lane(parent: Awaited<ReturnType<typeof conversation>>, lane: string) {
     const s = await store.createSession(parent.projectId, parent.workspaceId, lane, "elastic");
     await database
       .updateTable("sessions")
-      .set({ pi_session_id: parent.sessionId, pi_session_lane: lane })
+      .set({ pi_session_id: parent.sessionId, pi_conversation_id: String(nextConversationId++) })
       .where("id", "=", s.sessionId)
       .execute();
     return s;
@@ -211,7 +213,10 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
       let identity!: Parameters<typeof confirmAgentExit>[1], reference!: string;
       const executor = worker.executor({
         async execute(r, l, admission) {
-          identity = r;
+          identity = {
+            ...r,
+            leaseId: parseExecutionReference(admission!.executionReference).leaseId,
+          };
           reference = admission!.executionReference;
           entered.resolve();
           await interrupt.promise;

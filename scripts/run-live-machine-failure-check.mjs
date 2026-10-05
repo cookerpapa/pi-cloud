@@ -1,3 +1,4 @@
+import { readNativeHistory, nativeUsage } from "./lib/native-session-history.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
@@ -265,17 +266,10 @@ try {
   await terminal(
     'cd /opt/recovery-check; python3 insertion_sort.py; python3 binary_search.py; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
   );
-  report.resetMarkers = Number(
-    await sql(
-      `select count(*) from pi_session_log where kind='entry' and session_id=${sqlString(session.sessionId)} and custom_type='pi-cloud.sandbox_reset'`,
-    ),
-  );
+  const history = await readNativeHistory(sql, { sessionId: session.sessionId });
+  report.resetMarkers = history.filter(row => row.entry.kind === "pi-cloud.sandbox_reset").length;
   assert.equal(report.resetMarkers, 0);
-  report.usage = JSON.parse(
-    await sql(
-      `select json_build_object('input',coalesce(sum((payload->'entry'->'message'->'usage'->>'input')::bigint),0),'output',coalesce(sum((payload->'entry'->'message'->'usage'->>'output')::bigint),0),'cacheRead',coalesce(sum((payload->'entry'->'message'->'usage'->>'cacheRead')::bigint),0)) from pi_session_log where kind='entry' and session_id=${sqlString(session.sessionId)}`,
-    ),
-  );
+  report.usage = nativeUsage(history);
   await terminal(
     "mkdir -p /home/user/root-owned-gc; printf ROOT_ONLY > /home/user/root-owned-gc/private; chmod 000 /home/user/root-owned-gc/private /home/user/root-owned-gc",
   );

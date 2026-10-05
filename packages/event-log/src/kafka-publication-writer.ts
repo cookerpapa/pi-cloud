@@ -1,6 +1,6 @@
 import kafkaNative from "@confluentinc/kafka-javascript";
 import type { Producer, LibrdKafkaError } from "@confluentinc/kafka-javascript";
-import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
+import { PublicationNotSentError } from "@pi-cloud/protocol";
 import type { KafkaPartitionReader } from "./kafka-partition-reader.ts";
 
 export type KafkaPublicationRecord = Readonly<{ factId: string; sessionId: string; value: string }>;

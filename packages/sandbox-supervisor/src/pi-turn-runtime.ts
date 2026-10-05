@@ -21,16 +21,6 @@ export type PiModelRuntimeConfig = {
   serviceTier?: "fast" | null;
 };
 
-export function resolveCompactionReserveTokens(
-  config: Pick<PiModelRuntimeConfig, "contextWindow" | "autoCompactTokenLimit">,
-  policyReserveTokens: number,
-): number {
-  if (config.contextWindow === undefined || config.autoCompactTokenLimit === undefined) {
-    return policyReserveTokens;
-  }
-  return Math.max(policyReserveTokens, config.contextWindow - config.autoCompactTokenLimit);
-}
-
 export type PiTurnResult = {
   stopReason: string;
   /** Highest Agent event durably acknowledged by the Kafka AcceptedFact authority. */

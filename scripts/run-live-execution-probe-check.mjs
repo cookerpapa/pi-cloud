@@ -215,7 +215,7 @@ try {
   report.observationFrames = observations.length;
   assert.equal(
     await query(
-      `select count(*) from pi_session_log where session_id=(select pi_session_id from sessions where id='${session.sessionId}') and jsonb_path_exists(payload,'$.** ? (@.kind == "path_probe" || @.type == "worker.probe_result" || @.type == "run.execution")')`,
+      `select count(*) from pi_durable_log where session_id=(select pi_session_id from sessions where id='${session.sessionId}') and (body like '%"kind":"path_probe"%' or body like '%"type":"worker.probe_result"%' or body like '%"type":"run.execution"%')`,
     ),
     "0",
   );

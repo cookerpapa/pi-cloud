@@ -56,8 +56,10 @@ describe("domain state machines", () => {
     },
   );
 
-  it("does not requeue a Turn after execution has started", () => {
-    expect(() => transitionTurn("running", "queued")).toThrow(DomainTransitionError);
+  it("permits recovery admission while terminal Turns stay closed", () => {
+    expect(transitionTurn("running", "queued")).toBe("queued");
+    expect(transitionTurn("cancelling", "queued")).toBe("queued");
+    expect(() => transitionTurn("completed", "queued")).toThrow(DomainTransitionError);
     expect(transitionTurn("running", "failed")).toBe("failed");
   });
 

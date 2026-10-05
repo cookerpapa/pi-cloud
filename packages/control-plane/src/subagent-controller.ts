@@ -74,15 +74,16 @@ export class SubagentController {
       database: options.database,
       ...(options.treePolicy ? { treePolicy: options.treePolicy } : {}),
       ...(options.validateDirectory ? { validateDirectory: options.validateDirectory } : {}),
-      nativeLanes: {
+      nativeConversations: {
         childAnchor() {
           throw new Error("The Worker must freeze the Child context anchor");
         },
-        createChildLane: (input) =>
-          this.#host(input.executionReference, {
-            action: "prepare_lane",
+        createChildConversation: (input) =>
+          this.#host<number>(input.executionReference, {
+            action: "prepare_conversation",
             executionReference: input.executionReference,
-            lane: input.lane,
+            requestId: input.requestId,
+            ownerTaskId: input.ownerTaskId,
             anchor: input.at,
           }),
       },
@@ -357,38 +358,44 @@ export class SubagentController {
         }
       }
     }
-    if (record.fact.kind === "pi_session_append" || record.fact.kind === "tool_invocation") {
-      for (const item of record.fact.items) {
+    if (record.fact.kind === "durable_commit") {
+      const fact = record.fact;
+      const origins = new Map(fact.origins.map((origin) => [origin.recordId, origin]));
+      for (const write of fact.commit.writes) {
+        const value = write.value as
+          | {
+              id: number;
+              status?: string;
+              entry?: number;
+              requestId?: string;
+              state?: { status: string };
+            }
+          | undefined;
+        if (!value) continue;
+        const origin = origins.get(value.id);
+        if (write.type === "task" && value.state?.status === "terminal")
+          this.#requestRunReap({
+            tenantId: fact.scope.tenantId,
+            runId: origin?.runId ?? fact.scope.runId,
+          });
         if (
-          item.kind === "entry" &&
-          item.entry.type === "message" &&
-          item.entry.message.role === "user"
+          write.type === "submission" &&
+          value.entry !== undefined &&
+          value.requestId &&
+          /^[0-9a-f-]{36}$/i.test(value.requestId)
         ) {
-          // The native prompt proves startup reached the Agent; retry inputs
-          // queued while its Run was provisioning/restoring without a timer tick.
-          this.#touch(record.fact.scope.tenantId, record.fact.scope.piSessionId);
-        }
-        if (
-          item.kind === "entry" &&
-          item.entry.type === "message" &&
-          item.entry.message.role === "toolResult" &&
-          item.entry.message.toolName === "subagent"
-        ) {
-          this.#requestRunReap(record.fact.scope);
-          this.#touch(record.fact.scope.tenantId, record.fact.scope.piSessionId);
-        }
-        if (item.kind === "entry" && item.entry.id.startsWith("pc-agent-input-")) {
           const consumed = await this.options.database
             .updateTable("subagent_control_commands")
             .set({ input_consumed_at: new Date() })
-            .where("id", "=", item.entry.id.slice("pc-agent-input-".length))
-            .where("tenant_id", "=", record.fact.scope.tenantId)
-            .where("target_session_id", "=", record.fact.scope.sessionId)
+            .where("id", "=", value.requestId)
+            .where("tenant_id", "=", fact.scope.tenantId)
+            .where("target_session_id", "=", origin?.sessionId ?? fact.scope.sessionId)
             .returningAll()
             .execute();
           for (const row of consumed) this.#remember(row);
         }
       }
+      this.#touch(fact.scope.tenantId, fact.scope.piSessionId);
     }
     if (record.fact.kind === "execution_seal") this.#requestRunReap(record.fact.scope);
     if (record.fact.kind === "execution_seal")
@@ -763,17 +770,11 @@ export class SubagentController {
       subagentFamily(command.scope.tenantId, command.scope.piSessionId),
       `ended:${command.toolCallId}`,
       async () => {
-        const entry = await this.options.database
-          .selectFrom("pi_session_log")
-          .where("kind", "=", sql.lit("entry"))
-          .select("id")
-          .where("tenant_id", "=", command.scope.tenantId)
-          .where("turn_id", "=", command.scope.turnId)
-          .where("type", "=", "message")
-          .where(sql<string>`payload->'entry'->'message'->>'role'`, "=", "toolResult")
-          .where("id", "=", command.toolCallId)
-          .limit(1)
-          .executeTakeFirst();
+        const result = await sql<{ id: string }>`select id from pi_durable_records r
+          where r.tenant_id=${command.scope.tenantId}::uuid and r.session_id=${command.scope.piSessionId}
+            and r.kind='task' and r.id=${Number(command.toolCallId.slice(5))}
+            and r.fields->>'status'='terminal' limit 1`.execute(this.options.database);
+        const entry = result.rows[0];
         return !!entry;
       },
     );
@@ -801,9 +802,9 @@ export class SubagentController {
         eb.or([
           eb("parent.output_sealed_at", "is not", null),
           sql<boolean>`not exists(select 1 from subagent_supervisor_requests sr where sr.execution_id=e.id and sr.expects_reply=true)
-          and exists(select 1 from pi_session_log pe where pe.kind='entry' and pe.tenant_id=e.tenant_id and pe.turn_id=parent.turn_id
-            and pe.type='message' and pe.payload->'entry'->'message'->>'role'='toolResult'
-            and pe.id=e.parent_tool_call_id)`,
+          and exists(select 1 from pi_durable_records pe where pe.kind='task' and pe.tenant_id=e.tenant_id
+            and pe.fields->>'turn'=parent.turn_id::text and pe.fields->>'status'='terminal'
+            and ('task:' || pe.id::text)=e.parent_tool_call_id)`,
         ]),
       )
       .where("r.state", "in", ["queued", "running"])
@@ -898,7 +899,7 @@ export class SubagentController {
               .select("id")
               .where("tenant_id", "=", row.tenant_id)
               .where("pi_session_id", "=", command.scope.piSessionId)
-              .where("pi_session_lane", "=", "main")
+              .where("pi_conversation_id", "=", "1")
               .executeTakeFirst(),
         );
         sessionId = main?.id ?? null;

@@ -1,5 +1,5 @@
 import type { RunActivityUpdate, RunPhase } from "@pi-cloud/protocol";
-import type { CloudAgentRuntimeEvent } from "./cloud-agent-runtime.ts";
+import type { AgentEvent } from "@earendil-works/pi-durable";
 
 /** Only phase and time cross the trusted Runner boundary, never native payloads. */
 export class PiRunActivity {
@@ -22,16 +22,16 @@ export class PiRunActivity {
     }
   }
 
-  event(event: CloudAgentRuntimeEvent): void {
+  event(event: AgentEvent): void {
     switch (event.type) {
-      case "agent_start":
-      case "sampling_start":
+      case "run_start":
+      case "turn_start":
         this.phase("waiting_model");
         break;
       case "message_update": {
-        const type = event.assistantMessageEvent.type;
-        if (type.startsWith("toolcall_")) this.phase("preparing_tool");
-        else if (type.endsWith("_delta") || type.endsWith("_start")) this.phase("receiving_model");
+        if (event.changes.some((change) => change.type.startsWith("toolcall_")))
+          this.phase("preparing_tool");
+        else this.phase("receiving_model");
         break;
       }
       case "tool_execution_start": {
@@ -67,7 +67,7 @@ export class PiRunActivity {
       case "auto_retry_end":
         this.phase("preparing");
         break;
-      case "agent_end":
+      case "run_end":
         this.phase("settling");
         break;
     }

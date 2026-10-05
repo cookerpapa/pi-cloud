@@ -166,7 +166,7 @@ it.skipIf(!postgres || !brokers)(
           sandboxProfileKey: "standard",
         },
       );
-      const { leaseId: _lease, piSessionLane: _lane, ...scope } = admission.publication.scope;
+      const { leaseId: _lease, piConversationId: _lane, ...scope } = admission.publication.scope;
       const operationId = randomUUID();
       const cancellation = parseToolCancellation({
         kind: "tool_cancel",

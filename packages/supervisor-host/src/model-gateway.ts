@@ -555,7 +555,7 @@ export class TenantModelGateway {
         this.#maximumRequestsPerTurn,
         command.payload.budgets?.maximumModelRequests ?? null,
       ),
-      requestsStarted: 0,
+      requestsStarted: command.payload.budgets?.consumedModelRequests ?? 0,
       revoked: false,
       requestControllers: new Set(),
       hostedActivityListeners: new Set(),

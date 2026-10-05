@@ -1,384 +1,206 @@
-import type { Database } from "@pi-cloud/database";
-import { readCanonicalPiTurnTranscripts } from "../src/canonical-pi-conversation.ts";
-import type { Kysely } from "kysely";
-import { describe, expect, it } from "vitest";
-import { buildSessionContext, estimateTokens, type Entry } from "@earendil-works/pi-agent-core";
-
-const TENANT_ID = "10000000-0000-4000-8000-000000000001";
-const TURN_ID = "10000000-0000-4000-8000-000000000002";
-
-function database(entries?: unknown[]): Kysely<Database> {
-  const rows: Record<string, unknown[]> = {
-    entry: [
-      {
-        turn_id: TURN_ID,
-        seq: "2",
-        timestamp_ms: "1787529600000",
-        payload: {
-          type: "message",
-          message: {
-            role: "assistant",
-            content: [{ type: "text", text: "Before maintenance." }],
-          },
-        },
-      },
-      {
-        turn_id: TURN_ID,
-        seq: "3",
-        timestamp_ms: "1787529600050",
-        payload: {
-          type: "message",
-          message: {
-            role: "assistant",
-            content: [
-              {
-                type: "providerHostedToolCall",
-                toolName: "web_search",
-                nativeItem: {
-                  id: "call_search_1",
-                  type: "web_search_call",
-                  status: "completed",
-                  action: {
-                    type: "search",
-                    queries: ["official release", "ws_call_id=call_search_1"],
-                  },
-                },
-              },
-            ],
-          },
-        },
-      },
-      {
-        turn_id: TURN_ID,
-        seq: "4",
-        timestamp_ms: "1787529600100",
-        payload: {
-          id: "summary-entry",
-          type: "compaction",
-          summary: "Earlier work",
-          retainedTail: [],
-          tokensBefore: 80_000,
-        },
-      },
-      {
-        turn_id: TURN_ID,
-        seq: "5",
-        timestamp_ms: "1787529600150",
-        payload: {
-          type: "custom",
-          customType: "pi-cloud.model_retry",
-          data: {
-            nextSamplingAttempt: 2,
-            maximumSamplingAttempts: 3,
-            delayMs: 1_500,
-          },
-        },
-      },
-      {
-        turn_id: TURN_ID,
-        seq: "6",
-        timestamp_ms: "1787529600200",
-        payload: {
-          type: "message",
-          message: {
-            role: "assistant",
-            content: [{ type: "text", text: "After maintenance." }],
-          },
-        },
-      },
-      {
-        turn_id: TURN_ID,
-        seq: "7",
-        timestamp_ms: "1787529600250",
-        payload: {
-          type: "message",
-          message: {
-            role: "assistant",
-            content: [
-              {
-                type: "toolCall",
-                id: "preview-call",
-                name: "preview",
-                arguments: { port: 4_173 },
-              },
-            ],
-          },
-        },
-      },
-      {
-        turn_id: TURN_ID,
-        seq: "8",
-        timestamp_ms: "1787529600300",
-        payload: {
-          id: "preview-result-entry",
-          type: "message",
-          message: {
-            role: "toolResult",
-            toolCallId: "preview-call",
-            toolName: "preview",
-            isError: false,
-            content: [{ type: "text", text: "PiCloud published the service." }],
-            details: {
-              port: 4_173,
-              previewPath: `/v1/conversations/${TURN_ID}/preview/4173/`,
-            },
-          },
-        },
-      },
-    ],
-    record: [
-      {
-        turn_id: TURN_ID,
-        seq: "3",
-        timestamp_ms: "1787529600090",
-        payload: {
-          type: "step_attempt",
-          step: "compaction",
-          compactionReason: "overflow",
-          resultEntryId: "summary-entry",
-        },
-      },
-    ],
-    session_terminal_events: [
-      {
-        turn_id: TURN_ID,
-        seq: "10",
-        type: "turn.completed",
-        payload: { stopReason: "stop" },
-        occurred_at: new Date("2026-08-24T00:00:01.000Z"),
-        interrupted_prefix: null,
-      },
-    ],
-  };
-  if (entries) rows.entry = entries;
-  return {
-    isTransaction: true,
-    selectFrom(table: string) {
-      let selectedKind: string | undefined;
-      let union: { execute(): Promise<unknown[]> } | undefined;
-      const query = {
-        select() {
-          return this;
-        },
-        innerJoin() {
-          return this;
-        },
-        where(
-          column: unknown,
-          _op?: unknown,
-          value?: { toOperationNode(): { parameters: { value: string }[] } },
-        ) {
-          if (column === "kind") selectedKind = value?.toOperationNode().parameters[0]?.value;
-          return this;
-        },
-        orderBy() {
-          return this;
-        },
-        unionAll(other: { execute(): Promise<unknown[]> }) {
-          union = other;
-          return this;
-        },
-        async execute() {
-          return [
-            ...(rows[selectedKind ?? table] ?? []),
-            ...(union ? await union.execute() : []),
-          ].sort((a, b) => Number((a as { seq: string }).seq) - Number((b as { seq: string }).seq));
-        },
-      };
-      return query;
-    },
-  } as unknown as Kysely<Database>;
-}
-
-describe("canonical Pi conversation", () => {
-  it("keeps separate native results when later model responses reuse a provider Tool ID", async () => {
-    const entries = [1, 2].flatMap((n) => [
-      {
-        turn_id: TURN_ID,
-        seq: String(n * 2),
-        timestamp_ms: "1787529600000",
-        payload: {
-          id: `assistant-${n}`,
-          type: "message",
-          message: {
-            role: "assistant",
-            content: [
-              { type: "toolCall", id: "reused", name: "bash", arguments: { command: `echo ${n}` } },
-            ],
-          },
-        },
-      },
-      {
-        turn_id: TURN_ID,
-        seq: String(n * 2 + 1),
-        timestamp_ms: "1787529600001",
-        payload: {
-          id: `result-${n}`,
-          type: "message",
-          message: {
-            role: "toolResult",
-            toolCallId: "reused",
-            toolName: "bash",
-            content: [{ type: "text", text: String(n) }],
-            isError: false,
-          },
-        },
-      },
-    ]);
-    const result = (
-      await readCanonicalPiTurnTranscripts(database(entries), {
-        tenantId: TENANT_ID,
-        turnIds: [TURN_ID],
-      })
-    ).get(TURN_ID)!;
-    expect(result.items).toMatchObject([
-      { kind: "tool", toolCallId: "result-1", input: { command: "echo 1" } },
-      { kind: "tool", toolCallId: "result-2", input: { command: "echo 2" } },
-    ]);
-  });
-
-  it("restores native commentary/final phases without merging their message boundaries", async () => {
-    const transcript = await readCanonicalPiTurnTranscripts(
-      database([
-        {
-          turn_id: TURN_ID,
-          seq: "2",
-          timestamp_ms: "1787529600000",
-          payload: {
-            type: "message",
-            message: {
-              role: "assistant",
-              content: [
-                {
-                  type: "text",
-                  text: "First update.",
-                  textSignature: JSON.stringify({ v: 1, id: "a", phase: "commentary" }),
-                },
-                {
-                  type: "text",
-                  text: "Second update.",
-                  textSignature: JSON.stringify({ v: 1, id: "b", phase: "commentary" }),
-                },
-                {
-                  type: "text",
-                  text: "Final.",
-                  textSignature: JSON.stringify({ v: 1, id: "c", phase: "final_answer" }),
-                },
-              ],
-            },
-          },
-        },
-      ]),
-      { tenantId: TENANT_ID, turnIds: [TURN_ID] },
-    );
-    expect(transcript.get(TURN_ID)?.items).toMatchObject([
-      { kind: "text", text: "First update.", phase: "commentary" },
-      { kind: "text", text: "Second update.", phase: "commentary" },
-      { kind: "text", text: "Final.", phase: "final_answer" },
-    ]);
-  });
-  it("reconstructs completed compaction and retry attempts from native SessionStorage facts", async () => {
-    const transcripts = await readCanonicalPiTurnTranscripts(database(), {
-      tenantId: TENANT_ID,
-      turnIds: [TURN_ID],
-    });
-    expect(transcripts.get(TURN_ID)?.items).toMatchObject([
-      { kind: "text", text: "Before maintenance." },
-      {
-        kind: "hosted_search",
-        activityId: "call_search_1",
-        status: "completed",
-        action: { type: "search", queries: ["official release"] },
-      },
-      {
-        kind: "compaction",
-        reason: "overflow",
-        status: "completed",
-        tokensBefore: 80_000,
-        estimatedTokensAfter: expect.any(Number),
-      },
-      {
-        kind: "retry",
-        nextSamplingAttempt: 2,
-        maximumSamplingAttempts: 3,
-        delayMs: 1_500,
-      },
-      { kind: "text", text: "After maintenance." },
-      {
-        kind: "tool",
-        toolCallId: "preview-result-entry",
-        toolName: "preview",
-        status: "completed",
-        output: {
-          content: [{ type: "text", text: "PiCloud published the service." }],
-          details: {
-            port: 4_173,
-            previewPath: `/v1/conversations/${TURN_ID}/preview/4173/`,
-          },
-        },
-      },
-    ]);
-  });
-
-  it("counts retained image references with Pi's native image estimate without fetching bytes", async () => {
-    const retained = {
+import { expect, it } from "vitest";
+import {
+  projectDurableTranscript,
+  type NativeHistoryRow,
+} from "../src/canonical-pi-conversation.ts";
+const at = new Date("2026-10-06T00:00:00Z");
+const terminal = {
+  throughSequence: 20,
+  terminalSequence: 20,
+  stopReason: "stop",
+  failure: null,
+  cancellation: null,
+  occurredAt: at.toISOString(),
+};
+const row = (id: number, value: Record<string, unknown>, taskKind?: string): NativeHistoryRow => ({
+  id: String(id),
+  seq: String(id),
+  body: JSON.stringify({ type: "entry", value: { id, conversationId: 1, ...value } }),
+  fields: {},
+  committed_at: at,
+  ...(taskKind ? { task_kind: JSON.stringify(taskKind) } : {}),
+});
+const assistant = (content: unknown[], stopReason = "stop") => ({
+  kind: "pi.assistant",
+  model: [{ role: "assistant", content, stopReason, timestamp: at.valueOf() }],
+});
+const result = (callId: string, text: string, details?: unknown) => ({
+  kind: "pi.tool-result",
+  byTaskId: 4,
+  model: [
+    {
       role: "toolResult",
-      toolCallId: "image",
-      toolName: "read",
+      toolCallId: callId,
+      toolName: "bash",
+      content: [{ type: "text", text }],
+      timestamp: at.valueOf(),
       isError: false,
-      timestamp: 1,
-      content: [{ type: "image", mimeType: "image/png", data: "aW1hZ2U=" }],
-    };
-    const entry = {
-      id: "summary-entry",
-      parentId: null,
-      seq: 4,
-      timestamp: 1,
-      type: "compaction",
-      summary: "Earlier work",
-      tokensBefore: 80000,
-      retainedTail: [retained],
-    } as unknown as Entry;
-    const nativeEstimate = buildSessionContext([entry]).messages.reduce(
-      (total, message) => total + estimateTokens(message),
-      0,
-    );
-    const stored = {
-      ...entry,
-      retainedTail: [
+      ...(details ? { details } : {}),
+    },
+  ],
+});
+
+it("reconstructs native text phases, hosted search, compaction, retry and Tool details without a second transcript", () => {
+  const entries = [
+    row(
+      2,
+      assistant([
         {
-          ...retained,
-          content: [
-            {
-              type: "pi_cloud_image_v1",
-              attachment: {
-                id: "10000000-0000-4000-8000-000000000003",
-                mimeType: "image/png",
-                byteLength: 5,
-                sha256: "a".repeat(64),
-              },
-            },
-          ],
-        },
-      ],
-    };
-    const transcript = await readCanonicalPiTurnTranscripts(
-      database([
-        {
-          turn_id: TURN_ID,
-          seq: "4",
-          timestamp_ms: "1787529600100",
-          payload: stored,
+          type: "text",
+          text: "Working",
+          textSignature: JSON.stringify({ v: 1, phase: "commentary" }),
         },
       ]),
-      { tenantId: TENANT_ID, turnIds: [TURN_ID] },
-    );
-    expect(nativeEstimate).toBeGreaterThan(1000);
-    expect(transcript.get(TURN_ID)?.items).toContainEqual(
-      expect.objectContaining({
-        kind: "compaction",
-        estimatedTokensAfter: nativeEstimate,
-      }),
-    );
+    ),
+    row(
+      3,
+      assistant([
+        {
+          type: "providerHostedToolCall",
+          toolName: "web_search",
+          nativeItem: {
+            id: "search",
+            type: "web_search_call",
+            status: "completed",
+            action: { type: "search", queries: ["official docs"] },
+          },
+        },
+      ]),
+    ),
+    row(5, {
+      kind: "pi.compaction",
+      data: { reason: "overflow" },
+      head: 2,
+      model: [{ role: "user", content: "Summary not displayed", timestamp: at.valueOf() }],
+    }),
+    row(6, {
+      state: { status: "running", checkpoint: { phase: "retry", attempt: 1, until: at.valueOf() } },
+    }),
+    row(
+      7,
+      assistant(
+        [{ type: "toolCall", id: "call", name: "bash", arguments: { command: "one" } }],
+        "toolUse",
+      ),
+    ),
+    row(8, result("call", "OK", { previewPath: "/preview/3000" }), "pi.tool"),
+    row(
+      9,
+      assistant([
+        {
+          type: "text",
+          text: "Done",
+          textSignature: JSON.stringify({ v: 1, phase: "final_answer" }),
+        },
+      ]),
+    ),
+  ];
+  const view = projectDurableTranscript(entries, terminal);
+  expect(view.items.map((item) => item.kind)).toEqual([
+    "text",
+    "hosted_search",
+    "compaction",
+    "retry",
+    "tool",
+    "text",
+  ]);
+  expect(view.items[3]).toMatchObject({ nextSamplingAttempt: 2 });
+  expect(view.items[0]).toMatchObject({ phase: "commentary" });
+  expect(view.items[4]).toMatchObject({
+    toolCallId: "task:4",
+    input: { command: "one" },
+    status: "completed",
+    output: { details: { previewPath: "/preview/3000" } },
   });
+  expect(view.items[5]).toMatchObject({ phase: "final_answer" });
+  expect(JSON.stringify(view)).not.toContain("Summary not displayed");
+});
+
+it("does not concatenate separate assistant messages or conflate reused provider call IDs", () => {
+  const view = projectDurableTranscript(
+    [
+      row(
+        2,
+        assistant(
+          [
+            { type: "text", text: "one" },
+            { type: "toolCall", id: "same", name: "bash", arguments: { command: "first" } },
+          ],
+          "toolUse",
+        ),
+      ),
+      row(3, result("same", "first"), "pi.tool"),
+      row(
+        5,
+        assistant(
+          [
+            { type: "text", text: "two" },
+            { type: "toolCall", id: "same", name: "bash", arguments: { command: "second" } },
+          ],
+          "toolUse",
+        ),
+      ),
+      row(6, { ...result("same", "second"), byTaskId: 7 }, "pi.tool"),
+    ],
+    terminal,
+  );
+  expect(
+    view.items.filter((item) => item.kind === "tool").map((item) => [item.toolCallId, item.input]),
+  ).toEqual([
+    ["task:4", { command: "first" }],
+    ["task:7", { command: "second" }],
+  ]);
+  expect(view.items.filter((item) => item.kind === "text").map((item) => item.text)).toEqual([
+    "one",
+    "two",
+  ]);
+});
+
+it("keeps failed/aborted native text visible and gives unoffered calls their own entry identity", () => {
+  const view = projectDurableTranscript(
+    [
+      row(2, assistant([{ type: "text", text: "Interrupted prefix" }], "aborted")),
+      row(3, { ...result("unknown", "Not offered"), byTaskId: 2 }, "pi.generation"),
+    ],
+    {
+      ...terminal,
+      stopReason: null,
+      failure: { code: "model_error", message: "Failed", retryable: false },
+    },
+  );
+  expect(view.items[0]).toMatchObject({ text: "Interrupted prefix" });
+  expect(view.items[1]).toMatchObject({ toolCallId: "entry:3" });
+});
+
+it("retains faulted Tool and aborted compaction receipts even when no native entry exists", () => {
+  const view = projectDurableTranscript(
+    [
+      row(
+        2,
+        assistant(
+          [{ type: "toolCall", id: "call", name: "bash", arguments: { command: "maybe" } }],
+          "toolUse",
+        ),
+      ),
+      row(3, {
+        kind: "pi.tool",
+        input: { assistant: 2, callId: "call" },
+        state: {
+          status: "terminal",
+          outcome: { status: "faulted", error: { message: "internal transport detail" } },
+        },
+      }),
+      row(4, {
+        kind: "pi.compaction",
+        input: { reason: "threshold" },
+        state: { status: "terminal", outcome: { status: "aborted" } },
+      }),
+    ],
+    terminal,
+  );
+  expect(view.items).toMatchObject([
+    { kind: "tool", toolCallId: "task:3", status: "failed", input: { command: "maybe" } },
+    { kind: "compaction", status: "aborted" },
+  ]);
+  expect(JSON.stringify(view)).not.toContain("internal transport detail");
 });

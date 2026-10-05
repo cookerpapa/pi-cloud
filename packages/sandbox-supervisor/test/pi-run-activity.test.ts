@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { PiRunActivity } from "../src/pi-run-activity.ts";
-import type { CloudAgentRuntimeEvent } from "../src/cloud-agent-runtime.ts";
+import type { AgentEvent } from "@earendil-works/pi-durable";
 import type { RunActivityUpdate } from "@pi-cloud/protocol";
 
 it("reports observed phases and activity without exposing private deltas or arguments", () => {
@@ -10,15 +10,15 @@ it("reports observed phases and activity without exposing private deltas or argu
     (value) => updates.push(value),
     () => ++now,
   );
-  const event = (value: unknown) => activity.event(value as CloudAgentRuntimeEvent);
-  event({ type: "sampling_start" });
+  const event = (value: unknown) => activity.event(value as AgentEvent);
+  event({ type: "turn_start" });
   event({
     type: "message_update",
-    assistantMessageEvent: { type: "thinking_delta", delta: "PRIVATE" },
+    changes: [{ type: "thinking_delta", delta: "PRIVATE" }],
   });
   event({
     type: "message_update",
-    assistantMessageEvent: { type: "toolcall_delta", partial: { secret: "PRIVATE" } },
+    changes: [{ type: "toolcall_delta", partial: { secret: "PRIVATE" } }],
   });
   event({
     type: "tool_execution_start",
@@ -52,7 +52,7 @@ it("reports observed phases and activity without exposing private deltas or argu
   expect(JSON.stringify(updates)).not.toContain("PRIVATE");
   expect(updates.at(-1)?.lastActivityAt).toBe(110);
   activity.phase("cancelling");
-  event({ type: "agent_end" });
+  event({ type: "run_end" });
   expect(updates.at(-1)?.phase).toBe("cancelling");
 });
 

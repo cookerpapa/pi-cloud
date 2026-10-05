@@ -1,71 +1,44 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { MAX_EXECUTION_FACT_BYTES } from "@pi-cloud/protocol";
+import { MAX_EXECUTION_FACT_BYTES, PublicationNotSentError } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import type { AcceptedFact, AcceptedFactReceipt } from "../src/accepted-fact.ts";
 import { WorkerExecutionLog } from "../src/worker-execution-log.ts";
-import { NativeSessionLogPublisher } from "../src/native-session-log-publisher.ts";
-import { prepareExecutionFact } from "../src/prepare-execution-fact.ts";
+import { DurableSessionPublisher } from "../src/durable-session-publisher.ts";
 import { parseKafkaAcceptedFact } from "../src/kafka-accepted-fact.ts";
-import { toolCommandForFact } from "../src/tool-invocation-fact.ts";
+import { toolCommandsForFact } from "../src/tool-invocation-fact.ts";
 import { SessionPublicationIngress } from "../src/session-publication-ingress.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
-
 const logs: WorkerExecutionLog[] = [];
 afterEach(async () => {
-  await Promise.all(logs.splice(0).map((log) => log.close()));
+  await Promise.allSettled(logs.splice(0).map((log) => log.close()));
 });
 
-it("keeps large arguments at the existing checkpoint size and reconstructs the exact command", () => {
-  const { fact, command } = toolInvocationFixture("x".repeat(360_000));
-  const serialized = JSON.stringify(fact);
-  expect(Buffer.byteLength(serialized)).toBeLessThan(MAX_EXECUTION_FACT_BYTES);
-  expect(serialized.match(/x{360000}/g)).toHaveLength(2); // native intent + existing display event
-  const decoded = parseKafkaAcceptedFact(serialized);
-  expect(toolCommandForFact(decoded)).toEqual({
-    kind: "tool_command",
-    factId: command.request.operationId,
-    scope: { ...fact.scope, leaseId: fact.scope.writerId },
-    request: command.request,
-    toolCallId: command.toolCallId,
-    occurredAt: fact.occurredAt,
-    replyTopic: command.replyTopic,
-  });
+it("stores large validated arguments once and expands the exact owned Cube command", () => {
+  const { fact, command } = toolInvocationFixture("x".repeat(360000));
+  const encoded = JSON.stringify(fact);
+  expect(Buffer.byteLength(encoded)).toBeLessThan(MAX_EXECUTION_FACT_BYTES);
+  expect(encoded.match(/x{360000}/g)).toHaveLength(1);
+  expect(toolCommandsForFact(parseKafkaAcceptedFact(encoded))).toEqual([
+    {
+      kind: "tool_command",
+      factId: command.request.operationId,
+      scope: { ...fact.scope, leaseId: fact.scope.writerId },
+      request: command.request,
+      toolCallId: command.toolCallId,
+      occurredAt: command.occurredAt,
+      replyTopic: command.replyTopic,
+    },
+  ]);
 });
 
-it.each(["executionReference", "toolCallId", "args", "toolName", "providerId", "intent", "lane"])(
-  "rejects a mismatched %s before publication",
-  (field) => {
-    const { scope, executionReference, mutation } = toolInvocationFixture();
-    const candidate = structuredClone(mutation);
-    const command = candidate.toolCommand!;
-    const request = command.request as any;
-    if (field === "executionReference") Object.assign(command, { executionReference: "other" });
-    if (field === "toolCallId") Object.assign(command, { toolCallId: "other" });
-    if (field === "args") request.args = { ...request.args, content: "changed" };
-    if (field === "toolName") request.toolName = "bash";
-    if (field === "providerId") request.toolCallId = "other";
-    if (field === "intent") Object.assign(candidate, { items: [] });
-    if (field === "lane") Object.assign(candidate.scope, { piSessionLane: "child" });
-    expect(() =>
-      prepareExecutionFact(
-        { ...scope, executionReference },
-        {
-          kind: "pi_session_append",
-          mutation: candidate,
-        },
-      ),
-    ).toThrow();
-  },
-);
-
-it("rejects duplicate command arguments rather than giving them another authority", () => {
+it("rejects duplicate argument authority in a dispatch", () => {
   const { fact } = toolInvocationFixture();
-  Object.assign(fact.command.request, { args: { command: "unexpected" } });
-  expect(() => parseKafkaAcceptedFact(JSON.stringify(fact))).toThrow("reuse its native intent");
+  Object.assign(fact.tools[0]!.request, { args: {} });
+  expect(() => parseKafkaAcceptedFact(JSON.stringify(fact))).toThrow("duplicates native intent");
 });
 
-it("checks the enclosing tenant, Session, Run, writer and Lane before dispatch", async () => {
+it("checks the enclosing and independently admitted effect scopes without a per-record database query", async () => {
   const { scope, fact } = toolInvocationFixture();
   const ingress = new SessionPublicationIngress();
   const owner = ingress.installPartition(0, {
@@ -78,9 +51,9 @@ it("checks the enclosing tenant, Session, Run, writer and Lane before dispatch",
     await expect(
       ingress.append(owner, { ...fact, scope: { ...fact.scope, [key]: "other" } }),
     ).rejects.toBeInstanceOf(Error);
-  await expect(
-    ingress.append(owner, { ...fact, piSession: { ...fact.piSession, lane: "other" } }),
-  ).rejects.toBeInstanceOf(Error);
+  const changed = structuredClone(fact);
+  Object.assign(changed.tools[0]!.scope, { runId: "other" });
+  await expect(ingress.append(owner, changed)).rejects.toBeInstanceOf(Error);
 });
 
 async function publisherFixture() {
@@ -97,59 +70,52 @@ async function publisherFixture() {
     sessionId: f.scope.sessionId,
     turnId: f.scope.turnId,
     nextEventSeq: 1,
-    piSession: { id: f.scope.piSessionId, lane: "main", writerId: f.scope.writerId },
+    piSession: { id: f.scope.piSessionId, conversationId: 1, writerId: f.scope.writerId },
     publication: { scope: f.scope },
   });
-  const publisher = new NativeSessionLogPublisher({
+  const publisher = new DurableSessionPublisher({
     channels: log,
-    toolReplyTopic: "reply-worker-boot",
-  }).scoped(f.mutation.scope);
+    replyTopic: "reply-worker-boot",
+  }).scoped(f.executionReference);
   return { ...f, writer, publisher, append, ack };
 }
 
-it("publishes intent and command once, advancing the display watermark only after the matching ACK", async () => {
+it.each(["executionReference", "args", "providerId", "intent"] as const)(
+  "rejects a mismatched %s before enqueueing",
+  async (field) => {
+    const f = await publisherFixture(),
+      publication = structuredClone(f.publication);
+    const command = publication.tools[0]!.command;
+    if (field === "executionReference") Object.assign(command, { executionReference: "other" });
+    if (field === "args") Object.assign(command.request, { args: { content: "changed" } });
+    if (field === "providerId") Object.assign(command.request, { toolCallId: "other" });
+    if (field === "intent") Object.assign(publication.commit, { writes: [] });
+    await expect(f.publisher.publish(publication)).rejects.toBeInstanceOf(PublicationNotSentError);
+    expect(f.append).not.toHaveBeenCalled();
+  },
+);
+
+it("co-publishes native intent and command exactly once and rejects a separate fixed-Tool command", async () => {
   const f = await publisherFixture();
-  const pending = f.publisher.publish(f.mutation.items as any, f.mutation.events, {
-    toolCommand: f.command,
-  });
+  const published = f.publisher.publish(f.publication);
   await vi.waitFor(() => expect(f.append).toHaveBeenCalledOnce());
   const fact = f.append.mock.calls[0]![0];
-  expect(fact.kind).toBe("tool_invocation");
-  expect(f.writer.acknowledgedThroughSeq).toBe(0);
+  expect(fact.kind).toBe("durable_commit");
   f.ack.resolve({ factId: fact.factId, durable: true });
-  await pending;
-  expect(f.writer.acknowledgedThroughSeq).toBe(5);
+  await published;
   expect(f.append).toHaveBeenCalledOnce();
   await expect(f.writer.publishToolCommand(f.command)).rejects.toThrow("atomic native intent");
-  expect(f.append).toHaveBeenCalledOnce();
 });
 
-it("does not enqueue an invocation cancelled before publication", async () => {
+it.each(["lost", "mismatched"] as const)("does not retry an %s ACK", async (mode) => {
   const f = await publisherFixture();
-  const abort = new AbortController();
-  abort.abort(new Error("cancelled"));
-  await expect(
-    f.publisher.publish(f.mutation.items as any, [], {
-      toolCommand: f.command,
-      signal: abort.signal,
-    }),
-  ).rejects.toThrow("cancelled");
-  expect(f.append).not.toHaveBeenCalled();
-});
-
-it.each(["lost", "mismatched"])("never retries the invocation after an %s ACK", async (mode) => {
-  const f = await publisherFixture();
-  const pending = f.publisher.publish(f.mutation.items as any, f.mutation.events, {
-    toolCommand: f.command,
-  });
-  const rejection = expect(pending).rejects.toThrow();
+  const published = f.publisher.publish(f.publication);
+  void published.catch(() => {});
   await vi.waitFor(() => expect(f.append).toHaveBeenCalledOnce());
-  if (mode === "lost") f.ack.reject(new Error("ack lost"));
-  else f.ack.resolve({ durable: true, factId: "wrong" });
-  await rejection;
-  await expect(
-    f.publisher.publish(f.mutation.items as any, [], { toolCommand: f.command }),
-  ).rejects.toThrow();
+  if (mode === "lost") f.ack.reject(new Error("lost ACK"));
+  else f.ack.resolve({ factId: "wrong", durable: true });
+  await expect(published).rejects.toBeInstanceOf(Error);
   expect(f.append).toHaveBeenCalledOnce();
-  expect(f.writer.acknowledgedThroughSeq).toBe(0);
+  await expect(f.publisher.publish(f.publication)).rejects.toBeInstanceOf(Error);
+  expect(f.append).toHaveBeenCalledOnce();
 });

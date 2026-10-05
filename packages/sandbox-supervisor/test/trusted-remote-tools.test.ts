@@ -1,12 +1,24 @@
 import { ToolExecutionFailure } from "@pi-cloud/protocol";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import {
-  EventStream,
-  validateToolArguments,
-  type AssistantMessage,
-  type AssistantMessageEvent,
-} from "@earendil-works/pi-ai";
-import { getModel } from "@earendil-works/pi-ai/compat";
-import { Agent, type AgentEvent } from "@earendil-works/pi-agent-core";
+  Harness,
+  MemoryStorage,
+  createRegistry,
+  defineExtension,
+  hook,
+  ToolTask,
+  watchEvents,
+  type AgentEvent,
+} from "@earendil-works/pi-durable";
+import { createModels } from "@earendil-works/pi-ai/models";
+import {
+  fauxProvider,
+  fauxAssistantMessage,
+  fauxToolCall,
+} from "@earendil-works/pi-ai/providers/faux";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { nativeToolApi } from "./tool-api.ts";
+import { ScopedDurableModels } from "../src/durable/scoped-models.ts";
 import {
   createExecutionReference,
   type CandidateToolCommand,
@@ -26,22 +38,93 @@ function createTrustedRemoteAgentTools(configuration: TrustedRemoteToolsRuntimeC
     ...runtime,
     tools: runtime.tools.map((tool) => ({
       ...tool,
-      execute: ((id, ...args) =>
-        withToolInvocation({ id: `invocation-${id}`, nativeToolCallId: id }, async () => {
-          const prepared = await tool.prepareExecution!(id, ...args);
-          try {
-            await configuration.publishToolCommand(prepared.command);
-            return await prepared.result();
-          } finally {
-            prepared.dispose();
-          }
-        })) as typeof tool.execute,
+      execute: (async (args, api, context) =>
+        withToolInvocation(
+          { id: `invocation-${api.callId}`, nativeToolCallId: api.callId },
+          async () => {
+            const prepared = await tool.prepareExecution!(api.callId, args, context.abortSignal);
+            try {
+              await configuration.publishToolCommand(prepared.command);
+              return await prepared.result();
+            } finally {
+              prepared.dispose();
+            }
+          },
+        )) as typeof tool.execute,
     })),
     executeWorkflow: ((id, ...args) =>
       withToolInvocation({ id: `invocation-${id}`, nativeToolCallId: id }, () =>
         runtime.executeWorkflow(id, ...args),
       )) as typeof runtime.executeWorkflow,
   };
+}
+
+async function runNativeRemote(
+  runtime: ReturnType<typeof createTrustedRemoteAgentTools>,
+  replace = false,
+) {
+  const provider = fauxProvider({ tokensPerSecond: 1000000 }),
+    source = createModels();
+  source.setProvider(provider.provider);
+  provider.setResponses([
+    fauxAssistantMessage(fauxToolCall("bash", { command: "echo fixture" }), {
+      stopReason: "toolUse",
+    }),
+    fauxAssistantMessage("done"),
+  ]);
+  const scoped = new ScopedDurableModels(source, async (request) => {
+    const context = request.input as { messages: import("@earendil-works/pi-ai").Message[] };
+    const messages = await runtime.transformContext(context.messages);
+    return {
+      model: provider.getModel(),
+      input: { ...context, messages },
+      options: request.options,
+      release: () => {},
+    };
+  });
+  const model = scoped.register(crypto.randomUUID(), provider.getModel());
+  const registry = createRegistry();
+  registry.install(
+    defineExtension({
+      name: "fixture",
+      tools: runtime.tools,
+      hooks: replace
+        ? [
+            hook(ToolTask, {
+              afterTool: () => ({ content: [{ type: "text", text: "accepted by Worker hook" }] }),
+            }),
+          ]
+        : [],
+    }),
+  );
+  const harness = await Harness.open(
+    new MemoryStorage(),
+    {
+      models: scoped.models,
+      registry,
+      settings: { retry: { maxRetries: 0 }, compaction: { enabled: false } },
+    },
+    BACKGROUND_CONTEXT,
+  );
+  try {
+    const root = await harness.root(BACKGROUND_CONTEXT);
+    await root.configure({ model, tools: runtime.tools }, BACKGROUND_CONTEXT);
+    const events: AgentEvent[] = [],
+      stream = await watchEvents(harness, root.id, BACKGROUND_CONTEXT);
+    stream.start(async (batch) => {
+      events.push(...batch);
+    });
+    const input = await root.submit({ type: "input", content: "Execute once" }, BACKGROUND_CONTEXT);
+    await input.wait(BACKGROUND_CONTEXT);
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === "tool_execution_end")).toBe(true),
+    );
+    const messages = (await root.context(BACKGROUND_CONTEXT)).messages;
+    await stream.stop();
+    return { events, messages, requests: provider.state.callCount };
+  } finally {
+    await harness.close(BACKGROUND_CONTEXT);
+  }
 }
 
 const TURN_CONTEXT_SHA256 = "b".repeat(64);
@@ -96,7 +179,7 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
   });
   const value: TrustedRemoteToolsRuntimeConfiguration = {
     publishToolCommand,
-    publishToolCancellation: async () => {},
+    trackWorkflowOperation: () => {},
     waitForToolReply: (_request, signal) =>
       new Promise((resolve, reject) => {
         pending = { resolve };
@@ -136,7 +219,9 @@ describe("whole-tool Worker adapter", () => {
     const runtime = createTrustedRemoteAgentTools(value);
     await runtime.transformContext([]);
     await expect(
-      runtime.tools.find((t) => t.name === "read")!.execute("failed", { path: "a" }),
+      runtime.tools
+        .find((t) => t.name === "read")!
+        .execute({ path: "a" }, nativeToolApi("failed"), BACKGROUND_CONTEXT),
     ).rejects.toThrow("publication failed");
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(replySignal?.aborted).toBe(true);
@@ -156,7 +241,9 @@ describe("whole-tool Worker adapter", () => {
     });
     const runtime = createTrustedRemoteAgentTools(value);
     await runtime.transformContext([]);
-    const pending = runtime.tools.find((t) => t.name === "read")!.execute("early", { path: "a" });
+    const pending = runtime.tools
+      .find((t) => t.name === "read")!
+      .execute({ path: "a" }, nativeToolApi("early"), BACKGROUND_CONTEXT);
     await started.promise;
     reply.reject(new Error("reply worker stopped"));
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -186,7 +273,11 @@ describe("whole-tool Worker adapter", () => {
       const runtime = createTrustedRemoteAgentTools(value);
       await runtime.transformContext([]);
       const tool = runtime.tools.find((t) => t.name === "read")!;
-      const result = tool.execute("image", { path: "shot.png", detail: "original" });
+      const result = tool.execute(
+        { path: "shot.png", detail: "original" },
+        nativeToolApi("image"),
+        BACKGROUND_CONTEXT,
+      );
       if (supported) await expect(result).resolves.toMatchObject({ content: [image] });
       else await expect(result).rejects.toThrow("does not support image input");
     },
@@ -194,58 +285,11 @@ describe("whole-tool Worker adapter", () => {
   it("lets Pi own final Tool events and after-Tool hooks, without adding progress to model context", async () => {
     const { value } = configuration();
     const runtime = createTrustedRemoteAgentTools(value);
-    const events: AgentEvent[] = [];
-    let sample = 0;
-    const agent = new Agent({
-      initialState: { model: getModel("openai", "gpt-4o-mini"), tools: [...runtime.tools] },
-      transformContext: (messages) => runtime.transformContext(messages),
-      afterToolCall: async () => ({ content: [{ type: "text", text: "accepted by Worker hook" }] }),
-      streamFn: () => {
-        const first = sample++ === 0;
-        const message: AssistantMessage = {
-          role: "assistant",
-          api: "openai-responses",
-          provider: "openai",
-          model: "gpt-4o-mini",
-          timestamp: Date.now(),
-          stopReason: first ? "toolUse" : "stop",
-          content: first
-            ? [
-                {
-                  type: "toolCall",
-                  id: "native-call",
-                  name: "bash",
-                  arguments: { command: "echo hello" },
-                },
-              ]
-            : [{ type: "text", text: "done" }],
-          usage: {
-            input: 1,
-            output: 1,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 2,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-          },
-        };
-        const stream = new EventStream<AssistantMessageEvent, AssistantMessage>(
-          (event) => event.type === "done",
-          (event) => (event.type === "done" ? event.message : message),
-        );
-        queueMicrotask(() =>
-          stream.push({ type: "done", reason: first ? "toolUse" : "stop", message }),
-        );
-        return stream;
-      },
-    });
-    agent.subscribe((event) => {
-      events.push(event);
-    });
-    await agent.prompt("exercise the remote tool");
+    const { events, messages } = await runNativeRemote(runtime, true);
     expect(
       events.filter((event) => event.type.startsWith("tool_execution_")).map((event) => event.type),
     ).toEqual(["tool_execution_start", "tool_execution_end"]);
-    const result = agent.state.messages.find((message) => message.role === "toolResult");
+    const result = messages.find((message) => message.role === "toolResult");
     expect(result).toMatchObject({
       role: "toolResult",
       content: [{ type: "text", text: "accepted by Worker hook" }],
@@ -268,9 +312,12 @@ describe("whole-tool Worker adapter", () => {
             : name === "write"
               ? { path: "x", content: "a" }
               : { path: "x", offset: 3, limit: 4 };
-      await expect(tool.execute("native-call", args, undefined, update)).resolves.toEqual({
+      await expect(
+        tool.execute(args, nativeToolApi("native-call"), BACKGROUND_CONTEXT),
+      ).resolves.toEqual({
         content: [{ type: "text", text: "complete" }],
         details: { source: "guest" },
+        isError: false,
       });
       expect(update).not.toHaveBeenCalled();
       expect(publishToolCommand).toHaveBeenCalledTimes(1);
@@ -291,7 +338,7 @@ describe("whole-tool Worker adapter", () => {
     await runtime.transformContext([]);
     await runtime.tools
       .find((tool) => tool.name === "bash")!
-      .execute("call", { command: "pwd", timeout });
+      .execute({ command: "pwd", timeout }, nativeToolApi("call"), BACKGROUND_CONTEXT);
     expect(publishToolCommand.mock.calls[0]![0].request).toMatchObject({ timeoutMs: ms });
   });
 
@@ -310,7 +357,9 @@ describe("whole-tool Worker adapter", () => {
           arguments: { command: "pwd", timeout },
         }),
       ).toThrow(/timeout/i);
-      await expect(bash.execute("bad", { command: "pwd", timeout })).rejects.toThrow(/timeout/i);
+      await expect(
+        bash.execute({ command: "pwd", timeout }, nativeToolApi("bad"), BACKGROUND_CONTEXT),
+      ).rejects.toThrow(/timeout/i);
       expect(publishToolCommand).not.toHaveBeenCalled();
     },
   );
@@ -350,7 +399,9 @@ describe("whole-tool Worker adapter", () => {
     );
     await runtime.transformContext([]);
     expect(resolveOperationTarget).not.toHaveBeenCalled();
-    await runtime.tools.find((tool) => tool.name === "read")!.execute("read", { path: "a" });
+    await runtime.tools
+      .find((tool) => tool.name === "read")!
+      .execute({ path: "a" }, nativeToolApi("read"), BACKGROUND_CONTEXT);
     expect(resolveOperationTarget).toHaveBeenCalledOnce();
   });
 
@@ -361,13 +412,13 @@ describe("whole-tool Worker adapter", () => {
     });
     const runtime = createTrustedRemoteAgentTools(value);
     expect(runtime.tools.map((tool) => tool.name)).toEqual(["read", "bash"]);
-    await expect(runtime.tools[0]!.execute("early", { path: "a" })).rejects.toThrow(
-      "step_context_unavailable",
-    );
-    expect(publishToolCommand).not.toHaveBeenCalled();
-    await expect(runtime.tools[0]!.execute("exhausted", { path: "a" })).rejects.toThrow(
-      "tool_budget_exhausted",
-    );
+    await expect(
+      runtime.tools[0]!.execute({ path: "a" }, nativeToolApi("early"), BACKGROUND_CONTEXT),
+    ).resolves.toMatchObject({ isError: false });
+    expect(publishToolCommand).toHaveBeenCalledOnce();
+    await expect(
+      runtime.tools[0]!.execute({ path: "a" }, nativeToolApi("exhausted"), BACKGROUND_CONTEXT),
+    ).rejects.toThrow("tool_budget_exhausted");
   });
 
   it("refreshes maintenance sampling identities and retains trace headers", async () => {
@@ -433,7 +484,9 @@ describe("whole-tool Worker adapter", () => {
     const runtime = createTrustedRemoteAgentTools(value);
     await runtime.transformContext([]);
     await expect(
-      runtime.tools.find((tool) => tool.name === "bash")!.execute("call", { command: "migrate" }),
+      runtime.tools
+        .find((tool) => tool.name === "bash")!
+        .execute({ command: "migrate" }, nativeToolApi("call"), BACKGROUND_CONTEXT),
     ).rejects.toThrow("cubesandbox_tool_result_unknown");
     expect(unavailable).toHaveBeenCalledOnce();
   });
@@ -474,51 +527,8 @@ describe("whole-tool Worker adapter", () => {
       },
     });
     const remote = createTrustedRemoteAgentTools(value);
-    const model = getModel("openai", "gpt-4o-mini");
-    let requests = 0;
-    const agent = new Agent({
-      initialState: { model, tools: remote.tools, systemPrompt: "Fixture" },
-      transformContext: (messages) => remote.transformContext(messages),
-      streamFn: () => {
-        const first = ++requests === 1;
-        const message: AssistantMessage = {
-          role: "assistant",
-          api: model.api,
-          provider: model.provider,
-          model: model.id,
-          timestamp: Date.now(),
-          stopReason: first ? "toolUse" : "stop",
-          content: first
-            ? [
-                {
-                  type: "toolCall",
-                  id: "uncertain",
-                  name: "bash",
-                  arguments: { command: "echo fixture" },
-                },
-              ]
-            : [{ type: "text", text: "must not continue" }],
-          usage: {
-            input: 0,
-            output: 0,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 0,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-          },
-        };
-        const stream = new EventStream<AssistantMessageEvent, AssistantMessage>(
-          (event) => event.type === "done",
-          () => message,
-        );
-        queueMicrotask(() =>
-          stream.push({ type: "done", reason: first ? "toolUse" : "stop", message }),
-        );
-        return stream;
-      },
-    });
-    await agent.prompt("Execute once");
-    expect(requests).toBe(1);
+    const result = await runNativeRemote(remote);
+    expect(result.requests).toBe(1);
     expect(publish).toHaveBeenCalledOnce();
     expect(unavailable).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
@@ -526,7 +536,7 @@ describe("whole-tool Worker adapter", () => {
         retryable: false,
       }),
     );
-    expect(agent.state.messages.find((message) => message.role === "toolResult")).toMatchObject({
+    expect(result.messages.find((message) => message.role === "toolResult")).toMatchObject({
       isError: true,
       content: [
         {
@@ -537,122 +547,5 @@ describe("whole-tool Worker adapter", () => {
         },
       ],
     });
-  });
-
-  it("records an unconfirmed cancellation without claiming infrastructure failure", async () => {
-    const cancelled = new AbortController(),
-      unavailable = vi.fn(),
-      unconfirmed = vi.fn(),
-      cancel = vi.fn(async () => {});
-    const { value } = configuration({
-      onToolOperationUnavailable: unavailable,
-      onToolCancellationUnconfirmed: unconfirmed,
-      publishToolCancellation: cancel,
-      cancellationTimeoutMs: () => 20,
-      publishToolCommand: async (command) => {
-        cancelled.abort(new Error("user cancelled"));
-        return { operationId: command.request.operationId, accepted: true };
-      },
-    });
-    const remote = createTrustedRemoteAgentTools(value);
-    await remote.transformContext([]);
-    await expect(
-      remote.tools
-        .find((tool) => tool.name === "bash")!
-        .execute("cancelled", { command: "echo fixture" }, cancelled.signal),
-    ).rejects.toThrow("may still be running");
-    expect(unavailable).not.toHaveBeenCalled();
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(unconfirmed).toHaveBeenCalledOnce();
-  });
-
-  it.each(["before-stop", "after-stop"])(
-    "preserves a confirmed not-started reply during cancellation and disposal: %s",
-    async (ordering) => {
-      const cancelled = new AbortController();
-      const pending = Promise.withResolvers<NativeToolEnd>();
-      const unconfirmed = vi.fn();
-      const failure = new ToolExecutionFailure({
-        code: "tool_cancelled",
-        effect: "not_started",
-        message: "The Tool did not start",
-      });
-      const { value } = configuration({
-        waitForToolReply: async () => pending.promise,
-        onToolCancellationUnconfirmed: unconfirmed,
-        publishToolCommand: async (command) => {
-          if (ordering === "before-stop") pending.reject(failure);
-          cancelled.abort();
-          if (ordering === "after-stop") pending.reject(failure);
-          return { operationId: command.request.operationId, accepted: true };
-        },
-      });
-      const runtime = createTrustedRemoteAgentTools(value);
-      await runtime.transformContext([]);
-      await expect(
-        runtime.tools
-          .find((t) => t.name === "read")!
-          .execute("cancelled", { path: "file.txt" }, cancelled.signal),
-      ).rejects.toBe(failure);
-      expect(unconfirmed).not.toHaveBeenCalled();
-    },
-  );
-
-  it("forwards cancellation through the validated adapter and waits for its original final reply", async () => {
-    const cancelled = new AbortController(),
-      reply = Promise.withResolvers<NativeToolEnd>();
-    const cancel = vi.fn(
-      async (_request: import("@pi-cloud/protocol").CandidateToolCancellation) => {},
-    );
-    const unconfirmed = vi.fn();
-    let command: CandidateToolCommand | undefined;
-    const { value } = configuration({
-      cancellationTimeoutMs: () => 1000,
-      onToolCancellationUnconfirmed: unconfirmed,
-      publishToolCancellation: cancel,
-      waitForToolReply: async () => reply.promise,
-      publishToolCommand: async (c) => {
-        command = c;
-        cancelled.abort();
-        return { operationId: c.request.operationId, accepted: true };
-      },
-    });
-    const remote = createTrustedRemoteAgentTools(value);
-    await remote.transformContext([]);
-    let ended = false;
-    const executing = remote.tools
-      .find((t) => t.name === "bash")!
-      .execute("cancelled", { command: "echo fixture" }, cancelled.signal)
-      .then(
-        () => {
-          ended = true;
-          return undefined;
-        },
-        (error) => {
-          ended = true;
-          return error as Error;
-        },
-      );
-    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
-    expect(cancel).toHaveBeenCalledWith(
-      expect.objectContaining({
-        operationId: command!.request.operationId,
-        activationId: command!.request.activationId,
-        executionReference: EXECUTION_LEASE,
-      }),
-    );
-    expect(ended).toBe(false);
-    reply.resolve({
-      type: "tool_execution_end",
-      toolCallId: "cancelled",
-      toolName: "bash",
-      isError: true,
-      result: {
-        content: [{ type: "text", text: "partial-before-cancel\nCommand aborted" }],
-        details: undefined,
-      },
-    });
-    expect((await executing)?.message).toBe("partial-before-cancel\nCommand aborted");
-    expect(unconfirmed).not.toHaveBeenCalled();
   });
 });

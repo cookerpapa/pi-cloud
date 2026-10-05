@@ -583,7 +583,7 @@ export interface SessionTable {
   compute_session_id: GeneratedNullable<string>;
   id: string;
   pi_session_id: string;
-  pi_session_lane: string;
+  pi_conversation_id: NullableInt8;
   title: Generated<string>;
   tenant_id: string;
   project_id: string;
@@ -722,6 +722,7 @@ export interface TurnTable {
 }
 
 export interface RunTable {
+  recovery_requested_at: NullableTimestamp;
   input_return_request_id: GeneratedNullable<string>;
   queued_steer_id: GeneratedNullable<string>;
   compute_session_id: GeneratedNullable<string>;
@@ -985,50 +986,9 @@ export interface PiSessionTable {
   id: string;
   created_at_ms: Int8;
   parent_session_id: string | null;
-  next_seq: GeneratedInt8;
   name: string | null;
   lease_epoch: GeneratedInt8;
   unsealed_runs: GeneratedInt8;
-}
-
-export interface PiSessionLaneTable {
-  tenant_id: string;
-  session_id: string;
-  lane: string;
-  leaf_id: string | null;
-}
-
-export interface PiSessionOpenOperationTable {
-  tenant_id: string;
-  session_id: string;
-  lane: string;
-  seq: Int8;
-}
-
-export interface PiSessionLabelTable {
-  tenant_id: string;
-  session_id: string;
-  target_id: string;
-  label: string;
-  updated_seq: Int8;
-}
-
-export interface PiSessionLogTable {
-  tenant_id: string;
-  session_id: string;
-  seq: Int8;
-  kind: string;
-  payload: JsonObject;
-  append_id: string | null;
-  id: ColumnType<string | null, never, never>;
-  type: ColumnType<string | null, never, never>;
-  parent_id: ColumnType<string | null, never, never>;
-  custom_type: ColumnType<string | null, never, never>;
-  lane: ColumnType<string | null, never, never>;
-  run_id: ColumnType<string | null, never, never>;
-  operation_kind: ColumnType<string | null, never, never>;
-  timestamp_ms: ColumnType<string | null, never, never>;
-  turn_id: GeneratedNullable<string>;
 }
 
 export interface SessionUploadTable {
@@ -1111,8 +1071,4 @@ export interface Database {
   platform_runtime_settings: PlatformRuntimeSettingsTable;
   platform_runtime_setting_changes: PlatformRuntimeSettingChangeTable;
   pi_sessions: PiSessionTable;
-  pi_session_lanes: PiSessionLaneTable;
-  pi_session_labels: PiSessionLabelTable;
-  pi_session_log: PiSessionLogTable;
-  pi_session_open_operations: PiSessionOpenOperationTable;
 }

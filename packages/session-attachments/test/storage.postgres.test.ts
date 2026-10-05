@@ -3,10 +3,16 @@ import { sql } from "kysely";
 import { randomUUID, randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  PostgresPiSessionStorage,
-  PostgresPiSessionRepository,
-  rebuildPostgresPiSessionProjections,
-} from "../../pi-session-postgres/src/index.ts";
+  PublishedDurableStorage,
+  DurablePostgresProjection,
+  readDurableEntries,
+  copyDurableHistory,
+  type DurableBatch,
+} from "@pi-cloud/pi-session-postgres/durable";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { EntryId } from "@earendil-works/pi-durable";
+import { PublicationNotSentError } from "@pi-cloud/protocol";
+import { encodeSessionImages } from "../src/configured.ts";
 import { ImageAttachmentCodec } from "../src/codec.ts";
 import { PostgresImageAttachmentStore, type ImageBlobStore } from "../src/store.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
@@ -100,73 +106,140 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     expect(await store.reap(0)).toBe(1);
   });
 
+  async function native(sessionId: string, images?: ImageAttachmentCodec) {
+    await db
+      .insertInto("pi_sessions")
+      .values({
+        tenant_id: tenantId,
+        id: sessionId,
+        created_at_ms: Date.now(),
+        name: null,
+        parent_session_id: null,
+      })
+      .onConflict((conflict) => conflict.columns(["tenant_id", "id"]).doNothing())
+      .execute();
+    const projection = new DurablePostgresProjection(db, { tenantId, sessionId }, images);
+    return {
+      projection,
+      storage: await PublishedDurableStorage.open({
+        projection,
+        publish: async (batch) => {
+          let packed;
+          try {
+            packed = await encodeSessionImages(images, { tenantId }, batch);
+          } catch (error) {
+            throw new PublicationNotSentError(
+              "Session image attachment storage is not configured",
+              { cause: error },
+            );
+          }
+          await projection.apply(packed);
+        },
+        waitProjected: async () => {},
+      }),
+    };
+  }
+  const imageBatch = (image: unknown, role = "toolResult"): DurableBatch =>
+    ({
+      seq: 1,
+      nextId: 3,
+      writes: [
+        { type: "conversation", value: { id: 1 } },
+        {
+          type: "entry",
+          value: {
+            id: 2,
+            conversationId: 1,
+            kind: role === "user" ? "pi.user" : "pi.tool-result",
+            model: [
+              {
+                role,
+                content: [image],
+                timestamp: 1,
+                ...(role === "user"
+                  ? {}
+                  : { toolCallId: "call", toolName: "read", isError: false }),
+              },
+            ],
+          },
+        },
+      ],
+    }) as unknown as DurableBatch;
   it.each(["toolResult", "user"] as const)(
     "cold public SessionStorage reads reconstruct exact images while PG stores only references (%s)",
     async (role) => {
       const id = randomUUID(),
-        native = await PostgresPiSessionStorage.create({
-          database: db,
-          tenantId,
-          sessionId: id,
-          images: codec,
-        });
+        first = await native(id, codec);
       const image = {
-        type: "image" as const,
+        type: "image",
         data: randomBytes(2 * 1024 * 1024).toString("base64"),
         mimeType: "image/png",
       };
-      const entry = await native.appendEntry(
-        {
-          id: "image",
-          type: "message",
-          message:
-            role === "user"
-              ? { role: "user", content: [image], timestamp: 1 }
-              : {
-                  role: "toolResult",
-                  toolCallId: "call",
-                  toolName: "read",
-                  isError: false,
-                  content: [image],
-                  timestamp: 1,
-                },
-        },
-        "main",
-      );
-      const { rows } = await sql<{
-        payload: unknown;
-      }>`select payload from pi_session_log where tenant_id=${tenantId}::uuid and session_id=${id}`.execute(
+      await first.storage.commit(imageBatch(image, role).writes, BACKGROUND_CONTEXT);
+      const entry = await first.storage.entry(2 as EntryId, BACKGROUND_CONTEXT);
+      const rows = await sql<{
+        body: string;
+      }>`select body from pi_durable_log where tenant_id=${tenantId}::uuid and session_id=${id}`.execute(
         db,
       );
-      expect(JSON.stringify(rows).length).toBeLessThan(2048);
-      expect(JSON.stringify(rows)).toContain("pi_cloud_image_v1");
-      const cold = new PostgresPiSessionStorage({
-        database: db,
-        tenantId,
-        sessionId: id,
-        images: new ImageAttachmentCodec(new PostgresImageAttachmentStore(db, blobs)),
-      });
-      expect(await cold.getEntry("image")).toEqual(entry);
-      expect(await cold.findEntriesOnBranch({ start: "image" })).toEqual([entry]);
-      expect((await cold.getLog())[0]).toMatchObject({ entry });
+      expect(JSON.stringify(rows.rows).length).toBeLessThan(2048);
+      expect(JSON.stringify(rows.rows)).toContain("pi_cloud_image_v1");
+      const cold = await native(
+        id,
+        new ImageAttachmentCodec(new PostgresImageAttachmentStore(db, blobs)),
+      );
+      expect(await cold.storage.entry(2 as EntryId, BACKGROUND_CONTEXT)).toEqual(entry);
       expect(await store.reap(0)).toBe(0);
-      const repo = new PostgresPiSessionRepository({ database: db, tenantId, images: codec });
-      const fork = await repo.fork(await native.getMetadata(), { id: randomUUID() });
-      const nested = await repo.fork(await fork.getMetadata(), { id: randomUUID() });
-      // Direct source deletion requires no rebuild or materialization of a COW view.
-      await repo.delete(await native.getMetadata());
+      const copy = async (source: string) => {
+        const target = randomUUID();
+        await native(target, codec);
+        const entries = (
+          await readDurableEntries(db, {
+            tenantId,
+            sessionId: source,
+            conversationId: 1,
+            limit: 100,
+          })
+        ).reverse();
+        await db
+          .transaction()
+          .execute((tx) => copyDurableHistory(tx, { tenantId, sessionId: target }, entries));
+        return target;
+      };
+      const fork = await copy(id),
+        nested = await copy(fork);
+      await db
+        .deleteFrom("pi_sessions")
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", id)
+        .execute();
       expect(await store.reap(0)).toBe(0);
-      expect(await fork.getEntry("image")).toEqual(entry);
-      await repo.delete(await fork.getMetadata());
+      const forkReader = await native(fork, codec);
+      expect((await forkReader.storage.entry(2 as EntryId, BACKGROUND_CONTEXT))?.entry).toEqual(
+        entry?.entry,
+      );
+      await db
+        .deleteFrom("pi_sessions")
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", fork)
+        .execute();
       expect(await store.reap(0)).toBe(0);
-      expect(await nested.getEntry("image")).toEqual(entry);
-      await rebuildPostgresPiSessionProjections(db, {
-        tenantId,
-        sessionId: (await nested.getMetadata()).id,
-      });
-      expect(await nested.getEntry("image")).toEqual(entry);
-      await repo.delete(await nested.getMetadata());
+      const nestedReader = await native(nested, codec);
+      await nestedReader.projection.rebuild();
+      expect((await nestedReader.storage.entry(2 as EntryId, BACKGROUND_CONTEXT))?.entry).toEqual(
+        entry?.entry,
+      );
+      await db
+        .deleteFrom("pi_sessions")
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", nested)
+        .execute();
       expect(await store.reap(0)).toBe(1);
+      await Promise.all(
+        [first, cold, forkReader, nestedReader].map((value) =>
+          value.storage.close(BACKGROUND_CONTEXT),
+        ),
+      );
     },
   );
 
@@ -247,22 +320,27 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
   });
 
   it("keeps opaque custom JSON outside attachment reachability", async () => {
-    const sessionId = randomUUID();
-    const native = await PostgresPiSessionStorage.create({
-      database: db,
-      tenantId,
-      sessionId,
-      images: codec,
-    });
+    const sessionId = randomUUID(),
+      opened = await native(sessionId, codec);
     const data = {
       type: "pi_cloud_image_v1",
       attachment: { id: randomUUID(), example: "user data" },
     };
-    await native.appendEntry({ id: "opaque", type: "custom", customType: "example", data }, "main");
-    expect(await native.getEntry("opaque")).toMatchObject({ data });
-    const { rows } =
-      await sql`select * from session_image_references where session_id=${sessionId}`.execute(db);
-    expect(rows).toHaveLength(0);
+    await opened.storage.commit(
+      [
+        { type: "conversation", value: { id: 1 } },
+        { type: "entry", value: { id: 2, conversationId: 1, kind: "example", data } },
+      ] as unknown as import("@earendil-works/pi-durable").StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    expect((await opened.storage.entry(2 as EntryId, BACKGROUND_CONTEXT))?.entry).toMatchObject({
+      data,
+    });
+    expect(
+      (await sql`select * from session_image_references where session_id=${sessionId}`.execute(db))
+        .rows,
+    ).toHaveLength(0);
+    await opened.storage.close(BACKGROUND_CONTEXT);
   });
 
   it("failed uploads stay unpublishable and interrupted cleanup is repeatable", async () => {
@@ -281,7 +359,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     }>`select * from session_image_objects where state='uploading'`.execute(db);
     expect(upload).toBeDefined();
     const sessionId = randomUUID();
-    await PostgresPiSessionStorage.create({ database: db, tenantId, sessionId });
+    await native(sessionId);
     const fake = {
       type: "pi_cloud_image_v1",
       attachment: {
@@ -292,9 +370,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       },
     };
     await expect(
-      sql`insert into pi_session_log(tenant_id,session_id,seq,kind,payload) values(${tenantId}::uuid,${sessionId},1,'entry',${JSON.stringify({ lane: "main", turnId: null, entry: { id: "image", type: "message", seq: 1, timestamp: 1, parentId: null, message: { role: "toolResult", toolCallId: "call", toolName: "read", isError: false, timestamp: 1, content: [fake] } } })}::jsonb)`.execute(
-        db,
-      ),
+      new DurablePostgresProjection(db, { tenantId, sessionId }).apply(imageBatch(fake)),
     ).rejects.toThrow("unavailable");
     failDelete = true;
     await expect(store.reap(0)).rejects.toThrow("Image cleanup deferred");
@@ -357,12 +433,10 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     await held.promise;
     try {
       const sessionId = randomUUID();
-      await PostgresPiSessionStorage.create({ database: db, tenantId, sessionId });
+      await native(sessionId);
       const image = { type: "pi_cloud_image_v1", attachment: ref };
       await expect(
-        sql`insert into pi_session_log(tenant_id,session_id,seq,kind,payload) values(${tenantId}::uuid,${sessionId},1,'entry',${JSON.stringify({ lane: "main", turnId: null, entry: { id: "image", type: "message", seq: 1, timestamp: 1, parentId: null, message: { role: "toolResult", toolCallId: "call", toolName: "read", isError: false, timestamp: 1, content: [image] } } })}::jsonb)`.execute(
-          db,
-        ),
+        new DurablePostgresProjection(db, { tenantId, sessionId }).apply(imageBatch(image)),
       ).rejects.toThrow("unavailable");
     } finally {
       release.resolve();

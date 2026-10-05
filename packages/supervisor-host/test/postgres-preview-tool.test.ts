@@ -1,3 +1,5 @@
+import { nativeToolApi } from "./tool-api.ts";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -44,7 +46,7 @@ describe("trusted Preview Tool", () => {
         sessionId: "child",
         refreshServices: async () => {},
       });
-      await tool.execute("call", { port: 3000 });
+      await tool.execute({ port: 3000 }, nativeToolApi("call"), BACKGROUND_CONTEXT);
       expect(filters).toContainEqual([
         "target_kind",
         "=",
@@ -122,7 +124,7 @@ describe("trusted Preview Tool", () => {
       .values({
         id: sessionId,
         pi_session_id: sessionId,
-        pi_session_lane: "main",
+        pi_conversation_id: "1",
         tenant_id: tenantId,
         project_id: projectId,
         workspace_id: workspaceId,
@@ -156,7 +158,13 @@ describe("trusted Preview Tool", () => {
       sessionId,
       refreshServices: async () => undefined,
     });
-    await expect(tool.execute("preview-call", { port: 3_000, path: "/game" })).resolves.toEqual(
+    await expect(
+      tool.execute(
+        { port: 3_000, path: "/game" },
+        nativeToolApi("preview-call"),
+        BACKGROUND_CONTEXT,
+      ),
+    ).resolves.toEqual(
       expect.objectContaining({
         details: expect.objectContaining({
           port: 3_000,
@@ -170,8 +178,8 @@ describe("trusted Preview Tool", () => {
       .where("tenant_id", "=", tenantId)
       .where("target_id", "=", sessionId)
       .execute();
-    await expect(tool.execute("preview-call-2", { port: 3_000 })).rejects.toThrow(
-      "preview_service_not_found",
-    );
+    await expect(
+      tool.execute({ port: 3_000 }, nativeToolApi("preview-call-2"), BACKGROUND_CONTEXT),
+    ).rejects.toThrow("preview_service_not_found");
   }, 20_000);
 });

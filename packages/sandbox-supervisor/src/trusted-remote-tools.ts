@@ -12,14 +12,9 @@ import {
   type ToolCommandPublisher,
   type CandidateToolCommand,
 } from "@pi-cloud/protocol";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
-import {
-  createBashTool,
-  createEditTool,
-  createReadTool,
-  createWriteTool,
-} from "@earendil-works/pi-coding-agent";
+import { fixedRemoteToolDefinitions } from "./fixed-remote-tool-definitions.ts";
 import { randomUUID } from "node:crypto";
 import { toolInvocationId } from "./tool-invocation.ts";
 import type { PreparedAgentTool } from "./prepared-tool.ts";
@@ -53,23 +48,12 @@ type RemoteOperationInput<T = ToolSandboxOperationRequest> = T extends unknown
     >
   : never;
 
-class RemoteToolError extends Error {
-  readonly code: string;
-  readonly retryable: boolean;
-
-  constructor(code: string, message: string, retryable: boolean) {
-    super(message);
-    this.name = "RemoteToolError";
-    this.code = code;
-    this.retryable = retryable;
-  }
-}
-
 export type TrustedRemoteToolsRuntimeConfiguration = {
   observeToolDuration?: (seconds: number, outcome: "completed" | "failed") => void;
   publishToolCommand: ToolCommandPublisher["publishToolCommand"];
-  publishToolCancellation: import("@pi-cloud/protocol").ToolCancellationPublisher["publishToolCancellation"];
-  cancellationTimeoutMs?: () => number;
+  trackWorkflowOperation?: (
+    operation: import("./durable/remote-tools.ts").TrackedWorkflowOperation,
+  ) => void;
   onToolCancellationUnconfirmed?: () => void;
   waitForToolReply?: (
     request: ToolSandboxOperationRequest,
@@ -172,7 +156,6 @@ function validateRuntimeConfiguration(
     !/^[0-9a-f]{64}$/.test(turnContextSha256) ||
     !/^[0-9a-f]{64}$/.test(executionContextSha256) ||
     typeof candidate.captureStepContext !== "function" ||
-    typeof candidate.publishToolCancellation !== "function" ||
     (candidate.onToolOperationStarted !== undefined &&
       typeof candidate.onToolOperationStarted !== "function") ||
     (candidate.onToolOperationUnavailable !== undefined &&
@@ -202,9 +185,8 @@ function validateRuntimeConfiguration(
   }
   return {
     publishToolCommand: candidate.publishToolCommand,
-    publishToolCancellation: candidate.publishToolCancellation,
-    ...(candidate.cancellationTimeoutMs
-      ? { cancellationTimeoutMs: candidate.cancellationTimeoutMs }
+    ...(candidate.trackWorkflowOperation
+      ? { trackWorkflowOperation: candidate.trackWorkflowOperation }
       : {}),
     ...(candidate.onToolCancellationUnconfirmed
       ? { onToolCancellationUnconfirmed: candidate.onToolCancellationUnconfirmed }
@@ -239,9 +221,9 @@ export type TrustedRemoteAgentTools = Readonly<{
   tools: readonly PreparedAgentTool[];
   systemPrompt(base: string): Promise<string>;
   transformContext(
-    messages: AgentMessage[],
+    messages: Message[],
     purpose?: "agent" | "context_maintenance",
-  ): Promise<AgentMessage[]>;
+  ): Promise<Message[]>;
   transformHeaders(headers?: ProviderHeaders): Promise<ProviderHeaders>;
 }>;
 
@@ -278,16 +260,12 @@ export function createTrustedRemoteAgentTools(
     command: CandidateToolCommand;
     result(): Promise<ToolSandboxOperationResponse>;
     dispose(): void;
+    completed(): boolean;
   }> => {
     signal?.throwIfAborted();
     const invocationId = toolInvocationId(toolCallId);
-    if (sampling.step === undefined) {
-      throw new RemoteToolError(
-        "step_context_unavailable",
-        "step_context_unavailable: Tool call preceded its Pi context boundary",
-        false,
-      );
-    }
+    await sampling.ensureToolContext();
+    if (!sampling.step) throw new Error("Tool has no native execution context");
     const target = await runtime.resolveOperationTarget();
     await runtime.onToolOperationStarted?.();
     const candidate = parseToolSandboxOperationRequest({
@@ -306,7 +284,7 @@ export function createTrustedRemoteAgentTools(
     const pendingAbort = new AbortController();
     const replySignal = AbortSignal.any([
       pendingAbort.signal,
-      ...(signal && candidate.operation !== "tool.execute" ? [signal] : []),
+      ...(signal ? [signal] : []),
       AbortSignal.timeout(MAX_TOOL_EXECUTION_TIMEOUT_MS + 120_000),
     ]);
     if (!runtime.waitForToolReply) throw new Error("Native Tool reply transport is unavailable");
@@ -353,30 +331,14 @@ export function createTrustedRemoteAgentTools(
             }
           : {}),
       },
+      completed: () => received,
       dispose: () => {
-        if (candidate.operation === "tool.execute" && signal?.aborted && !received)
-          markCancellationUnconfirmed();
+        if (signal?.aborted && !received) markCancellationUnconfirmed();
         pendingAbort.abort(new Error("Tool reply wait closed"));
       },
       result: async () => {
         if (candidate.operation === "tool.execute") {
-          const final = awaitCancelledToolReply({
-            reply: pending,
-            ...(signal ? { signal } : {}),
-            received: () => received,
-            cancel: async () => {
-              await runtime.publishToolCancellation({
-                executionReference: runtime.executionReference,
-                activationId: candidate.activationId,
-                operationId: candidate.operationId,
-                occurredAt: new Date().toISOString(),
-              });
-            },
-            abortWait: (error) => pendingAbort.abort(error),
-            unconfirmed: markCancellationUnconfirmed,
-            timeoutMs: runtime.cancellationTimeoutMs?.() ?? TOOL_CANCELLATION_TIMEOUT_MS,
-          });
-          const event = await final.catch(failTransport);
+          const event = await pending.catch(failTransport);
           return {
             toolBrokerProtocolVersion: 1,
             type: "tool_sandbox.operation_result",
@@ -423,53 +385,11 @@ export function createTrustedRemoteAgentTools(
     return `${basePrompt}\n\n${platformContext}`;
   };
 
-  const toolRoot = runtime.workingDirectory;
-  const readTool = createReadTool(toolRoot);
-  const writeTool = createWriteTool(toolRoot);
-  const editTool = createEditTool(toolRoot);
-  const bashTool = createBashTool(toolRoot);
   const allowedTools = new Set(runtime.allowedTools);
-
-  for (const tool of [readTool, writeTool, editTool, bashTool]) {
+  for (const tool of fixedRemoteToolDefinitions()) {
     if (!allowedTools.has(tool.name as CloudToolName)) continue;
-    const parameters =
-      tool.name === "bash"
-        ? {
-            ...tool.parameters,
-            additionalProperties: false,
-            properties: {
-              ...tool.parameters.properties,
-              timeout: {
-                ...bashTool.parameters.properties.timeout,
-                minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS / 1000,
-                maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS / 1000,
-              },
-            },
-          }
-        : tool.name === "read"
-          ? {
-              ...tool.parameters,
-              properties: {
-                ...tool.parameters.properties,
-                detail: {
-                  type: "string",
-                  enum: ["high", "original"],
-                  description:
-                    "Image detail: high (default) or original for fine visual inspection.",
-                },
-              },
-            }
-          : tool.parameters;
     tools.push({
       ...tool,
-      parameters,
-      executionMode: tool.name === "read" ? "parallel" : "sequential",
-      ...(tool.name === "bash"
-        ? {
-            description:
-              "Execute a Bash command in the selected working directory. Output is limited to the last 2000 lines or 50 KiB; omitted output is not archived. Only command and timeout are accepted. Use cd inside command to change directory. Timeout defaults to 300 seconds (maximum 300). Detach long-running services and redirect stdin, stdout and stderr.",
-          }
-        : {}),
       async execute() {
         throw new Error("Remote Tool must be prepared and committed by the trusted Runner");
       },
@@ -500,6 +420,7 @@ export function createTrustedRemoteAgentTools(
         return {
           command: prepared.command,
           dispose: prepared.dispose,
+          completed: prepared.completed,
           result: async () => {
             const started = performance.now();
             let outcome: "completed" | "failed" = "failed";
@@ -519,15 +440,11 @@ export function createTrustedRemoteAgentTools(
                 throw new Error(
                   "The selected model does not support image input. Select an image-capable model to read this image.",
                 );
-              if (event.isError) {
-                const message = event.result.content
-                  .filter((part) => part.type === "text")
-                  .map((part) => part.text)
-                  .join("\n");
-                throw new Error(message);
-              }
-              outcome = "completed";
-              return event.result;
+              outcome = event.isError ? "failed" : "completed";
+              return {
+                ...event.result,
+                isError: event.isError,
+              } as import("@earendil-works/pi-durable").ToolExecutionResult;
             } finally {
               try {
                 runtime.observeToolDuration?.((performance.now() - started) / 1000, outcome);
@@ -557,7 +474,7 @@ export function createTrustedRemoteAgentTools(
           operation: "workflow.exec",
           toolCallId,
           script,
-          cwd: toolRoot,
+          cwd: runtime.workingDirectory,
           timeoutMs: MAX_TOOL_EXECUTION_TIMEOUT_MS,
         },
         signal,
@@ -565,7 +482,11 @@ export function createTrustedRemoteAgentTools(
       );
       try {
         signal?.throwIfAborted();
-        await runtime.publishToolCommand(prepared.command);
+        if (!runtime.trackWorkflowOperation)
+          throw new Error("Workflow native cancellation port is unavailable");
+        const published = runtime.publishToolCommand(prepared.command);
+        runtime.trackWorkflowOperation(prepared);
+        await published;
         const result = await prepared.result();
         if (result.type !== "tool_sandbox.operation_result" || result.operation !== "workflow.exec")
           throw new Error("Workflow returned an invalid response");
@@ -577,5 +498,3 @@ export function createTrustedRemoteAgentTools(
     }) satisfies WorkflowExecutor,
   };
 }
-import { awaitCancelledToolReply } from "./tool-cancellation.ts";
-import { TOOL_CANCELLATION_TIMEOUT_MS } from "@pi-cloud/protocol";

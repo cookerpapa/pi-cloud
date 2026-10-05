@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { it, expect } from "vitest";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
+import { appendNativeFixture } from "./fixtures/durable-native.ts";
 import { sql } from "kysely";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
@@ -46,15 +46,18 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
           db,
         );
         await sql`update turns set model_id=${oldModel} where id=${run.turnId}::uuid`.execute(db);
-        const native = new PostgresPiSessionStorage({
-          database: db,
-          tenantId: tenant.tenantId,
-          sessionId: session.sessionId,
-        });
-        await native.appendEntry(
-          { id: "model", type: "model_change", provider: "openai-codex", modelId: oldModel },
-          "main",
-        );
+        await appendNativeFixture(db, { tenantId: tenant.tenantId, sessionId: session.sessionId }, [
+          {
+            kind: "pi-cloud.accepted-model",
+            data: { provider: "openai-codex", modelId: oldModel },
+          },
+        ]);
+        const historyRows = async () =>
+          (
+            await sql`select * from pi_durable_log where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId} order by seq,ordinal`.execute(
+              db,
+            )
+          ).rows;
         const beforeRun = await db
           .selectFrom("runs")
           .selectAll()
@@ -65,7 +68,7 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
           .selectAll()
           .where("id", "=", run.turnId)
           .executeTakeFirstOrThrow();
-        const history = await native.getLog();
+        const history = await historyRows();
         await up(db as unknown as Parameters<typeof up>[0]);
         expect(
           (
@@ -90,7 +93,7 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
             .where("id", "=", run.turnId)
             .executeTakeFirstOrThrow(),
         ).toEqual(beforeTurn);
-        expect(await native.getLog()).toEqual(history);
+        expect(await historyRows()).toEqual(history);
       }
     } finally {
       await db.destroy();

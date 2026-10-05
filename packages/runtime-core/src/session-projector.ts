@@ -29,7 +29,7 @@ import { KafkaSafeRetention } from "./kafka-safe-retention.ts";
 import { loadFactReplayOffsets, recordFactProjection } from "./accepted-fact-recovery.ts";
 import type { AcceptedFact } from "./accepted-fact.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
-import { toolCommandForFact } from "./tool-invocation-fact.ts";
+import { toolCommandsForFact } from "./tool-invocation-fact.ts";
 import { ProjectionTiming } from "./projection-timing.ts";
 import { RunObservations } from "./run-observations.ts";
 
@@ -215,6 +215,9 @@ export class SessionProjector {
             const owner = this.publication.ownership(record.partition);
             if (owner) this.publication.confirmSealed(owner, fact);
           }
+          if (fact.kind === "durable_commit")
+            for (const cancellation of fact.cancellations)
+              await options.toolCommands.consume({ ...record, fact: cancellation }, current);
           const applicable =
             fact.kind === "execution_seal" ||
             (await timing.measure("boundary", () => this.#projection.accepts(record)));
@@ -229,15 +232,16 @@ export class SessionProjector {
                 fact.scope.sessionId,
                 projected.canonicalThroughSequence,
               );
-            const command = toolCommandForFact(fact);
-            if (command) {
+            const commands = toolCommandsForFact(fact);
+            if (commands.length) {
               if (
                 (await timing.measure("dispatch_commit", commitBeforeEffect!)) &&
                 current?.() !== false
               )
-                await timing.measure("tool_route", () =>
-                  options.toolCommands.consume({ ...record, fact: command }, current),
-                );
+                for (const command of commands)
+                  await timing.measure("tool_route", () =>
+                    options.toolCommands.consume({ ...record, fact: command }, current),
+                  );
             } else if (fact.kind !== "execution_seal") {
               await timing.measure("tool_route", () =>
                 options.toolCommands.consume(record, current),

@@ -11,7 +11,7 @@ import {
   type SupervisorRegisterMessage,
   type SupervisorRegisteredMessage,
 } from "@pi-cloud/protocol";
-import { PINNED_PI_CODING_AGENT_VERSION } from "@pi-cloud/protocol";
+import { PINNED_PI_DURABLE_VERSION } from "@pi-cloud/protocol";
 import { confirmStoppedWorkerExecutions } from "@pi-cloud/runtime-core/quarantined-session-recovery";
 import { createHash } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
@@ -27,7 +27,7 @@ import {
 } from "@pi-cloud/runtime-core/session-lease-coordinator";
 
 const DEFAULT_SUPERVISOR_VERSION = "0.1.0";
-const DEFAULT_PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
+const DEFAULT_PI_PACKAGE_NAME = "@earendil-works/pi-durable";
 const DEFAULT_REQUIRED_CAPABILITIES = ["pi.sdk"] as const;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000;
@@ -285,7 +285,7 @@ export class SupervisorConnectionManager {
       "expectedPiPackageName",
     );
     this.#expectedPiVersion = nonEmpty(
-      options.expectedPiVersion ?? PINNED_PI_CODING_AGENT_VERSION,
+      options.expectedPiVersion ?? PINNED_PI_DURABLE_VERSION,
       "expectedPiVersion",
     );
     this.#requiredCapabilities = normalizedCapabilities(

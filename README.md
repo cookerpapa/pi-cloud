@@ -1,6 +1,6 @@
 # PiCloud
 
-A self-hosted, multi-tenant coding agent. Pi SDK runs the Agent Loop in a shared
+A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
 - Multi-round chat, model switching, hosted search and Subagents.
@@ -35,6 +35,12 @@ Chat upload -> Control Plane -> Cube Workspace Volume
                             `-> S3 (immutable source images)
 ```
 
+Native tasks, submissions, entries and documents use one atomic commit stream.
+Kafka RF3 confirms each prepared commit before the Worker adopts it. PostgreSQL
+stores the native body once, with rebuildable record/document indexes for cold
+reads. Native Conversations share one physical Session lease and writer.
+See [Durable migration and verification](docs/reports/pi-durable-migration-20261006.md).
+
 Whole file/shell Tools execute in Cube. Replies return through the separate
 Worker-boot Kafka transport; Pi processes them before publishing the canonical
 Tool Result to the Session log. Optional temporary logs go through Projector HTTP/SSE.
@@ -57,12 +63,13 @@ binding bootstrap pages only the owner’s state. Transaction-local queue/state
 notifications are coalesced, and independent Outbox sends prevent a slow request
 from holding an entire batch. Lifecycle mutations and recovery retain PG checks.
 Chat Stop interrupts the Worker Agent and sends operation-scoped cancellation
-through the same Session Kafka path. The original Tool result carries partial
-output and cancellation back to Pi; a bounded wait yields UNKNOWN if it cannot be
-confirmed. Completed background services and independent process groups survive.
+through the same Session Kafka path. Durable records the native abort; a late
+physical reply does not replace it. Worker replacement preserves the logical Run,
+Turn and native input, resuming only after old-writer closure and a new PG lease.
+Unsafe interrupted Tools are reported to the model without automatic replay. Completed background services and independent process groups survive.
 Routing revocation still precedes the final seal. Abnormal retirement carries a
 bounded cleanup target in the existing Outbox, without a process-stop receipt
-ledger (ADR-0221). Cube's VM/partition progress rejects delayed old submissions.
+ledger (ADR-0221/0229). Cube's VM/partition progress rejects delayed old submissions.
 Queue display refreshes coalesce outside ordered projection, using a separate
 two-connection read pool. Responses carry 20 inputs per page; all queued inputs
 remain accessible, with drafts preserved when queue changes invalidate a page.

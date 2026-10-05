@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql } from "kysely";
 import { expect, it } from "vitest";
-import { createDatabase, runMigrations } from "../src/index.ts";
+import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
@@ -49,7 +49,15 @@ it.skipIf(!endpoint)(
       await sql`update sessions set archived_at=now() where id=${hidden.sessionId}::uuid`.execute(
         db,
       );
-      await expect(runMigrations(db, "up")).rejects.toThrow("Hidden conversations must quiesce");
+      const migrateDeletion = async () => {
+        const result = await new Migrator({
+          db,
+          provider: migrationProvider,
+          allowUnorderedMigrations: true,
+        }).migrateTo("156_permanent_conversation_deletion");
+        if (result.error) throw result.error;
+      };
+      await expect(migrateDeletion()).rejects.toThrow("Hidden conversations must quiesce");
       expect(await db.selectFrom("sessions").select("id").execute()).toHaveLength(2);
       await db
         .updateTable("runs")
@@ -61,7 +69,7 @@ it.skipIf(!endpoint)(
         .set({ state: "cancelled", settled_at: new Date() })
         .where("id", "=", accepted.turnId)
         .execute();
-      await runMigrations(db, "up");
+      await migrateDeletion();
       expect(await db.selectFrom("sessions").select(["id", "pruned_at"]).execute()).toEqual([
         { id: visible.sessionId, pruned_at: null },
       ]);

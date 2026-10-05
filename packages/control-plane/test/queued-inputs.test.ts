@@ -4,7 +4,10 @@ import { sql, type Kysely, type QueryId } from "kysely";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { parseKafkaAcceptedFact } from "@pi-cloud/runtime-core/kafka-accepted-fact";
-import { projectNativeSessionAppend } from "@pi-cloud/pi-session-postgres";
+import {
+  DurablePostgresProjection,
+  type DurableBatch,
+} from "@pi-cloud/pi-session-postgres/durable";
 import { ExecutionStreamProjector } from "@pi-cloud/runtime-core";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
@@ -345,42 +348,47 @@ describe.sequential("pending conversation inputs", () => {
       .select("pi_session_id")
       .where("id", "=", request.target.sessionId)
       .executeTakeFirstOrThrow();
-    const next = await database
-      .selectFrom("pi_sessions")
-      .select("next_seq")
-      .where("id", "=", s.pi_session_id)
-      .executeTakeFirstOrThrow();
-    const lane = await database
-      .selectFrom("pi_session_lanes")
-      .select("leaf_id")
-      .where("session_id", "=", s.pi_session_id)
-      .where("lane", "=", "main")
-      .executeTakeFirstOrThrow();
-    await database.transaction().execute((tx) =>
-      projectNativeSessionAppend(tx, {
-        tenantId: request.target.tenantId,
-        sessionId: s.pi_session_id,
-        appendId: randomUUID(),
-        items: [
-          {
-            kind: "entry",
-            lane: "main",
-            turnId: request.target.turnId,
-            entry: {
-              id: `pc-agent-input-${request.controlRequestId}`,
-              type: "message",
-              parentId: lane.leaf_id,
-              seq: Number(next.next_seq),
-              timestamp: Date.now(),
-              message: {
-                role: "user",
-                content: [{ type: "text", text: request.text }],
-                timestamp: Date.now(),
-              },
-            },
-          },
-        ],
-      }),
+    const projection = new DurablePostgresProjection(database, {
+      tenantId: request.target.tenantId,
+      sessionId: s.pi_session_id,
+    });
+    const head = await projection.head(),
+      id = head.nextId;
+    const writes: Record<string, unknown>[] = [];
+    if (!(await projection.get(1))) writes.push({ type: "conversation", value: { id: 1 } });
+    writes.push(
+      {
+        type: "entry",
+        value: {
+          id,
+          conversationId: 1,
+          kind: "pi.user",
+          model: [{ role: "user", content: request.text, timestamp: Date.now() }],
+        },
+      },
+      {
+        type: "submission",
+        value: {
+          id: id + 1,
+          conversationId: 1,
+          requestId: request.controlRequestId,
+          type: "input",
+          status: "placed",
+          entry: id,
+        },
+      },
+    );
+    const origin = {
+      sessionId: request.target.sessionId,
+      runId: request.target.runId,
+      turnId: request.target.turnId,
+    };
+    await projection.apply(
+      { seq: head.seq + 1, nextId: id + 2, writes } as unknown as DurableBatch,
+      [
+        { ...origin, recordId: id },
+        { ...origin, recordId: id + 1 },
+      ],
     );
   }
 

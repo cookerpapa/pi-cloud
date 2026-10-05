@@ -115,7 +115,7 @@ it.skipIf(!postgres || !brokers)(
       void execution.catch(entered.reject);
       const admission = await entered.promise;
       await projector.openPublication(admission.publication);
-      const { leaseId: _lease, piSessionLane: _lane, ...scope } = admission.publication.scope;
+      const { leaseId: _lease, piConversationId: _lane, ...scope } = admission.publication.scope;
       const workflowId = randomUUID();
       const publish = async (request: SubagentControlRequest) => {
         const command: AcceptedSubagentCommand = {

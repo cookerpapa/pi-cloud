@@ -4,29 +4,14 @@ import {
   MAX_INHERITED_CONTEXT_TOTAL_CHARACTERS,
   type ConversationDetailResource,
 } from "@pi-cloud/protocol";
-import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 
 export type InheritedContextPreview = Pick<
   ConversationDetailResource,
   "inheritedMessages" | "inheritedContextSummary" | "inheritedMessagesTruncated"
 >;
-export type InheritedContextEntry = {
-  id: string;
-  type: string;
-  timestampMs: string;
-  payload: Record<string, unknown>;
-};
+export type InheritedContextEntry =
+  import("@pi-cloud/pi-session-postgres/durable").StoredHistoryEntry;
 type PreviewMessage = ConversationDetailResource["inheritedMessages"][number];
-
-function timestamp(value: unknown): string {
-  const date = new Date(Number(value));
-  if (Number.isNaN(date.valueOf()))
-    throw new ControlPlaneStoreError(
-      "control_plane_misconfigured",
-      "Inherited message timestamp is invalid",
-    );
-  return date.toISOString();
-}
 
 function visibleMessage(
   value: unknown,
@@ -67,70 +52,53 @@ function clip(text: string, maximum: number): string {
   return text.slice(0, end);
 }
 
-/** Rows are newest first, stopped at Compaction or one beyond the preview cap. */
+/** Native head selection has already bounded this newest-first preview. */
 export function inheritedContextPreview(
   rows: readonly InheritedContextEntry[],
 ): InheritedContextPreview {
-  const window = rows.slice(0, MAX_INHERITED_CONTEXT_ENTRIES + 1);
-  const compactionIndex = window.findIndex((row) => row.type === "compaction");
-  const compaction = compactionIndex < 0 ? undefined : window[compactionIndex];
-  const suffix = compactionIndex < 0 ? window : window.slice(0, compactionIndex);
-  let truncated = compaction === undefined && rows.length > MAX_INHERITED_CONTEXT_ENTRIES;
+  const window = rows.slice(0, MAX_INHERITED_CONTEXT_ENTRIES);
+  const compaction = window.find((row) => row.entry.kind === "pi.compaction");
   const messages: PreviewMessage[] = [];
+  let truncated = rows.length > MAX_INHERITED_CONTEXT_ENTRIES;
   let summary: InheritedContextPreview["inheritedContextSummary"];
   let remaining = MAX_INHERITED_CONTEXT_TOTAL_CHARACTERS;
   if (compaction) {
-    const { summary: text, retainedTail } = compaction.payload;
-    if (typeof text !== "string" || !Array.isArray(retainedTail))
-      throw new ControlPlaneStoreError(
-        "control_plane_misconfigured",
-        "Inherited Compaction is invalid",
-      );
+    const model = compaction.entry.model?.find((message) => message.role === "user");
+    const text =
+      typeof model?.content === "string"
+        ? model.content
+        : (model?.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n") ??
+          "");
     const clipped = clip(text, MAX_INHERITED_CONTEXT_TEXT_CHARACTERS);
     truncated ||= clipped.length < text.length;
     remaining -= clipped.length;
     summary = {
-      entryId: compaction.id,
+      entryId: String(compaction.entry.id),
       text: clipped,
-      createdAt: timestamp(compaction.timestampMs),
+      createdAt: compaction.createdAt,
     };
-    const start = Math.max(0, retainedTail.length - MAX_INHERITED_CONTEXT_ENTRIES);
-    truncated ||= start > 0;
-    retainedTail.slice(start).forEach((message: unknown, index: number) => {
-      const candidate = visibleMessage(message, {
-        entryId: compaction.id,
-        messageIndex: start + index,
-        createdAt: timestamp(
-          typeof message === "object" && message !== null && "timestamp" in message
-            ? message.timestamp
-            : compaction.timestampMs,
-        ),
+  }
+  for (const row of window) {
+    if (row === compaction) continue;
+    for (const [index, message] of (row.entry.model ?? []).entries()) {
+      const value = visibleMessage(message, {
+        entryId: String(row.entry.id),
+        createdAt: row.createdAt,
+        messageIndex: index,
       });
-      if (candidate) messages.push(candidate);
-    });
-  }
-  for (const row of suffix.slice(0, MAX_INHERITED_CONTEXT_ENTRIES).reverse()) {
-    if (row.type !== "message") continue;
-    const message = visibleMessage(row.payload.message, {
-      entryId: row.id,
-      createdAt: timestamp(row.timestampMs),
-    });
-    if (message) messages.push(message);
-  }
-  truncated ||= messages.length > MAX_INHERITED_CONTEXT_ENTRIES;
-  const preview: PreviewMessage[] = [];
-  for (const message of messages.slice(-MAX_INHERITED_CONTEXT_ENTRIES).reverse()) {
-    if (remaining === 0) {
-      truncated = true;
-      break;
+      if (!value) continue;
+      if (!remaining) {
+        truncated = true;
+        break;
+      }
+      const text = clip(value.text, Math.min(remaining, MAX_INHERITED_CONTEXT_TEXT_CHARACTERS));
+      truncated ||= text.length < value.text.length;
+      remaining -= text.length;
+      messages.push({ ...value, text });
     }
-    const text = clip(message.text, Math.min(remaining, MAX_INHERITED_CONTEXT_TEXT_CHARACTERS));
-    truncated ||= text.length < message.text.length;
-    remaining -= text.length;
-    if (text.length) preview.push({ ...message, text });
   }
   return {
-    inheritedMessages: preview.reverse(),
+    inheritedMessages: messages.reverse(),
     ...(summary ? { inheritedContextSummary: summary } : {}),
     ...(truncated ? { inheritedMessagesTruncated: true } : {}),
   };

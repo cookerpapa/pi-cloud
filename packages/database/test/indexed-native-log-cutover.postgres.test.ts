@@ -1,3 +1,4 @@
+import { historicalNative } from "./fixtures/historical-native.ts";
 import { insertHistoricalPrompt, insertHistoricalSession } from "./fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
@@ -7,10 +8,6 @@ import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
-import {
-  PostgresPiSessionStorage,
-  rebuildPostgresPiSessionProjections,
-} from "@pi-cloud/pi-session-postgres";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
@@ -182,7 +179,7 @@ it.skipIf(!endpoint)(
         db,
       );
       const snapshot = () =>
-        db
+        historicalNative(db)
           .selectFrom("pi_session_log")
           .select(["tenant_id", "session_id", "seq", "kind", "payload", "append_id"])
           .orderBy("session_id")
@@ -234,20 +231,33 @@ it.skipIf(!endpoint)(
           ).rows[0]!.relation,
         ).toBeNull();
       }
-      const storage = new PostgresPiSessionStorage({ database: db, tenantId, sessionId });
-      expect(await storage.getEntry("root")).toEqual(root);
-      expect((await storage.findOpenOperations("main", { limit: 2 })).map((r) => r.id)).toEqual([
-        "main-operation",
-      ]);
-      expect(await storage.findOpenOperations("child", { limit: 2 })).toEqual([]);
-      const bindings = await db
+      expect(
+        (
+          await sql<{ payload: { entry: unknown } }>`select payload from pi_session_log
+        where tenant_id=${tenantId}::uuid and session_id=${sessionId} and kind='entry' and id='root'`.execute(
+            db,
+          )
+        ).rows[0]!.payload.entry,
+      ).toEqual(root);
+      expect(
+        (
+          await sql<{
+            id: string;
+          }>`select log.id from pi_session_open_operations op join pi_session_log log
+        on log.tenant_id=op.tenant_id and log.session_id=op.session_id and log.seq=op.seq
+        where op.tenant_id=${tenantId}::uuid and op.session_id=${sessionId} and op.lane='main'`.execute(
+            db,
+          )
+        ).rows.map((row) => row.id),
+      ).toEqual(["main-operation"]);
+      const bindings = await historicalNative(db)
         .selectFrom("pi_session_log")
         .select(["id", "turn_id"])
         .where("kind", "=", "entry")
         .execute();
       expect(bindings.find((r) => r.id === "disconnected")!.turn_id).toBeNull();
       expect(
-        await db
+        await historicalNative(db)
           .selectFrom("pi_session_log")
           .select("turn_id")
           .where("session_id", "=", sdkForkId)
@@ -271,24 +281,20 @@ it.skipIf(!endpoint)(
       await db.deleteFrom("runs").where("id", "=", turn.runId).execute();
       await db.deleteFrom("turns").where("id", "=", turn.turnId).execute();
       expect(
-        await db
+        await historicalNative(db)
           .selectFrom("pi_session_log")
           .select("seq")
           .where("turn_id", "is not", null)
           .execute(),
       ).toEqual([]);
-      await rebuildPostgresPiSessionProjections(db, { tenantId, sessionId });
       expect(await snapshot()).toEqual(before);
       expect(
-        await db
+        await historicalNative(db)
           .selectFrom("pi_session_log")
           .select("seq")
           .where("turn_id", "is not", null)
           .execute(),
       ).toEqual([]);
-      expect((await storage.findOpenOperations("main")).map((r) => r.id)).toEqual([
-        "main-operation",
-      ]);
     } finally {
       await db.destroy();
       await sql`drop database ${sql.id(name)}`.execute(admin);

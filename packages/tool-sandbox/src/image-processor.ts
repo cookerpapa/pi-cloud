@@ -1,5 +1,11 @@
 import sharp from "sharp";
-import type { ReadImageProcessor } from "@earendil-works/pi-agent-core";
+export type ReadImageResult =
+  { ok: true; data: string; mimeType: string; hints: string[] } | { ok: false; message: string };
+export type ReadImageProcessor = (
+  bytes: Uint8Array,
+  mimeType: string,
+  options: { autoResizeImages: boolean },
+) => Promise<ReadImageResult>;
 
 /** Codex 40e5de9's patch-grid sizing, expressed through Pi's public processor port. */
 export function imageDimensions(width: number, height: number, original: boolean) {

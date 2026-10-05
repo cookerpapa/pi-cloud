@@ -489,11 +489,11 @@ try {
   assert.equal(
     await psql(
       `select count(*)
-       from pi_session_log
+       from pi_durable_records
       where kind='entry' and tenant_id = ${sqlLiteral(bootstrapTenantId)}
         and session_id = (select pi_session_id from sessions where id = ${sqlLiteral(session.sessionId)})
-        and turn_id in (select id from turns where session_id=${sqlLiteral(session.sessionId)})
-        and custom_type = 'pi-cloud.sandbox_reset'`,
+        and fields->>'turn' in (select id::text from turns where session_id=${sqlLiteral(session.sessionId)})
+        and fields->>'nativeKind' = '"pi-cloud.sandbox_reset"'`,
     ),
     "0",
     "A renewed Agent Tool lease incorrectly reported a physical Sandbox reset",

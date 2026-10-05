@@ -1,9 +1,8 @@
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
-  sanitizeBinaryOutput,
   truncateTail,
-} from "@earendil-works/pi-agent-core";
+} from "@earendil-works/pi-coding-agent";
 import { StringDecoder } from "node:string_decoder";
 
 export function redactToolText(text: string): string {
@@ -34,7 +33,7 @@ export class NativeToolOutput {
     this.#append(this.#decoders.stderr.end());
   }
   #append(value: string): void {
-    const text = sanitizeBinaryOutput(value).replace(/\r/g, "");
+    const text = value.replace(/\0/g, "").replace(/\r/g, "");
     if (!text) return;
     this.#bytes += Buffer.byteLength(text);
     this.#newlines += text.split("\n").length - 1;

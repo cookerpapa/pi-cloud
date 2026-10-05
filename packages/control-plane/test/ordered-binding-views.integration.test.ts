@@ -305,7 +305,7 @@ it.skipIf(!postgres || !brokers)(
       await vi.waitFor(async () => expect(await view!.find(scope, false)).toEqual([]), {
         timeout: 10000,
       });
-      expect(await database.selectFrom("pi_session_log").select("id").execute()).toEqual([]);
+      expect((await sql`select 1 from pi_durable_log`.execute(database)).rows).toEqual([]);
       process.stdout.write(
         JSON.stringify({
           measurement: "ordered_binding_view",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PiSamplingStepController } from "../src/pi-sampling-step.ts";
+import { DurableSampling } from "../src/durable/sampling.ts";
 
 function capture(sequence: number) {
   return {
@@ -24,33 +24,33 @@ function capture(sequence: number) {
   };
 }
 
-describe("PiSamplingStepController", () => {
-  it("reuses the frozen Step only for the scheduled provider retry", async () => {
-    const controller = new PiSamplingStepController();
-    const first = await controller.captureAsync(async () => capture(1));
-    controller.scheduleRetry(1);
-    const retry = await controller.captureAsync(async () => capture(99));
-    const next = await controller.captureAsync(async () => capture(2));
-
-    expect(first.samplingAttempt).toBe(1);
-    expect(retry).toMatchObject({
-      step: { context: { sequence: 1 } },
-      samplingAttempt: 2,
+describe("native checkpoint sampling identity", () => {
+  it("shares one captured world within a checkpoint and reads attempts from native state", async () => {
+    const sampling = new DurableSampling();
+    sampling.select({ sequence: 42, attempt: 2, publish: true });
+    const first = await sampling.capture(async (sequence) => capture(sequence));
+    const same = await sampling.capture(async () => {
+      throw new Error("Capture must be shared");
     });
-    expect(next).toMatchObject({
-      step: { context: { sequence: 2 } },
-      samplingAttempt: 1,
-    });
+    expect(first).toEqual(same);
+    expect(first.samplingAttempt).toBe(2);
+    expect(first.step.context.sequence).toBe(42);
+    sampling.select({ sequence: 53, attempt: 3, publish: true });
+    expect(
+      (await sampling.capture(async (sequence) => capture(sequence))).step.context.sequence,
+    ).toBe(53);
   });
-
-  it("rejects retry and Step-order ambiguity", async () => {
-    const controller = new PiSamplingStepController();
-    expect(() => controller.scheduleRetry(1)).toThrow("without an active Cloud Step");
-    await controller.captureAsync(async () => capture(2));
-    await expect(controller.captureAsync(async () => capture(2))).rejects.toThrow(
-      "did not advance",
+  it("requires a native boundary and keeps recovery preparation out of model-start events", async () => {
+    const sampling = new DurableSampling();
+    await expect(sampling.capture(async () => capture(1))).rejects.toThrow(
+      "no admitted native checkpoint",
     );
-    controller.scheduleRetry(1);
-    expect(() => controller.scheduleRetry(2)).toThrow("overlapping");
+    expect(() => sampling.select({ sequence: 0, attempt: 1, publish: true })).toThrow();
+    sampling.select({ sequence: 7, attempt: 1, publish: false });
+    expect(sampling.publish).toBe(false);
+    expect(sampling.selected).toBe(true);
+    expect(
+      (await sampling.capture(async (sequence) => capture(sequence))).step.context.sequence,
+    ).toBe(7);
   });
 });

@@ -13,7 +13,7 @@ import { parseKafkaAcceptedFact } from "../src/kafka-accepted-fact.ts";
 import { ToolReplyMailbox, toolReplyTopic } from "@pi-cloud/event-log";
 
 it("decodes only the bounded content-free probe protocol", () => {
-  const { leaseId: _lease, piSessionLane: _lane, ...scope } = toolInvocationFixture().scope;
+  const { leaseId: _lease, piConversationId: _lane, ...scope } = toolInvocationFixture().scope;
   const probe = {
     kind: "path_probe",
     factId: "probe",
@@ -59,18 +59,27 @@ function fixture(append: (fact: AcceptedFact) => Promise<AcceptedFactReceipt>) {
       sessionId: scope.sessionId,
       turnId: scope.turnId,
       nextEventSeq: 1,
-      piSession: { id: scope.piSessionId, lane: scope.piSessionLane, writerId: scope.writerId },
+      piSession: {
+        id: scope.piSessionId,
+        conversationId: scope.piConversationId,
+        writerId: scope.writerId,
+      },
       publication: { scope },
     });
-    const publish = () =>
-      writer.mutate({
-        schemaVersion: 1,
-        mutationId: crypto.randomUUID(),
-        scope: { ...scope, executionReference },
-        occurredAt: new Date().toISOString(),
-        items: [],
+    const publish = () => {
+      const { leaseId: _lease, piConversationId: _conversation, ...identity } = scope;
+      return writer.commitNative({
+        kind: "durable_commit",
+        factId: crypto.randomUUID(),
+        scope: identity,
+        commit: { seq: 1, nextId: 2, writes: [] },
+        origins: [],
+        tools: [],
+        cancellations: [],
         events: [],
+        occurredAt: new Date().toISOString(),
       });
+    };
     return { writer, publish, executionReference };
   }
   return { log, writes, base, open };
@@ -90,11 +99,11 @@ it("probes a quiet physical Session once across Lanes and never opens or sequenc
     const b = await f.open({
       ...f.base,
       runId: "20000000-0000-4000-8000-000000000099",
-      piSessionLane: "child",
+      piConversationId: 2,
     });
     await b.publish(); // first registered Lane is still unpublished
     await vi.advanceTimersByTimeAsync(15_000);
-    expect(facts.map((f) => f.kind)).toEqual(["pi_session_append", "path_probe"]);
+    expect(facts.map((f) => f.kind)).toEqual(["durable_commit", "path_probe"]);
     expect(facts[1]?.scope.writerId).toBe(f.base.writerId);
     expect(a.writer.acknowledgedThroughSeq).toBe(0);
     expect(b.writer.acknowledgedThroughSeq).toBe(0);
@@ -132,7 +141,7 @@ it("probes bound guests despite ongoing text and aggregates Session bindings int
   try {
     const childRunId = crypto.randomUUID();
     const a = await f.open(f.base),
-      b = await f.open({ ...f.base, runId: childRunId, piSessionLane: "child" });
+      b = await f.open({ ...f.base, runId: childRunId, piConversationId: 2 });
     await a.publish();
     await b.publish();
     await vi.advanceTimersByTimeAsync(15000);
@@ -236,12 +245,12 @@ it("bounds stalled probes and a lost probe ACK does not poison later semantic wr
     await a.publish();
     await vi.advanceTimersByTimeAsync(90_000);
     expect(append).toHaveBeenCalledTimes(2);
-    await expect(a.publish()).resolves.toMatchObject({ accepted: true });
+    await expect(a.publish()).resolves.toBeUndefined();
     await a.writer.close(); // draining semantics does not wait for the probe receipt
     ack.reject(new Error("Probe ACK lost"));
     await vi.advanceTimersByTimeAsync(0);
     const b = await f.open({ ...f.base, runId: "20000000-0000-4000-8000-000000000088" });
-    await expect(b.publish()).resolves.toMatchObject({ accepted: true });
+    await expect(b.publish()).resolves.toBeUndefined();
   } finally {
     ack.reject(new Error("closed"));
     await f.log.close();

@@ -30,15 +30,13 @@ async function fixture(run) {
   }
 }
 
-it.each(["", "packages/sandbox-supervisor"])(
+it.each(["", "packages/tool-sandbox"])(
   "checks and prepares pinned Pi security dependencies at %s",
   async (scope) => {
     await fixture(async ({ root, pkg, invoke }) => {
-      await pkg("@earendil-works/pi-coding-agent", "0.84.1", scope);
+      await pkg("@earendil-works/pi-coding-agent", "1.0.0", scope);
       const patches = [
         ["brace-expansion", "5.0.12"],
-        ["undici", "8.10.2"],
-        ["protobufjs", "7.6.5"],
       ];
       for (const [name, version] of patches) {
         await pkg(`@earendil-works/pi-coding-agent/node_modules/${name}`, "0.0.0", scope);

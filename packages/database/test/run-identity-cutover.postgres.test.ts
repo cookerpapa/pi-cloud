@@ -1,10 +1,11 @@
+import { Migrator } from "kysely/migration";
+import { migrationProvider } from "../src/migrations/index.ts";
+import { historicalNative } from "./fixtures/historical-native.ts";
 import { insertHistoricalSession } from "./fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
-import { Migrator } from "kysely/migration";
 import { sql, type Kysely } from "kysely";
 import { beforeAll, beforeEach, afterEach, afterAll, describe, it, expect } from "vitest";
 import { createDatabase, runMigrations, type Database } from "../src/index.ts";
-import { migrationProvider } from "../src/migrations/index.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 
@@ -113,13 +114,18 @@ describe.skipIf(!endpoint)("one-Run identity cutover", () => {
     await admin?.destroy();
   });
   it("preserves native history and closed Run evidence without an Attempt authority", async () => {
-    const before = await db
+    const before = await historicalNative(db)
       .selectFrom("pi_session_log")
       .select(["tenant_id", "session_id", "seq", "kind", "payload", "append_id"])
       .execute();
-    await runMigrations(db, "up");
+    const migrated = await new Migrator({
+      db,
+      provider: migrationProvider,
+      allowUnorderedMigrations: true,
+    }).migrateTo("145_run_execution_identity");
+    if (migrated.error) throw migrated.error;
     expect(
-      await db
+      await historicalNative(db)
         .selectFrom("pi_session_log")
         .select(["tenant_id", "session_id", "seq", "kind", "payload", "append_id"])
         .execute(),
@@ -153,8 +159,11 @@ describe.skipIf(!endpoint)("one-Run identity cutover", () => {
     expect((await store.getRun(runId)).transitions).toEqual([
       expect.objectContaining({ fromState: "queued", toState: "running" }),
     ]);
-    const next = await store.acceptTurn(sessionId, "next", { prompt: "continue" });
-    expect(next.runId).not.toBe(runId);
+    // Admission on the current schema is covered separately. This test stops at
+    // migration 145 so later format cutovers cannot erase the evidence it checks.
+    expect((await db.selectFrom("runs").select("id").execute()).map((row) => row.id)).toEqual([
+      runId,
+    ]);
   });
   it("rejects queued input before making any schema changes", async () => {
     await sql`update runs set state='queued',settled_at=null where id=${runId}::uuid`.execute(db);

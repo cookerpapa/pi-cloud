@@ -92,7 +92,7 @@ try {
   await turn(`请记住验收标记 ${marker}。本轮不要工具，只回复已记住。稍后我会切换工作目录。`);
   const originalModel = await api.getSessionModel(session.sessionId);
   const { rows: originalHistory } =
-    await sql`select seq,payload from pi_session_log where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId} order by seq`.execute(
+    await sql`select seq,ordinal,body from pi_durable_log where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId} order by seq,ordinal`.execute(
       db,
     );
   const historyDigest = createHash("sha256").update(JSON.stringify(originalHistory)).digest("hex");
@@ -172,7 +172,7 @@ try {
   for (const key of ["provider", "modelId", "thinkingLevel", "fastMode"])
     assert.deepEqual(selected[key], originalModel[key]);
   const { rows: preserved } =
-    await sql`select seq,payload from pi_session_log where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId} and seq <= ${originalHistory.at(-1).seq} order by seq`.execute(
+    await sql`select seq,ordinal,body from pi_durable_log where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId} and seq <= ${originalHistory.at(-1).seq} order by seq,ordinal`.execute(
       db,
     );
   assert.equal(createHash("sha256").update(JSON.stringify(preserved)).digest("hex"), historyDigest);
@@ -204,7 +204,7 @@ try {
   report.modelSettingsPreserved = true;
   report.nextRunUsesMachineDirectory = true;
   const { rows: facts } =
-    await sql`select payload from pi_session_log where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId} and custom_type='pi-cloud.workspace_changed'`.execute(
+    await sql`select l.body from pi_durable_records r join pi_durable_log l using(tenant_id,session_id,seq,ordinal) where r.tenant_id=${tenant.tenantId}::uuid and r.session_id=${session.sessionId} and r.kind='entry' and r.fields->>'nativeKind'=${JSON.stringify('pi-cloud.workspace_changed')}`.execute(
       db,
     );
   assert.equal(facts.length, 1);

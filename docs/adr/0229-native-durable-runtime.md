@@ -17,6 +17,12 @@ Lanes. Native tasks, submissions, entries and documents own Agent progress,
 compaction, input placement and recovery. PG retains cloud admission, worker
 ownership, resource lifecycle and the public input queue.
 
+Configured finite budgets retain a conservative floor from native request/Tool
+intent checkpoints on recovery; unconfirmed intents still consume budget. The
+optional model-consumption count crosses the private assignment port into the
+gateway. Unlimited Runs add no budget query. These guards are not an exact
+provider billing ledger and never certify completion of an external effect.
+
 An admitted user request is logical work which may survive Worker replacement.
 Recovery must first revoke the old publication owner and close its ordered
 writer incarnation, then acquire the current PG lease. Only that holder may
@@ -24,6 +30,29 @@ open/resume the native Harness. Native pending state alone grants no execution
 permission. No RunAttempt table, channel lease or competing task scheduler is
 introduced. The mapping from logical work to its cloud execution grant must
 keep public input identity and accepted settings across recovery.
+
+Run identifies the accepted logical work. A recoverable Worker loss closes its
+old execution incarnation, not that logical work. Re-admission retains the Run,
+Turn and native submission identity under a new Session lease; there is no new
+attempt entity. Stop, deletion and an actual native terminal outcome remain
+logical termination. Native task checkpoints own continuation; the cloud queue
+owns admission, never an independent replay decision for each native task.
+
+The storage adapter retains one canonical append record per native write, grouped
+by atomic commit. Indexed current-record pointers and document reconstruction
+indexes are derived from that log. Native JSON is serialized losslessly as text,
+including NUL and lone-surrogate strings covered by upstream conformance; indexing
+uses JSON-encoded string identities rather than lossy text coercion. It must not
+copy transcript bodies into both a journal and full Entry query tables. Cloud
+Session/Run/Turn provenance is retained alongside each canonical write, so the
+thin current-record index can be rebuilt without reconstructing old grants.
+
+The active Storage serializes reads and commits and waits for publication ACK
+before adopting a prepared state. Its bounded acknowledged overlay serves writes
+which PG has not projected yet. Eviction waits for the existing projection
+watermark in batches, never a per-Step PG receipt. Cold reads use native IDs,
+head markers, current task indexes and document bases. This is a new implementation
+of the public Storage port; no upstream private fields or loop patches are used.
 
 Use the public Harness's native abort settlement. A not-yet-committed Tool result
 may become `aborted` with retained native output; late physical completions do
@@ -72,8 +101,21 @@ it. Retrying Stop must not withdraw inputs accepted after that Stop. Remove the
 former pause/resume queue policy rather than retaining a compatibility mode.
 Returned content remains readable from its accepted Turn until the browser has
 recovered it; queue pagination and a lost Stop response must not discard it.
-Only code-owned tools/extensions are installed. MCP/Codemode product exposure
+Branched child context retains PiCloud's frozen pre-Run anchor; it does not inherit
+the outstanding delegation call or the parent's current user prompt. Native
+Conversation ancestry records that boundary. Only code-owned tools/extensions are installed. MCP/Codemode product exposure
 is a separate capability decision, not an implicit effect of dependency upgrade.
+
+The private native batch format uses a new execution topic, `pi-cloud.execution-log.v14`.
+The old topic remains isolated until verified cutover and explicit drained-log
+retirement; the new reader never interprets old append envelopes. Partition ownership and the single Session
+queue remain unchanged. PG control views bootstrap the new topic owner.
+
+Independent human forks copy native conversation documents according to their
+persisted `asOf`/`current` fork policy as well as immutable entries. Task, Session
+and `initial` documents do not transfer execution grants. Project verification
+reminders are derived at native yield from committed progress, including their
+previous continuation, so lossy display delivery cannot change the decision.
 
 Cutover requires quiescence, matching Worker/Guest/control artifacts, migrated
 or explicitly reset development native data, and removal of the old runtime,

@@ -7,7 +7,7 @@ import {
   type SupervisorRegisteredMessage,
 } from "@pi-cloud/protocol";
 import WebSocket, { type RawData } from "ws";
-import { PINNED_PI_CODING_AGENT_VERSION } from "@pi-cloud/protocol";
+import { PINNED_PI_DURABLE_VERSION } from "@pi-cloud/protocol";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_CLOSE_TIMEOUT_MS = 1_000;
@@ -196,11 +196,11 @@ export class SupervisorWebSocketClient {
         "registration.supervisorVersion",
       ),
       piPackageName: nonEmpty(
-        options.registration.piPackageName ?? "@earendil-works/pi-coding-agent",
+        options.registration.piPackageName ?? "@earendil-works/pi-durable",
         "registration.piPackageName",
       ),
       piVersion: nonEmpty(
-        options.registration.piVersion ?? PINNED_PI_CODING_AGENT_VERSION,
+        options.registration.piVersion ?? PINNED_PI_DURABLE_VERSION,
         "registration.piVersion",
       ),
       supportedProtocolVersions: [...(options.registration.supportedProtocolVersions ?? [1])],

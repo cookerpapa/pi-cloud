@@ -1,10 +1,11 @@
+import { Migrator } from "kysely/migration";
+import { migrationProvider } from "../src/migrations/index.ts";
+import { historicalNative } from "./fixtures/historical-native.ts";
 import { insertHistoricalPrompt, insertHistoricalSession } from "./fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
-import { Migrator } from "kysely/migration";
 import { sql, type Kysely } from "kysely";
 import { beforeAll, beforeEach, afterEach, afterAll, describe, expect, it } from "vitest";
 import { createDatabase, runMigrations, type Database } from "../src/index.ts";
-import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 
@@ -76,13 +77,18 @@ describe.skipIf(!endpoint)("dormant accounting retirement", () => {
   });
 
   it("removes only dormant structures and preserves execution limits and native history", async () => {
-    const before = await db
+    const before = await historicalNative(db)
       .selectFrom("pi_session_log")
       .select(["tenant_id", "session_id", "seq", "kind", "payload", "append_id"])
       .execute();
-    await runMigrations(db, "up");
+    const migrated = await new Migrator({
+      db,
+      provider: migrationProvider,
+      allowUnorderedMigrations: true,
+    }).migrateTo("147_retire_dormant_accounting");
+    if (migrated.error) throw migrated.error;
     expect(
-      await db
+      await historicalNative(db)
         .selectFrom("pi_session_log")
         .select(["tenant_id", "session_id", "seq", "kind", "payload", "append_id"])
         .execute(),

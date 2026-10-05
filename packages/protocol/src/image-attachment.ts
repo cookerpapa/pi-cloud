@@ -36,13 +36,15 @@ export type StoredImageContent = {
   attachment: ImageAttachmentReference;
 };
 /** The wire/storage representation is deliberately distinct from native Pi data. */
-export type ImagePacked<T> = T extends { type: "image"; data: string; mimeType: string }
-  ? Omit<T, "type" | "data" | "mimeType"> & StoredImageContent
-  : T extends readonly (infer U)[]
-    ? ImagePacked<U>[]
-    : T extends object
-      ? { [K in keyof T]: ImagePacked<T[K]> }
-      : T;
+export type ImagePacked<T> = T extends string | number | boolean | null | undefined
+  ? T
+  : T extends { type: "image"; data: string; mimeType: string }
+    ? Omit<T, "type" | "data" | "mimeType"> & StoredImageContent
+    : T extends readonly (infer U)[]
+      ? ImagePacked<U>[]
+      : T extends object
+        ? { [K in keyof T]: ImagePacked<T[K]> }
+        : T;
 
 export function parseImageAttachmentReference(value: unknown): ImageAttachmentReference {
   if (!Value.Check(ImageAttachmentReferenceSchema, value))

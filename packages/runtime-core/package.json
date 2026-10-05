@@ -10,10 +10,8 @@
     "./execution-log": "./src/execution-log.ts",
     "./accepted-fact": "./src/accepted-fact.ts",
     "./session-projector": "./src/session-projector.ts",
-    "./postgres-pi-session-append-projector": "./src/postgres-pi-session-append-projector.ts",
     "./kafka-accepted-fact": "./src/kafka-accepted-fact.ts",
     "./kafka-accepted-fact-consumer": "./src/kafka-accepted-fact-consumer.ts",
-    "./native-session-log-publisher": "./src/native-session-log-publisher.ts",
     "./session-outbox-relay": "./src/session-outbox-relay.ts",
     "./run-state": "./src/run-state.ts",
     "./run-cancellation-executor": "./src/run-cancellation-executor.ts",
@@ -28,7 +26,8 @@
     "./http-publication-client": "./src/http-publication-client.ts",
     "./session-control-outbox": "./src/session-control-outbox.ts",
     "./session-publication-ingress": "./src/session-publication-ingress.ts",
-    "./worker-execution-log": "./src/worker-execution-log.ts"
+    "./worker-execution-log": "./src/worker-execution-log.ts",
+    "./durable-session-publisher": "./src/durable-session-publisher.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -36,7 +35,6 @@
   },
   "dependencies": {
     "@discoveryjs/json-ext": "1.1.0",
-    "@earendil-works/pi-agent-core": "0.84.1",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/domain": "0.1.0",
     "@pi-cloud/event-log": "0.1.0",

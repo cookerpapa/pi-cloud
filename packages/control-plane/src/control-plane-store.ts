@@ -536,7 +536,7 @@ export class ControlPlaneStore {
         .values({
           id: sessionId,
           pi_session_id: sessionId,
-          pi_session_lane: "main",
+          pi_conversation_id: "1",
           title,
           tenant_id: this.#tenantId,
           project_id: workspace.project_id,
@@ -572,13 +572,8 @@ export class ControlPlaneStore {
           id: session.id,
           created_at_ms: new Date(session.created_at).valueOf(),
           parent_session_id: null,
-          next_seq: 1,
           name: title,
         })
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("pi_session_lanes")
-        .values({ tenant_id: this.#tenantId, session_id: session.id, lane: "main", leaf_id: null })
         .executeTakeFirstOrThrow();
       return {
         sessionId: session.id,
@@ -1901,28 +1896,28 @@ export class ControlPlaneStore {
         }
         return acceptedTurnCancellationResource(existing, fingerprint, true);
       }
-      const activePair = lifecycle.turnState === "running" && lifecycle.sessionState === "running";
-      if (!activePair) {
-        throw new ControlPlaneStoreError(
-          "conflict",
-          "Only an active turn can accept a cancellation request",
-        );
-      }
-
       const target = await transaction
         .selectFrom("runs")
-        .select(["id", "state"])
+        .select(["id", "state", "recovery_requested_at"])
         .where("tenant_id", "=", this.#tenantId)
         .where("session_id", "=", sessionId)
         .where("turn_id", "=", turnId)
         .forUpdate()
         .executeTakeFirst();
-      if (target === undefined || !["running", "settling"].includes(target.state)) {
+      const recovering =
+        target?.state === "queued" &&
+        target.recovery_requested_at !== null &&
+        lifecycle.turnState === "queued" &&
+        lifecycle.sessionState === "idle";
+      const activePair = lifecycle.turnState === "running" && lifecycle.sessionState === "running";
+      if (
+        !target ||
+        (!recovering && (!activePair || !["running", "settling"].includes(target.state)))
+      )
         throw new ControlPlaneStoreError(
           "conflict",
-          "Turn does not have one running Run to cancel",
+          "Only active or recovering work can accept a cancellation request",
         );
-      }
 
       const activeCancellation = await transaction
         .selectFrom("turn_control_requests")

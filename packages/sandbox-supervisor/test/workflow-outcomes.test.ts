@@ -2,13 +2,21 @@ import { once } from "node:events";
 import { WebSocketServer } from "ws";
 import { expect, it, vi } from "vitest";
 import { Type } from "typebox";
-import { Agent } from "@earendil-works/pi-agent-core";
 import {
-  EventStream,
-  type AssistantMessage,
-  type AssistantMessageEvent,
-  type Model,
-} from "@earendil-works/pi-ai";
+  Harness,
+  MemoryStorage,
+  createRegistry,
+  defineExtension,
+  type ToolRegistration,
+} from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { createModels } from "@earendil-works/pi-ai/models";
+import {
+  fauxProvider,
+  fauxToolCall,
+  fauxAssistantMessage,
+} from "@earendil-works/pi-ai/providers/faux";
+import { ScopedDurableModels } from "../src/durable/scoped-models.ts";
 import {
   createExecutionReference,
   ToolExecutionFailure,
@@ -16,19 +24,6 @@ import {
 } from "@pi-cloud/protocol";
 import { createTrustedRemoteAgentTools } from "../src/trusted-remote-tools.ts";
 import { withToolInvocation } from "../src/tool-invocation.ts";
-
-const model: Model<"openai-responses"> = {
-  id: "gpt-6-luna",
-  name: "Scripted workflow fixture",
-  provider: "openai",
-  api: "openai-responses",
-  baseUrl: "http://127.0.0.1:1",
-  reasoning: false,
-  input: ["text"],
-  contextWindow: 10000,
-  maxTokens: 1000,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-};
 
 it.each([
   ["success", false],
@@ -95,7 +90,7 @@ it.each([
     );
     const remote = createTrustedRemoteAgentTools({
       publishToolCommand: publish,
-      publishToolCancellation: async () => {},
+      trackWorkflowOperation: () => {},
       waitForToolReply: async (_request, signal) => {
         signal.addEventListener("abort", () => reply.reject(signal.reason), { once: true });
         return reply.promise;
@@ -137,86 +132,70 @@ it.each([
       maximumToolOutputBytes: 65536,
       workingDirectory: "/workspace",
     });
-    let requests = 0;
-    const agent = new Agent({
-      initialState: {
-        model,
-        systemPrompt: "fixture",
-        tools: [
-          {
-            name: "workflow",
-            label: "workflow",
-            description: "fixture",
-            parameters: Type.Object({ script: Type.String() }),
-            execute: async (id, args, signal) =>
-              withToolInvocation({ id: `invocation-${id}`, nativeToolCallId: id }, async () => {
-                const value = await remote.executeWorkflow(
-                  id,
-                  (args as { script: string }).script,
-                  async () => null,
-                  signal,
-                );
-                return {
-                  content: [{ type: "text" as const, text: String(value) }],
-                  details: undefined,
-                };
-              }),
-          },
-        ],
-      },
-      transformContext: (messages, signal) => {
-        signal?.throwIfAborted();
-        return remote.transformContext(messages);
-      },
-      streamFn: () => {
-        const first = ++requests === 1;
-        const message: AssistantMessage = {
-          role: "assistant",
-          api: model.api,
-          provider: model.provider,
-          model: model.id,
-          timestamp: Date.now(),
-          stopReason: first ? "toolUse" : "stop",
-          content: first
-            ? [
-                {
-                  type: "toolCall",
-                  id: "call",
-                  name: "workflow",
-                  arguments: { script: "return 1" },
-                },
-              ]
-            : [{ type: "text", text: "done" }],
-          usage: {
-            input: 1,
-            output: 1,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 2,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-          },
-        };
-        const stream = new EventStream<AssistantMessageEvent, AssistantMessage>(
-          (event) => event.type === "done",
-          () => message,
-        );
-        queueMicrotask(() =>
-          stream.push({ type: "done", reason: first ? "toolUse" : "stop", message }),
-        );
-        return stream;
-      },
+    const provider = fauxProvider({ tokensPerSecond: 1000000 }),
+      models = createModels();
+    models.setProvider(provider.provider);
+    provider.setResponses([
+      fauxAssistantMessage(fauxToolCall("workflow", { script: "return 1" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage("done"),
+    ]);
+    const scoped = new ScopedDurableModels(models, async (request) => {
+      const input = request.input as import("@earendil-works/pi-ai").Context;
+      const messages = await remote.transformContext(input.messages);
+      return {
+        model: provider.getModel(),
+        options: request.options,
+        input: { ...input, messages },
+        release: () => {},
+      };
     });
+    const model = scoped.register(crypto.randomUUID(), provider.getModel());
+    const tool: ToolRegistration = {
+      name: "workflow",
+      description: "fixture",
+      parameters: Type.Object({ script: Type.String() }),
+      execute: async (args, api, context) =>
+        withToolInvocation({ id: `task:${api.taskId}`, nativeToolCallId: api.callId }, async () => {
+          const value = await remote.executeWorkflow(
+            api.callId,
+            (args as { script: string }).script,
+            async () => null,
+            context.abortSignal,
+          );
+          return { content: [{ type: "text", text: String(value) }] };
+        }),
+    };
+    const registry = createRegistry();
+    registry.install(defineExtension({ name: "fixture", tools: [tool] }));
+    const harness = await Harness.open(
+      new MemoryStorage(),
+      {
+        models: scoped.models,
+        registry,
+        settings: { retry: { maxRetries: 0 }, compaction: { enabled: false } },
+      },
+      BACKGROUND_CONTEXT,
+    );
+    const root = await harness.root(BACKGROUND_CONTEXT);
+    await root.configure({ model, tools: [tool] }, BACKGROUND_CONTEXT);
     try {
-      await agent.prompt("Execute once");
-      expect(requests).toBe(blocks ? 1 : 2);
+      await (
+        await root.submit({ type: "input", content: "Execute once" }, BACKGROUND_CONTEXT)
+      ).wait(BACKGROUND_CONTEXT);
+      expect(provider.state.callCount).toBe(blocks ? 1 : 2);
       expect(publish).toHaveBeenCalledOnce();
       expect(unavailable).toHaveBeenCalledTimes(blocks ? 1 : 0);
-      const result = agent.state.messages.find((message) => message.role === "toolResult");
+      const result = (await root.context(BACKGROUND_CONTEXT)).messages.find(
+        (message) => message.role === "toolResult",
+      );
       expect(result).toMatchObject({ toolName: "workflow", isError: kind !== "success" });
       if (kind === "business-error")
         expect(JSON.stringify(result)).toContain("ordinary script exception");
       if (kind === "not-started") expect(JSON.stringify(result)).toContain("tool_cancelled");
     } finally {
+      await harness.close(BACKGROUND_CONTEXT);
       for (const client of server.clients) client.terminate();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

@@ -1,19 +1,30 @@
 import type { CandidateFact, AcceptedFact, ExecutionPublication } from "./accepted-fact.ts";
-import { prepareToolInvocationDispatch } from "./tool-invocation-fact.ts";
 import { randomUUID } from "node:crypto";
 import { parseToolCancellation } from "@pi-cloud/protocol";
+import { isDeepStrictEqual } from "node:util";
 
 export function prepareExecutionFact(
   scope: ExecutionPublication["scope"] & { executionReference: string },
   candidate: CandidateFact,
 ): AcceptedFact {
+  if (candidate.kind === "durable_commit") {
+    const {
+      leaseId: _lease,
+      piConversationId: _lane,
+      executionReference: _reference,
+      ...identity
+    } = scope;
+    if (!isDeepStrictEqual(candidate.fact.scope, identity))
+      throw new Error("Native commit belongs to another execution owner");
+    return candidate.fact;
+  }
   if (candidate.kind === "tool_cancel") {
     const { executionReference, occurredAt, ...request } = candidate.command;
     if (executionReference !== scope.executionReference)
       throw new Error("Tool cancellation does not belong to its ExecutionReference");
     const {
       leaseId: _lease,
-      piSessionLane: _lane,
+      piConversationId: _lane,
       executionReference: _reference,
       ...identity
     } = scope;
@@ -28,7 +39,7 @@ export function prepareExecutionFact(
   if (candidate.kind === "path_probe") {
     const {
       leaseId: _lease,
-      piSessionLane: _lane,
+      piConversationId: _lane,
       executionReference: _reference,
       ...identity
     } = scope;
@@ -38,7 +49,7 @@ export function prepareExecutionFact(
     const command = candidate.command;
     if (command.executionReference !== scope.executionReference)
       throw new Error("Subagent command does not belong to its ExecutionReference");
-    const { leaseId: _lease, piSessionLane: _lane, executionReference, ...identity } = scope;
+    const { leaseId: _lease, piConversationId: _lane, executionReference, ...identity } = scope;
     return {
       kind: "subagent_command",
       factId: command.requestId,
@@ -97,67 +108,11 @@ export function prepareExecutionFact(
         writerId: scope.writerId,
       },
       event: publication.payload.event,
+      ...(publication.payload.nativeSequence === undefined
+        ? {}
+        : { nativeSequence: publication.payload.nativeSequence }),
       occurredAt: publication.payload.event.occurredAt,
     };
   }
-  const mutation = candidate.mutation;
-  if (
-    mutation.scope.executionReference !== scope.executionReference ||
-    mutation.scope.tenantId !== scope.tenantId ||
-    mutation.scope.sessionId !== scope.sessionId ||
-    mutation.scope.piSessionId !== scope.piSessionId ||
-    mutation.scope.piSessionLane !== scope.piSessionLane ||
-    mutation.scope.writerId !== scope.writerId ||
-    mutation.scope.runId !== scope.runId ||
-    mutation.scope.turnId !== scope.turnId
-  ) {
-    throw new Error("Pi Session mutation candidate does not belong to its ExecutionReference");
-  }
-  const operationLanes = mutation.items.flatMap((item) =>
-    item.kind === "entry"
-      ? [item.lane]
-      : item.kind === "record"
-        ? [item.record.lane]
-        : item.kind === "lane" && !item.create
-          ? [item.lane]
-          : [],
-  );
-  if (
-    operationLanes.some((lane) => lane !== scope.piSessionLane) ||
-    mutation.items.some((item) => item.kind === "fact" && scope.piSessionLane !== "main")
-  ) {
-    throw new Error("Pi Session mutation does not belong to its authorized lane");
-  }
-  if (
-    mutation.events.some(
-      (event) => event.sessionId !== scope.sessionId || event.turnId !== scope.turnId,
-    )
-  ) {
-    throw new Error("Pi Session checkpoint event does not belong to its ExecutionReference");
-  }
-  const append = {
-    kind: "pi_session_append" as const,
-    factId: mutation.mutationId,
-    scope: {
-      tenantId: scope.tenantId,
-      sessionId: scope.sessionId,
-      runId: scope.runId,
-      turnId: scope.turnId,
-      fencingToken: scope.fencingToken,
-      piSessionId: scope.piSessionId,
-      writerId: scope.writerId,
-    },
-    piSession: { id: scope.piSessionId, lane: scope.piSessionLane, writerId: scope.writerId },
-    items: mutation.items,
-    events: mutation.events,
-    occurredAt: mutation.occurredAt,
-  };
-  if (!mutation.toolCommand) return append;
-  if (mutation.toolCommand.executionReference !== scope.executionReference)
-    throw new Error("Tool command does not belong to its ExecutionReference");
-  return {
-    ...append,
-    kind: "tool_invocation",
-    command: prepareToolInvocationDispatch(append, mutation.toolCommand),
-  };
+  throw new Error("Unknown execution Fact candidate");
 }

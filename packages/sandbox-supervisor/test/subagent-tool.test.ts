@@ -1,3 +1,5 @@
+import { nativeToolApi } from "./tool-api.ts";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { describe, expect, it, vi } from "vitest";
 import { Value } from "typebox/value";
 import {
@@ -23,7 +25,9 @@ describe("role-free log-driven Subagent Tool", () => {
         tool = createCloudSubagentTool(backend);
       expect(() => tool.prepareArguments!({ action: "run", task })).toThrow();
       expect(() => validateSubagentTask({ key: "task", task })).toThrow();
-      await expect(tool.execute("invalid", { action: "run", task })).rejects.toThrow();
+      await expect(
+        tool.execute({ action: "run", task }, nativeToolApi("invalid"), BACKGROUND_CONTEXT),
+      ).rejects.toThrow();
       expect(backend.run).not.toHaveBeenCalled();
     },
   );
@@ -42,9 +46,9 @@ describe("role-free log-driven Subagent Tool", () => {
           : action === "run"
             ? { action, task: "inspect" }
             : { action, target: "child" };
-      await expect(createCloudSubagentTool(backend).execute("call", args)).rejects.toThrow(
-        "subagent_result_too_large",
-      );
+      await expect(
+        createCloudSubagentTool(backend).execute(args, nativeToolApi("call"), BACKGROUND_CONTEXT),
+      ).rejects.toThrow("subagent_result_too_large");
       expect(call).toHaveBeenCalledTimes(1);
     },
   );
@@ -53,10 +57,14 @@ describe("role-free log-driven Subagent Tool", () => {
     const text = "x".repeat(MAX_SUBAGENT_RESULT_BYTES - 2);
     backend.workflow = vi.fn(async () => text);
     await expect(
-      createCloudSubagentTool(backend).execute("call", {
-        action: "workflow",
-        script: "return text",
-      }),
+      createCloudSubagentTool(backend).execute(
+        {
+          action: "workflow",
+          script: "return text",
+        },
+        nativeToolApi("call"),
+        BACKGROUND_CONTEXT,
+      ),
     ).resolves.toEqual({
       content: [{ type: "text", text }],
       details: { action: "workflow" },
@@ -67,7 +75,6 @@ describe("role-free log-driven Subagent Tool", () => {
       tool = createCloudSubagentTool(backend),
       signal = new AbortController().signal;
     const result = await tool.execute(
-      "call",
       {
         action: "run",
         task: "inspect",
@@ -75,7 +82,8 @@ describe("role-free log-driven Subagent Tool", () => {
         sandbox: "ephemeral",
         cwd: "/workspace/worktrees/feature-a",
       },
-      signal,
+      nativeToolApi("call"),
+      withAbortSignal(signal, BACKGROUND_CONTEXT),
     );
     expect(backend.run).toHaveBeenCalledWith(
       "call",
@@ -100,7 +108,11 @@ describe("role-free log-driven Subagent Tool", () => {
     const backend = runtime(),
       tool = createCloudSubagentTool(backend);
     const source = "throw new Error('must never execute in this process')";
-    const result = await tool.execute("call", { action: "workflow", script: source });
+    const result = await tool.execute(
+      { action: "workflow", script: source },
+      nativeToolApi("call"),
+      BACKGROUND_CONTEXT,
+    );
     expect(backend.workflow).toHaveBeenCalledWith("call", source, undefined);
     expect(result.content).toEqual([{ type: "text", text: '{"selected":"only B","score":7}' }]);
   });
@@ -139,9 +151,9 @@ describe("role-free log-driven Subagent Tool", () => {
     controller.abort(new Error("cancelled"));
     await expect(
       createCloudSubagentTool(backend).execute(
-        "call",
         { action: "run", task: "inspect" },
-        controller.signal,
+        nativeToolApi("call"),
+        withAbortSignal(controller.signal, BACKGROUND_CONTEXT),
       ),
     ).rejects.toThrow("cancelled");
   });

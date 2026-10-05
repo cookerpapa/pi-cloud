@@ -1,1815 +1,432 @@
-import { ToolExecutionFailure } from "@pi-cloud/protocol";
-import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server";
-import type { TrustedModelRuntimeLeaseResolver } from "../src/agent-turn-runtime.ts";
+import { expect, it, vi } from "vitest";
+import { MemoryStorage, type StorageWrite, type Seq } from "@earendil-works/pi-durable";
+import type { Context } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
-  DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
-  DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  createExecutionReference,
-  type AgentModelRuntime,
-  type EventPublishMessage,
-  type ExecuteTurnCommandMessage,
-  type PiCloudEvent,
-  type RunActivityUpdate,
+  FakeModelServer,
+  FAKE_MODEL_API_KEY,
+  type FakeModelScenario,
+} from "@pi-cloud/fake-model-server";
+import type {
+  CandidateToolCommand,
+  DurableSessionCommit,
+  EventPublishMessage,
+  NativeToolEnd,
 } from "@pi-cloud/protocol";
-import {
-  PI_MODEL_RETRY_CUSTOM_TYPE,
-  type PiSessionMutationOperation,
-} from "@pi-cloud/protocol/native-session";
-import type { CloudAgentExecutionAuthority } from "../src/cloud-agent-runtime.ts";
-import {
-  buildSessionContext,
-  InMemorySessionStorage,
-  Session,
-} from "@earendil-works/pi-agent-core";
-import { mkdtemp, rm } from "node:fs/promises";
-import { createServer } from "node:http";
-
-const fakeTextModelLease: TrustedModelRuntimeLeaseResolver = async (command) => {
-  const server = new FakeModelServer({ defaultScenario: "text" });
-  await server.start();
-  return {
-    runtime: {
-      kind: "openai_compatible_gateway",
-      provider: command.payload.model.provider,
-      modelId: command.payload.model.modelId,
-      baseUrl: server.baseUrl,
-      api: "openai-completions",
-      capability: FAKE_MODEL_API_KEY,
-      reasoning: false,
-      contextWindow: 131_072,
-      autoCompactTokenLimit: 100_000,
-      maxTokens: 16_384,
-      requestTimeoutMs: 10_000,
-      turnTimeoutMs: 60_000,
-      inputModalities: ["text"],
-      hostedTools: [],
-      serviceTier: null,
-    } as unknown as AgentModelRuntime, // test-only completions adapter, never a production profile
-    release: () => server.stop(),
-  };
-};
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import type {
+  DurableSessionHandle,
+  ManagedNativeRuntime,
+} from "@pi-cloud/pi-session-postgres/durable";
+import { PiCloudTurnRunner, type PiCloudTurnRunnerOptions } from "../src/pi-cloud-turn-runner.ts";
+import { createTrustedRemoteAgentTools } from "../src/trusted-remote-tools.ts";
 import {
   createCloudExecutionContext,
-  createCloudStepContext,
   createCloudTurnContext,
-  PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
-  PI_SANDBOX_RESET_CUSTOM_TYPE,
-  PiCloudTurnRunner,
-  PiModelRuntimePool,
-  RemoteToolSandboxTurnRunner,
-  resolveCompactionReserveTokens,
-  type PiModelRuntimeConfig,
-  type ProviderHostedActivity,
-  applyProviderHostedTranscript,
-  type SandboxControlBoundary,
-} from "../src/index.ts";
+  createCloudStepContext,
+} from "../src/cloud-context.ts";
+import { command } from "./fixtures/durable-command.ts";
 
-const command: ExecuteTurnCommandMessage = {
-  protocolVersion: 1,
-  messageId: "11111111-1111-4111-8111-111111111111",
-  sentAt: "2026-08-14T08:00:00.000Z",
-  type: "command.turn.execute",
-  payload: {
-    idempotencyKey: "cloud-runner-integration",
-    tenantId: "tenant-1",
-    projectId: "project-1",
-    workspaceId: "workspace-1",
-    sessionId: "session-1",
-    piSession: { id: "session-1", lane: "main", writerId: "00000000-0000-4000-8000-000000000001" },
-    runId: "44444444-4444-4444-8444-444444444444",
-    turnId: "turn-1",
-    agentId: "root",
-    executionReference: createExecutionReference(
-      "33333333-3333-4333-8333-333333333333",
-      "55555555-5555-4555-8555-555555555555",
-      7,
-    ),
-    nextEventSeq: 1,
-    agent: {
-      revisionId: "84041f7b-5052-4abf-8bfd-16adf083c67e",
-      definitionKey: "pi-coding",
-      runtimeKind: "pi_sdk",
-      runtimeVersion: "0.84.1",
-      harnessVersion: "pi-cloud-harness-v1",
-      sessionStorageKind: "pi_session_storage_v1",
-    },
-    input: { kind: "prompt", text: "请返回确定性的测试响应。" },
-    executionMode: "elastic",
-    sessionKind: "conversation",
-    workspaceSeedKind: "empty",
-    sandboxProfileKey: "standard",
-    workingDirectory: "/workspace",
-    toolCapabilities: ["read", "write", "edit", "bash"],
-    model: {
-      profileId: "profile-1",
-      provider: "pi-cloud-fake",
-      modelId: "pi-cloud-fake",
-      thinkingLevel: "off",
-      serviceTier: null,
-      credentialBindingId: "credential-1",
-      credentialBindingVersion: 1,
-    },
-    environment: {
-      environmentVersionId: "66666666-6666-4666-8666-666666666666",
-      versionNumber: 1,
-      profileKey: "pi-cloud-fullstack",
-      profileVersion: "1",
-      imageRevision: "development",
-      specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
-      recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
-      recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-    },
-  },
-};
-
-class TestAuthority implements CloudAgentExecutionAuthority {
-  readonly signal = new AbortController().signal;
-  closed = false;
-  async assertCurrent(): Promise<void> {}
-  async close(): Promise<void> {
-    this.closed = true;
-  }
-}
-
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve } as const;
-}
-
-describe("PiCloudTurnRunner integration", () => {
-  it.each(["success", "invalid-image"])(
-    "prepares native user images before model admission (%s)",
-    async (mode) => {
-      const fake = new FakeModelServer({ defaultScenario: "text" });
-      await fake.start();
-      const session = new Session(
-        new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
-      );
-      const image = { type: "image" as const, data: "aW1hZ2U=", mimeType: "image/png" };
-      const upload = {
-        id: "aaaabbbb-1111-4111-8111-111111111111",
-        sessionId: "aaaabbbb-2222-4222-8222-222222222222",
-        workspaceId: "aaaabbbb-3333-4333-8333-333333333333",
-        name: "screenshot.png",
-        path: "/workspace/uploads/screenshot.png",
-        byteLength: 5,
-        mimeType: "image/png",
-        sha256: "a".repeat(64),
-        image: {
-          id: "aaaabbbb-4444-4444-8444-444444444444",
-          byteLength: 5,
-          mimeType: "image/png" as const,
-          sha256: "a".repeat(64),
-        },
-      };
-      const input = {
-        ...command,
-        payload: {
-          ...command.payload,
-          input: { kind: "prompt" as const, text: "", uploads: [upload] },
-        },
-      };
-      const turn = createCloudTurnContext(input);
-      let prepared = false,
-        step = 0;
-      const permits = vi.fn(async () => {
-        expect(prepared).toBe(true);
-        return () => {};
-      });
-      const nativeTools = vi.fn(async () => {
-        throw new Error("No Tool invocation expected");
-      });
-      const observed: unknown[] = [];
-      const activity: Array<RunActivityUpdate | undefined> = [];
-      const fetchOriginal = globalThis.fetch;
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-        if (String(url).startsWith(fake.baseUrl) && typeof init?.body === "string")
-          observed.push(JSON.parse(init.body));
-        return fetchOriginal(url, init);
-      });
-      const runner = new PiCloudTurnRunner({
-        onActivity: (update) => activity.push(update),
-        resolveModelRuntime: () => ({
-          provider: command.payload.model.provider,
-          modelId: command.payload.model.modelId,
-          baseUrl: fake.baseUrl,
-          api: "openai-completions",
-          apiKey: FAKE_MODEL_API_KEY,
-          inputModalities: ["text", "image"],
-          contextWindow: 131_072,
-          autoCompactTokenLimit: 100_000,
-          maxTokens: 16_384,
-        }),
-        openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
-        acquireModelPermit: permits,
-        prepareInputUploads: async (files) => {
-          expect(files).toEqual([upload]);
-          if (mode !== "success") throw new Error("Malformed image");
-          prepared = true;
-          return { images: [image], hints: [] };
-        },
-        sandboxContinuity: {
-          continuityId: "unused",
-          continuity: "cold_restore",
-          environmentSha256: turn.environmentSha256,
-          workspaceBindingSha256: turn.workspaceBindingSha256,
-          toolPolicySha256: turn.toolPolicySha256,
-        },
-        createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
-          tools: [],
-          systemPrompt: async (base) => base,
-          executeWorkflow: nativeTools,
-          transformHeaders: async (headers = {}) => headers,
-          transformContext: async (messages) => {
-            await captureSamplingStep(async () => {
-              const world = await stepWorldState.capture();
-              return {
-                step: createCloudStepContext({
-                  sequence: ++step,
-                  turnContextSha256: turn.sha256,
-                  executionContextSha256: "b".repeat(64),
-                  allowedTools: [],
-                  activeTools: [],
-                  worldState: world.worldState,
-                }),
-                modelMessages: world.modelMessages,
-              };
-            });
-            return messages;
-          },
-        }),
-      });
-      try {
-        if (mode !== "success") {
-          await expect(runner.run(input, () => {})).rejects.toThrow("Malformed image");
-          expect(permits).not.toHaveBeenCalled();
-          expect(fake.observations).toHaveLength(0);
-        } else {
-          await runner.run(input, () => {});
-          expect(activity.map((update) => update?.phase)).toContain("waiting_model");
-          expect(activity.map((update) => update?.phase)).toContain("receiving_model");
-          expect(activity.at(-1)).toBeUndefined();
-          expect(nativeTools).not.toHaveBeenCalled();
-          const entry = (await session.findEntriesOnBranch()).find(
-            (item) => item.type === "message" && item.message.role === "user",
-          );
-          expect(entry).toMatchObject({
-            message: {
-              content: [{ type: "text", text: expect.stringContaining(upload.path) }, image],
-            },
-          });
-          expect(JSON.stringify(observed)).toContain("data:image/png;base64,aW1hZ2U=");
-          expect(fake.observations).toHaveLength(1);
-        }
-      } finally {
-        fetchSpy.mockRestore();
-        await fake.stop();
-      }
-    },
-  );
-
-  it("reports target-unavailable for controls arriving while final native append waits", async () => {
-    const fake = new FakeModelServer({ defaultScenario: "text" });
-    await fake.start();
-    const session = new Session(
-      new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
-    );
-    const entered = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
-    const append = session.appendRecord.bind(session);
-    vi.spyOn(session, "appendRecord").mockImplementation(async (record) => {
-      if (record.type === "operation_finished") {
-        entered.resolve();
-        await release.promise;
-      }
-      return append(record);
-    });
-    const turn = createCloudTurnContext(command);
-    const runner = new PiCloudTurnRunner({
-      resolveModelRuntime: () => ({
-        provider: "pi-cloud-fake",
-        modelId: "pi-cloud-fake",
-        baseUrl: fake.baseUrl,
-        api: "openai-completions",
-        apiKey: FAKE_MODEL_API_KEY,
-        contextWindow: 131_072,
-        autoCompactTokenLimit: 100_000,
-        maxTokens: 16_384,
-      }),
-      openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
-      sandboxContinuity: {
-        continuityId: "unused",
-        continuity: "cold_restore",
-        environmentSha256: turn.environmentSha256,
-        workspaceBindingSha256: turn.workspaceBindingSha256,
-        toolPolicySha256: turn.toolPolicySha256,
-      },
-      createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
-        tools: [],
-        systemPrompt: async (base) => base,
-        executeWorkflow: async () => {
-          throw new Error("No guest execution expected");
-        },
-        transformHeaders: async (headers = {}) => headers,
-        transformContext: async (messages) => {
-          await captureSamplingStep(async () => {
-            const captured = await stepWorldState.capture();
-            return {
-              step: createCloudStepContext({
-                sequence: 1,
-                turnContextSha256: turn.sha256,
-                executionContextSha256: "b".repeat(64),
-                allowedTools: [],
-                activeTools: [],
-                worldState: captured.worldState,
-              }),
-              modelMessages: captured.modelMessages,
-            };
-          });
-          return messages;
-        },
-      }),
-    });
-    const running = runner.run(command, () => {});
-    try {
-      await entered.promise;
-      await expect(runner.steer("too late", crypto.randomUUID())).rejects.toMatchObject({
-        code: "steer_target_unavailable",
-        retryable: false,
-      });
-      await expect(runner.agentInput("late", "too late", "follow_up")).rejects.toMatchObject({
-        code: "steer_target_unavailable",
-        retryable: false,
-      });
-    } finally {
-      release.resolve();
-      try {
-        await running;
-      } finally {
-        await fake.stop();
-      }
+async function fixture(
+  scenario: FakeModelScenario = "text",
+  hold = false,
+  override: Partial<PiCloudTurnRunnerOptions> = {},
+) {
+  const server = new FakeModelServer({ defaultScenario: scenario });
+  await server.start();
+  const authority = new AbortController(),
+    cancelled = new AbortController(),
+    events: EventPublishMessage[] = [];
+  const commands: CandidateToolCommand[] = [],
+    cancellations: string[] = [],
+    started = Promise.withResolvers<void>();
+  const replies = new Map<
+    string,
+    {
+      request: CandidateToolCommand["request"];
+      pending: ReturnType<typeof Promise.withResolvers<NativeToolEnd>>;
     }
-    expect(fake.observations).toHaveLength(1);
-  });
-
-  it("publishes commentary only when complete, waits its ACK, then streams final text before the response ends", async () => {
-    const allowIntroEnd = deferred<void>(),
-      allowResponseEnd = deferred<void>(),
-      introDeltaSeen = deferred<void>(),
-      introPublished = deferred<void>(),
-      allowIntroAck = deferred<void>(),
-      finalPublished = deferred<void>();
-    const events: PiCloudEvent[] = [];
-    const server = createServer(async (request, response) => {
-      for await (const _chunk of request) {
-        /* consume the request body */
+  >();
+  let preparation: Parameters<DurableSessionHandle["preparePublication"]>[0] | undefined;
+  let runtime: Promise<ManagedNativeRuntime> | undefined,
+    released = !hold,
+    acquired = 0,
+    returned = 0;
+  const recordSeq = new Map<number, number>();
+  const settle = () => {
+    for (const value of replies.values())
+      value.pending.resolve({
+        type: "tool_execution_end",
+        toolCallId:
+          value.request.operation === "tool.execute" ? value.request.toolCallId : "workflow",
+        toolName: value.request.toolName,
+        isError: false,
+        result: { content: [{ type: "text", text: "complete" }] },
+      });
+  };
+  const storage = new (class extends MemoryStorage {
+    override async commit(writes: readonly StorageWrite[], context: Context): Promise<Seq> {
+      const prepared = this.prepareCommit(writes),
+        effects = preparation?.({
+          seq: prepared.seq,
+          nextId: 10000,
+          writes: prepared.writes,
+        } as unknown as DurableSessionCommit);
+      for (const tool of effects?.tools ?? []) {
+        commands.push(tool.command);
+        started.resolve();
       }
-      response.writeHead(200, { "content-type": "text/event-stream" });
-      const send = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`);
-      const message = (id: string, phase: string, text: string) => ({
-        id,
-        type: "message",
-        role: "assistant",
-        phase,
-        status: "completed",
-        content: [{ type: "output_text", text, annotations: [] }],
-      });
-      const intro = message("intro", "commentary", "Checking."),
-        final = message("final", "final_answer", "All done.");
-      send({
-        type: "response.created",
-        response: { id: "phased-response", status: "in_progress", output: [] },
-      });
-      send({
-        type: "response.output_item.added",
-        output_index: 0,
-        item: { ...intro, content: [] },
-      });
-      send({ type: "response.output_text.delta", output_index: 0, delta: "Check" });
-      await allowIntroEnd.promise;
-      send({ type: "response.output_text.delta", output_index: 0, delta: "ing." });
-      send({ type: "response.output_item.done", output_index: 0, item: intro });
-      send({
-        type: "response.output_item.added",
-        output_index: 1,
-        item: { ...final, content: [] },
-      });
-      send({ type: "response.output_text.delta", output_index: 1, delta: "All " });
-      await allowResponseEnd.promise;
-      send({ type: "response.output_text.delta", output_index: 1, delta: "done." });
-      send({ type: "response.output_item.done", output_index: 1, item: final });
-      send({
-        type: "response.completed",
-        response: {
-          id: "phased-response",
-          status: "completed",
-          output: [intro, final],
-          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-        },
-      });
-      response.end();
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const controller = new AbortController();
-    let execution: Promise<unknown> | undefined;
-    const reached = async (promise: Promise<void>, label: string) => {
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        await Promise.race([
-          promise,
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(
-              () =>
-                reject(
-                  new Error(`Missing ${label}; events=${events.map((e) => e.type).join(",")}`),
-                ),
-              3000,
-            );
-          }),
-        ]);
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-    try {
-      const address = server.address();
-      if (!address || typeof address === "string") throw Error("No listener");
-      const session = new Session(
-        new InMemorySessionStorage({ id: "phased-session", createdAt: 1 }),
-      );
-      const turn = createCloudTurnContext(command);
-      let step = 0;
-      const runner = new PiCloudTurnRunner({
-        resolveModelRuntime: () => ({
-          provider: command.payload.model.provider,
-          modelId: command.payload.model.modelId,
-          api: "openai-responses",
-          baseUrl: `http://127.0.0.1:${address.port}/v1`,
-          apiKey: FAKE_MODEL_API_KEY,
-          contextWindow: 1_000_000,
-          autoCompactTokenLimit: 900_000,
-        }),
-        openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
-        resolveAssistantTextPhase: (id, index) =>
-          id === "phased-response" ? (index === 0 ? "commentary" : "final_answer") : undefined,
-        sandboxContinuity: {
-          continuityId: "unused",
-          continuity: "cold_restore",
-          environmentSha256: turn.environmentSha256,
-          workspaceBindingSha256: turn.workspaceBindingSha256,
-          toolPolicySha256: turn.toolPolicySha256,
-        },
-        createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
-          tools: [],
-          systemPrompt: async (base) => base,
-          transformHeaders: async (headers = {}) => headers,
-          executeWorkflow: async () => {
-            throw Error("No tools");
-          },
-          async transformContext(messages, purpose = "agent") {
-            await captureSamplingStep(
-              async () => {
-                const world = await stepWorldState.capture();
-                return {
-                  step: createCloudStepContext({
-                    sequence: ++step,
-                    turnContextSha256: turn.sha256,
-                    executionContextSha256: "b".repeat(64),
-                    allowedTools: [],
-                    activeTools: [],
-                    worldState: world.worldState,
-                  }),
-                  modelMessages: world.modelMessages,
-                };
-              },
-              { publishEvent: purpose === "agent" },
-            );
-            return messages;
-          },
-        }),
-        observeEvent(event) {
-          if (
-            event.type === "message_update" &&
-            event.assistantMessageEvent.type === "text_delta" &&
-            event.assistantMessageEvent.delta === "Check"
-          )
-            introDeltaSeen.resolve();
-        },
-      });
-      let settled = false;
-      execution = runner
-        .run(
-          command,
-          async (message) => {
-            const event = message.payload.event;
-            events.push(event);
-            if (event.type === "assistant.text.delta" && event.payload.phase === "commentary") {
-              introPublished.resolve();
-              await allowIntroAck.promise;
-            }
-            if (event.type === "assistant.text.delta" && event.payload.phase === "final_answer")
-              finalPublished.resolve();
-          },
-          controller.signal,
-        )
-        .then((result) => {
-          settled = true;
-          return result;
-        });
-      await reached(introDeltaSeen.promise, "intro delta");
-      expect(events.filter((e) => e.type === "assistant.text.delta")).toEqual([]);
-      allowIntroEnd.resolve();
-      await reached(introPublished.promise, "intro publication");
-      expect(events.filter((e) => e.type === "assistant.text.delta").map((e) => e.payload)).toEqual(
-        [{ text: "Checking.", phase: "commentary" }],
-      );
-      allowIntroAck.resolve();
-      await reached(finalPublished.promise, "final publication");
-      expect(settled).toBe(false);
-      allowResponseEnd.resolve();
-      await execution;
-      const text = events.filter((e) => e.type === "assistant.text.delta");
-      expect(text.filter((e) => e.payload.phase === "commentary")).toHaveLength(1);
-      expect(
-        text
-          .filter((e) => e.payload.phase === "final_answer")
-          .map((e) => e.payload.text)
-          .join(""),
-      ).toBe("All done.");
-    } finally {
-      controller.abort();
-      allowIntroEnd.resolve();
-      allowIntroAck.resolve();
-      allowResponseEnd.resolve();
-      await execution?.catch(() => undefined);
-      server.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
+      for (const cancel of effects?.cancellations ?? []) cancellations.push(cancel.operationId);
+      effects?.confirmed();
+      const seq = prepared.apply();
+      for (const write of writes)
+        recordSeq.set(
+          "value" in write ? write.value.id : "record" in write ? write.record.id : write.id,
+          seq,
+        );
+      if (released) settle();
+      context.abortSignal?.throwIfAborted();
+      return seq;
     }
-  }, 20000);
-  it("recovers an HTTP-200 SSE overflow with fresh maintenance/agent Steps and one terminal", async () => {
-    const requests: unknown[] = [],
-      events: PiCloudEvent[] = [],
-      purposes: string[] = [];
-    let sequence = 0;
-    const server = createServer(async (request, response) => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-      response.writeHead(200, { "content-type": "text/event-stream" });
-      const send = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`);
-      if (requests.length === 1)
-        send({
-          type: "error",
-          code: "context_too_large",
-          message: "Your input exceeds the context window of this model",
-        });
-      else {
-        const text = requests.length === 2 ? "Earlier work summarized" : "recovered answer";
-        const item = {
-          type: "message",
-          id: `message-${requests.length}`,
-          role: "assistant",
-          status: "completed",
-          content: [{ type: "output_text", text, annotations: [] }],
-        };
-        send({
-          type: "response.created",
-          response: { id: `response-${requests.length}`, status: "in_progress", output: [] },
-        });
-        send({
-          type: "response.output_item.added",
-          output_index: 0,
-          item: { ...item, status: "in_progress", content: [] },
-        });
-        send({
-          type: "response.content_part.added",
-          output_index: 0,
-          content_index: 0,
-          part: { type: "output_text", text: "", annotations: [] },
-        });
-        send({
-          type: "response.output_text.delta",
-          output_index: 0,
-          content_index: 0,
-          delta: text,
-        });
-        send({ type: "response.output_text.done", output_index: 0, content_index: 0, text });
-        send({ type: "response.output_item.done", output_index: 0, item });
-        send({
-          type: "response.completed",
-          response: {
-            id: `response-${requests.length}`,
-            status: "completed",
-            output: [item],
-            usage: { input_tokens: 100, output_tokens: 5, total_tokens: 105 },
-          },
-        });
-      }
-      response.end();
+  })();
+  const scope = command.payload,
+    turn = createCloudTurnContext(command),
+    execution = createCloudExecutionContext({
+      command,
+      turnContextSha256: turn.sha256,
+      runtimeIdentity: { supervisorId: "test", bootId: "test", sandboxId: "test" },
     });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    try {
-      const address = server.address();
-      if (!address || typeof address === "string") throw new Error("Listener missing");
-      const session = new Session(
-        new InMemorySessionStorage({ id: "overflow-http", createdAt: 1 }),
-      );
-      await session.appendMessage({
-        role: "user",
-        content: "earlier-history ".repeat(400),
-        timestamp: 1,
-      });
-      const turn = createCloudTurnContext(command);
-      const runner = new PiCloudTurnRunner({
-        resolveModelRuntime: () => ({
-          provider: command.payload.model.provider,
-          modelId: command.payload.model.modelId,
-          api: "openai-responses",
-          baseUrl: `http://127.0.0.1:${address.port}/v1`,
-          apiKey: FAKE_MODEL_API_KEY,
-          contextWindow: 1_000_000,
-          autoCompactTokenLimit: 900_000,
-          maxTokens: 65536,
-        }),
-        openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
-        sandboxContinuity: {
-          continuityId: "unused",
-          continuity: "cold_restore",
-          environmentSha256: turn.environmentSha256,
-          workspaceBindingSha256: turn.workspaceBindingSha256,
-          toolPolicySha256: turn.toolPolicySha256,
-        },
-        createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
-          tools: [],
-          systemPrompt: async (base) => base,
-          executeWorkflow: async () => {
-            throw new Error("No tools");
-          },
-          transformHeaders: async (headers = {}) => headers,
-          async transformContext(messages, purpose = "agent") {
-            purposes.push(purpose);
-            await captureSamplingStep(
-              async () => {
-                const world = await stepWorldState.capture();
-                return {
-                  step: createCloudStepContext({
-                    sequence: ++sequence,
-                    turnContextSha256: turn.sha256,
-                    executionContextSha256: "b".repeat(64),
-                    allowedTools: [],
-                    activeTools: [],
-                    worldState: world.worldState,
-                  }),
-                  modelMessages: world.modelMessages,
-                };
-              },
-              { publishEvent: purpose === "agent" },
-            );
-            return messages;
-          },
-        }),
-      });
-      const input = {
-        ...command,
-        payload: { ...command.payload, budgets: { compactionKeepRecentTokens: 32 } },
-      } as ExecuteTurnCommandMessage;
-      await expect(
-        runner.run(input, (message) => {
-          events.push(message.payload.event);
-        }),
-      ).resolves.toMatchObject({ stopReason: "stop" });
-      expect(requests).toHaveLength(3);
-      expect(purposes).toEqual(["agent", "context_maintenance", "agent"]);
-      expect(
-        events.filter((e) => e.type === "model.sampling.started").map((e) => e.payload),
-      ).toMatchObject([
-        { stepSequence: 1, samplingAttempt: 1 },
-        { stepSequence: 3, samplingAttempt: 1 },
-      ]);
-      expect(
-        events.filter((e) => e.type === "context.compaction.completed").map((e) => e.payload),
-      ).toMatchObject([{ reason: "overflow", status: "completed", willRetry: true }]);
-      expect(events.filter((e) => e.type === "model.sampling.retry.scheduled")).toHaveLength(0);
-      expect(events.filter((e) => e.type === "turn.started")).toHaveLength(1);
-      expect(events.filter((e) => e.type === "turn.failed")).toHaveLength(0);
-      expect(await session.findEntries({ type: "compaction" })).toHaveLength(1);
-      expect(JSON.stringify(requests[2])).toContain("Earlier work summarized");
-    } finally {
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
-    }
-  });
-
-  it.each(["deepseek", "foreign-provider"])(
-    "samples a compacted native search tail without exposing extension blocks to Pi Models: %s",
-    async (sourceProvider) => {
-      const requests: { input: { type: string; id?: string }[] }[] = [];
-      const server = createServer(async (request, response) => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of request) chunks.push(Buffer.from(chunk));
-        requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-        response.writeHead(200, { "content-type": "text/event-stream" });
-        response.end(
-          `data: ${JSON.stringify({
-            type: "response.completed",
-            response: {
-              id: "response-fixture",
-              status: "completed",
-              output: [],
-              usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
-            },
-          })}\n\n`,
-        );
-      });
-      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-      try {
-        const address = server.address();
-        if (!address || typeof address === "string") throw new Error("Test listener missing");
-        const modelId = "deepseek-v4-pro";
-        const selection = { ...command.payload.model, provider: "deepseek", modelId };
-        const input = { ...command, payload: { ...command.payload, model: selection } };
-        const session = new Session(
-          new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: 1 }),
-        );
-        const searchMessage: import("@earendil-works/pi-ai").AssistantMessage = {
-          role: "assistant",
-          api: "openai-responses",
-          provider: sourceProvider,
-          model: modelId,
-          content: [
-            {
-              type: "text",
-              text: "Earlier search answer",
-              textSignature: JSON.stringify({ v: 1, id: "msg-search" }),
-            },
-          ],
-          usage: {
-            input: 50000,
-            output: 1,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 50001,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-          },
-          stopReason: "stop",
-          timestamp: 1,
-        };
-        applyProviderHostedTranscript(searchMessage, {
-          provider: sourceProvider,
-          api: "openai-responses",
-          modelId,
-          stepSequence: 1,
-          stepSha256: "a".repeat(64),
-          samplingAttempt: 1,
-          items: [
-            {
-              outputIndex: 0,
-              type: "web_search_call",
-              id: "search-1",
-              nativeItem: {
-                type: "web_search_call",
-                id: "search-1",
-                status: "completed",
-                action: { type: "search", query: "fixture search" },
-              },
-            },
-            { outputIndex: 1, type: "message", id: "msg-search" },
-          ],
-        });
-        const compacted = await session.appendEntry(
-          {
-            id: "compact-search",
-            type: "compaction",
-            summary: "Earlier work",
-            retainedTail: [searchMessage],
-            tokensBefore: 100000,
-          },
-          "main",
-        );
-        const turn = createCloudTurnContext(input);
-        const runner = new PiCloudTurnRunner({
-          resolveModelRuntime: () => ({
-            provider: "deepseek",
-            modelId,
-            api: "openai-responses",
-            baseUrl: `http://127.0.0.1:${address.port}/v1`,
-            apiKey: FAKE_MODEL_API_KEY,
-            contextWindow: 128000,
-            maxTokens: 8192,
-          }),
-          openSession: async () => ({ session, lane: "main", authority: new TestAuthority() }),
-          sandboxContinuity: {
-            continuityId: "unused",
-            continuity: "cold_restore",
-            environmentSha256: turn.environmentSha256,
-            workspaceBindingSha256: turn.workspaceBindingSha256,
-            toolPolicySha256: turn.toolPolicySha256,
-          },
-          createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
-            tools: [],
-            systemPrompt: async (base) => base,
-            executeWorkflow: async () => {
-              throw new Error("No guest work expected");
-            },
-            transformHeaders: async (headers = {}) => headers,
-            async transformContext(messages) {
-              await captureSamplingStep(async () => {
-                const captured = await stepWorldState.capture();
-                return {
-                  step: createCloudStepContext({
-                    sequence: 1,
-                    turnContextSha256: turn.sha256,
-                    executionContextSha256: "b".repeat(64),
-                    allowedTools: [],
-                    activeTools: [],
-                    worldState: captured.worldState,
-                  }),
-                  modelMessages: captured.modelMessages,
-                };
-              });
-              return messages;
-            },
-          }),
-        });
-        await expect(runner.run(input, () => {})).resolves.toMatchObject({ stopReason: "stop" });
-        expect(requests).toHaveLength(1);
-        expect(requests[0]!.input.filter((item) => item.type === "web_search_call")).toHaveLength(
-          sourceProvider === "deepseek" ? 1 : 0,
-        );
-        expect(await session.getEntry("compact-search")).toEqual(compacted);
-        expect(JSON.stringify(compacted)).toContain("providerHostedToolCall");
-      } finally {
-        await new Promise<void>((resolve, reject) =>
-          server.close((error) => (error ? reject(error) : resolve())),
-        );
-      }
+  const handle: DurableSessionHandle = {
+    storage,
+    binding: {
+      tenantId: scope.tenantId,
+      sessionId: scope.sessionId,
+      piSessionId: scope.piSession.id,
+      conversationId: 1,
+      runId: scope.runId,
+      turnId: scope.turnId,
+      writerId: scope.piSession.writerId,
+      executionReference: scope.executionReference,
     },
-  );
-
-  it.each(["missing", "throws"])(
-    "releases Session authority when model lookup %s",
-    async (failure) => {
-      const config: PiModelRuntimeConfig = {
-        provider: "pi-cloud-fake",
-        modelId: "pi-cloud-fake",
-        baseUrl: "http://unused.invalid",
-        api: "openai-completions",
-        apiKey: FAKE_MODEL_API_KEY,
-      };
-      const pool = new PiModelRuntimePool(0);
-      const lease = await pool.acquire(config);
-      const release = vi.fn(lease.release);
-      const lookup = vi.spyOn(lease.runtime, "getModel").mockImplementation(() => {
-        if (failure === "throws") throw new Error("model lookup failed");
-        return undefined;
-      });
-      const acquire = vi
-        .spyOn(pool, "acquire")
-        .mockResolvedValue({ runtime: lease.runtime, release });
-      const authority = new TestAuthority();
-      const session = new Session(
-        new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
-      );
-      const runner = new PiCloudTurnRunner({
-        resolveModelRuntime: () => config,
-        modelRuntimePool: pool,
-        openSession: async () => ({ session, lane: "main", authority }),
-        sandboxContinuity: {
-          continuityId: "unused",
-          continuity: "cold_restore",
-          environmentSha256: "a".repeat(64),
-          workspaceBindingSha256: "b".repeat(64),
-          toolPolicySha256: "c".repeat(64),
-        },
-        createAgentTools: () => {
-          throw new Error("Model lookup must precede Tools");
-        },
-      });
-      try {
-        await expect(runner.run(command, () => {})).rejects.toThrow(
-          failure === "missing" ? "Configured model is unavailable" : "model lookup failed",
-        );
-        expect(release).toHaveBeenCalledTimes(1);
-        expect(authority.closed).toBe(true);
-      } finally {
-        acquire.mockRestore();
-        lookup.mockRestore();
-        lease.release();
-        await authority.close();
-      }
+    recordSequence: async (id) => recordSeq.get(id),
+    authority: {
+      signal: authority.signal,
+      assertCurrent: async () => {
+        authority.signal.throwIfAborted();
+      },
+      close: async () => {},
     },
-  );
-
-  it.each(["model", "session"])(
-    "settles queued controls when %s preparation fails",
-    async (phase) => {
-      const preparing = Promise.withResolvers<void>();
-      const authority = new TestAuthority();
-      const session = new Session(
-        new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
-      );
-      const runner = new PiCloudTurnRunner({
-        resolveModelRuntime: async () => {
-          await preparing.promise;
-          if (phase === "model") throw new Error("model startup failed");
-          return {
-            provider: "pi-cloud-fake",
-            modelId: "pi-cloud-fake",
-            baseUrl: "http://unused.invalid",
-            api: "openai-completions",
-            apiKey: FAKE_MODEL_API_KEY,
-          };
-        },
-        openSession: async () => {
-          if (phase === "session") throw new Error("session startup failed");
-          return { session, lane: "main", authority };
-        },
-        sandboxContinuity: {
-          continuityId: "unused",
-          continuity: "cold_restore",
-          environmentSha256: "a".repeat(64),
-          workspaceBindingSha256: "b".repeat(64),
-          toolPolicySha256: "c".repeat(64),
-        },
-        createAgentTools: () => {
-          throw new Error("Tools cannot start during preparation failure");
-        },
-      });
-      const run = runner.run(command, () => {}).catch((error) => error);
-      const queued = [
-        runner.steer("new focus", crypto.randomUUID()),
-        runner.agentInput("child-1", "child input", "notify"),
-      ].map((p) => p.catch((error) => error));
-      preparing.resolve();
-      expect(await run).toMatchObject({ message: `${phase} startup failed` });
-      const settled = async (promises: Promise<unknown>[]) =>
-        Promise.race([
-          Promise.all(promises),
-          new Promise((resolve) => setTimeout(() => resolve("controls stranded"), 50)),
-        ]);
-      expect(await settled(queued)).toEqual([
-        expect.objectContaining({ code: "steer_target_unavailable" }),
-        expect.objectContaining({ code: "steer_target_unavailable" }),
-      ]);
-      expect(authority.closed).toBe(phase === "model");
-      expect(
-        await settled([runner.steer("late focus", crypto.randomUUID()).catch((error) => error)]),
-      ).toEqual([expect.objectContaining({ code: "steer_target_unavailable" })]);
+    interrupt: (reason) => authority.abort(reason),
+    runtime: (factory) => (runtime ??= factory()) as ReturnType<typeof factory>,
+    preparePublication: (value) => {
+      preparation = value;
     },
-  );
-
-  it("reports cancellation before first sampling without inventing a Cloud Step", async () => {
-    const fake = new FakeModelServer({ scenarioSequence: ["text"] });
-    await fake.start();
-    const session = new Session(
-      new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
-    );
-    const authority = new TestAuthority();
-    const controller = new AbortController();
-    const events: EventPublishMessage[] = [];
-    const turn = createCloudTurnContext(command);
-    const runner = new PiCloudTurnRunner({
-      resolveModelRuntime: () => ({
-        provider: "pi-cloud-fake",
-        modelId: "pi-cloud-fake",
-        baseUrl: fake.baseUrl,
-        api: "openai-completions",
-        apiKey: FAKE_MODEL_API_KEY,
-      }),
-      openSession: async (_command, readSignal) => {
-        expect(readSignal).toBeInstanceOf(AbortSignal);
-        controller.abort({
-          kind: "pi-cloud.turn-cancellation",
-          reason: "user_request",
-          gracePeriodMs: 0,
-        });
-        expect(readSignal?.aborted).toBe(true);
-        return { session, lane: "main", authority };
-      },
-      sandboxContinuity: {
-        continuityId: "never-activated",
-        continuity: "cold_restore",
-        environmentSha256: turn.environmentSha256,
-        workspaceBindingSha256: turn.workspaceBindingSha256,
-        toolPolicySha256: turn.toolPolicySha256,
-      },
-      createAgentTools: () => ({
-        tools: [],
-        systemPrompt: async (base) => base,
-        executeWorkflow: async () => {
-          throw new Error("No tools should start");
-        },
-        transformContext: async () => {
-          throw new Error("No sampling should start");
-        },
-        transformHeaders: async (headers = {}) => headers,
-      }),
-    });
-    try {
-      await expect(
-        runner.run(
-          command,
-          (event) => {
-            events.push(event);
-          },
-          controller.signal,
-        ),
-      ).rejects.toMatchObject({ name: "PiTurnCancelledError", reason: "user_request" });
-      expect(fake.observations).toHaveLength(0);
-      expect(events.some(({ payload }) => payload.event.type === "model.sampling.started")).toBe(
-        false,
-      );
-      expect(authority.closed).toBe(true);
-    } finally {
-      await fake.stop();
-    }
-  });
-
-  it("does not reserve a physical Sandbox when registered local Tools remain unused", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "pi-cloud-lazy-sandbox-"));
-    const session = new Session(
-      new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
-    );
-    const authority = new TestAuthority();
-    const create = vi.fn(async () => {
-      throw new Error("A text-only model response must not reserve a Sandbox");
-    });
-    const broker = {
-      create,
-      async refreshServices() {},
-      async release() {
-        throw new Error("unused");
-      },
-      workflowUrlFor() {
-        return "http://sandbox-control.test/internal/v1/tool-operation";
-      },
-    } as SandboxControlBoundary;
-    const runner = new RemoteToolSandboxTurnRunner({
-      broker,
-      runtimeIdentity: {
-        supervisorId: "supervisor-lazy-test",
-        bootId: "77777777-7777-4777-8777-777777777779",
-        sandboxId: "sandbox-lazy-test",
-      },
-      trustedWorkspaceDirectory: directory,
-      modelRuntimeLeaseResolver: fakeTextModelLease,
-      openAgentSession: async () => ({ session, lane: "main", authority }),
-    });
-    try {
-      await expect(
-        runner.run(command, () => undefined, new AbortController().signal),
-      ).resolves.toMatchObject({ stopReason: "stop" });
-      expect(create).not.toHaveBeenCalled();
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it("joins a late image steer reservation before releasing a completed Run", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "pi-cloud-late-image-"));
-    const session = new Session(
-      new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
-    );
-    const authority = new TestAuthority();
-    const sampling = Promise.withResolvers<void>(),
-      startModel = Promise.withResolvers<void>(),
-      reserving = Promise.withResolvers<void>(),
-      finishReserve = Promise.withResolvers<void>();
-    const release = vi.fn(async () => ({ retained: false }));
-    const prepare = vi.fn(async () => {
-      throw new Error("Closed input must not start image decoding");
-    });
-    const broker: SandboxControlBoundary = {
-      async create(request) {
-        reserving.resolve();
-        await finishReserve.promise;
-        return {
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.reserved",
-          requestId: request.requestId,
-          activationId: "99999999-9999-4999-8999-999999999999",
-          executionReference: request.assignment.executionReference,
-          ownerBaseUrl: "http://sandbox-control.test",
-          workspaceRoot: "/workspace",
-          continuity: "cold_restore",
-          continuityId: "late-image",
-        };
-      },
-      prepareInputImages: prepare,
-      release,
-      async refreshServices() {},
-      workflowUrlFor() {
-        return "http://sandbox-control.test/internal/v1/tool-operation";
-      },
-    };
-    const runner = new RemoteToolSandboxTurnRunner({
-      broker,
-      runtimeIdentity: {
-        supervisorId: "late-image",
-        bootId: "77777777-7777-4777-8777-777777777779",
-        sandboxId: "sandbox-late-image",
-      },
-      trustedWorkspaceDirectory: directory,
-      modelRuntimeLeaseResolver: async (c) => {
-        const lease = await fakeTextModelLease(c);
-        return { ...lease, runtime: { ...lease.runtime, inputModalities: ["text", "image"] } };
-      },
-      openAgentSession: async () => ({ session, lane: "main", authority }),
-      decodeInputImages: async () => [],
-      acquireModelPermit: async () => {
-        sampling.resolve();
-        await startModel.promise;
-        return () => {};
-      },
-    });
-    let settled = false;
-    const running = runner
-      .run(command, () => {}, new AbortController().signal)
-      .then((result) => {
-        settled = true;
-        return result;
-      });
-    let steering: Promise<unknown> | undefined;
-    try {
-      await sampling.promise;
-      const id = crypto.randomUUID();
-      steering = runner
-        .steer(command.payload.runId, "late image", crypto.randomUUID(), [
-          {
-            id,
-            sessionId: crypto.randomUUID(),
-            workspaceId: crypto.randomUUID(),
-            name: "capture.png",
-            path: "/workspace/capture.png",
-            mimeType: "image/png",
-            byteLength: 5,
-            sha256: "a".repeat(64),
-            image: { id, mimeType: "image/png", byteLength: 5, sha256: "a".repeat(64) },
-          },
-        ])
-        .catch((error) => error);
-      await reserving.promise;
-      startModel.resolve();
-      await vi.waitFor(() => expect(authority.closed).toBe(true));
-      expect(settled).toBe(false);
-      expect(release).not.toHaveBeenCalled();
-      finishReserve.resolve();
-      expect(await steering).toMatchObject({ code: "steer_target_unavailable" });
-      await expect(running).resolves.toMatchObject({ stopReason: "stop" });
-      expect(release).toHaveBeenCalledOnce();
-      expect(prepare).not.toHaveBeenCalled();
-    } finally {
-      startModel.resolve();
-      finishReserve.resolve();
-      await Promise.allSettled([running, ...(steering ? [steering] : [])]);
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps owned-machine chat independent of Sandbox control without reporting a reset", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "pi-cloud-development-continuity-"));
-    const developmentCommand: ExecuteTurnCommandMessage = {
-      ...command,
-      payload: {
-        ...command.payload,
-        executionMode: "development_environment",
-        workingDirectory: "/home/user/project",
-      },
-    };
-    const turn = createCloudTurnContext(developmentCommand);
-    const session = new Session(
-      new InMemorySessionStorage({
-        id: developmentCommand.payload.sessionId,
-        createdAt: Date.now(),
-      }),
-    );
-    await session.appendCustomEntry(PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE, {
-      schemaVersion: 3,
-      sandbox: { status: "active", continuityId: "development-runtime-1" },
-      environmentSha256: turn.environmentSha256,
-      workspaceBindingSha256: turn.workspaceBindingSha256,
-
-      toolPolicySha256: turn.toolPolicySha256,
-    });
-    const authority = new TestAuthority();
-    const create = vi.fn(async (request: Parameters<SandboxControlBoundary["create"]>[0]) => ({
-      toolBrokerProtocolVersion: 1 as const,
-      type: "tool_sandbox.reserved" as const,
-      requestId: request.requestId,
-      activationId: "99999999-9999-4999-8999-999999999999",
-      executionReference: request.assignment.executionReference,
-      ownerBaseUrl: "http://sandbox-control.test",
-      workspaceRoot: "/home/user/project",
-      continuity: "warm_reuse" as const,
-      continuityId: "development-runtime-1",
-    }));
-    const release = vi.fn(async () => ({ retained: false }));
-    const broker = {
-      create,
-      async refreshServices() {},
-      release,
-      workflowUrlFor() {
-        return "http://sandbox-control.test/internal/v1/tool-operation";
-      },
-    } as SandboxControlBoundary;
-    const runner = new RemoteToolSandboxTurnRunner({
-      broker,
-      runtimeIdentity: {
-        supervisorId: "supervisor-development-test",
-        bootId: "77777777-7777-4777-8777-777777777780",
-        sandboxId: "sandbox-development-test",
-      },
-      trustedWorkspaceDirectory: directory,
-      modelRuntimeLeaseResolver: fakeTextModelLease,
-      openAgentSession: async () => ({ session, lane: "main", authority }),
-    });
-    try {
-      await expect(
-        runner.run(developmentCommand, () => undefined, new AbortController().signal),
-      ).resolves.toMatchObject({ stopReason: "stop" });
-      expect(create).not.toHaveBeenCalled();
-      expect(release).not.toHaveBeenCalled();
-      expect(
-        (await session.findEntriesOnBranch()).filter(
-          (entry) => entry.type === "custom" && entry.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
-        ),
-      ).toHaveLength(0);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it.each([
-    { cleanupFails: false, toolFails: false },
-    { cleanupFails: true, toolFails: false },
-    { cleanupFails: true, toolFails: true },
-  ])(
-    "preserves a failed Run and its development machine: %j",
-    async ({ cleanupFails, toolFails }) => {
-      const directory = await mkdtemp(join(tmpdir(), "pi-cloud-development-model-failure-"));
-      const fake = new FakeModelServer({
-        scenarioSequence: toolFails
-          ? ["java_followup"]
-          : ["tool_call", "disconnect", "disconnect", "disconnect"],
-      });
-      await fake.start();
-      const developmentCommand: ExecuteTurnCommandMessage = {
-        ...command,
-        payload: {
-          ...command.payload,
-          executionMode: "development_environment",
-          workingDirectory: "/home/user/project",
-          model: {
-            ...command.payload.model,
-            provider: "deepseek",
-            modelId: "deepseek-v4-flash",
-            thinkingLevel: "off",
-          },
-        },
-      };
-      const turn = createCloudTurnContext(developmentCommand);
-      const session = new Session(
-        new InMemorySessionStorage({
-          id: developmentCommand.payload.sessionId,
-          createdAt: Date.now(),
-        }),
-      );
-      await session.appendCustomEntry(PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE, {
-        schemaVersion: 3,
-        sandbox: { status: "active", continuityId: "development-runtime-1" },
-        environmentSha256: turn.environmentSha256,
-        workspaceBindingSha256: turn.workspaceBindingSha256,
-
-        toolPolicySha256: turn.toolPolicySha256,
-      });
-      const authority = new TestAuthority();
-      const checkpointEvents: PiCloudEvent[] = [];
-      const checkpointOperations: PiSessionMutationOperation[] = [];
-      const create = vi.fn(async (request: Parameters<SandboxControlBoundary["create"]>[0]) => ({
-        toolBrokerProtocolVersion: 1 as const,
-        type: "tool_sandbox.reserved" as const,
-        requestId: request.requestId,
-        activationId: "99999999-9999-4999-8999-999999999998",
-        executionReference: request.assignment.executionReference,
-        ownerBaseUrl: "http://sandbox-control.test",
-        workspaceRoot: "/home/user/project",
-        continuity: "warm_reuse" as const,
-        continuityId: "development-runtime-1",
-      }));
-      const release = vi.fn(async () => {
-        if (cleanupFails) throw new Error("cleanup transport unavailable");
-        return { retained: true };
-      });
-      const modelLeaseRelease = vi.fn(async () => undefined);
-      const broker = {
-        create,
-        release,
-        async refreshServices() {},
-        workflowUrlFor() {
-          return "http://sandbox-control.test/internal/v1/tool-operation";
-        },
-      } as SandboxControlBoundary;
-      const runner = new RemoteToolSandboxTurnRunner({
-        publishToolCommand: async (command) => ({
-          operationId: command.request.operationId,
-          accepted: true,
-        }),
-        waitForToolReply: async (request, _signal, toolCallId) => {
-          if (toolFails)
-            throw new ToolExecutionFailure({
-              code: "cubesandbox_tool_result_unknown",
-              message: "Guest disconnected after dispatch",
-              effect: "unknown",
-            });
-          return {
-            type: "tool_execution_end",
-            toolCallId: toolCallId!,
-            toolName: request.toolName,
-            isError: true,
-            result: {
-              content: [
-                {
-                  type: "text",
-                  text: "cubesandbox_tool_result_unknown: Guest disconnected after dispatch",
-                },
-              ],
-              details: undefined,
-            },
-          };
-        },
-        broker,
-        runtimeIdentity: {
-          supervisorId: "supervisor-development-failure-test",
-          bootId: "77777777-7777-4777-8777-777777777781",
-          sandboxId: "sandbox-development-failure-test",
-        },
-        trustedWorkspaceDirectory: directory,
-        modelRuntimeLeaseResolver: async () => ({
-          runtime: {
-            kind: "openai_compatible_gateway",
-            provider: "deepseek",
-            modelId: "deepseek-v4-flash",
-            baseUrl: fake.baseUrl,
-            api: "openai-completions",
-            capability: FAKE_MODEL_API_KEY,
-            reasoning: false,
-            contextWindow: 131_072,
-            autoCompactTokenLimit: 100_000,
-            maxTokens: 16_384,
-            requestTimeoutMs: 1_000,
-            turnTimeoutMs: 5_000,
-            inputModalities: ["text"],
-            hostedTools: [],
-            serviceTier: null,
-          } as unknown as AgentModelRuntime,
-          release: modelLeaseRelease,
-        }),
-        openAgentSession: async () => ({
-          session,
-          lane: "main",
-          authority,
-          mutationPublisher: {
-            async synchronize() {},
-            async mutate(operation, attachedEvents = []) {
-              if (operation.kind !== "append_items") {
-                throw new Error("Runtime checkpoint must use one atomic append batch");
-              }
-              const results = [];
-              for (const item of operation.items) {
-                results.push(
-                  item.kind === "append_entry"
-                    ? await session.appendEntry(item.entry, item.lane)
-                    : await session.appendRecord(item.record),
-                );
-              }
-              checkpointOperations.push(operation);
-              checkpointEvents.push(...attachedEvents);
-              return { items: results };
-            },
-          },
-        }),
-        createTrustedTools: () => [
-          {
-            executionPlane: "platform",
-            tool: {
-              name: "inspect_workspace",
-              label: "Inspect Workspace",
-              description: "Return one deterministic inspection result",
-              parameters: {
-                type: "object",
-                properties: { path: { type: "string" } },
-                required: ["path"],
-                additionalProperties: false,
-              } as never,
-              async execute() {
-                return { content: [{ type: "text", text: "workspace inspected" }], details: {} };
-              },
-            },
-          },
-        ],
-      });
-      try {
-        await expect(
-          runner.run(developmentCommand, () => undefined, new AbortController().signal),
-        ).rejects.toMatchObject({
-          code: toolFails ? "cubesandbox_tool_result_unknown" : "model_error",
-        });
-        if (toolFails) {
-          expect(fake.observations).toHaveLength(1);
-          const messages = buildSessionContext(await session.findEntriesOnBranch()).messages;
-          expect(
-            messages.some(
-              (message) =>
-                message.role === "toolResult" &&
-                JSON.stringify(message).includes("cubesandbox_tool_result_unknown"),
-            ),
-          ).toBe(true);
-        }
-        expect(create).toHaveBeenCalledTimes(toolFails ? 1 : 0);
-        if (toolFails)
-          expect(release).toHaveBeenCalledWith(
-            "99999999-9999-4999-8999-999999999998",
-            expect.anything(),
-            { kind: "detach", cancelOutstanding: true },
-          );
-        else expect(release).not.toHaveBeenCalled();
-        expect(modelLeaseRelease).toHaveBeenCalledTimes(1);
-        expect(checkpointEvents.map((event) => event.type)).toContain("tool.started");
-        expect(checkpointOperations).toContainEqual(
-          expect.objectContaining({
-            kind: "append_items",
-            items: [
-              expect.objectContaining({
-                kind: "append_record",
-                record: expect.objectContaining({ type: "tool_started" }),
-              }),
-            ],
-          }),
-        );
-        expect(
-          (await session.findEntriesOnBranch()).filter(
-            (entry) => entry.type === "custom" && entry.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
-          ),
-        ).toHaveLength(0);
-      } finally {
-        vi.unstubAllGlobals();
-        await fake.stop();
-        await rm(directory, { recursive: true, force: true });
-      }
-    },
-  );
-
-  it("reuses an idle ModelRuntime without sharing one between active Runs", async () => {
-    const pool = new PiModelRuntimePool(1);
-    const runtime: PiModelRuntimeConfig = {
-      provider: "pi-cloud-fake",
-      modelId: "pi-cloud-fake",
-      baseUrl: "http://127.0.0.1:1/v1",
+    close: async () => {},
+  };
+  const runner = new PiCloudTurnRunner({
+    openSession: async () => handle,
+    resolveModelRuntime: () => ({
+      provider: scope.model.provider,
+      modelId: scope.model.modelId,
       api: "openai-completions",
       apiKey: FAKE_MODEL_API_KEY,
-      contextWindow: 131_072,
-    };
-
-    const first = await pool.acquire(runtime);
-    first.release();
-    const reused = await pool.acquire(runtime);
-    expect(reused.runtime).toBe(first.runtime);
-
-    const concurrent = await pool.acquire(runtime);
-    expect(concurrent.runtime).not.toBe(reused.runtime);
-    concurrent.release();
-    reused.release();
-  });
-
-  it("configures the native Codex Responses provider with a short-lived gateway credential", async () => {
-    const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
-    const payload = Buffer.from(
-      JSON.stringify({
-        "https://api.openai.com/auth": { chatgpt_account_id: "pi-cloud-provider-gateway" },
-      }),
-    ).toString("base64url");
-    const pool = new PiModelRuntimePool(0);
-    const lease = await pool.acquire({
-      provider: "openai-codex",
-      modelId: "gpt-6-sol",
-      baseUrl: "http://127.0.0.1:4200",
-      api: "openai-codex-responses",
-      apiKey: `${header}.${payload}.${"s".repeat(43)}`,
-      transport: "sse",
-      reasoning: true,
-      contextWindow: 1_000_000,
-      autoCompactTokenLimit: 900_000,
-      maxTokens: 65_536,
+      baseUrl: server.baseUrl,
       inputModalities: ["text", "image"],
-      hostedTools: ["web_search"],
-    });
-    expect(lease.runtime.getProviderAuthStatus("openai-codex")).toMatchObject({
-      configured: true,
-    });
-    expect(lease.runtime.getModel("openai-codex", "gpt-6-sol")).toMatchObject({
-      api: "openai-codex-responses",
-      baseUrl: "http://127.0.0.1:4200",
-      input: ["text", "image"],
-    });
-    expect(
-      resolveCompactionReserveTokens(
-        { contextWindow: 1_000_000, autoCompactTokenLimit: 900_000 },
-        16_384,
-      ),
-    ).toBe(100_000);
-    lease.release();
+      contextWindow: 131072,
+      maxTokens: 1024,
+    }),
+    turnTimeoutMs: 30000,
+    requestTimeoutMs: 30000,
+    acquireModelPermit: async (signal) => {
+      signal?.throwIfAborted();
+      acquired++;
+      return () => {
+        returned++;
+      };
+    },
+    sandboxContinuity: {
+      continuityId: "not-activated",
+      continuity: "cold_restore",
+      environmentSha256: turn.environmentSha256,
+      workspaceBindingSha256: turn.workspaceBindingSha256,
+      toolPolicySha256: turn.toolPolicySha256,
+    },
+    createAgentTools: ({ stepWorldState, captureSamplingStep }) =>
+      createTrustedRemoteAgentTools({
+        publishToolCommand: async () => {
+          throw new Error("Fixed tools require one native handoff");
+        },
+        trackWorkflowOperation: () => {},
+        workflowUrl: "http://127.0.0.1:1",
+        activationId: "20000000-0000-4000-8000-000000000001",
+        executionReference: scope.executionReference,
+        turnContextSha256: turn.sha256,
+        executionContextSha256: execution.sha256,
+        workingDirectory: "/workspace",
+        supportsImages: true,
+        remainingToolCalls: null,
+        maximumToolOutputBytes: 65536,
+        captureStepContext: (tools, purpose) =>
+          captureSamplingStep(
+            async (sequence) => {
+              const value = await stepWorldState.capture();
+              return {
+                step: createCloudStepContext({
+                  sequence,
+                  turnContextSha256: turn.sha256,
+                  executionContextSha256: execution.sha256,
+                  allowedTools: turn.context.tools.names,
+                  activeTools: tools,
+                  worldState: value.worldState,
+                }),
+                modelMessages: value.modelMessages,
+              };
+            },
+            { publishEvent: purpose !== "context_maintenance" },
+          ),
+        waitForToolReply: (request, signal) => {
+          const pending = Promise.withResolvers<NativeToolEnd>();
+          replies.set(request.operationId, { request, pending });
+          signal.addEventListener("abort", () => pending.reject(signal.reason), { once: true });
+          return pending.promise;
+        },
+      }),
+    ...override,
   });
+  return {
+    runner,
+    storage,
+    events,
+    commands,
+    cancellations,
+    started,
+    server,
+    counts: () => ({ acquired, returned }),
+    release: () => {
+      released = true;
+      settle();
+    },
+    stop: () =>
+      cancelled.abort({
+        kind: "pi-cloud.turn-cancellation",
+        reason: "user_request",
+        gracePeriodMs: 1000,
+      }),
+    revoke: () => authority.abort(new Error("lease revoked")),
+    run: (input = command) =>
+      runner.run(
+        input,
+        (value) => {
+          events.push(value);
+        },
+        cancelled.signal,
+      ),
+    close: async () => {
+      cancelled.abort();
+      released = true;
+      settle();
+      await (await runtime)?.close();
+      await server.stop();
+    },
+  };
+}
 
-  it("configures native DeepSeek Responses with Provider-hosted Web Search", async () => {
-    const pool = new PiModelRuntimePool(0);
-    const lease = await pool.acquire({
-      provider: "deepseek",
-      modelId: "deepseek-v4-flash",
-      baseUrl: "http://127.0.0.1:4200/v1",
-      api: "openai-responses",
-      apiKey: FAKE_MODEL_API_KEY,
-      reasoning: true,
-      contextWindow: 1_000_000,
-      maxTokens: 65_536,
-      inputModalities: ["text"],
-      hostedTools: ["web_search"],
-    });
-    expect(lease.runtime.getModel("deepseek", "deepseek-v4-flash")).toMatchObject({
-      api: "openai-responses",
-      baseUrl: "http://127.0.0.1:4200/v1",
-      input: ["text"],
-      compat: {
-        supportsDeveloperRole: false,
-        supportsLongCacheRetention: false,
+it("executes one native post-validation handoff and releases the model permit during the tool wait", async () => {
+  const f = await fixture("tool_hold", true);
+  const running = f.run();
+  try {
+    await f.started.promise;
+    expect(f.counts()).toEqual({ acquired: 1, returned: 1 });
+    expect(f.commands).toHaveLength(1);
+    f.release();
+    expect((await running).stopReason).toBe("stop");
+    const starts = f.events
+      .map((value) => value.payload.event)
+      .filter((event) => event.type === "tool.started");
+    const ends = f.events
+      .map((value) => value.payload.event)
+      .filter((event) => event.type === "tool.completed");
+    expect(starts).toHaveLength(1);
+    expect(ends).toHaveLength(1);
+    expect(starts[0]!.payload.toolCallId).toBe(f.commands[0]!.toolCallId);
+    expect(ends[0]!.payload.toolCallId).toBe(starts[0]!.payload.toolCallId);
+  } finally {
+    f.release();
+    await running.catch(() => {});
+    await f.close();
+  }
+}, 15000);
+
+it.each(["steer", "follow_up"] as const)(
+  "consumes durable %s input and keeps reused provider IDs in separate native Tool tasks",
+  async (delivery) => {
+    const f = await fixture("tool_hold", true);
+    const running = f.run();
+    try {
+      await f.started.promise;
+      const id = crypto.randomUUID();
+      await f.runner.agentInput(id, "second instruction", delivery);
+      f.release();
+      await running;
+      const submissions = await f.storage.scanSubmissions({}, 100, undefined, BACKGROUND_CONTEXT);
+      expect(submissions.items.find((value) => value.requestId === id)?.status).toBe("done");
+      const starts = f.events
+        .map((value) => value.payload.event)
+        .filter((event) => event.type === "tool.started");
+      expect(new Set(starts.map((value) => value.payload.toolCallId)).size).toBe(starts.length);
+      expect(f.counts().acquired).toBe(f.counts().returned);
+    } finally {
+      f.release();
+      await running.catch(() => {});
+      await f.close();
+    }
+  },
+  15000,
+);
+
+it("co-commits native Stop with operation cancellation without waiting for an unconfirmed guest result", async () => {
+  const f = await fixture("tool_hold", true);
+  const running = f.run();
+  void running.catch(() => {});
+  try {
+    await f.started.promise;
+    f.stop();
+    await expect(running).rejects.toMatchObject({ code: "turn_cancelled" });
+    expect(f.cancellations).toEqual([f.commands[0]!.request.operationId]);
+    expect(f.server.observations).toHaveLength(1);
+  } finally {
+    f.release();
+    await running.catch(() => {});
+    await f.close();
+  }
+}, 15000);
+
+it("stops provider IO when the current cloud lease is revoked", async () => {
+  const f = await fixture("timeout"),
+    running = f.run();
+  void running.catch(() => {});
+  try {
+    await vi.waitFor(() => expect(f.server.observations).toHaveLength(1));
+    f.revoke();
+    await expect(running).rejects.toMatchObject({ code: "session_lease_revoked" });
+  } finally {
+    await running.catch(() => {});
+    await f.close();
+  }
+}, 15000);
+
+it.each([false, true])(
+  "prepares native visual input before any model request (invalid=%s)",
+  async (invalid) => {
+    let prepared = false;
+    const image = { type: "image" as const, mimeType: "image/png", data: "aW1hZ2U=" };
+    const f = await fixture("text", false, {
+      prepareInputUploads: async () => {
+        if (invalid) throw new Error("invalid image");
+        prepared = true;
+        return { images: [image], hints: [] };
+      },
+      acquireModelPermit: async () => {
+        expect(prepared).toBe(true);
+        return () => {};
       },
     });
-    lease.release();
-  });
-
-  it.each(["rate_limit", "disconnect"] as const)(
-    "recovers native Pi sampling through the HTTP transport: %s",
-    async (failure) => {
-      const fake = new FakeModelServer({ scenarioSequence: [failure, "text"] });
-      await fake.start();
-      const session = new Session(
-        new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
-      );
-      const authority = new TestAuthority();
-      const events: EventPublishMessage[] = [];
-      const checkpointOperations: PiSessionMutationOperation[] = [];
-      const checkpointEvents: PiCloudEvent[] = [];
-      const turn = createCloudTurnContext(command);
-      const attempt = createCloudExecutionContext({
-        command,
-        runtimeIdentity: {
-          supervisorId: "supervisor-cloud-test",
-          bootId: "77777777-7777-4777-8777-777777777778",
-          sandboxId: "sandbox-cloud-test",
-        },
-        turnContextSha256: turn.sha256,
-      });
-      let stepSequence = 0;
-      let authorityWasActiveAtSettlement = false;
-      let receivedSystemPrompt = "";
-      const sourceEvents: string[] = [];
-      let hostedActivityListener: ((activity: ProviderHostedActivity) => void) | undefined;
-      let hostedActivityStarted = false;
-      const modelPreparationStarted = deferred<void>();
-      const sessionPreparationStarted = deferred<void>();
-      const runner = new PiCloudTurnRunner({
-        resolveModelRuntime: async () => {
-          modelPreparationStarted.resolve(undefined);
-          await sessionPreparationStarted.promise;
-          return {
-            provider: "pi-cloud-fake",
-            modelId: "pi-cloud-fake",
-            baseUrl: fake.baseUrl,
-            api: "openai-completions",
-            apiKey: FAKE_MODEL_API_KEY,
-            contextWindow: 131_072,
-          };
-        },
-        openSession: async () => {
-          sessionPreparationStarted.resolve(undefined);
-          await modelPreparationStarted.promise;
-          return {
-            session,
-            lane: "main",
-            authority,
-            mutationPublisher: {
-              async synchronize() {},
-              async mutate(operation, attachedEvents = []) {
-                if (operation.kind !== "append_items") {
-                  throw new Error("Runtime checkpoint must use one atomic append batch");
-                }
-                const results = [];
-                for (const item of operation.items) {
-                  results.push(
-                    item.kind === "append_entry"
-                      ? await session.appendEntry(item.entry, item.lane)
-                      : await session.appendRecord(item.record),
-                  );
-                }
-                checkpointOperations.push(operation);
-                checkpointEvents.push(...attachedEvents);
-                return { items: results };
-              },
-            },
-          };
-        },
-        sandboxContinuity: {
-          continuityId: "88888888-8888-4888-8888-888888888888",
-          continuity: "cold_restore",
-          environmentSha256: turn.environmentSha256,
-          workspaceBindingSha256: turn.workspaceBindingSha256,
-
-          toolPolicySha256: turn.toolPolicySha256,
-        },
-        subscribeHostedActivity(listener) {
-          hostedActivityListener = listener;
-          return () => {
-            hostedActivityListener = undefined;
-          };
-        },
-        createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
-          tools: [],
-          executeWorkflow: async () => {
-            throw new Error("unused in this test");
-          },
-          async systemPrompt(base) {
-            receivedSystemPrompt = base;
-            return base;
-          },
-          async transformContext(messages, purpose = "agent") {
-            await captureSamplingStep(
-              async () => {
-                const captured = await stepWorldState.capture();
-                return {
-                  step: createCloudStepContext({
-                    sequence: (stepSequence += 1),
-                    turnContextSha256: turn.sha256,
-                    executionContextSha256: attempt.sha256,
-                    allowedTools: command.payload.toolCapabilities,
-                    activeTools: ["read", "write", "edit", "bash"],
-                    worldState: captured.worldState,
-                  }),
-                  modelMessages: captured.modelMessages,
-                };
-              },
-              { publishEvent: purpose === "agent" },
-            );
-            return messages;
-          },
-          async transformHeaders(headers = {}) {
-            return headers;
-          },
-        }),
-        observeEvent(event) {
-          if (event.type === "message_start" && !hostedActivityStarted) {
-            hostedActivityStarted = true;
-            hostedActivityListener?.({
-              phase: "started",
-              toolName: "web_search",
-              activityId: "ws-integration",
-            });
-          } else if (event.type === "message_update" && hostedActivityStarted) {
-            hostedActivityStarted = false;
-            hostedActivityListener?.({
-              phase: "completed",
-              toolName: "web_search",
-              activityId: "ws-integration",
-              outcome: "completed",
-              action: { type: "search", queries: ["integration source"] },
-            });
-          }
-          sourceEvents.push(
-            event.type === "message_end" && event.message.role === "assistant"
-              ? `${event.type}:${event.message.errorMessage ?? event.message.stopReason}`
-              : event.type,
-          );
-        },
-        onSettled() {
-          authorityWasActiveAtSettlement = !authority.closed;
+    const upload = {
+      id: crypto.randomUUID(),
+      sessionId: crypto.randomUUID(),
+      workspaceId: crypto.randomUUID(),
+      name: "shot.png",
+      path: "/workspace/shot.png",
+      byteLength: 5,
+      mimeType: "image/png",
+      sha256: "a".repeat(64),
+      image: {
+        id: crypto.randomUUID(),
+        byteLength: 5,
+        mimeType: "image/png" as const,
+        sha256: "a".repeat(64),
+      },
+    };
+    try {
+      const running = f.run({
+        ...command,
+        payload: {
+          ...command.payload,
+          input: { kind: "prompt", text: "inspect", uploads: [upload] },
         },
       });
-
-      try {
-        const result = await runner
-          .run(command, (event) => {
-            events.push(event);
-          })
-          .catch((error: unknown) => {
-            throw new Error(
-              `${error instanceof Error ? error.message : String(error)}: ${sourceEvents.join(",")}`,
-            );
-          });
-        expect(result.stopReason).toBe("stop");
-        expect(events.map((event) => event.payload.event.type)).toContain("turn.started");
-        expect(events.map((event) => event.payload.event.type)).toContain("assistant.text.delta");
-        const eventTypes = events.map((event) => event.payload.event.type);
-        expect(eventTypes).toContain("provider.hosted_tool.started");
-        expect(eventTypes).toContain("provider.hosted_tool.completed");
-        expect(eventTypes.indexOf("provider.hosted_tool.started")).toBeLessThan(
-          eventTypes.indexOf("provider.hosted_tool.completed"),
-        );
-        expect(eventTypes.indexOf("provider.hosted_tool.completed")).toBeLessThan(
-          eventTypes.indexOf("assistant.text.delta"),
-        );
-        const textEvents = events.filter(
-          (event) => event.payload.event.type === "assistant.text.delta",
-        );
-        expect(textEvents).toHaveLength(failure === "disconnect" ? 3 : 2);
+      if (invalid) {
+        await expect(running).rejects.toThrow("invalid image");
+        expect(f.server.observations).toHaveLength(0);
+      } else {
+        await running;
         expect(
-          textEvents
-            .map((event) =>
-              event.payload.event.type === "assistant.text.delta"
-                ? event.payload.event.payload.text
-                : "",
-            )
-            .join(""),
-        ).toBe(
-          `${failure === "disconnect" ? "partial-before-disconnect" : ""}PiCloud fake stream OK.`,
-        );
-        expect(
-          events.some(
-            ({ payload: { event } }) =>
-              event.type === "model.sampling.completed" && event.payload.outcome === "completed",
-          ),
-        ).toBe(false);
-        expect(
-          checkpointEvents.some(
-            (event) =>
-              event.type === "model.sampling.completed" && event.payload.outcome === "completed",
-          ),
-        ).toBe(true);
-        expect(checkpointOperations).toContainEqual(
-          expect.objectContaining({
-            kind: "append_items",
-            items: expect.arrayContaining([
-              expect.objectContaining({
-                kind: "append_entry",
-                entry: expect.objectContaining({ type: "message" }),
-              }),
-              expect.objectContaining({
-                kind: "append_record",
-                record: expect.objectContaining({ type: "usage" }),
-              }),
-            ]),
-          }),
-        );
-        expect(events.map((event) => event.payload.event.type)).toContain(
-          "model.sampling.retry.scheduled",
-        );
-        expect(fake.observations.map((observation) => observation.scenario)).toEqual([
-          failure,
-          "text",
-        ]);
-        expect((await session.getStats()).messageCount).toBe(2);
-        const entries = await session.findEntriesOnBranch();
-        if (failure === "disconnect") {
-          expect(
-            entries.filter(
-              (entry) =>
-                entry.type === "custom" &&
-                entry.customType === "pi-cloud.interrupted_assistant_prefix",
+          JSON.stringify(
+            await f.storage.scanEntries(
+              { conversationId: 1 as import("@earendil-works/pi-durable").ConversationId },
+              100,
+              undefined,
+              BACKGROUND_CONTEXT,
             ),
-          ).toHaveLength(1);
-        }
-        const baseline = entries.find(
-          (entry) =>
-            entry.type === "custom" && entry.customType === PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
-        );
-        const prompt = entries.find(
-          (entry) => entry.type === "message" && entry.message.role === "user",
-        );
-        const retry = entries.find(
-          (entry) => entry.type === "custom" && entry.customType === PI_MODEL_RETRY_CUSTOM_TYPE,
-        );
-        expect(baseline).toBeDefined();
-        expect(prompt).toBeDefined();
-        expect(retry).toMatchObject({
-          type: "custom",
-          data: { nextSamplingAttempt: 2, maximumSamplingAttempts: 3 },
-        });
-        expect(JSON.stringify(buildSessionContext(entries).messages)).not.toContain(
-          PI_MODEL_RETRY_CUSTOM_TYPE,
-        );
-        expect(prompt!.seq).toBeGreaterThan(baseline!.seq);
-        expect(authorityWasActiveAtSettlement).toBe(true);
-        expect(authority.closed).toBe(true);
-        expect(receivedSystemPrompt).toContain("所有对用户可见的内容");
-      } finally {
-        await fake.stop();
+          ),
+        ).toContain(image.data);
       }
+    } finally {
+      await f.close();
+    }
+  },
+  15000,
+);
+
+it("decides the project verification reminder from native progress and consumes it only once", async () => {
+  const f = await fixture("tool_hold", false, {
+    settlementPolicy: {
+      command: "npm test",
+      cwd: ".",
+      workingDirectory: "/workspace",
+      timeoutMs: 1000,
+      maximumFollowUps: 1,
     },
-  );
-});
+  });
+  try {
+    await f.run();
+    const entries = (
+      await f.storage.scanEntries(
+        { conversationId: 1 as import("@earendil-works/pi-durable").ConversationId },
+        100,
+        undefined,
+        BACKGROUND_CONTEXT,
+      )
+    ).items;
+    const reminders = entries.filter(
+      (entry) =>
+        entry.byTaskId !== undefined &&
+        entry.model?.some(
+          (message) =>
+            message.role === "user" &&
+            JSON.stringify(message.content).includes("project-defined verification step"),
+        ),
+    );
+    expect(reminders).toHaveLength(1);
+    expect(f.commands).toHaveLength(2); // Initial work, then the one reminder continuation.
+    const { prepareNativeSettlementFollowUp } = await import("../src/pi-settlement-gate.ts");
+    const answer = entries
+      .flatMap((entry) => entry.model ?? [])
+      .find((message) => message.role === "assistant")!;
+    expect(
+      await prepareNativeSettlementFollowUp({
+        policy: {
+          command: "npm test",
+          cwd: ".",
+          workingDirectory: "/workspace",
+          timeoutMs: 1000,
+          maximumFollowUps: 1,
+        },
+        storage: f.storage,
+        conversationId: 1,
+        answer: answer as import("@earendil-works/pi-ai").AssistantMessage,
+      }),
+    ).toBeUndefined();
+  } finally {
+    await f.close();
+  }
+}, 15000);

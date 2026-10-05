@@ -1,3 +1,5 @@
+import { nativeToolApi } from "./tool-api.ts";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { expect, it, vi } from "vitest";
 import { MAX_SUBAGENT_RESULT_BYTES } from "@pi-cloud/protocol";
 import {
@@ -14,14 +16,22 @@ it.each(["contact", "supervisor"] as const)(
     }));
     const run = () =>
       kind === "contact"
-        ? createCloudContactSupervisorTool(request).execute("call", {
-            reason: "need_decision",
-            message: "inspect",
-          })
-        : createCloudSubagentSupervisorTool(request).execute("call", {
-            action: "wait",
-            replyTo: "child",
-          });
+        ? createCloudContactSupervisorTool(request).execute(
+            {
+              reason: "need_decision",
+              message: "inspect",
+            },
+            nativeToolApi("call"),
+            BACKGROUND_CONTEXT,
+          )
+        : createCloudSubagentSupervisorTool(request).execute(
+            {
+              action: "wait",
+              replyTo: "child",
+            },
+            nativeToolApi("call"),
+            BACKGROUND_CONTEXT,
+          );
     await expect(run()).rejects.toThrow("subagent_result_too_large");
     expect(request).toHaveBeenCalledTimes(1);
   },
@@ -30,10 +40,14 @@ it.each(["contact", "supervisor"] as const)(
 it("keeps ordinary supervisor output and metadata intact", async () => {
   const result = { output: "completed", executionId: "child", state: "completed" };
   await expect(
-    createCloudSubagentSupervisorTool(async () => result).execute("call", {
-      action: "wait",
-      replyTo: "child",
-    }),
+    createCloudSubagentSupervisorTool(async () => result).execute(
+      {
+        action: "wait",
+        replyTo: "child",
+      },
+      nativeToolApi("call"),
+      BACKGROUND_CONTEXT,
+    ),
   ).resolves.toEqual({
     content: [{ type: "text", text: "completed" }],
     details: result,

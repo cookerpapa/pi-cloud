@@ -33,9 +33,10 @@ function number(value: string | number | bigint): number {
 }
 
 // Both reconciliation reads use the same canonical input identity and scope.
-const consumedInput = sql<boolean>`exists(select 1 from pi_session_log e
-  where e.kind='entry' and e.tenant_id=c.tenant_id and e.session_id=c.payload->>'piSessionId'
-    and e.turn_id=c.turn_id and e.id=('pc-agent-input-' || c.id::text))`;
+const consumedInput = sql<boolean>`exists(select 1 from pi_durable_records e
+  where e.kind='submission' and e.tenant_id=c.tenant_id and e.session_id=c.payload->>'piSessionId'
+    and e.fields->>'turn'=c.turn_id::text and e.fields->>'request'=to_jsonb(c.id::text)::text
+    and e.fields ? 'entry')`;
 const earlierDeliveryPending = sql<boolean>`exists(select 1 from turn_control_requests prior
   join runs held on held.queued_steer_id=prior.id and held.state='queued'
   where prior.tenant_id=c.tenant_id and prior.session_id=c.session_id

@@ -3,7 +3,7 @@ import { MAX_EXECUTION_FACT_BYTES, type SessionControlChange } from "@pi-cloud/p
 import { expect, it, vi } from "vitest";
 import type {
   AcceptedExecutionSealFact,
-  AcceptedPiSessionAppendFact,
+  AcceptedDurableCommitFact,
   ExecutionPublication,
 } from "../src/accepted-fact.ts";
 import {
@@ -17,7 +17,7 @@ function permit(
   epoch = 7,
   prior?: ExecutionPublication,
   run = randomUUID(),
-  lane = "main",
+  lane = 1,
 ): ExecutionPublication {
   const writer = prior && prior.scope.fencingToken === epoch ? prior.scope.writerId : randomUUID();
   return {
@@ -30,39 +30,37 @@ function permit(
       writerId: writer,
       leaseId: writer,
       fencingToken: epoch,
-      piSessionLane: lane,
+      piConversationId: lane,
     },
   };
 }
-function entry(p: ExecutionPublication, text = "accepted"): AcceptedPiSessionAppendFact {
-  const { leaseId: _lease, piSessionLane: lane, ...scope } = p.scope;
+function entry(p: ExecutionPublication, text = "accepted"): AcceptedDurableCommitFact {
+  const { leaseId: _lease, piConversationId, ...scope } = p.scope;
   return {
-    kind: "pi_session_append",
+    kind: "durable_commit",
     factId: randomUUID(),
     scope,
-    piSession: { id: scope.piSessionId, lane, writerId: scope.writerId },
-    items: [
-      {
-        kind: "entry",
-        lane,
-        turnId: scope.turnId,
-        entry: {
-          id: randomUUID(),
-          seq: 1,
-          parentId: null,
-          timestamp: 1,
-          type: "custom",
-          customType: "test",
-          data: { text },
+    commit: {
+      seq: 1,
+      nextId: 3,
+      writes: [
+        {
+          type: "entry",
+          value: { id: 2, conversationId: piConversationId, kind: "test", data: { text } },
         },
-      },
+      ],
+    },
+    origins: [
+      { recordId: 2, runId: scope.runId, sessionId: scope.sessionId, turnId: scope.turnId },
     ],
+    tools: [],
+    cancellations: [],
     events: [],
     occurredAt: new Date().toISOString(),
   };
 }
 function seal(p: ExecutionPublication, closesWriter = true): AcceptedExecutionSealFact {
-  const { leaseId: _lease, piSessionLane: _lane, ...scope } = p.scope;
+  const { leaseId: _lease, piConversationId: _lane, ...scope } = p.scope;
   return {
     kind: "execution_seal",
     factId: randomUUID(),
@@ -119,7 +117,7 @@ it("orders control changes with native publications on the physical Session queu
   await Promise.all([first, native, next]);
   expect(f.records.map((r) => JSON.parse(r.value).kind)).toEqual([
     "control_change",
-    "pi_session_append",
+    "durable_commit",
     "control_change",
   ]);
   expect(new Set(f.records.map((r) => r.sessionId))).toEqual(new Set([f.p.scope.piSessionId]));
@@ -178,14 +176,14 @@ it("closes admission before draining and emits the seal before opening a new wri
 
 it("keeps sibling Lane publication open after normal Run closure", async () => {
   const f = fixture(),
-    child = permit(7, f.p, randomUUID(), "child");
+    child = permit(7, f.p, randomUUID(), 2);
   f.ingress.installRun(f.owner, child);
   await f.ingress.seal(f.owner, seal(child, false));
   await expect(f.ingress.append(f.owner, entry(child))).rejects.toMatchObject({ reason: "closed" });
   await f.ingress.append(f.owner, entry(f.p));
   expect(f.records.map((r) => JSON.parse(r.value).kind)).toEqual([
     "execution_seal",
-    "pi_session_append",
+    "durable_commit",
   ]);
   await f.ingress.seal(f.owner, seal(f.p));
   const next = permit(8, f.p);
@@ -363,12 +361,12 @@ it("closes execution before sealing without blocking another Session's publicati
   const other = permit();
   f.ingress.installRun(f.owner, other);
   await f.ingress.append(f.owner, entry(other));
-  expect(f.records.map((record) => JSON.parse(record.value).kind)).toEqual(["pi_session_append"]);
+  expect(f.records.map((record) => JSON.parse(record.value).kind)).toEqual(["durable_commit"]);
   expect(closeExecution).toHaveBeenCalledOnce();
   stopped.resolve();
   await pending;
   expect(f.records.map((record) => JSON.parse(record.value).kind)).toEqual([
-    "pi_session_append",
+    "durable_commit",
     "execution_seal",
   ]);
 });

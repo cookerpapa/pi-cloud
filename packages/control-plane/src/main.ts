@@ -239,19 +239,13 @@ export async function startControlPlane(): Promise<void> {
           await subagents.consume(record, current);
           if (current?.() === false) return;
           const fact = record.fact;
-          if (
-            fact.kind === "execution_seal" ||
-            ((fact.kind === "pi_session_append" || fact.kind === "tool_invocation") &&
-              fact.piSession.lane === "main" &&
-              fact.items.some(
-                (item) =>
-                  item.kind === "entry" &&
-                  item.entry.type === "message" &&
-                  item.entry.message.role === "user" &&
-                  item.entry.id.startsWith("pc-agent-input-"),
-              ))
-          )
+          if (fact.kind === "execution_seal")
             queuedInputs?.notifySession(fact.scope.tenantId, fact.scope.sessionId);
+          if (fact.kind === "durable_commit") {
+            const sessions = new Set(fact.origins.map((origin) => origin.sessionId));
+            for (const sessionId of sessions)
+              queuedInputs?.notifySession(fact.scope.tenantId, sessionId);
+          }
         },
         close: () => subagents.close(),
       },

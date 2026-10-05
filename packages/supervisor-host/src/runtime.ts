@@ -7,17 +7,14 @@ import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 import { WorkerExecutionLog } from "@pi-cloud/runtime-core/worker-execution-log";
 import { kafkaProducerLane } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { KafkaToolReplyMailbox } from "@pi-cloud/event-log";
-import { NativeSessionLogPublisher } from "@pi-cloud/runtime-core/native-session-log-publisher";
+import { DurableSessionPublisher } from "@pi-cloud/runtime-core/durable-session-publisher";
 import { type ActiveExecutionLogResolver } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "./agent-run-execution-backend.ts";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { createDatabase, type Database } from "@pi-cloud/database";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
-import {
-  PostgresPiSessionEntryPayloadCache,
-  PostgresNativeSessionHost,
-} from "@pi-cloud/pi-session-postgres";
+import { PostgresDurableSessionHost } from "@pi-cloud/pi-session-postgres/durable";
 import type { SupervisorBootProvisionRequest } from "@pi-cloud/protocol";
 import { ReplicatedSandboxControlClient } from "@pi-cloud/sandbox-control";
 import {
@@ -66,7 +63,7 @@ export type PiWorkerRuntimeOptions = {
     checkHealth?(): Promise<void>;
     close?(): Promise<void>;
   };
-  sessionMutationProducer?: Pick<NativeSessionLogPublisher, "scoped" | "checkHealth" | "close">;
+  sessionMutationProducer?: Pick<DurableSessionPublisher, "scoped" | "checkHealth" | "close">;
 };
 
 export type SupervisorRunWorker = {
@@ -135,11 +132,11 @@ export class PiWorkerRuntime {
       })
     | undefined;
   readonly #configuredSessionMutationProducer:
-    Pick<NativeSessionLogPublisher, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<DurableSessionPublisher, "scoped" | "checkHealth" | "close"> | undefined;
   #sessionMutationProducer:
-    Pick<NativeSessionLogPublisher, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<DurableSessionPublisher, "scoped" | "checkHealth" | "close"> | undefined;
   #ownsSessionMutationProducer = false;
-  #nativeSessions: PostgresNativeSessionHost | undefined;
+  #nativeSessions: PostgresDurableSessionHost | undefined;
   #subagentControl: SubagentControlClient | undefined;
   #agentRunner: RemoteToolSandboxTurnRunner | undefined;
   #images: ConfiguredImageAttachments | undefined;
@@ -327,10 +324,11 @@ export class PiWorkerRuntime {
             command.delivery,
             command.executionReference,
           );
-        } else if (command.action === "prepare_lane") {
-          await this.#nativeSessions.createChildLane({
+        } else if (command.action === "prepare_conversation") {
+          return this.#nativeSessions.createChildConversation({
             executionReference: command.executionReference,
-            lane: command.lane,
+            requestId: command.requestId,
+            ownerTaskId: command.ownerTaskId,
             at: command.anchor,
           });
         } else if (command.action === "result") {
@@ -428,9 +426,9 @@ export class PiWorkerRuntime {
     if (images) await images.blobs.checkHealth();
     const sessionMutationProducer =
       this.#configuredSessionMutationProducer ??
-      new NativeSessionLogPublisher({
+      new DurableSessionPublisher({
         channels: executionLogResolver(executionLogs),
-        toolReplyTopic: toolReplies.topic,
+        replyTopic: toolReplies.topic,
         ...(images ? { images: images.codec } : {}),
         ...(this.#metrics ? { metrics: this.#metrics } : {}),
       });
@@ -450,25 +448,9 @@ export class PiWorkerRuntime {
     this.#runClaimReadiness = runClaimReadiness;
     await runClaimReadiness.start();
     this.#assertStarting();
-    const sessionEntryPayloadCache = new PostgresPiSessionEntryPayloadCache();
-    const nativeSessions = new PostgresNativeSessionHost({
-      ...(images ? { images: images.codec } : {}),
+    const nativeSessions = new PostgresDurableSessionHost({
       database: this.#database,
-      entryPayloadCache: sessionEntryPayloadCache,
-      ...(this.#metrics
-        ? {
-            onTiming: (stage, durationMs) =>
-              this.#metrics!.observeSessionMutation(stage, durationMs),
-            onViewRead: (sample) => {
-              this.#metrics!.sessionViewReads.inc({ source: sample.source });
-              this.#metrics!.sessionViewReadDuration.observe(
-                { source: sample.source },
-                sample.durationMs / 1000,
-              );
-              this.#metrics!.sessionViewStorageBytes.inc(sample.storageBytes);
-            },
-          }
-        : {}),
+      ...(images ? { images: images.codec } : {}),
     });
     this.#nativeSessions = nativeSessions;
     this.#subagentControl = new SubagentControlClient((lease) =>
@@ -476,7 +458,7 @@ export class PiWorkerRuntime {
     );
     const trustedTools = new PostgresTrustedToolRuntime({
       database: this.#database,
-      nativeLanes: nativeSessions,
+      nativeConversations: nativeSessions,
       control: this.#subagentControl,
       treePolicy: {
         maximumDepth: this.#config.subagentMaximumDepth,
@@ -543,11 +525,6 @@ export class PiWorkerRuntime {
         if (!channel) throw new Error("Tool command Fact Stream is unavailable");
         return channel.publishToolCommand({ ...command, replyTopic: toolReplies.topic });
       },
-      publishToolCancellation: (command) => {
-        const channel = executionLogResolver(executionLogs).resolve(command.executionReference);
-        if (!channel) throw new Error("Tool cancellation execution writer is unavailable");
-        return channel.publishToolCancellation(command);
-      },
       waitForToolReply: async (request, signal, toolCallId, imageScope) => {
         if (!toolCallId) throw new Error("Tool call identity is unavailable");
         const event = await toolReplies.wait(
@@ -562,29 +539,20 @@ export class PiWorkerRuntime {
       broker: this.#sandboxControl,
       runtimeIdentity: identity,
       trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
-      openAgentSession: (command, readSignal) =>
+      openAgentSession: (command) =>
         nativeSessions.open({
-          ...(readSignal ? { readSignal } : {}),
-          scope: {
+          binding: {
             tenantId: command.payload.tenantId,
             sessionId: command.payload.sessionId,
             piSessionId: command.payload.piSession.id,
-            piSessionLane: command.payload.piSession.lane,
-            turnId: command.payload.turnId,
-            runId: command.payload.runId,
-          },
-          executionReference: command.payload.executionReference,
-          writerId: command.payload.piSession.writerId,
-          publisher: sessionMutationProducer.scoped({
-            tenantId: command.payload.tenantId,
-            sessionId: command.payload.sessionId,
-            piSessionId: command.payload.piSession.id,
-            piSessionLane: command.payload.piSession.lane,
-            writerId: command.payload.piSession.writerId,
+            conversationId: command.payload.piSession.conversationId,
             turnId: command.payload.turnId,
             runId: command.payload.runId,
             executionReference: command.payload.executionReference,
-          }),
+            writerId: command.payload.piSession.writerId,
+          },
+          publish: (publication) =>
+            sessionMutationProducer.scoped(command.payload.executionReference).publish(publication),
         }),
       createTrustedTools: (command, context) => trustedTools.create({ command, ...context }),
       modelRuntimeLeaseResolver: (command) => modelGateway.issue(command),

@@ -896,7 +896,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
         [rootSessionId, unrelatedSessionId].map((id) => ({
           id,
           pi_session_id: id,
-          pi_session_lane: "main",
+          pi_conversation_id: "1",
           tenant_id: tenantId,
           project_id: projectId,
           workspace_id: workspaceId,
@@ -933,7 +933,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .values({
         id: childSessionId,
         pi_session_id: childSessionId,
-        pi_session_lane: "main",
+        pi_conversation_id: "1",
         tenant_id: tenantId,
         project_id: projectId,
         workspace_id: workspaceId,
@@ -1074,7 +1074,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .values({
         id: delegatedSessionId,
         pi_session_id: rootSessionId,
-        pi_session_lane: "child",
+        pi_conversation_id: "2",
         tenant_id: tenantId,
         project_id: projectId,
         workspace_id: workspaceId,

@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
+import { PublicationNotSentError } from "@pi-cloud/protocol";
 import type { KafkaPartitionReader } from "../src/kafka-partition-reader.ts";
 
 const f = vi.hoisted(() => ({

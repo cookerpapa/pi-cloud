@@ -1,8 +1,9 @@
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import {
-  PostgresPiSessionStorage,
-  projectNativeSessionAppend,
-} from "@pi-cloud/pi-session-postgres";
+  DurablePostgresProjection,
+  readDurableEntries,
+  type DurableBatch,
+} from "@pi-cloud/pi-session-postgres/durable";
 import { spawnSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -120,19 +121,7 @@ try {
             id: sessionId,
             created_at_ms: Date.now(),
             parent_session_id: null,
-            next_seq: 1,
             name: null,
-          })),
-        )
-        .execute();
-      await database
-        .insertInto("pi_session_lanes")
-        .values(
-          chunk.map((sessionId) => ({
-            tenant_id: tenantId,
-            session_id: sessionId,
-            lane: "main",
-            leaf_id: null,
           })),
         )
         .execute();
@@ -143,29 +132,23 @@ try {
     const durations: number[] = [];
     const failures: string[] = [];
     const startedAt = performance.now();
-    const heads = new Map<string, string>();
     for (let wave = 0; wave < mutationsPerSession; wave += 1) {
       const result = await parallelMap(sessions, concurrency, async (sessionId) => {
-        const mutationId = randomUUID();
         const operationStarted = performance.now();
         const entry = {
-          id: randomUUID(),
-          seq: wave + 1,
-          timestamp: Date.now(),
-          parentId: heads.get(sessionId) ?? null,
-          type: "custom" as const,
-          customType: "benchmark.complete_message",
+          id: wave + 2,
+          conversationId: 1,
+          kind: "benchmark.complete_message",
           data: { wave, text: "x".repeat(1024) },
         };
-        await database.transaction().execute(async (transaction) => {
-          await projectNativeSessionAppend(transaction, {
-            tenantId,
-            sessionId,
-            appendId: mutationId,
-            items: [{ kind: "entry", lane: "main", turnId: null, entry }],
-          });
-        });
-        heads.set(sessionId, entry.id);
+        await new DurablePostgresProjection(database, { tenantId, sessionId }).apply({
+          seq: wave + 1,
+          nextId: wave + 3,
+          writes: [
+            ...(wave === 0 ? [{ type: "conversation", value: { id: 1 } }] : []),
+            { type: "entry", value: entry },
+          ],
+        } as DurableBatch);
         return performance.now() - operationStarted;
       });
       durations.push(...result.durations);
@@ -180,27 +163,26 @@ try {
     const replayStartedAt = performance.now();
     const replay = await parallelMap(replaySessions, concurrency, async (sessionId) => {
       const started = performance.now();
-      const items = await new PostgresPiSessionStorage({
-        database,
+      const items = await readDurableEntries(database, {
         tenantId,
         sessionId,
-      }).getLog();
-      if (items.length !== mutationsPerSession || items.some((item) => item.kind !== "entry")) {
-        throw new Error("Pi Session log replay returned an incomplete semantic stream");
-      }
+        conversationId: 1,
+        limit: mutationsPerSession + 1,
+      });
+      if (items.length !== mutationsPerSession)
+        throw new Error("Native cold read returned incomplete history");
       return performance.now() - started;
     });
     const replayElapsedMs = performance.now() - replayStartedAt;
     failures.push(...replay.failures);
     const entries = await database
-      .selectFrom("pi_session_log")
+      .selectFrom("pi_durable_records")
       .where("kind", "=", sql.lit("entry"))
       .select(({ fn }) => fn.countAll<string>().as("count"))
       .executeTakeFirstOrThrow();
     const results = await database
-      .selectFrom("pi_session_log")
+      .selectFrom("pi_durable_commits")
       .select(({ fn }) => fn.countAll<string>().as("count"))
-      .where("append_id", "is not", null)
       .executeTakeFirstOrThrow();
     const wal = await sql<{ bytes: string }>`
       select pg_wal_lsn_diff(
@@ -210,8 +192,8 @@ try {
     `.execute(database);
     const walBytes = Number(wal.rows[0]!.bytes);
     const report = {
-      format: "pi-cloud.postgres-session-projection-capacity.v4",
-      projectionCommit: "exact-stamped-native-append",
+      format: "pi-cloud.postgres-session-projection-capacity.v5",
+      projectionCommit: "native-durable-atomic-batch",
       worktreeDirty:
         spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).stdout.trim()
           .length > 0,
@@ -257,7 +239,7 @@ try {
       },
       scope: [
         "isolated single-node PostgreSQL",
-        "complete pre-stamped 1 KiB Pi semantic entries, without projection-result receipts",
+        "complete pre-stamped 1 KiB Durable native entries, without projection-result receipts",
         "no token deltas, model calls or Cube execution",
       ],
     };

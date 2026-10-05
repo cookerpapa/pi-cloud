@@ -1,9 +1,10 @@
-import { encodeSessionImages } from "@pi-cloud/session-attachments";
 import {
-  PostgresPiSessionStorage,
-  PostgresPiSessionRepository,
-} from "@pi-cloud/pi-session-postgres";
-import { PostgresPiSessionAppendProjector } from "../../runtime-core/src/postgres-pi-session-append-projector.ts";
+  copyDurableHistory,
+  readDurableEntries,
+  forkIdleConversation,
+} from "@pi-cloud/pi-session-postgres/durable";
+import { appendNativeFixture } from "./fixtures/durable-native.ts";
+import { PostgresDurableCommitProjector } from "../../runtime-core/src/postgres-durable-commit-projector.ts";
 import { createTestWorker } from "./admit-test-execution.ts";
 import { randomUUID } from "node:crypto";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
@@ -683,34 +684,51 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
   });
   it("erases owned history and references atomically while retaining independent native copies and Workspace bytes", async () => {
     const { project, session } = await fixture("permanent-history");
-    const storage = new PostgresPiSessionStorage({
-      database,
-      tenantId: scope.tenantId,
-      sessionId: session.sessionId,
-    });
-    const entry = await storage.appendEntry(
-      {
-        id: randomUUID(),
-        type: "message",
-        message: { role: "user", content: "private-history", timestamp: 1 },
-      },
-      "main",
-    );
-    const repository = new PostgresPiSessionRepository({ database, tenantId: scope.tenantId });
-    const independent = await repository.fork(await storage.getMetadata(), {
-      id: randomUUID(),
-      scope: "branch",
-    });
-    const independentId = (await independent.getMetadata()).id;
+    const nativeScope = { tenantId: scope.tenantId, sessionId: session.sessionId };
+    const entry = (
+      await appendNativeFixture(database, nativeScope, [
+        { kind: "pi.user", model: [{ role: "user", content: "private-history", timestamp: 1 }] },
+      ])
+    )[0]!;
+    const independentId = randomUUID();
+    await database
+      .insertInto("pi_sessions")
+      .values({
+        tenant_id: scope.tenantId,
+        id: independentId,
+        created_at_ms: Date.now(),
+        name: null,
+        parent_session_id: null,
+      })
+      .execute();
+    await database
+      .transaction()
+      .execute(async (tx) =>
+        copyDurableHistory(
+          tx,
+          { tenantId: scope.tenantId, sessionId: independentId },
+          (
+            await readDurableEntries(tx, { ...nativeScope, conversationId: 1, limit: 100 })
+          ).reverse(),
+        ),
+      );
     const otherTenant = await createPrivateTenant(database, {
       slug: randomUUID(),
       ownerDisplayName: "Other",
     });
-    await PostgresPiSessionStorage.create({
-      database,
-      tenantId: otherTenant.tenantId,
-      sessionId: session.sessionId,
-    });
+    await database
+      .insertInto("pi_sessions")
+      .values({
+        tenant_id: otherTenant.tenantId,
+        id: session.sessionId,
+        created_at_ms: Date.now(),
+        name: null,
+        parent_session_id: null,
+      })
+      .execute();
+    const childConversation = await database
+      .transaction()
+      .execute((tx) => forkIdleConversation(tx, nativeScope, 1, entry.id));
     const logicalId = randomUUID();
     const row = await database
       .selectFrom("sessions")
@@ -724,10 +742,9 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         tool_capabilities: sql`${JSON.stringify(row.tool_capabilities)}::jsonb`,
         id: logicalId,
         session_kind: "subagent",
-        pi_session_lane: "test-child",
+        pi_conversation_id: String(childConversation),
       })
       .execute();
-    await storage.createLane("test-child", entry.id);
     const imageId = randomUUID();
     await sql`insert into session_image_objects(tenant_id,id,state,sha256,byte_length,mime_type)
       values(${scope.tenantId}::uuid,${imageId}::uuid,'ready',${"a".repeat(64)},1,'image/png')`.execute(
@@ -794,7 +811,10 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     const deletion = new ConversationDeletionService({ database });
     // Public identity is tenant-scoped, including idempotent absent results.
     await deletion.delete(otherTenant.tenantId, session.sessionId);
-    expect(await storage.getEntry(entry.id)).toBeDefined();
+    expect(
+      (await readDurableEntries(database, { ...nativeScope, conversationId: 1, limit: 1 }))[0]
+        ?.entry,
+    ).toEqual(entry);
     await deletion.delete(scope.tenantId, session.sessionId);
     await deletion.delete(scope.tenantId, session.sessionId);
     for (const table of ["sessions", "turns", "runs"] as const) {
@@ -814,8 +834,10 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     }
     for (const table of [
       "pi_sessions",
-      "pi_session_log",
-      "pi_session_lanes",
+      "pi_durable_log",
+      "pi_durable_records",
+      "pi_durable_commits",
+      "pi_durable_document_revisions",
       "session_image_references",
     ] as const) {
       const rows =
@@ -842,7 +864,16 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         .where("id", "=", project.workspaceId)
         .executeTakeFirstOrThrow(),
     ).toEqual({ deleted_at: null });
-    expect(await independent.view("main").findEntriesOnBranch()).toEqual([entry]);
+    expect(
+      (
+        await readDurableEntries(database, {
+          tenantId: scope.tenantId,
+          sessionId: independentId,
+          conversationId: 1,
+          limit: 100,
+        })
+      ).map((row) => row.entry),
+    ).toEqual([entry]);
     expect(
       (
         await sql`select 1 from session_image_references where image_id=${imageId}::uuid`.execute(
@@ -859,9 +890,9 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         .execute(),
     ).toHaveLength(1);
     // A retained Kafka record can be consumed again without recreating a Run/log.
-    await new PostgresPiSessionAppendProjector(database).project(
+    await new PostgresDurableCommitProjector(database).project(
       {
-        kind: "pi_session_append",
+        kind: "durable_commit",
         factId: randomUUID(),
         scope: {
           tenantId: scope.tenantId,
@@ -872,10 +903,10 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
           piSessionId: session.sessionId,
           writerId: randomUUID(),
         },
-        piSession: { id: session.sessionId, lane: "main", writerId: randomUUID() },
-        items: await encodeSessionImages(undefined, { tenantId: scope.tenantId }, [
-          { kind: "entry", lane: "main", turnId: accepted.turnId, entry },
-        ]),
+        commit: { seq: 1, nextId: entry.id + 1, writes: [{ type: "entry", value: entry }] },
+        origins: [],
+        tools: [],
+        cancellations: [],
         events: [],
         occurredAt: new Date().toISOString(),
       },

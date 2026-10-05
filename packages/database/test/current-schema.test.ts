@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(176);
+      expect(firstMigrationPass.rows).toHaveLength(180);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("176_return_stopped_inputs");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("180_durable_runtime_revision");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -83,8 +83,10 @@ describe("current PiCloud schema", () => {
         "turn_control_requests",
         "session_leases",
         "pi_sessions",
-        "pi_session_log",
-        "pi_session_open_operations",
+        "pi_durable_log",
+        "pi_durable_records",
+        "pi_durable_commits",
+        "pi_durable_document_revisions",
         "workspace_runtimes",
         "sandbox_tool_bindings",
         "sandbox_control_instances",
@@ -170,7 +172,7 @@ describe("current PiCloud schema", () => {
       expect(keys.has("sessions.desired_thinking_level")).toBe(true);
       expect(keys.has("sessions.desired_service_tier")).toBe(true);
       expect(keys.has("sessions.pi_session_id")).toBe(true);
-      expect(keys.has("sessions.pi_session_lane")).toBe(true);
+      expect(keys.has("sessions.pi_conversation_id")).toBe(true);
       expect(keys.has("sessions.compute_session_id")).toBe(true);
       expect(keys.has("runs.compute_session_id")).toBe(true);
       expect(keys.has("subagent_executions.sandbox_mode")).toBe(true);
@@ -215,12 +217,18 @@ describe("current PiCloud schema", () => {
       ]);
       expect(pendingControls.rows[0]!.indexdef).toContain("acknowledged");
 
-      const sessionLogConstraint = await sql<{ definition: string }>`
-        select pg_get_constraintdef(oid) as definition
-          from pg_constraint
-         where conname = 'pi_session_log_payload_valid'
+      const nativeBody = await sql<{ data_type: string }>`
+        select data_type from information_schema.columns
+        where table_schema='public' and table_name='pi_durable_log' and column_name='body'
       `.execute(database);
-      expect(sessionLogConstraint.rows[0]?.definition).toContain("payload -> 'entry'");
+      expect(nativeBody.rows).toEqual([{ data_type: "text" }]);
+      expect(
+        (
+          await sql<{
+            retired: string | null;
+          }>`select to_regclass('pi_session_log')::text as retired`.execute(database)
+        ).rows,
+      ).toEqual([{ retired: null }]);
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

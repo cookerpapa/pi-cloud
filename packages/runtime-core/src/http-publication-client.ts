@@ -7,7 +7,7 @@ import {
   type SessionControlChange,
   type SessionControlPublisher,
 } from "@pi-cloud/protocol";
-import { PublicationNotSentError } from "@pi-cloud/protocol/native-session";
+import { PublicationNotSentError } from "@pi-cloud/protocol";
 import type {
   AcceptedFact,
   AcceptedFactBus,

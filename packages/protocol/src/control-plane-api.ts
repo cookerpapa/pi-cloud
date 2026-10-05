@@ -8,6 +8,7 @@ import { Value } from "typebox/value";
 import { DEEPSEEK_MODEL_IDS, GPT_MODEL_IDS } from "./model-catalog.ts";
 import {
   NonNegativeSafeIntegerSchema,
+  OpaqueIdSchema,
   PositiveSafeIntegerSchema,
   ExecutionModeSchema,
   UtcTimestampSchema,
@@ -690,6 +691,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
   Type.Object(
     {
       kind: Type.Literal("text"),
+      messageId: Type.Optional(OpaqueIdSchema),
       text: Type.String(),
       phase: Type.Optional(AssistantMessagePhaseSchema),
       firstSequence: PositiveSafeIntegerSchema,

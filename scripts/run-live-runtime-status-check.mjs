@@ -82,7 +82,7 @@ async function alone() {
 }
 async function logCount() {
   const { rows } =
-    await sql`select count(*)::int n from pi_session_log where tenant_id=${tenant.tenantId} and session_id=${session.sessionId}`.execute(
+    await sql`select count(*)::int n from pi_durable_log where tenant_id=${tenant.tenantId} and session_id=${session.sessionId}`.execute(
       db,
     );
   return rows[0].n;

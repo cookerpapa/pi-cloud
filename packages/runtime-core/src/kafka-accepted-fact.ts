@@ -3,9 +3,11 @@ import {
   parsePathProbe,
   parseSessionControlChange,
   parseToolCancellation,
+  parseDurableSessionCommit,
+  durableToolIntent,
 } from "@pi-cloud/protocol";
 import type { AcceptedFact, SessionLogFact } from "./accepted-fact.ts";
-import { isNativeAppendFact, toolCommandForFact } from "./tool-invocation-fact.ts";
+import { toolCommandsForFact } from "./tool-invocation-fact.ts";
 export {
   ACCEPTED_FACT_TOPIC,
   loadProducerCapacity,
@@ -36,6 +38,17 @@ export function parseSessionLogFact(value: string | Buffer): SessionLogFact {
 
 export function parseAcceptedFact(value: unknown): AcceptedFact {
   const parsed = value as AcceptedFact;
+  if (parsed.kind === "durable_commit") {
+    const commit = parseDurableSessionCommit(parsed.commit);
+    for (const tool of parsed.tools) durableToolIntent(commit, tool.taskId);
+    toolCommandsForFact(parsed);
+    return {
+      ...parsed,
+      commit,
+      events: parsed.events.map(parsePiCloudEvent),
+      cancellations: parsed.cancellations.map(parseToolCancellation),
+    };
+  }
   if (parsed.kind === "agent_event") {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
@@ -48,12 +61,5 @@ export function parseAcceptedFact(value: unknown): AcceptedFact {
   )
     return parsed;
 
-  if (isNativeAppendFact(parsed)) {
-    toolCommandForFact(parsed);
-    return {
-      ...parsed,
-      events: (parsed.events ?? []).map((event) => parsePiCloudEvent(event)),
-    };
-  }
   throw new TypeError("Kafka AcceptedFact kind is invalid");
 }

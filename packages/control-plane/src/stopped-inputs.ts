@@ -24,7 +24,7 @@ export async function withdrawStoppedInputs(
         settled_at=case when queued_steer_id is null then clock_timestamp() else settled_at end,
         row_version=row_version+1,updated_at=clock_timestamp()
       where tenant_id=${tenantId}::uuid and session_id=${sessionId}::uuid
-        and state='queued' and lease_id is null and input_return_request_id is null
+        and state='queued' and lease_id is null and started_at is null and input_return_request_id is null
       returning id,turn_id,state
     ), turns_updated as (
       update turns t set state='cancelled', stop_reason='queued_input_withdrawn', settled_at=clock_timestamp()

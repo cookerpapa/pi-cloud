@@ -76,7 +76,7 @@ vi.mock("../src/kafka-safe-retention.ts", () => ({
 }));
 import { SessionProjector } from "../src/session-projector.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
-import { toolCommandForFact } from "../src/tool-invocation-fact.ts";
+import { toolCommandsForFact } from "../src/tool-invocation-fact.ts";
 
 let projector: SessionProjector;
 type ToolDelivery = ConstructorParameters<typeof SessionProjector>[0]["toolCommands"]["consume"];
@@ -194,7 +194,7 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     dispatch.resolve(true);
     await pending;
     expect(route).toHaveBeenCalledWith(
-      { ...r, fact: toolCommandForFact(fact) },
+      { ...r, fact: toolCommandsForFact(fact)[0] },
       expect.any(Function),
     );
     await f.handler!(

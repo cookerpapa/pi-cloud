@@ -11,16 +11,18 @@
     "packages/*"
   ],
   "dependencies": {
-    "fastify": "5.12.4",
-    "pi-security-brace-expansion": "npm:brace-expansion@5.0.12",
-    "pi-security-protobufjs": "npm:protobufjs@7.6.5",
-    "pi-security-undici": "npm:undici@8.10.2"
+    "fastify": "5.12.5",
+    "pi-security-brace-expansion": "npm:brace-expansion@5.0.12"
   },
   "overrides": {
     "nanoid": "3.3.18",
     "fast-uri@3": "3.1.8",
     "fast-uri@4": "4.1.5",
-    "@grpc/grpc-js": "1.14.5"
+    "@grpc/grpc-js": "1.14.5",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-telemetry": "1.0.0",
+    "@earendil-works/chord": "1.0.0",
+    "fastify": "$fastify"
   },
   "scripts": {
     "postinstall": "node scripts/harden-pi-dependencies.mjs",
@@ -124,18 +126,22 @@
     "cubesandbox:allocation-check": "node scripts/check-cube-allocation.mjs"
   },
   "devDependencies": {
-    "esbuild": "0.28.1",
+    "@earendil-works/chord": "1.0.0",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-durable": "1.0.0",
+    "@earendil-works/pi-telemetry": "1.0.0",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/pi-session-postgres": "0.1.0",
     "@types/node": "24.12.4",
+    "esbuild": "0.28.1",
     "kysely": "0.29.4",
     "prettier": "3.9.5",
+    "semver": "7.8.5",
     "ssh2": "1.17.0",
     "tsx": "4.23.1",
     "typescript": "5.9.3",
     "vitest": "4.1.11",
     "ws": "8.21.1",
-    "yaml": "2.9.0",
-    "semver": "7.8.5"
+    "yaml": "2.9.0"
   }
 }

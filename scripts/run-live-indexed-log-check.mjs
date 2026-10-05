@@ -4,9 +4,10 @@ import { randomUUID, createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { sql } from "kysely";
-import { estimateTokens } from "@earendil-works/pi-agent-core";
+import { createSession } from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createDatabase } from "../packages/database/src/index.ts";
-import { PostgresPiSessionStorage } from "../packages/pi-session-postgres/src/index.ts";
+import { DurablePostgresProjection, PublishedDurableStorage } from "../packages/pi-session-postgres/src/durable/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_INDEXED_LOG_CHECK !== "1")
@@ -34,7 +35,7 @@ const report = {
   accepted: false,
   runs: [],
   compactionMethod:
-    "Seed one native Compaction through the quiescent SessionStorage port; verify real Luna cold reads. This is not an automatic-threshold or model-summary-generation benchmark.",
+    "Seed one native Compaction through the quiescent Storage port; verify real Luna cold reads. This is not an automatic-threshold or model-summary-generation benchmark.",
 };
 let project, source, fork, failure;
 const accepted = [];
@@ -155,13 +156,13 @@ try {
     120000,
   );
   const leaf = await db
-    .selectFrom("pi_session_log")
+    .selectFrom("pi_durable_records")
     .select("id")
     .where("tenant_id", "=", scope.tenant_id)
     .where("session_id", "=", scope.pi_session_id)
     .where("kind", "=", sql.lit("entry"))
-    .where("turn_id", "=", first.task.turnId)
-    .where(sql`payload #>> '{entry,message,role}'`, "=", "assistant")
+    .where(sql`fields->>'turn'`, "=", first.task.turnId)
+    .where(sql`fields->>'role'`, "=", "assistant")
     .orderBy("seq", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
@@ -181,39 +182,21 @@ try {
     ),
     digest(first.transcript),
   );
-  const native = new PostgresPiSessionStorage({
-    database: db,
-    tenantId: scope.tenant_id,
-    sessionId: fork.session.sessionId,
-  });
-  const head = (await native.getLanes()).find((lane) => lane.lane === "main");
-  const branch = await native.findEntriesOnBranch({ start: head.leafId, order: "oldestFirst" });
   const marker = `COMPACTED-${randomUUID()}`;
-  const tokensBefore = branch.reduce(
-    (sum, entry) => sum + (entry.type === "message" ? estimateTokens(entry.message) : 0),
-    0,
-  );
-  // This fresh Fork has never had a Worker owner. A native administrative
-  // Compaction provides a deterministic cold-read fixture without changing
-  // production model windows, thresholds or claiming a paid million-token test.
-  const compaction = await native.appendEntry(
-    {
-      id: randomUUID(),
-      type: "compaction",
-      tokensBefore,
-      retainedTail: [],
-      summary: `Storage acceptance context: the exact verification marker is ${marker}. The persistent Workspace contains indexed_log.txt with INDEXED_LOG_FILE_OK. One Child already completed CHILD_LOG_OK. Continue this existing Workspace.`,
-    },
-    "main",
-  );
-  const compacted = await native.findEntriesOnBranch({
-    start: compaction.id,
-    stopAtType: "compaction",
+  // This unowned fork is an administrative cold-read fixture. Generic Session
+  // owns entry/head stamping; no Harness or model runs in the control plane.
+  const compaction = await db.transaction().execute(async tx => {
+    const projection = new DurablePostgresProjection(tx, { tenantId: scope.tenant_id, sessionId: fork.session.sessionId }, undefined, "references");
+    const native = await PublishedDurableStorage.open({ projection,
+      publish: batch => projection.applyIn(tx, batch).then(() => {}), waitProjected: async () => {} });
+    const session = createSession(native);
+    try {
+      const entry = await session.commit(change => change.appendEntry(1, { kind: "pi.compaction", head: "self", data: { reason: "manual" },
+        model: [{ role: "user", timestamp: Date.now(), content: `Storage acceptance context: exact marker ${marker}. Workspace contains indexed_log.txt with INDEXED_LOG_FILE_OK. One Child completed CHILD_LOG_OK.` }] }), BACKGROUND_CONTEXT);
+      assert.equal((await native.findLatestHeadMarker(1, undefined, BACKGROUND_CONTEXT)).entry.id, entry.id);
+      return entry;
+    } finally { await session.close(BACKGROUND_CONTEXT); }
   });
-  assert.deepEqual(
-    compacted.map((entry) => entry.id),
-    [compaction.id],
-  );
   const resumed = await run(
     fork.session.sessionId,
     "先 read 读取已有 indexed_log.txt。然后输出压缩摘要中的完整 COMPACTED- 开头验证标记，并确认文件内容。标记只在此前上下文的摘要里，不要用其他工具或子代理寻找，也不要搜索。",
@@ -233,15 +216,16 @@ try {
     "INDEXED_LOG_FILE_OK",
   );
   const open = await db
-    .selectFrom("pi_session_open_operations")
+    .selectFrom("pi_durable_records")
     .select("seq")
     .where("tenant_id", "=", scope.tenant_id)
     .where("session_id", "in", [scope.pi_session_id, fork.session.sessionId])
+    .where("kind", "=", "task")
+    .where(sql`fields->>'status'`, "!=", "terminal")
     .execute();
   assert.equal(open.length, 0);
   report.compaction = {
     entryId: compaction.id,
-    tokensBeforeEstimate: tokensBefore,
     selectedSeedEntries: 1,
     coldLunaRecall: true,
   };

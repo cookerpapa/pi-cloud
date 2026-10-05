@@ -45,8 +45,10 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Use idempotency keys, leases, and fencing tokens for distributed mutations.
 - One physical Pi Session owns one renewable execution lease/epoch and one Worker
   family slot. Child Lanes retain task identity/cancellation, not separate leases.
-  Capacity is Worker-local, including pending claims. Each admitted Run executes
-  once; another execution uses a new Run, never a second RunAttempt. The native
+  Capacity is Worker-local, including pending claims. Under ADR-0229 a logical
+  Run/Turn/native submission may resume after ordered old-writer closure and a
+  new PG-issued Session lease; there is no RunAttempt. Durable owns continuation,
+  and interrupted unsafe Tools are never automatically replayed. The native
   writer identity is the Session lease incarnation, not a task anchor.
   Model-request permits are local, fair and held only through provider completion;
   never reserve the same permit while waiting for a child or Tool.
@@ -87,8 +89,9 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Control Plane owns VM lifecycle, binding admission and recovery. Cubelet owns
   accepted fixed Tool lifetimes and boot/ordered-position fencing (ADR-0219/0221).
   Do not add per-Tool PG Run-lease checks. Chat Stop aborts the Worker Agent and
-  sends operation cancellation through the same Session log. Await the original
-  Tool's result within a bounded grace, then retain UNKNOWN if unconfirmed.
+  sends operation cancellation through the same Session log. Pi Durable owns
+  native abort settlement; late physical replies never overwrite it (ADR-0229).
+  No cancellation ACK or missing reply proves a physical process stopped.
   Normal cancellation follows the guest Tool's process-group boundary, not whole
   cgroup/VM cleanup. Completed background work is never cancelled retroactively.
   Revoke routing before sealing; abnormal retirement retains its immutable cleanup

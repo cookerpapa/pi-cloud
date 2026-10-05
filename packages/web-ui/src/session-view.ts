@@ -18,6 +18,7 @@ export type TurnViewStatus =
 export type TranscriptItem =
   | {
       kind: "text";
+      messageId?: string;
       key: string;
       text: string;
       phase?: AssistantMessagePhase;
@@ -194,11 +195,28 @@ function appendText(
   text: string,
   sequence: number,
   phase?: AssistantMessagePhase,
+  messageId?: string,
+  replace = false,
 ): TurnView {
   const items = [...turn.items];
+  if (messageId !== undefined) {
+    const index = items.findIndex((item) => item.kind === "text" && item.messageId === messageId);
+    const old = items[index];
+    if (old?.kind === "text") {
+      items[index] = {
+        ...old,
+        text: replace ? text : old.text + text,
+        lastSequence: sequence,
+        ...(phase === undefined ? {} : { phase }),
+      };
+      return { ...turn, status: "running", items };
+    }
+  }
   const last = items.at(-1);
   if (
     last?.kind === "text" &&
+    messageId === undefined &&
+    last.messageId === undefined &&
     last.phase !== "commentary" &&
     phase !== "commentary" &&
     last.phase === phase
@@ -213,6 +231,7 @@ function appendText(
       kind: "text",
       key: `text:${String(sequence)}`,
       text,
+      ...(messageId === undefined ? {} : { messageId }),
       ...(phase === undefined ? {} : { phase }),
       firstSequence: sequence,
       lastSequence: sequence,
@@ -264,7 +283,14 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
       };
     }
     if (event.type === "assistant.text.delta") {
-      return appendText(turn, event.payload.text, event.seq, event.payload.phase);
+      return appendText(
+        turn,
+        event.payload.text,
+        event.seq,
+        event.payload.phase,
+        event.payload.messageId,
+        event.payload.replace,
+      );
     }
     if (event.type === "provider.hosted_tool.started") {
       if (

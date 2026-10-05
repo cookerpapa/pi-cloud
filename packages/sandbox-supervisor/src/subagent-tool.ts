@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import {
@@ -130,10 +130,9 @@ export function validateSubagentControl(
 /** Pi Tool semantics, with no local child process, fake Session or script eval. */
 export function createCloudSubagentTool(
   runtime: CloudSubagentToolRuntime,
-): AgentTool<typeof schema> {
+): ToolRegistration<typeof schema> {
   return {
     name: "subagent",
-    label: "Subagent",
     parameters: schema,
     prepareArguments: argumentsForAction,
     description: [
@@ -153,7 +152,9 @@ export function createCloudSubagentTool(
       "Use a returned executionId or a workflow key as target. notify does not wake an idle Agent; steer targets the current task; follow_up queues later work.",
       "Do not send inherited 'start a subagent' instructions as the child's actual task. Do not replay uncertain external effects.",
     ].join(" "),
-    async execute(toolCallId, raw, signal) {
+    async execute(raw, api, context) {
+      const toolCallId = api.callId,
+        signal = context.abortSignal;
       const args = argumentsForAction(raw);
       let result: unknown;
       if (args.action === "run") {
