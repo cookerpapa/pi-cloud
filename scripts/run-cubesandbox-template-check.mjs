@@ -290,6 +290,8 @@ try {
       "root",
       request.timeoutMs + 5_000,
     );
+    assert(result.exitCode === 0, `Guest Tool launcher failed: ${result.stderr.slice(0, 2000)}`);
+    assert(result.stdout.trim(), "Guest Tool launcher omitted its protocol output");
     const frames = result.stdout
       .trim()
       .split(/\r?\n/)

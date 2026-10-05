@@ -70,9 +70,10 @@ RUN node node_modules/esbuild/bin/esbuild \
       --external:sharp \
       --format=esm \
       --target=node24 \
-      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
+      --banner:js="import { createRequire as __piCloudGuestRequire } from 'node:module'; const require = __piCloudGuestRequire(import.meta.url);" \
       --out-extension:.js=.mjs \
-      --outdir=/out
+      --outdir=/out \
+    && for guest_module in /out/*.mjs; do node --check "$guest_module"; done
 
 FROM ${CUBE_BASE_IMAGE}
 
