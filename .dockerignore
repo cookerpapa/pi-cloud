@@ -3,7 +3,7 @@
 !package.json
 !package-lock.json
 !tsconfig.base.json
-!scripts/harden-pi-dependencies.mjs
+!scripts/prepare-json-parser.mjs
 !scripts/retry-npm-command.sh
 !scripts/install-node-os-security-updates.sh
 !packages/*/package.json
