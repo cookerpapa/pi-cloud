@@ -38,17 +38,33 @@
     "sessions": 0,
     "unknown": [
       {
-        "runtimeId": null,
+        "identitySha256": "80bc33a15f811af67c7c25eb395f0a35c369111287e7694c046150632ab5e4c7",
         "state": "unknown"
       },
       {
-        "runtimeId": null,
+        "identitySha256": "5a695a70cc76f87ce52889704f4875e53143a6fbb23d4a3645520373657d993c",
         "state": "unknown"
       }
     ],
     "runtimeStates": {
       "unknown": 2,
       "released": 85
+    },
+    "originalUnknownIdentitiesPreserved": true,
+    "identityVerification": {
+      "fields": [
+        "tenant_id",
+        "workspace_id",
+        "supervisor_id",
+        "boot_id",
+        "sandbox_id",
+        "lease_id",
+        "fencing_token",
+        "runtime_id",
+        "state"
+      ],
+      "source": "schema180 pg_dump archive",
+      "checkedAt": "2026-10-06T14:57:15.053Z"
     }
   },
   "workerReplicas": 2,
