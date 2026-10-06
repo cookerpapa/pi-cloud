@@ -33,6 +33,10 @@ The [October 6 post-Durable review](reports/repository-review-20261006.md) is
 implemented and source-verified. [Repair evidence](reports/review-repair-20261006.md)
 records the native request/event fixes, filesystem exclusion, bounded navigation,
 SQL/dependency reductions and restored delivery checks. Production is not yet updated.
+The authorized rollout additionally found stale Debian package pins and fixable
+image findings beyond the npm audit. Release preparation updates the explicit
+OS/Go dependency pins and aligns image evidence with the actual versioned build
+and guest source identity; final image scans and live acceptance remain required.
 
 - [x] R06-01: restore Compaction summarize/retry identity under the new PG grant.
 - [x] R06-02: correlate overflow/retry events and query executing Tools beyond

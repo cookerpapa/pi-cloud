@@ -1,5 +1,5 @@
 import { completionBuildIdentity } from "./lib/guest-build-identity.mjs";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile, rm, copyFile, access } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
@@ -12,6 +12,16 @@ const manifest = JSON.parse(
 );
 const tag = process.env.PI_CLOUD_IMAGE_VERSION ?? "production";
 if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(tag)) throw new Error("Invalid Cube image tag");
+const revision = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: root,
+  encoding: "utf8",
+}).trim();
+const imageLabels = [
+  "--label",
+  `org.opencontainers.image.revision=${revision}`,
+  "--label",
+  `org.opencontainers.image.version=${tag}`,
+];
 const sourceRepository = resolve(
   process.env.PI_CLOUD_CUBESANDBOX_REPOSITORY ?? join(homedir(), "CubeSandbox"),
 );
@@ -82,6 +92,7 @@ try {
       .catch(() => {});
     await run("docker", [
       "build",
+      ...imageLabels,
       "--network=host",
       "--build-arg",
       "HTTP_PROXY",
@@ -105,6 +116,7 @@ try {
   }
   await run("docker", [
     "build",
+    ...imageLabels,
     "--network=host",
     "--build-arg",
     "HTTP_PROXY",

@@ -19,11 +19,15 @@
     {
       "file": "0004-recoverable-vm-allocation.patch",
       "sha256": "8869d15a276cadfe60852c57a0965a5829e24d75185e584d74ea84b94bbdc7e5"
+    },
+    {
+      "file": "0005-release-security-dependencies.patch",
+      "sha256": "1a951aebdcbab2e24b4307ca9b0736fec56ab70a85e7e1c4abfbe650d9e1b52c"
     }
   ],
   "buildImages": {
     "cubeletBuilder": "ghcr.io/tencentcloud/cubesandbox-builder@sha256:5848d94b222df1e0022638599a50a7680e48fcf744d4e2bd8cca60f7ba641aa5",
-    "go": "golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437",
+    "go": "golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36",
     "rust": "rust:1.85-alpine@sha256:4333721398de61f53ccbe53b0b855bcc4bb49e55828e8f652d7a8ac33dd0c118",
     "ubuntu22": "ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02",
     "ubuntu24": "ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",

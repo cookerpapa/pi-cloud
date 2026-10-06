@@ -96,7 +96,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       -e "s|http://archive.ubuntu.com/ubuntu|${PI_CLOUD_UBUNTU_MIRROR}|g" \
       -e "s|http://security.ubuntu.com/ubuntu|${PI_CLOUD_UBUNTU_MIRROR}|g" \
       /etc/apt/sources.list; \
-    packages="bash ca-certificates git openjdk-17-jdk-headless util-linux"; \
+    packages="bash ca-certificates git openjdk-17-jdk-headless util-linux libssl3=3.0.2-0ubuntu1.30 openssl=3.0.2-0ubuntu1.30"; \
     installed=0; \
     attempt=1; \
     while [ "$attempt" -le 3 ]; do \

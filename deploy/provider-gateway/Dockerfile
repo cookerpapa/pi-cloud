@@ -22,7 +22,9 @@ RUN git -c http.version=HTTP/1.1 clone --no-checkout --filter=blob:none https://
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
-    GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go mod download \
+    GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \
+      go get github.com/go-git/go-git/v6@v6.0.0-alpha.5 golang.org/x/crypto@v0.55.0 \
+    && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go mod download \
     && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
       GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \
       go build -buildvcs=false -trimpath \
@@ -31,5 +33,12 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 
 FROM ${CLI_PROXY_BASE_IMAGE}
 
+ARG PI_CLOUD_VERSION=development
+ARG PI_CLOUD_REVISION=development
+LABEL org.opencontainers.image.title="PiCloud model provider gateway" \
+      org.opencontainers.image.version="${PI_CLOUD_VERSION}" \
+      org.opencontainers.image.revision="${PI_CLOUD_REVISION}"
+COPY scripts/install-node-os-security-updates.sh /tmp/install-node-os-security-updates.sh
+RUN sh /tmp/install-node-os-security-updates.sh && rm /tmp/install-node-os-security-updates.sh
 COPY --from=builder /out/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
 RUN chmod 0555 /CLIProxyAPI/CLIProxyAPI

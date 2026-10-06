@@ -16,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const TRIVY_IMAGE =
@@ -28,14 +29,9 @@ const PRODUCTION_IMAGE_NAMES = [
   "web-ui",
   "provider-egress-relay",
   "ssh-gateway",
+  "cli-proxy-api",
 ];
-const CUBE_PLATFORM_IMAGES = [
-  "cube-api-authorizer",
-  "cube-egress-gateway",
-  "cube-api",
-  "cube-master",
-  "cubelet",
-];
+const CUBE_PLATFORM_IMAGES = ["cube-api", "cube-master", "cubelet"];
 const MAX_CAPTURE_BYTES = 64 * 1_024 * 1_024;
 
 function parseArguments(argv) {
@@ -282,12 +278,12 @@ try {
     })),
     ...CUBE_PLATFORM_IMAGES.map((imageName) => ({
       imageName,
-      reference: `pi-cloud/${imageName}:${revision}`,
-      labelVersion: "cube-primary",
+      reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+      labelVersion: options.imageVersion,
     })),
     {
       imageName: "cubesandbox-tool",
-      reference: `localhost:5000/pi-cloud/cubesandbox-tool:${revision}`,
+      reference: `localhost:5000/pi-cloud/cubesandbox-tool:${await guestBuildIdentity(repositoryRoot)}`,
       labelVersion: "cube-primary",
     },
   ];

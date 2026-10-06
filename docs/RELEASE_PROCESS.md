@@ -1,8 +1,10 @@
 # Release evidence process
 
-PiCloud's supported release process binds a clean Git revision to six
-application images and the three images owned by its CubeSandbox execution
-plane, plus machine-readable dependency/security evidence. It does not
+PiCloud's matched runtime release binds a clean Git revision to seven
+application/provider images, three native Cube runtime images and one guest
+template, plus machine-readable dependency/security evidence. The unchanged
+installer-managed authorizer/egress gateway and third-party infrastructure are
+outside this application-upgrade image set. It does not
 currently push, sign, or publish images; registry policy and signing need a
 separate deployment decision.
 
@@ -10,8 +12,8 @@ separate deployment decision.
 
 - use a clean checkout at the intended release commit;
 - install only the lockfile with `npm ci --ignore-scripts`, then run
-  `npm run dependencies:harden` to apply and verify the reviewed Pi shrinkwrap
-  security patches;
+  `npm run dependencies:harden` to apply the reviewed JSON parser correction and
+  build the pinned Kafka native dependency;
 - run `npm run ci`, `npm run cubesandbox:live-check`, and
   `PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check`;
 - install the Cube platform images and register the immutable Tool template
@@ -22,11 +24,13 @@ separate deployment decision.
 - choose one immutable image version. Do not reuse a published version for a
   different commit.
 
-Build all production images with the version. The Compose wrapper derives the
+Build all production images with the version. The Kubernetes build wrapper derives the
 full lowercase Git revision and passes both values as OCI labels:
 
 ```bash
-PI_CLOUD_IMAGE_VERSION=0.1.0 npm run production:build
+PI_CLOUD_BUILD_TAG=0.1.0 npm run production:build
+PI_CLOUD_IMAGE_VERSION=0.1.0 node scripts/build-cubesandbox-runtime.mjs
+npm run cubesandbox:template-register
 ```
 
 Generate evidence into an absent or empty path:
@@ -50,7 +54,7 @@ pi-cloud-root.cdx.json
 images/control-plane.cdx.json
 images/control-plane.vulnerabilities.json
 images/control-plane.policy-vulnerabilities.json
-... one SBOM/two-report set for each of nine images
+... one SBOM/two-report set for each of eleven matched runtime images
 ```
 
 `manifest.json` records:

@@ -108,9 +108,14 @@ assert.equal(
 const installer = readFileSync("scripts/install-cubesandbox-k3s.mjs", "utf8");
 const releaseEvidence = readFileSync("scripts/generate-release-evidence.mjs", "utf8");
 assert.ok(
-  /reference: `pi-cloud\/\$\{imageName\}:\$\{revision\}`/u.test(releaseEvidence),
-  "Release evidence must inspect immutable Cube platform images",
+  /reference: `pi-cloud\/\$\{imageName\}:\$\{options.imageVersion\}`/u.test(releaseEvidence),
+  "Release evidence must inspect the selected matched image version",
 );
+assert.match(releaseEvidence, /await guestBuildIdentity\(repositoryRoot\)/u);
+assert.match(releaseEvidence, /"cli-proxy-api"/u);
+const cubeBuilder = readFileSync("scripts/build-cubesandbox-runtime.mjs", "utf8");
+assert.match(cubeBuilder, /org.opencontainers.image.revision=\$\{revision\}/u);
+assert.equal(cubeBuilder.match(/\.\.\.imageLabels/g)?.length, 2);
 assert.ok(
   !/reference: `pi-cloud\/\$\{imageName\}:local`/u.test(releaseEvidence),
   "Retired mutable Cube image tags must not remain",
