@@ -1,6 +1,7 @@
 # ADR-0229: Adopt Pi Durable 1.0 execution semantics
 
-Status: accepted for implementation, 2026-10-05. Not deployed.
+Status: implemented, verified and deployed, 2026-10-06. See the
+[migration and release record](../reports/pi-durable-migration-20261006.md).
 
 The owner chose native Pi Durable 1.0 cancellation and recovery after
 [ADR-0228's executable evaluation](../reports/pi-durable-evaluation-20261005.md).

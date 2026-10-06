@@ -1,5 +1,7 @@
 # ADR-0197: Indexed native Session log and bounded current state
 
+
+The indexed-log principle remains; the 0.84 Entry/Record schema below was replaced by the native Durable batch/record/document layout in [ADR-0229](0229-native-durable-runtime.md).
 ## Status
 
 Accepted, 2026-09-27. The owner approved option B after the

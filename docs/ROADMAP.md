@@ -2,9 +2,9 @@
 
 ## Pi Durable 1.0 evaluation
 
-- [ ] Implement the approved native Durable runtime/storage migration under
-      [ADR-0229](adr/0229-native-durable-runtime.md), validate full product and
-      recovery behavior, then perform a matched cutover.
+- [x] Implement and deploy the native Durable runtime/storage migration under
+      [ADR-0229](adr/0229-native-durable-runtime.md), with product/recovery
+      [verification and matched cutover](reports/pi-durable-migration-20261006.md).
 - [x] Execute isolated storage, Kafka/PG, crash and actual Cube Tool verification
       under ADR-0228. [Results and migration boundaries](reports/pi-durable-evaluation-20261005.md).
       The owner subsequently approved native adoption under ADR-0229; the evaluation

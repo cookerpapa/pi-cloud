@@ -1,5 +1,7 @@
 # ADR-0221: Pi Tool cancellation across the execution boundary
 
+
+Ordered operation cancellation and physical process-group boundaries remain. Original-reply settlement below is superseded by native Durable abort semantics in [ADR-0229](0229-native-durable-runtime.md).
 Status: implemented and deployed, 2026-10-04. See the
 [verification and live acceptance](../reports/pi-tool-cancellation-20261004.md).
 

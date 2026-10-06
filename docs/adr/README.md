@@ -10,7 +10,7 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
-1. [ADR-0229](0229-native-durable-runtime.md) — accepted adoption of Pi Durable
+1. [ADR-0229](0229-native-durable-runtime.md) — native adoption of Pi Durable
    1.0 execution semantics; implementation and matched cutover pending.
 1. [ADR-0228](0228-pi-durable-evaluation.md) — isolated Pi Durable 1.0 commit and
    remote Tool verification; no production runtime adoption.
@@ -24,7 +24,7 @@ Read the documents in this order:
    staged recovery, PG decision time and shared native model request policy.
 1. [ADR-0223](0223-recoverable-vm-allocation.md) — stable VM creation identity,
    queryable outcomes, node boot fencing and irreversible allocation closure.
-1. [ADR-0222](0222-paused-inputs-after-stop.md) — historical deployed input pause (replaced by ADR-0229 in source),
+1. [ADR-0222](0222-paused-inputs-after-stop.md) — historical deployed input pause (replaced by deployed ADR-0229),
    independent fresh input and explicit queue/individual continuation.
 1. [ADR-0221](0221-pi-tool-cancellation.md) — Pi-style operation cancellation,
    bounded result settlement and durable abnormal-retirement intent.

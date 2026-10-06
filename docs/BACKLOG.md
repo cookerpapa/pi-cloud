@@ -32,13 +32,12 @@ release-time cleanup before changing target identity or deleting metadata.
       [ADR-0228](adr/0228-pi-durable-evaluation.md). The
       [executable evaluation](reports/pi-durable-evaluation-20261005.md) proves
       transport seams and records cancellation/recovery/queue mismatches.
-- [ ] Complete matched release verification for the owner-approved
-      [Pi Durable adoption](adr/0229-native-durable-runtime.md). Native Harness,
-      Storage, numeric Conversation bindings, authorized same-Run recovery,
-      ordered abort/Tool cancellation and queue return are implemented. The
-      [migration record](reports/pi-durable-migration-20261006.md) tracks actual
-      build, fault, Luna/Cube/browser and deployment gates; source completion
-      alone is not a deployment.
+- [x] Deploy the owner-approved [Pi Durable adoption](adr/0229-native-durable-runtime.md):
+      native Harness/Storage, numeric Conversations, authorized same-Run recovery,
+      ordered abort/Tool cancellation and queue return. [Release evidence](reports/pi-durable-migration-20261006.md)
+      includes 186 fault cases, real Luna/Cube/browser/image/Steer recovery and
+      matched schema 180 / execution-topic v14 artifacts. Automatic background
+      Compaction remains outside the current cloud admission lifetime.
 
 The [October 5 follow-up review](reports/repository-review-20261005.md) is complete
 at `5c2fcab4`. Its original characterization tests are archived at `13344042`.
@@ -81,7 +80,7 @@ creation/closure races, Luna with Control Plane SIGKILL, and dedicated-machine
 takeover, pause/resume and Volume release. Historical untracked allocations and
 physical-node recovery limits remain in the operational items below.
 
-[ADR-0222](adr/0222-paused-inputs-after-stop.md) is deployed: Stop durably pauses
+[ADR-0222](adr/0222-paused-inputs-after-stop.md) was deployed before ADR-0229: Stop paused
 pending human inputs; new input runs independently and explicit Send/Continue
 queue resumes old input. [Verification](reports/paused-inputs-20261004.md) includes
 172 fault cases and real Luna/browser/Worker-replacement acceptance.

@@ -1,5 +1,7 @@
 # ADR-0198: atomic remote Tool intent and dispatch
 
+
+The single validated intent/dispatch boundary remains. Its former `tool_invocation` wire format is replaced by the native execute checkpoint plus compressed dispatch in [ADR-0229](0229-native-durable-runtime.md).
 Status: implemented and validated, 2026-09-28.
 
 [Implementation, fault and real Luna/Cube acceptance](../reports/tool-invocation-acceptance-20260928.md).

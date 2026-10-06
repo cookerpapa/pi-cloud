@@ -10,11 +10,17 @@
     "workspaceTestsBeforeSupervisionFix": 1578,
     "workspaceSkipped": 9,
     "currentSupervisorTests": 157,
-    "faultCases": 185,
+    "faultCases": 186,
     "acceptanceHelpers": 53,
     "rf3IntegrationCases": 2,
     "freshNpmCi": true,
-    "dependencyAuditRemainingVulnerabilities": 0
+    "dependencyAuditRemainingVulnerabilities": 0,
+    "activeToolProjectionTests": 35,
+    "activeToolAndSealPostgresTests": 20,
+    "currentFaultManifestCases": 186,
+    "finalBuild": true,
+    "finalTypecheck": true,
+    "finalDocumentationCheck": true
   },
   "live": {
     "nativeTools": {
@@ -143,7 +149,41 @@
         }
       ],
       "scope": "Real Gateway/Durable/Luna with a 4096-token fixture window; no PG/Kafka Run or production catalog mutation"
+    },
+    "subagentCancellation": {
+      "accepted": true,
+      "scenarios": ["cancellation"],
+      "cleanupCompleted": true
+    },
+    "workflowGuestBoundary": {
+      "accepted": true,
+      "scenarios": ["guest-boundary"],
+      "cleanupCompleted": true
+    },
+    "browserQueue": {
+      "accepted": true,
+      "browserActions": ["编辑", "保存", "↑", "取消发送", "编辑", "立即引导"],
+      "cleanupCompleted": true
+    },
+    "queuedImage": {
+      "accepted": true,
+      "queuedImageSteer": {
+        "imageOnlyAdmission": true,
+        "editPreservedAttachment": true,
+        "consumedExactlyOnce": true,
+        "directVisionWithoutRead": true,
+        "sourceRunCancelled": true
+      },
+      "cleanupRequested": true
     }
   },
-  "releaseStatus": "final product acceptance in progress"
+  "releaseStatus": "deployed and verified",
+  "deployedControlRevision": "c2e920f91399",
+  "cleanup": {
+    "productSessions": 0,
+    "activeRuns": 0,
+    "unsealedRuns": 0,
+    "openToolBindings": 0,
+    "historicalUnknownRuntimesPreserved": 2
+  }
 }
