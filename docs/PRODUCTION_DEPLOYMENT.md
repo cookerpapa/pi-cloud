@@ -102,6 +102,9 @@ base image, so a stale local `production` tag cannot silently produce a release.
 Template retention shares a 30-second deletion budget across registration phases
 and stops after an unconfirmed delete. Remaining targets stay in Cube's inventory;
 auxiliary cleanup cannot add one full timeout per historical replica to a release.
+Template and rootfs cleanup resolve current addresses from recorded stable node
+IDs (ADR-0233). Stored replica/job IPs are historical observations. Missing current
+registration retains cleanup evidence; it never selects a replacement node by IP.
 Platform deployment checks the actual CubeMaster/Cubelet shared path, Cubelet
 configuration mount, native patch version and completion source identity before
 changing the application. It refuses a mismatched runtime rather than accepting a

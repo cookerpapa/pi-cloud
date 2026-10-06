@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Cube template cleanup
+
+- [x] Diagnose and repair stale node-address routing under
+      [ADR-0233](adr/0233-template-cleanup-node-routing.md). Matched Cube release,
+      148 template tests, real MySQL failure/reference checks and removal of 55
+      old templates pass [live acceptance](reports/template-cleanup-20261007.md).
+
 ## Post-Durable whole-repository review
 
 - [x] Review `aace21a8` against pinned Pi Durable 1.0.0 and

@@ -1,5 +1,10 @@
 # Documentation map
 
+The [October 7 template cleanup repair](reports/template-cleanup-20261007.md)
+resolves obsolete Pod IP routing in Cube's template and rootfs cleanup. It records
+the pinned source patch, retained-reference tests, native rollout and actual
+removal of 55 old templates while the four current templates remain usable.
+
 The [October 6 post-Durable whole-repository review](reports/repository-review-20261006.md)
 audits `aace21a8` across all 22 workspaces, native Pi, Cube, product and delivery
 boundaries. It records five findings, three measured optimization opportunities

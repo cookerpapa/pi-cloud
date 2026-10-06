@@ -21,12 +21,12 @@ and the [production cutover](reports/cube-execution-rollout-20261001.md) are
 complete. The owner confirmed dsh-cloud is retired; it no longer constrains
 PiCloud deployment. Remaining operational limits are listed below.
 
-The Durable cutover also exposed repeated timeouts while Cube deletes old
-Template replicas. New registered templates remain usable; failed cleanup keeps
-its recorded targets. Release-time cleanup now shares a 30-second budget and stops
-after an unconfirmed delete. The owner-authorized repair in
-[ADR-0233](adr/0233-template-cleanup-node-routing.md) addresses stale Pod IP routing
-through the existing stable-node registry; implementation and live cleanup are in progress.
+The repeated Cube template-cleanup timeouts are resolved under
+[ADR-0233](adr/0233-template-cleanup-node-routing.md): cleanup used obsolete Pod IPs
+instead of current addresses for the same stable node. The
+[deployed repair](reports/template-cleanup-20261007.md) removes 55 unused templates
+and their artifacts, preserving all four current templates and historical UNKNOWN
+VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
 ## Reliability and capacity
 
@@ -242,10 +242,10 @@ separate design questions, not an implicit part of the completed query merge.
       standard-profile acceptance allocation remain held). [Evidence](reports/review-repair-20261004.md).
 
 
-- [ ] Diagnose Cube node template-cleanup timeouts observed during the
-      [chat upload rollout](reports/user-input-attachments-rollout-20260929.json).
-      Fifteen retention candidates were deferred; the new templates are READY.
-      Preserve template/Volume pinning instead of bypassing cleanup guards.
+- [x] Resolve the historical Cube node template-cleanup timeouts through current
+      node discovery. [Acceptance](reports/template-cleanup-20261007.md) covers
+      replica/artifact routing, retained failures, shared references and actual
+      cleanup of the accumulated 55 candidates without weakening pinning.
 
 - [ ] Investigate the 4GB Cube template restore failure seen after a WSL reboot:
       CubeShim's `SetGuestDateTime` RPC timed out twice before guest tools started.
@@ -254,8 +254,8 @@ separate design questions, not an implicit part of the completed query merge.
       template replacement, Tool retry or weaker readiness was introduced.
 - [ ] Run the one-host installer on a genuinely clean machine; current K3s
       cutover tests do not establish that broader claim.
-- [ ] Reconcile Cube Volume node references after host/guest loss and resolve
-      template cleanup via stable node identity rather than obsolete Pod IPs.
+- [ ] Reconcile Cube Volume node references after host/guest loss; template cleanup
+      via stable node identity is completed separately under ADR-0233.
 - [ ] Decide a local Cube MySQL binlog retention policy. Earlier disk cleanup
       did not change its 30-day default. [Evidence](reports/environment-reset-20260910.md).
 - [ ] Add deployment-specific Kafka TLS/SASL/ACL examples and wire real on-call

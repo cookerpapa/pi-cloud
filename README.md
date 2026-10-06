@@ -97,6 +97,9 @@ verified behavior and remaining limits. Original images stream to Cube for
 normalization; native context still materializes normalized image content.
 Cube mounts, configuration and completion credentials are rendered into one
 Helm release before deployment, with native-version and source-identity checks.
+Template and artifact cleanup follows stable node identity through current
+discovery, so Pod address changes do not strand historical replicas.
+See the [deployed cleanup repair](docs/reports/template-cleanup-20261007.md).
 The [follow-up review](docs/reports/repository-review-20261003-r2.md) records
 findings and baseline evidence at `3dbf49fb`; [the repairs](docs/reports/review-repair-20261004.md)
 track the approved fixes and matched protocol-3 verification.

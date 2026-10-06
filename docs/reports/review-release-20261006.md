@@ -104,3 +104,6 @@ and states. No whole-VM cleanup was inferred from a missing probe.
 Old template-replica cleanup still needs diagnosis. Cross-node filesystem failover
 and large-scale capacity remain unverified. The earlier deterministic native
 recovery and 203-case fault evidence remain distinct from these live smoke checks.
+
+The subsequent [October 7 cleanup repair](template-cleanup-20261007.md) resolves
+the template timeout noted above; the other scope limits remain.

@@ -1,6 +1,7 @@
 # ADR-0233: Resolve template cleanup by current node identity
 
-Status: implemented and source-verified, 2026-10-06; production verification pending.
+Status: implemented, verified and deployed, 2026-10-07.
+[Verification and cleanup evidence](../reports/template-cleanup-20261007.md).
 The owner requested diagnosis and repair of repeated old-template cleanup timeouts.
 
 ## Evidence

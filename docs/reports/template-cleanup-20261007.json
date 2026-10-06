@@ -1,0 +1,316 @@
+{
+  "format": "pi-cloud.template-cleanup.v1",
+  "verifiedAt": "2026-10-06T16:05:34.270Z",
+  "sourceRevision": "59f3db87f136bed245e785b8b030c9a004c59094",
+  "deployed": true,
+  "patchSet": "5db7e5dcc3f3b829",
+  "completionSource": "b9412dc3af9b5eae8859f0fce56ce4db5b0e1163",
+  "managedProtocolVersion": 7,
+  "guestProtocolVersion": 3,
+  "releases": [
+    {
+      "name": "cube",
+      "revision": "50",
+      "status": "deployed"
+    },
+    {
+      "name": "pi-cloud",
+      "revision": "25",
+      "status": "deployed"
+    },
+    {
+      "name": "pi-cloud-infrastructure",
+      "revision": "24",
+      "status": "deployed"
+    }
+  ],
+  "rootCause": {
+    "recordedAddresses": ["10.42.0.52", "10.42.0.218"],
+    "registeredAddressBefore": "10.42.0.6",
+    "registeredAddressAfter": "10.42.0.21",
+    "reproduction": "Original source sent cleanup RPC to the recorded address despite current node registration"
+  },
+  "tests": {
+    "templateCenterPassed": 148,
+    "optionalUpstreamSkipped": 3,
+    "realMysqlScenarios": 5
+  },
+  "cleanup": {
+    "startedAt": "2026-10-06T16:01:00.780Z",
+    "before": 59,
+    "protectedTemplates": [
+      "tpl-d30309554b434999a7e3422c",
+      "tpl-8650befc4ccb4aceb58838ff",
+      "tpl-d7f6520205a9495fa8fd2f68",
+      "tpl-15d61304ac90472c99e5347e"
+    ],
+    "currentNodes": [
+      {
+        "nodeId": "laptop-ovcivi2v",
+        "ip": "10.42.0.21"
+      }
+    ],
+    "selected": 55,
+    "deleted": [
+      {
+        "templateId": "tpl-e73ae5711a6042c6853464bd",
+        "elapsedMs": 713
+      },
+      {
+        "templateId": "tpl-d318ad2d9b0f496e893344a2",
+        "elapsedMs": 745
+      },
+      {
+        "templateId": "tpl-f3bc7d2c30e84acf8576e782",
+        "elapsedMs": 917
+      },
+      {
+        "templateId": "tpl-f803925832ad48d696468188",
+        "elapsedMs": 759
+      },
+      {
+        "templateId": "tpl-0f01a5de478f4379a7f2dd38",
+        "elapsedMs": 916
+      },
+      {
+        "templateId": "tpl-d20dd9d471ad43a1821f4cff",
+        "elapsedMs": 736
+      },
+      {
+        "templateId": "tpl-214d35bec40642b08f03fa9f",
+        "elapsedMs": 888
+      },
+      {
+        "templateId": "tpl-efb80cf366c241d5986b7cca",
+        "elapsedMs": 729
+      },
+      {
+        "templateId": "tpl-d228976c333846cca17052f7",
+        "elapsedMs": 721
+      },
+      {
+        "templateId": "tpl-9f27922824f64a1993e861f8",
+        "elapsedMs": 737
+      },
+      {
+        "templateId": "tpl-fac8b335b290434d8705189e",
+        "elapsedMs": 730
+      },
+      {
+        "templateId": "tpl-27ca4fda03fc416ab1b421e2",
+        "elapsedMs": 1221
+      },
+      {
+        "templateId": "tpl-fd2f1fa705a742e4a74763de",
+        "elapsedMs": 720
+      },
+      {
+        "templateId": "tpl-c0c9ddfc6cc641daa01c8261",
+        "elapsedMs": 717
+      },
+      {
+        "templateId": "tpl-fc942239453249f999b74589",
+        "elapsedMs": 697
+      },
+      {
+        "templateId": "tpl-61d277bd4a70452e8ce3c4c7",
+        "elapsedMs": 707
+      },
+      {
+        "templateId": "tpl-133858a8608d4dfe86ad47f8",
+        "elapsedMs": 732
+      },
+      {
+        "templateId": "tpl-f16e53712cf44e2598d937c1",
+        "elapsedMs": 876
+      },
+      {
+        "templateId": "tpl-c081211ada9d45ea9214f0f3",
+        "elapsedMs": 738
+      },
+      {
+        "templateId": "tpl-a0889e7c8c6e4521889562f9",
+        "elapsedMs": 760
+      },
+      {
+        "templateId": "tpl-114170342a16421898b54f3a",
+        "elapsedMs": 772
+      },
+      {
+        "templateId": "tpl-1042655605514801a1d35b71",
+        "elapsedMs": 785
+      },
+      {
+        "templateId": "tpl-43e601fcd10e4486a05a52b7",
+        "elapsedMs": 724
+      },
+      {
+        "templateId": "tpl-2e06c8a52bc6421eaafb0297",
+        "elapsedMs": 814
+      },
+      {
+        "templateId": "tpl-ec693918e5ef4eab91f99599",
+        "elapsedMs": 780
+      },
+      {
+        "templateId": "tpl-2f4f4747f1e74f98bafc1481",
+        "elapsedMs": 750
+      },
+      {
+        "templateId": "tpl-9485177d32e9487089e30ff5",
+        "elapsedMs": 705
+      },
+      {
+        "templateId": "tpl-2cd34afd50524f7b838c770f",
+        "elapsedMs": 754
+      },
+      {
+        "templateId": "tpl-f4c3327dd6ad4d26aaa05b80",
+        "elapsedMs": 730
+      },
+      {
+        "templateId": "tpl-aa6a8aa46a17414285a66ec5",
+        "elapsedMs": 776
+      },
+      {
+        "templateId": "tpl-b2ca5d67b4c44eac9bd724ad",
+        "elapsedMs": 892
+      },
+      {
+        "templateId": "tpl-77cd5d457e1e45c59dd799f1",
+        "elapsedMs": 780
+      },
+      {
+        "templateId": "tpl-f3cad5502f1541a5a4afe261",
+        "elapsedMs": 730
+      },
+      {
+        "templateId": "tpl-ffa624e9b4c94344aa164812",
+        "elapsedMs": 753
+      },
+      {
+        "templateId": "tpl-d1755a8d8e6a49af935a743e",
+        "elapsedMs": 751
+      },
+      {
+        "templateId": "tpl-617ba67fe42a4657847581fe",
+        "elapsedMs": 759
+      },
+      {
+        "templateId": "tpl-d1f7c20f29fb431399fc6c3f",
+        "elapsedMs": 707
+      },
+      {
+        "templateId": "tpl-6068113b3a064f79b7f75cb8",
+        "elapsedMs": 704
+      },
+      {
+        "templateId": "tpl-d4c1f61c75394aa6bdcea65d",
+        "elapsedMs": 730
+      },
+      {
+        "templateId": "tpl-46c1e7012f264098b7196f84",
+        "elapsedMs": 715
+      },
+      {
+        "templateId": "tpl-5aba936c12b9470898d65569",
+        "elapsedMs": 700
+      },
+      {
+        "templateId": "tpl-43786d1b01b64f9d85a08cec",
+        "elapsedMs": 784
+      },
+      {
+        "templateId": "tpl-f08ecfd9901242e285801a64",
+        "elapsedMs": 1027
+      },
+      {
+        "templateId": "tpl-9327ff13689244caaeecae85",
+        "elapsedMs": 889
+      },
+      {
+        "templateId": "tpl-b5c7b7596258437899176f67",
+        "elapsedMs": 752
+      },
+      {
+        "templateId": "tpl-da36e56bc34c4873b80c7013",
+        "elapsedMs": 727
+      },
+      {
+        "templateId": "tpl-0009fbe0976e4f7697042f23",
+        "elapsedMs": 786
+      },
+      {
+        "templateId": "tpl-b2a4f09cd4f54b7bb6a11a30",
+        "elapsedMs": 782
+      },
+      {
+        "templateId": "tpl-e938a23f22dd4e85bd6b4cb0",
+        "elapsedMs": 744
+      },
+      {
+        "templateId": "tpl-0a9c583969714f8e9f21c25a",
+        "elapsedMs": 793
+      },
+      {
+        "templateId": "tpl-93f84b1a8a6542f98894107d",
+        "elapsedMs": 823
+      },
+      {
+        "templateId": "tpl-bd3872a4da1b41b0b289d364",
+        "elapsedMs": 800
+      },
+      {
+        "templateId": "tpl-7eca7d38db0f4c42a4bc1bc4",
+        "elapsedMs": 751
+      },
+      {
+        "templateId": "tpl-23792881104243c5b2cf79af",
+        "elapsedMs": 779
+      },
+      {
+        "templateId": "tpl-143b3283a17344e0bf9b1fe1",
+        "elapsedMs": 759
+      }
+    ],
+    "accepted": true,
+    "after": 4,
+    "artifactMetadata": "READY\t4\t4294967296\n",
+    "completedAt": "2026-10-06T16:01:47.243Z"
+  },
+  "artifacts": {
+    "beforeKiB": 44021432,
+    "afterKiB": 3010740,
+    "reclaimedKiB": 41010692,
+    "metadata": "READY\t4\t4294967296\n4\n4\n"
+  },
+  "security": [
+    {
+      "reference": "pi-cloud/cube-api:template-cleanup-59f3db87",
+      "imageId": "sha256:d4dc41ef691a4f0f03d8b83d39d4eb73e6fc7ee3060de11b50a416bad4785394",
+      "highCritical": 0,
+      "fixable": 0
+    },
+    {
+      "reference": "pi-cloud/cube-master:template-cleanup-59f3db87",
+      "imageId": "sha256:3270aca304e71e851634f1048fc5dfc972979bf171be8faf7043a8db7fe7b8b2",
+      "highCritical": 0,
+      "fixable": 0
+    },
+    {
+      "reference": "pi-cloud/cubelet:template-cleanup-59f3db87",
+      "imageId": "sha256:e21f2763c8dbe2829e83ec0aff20408336ce3df00bc84affdf97b2a9d27eb8ac",
+      "highCritical": 0,
+      "fixable": 0
+    }
+  ],
+  "final": {
+    "schema": "181_durable_navigation_index",
+    "activeRuns": 0,
+    "unsealed": 0,
+    "outbox": 0,
+    "readyWorkers": 2,
+    "historicalUnknownIdentitiesPreserved": 2
+  },
+  "liveTools": "template-cleanup-tools-20261007.json"
+}
