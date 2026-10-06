@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
 
 import {
+  createCubeTemplatePruner,
   parseCubeTemplateRetention,
   selectCubeTemplatesForDeletion,
 } from "./cubesandbox-template-retention.mjs";
@@ -268,6 +269,11 @@ async function currentTemplateEvidence() {
   return current;
 }
 
+const pruneSelectedTemplates = createCubeTemplatePruner({
+  deleteTemplate: (templateId, timeoutMs) =>
+    cubeMasterCli(["tpl", "delete", templateId], timeoutMs),
+});
+
 async function pruneCubeTemplates(inventory, protectedTemplateIds, phase) {
   const retention = parseCubeTemplateRetention(process.env.PI_CLOUD_CUBE_TEMPLATE_RETENTION);
   const selected = selectCubeTemplatesForDeletion({
@@ -275,21 +281,14 @@ async function pruneCubeTemplates(inventory, protectedTemplateIds, phase) {
     protectedTemplateIds,
     retention,
   });
-  let deleted = 0;
-  let deferred = 0;
-  for (const template of selected) {
-    try {
-      await cubeMasterCli(["tpl", "delete", template.template_id], 120_000);
-      deleted += 1;
-    } catch (error) {
-      deferred += 1;
-      process.stderr.write(
-        `Cube template retention deferred ${template.template_id} during ${phase}: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
-    }
+  const { deleted, deferred, stopReason, failure } = await pruneSelectedTemplates(selected);
+  if (failure) {
+    process.stderr.write(
+      `Cube template retention deferred ${failure.templateId} during ${phase}: ${failure.error instanceof Error ? failure.error.message : String(failure.error)}\n`,
+    );
   }
   process.stdout.write(
-    `${JSON.stringify({ cubeTemplateRetention: phase, retention, selected: selected.length, deleted, deferred })}\n`,
+    `${JSON.stringify({ cubeTemplateRetention: phase, retention, selected: selected.length, deleted, deferred, stopReason })}\n`,
   );
 }
 

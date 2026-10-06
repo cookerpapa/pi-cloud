@@ -4,6 +4,7 @@ import { parseDocument } from "yaml";
 
 import {
   PI_CLOUD_CUBE_TEMPLATE_IMAGE_PREFIX,
+  createCubeTemplatePruner,
   parseCubeTemplateRetention,
   selectCubeTemplatesForDeletion,
 } from "./cubesandbox-template-retention.mjs";
@@ -54,6 +55,46 @@ assert.ok(
   !selected.some((value) => value.template_id === id("7")),
   "another product's Cube template must never be deleted",
 );
+
+// Slow successes share one budget across release phases; a timeout/failure
+// must not start a separate wait for every remaining historical replica.
+let clock = 0;
+const calls = [];
+const prune = createCubeTemplatePruner({
+  now: () => clock,
+  budgetMs: 30,
+  deleteTemplate: async (templateId, timeoutMs) => {
+    calls.push({ templateId, timeoutMs });
+    clock += 15;
+  },
+});
+assert.equal((await prune(selected.slice(0, 1))).deleted, 1);
+clock += 60_000; // Image construction time does not consume cleanup's I/O budget.
+const exhausted = await prune(selected);
+assert.equal(exhausted.deleted, 1);
+assert.equal(exhausted.deferred, 1);
+assert.equal(exhausted.stopReason, "budget_exhausted");
+assert.deepEqual(
+  calls.map((call) => call.timeoutMs),
+  [30, 15],
+);
+assert.equal((await prune(selected)).deferred, selected.length);
+assert.equal(calls.length, 2);
+
+let attempts = 0;
+const failedPrune = createCubeTemplatePruner({
+  deleteTemplate: async () => {
+    attempts += 1;
+    throw new Error("replica deletion timed out");
+  },
+});
+const failed = await failedPrune(selected);
+assert.equal(failed.deleted, 0);
+assert.equal(failed.deferred, selected.length);
+assert.equal(failed.failure.templateId, selected[0].template_id);
+assert.equal(failed.stopReason, "delete_unconfirmed");
+await failedPrune(selected);
+assert.equal(attempts, 1, "later registration phases must not repeat failed cleanup");
 
 const cubeValuesDocument = parseDocument(
   readFileSync("deploy/cubesandbox/values-pi-cloud-single-node.yaml", "utf8"),

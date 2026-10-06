@@ -23,8 +23,9 @@ PiCloud deployment. Remaining operational limits are listed below.
 
 The Durable cutover also exposed repeated timeouts while Cube deletes old
 Template replicas. New registered templates remain usable; failed cleanup keeps
-its recorded targets. Diagnose the historical locator/address path and bound
-release-time cleanup before changing target identity or deleting metadata.
+its recorded targets. Release-time cleanup now shares a 30-second budget and stops
+after an unconfirmed delete. Diagnose the historical locator/address path before
+changing target identity or deleting metadata.
 
 ## Reliability and capacity
 

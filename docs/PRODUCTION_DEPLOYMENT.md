@@ -99,6 +99,9 @@ Migration 175 removes obsolete terminal lease mirrors; drain the old Control Pla
 before applying it and use matching schema/application state for rollback.
 The completion image build requires `PI_CLOUD_CUBE_PATCH_ID` matching the actual
 base image, so a stale local `production` tag cannot silently produce a release.
+Template retention shares a 30-second deletion budget across registration phases
+and stops after an unconfirmed delete. Remaining targets stay in Cube's inventory;
+auxiliary cleanup cannot add one full timeout per historical replica to a release.
 Platform deployment checks the actual CubeMaster/Cubelet shared path, Cubelet
 configuration mount, native patch version and completion source identity before
 changing the application. It refuses a mismatched runtime rather than accepting a
