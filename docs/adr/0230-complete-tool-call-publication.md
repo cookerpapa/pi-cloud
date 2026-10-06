@@ -1,6 +1,6 @@
 # ADR-0230: Publish Tool calls only after model response completion
 
-Status: implemented and locally verified, 2026-10-06; rollout pending.
+Status: implemented, verified and deployed, 2026-10-06.
 
 The owner requires incomplete model-generated Tool calls to remain in Worker
 memory. Hiding argument deltas in the Web UI is insufficient: they must not
@@ -69,3 +69,31 @@ They drive the public Models stream and the actual pinned Harness, inspect every
 submitted storage batch, withhold intent acknowledgement, and reopen from a
 committed pre-shutdown prefix. This is deterministic recovery evidence; it does
 not claim that a MemoryStorage probe itself tests Kafka replication.
+
+## Verification and deployment
+
+- Sandbox Supervisor: 167 tests pass, including 10 new stream/native contract
+  cases. Supervisor Host: 93 tests pass. Both affected workspaces typecheck;
+  formatting, documentation and Worker image-closure checks pass.
+- [Deterministic fault evaluation](../reports/tool-call-publication-faults-20261006.md):
+  190/190 cases pass, including partial publication, provider mutation, Stop and
+  reopen. The report captures the dirty `ea07e2cb` worktree; those runtime/test
+  changes were committed as `af011ea4` before building the release image.
+- Helm release `pi-cloud` revision 24 deploys
+  `pi-cloud/supervisor-host:complete-tools-af011ea46133`. Both Worker Pods are
+  updated and Ready. Runtime image inventory and private Helm values record the
+  same desired image. This Worker-only release needs no schema or guest update.
+- [Real GPT-6 Luna acceptance](../reports/complete-tool-call-live-20261006.json)
+  executes `write` and `bash`, checks exact file bytes by SHA-256, and inspects
+  the corresponding PG native log before deleting the disposable conversation.
+  It observes 87 native writes, including 53 document writes with zero Tool-call
+  objects, two complete Tool calls and two execute checkpoints. This live check
+  exercises the actual Kafka/Projector/Cube path; interruption cases above use
+  controlled model streams and native committed-prefix reopen.
+
+Reproduce the live probe with
+`PI_CLOUD_LIVE_COMPLETE_TOOL_CHECK=1 node --import tsx scripts/run-live-complete-tool-call-check.mjs`.
+It uses Luna tokens and a disposable Workspace, then requests deletion of its
+own conversation and Workspace. The report stores aggregate metadata only.
+Historical records are not rewritten. Worker rollback uses the previous matched
+image; it would restore the older partial-Tool publication policy.

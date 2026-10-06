@@ -1,5 +1,10 @@
 # Documentation map
 
+[ADR-0230](adr/0230-complete-tool-call-publication.md) is implemented and deployed:
+streaming local Tool call drafts stay in Worker memory, while complete successful
+responses retain Durable's validation and execution-intent commits. The ADR links
+native recovery contracts, the 190-case fault report and real Luna/Cube/PG evidence.
+
 [ADR-0229](adr/0229-native-durable-runtime.md) is implemented and deployed:
 Pi Durable 1.0 replaces the former runtime and storage, preserves PG cloud
 ownership, resumes logical Runs after ordered owner closure, and returns

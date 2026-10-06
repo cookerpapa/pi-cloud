@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Complete Tool call publication
+
+- [x] Implement and deploy [ADR-0230](adr/0230-complete-tool-call-publication.md):
+      incomplete Tool arguments remain in Worker memory, text keeps streaming,
+      and complete calls retain the native validation/intent boundary. Native
+      recovery contracts, 190 fault cases and real Luna/Cube/PG acceptance pass.
+
 ## Pi Durable 1.0 evaluation
 
 - [x] Implement and deploy the native Durable runtime/storage migration under

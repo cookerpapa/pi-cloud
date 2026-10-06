@@ -39,6 +39,8 @@ Native tasks, submissions, entries and documents use one atomic commit stream.
 Kafka RF3 confirms each prepared commit before the Worker adopts it. PostgreSQL
 stores the native body once, with rebuildable record/document indexes for cold
 reads. Native Conversations share one physical Session lease and writer.
+Incomplete local Tool calls stay in Worker memory; complete model responses
+enter native persistence before validated Tool execution (ADR-0230).
 See [Durable migration and verification](docs/reports/pi-durable-migration-20261006.md).
 
 Whole file/shell Tools execute in Cube. Replies return through the separate
