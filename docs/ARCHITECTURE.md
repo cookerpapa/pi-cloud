@@ -940,6 +940,12 @@ detach and missing/replaced node metadata prevent Volume deletion. PG keeps
 product intent and Cube remains the physical/Workspace-byte authority (ADR-0226).
 These lifecycle checks add no per-Tool PG lease lookup or operation ledger.
 
+Template replica and rootfs artifact cleanup resolve the recorded stable Cube
+node ID through the current node registry at dispatch. Historical Pod IPs are
+observations, not cleanup targets. Multiple replica/job observations of one node
+produce one request; an unresolved node retains cleanup metadata. Active-template
+and shared-artifact pins remain enforced by Cube (ADR-0233).
+
 | Concern | Authority |
 | --- | --- |
 | users, resources, Runs, leases and fences | PostgreSQL |

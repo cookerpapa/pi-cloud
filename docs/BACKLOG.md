@@ -24,8 +24,9 @@ PiCloud deployment. Remaining operational limits are listed below.
 The Durable cutover also exposed repeated timeouts while Cube deletes old
 Template replicas. New registered templates remain usable; failed cleanup keeps
 its recorded targets. Release-time cleanup now shares a 30-second budget and stops
-after an unconfirmed delete. Diagnose the historical locator/address path before
-changing target identity or deleting metadata.
+after an unconfirmed delete. The owner-authorized repair in
+[ADR-0233](adr/0233-template-cleanup-node-routing.md) addresses stale Pod IP routing
+through the existing stable-node registry; implementation and live cleanup are in progress.
 
 ## Reliability and capacity
 

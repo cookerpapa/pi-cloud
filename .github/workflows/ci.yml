@@ -49,11 +49,29 @@ jobs:
       - name: Install pinned dependencies without lifecycle scripts
         run: npm ci --ignore-scripts
 
+      - name: Read pinned Cube source revision
+        id: cube-source
+        run: node -e 'console.log("commit=" + require("./deploy/cubesandbox/runtime-build.json").upstreamCommit)' >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned Cube source for native contracts
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: TencentCloud/CubeSandbox
+          ref: ${{ steps.cube-source.outputs.commit }}
+          path: .cache/cubesandbox-source
+          persist-credentials: false
+
       - name: Run reproducible local CI checks
         run: npm run ci
         env:
+          PI_CLOUD_CUBESANDBOX_REPOSITORY: ${{ github.workspace }}/.cache/cubesandbox-source
           PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL: postgresql://pi_conformance:pi_conformance@127.0.0.1:5432/pi_conformance
           PI_CLOUD_POSTGRES_INTEGRATION_URL: postgresql://pi_conformance:pi_conformance@127.0.0.1:5432/pi_conformance
+
+      - name: Verify Cube template cleanup and artifact reference preservation
+        run: node scripts/check-cube-template-cleanup.mjs
+        env:
+          PI_CLOUD_CUBESANDBOX_REPOSITORY: ${{ github.workspace }}/.cache/cubesandbox-source
 
       - name: Verify Docker build context excludes local runtime data
         run: npm run image:context-check

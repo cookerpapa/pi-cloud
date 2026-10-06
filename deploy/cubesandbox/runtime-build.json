@@ -23,6 +23,10 @@
     {
       "file": "0005-release-security-dependencies.patch",
       "sha256": "1a951aebdcbab2e24b4307ca9b0736fec56ab70a85e7e1c4abfbe650d9e1b52c"
+    },
+    {
+      "file": "0006-template-cleanup-node-routing.patch",
+      "sha256": "4df39ad1d7f5f71f9ad5c0fa24bd1e125ade2423b3d1451725927f4221815cc8"
     }
   ],
   "buildImages": {

@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0233](0233-template-cleanup-node-routing.md) — template and rootfs cleanup
+   follows stable node identity through current discovery, retaining unresolved targets.
 1. [ADR-0232](0232-indexed-native-navigation.md) — thin native navigation
    classification and bounded independent-Fork history copying; deployed.
 1. [ADR-0231](0231-volume-filesystem-mutation-locks.md) — filesystem-held Volume

@@ -154,6 +154,15 @@ accepted-command survival, native timeout isolation, independent partitions,
 probe isolation, and 70,000 completions followed
 by new work. This is part of `npm run ci`.
 
+`node scripts/check-cube-template-cleanup.mjs` exports the pinned Cube source,
+applies the digest-checked patches and runs the template-center suite with a
+disposable MySQL. It verifies current-node cleanup routing, retained unknown
+targets, shared-rootfs references, node pins and successful physical/metadata
+cleanup. Set `PI_CLOUD_CUBESANDBOX_REPOSITORY` to a local Cube checkout; CI checks
+out the manifest's exact upstream revision before both native contract gates.
+The runner does not mount the Docker socket into the Go container. Optional
+upstream Docker/PostgreSQL fixtures may skip; the new MySQL routing tests run.
+
 `agent-stop-binding-closure.integration.test.ts` uses the explicit test PG and RF3 Kafka
 endpoints. It proves routing revocation precedes the final seal without a separate
 process-stop receipt table. The native Go
