@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import {
   readDurableEntries,
+  iterateDurableHistoryPrefix,
   forkIdleConversation,
   copyDurableHistory,
   type StoredHistoryEntry,
@@ -58,6 +59,7 @@ type PiSessionBinding = {
   piSessionId: string;
   piConversationId: string | null;
   contextBaseEntryId: string | null;
+  forkEntryId: string | null;
 };
 
 type MappedEntry = ConversationTreeEntryResource & { readonly index: number };
@@ -95,7 +97,7 @@ function messageText(message: Record<string, unknown>): string {
 
 function isFinalAssistant(message: Record<string, unknown>): boolean {
   if (message.role !== "assistant" || typeof message.stopReason !== "string") return false;
-  return !["toolUse", "error", "aborted", "pending"].includes(message.stopReason);
+  return !["toolUse", "error", "aborted", "pending", "deferred"].includes(message.stopReason);
 }
 
 function sha256(value: unknown): string {
@@ -191,6 +193,7 @@ async function sessionEntries(
   database: Kysely<Database> | Transaction<Database>,
   tenantId: string,
   bindings: readonly PiSessionBinding[],
+  includeInherited?: string,
 ): Promise<Map<string, PiEntryRow[]>> {
   const result = new Map<string, PiEntryRow[]>();
   for (const binding of bindings) {
@@ -203,9 +206,23 @@ async function sessionEntries(
         tenantId,
         sessionId: binding.piSessionId,
         conversationId: Number(binding.piConversationId),
-        limit: Number.MAX_SAFE_INTEGER,
+        navigationOnly: true,
+        ...(binding.productSessionId === includeInherited
+          ? {}
+          : {
+              from: Math.max(
+                Number(binding.contextBaseEntryId ?? 0),
+                Number(binding.forkEntryId ?? 0),
+              ),
+            }),
+        includeEntryIds: [binding.contextBaseEntryId, binding.forkEntryId]
+          .filter((value): value is string => value !== null)
+          .map(Number),
+        limit: MAX_TREE_ENTRIES + 1,
       })
     ).reverse();
+    if (entries.length > MAX_TREE_ENTRIES)
+      throw new ControlPlaneStoreError("invalid_request", "Conversation tree is too large");
     result.set(
       binding.productSessionId,
       entries.map((row, index) => ({
@@ -240,6 +257,7 @@ async function sessionBindings(
       "session.id as productSessionId",
       "session.pi_session_id as piSessionId",
       "session.pi_conversation_id as piConversationId",
+      "session.conversation_fork_entry_id as forkEntryId",
       "execution.pi_context_base_entry_id as contextBaseEntryId",
     ])
     .where("session.tenant_id", "=", tenantId)
@@ -392,7 +410,12 @@ export class ConversationTreeService {
       bindings.map((binding) => [binding.productSessionId, binding] as const),
     );
     const [entriesBySession, turnsBySession] = await Promise.all([
-      sessionEntries(database, tenantId, bindings),
+      sessionEntries(
+        database,
+        tenantId,
+        bindings,
+        view === "focus" ? selectedDelegated?.sessionId : undefined,
+      ),
       completedTurns(database, tenantId, uniqueSessionIds),
     ]);
     const leaves = conversationLeaves(entriesBySession);
@@ -1147,17 +1170,9 @@ export class ConversationTreeService {
             "Fork entry is not on the main branch",
           );
         }
-        const copiedBranch = sourceBranch.slice(0, targetIndex + 1);
         const childSessionId = this.#idGenerator();
         const title = request.title ?? `${source.title} · 分支`;
         const createdAt = new Date();
-        const copiedEntries = copiedBranch.map((entry, index) => {
-          const sequence = index + 1;
-          return {
-            ...entry,
-            sequence,
-          };
-        });
 
         const child = await transaction
           .insertInto("sessions")
@@ -1197,7 +1212,12 @@ export class ConversationTreeService {
         await copyDurableHistory(
           transaction,
           { tenantId, sessionId: childSessionId },
-          copiedEntries.map((entry) => entry.native),
+          iterateDurableHistoryPrefix(transaction, {
+            tenantId,
+            sessionId: bindings[0]!.piSessionId,
+            conversationId: Number(bindings[0]!.piConversationId),
+            through: Number(request.entryId),
+          }),
           {
             tenantId,
             sessionId: bindings[0]!.piSessionId,

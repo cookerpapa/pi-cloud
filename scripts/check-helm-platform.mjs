@@ -66,6 +66,10 @@ assert.equal(
 assert.match(environment.PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES, /\{supervisorId\}/);
 assert(find("StatefulSet", "pi-cloud-pi-worker-primary-v1"));
 assert(find("Deployment", "pi-cloud-workspace-volume-gateway"));
+assert.equal(
+  find("Deployment", "pi-cloud-workspace-volume-gateway").spec.strategy.type,
+  "Recreate",
+);
 const web = find("Deployment", "pi-cloud-web");
 assert(web);
 const webEnvironment = Object.fromEntries(
@@ -141,7 +145,7 @@ const customDatabaseKeys = parseAllDocuments(
   .filter(Boolean);
 for (const [kind, name, key] of [
   ["Deployment", "pi-cloud-control-plane", "pooled-database"],
-  ["Deployment", "pi-cloud-workspace-volume-gateway", "direct-database"],
+  ["Deployment", "pi-cloud-workspace-volume-gateway", "pooled-database"],
 ]) {
   const workload = customDatabaseKeys.find(
     (resource) => resource.kind === kind && resource.metadata.name === name,

@@ -40,7 +40,7 @@ recoverable creation and irreversible closure. [Verification and matched release
 cover lost replies, late creation, Control Plane SIGKILL and dedicated-machine
 lifecycle. PG retains lifecycle authority and Cube supplies the physical contract.
 
-[ADR-0221](adr/0221-pi-tool-cancellation.md) implements Pi-style Tool cancellation:
+[ADR-0221](adr/0221-pi-tool-cancellation.md) introduced Pi-style Tool cancellation:
 ordered operation interruption, original-result settlement and bounded UNKNOWN
 outcomes. [Verification and matched release](reports/pi-tool-cancellation-20261004.md)
 include normal and unavailable-executor Luna/Cube acceptance.
@@ -49,7 +49,9 @@ independent fresh input and explicit continuation.
 [Verification and rollout](reports/paused-inputs-20261004.md) cover native input
 consumption, real Luna/browser behavior and Worker replacement.
 The earlier [detach-only acceptance](reports/agent-stop-correction-20261004.md)
-records ADR-0220's superseded behavior at its named revision.
+records ADR-0220's superseded behavior at its named revision. ADR-0229 supersedes
+ADR-0221's original-result waiting and ADR-0222's paused queue: native abort now
+owns settlement, and unconsumed input returns to the composer.
 
 The [October 4 repair record](reports/review-repair-20261004.md) tracks the approved
 boundary fixes and the earlier Cube closure implementation (ADR-0218/0219);

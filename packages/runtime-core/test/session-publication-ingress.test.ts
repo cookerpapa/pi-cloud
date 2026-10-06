@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { MAX_EXECUTION_FACT_BYTES, type SessionControlChange } from "@pi-cloud/protocol";
+import {
+  MAX_EXECUTION_FACT_BYTES,
+  createExecutionReference,
+  type SessionControlChange,
+} from "@pi-cloud/protocol";
 import { expect, it, vi } from "vitest";
 import type {
   AcceptedExecutionSealFact,
@@ -104,6 +108,30 @@ function controlChange(p: ExecutionPublication, version: string): SessionControl
     occurredAt: new Date().toISOString(),
   };
 }
+
+it.each(["legacy-call", "task:0", "task:9007199254740992"])(
+  "refuses invalid Subagent task identity before publishing: %s",
+  async (toolCallId) => {
+    const f = fixture(),
+      { leaseId, piConversationId: _lane, ...scope } = f.p.scope;
+    await expect(
+      f.ingress.append(f.owner, {
+        kind: "subagent_command",
+        factId: randomUUID(),
+        scope,
+        executionReference: createExecutionReference(leaseId, scope.runId, scope.fencingToken),
+        toolCallId,
+        workflowId: randomUUID(),
+        request: { action: "status", target: "child" },
+        occurredAt: new Date().toISOString(),
+      }),
+    ).rejects.toMatchObject({ reason: "scope" });
+    expect(f.records).toEqual([]);
+    await f.ingress.append(f.owner, entry(f.p));
+    expect(f.records).toHaveLength(1);
+    await f.ingress.close();
+  },
+);
 
 it("orders control changes with native publications on the physical Session queue", async () => {
   const f = fixture(),

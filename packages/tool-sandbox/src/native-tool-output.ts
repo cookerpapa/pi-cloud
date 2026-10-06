@@ -1,8 +1,4 @@
-import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  truncateTail,
-} from "@earendil-works/pi-coding-agent";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateTail } from "./tool-output-truncation.ts";
 import { StringDecoder } from "node:string_decoder";
 
 export function redactToolText(text: string): string {
@@ -13,7 +9,7 @@ export function redactToolText(text: string): string {
     .replace(/\bgh[pousr]_[A-Za-z0-9]{8,}\b/gu, "[PI_CLOUD_REDACTED]");
 }
 
-/** Pi's public tail truncator at the data source; no full-output artifact store. */
+/** Pinned Pi tail-truncation behavior at the data source; no full-output archive. */
 export class NativeToolOutput {
   readonly #decoders = { stdout: new StringDecoder("utf8"), stderr: new StringDecoder("utf8") };
   readonly #maximumBytes: number;

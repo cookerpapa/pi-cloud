@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   MAX_EXECUTION_FACT_BYTES,
   parseExecutionReference,
+  parseSubagentTaskId,
   validateImageReferencePayload,
 } from "@pi-cloud/protocol";
 import { PublicationNotSentError } from "@pi-cloud/protocol";
@@ -363,6 +364,11 @@ export class SessionPublicationIngress {
     )
       throw new PublicationIngressRejected("scope");
     if (fact.kind === "subagent_command") {
+      try {
+        parseSubagentTaskId(fact.toolCallId);
+      } catch {
+        throw new PublicationIngressRejected("scope");
+      }
       const execution = parseExecutionReference(fact.executionReference);
       if (
         execution.leaseId !== leaseId ||

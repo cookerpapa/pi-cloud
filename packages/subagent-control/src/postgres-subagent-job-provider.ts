@@ -10,6 +10,7 @@ import type {
 import {
   parseCloudToolCapabilitySnapshot,
   parseExecutionReference,
+  parseSubagentTaskId,
   assertSubagentTaskInputBudget,
   type CloudToolCapabilitySnapshot,
   type RunState,
@@ -233,7 +234,7 @@ export class PostgresSubagentJobProvider {
     input: StartCloudSubagentJobInput,
     deferPreparation = false,
   ): Promise<CloudSubagentJobHandle> {
-    nonEmpty(input.parentToolCallId, "Parent Tool call", 256);
+    parseSubagentTaskId(input.parentToolCallId);
     nonEmpty(input.workflowRunId, "Subagent workflow Run", 256);
     nonEmpty(input.agentName, "Subagent name", 128);
     assertSubagentTaskInputBudget(input.prompt);
@@ -672,7 +673,7 @@ export class PostgresSubagentJobProvider {
       const conversationId = await this.#nativeConversations.createChildConversation({
         executionReference: input.parentExecutionReference,
         requestId: pending.executionId,
-        ownerTaskId: nativeTaskId(input.parentToolCallId),
+        ownerTaskId: parseSubagentTaskId(input.parentToolCallId),
         at: target.anchor,
       });
       return await this.#database.transaction().execute(async (transaction) => {
@@ -1110,11 +1111,4 @@ export class PostgresSubagentJobProvider {
     }
     return reaped;
   }
-}
-
-function nativeTaskId(value: string): number {
-  if (!/^task:[1-9][0-9]*$/.test(value)) throw new Error("Child owner is not a native Tool task");
-  const id = Number(value.slice(5));
-  if (!Number.isSafeInteger(id)) throw new Error("Native Tool task ID is invalid");
-  return id;
 }

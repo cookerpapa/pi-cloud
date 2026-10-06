@@ -1,15 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { classifyAuditFindings } from "./lib/dependency-audit.mjs";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 execFileSync(
   process.execPath,
-  [join(repositoryRoot, "scripts", "harden-pi-dependencies.mjs"), "--check"],
+  [join(repositoryRoot, "scripts", "prepare-json-parser.mjs"), "--check"],
   {
     cwd: repositoryRoot,
     stdio: "inherit",
@@ -48,20 +46,10 @@ if (auditResult === undefined || auditReport === undefined) {
   throw new Error("npm audit did not return a complete report after three attempts");
 }
 
-const replacements = new Map([
-  [
-    "brace-expansion",
-    {
-      node: "node_modules/@earendil-works/pi-coding-agent/node_modules/brace-expansion",
-      version: "5.0.12",
-    },
-  ],
-]);
-const { remediated, remaining } = classifyAuditFindings(
-  auditReport.vulnerabilities,
-  replacements,
-  (node) => JSON.parse(readFileSync(join(repositoryRoot, node, "package.json"), "utf8")).version,
-);
+const remaining = Object.entries(auditReport.vulnerabilities).map(([name, finding]) => ({
+  ...finding,
+  name,
+}));
 
 const blockingSeverities = new Set(["high", "critical"]);
 const blocking = remaining.filter((vulnerability) =>
@@ -72,7 +60,6 @@ console.log(
   JSON.stringify({
     securityAuditPassed: blocking.length === 0,
     auditLevel: "high",
-    remediatedShrinkwrapFindings: remediated,
     remainingVulnerabilities: remaining.map((vulnerability) => ({
       name: vulnerability.name,
       severity: vulnerability.severity,
@@ -86,7 +73,7 @@ if (blocking.length > 0) {
   process.exit(1);
 }
 
-if (auditResult.status !== 0 && remediated.length === 0) {
+if (auditResult.status !== 0) {
   process.stderr.write(auditResult.stderr);
   process.exit(auditResult.status ?? 1);
 }

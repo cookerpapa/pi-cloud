@@ -6,6 +6,7 @@ import type { KafkaAcceptedFactRecord } from "@pi-cloud/runtime-core/kafka-accep
 import {
   createExecutionReference,
   parseExecutionReference,
+  parseSubagentTaskId,
   type SubagentHostRequest,
   type SubagentControlResult,
   type SessionControlChange,
@@ -295,6 +296,7 @@ export class SubagentController {
     if (current?.() === false || this.#closed) return;
     if (record.fact.kind === "subagent_command") {
       const command = record.fact;
+      parseSubagentTaskId(command.toolCallId);
       const row = await this.options.database
         .insertInto("subagent_control_commands")
         .values({
@@ -772,7 +774,7 @@ export class SubagentController {
       async () => {
         const result = await sql<{ id: string }>`select id from pi_durable_records r
           where r.tenant_id=${command.scope.tenantId}::uuid and r.session_id=${command.scope.piSessionId}
-            and r.kind='task' and r.id=${Number(command.toolCallId.slice(5))}
+            and r.kind='task' and r.id=${parseSubagentTaskId(command.toolCallId)}
             and r.fields->>'status'='terminal' limit 1`.execute(this.options.database);
         const entry = result.rows[0];
         return !!entry;

@@ -21,7 +21,6 @@ import {
   type Conversation,
   type ConversationId,
   type EntryId,
-  type HookApi,
   type Storage,
   type TaskId,
   type ToolRegistration,
@@ -59,8 +58,6 @@ const CreationReceipt = defineDocFamily<{ conversationId: number }, number>({
 export type NativeRequestContext = {
   taskId: number;
   conversationId: number;
-  api: HookApi;
-  context: Context;
   purpose: "agent" | "context_maintenance";
 };
 export type DurableRunConfiguration = {
@@ -130,12 +127,10 @@ export class DurableAgentSession {
         tools: [...this.remote.definitions],
         hooks: [
           hook(GenerationTask, {
-            beforeRequest: (_request, api, context) => {
+            beforeRequest: (_request, api) => {
               this.#requests.set(api.conversationId, {
                 taskId: api.taskId,
                 conversationId: api.conversationId,
-                api,
-                context,
                 purpose: "agent",
               });
               return undefined;
@@ -148,12 +143,10 @@ export class DurableAgentSession {
             },
           }),
           hook(CompactionTask, {
-            beforeCompact: (_range, api, context) => {
+            beforeCompact: (_range, api) => {
               this.#requests.set(api.conversationId, {
                 taskId: api.taskId,
                 conversationId: api.conversationId,
-                api,
-                context,
                 purpose: "context_maintenance",
               });
               return undefined;
@@ -226,6 +219,23 @@ export class DurableAgentSession {
     // Only live task conversations need restored routes. Historical child
     // documents never turn into a lifetime Session bootstrap scan.
     const inspection = await session.#harness.inspect(BACKGROUND_CONTEXT);
+    // Compaction resumes summarize/retry without rerunning beforeCompact. The
+    // request identity is derived from that committed task, never a new grant.
+    // Generation's request phase refreshes this through beforeRequest.
+    // Background compaction is disabled,
+    // so only one model-producing task can own a Conversation at this boundary.
+    for (const { record } of inspection.tasks) {
+      if (!("checkpoint" in record.state)) continue;
+      const phase = (record.state.checkpoint as { phase?: string }).phase;
+      const compaction =
+        record.kind === "pi.compaction" && ["summarize", "retry"].includes(phase ?? "");
+      if (!compaction) continue;
+      session.#requests.set(record.conversationId, {
+        taskId: record.id,
+        conversationId: record.conversationId,
+        purpose: "context_maintenance",
+      });
+    }
     for (const conversationId of new Set(
       inspection.tasks.map((task) => task.record.conversationId),
     )) {

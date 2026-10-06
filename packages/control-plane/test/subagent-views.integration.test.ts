@@ -12,6 +12,7 @@ import { SessionProjector } from "../../runtime-core/src/session-projector.ts";
 import { SubagentController } from "../src/subagent-controller.ts";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { createTestWorker } from "./admit-test-execution.ts";
+import { durableFamilyFixture } from "@pi-cloud/pi-session-postgres/testing";
 
 const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 const brokers = process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS?.split(",");
@@ -41,6 +42,7 @@ it.skipIf(!postgres || !brokers)(
     let projector: SessionProjector | undefined, host: SubagentController | undefined;
     const finish = Promise.withResolvers<void>();
     let execution: Promise<unknown> | undefined;
+    let family: Awaited<ReturnType<typeof durableFamilyFixture>> | undefined;
     try {
       await runMigrations(database, "up");
       const tenant = await createPrivateTenant(database, {
@@ -58,6 +60,7 @@ it.skipIf(!postgres || !brokers)(
         "Control only",
         "elastic",
       );
+      family = await durableFamilyFixture(database, tenant.tenantId, session.sessionId);
       host = new SubagentController({
         database: measured,
         managementToken: "fixture-".repeat(8),
@@ -65,6 +68,13 @@ it.skipIf(!postgres || !brokers)(
         ownsPartition: (partition) => projector?.ownsPartition(partition) === true,
         // The trusted Runner port is simulated; no VM/model execution is claimed.
         deliver: async (_lease, request) => {
+          if (request.action === "prepare_conversation")
+            return family!.nativeConversations.createChildConversation({
+              executionReference: request.executionReference,
+              requestId: request.requestId,
+              ownerTaskId: request.ownerTaskId,
+              at: request.anchor,
+            });
           if (request.action === "result")
             replies.set(request.response.requestId, request.response);
         },
@@ -114,6 +124,7 @@ it.skipIf(!postgres || !brokers)(
         .dispatchRun(accepted.runId);
       void execution.catch(entered.reject);
       const admission = await entered.promise;
+      await family.bind(1, accepted.turnId, admission.executionReference);
       await projector.openPublication(admission.publication);
       const { leaseId: _lease, piConversationId: _lane, ...scope } = admission.publication.scope;
       const workflowId = randomUUID();
@@ -123,7 +134,7 @@ it.skipIf(!postgres || !brokers)(
           factId: randomUUID(),
           scope,
           executionReference: admission.executionReference,
-          toolCallId: workflowId,
+          toolCallId: "task:10000000",
           workflowId,
           request,
           occurredAt: new Date().toISOString(),
@@ -209,6 +220,7 @@ it.skipIf(!postgres || !brokers)(
       await execution?.catch(() => {});
       await projector?.close().catch(() => {});
       await host?.close().catch(() => {});
+      await family?.close();
       await database.destroy();
       await sql`drop database ${sql.id(name)}`.execute(admin);
       await admin.destroy();

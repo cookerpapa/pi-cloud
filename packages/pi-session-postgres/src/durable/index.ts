@@ -10,6 +10,7 @@ export {
 export type { DurableBatch, StoredDurableBatch, DurableScope } from "./types.ts";
 export {
   readDurableEntries,
+  iterateDurableHistoryPrefix,
   forkIdleConversation,
   copyDurableHistory,
   type StoredHistoryEntry,

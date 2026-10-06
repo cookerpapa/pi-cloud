@@ -81,7 +81,7 @@ export {
   type WorkspaceVolumeGatewayVolumeIdentity,
   type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway.ts";
-export { PostgresWorkspaceVolumeGatewayLock } from "./workspace-volume-gateway.ts";
+export { FilesystemWorkspaceVolumeGatewayLock } from "./workspace-volume-gateway.ts";
 export {
   WorkspaceVolumeDeletionReaper,
   type WorkspaceVolumeDeletionReaperOptions,

@@ -5,6 +5,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
   DurablePostgresProjection,
   PublishedDurableStorage,
+  readDurableEntries,
 } from "@pi-cloud/pi-session-postgres/durable";
 import { appendNativeFixture } from "./fixtures/durable-native.ts";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -14,6 +15,7 @@ import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { ConversationTreeService } from "../src/conversation-tree-service.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
+import { up as backfillNavigation } from "../../database/src/migrations/181_durable_navigation_index.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
@@ -125,6 +127,150 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     return { ...tenant, project, store, session, service, turn, tree };
   }
 
+  it("reads only navigation bodies but preserves the complete Tool-heavy prefix in a paged Fork", async () => {
+    const f = await fixture(),
+      first = await f.turn("heavy", "completed");
+    const scope = {
+      tenantId: f.tenantId,
+      sessionId: f.session.sessionId,
+      turnId: first.turnId,
+      runId: first.runId,
+    };
+    for (let page = 0; page < 5; page++)
+      await appendNativeFixture(
+        db,
+        scope,
+        Array.from({ length: 32 }, (_, i) => ({
+          kind: "pi.tool-result",
+          model: [
+            {
+              role: "toolResult",
+              toolCallId: `${page}-${i}`,
+              toolName: "bash",
+              content: [{ type: "text", text: "x".repeat(4096) }],
+              isError: false,
+              timestamp: Date.now(),
+            },
+          ],
+        })),
+      );
+    const answer = await first.respond("finished");
+    const queries = new Set<QueryId>();
+    let bytes = 0,
+      rows = 0;
+    const measured = db.withPlugin({
+      transformQuery({ node, queryId }) {
+        if (
+          db
+            .getExecutor()
+            .compileQuery(node, queryId)
+            .sql.includes("select l.body,r.fields,r.seq,c.committed_at")
+        )
+          queries.add(queryId);
+        return node;
+      },
+      async transformResult({ result, queryId }) {
+        if (queries.delete(queryId)) {
+          rows += result.rows.length;
+          bytes += result.rows.reduce((n, row) => n + Buffer.byteLength(String(row.body)), 0);
+        }
+        return result;
+      },
+    });
+    const tree = await new ConversationTreeService({ database: measured }).tree(
+      f.tenantId,
+      f.session.sessionId,
+      "focus",
+    );
+    expect(tree.branches[0]!.entries.map((entry) => entry.text)).toEqual(["heavy", "finished"]);
+    expect(rows).toBe(3);
+    expect(bytes).toBeLessThan(5000);
+    const fork = await f.service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
+      turnId: first.turnId,
+      entryId: answer.id,
+    });
+    const source = await readDurableEntries(db, {
+      tenantId: f.tenantId,
+      sessionId: f.session.sessionId,
+      conversationId: 1,
+      limit: 1000,
+    });
+    const copied = await readDurableEntries(db, {
+      tenantId: f.tenantId,
+      sessionId: fork.session.sessionId,
+      conversationId: 1,
+      limit: 1000,
+    });
+    expect(copied.map((row) => row.entry)).toEqual(source.map((row) => row.entry));
+    const commits = await sql<{ write_count: number }>`select write_count from pi_durable_commits
+      where tenant_id=${f.tenantId}::uuid and session_id=${fork.session.sessionId}`.execute(db);
+    expect(commits.rows.length).toBeGreaterThan(1);
+    expect(commits.rows.every((row) => row.write_count <= 32)).toBe(true);
+  });
+
+  it("backfills and rebuilds navigation without coercing native NUL or surrogate text", async () => {
+    const f = await fixture(),
+      turn = await f.turn("index", "completed");
+    await appendNativeFixture(
+      db,
+      {
+        tenantId: f.tenantId,
+        sessionId: f.session.sessionId,
+        turnId: turn.turnId,
+        runId: turn.runId,
+      },
+      [
+        {
+          kind: "pi.assistant",
+          model: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "native\0\ud800" }],
+              stopReason: "stop",
+              timestamp: 1,
+            },
+          ],
+        },
+      ],
+    );
+    const native = () =>
+      sql<{
+        body: string;
+      }>`select body from pi_durable_log where tenant_id=${f.tenantId}::uuid order by seq,ordinal`.execute(
+        db,
+      );
+    const before = (await native()).rows;
+    await db.transaction().execute(async (tx) => {
+      await sql`alter table pi_durable_records drop constraint pi_durable_navigation_required,
+        drop constraint pi_durable_document_policy_required;drop index pi_durable_navigation`.execute(
+        tx,
+      );
+      await sql`update pi_durable_records set fields=fields-'navigation' where kind='entry'`.execute(
+        tx,
+      );
+      await backfillNavigation<Database>(tx);
+    });
+    expect((await native()).rows).toEqual(before);
+    const projection = new DurablePostgresProjection(db, {
+      tenantId: f.tenantId,
+      sessionId: f.session.sessionId,
+    });
+    await projection.rebuild();
+    const visible = await readDurableEntries(db, {
+      tenantId: f.tenantId,
+      sessionId: f.session.sessionId,
+      conversationId: 1,
+      limit: 10,
+      navigationOnly: true,
+    });
+    expect(JSON.stringify(visible[0]!.entry)).toContain("native\\u0000\\ud800");
+    await expect(
+      sql`update pi_durable_records set fields=fields-'navigation' where tenant_id=${f.tenantId}::uuid and kind='entry'`.execute(
+        db,
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+  });
+
   it("does not attach a failed prompt to the next successful Turn", async () => {
     const f = await fixture();
     await f.turn("failed question", "failed");
@@ -221,83 +367,107 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     expect(tree.branches[1]!.entries).toEqual([]);
   });
 
-  it("reads a running native Tool after the covered assistant while its Tool result is still absent", async () => {
-    const f = await fixture(),
-      accepted = await f.turn("active Tool", "queued");
-    const scope = {
-      tenantId: f.tenantId,
-      sessionId: f.session.sessionId,
-      turnId: accepted.turnId,
-      runId: accepted.runId,
-    };
-    const call = (
-      await appendNativeFixture(db, scope, [
-        {
-          kind: "pi.assistant",
-          model: [
-            {
-              role: "assistant",
-              content: [
-                { type: "toolCall", id: "call", name: "bash", arguments: { command: "sleep 30" } },
-              ],
-              stopReason: "toolUse",
-              timestamp: Date.now(),
-            },
-          ],
-        },
-      ])
-    )[0]!;
-    const projection = new DurablePostgresProjection(db, scope),
-      head = await projection.head(),
-      taskId = head.nextId;
-    await projection.apply(
-      {
-        seq: head.seq + 1,
-        nextId: taskId + 1,
-        writes: [
+  it.each([true, false])(
+    "reads a running native Tool with assistant coverage=%s while its result is absent",
+    async (covered) => {
+      const f = await fixture(),
+        accepted = await f.turn("active Tool", "queued");
+      const scope = {
+        tenantId: f.tenantId,
+        sessionId: f.session.sessionId,
+        turnId: accepted.turnId,
+        runId: accepted.runId,
+      };
+      const call = (
+        await appendNativeFixture(db, scope, [
           {
-            type: "task",
-            value: {
-              id: taskId,
-              conversationId: 1,
-              kind: "pi.tool",
-              version: 1,
-              input: { assistant: call.id, callId: "call" },
-              background: false,
-              abortRequested: false,
-              state: {
-                status: "running",
-                checkpoint: {
-                  phase: "execute",
-                  arguments: { command: "sleep 30" },
-                  replay: "unsafe",
+            kind: "pi.assistant",
+            model: [
+              {
+                role: "assistant",
+                content: [
+                  { type: "text", text: "tool preamble" },
+                  {
+                    type: "toolCall",
+                    id: "call",
+                    name: "bash",
+                    arguments: { command: "sleep 30" },
+                  },
+                ],
+                stopReason: "toolUse",
+                timestamp: Date.now(),
+              },
+            ],
+          },
+        ])
+      )[0]!;
+      const projection = new DurablePostgresProjection(db, scope),
+        head = await projection.head(),
+        taskId = head.nextId;
+      await projection.apply(
+        {
+          seq: head.seq + 1,
+          nextId: taskId + 1,
+          writes: [
+            {
+              type: "task",
+              value: {
+                id: taskId,
+                conversationId: 1,
+                kind: "pi.tool",
+                version: 1,
+                input: { assistant: call.id, callId: "call" },
+                background: false,
+                abortRequested: false,
+                state: {
+                  status: "running",
+                  checkpoint: {
+                    phase: "execute",
+                    arguments: { command: "sleep 30" },
+                    replay: "unsafe",
+                  },
                 },
               },
             },
+          ],
+        } as unknown as import("@pi-cloud/pi-session-postgres/durable").DurableBatch,
+        [
+          {
+            recordId: taskId,
+            sessionId: scope.sessionId,
+            runId: scope.runId,
+            turnId: scope.turnId,
           },
         ],
-      } as unknown as import("@pi-cloud/pi-session-postgres/durable").DurableBatch,
-      [{ recordId: taskId, sessionId: scope.sessionId, runId: scope.runId, turnId: scope.turnId }],
-    );
-    await db
-      .updateTable("runs")
-      .set({ output_display_seq: "10", output_display_native_seq: String(head.seq) })
-      .where("id", "=", accepted.runId)
-      .execute();
-    const views = await readCanonicalPiTurnTranscripts(db, {
-      tenantId: f.tenantId,
-      turnIds: [accepted.turnId],
-    });
-    expect(views.get(accepted.turnId)?.items).toContainEqual(
-      expect.objectContaining({
-        kind: "tool",
-        toolName: "bash",
-        toolCallId: `task:${taskId}`,
-        status: "running",
-        input: { command: "sleep 30" },
-      }),
-    );
-  });
+      );
+      await db
+        .updateTable("runs")
+        .set({
+          output_display_seq: "10",
+          output_display_native_seq: covered ? String(head.seq) : "0",
+        })
+        .where("id", "=", accepted.runId)
+        .execute();
+      const views = await readCanonicalPiTurnTranscripts(db, {
+        tenantId: f.tenantId,
+        turnIds: [accepted.turnId],
+      });
+      expect(views.get(accepted.turnId)?.items).toContainEqual(
+        expect.objectContaining({
+          kind: "tool",
+          toolName: "bash",
+          toolCallId: `task:${taskId}`,
+          status: "running",
+          input: { command: "sleep 30" },
+        }),
+      );
+      expect(
+        views
+          .get(accepted.turnId)
+          ?.items.some((item) => item.kind === "text" && item.text === "tool preamble"),
+      ).toBe(covered);
+    },
+  );
 
   it("copies native fork document policies without carrying execution or task state", async () => {
     const f = await fixture();

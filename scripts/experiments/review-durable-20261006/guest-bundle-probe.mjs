@@ -1,13 +1,8 @@
 import { build } from "esbuild";
-import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
-const directHelper = resolve(
-  dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))),
-  "core/tools/truncate.js",
-);
-async function measure(narrowDiagnostic) {
+async function measure() {
   const bundle = await build({
     absWorkingDir: root,
     entryPoints: ["packages/tool-sandbox/src/envd-tool-exec.ts"],
@@ -20,20 +15,6 @@ async function measure(narrowDiagnostic) {
     external: ["sharp"],
     outdir: "unused-review-output",
     logLevel: "silent",
-    // Diagnostic comparison only. A private deep import is not a supported
-    // production fix; no generated bundle is written or executed.
-    plugins: narrowDiagnostic
-      ? [
-          {
-            name: "diagnostic-narrow-truncation",
-            setup(plugin) {
-              plugin.onResolve({ filter: /^@earendil-works\/pi-coding-agent$/ }, () => ({
-                path: directHelper,
-              }));
-            },
-          },
-        ]
-      : [],
   });
   const output = Object.values(bundle.metafile.outputs)[0];
   const modules = new Map();
@@ -64,7 +45,6 @@ async function measure(narrowDiagnostic) {
 console.log(
   JSON.stringify({
     id: "guest-bundle",
-    current: await measure(false),
-    diagnosticPrivateHelperOnly: await measure(true),
+    current: await measure(),
   }),
 );

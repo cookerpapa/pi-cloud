@@ -50,6 +50,13 @@ it("bundles the real guest using only declared COPY inputs, without model/API mo
   expect(inputs).not.toContain("packages/protocol/src/model-catalog.ts");
   expect(inputs).not.toContain("packages/protocol/src/control-plane-api.ts");
   expect(inputs.some((path) => path.startsWith("packages/sandbox-supervisor/"))).toBe(false);
+  expect(
+    Object.keys(bundle.metafile.inputs).some((path) =>
+      /node_modules\/(?:@earendil-works\/pi-(?:coding-agent|ai|mcp|codemode|tui)|openai|@anthropic-ai\/sdk|@google\/genai)\//.test(
+        path,
+      ),
+    ),
+  ).toBe(false);
 });
 
 it("the actual guest identity ignores model edits but includes copied protocol and Tool changes", async () => {

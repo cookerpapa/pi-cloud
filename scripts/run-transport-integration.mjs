@@ -1,8 +1,8 @@
 // Explicit isolated RF3/PG coverage for cases skipped by the default suite.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { testKafka } from "../../lib/test-kafka.mjs";
-import { testPostgres } from "../../lib/test-postgres.mjs";
+import { testKafka } from "./lib/test-kafka.mjs";
+import { testPostgres } from "./lib/test-postgres.mjs";
 
 let kafka, postgres;
 try {
@@ -27,7 +27,7 @@ try {
       "--hookTimeout=60000",
     ],
     {
-      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
       env: {
         ...process.env,
         PI_CLOUD_POSTGRES_INTEGRATION_URL: postgres.url,

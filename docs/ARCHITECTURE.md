@@ -5,9 +5,9 @@ native tasks, model context, input placement, Tool selection and Compaction. PiC
 execution authority, distributed placement, output projection and Cube lifetimes.
 CubeSandbox KVM is the only untrusted execution backend.
 
-Current implementation gaps and verification limits are recorded in the
-[October 4 review](reports/repository-review-20261004.md), including allocation
-cleanup, partial adoption, Volume bookkeeping and request-policy boundaries.
+The [post-Durable review](reports/repository-review-20261006.md) records the audited
+baseline. The [repair record](reports/review-repair-20261006.md) distinguishes current
+implementation verification from deployment and remaining operational limits.
 
 ## One message
 
@@ -15,7 +15,7 @@ cleanup, partial adoption, Volume bookkeeping and request-policy boundaries.
 Browser → Control Plane → PostgreSQL accepted Run
                             ↓ Lane ready → atomic claim + shared Session lease
                          Pi Worker
-                         ├─ native Session Host / concurrent Lanes
+                         ├─ native Harness / concurrent Conversations
                          ├─ Model Gateway → CLIProxyAPI → Provider
                          └─ publication ingress → Kafka transaction ACK
                                                         ↓
@@ -89,24 +89,22 @@ bounded held-scope index falls back to scoped reconciliation on overflow.
 Ordinary Subagent maintenance follows affected Run changes with indexed parent/child
 reads. Startup, known deadlines and bounded-scope overflow retain global recovery.
 
-Chat Stop uses the existing durable PG request to interrupt Pi's Agent Loop.
-The remote Tool adapter keeps its original reply waiter and appends an
-operation-scoped `tool_cancel` through the same Session writer/ingress/Kafka path.
-Projector forwards its position to Cube; native acceptance only acknowledges
-that interruption was requested. The fixed guest pipe delivers the signal to
-that Tool's AbortController. Bash cancels its process group, retaining partial
-output. Completed operations, completed background launches and setsid groups
-are not cancelled retroactively. Native Pi hooks finalize the original reply.
+Chat Stop uses the existing durable PG request to abort the native Conversation.
+The fixed remote adapter co-commits the native abort mark and operation-scoped
+cancellation through the same Session writer/ingress/Kafka path. Projector forwards
+its ordered position to Cube; acceptance means the signal was requested, not that
+process exit was proved. The fixed guest delivers it to that Tool's AbortController.
+Bash cancels its process group. Completed operations, completed background launches
+and independent setsid groups are not cancelled retroactively.
 
-The default cancellation-result grace is 10 seconds (configurable through the
-cancellation API's `gracePeriodMs`). Model interruption is immediate;
-Run/native publication still observes its durability boundaries. Missing final
-results become `tool_operation_outcome_unknown`, never invented stopping or
-shell replay. Late replies do not reopen a sealed Run. Binding retirement on
-unknown outcomes or Worker loss writes a bounded immutable cancellation address
-into its existing control reference; it survives row deletion and selects only
-unfinished operations of that Run/writer. No stopped/quarantined ACK table or
-per-Tool PG execution ledger is added. See [ADR-0221](adr/0221-pi-tool-cancellation.md).
+Pi Durable owns native abort settlement. The Run need not retain the original Tool
+reply waiter or run after-Tool hooks on a late reply; results committed before abort
+remain, while uncommitted late physical replies cannot replace the native terminal.
+The cancellation API's grace period bounds outer Run interruption, not a promised
+window for preserving cancelled Tool output. Missing physical confirmation never
+means success or authorizes shell replay. Abnormal binding retirement retains its
+immutable target/run/writer in the existing control Outbox, without a process-stop
+receipt table or per-Tool PG ledger. See ADR-0221 as amended by ADR-0229.
 
 Cube retains one source identity and per-partition progress per physical VM;
 active operation fingerprints disappear after bounded delivery. Boot changes,
@@ -126,6 +124,11 @@ snapshot, inherited history and display coverage still share one repeatable-read
 transaction. This is an internal code boundary, not another service or database.
 Tree navigation also uses one repeatable-read snapshot and each native Entry's
 persisted Turn binding; it never pairs prompts and answers by message count.
+Its thin navigation index selects user/final-assistant records before reading bodies.
+Reads use 64-record pages and the existing tree response budget; Tool payloads do
+not travel through the ordinary navigation query. Prune validates navigation anchors.
+Independent Forks separately stream the full prefix through the selected anchor and
+copy it in bounded batches inside the same quiescent PG transaction (ADR-0232).
 Human Fork copies preserve that binding in their self-contained log.
 Canonical Turn reads select its actual execution Session, excluding inherited
 copies in independent Fork logs.
@@ -156,7 +159,8 @@ follow-up lifecycles are distinct. Pending ordinary-conversation inputs can be
 edited, reordered by adjacent swaps, individually removed or promoted to the
 active Run. Input text/order freeze at admission. Model/environment/credential
 snapshots remain frozen at acceptance. Started inputs and consumed steer cannot
-be recalled. The stop action still cancels only the active Turn (ADR-0194).
+be recalled. Stop interrupts the active Run and withdraws its current unowned
+queued inputs for return to the composer (ADR-0229).
 
 Queue mutations use the product Session revision and a bounded idempotency
 receipt in `turn_control_requests` (`kind=queue`). They acquire affected queued
@@ -350,7 +354,9 @@ the dispatch commit backwards. A new Tool command is dispatched only after its
 Kafka offset commit is confirmed; commands below that commit are never dispatched
 again during projection replay. A crash between commit and dispatch may omit
 execution and remains UNKNOWN. Kafka fetching is not acknowledgement. Complete
-message/seal transactions advance PG progress; token fragments create no PG rows.
+native commit/seal transactions advance PG progress. Durable text/thinking partials
+are native document changes and are materialized in PG; local Tool drafts remain
+excluded by ADR-0230. Public display fragments do not create another transcript table.
 Rebalance invalidates old subscriptions and rebuilds the assigned prefix before
 its Projector serves snapshots.
 
@@ -463,18 +469,14 @@ covered spans. Completed snapshot objects are released after sending, not held
 for the lifetime of an SSE connection. Blocked writes have a 30-second deadline;
 slow readers disconnect without blocking Kafka or other viewers. Pending text
 still needs memory proportional to its actual content, not constant RAM for
-unbounded output. SSE heartbeats keep idle connections open. Pi's first text
-delta of a streaming answer is sent promptly; adjacent text can coalesce for 25 ms.
-On the verified GPT route, early provider phase distinguishes complete commentary
-from a streaming final answer. Commentary publishes once at Pi's text_end and
-renders without typing animation; original native phase/signatures remain intact.
-DeepSeek's early phase can change at completion, so that route retains ordinary
-text streaming. No wording heuristics or buffered "fake streaming" are used.
-See [ADR-0182](adr/0182-assistant-message-presentation.md). Tool argument JSON,
-thinking fragments are not public streams. Temporary Tool output snapshots use
-a separate unsequenced SSE event, described below. One durable,
-argument-free preparation event marks a long Tool-call generation interval, then
-the complete Tool start/result replaces it.
+unbounded output. SSE heartbeats keep idle connections open. Pi Durable coalesces model partials at its native 100ms trailing-write boundary;
+committed text changes then enter the public display stream, whose adjacent text
+may coalesce for 25ms. Complete terminal responses remain visible when no partial
+was committed. Phase metadata is preserved and can be corrected by later provider
+information; the adapter does not require a text_end event or fabricate a typing
+stream. Tool argument drafts and thinking are not public text streams. Tool
+preparation is a payload-free, disposable Working observation, replaced by complete
+native Tool start/result events.
 
 Every active browser turn also has a persistent runtime status. The trusted
 Runner maps native lifecycle/stream events into PiCloud phases and last-activity
@@ -524,6 +526,10 @@ preserves native NUL and lone-surrogate strings without PostgreSQL JSONB coercio
 `pi_durable_records` contains current record pointers and thin query fields;
 `pi_durable_document_revisions` reconstructs documents with derived checkpoints
 every 64 deltas. These are indexes of the canonical log, not another authority.
+Document current-only policy is indexed metadata. Batched revision inserts derive
+version/count from PG state without per-document definition reads; every 64th delta
+still materializes a bounded native tail. Fixed selector keys are SQL literals from
+a code-owned allowlist, while selector values remain parameters.
 Rebuild requires quiescence and never executes Tools or rewrites native bodies.
 Cloud Session/Run/Turn origins remain in the canonical log through rebuilds.
 
@@ -538,6 +544,11 @@ Both overlay and cold modes run the official upstream Storage conformance suite.
 The trusted `DurableAgentSession` supplies live model and remote-effect grants;
 Pi owns scheduling, retry, foreground Compaction and abort. Stored model
 references have no credentials. Compaction uses the same model authority port.
+Reopen restores summarize/retry request identity from live persisted Compaction
+tasks before rebinding the new PG grant. Display sampling correlation handles
+overflow snapshots without assuming a start event survived; native retry progress
+may precede its terminal-only assistant Entry. These repairs do not add another
+checkpoint, model counter or execution authority.
 The Models port retains streamed local Tool calls in Worker memory. Text and
 thinking partials reach Durable with empty text slots in place of Tool blocks,
 preserving content indexes without storing Tool names, IDs or arguments.
@@ -668,7 +679,11 @@ identity directly, without copied per-terminal lease timestamps. Cold native
 writer cleanup batches active-Run queries and never overlaps itself (ADR-0227).
 
 The guest executes the whole fixed Tool, with native edit/write logic and source
-output bounds. Internal reads/writes are not separate RPCs. The trusted Cube
+output bounds.
+Head/tail truncation is a licensed, source-pinned Pi 1.0.0 helper subset with
+upstream-output contract vectors. The guest does not depend on the full Pi CLI,
+MCP, Codemode, TUI or model-provider SDKs. Native file Tools still use public Durable
+Tool/environment APIs; no private package import or Agent-loop patch is used. Internal reads/writes are not separate RPCs. The trusted Cube
 adapter forwards Pi-native final results to a Worker-boot Kafka reply topic;
 all slots share one topic. A random operation ID correlates the waiting callback,
 not authority. The final reply resolves or
@@ -787,6 +802,13 @@ never repairs or initializes storage during a read. Guest seed initialization
 only supplies missing files and cannot clear existing user data. A separate
 generation-bound deletion grant still expresses PG-authorized release, not mount
 refcount. See [ADR-0172](adr/0172-plugin-owned-volume-initialization.md).
+Trusted Gateway mutations hold a filesystem flock on an existing Volume envelope
+until their callbacks settle. The Node-owned descriptor outlives the acquisition
+utility and is independent of PG connections. Lock files are derived, remain
+outside guest mounts, and disappear with the retired envelope. Replaced-inode
+waiters are refused; missing/malformed storage is never initialized during a read.
+PG upload/lifecycle authorization and Cube attachment evidence remain required
+(ADR-0231). Deployment Recreate excludes mixed old/new Gateway lock contracts.
 
 A user-owned development machine is allocated independently, with a selected
 CPU/memory/disk template. It retains node-affine full-VM state and has its own home

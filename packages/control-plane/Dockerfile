@@ -7,7 +7,7 @@ FROM os-base AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
-COPY scripts/harden-pi-dependencies.mjs scripts/harden-pi-dependencies.mjs
+COPY scripts/prepare-json-parser.mjs scripts/prepare-json-parser.mjs
 COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
 COPY packages/control-plane/package.json packages/control-plane/package.json
 COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
@@ -24,8 +24,8 @@ COPY packages/subagent-control/package.json packages/subagent-control/package.js
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
     && npm rebuild @confluentinc/kafka-javascript \
-    && node scripts/harden-pi-dependencies.mjs \
-    && node scripts/harden-pi-dependencies.mjs --check \
+    && node scripts/prepare-json-parser.mjs \
+    && node scripts/prepare-json-parser.mjs --check \
     && npm cache clean --force
 
 FROM os-base

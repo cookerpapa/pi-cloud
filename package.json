@@ -11,8 +11,7 @@
     "packages/*"
   ],
   "dependencies": {
-    "fastify": "5.12.5",
-    "pi-security-brace-expansion": "npm:brace-expansion@5.0.12"
+    "fastify": "5.12.5"
   },
   "overrides": {
     "nanoid": "3.3.18",
@@ -22,13 +21,14 @@
     "@earendil-works/pi-ai": "1.0.0",
     "@earendil-works/pi-telemetry": "1.0.0",
     "@earendil-works/chord": "1.0.0",
-    "fastify": "$fastify"
+    "fastify": "$fastify",
+    "source-map-js": "1.2.2"
   },
   "scripts": {
-    "postinstall": "node scripts/harden-pi-dependencies.mjs",
-    "dependencies:harden": "node scripts/harden-pi-dependencies.mjs && npm rebuild @confluentinc/kafka-javascript",
-    "dependencies:check": "node scripts/harden-pi-dependencies.mjs --check",
-    "ci": "npm run dependencies:harden && npm run format:check && npm run docs:check && npm run production:install:check && npm run runtime-policy:check && npm run cubesandbox:admission-check && npm run cubesandbox:allocation-check && npm run helm:check && npm run observability:check && npm run image:closure-check && npm run build && npm run check && npm run eval:faults && npm run security:audit",
+    "postinstall": "node scripts/prepare-json-parser.mjs",
+    "dependencies:harden": "node scripts/prepare-json-parser.mjs && npm rebuild @confluentinc/kafka-javascript",
+    "dependencies:check": "node scripts/prepare-json-parser.mjs --check",
+    "ci": "npm run dependencies:harden && npm run format:check && npm run docs:check && npm run production:install:check && npm run runtime-policy:check && npm run cubesandbox:admission-check && npm run cubesandbox:allocation-check && npm run helm:check && npm run observability:check && npm run image:closure-check && npm run build && npm run check && npm run test:transport && npm run eval:faults && npm run security:audit",
     "build": "npm run build --workspaces --if-present",
     "cubesandbox:template-check": "node scripts/run-cubesandbox-template-check.mjs",
     "cubesandbox:live-check": "node scripts/run-cubesandbox-provider-live-check.mjs",
@@ -123,7 +123,8 @@
     "production:up:observability": "PI_CLOUD_OBSERVABILITY_ENABLED=1 node scripts/production-kubernetes.mjs deploy",
     "production:config:observability": "PI_CLOUD_OBSERVABILITY_ENABLED=1 node scripts/production-kubernetes.mjs config",
     "cubesandbox:admission-check": "node scripts/check-cube-admission.mjs",
-    "cubesandbox:allocation-check": "node scripts/check-cube-allocation.mjs"
+    "cubesandbox:allocation-check": "node scripts/check-cube-allocation.mjs",
+    "test:transport": "node scripts/run-transport-integration.mjs"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.0.0",
@@ -136,7 +137,6 @@
     "esbuild": "0.28.1",
     "kysely": "0.29.4",
     "prettier": "3.9.5",
-    "semver": "7.8.5",
     "ssh2": "1.17.0",
     "tsx": "4.23.1",
     "typescript": "5.9.3",

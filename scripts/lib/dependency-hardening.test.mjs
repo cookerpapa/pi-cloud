@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, cp, readFile, writeFile, rm, access } from "node:fs/promises";
+import { mkdtemp, mkdir, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -10,8 +10,8 @@ async function fixture(run) {
   try {
     await mkdir(join(root, "scripts"));
     await cp(
-      fileURLToPath(new URL("../harden-pi-dependencies.mjs", import.meta.url)),
-      join(root, "scripts/harden-pi-dependencies.mjs"),
+      fileURLToPath(new URL("../prepare-json-parser.mjs", import.meta.url)),
+      join(root, "scripts/prepare-json-parser.mjs"),
     );
     const pkg = async (path, version, scope = "") => {
       await mkdir(join(root, scope, "node_modules", path), { recursive: true });
@@ -21,7 +21,7 @@ async function fixture(run) {
       );
     };
     const invoke = (...args) =>
-      spawnSync(process.execPath, [join(root, "scripts/harden-pi-dependencies.mjs"), ...args], {
+      spawnSync(process.execPath, [join(root, "scripts/prepare-json-parser.mjs"), ...args], {
         encoding: "utf8",
       });
     await run({ root, pkg, invoke });
@@ -30,68 +30,23 @@ async function fixture(run) {
   }
 }
 
-it.each(["", "packages/tool-sandbox"])(
-  "checks and prepares pinned Pi security dependencies at %s",
-  async (scope) => {
-    await fixture(async ({ root, pkg, invoke }) => {
-      await pkg("@earendil-works/pi-coding-agent", "1.0.0", scope);
-      const patches = [["brace-expansion", "5.0.12"]];
-      for (const [name, version] of patches) {
-        await pkg(`@earendil-works/pi-coding-agent/node_modules/${name}`, "0.0.0", scope);
-        await pkg(`pi-security-${name}`, version);
-      }
-      expect(invoke("--check").status).not.toBe(0);
-      expect(invoke().status).toBe(0);
-      expect(invoke("--check").status).toBe(0);
-      for (const [name, version] of patches) {
-        const actual = JSON.parse(
-          await readFile(
-            join(
-              root,
-              scope,
-              `node_modules/@earendil-works/pi-coding-agent/node_modules/${name}/package.json`,
-            ),
-            "utf8",
-          ),
-        );
-        expect(actual.version).toBe(version);
-      }
-    });
-  },
-);
-
-it("does not create security dependency trees for absent components", async () => {
-  await fixture(async ({ root, invoke }) => {
-    expect(invoke("--check").status).toBe(0);
+it("prepares the pinned chunked JSON parser and rejects unknown versions", async () => {
+  await fixture(async ({ root, pkg, invoke }) => {
+    await pkg("@discoveryjs/json-ext", "1.1.0");
+    for (const file of ["src/parse-chunked.js", "cjs/parse-chunked.cjs"]) {
+      const path = join(root, "node_modules/@discoveryjs/json-ext", file);
+      await mkdir(join(path, ".."), { recursive: true });
+      await writeFile(path, "Object.assign(currentRootValueCursor.value, JSON.parse(fragment));");
+    }
+    expect(invoke("--check").status).not.toBe(0);
     expect(invoke().status).toBe(0);
-    await expect(
-      access(join(root, "node_modules/@earendil-works/pi-coding-agent")),
-    ).rejects.toThrow();
+    expect(invoke("--check").status).toBe(0);
+    await pkg("@discoveryjs/json-ext", "9.0.0");
+    expect(invoke().status).not.toBe(0);
   });
 });
 
-it("keeps deeply nested brace input bounded in the installed Pi dependency", () => {
-  const owner = fileURLToPath(
-    new URL("../../node_modules/@earendil-works/pi-coding-agent/package.json", import.meta.url),
-  );
-  const result = spawnSync(
-    process.execPath,
-    [
-      "-e",
-      `
-    const requirePi = require('node:module').createRequire(${JSON.stringify(owner)});
-    const { expand } = requirePi('brace-expansion');
-    const result = expand('{'.repeat(4000) + 'a,b' + '}'.repeat(4000));
-    if (!Array.isArray(result)) throw Error('Invalid expansion');
-  `,
-    ],
-    { encoding: "utf8", timeout: 5000 },
-  );
-  expect(result.error).toBeUndefined();
-  expect(result.status, result.stderr).toBe(0);
-});
-
-it.each(["../../package.json", "../../node_modules/@earendil-works/pi-coding-agent/package.json"])(
+it.each(["../../package.json"])(
   "rejects an unsolicited WebSocket subprotocol without crashing the process at %s",
   (path) => {
     const owner = fileURLToPath(new URL(path, import.meta.url));

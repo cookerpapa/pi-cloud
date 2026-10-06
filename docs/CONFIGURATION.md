@@ -476,11 +476,13 @@ session-scoped. Control Plane and Worker both read `DATABASE_NOTIFICATION_URL_FI
 when absent, they use `DATABASE_URL_FILE` (appropriate for direct-PG self-hosting).
 Helm mounts `external.database.notificationSecretKey` for the Control Plane's
 one terminal-relay listener per replica, outside its ordinary SQL pool. It does
-not allocate a listener per Session. The Volume Gateway also mounts this direct Secret key for its
-session-scoped advisory locks; transaction-pooling endpoints must not be used
-there. Its dedicated lock pool discards a connection if cleanup is uncertain.
-Workspace storage must support ReadWriteMany for replicated
-Volume gateways.
+not allocate a listener per Session. The Volume Gateway uses the ordinary database
+Secret key for upload authorization. File exclusion uses util-linux `flock` on
+the shared Volume, held by its filesystem callback, independently of PG connections
+(ADR-0231). Replicated gateways require ReadWriteMany storage with cross-client
+locking; NFS local-only locking and mtime-based stale-lock recovery are unsupported.
+The chart uses `Recreate` for Gateway upgrades so different lock contracts never
+overlap. Validate locking on the actual storage backend before multi-node deployment.
 
 ## Validate changes
 

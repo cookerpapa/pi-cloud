@@ -1,5 +1,14 @@
 import type { CloudToolCapabilitySnapshot } from "./tool-capabilities.ts";
 
+/** Subagent control originates at a committed native Tool task, not a provider call ID. */
+export function parseSubagentTaskId(value: string): number {
+  if (typeof value !== "string" || !/^task:[1-9][0-9]*$/.test(value))
+    throw new TypeError("Subagent owner must be a native Tool task");
+  const id = Number(value.slice(5));
+  if (!Number.isSafeInteger(id)) throw new TypeError("Native Tool task ID is invalid");
+  return id;
+}
+
 /** Runtime control, not an assistant message or a guest shell command. */
 export type SubagentControlRequest =
   | Readonly<{

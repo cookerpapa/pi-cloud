@@ -50,13 +50,17 @@
       acceptance without resetting business data.
       [Deployed verification](reports/vm-allocation-20261004.md).
 
-## Paused input after Stop
+## Historical paused input after Stop
+
+ADR-0229 supersedes this queue policy: unconsumed input now returns to the composer.
 
 - [x] Deliver [ADR-0222](adr/0222-paused-inputs-after-stop.md), including durable
       pause, fresh-input bypass, explicit continuation and browser/recovery tests.
       [Verification and release](reports/paused-inputs-20261004.md).
 
 ## Pi Tool cancellation
+
+The original-result waiting policy below is historical; ADR-0229 adopts native Durable abort settlement.
 
 - [x] Deliver [ADR-0221](adr/0221-pi-tool-cancellation.md): ordered cancellation,
       original-result settlement, bounded UNKNOWN and foreground/background isolation.
@@ -103,8 +107,8 @@ record the deployed matched release; existing storage and execution authorities 
 - multi-tenant Web Coding Agent using Pi SDK;
 - PostgreSQL Run authority, same-Lane ordering, physical Pi Session
   Worker ownership and shared Worker queue;
-- Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with one self-contained
-  append-only semantic log per physical Session and native Compaction;
+- Pi Durable public `Storage` PostgreSQL adapter with one self-contained
+  native commit log per physical Session and native Compaction;
 - control-plane publication ingress under a PG-issued identity, ordered seals and producer fencing;
 - lossless PostgreSQL queue wake-up and background fail-closed execution-plane readiness;
 - Kafka `acks=all` AcceptedFact log keyed by Session;

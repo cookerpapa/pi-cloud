@@ -18,7 +18,7 @@ export {
   PersistentVolumeWorkspaceVolumeGateway,
   runTrustedWorkspaceGit,
 } from "./persistent-volume-workspace-volume-gateway.ts";
-export { PostgresWorkspaceVolumeGatewayLock } from "./postgres-workspace-volume-gateway-lock.ts";
+export { FilesystemWorkspaceVolumeGatewayLock } from "./filesystem-workspace-volume-gateway-lock.ts";
 export {
   HttpWorkspaceVolumeGateway,
   WorkspaceVolumeGatewayServer,

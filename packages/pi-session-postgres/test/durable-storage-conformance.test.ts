@@ -206,6 +206,71 @@ it("keeps proved refusal usable and rejects conflicting projection bytes atomica
   }
 });
 
+it("batches document revision metadata without per-document reads and keeps fixed selector keys literal", async () => {
+  const queries: string[] = [];
+  const measured = database.withPlugin({
+    transformQuery({ node, queryId }) {
+      queries.push(database.getExecutor().compileQuery(node, queryId).sql);
+      return node;
+    },
+    async transformResult({ result }) {
+      return result;
+    },
+  });
+  const f = await fixture({
+    publish: async (batch, projection) => {
+      await new DurablePostgresProjection(measured, projection.scope).apply(batch);
+    },
+  });
+  try {
+    await f.store.commit(
+      [
+        { type: "conversation", value: { id: 1 } },
+        ...Array.from({ length: 16 }, (_, i) => ({
+          type: "document.create",
+          record: {
+            id: i + 2,
+            kind: `fixture-${i}`,
+            scope: { kind: "conversation", conversationId: 1 },
+            history: "latest",
+            fork: "current",
+          },
+          content: { kind: "base", version: 1, value: { text: "before" } },
+        })),
+      ] as unknown as StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    queries.length = 0;
+    await f.store.commit(
+      Array.from({ length: 16 }, (_, i) => ({
+        type: "document.change",
+        id: i + 2,
+        content: { kind: "delta", version: 1, ops: [["s", ["text"], "after"]] },
+      })) as unknown as StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    expect(queries.filter((query) => /^select/i.test(query.trim())).length).toBe(3);
+    expect(
+      queries.filter((query) => query.startsWith("insert into pi_durable_document_revisions")),
+    ).toHaveLength(1);
+    queries.length = 0;
+    await new DurablePostgresProjection(measured, f.projection.scope).scan(
+      { kind: "entry", fields: { conversation: "1" } },
+      1,
+    );
+    expect(queries[0]).toContain("r.fields->>'conversation'");
+    expect(
+      await f.store.document(
+        2 as import("@earendil-works/pi-durable").DocumentId,
+        "current",
+        BACKGROUND_CONTEXT,
+      ),
+    ).toMatchObject({ value: { text: "after" } });
+  } finally {
+    await f.store.close(BACKGROUND_CONTEXT);
+  }
+});
+
 it("keeps long native document tails bounded after cold reopen without changing native delta counts", async () => {
   const f = await fixture();
   try {

@@ -17,7 +17,6 @@ import type {
 } from "@earendil-works/pi-durable";
 import { applyImmutableBatches } from "@earendil-works/chord/delta";
 import {
-  currentOnly,
   indexNative,
   type DurableBatch,
   type StoredDurableBatch,
@@ -37,6 +36,28 @@ type RecordRow = {
   created_seq: string | null;
   retired_seq: string | null;
 };
+const INDEX_FIELDS = new Set([
+  "conversation",
+  "nativeKind",
+  "task",
+  "role",
+  "head",
+  "navigation",
+  "currentOnly",
+  "status",
+  "entry",
+  "request",
+  "background",
+  "abortRequested",
+  "outcome",
+  "ownerConversation",
+  "ownerTask",
+  "scope",
+  "address",
+  "cloudSession",
+  "run",
+  "turn",
+]);
 const decodeRecord = (row: RecordRow): IndexedRecord => {
   const write = JSON.parse(row.body) as StorageWrite;
   const value =
@@ -102,8 +123,12 @@ export class DurablePostgresProjection {
     exclude: readonly number[] = [],
   ): Promise<IndexedRecord[]> {
     const clauses: RawBuilder<unknown>[] = [this.scoped("r"), sql`r.kind=${query.kind}`];
-    for (const [key, value] of Object.entries(query.fields ?? {}))
-      clauses.push(sql`r.fields->>${key}=${value}`);
+    for (const [key, value] of Object.entries(query.fields ?? {})) {
+      if (!INDEX_FIELDS.has(key)) throw new Error("Unsupported native index field");
+      // Only code-owned keys are literal. User-supplied values remain bound;
+      // a generic prepared plan can now match the fixed expression indexes.
+      clauses.push(sql`r.fields->>${sql.lit(key)}=${value}`);
+    }
     if (query.minId !== undefined) clauses.push(sql`r.id>=${query.minId}`);
     if (query.maxId !== undefined) clauses.push(sql`r.id<=${query.maxId}`);
     if (query.head) clauses.push(sql`r.fields ? 'head'`);
@@ -300,11 +325,19 @@ export class DurablePostgresProjection {
     const retired = new Set(
       batch.writes.filter((w) => w.type === "document.retire").map((w) => w.id),
     );
-    // Retire addresses before creating their replacements, independent of the
-    // caller's write order. Create-and-retire has an empty lifetime.
-    for (const id of retired)
+    // Retire addresses before installing replacements. One batch can update a
+    // task repeatedly, so the derived pointer retains its last write only.
+    if (retired.size)
       await sql`update pi_durable_records r set retired_seq=${batch.seq}
-      where ${this.scoped("r")} and id=${id} and kind='document'`.execute(tx);
+        where ${this.scoped("r")} and id=any(${[...retired]}::bigint[]) and kind='document'`.execute(
+        tx,
+      );
+    const records = new Map<number, IndexedRecord>();
+    const documents: Array<{
+      id: number;
+      ordinal: number;
+      write: Extract<StorageWrite, { type: "document.create" | "document.change" }>;
+    }> = [];
     for (const [ordinal, write] of batch.writes.entries()) {
       if (write.type === "document.copy")
         throw new Error("Published document copies must carry their resolved native base");
@@ -319,53 +352,88 @@ export class DurablePostgresProjection {
                 ...(retired.has(write.record.id) ? { retiredAt: batch.seq } : {}),
               } as DocumentRecord)
             : write.value;
-        const record = indexNative(kind, value, batch.seq, ordinal);
-        const origin = effective.get(value.id);
+        const previous = records.get(value.id);
+        if (previous && (previous.kind !== kind || !["task", "submission"].includes(kind)))
+          throw new Error("Native record ID ownership changed");
+        const record = indexNative(kind, value, batch.seq, ordinal),
+          origin = effective.get(value.id);
         if (origin)
           for (const key of ["cloudSession", "run", "turn"] as const)
             if (origin[key]) record.fields[key] = origin[key]!;
-        const result = await sql`insert into pi_durable_records as existing
-          (tenant_id,session_id,id,kind,seq,ordinal,fields,created_seq,retired_seq) values
-          (${this.scope.tenantId}::uuid,${this.scope.sessionId},${value.id},${kind},${batch.seq},${ordinal},${JSON.stringify(record.fields)}::jsonb,${record.createdSeq ?? null},${record.retiredSeq ?? null})
-          on conflict(tenant_id,session_id,id) do update set seq=excluded.seq,ordinal=excluded.ordinal,
-            fields=excluded.fields || jsonb_strip_nulls(jsonb_build_object(
-              'cloudSession',coalesce(existing.fields->'cloudSession',excluded.fields->'cloudSession'),
-              'run',coalesce(existing.fields->'run',excluded.fields->'run'),
-              'turn',coalesce(existing.fields->'turn',excluded.fields->'turn')))
-          where existing.kind=excluded.kind and existing.kind in ('task','submission') returning id`.execute(
-          tx,
-        );
-        if (!result.rows.length) throw new Error("Native record ID ownership changed");
+        records.set(value.id, record);
       }
-      if (write.type === "document.create" || write.type === "document.change") {
-        const id = write.type === "document.create" ? write.record.id : write.id;
-        const record = (await view.get(id))?.value as DocumentRecord | undefined;
-        if (!record) throw new Error("Native document is missing");
-        const previous = await view.latestRevision(id);
-        if (write.content.kind === "delta" && previous?.version !== write.content.version)
-          throw new Error("Native document delta has no matching base");
-        const deltaCount = write.content.kind === "base" ? 0 : previous!.deltaCount + 1;
-        let checkpoint: string | null = null;
-        if (write.content.kind === "delta" && deltaCount % 64 === 0) {
-          const revisions = await view.#storedRevisions(id, batch.seq - 1);
-          const before = materializeNativeDocument(record, revisions);
-          checkpoint = JSON.stringify(applyImmutableBatches(before.value, [write.content.ops]));
-        }
-        if (write.content.kind === "base" && currentOnly(record))
-          await sql`delete from pi_durable_document_revisions d
-          where ${this.scoped("d")} and document_id=${id}`.execute(tx);
-        await sql`insert into pi_durable_document_revisions values
-          (${this.scope.tenantId}::uuid,${this.scope.sessionId},${id},${batch.seq},${ordinal},${write.content.kind},${write.content.version},${deltaCount},${checkpoint})`.execute(
-          tx,
+      if (write.type === "document.create" || write.type === "document.change")
+        documents.push({
+          id: write.type === "document.create" ? write.record.id : write.id,
+          ordinal,
+          write,
+        });
+    }
+    if (records.size) {
+      const result = await sql`insert into pi_durable_records as existing
+        (tenant_id,session_id,id,kind,seq,ordinal,fields,created_seq,retired_seq) values
+        ${sql.join([...records.values()].map((r) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${r.value.id},${r.kind},${batch.seq},${r.ordinal},${JSON.stringify(r.fields)}::jsonb,${r.createdSeq ?? null},${r.retiredSeq ?? null})`))}
+        on conflict(tenant_id,session_id,id) do update set seq=excluded.seq,ordinal=excluded.ordinal,
+          fields=excluded.fields || jsonb_strip_nulls(jsonb_build_object(
+            'cloudSession',coalesce(existing.fields->'cloudSession',excluded.fields->'cloudSession'),
+            'run',coalesce(existing.fields->'run',excluded.fields->'run'),
+            'turn',coalesce(existing.fields->'turn',excluded.fields->'turn')))
+        where existing.kind=excluded.kind and existing.kind in ('task','submission') returning id`.execute(
+        tx,
+      );
+      if (result.rows.length !== records.size)
+        throw new Error("Native record ID ownership changed");
+    }
+    const bases = documents
+      .filter((d) => d.write.type === "document.change" && d.write.content.kind === "base")
+      .map((d) => d.id);
+    if (bases.length)
+      await sql`delete from pi_durable_document_revisions d using pi_durable_records r
+      where ${this.scoped("r")} and r.id=any(${bases}::bigint[]) and r.fields->>'currentOnly'='true'
+        and d.tenant_id=r.tenant_id and d.session_id=r.session_id and d.document_id=r.id`.execute(
+        tx,
+      );
+    if (documents.length) {
+      // PG can derive revision metadata in the INSERT itself. Ordinary deltas
+      // need no per-document definition/revision SELECT or external cache.
+      const inserted = await sql<{
+        document_id: string;
+        delta_count: number;
+      }>`insert into pi_durable_document_revisions
+        (tenant_id,session_id,document_id,seq,ordinal,kind,version,delta_count,checkpoint)
+        select r.tenant_id,r.session_id,r.id,${batch.seq},v.ordinal,v.kind,v.version,
+          case when v.kind='base' then 0 else previous.delta_count+1 end,null
+        from (values ${sql.join(documents.map((d) => sql`(${d.id}::bigint,${d.ordinal}::integer,${d.write.content.kind}::text,${d.write.content.version}::integer)`))}) v(id,ordinal,kind,version)
+        join pi_durable_records r on r.id=v.id and ${this.scoped("r")} and r.kind='document'
+        left join lateral(select version,delta_count from pi_durable_document_revisions d
+          where d.tenant_id=r.tenant_id and d.session_id=r.session_id and d.document_id=r.id
+          order by seq desc limit 1) previous on true
+        where v.kind='base' or previous.version=v.version
+        returning document_id,delta_count`.execute(tx);
+      if (inserted.rows.length !== documents.length)
+        throw new Error("Native document or matching base is missing");
+      const byId = new Map(documents.map((d) => [d.id, d.write]));
+      for (const row of inserted.rows) {
+        if (row.delta_count === 0 || row.delta_count % 64 !== 0) continue;
+        const id = Number(row.document_id),
+          write = byId.get(id)!;
+        if (write.content.kind !== "delta") throw new Error("Invalid native delta checkpoint");
+        const record = (await view.get(id))!.value as DocumentRecord;
+        const before = materializeNativeDocument(
+          record,
+          await view.#storedRevisions(id, batch.seq - 1),
         );
+        const checkpoint = JSON.stringify(applyImmutableBatches(before.value, [write.content.ops]));
+        await sql`update pi_durable_document_revisions d set checkpoint=${checkpoint}
+          where ${this.scoped("d")} and document_id=${id} and seq=${batch.seq}`.execute(tx);
       }
     }
-    for (const id of retired) {
-      const record = (await view.get(id))?.value as DocumentRecord | undefined;
-      if (record && currentOnly(record))
-        await sql`delete from pi_durable_document_revisions d
-        where ${this.scoped("d")} and document_id=${id}`.execute(tx);
-    }
+    if (retired.size)
+      await sql`delete from pi_durable_document_revisions d using pi_durable_records r
+      where ${this.scoped("r")} and r.id=any(${[...retired]}::bigint[]) and r.fields->>'currentOnly'='true'
+        and d.tenant_id=r.tenant_id and d.session_id=r.session_id and d.document_id=r.id`.execute(
+        tx,
+      );
   }
 
   /** Administrative rebuild of disposable indexes, never a Worker bootstrap. */

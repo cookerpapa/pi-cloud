@@ -20,6 +20,7 @@ export class DurableRunEvents {
   #ordinal = 0;
   #responseId: string | undefined;
   #timestamp: number | undefined;
+  #messageOpen = false;
   readonly #blocks = new Map<number, { text: string; phase?: AssistantMessagePhase }>();
   readonly #compactions = new Map<number, "manual" | "threshold" | "overflow">();
   #entryThrough = 0;
@@ -58,6 +59,10 @@ export class DurableRunEvents {
     this.lastAssistant = snapshot.entries
       .flatMap((entry) => entry.model ?? [])
       .findLast((message) => message.role === "assistant");
+    // A recovered partial belongs to the previous request. Pi converts it to
+    // an aborted Entry before issuing a new request; do not consume the new
+    // request's identity when that old message ends.
+    this.#messageOpen = snapshot.generation?.message !== undefined;
   }
   async samplingStarted(identity: ModelSamplingIdentity): Promise<void> {
     this.#samplingQueue.push(identity);
@@ -95,6 +100,7 @@ export class DurableRunEvents {
   }
   async #messageStart(message: AssistantMessage, advance = false): Promise<void> {
     if (advance) this.#sampling = this.#samplingQueue.shift();
+    this.#messageOpen = true;
     if (advance || this.#timestamp !== message.timestamp || !this.#message) {
       this.#message = message.responseId ?? `${this.options.writerId}:${++this.#ordinal}`;
       this.#blocks.clear();
@@ -138,7 +144,8 @@ export class DurableRunEvents {
               },
             ]);
           }
-        if (event.generation?.message) await this.#messageStart(event.generation.message);
+        if (event.generation?.message)
+          await this.#messageStart(event.generation.message, !this.#messageOpen);
       } else if (event.type === "message_start" && event.message.role === "assistant") {
         await this.#messageStart(event.message, true);
       } else if (event.type === "message_update") {
@@ -166,23 +173,16 @@ export class DurableRunEvents {
           }
         }
       } else if (event.type === "message_end") {
+        if (event.entry.id <= this.#entryThrough) continue;
         this.#entryThrough = Math.max(this.#entryThrough, event.entry.id);
         for (const message of event.entry.model ?? []) {
           if (message.role !== "assistant") continue;
           this.lastAssistant = message;
           this.#assistantEntry = event.entry;
           this.#responseId ??= message.responseId;
-          if (
-            !this.#message ||
-            this.#timestamp !== message.timestamp ||
-            (message.responseId && this.#responseId && message.responseId !== this.#responseId)
-          ) {
-            await this.#messageStart(message);
-          } else {
-            for (const [index, block] of message.content.entries())
-              if (block.type === "text")
-                await this.#text(index, block.text, this.#phase(block, index));
-          }
+          // Overflow recovery can supply complete Entries without their start
+          // events. Advance once at that boundary, even with equal timestamps.
+          await this.#messageStart(message, !this.#messageOpen);
           if (
             this.#sampling &&
             message.stopReason !== "pending" &&
@@ -202,6 +202,7 @@ export class DurableRunEvents {
               },
             });
           }
+          this.#messageOpen = false;
         }
       } else if (event.type === "tool_execution_start") {
         const toolCallId = await this.options.toolId(event.toolCallId, this.#assistantEntry);
@@ -265,12 +266,18 @@ export class DurableRunEvents {
             willRetry: outcome?.status === "completed" && event.reason === "overflow",
           },
         });
-      } else if (event.type === "auto_retry_start" && this.#sampling) {
+      } else if (event.type === "auto_retry_start") {
+        // Native retry progress precedes the completed Entry in the same
+        // publication. A terminal-only failure may not have started yet.
+        const sampling = this.#messageOpen
+          ? this.#sampling
+          : (this.#samplingQueue[0] ?? this.#sampling);
+        if (!sampling) continue;
         await this.options.emit({
           type: "model.sampling.retry.scheduled",
           payload: {
-            stepSequence: this.#sampling.stepSequence,
-            stepSha256: this.#sampling.stepSha256,
+            stepSequence: sampling.stepSequence,
+            stepSha256: sampling.stepSha256,
             completedSamplingAttempt: event.attempt,
             nextSamplingAttempt: event.attempt + 1,
             maximumSamplingAttempts: this.options.retryAttempts,

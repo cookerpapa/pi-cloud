@@ -42,6 +42,10 @@ PG 新授权仍然必须先完成。不要通过删除身份检查、允许无�
 
 ### R06-02 · P2：没有 partial 的响应会漏记或串用 sampling 身份，并影响正在运行工具的快照
 
+修复阶段复核澄清：原生 Pi 在普通 terminal-only 响应中会补发 `message_start`。
+下面“直接收到 message_end”的缺口适用于溢出快照恢复，不能仅凭纯 Tool 回复推断它必然发生。
+原生重试事件还可能先于终态消息到达。详见 [修复记录](review-repair-20261006.md)。
+
 位置：`packages/sandbox-supervisor/src/durable/run-events.ts:96`、`:168`；
 `packages/runtime-core/src/canonical-pi-conversation.ts:326`。
 

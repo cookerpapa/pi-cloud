@@ -33,10 +33,12 @@ unconfigured credential destination.
 PG binding revocation is installed at publication admission; its closed reference
 follows the same Kafka Session queue. Normal cancellation carries an operation ID
 and position through that path to Cube. Cube acknowledges only signal acceptance;
-the guest Tool's original final reply carries cancellation/partial output to Pi.
-The Worker bounds its result wait and records UNKNOWN if unconfirmed. Abnormal
-retirement retains a bounded target/run/writer in the existing Outbox so a lost
-Worker or deleted binding cannot erase the cancellation address.
+the fixed guest delivers cancellation to its Tool AbortController. Native Durable
+abort may settle before physical completion and discard the original waiter.
+Already committed results remain; late replies cannot overwrite native abort.
+No cancellation ACK or missing reply proves process exit. Abnormal retirement
+retains a bounded target/run/writer in the existing Outbox so a lost Worker or
+deleted binding cannot erase the cancellation address (ADR-0229).
 
 Normal Agent cancellation follows the Tool's process-group boundary. Completed
 background services and independent setsid groups remain alive. Native Tool

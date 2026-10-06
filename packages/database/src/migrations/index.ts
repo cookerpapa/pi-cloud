@@ -363,6 +363,8 @@ export const migrationProvider: MigrationProvider = {
       "178_durable_conversation_binding": durableConversationBinding,
       "179_durable_execution_recovery": durableExecutionRecovery,
       "180_durable_runtime_revision": durableRuntimeRevision,
+      "181_durable_navigation_index": durableNavigationIndex,
     };
   },
 };
+import * as durableNavigationIndex from "./181_durable_navigation_index.ts";

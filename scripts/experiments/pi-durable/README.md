@@ -1,7 +1,9 @@
 # Pi Durable 1.0 boundary verification
 
 An isolated evaluation under ADR-0228. This directory is deliberately outside
-the application workspaces; production Pi remains 0.84.1. No executable user
+the application workspaces. At the evaluation revision production Pi was 0.84.1;
+ADR-0229 subsequently migrated production to 1.0.0. These historical evaluation
+commands are not the current runtime or deployment procedure. No executable user
 code runs on the trusted host. Deterministic tools model remote effects; the
 explicit live check runs its shell only in a disposable Cube VM.
 
@@ -42,7 +44,7 @@ owned Cube allocation. Container-local host aliases resolve Kafka's advertised
 Service names. It neither deploys Pi 1.0 nor changes host/cluster DNS. The model
 is scripted so exact operation/result/cancellation behavior is deterministic.
 Override `PI_CLOUD_DURABLE_PROBE_IMAGE` for a different locally built matched
-application image. The real guest stays on the deployed protocol and old fixed
+application image. At that evaluation revision the guest used the then-deployed protocol and old fixed
 Tool package: the test proves interoperability through PiCloud's existing reply
 schema, not upgraded built-in Tool parity.
 
@@ -51,7 +53,7 @@ or evidence. Cleanup closes the exact allocation, confirms recorded-node
 absence, retires the owned reply topic and removes fixture PG/Kafka resources.
 No shared service fault injection or application data reset is performed.
 
-Adoption would still need a chosen Session/task schema, indexed PG projection,
+At the evaluation date adoption still needed a chosen Session/task schema, indexed PG projection,
 bounded cold restore, immutable image codec, PG lease and Run reconciliation,
 product queue policy and a cancellation design that retains confirmed results.
 These scripts are evidence for that decision, not a dormant alternate runtime.

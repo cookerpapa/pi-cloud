@@ -86,6 +86,7 @@ export function indexNative(
     fields.scope = documentScope(record.scope);
     fields.address = documentAddress(record);
     fields.nativeKind = JSON.stringify(record.kind);
+    fields.currentOnly = String(currentOnly(record));
     return {
       kind,
       value,
@@ -104,6 +105,17 @@ export function indexNative(
       fields.nativeKind = JSON.stringify(entry.kind);
       if (entry.byTaskId !== undefined) fields.task = String(entry.byTaskId);
       if (entry.model?.[0]) fields.role = entry.model[0].role;
+      const visible = entry.model?.find(
+        (message) => message.role === "user" || message.role === "assistant",
+      );
+      fields.navigation =
+        visible?.role === "user"
+          ? "user"
+          : visible?.role === "assistant" &&
+              typeof visible.stopReason === "string" &&
+              !["toolUse", "error", "aborted", "pending", "deferred"].includes(visible.stopReason)
+            ? "assistant"
+            : "none";
       if (entry.head !== undefined) fields.head = String(entry.head);
     } else if (kind === "submission") {
       const submission = record as SubmissionRecord;

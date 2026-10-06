@@ -7,7 +7,7 @@ import {
 } from "./workspace-volume-gateway.ts";
 import { Pool } from "pg";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
-import { PostgresWorkspaceVolumeGatewayLock } from "./postgres-workspace-volume-gateway-lock.ts";
+import { FilesystemWorkspaceVolumeGatewayLock } from "./filesystem-workspace-volume-gateway-lock.ts";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -52,7 +52,7 @@ database.on("error", () =>
   operationalLog({
     service: "pi-cloud-workspace-volume-gateway",
     level: "error",
-    event: "volume.lock_connection.failed",
+    event: "volume.database_connection.failed",
   }),
 );
 const observability = await startServiceObservability({
@@ -61,7 +61,7 @@ const observability = await startServiceObservability({
 });
 const gateway = new PersistentVolumeWorkspaceVolumeGateway({
   workspaceRoot: required("PI_CLOUD_WORKSPACE_POSIX_ROOT"),
-  lock: new PostgresWorkspaceVolumeGatewayLock(database),
+  lock: new FilesystemWorkspaceVolumeGatewayLock(required("PI_CLOUD_WORKSPACE_POSIX_ROOT")),
   authorizeUpload: async (input, byteLength) => {
     const result = await database.query(
       `select u.id from session_uploads u

@@ -4,12 +4,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
 COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
-COPY scripts/harden-pi-dependencies.mjs scripts/harden-pi-dependencies.mjs
+COPY scripts/prepare-json-parser.mjs scripts/prepare-json-parser.mjs
 COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/web-ui/package.json packages/web-ui/package.json
 RUN sh scripts/retry-npm-command.sh ci --ignore-scripts \
-    && node scripts/harden-pi-dependencies.mjs \
-    && node scripts/harden-pi-dependencies.mjs --check
+    && node scripts/prepare-json-parser.mjs \
+    && node scripts/prepare-json-parser.mjs --check
 COPY packages/protocol/src packages/protocol/src
 COPY packages/web-ui/index.html packages/web-ui/index.html
 COPY packages/web-ui/src packages/web-ui/src

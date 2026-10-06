@@ -90,6 +90,7 @@ export type NativeHistoryRow = {
 export function projectDurableTranscript(
   rows: readonly NativeHistoryRow[],
   terminal: TerminalProjectionMetadata,
+  proposalOnly: ReadonlySet<string> = new Set(),
 ): ConversationTurnTranscriptResource {
   const items: ConversationTranscriptItemResource[] = [],
     proposals = new Map<string, { name: string; input: unknown }>();
@@ -183,7 +184,12 @@ export function projectDurableTranscript(
         for (const [index, part] of content.entries()) {
           const block = record(part);
           if (!block) continue;
-          if (block.type === "text" && typeof block.text === "string" && block.text) {
+          if (
+            !proposalOnly.has(row.id) &&
+            block.type === "text" &&
+            typeof block.text === "string" &&
+            block.text
+          ) {
             const phase = textPhase(block);
             items.push({
               kind: "text",
@@ -199,7 +205,11 @@ export function projectDurableTranscript(
             typeof block.name === "string"
           ) {
             proposals.set(block.id, { name: block.name, input: block.arguments ?? null });
-          } else if (block.type === "providerHostedToolCall" && block.toolName === "web_search") {
+          } else if (
+            !proposalOnly.has(row.id) &&
+            block.type === "providerHostedToolCall" &&
+            block.toolName === "web_search"
+          ) {
             const native = record(block.nativeItem);
             if (typeof native?.id !== "string") continue;
             const action = normalizeProviderHostedWebSearchAction(native);
@@ -325,18 +335,36 @@ export async function readCanonicalPiTurnTranscripts(
         turn,
         projectDurableTranscript(grouped.get(turn) ?? [], terminalMetadata(terminal)),
       );
-    else if (current && Number(current.output_display_seq) > 0)
+    else if (current && Number(current.output_display_seq) > 0) {
+      const all = grouped.get(turn) ?? [],
+        proposalOnly = new Set<string>();
+      const running = new Set(
+        all.filter(
+          (row) =>
+            row.fields.nativeKind === JSON.stringify("pi.tool") && row.fields.status === "running",
+        ),
+      );
+      for (const row of running) {
+        const task = record(JSON.parse(row.body).value),
+          input = record(task?.input);
+        if (typeof input?.assistant === "number") proposalOnly.add(String(input.assistant));
+      }
+      // Only recover Tool metadata beyond display coverage. Text in the same
+      // assistant stays covered by its original stream boundary.
+      for (const row of all)
+        if (Number(row.seq) <= Number(current.output_display_native_seq))
+          proposalOnly.delete(row.id);
       result.set(
         turn,
         projectDurableTranscript(
-          (grouped.get(turn) ?? []).filter(
+          all.filter(
             (row) =>
               Number(row.seq) <= Number(current.output_display_native_seq) ||
               // An already projected execute checkpoint is current native state.
               // It can show a Tool in a plain GET before its lossy/live start is
               // covered. The stable native task ID merges with the SSE start.
-              (row.fields.nativeKind === JSON.stringify("pi.tool") &&
-                row.fields.status === "running"),
+              running.has(row) ||
+              proposalOnly.has(row.id),
           ),
           {
             throughSequence: Number(current.output_display_seq),
@@ -346,8 +374,10 @@ export async function readCanonicalPiTurnTranscripts(
             cancellation: null,
             occurredAt: new Date().toISOString(),
           },
+          proposalOnly,
         ),
       );
+    }
   }
   return result;
 }

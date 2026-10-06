@@ -272,7 +272,7 @@ try {
     from generate_series(1,${count}) n`.execute(db);
   await sql`insert into pi_durable_records(tenant_id,session_id,id,kind,seq,ordinal,fields)
     select ${tenantId}::uuid,${sessionId},n+100,'entry',12,n,
-      jsonb_build_object('conversation',case when n<=10 then '1' else '3' end)
+      jsonb_build_object('conversation',case when n<=10 then '1' else '3' end,'navigation','user')
     from generate_series(1,${count}) n`.execute(db);
   await sql`analyze pi_durable_records`.execute(db);
   await sql`analyze pi_durable_log`.execute(db);
@@ -288,7 +288,7 @@ try {
   if (!prepared) throw new Error("Native scan did not use a prepared statement");
   const lit = (value) =>
     typeof value === "number" ? String(value) : `'${String(value).replaceAll("'", "''")}'`;
-  const values = [tenantId, sessionId, "entry", "conversation", "1", 2];
+  const values = [tenantId, sessionId, "entry", "1", 2];
   const explain = async (name, parameters) => {
     const result = await sql
       .raw(
@@ -313,13 +313,22 @@ try {
   };
   const auto = await explain(prepared.name, values);
   await sql`set plan_cache_mode=force_generic_plan`.execute(preparedDb);
-  const dynamic = await explain(prepared.name, values);
-  const fixed = prepared.statement
-    .replace("r.fields->>$4", "r.fields->>'conversation'")
-    .replaceAll("$5", "$4")
-    .replaceAll("$6", "$5");
-  await sql.raw(`prepare review_fixed(uuid,text,text,text,bigint) as ${fixed}`).execute(preparedDb);
-  const literalKey = await explain("review_fixed", [tenantId, sessionId, "entry", "1", 2]);
+  const literalKey = await explain(prepared.name, values);
+  // Counterfactual old query shape, never used by the current adapter.
+  const dynamicStatement = prepared.statement
+    .replace(/\$(\d+)/g, (token, n) => (Number(n) >= 4 ? `$${Number(n) + 1}` : token))
+    .replace("r.fields->>'conversation'", "r.fields->>$4");
+  await sql
+    .raw(`prepare review_dynamic(uuid,text,text,text,text,bigint) as ${dynamicStatement}`)
+    .execute(preparedDb);
+  const dynamic = await explain("review_dynamic", [
+    tenantId,
+    sessionId,
+    "entry",
+    "conversation",
+    "1",
+    2,
+  ]);
   console.log(
     JSON.stringify({
       id: "native-scan-index-plan",

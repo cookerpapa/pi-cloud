@@ -15,7 +15,6 @@
     "@pi-cloud/workspace-runtime": "0.1.0",
     "sharp": "0.35.4",
     "@earendil-works/pi-durable": "1.0.0",
-    "@earendil-works/chord": "1.0.0",
-    "@earendil-works/pi-coding-agent": "1.0.0"
+    "@earendil-works/chord": "1.0.0"
   }
 }

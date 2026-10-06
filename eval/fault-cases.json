@@ -1329,8 +1329,99 @@
       "id": "durable-active-tool-query",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/conversation-tree.postgres.test.ts",
-      "test": "reads a running native Tool after the covered assistant while its Tool result is still absent",
+      "test": "reads a running native Tool with assistant coverage=true while its result is absent",
       "invariant": "Plain conversation reads show the committed native Tool execute checkpoint without waiting for its final result or creating another Tool ledger."
+    },
+    {
+      "id": "durable-compaction-reopen-summarize",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-compaction-recovery.test.ts",
+      "test": "recovers native Compaction at summarize under the new Run grant",
+      "invariant": "Recovered native Compaction uses its committed Task identity only after a fresh cloud grant; Stop cannot dispatch a held model request."
+    },
+    {
+      "id": "durable-compaction-reopen-retry",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-compaction-recovery.test.ts",
+      "test": "recovers native Compaction at retry under the new Run grant",
+      "invariant": "Recovered native Compaction uses its committed Task identity only after a fresh cloud grant; Stop cannot dispatch a held model request."
+    },
+    {
+      "id": "durable-compaction-reopen-stop",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-compaction-recovery.test.ts",
+      "test": "recovers native Compaction at stop under the new Run grant",
+      "invariant": "Recovered native Compaction uses its committed Task identity only after a fresh cloud grant; Stop cannot dispatch a held model request."
+    },
+    {
+      "id": "durable-terminal-snapshot-identity",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-run-events.test.ts",
+      "test": "associates terminal-only Entries after snapshot loss (prior partial=false)",
+      "invariant": "Dropped start events cannot lose or shift sampling completion identity."
+    },
+    {
+      "id": "durable-recovered-partial-identity",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-run-events.test.ts",
+      "test": "keeps the old recovered partial outside the next request's completion",
+      "invariant": "An old interrupted partial cannot consume the replacement request identity."
+    },
+    {
+      "id": "durable-retry-before-final",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-run-events.test.ts",
+      "test": "uses the pending request for native retry progress preceding its terminal-only Entry",
+      "invariant": "Retry progress belongs to the request whose native terminal has not been displayed yet."
+    },
+    {
+      "id": "volume-lock-holder-killed",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
+      "test": "holds the filesystem lock across utility exit and releases after holder SIGKILL",
+      "invariant": "A live filesystem callback owns exclusion independently of the acquisition utility; process death releases its descriptor."
+    },
+    {
+      "id": "volume-lock-pg-loss",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
+      "test": "keeps filesystem exclusion while a callback continues after PG connection loss",
+      "invariant": "PG connection loss cannot let a new filesystem callback overlap the old holder."
+    },
+    {
+      "id": "volume-lock-replaced-inode",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
+      "test": "rejects a waiter whose locked envelope was replaced",
+      "invariant": "A waiter on a retired inode cannot mutate a successor Volume envelope."
+    },
+    {
+      "id": "native-tree-bounded-prefix-copy",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/conversation-tree.postgres.test.ts",
+      "test": "reads only navigation bodies but preserves the complete Tool-heavy prefix in a paged Fork",
+      "invariant": "Navigation omits unrelated Tool payloads while an independent Fork preserves the full selected native prefix."
+    },
+    {
+      "id": "native-index-text-backfill",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/conversation-tree.postgres.test.ts",
+      "test": "backfills and rebuilds navigation without coercing native NUL or surrogate text",
+      "invariant": "Index backfill/rebuild leaves canonical JSON text exact and refuses outdated metadata writes."
+    },
+    {
+      "id": "durable-active-tool-uncovered",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/conversation-tree.postgres.test.ts",
+      "test": "reads a running native Tool with assistant coverage=false while its result is absent",
+      "invariant": "A durable executing Tool can be queried before display coverage without replaying uncovered assistant text."
+    },
+    {
+      "id": "subagent-native-task-admission",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "refuses invalid Subagent task identity before publishing: legacy-call",
+      "invariant": "An invalid Tool identity is refused before Kafka and cannot poison the Session writer."
     }
   ]
 }

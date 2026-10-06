@@ -1,6 +1,6 @@
 import type { CandidateFact, AcceptedFact, ExecutionPublication } from "./accepted-fact.ts";
 import { randomUUID } from "node:crypto";
-import { parseToolCancellation } from "@pi-cloud/protocol";
+import { parseToolCancellation, parseSubagentTaskId } from "@pi-cloud/protocol";
 import { isDeepStrictEqual } from "node:util";
 
 export function prepareExecutionFact(
@@ -47,6 +47,7 @@ export function prepareExecutionFact(
   }
   if (candidate.kind === "subagent_command") {
     const command = candidate.command;
+    parseSubagentTaskId(command.toolCallId);
     if (command.executionReference !== scope.executionReference)
       throw new Error("Subagent command does not belong to its ExecutionReference");
     const { leaseId: _lease, piConversationId: _lane, executionReference, ...identity } = scope;
