@@ -1,6 +1,7 @@
 # ADR-0232: Indexed native navigation and bounded history copying
 
-Status: implementation in progress, 2026-10-06.
+Status: implemented and source-verified, 2026-10-06; production rollout pending.
+[Verification and release status](../reports/review-repair-20261006.md).
 The owner approved R06-04 and the associated native projection/query improvements.
 
 ## Decision

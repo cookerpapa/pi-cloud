@@ -5,8 +5,10 @@
 - [x] Review `aace21a8` against pinned Pi Durable 1.0.0 and
       `pre-pi-durable-1.0`, covering all 22 workspaces and delivery boundaries.
       [Findings and verification](reports/repository-review-20261006.md).
-- [ ] Implement the reviewed findings in independent slices, after discussing
-      the Volume file-side protection contract. See R06/O06 in BACKLOG.
+- [x] Implement and verify R06/Q06/O06 under ADR-0231/0232.
+      [Repair and validation evidence](reports/review-repair-20261006.md).
+- [ ] Complete the matched release and owned live acceptance; source verification
+      does not imply the running deployment was updated.
 
 ## Complete Tool call publication
 

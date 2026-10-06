@@ -28,30 +28,30 @@ release-time cleanup before changing target identity or deleting metadata.
 
 ## Reliability and capacity
 
-The [October 6 post-Durable whole-repository review](reports/repository-review-20261006.md)
-is complete at `aace21a8`. Reproductions and query measurements are review evidence;
-the following fixes have not been implemented or deployed:
+The [October 6 post-Durable review](reports/repository-review-20261006.md) is
+implemented and source-verified. [Repair evidence](reports/review-repair-20261006.md)
+records the native request/event fixes, filesystem exclusion, bounded navigation,
+SQL/dependency reductions and restored delivery checks. Production is not yet updated.
 
-- [ ] R06-01: reconstruct native Compaction request identity when reopening
-      summarize/retry checkpoints; preserve PG authorization and request policy.
-- [ ] R06-02: associate sampling completion without requiring a partial event,
-      and include the persisted proposal when querying an executing Tool.
-- [ ] R06-03: define file-side mutation protection after the Volume Gateway's
-      PG lock connection is lost. Discuss the lock/recovery contract in an ADR
-      before implementation; rejecting a late callback result is insufficient.
-- [ ] R06-04: bound conversation-tree native body reads and page necessary
-      entries, without copying transcript bodies into another authority.
-- [ ] R06-05: reconcile maintained cancellation/queue documentation with
-      ADR-0229 and explicitly date superseded evaluation instructions.
-- [ ] O06-01/02: batch native document projection metadata/updates and use
-      index-compatible query shapes for fixed JSON keys. The generic-plan
-      slowdown was forced in a fixture, not observed under its default plan.
-- [ ] O06-03: remove the full CLI dependency from guest truncation helpers
-      through a supported narrow interface and behavior contracts.
-- [ ] Q06-01: migrate the real Kafka Subagent-view fixture to native task IDs
-      and Conversation preparation; its explicit integration run currently fails.
-- [ ] Q06-02: update locked `source-map-js` 1.2.1 to a patched dependency and
-      restore the current security audit gate without suppressing the finding.
+- [x] R06-01: restore Compaction summarize/retry identity under the new PG grant.
+- [x] R06-02: correlate overflow/retry events and query executing Tools beyond
+      display coverage without exposing uncovered assistant text.
+- [x] R06-03: adopt filesystem-held exclusion under ADR-0231, including process
+      loss, PG disconnect, replaced-inode and actual credential/GC tests.
+- [x] R06-04: select navigation bodies through the native index; stream complete
+      Fork prefixes in bounded batches under ADR-0232.
+- [x] R06-05: reconcile current cancellation/queue/partial guidance and date the
+      superseded evaluation/queue behavior.
+- [x] O06-01/02: batch native metadata/revisions and use fixed indexed selector
+      keys; single-delta SQL drops from ten to eight in the measured fixture.
+- [x] O06-03: remove the CLI dependency from guest truncation; keep a licensed
+      pinned helper subset with 1,100 upstream-output cases and bundle closure tests.
+- [x] Q06-01: migrate and pass the native Subagent RF3 fixture, validate Tool
+      identity before publication, and include the isolated transport gate in CI.
+- [x] Q06-02: pin patched source-map-js and pass the audit without exceptions.
+- [ ] Deploy the matched schema 181 / Control Plane / Worker / Volume Gateway /
+      guest release, draining before index-contract and Gateway-lock cutover;
+      repeat owned live acceptance while preserving current Sessions and UNKNOWN VMs.
 
 - [x] Deploy [ADR-0230](adr/0230-complete-tool-call-publication.md): incomplete
       Tool calls stay outside Kafka/PG at the public Models port. Streaming text,

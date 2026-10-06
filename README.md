@@ -43,7 +43,9 @@ Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
 See [Durable migration and verification](docs/reports/pi-durable-migration-20261006.md).
 The [post-migration repository review](docs/reports/repository-review-20261006.md)
-records current recovery, query and dependency gaps with reproducible evidence.
+records the baseline findings. [Source repairs and validation](docs/reports/review-repair-20261006.md)
+cover recovery, file locking, query costs and guest dependency reduction; their
+matched production rollout is tracked separately.
 
 Whole file/shell Tools execute in Cube. Replies return through the separate
 Worker-boot Kafka transport; Pi processes them before publishing the canonical

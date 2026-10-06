@@ -1,0 +1,305 @@
+{
+  "format": "pi-cloud.review-repair.v1",
+  "verifiedAt": "2026-10-06T13:06:26.490Z",
+  "sourceRevision": "da2208b9e0a2df6190a09a2ba2962a9cb18c676a",
+  "reviewRevision": "aace21a8f9082c43479a06ff428bac2b2e28d812",
+  "implemented": [
+    "R06-01",
+    "R06-02",
+    "R06-03",
+    "R06-04",
+    "R06-05",
+    "O06-01",
+    "O06-02",
+    "O06-03",
+    "Q06-01",
+    "Q06-02"
+  ],
+  "deployed": false,
+  "productionSchemaMigrated": false,
+  "schema": 181,
+  "checks": {
+    "typechecks": true,
+    "workspaces": {
+      "passed": 1612,
+      "optionalSkipped": 9,
+      "method": "Full workspace pass plus focused real-PG database rerun after updating the schema-version assertion",
+      "databaseRerun": {
+        "passed": 42,
+        "skipped": 0
+      }
+    },
+    "acceptanceHelpers": {
+      "passed": 43
+    },
+    "totalAssertions": 1655,
+    "faults": {
+      "passed": 203,
+      "total": 203,
+      "revision": "48cd436616a1d4c0ce9d5c02a99e69a386b35545",
+      "dirtyWorktree": true,
+      "methodology": "deterministic_targeted_fault_injection"
+    },
+    "isolatedRf3Transport": {
+      "passed": 7,
+      "failed": 0,
+      "measurements": [
+        {
+          "measurement": "subagent_ordered_views",
+          "idleSqlQueries": 0,
+          "preAdmissionTerminalWokeWaiter": true
+        },
+        {
+          "measurement": "private_http_to_rf3_commit",
+          "count": 12,
+          "p50Ms": 44.33421200000157,
+          "p95Ms": 166.64536699999917,
+          "appendQueries": 0
+        },
+        {
+          "measurement": "agent_seal_without_cube_stop",
+          "realPostgresKafka": true,
+          "closeBeforeSeal": true,
+          "cubeStopReceiptRequired": false,
+          "orderedToolCancellation": true
+        },
+        {
+          "measurement": "ordered_binding_view",
+          "hotReads": 100,
+          "hotSqlQueries": 0,
+          "lostAckClosure": true,
+          "restoredClosed": true,
+          "noNativeHistory": true,
+          "queuePushedWithoutWorker": true
+        }
+      ]
+    },
+    "browser": {
+      "accepted": true,
+      "directSteerRetryIdentity": true,
+      "directSteerPendingPresentation": true,
+      "machineWorkspaceRebind": true,
+      "rebindRetryUsesSameTargetAndKey": true,
+      "persistentRuntimeStatus": true,
+      "separateActivityAndPath": true,
+      "firstImageOnlyMessage": true,
+      "uploadIdentityOnRetry": true,
+      "debuggerDisconnect": true,
+      "strictModeAnimation": true,
+      "outputLimitVisible": true,
+      "reconnectSnapshotImmediate": true,
+      "initialPanelWidth": true,
+      "resizeUnmountCleanup": true,
+      "pointerCancellation": true,
+      "composerSessionSettings": true,
+      "providerSwitchClearsFast": true,
+      "compositionAndPendingDraft": true,
+      "inspectorSelectionAndTerminalLifetime": true,
+      "logoutLifecycle": true,
+      "branchSelectionAndManualJump": true,
+      "childHistoryReadOnlyAndParentActions": true,
+      "pendingInputNavigation": true,
+      "childWorkspaceReadOnly": true,
+      "unavailableIdentityRetry": true,
+      "staleConversationListAfterDelete": true,
+      "terminalSocketIsolation": true,
+      "directoryPickerLifecycle": true,
+      "responsivePageScrolling": true
+    },
+    "build": true,
+    "cleanSource": [
+      {
+        "command": "npm ci",
+        "exit": 0
+      },
+      {
+        "command": "npm run dependencies:check",
+        "exit": 0
+      },
+      {
+        "command": "npm run build",
+        "exit": 0
+      }
+    ],
+    "helm": true,
+    "installation": true,
+    "runtimePolicy": true,
+    "observability": true,
+    "imageClosure": true,
+    "dockerContext": true,
+    "formatting": true,
+    "documentation": true,
+    "guestDockerBuildTarget": "tool-worker-builder",
+    "volumeGatewayImageBuild": true,
+    "volumeImageLockProof": {
+      "imageLockAcquired": true
+    },
+    "security": {
+      "securityAuditPassed": true,
+      "auditLevel": "high",
+      "remainingVulnerabilities": []
+    }
+  },
+  "measurements": {
+    "storage": [
+      {
+        "id": "cold-tool-without-partial-coverage",
+        "visible": [
+          {
+            "coverage": 0,
+            "tools": ["bash"]
+          },
+          {
+            "coverage": 1,
+            "tools": ["bash"]
+          }
+        ]
+      },
+      {
+        "id": "tree-payload-read",
+        "returnedEntries": 1,
+        "historyReads": [
+          {
+            "rows": 1,
+            "bytes": 195
+          }
+        ]
+      },
+      {
+        "id": "projection-round-trips",
+        "includesBeginCommit": true,
+        "samples": [
+          {
+            "writes": 1,
+            "statements": 8
+          },
+          {
+            "writes": 1,
+            "statements": 8
+          },
+          {
+            "writes": 1,
+            "statements": 8
+          },
+          {
+            "writes": 1,
+            "statements": 8
+          },
+          {
+            "writes": 1,
+            "statements": 8
+          },
+          {
+            "writes": 1,
+            "statements": 8
+          },
+          {
+            "writes": 1,
+            "statements": 8
+          },
+          {
+            "writes": 1,
+            "statements": 8
+          },
+          {
+            "writes": 1,
+            "statements": 8
+          },
+          {
+            "writes": 1,
+            "statements": 8
+          }
+        ]
+      },
+      {
+        "id": "native-scan-index-plan",
+        "rows": 20000,
+        "defaultPlanCounts": {
+          "generic": 0,
+          "custom": 12
+        },
+        "auto": {
+          "milliseconds": 0.117,
+          "scans": [
+            {
+              "relation": "pi_durable_records",
+              "index": "pi_durable_conversation_records",
+              "rows": 2,
+              "removed": 0,
+              "buffers": 4
+            },
+            {
+              "relation": "pi_durable_log",
+              "index": "pi_durable_log_pkey",
+              "rows": 1,
+              "removed": 0,
+              "buffers": 8
+            }
+          ]
+        },
+        "forcedGenericDynamicKey": {
+          "milliseconds": 5.911,
+          "scans": [
+            {
+              "relation": "pi_durable_records",
+              "index": "pi_durable_record_kind",
+              "rows": 2,
+              "removed": 19990,
+              "buffers": 1272
+            },
+            {
+              "relation": "pi_durable_log",
+              "index": "pi_durable_log_pkey",
+              "rows": 1,
+              "removed": 0,
+              "buffers": 8
+            }
+          ]
+        },
+        "forcedGenericLiteralKey": {
+          "milliseconds": 0.136,
+          "scans": [
+            {
+              "relation": "pi_durable_records",
+              "index": "pi_durable_conversation_records",
+              "rows": 2,
+              "removed": 0,
+              "buffers": 4
+            },
+            {
+              "relation": "pi_durable_log",
+              "index": "pi_durable_log_pkey",
+              "rows": 1,
+              "removed": 0,
+              "buffers": 8
+            }
+          ]
+        }
+      }
+    ],
+    "guestBundle": {
+      "id": "guest-bundle",
+      "current": {
+        "bytes": 775103,
+        "modules": {}
+      }
+    },
+    "truncationOracle": {
+      "sourceSha256": "8e4507c3ed7ca7548cf7c2d7f77d07f2ae63a38b756789cbb44e9062db6c8762",
+      "cases": 1100,
+      "sha256": "bcd5577c721d7f91700d89f259e0ad65843692eda0cd6cf450e7f23da82c9cbb"
+    },
+    "removedDependencyPackages": 149
+  },
+  "limitations": [
+    "Production remains on schema180 and its previous images; a matched drain/migration/rollout is pending",
+    "No new production Luna/VM-chaos acceptance was performed for this source revision",
+    "Two optional Cube live integration assertions remain outside the automated suite; seven Kafka skips are covered by the mandatory isolated transport gate",
+    "Filesystem exclusion was tested across local processes/containers, not physical multi-node storage failover",
+    "An initial browser reload wait timed out and an unchanged rerun passed",
+    "No exactly-once claim for arbitrary shell effects"
+  ],
+  "corrections": [
+    "Native Pi normally synthesizes message_start for terminal-only responses; missing-start identity repair targets overflow snapshots and retry ordering"
+  ]
+}

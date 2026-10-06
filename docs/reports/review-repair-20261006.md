@@ -2,7 +2,8 @@
 
 Source implementation follows the owner's approval of the
 [October 6 review](repository-review-20261006.md), preserved at `48cd4366`.
-Validation is in progress. No production deployment or schema migration has been
+Source validation is complete at `da2208b9` plus this evidence-only update.
+No production deployment or schema migration has been
 performed by this repair task; deployed baseline evidence is in the review report.
 
 ## Implemented slices
@@ -53,7 +54,7 @@ snapshot reconstruction; native retry progress can also precede terminal-only
 entry events. The regression tests now describe those actual boundaries. The cold
 Tool query coverage gap is independently tested.
 
-## Verification observed so far
+## Verification
 
 - Native compaction recovery, abort/grant refusal, event snapshots/retry ordering
   and uncovered Tool queries pass targeted tests.
@@ -77,7 +78,34 @@ the serial run with explicit setup budgets passed. A PG-loss fixture initially
 left a second disconnect event unhandled; the test listener was corrected and the
 seven-case file was rerun successfully. Neither failure was hidden as a product pass.
 
-Full workspace/fault/delivery verification is recorded when those checks finish.
+Final verification:
+
+- All workspaces typecheck. Workspace tests total **1,612 passed** after the focused
+  database rerun; 43 acceptance helpers pass (**1,655 total**, nine optional skips).
+  The full workspace execution initially found only the schema-count assertion still
+  expecting 180; updating it to 181 and rerunning the full database package on real
+  PG passes 42/42. Unchanged passing workspaces were not redundantly rerun.
+- [Fault evaluation](review-repair-faults-20261006.json): **203/203 pass**. The record
+  names the dirty review-base worktree actually tested. The later exact-inode bigint
+  refinement was additionally checked by all seven filesystem-lock tests.
+- Final mandatory RF3 transport gate: **7/7 pass** on isolated PG/Kafka.
+- Browser presentation passes. One earlier run timed out on identity-retry reload;
+  an unchanged isolated rerun passed. This single transient was not treated as proof
+  of a new product defect or hidden by deleting an assertion.
+- Build, Helm, install/runtime/observability, dependency audit, image closure,
+  Docker build-context exclusion, documentation and formatting checks pass.
+- A clean `git archive` source export passes `npm ci`, dependency preparation checks
+  and build. The renamed preparation script required an explicit `.dockerignore`
+  allowlist update, now checked by the actual Docker context probe.
+- The actual guest `tool-worker-builder` Docker target builds and syntax-checks the
+  generated modules. The Volume Gateway image builds and acquires a real filesystem
+  lock in a disposable mounted Volume envelope under its packaged Node/util-linux.
+  This is not a claim of a newly deployed full Cube guest template.
+- [Machine-readable acceptance](review-repair-20261006.json) records totals,
+  measurements and the distinction between source checks and deployment.
+
+The baseline review's real Luna runs exercised the old deployment. They are not
+relabelled as live acceptance of this new source revision.
 The changes require matched Control Plane/schema 181, Worker, Volume Gateway and
 guest-image release. The two existing UNKNOWN runtime records and production
 conversations/Volumes have not been reset or destroyed. Physical multi-node
