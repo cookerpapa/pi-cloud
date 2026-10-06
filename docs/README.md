@@ -1,5 +1,11 @@
 # Documentation map
 
+The [October 6 post-Durable whole-repository review](reports/repository-review-20261006.md)
+audits `aace21a8` across all 22 workspaces, native Pi, Cube, product and delivery
+boundaries. It records five findings, three measured optimization opportunities
+and two failing delivery checks, with isolated reproductions and live Luna acceptance. Fixes remain in BACKLOG;
+this review does not change the deployed runtime.
+
 [ADR-0230](adr/0230-complete-tool-call-publication.md) is implemented and deployed:
 streaming local Tool call drafts stay in Worker memory, while complete successful
 responses retain Durable's validation and execution-intent commits. The ADR links

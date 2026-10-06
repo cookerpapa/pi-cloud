@@ -28,6 +28,31 @@ release-time cleanup before changing target identity or deleting metadata.
 
 ## Reliability and capacity
 
+The [October 6 post-Durable whole-repository review](reports/repository-review-20261006.md)
+is complete at `aace21a8`. Reproductions and query measurements are review evidence;
+the following fixes have not been implemented or deployed:
+
+- [ ] R06-01: reconstruct native Compaction request identity when reopening
+      summarize/retry checkpoints; preserve PG authorization and request policy.
+- [ ] R06-02: associate sampling completion without requiring a partial event,
+      and include the persisted proposal when querying an executing Tool.
+- [ ] R06-03: define file-side mutation protection after the Volume Gateway's
+      PG lock connection is lost. Discuss the lock/recovery contract in an ADR
+      before implementation; rejecting a late callback result is insufficient.
+- [ ] R06-04: bound conversation-tree native body reads and page necessary
+      entries, without copying transcript bodies into another authority.
+- [ ] R06-05: reconcile maintained cancellation/queue documentation with
+      ADR-0229 and explicitly date superseded evaluation instructions.
+- [ ] O06-01/02: batch native document projection metadata/updates and use
+      index-compatible query shapes for fixed JSON keys. The generic-plan
+      slowdown was forced in a fixture, not observed under its default plan.
+- [ ] O06-03: remove the full CLI dependency from guest truncation helpers
+      through a supported narrow interface and behavior contracts.
+- [ ] Q06-01: migrate the real Kafka Subagent-view fixture to native task IDs
+      and Conversation preparation; its explicit integration run currently fails.
+- [ ] Q06-02: update locked `source-map-js` 1.2.1 to a patched dependency and
+      restore the current security audit gate without suppressing the finding.
+
 - [x] Deploy [ADR-0230](adr/0230-complete-tool-call-publication.md): incomplete
       Tool calls stay outside Kafka/PG at the public Models port. Streaming text,
       payload-free activity and native complete-intent execution are preserved.

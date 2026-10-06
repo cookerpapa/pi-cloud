@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Post-Durable whole-repository review
+
+- [x] Review `aace21a8` against pinned Pi Durable 1.0.0 and
+      `pre-pi-durable-1.0`, covering all 22 workspaces and delivery boundaries.
+      [Findings and verification](reports/repository-review-20261006.md).
+- [ ] Implement the reviewed findings in independent slices, after discussing
+      the Volume file-side protection contract. See R06/O06 in BACKLOG.
+
 ## Complete Tool call publication
 
 - [x] Implement and deploy [ADR-0230](adr/0230-complete-tool-call-publication.md):

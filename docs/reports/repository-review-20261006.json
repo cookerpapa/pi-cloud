@@ -1,0 +1,358 @@
+{
+  "format": "pi-cloud.repository-review.v1",
+  "reviewedAt": "2026-10-06T11:00:17.586Z",
+  "revision": "aace21a8f9082c43479a06ff428bac2b2e28d812",
+  "comparisonTag": "pre-pi-durable-1.0",
+  "piVersion": "1.0.0",
+  "workspaceCount": 22,
+  "productionCodeModified": false,
+  "deployed": false,
+  "checks": {
+    "baseline": {
+      "passed": 1645,
+      "skipped": 9,
+      "acceptanceHelpersIncluded": 53,
+      "typechecksPassed": true
+    },
+    "faults": {
+      "passed": 190,
+      "total": 190,
+      "methodology": "deterministic_targeted_fault_injection",
+      "executionDurationMs": 412101
+    },
+    "isolatedKafka": {
+      "passed": 6,
+      "failed": 1,
+      "total": 7,
+      "failure": "Q06-01 stale Subagent-view fixture uses UUID instead of native task ID; PG 22P02",
+      "cleanupPassed": true,
+      "measurements": [
+        {
+          "measurement": "private_http_to_rf3_commit",
+          "count": 12,
+          "p50Ms": 52.03013199999987,
+          "p95Ms": 98.12452499999927,
+          "appendQueries": 0
+        },
+        {
+          "measurement": "ordered_binding_view",
+          "hotReads": 100,
+          "hotSqlQueries": 0,
+          "lostAckClosure": true,
+          "restoredClosed": true,
+          "noNativeHistory": true,
+          "queuePushedWithoutWorker": true
+        },
+        {
+          "measurement": "agent_seal_without_cube_stop",
+          "realPostgresKafka": true,
+          "closeBeforeSeal": true,
+          "cubeStopReceiptRequired": false,
+          "orderedToolCancellation": true
+        }
+      ]
+    },
+    "browser": {
+      "accepted": true,
+      "directSteerRetryIdentity": true,
+      "directSteerPendingPresentation": true,
+      "machineWorkspaceRebind": true,
+      "rebindRetryUsesSameTargetAndKey": true,
+      "persistentRuntimeStatus": true,
+      "separateActivityAndPath": true,
+      "firstImageOnlyMessage": true,
+      "uploadIdentityOnRetry": true,
+      "debuggerDisconnect": true,
+      "strictModeAnimation": true,
+      "outputLimitVisible": true,
+      "reconnectSnapshotImmediate": true,
+      "initialPanelWidth": true,
+      "resizeUnmountCleanup": true,
+      "pointerCancellation": true,
+      "composerSessionSettings": true,
+      "providerSwitchClearsFast": true,
+      "compositionAndPendingDraft": true,
+      "inspectorSelectionAndTerminalLifetime": true,
+      "logoutLifecycle": true,
+      "branchSelectionAndManualJump": true,
+      "childHistoryReadOnlyAndParentActions": true,
+      "pendingInputNavigation": true,
+      "childWorkspaceReadOnly": true,
+      "unavailableIdentityRetry": true,
+      "staleConversationListAfterDelete": true,
+      "terminalSocketIsolation": true,
+      "directoryPickerLifecycle": true,
+      "responsivePageScrolling": true
+    },
+    "build": true,
+    "documentation": true,
+    "formatting": true,
+    "diffCheck": true,
+    "dependencyPinCheck": true,
+    "helm": true,
+    "installation": true,
+    "runtimePolicy": true,
+    "observability": true,
+    "imageClosure": true,
+    "imageContext": true,
+    "cubeAdmission": true,
+    "cubeAllocation": true,
+    "security": {
+      "securityAuditPassed": false,
+      "auditLevel": "high",
+      "remediatedShrinkwrapFindings": [
+        {
+          "name": "brace-expansion",
+          "installedVersion": "5.0.12",
+          "advisoryUrls": [
+            "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+            "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+            "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p"
+          ],
+          "reason": "The exact shrinkwrapped node is replaced and verified; no reported affected range includes its installed version"
+        }
+      ],
+      "remainingVulnerabilities": [
+        {
+          "name": "source-map-js",
+          "severity": "high",
+          "nodes": ["node_modules/source-map-js"]
+        }
+      ]
+    }
+  },
+  "reproductions": [
+    {
+      "id": "terminal-without-partial",
+      "expected": [11, 22],
+      "completedBeforeSecond": [],
+      "actual": [11]
+    },
+    {
+      "id": "compaction-recovery",
+      "requests": [null, "agent"],
+      "compactionOutcomes": ["failed"],
+      "expectedFirstPurpose": "context_maintenance"
+    },
+    {
+      "id": "cold-tool-without-partial-coverage",
+      "visible": [
+        {
+          "coverage": 0,
+          "tools": []
+        },
+        {
+          "coverage": 1,
+          "tools": ["bash"]
+        }
+      ]
+    },
+    {
+      "id": "tree-payload-read",
+      "returnedEntries": 1,
+      "historyReads": [
+        {
+          "rows": 258,
+          "bytes": 1107460
+        }
+      ]
+    },
+    {
+      "id": "projection-round-trips",
+      "includesBeginCommit": true,
+      "samples": [
+        {
+          "writes": 1,
+          "statements": 10
+        },
+        {
+          "writes": 1,
+          "statements": 10
+        },
+        {
+          "writes": 1,
+          "statements": 10
+        },
+        {
+          "writes": 1,
+          "statements": 10
+        },
+        {
+          "writes": 1,
+          "statements": 10
+        },
+        {
+          "writes": 1,
+          "statements": 10
+        },
+        {
+          "writes": 1,
+          "statements": 10
+        },
+        {
+          "writes": 1,
+          "statements": 10
+        },
+        {
+          "writes": 1,
+          "statements": 10
+        },
+        {
+          "writes": 1,
+          "statements": 10
+        }
+      ]
+    },
+    {
+      "id": "native-scan-index-plan",
+      "rows": 20000,
+      "defaultPlanCounts": {
+        "generic": 0,
+        "custom": 12
+      },
+      "auto": {
+        "milliseconds": 0.681,
+        "scans": [
+          {
+            "relation": "pi_durable_records",
+            "index": "pi_durable_conversation_records",
+            "rows": 2,
+            "removed": 0,
+            "buffers": 4
+          },
+          {
+            "relation": "pi_durable_log",
+            "index": "pi_durable_log_pkey",
+            "rows": 1,
+            "removed": 0,
+            "buffers": 8
+          }
+        ]
+      },
+      "forcedGenericDynamicKey": {
+        "milliseconds": 6.564,
+        "scans": [
+          {
+            "relation": "pi_durable_records",
+            "index": "pi_durable_record_kind",
+            "rows": 2,
+            "removed": 19990,
+            "buffers": 842
+          },
+          {
+            "relation": "pi_durable_log",
+            "index": "pi_durable_log_pkey",
+            "rows": 1,
+            "removed": 0,
+            "buffers": 8
+          }
+        ]
+      },
+      "forcedGenericLiteralKey": {
+        "milliseconds": 0.326,
+        "scans": [
+          {
+            "relation": "pi_durable_records",
+            "index": "pi_durable_conversation_records",
+            "rows": 2,
+            "removed": 0,
+            "buffers": 4
+          },
+          {
+            "relation": "pi_durable_log",
+            "index": "pi_durable_log_pkey",
+            "rows": 1,
+            "removed": 0,
+            "buffers": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": "volume-lock-loss",
+      "events": ["old-entered", "new-entered", "new-committed", "old-wrote-after-lock-loss"],
+      "oldResult": "rejected",
+      "newWriteRetained": false
+    },
+    {
+      "id": "guest-bundle",
+      "current": {
+        "bytes": 8782025,
+        "modules": {
+          "@earendil-works/pi-coding-agent": 275250,
+          "@earendil-works/pi-ai": 1414892,
+          "@anthropic-ai/sdk": 622661,
+          "openai": 815385,
+          "@google/genai": 894015,
+          "@earendil-works/pi-tui": 268746,
+          "@earendil-works/pi-codemode": 36904,
+          "@earendil-works/pi-mcp": 81087
+        }
+      },
+      "diagnosticPrivateHelperOnly": {
+        "bytes": 774039,
+        "modules": {
+          "@earendil-works/pi-coding-agent": 4431
+        }
+      }
+    }
+  ],
+  "live": {
+    "completeTools": {
+      "checkedAt": "2026-10-06T10:41:56.605Z",
+      "model": "gpt-6-luna",
+      "accepted": true,
+      "metrics": {
+        "nativeWrites": 67,
+        "documentWrites": 33,
+        "toolCallsInDocuments": 0,
+        "completeToolCalls": 2,
+        "executeCheckpoints": 2
+      },
+      "toolNames": ["write", "bash"],
+      "exactFileBytesVerified": true,
+      "cleanupAccepted": true
+    },
+    "subagents": {
+      "checkedAt": "2026-10-06T10:46:57.878Z",
+      "model": "gpt-6-luna",
+      "accepted": true,
+      "scenarios": [
+        {
+          "name": "parallel",
+          "runId": "243fdebc-a835-4e24-8dbd-f92d592588f2",
+          "descendants": 2,
+          "sameOwner": true,
+          "markerVerified": true
+        }
+      ],
+      "cleanupCompleted": true
+    }
+  },
+  "deployment": {
+    "checkedAt": "2026-10-06T10:50:34.844Z",
+    "worker": {
+      "replicas": 2,
+      "ready": 2,
+      "images": ["pi-cloud/supervisor-host:complete-tools-af011ea46133"]
+    },
+    "schema": {
+      "name": "180_durable_runtime_revision"
+    },
+    "states": [
+      {
+        "state": "unknown",
+        "count": 2
+      }
+    ],
+    "activeOrUnsealedRuns": 0
+  },
+  "limitations": [
+    "No production service crash injection or physical multi-node HA experiment in this review",
+    "Two optional Cube live integration assertions were not rerun; real Luna/Cube owned smoke tests are separate evidence",
+    "Generic-plan slowdown was forced; default measured plan stayed custom",
+    "Volume lock reproduction uses a temporary file callback with the real lock class, not production credential mutation",
+    "Compaction recovery reproduction uses the real native Harness and a controlled model port",
+    "Historical UNKNOWN runtimes were preserved"
+  ]
+}
