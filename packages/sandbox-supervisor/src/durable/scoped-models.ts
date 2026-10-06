@@ -7,6 +7,7 @@ import {
   type Model,
 } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
+import { completeModelResponse, durableModelProgress } from "./model-stream-policy.ts";
 
 type ModelOperation = "stream" | "streamSimple" | "streamDeferred" | "cancelDeferred";
 type RequestOptions = Record<string, unknown> & { signal?: AbortSignal };
@@ -14,6 +15,8 @@ export type CloudModelPermit = {
   model: Model<Api>;
   options: RequestOptions;
   input?: unknown;
+  /** Lossy activity only. Tool names, IDs and arguments never leave this port. */
+  onToolCallProgress?(): void;
   decorate?(message: AssistantMessage): void;
   release(): void;
 };
@@ -131,9 +134,19 @@ export class ScopedDurableModels {
         let terminal: Extract<AssistantMessageEvent, { type: "done" | "error" }> | undefined;
         for await (const event of stream) {
           if (event.type === "done" || event.type === "error") terminal = event;
-          else output.push(event);
+          else {
+            const progress = durableModelProgress(event);
+            if (progress) output.push(progress);
+            else {
+              try {
+                permit.onToolCallProgress?.();
+              } catch {
+                /* Disposable activity cannot interrupt model execution. */
+              }
+            }
+          }
         }
-        const result = await stream.result();
+        const result = completeModelResponse(await stream.result());
         permit.decorate?.(result);
         const ids = new Set<string>();
         if (
@@ -143,8 +156,8 @@ export class ScopedDurableModels {
               (!part.id || ids.has(part.id) || (ids.add(part.id), false)),
           )
         ) {
-          result.content = result.content.filter((part) => part.type !== "toolCall");
           result.stopReason = "error";
+          result.content = completeModelResponse(result).content;
           result.errorMessage = "Provider returned ambiguous tool call identities";
           terminal = { type: "error", reason: "error", error: result };
         }
@@ -153,7 +166,12 @@ export class ScopedDurableModels {
         const completed = permit;
         permit = undefined;
         completed.release();
-        if (terminal) output.push(terminal);
+        if (terminal)
+          output.push(
+            terminal.type === "done"
+              ? { ...terminal, message: result }
+              : { ...terminal, error: result },
+          );
         output.end(result);
       } catch {
         const real = this.#descriptors.get(model.id)?.model ?? model;

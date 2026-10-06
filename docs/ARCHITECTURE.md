@@ -538,6 +538,13 @@ Both overlay and cold modes run the official upstream Storage conformance suite.
 The trusted `DurableAgentSession` supplies live model and remote-effect grants;
 Pi owns scheduling, retry, foreground Compaction and abort. Stored model
 references have no credentials. Compaction uses the same model authority port.
+The Models port retains streamed local Tool calls in Worker memory. Text and
+thinking partials reach Durable with empty text slots in place of Tool blocks,
+preserving content indexes without storing Tool names, IDs or arguments.
+Only a complete successful response exposes its Tool calls to the Harness;
+error, abort, deferred and length-truncated replies omit them. Tool preparation
+activity remains payload-free HTTP/SSE. Native commits are still stored exactly;
+there is no filtering of Storage deltas or a second recovery log (ADR-0230).
 Automatic background Compaction is disabled through the public setting because
 cloud background admission is not yet a product capability. The API uses generic
 Session data operations while quiescent, never a Harness or model/Tool executor.

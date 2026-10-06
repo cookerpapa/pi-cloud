@@ -3,6 +3,34 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "durable-tool-draft-publication",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-tool-call-publication.test.ts",
+      "test": "persists text but no Tool draft, then waits for the complete validated intent ACK",
+      "invariant": "Streaming Tool drafts never enter native commits; complete calls execute only after their validated intent is acknowledged."
+    },
+    {
+      "id": "durable-tool-draft-provider-mutation",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-tool-call-publication.test.ts",
+      "test": "a Tool-only stream writes no draft even when its provider mutates the opening partial",
+      "invariant": "Provider mutation cannot insert Tool arguments into an earlier partial already delivered to Durable."
+    },
+    {
+      "id": "durable-tool-draft-stop",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-tool-call-publication.test.ts",
+      "test": "Stop during argument generation retains text without a Tool or phantom result",
+      "invariant": "Stopping an incomplete call retains committed text without persisting arguments, executing the Tool or inventing a result."
+    },
+    {
+      "id": "durable-tool-draft-recovery",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-tool-call-publication.test.ts",
+      "test": "reopens a streamed request without replaying drafts or submitting the input twice",
+      "invariant": "Recovery resumes the original input without replaying or retaining an incomplete Tool call."
+    },
+    {
       "id": "execution-probe-no-allocation",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/execution-path-probes.test.ts",

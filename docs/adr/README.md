@@ -10,8 +10,10 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0230](0230-complete-tool-call-publication.md) — incomplete Tool calls stay
+   in Worker memory; only complete model responses expose calls to native persistence.
 1. [ADR-0229](0229-native-durable-runtime.md) — native adoption of Pi Durable
-   1.0 execution semantics; implementation and matched cutover pending.
+   1.0 execution semantics; implemented, verified and deployed.
 1. [ADR-0228](0228-pi-durable-evaluation.md) — isolated Pi Durable 1.0 commit and
    remote Tool verification; no production runtime adoption.
 1. [ADR-0227](0227-review-recovery-and-tool-outcomes.md) — recoverable POSIX

@@ -28,6 +28,10 @@ release-time cleanup before changing target identity or deleting metadata.
 
 ## Reliability and capacity
 
+- [ ] Implement [ADR-0230](adr/0230-complete-tool-call-publication.md): keep
+      incomplete Tool calls outside Kafka/PG at the public Models port; preserve
+      streaming text, payload-free activity and native complete-intent execution.
+      Verify abort, truncation and crash/reopen before rollout.
 - [x] Verify Pi Durable 1.0 commit, recovery and remote Tool contracts under
       [ADR-0228](adr/0228-pi-durable-evaluation.md). The
       [executable evaluation](reports/pi-durable-evaluation-20261005.md) proves

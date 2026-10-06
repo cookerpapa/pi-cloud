@@ -537,6 +537,9 @@ export class PiCloudTurnRunner {
               model,
               input: nativeProviderContext(context),
               release,
+              ...(native.purpose === "agent"
+                ? { onToolCallProgress: () => activity.phase("preparing_tool") }
+                : {}),
               options: {
                 ...request.options,
                 apiKey: config.apiKey,

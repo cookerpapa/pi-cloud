@@ -10,6 +10,14 @@ These guarantees concern formal conversation events. Disposable `tool.progress`
 snapshots are a separate HTTP/SSE observation: no Kafka/PG write, durable sequence,
 context entry or reconnect replay. Losing one cannot fail or complete a Tool.
 
+Under ADR-0230, local Tool call argument fragments stay inside the Worker model
+adapter. The public Models stream supplied to Durable contains text/thinking
+progress but no Tool drafts; only a complete successful response admits calls
+to native persistence. Error, abort, deferred and token-limit endings discard
+local calls. A payload-free preparation observation can update Working status.
+Completed calls still require native validation and a durable execute checkpoint
+before dispatch. This changes new model output, never already committed history.
+
 ADR-0212 adds bounded PG control-change references to the same ordered Kafka
 Session path. They rebuild binding, queue and Subagent read views, without
 creating Pi Entries or changing native sequence. New owners capture Kafka

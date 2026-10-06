@@ -41,6 +41,9 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Load only code-owned trusted infrastructure tools in the Agent Runner.
   User/project extensions are outside the current product boundary.
 - Use Pi's public tool/extension APIs rather than patching its agent loop.
+- Incomplete local Tool calls stay in Worker memory at the public Models port
+  (ADR-0230). Only complete successful responses expose calls to native storage;
+  never strip fields from committed Storage batches to implement this policy.
 - Persist commands before acknowledging them.
 - Use idempotency keys, leases, and fencing tokens for distributed mutations.
 - One physical Pi Session owns one renewable execution lease/epoch and one Worker

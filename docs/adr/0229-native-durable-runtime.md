@@ -102,6 +102,11 @@ do not feed ordinary guest previews into `api.output()` by default. Immutable
 image references must cover new native record/document locations; Worker decoding
 still gives Pi ordinary image content. Cube Volumes retain Workspace byte ownership.
 
+[ADR-0230](0230-complete-tool-call-publication.md) further restricts the public
+Models input: incomplete local Tool calls stay in Worker memory and never enter
+native partials. Complete successful calls retain native validation/intent rules.
+Storage continues to preserve the exact writes produced by the Harness.
+
 ## Product scope and cutover
 
 Public conversation, Tool, Workspace, model selection and Subagent behavior must
