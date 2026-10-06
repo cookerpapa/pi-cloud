@@ -15,8 +15,8 @@
     "Q06-01",
     "Q06-02"
   ],
-  "deployed": false,
-  "productionSchemaMigrated": false,
+  "deployed": true,
+  "productionSchemaMigrated": true,
   "schema": 181,
   "checks": {
     "typechecks": true,
@@ -292,8 +292,8 @@
     "removedDependencyPackages": 149
   },
   "limitations": [
-    "Production remains on schema180 and its previous images; a matched drain/migration/rollout is pending",
-    "No new production Luna/VM-chaos acceptance was performed for this source revision",
+    "The source-validation phase did not deploy; the subsequent matched schema181 rollout and owned Luna acceptance are recorded under deployment",
+    "The later live smoke checks do not constitute a production VM-chaos or physical multi-node failover campaign",
     "Two optional Cube live integration assertions remain outside the automated suite; seven Kafka skips are covered by the mandatory isolated transport gate",
     "Filesystem exclusion was tested across local processes/containers, not physical multi-node storage failover",
     "An initial browser reload wait timed out and an unchanged rerun passed",
@@ -301,5 +301,10 @@
   ],
   "corrections": [
     "Native Pi normally synthesizes message_start for terminal-only responses; missing-start identity repair targets overflow snapshots and retry ordering"
-  ]
+  ],
+  "deployment": {
+    "sourceRevision": "18defa3ec16fa6f5fa395bc931239c1602e59a32",
+    "verifiedAt": "2026-10-06T14:45:06.837Z",
+    "report": "docs/reports/review-release-20261006.json"
+  }
 }

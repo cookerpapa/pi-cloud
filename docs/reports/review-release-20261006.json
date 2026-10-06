@@ -1,0 +1,304 @@
+{
+  "format": "pi-cloud.release.v1",
+  "verifiedAt": "2026-10-06T14:45:06.837Z",
+  "sourceRevision": "18defa3ec16fa6f5fa395bc931239c1602e59a32",
+  "repairRevision": "9fe9024c",
+  "deployed": true,
+  "releases": [
+    {
+      "name": "cube",
+      "revision": "49",
+      "status": "deployed"
+    },
+    {
+      "name": "pi-cloud",
+      "revision": "25",
+      "status": "deployed"
+    },
+    {
+      "name": "pi-cloud-infrastructure",
+      "revision": "24",
+      "status": "deployed"
+    }
+  ],
+  "images": {
+    "controlPlane": "pi-cloud/control-plane:review-release-18defa3e",
+    "worker": "pi-cloud/supervisor-host:review-release-18defa3e",
+    "web": "pi-cloud/web-ui:review-release-18defa3e",
+    "volumeGateway": "pi-cloud/workspace-volume-gateway:review-release-18defa3e",
+    "sshGateway": "pi-cloud/ssh-gateway:review-release-18defa3e",
+    "relay": "pi-cloud/provider-egress-relay:review-release-18defa3e",
+    "provider": "pi-cloud/cli-proxy-api:review-release-18defa3e"
+  },
+  "database": {
+    "schema": "181_durable_navigation_index",
+    "activeRuns": 0,
+    "unsealedWriters": 0,
+    "pendingOutbox": 0,
+    "sessions": 0,
+    "unknown": [
+      {
+        "runtimeId": null,
+        "state": "unknown"
+      },
+      {
+        "runtimeId": null,
+        "state": "unknown"
+      }
+    ],
+    "runtimeStates": {
+      "unknown": 2,
+      "released": 85
+    }
+  },
+  "workerReplicas": 2,
+  "gatewayStrategy": "Recreate",
+  "publicationPartitions": 32,
+  "guest": {
+    "formatVersion": 2,
+    "cubeCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
+    "imageRevision": "1f7649a81c99c671770d3ef2bc09480dadd93847",
+    "imageDigest": "sha256:c4ba840fa81fca8833e916aaa68228bc2ccfc4243e860cc3e0c7a99d592d054f",
+    "imageReference": "pi-cloud-cube-template-registry.cube-system.svc.cluster.local:5000/pi-cloud/cubesandbox-tool@sha256:c4ba840fa81fca8833e916aaa68228bc2ccfc4243e860cc3e0c7a99d592d054f",
+    "agent": {
+      "key": "agent",
+      "label": "Agent Tool Runtime",
+      "templateId": "tpl-d30309554b434999a7e3422c",
+      "jobId": "54969f8a-f928-4b2f-adb4-ace8a1077795",
+      "templateSpecSha256": "06b01c787e95affc11fcde357f54ebf35421337467bed8e202f5881d45e8055f",
+      "templateSpecification": {
+        "image": "pi-cloud-cube-template-registry.cube-system.svc.cluster.local:5000/pi-cloud/cubesandbox-tool@sha256:c4ba840fa81fca8833e916aaa68228bc2ccfc4243e860cc3e0c7a99d592d054f",
+        "writableLayerSize": "1G",
+        "exposedPorts": [49983],
+        "probePort": 49983,
+        "probePath": "/health",
+        "cpuMillicores": 2000,
+        "memoryMb": 2000,
+        "cubeCaInjected": false,
+        "allowInternetAccess": true
+      }
+    },
+    "development": {
+      "starter": {
+        "key": "starter",
+        "label": "轻量型",
+        "templateId": "tpl-8650befc4ccb4aceb58838ff",
+        "jobId": "a16a6589-7bf2-4baa-aed4-cbdac49b80e4",
+        "templateSpecSha256": "a4eb93fd7c0367ee73394e6be1a1ba84dc26cf52aacd1ed9703709e00ea391ae",
+        "templateSpecification": {
+          "image": "pi-cloud-cube-template-registry.cube-system.svc.cluster.local:5000/pi-cloud/cubesandbox-tool@sha256:c4ba840fa81fca8833e916aaa68228bc2ccfc4243e860cc3e0c7a99d592d054f",
+          "writableLayerSize": "8G",
+          "exposedPorts": [49983],
+          "probePort": 49983,
+          "probePath": "/health",
+          "cpuMillicores": 1000,
+          "memoryMb": 2048,
+          "cubeCaInjected": false,
+          "allowInternetAccess": true
+        }
+      },
+      "standard": {
+        "key": "standard",
+        "label": "标准型",
+        "templateId": "tpl-d7f6520205a9495fa8fd2f68",
+        "jobId": "b1d845e3-96b3-4aae-a6fb-71a96751ed0c",
+        "templateSpecSha256": "29c12d193b44db2a173b8ff13b85c0f4f87b0dc006cd79b9ff39c0d1b04ab8b3",
+        "templateSpecification": {
+          "image": "pi-cloud-cube-template-registry.cube-system.svc.cluster.local:5000/pi-cloud/cubesandbox-tool@sha256:c4ba840fa81fca8833e916aaa68228bc2ccfc4243e860cc3e0c7a99d592d054f",
+          "writableLayerSize": "16G",
+          "exposedPorts": [49983],
+          "probePort": 49983,
+          "probePath": "/health",
+          "cpuMillicores": 2000,
+          "memoryMb": 4096,
+          "cubeCaInjected": false,
+          "allowInternetAccess": true
+        }
+      },
+      "performance": {
+        "key": "performance",
+        "label": "性能型",
+        "templateId": "tpl-15d61304ac90472c99e5347e",
+        "jobId": "078ee980-0931-44bd-860c-86d5e8f9537f",
+        "templateSpecSha256": "924d3359a530c93cf2109549d6860715b26d9af2688033c3ea1006e91037e8a7",
+        "templateSpecification": {
+          "image": "pi-cloud-cube-template-registry.cube-system.svc.cluster.local:5000/pi-cloud/cubesandbox-tool@sha256:c4ba840fa81fca8833e916aaa68228bc2ccfc4243e860cc3e0c7a99d592d054f",
+          "writableLayerSize": "32G",
+          "exposedPorts": [49983],
+          "probePort": 49983,
+          "probePath": "/health",
+          "cpuMillicores": 4000,
+          "memoryMb": 8192,
+          "cubeCaInjected": false,
+          "allowInternetAccess": true
+        }
+      }
+    },
+    "registeredAt": "2026-10-06T14:04:21.771Z"
+  },
+  "cubePatchSet": "07964b1feb86cbb4",
+  "completionSource": "e8a9e29eec723e694a51d41d394bb3f29fc4cfbe",
+  "security": {
+    "path": "dist/release-evidence-review-release-18defa3e",
+    "images": [
+      {
+        "reference": "pi-cloud/control-plane:review-release-18defa3e",
+        "imageId": "sha256:51fa6c2cc7b6638bd11e7fae5579b7cd59879a384869731c606df7bfc36c3ba2",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 48,
+        "unfixedCritical": 1
+      },
+      {
+        "reference": "pi-cloud/supervisor-host:review-release-18defa3e",
+        "imageId": "sha256:76fe368c66cbcc843600a59ca247b34cf1c2e401129196e4b271ec1cd32199fc",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 48,
+        "unfixedCritical": 1
+      },
+      {
+        "reference": "pi-cloud/workspace-volume-gateway:review-release-18defa3e",
+        "imageId": "sha256:6fb16eaa06417d5aa89a9966e5810a9d6bbbf13506bda29595c5265c0aebf39b",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 58,
+        "unfixedCritical": 1
+      },
+      {
+        "reference": "pi-cloud/web-ui:review-release-18defa3e",
+        "imageId": "sha256:c5fbf4922e0ff13ce58ddaab3ff17e4dbd76800c7494254c95217f7e4fe9bcee",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 0,
+        "unfixedCritical": 0
+      },
+      {
+        "reference": "pi-cloud/provider-egress-relay:review-release-18defa3e",
+        "imageId": "sha256:6016a8bc7e29ad5f11c11aa9b4db4d116d34d00c6ad5b7d4fad235d83f9030bc",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 48,
+        "unfixedCritical": 1
+      },
+      {
+        "reference": "pi-cloud/ssh-gateway:review-release-18defa3e",
+        "imageId": "sha256:a7c811e9d845523dd86a589f1f235d7adab120a3273c8a1491306b3af2cd4236",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 48,
+        "unfixedCritical": 1
+      },
+      {
+        "reference": "pi-cloud/cli-proxy-api:review-release-18defa3e",
+        "imageId": "sha256:9741859be0abb7ae16259391ce6ecca6436b4352b030452eb4c0aa083342d500",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 50,
+        "unfixedCritical": 1
+      },
+      {
+        "reference": "pi-cloud/cube-api:review-release-18defa3e",
+        "imageId": "sha256:4c73422d6c893daccd5ccdb233a0ca2448a80ae8f89f57e05bc73115d9ca04c9",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 0,
+        "unfixedCritical": 0
+      },
+      {
+        "reference": "pi-cloud/cube-master:review-release-18defa3e",
+        "imageId": "sha256:f41703287b3de6a1241afe64ab444c505f6831097d5b482e246fdcecc494df86",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 0,
+        "unfixedCritical": 0
+      },
+      {
+        "reference": "pi-cloud/cubelet:review-release-18defa3e",
+        "imageId": "sha256:d5e4a4a2b15c9cd8508ba9650abf8c45fb87d21187be79940532f4a89f1778ac",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 0,
+        "unfixedCritical": 0
+      },
+      {
+        "reference": "localhost:5000/pi-cloud/cubesandbox-tool:1f7649a81c99c671770d3ef2bc09480dadd93847",
+        "imageId": "sha256:c4ba840fa81fca8833e916aaa68228bc2ccfc4243e860cc3e0c7a99d592d054f",
+        "fixableHigh": 0,
+        "fixableCritical": 0,
+        "unfixedHigh": 0,
+        "unfixedCritical": 0
+      }
+    ],
+    "exceptions": 0,
+    "guestScope": "OS packages; application npm dependencies separately audited",
+    "manifestSha256": "5e3013971821d510f56276ae31cd93991a9b39d8602f4383128644500def2774"
+  },
+  "backups": {
+    "startedAt": "2026-10-06T14:13:41.978Z",
+    "phases": [
+      {
+        "phase": "quiescent-before",
+        "at": "2026-10-06T14:13:42.611Z",
+        "activeRuns": 0,
+        "unsealed": 0,
+        "outbox": 0,
+        "unknown": 2
+      },
+      {
+        "phase": "quiescent-after",
+        "at": "2026-10-06T14:13:43.863Z",
+        "activeRuns": 0,
+        "unsealed": 0,
+        "outbox": 0,
+        "unknown": 2
+      },
+      {
+        "phase": "postgres-backup",
+        "at": "2026-10-06T14:13:45.981Z",
+        "bytes": 468416,
+        "sha256": "9fcecd58eeca455b577ea0a47b4bde62960b809afe39623c4a622717daf4f9e7"
+      },
+      {
+        "phase": "workspace-provider-backup",
+        "at": "2026-10-06T14:13:47.207Z",
+        "bytes": 58822318
+      },
+      {
+        "phase": "attachment-backup",
+        "at": "2026-10-06T14:13:47.934Z",
+        "objects": 8,
+        "bytes": 100603669
+      }
+    ],
+    "completed": true,
+    "completedAt": "2026-10-06T14:13:47.934Z"
+  },
+  "live": {
+    "tools": {
+      "path": "docs/reports/review-release-tools-20261006.json",
+      "accepted": true,
+      "sha256": "abb972e6620467ff6dd64976f19b0b72a9719c315fbcc35f00de3ac41e37bfcf"
+    },
+    "navigation": {
+      "path": "docs/reports/review-release-navigation-20261006.json",
+      "accepted": true,
+      "sha256": "b5143f20255f3a420458935cf139029e822314fcb5d5b14b0167589208c9f03e"
+    },
+    "subagents": {
+      "path": "docs/reports/review-release-subagents-20261006.json",
+      "accepted": true,
+      "sha256": "3394928c2e03d837fc2fea2f4ae487408e2b61e3d4c7fa0df202436f74f9a887"
+    },
+    "uploads": {
+      "path": "docs/reports/review-release-uploads-20261006.json",
+      "accepted": true,
+      "sha256": "b5f227c51b7b24f806d5fba90abec9f5ffb6964c38489f4bf7f29fdbceb3e2af"
+    },
+    "compaction": {
+      "path": "docs/reports/review-release-compaction-20261006.json",
+      "accepted": true,
+      "sha256": "7b3af0054d2b6f77c5ff03e8af4af8aa4e1a459f14850af6e337606fec23d7e7"
+    }
+  }
+}

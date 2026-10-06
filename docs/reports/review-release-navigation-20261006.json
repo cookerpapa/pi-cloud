@@ -1,0 +1,28 @@
+{
+  "checkedAt": "2026-10-06T14:41:20.487Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "da2e7779-6ae4-4b89-9952-f50af590d0cd",
+      "state": "completed"
+    },
+    {
+      "runId": "6d2fc584-3118-494c-a22f-e8c006323837",
+      "state": "completed"
+    },
+    {
+      "runId": "e3af3b2b-9537-46c4-82ea-35b0964f27b6",
+      "state": "completed"
+    }
+  ],
+  "nativeToolCopy": {
+    "toolResults": 1,
+    "sha256": "9e95a5421435da77fbe800e4d8998fe44da7a057d1dc8e4afc09a41643651149"
+  },
+  "navigationAnchor": true,
+  "independentFork": true,
+  "toolContextRetained": true,
+  "pruneRetiresDescendant": true,
+  "cleanupRequested": true
+}

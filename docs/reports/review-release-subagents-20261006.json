@@ -1,0 +1,43 @@
+{
+  "checkedAt": "2026-10-06T14:22:11.477Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "scenarios": [
+    {
+      "name": "supervisor",
+      "runId": "34598a7a-4ffd-4abb-adf7-6e97022820bd",
+      "descendants": 1,
+      "sameOwner": true,
+      "markerVerified": true
+    },
+    {
+      "name": "messaging",
+      "runId": "cab3e807-4b08-45be-842f-f848203604cd",
+      "descendants": 1,
+      "sameOwner": true,
+      "markerVerified": true
+    },
+    {
+      "name": "parallel",
+      "runId": "5604abcc-1b01-4035-aaad-875bf0366eda",
+      "descendants": 2,
+      "sameOwner": true,
+      "markerVerified": true
+    },
+    {
+      "name": "cancellation",
+      "runId": "e4ffe298-03b9-4bac-8cce-4c40bb772133",
+      "descendants": 1,
+      "sameOwner": true,
+      "markerVerified": true
+    },
+    {
+      "name": "guest-boundary",
+      "runId": "f54a2206-241f-4823-91c0-98a7728adf1c",
+      "descendants": 0,
+      "sameOwner": true,
+      "markerVerified": true
+    }
+  ],
+  "cleanupCompleted": true
+}

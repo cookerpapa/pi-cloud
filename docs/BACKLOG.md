@@ -32,11 +32,12 @@ changing target identity or deleting metadata.
 The [October 6 post-Durable review](reports/repository-review-20261006.md) is
 implemented and source-verified. [Repair evidence](reports/review-repair-20261006.md)
 records the native request/event fixes, filesystem exclusion, bounded navigation,
-SQL/dependency reductions and restored delivery checks. Production is not yet updated.
-The authorized rollout additionally found stale Debian package pins and fixable
-image findings beyond the npm audit. Release preparation updates the explicit
-OS/Go dependency pins and aligns image evidence with the actual versioned build
-and guest source identity; final image scans and live acceptance remain required.
+SQL/dependency reductions and restored delivery checks. The
+[matched production release](reports/review-release-20261006.md) is deployed.
+It also updates stale Debian pins and the affected OS/Go dependencies, and aligns
+image evidence with the actual versioned build and guest identity. Eleven release
+images pass the documented fixable HIGH/CRITICAL gate; raw unfixed findings remain
+visible in the evidence.
 
 - [x] R06-01: restore Compaction summarize/retry identity under the new PG grant.
 - [x] R06-02: correlate overflow/retry events and query executing Tools beyond
@@ -54,15 +55,17 @@ and guest source identity; final image scans and live acceptance remain required
 - [x] Q06-01: migrate and pass the native Subagent RF3 fixture, validate Tool
       identity before publication, and include the isolated transport gate in CI.
 - [x] Q06-02: pin patched source-map-js and pass the audit without exceptions.
-- [ ] Deploy the matched schema 181 / Control Plane / Worker / Volume Gateway /
-      guest release, draining before index-contract and Gateway-lock cutover;
-      repeat owned live acceptance while preserving current Sessions and UNKNOWN VMs.
+- [x] Deploy the matched schema 181 / Control Plane / Worker / Volume Gateway /
+      guest release after drain and backup. Luna Tool, native Fork/prune, five
+      Subagent scenarios, browser uploads and cold-Worker image recovery pass.
+      The two historical UNKNOWN records retain their original identities.
 
 - [x] Deploy [ADR-0230](adr/0230-complete-tool-call-publication.md): incomplete
       Tool calls stay outside Kafka/PG at the public Models port. Streaming text,
       payload-free activity and native complete-intent execution are preserved.
       Abort/truncation/reopen contracts, 190 fault cases and real Luna write/Bash
-      acceptance pass; both Worker Pods use `complete-tools-af011ea46133`.
+      acceptance pass; its initial Worker image was `complete-tools-af011ea46133`,
+      superseded by the matched release above.
 - [x] Verify Pi Durable 1.0 commit, recovery and remote Tool contracts under
       [ADR-0228](adr/0228-pi-durable-evaluation.md). The
       [executable evaluation](reports/pi-durable-evaluation-20261005.md) proves

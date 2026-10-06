@@ -7,8 +7,9 @@
       [Findings and verification](reports/repository-review-20261006.md).
 - [x] Implement and verify R06/Q06/O06 under ADR-0231/0232.
       [Repair and validation evidence](reports/review-repair-20261006.md).
-- [ ] Complete the matched release and owned live acceptance; source verification
-      does not imply the running deployment was updated.
+- [x] Complete the [matched schema 181 release](reports/review-release-20261006.md)
+      and owned Luna/Cube/browser acceptance, including native Fork context,
+      Subagent interactions and image recovery on another Worker.
 
 ## Complete Tool call publication
 

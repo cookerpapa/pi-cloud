@@ -3,8 +3,10 @@
 Source implementation follows the owner's approval of the
 [October 6 review](repository-review-20261006.md), preserved at `48cd4366`.
 Source validation is complete at `da2208b9` plus this evidence-only update.
-No production deployment or schema migration has been
-performed by this repair task; deployed baseline evidence is in the review report.
+That source-validation task did not deploy or migrate production. The owner then
+authorized the [matched schema 181 rollout](review-release-20261006.md), now
+completed with image, native Cube and owned live acceptance. The original review
+remains evidence of the preceding deployment.
 
 ## Implemented slices
 
@@ -106,7 +108,8 @@ Final verification:
 
 The baseline review's real Luna runs exercised the old deployment. They are not
 relabelled as live acceptance of this new source revision.
-The changes require matched Control Plane/schema 181, Worker, Volume Gateway and
-guest-image release. The two existing UNKNOWN runtime records and production
-conversations/Volumes have not been reset or destroyed. Physical multi-node
-filesystem failover remains a deployment-specific acceptance requirement.
+The subsequent matched release updates Control Plane/schema 181, Worker, Volume
+Gateway, native Cube and guest images together. The two existing UNKNOWN runtime
+records and production conversations/Volumes have not been reset or destroyed.
+Physical multi-node filesystem failover remains a deployment-specific acceptance
+requirement.

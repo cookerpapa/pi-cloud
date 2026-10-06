@@ -98,11 +98,13 @@ inheriting stale packages from an older prebuilt Caddy image while preserving
 the standard Caddy module set. The actual final image, not either build stage,
 is what the release gate scans.
 
-CI independently builds the same nine-image matrix, generates CycloneDX with
+CI independently builds its nine-image matrix (six application services, the two
+installer-managed gateways and the guest template), generates CycloneDX with
 Anchore SBOM Action, records all HIGH/CRITICAL findings with Trivy, runs the same
 fixable-finding gate, and uploads each evidence set for 14 days. Checkout,
 Node, Anchore, Trivy, Gitleaks, and artifact Actions are pinned to immutable
-commits in `.github/workflows/ci.yml`.
+commits in `.github/workflows/ci.yml`. The release-host collection additionally
+covers the model provider and native Cube images described above.
 
 GitHub-hosted CI runs deterministic zero-token checks plus the nine-image SBOM
 and vulnerability matrix. The matrix still builds the Cube Tool image, but the

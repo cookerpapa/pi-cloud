@@ -1,7 +1,8 @@
 # ADR-0231: Volume Gateway filesystem mutation locks
 
-Status: implemented and source-verified, 2026-10-06; production rollout pending.
-[Verification and release status](../reports/review-repair-20261006.md).
+Status: implemented, verified and deployed, 2026-10-06.
+[Source verification](../reports/review-repair-20261006.md) and
+[matched release](../reports/review-release-20261006.md).
 The owner authorized the post-Durable review repairs. This decision addresses
 R06-03 without changing Workspace byte ownership or VM lifecycle authority.
 

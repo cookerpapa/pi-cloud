@@ -5,7 +5,8 @@ audits `aace21a8` across all 22 workspaces, native Pi, Cube, product and deliver
 boundaries. It records five findings, three measured optimization opportunities
 and two failing delivery checks, with isolated reproductions and baseline live Luna acceptance.
 The [approved source repairs](reports/review-repair-20261006.md) are implemented and
-verified under ADR-0231/0232; matched production rollout remains in BACKLOG.
+verified under ADR-0231/0232. The [matched production release](reports/review-release-20261006.md)
+deploys schema 181 and records actual image checks and owned live acceptance.
 
 [ADR-0230](adr/0230-complete-tool-call-publication.md) is implemented and deployed:
 streaming local Tool call drafts stay in Worker memory, while complete successful

@@ -11,9 +11,9 @@ revision-bound reports, not as alternate production backends.
 Read the documents in this order:
 
 1. [ADR-0232](0232-indexed-native-navigation.md) — thin native navigation
-   classification and bounded independent-Fork history copying.
+   classification and bounded independent-Fork history copying; deployed.
 1. [ADR-0231](0231-volume-filesystem-mutation-locks.md) — filesystem-held Volume
-   Gateway mutation locks, independent of PG connection lifetime.
+   Gateway mutation locks, independent of PG connection lifetime; deployed.
 1. [ADR-0230](0230-complete-tool-call-publication.md) — incomplete Tool calls stay
    in Worker memory; only complete model responses expose calls to native persistence.
 1. [ADR-0229](0229-native-durable-runtime.md) — native adoption of Pi Durable

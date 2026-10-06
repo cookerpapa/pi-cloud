@@ -1,0 +1,24 @@
+{
+  "checkedAt": "2026-10-06T14:25:52.754Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "scope": "Real Gateway/Durable/Luna with a 4096-token fixture window; no PG/Kafka Run or production catalog mutation",
+  "requests": [
+    {
+      "purpose": "context_maintenance",
+      "serviceTier": "fast",
+      "model": "gpt-6-luna"
+    },
+    {
+      "purpose": "agent",
+      "serviceTier": "fast",
+      "model": "gpt-6-luna"
+    }
+  ],
+  "compactions": [
+    {
+      "status": "completed"
+    }
+  ],
+  "grants": 2
+}
