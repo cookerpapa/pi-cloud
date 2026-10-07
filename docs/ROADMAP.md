@@ -8,7 +8,8 @@
       Volume concurrency and the stale cancellation comment. See
       [source verification](reports/review-repair-20261007.md) and
       [ADR-0234](adr/0234-volume-gateway-shared-access.md).
-- [ ] Deploy the matched application/migration 182 release and verify live behavior.
+- [x] Deploy the [matched application/migration 182 release](reports/review-release-20261007.md)
+      and verify browser retry, concurrent uploads, Luna Tools/images and cold Worker recovery.
 
 ## Cube template cleanup
 

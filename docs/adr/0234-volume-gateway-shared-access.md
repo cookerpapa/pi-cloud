@@ -1,7 +1,8 @@
 # ADR-0234: Shared Volume access with exclusive lifecycle and credential mutation
 
-Status: implemented and source-verified, not deployed, 2026-10-07.
-[Repair evidence](../reports/review-repair-20261007.md). The owner authorized the
+Status: implemented, verified and deployed, 2026-10-07.
+[Source repairs](../reports/review-repair-20261007.md) and
+[matched rollout](../reports/review-release-20261007.md). The owner authorized the
 October 7 review improvements. This refines ADR-0231's exclusion granularity;
 it does not change Workspace ownership, PG admission or Cube deletion authority.
 

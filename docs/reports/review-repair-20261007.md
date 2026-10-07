@@ -4,6 +4,7 @@ Source implementation for the owner-approved
 [review findings](repository-review-20261007.md), based on
 `7a5fc6034a55d9fda98a25c8015112327ed2bfc4`. This record describes source changes
 and isolated verification. Production deployment is not part of this repair turn.
+The subsequent [owner-authorized rollout](review-release-20261007.md) is complete.
 The [210-case fault evaluation](review-repair-20261007-faults.md) passes; it is
 deterministic fault injection, not a live production chaos test.
 

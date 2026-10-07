@@ -6,7 +6,8 @@ It records ordinary-send retry duplication, a guest-reuse release-evidence
 conflict, measured Volume-lock and conversation-query improvements, and a stale
 Stop comment. The [approved source repairs](reports/review-repair-20261007.md)
 implement all five under ADR-0234 and migration 182, with isolated/browser/fault
-verification. This source repair record is separate from production rollout.
+verification. The [matched schema 182 rollout](reports/review-release-20261007.md)
+is deployed, including owner-authorized old-test cleanup and live acceptance.
 
 The [October 7 template cleanup repair](reports/template-cleanup-20261007.md)
 resolves obsolete Pod IP routing in Cube's template and rootfs cleanup. It records

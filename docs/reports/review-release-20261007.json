@@ -1,0 +1,233 @@
+{
+  "format": "pi-cloud.deployment-evidence.v1",
+  "checkedAt": "2026-10-07T02:39:05.069775+00:00",
+  "sourceRevision": "8244934ad7d080db50c204d827c9ccf6ac4d3afd",
+  "deployed": true,
+  "tag": "review-release-8244934a",
+  "schema": "182_conversation_activity_page",
+  "state": {
+    "checkedAt": "2026-10-07T02:36:27.186Z",
+    "helm": [
+      {
+        "name": "cube",
+        "revision": "51",
+        "status": "deployed"
+      },
+      {
+        "name": "pi-cloud",
+        "revision": "26",
+        "status": "deployed"
+      },
+      {
+        "name": "pi-cloud-infrastructure",
+        "revision": "25",
+        "status": "deployed"
+      }
+    ],
+    "workloads": [
+      {
+        "name": "pi-cloud-control-plane",
+        "ready": 1,
+        "desired": 1,
+        "images": ["pi-cloud/control-plane:review-release-8244934a"]
+      },
+      {
+        "name": "pi-cloud-cube-api-authorizer",
+        "ready": 2,
+        "desired": 2,
+        "images": ["pi-cloud/cube-api-authorizer:vm-allocation-v6"]
+      },
+      {
+        "name": "pi-cloud-cube-egress-gateway",
+        "ready": 1,
+        "desired": 1,
+        "images": ["pi-cloud/cube-egress-gateway:e6240f4bdab9d33e67e3191d5c2fd9e31095afa2"]
+      },
+      {
+        "name": "pi-cloud-cube-template-registry",
+        "ready": 1,
+        "desired": 1,
+        "images": [
+          "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+        ]
+      },
+      {
+        "name": "pi-cloud-ssh-gateway",
+        "ready": 1,
+        "desired": 1,
+        "images": ["pi-cloud/ssh-gateway:review-release-8244934a"]
+      },
+      {
+        "name": "pi-cloud-web",
+        "ready": 1,
+        "desired": 1,
+        "images": ["pi-cloud/web-ui:review-release-8244934a"]
+      },
+      {
+        "name": "pi-cloud-workspace-volume-gateway",
+        "ready": 1,
+        "desired": 1,
+        "images": ["pi-cloud/workspace-volume-gateway:review-release-8244934a"]
+      },
+      {
+        "name": "cli-proxy-api",
+        "ready": 1,
+        "desired": 1,
+        "images": ["pi-cloud/cli-proxy-api:review-release-8244934a"]
+      },
+      {
+        "name": "pi-cloud-pi-worker-primary-v1",
+        "ready": 2,
+        "desired": 2,
+        "images": ["pi-cloud/supervisor-host:review-release-8244934a"]
+      }
+    ],
+    "database": "sessions|0\nruns|0\nruntime_records|0\nunpurged|0\noutbox|0\n",
+    "publication": {
+      "partitionCount": 32,
+      "available": 32
+    },
+    "images": [
+      {
+        "name": "controlPlane",
+        "reference": "pi-cloud/control-plane:review-release-8244934a",
+        "digest": "sha256:865fcf491981d6fd9def9ceb86ed8b8247c3da81ea7e818384af4412fe14d29e",
+        "source": "8244934ad7d080db50c204d827c9ccf6ac4d3afd"
+      },
+      {
+        "name": "worker",
+        "reference": "pi-cloud/supervisor-host:review-release-8244934a",
+        "digest": "sha256:411d21227b73b88d04bcbb81d8990e656902839016b3070ceafd6c3c89fa2614",
+        "source": "8244934ad7d080db50c204d827c9ccf6ac4d3afd"
+      },
+      {
+        "name": "web",
+        "reference": "pi-cloud/web-ui:review-release-8244934a",
+        "digest": "sha256:6df9efe64fdf5cf9e5554534f423402bd87a21dfafc8a7f5184da7247e764e99",
+        "source": "8244934ad7d080db50c204d827c9ccf6ac4d3afd"
+      },
+      {
+        "name": "volumeGateway",
+        "reference": "pi-cloud/workspace-volume-gateway:review-release-8244934a",
+        "digest": "sha256:dd213534cad86304bf408e37d6ffa16a8c3d9ea2f9221f57549a836f810119b2",
+        "source": "8244934ad7d080db50c204d827c9ccf6ac4d3afd"
+      },
+      {
+        "name": "sshGateway",
+        "reference": "pi-cloud/ssh-gateway:review-release-8244934a",
+        "digest": "sha256:4a64e266d1fffdbe6063e29fa91f32f5c6023fcad591e99e8336fa241a2a0551",
+        "source": "8244934ad7d080db50c204d827c9ccf6ac4d3afd"
+      },
+      {
+        "name": "relay",
+        "reference": "pi-cloud/provider-egress-relay:review-release-8244934a",
+        "digest": "sha256:e13db228e0c9d0ea1aa764255b698858f59f3f267a8fb2d7069e6affed74b717",
+        "source": "8244934ad7d080db50c204d827c9ccf6ac4d3afd"
+      },
+      {
+        "name": "provider",
+        "reference": "pi-cloud/cli-proxy-api:review-release-8244934a",
+        "digest": "sha256:df66fb0586f2cf35c9fb8ab039df25edbff3bddfc56eafe8666b5619dda4554b",
+        "source": "8244934ad7d080db50c204d827c9ccf6ac4d3afd"
+      }
+    ],
+    "finalCleanup": {
+      "database": "DELETE 3\nruntime_records|0",
+      "inventory": "NODE_SCOPE       all\nNODES_SCANNED    1/1\nSANDBOX_COUNT    0\n\nsandbox_id    status    host_id    create_at    pause_at    template_id    namespace    host_ip    labels",
+      "remainingVolumes": 0
+    }
+  },
+  "imageScan": {
+    "scanner": "aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e",
+    "checkedAt": "2026-10-07T02:26:27.853Z",
+    "images": [
+      {
+        "name": "controlPlane",
+        "reference": "pi-cloud/control-plane:review-release-8244934a",
+        "highCritical": 49,
+        "fixable": 0
+      },
+      {
+        "name": "worker",
+        "reference": "pi-cloud/supervisor-host:review-release-8244934a",
+        "highCritical": 49,
+        "fixable": 0
+      },
+      {
+        "name": "web",
+        "reference": "pi-cloud/web-ui:review-release-8244934a",
+        "highCritical": 0,
+        "fixable": 0
+      },
+      {
+        "name": "volumeGateway",
+        "reference": "pi-cloud/workspace-volume-gateway:review-release-8244934a",
+        "highCritical": 59,
+        "fixable": 0
+      },
+      {
+        "name": "sshGateway",
+        "reference": "pi-cloud/ssh-gateway:review-release-8244934a",
+        "highCritical": 49,
+        "fixable": 0
+      },
+      {
+        "name": "relay",
+        "reference": "pi-cloud/provider-egress-relay:review-release-8244934a",
+        "highCritical": 49,
+        "fixable": 0
+      },
+      {
+        "name": "provider",
+        "reference": "pi-cloud/cli-proxy-api:review-release-8244934a",
+        "highCritical": 51,
+        "fixable": 0
+      }
+    ],
+    "passed": true
+  },
+  "developmentCleanup": {
+    "kind": "owner-authorized-development-cleanup",
+    "checkedAt": "2026-10-07T02:25:14.731Z",
+    "deleted": [
+      {
+        "tenantId": "de7e2298-357f-409b-bfc7-28dc0ee5fc51",
+        "workspaceId": "85a32bd6-17e5-4eab-b8c3-069cb3a89ec7",
+        "volumeId": "pcw-9e76808460c62a21ba8cb8e820cd4d2d272412600ac238a4",
+        "legacyRuntimeId": "0a7252b7-b511-4270-aec4-2c77b4c42528"
+      },
+      {
+        "tenantId": "770333a2-d914-42bd-b02b-7bfbafd85453",
+        "workspaceId": "b6bdc955-8943-4af9-ba78-ff4508d4135f",
+        "volumeId": "pcw-2590b21332427679af415075b96ebce57794fee9364a0a88",
+        "legacyRuntimeId": "13ac678f-e478-48a1-a002-33e672bb2043"
+      }
+    ],
+    "failures": [],
+    "physicalInventory": "NODE_SCOPE       all\nNODES_SCANNED    1/1\nSANDBOX_COUNT    0\n\nsandbox_id    status    host_id    create_at    pause_at    template_id    namespace    host_ip    labels",
+    "releasedRecordsRemoved": 86
+  },
+  "liveChecks": {
+    "retry-upload": "review-release-retry-upload-20261007.json",
+    "tools": "review-release-tools-20261007.json",
+    "uploads": "review-release-uploads-20261007.json"
+  },
+  "initialUploadAttempt": {
+    "accepted": false,
+    "directVision": true,
+    "browserUploads": true,
+    "failedBeforeColdRecovery": "Model performed read but omitted the requested bash call; assertions failed. The fixture now separates decisions and verifies changed Workspace bytes before worker replacement."
+  },
+  "preservedConfiguration": [
+    "accounts",
+    "provider credentials and routes",
+    "current Cube template catalog"
+  ],
+  "noConversationBackup": true,
+  "privateScanDirectory": "dist/release-evidence-review-release-8244934a",
+  "limits": [
+    "Single physical host; no multi-node HA claim",
+    "Existing OS HIGH/CRITICAL findings without available fixes remain in raw image scans",
+    "Seven new application/provider images scanned; unchanged Cube/guest images retain prior matching evidence"
+  ]
+}

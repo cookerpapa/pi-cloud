@@ -345,15 +345,29 @@ try {
       new Blob(["workspace-upload-marker-78\n"]),
       "notes.txt",
     );
-    const fileTurn = await turn(
-      `先使用 read 工具读取刚附带的 notes.txt，再使用 bash 运行 printf 'changed' > ${JSON.stringify(source.path)}，最后只回复该文本文件的内容。不要读取图片、搜索或使用子代理。`,
+    const readTurn = await turn(
+      "使用 read 工具读取刚附带的 notes.txt，最后只回复该文本文件的内容。不要读取图片、搜索或使用子代理。",
       [note.id],
     );
-    assert(fileTurn.text.includes("workspace-upload-marker-78"));
+    assert(readTurn.text.includes("workspace-upload-marker-78"));
+    assert.deepEqual(
+      readTurn.tools.map((t) => t.name),
+      ["read"],
+    );
+    // Separate model choices and verify the physical effect, not merely a Tool name.
+    const fileTurn = await turn(
+      `只调用一次 bash，原样执行这个命令：printf '%s' 'changed' > ${JSON.stringify(source.path)} && wc -c < ${JSON.stringify(source.path)}。这是本验收创建的临时文件，要求覆盖它。完成后只回复命令输出，不要读取图片或调用其他工具。`,
+    );
     assert.deepEqual(
       fileTurn.tools.map((t) => t.name),
-      ["read", "bash"],
+      ["bash"],
     );
+    assert(source.path.startsWith(session.workingDirectory + "/"));
+    const changed = await api.readWorkspaceFile(
+      session.sessionId,
+      source.path.slice(session.workingDirectory.length + 1),
+    );
+    assert.equal(Buffer.from(changed.bytes).toString(), "changed");
     const retained = await api.readInputImage({ id: uploadId, sessionId: session.sessionId });
     assert.equal(createHash("sha256").update(retained.bytes).digest("hex"), source.image.sha256);
     report.mutableSourceChanged = true;

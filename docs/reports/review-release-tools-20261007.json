@@ -1,0 +1,15 @@
+{
+  "checkedAt": "2026-10-07T02:29:44.233Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "metrics": {
+    "nativeWrites": 66,
+    "documentWrites": 32,
+    "toolCallsInDocuments": 0,
+    "completeToolCalls": 2,
+    "executeCheckpoints": 2
+  },
+  "toolNames": ["write", "bash"],
+  "exactFileBytesVerified": true,
+  "cleanupAccepted": true
+}

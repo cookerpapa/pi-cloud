@@ -32,7 +32,8 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 The [October 7 whole-repository review](reports/repository-review-20261007.md)
 is complete at `7a5fc603`. The [approved repairs](reports/review-repair-20261007.md)
-implement its findings; production rollout remains separate:
+implement its findings; the [schema 182 rollout](reports/review-release-20261007.md)
+and owned live acceptance are complete:
 
 - [x] R07-01: retain ordinary-send request identity across a lost response;
       unchanged retries must admit one Run, including attachment/first-message cases.
@@ -43,7 +44,7 @@ implement its findings; production rollout remains separate:
 - [x] O07-01: implement ADR-0234 shared access and narrow credential exclusion,
       preserving initialization/deletion/process-loss guarantees.
 - [x] N07-01: correct the Projector's obsolete original-Tool-result waiting comment.
-- [ ] Deploy the October 7 source repairs with migration 182 and a drained
+- [x] Deploy the October 7 source repairs with migration 182 and a drained
       Gateway Recreate upgrade; run owned live acceptance after rollout.
 
 Partition head-of-line blocking, the Cube patch maintenance boundary and internal
@@ -258,8 +259,11 @@ separate design questions, not an implicit part of the completed query merge.
       template restores boot and image-queue acceptance, but the upstream failure
       mechanism is not established. Preserve creation uncertainty and node-absence
       requirements; no forced quota release or identity fabrication for failed
-      allocations lacking a recorded VM/node (one older record and one failed
-      standard-profile acceptance allocation remain held). [Evidence](reports/review-repair-20261004.md).
+      allocations lacking a recorded VM/node. [Original evidence](reports/review-repair-20261004.md).
+      The two legacy records/Volumes were removed during the owner's explicit
+      [October 7 development cleanup](reports/review-release-20261007.md), after
+      quiescence and confirmed managed Volume deletion; this does not establish
+      the snapshot-restore failure's underlying cause.
 
 
 - [x] Resolve the historical Cube node template-cleanup timeouts through current
