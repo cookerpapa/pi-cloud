@@ -1,0 +1,163 @@
+{
+  "accepted": true,
+  "piCloudRevision": "49e9b8ccdc3702603db7d0109a4ed0cc3784e13b",
+  "deployedControlPlaneImage": "sha256:305ce579d4d1ba9c004d54e878780833ba75b54ee6865ac3c39892c2553edd86",
+  "testRevision": "49e9b8ccdc3702603db7d0109a4ed0cc3784e13b",
+  "checkedAt": "2026-10-07T12:09:45.798Z",
+  "upstream": "TencentCloud/CubeSandbox@v0.6.0",
+  "model": {
+    "provider": "openai-codex",
+    "modelId": "gpt-6-luna"
+  },
+  "pureChat": {
+    "acceptedMs": 32,
+    "firstDurableActivityMs": 2239,
+    "firstToolStartedMs": null,
+    "firstAssistantTextMs": 2239,
+    "settledMs": 2430,
+    "toolCalls": 0,
+    "cubeActivations": 0,
+    "latency": {
+      "acceptedToExecutionMs": 37,
+      "executionToSettlementMs": 2250,
+      "modelRequests": 1,
+      "toolOperations": 0,
+      "toolBoundaryMs": 0
+    },
+    "usage": {
+      "requests": 1,
+      "inputTokens": 3155,
+      "outputTokens": 7,
+      "cacheReadTokens": 3328,
+      "cacheWriteTokens": 0
+    }
+  },
+  "firstCoding": {
+    "acceptedMs": 35,
+    "firstDurableActivityMs": 5773,
+    "firstToolStartedMs": 5773,
+    "firstAssistantTextMs": 21800,
+    "settledMs": 22848,
+    "toolCalls": 3,
+    "cubeActivations": 1,
+    "workspaceFileBytes": 1080,
+    "latency": {
+      "acceptedToExecutionMs": 40,
+      "executionToSettlementMs": 22661,
+      "modelRequests": 4,
+      "toolOperations": 3,
+      "toolBoundaryMs": 5396.944
+    },
+    "usage": {
+      "requests": 4,
+      "inputTokens": 5992,
+      "outputTokens": 481,
+      "cacheReadTokens": 21504,
+      "cacheWriteTokens": 0
+    }
+  },
+  "followUpCoding": {
+    "acceptedMs": 27,
+    "firstDurableActivityMs": 4653,
+    "firstToolStartedMs": 4653,
+    "firstAssistantTextMs": 16946,
+    "settledMs": 20530,
+    "toolCalls": 4,
+    "cubeActivations": 1,
+    "workspaceFileBytes": 1217,
+    "latency": {
+      "acceptedToExecutionMs": 24,
+      "executionToSettlementMs": 20379,
+      "modelRequests": 4,
+      "toolOperations": 4,
+      "toolBoundaryMs": 2114.137
+    },
+    "usage": {
+      "requests": 4,
+      "inputTokens": 4970,
+      "outputTokens": 362,
+      "cacheReadTokens": 29696,
+      "cacheWriteTokens": 0
+    }
+  },
+  "multiRound": {
+    "sameCubeMicroVm": true,
+    "runningWorkspaceRuntimeReuse": true,
+    "elasticSandboxPolicy": true,
+    "agentPreviewPublished": true,
+    "backgroundProcessSurvived": true,
+    "authenticatedHttpPreviewPassed": true,
+    "workspaceRestored": true,
+    "finalWorkspaceFileBytes": 1217
+  },
+  "workspaceIsolation": {
+    "volumeId": "pcw-6c91a64264eccdd540e2023a014dda7a05a442e52a24ac80",
+    "platformGitMetadataAbsent": true,
+    "userGitPresent": false
+  },
+  "multiTenant": {
+    "crossTenantConversationHidden": true,
+    "lowerLevelCubeTenantGate": 2
+  },
+  "largeWorkspace": {
+    "source": "deterministic 1024-file local fixture",
+    "firstRunId": "103d8975-3433-45ac-b692-725091c43c52",
+    "followUpRunId": "94be98ff-4e2c-4eb4-81c0-215cb6f33201",
+    "firstFileCount": 1025,
+    "restoredFileCount": 1026,
+    "sourceSandboxDestroyed": true,
+    "persistentVolumeRetained": true,
+    "volumeId": "pcw-d63e8a268d48e3a3f336a8697c81476ead90b2bae7b392c5",
+    "restoredFromPersistentVolume": true,
+    "freshCubeMicroVm": true,
+    "higherRuntimeGeneration": true,
+    "firstUsage": {
+      "requests": 2,
+      "inputTokens": 6716,
+      "outputTokens": 263,
+      "cacheReadTokens": 6656,
+      "cacheWriteTokens": 0
+    },
+    "followUpUsage": {
+      "requests": 2,
+      "inputTokens": 5555,
+      "outputTokens": 282,
+      "cacheReadTokens": 8704,
+      "cacheWriteTokens": 0
+    }
+  },
+  "canonicalConversation": {
+    "terminalCount": 5,
+    "piEntryCount": 36,
+    "canonicalPayloadBytes": 36215,
+    "terminalThroughSequence": 110
+  },
+  "eventPlane": {
+    "authority": "Kafka acks=all",
+    "postgresHotEventTableAbsent": true,
+    "projectedSessionMutations": 194,
+    "publishedTerminalEvents": 5,
+    "kafka": {
+      "topic": "pi-cloud.execution-log.v14",
+      "logEndOffsetSum": 886
+    }
+  },
+  "scheduler": {
+    "authority": "PostgreSQL",
+    "queue": "runs",
+    "workerPool": "shared"
+  },
+  "totalUsage": {
+    "requests": 21,
+    "inputTokens": 35628,
+    "outputTokens": 2057,
+    "cacheReadTokens": 125184,
+    "cacheWriteTokens": 0
+  },
+  "cleanup": {
+    "retainedRunningWorkspaceMicroVmCount": 0,
+    "foreignSessionMicroVmCount": 0,
+    "conversationDeletionReleasedWorkspaceRuntime": true,
+    "confirmedAllocationClosureVerified": true
+  }
+}

@@ -83,6 +83,9 @@ reads still avoided the round trips in this sample. The existing overlay's
 
 ## Release boundary
 
+The subsequent [matched rollout](review-release-20261007-r3.md) is now complete.
+The source-verification boundary below records the state before that deployment.
+
 **Source repair only; not deployed.** Tool Worker protocol becomes **4** and
 returned-input items require `idempotencyKey`. API, browser, Worker, completion
 adapter and guest must be built/deployed together. Protocol 3 guest outputs are

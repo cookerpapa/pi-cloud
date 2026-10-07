@@ -1,6 +1,6 @@
 # ADR-0236: Recovery, returned input identity and native Tool diagnostics
 
-Status: implemented and source-verified, 2026-10-07; matched deployment pending.
+Status: implemented, source-verified and [deployed](../reports/review-release-20261007-r3.md), 2026-10-07.
 The [repair record](../reports/review-repair-20261007-r3.md) contains verification.
 The owner approved the R07R3
 repairs and document-read optimization, deferring R07R3-04 (CubeMaster logging).

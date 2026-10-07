@@ -1,0 +1,63 @@
+{
+  "checkedAt": "2026-10-07T12:04:06.502Z",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "cleanupRequested": true,
+  "runs": [
+    {
+      "runId": "6b61b82b-0909-415c-b24d-2212bf281a05",
+      "state": "completed",
+      "usage": {
+        "requests": 1,
+        "inputTokens": 3554,
+        "outputTokens": 6,
+        "cacheReadTokens": 3328,
+        "cacheWriteTokens": 0
+      }
+    },
+    {
+      "runId": "c63d89fa-cc95-4f9c-88af-161d13fddf6e",
+      "state": "completed",
+      "usage": {
+        "requests": 2,
+        "inputTokens": 24612,
+        "outputTokens": 140,
+        "cacheReadTokens": 10752,
+        "cacheWriteTokens": 0
+      }
+    }
+  ],
+  "scriptSha256": "e26d9233d030f5ef8cfcc2de088b445e4b07b67436cff4a57cdf642a1e11bd0d",
+  "resources": {
+    "tenantId": "40c5be93-86f8-4b9c-83a4-fafa531bf076",
+    "sessionId": "63b5deac-5327-4d11-b029-04f3232fa5ab",
+    "workspaceId": "1b5e874a-6c34-4b93-9ce1-cf9d61b5ba60"
+  },
+  "returnedInput": {
+    "realBrowser": true,
+    "requests": 2,
+    "distinctKeys": 2,
+    "distinctAdmissions": 2,
+    "originalRunCancelled": true,
+    "newRunCompleted": true,
+    "sameUploadId": true,
+    "directVision": true,
+    "activeRunCancelled": true
+  },
+  "read": [
+    {
+      "kind": "wide-ascii.txt",
+      "sourceBytes": 120017,
+      "contentBytes": 51200,
+      "utf8Valid": true,
+      "canonicalDiagnostic": true
+    },
+    {
+      "kind": "wide-unicode.txt",
+      "sourceBytes": 140031,
+      "contentBytes": 51196,
+      "utf8Valid": true,
+      "canonicalDiagnostic": true
+    }
+  ]
+}

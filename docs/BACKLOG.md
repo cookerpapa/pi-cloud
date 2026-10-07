@@ -52,8 +52,10 @@ leave product behavior unchanged. The subsequently approved repairs follow
       version, checkpoint and eviction semantics and measure materialization cost.
 - [x] Remove the unused Pi 0.84 model-stream classifier and simplify overlapping
       README release narratives while preserving versioned design evidence.
-- [ ] Deploy matched Tool Worker protocol 4 artifacts and the updated returned-input
+- [x] Deploy matched Tool Worker protocol 4 artifacts and the updated returned-input
       API/browser after draining old writers. No old-protocol compatibility mode.
+      [Matched rollout and cleanup](reports/review-release-20261007-r3.md) preserve
+      29 accounts/tenants and 30 model profiles; all owned live acceptance passes.
 
 The [October 7 post-release review](reports/repository-review-20261007-r2.md)
 is complete at `59541389`. Its four confirmed findings are implemented and

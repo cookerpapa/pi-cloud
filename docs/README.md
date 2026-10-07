@@ -8,7 +8,9 @@ and native configuration logging, and measures avoidable hot-document SQL.
 The previously interrupted full Luna/cold-VM acceptance now passes. Product
 repairs are implemented under [ADR-0236](adr/0236-recovery-input-identity-and-tool-diagnostics.md),
 with [source verification and release boundaries](reports/review-repair-20261007-r3.md).
-R07R3-04 is owner-deferred. The matched Tool Worker protocol 4 deployment remains pending.
+R07R3-04 is owner-deferred. The [matched Tool Worker protocol 4 rollout](reports/review-release-20261007-r3.md)
+is deployed, with real browser Stop/return/image resend, native VM and full
+Luna/cold-VM acceptance; original accounts and model configuration are preserved.
 
 The [October 7 post-release review](reports/repository-review-20261007-r2.md)
 audits `59541389` across all 22 workspaces. Four reproduced findings cover

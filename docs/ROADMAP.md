@@ -11,8 +11,10 @@
       and scoped cleanup under [ADR-0236](adr/0236-recovery-input-identity-and-tool-diagnostics.md).
       [Source verification](reports/review-repair-20261007-r3.md) records recovery,
       browser, native parity and query-cost evidence. R07R3-04 is owner-deferred.
-- [ ] Deploy the matched Tool Worker protocol 4 guest/application artifacts and
-      updated returned-input API/browser; the running release is unchanged.
+- [x] Deploy the matched Tool Worker protocol 4 guest/application artifacts and
+      updated returned-input API/browser. [Release acceptance](reports/review-release-20261007-r3.md)
+      covers real Stop/return/image resend, canonical Read diagnostics, native VM
+      contracts and the complete Luna/cold-VM gate; owned resources are cleaned.
 
 ## October 7 post-release review
 

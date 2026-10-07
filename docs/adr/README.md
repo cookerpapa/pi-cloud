@@ -11,8 +11,7 @@ revision-bound reports, not as alternate production backends.
 Read the documents in this order:
 
 1. [ADR-0236](0236-recovery-input-identity-and-tool-diagnostics.md) — execution-based
-   recovery, returned-input identity and native Tool diagnostics; source-verified,
-   matched deployment pending.
+   recovery, returned-input identity and native Tool diagnostics; verified and deployed.
 1. [ADR-0235](0235-upload-staging-recovery.md) — filesystem-owned upload staging,
    cross-process cleanup exclusion and recoverable guest locators; source implemented.
 1. [ADR-0234](0234-volume-gateway-shared-access.md) — shared browsing/upload access,

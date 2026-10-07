@@ -1,0 +1,39 @@
+{
+  "checkedAt": "2026-10-07T12:23:14.302Z",
+  "cubeDeletionFailureGate": {
+    "releaseRejected": true,
+    "nativeSurvivorConfirmed": true,
+    "releasedNotReported": true,
+    "cleanupConfirmed": true,
+    "scope": "real Cube; controlled allocation-close failure; in-memory ownership fixture"
+  },
+  "cubeSandboxLiveGate": {
+    "upstream": "TencentCloud/CubeSandbox@v0.6.0",
+    "isolationValidated": true,
+    "tenantCount": 2,
+    "firstToolMs": 485,
+    "secondToolMs": 420,
+    "totalMs": 27394,
+    "guestKernelDistinctFromHost": true,
+    "forbiddenEndpointCount": 3,
+    "publicInternetReachable": true,
+    "privateAndPlatformEgressDenied": true,
+    "fencedPtyValidated": true,
+    "warmProcessSurvivedRunBoundaryWithinTtl": true,
+    "staleToolAuthorityRejected": true,
+    "explicitStopRetiredCancelledToolBinding": true,
+    "dispatchedCancellationRemainsUnknown": true,
+    "persistentVolumesRemoved": 3,
+    "orphanCount": 0
+  },
+  "egressRestoration": {
+    "checkedAt": "2026-10-07T12:09:26.974Z",
+    "originalEnabled": false,
+    "originalConfigured": false,
+    "temporaryEnable": true,
+    "nativeTestsPassed": 2,
+    "accepted": true,
+    "restored": true,
+    "restoreMethod": "CAS on the exact fixture revision/URL plus existing configuration audit; public API cannot clear an unconfigured URL with empty text"
+  }
+}
