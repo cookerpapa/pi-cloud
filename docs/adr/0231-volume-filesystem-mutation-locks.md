@@ -5,6 +5,8 @@ Status: implemented, verified and deployed, 2026-10-06.
 [matched release](../reports/review-release-20261006.md).
 The owner authorized the post-Durable review repairs. This decision addresses
 R06-03 without changing Workspace byte ownership or VM lifecycle authority.
+The owner-approved [ADR-0234](0234-volume-gateway-shared-access.md) refines the
+exclusive-only policy below into shared ordinary access and narrower mutation locks.
 
 ## Evidence and adoption
 

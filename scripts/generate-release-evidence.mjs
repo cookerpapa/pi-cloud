@@ -1,4 +1,3 @@
-import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -17,6 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
+import { inspectReleaseImage } from "./lib/release-image-evidence.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const TRIVY_IMAGE =
@@ -192,36 +192,6 @@ function vulnerabilitySummary(report) {
   return summary;
 }
 
-async function inspectImage(reference, imageVersion, revision) {
-  const values = JSON.parse(await capture("docker", ["image", "inspect", reference]));
-  assert.equal(values.length, 1, `Expected one local image for ${reference}`);
-  const image = values[0];
-  const labels = image.Config?.Labels ?? {};
-  assert.equal(
-    labels["org.opencontainers.image.version"],
-    imageVersion,
-    `${reference} has the wrong OCI version label`,
-  );
-  assert.equal(
-    labels["org.opencontainers.image.revision"],
-    revision,
-    `${reference} has the wrong OCI revision label`,
-  );
-  assert.match(image.Id, /^sha256:[0-9a-f]{64}$/);
-  return {
-    reference,
-    imageId: image.Id,
-    repoDigests: Array.isArray(image.RepoDigests) ? image.RepoDigests.toSorted() : [],
-    created: image.Created,
-    platform: `${image.Os}/${image.Architecture}`,
-    labels: {
-      title: labels["org.opencontainers.image.title"],
-      version: labels["org.opencontainers.image.version"],
-      revision: labels["org.opencontainers.image.revision"],
-    },
-  };
-}
-
 async function prepareDestination(path) {
   if (await exists(path)) {
     const metadata = await lstat(path);
@@ -270,6 +240,7 @@ try {
   await run("docker", [...trivyBase, "image", "--cache-dir", "/cache", "--download-db-only"]);
 
   const images = [];
+  const guestIdentity = await guestBuildIdentity(repositoryRoot);
   const imageDescriptors = [
     ...PRODUCTION_IMAGE_NAMES.map((imageName) => ({
       imageName,
@@ -283,12 +254,17 @@ try {
     })),
     {
       imageName: "cubesandbox-tool",
-      reference: `localhost:5000/pi-cloud/cubesandbox-tool:${await guestBuildIdentity(repositoryRoot)}`,
+      reference: `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,
       labelVersion: "cube-primary",
+      guestIdentity,
     },
   ];
-  for (const { imageName, reference, labelVersion } of imageDescriptors) {
-    const evidence = await inspectImage(reference, labelVersion, revision);
+  for (const { imageName, ...descriptor } of imageDescriptors) {
+    const { reference } = descriptor;
+    const evidence = await inspectReleaseImage(
+      { ...descriptor, releaseRevision: revision, repositoryRoot },
+      capture,
+    );
     const archiveName = `${imageName}.tar`;
     const archivePath = resolve(temporaryDirectory, archiveName);
     await run("docker", ["image", "save", "--output", archivePath, reference]);

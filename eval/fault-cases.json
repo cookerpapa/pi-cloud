@@ -1378,21 +1378,21 @@
       "id": "volume-lock-holder-killed",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
-      "test": "holds the filesystem lock across utility exit and releases after holder SIGKILL",
+      "test": "holds exclusive exclusion across utility exit and releases after holder SIGKILL",
       "invariant": "A live filesystem callback owns exclusion independently of the acquisition utility; process death releases its descriptor."
     },
     {
       "id": "volume-lock-pg-loss",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
-      "test": "keeps filesystem exclusion while a callback continues after PG connection loss",
+      "test": "keeps exclusive filesystem exclusion while a callback continues after PG connection loss",
       "invariant": "PG connection loss cannot let a new filesystem callback overlap the old holder."
     },
     {
       "id": "volume-lock-replaced-inode",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
-      "test": "rejects a waiter whose locked envelope was replaced",
+      "test": "rejects a exclusive waiter whose locked envelope was replaced",
       "invariant": "A waiter on a retired inode cannot mutate a successor Volume envelope."
     },
     {
@@ -1422,6 +1422,55 @@
       "file": "test/session-publication-ingress.test.ts",
       "test": "refuses invalid Subagent task identity before publishing: legacy-call",
       "invariant": "An invalid Tool identity is refused before Kafka and cannot poison the Session writer."
+    },
+    {
+      "id": "volume-shared-holder-killed",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
+      "test": "holds shared exclusion across utility exit and releases after holder SIGKILL",
+      "invariant": "A killed shared holder releases lifecycle exclusion without a PG lease or stale-lock deletion."
+    },
+    {
+      "id": "volume-credential-lock-pg-loss",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
+      "test": "keeps credentials filesystem exclusion while a callback continues after PG connection loss",
+      "invariant": "PG loss cannot release credential-file exclusion while an older callback continues."
+    },
+    {
+      "id": "volume-shared-replaced-envelope",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
+      "test": "rejects a shared waiter whose locked envelope was replaced",
+      "invariant": "Shared access cannot proceed on an envelope replaced while acquisition was pending."
+    },
+    {
+      "id": "volume-credential-replaced-inode",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
+      "test": "rejects a credential waiter whose inner lock inode was replaced",
+      "invariant": "Credential waiters validate the inner as well as outer inode before mutation."
+    },
+    {
+      "id": "volume-upload-shared-delete-exclusive",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
+      "test": "permits actual browsing, another upload and credential updates during an upload, but excludes deletion",
+      "invariant": "Concurrent ordinary operations retain exclusive deletion admission until all existing callbacks settle."
+    },
+    {
+      "id": "volume-concurrent-upload-publish",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/filesystem-workspace-volume-gateway-lock.test.ts",
+      "test": "publishes identical concurrent uploads once and rejects conflicting content without overwrite",
+      "invariant": "Shared transfer admission preserves complete non-overwriting placement and content identity."
+    },
+    {
+      "id": "composer-ordinary-send-lost-ack",
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/composer-submission.test.ts",
+      "test": "turn retries a lost ACK but permits an intentional repeat after confirmation",
+      "invariant": "An unchanged ordinary-send retry reuses the accepted input identity; a confirmed intentional repeat remains possible."
     }
   ]
 }

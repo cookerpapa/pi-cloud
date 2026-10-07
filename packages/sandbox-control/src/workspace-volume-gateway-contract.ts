@@ -146,8 +146,14 @@ export interface WorkspaceVolumeGateway {
   close(): Promise<void>;
 }
 
+export type WorkspaceVolumeLockScope = "shared" | "credentials" | "exclusive";
 export interface WorkspaceVolumeGatewayLock {
-  withLock<T>(volumeId: string, run: () => Promise<T>, whenAbsent?: () => Promise<T>): Promise<T>;
+  withLock<T>(
+    volumeId: string,
+    scope: WorkspaceVolumeLockScope,
+    run: () => Promise<T>,
+    whenAbsent?: () => Promise<T>,
+  ): Promise<T>;
 }
 
 export type PersistentVolumeWorkspaceVolumeGatewayOptions = Readonly<{

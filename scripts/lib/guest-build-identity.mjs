@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, readdir, readlink, realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { tmpdir } from "node:os";
+import { lstat, readFile, readdir, readlink, realpath, mkdtemp, rm } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep, join } from "node:path";
 
 const guestDockerfile = "deploy/cubesandbox/Dockerfile.tool";
 
@@ -31,6 +34,26 @@ export function guestCopyInputs(dockerfile, dockerfilePath = guestDockerfile) {
 /** Runtime identity only; the actual built image still has its full OCI digest. */
 export function guestBuildIdentity(repositoryRoot) {
   return buildIdentity(repositoryRoot, guestDockerfile, "pi-cloud.guest-build-inputs.v1\0");
+}
+
+/** Reproduce the declared source inputs without changing the working checkout.
+ * Missing source commits are an evidence error, never permission to trust a tag. */
+export async function guestBuildIdentityAtRevision(repositoryRoot, revision) {
+  if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error("Guest source revision must be a full SHA");
+  const run = promisify(execFile),
+    directory = await mkdtemp(join(tmpdir(), "pi-cloud-guest-source-"));
+  try {
+    const archive = join(directory, "source.tar");
+    await run(
+      "git",
+      ["-C", repositoryRoot, "archive", "--format=tar", `--output=${archive}`, revision],
+      { timeout: 30_000 },
+    );
+    await run("tar", ["-xf", archive, "-C", directory], { timeout: 30_000 });
+    return await guestBuildIdentity(directory);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 export function completionBuildIdentity(repositoryRoot) {

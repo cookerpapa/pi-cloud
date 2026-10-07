@@ -1,5 +1,13 @@
 # Documentation map
 
+The [October 7 whole-repository review](reports/repository-review-20261007.md)
+audits `7a5fc603` across all 22 workspaces and the Pi/Cube/deployment boundaries.
+It records ordinary-send retry duplication, a guest-reuse release-evidence
+conflict, measured Volume-lock and conversation-query improvements, and a stale
+Stop comment. The [approved source repairs](reports/review-repair-20261007.md)
+implement all five under ADR-0234 and migration 182, with isolated/browser/fault
+verification. This source repair record is separate from production rollout.
+
 The [October 7 template cleanup repair](reports/template-cleanup-20261007.md)
 resolves obsolete Pod IP routing in Cube's template and rootfs cleanup. It records
 the pinned source patch, retained-reference tests, native rollout and actual

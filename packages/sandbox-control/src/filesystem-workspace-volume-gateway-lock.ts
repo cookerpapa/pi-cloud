@@ -8,6 +8,7 @@ import {
   WorkspaceVolumeGatewayError,
   validatedAbsoluteDirectory,
   type WorkspaceVolumeGatewayLock,
+  type WorkspaceVolumeLockScope,
 } from "./workspace-volume-gateway-contract.ts";
 
 const DIRECTORY = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
@@ -18,6 +19,10 @@ const missing = () =>
     "Workspace Volume identity is unavailable",
     false,
   );
+function identityUnavailable(error: unknown): never {
+  if ((error as NodeJS.ErrnoException).code === "ENOENT") throw missing();
+  throw error;
+}
 
 /** The Node-owned open file description holds flock after the utility exits.
  * PG connection loss cannot release it while filesystem work is still running. */
@@ -34,10 +39,16 @@ export class FilesystemWorkspaceVolumeGatewayLock implements WorkspaceVolumeGate
 
   async withLock<T>(
     volumeId: string,
+    scope: WorkspaceVolumeLockScope,
     run: () => Promise<T>,
     whenAbsent?: () => Promise<T>,
   ): Promise<T> {
     if (!/^pcw-[0-9a-f]{48}$/.test(volumeId)) throw new TypeError("Invalid Volume lock identity");
+    if (
+      !["shared", "credentials", "exclusive"].includes(scope) ||
+      (whenAbsent && scope !== "exclusive")
+    )
+      throw new TypeError("Invalid Volume lock scope");
     const path = join(this.#root, `picloud-posix-${volumeId}`);
     let volume: FileHandle;
     try {
@@ -49,52 +60,74 @@ export class FilesystemWorkspaceVolumeGatewayLock implements WorkspaceVolumeGate
       }
       throw error;
     }
-    let directory: FileHandle | undefined, lock: FileHandle | undefined;
+    let directory: FileHandle | undefined;
+    const locks: Array<{ handle: FileHandle; name: string; ino: bigint; dev: bigint }> = [];
     try {
-      directory = await open(`/proc/self/fd/${volume.fd}/${VOLUME_METADATA_DIRECTORY}`, DIRECTORY);
+      directory = await open(
+        `/proc/self/fd/${volume.fd}/${VOLUME_METADATA_DIRECTORY}`,
+        DIRECTORY,
+      ).catch(identityUnavailable);
       const identity = await open(
         `/proc/self/fd/${directory.fd}/${VOLUME_IDENTITY_FILE}`,
         constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-      );
+      ).catch(identityUnavailable);
       try {
         const stat = await identity.stat();
         if (!stat.isFile() || stat.size > 256) throw missing();
         const content = await identity.readFile("utf8");
-        if (!new RegExp(`^pi-cloud-volume-v1\\n${volumeId}\\n[0-9a-f]{64}\\n?$`).test(content))
-          throw missing();
+        const match = /^pi-cloud-volume-v1\n(pcw-[0-9a-f]{48})\n[0-9a-f]{64}\n?$/.exec(content);
+        if (!match || match[1] !== volumeId)
+          throw new WorkspaceVolumeGatewayError(
+            "workspace_volume_binding_invalid",
+            "Plugin-created Workspace Volume identity was invalid",
+            false,
+          );
       } finally {
         await identity.close();
       }
-      // Only a published plugin envelope may receive this derived lock file.
-      lock = await open(
-        `/proc/self/fd/${directory.fd}/${LOCK_FILE}`,
-        constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-        0o600,
-      );
-      const held = await lock.stat({ bigint: true });
-      if (!held.isFile() || held.size !== 0n) throw new Error("Invalid Volume lock file");
-      await this.#acquire(lock.fd);
-      const current = await lstat(join(path, VOLUME_METADATA_DIRECTORY, LOCK_FILE), {
-        bigint: true,
-      });
-      if (current.ino !== held.ino || current.dev !== held.dev || !current.isFile())
-        throw new WorkspaceVolumeGatewayError(
-          "workspace_volume_binding_invalid",
-          "Volume lock identity changed",
-          true,
+      // Never upgrade a shared lock. Always take Volume admission before the
+      // credential-file lock, retaining both descriptions through the callback.
+      for (const name of scope === "credentials" ? [LOCK_FILE, "credentials.lock"] : [LOCK_FILE]) {
+        const handle = await open(
+          `/proc/self/fd/${directory.fd}/${name}`,
+          constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+          0o600,
         );
+        const held = { handle, name, ino: 0n, dev: 0n };
+        locks.push(held);
+        const metadata = await handle.stat({ bigint: true });
+        if (!metadata.isFile() || metadata.size !== 0n) throw new Error("Invalid Volume lock file");
+        held.ino = metadata.ino;
+        held.dev = metadata.dev;
+        await this.#acquire(handle.fd, name === LOCK_FILE && scope !== "exclusive");
+      }
+      for (const held of locks) {
+        const current = await lstat(join(path, VOLUME_METADATA_DIRECTORY, held.name), {
+          bigint: true,
+        });
+        if (current.ino !== held.ino || current.dev !== held.dev || !current.isFile())
+          throw new WorkspaceVolumeGatewayError(
+            "workspace_volume_binding_invalid",
+            "Volume lock identity changed",
+            true,
+          );
+      }
       return await run();
     } finally {
       // The callback is joined before the last held descriptor closes.
-      await Promise.all([lock?.close(), directory?.close(), volume.close()]);
+      await Promise.all([
+        ...locks.reverse().map((lock) => lock.handle.close()),
+        directory?.close(),
+        volume.close(),
+      ]);
     }
   }
 
-  #acquire(fd: number): Promise<void> {
+  #acquire(fd: number, shared: boolean): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = spawn(
         "/usr/bin/flock",
-        ["--exclusive", "--timeout", String(this.waitMs / 1000), "3"],
+        [shared ? "--shared" : "--exclusive", "--timeout", String(this.waitMs / 1000), "3"],
         {
           stdio: ["ignore", "ignore", "ignore", fd],
           timeout: this.waitMs + 1000,

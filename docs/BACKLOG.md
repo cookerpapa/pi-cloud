@@ -30,6 +30,26 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+The [October 7 whole-repository review](reports/repository-review-20261007.md)
+is complete at `7a5fc603`. The [approved repairs](reports/review-repair-20261007.md)
+implement its findings; production rollout remains separate:
+
+- [x] R07-01: retain ordinary-send request identity across a lost response;
+      unchanged retries must admit one Run, including attachment/first-message cases.
+- [x] Q07-01: reconcile guest content-identity reuse with release provenance;
+      retain the original image source revision and verify matching build inputs/digest.
+- [x] O07-02: page Session headers before counting visible Turn history; preserve
+      cursor/visibility semantics and verify plans with substantial isolated history.
+- [x] O07-01: implement ADR-0234 shared access and narrow credential exclusion,
+      preserving initialization/deletion/process-loss guarantees.
+- [x] N07-01: correct the Projector's obsolete original-Tool-result waiting comment.
+- [ ] Deploy the October 7 source repairs with migration 182 and a drained
+      Gateway Recreate upgrade; run owned live acceptance after rollout.
+
+Partition head-of-line blocking, the Cube patch maintenance boundary and internal
+lifecycle/UI cohesion are documented discussion items. Measure or define their
+contracts before treating structural changes as authorized repairs.
+
 The [October 6 post-Durable review](reports/repository-review-20261006.md) is
 implemented and source-verified. [Repair evidence](reports/review-repair-20261006.md)
 records the native request/event fixes, filesystem exclusion, bounded navigation,

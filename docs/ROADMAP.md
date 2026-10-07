@@ -1,5 +1,15 @@
 # Implementation roadmap
 
+## October 7 review repairs
+
+- [x] Review all 22 workspaces at `7a5fc603`; record
+      [findings and evidence](reports/repository-review-20261007.md).
+- [x] Repair submission identity, guest provenance, paginated history counts,
+      Volume concurrency and the stale cancellation comment. See
+      [source verification](reports/review-repair-20261007.md) and
+      [ADR-0234](adr/0234-volume-gateway-shared-access.md).
+- [ ] Deploy the matched application/migration 182 release and verify live behavior.
+
 ## Cube template cleanup
 
 - [x] Diagnose and repair stale node-address routing under

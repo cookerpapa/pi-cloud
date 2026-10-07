@@ -47,6 +47,10 @@ records the baseline findings. [Source repairs and validation](docs/reports/revi
 cover recovery, file locking, query costs and guest dependency reduction.
 The [matched schema 181 release](docs/reports/review-release-20261006.md) is deployed
 with real Luna, native Fork, Subagent, upload and cold-Worker acceptance.
+The [October 7 source repairs](docs/reports/review-repair-20261007.md) preserve
+send identity after a lost response, validate reused guest provenance, page Session
+headers before counting history, and allow concurrent Volume browsing/uploads
+with exclusive deletion. They add migration 182 and await production rollout.
 
 Whole file/shell Tools execute in Cube. Replies return through the separate
 Worker-boot Kafka transport; Pi processes them before publishing the canonical

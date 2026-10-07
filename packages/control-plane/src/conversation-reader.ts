@@ -84,8 +84,24 @@ export class ConversationReader {
   }
   async listConversations(cursor?: string): Promise<ConversationListResource> {
     const position = listPosition(cursor);
-    const rows = await this.#database
+    // Bound the Session page before touching its Turns. History outside this
+    // page must not participate in aggregation or sorting.
+    const page = this.#database
       .selectFrom("sessions as session_row")
+      .selectAll()
+      .where("session_row.tenant_id", "=", this.#tenantId)
+      .where("session_row.session_kind", "=", sql.lit("conversation"))
+      .where("session_row.pruned_at", "is", null)
+      .$if(position !== undefined, (query) =>
+        query.where(sql<boolean>`
+        (session_row.last_active_at, session_row.id) < (${position!.at}::timestamptz, ${position!.id}::uuid)
+      `),
+      )
+      .orderBy("session_row.last_active_at", "desc")
+      .orderBy("session_row.id", "desc")
+      .limit(MAX_CONVERSATION_SUMMARIES + 1);
+    const rows = await this.#database
+      .selectFrom(page.as("session_row"))
       .innerJoin("projects as project", (join) =>
         join
           .onRef("project.tenant_id", "=", "session_row.tenant_id")
@@ -96,13 +112,18 @@ export class ConversationReader {
           .onRef("workspace.tenant_id", "=", "session_row.tenant_id")
           .onRef("workspace.id", "=", "session_row.workspace_id"),
       )
-      .leftJoin("turns as turn", (join) =>
-        join
-          .onRef("turn.tenant_id", "=", "session_row.tenant_id")
-          .onRef("turn.session_id", "=", "session_row.id")
-          .on("turn.pruned_at", "is", null)
-          .on("turn.state", "!=", "queued")
-          .on(sql<boolean>`not (turn.state='cancelled' and turn.started_at is null)`),
+      .innerJoinLateral(
+        (query) =>
+          query
+            .selectFrom("turns as turn")
+            .select((expression) => expression.fn.countAll<string>().as("count"))
+            .whereRef("turn.tenant_id", "=", "session_row.tenant_id")
+            .whereRef("turn.session_id", "=", "session_row.id")
+            .where("turn.pruned_at", "is", null)
+            .where("turn.state", "!=", "queued")
+            .where(sql<boolean>`not (turn.state='cancelled' and turn.started_at is null)`)
+            .as("turn_count"),
+        (join) => join.onTrue(),
       )
       .select([
         "session_row.id as sessionId",
@@ -121,40 +142,14 @@ export class ConversationReader {
         "project.name as workspaceName",
         "workspace.deleted_at as workspaceDeletedAt",
       ])
-      .select((expression) => expression.fn.count<string>("turn.id").as("turnCount"))
+      .select("turn_count.count as turnCount")
       .select(
         sql<string>`to_char(session_row.last_active_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
           "cursorAt",
         ),
       )
-      .where("session_row.tenant_id", "=", this.#tenantId)
-      .where("session_row.session_kind", "=", "conversation")
-      .where("session_row.pruned_at", "is", null)
-      .$if(position !== undefined, (query) =>
-        query.where(sql<boolean>`
-        (session_row.last_active_at, session_row.id) < (${position!.at}::timestamptz, ${position!.id}::uuid)
-      `),
-      )
-      .groupBy([
-        "session_row.id",
-        "session_row.title",
-        "session_row.project_id",
-        "session_row.workspace_id",
-        "session_row.development_environment_id",
-        "session_row.state",
-        "session_row.execution_mode",
-        "session_row.sandbox_profile_key",
-        "session_row.working_directory",
-        "session_row.created_at",
-        "session_row.updated_at",
-        "session_row.last_active_at",
-        "session_row.conversation_parent_session_id",
-        "project.name",
-        "workspace.deleted_at",
-      ])
       .orderBy("session_row.last_active_at", "desc")
       .orderBy("session_row.id", "desc")
-      .limit(MAX_CONVERSATION_SUMMARIES + 1)
       .execute();
     const visibleRows = rows.slice(0, MAX_CONVERSATION_SUMMARIES);
     const delegated = await loadDelegatedSessionTreeSummaries(this.#database, {

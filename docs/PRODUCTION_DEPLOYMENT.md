@@ -55,6 +55,14 @@ Cube guest template, builds/imports application images and deploys. It does not
 implicitly rebuild the Cube host protocol. For a changed Cube patch set, use the
 matched Cube build/install instructions before platform rollout.
 
+`npm run release:evidence -- --image-version <release>` records each image's
+digest and original OCI source revision. Application images must match the release
+revision. A guest reused by build-input identity may keep its older source revision:
+the collector exports that commit to a temporary directory and verifies its guest
+input hash before accepting it. Keep the source commit available in the local Git
+object database (fetch the needed history if using a shallow checkout). Missing
+source or changed guest inputs fails verification; tags and OCI labels are not rewritten.
+
 The operator kubeconfig is `deploy/production/runtime/k3s/kubeconfig.yaml`, mode
 0600. It has cluster administration privileges and is never mounted into a Worker
 or guest. On WSL, use the Linux `/usr/local/bin/k3s kubectl` binary; a Windows
@@ -128,6 +136,12 @@ commands. Rebuild/import images, validate charts, and deploy matching versions.
 Pod readiness is necessary but insufficient: check publication availability and
 run an actual Tool request. The optional native/image/fault acceptance scripts
 use GPT-6 Luna and isolated resources.
+
+The October 7 source repairs add migration 182's Session activity index and
+ADR-0234's shared Gateway access. Apply the migration through the normal bootstrap
+Job and retain the Gateway's `Recreate` strategy. Drain Gateway requests for
+upgrade or rollback; no Cube host-protocol or guest-template change is needed for
+these repairs. The source verification record does not claim a production rollout.
 
 `npm run production:down` uninstalls application and infrastructure releases;
 retained PV/PVC data survives. Cube host services remain installed. Start again

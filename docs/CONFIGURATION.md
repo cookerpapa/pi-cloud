@@ -479,7 +479,9 @@ one terminal-relay listener per replica, outside its ordinary SQL pool. It does
 not allocate a listener per Session. The Volume Gateway uses the ordinary database
 Secret key for upload authorization. File exclusion uses util-linux `flock` on
 the shared Volume, held by its filesystem callback, independently of PG connections
-(ADR-0231). Replicated gateways require ReadWriteMany storage with cross-client
+(ADR-0231/0234). Browsing/uploads share Volume access; credential callbacks use a
+narrow exclusive lock and deletion requires exclusive Volume access.
+Replicated gateways require ReadWriteMany storage with cross-client
 locking; NFS local-only locking and mtime-based stale-lock recovery are unsupported.
 The chart uses `Recreate` for Gateway upgrades so different lock contracts never
 overlap. Validate locking on the actual storage backend before multi-node deployment.

@@ -364,7 +364,9 @@ export const migrationProvider: MigrationProvider = {
       "179_durable_execution_recovery": durableExecutionRecovery,
       "180_durable_runtime_revision": durableRuntimeRevision,
       "181_durable_navigation_index": durableNavigationIndex,
+      "182_conversation_activity_page": conversationActivityPage,
     };
   },
 };
 import * as durableNavigationIndex from "./181_durable_navigation_index.ts";
+import * as conversationActivityPage from "./182_conversation_activity_page.ts";

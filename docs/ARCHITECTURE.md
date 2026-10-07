@@ -399,6 +399,11 @@ discarded; only a complete replacement is applied. Small live events remain
 immediate. The browser does not submit Kafka offsets or Last-Event-ID. A local
 POST which raced with an older snapshot invalidates that UI request, not the Run.
 History opens on the latest 40 Turns; earlier pages use an owned Turn identity.
+The composer shares one submission-identity implementation across ordinary,
+first-message and Steer paths. An uncertain response retains the key for the
+same Session/text/attachments/target; confirmation or a different submitted
+input permits a new key. Draft edits made while waiting survive the ACK. This
+is browser-local retry identity, not a second Run authority or durable draft store.
 Queued inputs and unstarted cancellations do not occupy history pages or Turn
 counts. The composer owns a separate pending-input view. Initial, focus and
 reconnect reads use a current PG snapshot; successful edits reuse their returned
@@ -457,6 +462,8 @@ Conversation discovery returns pages of 100 Sessions with an optional opaque
 activity/ID position; every page retains tenant and branch-pruning filtering. Browser
 load-more appends by Session ID, and a newer refresh invalidates an older page
 request. This list position is neither authorization nor an SSE cursor.
+The activity index selects the visible Session page before lateral Turn counts;
+only that page's history participates in counting. No persistent count mirror is added.
 
 A request arriving on another API replica is proxied to the partition owner
 discovered from Kafka group membership. Each replica advertises a unique internal
@@ -802,13 +809,17 @@ never repairs or initializes storage during a read. Guest seed initialization
 only supplies missing files and cannot clear existing user data. A separate
 generation-bound deletion grant still expresses PG-authorized release, not mount
 refcount. See [ADR-0172](adr/0172-plugin-owned-volume-initialization.md).
-Trusted Gateway mutations hold a filesystem flock on an existing Volume envelope
-until their callbacks settle. The Node-owned descriptor outlives the acquisition
-utility and is independent of PG connections. Lock files are derived, remain
-outside guest mounts, and disappear with the retired envelope. Replaced-inode
-waiters are refused; missing/malformed storage is never initialized during a read.
-PG upload/lifecycle authorization and Cube attachment evidence remain required
-(ADR-0231). Deployment Recreate excludes mixed old/new Gateway lock contracts.
+Gateway reads and uploads hold shared filesystem exclusion on the existing
+Volume envelope; credential callbacks take a separate exclusive lock after that
+shared admission. Deletion preparation/finalization requires exclusive Volume
+access and waits for active callbacks. Uploads retain unique staging and
+non-overwriting atomic publication. The Node-owned descriptors outlive the
+acquisition utility and are independent of PG connections. Lock files remain
+outside guest mounts and disappear with the retired envelope. Replaced-inode
+waiters are refused. An absent root may return an empty directory listing without
+creating storage; no such read establishes deletion authority. PG upload/lifecycle
+authorization and Cube attachment evidence remain required (ADR-0231/0234).
+Deployment Recreate excludes mixed Gateway lock contracts.
 
 A user-owned development machine is allocated independently, with a selected
 CPU/memory/disk template. It retains node-affine full-VM state and has its own home

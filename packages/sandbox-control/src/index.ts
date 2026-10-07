@@ -77,6 +77,7 @@ export {
   type WorkspaceVolumeGatewayReadFileInput,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayLock,
+  type WorkspaceVolumeLockScope,
   type WorkspaceVolumeGatewayVerifyInput,
   type WorkspaceVolumeGatewayVolumeIdentity,
   type WorkspaceVolumeGitRunner,

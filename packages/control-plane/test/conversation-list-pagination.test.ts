@@ -33,6 +33,55 @@ it("pages beyond 100 owned Sessions without losing PostgreSQL microseconds or te
       (await store.createSession(project.projectId, project.workspaceId, `session-${i}`, "elastic"))
         .sessionId,
     );
+  const hidden = await store.createSession(
+    project.projectId,
+    project.workspaceId,
+    "pruned",
+    "elastic",
+  );
+  await db
+    .updateTable("sessions")
+    .set({ pruned_at: new Date() })
+    .where("id", "=", hidden.sessionId)
+    .execute();
+  const child = await store.createSession(
+    project.projectId,
+    project.workspaceId,
+    "child",
+    "elastic",
+  );
+  await db
+    .updateTable("sessions")
+    .set({ session_kind: "subagent" })
+    .where("id", "=", child.sessionId)
+    .execute();
+  const expectedCounts = new Map<string, number>();
+  for (const [sessionId, count] of [
+    [ids[0]!, 17],
+    [ids[102]!, 3],
+  ] as const) {
+    expectedCounts.set(sessionId, count);
+    for (let i = 0; i < count + 3; i++) {
+      const turn = await store.acceptTurn(sessionId, `input-${i}`, { prompt: `message ${i}` });
+      // Include a started cancellation; exclude queued, unstarted cancelled and pruned inputs.
+      if (i === count) continue;
+      await db
+        .updateTable("turns")
+        .set({
+          state: i === count + 1 || i === 0 ? "cancelled" : "completed",
+          started_at: i === count + 1 ? null : new Date(),
+          settled_at: new Date(),
+          pruned_at: i === count + 2 ? new Date() : null,
+        })
+        .where("id", "=", turn.turnId)
+        .execute();
+    }
+  }
+  await db
+    .updateTable("workspaces")
+    .set({ deleted_at: new Date() })
+    .where("id", "=", project.workspaceId)
+    .execute();
   await sql`update sessions s set last_active_at='2026-09-26T00:00:00Z'::timestamptz + p.n * interval '1 microsecond'
     from jsonb_to_recordset(${JSON.stringify(ids.map((id, n) => ({ id, n: n + 1 })))}::jsonb) p(id text,n integer)
     where s.id=p.id::uuid`.execute(db);
@@ -48,6 +97,10 @@ it("pages beyond 100 owned Sessions without losing PostgreSQL microseconds or te
   expect(
     new Set([...first.conversations, ...second.conversations].map((row) => row.sessionId)),
   ).toEqual(new Set(ids));
+  for (const row of [...first.conversations, ...second.conversations]) {
+    expect(row.turnCount).toBe(expectedCounts.get(row.sessionId) ?? 0);
+    expect(row.workspaceState).toBe("missing");
+  }
   const outsider = await createPrivateTenant(db, {
     slug: "paged-outsider",
     ownerDisplayName: "Outsider",

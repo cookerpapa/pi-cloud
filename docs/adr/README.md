@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0234](0234-volume-gateway-shared-access.md) — shared browsing/upload access,
+   narrow credential exclusion and exclusive Volume lifecycle; source-verified, awaiting rollout.
 1. [ADR-0233](0233-template-cleanup-node-routing.md) — template and rootfs cleanup
    follows stable node identity through current discovery, retaining unresolved targets;
    deployed and verified against the historical backlog.

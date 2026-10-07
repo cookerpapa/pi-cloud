@@ -15,6 +15,7 @@ import {
 import { dirname, join, resolve, sep } from "node:path";
 import { isIPv4 } from "node:net";
 import { writeWorkspaceUpload } from "@pi-cloud/workspace-runtime";
+import { FilesystemWorkspaceVolumeGatewayLock } from "./filesystem-workspace-volume-gateway-lock.ts";
 import type { WorkspaceVolumeGatewayUploadInput } from "./workspace-volume-gateway-contract.ts";
 import {
   VOLUME_IDENTITY_FILE,
@@ -32,6 +33,7 @@ import {
   type VolumeIdentity,
   type WorkspaceVolumeGateway,
   type WorkspaceVolumeGatewayLock,
+  type WorkspaceVolumeLockScope,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayPathInput,
   type WorkspaceVolumeGatewayVerifyInput,
@@ -290,14 +292,13 @@ export function runTrustedWorkspaceGit(
 /** Trusted direct access to Cube's durable POSIX Workspace volumes. */
 export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
   readonly #workspaceRoot: string;
-  readonly #distributedLock: WorkspaceVolumeGatewayLock | undefined;
-  readonly #locks = new Map<string, Promise<void>>();
+  readonly #lock: WorkspaceVolumeGatewayLock;
   readonly #git: WorkspaceVolumeGitRunner;
   readonly #authorizeUpload: PersistentVolumeWorkspaceVolumeGatewayOptions["authorizeUpload"];
 
   constructor(options: PersistentVolumeWorkspaceVolumeGatewayOptions) {
     this.#workspaceRoot = validatedAbsoluteDirectory(options.workspaceRoot, "workspaceRoot");
-    this.#distributedLock = options.lock;
+    this.#lock = options.lock ?? new FilesystemWorkspaceVolumeGatewayLock(this.#workspaceRoot);
     this.#git = options.gitRunner ?? runTrustedWorkspaceGit;
     this.#authorizeUpload = options.authorizeUpload;
   }
@@ -315,7 +316,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
 
   async verify(input: WorkspaceVolumeGatewayVerifyInput): Promise<{ verified: true }> {
     const identity = validatedIdentity(input);
-    return this.#withVolumeLock(identity.volumeId, async () => {
+    return this.#withVolumeLock(identity.volumeId, "shared", async () => {
       await this.#validatedVolume(identity);
       return { verified: true };
     });
@@ -326,16 +327,18 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     truncated: boolean;
   }> {
     const identity = validatedIdentity(input);
-    return this.#withVolumeLock(identity.volumeId, async () => {
-      if (input.rootPath === "" && input.path === "") {
-        const present = await lstat(this.#volumeDirectory(identity.volumeId)).catch(
-          (error: NodeJS.ErrnoException) => {
-            if (error.code === "ENOENT") return undefined;
-            throw error;
-          },
-        );
-        if (present === undefined) return { entries: [], truncated: false };
-      }
+    // An absent root is a read-only empty listing, never initialization or
+    // deletion evidence. Once an envelope exists, all byte access takes a lock.
+    if (input.rootPath === "" && input.path === "") {
+      const present = await lstat(this.#volumeDirectory(identity.volumeId)).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return undefined;
+          throw error;
+        },
+      );
+      if (present === undefined) return { entries: [], truncated: false };
+    }
+    return this.#withVolumeLock(identity.volumeId, "shared", async () => {
       const directory = await this.#validatedVolume(identity);
       const target = await this.#browseTarget(directory, input.rootPath, input.path, true);
       const handle = await this.#openBrowseTarget(target, true);
@@ -385,7 +388,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     signal?: AbortSignal,
   ) {
     const identity = validatedIdentity(input);
-    return this.#withVolumeLock(identity.volumeId, async () => {
+    return this.#withVolumeLock(identity.volumeId, "shared", async () => {
       signal?.throwIfAborted();
       if (!this.#authorizeUpload) throw new Error("Workspace upload authorization is unavailable");
       await this.#authorizeUpload(input, input.byteLength);
@@ -424,7 +427,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         false,
       );
     }
-    return this.#withVolumeLock(identity.volumeId, async () => {
+    return this.#withVolumeLock(identity.volumeId, "shared", async () => {
       const directory = await this.#validatedVolume(identity);
       const target = await this.#browseTarget(directory, input.rootPath, input.path, false);
       const handle = await this.#openBrowseTarget(target, false);
@@ -460,7 +463,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     input: WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
   ): Promise<{ authorized: true }> {
     const identity = validatedIdentity(input);
-    return this.#withVolumeLock(identity.volumeId, async () => {
+    return this.#withVolumeLock(identity.volumeId, "credentials", async () => {
       const directory = await this.#validatedVolume(identity);
       const workspace = join(directory, VOLUME_WORKSPACE_DIRECTORY);
       const credentialPath = join(workspace, WORKSPACE_GIT_CREDENTIALS_FILE);
@@ -489,7 +492,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     reason?: "credential_missing" | "credential_rejected" | "code_host_unreachable";
   }> {
     const identity = validatedIdentity(input);
-    const credentialUrl = await this.#withVolumeLock(identity.volumeId, async () => {
+    const credentialUrl = await this.#withVolumeLock(identity.volumeId, "credentials", async () => {
       const directory = await this.#validatedVolume(identity);
       const credentialPath = join(
         directory,
@@ -532,7 +535,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     input: WorkspaceVolumeGatewaySourceCredentialListInput,
   ): Promise<{ connections: readonly { provider: "github" | "gitlab"; origin: string }[] }> {
     const identity = validatedIdentity(input);
-    return this.#withVolumeLock(identity.volumeId, async () => {
+    return this.#withVolumeLock(identity.volumeId, "credentials", async () => {
       const directory = await this.#validatedVolume(identity);
       const credentialPath = join(
         directory,
@@ -557,7 +560,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     input: WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
   ): Promise<{ disconnected: boolean }> {
     const identity = validatedIdentity(input);
-    return this.#withVolumeLock(identity.volumeId, async () => {
+    return this.#withVolumeLock(identity.volumeId, "credentials", async () => {
       const directory = await this.#validatedVolume(identity);
       const workspace = join(directory, VOLUME_WORKSPACE_DIRECTORY);
       const credentialPath = join(workspace, WORKSPACE_GIT_CREDENTIALS_FILE);
@@ -613,6 +616,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     const identity = validatedVolumeIdentity(input);
     return this.#withVolumeLock(
       identity.volumeId,
+      "exclusive",
       async () => {
         const envelope = await this.#deletionEnvelope(identity);
         if (envelope === undefined) return { prepared: false };
@@ -657,6 +661,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     };
     return this.#withVolumeLock(
       identity.volumeId,
+      "exclusive",
       async () => {
         const retired = `${this.#volumeDirectory(identity.volumeId)}.deleted`;
         const envelope = await this.#deletionEnvelope(identity);
@@ -797,13 +802,11 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
 
   async #withVolumeLock<T>(
     volumeId: string,
+    scope: WorkspaceVolumeLockScope,
     operation: () => Promise<T>,
     whenAbsent?: () => Promise<T>,
   ): Promise<T> {
-    const run = () => this.#withLocalVolumeLock(volumeId, operation);
-    return this.#distributedLock === undefined
-      ? run()
-      : this.#distributedLock.withLock(volumeId, run, whenAbsent);
+    return this.#lock.withLock(volumeId, scope, operation, whenAbsent);
   }
 
   async #openBrowseTarget(
@@ -864,22 +867,5 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       );
     }
     return { absolute, relative: path, root: selectedRoot };
-  }
-
-  async #withLocalVolumeLock<T>(volumeId: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.#locks.get(volumeId) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolvePromise) => {
-      release = resolvePromise;
-    });
-    const tail = previous.then(() => current);
-    this.#locks.set(volumeId, tail);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.#locks.get(volumeId) === tail) this.#locks.delete(volumeId);
-    }
   }
 }

@@ -79,6 +79,7 @@ window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReas
     items:[{kind:"text",key:"text:"+(phase??'1'),text,firstSequence:1,lastSequence:2,recoveredTextLength,...(phase?{phase}:{})}]
   }})));
 window.turnBodies = [];
+window.turnRequests = [];
 window.uploadCalls = [];
 window.uploadReceipts = [];
 window.copyFixtureText=copyMessageText;
@@ -187,6 +188,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   const fixtureTurnId='50000000-0000-4000-8000-000000000011';
   window.fixtureQueue={sessionId:sid,revision:0,activeTurnId:sessionState==='running'?fixtureTurnId:null,items:[]};
   window.steerRequests=[];window.steerReceipts=new Map();
+  window.turnReceipts=new Map();
   const delegates=['branch','fresh'].map((contextMode,index)=>({sessionId:'10000000-0000-4000-8000-00000000000'+(index+2),
     executionId:'80000000-0000-4000-8000-00000000000'+(index+1),parentSessionId:sid,rootSessionId:sid,parentTurnId:fixtureTurnId,
     depth:1,title:contextMode+' child',contextMode,sandboxMode:'shared',state:'completed',workspaceName:'fixture',createdAt}));
@@ -286,6 +288,8 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     }
     if(String(url).endsWith("/turns")) {
       const submitted=JSON.parse(init.body);window.turnBodies.push(submitted);
+      const key=new Headers(init.headers).get('idempotency-key');
+      window.turnRequests.push({key,body:submitted});
       if(window.deferTurn) return new Promise(resolve=>{
         window.finishTurn=()=>{
           window.fixtureQueue.revision++;window.fixtureQueue.items=[{turnId:"50000000-0000-4000-8000-000000000001",runId:"60000000-0000-4000-8000-000000000001",text:submitted.prompt,mailboxPosition:1,acceptedAt:new Date().toISOString(),status:"queued"}];
@@ -294,6 +298,14 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
           state:"queued",acceptedAt:new Date().toISOString(),replayed:false},{status:202}));
         };
       });
+      if(window.acceptTurns) {
+        const prior=window.turnReceipts.get(key);
+        const receipt=prior??{turnId:crypto.randomUUID(),sessionId:sid,runId:crypto.randomUUID(),
+          mailboxPosition:window.turnReceipts.size+1,state:'queued',acceptedAt:new Date().toISOString()};
+        if(!prior)window.turnReceipts.set(key,receipt);
+        if(window.loseTurnReply){window.loseTurnReply=false;throw Error('Fixture lost Turn response after commit');}
+        return Response.json({...receipt,replayed:!!prior},{status:202});
+      }
       // Capture the real request builder without creating a model Run.
       return Response.json({error:{code:"conflict",message:"Fixture does not execute models"}},{status:409});
     }
@@ -608,7 +620,30 @@ try {
       [null, null, null],
       "Composer must use persisted Session settings, not an old per-Turn override",
     );
-    await page.evaluate("window.deferTurn=true");
+    await page.evaluate("window.acceptTurns=true;window.loseTurnReply=true");
+    await fill(".product-composer textarea", "one ordinary submission");
+    await page.evaluate('document.querySelector(".product-send-button").click()');
+    await page.waitFor(
+      "turnReceipts.size===1 && !document.querySelector('.product-send-button').disabled",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-composer textarea').value"),
+      "one ordinary submission",
+    );
+    await page.evaluate('document.querySelector(".product-send-button").click()');
+    await page.waitFor("document.querySelector('.product-composer textarea').value===''");
+    assert.equal(await page.evaluate("turnReceipts.size"), 1);
+    assert.deepEqual(
+      await page.evaluate("turnRequests.slice(-2).map(r=>r.key)"),
+      Array(2).fill(await page.evaluate("turnRequests.at(-1).key")),
+    );
+    await fill(".product-composer textarea", "one ordinary submission");
+    await page.evaluate('document.querySelector(".product-send-button").click()');
+    await page.waitFor(
+      "turnReceipts.size===2 && document.querySelector('.product-composer textarea').value===''",
+    );
+
+    await page.evaluate("window.acceptTurns=false;window.deferTurn=true");
     await fill(".product-composer textarea", "submitted draft");
     await page.waitFor('!document.querySelector(".product-send-button").disabled');
     await page.evaluate('document.querySelector(".product-send-button").click()');
@@ -981,7 +1016,9 @@ try {
 
     // A first, image-only message survives Session creation and sends references,
     // while retries and picker cancellation keep the original upload identity.
-    await page.evaluate("window.deferTurn=false;renderChat('idle')");
+    await page.evaluate(
+      "window.deferTurn=false;window.acceptTurns=true;window.loseTurnReply=true;renderChat('idle')",
+    );
     await page.waitFor('document.querySelector(".product-attach-button")');
     const countBeforeImage = await page.evaluate("turnBodies.length");
     await page.evaluate(`(() => {
@@ -1008,9 +1045,10 @@ try {
     await page.evaluate('document.querySelector(".product-send-button").click()');
     await page.waitFor(`turnBodies.length===${countBeforeImage + 2}`);
     assert.deepEqual(await page.evaluate("turnBodies.at(-1).uploadIds"), firstImageBody.uploadIds);
-    await page.waitFor('!document.querySelector(".upload-card button").disabled');
-    await page.evaluate('document.querySelector(".upload-card button").click()');
+    assert.equal(await page.evaluate("turnReceipts.size"), 1);
+    assert.equal(await page.evaluate("turnRequests.at(-1).key===turnRequests.at(-2).key"), true);
     await page.waitFor('!document.querySelector(".upload-card")');
+    await page.evaluate("window.acceptTurns=false");
 
     for (const status of [503, 0]) {
       await page.evaluate(`window.identityErrorStatus=${status};renderChat()`);
@@ -1063,6 +1101,8 @@ try {
     JSON.stringify({
       accepted: true,
       directSteerRetryIdentity: true,
+      ordinarySendRetryIdentity: true,
+      initialImageSendRetryIdentity: true,
       directSteerPendingPresentation: true,
       machineWorkspaceRebind: true,
       rebindRetryUsesSameTargetAndKey: true,

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import {
   mkdtemp,
   readFile,
@@ -19,6 +19,7 @@ import {
   FilesystemWorkspaceVolumeGatewayLock,
   PersistentVolumeWorkspaceVolumeGateway,
   workspaceVolumeId,
+  type WorkspaceVolumeLockScope,
 } from "../src/index.ts";
 import { createPluginVolumeFixture } from "./fixtures/plugin-volume.ts";
 
@@ -40,7 +41,11 @@ async function fixture() {
     lock: () => new FilesystemWorkspaceVolumeGatewayLock(root, 2000),
   };
 }
-async function holdInChild(root: string, volumeId: string) {
+async function holdInChild(
+  root: string,
+  volumeId: string,
+  scope: WorkspaceVolumeLockScope = "exclusive",
+) {
   const module = new URL("../src/filesystem-workspace-volume-gateway-lock.ts", import.meta.url)
     .href;
   const child = spawn(
@@ -52,7 +57,7 @@ async function holdInChild(root: string, volumeId: string) {
       "-e",
       `
     import {FilesystemWorkspaceVolumeGatewayLock} from ${JSON.stringify(module)};
-    await new FilesystemWorkspaceVolumeGatewayLock(${JSON.stringify(root)}).withLock(${JSON.stringify(volumeId)},async()=>{
+    await new FilesystemWorkspaceVolumeGatewayLock(${JSON.stringify(root)}).withLock(${JSON.stringify(volumeId)},${JSON.stringify(scope)},async()=>{
       process.stdout.write('held\\n');
       await new Promise(resolve=>process.stdin.once('data',resolve));
     });process.exit(0);
@@ -91,63 +96,237 @@ async function stop(child: ChildProcess, signal?: NodeJS.Signals) {
   await exited;
 }
 
-it.each(["normal", "SIGKILL"] as const)(
-  "holds the filesystem lock across utility exit and releases after holder %s",
-  async (mode) => {
+it.each([
+  ["exclusive", "normal"],
+  ["exclusive", "SIGKILL"],
+  ["shared", "normal"],
+  ["shared", "SIGKILL"],
+  ["credentials", "SIGKILL"],
+] as const)(
+  "holds %s exclusion across utility exit and releases after holder %s",
+  async (scope, mode) => {
     const f = await fixture(),
-      child = await holdInChild(f.root, f.scope.volumeId);
+      child = await holdInChild(f.root, f.scope.volumeId, scope);
+    if (scope !== "exclusive")
+      expect(await f.lock().withLock(f.scope.volumeId, "shared", async () => "reader")).toBe(
+        "reader",
+      );
+    if (scope === "shared")
+      expect(
+        await f.lock().withLock(f.scope.volumeId, "credentials", async () => "credential"),
+      ).toBe("credential");
     let entered = false;
-    const waiter = f.lock().withLock(f.scope.volumeId, async () => {
+    const waiter = f.lock().withLock(f.scope.volumeId, "exclusive", async () => {
       entered = true;
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(entered).toBe(false);
     const other = { volumeId: workspaceVolumeId({ ...f.scope, workspaceId: randomUUID() }) };
     await createPluginVolumeFixture(f.root, other);
-    await f.lock().withLock(other.volumeId, async () => "independent");
+    await f.lock().withLock(other.volumeId, "exclusive", async () => "independent");
     await stop(child, mode === "SIGKILL" ? "SIGKILL" : undefined);
     await waiter;
     expect(entered).toBe(true);
   },
 );
 
-it("never runs after acquisition timeout and releases a failed callback's lock", async () => {
-  const f = await fixture(),
-    child = await holdInChild(f.root, f.scope.volumeId),
-    callback = vi.fn();
-  await expect(
-    new FilesystemWorkspaceVolumeGatewayLock(f.root, 30).withLock(f.scope.volumeId, callback),
-  ).rejects.toMatchObject({ code: "workspace_volume_lock_unavailable" });
-  expect(callback).not.toHaveBeenCalled();
-  await stop(child);
-  await expect(
-    f.lock().withLock(f.scope.volumeId, async () => {
-      throw new Error("file failed");
-    }),
-  ).rejects.toThrow("file failed");
-  expect(await f.lock().withLock(f.scope.volumeId, async () => "next")).toBe("next");
-});
+it.each(["shared", "credentials", "exclusive"] as const)(
+  "never runs after %s acquisition timeout and releases a failed callback's lock",
+  async (scope) => {
+    const f = await fixture(),
+      child = await holdInChild(f.root, f.scope.volumeId),
+      callback = vi.fn();
+    await expect(
+      new FilesystemWorkspaceVolumeGatewayLock(f.root, 30).withLock(
+        f.scope.volumeId,
+        scope,
+        callback,
+      ),
+    ).rejects.toMatchObject({ code: "workspace_volume_lock_unavailable" });
+    expect(callback).not.toHaveBeenCalled();
+    await stop(child);
+    await expect(
+      f.lock().withLock(f.scope.volumeId, scope, async () => {
+        throw new Error("file failed");
+      }),
+    ).rejects.toThrow("file failed");
+    expect(await f.lock().withLock(f.scope.volumeId, "exclusive", async () => "next")).toBe("next");
+  },
+);
 
-it("rejects a waiter whose locked envelope was replaced", async () => {
+it.each(["exclusive", "shared", "credentials"] as const)(
+  "rejects a %s waiter whose locked envelope was replaced",
+  async (scope) => {
+    const f = await fixture(),
+      child = await holdInChild(f.root, f.scope.volumeId),
+      callback = vi.fn();
+    const waiting = f
+      .lock()
+      .withLock(f.scope.volumeId, scope, callback)
+      .catch((error) => error);
+    await vi.waitFor(async () => {
+      const targets = await Promise.all(
+        (await readdir("/proc/self/fd")).map((fd) =>
+          readlink(`/proc/self/fd/${fd}`).catch(() => ""),
+        ),
+      );
+      expect(targets).toContain(join(f.path, ".pi-cloud-runtime/gateway.lock"));
+    });
+    await rename(f.path, `${f.path}.retired`);
+    await createPluginVolumeFixture(f.root, f.scope);
+    await f.lock().withLock(f.scope.volumeId, "exclusive", async () => {});
+    await stop(child);
+    expect(await waiting).toMatchObject({ code: "workspace_volume_binding_invalid" });
+    expect(callback).not.toHaveBeenCalled();
+  },
+);
+
+it("rejects a credential waiter whose inner lock inode was replaced", async () => {
   const f = await fixture(),
-    child = await holdInChild(f.root, f.scope.volumeId),
+    child = await holdInChild(f.root, f.scope.volumeId, "credentials"),
     callback = vi.fn();
+  const path = join(f.path, ".pi-cloud-runtime/credentials.lock");
   const waiting = f
     .lock()
-    .withLock(f.scope.volumeId, callback)
+    .withLock(f.scope.volumeId, "credentials", callback)
     .catch((error) => error);
   await vi.waitFor(async () => {
     const targets = await Promise.all(
       (await readdir("/proc/self/fd")).map((fd) => readlink(`/proc/self/fd/${fd}`).catch(() => "")),
     );
-    expect(targets).toContain(join(f.path, ".pi-cloud-runtime/gateway.lock"));
+    expect(targets).toContain(path);
   });
-  await rename(f.path, `${f.path}.retired`);
-  await createPluginVolumeFixture(f.root, f.scope);
-  await f.lock().withLock(f.scope.volumeId, async () => {});
+  await rename(path, path + ".retired");
+  await writeFile(path, "", { mode: 0o600 });
   await stop(child);
   expect(await waiting).toMatchObject({ code: "workspace_volume_binding_invalid" });
   expect(callback).not.toHaveBeenCalled();
+});
+
+it("permits actual browsing, another upload and credential updates during an upload, but excludes deletion", async () => {
+  const f = await fixture(),
+    release = Promise.withResolvers<void>(),
+    began = Promise.withResolvers<void>();
+  const gateway = () =>
+    new PersistentVolumeWorkspaceVolumeGateway({
+      workspaceRoot: f.root,
+      lock: f.lock(),
+      authorizeUpload: async () => {},
+    });
+  const first = gateway(),
+    second = gateway();
+  const request = (name: string, content: string) => ({
+    ...f.scope,
+    uploadId: randomUUID(),
+    claimToken: randomUUID(),
+    name,
+    rootPath: "",
+    byteLength: Buffer.byteLength(content),
+    sha256: createHash("sha256").update(content).digest("hex"),
+  });
+  const upload = first.uploadFile(
+    request("slow.txt", "ab"),
+    (async function* () {
+      yield Buffer.from("a");
+      began.resolve();
+      await release.promise;
+      yield Buffer.from("b");
+    })(),
+  );
+  let deletion: Promise<unknown> | undefined,
+    deleted = false;
+  try {
+    await began.promise;
+    // One instance as well as another: no hidden process-local serial queue.
+    await first.listDirectory({ ...f.scope, rootPath: "", path: "" });
+    const quick = request("quick.txt", "ready");
+    const receipt = await second.uploadFile(
+      quick,
+      (async function* () {
+        yield Buffer.from("ready");
+      })(),
+    );
+    expect(
+      Buffer.from(
+        (
+          await second.readFile({
+            ...f.scope,
+            rootPath: "",
+            path: receipt.relativePath,
+            maximumBytes: 100,
+          })
+        ).bytes,
+      ).toString(),
+    ).toBe("ready");
+    const credential = {
+      ...f.scope,
+      requestId: randomUUID(),
+      provider: "gitlab" as const,
+      origin: "https://git.example.test",
+      accessToken: "fixture-token-never-used",
+      credentialMountPath: "/workspace" as const,
+    };
+    await second.authorizeSourceCredential(credential);
+    expect((await first.listSourceCredentials(credential)).connections).toHaveLength(1);
+    deletion = second.prepareDelete(f.scope).then(() => {
+      deleted = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(deleted).toBe(false);
+    release.resolve();
+    await upload;
+    await deletion;
+    await expect(first.listDirectory({ ...f.scope, rootPath: "", path: "" })).rejects.toMatchObject(
+      { code: "workspace_volume_deleting" },
+    );
+  } finally {
+    release.resolve();
+    await upload.catch(() => {});
+    await deletion;
+  }
+});
+
+it("publishes identical concurrent uploads once and rejects conflicting content without overwrite", async () => {
+  const f = await fixture();
+  const gateways = [0, 1].map(
+    () =>
+      new PersistentVolumeWorkspaceVolumeGateway({
+        workspaceRoot: f.root,
+        authorizeUpload: async () => {},
+      }),
+  );
+  const input = {
+    ...f.scope,
+    uploadId: randomUUID(),
+    claimToken: randomUUID(),
+    name: "same.txt",
+    rootPath: "",
+    byteLength: 3,
+    sha256: createHash("sha256").update("one").digest("hex"),
+  };
+  const bytes = async function* (text: string) {
+    yield Buffer.from(text);
+  };
+  const replies = await Promise.all(gateways.map((g) => g.uploadFile(input, bytes("one"))));
+  expect(replies[0]).toEqual(replies[1]);
+  await expect(
+    gateways[1]!.uploadFile(
+      { ...input, sha256: createHash("sha256").update("two").digest("hex") },
+      bytes("two"),
+    ),
+  ).rejects.toThrow();
+  expect(
+    Buffer.from(
+      (
+        await gateways[0]!.readFile({
+          ...f.scope,
+          rootPath: "",
+          path: replies[0]!.relativePath,
+          maximumBytes: 10,
+        })
+      ).bytes,
+    ).toString(),
+  ).toBe("one");
 });
 
 it("does not initialize absent/unpublished Volumes and keeps deletion retryable", async () => {
@@ -200,9 +379,11 @@ it("serializes actual credential updates across Gateways and removes locks with 
   expect(await readdir(f.root)).toEqual([]);
 });
 
-it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
-  "keeps filesystem exclusion while a callback continues after PG connection loss",
-  async () => {
+it
+  .skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)
+  .each(["exclusive", "credentials"] as const)(
+  "keeps %s filesystem exclusion while a callback continues after PG connection loss",
+  async (scope) => {
     const f = await fixture(),
       pool = new Pool({ connectionString: process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL, max: 2 });
     cleanups.push(() => pool.end());
@@ -215,7 +396,7 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
       release = Promise.withResolvers<void>();
     const path = join(f.path, "workspace/state.json");
     await writeFile(path, "[]");
-    const old = f.lock().withLock(f.scope.volumeId, async () => {
+    const old = f.lock().withLock(f.scope.volumeId, scope, async () => {
       const value = JSON.parse(await readFile(path, "utf8"));
       ready.resolve();
       await release.promise;
@@ -227,7 +408,7 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
       await ready.promise;
       await observer.query("select pg_terminate_backend($1)", [pid]);
       await disconnected;
-      next = f.lock().withLock(f.scope.volumeId, async () => {
+      next = f.lock().withLock(f.scope.volumeId, scope, async () => {
         entered = true;
         const value = JSON.parse(await readFile(path, "utf8"));
         await writeFile(path, JSON.stringify([...value, "new"]));

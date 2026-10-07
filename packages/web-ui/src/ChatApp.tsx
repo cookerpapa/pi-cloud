@@ -2,6 +2,7 @@ import { inputReturnRecovery, type InputReturnRecovery } from "./returned-inputs
 import { InheritedContext } from "./InheritedContext.tsx";
 import { useComposerUploads } from "./useComposerUploads.ts";
 import { ComposerUploadCards } from "./UploadCards.tsx";
+import { ComposerSubmission } from "./composer-submission.ts";
 import {
   useCallback,
   useEffect,
@@ -243,7 +244,8 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     | null
   >(null);
   const [steerNotice, setSteerNotice] = useState<string | null>(null);
-  const steerSubmission = useRef<{ fingerprint: string; key: string } | undefined>(undefined);
+  const turnSubmission = useRef(new ComposerSubmission("turn"));
+  const steerSubmission = useRef(new ComposerSubmission("steer"));
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorRefreshSignal, setInspectorRefreshSignal] = useState(0);
@@ -997,6 +999,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }
 
   async function createConversation(): Promise<void> {
+    const submittedRevision = draftRevision.current;
     const title = newConversationTitle.trim();
     if (title.length === 0 || operation !== null || newConversationModel === null) return;
     setOperation("creating");
@@ -1074,11 +1077,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       ]);
       if (pendingInitialPrompt !== null) {
         const attached = await uploads.ready(session.sessionId);
-        const accepted = await api.acceptTurn(
+        const accepted = await acceptComposerTurn(
           session.sessionId,
           pendingInitialPrompt,
-          newIdempotencyKey("turn"),
-          undefined,
           attached.map((file) => file.id),
         );
         update({
@@ -1088,7 +1089,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           uploads: attached,
         });
         uploads.clear(attached.map((file) => file.id));
-        setPrompt((current) => (current.trim() === pendingInitialPrompt ? "" : current));
+        setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       }
       setPendingInitialPrompt(null);
     } catch (error: unknown) {
@@ -1219,6 +1220,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     }
   }
 
+  function acceptComposerTurn(sessionId: string, text: string, uploadIds: string[]) {
+    return turnSubmission.current.send({ sessionId, text, uploadIds }, (key) =>
+      api.acceptTurn(sessionId, text, key, undefined, uploadIds),
+    );
+  }
+
   async function submitTurn(): Promise<void> {
     const submittedRevision = draftRevision.current;
     const text = prompt.trim();
@@ -1251,11 +1258,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         }
       }
       const attached = await uploads.ready(session.sessionId);
-      const accepted = await api.acceptTurn(
+      const accepted = await acceptComposerTurn(
         session.sessionId,
         text,
-        newIdempotencyKey("turn"),
-        undefined,
         attached.map((file) => file.id),
       );
       update({ type: "turn.accepted", accepted, prompt: text, uploads: attached });
@@ -1306,22 +1311,11 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     try {
       const attached = await uploads.ready(state.session.sessionId);
       const uploadIds = attached.map((file) => file.id);
-      const fingerprint = JSON.stringify({
-        sessionId: state.session.sessionId,
-        targetTurnId: currentTurn.turnId,
-        text,
-        uploadIds,
-      });
-      if (steerSubmission.current?.fingerprint !== fingerprint)
-        steerSubmission.current = { fingerprint, key: newIdempotencyKey("steer") };
-      await api.steerTurn(
-        state.session.sessionId,
-        currentTurn.turnId,
-        text,
-        steerSubmission.current.key,
-        uploadIds,
+      const sessionId = state.session.sessionId,
+        targetTurnId = currentTurn.turnId;
+      await steerSubmission.current.send({ sessionId, targetTurnId, text, uploadIds }, (key) =>
+        api.steerTurn(sessionId, targetTurnId, text, key, uploadIds),
       );
-      steerSubmission.current = undefined;
       setQueueRefreshGeneration((generation) => generation + 1);
       uploads.clear(attached.map((file) => file.id));
       setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));

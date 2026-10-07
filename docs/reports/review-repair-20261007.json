@@ -1,0 +1,453 @@
+{
+  "format": "pi-cloud.review-repair.v1",
+  "date": "2026-10-07",
+  "baseRevision": "7a5fc6034a55d9fda98a25c8015112327ed2bfc4",
+  "sourceState": "working tree on base revision; see sourceFileSha256",
+  "deployed": false,
+  "migration": "182_conversation_activity_page",
+  "adr": "0234-volume-gateway-shared-access",
+  "resolved": ["R07-01", "Q07-01", "O07-01", "O07-02", "N07-01"],
+  "checks": {
+    "build": {
+      "status": "passed",
+      "logSha256": "4a54c0573373899a5b56a0fab9a37d30009f98dff74f3fbaa1b7a50a233a9046"
+    },
+    "browser": {
+      "status": "passed",
+      "logSha256": "2343c9f9fdda9941b0d1e3380df1ae9db5beace9f41766d44066633e6a50fdcd"
+    },
+    "helm": {
+      "status": "passed",
+      "logSha256": "11ddfbacc3dccda23f29265421dcb89bb3491e834106149125eb4f3cb2d51bc3"
+    },
+    "installContract": {
+      "status": "passed",
+      "logSha256": "e7369f89f513b6f21976f64f37fdacc8361d0014deac66b2753b8d9c98402d4a"
+    },
+    "runtimePolicy": {
+      "status": "passed",
+      "logSha256": "ea80913d0ac920bed4b9c41e83a4297e66d7596bfd78e5e142d5dea42d2fbb0d"
+    },
+    "imageClosure": {
+      "status": "passed",
+      "logSha256": "f99b41e818d1a0b10d19da70c82f544c8bf98358122a4b24ba3cbfd44aba5b3f"
+    },
+    "imageContext": {
+      "status": "passed",
+      "logSha256": "52f4f37b5a1cacae2f9e361425edae3718514e4b56983fe931b470918361573e"
+    },
+    "combined": {
+      "status": "passed",
+      "exitCode": 0,
+      "workspacesTypechecked": 22,
+      "workspaceTestsPassed": 1630,
+      "helperTestsPassed": 44,
+      "optionalTestsSkipped": 9,
+      "logSha256": "1f58a073a4c18eec21783bcbde73d296c24cddc6118eebe24ac28db412787558"
+    },
+    "docs": {
+      "status": "passed",
+      "logSha256": "a6ee9eb8232756c004d5d95c0ff541dfb8cdad57b6aff175b8aee8d609b043a2"
+    },
+    "format": {
+      "status": "passed",
+      "logSha256": "ee3c89742afe6548f8d589fa2c2a122bb7b08c46d64d5690070ee3308fcf510c"
+    }
+  },
+  "faults": {
+    "passed": 210,
+    "total": 210,
+    "record": "review-repair-20261007-faults.json"
+  },
+  "query": {
+    "sessions": 5000,
+    "turns": 200000,
+    "sameRows": true,
+    "turnRowsVisited": 4040,
+    "currentMs": [2.193, 1.231, 1.132],
+    "baselineMs": [132.526, 116.577, 117.882],
+    "plan": {
+      "Plan": {
+        "Node Type": "Nested Loop",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Join Type": "Inner",
+        "Startup Cost": 78.61,
+        "Total Cost": 7933.67,
+        "Plan Rows": 101,
+        "Plan Width": 208,
+        "Actual Startup Time": 0.064,
+        "Actual Total Time": 1.026,
+        "Actual Rows": 101,
+        "Actual Loops": 1,
+        "Inner Unique": false,
+        "Shared Hit Blocks": 514,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Plans": [
+          {
+            "Node Type": "Nested Loop",
+            "Parent Relationship": "Outer",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Join Type": "Inner",
+            "Startup Cost": 0.28,
+            "Total Cost": 19.56,
+            "Plan Rows": 101,
+            "Plan Width": 184,
+            "Actual Startup Time": 0.033,
+            "Actual Total Time": 0.093,
+            "Actual Rows": 101,
+            "Actual Loops": 1,
+            "Inner Unique": false,
+            "Join Filter": "((session_row.tenant_id = project.tenant_id) AND (session_row.project_id = project.id) AND (session_row.workspace_id = workspace.id))",
+            "Rows Removed by Join Filter": 0,
+            "Shared Hit Blocks": 9,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Limit",
+                "Parent Relationship": "Outer",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Startup Cost": 0.28,
+                "Total Cost": 14.5,
+                "Plan Rows": 101,
+                "Plan Width": 489,
+                "Actual Startup Time": 0.022,
+                "Actual Total Time": 0.053,
+                "Actual Rows": 101,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 7,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Index Scan",
+                    "Parent Relationship": "Outer",
+                    "Parallel Aware": false,
+                    "Async Capable": false,
+                    "Scan Direction": "Forward",
+                    "Index Name": "sessions_tenant_id_last_active_at_id_idx",
+                    "Relation Name": "sessions",
+                    "Alias": "session_row",
+                    "Startup Cost": 0.28,
+                    "Total Cost": 703.97,
+                    "Plan Rows": 5000,
+                    "Plan Width": 489,
+                    "Actual Startup Time": 0.022,
+                    "Actual Total Time": 0.047,
+                    "Actual Rows": 101,
+                    "Actual Loops": 1,
+                    "Index Cond": "(tenant_id = '4130f600-bdd1-41d6-bdf0-8e236b1362a8'::uuid)",
+                    "Rows Removed by Index Recheck": 0,
+                    "Shared Hit Blocks": 7,
+                    "Shared Read Blocks": 0,
+                    "Shared Dirtied Blocks": 0,
+                    "Shared Written Blocks": 0,
+                    "Local Hit Blocks": 0,
+                    "Local Read Blocks": 0,
+                    "Local Dirtied Blocks": 0,
+                    "Local Written Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  }
+                ]
+              },
+              {
+                "Node Type": "Materialize",
+                "Parent Relationship": "Inner",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Startup Cost": 0,
+                "Total Cost": 2.04,
+                "Plan Rows": 1,
+                "Plan Width": 87,
+                "Actual Startup Time": 0,
+                "Actual Total Time": 0,
+                "Actual Rows": 1,
+                "Actual Loops": 101,
+                "Shared Hit Blocks": 2,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Nested Loop",
+                    "Parent Relationship": "Outer",
+                    "Parallel Aware": false,
+                    "Async Capable": false,
+                    "Join Type": "Inner",
+                    "Startup Cost": 0,
+                    "Total Cost": 2.03,
+                    "Plan Rows": 1,
+                    "Plan Width": 87,
+                    "Actual Startup Time": 0.004,
+                    "Actual Total Time": 0.005,
+                    "Actual Rows": 1,
+                    "Actual Loops": 1,
+                    "Inner Unique": false,
+                    "Join Filter": "(project.tenant_id = workspace.tenant_id)",
+                    "Rows Removed by Join Filter": 0,
+                    "Shared Hit Blocks": 2,
+                    "Shared Read Blocks": 0,
+                    "Shared Dirtied Blocks": 0,
+                    "Shared Written Blocks": 0,
+                    "Local Hit Blocks": 0,
+                    "Local Read Blocks": 0,
+                    "Local Dirtied Blocks": 0,
+                    "Local Written Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Seq Scan",
+                        "Parent Relationship": "Outer",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Relation Name": "projects",
+                        "Alias": "project",
+                        "Startup Cost": 0,
+                        "Total Cost": 1.01,
+                        "Plan Rows": 1,
+                        "Plan Width": 47,
+                        "Actual Startup Time": 0.002,
+                        "Actual Total Time": 0.002,
+                        "Actual Rows": 1,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 1,
+                        "Shared Read Blocks": 0,
+                        "Shared Dirtied Blocks": 0,
+                        "Shared Written Blocks": 0,
+                        "Local Hit Blocks": 0,
+                        "Local Read Blocks": 0,
+                        "Local Dirtied Blocks": 0,
+                        "Local Written Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      },
+                      {
+                        "Node Type": "Seq Scan",
+                        "Parent Relationship": "Inner",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Relation Name": "workspaces",
+                        "Alias": "workspace",
+                        "Startup Cost": 0,
+                        "Total Cost": 1.01,
+                        "Plan Rows": 1,
+                        "Plan Width": 40,
+                        "Actual Startup Time": 0.001,
+                        "Actual Total Time": 0.001,
+                        "Actual Rows": 1,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 1,
+                        "Shared Read Blocks": 0,
+                        "Shared Dirtied Blocks": 0,
+                        "Shared Written Blocks": 0,
+                        "Local Hit Blocks": 0,
+                        "Local Read Blocks": 0,
+                        "Local Dirtied Blocks": 0,
+                        "Local Written Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Strategy": "Plain",
+            "Partial Mode": "Simple",
+            "Parent Relationship": "Inner",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Startup Cost": 78.33,
+            "Total Cost": 78.34,
+            "Plan Rows": 1,
+            "Plan Width": 8,
+            "Actual Startup Time": 0.008,
+            "Actual Total Time": 0.009,
+            "Actual Rows": 1,
+            "Actual Loops": 101,
+            "Shared Hit Blocks": 505,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Scan",
+                "Parent Relationship": "Outer",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Scan Direction": "Forward",
+                "Index Name": "turns_tenant_id_session_id_created_at_idx",
+                "Relation Name": "turns",
+                "Alias": "turn",
+                "Startup Cost": 0.42,
+                "Total Cost": 78.23,
+                "Plan Rows": 40,
+                "Plan Width": 0,
+                "Actual Startup Time": 0.002,
+                "Actual Total Time": 0.007,
+                "Actual Rows": 40,
+                "Actual Loops": 101,
+                "Index Cond": "((tenant_id = session_row.tenant_id) AND (session_id = session_row.id))",
+                "Rows Removed by Index Recheck": 0,
+                "Filter": "((state <> 'queued'::text) AND ((state <> 'cancelled'::text) OR (started_at IS NOT NULL)))",
+                "Rows Removed by Filter": 0,
+                "Shared Hit Blocks": 505,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          }
+        ]
+      },
+      "Planning": {
+        "Shared Hit Blocks": 5,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.315,
+      "Triggers": [],
+      "Execution Time": 1.132
+    }
+  },
+  "send": {
+    "observedAt": "2026-10-07T01:54:36.273Z",
+    "scope": "Real ChatApp DOM with isolated response-loss fixture; no provider or production data",
+    "calls": [
+      {
+        "key": "turn:c4f1ee38-78f2-431a-8559-8073daa858f1",
+        "body": {
+          "prompt": "Run the project test once"
+        }
+      },
+      {
+        "key": "turn:c4f1ee38-78f2-431a-8559-8073daa858f1",
+        "body": {
+          "prompt": "Run the project test once"
+        }
+      }
+    ],
+    "acceptedRuns": 1
+  },
+  "volume": {
+    "duringStreamingUpload": "allowed",
+    "afterUpload": "read succeeds",
+    "waitMs": 100,
+    "elapsedMs": 54.30035999999973,
+    "scope": "two Gateway instances, real filesystem flock, owned fixture, no production data"
+  },
+  "guest": {
+    "revision": "7a5fc6034a55d9fda98a25c8015112327ed2bfc4",
+    "identity": "1f7649a81c99c671770d3ef2bc09480dadd93847",
+    "reference": "localhost:5000/pi-cloud/cubesandbox-tool:1f7649a81c99c671770d3ef2bc09480dadd93847",
+    "image": {
+      "reference": "localhost:5000/pi-cloud/cubesandbox-tool:1f7649a81c99c671770d3ef2bc09480dadd93847",
+      "imageId": "sha256:c4ba840fa81fca8833e916aaa68228bc2ccfc4243e860cc3e0c7a99d592d054f",
+      "repoDigests": [
+        "localhost:5000/pi-cloud/cubesandbox-tool@sha256:c4ba840fa81fca8833e916aaa68228bc2ccfc4243e860cc3e0c7a99d592d054f"
+      ],
+      "created": "2026-10-06T22:00:57.934180642+08:00",
+      "platform": "linux/amd64",
+      "labels": {
+        "title": "PiCloud CubeSandbox tool template",
+        "version": "cube-primary",
+        "revision": "18defa3ec16fa6f5fa395bc931239c1602e59a32"
+      },
+      "provenance": {
+        "releaseRevision": "7a5fc6034a55d9fda98a25c8015112327ed2bfc4",
+        "sourceRevision": "18defa3ec16fa6f5fa395bc931239c1602e59a32",
+        "guestBuildIdentity": "1f7649a81c99c671770d3ef2bc09480dadd93847",
+        "reusedSource": true
+      }
+    }
+  },
+  "sourceFileSha256": {
+    "eval/fault-cases.json": "49a49f912295b5eda6a3bf1bc9f4db7687cd25ce9548994c54f58694e04f9e21",
+    "packages/control-plane/src/conversation-reader.ts": "51b09f62163d143a780d800ee5b5eb047f2659b4ccb8f5c9d300f36029c73f01",
+    "packages/control-plane/test/conversation-list-pagination.test.ts": "91f0cc1a3a38310fd2b1bbda4d86df0a8eb2110f33a05e58e65c59d4296ba9bb",
+    "packages/database/src/migrations/182_conversation_activity_page.ts": "f7c17a4cd054636866ff9e0649e3b67f323b71a6dc68ef92efd1fc9006fdd701",
+    "packages/database/src/migrations/index.ts": "57e0e83c7f7cabe00203ee9552cb7f30a5ebf192d9c508f38e43562d51a05127",
+    "packages/database/test/current-schema.test.ts": "9e21f97d053b578d90e54843faad1f734f4cddd1a539b1e4cfb308246dc2a512",
+    "packages/runtime-core/src/session-projector.ts": "37fadd8ddf1431772a9723451ec570b2e23b8c20055e3a3d128ec7c396c4d8ab",
+    "packages/sandbox-control/src/filesystem-workspace-volume-gateway-lock.ts": "6a4560b4bd05242999f788c651dc86bcc7a21a522189b6e6e2305715b6cbebe3",
+    "packages/sandbox-control/src/index.ts": "b08be4df27d4f013e54c7de1414b1c587a0da4b1e89a7a452b52a188910ab334",
+    "packages/sandbox-control/src/persistent-volume-workspace-volume-gateway.ts": "b9880c2e91875985d51d028daa92292d72ae112fcc179e1906c24f314ac36b5f",
+    "packages/sandbox-control/src/workspace-volume-gateway-contract.ts": "a5ccd3b8de7367015c318a6a35e6f617dbddf4498757fbe812572a0e844c2b72",
+    "packages/sandbox-control/src/workspace-volume-gateway.ts": "dcffdd3dc463c1d19aeada5458c7a4780593e7f3561c8d3ce0e177735ba5cef1",
+    "packages/sandbox-control/test/filesystem-workspace-volume-gateway-lock.test.ts": "48f17580c80feb4969cb6d90f24232282d98fb399796fc255b281189b3459901",
+    "packages/web-ui/src/ChatApp.tsx": "c9f96705f1eaadb3267b5b6bc7888b42592d5703c181db3ba9e121a8cb7e0418",
+    "packages/web-ui/src/composer-submission.ts": "1973e0a074806362edb1016f419d43eb66b005d77d6577507f9fc657d95337e9",
+    "packages/web-ui/test/composer-submission.test.ts": "00611e1698f287ad81f357b55675df3b03e11d8a91653c5b8723edb82c54b21d",
+    "scripts/experiments/review-20261007/README.md": "268947e1fe005ee186e0794deaa4c47f6287c9c48c094ba29db2707015cb7926",
+    "scripts/experiments/review-20261007/gateway-lock.mjs": "9aeb892390c912178019c7b649eeb73d31041a8f4943d57618d638f64e24e7d9",
+    "scripts/experiments/review-20261007/guest-provenance.mjs": "d936657803c1de63dc69f0547727b19f3c488ee7724f8f632fe6ebb2584bc2db",
+    "scripts/experiments/review-20261007/list-query.mjs": "821e5b4624e2c7f62e328106cfe4aedd019afa7e2db3e42a14e34aa1822eca71",
+    "scripts/experiments/review-20261007/send-ack.mjs": "e3f7e4c472901b88dbce53c1b136af5559d5f55fbeb8497f160d6c1e985f06bb",
+    "scripts/generate-release-evidence.mjs": "c51d36c392bfbecdfb97626176cd1423120f36c4a9a6bd1b0a3d47ef012b5037",
+    "scripts/lib/guest-build-identity.mjs": "d9ad3a34a6d5da3f3de2b5b11c5da4b4dfee08bd0007154610bf3cce39d2f5b5",
+    "scripts/lib/release-image-evidence.mjs": "119bf6dbf412b47abdbde9193f522c56089b0d53552e8cf0aa5ebd78d9645b20",
+    "scripts/lib/release-image-evidence.test.mjs": "2bfd8c5859eda4fff33f2e59bd491f35b3a3a55175be59dbfae7fc30dd3fdeb8",
+    "scripts/run-browser-presentation-check.mjs": "6f91b5d49b030ec3062650613f62356b183fd10455677584afb88ab30e695b78"
+  },
+  "notRun": [
+    "production rollout",
+    "paid model acceptance",
+    "full release image vulnerability scan",
+    "physical multi-node storage validation"
+  ]
+}
