@@ -1,0 +1,66 @@
+{
+  "checkedAt": "2026-10-07T06:33:23.666Z",
+  "scriptSha256": "213b4e2abe9235268c8ddcdc1df209efc2ad3de28cd2a726f42e93b101c45080",
+  "model": "gpt-6-luna",
+  "accepted": true,
+  "runs": [
+    {
+      "runId": "d6d822e7-e747-4339-8149-1c1cf382a93a",
+      "workerId": "01560d3a-42c8-46f7-8a54-e31d5d6dc7e6",
+      "tools": []
+    },
+    {
+      "runId": "b11a5c44-7017-41e3-a8cd-3c3b115e597f",
+      "workerId": "76cdb5f2-fee4-4591-ad20-17fba0692a7c",
+      "tools": [
+        {
+          "name": "read",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "4051e54e-4c0a-466c-b698-67f40e3c44c7",
+      "workerId": "76cdb5f2-fee4-4591-ad20-17fba0692a7c",
+      "tools": [
+        {
+          "name": "bash",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "runId": "0c046b7f-503c-4b82-98e0-dc726cc17c25",
+      "workerId": "01560d3a-42c8-46f7-8a54-e31d5d6dc7e6",
+      "tools": []
+    }
+  ],
+  "resources": {
+    "tenantId": "0ada24c9-153f-4b47-9452-e3132b17fa98",
+    "workspaceId": "a443f95b-f177-465c-8b40-602d061192df",
+    "sessionId": "6d495463-4953-4e60-8cc7-58f7687e7be7"
+  },
+  "unlimitedAttachments": {
+    "count": 6,
+    "totalBytes": 60863297,
+    "imageBytes": 24163137,
+    "executionMode": "development_environment"
+  },
+  "browser": {
+    "uploadedBytes": 24163137,
+    "previewAfterReload": true,
+    "originalTextSeparate": true,
+    "imageSeenWithoutTool": true
+  },
+  "referencesOnly": {
+    "bytes": 1766,
+    "count": 1
+  },
+  "mutableSourceChanged": true,
+  "coldRecovery": {
+    "previousWorker": "76cdb5f2-fee4-4591-ad20-17fba0692a7c",
+    "nextWorker": "01560d3a-42c8-46f7-8a54-e31d5d6dc7e6",
+    "unseenVisualAttributeCorrect": true
+  },
+  "cleanupRequested": true
+}

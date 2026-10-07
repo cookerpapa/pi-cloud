@@ -44,9 +44,14 @@ following the [approved plan](reports/review-repair-plan-20261007-r2.md).
       concurrent transfers, atomic finalization and shared Volume admission.
 - [x] R07R2-03: apply EXIF orientation before image resizing/encoding for both
       user-image preparation and Tool reads.
-- [ ] Deploy matching application/Gateway and guest-protocol-4 artifacts after
-      draining old uploads. Preserve managed Cube protocol 7 / Tool Worker 3 and
-      use the current template identity/provenance checks (ADR-0235).
+- [x] Deploy matching application/Gateway and guest-protocol-4 artifacts after
+      draining old uploads. [Release evidence](reports/review-release-20261007-r2.md)
+      records destructive development cleanup, preserved configuration, matched
+      protocol 7 / Tool Worker 3 artifacts and live acceptance (ADR-0235).
+- [ ] Rerun the additional whole-production multi-Run/cold-VM gate after the
+      model proxy's HTTP 500 failures clear. [Release evidence](reports/review-release-production-gate-20261007-r2.json)
+      records the failed reruns and partial coverage; the targeted browser,
+      elastic/machine image, Worker recovery and native Provider checks passed.
 
 The same review distinguishes measured same-partition handoff blocking from the
 cross-partition lock defect. Native template restore passed in two owned cases;

@@ -2,7 +2,7 @@
   "sourceBaseRevision": "59541389d26a8f4c4e982f27e645a18b8e89892f",
   "testedWorktree": true,
   "generatedAt": "2026-10-07T04:57:04.975332+00:00",
-  "status": "implemented and verified; matched deployment pending",
+  "status": "implemented and verified; matching release deployed",
   "architectureDecision": "docs/adr/0235-upload-staging-recovery.md",
   "implemented": ["R07R2-04", "R07R2-02", "R07R2-03", "R07R2-01"],
   "protocols": {
@@ -193,5 +193,6 @@
         "images": ["pi-cloud/supervisor-host:review-release-8244934a"]
       }
     ]
-  }
+  },
+  "deploymentRecord": "review-release-20261007-r2.json"
 }

@@ -1,6 +1,6 @@
 # ADR-0235: Filesystem-owned upload staging and recovery
 
-Status: source implemented, 2026-10-07; matched rollout pending. The owner approved the
+Status: implemented and [deployed](../reports/review-release-20261007-r2.md), 2026-10-07. The owner approved the
 [post-release repair plan](../reports/review-repair-plan-20261007-r2.md).
 This refines ADR-0234 for R07R2-01 without changing upload admission or Workspace
 byte ownership. See the [repair and verification record](../reports/review-repair-20261007-r2.md).

@@ -10,9 +10,9 @@
       [ADR-0235](adr/0235-upload-staging-recovery.md).
       [Source verification](reports/review-repair-20261007-r2.md) covers browser,
       RF3, process loss, new guest code and 217 fault cases.
-- [ ] Deploy matched application/Gateway and guest-protocol-4 artifacts after
-      drain. Same-partition dispatch redesign and cold-host restore diagnosis
-      remain separately scoped work.
+- [x] Deploy [matched application/Gateway and guest-protocol-4 artifacts](reports/review-release-20261007-r2.md)
+      after drain, with owner-authorized destructive cleanup. Same-partition
+      dispatch redesign and cold-host restore diagnosis remain separately scoped work.
 
 ## October 7 review repairs
 

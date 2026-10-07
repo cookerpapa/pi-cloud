@@ -1,0 +1,25 @@
+{
+  "checkedAt": "2026-10-07T06:14:07.681Z",
+  "accepted": true,
+  "model": "gpt-6-luna",
+  "resources": {
+    "tenantId": "39dd7a13-69c6-4856-b072-9c839534b42b",
+    "sessionId": "ed8a4609-c921-41ed-bf8a-caf4afa0cae8",
+    "workspaceId": "d2c0917a-e380-4488-8396-824890670995"
+  },
+  "browserRetry": {
+    "sameKey": true,
+    "sameRun": true,
+    "serverConfirmedReplay": true,
+    "requests": 2,
+    "runId": "fd257b00-0ead-4380-a0f1-5f5f1cb531c2"
+  },
+  "concurrentUpload": {
+    "inProgressBytes": 65536,
+    "totalBytes": 1048576,
+    "browseAndSecondUploadMs": 100.55003000000033,
+    "secondUploadBeforeFirstFinished": true,
+    "stagingEmptyAfterCompletion": true
+  },
+  "cleanupRequested": true
+}

@@ -1,0 +1,47 @@
+{
+  "checkedAt": "2026-10-07T06:20:09.000Z",
+  "accepted": true,
+  "tests": 2,
+  "evidence": [
+    {
+      "cubeDeletionFailureGate": {
+        "releaseRejected": true,
+        "nativeSurvivorConfirmed": true,
+        "releasedNotReported": true,
+        "cleanupConfirmed": true,
+        "scope": "real Cube; controlled allocation-close failure; in-memory ownership fixture"
+      }
+    },
+    {
+      "cubeSandboxLiveGate": {
+        "upstream": "TencentCloud/CubeSandbox@v0.6.0",
+        "isolationValidated": true,
+        "tenantCount": 2,
+        "firstToolMs": 484,
+        "secondToolMs": 432,
+        "totalMs": 25658,
+        "guestKernelDistinctFromHost": true,
+        "forbiddenEndpointCount": 3,
+        "publicInternetReachable": true,
+        "privateAndPlatformEgressDenied": true,
+        "fencedPtyValidated": true,
+        "warmProcessSurvivedRunBoundaryWithinTtl": true,
+        "staleToolAuthorityRejected": true,
+        "explicitStopRetiredCancelledToolBinding": true,
+        "dispatchedCancellationRemainsUnknown": true,
+        "persistentVolumesRemoved": 3,
+        "orphanCount": 0
+      }
+    }
+  ],
+  "egressFixture": {
+    "checkedAt": "2026-10-07T06:21:18.831Z",
+    "originalEnabled": false,
+    "originalConfigured": false,
+    "temporaryEnable": true,
+    "accepted": true,
+    "restored": true,
+    "revision": 2,
+    "restoration": "public disable and scoped removal of test-only proxy URL; audit retained"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "accepted": false,
+  "scope": "Additional whole-production multi-Run/cold-VM gate",
+  "reason": "model gateway received HTTP 500 from its upstream model proxy; cause beyond that boundary is unverified",
+  "upstreamFailures": [
+    {
+      "timestamp": "2026-10-07T06:37:25.915Z",
+      "runId": "47825712-81e6-4bcf-b5e2-dae6a1ce1bf7",
+      "provider": "openai-codex",
+      "model": "gpt-6-luna",
+      "upstreamStatus": 500,
+      "upstreamAttempts": 1,
+      "elapsedMs": 19055.53
+    },
+    {
+      "timestamp": "2026-10-07T06:38:44.999Z",
+      "runId": "10ad05d8-7c64-46af-89ca-793bdb07dc75",
+      "provider": "openai-codex",
+      "model": "gpt-6-luna",
+      "upstreamStatus": 500,
+      "upstreamAttempts": 1,
+      "elapsedMs": 3053.132
+    }
+  ],
+  "priorPartialChecks": [
+    "pure chat without VM",
+    "coding Tools and persisted file bytes",
+    "preview",
+    "cross-Run warm VM and background process",
+    "1024-file fixture generation"
+  ],
+  "notYetVerified": [
+    "complete gate rerun",
+    "cold-VM continuation after exact PG lifecycle reconciliation"
+  ]
+}

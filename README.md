@@ -56,8 +56,9 @@ is deployed, with real browser retry/concurrent-upload and Luna Tool/image accep
 The [post-release source repairs](docs/reports/review-repair-20261007-r2.md)
 unify ordinary/Steer submission identity, isolate partition progress guards,
 recover abandoned upload staging and preserve EXIF image orientation.
-These source changes require a matched Gateway/guest-protocol-4 rollout;
-they have not replaced the deployed schema-182 application release above.
+The [matched rollout](docs/reports/review-release-20261007-r2.md) deploys these
+changes with guest protocol 4 and schema 182. Old development data and superseded
+runtime resources are removed; accounts and provider/model configuration remain.
 
 Whole file/shell Tools execute in Cube. Replies return through the separate
 Worker-boot Kafka transport; Pi processes them before publishing the canonical

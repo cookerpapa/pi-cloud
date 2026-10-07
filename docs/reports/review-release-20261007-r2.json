@@ -1,0 +1,591 @@
+{
+  "checkedAt": "2026-10-07T06:48:20.566Z",
+  "deployed": true,
+  "source": "ad2bdd974afd45e5a8b5ff733c7ccad077231bfc",
+  "deploymentAndAcceptanceSource": "8f64801960b0fb00dcb32fc9425712c782cb5639",
+  "release": {
+    "source": "ad2bdd974afd45e5a8b5ff733c7ccad077231bfc",
+    "tag": "review-release-ad2bdd97",
+    "guest": "1d7bbc6072bf974e41d96ec9192e3c787098c6d5",
+    "completion": "9740c7ec8b885cfaebfd15eb99c281bfed2ab565",
+    "patch": "ef9a6ccce4c15a93",
+    "managedProtocol": 7,
+    "guestProtocol": 4,
+    "sharp": "0.35.5"
+  },
+  "helm": [
+    {
+      "name": "cube",
+      "revision": "55",
+      "status": "deployed"
+    },
+    {
+      "name": "pi-cloud",
+      "revision": "28",
+      "status": "deployed"
+    },
+    {
+      "name": "pi-cloud-infrastructure",
+      "revision": "27",
+      "status": "deployed"
+    }
+  ],
+  "workloads": [
+    {
+      "kind": "Deployment",
+      "name": "cube-api",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/cube-api:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "cube-master",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/cube-master:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "pi-cloud-control-plane",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/control-plane:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "pi-cloud-cube-api-authorizer",
+      "ready": 2,
+      "desired": 2,
+      "images": ["pi-cloud/cube-api-authorizer:vm-allocation-v6"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "pi-cloud-cube-egress-gateway",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/cube-egress-gateway:e6240f4bdab9d33e67e3191d5c2fd9e31095afa2"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "pi-cloud-cube-template-registry",
+      "ready": 1,
+      "desired": 1,
+      "images": [
+        "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+      ],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "pi-cloud-ssh-gateway",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/ssh-gateway:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "pi-cloud-web",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/web-ui:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "pi-cloud-workspace-volume-gateway",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/workspace-volume-gateway:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "provider-bridge-egress-relay",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/provider-egress-relay:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "Deployment",
+      "name": "provider-host-egress-relay",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/provider-egress-relay:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "StatefulSet",
+      "name": "cli-proxy-api",
+      "ready": 1,
+      "desired": 1,
+      "images": ["pi-cloud/cli-proxy-api:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "StatefulSet",
+      "name": "pi-cloud-pi-worker-primary-v1",
+      "ready": 2,
+      "desired": 2,
+      "images": ["pi-cloud/supervisor-host:review-release-ad2bdd97"],
+      "retiredDshReference": false
+    },
+    {
+      "kind": "DaemonSet",
+      "name": "cube-node",
+      "ready": 1,
+      "desired": 1,
+      "images": [
+        "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/network-agent:v0.6.0",
+        "pi-cloud/cubelet:review-release-ad2bdd97",
+        "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress:v0.6.0",
+        "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0"
+      ],
+      "retiredDshReference": false
+    }
+  ],
+  "imageIds": [
+    {
+      "pod": "cli-proxy-api-0",
+      "container": "cli-proxy-api",
+      "image": "docker.io/pi-cloud/cli-proxy-api:review-release-ad2bdd97",
+      "imageId": "sha256:20111475b15f0a33effbaaf984d640679027271ba3e69e9271ee8f3686110d45",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "pod": "cube-api-6875bc8dd5-7rfjg",
+      "container": "cube-api",
+      "image": "docker.io/pi-cloud/cube-api:review-release-ad2bdd97",
+      "imageId": "sha256:3709cc1454dfcccdb1c7cbf1c26635e4cf013333b6e748bde54648336443faf1",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "pod": "cube-master-5d99bdfbd9-2nbgh",
+      "container": "cube-master",
+      "image": "docker.io/pi-cloud/cube-master:review-release-ad2bdd97",
+      "imageId": "sha256:d72d2f771f56e95d9a53428d3dd1631c1436fe9068b76796bf752c9e6f62baed",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "pod": "cube-node-t5klf",
+      "container": "cubelet",
+      "image": "docker.io/pi-cloud/cubelet:review-release-ad2bdd97",
+      "imageId": "sha256:e05cbcdb0bdce8221e4f86045bc522b0f2ce5cccda0f71473c894967669ac533",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "pod": "pi-cloud-control-plane-85796b6ff4-mtgz6",
+      "container": "control-plane",
+      "image": "docker.io/pi-cloud/control-plane:review-release-ad2bdd97",
+      "imageId": "sha256:0546dc67daf94135c4cbbd1c0263a1c58d9a125da36990990a3ee5395ba2c3a3",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "pod": "pi-cloud-pi-worker-primary-v1-0",
+      "container": "pi-worker",
+      "image": "docker.io/pi-cloud/supervisor-host:review-release-ad2bdd97",
+      "imageId": "sha256:8de7f0999980894b92f64307270531bfe1e44836373edd09f8115cc69a7029a4",
+      "ready": true,
+      "restarts": 2
+    },
+    {
+      "pod": "pi-cloud-pi-worker-primary-v1-1",
+      "container": "pi-worker",
+      "image": "docker.io/pi-cloud/supervisor-host:review-release-ad2bdd97",
+      "imageId": "sha256:8de7f0999980894b92f64307270531bfe1e44836373edd09f8115cc69a7029a4",
+      "ready": true,
+      "restarts": 2
+    },
+    {
+      "pod": "pi-cloud-ssh-gateway-846545547c-xcvdb",
+      "container": "ssh-gateway",
+      "image": "docker.io/pi-cloud/ssh-gateway:review-release-ad2bdd97",
+      "imageId": "sha256:d83cd4343878c0c480d81ae618de11cfad4aa22a2c2f112dc2ce1c18b395635c",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "pod": "pi-cloud-web-69f649b7c8-75glz",
+      "container": "web",
+      "image": "docker.io/pi-cloud/web-ui:review-release-ad2bdd97",
+      "imageId": "sha256:47031193d60572f1a70c4a407a8f1161572e946f5aba5cb1c93345aebd031703",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "pod": "pi-cloud-workspace-volume-gateway-5b6574c6f4-6rpvd",
+      "container": "workspace-volume-gateway",
+      "image": "docker.io/pi-cloud/workspace-volume-gateway:review-release-ad2bdd97",
+      "imageId": "sha256:aead013212b2a57ddc997b9bd56d926ee3c58093ec9c4707da6332ac2a0f8719",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "pod": "provider-bridge-egress-relay-d6477b66-rd595",
+      "container": "relay",
+      "image": "docker.io/pi-cloud/provider-egress-relay:review-release-ad2bdd97",
+      "imageId": "sha256:130f8982e2a1e5dfadb211e085fc5e7dc056d8f831f3031a50fe05b5936ede30",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "pod": "provider-host-egress-relay-6cf489dd-4dmhm",
+      "container": "relay",
+      "image": "docker.io/pi-cloud/provider-egress-relay:review-release-ad2bdd97",
+      "imageId": "sha256:130f8982e2a1e5dfadb211e085fc5e7dc056d8f831f3031a50fe05b5936ede30",
+      "ready": true,
+      "restarts": 0
+    }
+  ],
+  "publication": {
+    "status": 200,
+    "body": {
+      "partitionCount": 32,
+      "partitions": [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+        25, 26, 27, 28, 29, 30, 31
+      ]
+    }
+  },
+  "database": {
+    "schema": "182_conversation_activity_page",
+    "accounts": 29,
+    "tenants": 29,
+    "modelProfiles": 30,
+    "sessions": 0,
+    "runs": 0,
+    "workspaces": 0,
+    "projects": 0,
+    "nativeCommits": 0,
+    "pendingOutbox": 0,
+    "workspaceRuntimes": 0,
+    "developmentEnvironments": 0,
+    "imageReferences": 0,
+    "cubeProxyEnabled": false
+  },
+  "native": {
+    "inventory": "NODE_SCOPE       all\nNODES_SCANNED    1/1\nSANDBOX_COUNT    0\n\nsandbox_id    status    host_id    create_at    pause_at    template_id    namespace    host_ip    labels\n",
+    "volumes": 0,
+    "templates": [
+      {
+        "template_id": "tpl-c6220c68ef784555a440cde8",
+        "instance_type": "cubebox",
+        "version": "v2",
+        "status": "READY",
+        "created_at": "2026-10-07T05:50:22Z",
+        "image_info": "pi-cloud-cube-template-registry.cube-system.svc.cluster.local:5000/pi-cloud/cubesandbox-tool@sha256:876122322d81225f07e397087401cb04a719d36c222cf607331a05b16b2f95f8",
+        "job_id": "0c60dded-9b81-458b-bdab-aed5e709c066"
+      },
+      {
+        "template_id": "tpl-70f60f8ed5ae4a9e911e0314",
+        "instance_type": "cubebox",
+        "version": "v2",
+        "status": "READY",
+        "created_at": "2026-10-07T05:50:03Z",
+        "image_info": "pi-cloud-cube-template-registry.cube-system.svc.cluster.local:5000/pi-cloud/cubesandbox-tool@sha256:876122322d81225f07e397087401cb04a719d36c222cf607331a05b16b2f95f8",
+        "job_id": "36586ec0-9787-4404-85f4-a4a6adbd655e"
+      },
+      {
+        "template_id": "tpl-f4f52984305d4092bdd16ce7",
+        "instance_type": "cubebox",
+        "version": "v2",
+        "status": "READY",
+        "created_at": "2026-10-07T05:49:42Z",
+        "image_info": "pi-cloud-cube-template-registry.cube-system.svc.cluster.local:5000/pi-cloud/cubesandbox-tool@sha256:876122322d81225f07e397087401cb04a719d36c222cf607331a05b16b2f95f8",
+        "job_id": "feb1bcaa-e6d3-41cb-983e-ed0cb088783f"
+      },
+      {
+        "template_id": "tpl-a7753d3cb98c490da426c06b",
+        "instance_type": "cubebox",
+        "version": "v2",
+        "status": "READY",
+        "created_at": "2026-10-07T05:49:18Z",
+        "image_info": "pi-cloud-cube-template-registry.cube-system.svc.cluster.local:5000/pi-cloud/cubesandbox-tool@sha256:876122322d81225f07e397087401cb04a719d36c222cf607331a05b16b2f95f8",
+        "job_id": "c0006d04-8080-4abc-a1b7-b3adbe8d2923"
+      }
+    ],
+    "pluginSha256": "1cfd65383292a82050e42ae06dc724552d0b9ec9d589e1096352c7a4052c049c",
+    "mountedAndStagedPluginMatch": true,
+    "guest": "1d7bbc6072bf974e41d96ec9192e3c787098c6d5",
+    "guestDigest": "sha256:876122322d81225f07e397087401cb04a719d36c222cf607331a05b16b2f95f8"
+  },
+  "security": {
+    "imageCount": 11,
+    "source": "ad2bdd974afd45e5a8b5ff733c7ccad077231bfc",
+    "fixableHighCritical": 0,
+    "rawUnfixedFindingsRetained": true,
+    "guestScan": "OS packages plus repository npm audit/SBOM",
+    "evidenceDirectory": "dist/release-evidence-review-release-ad2bdd97"
+  },
+  "cleanup": {
+    "initialBusiness": {
+      "checkedAt": "2026-10-07T05:38:31.296Z",
+      "ownerAuthorized": true,
+      "noBusinessBackup": true,
+      "tables": {
+        "accepted_fact_projection_offsets": 55,
+        "conversation_fork_operations": 0,
+        "conversation_prune_operations": 0,
+        "conversation_workspace_rebind_operations": 0,
+        "development_environment_operations": 19,
+        "development_environments": 9,
+        "environment_validations": 77,
+        "environment_versions": 89,
+        "gitlab_issue_note_sync": 0,
+        "outbox": 2,
+        "pi_durable_commits": 0,
+        "pi_durable_document_revisions": 0,
+        "pi_durable_log": 0,
+        "pi_durable_records": 0,
+        "pi_sessions": 0,
+        "projects": 89,
+        "run_transitions": 0,
+        "runs": 0,
+        "sandbox_control_instances": 43,
+        "sandbox_http_services": 0,
+        "sandbox_retirements": 173,
+        "sandbox_tool_bindings": 0,
+        "sandboxes": 175,
+        "session_image_objects": 6,
+        "session_image_references": 0,
+        "session_leases": 0,
+        "session_terminal_events": 0,
+        "session_uploads": 0,
+        "sessions": 0,
+        "source_control_issue_claims": 0,
+        "source_control_issue_jobs": 0,
+        "source_control_webhook_deliveries": 0,
+        "ssh_access_tickets": 0,
+        "subagent_control_commands": 0,
+        "subagent_executions": 0,
+        "subagent_supervisor_requests": 0,
+        "supervisor_boot_credentials": 175,
+        "supervisor_connections": 113,
+        "turn_control_requests": 0,
+        "turns": 0,
+        "workspace_delete_operations": 89,
+        "workspace_runtimes": 0,
+        "workspace_terminal_sessions": 0,
+        "workspaces": 89
+      },
+      "objectsDeleted": 6,
+      "kafkaTopicsDeleted": ["pi-cloud.execution-log.v13", "pi-cloud.execution-log.v14"],
+      "kafkaGroupsDeleted": ["pi-cloud-session-projector-v2"],
+      "configurationPreserved": true,
+      "after": {
+        "accepted_fact_projection_offsets": 0,
+        "conversation_fork_operations": 0,
+        "conversation_prune_operations": 0,
+        "conversation_workspace_rebind_operations": 0,
+        "development_environment_operations": 0,
+        "development_environments": 0,
+        "environment_validations": 0,
+        "environment_versions": 0,
+        "gitlab_issue_note_sync": 0,
+        "outbox": 0,
+        "pi_durable_commits": 0,
+        "pi_durable_document_revisions": 0,
+        "pi_durable_log": 0,
+        "pi_durable_records": 0,
+        "pi_sessions": 0,
+        "projects": 0,
+        "run_transitions": 0,
+        "runs": 0,
+        "sandbox_control_instances": 0,
+        "sandbox_http_services": 0,
+        "sandbox_retirements": 0,
+        "sandbox_tool_bindings": 0,
+        "sandboxes": 0,
+        "session_image_objects": 0,
+        "session_image_references": 0,
+        "session_leases": 0,
+        "session_terminal_events": 0,
+        "session_uploads": 0,
+        "sessions": 0,
+        "source_control_issue_claims": 0,
+        "source_control_issue_jobs": 0,
+        "source_control_webhook_deliveries": 0,
+        "ssh_access_tickets": 0,
+        "subagent_control_commands": 0,
+        "subagent_executions": 0,
+        "subagent_supervisor_requests": 0,
+        "supervisor_boot_credentials": 0,
+        "supervisor_connections": 0,
+        "turn_control_requests": 0,
+        "turns": 0,
+        "workspace_delete_operations": 0,
+        "workspace_runtimes": 0,
+        "workspace_terminal_sessions": 0,
+        "workspaces": 0
+      }
+    },
+    "acceptanceBusiness": {
+      "checkedAt": "2026-10-07T06:42:33.771Z",
+      "ownerAuthorized": true,
+      "noBusinessBackup": true,
+      "tables": {
+        "accepted_fact_projection_offsets": 11,
+        "conversation_fork_operations": 0,
+        "conversation_prune_operations": 0,
+        "conversation_workspace_rebind_operations": 0,
+        "development_environment_operations": 1,
+        "development_environments": 1,
+        "environment_validations": 7,
+        "environment_versions": 13,
+        "gitlab_issue_note_sync": 0,
+        "outbox": 26,
+        "pi_durable_commits": 0,
+        "pi_durable_document_revisions": 0,
+        "pi_durable_log": 0,
+        "pi_durable_records": 0,
+        "pi_sessions": 0,
+        "projects": 13,
+        "run_transitions": 0,
+        "runs": 0,
+        "sandbox_control_instances": 1,
+        "sandbox_http_services": 0,
+        "sandbox_retirements": 6,
+        "sandbox_tool_bindings": 0,
+        "sandboxes": 8,
+        "session_image_objects": 4,
+        "session_image_references": 0,
+        "session_leases": 0,
+        "session_terminal_events": 0,
+        "session_uploads": 0,
+        "sessions": 0,
+        "source_control_issue_claims": 0,
+        "source_control_issue_jobs": 0,
+        "source_control_webhook_deliveries": 0,
+        "ssh_access_tickets": 0,
+        "subagent_control_commands": 0,
+        "subagent_executions": 0,
+        "subagent_supervisor_requests": 0,
+        "supervisor_boot_credentials": 8,
+        "supervisor_connections": 4,
+        "turn_control_requests": 0,
+        "turns": 0,
+        "workspace_delete_operations": 13,
+        "workspace_runtimes": 7,
+        "workspace_terminal_sessions": 0,
+        "workspaces": 13
+      },
+      "objectsDeleted": 4,
+      "kafkaTopicsDeleted": ["pi-cloud.execution-log.v14"],
+      "kafkaGroupsDeleted": ["pi-cloud-session-projector-v2"],
+      "configurationPreserved": true,
+      "after": {
+        "accepted_fact_projection_offsets": 0,
+        "conversation_fork_operations": 0,
+        "conversation_prune_operations": 0,
+        "conversation_workspace_rebind_operations": 0,
+        "development_environment_operations": 0,
+        "development_environments": 0,
+        "environment_validations": 0,
+        "environment_versions": 0,
+        "gitlab_issue_note_sync": 0,
+        "outbox": 0,
+        "pi_durable_commits": 0,
+        "pi_durable_document_revisions": 0,
+        "pi_durable_log": 0,
+        "pi_durable_records": 0,
+        "pi_sessions": 0,
+        "projects": 0,
+        "run_transitions": 0,
+        "runs": 0,
+        "sandbox_control_instances": 0,
+        "sandbox_http_services": 0,
+        "sandbox_retirements": 0,
+        "sandbox_tool_bindings": 0,
+        "sandboxes": 0,
+        "session_image_objects": 0,
+        "session_image_references": 0,
+        "session_leases": 0,
+        "session_terminal_events": 0,
+        "session_uploads": 0,
+        "sessions": 0,
+        "source_control_issue_claims": 0,
+        "source_control_issue_jobs": 0,
+        "source_control_webhook_deliveries": 0,
+        "ssh_access_tickets": 0,
+        "subagent_control_commands": 0,
+        "subagent_executions": 0,
+        "subagent_supervisor_requests": 0,
+        "supervisor_boot_credentials": 0,
+        "supervisor_connections": 0,
+        "turn_control_requests": 0,
+        "turns": 0,
+        "workspace_delete_operations": 0,
+        "workspace_runtimes": 0,
+        "workspace_terminal_sessions": 0,
+        "workspaces": 0
+      }
+    },
+    "acceptanceTenants": {
+      "checkedAt": "2026-10-07T06:43:48.961Z",
+      "deletedOwnedTenants": 9,
+      "originalConfigurationPreserved": true,
+      "after": {
+        "accounts": 29,
+        "tenants": 29,
+        "modelProfiles": 30
+      }
+    },
+    "retiredDsh": [
+      "deployment/dsh-cloud-cube-api",
+      "deployment/dsh-cloud-cube-api-authorizer",
+      "service/dsh-cloud-cube-api",
+      "service/dsh-cloud-cube-api-authorizer",
+      "configmap/dsh-cloud-posix-volume-plugin",
+      "secret/dsh-cloud-cube-api-credential",
+      "networkpolicy/dsh-cloud-cube-api-authorizer"
+    ],
+    "oldDockerTags": 410,
+    "oldContainerdReferences": 31,
+    "oldReplicaSets": 88,
+    "oldHelmRevisions": 30,
+    "oldBackupDirectories": 6,
+    "registry": {
+      "accepted": true,
+      "oldManifestsDeleted": 259,
+      "tagsRemaining": ["1d7bbc6072bf974e41d96ec9192e3c787098c6d5"],
+      "retainedManifestCount": 3,
+      "retainedBlobsVerified": 33,
+      "bytesReclaimed": 1400160256
+    },
+    "remainingImageObjects": 0,
+    "failedProviderVolume": {
+      "checkedAt": "2026-10-07T06:24:40.210Z",
+      "volumeId": "pcw-6ddd0232b2966afecd96b8393cd96bd5e3df807f656bd270",
+      "nativeDeletionConfirmed": true,
+      "files": {
+        "volume": true,
+        "retired": false
+      },
+      "finalization": {
+        "nativeAbsent": true,
+        "envelopeAbsent": true
+      },
+      "reason": "Exact failed acceptance Volume, existing delete authorization, confirmed allocation/node absence and native Volume deletion"
+    }
+  },
+  "acceptance": {
+    "browserRetryUpload": "review-release-retry-upload-20261007-r2.json",
+    "elasticImages": "review-release-uploads-20261007-r2.json",
+    "machineImages": "review-release-machine-uploads-20261007-r2.json",
+    "nativeProvider": "review-release-native-provider-20261007-r2.json",
+    "additionalProductionGate": "review-release-production-gate-20261007-r2.json",
+    "additionalProductionGateAccepted": false
+  }
+}

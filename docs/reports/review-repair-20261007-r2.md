@@ -3,9 +3,10 @@
 Implements the four owner-approved findings from the
 [post-release review](repository-review-20261007-r2.md), following its
 [repair plan](review-repair-plan-20261007-r2.md). Base revision: `59541389`.
-This is a source/verification record; the deployed application is still
-`review-release-8244934a` / schema 182. No deployment or user-data reset is part
-of this implementation turn.
+This is the source/verification record. Its implementation turn did not deploy
+or reset user data. The subsequent owner-authorized
+[matched rollout](review-release-20261007-r2.md) deploys `review-release-ad2bdd97`,
+guest protocol 4 and schema 182, and removes obsolete development resources.
 
 ## Resulting behavior
 
