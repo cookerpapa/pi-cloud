@@ -53,6 +53,12 @@ headers before counting history, and allow concurrent Volume browsing/uploads
 with exclusive deletion. The [schema 182 rollout](docs/reports/review-release-20261007.md)
 is deployed, with real browser retry/concurrent-upload and Luna Tool/image acceptance.
 
+The [post-release source repairs](docs/reports/review-repair-20261007-r2.md)
+unify ordinary/Steer submission identity, isolate partition progress guards,
+recover abandoned upload staging and preserve EXIF image orientation.
+These source changes require a matched Gateway/guest-protocol-4 rollout;
+they have not replaced the deployed schema-182 application release above.
+
 Whole file/shell Tools execute in Cube. Replies return through the separate
 Worker-boot Kafka transport; Pi processes them before publishing the canonical
 Tool Result to the Session log. Optional temporary logs go through Projector HTTP/SSE.

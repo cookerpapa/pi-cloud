@@ -1329,6 +1329,63 @@ describe("CubeSandbox Provider contract", () => {
     await upgradedProvider.close();
   });
 
+  it("rotates staging maintenance, skips paused VMs and keeps failure separate from lifecycle", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    });
+    const handles: Array<Awaited<ReturnType<typeof provider.create>>> = [];
+    for (let n = 0; n < 4; n++)
+      handles.push(
+        await provider.create(
+          {
+            activationId: crypto.randomUUID(),
+            assignment,
+            environment,
+            workspaceSeed: { kind: "sample_java" },
+            policy: provider.defaultPolicy,
+            ...(n === 3 ? {} : { lifetime: "development_environment" as const }),
+          },
+          creationAuthorization,
+        ),
+      );
+    await provider.pause(handles[2]!);
+    const seen: string[] = [];
+    const original = runtime.runCommand.bind(runtime);
+    vi.spyOn(runtime, "runCommand").mockImplementation(async (instance, input) => {
+      if (input.command.includes("envd-input-files.mjs")) {
+        expect(runtime.requestForCommand(input)).toEqual({ mode: "reap_upload_staging" });
+        expect(input.command).toContain("--reuid 1000");
+        seen.push(instance.sandboxId);
+        if (instance.sandboxId === handles[0]!.runtimeName)
+          throw new Error("Cleanup channel unavailable");
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            result: { areas: 1, files: 1, bytes: 4, deferred: 0 },
+          }),
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      return original(instance, input);
+    });
+    try {
+      await expect(provider.reapUploadStaging(1)).rejects.toThrow("deferred");
+      await expect(provider.reapUploadStaging(1)).resolves.toBeUndefined();
+      expect(seen).toEqual([handles[0]!.runtimeName, handles[1]!.runtimeName]);
+      expect(runtime.destroyed).toEqual([]);
+      await expect(provider.inspect(handles[0]!)).resolves.toMatchObject({ state: "running" });
+      expect(runtime.creates).toHaveLength(4);
+    } finally {
+      await provider.close();
+    }
+  });
+
   it.each(["before_upload", "after_upload", "cleanup_failure", "cleanup_nonzero"] as const)(
     "cleans a cancelled image preparation before guest execution (%s)",
     async (phase) => {

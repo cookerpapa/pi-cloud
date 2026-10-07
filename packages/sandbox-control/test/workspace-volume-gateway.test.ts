@@ -17,6 +17,7 @@ import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { UploadStagingArea } from "@pi-cloud/workspace-runtime";
 import * as fileSystem from "node:fs/promises";
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -64,6 +65,60 @@ function identity(sessionId: string) {
 }
 
 describe("PersistentVolumeWorkspaceVolumeGateway", () => {
+  it("reaps private upload staging without PG claims and rotates past a live writer", async () => {
+    const workspaceRoot = await root(),
+      authorizeUpload = vi.fn(async () => {
+        throw new Error("No live upload claim");
+      });
+    const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot, authorizeUpload });
+    const areas: UploadStagingArea[] = [];
+    for (let n = 0; n < 3; n++) {
+      const scope = { tenantId: "cleanup-tenant", workspaceId: `cleanup-${n}` },
+        volumeId = workspaceVolumeId(scope);
+      await createPluginVolumeFixture(workspaceRoot, { volumeId });
+      const envelope = join(workspaceRoot, `picloud-posix-${volumeId}`);
+      await writeFile(join(envelope, "workspace", ".upload-user-file"), "keep");
+      const area = new UploadStagingArea(join(envelope, ".pi-cloud-runtime", "uploads-v1"));
+      await area.prepare();
+      await area.use((files) =>
+        writeFile(`/proc/self/fd/${files.fd}/.part-${randomUUID()}`, "abandoned"),
+      );
+      areas.push(area);
+    }
+    const held = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const writer = areas[0]!.use(async () => {
+      held.resolve();
+      await release.promise;
+    });
+    try {
+      await held.promise;
+      let removed = 0;
+      for (let n = 0; n < 4; n++) removed += (await gateway.reapUploads(1)).files;
+      expect(removed).toBe(2);
+      expect(await readdir(join(areas[0]!.directory, "files"))).toHaveLength(1);
+      release.resolve();
+      await writer;
+      const onError = vi.fn();
+      gateway.startUploadMaintenance(onError, 20);
+      await vi.waitFor(async () =>
+        expect(await readdir(join(areas[0]!.directory, "files"))).toEqual([]),
+      );
+      expect(onError).not.toHaveBeenCalled();
+      expect(authorizeUpload).not.toHaveBeenCalled();
+      for (const area of areas)
+        expect(
+          await readFile(
+            join(area.directory, "..", "..", "workspace", ".upload-user-file"),
+            "utf8",
+          ),
+        ).toBe("keep");
+    } finally {
+      release.resolve();
+      await writer;
+      await gateway.close();
+    }
+  });
   it("rejects another Volume's identity even at the requested storage path", async () => {
     const workspaceRoot = await root();
     const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });

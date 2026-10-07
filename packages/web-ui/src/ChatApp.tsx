@@ -244,8 +244,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     | null
   >(null);
   const [steerNotice, setSteerNotice] = useState<string | null>(null);
-  const turnSubmission = useRef(new ComposerSubmission("turn"));
-  const steerSubmission = useRef(new ComposerSubmission("steer"));
+  const composerSubmission = useRef(new ComposerSubmission());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorRefreshSignal, setInspectorRefreshSignal] = useState(0);
@@ -846,7 +845,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   ]);
 
   function resetConversation(preserveDraft = false): void {
-    if (!preserveDraft) uploads.clear();
+    if (!preserveDraft) {
+      uploads.clear();
+      composerSubmission.current.reset();
+    }
     currentStreamSession.current = null;
     setStreamSessionId(null);
     setState(createInitialSessionView());
@@ -1221,7 +1223,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }
 
   function acceptComposerTurn(sessionId: string, text: string, uploadIds: string[]) {
-    return turnSubmission.current.send({ sessionId, text, uploadIds }, (key) =>
+    return composerSubmission.current.send({ kind: "turn", sessionId, text, uploadIds }, (key) =>
       api.acceptTurn(sessionId, text, key, undefined, uploadIds),
     );
   }
@@ -1313,8 +1315,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       const uploadIds = attached.map((file) => file.id);
       const sessionId = state.session.sessionId,
         targetTurnId = currentTurn.turnId;
-      await steerSubmission.current.send({ sessionId, targetTurnId, text, uploadIds }, (key) =>
-        api.steerTurn(sessionId, targetTurnId, text, key, uploadIds),
+      await composerSubmission.current.send(
+        { kind: "steer", sessionId, targetTurnId, text, uploadIds },
+        (key) => api.steerTurn(sessionId, targetTurnId, text, key, uploadIds),
       );
       setQueueRefreshGeneration((generation) => generation + 1);
       uploads.clear(attached.map((file) => file.id));

@@ -1,7 +1,7 @@
 // Owner-invoked release acceptance. Owns its tenant, Session and Workspace.
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
@@ -123,8 +123,7 @@ try {
     runtimeDirectory,
     "state/cube-shared/volume",
     `picloud-posix-${volume}`,
-    "workspace/uploads",
-    id,
+    ".pi-cloud-runtime/uploads-v1/files",
   );
   let finished = false;
   upload = fetch(`${baseUrl}/v1/sessions/${session.sessionId}/uploads/${id}?name=slow.bin`, {
@@ -155,7 +154,10 @@ try {
         if (e.code === "ENOENT") return [];
         throw e;
       });
-      return files.some((name) => name.startsWith(".upload-"));
+      for (const name of files)
+        if (name.startsWith(".part-") && (await stat(join(temporary, name))).size >= 65536)
+          return true;
+      return false;
     },
     "Partial file in the real Volume",
     30000,
@@ -181,6 +183,8 @@ try {
   release.resolve();
   const completed = await upload;
   assert.equal(completed.byteLength, bytes.length);
+  assert.deepEqual(await readdir(temporary), []);
+  report.concurrentUpload.stagingEmptyAfterCompletion = true;
   report.accepted = true;
 } catch (error) {
   failure = error;

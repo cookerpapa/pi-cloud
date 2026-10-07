@@ -576,6 +576,9 @@ function effectiveIsolation(
 }
 
 export class CubeSandboxProvider implements SandboxProvider {
+  #uploadCleanupTimer: NodeJS.Timeout | undefined;
+  #uploadCleanup: Promise<void> | undefined;
+  #uploadCleanupCursor = 0;
   readonly providerId = CUBESANDBOX_PROVIDER_ID;
   readonly defaultPolicy = CUBESANDBOX_TOOL_POLICY;
   readonly #templateId: string;
@@ -2081,6 +2084,9 @@ export class CubeSandboxProvider implements SandboxProvider {
   async close(): Promise<void> {
     // Resource release is an explicit controller action. Closing transports must
     // not kill accepted Cube executions or a shared Workspace's background server.
+    if (this.#uploadCleanupTimer) clearInterval(this.#uploadCleanupTimer);
+    this.#uploadCleanupTimer = undefined;
+    await this.#uploadCleanup;
     this.#activations.clear();
     const results = await Promise.allSettled([
       this.#client.close(),
@@ -2090,6 +2096,60 @@ export class CubeSandboxProvider implements SandboxProvider {
       result.status === "rejected" ? [result.reason] : [],
     );
     if (errors.length) throw new AggregateError(errors, "Cube transport cleanup failed");
+  }
+
+  startUploadMaintenance(onError: (error: unknown) => void, intervalMs = 30_000): void {
+    if (this.#uploadCleanupTimer) return;
+    const sweep = () => {
+      if (this.#uploadCleanup) return;
+      this.#uploadCleanup = this.reapUploadStaging()
+        .catch((error) => {
+          try {
+            onError(error);
+          } catch {
+            /* Diagnostics do not own cleanup lifetime. */
+          }
+        })
+        .finally(() => {
+          this.#uploadCleanup = undefined;
+        });
+    };
+    this.#uploadCleanupTimer = setInterval(sweep, intervalMs);
+    this.#uploadCleanupTimer.unref();
+    sweep();
+  }
+
+  async reapUploadStaging(maximumRuntimes = 4): Promise<void> {
+    const candidates = [...this.#activations.values()].filter(
+      (a) => a.state === "running" && a.lifetime === "development_environment",
+    );
+    const errors: unknown[] = [];
+    for (let n = 0; n < Math.min(maximumRuntimes, candidates.length); n++) {
+      const activation = candidates[this.#uploadCleanupCursor++ % candidates.length]!;
+      try {
+        const response = record(
+          await this.#guestJson(
+            activation.instance,
+            { mode: "reap_upload_staging" },
+            {
+              program: "input",
+              runAsToolUser: true,
+              timeoutMs: 5000,
+              maximumOutputBytes: 4096,
+            },
+          ),
+          "Upload staging cleanup",
+        );
+        if (
+          response.ok !== true ||
+          record(response.result, "Upload staging cleanup result").deferred !== 0
+        )
+          throw new Error("Guest upload staging cleanup deferred");
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, "Guest upload staging cleanup deferred");
   }
 
   async #probeRuntime(): Promise<void> {

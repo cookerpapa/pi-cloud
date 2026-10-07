@@ -308,6 +308,13 @@ export async function createSandboxControl(options: {
         if (starting) throw new Error("Sandbox control already started");
         starting = true;
         await controller.recoverPersistentDevelopmentEnvironments();
+        provider.startUploadMaintenance(() =>
+          operationalLog({
+            service: "pi-cloud-sandbox-control",
+            level: "warn",
+            event: "upload.staging.cleanup_deferred",
+          }),
+        );
         started = true;
         reaper.start();
       },

@@ -1,6 +1,7 @@
 import { newIdempotencyKey } from "./api.ts";
 
 type ComposerInput = Readonly<{
+  kind: "turn" | "steer";
   sessionId: string;
   text: string;
   uploadIds: readonly string[];
@@ -11,12 +12,15 @@ type ComposerInput = Readonly<{
  * an acknowledged or different input starts a new intentional submission. */
 export class ComposerSubmission {
   #pending: { fingerprint: string; key: string } | undefined;
-  constructor(readonly kind: "turn" | "steer") {}
+
+  reset(): void {
+    this.#pending = undefined;
+  }
 
   async send<T>(input: ComposerInput, operation: (key: string) => Promise<T>): Promise<T> {
     const fingerprint = JSON.stringify(input);
     if (this.#pending?.fingerprint !== fingerprint)
-      this.#pending = { fingerprint, key: newIdempotencyKey(this.kind) };
+      this.#pending = { fingerprint, key: newIdempotencyKey(input.kind) };
     const pending = this.#pending;
     const result = await operation(pending.key);
     // A late ACK cannot discard a newer submission's unresolved identity.

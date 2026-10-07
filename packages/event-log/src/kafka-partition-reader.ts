@@ -304,47 +304,45 @@ export class KafkaPartitionReader {
     });
   }
 
-  commitOffsets(offsets: K.TopicPartitionOffsetAndMetadata[]): Promise<void> {
-    const generation = this.#generation;
-    // One explicit commit per native callback; there are no auto commits whose
-    // receipt could be confused with a later owner's effect-dispatch boundary.
-    const locked = this.#withCommitLocks(
-      offsets.map((p) => p.partition),
-      async () => {
-        const pending = this.#commitTail.then(async () => {
-          if (this.#closing || generation !== this.#generation)
-            throw new Error("Kafka commit owner changed");
-          const targets = offsets.filter(
-            (p) => BigInt(p.offset) > (this.#committed.get(p.partition) ?? -1n),
-          );
-          if (!targets.length) return;
-          await new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(() => {
-              const error = new Error("Kafka dispatch commit acknowledgement timed out");
-              this.#fail(error);
-              finish(error);
-            }, 5000);
-            const finish = (error?: unknown) => {
-              clearTimeout(timer);
-              this.#commit = undefined;
-              if (error) reject(error);
-              else resolve();
-            };
-            this.#commit = { offsets: targets, resolve: () => finish(), reject: finish };
-            try {
-              this.#client.commit(targets.map((p) => ({ ...p, offset: Number(p.offset) })));
-            } catch (error) {
-              finish(error);
-            }
-          });
-          if (generation === this.#generation)
-            for (const value of targets) this.#committed.set(value.partition, BigInt(value.offset));
+  commitOffset(position: K.TopicPartitionOffsetAndMetadata): Promise<void> {
+    const offset = { ...position },
+      generation = this.#generation;
+    // A partition waiting for its publication never reserves another partition
+    // or the shared native commit callback. Only actual callback receipts serialize.
+    return this.#withCommitLock(offset.partition, () => {
+      const pending = this.#commitTail.then(async () => {
+        if (
+          this.#closing ||
+          generation !== this.#generation ||
+          !this.#assigned.has(offset.partition)
+        )
+          throw new Error("Kafka commit owner changed");
+        if (BigInt(offset.offset) <= (this.#committed.get(offset.partition) ?? -1n)) return;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            const error = new Error("Kafka dispatch commit acknowledgement timed out");
+            this.#fail(error);
+            finish(error);
+          }, 5000);
+          const finish = (error?: unknown) => {
+            clearTimeout(timer);
+            this.#commit = undefined;
+            if (error) reject(error);
+            else resolve();
+          };
+          this.#commit = { offsets: [offset], resolve: () => finish(), reject: finish };
+          try {
+            this.#client.commit([{ ...offset, offset: Number(offset.offset) }]);
+          } catch (error) {
+            finish(error);
+          }
         });
-        this.#commitTail = pending.catch(() => {});
-        return pending;
-      },
-    );
-    return locked;
+        if (generation === this.#generation)
+          this.#committed.set(offset.partition, BigInt(offset.offset));
+      });
+      this.#commitTail = pending.catch(() => {});
+      return pending;
+    });
   }
 
   seedCommitted(offsets: ReadonlyMap<number, bigint>): void {
@@ -352,23 +350,17 @@ export class KafkaPartitionReader {
       this.#committed.set(partition, offset < 0n ? 0n : offset);
   }
 
-  async #withCommitLocks<T>(partitions: number[], run: () => Promise<T>): Promise<T> {
-    const ids = [...new Set(partitions)].sort((a, b) => a - b);
-    const held: Array<() => void> = [];
+  async #withCommitLock<T>(partition: number, run: () => Promise<T>): Promise<T> {
+    const previous = this.#commitLocks.get(partition) ?? Promise.resolve();
+    const next = Promise.withResolvers<void>();
+    const tail = previous.then(() => next.promise);
+    this.#commitLocks.set(partition, tail);
+    await previous;
     try {
-      for (const id of ids) {
-        const previous = this.#commitLocks.get(id) ?? Promise.resolve();
-        const next = Promise.withResolvers<void>();
-        this.#commitLocks.set(
-          id,
-          previous.then(() => next.promise),
-        );
-        await previous;
-        held.push(next.resolve);
-      }
       return await run();
     } finally {
-      for (const release of held.reverse()) release();
+      next.resolve();
+      if (this.#commitLocks.get(partition) === tail) this.#commitLocks.delete(partition);
     }
   }
 
@@ -380,7 +372,7 @@ export class KafkaPartitionReader {
     send: () => Promise<void>,
   ): Promise<void> {
     const generation = this.#generation;
-    await this.#withCommitLocks([partition], async () => {
+    await this.#withCommitLock(partition, async () => {
       if (this.#closing || generation !== this.#generation || !this.#assigned.has(partition))
         throw new Error("Publication partition assignment changed");
       const offset = this.#committed.get(partition);

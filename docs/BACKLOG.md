@@ -30,6 +30,29 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+The [October 7 post-release review](reports/repository-review-20261007-r2.md)
+is complete at `59541389`. Its four confirmed findings are implemented and
+source-verified in the [repair record](reports/review-repair-20261007-r2.md),
+following the [approved plan](reports/review-repair-plan-20261007-r2.md).
+
+- [x] R07R2-04: scope composer submission identity across ordinary send and Steer;
+      an intervening successful submission must not cause a fresh identical draft
+      to replay an older request. Preserve unchanged retry and late-ACK behavior.
+- [x] R07R2-02: remove multi-partition progress-lock coupling without weakening
+      monotonic dispatch commits, group fencing or commit-before-effect.
+- [x] R07R2-01: reclaim abandoned upload staging after process loss, preserving
+      concurrent transfers, atomic finalization and shared Volume admission.
+- [x] R07R2-03: apply EXIF orientation before image resizing/encoding for both
+      user-image preparation and Tool reads.
+- [ ] Deploy matching application/Gateway and guest-protocol-4 artifacts after
+      draining old uploads. Preserve managed Cube protocol 7 / Tool Worker 3 and
+      use the current template identity/provenance checks (ADR-0235).
+
+The same review distinguishes measured same-partition handoff blocking from the
+cross-partition lock defect. Native template restore passed in two owned cases;
+the earlier host-restart `SetGuestDateTime` failure remains unreproduced and needs
+correlated cold-recovery evidence before changing timeout/retry policy.
+
 The [October 7 whole-repository review](reports/repository-review-20261007.md)
 is complete at `7a5fc603`. The [approved repairs](reports/review-repair-20261007.md)
 implement its findings; the [schema 182 rollout](reports/review-release-20261007.md)

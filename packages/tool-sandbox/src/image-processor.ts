@@ -42,20 +42,20 @@ export async function processImageSource(
     });
     const metadata = await source.metadata();
     if (!metadata.width || !metadata.height) throw new Error("Image dimensions are unavailable");
-    const dimensions = imageDimensions(metadata.width, metadata.height, !options.autoResizeImages);
-    // Re-encode even unscaled inputs, bounding bit depth and stripping metadata.
+    const { width, height } = metadata.autoOrient;
+    const dimensions = imageDimensions(width, height, !options.autoResizeImages);
+    // Apply display geometry before sizing or removing its EXIF metadata.
     const pipeline = source
+      .autoOrient()
       .resize(dimensions.width, dimensions.height, { fit: "fill", withoutEnlargement: true })
       .toColourspace("srgb");
-    const output = await pipeline.png().toBuffer();
+    const { data: output, info } = await pipeline.png().toBuffer({ resolveWithObject: true });
     const mimeType = "image/png";
     return {
       ok: true,
       data: output.toString("base64"),
       mimeType,
-      hints: [
-        `Image ${metadata.width}x${metadata.height}; model receives ${dimensions.width}x${dimensions.height}.`,
-      ],
+      hints: [`Image ${width}x${height}; model receives ${info.width}x${info.height}.`],
     };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "Image decoding failed" };

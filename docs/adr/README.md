@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0235](0235-upload-staging-recovery.md) — filesystem-owned upload staging,
+   cross-process cleanup exclusion and recoverable guest locators; source implemented.
 1. [ADR-0234](0234-volume-gateway-shared-access.md) — shared browsing/upload access,
    narrow credential exclusion and exclusive Volume lifecycle; verified and deployed.
 1. [ADR-0233](0233-template-cleanup-node-routing.md) — template and rootfs cleanup

@@ -1,5 +1,15 @@
 # Documentation map
 
+The [October 7 post-release review](reports/repository-review-20261007-r2.md)
+audits `59541389` across all 22 workspaces. Four reproduced findings cover
+cross-action composer identity, partition commit-lock coupling, upload staging
+after process loss and EXIF orientation. It also records RF3 isolation/replay,
+deep pagination and owned native template restore checks. These findings are
+recorded for repair; product behavior is unchanged by this review.
+The [approved repair plan](reports/review-repair-plan-20261007-r2.md) and
+[source implementation](reports/review-repair-20261007-r2.md) define and implement
+the four slices without changing runtime authorities. Matched rollout is pending.
+
 The [October 7 whole-repository review](reports/repository-review-20261007.md)
 audits `7a5fc603` across all 22 workspaces and the Pi/Cube/deployment boundaries.
 It records ordinary-send retry duplication, a guest-reuse release-evidence

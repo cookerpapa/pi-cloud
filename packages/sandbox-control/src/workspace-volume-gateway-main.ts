@@ -115,6 +115,13 @@ const server = new WorkspaceVolumeGatewayServer({
 });
 try {
   await server.listen();
+  gateway.startUploadMaintenance(() =>
+    operationalLog({
+      service: "pi-cloud-workspace-volume-gateway",
+      level: "warn",
+      event: "upload.staging.cleanup_deferred",
+    }),
+  );
 } catch (error: unknown) {
   await Promise.allSettled([server.close(), observability.close(), database.end()]);
   throw error;

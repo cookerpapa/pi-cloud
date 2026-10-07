@@ -173,6 +173,27 @@ describe("whole native tools at the execution source", () => {
       expect.objectContaining({ type: "image", mimeType: "image/png" }),
     );
   });
+  it("reads EXIF-rotated images using display dimensions", async () => {
+    const root = await directory(),
+      path = join(root, "camera.jpg");
+    await writeFile(
+      path,
+      await sharp({ create: { width: 80, height: 40, channels: 3, background: "blue" } })
+        .jpeg()
+        .withMetadata({ orientation: 6 })
+        .toBuffer(),
+    );
+    const result = await executeNativeTool(
+      request("read", { path }),
+      root,
+      new AbortController().signal,
+      () => {},
+    );
+    const image = result.result.content.find((part) => part.type === "image");
+    if (!image || image.type !== "image") throw new Error("No read image");
+    const metadata = await sharp(Buffer.from(image.data, "base64")).metadata();
+    expect([metadata.width, metadata.height, metadata.orientation]).toEqual([40, 80, undefined]);
+  });
   it("treats cwd as a base and follows guest file links without replacing them", async () => {
     const root = await directory();
     const cwd = join(root, "repo");

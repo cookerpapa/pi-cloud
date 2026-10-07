@@ -1,12 +1,25 @@
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
-import { writeWorkspaceUpload } from "@pi-cloud/workspace-runtime";
+import { join } from "node:path";
+import {
+  writeWorkspaceUpload,
+  UploadStagingArea,
+  UPLOAD_STAGING_NAME,
+  registerUploadStaging,
+  reapRegisteredUploads,
+} from "@pi-cloud/workspace-runtime";
 import { processImageSource } from "./image-processor.ts";
 
-export async function prepareInputFile(value: unknown) {
+export async function prepareInputFile(
+  value: unknown,
+  options: { registryDirectory?: string } = {},
+) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid input file request");
   const input = value as Record<string, unknown>;
+  const registry = options.registryDirectory ?? "/home/user/.pi-cloud-upload-areas-v1";
+  if (input.mode === "reap_upload_staging" && Object.keys(input).length === 1)
+    return reapRegisteredUploads(registry);
   if (
     typeof input.sourcePath !== "string" ||
     !/^\/tmp\/pi-cloud-upload-[0-9a-f-]{36}$/.test(input.sourcePath) ||
@@ -37,20 +50,33 @@ export async function prepareInputFile(value: unknown) {
     )
       throw new Error("Invalid Workspace upload request");
     const directory = await realpath(input.directory);
+    const { id, name, sha256 } = input;
     const root = await open(
       directory,
       constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
     );
+    const staging = new UploadStagingArea(join(directory, UPLOAD_STAGING_NAME));
     try {
-      return await writeWorkspaceUpload(root, {
-        id: input.id,
-        name: input.name,
-        sha256: input.sha256,
-        chunks: source.createReadStream({ autoClose: false }),
-        byteLength: input.byteLength as number,
-      });
+      await staging.prepare();
+      const identity = await registerUploadStaging(registry, staging.directory);
+      const owned = new UploadStagingArea(staging.directory, identity);
+      await owned.reap();
+      return await owned.use((files) =>
+        writeWorkspaceUpload(
+          root,
+          {
+            id,
+            name,
+            sha256,
+            chunks: source.createReadStream({ autoClose: false }),
+            byteLength: input.byteLength as number,
+          },
+          files,
+        ),
+      );
     } finally {
       await root.close();
+      await staging.reap().catch(() => undefined);
     }
   } finally {
     await source.close();

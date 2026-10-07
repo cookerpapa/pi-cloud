@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { acquireFileLock } from "@pi-cloud/workspace-runtime";
 import { constants } from "node:fs";
 import { lstat, open, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
@@ -42,6 +42,7 @@ export class FilesystemWorkspaceVolumeGatewayLock implements WorkspaceVolumeGate
     scope: WorkspaceVolumeLockScope,
     run: () => Promise<T>,
     whenAbsent?: () => Promise<T>,
+    waitMs = this.waitMs,
   ): Promise<T> {
     if (!/^pcw-[0-9a-f]{48}$/.test(volumeId)) throw new TypeError("Invalid Volume lock identity");
     if (
@@ -99,7 +100,16 @@ export class FilesystemWorkspaceVolumeGatewayLock implements WorkspaceVolumeGate
         if (!metadata.isFile() || metadata.size !== 0n) throw new Error("Invalid Volume lock file");
         held.ino = metadata.ino;
         held.dev = metadata.dev;
-        await this.#acquire(handle.fd, name === LOCK_FILE && scope !== "exclusive");
+        if (!Number.isSafeInteger(waitMs) || waitMs < 0 || waitMs > 600_000)
+          throw new TypeError("Invalid filesystem lock wait");
+        if (
+          !(await acquireFileLock(handle.fd, name === LOCK_FILE && scope !== "exclusive", waitMs))
+        )
+          throw new WorkspaceVolumeGatewayError(
+            "workspace_volume_lock_unavailable",
+            "Workspace Volume is busy or its filesystem lock is unavailable",
+            true,
+          );
       }
       for (const held of locks) {
         const current = await lstat(join(path, VOLUME_METADATA_DIRECTORY, held.name), {
@@ -121,30 +131,5 @@ export class FilesystemWorkspaceVolumeGatewayLock implements WorkspaceVolumeGate
         volume.close(),
       ]);
     }
-  }
-
-  #acquire(fd: number, shared: boolean): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(
-        "/usr/bin/flock",
-        [shared ? "--shared" : "--exclusive", "--timeout", String(this.waitMs / 1000), "3"],
-        {
-          stdio: ["ignore", "ignore", "ignore", fd],
-          timeout: this.waitMs + 1000,
-        },
-      );
-      child.once("error", reject);
-      child.once("exit", (code) => {
-        if (code === 0) resolve();
-        else
-          reject(
-            new WorkspaceVolumeGatewayError(
-              "workspace_volume_lock_unavailable",
-              "Workspace Volume is busy or its filesystem lock is unavailable",
-              true,
-            ),
-          );
-      });
-    });
   }
 }

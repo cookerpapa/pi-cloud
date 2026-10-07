@@ -1471,6 +1471,55 @@
       "file": "test/composer-submission.test.ts",
       "test": "turn retries a lost ACK but permits an intentional repeat after confirmation",
       "invariant": "An unchanged ordinary-send retry reuses the accepted input identity; a confirmed intentional repeat remains possible."
+    },
+    {
+      "id": "composer-cross-action-lost-ack",
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/composer-submission.test.ts",
+      "test": "ends uncertain turn identity after the other action succeeds",
+      "invariant": "A successful Steer ends the old ordinary intent; fresh identical input receives a new identity."
+    },
+    {
+      "id": "partition-progress-isolation",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/ordered-effects.test.ts",
+      "test": "keeps periodic progress moving for another partition over multiple blocked ticks",
+      "invariant": "One pending partition cannot hold periodic progress of another partition across ticks."
+    },
+    {
+      "id": "upload-staging-sigkill",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/upload-staging.test.ts",
+      "test": "reclaims a killed registered writer without retry (published=false)",
+      "invariant": "An OS-released guard authorizes cleanup of owned abandoned staging without another upload or PG claim."
+    },
+    {
+      "id": "upload-staging-published-sigkill",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/upload-staging.test.ts",
+      "test": "reclaims a killed registered writer without retry (published=true)",
+      "invariant": "Cleaning an abandoned temporary hard link preserves the already published final file."
+    },
+    {
+      "id": "upload-staging-live-writer",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/upload-staging.test.ts",
+      "test": "admits another upload while a live writer excludes nonblocking cleanup",
+      "invariant": "Shared transfer guards permit another writer but refuse cleanup while either writer is alive."
+    },
+    {
+      "id": "upload-staging-locator-replaced",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/upload-staging.test.ts",
+      "test": "does not let an old filesystem locator authorize a replaced area",
+      "invariant": "Recovery locators cannot authorize deleting a replacement staging identity."
+    },
+    {
+      "id": "upload-maintenance-lifecycle-isolation",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-provider.test.ts",
+      "test": "rotates staging maintenance, skips paused VMs and keeps failure separate from lifecycle",
+      "invariant": "Cleanup errors do not destroy or quarantine VMs, wake paused runtimes or prevent other cleanup candidates."
     }
   ]
 }

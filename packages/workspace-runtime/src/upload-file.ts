@@ -15,6 +15,7 @@ export async function writeWorkspaceUpload(
     sha256: string;
     signal?: AbortSignal;
   },
+  staging: FileHandle,
 ): Promise<{ relativePath: string; byteLength: number; sha256: string }> {
   const relativePath = uploadRelativePath(input.id, input.name);
   if (
@@ -42,7 +43,9 @@ export async function writeWorkspaceUpload(
       current = directory;
     }
     const parent = `/proc/self/fd/${current.fd}`;
-    temporary = `${parent}/.upload-${randomUUID()}`;
+    if ((await staging.stat()).dev !== (await current.stat()).dev)
+      throw new Error("Upload staging and destination must share one filesystem");
+    temporary = `/proc/self/fd/${staging.fd}/.part-${randomUUID()}`;
     const file = await open(
       temporary,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,

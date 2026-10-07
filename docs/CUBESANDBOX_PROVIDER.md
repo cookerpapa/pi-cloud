@@ -76,6 +76,14 @@ or changing Kafka dispatch semantics. The same fixed helper writes dedicated-mac
 uploads under UID 1000; elastic uploads use the existing Volume Gateway. See
 [chat uploads](CHAT_ATTACHMENTS.md) for limits and claims.
 
+Guest input protocol 4 adds `reap_upload_staging`, invoked through the existing
+fixed input helper for owned, running development machines. It takes guest-local
+filesystem exclusion and consults derived staging locators. Elastic uploads are
+maintained by the Volume Gateway; this operation does not allocate/wake a VM or
+contribute health/deletion evidence. Native Tool Worker reply protocol 3 and
+managed Cube execution protocol 7 are unchanged. See
+[ADR-0235](adr/0235-upload-staging-recovery.md) for layout and matched cutover.
+
 The guest uses Pi's public image processor hook with pinned Sharp. `read` accepts
 optional image `detail: high | original`; high is the default. The dimensions and
 32px patch budgets match the inspected Codex client: high 2048/2500, original

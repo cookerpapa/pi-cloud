@@ -1,5 +1,19 @@
 # Implementation roadmap
 
+## October 7 post-release review
+
+- [x] Review all 22 workspaces at `59541389`, including recent repairs, pinned
+      Durable recovery, transport, resource lifecycle, storage, UI and delivery.
+      [Findings and bounded verification](reports/repository-review-20261007-r2.md).
+- [x] Implement the four confirmed findings under the
+      [approved repair plan](reports/review-repair-plan-20261007-r2.md) and
+      [ADR-0235](adr/0235-upload-staging-recovery.md).
+      [Source verification](reports/review-repair-20261007-r2.md) covers browser,
+      RF3, process loss, new guest code and 217 fault cases.
+- [ ] Deploy matched application/Gateway and guest-protocol-4 artifacts after
+      drain. Same-partition dispatch redesign and cold-host restore diagnosis
+      remain separately scoped work.
+
 ## October 7 review repairs
 
 - [x] Review all 22 workspaces at `7a5fc603`; record

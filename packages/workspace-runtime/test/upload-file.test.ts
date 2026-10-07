@@ -4,8 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { afterEach, expect, it } from "vitest";
-import { writeWorkspaceUpload } from "../src/upload-file.ts";
+import { writeWorkspaceUpload as placeUpload } from "../src/upload-file.ts";
 
+const staging = new WeakMap<Awaited<ReturnType<typeof open>>, Awaited<ReturnType<typeof open>>>();
+function writeWorkspaceUpload(
+  root: Parameters<typeof placeUpload>[0],
+  input: Parameters<typeof placeUpload>[1],
+) {
+  return placeUpload(root, input, staging.get(root)!);
+}
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -15,6 +22,11 @@ async function fixture() {
   cleanups.push(() => rm(path, { recursive: true, force: true }));
   const root = await open(path, constants.O_RDONLY | constants.O_DIRECTORY);
   cleanups.push(() => root.close());
+  const stagingPath = await mkdtemp(join(tmpdir(), "pi-upload-stage-"));
+  cleanups.push(() => rm(stagingPath, { recursive: true, force: true }));
+  const stage = await open(stagingPath, constants.O_RDONLY | constants.O_DIRECTORY);
+  cleanups.push(() => stage.close());
+  staging.set(root, stage);
   const bytes = Buffer.from("uploaded bytes\n"),
     id = randomUUID(),
     name = "截图 test.txt";

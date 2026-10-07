@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, type Dir } from "node:fs";
 import {
   chmod,
   lstat,
   open,
+  opendir,
   readFile,
   readdir,
   realpath,
@@ -14,7 +15,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { isIPv4 } from "node:net";
-import { writeWorkspaceUpload } from "@pi-cloud/workspace-runtime";
+import { writeWorkspaceUpload, UploadStagingArea } from "@pi-cloud/workspace-runtime";
 import { FilesystemWorkspaceVolumeGatewayLock } from "./filesystem-workspace-volume-gateway-lock.ts";
 import type { WorkspaceVolumeGatewayUploadInput } from "./workspace-volume-gateway-contract.ts";
 import {
@@ -295,6 +296,10 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
   readonly #lock: WorkspaceVolumeGatewayLock;
   readonly #git: WorkspaceVolumeGitRunner;
   readonly #authorizeUpload: PersistentVolumeWorkspaceVolumeGatewayOptions["authorizeUpload"];
+  #uploadCursor: Dir | undefined;
+  #uploadSweep: Promise<{ files: number; bytes: number }> | undefined;
+  #uploadTimer: NodeJS.Timeout | undefined;
+  #closed = false;
 
   constructor(options: PersistentVolumeWorkspaceVolumeGatewayOptions) {
     this.#workspaceRoot = validatedAbsoluteDirectory(options.workspaceRoot, "workspaceRoot");
@@ -395,17 +400,31 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       const directory = await this.#validatedVolume(identity);
       const target = await this.#browseTarget(directory, input.rootPath, "", true);
       const root = await this.#openBrowseTarget(target, true);
+      const staging = new UploadStagingArea(
+        join(directory, VOLUME_METADATA_DIRECTORY, "uploads-v1"),
+      );
       try {
-        return await writeWorkspaceUpload(root, {
-          id: input.uploadId,
-          name: input.name,
-          chunks,
-          byteLength: input.byteLength,
-          sha256: input.sha256,
-          ...(signal ? { signal } : {}),
-        });
+        await staging.prepare();
+        await staging.reap();
+        return await staging.use((files) =>
+          writeWorkspaceUpload(
+            root,
+            {
+              id: input.uploadId,
+              name: input.name,
+              chunks,
+              byteLength: input.byteLength,
+              sha256: input.sha256,
+              ...(signal ? { signal } : {}),
+            },
+            files,
+          ),
+        );
       } finally {
         await root.close();
+        // Failure here does not replace an acknowledged file placement. Periodic
+        // maintenance owns retry and reporting of abandoned staging.
+        await staging.reap().catch(() => undefined);
       }
     }).catch(rethrowBrowseFailure);
   }
@@ -720,7 +739,89 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       );
   }
 
-  async close(): Promise<void> {}
+  startUploadMaintenance(onError: (error: unknown) => void, intervalMs = 30_000): void {
+    if (this.#uploadTimer || this.#closed) return;
+    const sweep = () =>
+      void this.reapUploads().catch((error) => {
+        try {
+          onError(error);
+        } catch {
+          /* Diagnostics are disposable. */
+        }
+      });
+    this.#uploadTimer = setInterval(sweep, intervalMs);
+    this.#uploadTimer.unref();
+    sweep();
+  }
+
+  reapUploads(maximumVolumes = 16): Promise<{ files: number; bytes: number }> {
+    if (this.#closed) return Promise.resolve({ files: 0, bytes: 0 });
+    return (this.#uploadSweep ??= this.#reapUploads(maximumVolumes).finally(() => {
+      this.#uploadSweep = undefined;
+    }));
+  }
+
+  async #reapUploads(maximumVolumes: number) {
+    this.#uploadCursor ??= await opendir(this.#workspaceRoot);
+    let files = 0,
+      bytes = 0;
+    const errors: unknown[] = [];
+    for (let n = 0; n < maximumVolumes && !this.#closed; n++) {
+      const entry = await this.#uploadCursor.read();
+      if (!entry) {
+        await this.#uploadCursor.close();
+        this.#uploadCursor = undefined;
+        break;
+      }
+      const match = /^picloud-posix-(pcw-[0-9a-f]{48})$/.exec(entry.name);
+      if (!match || !entry.isDirectory()) continue;
+      const volumeId = match[1]!;
+      try {
+        const result = await this.#lock.withLock(
+          volumeId,
+          "shared",
+          async () => {
+            const directory = this.#volumeDirectory(volumeId);
+            if ((await this.#readVolumeIdentity(directory)).volumeId !== volumeId)
+              throw new Error("Upload cleanup Volume changed");
+            await this.#assertNotDeleting(directory);
+            return new UploadStagingArea(
+              join(directory, VOLUME_METADATA_DIRECTORY, "uploads-v1"),
+            ).reap();
+          },
+          undefined,
+          0,
+        );
+        files += result.files;
+        bytes += result.bytes;
+      } catch (error) {
+        if (
+          (error as NodeJS.ErrnoException).code === "ENOENT" ||
+          (error instanceof WorkspaceVolumeGatewayError &&
+            [
+              "workspace_volume_lock_unavailable",
+              "workspace_volume_identity_unavailable",
+              "workspace_volume_deleting",
+            ].includes(error.code))
+        )
+          continue;
+        errors.push(error);
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, "Upload staging cleanup deferred");
+    return { files, bytes };
+  }
+
+  async close(): Promise<void> {
+    this.#closed = true;
+    if (this.#uploadTimer) clearInterval(this.#uploadTimer);
+    try {
+      await this.#uploadSweep;
+    } finally {
+      await this.#uploadCursor?.close();
+      this.#uploadCursor = undefined;
+    }
+  }
 
   async #validatedVolume(identity: ReturnType<typeof validatedIdentity>): Promise<string> {
     // Only the Cube plugin creates a Volume. Reads never recreate a deleted path.

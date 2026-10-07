@@ -7,6 +7,7 @@ const f = vi.hoisted(() => ({
   stale: false,
   commit: vi.fn(),
   consumers: 0,
+  partitions: 1,
   logger: undefined as KafkaJS.Logger | undefined,
   batch: undefined as ((payload: KafkaJS.EachBatchPayload) => Promise<void>) | undefined,
 }));
@@ -21,10 +22,21 @@ vi.mock("@confluentinc/kafka-javascript", () => ({
             async connect() {},
             async disconnect() {},
             async fetchTopicOffsets() {
-              return [{ partition: 0, low: "0", high: f.high }];
+              return Array.from({ length: f.partitions }, (_, partition) => ({
+                partition,
+                low: "0",
+                high: f.high,
+              }));
             },
             async fetchOffsets() {
-              return [{ partitions: [{ partition: 0, offset: f.committed }] }];
+              return [
+                {
+                  partitions: Array.from({ length: f.partitions }, (_, partition) => ({
+                    partition,
+                    offset: f.committed,
+                  })),
+                },
+              ];
             },
           };
         }
@@ -41,10 +53,14 @@ vi.mock("../src/kafka-partition-reader.ts", () => ({
       f.logger = options.logger;
     }
     async connect() {
-      await this.options.rebalance({ code: 1 }, [{ topic: "log", partition: 0 }], {
-        assign() {},
-        unassign() {},
-      });
+      await this.options.rebalance(
+        { code: 1 },
+        Array.from({ length: f.partitions }, (_, partition) => ({ topic: "log", partition })),
+        {
+          assign() {},
+          unassign() {},
+        },
+      );
     }
     async subscribe() {}
     async disconnect() {}
@@ -55,7 +71,7 @@ vi.mock("../src/kafka-partition-reader.ts", () => ({
     async run(options: { eachBatch: typeof f.batch }) {
       f.batch = options.eachBatch;
     }
-    commitOffsets = f.commit;
+    commitOffset = f.commit;
   },
 }));
 import { KafkaLogConsumer } from "../src/kafka-log-consumer.ts";
@@ -66,6 +82,7 @@ beforeEach(() => {
   f.stale = false;
   f.batch = undefined;
   f.consumers = 0;
+  f.partitions = 1;
   f.logger = undefined;
   f.commit.mockReset().mockResolvedValue(undefined);
 });
@@ -79,7 +96,7 @@ async function fixture() {
     clientId: "test",
     groupRecovery: true,
     orderedEffects: true,
-    replayOffsets: async () => new Map([[0, 0n]]),
+    replayOffsets: async () => new Map(Array.from({ length: f.partitions }, (_, p) => [p, 0n])),
     decode: (value) => JSON.parse(value.toString()),
     handler: async ({ fact }, _current, commit) => {
       projected.push(fact.n);
@@ -89,11 +106,11 @@ async function fixture() {
   await consumer.start();
   await consumer.waitUntilAssigned(1000);
   await vi.waitFor(() => expect(f.batch).toBeDefined());
-  const deliver = (entries: Array<[number, boolean]>) =>
+  const deliver = (entries: Array<[number, boolean]>, partition = 0) =>
     f.batch!({
       batch: {
         topic: "log",
-        partition: 0,
+        partition,
         messages: entries.map(([n, command]) => ({
           offset: String(n),
           value: Buffer.from(JSON.stringify({ n, command })),
@@ -117,7 +134,7 @@ it("replays an unfinished display prefix without executing commands below the co
     ]);
     expect(test.projected).toEqual([0, 1, 2, 3, 4]);
     expect(test.effects).toEqual([3]);
-    expect(f.commit.mock.calls.map(([offsets]) => offsets[0].offset)).toEqual(["4"]);
+    expect(f.commit.mock.calls.map(([offsets]) => offsets.offset)).toEqual(["4"]);
   } finally {
     await test.consumer.close();
   }
@@ -142,9 +159,47 @@ it("does not add a synchronous commit for every text fragment", async () => {
     for (let n = 3; n < 103; n++) await test.deliver([[n, false]]);
     expect(f.commit).toHaveBeenCalledOnce();
     await test.deliver([[103, true]]);
-    expect(f.commit.mock.calls.at(-1)![0][0].offset).toBe("104");
+    expect(f.commit.mock.calls.at(-1)![0].offset).toBe("104");
     expect(test.effects).toEqual([103]);
   } finally {
+    await test.consumer.close();
+  }
+});
+
+it("keeps periodic progress moving for another partition over multiple blocked ticks", async () => {
+  f.partitions = 2;
+  const test = await fixture(),
+    release = Promise.withResolvers<void>();
+  try {
+    await test.deliver([[3, false]], 0);
+    await test.deliver([[3, false]], 1);
+    f.commit
+      .mockClear()
+      .mockImplementation((position) =>
+        position.partition === 1 ? release.promise : Promise.resolve(),
+      );
+    await test.deliver([[4, false]], 0);
+    await test.deliver([[4, false]], 1);
+    await vi.waitFor(
+      () =>
+        expect(f.commit.mock.calls.map(([p]) => [p.partition, p.offset])).toEqual([
+          [0, "5"],
+          [1, "5"],
+        ]),
+      { timeout: 2500, interval: 5 },
+    );
+    await test.deliver([[5, false]], 0);
+    await vi.waitFor(
+      () =>
+        expect(f.commit.mock.calls.map(([p]) => [p.partition, p.offset])).toEqual([
+          [0, "5"],
+          [1, "5"],
+          [0, "6"],
+        ]),
+      { timeout: 2500, interval: 5 },
+    );
+  } finally {
+    release.resolve();
     await test.consumer.close();
   }
 });

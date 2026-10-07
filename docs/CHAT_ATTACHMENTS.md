@@ -61,6 +61,18 @@ The idle budget includes waiting for a final PUT receipt and resets while bytes
 make progress; it does not cap total upload duration. Upload failure still cancels
 and joins both byte-placement branches before ending the claim (ADR-0216).
 
+Image normalization applies EXIF orientation, including mirroring, before sizing
+and PNG encoding. Both attached images and fixed Tool reads use this processor;
+the immutable original source remains unchanged.
+
+Under [ADR-0235](adr/0235-upload-staging-recovery.md), placement temporaries live
+in managed same-filesystem staging areas. Shared file locks protect active writes;
+exclusive nonblocking maintenance reclaims abandoned staging after process loss.
+Gateway startup/periodic recovery and guest filesystem locators make cleanup
+independent of whether an upload's PG draft row still exists. The original
+guest transport source retains its separate transfer/helper/EXIT cleanup lifetime.
+Busy staging is ordinary deferred maintenance, not a VM failure.
+
 The browser displays original user text separately from attachment cards. Its
 previews use an authenticated API; no object-store credentials or public bucket
 URLs are exposed. History, queue edits/reordering and promotion to steer retain

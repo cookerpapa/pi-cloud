@@ -2,7 +2,7 @@
   "upstreamRepository": "https://github.com/TencentCloud/CubeSandbox.git",
   "upstreamCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
   "managedProtocolVersion": 7,
-  "guestProtocolVersion": 3,
+  "guestProtocolVersion": 4,
   "patches": [
     {
       "file": "0001-accurate-sandbox-state.patch",

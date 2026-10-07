@@ -348,6 +348,14 @@ second transcript or a per-delta PG write.
 PG transaction-time closure checks remain: a stale Projector handler cannot
 overwrite a successor merely because it cached an older OPEN state.
 
+Publication and dispatch/progress commits share a guard for their own partition.
+Periodic progress tracks in-flight work per partition; waiting for one guard
+does not reserve another partition or suspend its next progress tick. The native
+consumer's actual offset-commit callbacks remain serialized for unambiguous
+confirmation. This removes cross-partition lock coupling without changing the
+dispatch boundary or same-partition handler ordering. Kafka connection/coordinator
+failure remains a shared transport boundary.
+
 Recovery starts at the minimum of PG's canonical/unsealed-prefix floor and the
 group's committed position. It can replay text/native history but cannot move
 the dispatch commit backwards. A new Tool command is dispatched only after its
@@ -820,6 +828,18 @@ waiters are refused. An absent root may return an empty directory listing withou
 creating storage; no such read establishes deletion authority. PG upload/lifecycle
 authorization and Cube attachment evidence remain required (ADR-0231/0234).
 Deployment Recreate excludes mixed Gateway lock contracts.
+
+[ADR-0235](adr/0235-upload-staging-recovery.md) moves upload temporaries into
+managed areas on the destination filesystem. Gateway areas remain outside the
+guest mount; machine areas belong to the fixed guest helper. Shared OS-held
+staging locks cover writes and atomic publication. Nonblocking exclusive cleanup
+can reclaim abandoned temporary names after process loss while preserving active
+writers and final files. Startup/periodic scans do not depend on PG draft rows.
+Guest filesystem locators retain discovery across Session deletion; they contain
+paths and inode identities, never uploaded bytes or execution authority. Guest
+maintenance applies only to already-owned, running development machines. Elastic
+Workspace staging is reclaimed by the Gateway. Paused/inactive VMs are not woken,
+and cleanup failure cannot authorize quarantine, destruction or quota release.
 
 A user-owned development machine is allocated independently, with a selected
 CPU/memory/disk template. It retains node-affine full-VM state and has its own home

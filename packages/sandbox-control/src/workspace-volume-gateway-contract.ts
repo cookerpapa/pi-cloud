@@ -153,6 +153,7 @@ export interface WorkspaceVolumeGatewayLock {
     scope: WorkspaceVolumeLockScope,
     run: () => Promise<T>,
     whenAbsent?: () => Promise<T>,
+    waitMs?: number,
   ): Promise<T>;
 }
 

@@ -1,0 +1,197 @@
+{
+  "sourceBaseRevision": "59541389d26a8f4c4e982f27e645a18b8e89892f",
+  "testedWorktree": true,
+  "generatedAt": "2026-10-07T04:57:04.975332+00:00",
+  "status": "implemented and verified; matched deployment pending",
+  "architectureDecision": "docs/adr/0235-upload-staging-recovery.md",
+  "implemented": ["R07R2-04", "R07R2-02", "R07R2-03", "R07R2-01"],
+  "protocols": {
+    "managedCube": 7,
+    "toolWorker": 3,
+    "guestInput": 4,
+    "postgresSchema": 182,
+    "postgresMigrationAdded": false
+  },
+  "verification": {
+    "workspaceTypechecks": 22,
+    "workspaceTestsPassed": 1649,
+    "helperTestsPassed": 44,
+    "defaultOptInSkipped": 9,
+    "realRf3PgTransportTestsPassed": 7,
+    "faultCases": 217,
+    "faultCasesPassed": 217,
+    "build": "passed",
+    "fullBrowser": "passed",
+    "imageClosure": "passed",
+    "installationContract": "passed",
+    "helmAndPreflight": "passed",
+    "runtimePolicy": "passed",
+    "format": "passed",
+    "documentation": "passed",
+    "links": "passed",
+    "whitespace": "passed",
+    "finalAffectedTypechecks": "workspace-runtime, tool-sandbox and sandbox-control passed",
+    "finalMaintenanceFixture": "passed after using the typed elastic omission",
+    "testContainersRemaining": 0
+  },
+  "probes": {
+    "cross-send": {
+      "observedAt": "2026-10-07T04:08:18.382Z",
+      "scope": "Actual ChatApp/PiCloudApi with response-loss fixture; no model or production data",
+      "cases": [
+        {
+          "firstKind": "turn",
+          "ordinaryAdmissions": 2,
+          "steerAdmissions": 1,
+          "keysDiffer": true
+        },
+        {
+          "firstKind": "steer",
+          "ordinaryAdmissions": 1,
+          "steerAdmissions": 2,
+          "keysDiffer": true
+        }
+      ]
+    },
+    "partition-locks": {
+      "scope": "Actual KafkaPartitionReader, controlled native callbacks; no broker/network latency claim",
+      "independent": {
+        "batchProgress": false,
+        "healthyPublicationBeforeSlowRelease": true,
+        "healthyPublicationMs": 0.08906899999999496
+      },
+      "coupled": {
+        "batchProgress": true,
+        "healthyPublicationBeforeSlowRelease": true,
+        "healthyPublicationMs": 0.04609700000000316
+      }
+    },
+    "rf3-isolation": {
+      "scope": "Isolated RF3 and actual partition reader/publisher; controlled external handoff, no PG/model/production fault",
+      "otherFinishedWhileBlocked": true,
+      "otherPartitionMs": 185.25339800000074,
+      "samePartitionMs": 918.360431000001,
+      "toolHandoffsAfterConsumerReplacementAndRewind": 1
+    },
+    "partition-commit-load": {
+      "scope": "Isolated RF3, 32 actual transactional publishers and one native consumer; no PG/Tool/provider",
+      "partitions": 32,
+      "records": 128,
+      "ordinaryOffsetCommitCalls": 186,
+      "committedPartitions": 32,
+      "sampleDurationMs": 8537.960100000004,
+      "publicationToHandlerMs": {
+        "p50": 778.1565719999999,
+        "p95": 1594.0151019999976,
+        "max": 1732.0044710000002
+      },
+      "note": "Includes deliberate 1.1-second gaps; one bounded sample, no throughput/availability SLO"
+    },
+    "partition-commit-baseline": {
+      "scope": "Baseline 59541389; isolated RF3, 32 actual transactional publishers and one native consumer; no PG/Tool/provider",
+      "partitions": 32,
+      "records": 128,
+      "ordinaryOffsetCommitCalls": 133,
+      "committedPartitions": 32,
+      "sampleDurationMs": 9150.028461999998,
+      "publicationToHandlerMs": {
+        "p50": 804.0799999999945,
+        "p95": 1807.8182989999987,
+        "max": 2119.3541840000034
+      },
+      "note": "Includes deliberate 1.1-second gaps; one bounded sample, no throughput/availability SLO"
+    },
+    "upload-crash": {
+      "scope": "Actual Gateway/filesystem, three process SIGKILLs, cold maintenance without retry, then same upload identity retry; authorization fixture, no production data",
+      "completedBytes": 2097152,
+      "withoutRetry": {
+        "files": 1,
+        "bytes": 65536
+      },
+      "orphanFiles": 0,
+      "orphanBytes": 0
+    },
+    "image-orientation": {
+      "scope": "Actual image processor and synthetic EXIF-rotated JPEG; no model or production call",
+      "input": {
+        "width": 80,
+        "height": 40,
+        "orientation": 6
+      },
+      "expectedDisplay": {
+        "width": 40,
+        "height": 80
+      },
+      "actual": {
+        "width": 40,
+        "height": 80,
+        "orientation": null
+      }
+    },
+    "live-staging": {
+      "checkedAt": "2026-10-07T04:44:42.760Z",
+      "scope": "Owned native Cube plus freshly bundled guest helper, no PG Run or model; not a matched release",
+      "passed": true,
+      "cleanupConfirmed": true,
+      "guestHelperSha256": "f57ea2604b1d7fb997d4a97a8157fbe35898d1fdb083226201def0875202d46d",
+      "activeWriter": {
+        "areas": 1,
+        "files": 0,
+        "bytes": 0,
+        "deferred": 0,
+        "busyAreas": 1
+      },
+      "afterSigkill": {
+        "areas": 1,
+        "files": 1,
+        "bytes": 65536,
+        "deferred": 0,
+        "busyAreas": 0
+      },
+      "finalFilePreserved": true,
+      "identicalRetry": true,
+      "normalizedImage": {
+        "width": 40,
+        "height": 80
+      }
+    }
+  },
+  "limits": [
+    "No production rollout in this repair turn",
+    "Live Cube exercised freshly bundled guest code on installed native base, not matched image release",
+    "No paid model calls",
+    "Default skips include two full live Provider tests; new owned guest check is separate",
+    "217-case report is deterministic injection, not production chaos",
+    "One 32-partition sample does not establish a fleet SLO",
+    "Guest transport sources /tmp/pi-cloud-upload-* retain separate transfer/helper/EXIT cleanup; new collector owns destination staging",
+    "No automatic old user-visible .upload-* compatibility sweep",
+    "Indefinitely busy staging can defer cleanup",
+    "Host-restart SetGuestDateTime root cause is outside these repairs"
+  ],
+  "finalReadOnlyProductionBaseline": {
+    "checkedAt": "2026-10-07T05:02:08.935Z",
+    "database": {
+      "sessions": 0,
+      "runs": 0,
+      "unsealed": 0,
+      "schema": "182_conversation_activity_page"
+    },
+    "workloads": [
+      {
+        "name": "pi-cloud-control-plane",
+        "ready": 1,
+        "images": ["pi-cloud/control-plane:review-release-8244934a"]
+      },
+      {
+        "name": "pi-cloud-workspace-volume-gateway",
+        "ready": 1,
+        "images": ["pi-cloud/workspace-volume-gateway:review-release-8244934a"]
+      },
+      {
+        "name": "pi-cloud-pi-worker-primary-v1",
+        "ready": 2,
+        "images": ["pi-cloud/supervisor-host:review-release-8244934a"]
+      }
+    ]
+  }
+}

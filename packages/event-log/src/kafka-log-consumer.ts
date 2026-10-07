@@ -339,25 +339,23 @@ export class KafkaLogConsumer<T> {
           }
         },
       });
-      let progressing: Promise<void> | undefined;
+      const progressing = new Map<number, Promise<void>>();
       const progressTimer = setInterval(() => {
-        if (
-          progressing ||
-          !this.#ready ||
-          retired ||
-          this.#closing ||
-          this.#options.commitMessages === false
-        )
+        if (!this.#ready || retired || this.#closing || this.#options.commitMessages === false)
           return;
         const epoch = this.#epoch;
-        progressing = this.#commitProgress(consumer, epoch)
-          .catch(() => {
-            if (epoch === this.#epoch && !retired && !this.#closing)
-              logger.error("Kafka progress commit failed");
-          })
-          .finally(() => {
-            progressing = undefined;
-          });
+        for (const partition of this.#assigned) {
+          if (progressing.has(partition)) continue;
+          const task = this.#commitProgress(consumer, partition, epoch)
+            .catch(() => {
+              if (epoch === this.#epoch && !retired && !this.#closing)
+                logger.error("Kafka progress commit failed");
+            })
+            .finally(() => {
+              if (progressing.get(partition) === task) progressing.delete(partition);
+            });
+          progressing.set(partition, task);
+        }
       }, 1000);
       progressTimer.unref();
       this.#reader = consumer;
@@ -393,29 +391,29 @@ export class KafkaLogConsumer<T> {
         // disconnecting that consumer object.
         await this.#retirePublicationWriters();
         await consumer.disconnect().catch(() => undefined);
-        await progressing;
+        await Promise.allSettled(progressing.values());
         if (this.#reader === consumer) this.#reader = undefined;
       }
       if (!this.#closing) await new Promise((resolve) => setTimeout(resolve, 250));
     }
   }
 
-  async #commitProgress(consumer: KafkaPartitionReader, epoch: number): Promise<void> {
-    const offsets = [...this.#assigned].flatMap((partition) => {
-      const offset = this.#processedOffsets.get(partition);
-      return offset !== undefined && offset > (this.#committedOffsets.get(partition) ?? -1n)
-        ? [{ topic: this.#options.topic, partition, offset: offset.toString() }]
-        : [];
+  async #commitProgress(
+    consumer: KafkaPartitionReader,
+    partition: number,
+    epoch: number,
+  ): Promise<void> {
+    const offset = this.#processedOffsets.get(partition);
+    if (offset === undefined || offset <= (this.#committedOffsets.get(partition) ?? -1n)) return;
+    await consumer.commitOffset({
+      topic: this.#options.topic,
+      partition,
+      offset: offset.toString(),
     });
-    if (!offsets.length) return;
-    await consumer.commitOffsets(offsets);
     if (epoch !== this.#epoch || this.#closing) return;
-    for (const p of offsets) {
-      const offset = BigInt(p.offset);
-      if (offset > (this.#committedOffsets.get(p.partition) ?? -1n))
-        this.#committedOffsets.set(p.partition, offset);
-      this.#lastCommitAt.set(p.partition, performance.now());
-    }
+    if (offset > (this.#committedOffsets.get(partition) ?? -1n))
+      this.#committedOffsets.set(partition, offset);
+    this.#lastCommitAt.set(partition, performance.now());
   }
 
   async #batch(
@@ -452,9 +450,11 @@ export class KafkaLogConsumer<T> {
                 if (epoch !== this.#epoch || payload.isStale() || this.#closing) return false;
                 const next = BigInt(message.offset) + 1n;
                 if (next <= (this.#committedOffsets.get(batch.partition) ?? -1n)) return false;
-                await consumer.commitOffsets([
-                  { topic: batch.topic, partition: batch.partition, offset: next.toString() },
-                ]);
+                await consumer.commitOffset({
+                  topic: batch.topic,
+                  partition: batch.partition,
+                  offset: next.toString(),
+                });
                 if (epoch !== this.#epoch || payload.isStale() || this.#closing) return false;
                 this.#committedOffsets.set(batch.partition, next);
                 this.#lastCommitAt.set(batch.partition, performance.now());
@@ -508,9 +508,11 @@ export class KafkaLogConsumer<T> {
         next > (this.#committedOffsets.get(batch.partition) ?? -1n) &&
         performance.now() - (this.#lastCommitAt.get(batch.partition) ?? -Infinity) >= 1000
       ) {
-        await consumer.commitOffsets([
-          { topic: batch.topic, partition: batch.partition, offset: next.toString() },
-        ]);
+        await consumer.commitOffset({
+          topic: batch.topic,
+          partition: batch.partition,
+          offset: next.toString(),
+        });
         if (epoch === this.#epoch && !payload.isStale()) {
           if (next > (this.#committedOffsets.get(batch.partition) ?? -1n))
             this.#committedOffsets.set(batch.partition, next);
