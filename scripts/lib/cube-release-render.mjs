@@ -9,8 +9,8 @@ import {
 export const CUBE_PLUGIN_CONFIG = "pi-cloud-posix-volume-plugin";
 const plugin = "picloud-posix";
 const hash = (value) => createHash("sha256").update(value).digest("hex");
-function upsert(items, value) {
-  const index = items.findIndex((item) => item.name === value.name);
+function upsert(items, value, key = "name") {
+  const index = items.findIndex((item) => item[key] === value[key]);
   if (index < 0) items.push(value);
   else items[index] = { ...items[index], ...value };
 }
@@ -21,7 +21,7 @@ function container(pod, name) {
 }
 function mount(pod, name, value) {
   const target = container(pod, name);
-  upsert((target.volumeMounts ??= []), value);
+  upsert((target.volumeMounts ??= []), value, "mountPath");
 }
 function annotate(resource, annotations) {
   const metadata = resource.spec.template.metadata;
@@ -175,7 +175,7 @@ export function renderCubeRelease(yaml, input) {
   const cubelet = container(nodePod, "cubelet"),
     additions = completion.spec.containers[0];
   for (const entry of additions.env) upsert((cubelet.env ??= []), entry);
-  for (const entry of additions.volumeMounts) upsert(cubelet.volumeMounts, entry);
+  for (const entry of additions.volumeMounts) upsert(cubelet.volumeMounts, entry, "mountPath");
   for (const entry of completion.spec.volumes) upsert(nodePod.volumes, entry);
   const owned = [
     {

@@ -13,6 +13,28 @@ export function assertCubeWorkspaceContract(master, node, expectedHostRoot) {
   requiredMount(master, "cube-master", "/data/cube-shared", expectedHostRoot);
   requiredMount(node, "cubelet", "/data/cube-shared", expectedHostRoot);
   requiredMount(node, "network-agent", "/data/cube-shared", expectedHostRoot);
+  for (const [resource, containerName, mountPath] of [
+    [
+      master,
+      "cube-master",
+      "/usr/local/services/cubetoolbox/CubeMaster/plugin/cube-volume-picloud-posix",
+    ],
+    [node, "cubelet", "/opt/cube-image/Cubelet/plugin/cube-volume-picloud-posix"],
+  ]) {
+    const pod = resource.spec.template.spec;
+    const executable = pod.containers
+      .find((c) => c.name === containerName)
+      ?.volumeMounts?.find((m) => m.mountPath === mountPath);
+    const mounted = pod.volumes.find((v) => v.name === executable?.name);
+    if (
+      executable?.subPath !== "cube-volume-picloud-posix" ||
+      executable.readOnly !== true ||
+      mounted?.configMap?.name !== "pi-cloud-posix-volume-plugin"
+    )
+      throw new Error(
+        "Cube POSIX plugin executable mount drifted; rerun the Cube installer before deployment",
+      );
+  }
   const cubelet = node.spec.template.spec.containers.find((item) => item.name === "cubelet");
   const config = cubelet?.volumeMounts?.find(
     (item) => item.mountPath === "/opt/cube-image/Cubelet/config/config.toml",

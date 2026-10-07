@@ -6,6 +6,15 @@ Build a portfolio-quality, cloud-oriented coding-agent runtime around Pi's
 public embedded SDK. The project must demonstrate reliable agent
 infrastructure, not merely a chat UI or a collection of framework integrations.
 
+## Current development stage
+
+The owner permits destructive matched upgrades and removal of obsolete PiCloud
+business data/runtime resources. Do not retain compatibility code or old business
+backups solely to support development-era versions. Preserve accounts, model and
+provider configuration, and credentials unless their removal is explicitly in
+scope. Drain writers and confirm physical cleanup before discarding ownership
+records; destructive development updates do not weaken runtime fencing.
+
 ## Before changing code
 
 Read these files first:

@@ -96,6 +96,15 @@ it("renders a complete, idempotent Cube release before deployment while retainin
     "kafka-1:9092,kafka-2:9092,kafka-3:9092",
   );
   expect(network.volumeMounts.some((v) => v.name === "pi-cloud-completion")).toBe(false);
+  expect(
+    cubelet.volumeMounts
+      .filter((v) => v.name === "picloud-posix-volume-plugin")
+      .map((v) => v.mountPath)
+      .sort(),
+  ).toEqual([
+    "/opt/cube-image/Cubelet/config/config.toml",
+    "/opt/cube-image/Cubelet/plugin/cube-volume-picloud-posix",
+  ]);
   const config = find(resources, "ConfigMap", "pi-cloud-posix-volume-plugin").data;
   expect(config["cubelet-config.toml"]).toContain("execution_completion_command");
   expect(config["cubelet-config.toml"]).toContain("cube-volume-picloud-posix");

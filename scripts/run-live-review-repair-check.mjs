@@ -83,11 +83,15 @@ try {
       `(()=>{const input=document.querySelector('.product-composer textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'只回复 LIVE_RETRY_OK，不要调用工具。');input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
     );
     await page.waitFor("!document.querySelector('.product-send-button').disabled");
-    await page.evaluate("document.querySelector('.product-send-button').click()");
-    await page.waitFor(
-      "releaseTurnCalls.length===1 && !document.querySelector('.product-send-button').disabled",
+    await page.evaluate(
+      "document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
     );
-    await page.evaluate("document.querySelector('.product-send-button').click()");
+    await page.waitFor(
+      "releaseTurnCalls.length===1 && (document.querySelector('.product-send-button')??document.querySelector('.product-steer-button'))?.disabled===false",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
+    );
     await page.waitFor(
       "releaseTurnCalls.length===2 && document.querySelector('.product-composer textarea').value===''",
     );

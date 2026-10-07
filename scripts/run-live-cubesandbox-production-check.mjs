@@ -1,4 +1,5 @@
 import { readNativeHistory, nativeMessages, runUsage } from "./lib/native-session-history.mjs";
+import { resourceLimit } from "../packages/domain/src/resource-limit.ts";
 import { kubectl, podFor } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -440,7 +441,14 @@ async function waitForRunningCubeSession(sessionId) {
 
 async function destroyCubeSession(sessionId) {
   const retained = managedForSession(await cube.list(), sessionId);
-  await Promise.allSettled(retained.map((instance) => cube.destroy(instance.sandboxId)));
+  for (const instance of retained) {
+    const id = instance.metadata["picloud.allocation_id"];
+    const createBefore = Number(instance.metadata["picloud.create_before"]);
+    assert(id && Number.isSafeInteger(createBefore) && createBefore > 0);
+    const result = await cube.allocation(id, createBefore, "close");
+    assert(result.closed && result.phase === "absent", "Owned allocation closure was unconfirmed");
+    assert.equal((await cube.observe(instance.sandboxId, instance.nodeId)).presence, "absent");
+  }
   await waitForNoCubeSession(sessionId);
 }
 
@@ -452,19 +460,6 @@ async function logicalSandboxIdForRun(runId) {
   );
   assert.match(value, /^[0-9a-f-]{36}$/i);
   return value;
-}
-
-async function logicalSandboxIdsForSession(sessionId) {
-  const values = await psql(
-    `select distinct r.sandbox_id
-       from runs r
-      where r.session_id = ${sqlLiteral(sessionId)}
-        and r.sandbox_id is not null`,
-  );
-  if (values.length === 0) return [];
-  const sandboxIds = values.split(/\r?\n/);
-  for (const sandboxId of sandboxIds) assert.match(sandboxId, /^[0-9a-f-]{36}$/i);
-  return sandboxIds;
 }
 
 async function listLogicalSandboxAssignments(logicalSandboxId) {
@@ -531,15 +526,12 @@ async function workspaceRuntimeEvidence(workspaceId) {
   return { workspaceRuntimeId, providerRuntimeId, state };
 }
 
+// Routing rows are removed after ordered closure; collect the owned binding
+// while its Run is active instead of treating routing as historical storage.
+const observedToolBindings = new Map();
 async function toolBindingForRun(runId) {
-  const value = await psql(
-    `select binding_id::text
-       from sandbox_tool_bindings
-      where run_id = ${sqlLiteral(runId)}
-      order by binding_id
-      limit 1`,
-  );
-  assert(value.length > 0, `Run ${runId} did not record a Tool binding`);
+  const value = observedToolBindings.get(runId);
+  assert(value, `Run ${runId} did not expose a live Tool binding`);
   return value;
 }
 
@@ -584,99 +576,28 @@ async function userManagedGitEvidence(tenant, workspaceId, sessionId) {
   };
 }
 
-async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
-  const durableWarmJson = await psql(
-    `select json_build_object(
-              'containerId', runtime_id,
-              'containerName', runtime_name,
-              'supervisorId', supervisor_id,
-              'bootId', boot_id,
-              'sandboxId', sandbox_id,
-              'runId', run_id,
-              'workspaceId', workspace_id,
-              'sessionId', session_id,
-              'turnId', turn_id,
-              'executionReference', 'pcer2_' || replace(lease_id::text, '-', '') ||
-                '_' || replace(run_id::text, '-', '') || '_' || fencing_token::text
-            )::text
-       from workspace_runtimes
-      where workspace_id = (
-              select workspace_id from sessions where id = ${sqlLiteral(sessionId)}
-            )
-        and state = 'warm'
-        and runtime_id is not null
-        and runtime_name is not null`,
-  );
-  const durableWarm =
-    durableWarmJson.length === 0
-      ? undefined
-      : parseJson(durableWarmJson, "Control-plane-owned warm assignment");
-  const source = `
-    import { readFileSync } from "node:fs";
-    import { randomUUID } from "node:crypto";
-    const sessionId = ${JSON.stringify(sessionId)};
-    const token = readFileSync(
-      "/run/pi-cloud-secrets/sandbox-control-token",
-      "utf8",
-    ).trim();
-    const endpoint = "http://127.0.0.1:4300/internal/v1/sandbox-inventory";
-    const durableWarm = ${JSON.stringify(durableWarm)};
-    const sandboxId = durableWarm?.sandboxId ?? ${JSON.stringify(logicalSandboxId)};
-    const send = async (body) => {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          authorization: "Bearer " + token,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      const value = await response.json();
-      if (!response.ok) throw new Error(JSON.stringify(value));
-      return value;
-    };
-    const listed = await send({
-      protocolVersion: 1,
-      type: "assignments.list",
-      requestId: randomUUID(),
-      sandboxId,
-    });
-    const visibleAssignments = listed.assignments.filter(
-      (assignment) => assignment.sessionId === sessionId,
-    );
-    const assignments = visibleAssignments.length === 0 && durableWarm !== undefined
-      ? [durableWarm]
-      : visibleAssignments;
-    if (assignments.length > 1 || (${JSON.stringify(required)} && assignments.length !== 1)) {
-      throw new Error("Expected one Workspace runtime assignment, got " + assignments.length);
-    }
-    if (assignments.length === 0) process.exit(0);
-    const assignment = assignments[0];
-    await send({
-      protocolVersion: 1,
-      type: "assignment.terminate_and_confirm",
-      requestId: randomUUID(),
-      sandboxId,
-      assignment,
-    });
-  `;
-  await capture(
-    process.execPath,
-    [
-      "scripts/production-kubernetes.mjs",
-      "exec",
-      "control-plane",
-      "node",
-      "--input-type=module",
-      "--eval",
-      source,
-    ],
-    60_000,
-  );
-}
-
+// Fault injection owns only this acceptance Session's VM. Logical Worker
+// assignment retirement deliberately keeps the Workspace warm; it is not a VM
+// eviction API. Close the immutable native allocation and wait for the Control
+// Plane to reconcile physical absence before asking it to create another VM.
 async function terminateWarmCubeSession(runId, sessionId) {
-  await terminateLogicalSandbox(await logicalSandboxIdForRun(runId), sessionId, true);
+  const run = await api.getRun(runId);
+  assert.equal(run.sessionId, sessionId);
+  assert.equal(run.state, "completed");
+  const instances = managedForSession(await cube.list(), sessionId);
+  assert.equal(instances.length, 1, "Expected one owned warm VM");
+  const previous = instances[0];
+  await destroyCubeSession(sessionId);
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    const state = await psql(
+      `select state from workspace_runtimes where workspace_runtime_id=${sqlLiteral(previous.metadata["picloud.allocation_id"])}`,
+    );
+    assert(state, "Owned allocation lost its PG lifecycle record before reconciliation");
+    if (state === "released") return;
+    await wait(500);
+  }
+  throw new Error("Control Plane did not reconcile the owned VM's confirmed absence");
 }
 
 async function waitForDurableRunCompletion(runId) {
@@ -721,6 +642,13 @@ async function runTurn(sessionId, prompt, expectTools) {
     try {
       while (!controller.signal.aborted) {
         const run = await api.getRun(accepted.runId);
+        if (expectTools && !observedToolBindings.has(accepted.runId)) {
+          const binding = await psql(
+            `select binding_id::text from sandbox_tool_bindings
+             where run_id = ${sqlLiteral(accepted.runId)} order by binding_id limit 1`,
+          );
+          if (binding) observedToolBindings.set(accepted.runId, binding);
+        }
         if (["failed", "cancelled", "timed_out", "superseded"].includes(run.state)) {
           failedRun = run;
           controller.abort();
@@ -906,15 +834,12 @@ function totalUsage(...usage) {
 }
 
 await cube.checkHealth();
-const maximumActiveToolSandboxes = Number(
-  environment.PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES ?? "2",
+const maximumActiveToolSandboxes = resourceLimit(
+  environment.PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES,
+  "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES",
 );
 const existingCubeCount = (await cube.list()).length;
-if (
-  !Number.isSafeInteger(maximumActiveToolSandboxes) ||
-  maximumActiveToolSandboxes < 2 ||
-  maximumActiveToolSandboxes - existingCubeCount < 2
-) {
+if (maximumActiveToolSandboxes !== null && maximumActiveToolSandboxes - existingCubeCount < 2) {
   throw new Error(
     `Cube production acceptance requires two free Sandbox slots; configured=${String(maximumActiveToolSandboxes)}, active=${String(existingCubeCount)}`,
   );
@@ -1319,7 +1244,7 @@ try {
       retainedRunningWorkspaceMicroVmCount: retainedMainSessionCubes.length,
       foreignSessionMicroVmCount: 0,
       conversationDeletionReleasedWorkspaceRuntime: false,
-      explicitWarmEvictionVerified: false,
+      confirmedAllocationClosureVerified: false,
     },
   };
   assert(usage.requests >= 3 && usage.inputTokens > 0 && usage.outputTokens > 0);
@@ -1329,7 +1254,7 @@ try {
   progress("deleting the final conversation released its unused elastic Workspace runtime");
   await terminateWarmCubeSession(largeFollowUp.accepted.runId, largeSession.sessionId);
   await waitForNoCubeSession(largeSession.sessionId);
-  report.cleanup.explicitWarmEvictionVerified = true;
+  report.cleanup.confirmedAllocationClosureVerified = true;
   report.cleanup.retainedRunningWorkspaceMicroVmCount = 0;
 
   if (writeReport) {
@@ -1357,7 +1282,7 @@ try {
         `- Coding Tool calls: ${String(report.firstCoding.toolCalls)} + ${String(report.followUpCoding.toolCalls)}`,
         `- Same running Workspace Cube KVM guest reused: ${String(report.multiRound.sameCubeMicroVm)}`,
         `- Agent Preview / background process survived cross-Run Tool bindings: ${String(report.multiRound.agentPreviewPublished)} / ${String(report.multiRound.backgroundProcessSurvived)}`,
-        `- Elastic runtime / conversation deletion preserved Workspace ownership: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.conversationDeletionPreservedWorkspaceRuntime)}`,
+        `- Elastic runtime / final conversation deletion released its unused runtime: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.conversationDeletionReleasedWorkspaceRuntime)}`,
         `- Workspace restored across Runs: ${String(report.multiRound.workspaceRestored)}`,
         `- Platform Git metadata absent / user-managed .git present: ${String(report.workspaceIsolation.platformGitMetadataAbsent)} / ${String(report.workspaceIsolation.userGitPresent)}`,
         `- Large Workspace files on the persistent Volume: ${String(report.largeWorkspace.firstFileCount)}`,
@@ -1368,9 +1293,9 @@ try {
         `- PostgreSQL hot-event table absent / projected Session mutations: ${String(report.eventPlane.postgresHotEventTableAbsent)} / ${String(report.eventPlane.projectedSessionMutations)}`,
         `- Scheduler / Worker pool: ${report.scheduler.authority} / ${report.scheduler.workerPool}`,
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,
-        `- Final-conversation cleanup and explicit warm eviction / remaining Cube microVMs: ${String(report.cleanup.conversationDeletionReleasedWorkspaceRuntime && report.cleanup.explicitWarmEvictionVerified)} / ${String(report.cleanup.retainedRunningWorkspaceMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
+        `- Final-conversation cleanup and confirmed native allocation closure / remaining Cube microVMs: ${String(report.cleanup.conversationDeletionReleasedWorkspaceRuntime && report.cleanup.confirmedAllocationClosureVerified)} / ${String(report.cleanup.retainedRunningWorkspaceMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
         "",
-        "A real-model chat Run completed without touching Cube. Two elastic coding Runs used distinct fenced Tool bindings in one bounded-warm Workspace Cube; deleting the conversation did not implicitly own or destroy that Workspace runtime, and explicit eviction removed it. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a new physical runtime identity. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
+        "A real-model chat Run completed without touching Cube. Two elastic coding Runs used distinct fenced Tool bindings in one bounded-warm Workspace Cube; deleting the final conversation released its unused runtime. A separately owned cold-recovery fixture closed its native allocation and waited for the Control Plane to reconcile absence. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a new physical runtime identity. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and confirmed native allocation closure were verified.",
         "",
       ].join("\n"),
       "utf8",
@@ -1383,13 +1308,6 @@ try {
   // in-memory handle until the Manager's TTL/restart.
   await api.deleteConversation(session.sessionId).catch(() => undefined);
   await waitForNoCubeSession(session.sessionId).catch(() => undefined);
-  for (const logicalSandboxId of await logicalSandboxIdsForSession(session.sessionId).catch(
-    () => [],
-  )) {
-    await terminateLogicalSandbox(logicalSandboxId, session.sessionId, false).catch(
-      () => undefined,
-    );
-  }
   await destroyCubeSession(session.sessionId).catch(() => undefined);
   await api
     .deleteWorkspace(project.workspaceId, newIdempotencyKey("acceptance-finally-workspace"))
@@ -1406,13 +1324,6 @@ try {
   if (largeSession !== undefined) {
     await api.deleteConversation(largeSession.sessionId).catch(() => undefined);
     await waitForNoCubeSession(largeSession.sessionId).catch(() => undefined);
-    for (const logicalSandboxId of await logicalSandboxIdsForSession(largeSession.sessionId).catch(
-      () => [],
-    )) {
-      await terminateLogicalSandbox(logicalSandboxId, largeSession.sessionId, false).catch(
-        () => undefined,
-      );
-    }
     await destroyCubeSession(largeSession.sessionId).catch(() => undefined);
     await api
       .deleteWorkspace(

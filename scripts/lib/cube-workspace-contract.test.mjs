@@ -14,6 +14,19 @@ function fixture(names) {
             name,
             volumeMounts: [
               { name: "shared", mountPath: "/data/cube-shared" },
+              ...(["cubelet", "cube-master"].includes(name)
+                ? [
+                    {
+                      name: "plugin",
+                      mountPath:
+                        name === "cubelet"
+                          ? "/opt/cube-image/Cubelet/plugin/cube-volume-picloud-posix"
+                          : "/usr/local/services/cubetoolbox/CubeMaster/plugin/cube-volume-picloud-posix",
+                      subPath: "cube-volume-picloud-posix",
+                      readOnly: true,
+                    },
+                  ]
+                : []),
               ...(name === "cubelet"
                 ? [
                     {
@@ -78,4 +91,14 @@ test("requires matching native Cubelet patches and completion protocol sources",
       ),
     /Update Cubelet/,
   );
+});
+
+test("refuses a missing executable even when the same ConfigMap still provides the config", () => {
+  const master = fixture(["cube-master"]),
+    node = fixture(["cubelet", "network-agent"]);
+  const container = node.spec.template.spec.containers[0];
+  container.volumeMounts = container.volumeMounts.filter(
+    (m) => m.subPath !== "cube-volume-picloud-posix",
+  );
+  assert.throws(() => assertCubeWorkspaceContract(master, node, root), /executable mount drifted/);
 });

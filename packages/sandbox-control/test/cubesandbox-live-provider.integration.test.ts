@@ -355,8 +355,11 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
     try {
       const binding = await broker.create(createRequest(assigned, config.imageRevision));
       expect(binding.continuity).toBe("cold_restore");
-      const failure = new Error("Owned test VM DELETE did not reach Cube");
-      vi.spyOn(runtime, "destroy").mockRejectedValueOnce(failure);
+      const failure = new Error("Owned test allocation closure did not reach Cube");
+      const allocation = runtime.allocation.bind(runtime);
+      vi.spyOn(runtime, "allocation").mockImplementation((id, createBefore, action) =>
+        action === "close" ? Promise.reject(failure) : allocation(id, createBefore, action),
+      );
       setState.mockClear();
       await expect(
         broker.release({
@@ -422,7 +425,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           nativeSurvivorConfirmed: true,
           releasedNotReported: true,
           cleanupConfirmed: true,
-          scope: "real Cube; controlled DELETE failure; in-memory ownership fixture",
+          scope: "real Cube; controlled allocation-close failure; in-memory ownership fixture",
         },
       }) + "\n",
     );
