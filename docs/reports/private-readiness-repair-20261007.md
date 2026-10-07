@@ -63,6 +63,13 @@ data; no production backup, schedule or remote destination was created.
   Bounded private evidence: `dist/readiness-live-acceptance-20261007.json`.
 - Documentation links, installer contract/shell syntax, runtime budget/template
   retention policy, image closure, formatting and diff checks pass.
+- From clean source commit `d2d10fea`, the maintained guest preparation command
+  also passes against the actual registered image. It reports `reused: true`
+  for guest input identity `1ab0b6a38aa52ff410a7ab8b527f1f32c91a3b89` and passes
+  the real-image execution/path/directory/preview contract without registering
+  a template or changing the running release. The final seven-case asset suite
+  completes in 39.54 seconds including fixture startup, failure cases and cleanup;
+  that duration is not a production restore-time guarantee.
 
 ## Scope and remaining claims
 
