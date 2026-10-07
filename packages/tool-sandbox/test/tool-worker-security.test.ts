@@ -162,7 +162,7 @@ describe("credential-free Tool Sandbox worker", () => {
 
       await writeFile(resolve(workspace, "wide.txt"), `${"x".repeat(60 * 1_024)}\nnext`);
       await expect(readWorkspaceFileRange("wide.txt", 1, 10, workspace)).resolves.toMatchObject({
-        content: Buffer.alloc(0),
+        content: Buffer.from("x".repeat(50 * 1_024)),
         startLine: 1,
         endLine: 1,
         firstLineBytes: 60 * 1_024,
@@ -196,7 +196,7 @@ describe("credential-free Tool Sandbox worker", () => {
   it("attaches an existing persistent Volume independently of its original seed kind", async () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-volume-authority-"));
     const base = {
-      toolWorkerProtocolVersion: 3 as const,
+      toolWorkerProtocolVersion: 4 as const,
       type: "worker.initialize" as const,
       activationId: "10000000-0000-4000-8000-000000000001",
       toolRoot: workspace,
@@ -224,7 +224,7 @@ describe("credential-free Tool Sandbox worker", () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-seed-safe-"));
     try {
       await attachToolExecution({
-        toolWorkerProtocolVersion: 3,
+        toolWorkerProtocolVersion: 4,
         type: "worker.initialize",
         activationId: "10000000-0000-4000-8000-000000000001",
         toolRoot: workspace,

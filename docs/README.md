@@ -6,7 +6,9 @@ interaction with withdrawn queued input, returned-input submission identity,
 oversized-line Read drift from Pi 1.0,
 and native configuration logging, and measures avoidable hot-document SQL.
 The previously interrupted full Luna/cold-VM acceptance now passes. Product
-repairs remain pending; the report separates current evidence from limitations.
+repairs are implemented under [ADR-0236](adr/0236-recovery-input-identity-and-tool-diagnostics.md),
+with [source verification and release boundaries](reports/review-repair-20261007-r3.md).
+R07R3-04 is owner-deferred. The matched Tool Worker protocol 4 deployment remains pending.
 
 The [October 7 post-release review](reports/repository-review-20261007-r2.md)
 audits `59541389` across all 22 workspaces. Four reproduced findings cover

@@ -1,7 +1,7 @@
 import { MAX_AGENT_INPUT_CHARACTERS } from "./agent-input-budget.ts";
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { ControlPlaneApiValidationError } from "./control-plane-api.ts";
+import { ControlPlaneApiValidationError, IdempotencyKeySchema } from "./control-plane-api.ts";
 import { UserUploadIdsSchema, UserUploadsSchema } from "./user-upload.ts";
 import {
   NonNegativeSafeIntegerSchema,
@@ -84,6 +84,7 @@ export type QueuedInputActionResult = Static<typeof QueuedInputActionResultSchem
 export const ReturnedInputSchema = Type.Object(
   {
     turnId: UuidSchema,
+    idempotencyKey: IdempotencyKeySchema,
     text: Text,
     uploads: UserUploadsSchema,
     mailboxPosition: PositiveSafeIntegerSchema,

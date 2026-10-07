@@ -1,0 +1,280 @@
+{
+  "format": "pi-cloud.review-repair-evidence.v1",
+  "baseRevision": "21c082b4",
+  "scope": ["R07R3-01", "R07R3-02", "R07R3-03", "O07R3-01", "unused-classifier-and-readme-cleanup"],
+  "deferred": ["R07R3-04"],
+  "deploymentChanged": false,
+  "sourceProtocols": {
+    "toolWorker": 4,
+    "guestInput": 4,
+    "cubeManagement": 7,
+    "pgSchema": 182
+  },
+  "recovery": {
+    "scope": "isolated real PostgreSQL; actual admission/cancellation/closure code; controlled Worker exit",
+    "cases": [
+      {
+        "order": "exit-first",
+        "queuedInputWithdrawn": false,
+        "sessionState": "idle",
+        "failedRunState": "failed",
+        "agentExitConfirmed": true,
+        "sealConfirmed": true,
+        "nextInputAccepted": true
+      },
+      {
+        "order": "exit-first",
+        "queuedInputWithdrawn": true,
+        "sessionState": "idle",
+        "failedRunState": "failed",
+        "agentExitConfirmed": true,
+        "sealConfirmed": true,
+        "queuedRow": {
+          "state": "cancelled",
+          "lease_id": null,
+          "started_at": null,
+          "stop_reason": "queued_input_withdrawn"
+        },
+        "nextInputAccepted": true
+      },
+      {
+        "order": "seal-first",
+        "queuedInputWithdrawn": false,
+        "sessionState": "idle",
+        "failedRunState": "failed",
+        "agentExitConfirmed": true,
+        "sealConfirmed": true,
+        "nextInputAccepted": true
+      },
+      {
+        "order": "seal-first",
+        "queuedInputWithdrawn": true,
+        "sessionState": "idle",
+        "failedRunState": "failed",
+        "agentExitConfirmed": true,
+        "sealConfirmed": true,
+        "queuedRow": {
+          "state": "cancelled",
+          "lease_id": null,
+          "started_at": null,
+          "stop_reason": "queued_input_withdrawn"
+        },
+        "nextInputAccepted": true
+      }
+    ]
+  },
+  "returnedIntent": {
+    "scope": "actual ComposerSubmission, PiCloudApi validation and returned-input recovery; controlled durable-admission/reply-loss fixture; ChatApp wiring checked separately",
+    "controlIsNotAProposedBlindReset": true,
+    "cases": [
+      {
+        "invalidateStoppedIntent": false,
+        "requests": 2,
+        "distinctKeys": 1,
+        "admittedRuns": 1,
+        "replayed": true,
+        "wireState": "queued",
+        "resubmissionRunState": "cancelled",
+        "draftAfterSuccess": ""
+      },
+      {
+        "invalidateStoppedIntent": true,
+        "requests": 2,
+        "distinctKeys": 2,
+        "admittedRuns": 2,
+        "replayed": false,
+        "wireState": "queued",
+        "resubmissionRunState": "queued",
+        "draftAfterSuccess": ""
+      }
+    ]
+  },
+  "readParity": {
+    "bytes": 120017,
+    "native": {
+      "contentBytes": 51200,
+      "containsFilePrefix": true,
+      "diagnostics": [
+        {
+          "severity": "warn",
+          "code": "truncated",
+          "message": "Line 1 is 117.2KB, exceeds the 50.0KB limit; showing its first 50.0KB. Use bash: sed -n '1p' bundle.js | tail -c +51201"
+        }
+      ]
+    },
+    "cloud": {
+      "contentBytes": 51200,
+      "containsFilePrefix": true,
+      "isError": false
+    }
+  },
+  "completeDocumentReads": {
+    "scope": "isolated real PostgreSQL; acknowledged publication fixture with PG projection held",
+    "documentReads": 20,
+    "unnecessaryRevisionSqlReads": 0,
+    "projectionHead": 0,
+    "publishedBatches": 21,
+    "allValuesCorrect": true,
+    "completeLocalDocumentFailsWhenProjectionReadFails": false
+  },
+  "documentCost": {
+    "scope": "owned loopback PG; acknowledged fixture publication; synthetic document, no model or production deployment",
+    "limitation": "Process CPU includes JS/GC scheduling; cold read CPU excludes the separate PG process. Timings are not a capacity guarantee.",
+    "cases": [
+      {
+        "deltas": 20,
+        "baseTextBytes": 16384,
+        "checkpointTailRevisions": 21,
+        "acknowledgedLocal": {
+          "reads": 40,
+          "revisionQueries": 0,
+          "wallMs": 15.914,
+          "processCpuMs": 22.122
+        },
+        "coldIndexed": {
+          "reads": 40,
+          "revisionQueries": 40,
+          "wallMs": 107.281,
+          "processCpuMs": 61.436
+        },
+        "materializeLocalSuffix": {
+          "reads": 200,
+          "revisionQueries": 0,
+          "wallMs": 3.349,
+          "processCpuMs": 4.045
+        },
+        "materializeDerivedCheckpoint": {
+          "reads": 200,
+          "revisionQueries": 0,
+          "wallMs": 8.079,
+          "processCpuMs": 16
+        }
+      },
+      {
+        "deltas": 130,
+        "baseTextBytes": 16384,
+        "checkpointTailRevisions": 3,
+        "acknowledgedLocal": {
+          "reads": 40,
+          "revisionQueries": 0,
+          "wallMs": 14.4,
+          "processCpuMs": 28.451
+        },
+        "coldIndexed": {
+          "reads": 40,
+          "revisionQueries": 40,
+          "wallMs": 72.431,
+          "processCpuMs": 24.282
+        },
+        "materializeLocalSuffix": {
+          "reads": 200,
+          "revisionQueries": 0,
+          "wallMs": 17.537,
+          "processCpuMs": 22.664
+        },
+        "materializeDerivedCheckpoint": {
+          "reads": 200,
+          "revisionQueries": 0,
+          "wallMs": 0.796,
+          "processCpuMs": 0.801
+        }
+      },
+      {
+        "deltas": 1024,
+        "baseTextBytes": 16384,
+        "checkpointTailRevisions": 1,
+        "acknowledgedLocal": {
+          "reads": 40,
+          "revisionQueries": 0,
+          "wallMs": 53.827,
+          "processCpuMs": 99.237
+        },
+        "coldIndexed": {
+          "reads": 40,
+          "revisionQueries": 40,
+          "wallMs": 71.915,
+          "processCpuMs": 18.257
+        },
+        "materializeLocalSuffix": {
+          "reads": 200,
+          "revisionQueries": 0,
+          "wallMs": 122.267,
+          "processCpuMs": 151.168
+        },
+        "materializeDerivedCheckpoint": {
+          "reads": 200,
+          "revisionQueries": 0,
+          "wallMs": 0.409,
+          "processCpuMs": 0.417
+        }
+      }
+    ]
+  },
+  "guestBundle": {
+    "entries": 4,
+    "syntax": "passed",
+    "toolWorkerProtocol": 4,
+    "files": [
+      {
+        "name": "envd-tool-exec.mjs",
+        "bytes": 776939
+      },
+      {
+        "name": "envd-guest-control.mjs",
+        "bytes": 383371
+      },
+      {
+        "name": "envd-input-files.mjs",
+        "bytes": 400819
+      },
+      {
+        "name": "cube-tool-scope.mjs",
+        "bytes": 10814
+      }
+    ],
+    "method": "same esbuild flags and entry points as Dockerfile.tool; local build, no deployment"
+  },
+  "browser": {
+    "command": "npm run browser:presentation:check",
+    "passed": true,
+    "scope": "actual React DOM and client API validation with controlled HTTP fixtures; no production Run",
+    "newScenarios": [
+      "lost admission reply; clear; Stop; returned text/image; fresh admission",
+      "older return while newer post-Stop submission is uncertain; preserve newer retry key and draft"
+    ]
+  },
+  "transport": {
+    "command": "npm run test:transport",
+    "passed": true,
+    "files": 6,
+    "tests": 7,
+    "scope": "owned RF3 Kafka and PostgreSQL"
+  },
+  "faults": {
+    "report": "review-repair-20261007-r3-faults.json",
+    "cases": 226,
+    "initialSweepPassed": 223,
+    "selectionFailuresRetried": 3,
+    "verifiedPassed": 226
+  },
+  "workspaceCheck": {
+    "command": "npm run check",
+    "passed": true,
+    "typechecks": 22,
+    "workspaces": 22,
+    "testsPassed": 1666,
+    "testsSkipped": 9,
+    "acceptanceHelpersPassed": 45,
+    "skippedCoverage": "Seven Kafka/PG cases passed separately in test:transport; two live Cube VM cases remain for matched deployment acceptance."
+  },
+  "otherChecks": {
+    "build": true,
+    "browser:presentation:check": true,
+    "helm:check": true,
+    "runtime-policy:check": true,
+    "image:closure-check": true,
+    "security:audit": true,
+    "docs:check": true,
+    "format:check": true
+  }
+}

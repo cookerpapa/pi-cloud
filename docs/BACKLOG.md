@@ -32,23 +32,28 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 The [recovery and boundary review](reports/repository-review-20261007-r3.md)
 is complete at `1e7e21eb`, covering all 22 workspaces. Its new characterizations
-leave product behavior unchanged:
+leave product behavior unchanged. The subsequently approved repairs follow
+[ADR-0236](adr/0236-recovery-input-identity-and-tool-diagnostics.md) and the
+[source verification record](reports/review-repair-20261007-r3.md):
 
-- [ ] R07R3-01: distinguish cancelled, unstarted queue inputs from later actual
+- [x] R07R3-01: distinguish cancelled, unstarted queue inputs from later actual
       executions when recovering a failed Session. Preserve exact exit/seal and
       stale-owner guards; verify both proof orderings with Stop queue return.
-- [ ] R07R3-02: end the matching uncertain submission identity when stopped input
+- [x] R07R3-02: end the matching uncertain submission identity when stopped input
       returns to the composer, so resending admits new work. Preserve newer
       post-Stop intents, unchanged retries, late ACKs and attachments.
-- [ ] R07R3-03: align oversized-line Read content and continuation diagnostics
+- [x] R07R3-03: align oversized-line Read content and continuation diagnostics
       with pinned Pi 1.0 while preserving bounded source reads and image support.
 - [ ] R07R3-04: remove CubeMaster's full configuration dumps and verify that
       startup/validation/reload logs exclude synthetic credential canaries.
-- [ ] O07R3-01: avoid cold document-revision SQL when the acknowledged overlay
+      Explicitly deferred by the owner on 2026-10-07 for private deployment.
+- [x] O07R3-01: avoid cold document-revision SQL when the acknowledged overlay
       contains the complete requested base/suffix. Retain native historical,
       version, checkpoint and eviction semantics and measure materialization cost.
-- [ ] Remove the unused Pi 0.84 model-stream classifier and simplify overlapping
+- [x] Remove the unused Pi 0.84 model-stream classifier and simplify overlapping
       README release narratives while preserving versioned design evidence.
+- [ ] Deploy matched Tool Worker protocol 4 artifacts and the updated returned-input
+      API/browser after draining old writers. No old-protocol compatibility mode.
 
 The [October 7 post-release review](reports/repository-review-20261007-r2.md)
 is complete at `59541389`. Its four confirmed findings are implemented and

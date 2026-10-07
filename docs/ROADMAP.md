@@ -7,8 +7,12 @@
       [Coverage, findings and evidence](reports/repository-review-20261007-r3.md).
 - [x] Complete the previously interrupted real Luna multi-Run/cold-VM gate and
       isolate new recovery, Read parity, logging and document-query observations.
-- [ ] Implement the confirmed repairs after review acceptance; proposed changes
-      and remaining architectural tradeoffs are recorded in BACKLOG and the report.
+- [x] Implement the approved R07R3-01/02/03 repairs, O07R3-01 query optimization
+      and scoped cleanup under [ADR-0236](adr/0236-recovery-input-identity-and-tool-diagnostics.md).
+      [Source verification](reports/review-repair-20261007-r3.md) records recovery,
+      browser, native parity and query-cost evidence. R07R3-04 is owner-deferred.
+- [ ] Deploy the matched Tool Worker protocol 4 guest/application artifacts and
+      updated returned-input API/browser; the running release is unchanged.
 
 ## October 7 post-release review
 

@@ -41,27 +41,13 @@ stores the native body once, with rebuildable record/document indexes for cold
 reads. Native Conversations share one physical Session lease and writer.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
-See [Durable migration and verification](docs/reports/pi-durable-migration-20261006.md).
-The [post-migration repository review](docs/reports/repository-review-20261006.md)
-records the baseline findings. [Source repairs and validation](docs/reports/review-repair-20261006.md)
-cover recovery, file locking, query costs and guest dependency reduction.
-The [matched schema 181 release](docs/reports/review-release-20261006.md) is deployed
-with real Luna, native Fork, Subagent, upload and cold-Worker acceptance.
-The [October 7 source repairs](docs/reports/review-repair-20261007.md) preserve
-send identity after a lost response, validate reused guest provenance, page Session
-headers before counting history, and allow concurrent Volume browsing/uploads
-with exclusive deletion. The [schema 182 rollout](docs/reports/review-release-20261007.md)
-is deployed, with real browser retry/concurrent-upload and Luna Tool/image acceptance.
-
-The [post-release source repairs](docs/reports/review-repair-20261007-r2.md)
-unify ordinary/Steer submission identity, isolate partition progress guards,
-recover abandoned upload staging and preserve EXIF image orientation.
-The [matched rollout](docs/reports/review-release-20261007-r2.md) deploys these
-changes with guest protocol 4 and schema 182. Old development data and superseded
-runtime resources are removed; accounts and provider/model configuration remain.
-The subsequent [recovery and boundary review](docs/reports/repository-review-20261007-r3.md)
-records four confirmed defects and one measured Storage query improvement;
-it completes the full Luna/cold-VM gate without changing product behavior.
+The [current deployed release](docs/reports/review-release-20261007-r2.md) uses
+schema 182, guest input protocol 4, Tool Worker protocol 3 and Cube management
+protocol 7. The subsequent [source repairs](docs/reports/review-repair-20261007-r3.md)
+correct quarantine recovery, returned-input identity and oversized-line Read,
+and remove unnecessary document-revision queries. They require a matched Tool
+Worker protocol 4 release; deployment is pending. Earlier releases, reviews and
+the Durable migration remain indexed in [the documentation map](docs/README.md).
 
 Whole file/shell Tools execute in Cube. Replies return through the separate
 Worker-boot Kafka transport; Pi processes them before publishing the canonical
@@ -107,30 +93,13 @@ so a publication outage cannot leave a failed VM eligible for new work.
 
 One physical Session family stays on one Worker, and each Kafka partition keeps
 ordered projection. The single-host profile does not provide physical-node HA.
-The [review and repair record](docs/reports/review-repair-20261003.md) records
-verified behavior and remaining limits. Original images stream to Cube for
-normalization; native context still materializes normalized image content.
+Original images stream to Cube for normalization; native context still
+materializes normalized image content.
 Cube mounts, configuration and completion credentials are rendered into one
 Helm release before deployment, with native-version and source-identity checks.
 Template and artifact cleanup follows stable node identity through current
 discovery, so Pod address changes do not strand historical replicas.
-See the [deployed cleanup repair](docs/reports/template-cleanup-20261007.md).
-The [follow-up review](docs/reports/repository-review-20261003-r2.md) records
-findings and baseline evidence at `3dbf49fb`; [the repairs](docs/reports/review-repair-20261004.md)
-track the approved fixes and matched protocol-3 verification.
-
-The [October 4 whole-repository review](docs/reports/repository-review-20261004.md)
-records lifecycle/recovery, Pi request-policy and validation gaps with isolated
-reproductions and SQL measurements. [The October 5 repairs](docs/reports/review-repair-20261005.md)
-close those gaps with staged adoption, PG-time authorization, shared Compaction
-policy, structured Tool failures and recoverable Cube Volume reference state.
-
-The [October 5 follow-up review](docs/reports/repository-review-20261005.md)
-covers the current 22 workspaces and matched Cube release. It records four new
-behavior findings, a documentation inconsistency, isolated reproducers and SQL
-counts. The [approved improvements](docs/reports/review-improvements-20261005.md)
-track recovery isolation, consistent Tool outcomes, eight large-reply permits
-and matched verification/release status.
+See the [architecture and failure boundaries](docs/ARCHITECTURE.md).
 
 ## Quick start
 

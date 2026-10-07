@@ -1520,6 +1520,69 @@
       "file": "test/cubesandbox-provider.test.ts",
       "test": "rotates staging maintenance, skips paused VMs and keeps failure separate from lifecycle",
       "invariant": "Cleanup errors do not destroy or quarantine VMs, wake paused runtimes or prevent other cleanup candidates."
+    },
+    {
+      "id": "quarantine-withdrawn-exit-first",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/run-queue.test.ts",
+      "test": "recovers cancellation failure only after exit and seal (exit-first, queue=true)",
+      "invariant": "Unstarted withdrawn and cancelled inputs do not supersede exact execution exit/seal proof; missing or stale proof still cannot recover the Session."
+    },
+    {
+      "id": "quarantine-withdrawn-seal-first",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/run-queue.test.ts",
+      "test": "recovers cancellation failure only after exit and seal (seal-first, queue=true)",
+      "invariant": "Unstarted withdrawn and cancelled inputs do not supersede exact execution exit/seal proof; missing or stale proof still cannot recover the Session."
+    },
+    {
+      "id": "quarantine-withdrawn-no-exit-proof",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/run-queue.test.ts",
+      "test": "recovers cancellation failure only after exit and seal (no-exit-proof, queue=true)",
+      "invariant": "Unstarted withdrawn and cancelled inputs do not supersede exact execution exit/seal proof; missing or stale proof still cannot recover the Session."
+    },
+    {
+      "id": "returned-turn-identity",
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/composer-submission.test.ts",
+      "test": "retires only the returned turn identity, preserving an unrelated Session or newer intent",
+      "invariant": "Returned input ends only its matching unresolved submission; new post-Stop input retains its key."
+    },
+    {
+      "id": "returned-steer-identity",
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/composer-submission.test.ts",
+      "test": "retires only the returned steer identity, preserving an unrelated Session or newer intent",
+      "invariant": "Returned input ends only its matching unresolved submission; new post-Stop input retains its key."
+    },
+    {
+      "id": "returned-input-late-ack",
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/composer-submission.test.ts",
+      "test": "a late acknowledgement of a returned input cannot clear its resubmission",
+      "invariant": "A late ACK cannot erase the fresh returned-input submission identity."
+    },
+    {
+      "id": "durable-complete-document-overlay",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "reads a complete acknowledged base locally but still loads missing historical bases after eviction",
+      "invariant": "Complete acknowledged documents need no projection revision query; incomplete and historical overlays retain PG reconstruction."
+    },
+    {
+      "id": "native-read-long-multibyte-line",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/native-tools.test.ts",
+      "test": "keeps native long-line content and diagnostics (UTF-8 three-byte)",
+      "invariant": "Bounded Read retains a UTF-8-safe file prefix and native byte continuation diagnostics."
+    },
+    {
+      "id": "native-read-harness-diagnostics",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "test": "retains Read diagnostics through the Worker and native Harness at the full content budget",
+      "invariant": "The canonical Tool result and model context retain continuation guidance after native content bounding."
     }
   ]
 }

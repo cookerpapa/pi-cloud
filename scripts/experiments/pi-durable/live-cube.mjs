@@ -59,7 +59,7 @@ const environment = {
   recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 };
 const initialization = {
-  toolWorkerProtocolVersion: 3,
+  toolWorkerProtocolVersion: 4,
   type: "worker.initialize",
   activationId,
   toolRoot: "/home/user",

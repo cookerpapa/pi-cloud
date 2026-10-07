@@ -66,7 +66,15 @@ describe("tenant-aware browser API", () => {
       afterPosition: 0,
       pending: false,
       hasMore: false,
-      items: [{ turnId, text: "draft", uploads: [], mailboxPosition: 2 }],
+      items: [
+        {
+          turnId,
+          idempotencyKey: "returned-input",
+          text: "draft",
+          uploads: [],
+          mailboxPosition: 2,
+        },
+      ],
     };
     const transport = vi.fn<typeof fetch>(async (input, init) => {
       if (String(input).endsWith("/acknowledgements")) {

@@ -1,4 +1,4 @@
-import type { UserUpload } from "@pi-cloud/protocol";
+import type { ReturnedInput } from "@pi-cloud/protocol";
 import type { PiCloudApi } from "./api.ts";
 
 export type InputReturnRecovery = {
@@ -18,7 +18,7 @@ export async function restoreReturnedInputs(
   api: Pick<PiCloudApi, "getReturnedInputs" | "acknowledgeReturnedInputs">,
   sessionId: string,
   recovery: InputReturnRecovery,
-  append: (text: string, uploads: UserUpload[]) => boolean | void,
+  append: (items: readonly ReturnedInput[]) => boolean | void,
   signal: AbortSignal,
 ): Promise<"pending" | "done"> {
   while (true) {
@@ -41,16 +41,7 @@ export async function restoreReturnedInputs(
     if (page.pending) return "pending";
     const fresh = page.items.filter((item) => !recovery.restored.has(item.turnId));
     if (fresh.length) {
-      if (
-        append(
-          fresh
-            .map((i) => i.text)
-            .filter(Boolean)
-            .join("\n\n"),
-          fresh.flatMap((i) => i.uploads),
-        ) === false
-      )
-        throw new Error("Could not restore input attachments");
+      if (append(fresh) === false) throw new Error("Could not restore input attachments");
       for (const item of fresh) recovery.restored.add(item.turnId);
     }
     const last = page.items.at(-1);

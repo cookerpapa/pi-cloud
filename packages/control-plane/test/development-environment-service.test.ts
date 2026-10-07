@@ -114,7 +114,7 @@ function provider(): SandboxProvider {
           bootId: "11111111-1111-4111-8111-111111111111",
         },
         initialization: {
-          toolWorkerProtocolVersion: 3,
+          toolWorkerProtocolVersion: 4,
           type: "worker.initialize",
           activationId: bindingId,
           toolRoot,

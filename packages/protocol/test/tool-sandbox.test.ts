@@ -11,6 +11,7 @@ import {
   parseToolSandboxOperationRequest,
   parseToolWorkerInput,
   parseToolWorkerOutput,
+  parseNativeToolEvent,
   ToolSandboxProtocolError,
 } from "../src/index.ts";
 
@@ -94,7 +95,7 @@ describe("Tool Sandbox protocol", () => {
   it("carries deployment-owned direct private CIDRs into the Tool process environment", () => {
     expect(
       parseToolWorkerInput({
-        toolWorkerProtocolVersion: 3,
+        toolWorkerProtocolVersion: 4,
         type: "worker.initialize",
         activationId: "10000000-0000-4000-8000-000000000005",
         toolRoot: "/workspace",
@@ -150,7 +151,7 @@ describe("Tool Sandbox protocol", () => {
   it("binds every worker result to activation and operation identities", () => {
     expect(
       parseToolWorkerOutput({
-        toolWorkerProtocolVersion: 3,
+        toolWorkerProtocolVersion: 4,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -173,6 +174,28 @@ describe("Tool Sandbox protocol", () => {
       scopeStopRequired: false,
       response: { operation: "tool.execute" },
     });
+  });
+
+  it("validates structured guest diagnostics instead of treating them as file content", () => {
+    const event = {
+      type: "tool_execution_end",
+      toolCallId: "native-read",
+      toolName: "read",
+      isError: false,
+      result: {
+        content: [{ type: "text", text: "file data" }],
+        diagnostics: [{ severity: "warn", code: "truncated", message: "Continue from byte 51201" }],
+      },
+    };
+    expect(parseNativeToolEvent(event)).toEqual(event);
+    for (const diagnostic of [
+      { severity: "debug", message: "invalid" },
+      { severity: "warn" },
+      { severity: "warn", message: 3 },
+    ])
+      expect(() =>
+        parseNativeToolEvent({ ...event, result: { ...event.result, diagnostics: [diagnostic] } }),
+      ).toThrow();
   });
 
   it.each(["bash.exec", "file.read", "file.read_range", "file.write", "file.mkdir", "file.access"])(
@@ -209,7 +232,7 @@ describe("Tool Sandbox protocol", () => {
     (type) => {
       expect(() =>
         parseToolWorkerInput({
-          toolWorkerProtocolVersion: 3,
+          toolWorkerProtocolVersion: 4,
           type,
           activationId: "10000000-0000-4000-8000-000000000008",
           ...(type === "worker.cancel"

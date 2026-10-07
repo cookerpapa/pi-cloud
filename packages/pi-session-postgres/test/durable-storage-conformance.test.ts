@@ -318,6 +318,107 @@ it("keeps long native document tails bounded after cold reopen without changing 
   }
 });
 
+it("reads a complete acknowledged base locally but still loads missing historical bases after eviction", async () => {
+  const pending: DurableBatch[] = [];
+  const f = await fixture({
+    publish: async (batch) => {
+      pending.push(batch);
+    },
+  });
+  const read = vi.spyOn(f.projection, "revisions");
+  try {
+    const conversationId =
+      await f.store.mintId<import("@earendil-works/pi-durable").ConversationId>();
+    const id = await f.store.mintId<import("@earendil-works/pi-durable").DocumentId>();
+    const created = await f.store.commit(
+      [
+        { type: "conversation", value: { id: conversationId } },
+        {
+          type: "document.create",
+          record: {
+            id,
+            kind: "overlay",
+            scope: { kind: "conversation", conversationId },
+            history: "rewindable",
+            fork: "asOf",
+          },
+          content: { kind: "base", version: 1, value: { count: 0 } },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    read.mockRejectedValue(new Error("projection unavailable"));
+    for (let count = 1; count <= 130; count++) {
+      await f.store.commit(
+        [
+          {
+            type: "document.change",
+            id,
+            content: { kind: "delta", version: 1, ops: [["s", ["count"], count]] },
+          },
+        ],
+        BACKGROUND_CONTEXT,
+      );
+      expect(await f.store.document(id, "current", BACKGROUND_CONTEXT)).toMatchObject({
+        value: { count },
+        version: 1,
+        deltasSinceBase: count,
+      });
+    }
+    expect(await f.store.document(id, created, BACKGROUND_CONTEXT)).toMatchObject({
+      value: { count: 0 },
+      deltasSinceBase: 0,
+    });
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
+    for (const batch of pending.splice(0)) await f.projection.apply(batch);
+    await f.store.flush();
+    const cold = vi.spyOn(f.projection, "revisions");
+    await f.store.commit(
+      [
+        {
+          type: "document.change",
+          id,
+          content: { kind: "delta", version: 1, ops: [["s", ["count"], 131]] },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    expect(await f.store.document(id, "current", BACKGROUND_CONTEXT)).toMatchObject({
+      value: { count: 131 },
+      deltasSinceBase: 131,
+    });
+    expect(cold).toHaveBeenCalledOnce();
+    cold.mockClear();
+    const newBase = await f.store.commit(
+      [
+        {
+          type: "document.change",
+          id,
+          content: { kind: "base", version: 2, value: { changed: true } },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    expect(await f.store.document(id, newBase, BACKGROUND_CONTEXT)).toMatchObject({
+      version: 2,
+      value: { changed: true },
+      deltasSinceBase: 0,
+    });
+    expect(cold).not.toHaveBeenCalled();
+    expect(await f.store.document(id, created, BACKGROUND_CONTEXT)).toMatchObject({
+      version: 1,
+      value: { count: 0 },
+      deltasSinceBase: 0,
+    });
+    expect(cold).toHaveBeenCalledOnce();
+    cold.mockRestore();
+  } finally {
+    read.mockRestore();
+    await f.close();
+  }
+});
+
 it("retains acknowledged batches while projection is paused and reads only the requested cold suffix", async () => {
   const pending: DurableBatch[] = [];
   const f = await fixture({

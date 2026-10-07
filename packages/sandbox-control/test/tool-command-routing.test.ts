@@ -63,7 +63,7 @@ function fixture() {
         bootId: randomUUID(),
       },
       initialization: {
-        toolWorkerProtocolVersion: 3,
+        toolWorkerProtocolVersion: 4,
         type: "worker.initialize",
         activationId: command.request.activationId,
         toolRoot: "/workspace",

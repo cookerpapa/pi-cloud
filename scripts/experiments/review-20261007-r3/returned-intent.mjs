@@ -62,23 +62,37 @@ for (const invalidateStoppedIntent of [false, true]) {
         afterPosition: 0,
         pending: false,
         hasMore: false,
-        items: available ? [{ turnId, text: input.text, uploads: [], mailboxPosition: 2 }] : [],
+        items: available
+          ? [
+              {
+                turnId,
+                idempotencyKey: calls[0],
+                text: input.text,
+                uploads: [],
+                mailboxPosition: 2,
+              },
+            ]
+          : [],
       });
     throw Error("Unexpected fixture request");
   });
   const send = (key) => api.acceptTurn(sessionId, input.text, key, undefined, []);
   await assert.rejects(submission.send(input, send));
-  // Clearing the draft and restoring a stopped input do not reset the shared
-  // pending identity in ChatApp. Model the server's cancelled original Run;
+  // Model the server's cancelled original Run;
   // its idempotent acceptance DTO still describes the original admission.
   let draft = "";
   for (const record of records.values()) record.runState = "cancelled";
-  if (invalidateStoppedIntent) submission.reset();
   await restoreReturnedInputs(
     api,
     sessionId,
     inputReturnRecovery(),
-    (text) => {
+    (items) => {
+      if (invalidateStoppedIntent)
+        submission.retireReturned(
+          sessionId,
+          items.map((item) => item.idempotencyKey),
+        );
+      const text = items.map((item) => item.text).join("\n\n");
       draft = draft.trim() ? draft + "\n\n" + text : text;
     },
     new AbortController().signal,

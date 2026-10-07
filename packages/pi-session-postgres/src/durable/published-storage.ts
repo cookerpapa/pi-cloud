@@ -483,9 +483,13 @@ export class PublishedDurableStorage implements Storage {
       return undefined;
     const through = at === "current" ? this.#seq : at;
     const local = (this.#revisions.get(id) ?? []).filter((r) => r.seq <= through);
-    const cold = this.#revisionResets.has(id)
-      ? []
-      : await this.#options.projection.revisions(id, through);
+    // A local base and every later acknowledged write belong to this writer.
+    // Historical points before that base (or an evicted base) still need PG.
+    const completeLocal = local.some((revision) => revision.content.kind === "base");
+    const cold =
+      this.#revisionResets.has(id) || completeLocal
+        ? []
+        : await this.#options.projection.revisions(id, through);
     const bySequence = new Map(cold.map((r) => [r.seq, r]));
     for (const revision of local)
       if (bySequence.get(revision.seq)?.checkpoint === undefined)

@@ -56,12 +56,19 @@ export async function readReturnedInputs(
   const { rows } = await sql<{
     requestId: string | null;
     pending: boolean;
-    items: { turnId: string; text: string; uploads: unknown; mailboxPosition: number }[];
+    items: {
+      turnId: string;
+      idempotencyKey: string;
+      text: string;
+      uploads: unknown;
+      mailboxPosition: number;
+    }[];
   }>`select batch.id as "requestId",
     exists(select 1 from runs r where r.tenant_id=s.tenant_id and r.session_id=s.id
       and r.input_return_request_id=batch.id and r.state='queued') as pending,
     coalesce((select json_agg(item) from (
-      select r.turn_id as "turnId",t.input_text as text,t.input_uploads as uploads,
+      select r.turn_id as "turnId",r.idempotency_key as "idempotencyKey",
+        t.input_text as text,t.input_uploads as uploads,
         r.mailbox_position as "mailboxPosition"
       from runs r join turns t on t.id=r.turn_id and t.tenant_id=r.tenant_id
       where r.tenant_id=s.tenant_id and r.session_id=s.id

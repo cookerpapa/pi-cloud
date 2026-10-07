@@ -2237,9 +2237,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               streamQueue={streamQueue}
               refreshSignal={String(queueRefreshGeneration)}
               onSnapshot={(queue) => update({ type: "queue.updated", queue })}
-              onRestoreDraft={(text, attached) => {
+              onRestoreDraft={(text, attached, returnedKeys = []) => {
                 if (currentStreamSession.current !== state.session?.sessionId) return false;
                 if (!uploads.restore(attached)) return false;
+                composerSubmission.current.retireReturned(state.session.sessionId, returnedKeys);
                 draftRevision.current++;
                 setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text));
                 focusComposer();

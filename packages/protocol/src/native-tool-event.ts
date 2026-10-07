@@ -5,6 +5,7 @@ import { Value } from "typebox/value";
 export type NativeToolResult = {
   content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
   details?: unknown;
+  diagnostics?: { severity: "info" | "warn" | "error"; message: string; code?: string }[];
 };
 export type NativeToolUpdate = {
   type: "tool_execution_update";
@@ -23,7 +24,26 @@ export type NativeToolEnd = {
 export type NativeToolEvent = NativeToolUpdate | NativeToolEnd;
 
 const result = Type.Unsafe<NativeToolResult>(
-  Type.Object({ content: Type.Array(Type.Unknown()), details: Type.Optional(Type.Unknown()) }),
+  Type.Object({
+    content: Type.Array(Type.Unknown()),
+    details: Type.Optional(Type.Unknown()),
+    diagnostics: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            severity: Type.Union([
+              Type.Literal("info"),
+              Type.Literal("warn"),
+              Type.Literal("error"),
+            ]),
+            message: Type.String(),
+            code: Type.Optional(Type.String()),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+  }),
 );
 const identity = { toolCallId: Type.String(), toolName: Type.String() };
 export const NativeToolEventSchema = Type.Unsafe<NativeToolEvent>(

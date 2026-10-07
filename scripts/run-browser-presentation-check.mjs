@@ -189,6 +189,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   window.fixtureQueue={sessionId:sid,revision:0,activeTurnId:sessionState==='running'?fixtureTurnId:null,items:[]};
   window.steerRequests=[];window.steerReceipts=new Map();
   window.turnReceipts=new Map();
+  window.turnStates=new Map();window.returnedInputs=null;window.returnInputsReady=true;
   const delegates=['branch','fresh'].map((contextMode,index)=>({sessionId:'10000000-0000-4000-8000-00000000000'+(index+2),
     executionId:'80000000-0000-4000-8000-00000000000'+(index+1),parentSessionId:sid,rootSessionId:sid,parentTurnId:fixtureTurnId,
     depth:1,title:contextMode+' child',contextMode,sandboxMode:'shared',state:'completed',workspaceName:'fixture',createdAt}));
@@ -249,7 +250,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     getConversation:async(sessionId)=>conversation(sessionId),
     getInputQueue:async(sessionId)=>parseInputQueueResource({...structuredClone(window.fixtureQueue),sessionId,
       viewVersion:String(window.fixtureQueue.revision),afterPosition:0,hasMore:false,
-      hasReturnedInputs:false,
+      hasReturnedInputs:!!window.returnedInputs,
       items:window.fixtureQueue.items}),
   });
   const nativeFetch=window.fetch;
@@ -273,6 +274,29 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     if(String(url).endsWith("/model") && init.method==="PUT") {
       selection=JSON.parse(init.body); window.savedSelection=selection;
       return Response.json(modelResource());
+    }
+    if(String(url).endsWith('/cancellations')) {
+      const requestId=crypto.randomUUID();
+      const items=[...window.turnReceipts.entries()].filter(([,r])=>window.turnStates.get(r.runId)==='queued')
+        .map(([key,r])=>{
+          window.turnStates.set(r.runId,'cancelled');
+          const body=window.turnRequests.find(call=>call.key===key).body;
+          return {turnId:r.turnId,idempotencyKey:key,text:body.prompt,mailboxPosition:r.mailboxPosition,
+            uploads:(body.uploadIds??[]).map(id=>window.uploadReceipts.find(file=>file.id===id))};
+        });
+      window.returnedInputs={requestId,items};window.fixtureQueue.revision++;
+      return Response.json({controlRequestId:requestId,targetRunId:'60000000-0000-4000-8000-000000000011',
+        turnId:fixtureTurnId,sessionId:sid,state:'pending',acceptedAt:new Date().toISOString(),replayed:false},{status:202});
+    }
+    if(String(url).endsWith('/returned-inputs/acknowledgements')) {
+      window.returnedInputs=null;window.fixtureQueue.revision++;
+      return new Response(null,{status:204});
+    }
+    if(String(url).includes('/returned-inputs')) {
+      const batch=window.returnedInputs,afterPosition=Number(new URL(String(url),location.origin).searchParams.get('afterPosition')??0);
+      return Response.json({sessionId:sid,requestId:batch?.requestId??null,afterPosition,
+        pending:!!batch&&!window.returnInputsReady,hasMore:false,
+        items:batch&&window.returnInputsReady?batch.items.filter(item=>item.mailboxPosition>afterPosition):[]});
     }
     if(String(url).endsWith("/steers")) {
       const body=JSON.parse(init.body),key=new Headers(init.headers).get('idempotency-key');
@@ -302,7 +326,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
         const prior=window.turnReceipts.get(key);
         const receipt=prior??{turnId:crypto.randomUUID(),sessionId:sid,runId:crypto.randomUUID(),
           mailboxPosition:window.turnReceipts.size+1,state:'queued',acceptedAt:new Date().toISOString()};
-        if(!prior)window.turnReceipts.set(key,receipt);
+        if(!prior){window.turnReceipts.set(key,receipt);window.turnStates.set(receipt.runId,'queued');}
         if(window.loseTurnReply){window.loseTurnReply=false;throw Error('Fixture lost Turn response after commit');}
         return Response.json({...receipt,replayed:!!prior},{status:202});
       }
@@ -1049,6 +1073,95 @@ try {
     assert.equal(await page.evaluate("turnRequests.at(-1).key===turnRequests.at(-2).key"), true);
     await page.waitFor('!document.querySelector(".upload-card")');
     await page.evaluate("window.acceptTurns=false");
+
+    // Actual ChatApp + validated HTTP responses: Stop ends only the returned
+    // admission identity, including when a newer post-Stop request loses its ACK.
+    for (const newerSubmission of [false, true]) {
+      await page.navigate(`http://127.0.0.1:${port}/review.html`);
+      await page.waitFor("window.fixtureReady");
+      await page.evaluate(
+        "renderChat('running',true,true);window.acceptTurns=true;window.deferTurn=false",
+      );
+      await page.waitFor(`document.querySelector(${JSON.stringify(parentButton)})`);
+      await page.evaluate(`document.querySelector(${JSON.stringify(parentButton)}).click()`);
+      await page.waitFor("document.querySelector('.product-stop-button')");
+      await fill(".product-composer textarea", "returned image instruction");
+      await page.evaluate(`(() => {
+        const files=new DataTransfer();
+        files.items.add(new File(['image fixture'],'returned.png',{type:'image/png'}));
+        const picker=document.querySelector('input[type=file]');picker.files=files.files;
+        picker.dispatchEvent(new Event('change',{bubbles:true}));
+      })()`);
+      await page.waitFor(
+        "document.querySelector('.upload-card') && document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
+      );
+      await page.evaluate(
+        "window.loseTurnReply=true;document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
+      );
+      await page.waitFor(
+        "turnReceipts.size===1 && document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
+      );
+      const original = await page.evaluate("turnRequests.at(-1)");
+      assert.equal(original.body.uploadIds.length, 1);
+      await fill(".product-composer textarea", "");
+      await page.evaluate(
+        "document.querySelector('.upload-card button[aria-label^=\"Remove attachment\"]').click()",
+      );
+      await page.evaluate(
+        `window.returnInputsReady=${!newerSubmission};document.querySelector('.product-stop-button').click()`,
+      );
+      await page.waitFor(
+        "window.returnedInputs && !document.querySelector('.product-composer textarea').disabled",
+      );
+      await page.evaluate("window.dispatchEvent(new Event('focus'))");
+      if (newerSubmission) {
+        await fill(".product-composer textarea", "newer instruction");
+        await page.waitFor(
+          "document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
+        );
+        await page.evaluate(
+          "window.loseTurnReply=true;document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
+        );
+        await page.waitFor(
+          "turnReceipts.size===2 && document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
+        );
+        await page.evaluate("window.returnInputsReady=true");
+      }
+      await page.waitFor(
+        "document.querySelector('.product-composer textarea').value.includes('returned image instruction') && document.querySelector('.upload-card')",
+      );
+      if (newerSubmission) {
+        assert.equal(
+          await page.evaluate("document.querySelector('.product-composer textarea').value"),
+          "newer instruction\n\nreturned image instruction",
+        );
+        await fill(".product-composer textarea", "newer instruction");
+        await page.evaluate(
+          "document.querySelector('.upload-card button[aria-label^=\"Remove attachment\"]').click()",
+        );
+      }
+      await page.waitFor(
+        "document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
+      );
+      await page.evaluate(
+        "document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
+      );
+      await page.waitFor("document.querySelector('.product-composer textarea').value===''");
+      assert.equal(await page.evaluate("turnReceipts.size"), 2);
+      assert.deepEqual(await page.evaluate("[...turnStates.values()]"), ["cancelled", "queued"]);
+      const last = await page.evaluate("turnRequests.at(-1)");
+      if (newerSubmission) {
+        assert.equal(
+          last.key,
+          await page.evaluate("turnRequests.at(-2).key"),
+          "An old return must preserve the newer uncertain key",
+        );
+      } else {
+        assert.notEqual(last.key, original.key, "Returned input must create a new admission");
+        assert.deepEqual(last.body.uploadIds, original.body.uploadIds);
+      }
+      await page.waitFor("window.returnedInputs===null");
+    }
 
     for (const status of [503, 0]) {
       await page.evaluate(`window.identityErrorStatus=${status};renderChat()`);

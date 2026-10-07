@@ -29,7 +29,11 @@ export function PendingInputQueue({
   streamQueue: InputQueueResource | null;
   onSnapshot: (queue: InputQueueResource) => void;
   returnRecovery: InputReturnRecovery;
-  onRestoreDraft: (text: string, uploads: UserUpload[]) => boolean | void;
+  onRestoreDraft: (
+    text: string,
+    uploads: UserUpload[],
+    returnedKeys?: readonly string[],
+  ) => boolean | void;
 }) {
   const { t } = useI18n();
   const [queue, setQueue] = useState<InputQueueResource | null>(null);
@@ -232,7 +236,15 @@ export function PendingInputQueue({
           api,
           sessionId,
           returnRecovery,
-          (text, uploads) => callbacks.current.onRestoreDraft(text, uploads),
+          (items) =>
+            callbacks.current.onRestoreDraft(
+              items
+                .map((item) => item.text)
+                .filter(Boolean)
+                .join("\n\n"),
+              items.flatMap((item) => item.uploads),
+              items.map((item) => item.idempotencyKey),
+            ),
           abort.signal,
         );
         if (abort.signal.aborted) return;

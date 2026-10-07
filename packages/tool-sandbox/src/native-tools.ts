@@ -59,6 +59,7 @@ export async function executeNativeTool(
       const asResult = (value: ToolExecutionResult): NativeToolEnd["result"] => ({
         content: [...(value.content ?? [])],
         ...(value.details === undefined ? {} : { details: value.details }),
+        ...(value.diagnostics === undefined ? {} : { diagnostics: [...value.diagnostics] }),
       });
       const absolutePath = getOrThrow(await env.absolutePath(path, context));
       const canonicalPath = async (target: string) => {
@@ -170,13 +171,26 @@ export async function executeNativeTool(
           "/",
           maximum,
         );
-        let text =
+        // Native Read decodes the sliced long-line bytes again, including its
+        // BOM handling. Keep the original byte count for continuation offsets.
+        const text =
           range.firstLineBytes === undefined
             ? range.content.toString("utf8")
-            : `[Line ${range.startLine} is ${range.firstLineBytes} bytes, exceeds ${maximum} byte limit. Use bash with sed/head to inspect a bounded slice.]`;
+            : new TextDecoder().decode(range.content);
+        const diagnostics: NonNullable<NativeToolEnd["result"]["diagnostics"]> = [];
+        if (range.firstLineBytes !== undefined)
+          diagnostics.push({
+            severity: "warn",
+            code: "truncated",
+            message: `Line ${range.startLine} is ${formatSize(range.firstLineBytes)}, exceeds the ${formatSize(maximum)} limit; showing its first ${formatSize(range.content.byteLength)}. Use bash: sed -n '${range.startLine}p' ${path} | tail -c +${range.content.byteLength + 1}`,
+          });
         if (range.nextOffsetLine !== undefined)
-          text += `\n\n[Showing lines ${range.startLine}-${range.endLine}. Use offset=${range.nextOffsetLine} to continue.]`;
-        result = { content: text.length ? [{ type: "text", text }] : [], details: undefined };
+          diagnostics.push({
+            severity: "info",
+            code: "truncated",
+            message: `Showing lines ${range.startLine}-${range.endLine}. Use offset=${range.nextOffsetLine} to continue.`,
+          });
+        result = { content: text.length ? [{ type: "text", text }] : [], diagnostics };
       }
     }
     signal.throwIfAborted();
@@ -201,6 +215,12 @@ export async function executeNativeTool(
 
 function fileError(error: unknown, path: string): FileError {
   return new FileError("unknown", error instanceof Error ? error.message : String(error), path);
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
 async function isImageFile(path: string): Promise<boolean> {

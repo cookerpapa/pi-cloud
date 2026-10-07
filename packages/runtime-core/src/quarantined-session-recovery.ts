@@ -31,7 +31,8 @@ export async function recoverQuarantinedSession(
         and r.state in ('failed','timed_out','cancelled')
         and r.agent_exited_at is not null and r.output_sealed_at is not null
         and not exists(select 1 from runs later where later.session_id=s.id
-          and later.mailbox_position>r.mailbox_position and later.state<>'queued')
+          and later.mailbox_position>r.mailbox_position
+          and (later.started_at is not null or later.lease_id is not null))
     )`,
     )
     .where(

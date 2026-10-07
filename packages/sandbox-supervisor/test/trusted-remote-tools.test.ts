@@ -62,12 +62,13 @@ function createTrustedRemoteAgentTools(configuration: TrustedRemoteToolsRuntimeC
 async function runNativeRemote(
   runtime: ReturnType<typeof createTrustedRemoteAgentTools>,
   replace = false,
+  call = fauxToolCall("bash", { command: "echo fixture" }),
 ) {
   const provider = fauxProvider({ tokensPerSecond: 1000000 }),
     source = createModels();
   source.setProvider(provider.provider);
   provider.setResponses([
-    fauxAssistantMessage(fauxToolCall("bash", { command: "echo fixture" }), {
+    fauxAssistantMessage(call, {
       stopReason: "toolUse",
     }),
     fauxAssistantMessage("done"),
@@ -201,6 +202,43 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
 }
 
 describe("whole-tool Worker adapter", () => {
+  it("retains Read diagnostics through the Worker and native Harness at the full content budget", async () => {
+    const text = "x".repeat(51200);
+    const diagnostic = {
+      severity: "warn" as const,
+      code: "truncated",
+      message: "Use bash: sed -n '1p' bundle.js | tail -c +51201",
+    };
+    const { value } = configuration({
+      publishToolCommand: async (command) => ({
+        operationId: command.request.operationId,
+        accepted: true,
+      }),
+      waitForToolReply: async (request) => ({
+        type: "tool_execution_end",
+        toolCallId: (request as { toolCallId: string }).toolCallId,
+        toolName: "read",
+        isError: false,
+        result: { content: [{ type: "text", text }], diagnostics: [diagnostic] },
+      }),
+    });
+    const runtime = createTrustedRemoteAgentTools(value);
+    const result = await runNativeRemote(
+      runtime,
+      false,
+      fauxToolCall("read", { path: "bundle.js" }),
+    );
+    const message = result.messages.find((m) => m.role === "toolResult");
+    expect(message).toMatchObject({
+      toolName: "read",
+      isError: false,
+      content: [
+        { type: "text", text },
+        { type: "text", text: `<harness>\n[warn] ${diagnostic.message}\n</harness>` },
+      ],
+    });
+    expect(result.requests).toBe(2);
+  });
   it("retires the image-adapter reply wait after publication fails without an unhandled rejection", async () => {
     let replySignal: AbortSignal | undefined;
     const { value } = configuration({

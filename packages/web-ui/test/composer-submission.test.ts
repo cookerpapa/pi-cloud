@@ -116,3 +116,52 @@ it("explicit abandonment ends an uncertain intent without letting its late ACK c
   await first;
   expect(await submission.send(input, async (key) => key)).toBe(newKey);
 });
+
+it.each(["turn", "steer"] as const)(
+  "retires only the returned %s identity, preserving an unrelated Session or newer intent",
+  async (kind) => {
+    const submission = new ComposerSubmission(),
+      request = { ...input, kind };
+    const keys: string[] = [];
+    const lost = async (key: string) => {
+      keys.push(key);
+      throw new Error("reply lost");
+    };
+    await expect(submission.send(request, lost)).rejects.toThrow();
+    submission.retireReturned("another-session", [keys[0]!]);
+    await expect(submission.send(request, lost)).rejects.toThrow();
+    expect(keys[1]).toBe(keys[0]);
+    submission.retireReturned(input.sessionId, [keys[0]!]);
+    await expect(submission.send(request, lost)).rejects.toThrow();
+    expect(keys[2]).not.toBe(keys[0]);
+    // A repeated/late old return cannot erase the new request's lost ACK.
+    submission.retireReturned(input.sessionId, [keys[0]!]);
+    await expect(submission.send(request, lost)).rejects.toThrow();
+    expect(keys[3]).toBe(keys[2]);
+  },
+);
+
+it("a late acknowledgement of a returned input cannot clear its resubmission", async () => {
+  const submission = new ComposerSubmission();
+  let acknowledge!: () => void;
+  const ack = new Promise<void>((resolve) => {
+    acknowledge = resolve;
+  });
+  let oldKey = "",
+    newKey = "";
+  const first = submission.send(input, async (key) => {
+    oldKey = key;
+    await ack;
+  });
+  submission.retireReturned(input.sessionId, [oldKey]);
+  await expect(
+    submission.send(input, async (key) => {
+      newKey = key;
+      throw Error("lost");
+    }),
+  ).rejects.toThrow();
+  acknowledge();
+  await first;
+  expect(newKey).not.toBe(oldKey);
+  expect(await submission.send(input, async (key) => key)).toBe(newKey);
+});

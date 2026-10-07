@@ -31,7 +31,7 @@ function fixture() {
     context,
     result: {
       output: {
-        toolWorkerProtocolVersion: 3,
+        toolWorkerProtocolVersion: 4,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -46,6 +46,7 @@ function fixture() {
             toolCallId: "native-call",
             isError: false,
             result: {
+              diagnostics: [{ severity: "info", code: "fixture", message: "Guest diagnostic" }],
               content: [
                 {
                   type: "image",
@@ -107,7 +108,10 @@ it("externalizes the guest image before the boot reply and preserves the origina
       sequence: 1,
       event: {
         toolCallId: "native-call",
-        result: { content: [{ type: "pi_cloud_image_v1", attachment: { byteLength: 7 } }] },
+        result: {
+          content: [{ type: "pi_cloud_image_v1", attachment: { byteLength: 7 } }],
+          diagnostics: [{ severity: "info", code: "fixture", message: "Guest diagnostic" }],
+        },
       },
     },
   ]);
@@ -171,7 +175,7 @@ it("rejects mismatched operation identity and an old guest wire before publicati
   raw.response.operationId = randomUUID();
   await expect(f.adapter.accept(f.packet)).rejects.toThrow("identity");
   raw.response.operationId = f.packet.operationId;
-  raw.toolWorkerProtocolVersion = 1;
+  raw.toolWorkerProtocolVersion = 3;
   await expect(f.adapter.accept(f.packet)).rejects.toThrow();
   expect(f.publish).not.toHaveBeenCalled();
 });

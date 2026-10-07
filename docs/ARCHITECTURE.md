@@ -385,6 +385,9 @@ unsafe interrupted Tools are never automatically replayed. A native terminal
 outcome or explicit Stop terminates the logical Run. This adds no per-delta or per-Step
 database barrier. A stale browser failure state may submit a new-message request,
 but admission remains server-authoritative until recovery actually completes.
+Unstarted withdrawn or individually cancelled inputs do not supersede an
+execution's exit/seal proof. A later admitted Run (start timestamp or lease)
+still does, including a Run awaiting Durable recovery (ADR-0236).
 
 Kafka automatic time/size expiry is disabled. Safe retention stays behind
 canonical progress and every unsealed start, with an additional grace interval.
@@ -412,6 +415,8 @@ first-message and Steer paths. An uncertain response retains the key for the
 same Session/text/attachments/target; confirmation or a different submitted
 input permits a new key. Draft edits made while waiting survive the ACK. This
 is browser-local retry identity, not a second Run authority or durable draft store.
+Returning stopped input ends only the unresolved identity with the same Session
+and original acceptance key. A delayed return cannot reset a newer submission.
 Queued inputs and unstarted cancellations do not occupy history pages or Turn
 counts. The composer owns a separate pending-input view. Initial, focus and
 reconnect reads use a current PG snapshot; successful edits reuse their returned
@@ -434,7 +439,8 @@ whose consumption is unconfirmed after ordered closure (ADR-0229).
 
 Queue snapshots expose `hasReturnedInputs`. GET
 `/v1/sessions/:sessionId/returned-inputs` waits for consumption reconciliation,
-then returns at most 20 withdrawn inputs in their original order. Subsequent
+then returns at most 20 withdrawn inputs in their original order, including each
+Run's original `idempotencyKey`. Subsequent
 pages use that Stop's `requestId` and `afterPosition`; their immutable membership
 survives another browser's acknowledgement. The browser appends their text and
 restores attachments without replacing its draft. POST
@@ -554,6 +560,9 @@ overlay handles PG lag. Eviction waits for the existing projection watermark in
 batches, not a receipt per Step. A proved pre-enqueue refusal leaves the writer
 usable; an ambiguous commit poisons that owner until ordered closure. Cold reads
 use native head markers, scoped record indexes and bounded document tails.
+An acknowledged local base and its complete suffix satisfy document reads
+without cold revision SQL. Historical points before that base and suffixes whose
+base was evicted still read PG and merge its derived checkpoints (ADR-0236).
 Both overlay and cold modes run the official upstream Storage conformance suite.
 
 The trusted `DurableAgentSession` supplies live model and remote-effect grants;
@@ -695,6 +704,11 @@ writer cleanup batches active-Run queries and never overlaps itself (ADR-0227).
 
 The guest executes the whole fixed Tool, with native edit/write logic and source
 output bounds.
+Oversized-line Read retains a UTF-8-safe text prefix. Continuation guidance
+travels as structured diagnostics through Tool Worker protocol 4; native Harness
+renders it after bounding content, so a full text budget cannot erase the hint.
+Ranged reads do not scan the remaining file just to count total lines/bytes.
+The matched-release requirement is recorded in [ADR-0236](adr/0236-recovery-input-identity-and-tool-diagnostics.md).
 Head/tail truncation is a licensed, source-pinned Pi 1.0.0 helper subset with
 upstream-output contract vectors. The guest does not depend on the full Pi CLI,
 MCP, Codemode, TUI or model-provider SDKs. Native file Tools still use public Durable

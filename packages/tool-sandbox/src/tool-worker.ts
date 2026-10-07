@@ -626,6 +626,14 @@ export async function readWorkspaceFileRange(
         const separatorBytes = selected.length === 0 ? 0 : 1;
         if (selected.length === 0 && lineBytes > maximumBytes) {
           firstLineBytes = lineBytes;
+          // Pi Durable keeps the beginning of a long line. Cut before a UTF-8
+          // continuation byte so transport never manufactures a replacement character.
+          // No UTF-8 byte prefix can require more UTF-16 units than its byte
+          // budget. Avoid allocating a second full buffer for a huge line.
+          const bytes = Buffer.from(line.slice(0, maximumBytes), "utf8");
+          let end = maximumBytes;
+          while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
+          selected.push(bytes.subarray(0, end).toString("utf8"));
           break;
         }
         if (

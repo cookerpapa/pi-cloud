@@ -5,6 +5,7 @@ import { restoreReturnedInputs, inputReturnRecovery } from "../src/returned-inpu
 const signal = () => new AbortController().signal;
 const item = (n: number): ReturnedInput => ({
   turnId: String(n),
+  idempotencyKey: `input-${n}`,
   text: `message ${n}`,
   mailboxPosition: n,
   uploads: [],
@@ -38,9 +39,9 @@ describe("stopped inputs back to the composer", () => {
         api,
         "session",
         inputReturnRecovery(),
-        (text, files) => {
-          draft += `\n\n${text}`;
-          uploads.push(...files);
+        (items) => {
+          draft += `\n\n${items.map((input) => input.text).join("\n\n")}`;
+          uploads.push(...items.flatMap((input) => input.uploads));
         },
         signal(),
       ),
@@ -73,6 +74,7 @@ describe("stopped inputs back to the composer", () => {
       "done",
     );
     expect(append).toHaveBeenCalledOnce();
+    expect(append).toHaveBeenCalledWith([item(1)]);
   });
 
   it("waits for Steer consumption, and retains the server copy if restoration fails", async () => {

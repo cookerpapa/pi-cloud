@@ -153,6 +153,72 @@ describe("whole native tools at the execution source", () => {
     expect(remote.result.content).toEqual(native.content);
   });
 
+  it.each([
+    ["ASCII", "PREFIX_" + "x".repeat(120000)],
+    ["UTF-8 three-byte", "界".repeat(30000)],
+    ["UTF-8 four-byte", "a😀".repeat(30000)],
+    ["BOM and CRLF", "\uFEFF" + "界".repeat(30000) + "\r"],
+  ])("keeps native long-line content and diagnostics (%s)", async (_name, text) => {
+    const root = await directory();
+    for (const offset of [1, 2]) {
+      await writeFile(join(root, "bundle.txt"), (offset === 2 ? "header\n" : "") + text + "\nlast");
+      for (const limit of [undefined, 1]) {
+        const args = { path: "bundle.txt", offset, ...(limit === undefined ? {} : { limit }) };
+        const native = await createReadTool().execute(
+          args,
+          {
+            env: new NodeExecutionEnv({ cwd: root }),
+            diagnostic: () => {},
+          } as unknown as ToolExecutionApi,
+          BACKGROUND_CONTEXT,
+        );
+        const cloud = await executeNativeTool(
+          request("read", args),
+          root,
+          new AbortController().signal,
+          () => {},
+        );
+        expect(cloud.isError).toBe(false);
+        expect(cloud.result.content).toEqual(native.content);
+        expect(cloud.result.diagnostics).toEqual(native.diagnostics);
+        const content = cloud.result.content[0];
+        expect(content?.type).toBe("text");
+        if (content?.type === "text") {
+          expect(content.text).not.toContain("\uFFFD");
+          expect(Buffer.byteLength(content.text)).toBeLessThanOrEqual(51200);
+        }
+      }
+    }
+  });
+
+  it.each([1, 2000, 3000])(
+    "separates continuation guidance from file data (limit=%s)",
+    async (limit) => {
+      const root = await directory();
+      const text = Array.from({ length: 3001 }, (_, n) => String(n)).join("\n");
+      await writeFile(join(root, "lines.txt"), text);
+      const args = { path: "lines.txt", offset: 2, limit };
+      const native = await createReadTool().execute(
+        args,
+        {
+          env: new NodeExecutionEnv({ cwd: root }),
+          diagnostic: () => {},
+        } as unknown as ToolExecutionApi,
+        BACKGROUND_CONTEXT,
+      );
+      const cloud = await executeNativeTool(
+        request("read", args),
+        root,
+        new AbortController().signal,
+        () => {},
+      );
+      expect(cloud.isError).toBe(false);
+      expect(cloud.result.content).toEqual(native.content);
+      const next = 2 + Math.min(2000, limit);
+      if (next <= 3001) expect(cloud.result.diagnostics?.[0]?.message).toContain(`offset=${next}`);
+    },
+  );
+
   it("reads image magic without depending on a filename extension", async () => {
     const root = await directory();
     const path = join(root, "screenshot");

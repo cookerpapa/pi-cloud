@@ -57,6 +57,28 @@ describe("pending input protocol", () => {
     ])
       expect(() => parseQueuedInputAction(value)).toThrow();
   });
+
+  it("requires the original admission identity for returned input", () => {
+    const input = {
+      turnId: id,
+      idempotencyKey: "accepted-input",
+      text: "draft",
+      uploads: [],
+      mailboxPosition: 2,
+    };
+    const page = {
+      sessionId: id,
+      requestId: id,
+      afterPosition: 0,
+      pending: false,
+      hasMore: false,
+      items: [input],
+    };
+    expect(parseReturnedInputsResource(page).items[0]?.idempotencyKey).toBe("accepted-input");
+    expect(() =>
+      parseReturnedInputsResource({ ...page, items: [{ ...input, idempotencyKey: undefined }] }),
+    ).toThrow();
+  });
   it("bounds queue snapshots and represents a promotion separately from runnable input", () => {
     const item = {
       turnId: id,

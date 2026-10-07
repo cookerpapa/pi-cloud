@@ -32,7 +32,7 @@ const ToolSandboxEnvelope = {
 };
 
 const WorkerEnvelope = {
-  toolWorkerProtocolVersion: Type.Literal(3),
+  toolWorkerProtocolVersion: Type.Literal(4),
 };
 
 const SafeCodeSchema = Type.String({
