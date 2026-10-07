@@ -1,5 +1,37 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
+
+/** Stop can atomically withdraw sibling queued inputs. Refresh each Run rather
+ * than applying cancellation to the pre-Stop snapshot; queued inputs use their
+ * revision-checked queue API. Only idempotent cleanup controls are retried. */
+export async function settleOwnedAcceptanceRuns(api, sessionId, rows, settled) {
+  const terminal = (run) => ["completed", "failed", "cancelled", "timed_out"].includes(run.state);
+  for (const row of rows) {
+    for (let attempt = 0; ; attempt++) {
+      const current = await api.getRun(row.id);
+      if (terminal(current)) break;
+      try {
+        if (current.state === "queued") {
+          const queue = await api.getInputQueue(sessionId);
+          await api.mutateQueuedInput(
+            sessionId,
+            row.turn_id,
+            { action: "cancel", revision: queue.revision },
+            `cleanup:${randomUUID()}`,
+          );
+        } else {
+          await api.cancelTurn(sessionId, row.turn_id, `cleanup:${randomUUID()}`);
+        }
+        await settled(row.id);
+        break;
+      } catch (error) {
+        if (terminal(await api.getRun(row.id))) break;
+        if (attempt >= 2) throw error;
+      }
+    }
+  }
+}
 
 /** Only newly created acceptance tenants. Physical deletion must have completed
  * through the product API first; this never deletes a VM or releases quota. */

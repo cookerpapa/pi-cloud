@@ -46,9 +46,10 @@ stores the native body once, with rebuildable record/document indexes for cold
 reads. Native Conversations share one physical Session lease and writer.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
-The [current deployed release](docs/reports/review-release-20261007-r3.md) uses
+The [current deployed release](docs/reports/readiness-release-20261007.md) uses
 schema 182, guest input protocol 4, Tool Worker protocol 4 and Cube management
-protocol 7. Its [source repairs](docs/reports/review-repair-20261007-r3.md)
+protocol 7. It exercises the maintained matched release workflow and preserves
+the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which
 correct quarantine recovery, returned-input identity and oversized-line Read,
 and remove unnecessary document-revision queries. Real browser, native VM and
 Luna multi-Run/cold-VM acceptance pass. Earlier releases, reviews and

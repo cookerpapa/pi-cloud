@@ -4,11 +4,69 @@ import { createDatabase, runMigrations } from "../../packages/database/src/index
 import { createPrivateTenant } from "../../packages/control-plane/src/tenant-administration.ts";
 import { PlatformRuntimeSettingsService } from "../../packages/control-plane/src/platform-runtime-settings.ts";
 import { withCubeProxyFixture, restoreCubeProxyFixture } from "./cube-proxy-fixture.mjs";
-import { purgeOwnedAcceptanceTenant } from "./owned-acceptance-cleanup.mjs";
+import {
+  purgeOwnedAcceptanceTenant,
+  settleOwnedAcceptanceRuns,
+} from "./owned-acceptance-cleanup.mjs";
 import { ControlPlaneStore } from "../../packages/control-plane/src/control-plane-store.ts";
 import { randomUUID } from "node:crypto";
 
 let pg, database, api, settings, actor;
+it("refreshes siblings withdrawn by Stop and uses the queue revision for still-queued cleanup", async () => {
+  const runs = new Map([
+    ["active", { state: "running" }],
+    ["withdrawn", { state: "queued" }],
+    ["queued", { state: "queued" }],
+  ]);
+  const calls = [];
+  await settleOwnedAcceptanceRuns(
+    {
+      async getRun(id) {
+        return runs.get(id);
+      },
+      async cancelTurn(session, turn) {
+        calls.push(["stop", session, turn]);
+        runs.set("active", { state: "cancelled" });
+        runs.set("withdrawn", { state: "cancelled" });
+      },
+      async getInputQueue() {
+        return { revision: 7 };
+      },
+      async mutateQueuedInput(session, turn, action) {
+        calls.push(["queue", session, turn, action]);
+        runs.set("queued", { state: "cancelled" });
+      },
+    },
+    "fixture",
+    [...runs.keys()].map((id) => ({ id, turn_id: id, state: runs.get(id).state })),
+    async () => {},
+  );
+  expect(calls).toEqual([
+    ["stop", "fixture", "active"],
+    ["queue", "fixture", "queued", { action: "cancel", revision: 7 }],
+  ]);
+});
+
+it("accepts a lost cancellation reply after the Run has actually settled", async () => {
+  let state = "running",
+    calls = 0;
+  await settleOwnedAcceptanceRuns(
+    {
+      async getRun() {
+        return { state };
+      },
+      async cancelTurn() {
+        calls++;
+        state = "cancelled";
+        throw new Error("reply lost");
+      },
+    },
+    "fixture",
+    [{ id: "run", turn_id: "turn" }],
+    async () => {},
+  );
+  expect(calls).toBe(1);
+});
 beforeAll(async () => {
   pg = await testPostgres({});
   database = createDatabase({ connectionString: pg.url, maxConnections: 3 });

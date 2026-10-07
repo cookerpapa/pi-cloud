@@ -1,5 +1,11 @@
 # Documentation map
 
+The [readiness release](reports/readiness-release-20261007.md) is deployed as
+`pilot-ready-81392f7d` through the maintained matched workflow. Full Luna/Cube and
+browser acceptance pass; original accounts/configuration remain, and owned test
+resources are removed. The report records driver corrections and one upstream
+TLS interruption separately from the successful final verification.
+
 The approved readiness work adds a [matched release procedure](MATCHED_RELEASE.md),
 an optional [conversation/image recovery drill](ASSET_RECOVERY.md), and a bounded
 [private-use pilot](PRIVATE_PILOT.md). The owner has deferred backups of the current

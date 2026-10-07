@@ -7,7 +7,8 @@ retains the implemented core. The approved readiness slice now provides a
 [matched release workflow](MATCHED_RELEASE.md), consistent Run/Stop/Storage
 semantics, [pilot criteria](PRIVATE_PILOT.md), and an independently exercised
 [conversation/image restore](ASSET_RECOVERY.md) into new Workspaces. It changes
-operator tooling/docs, not runtime authorities. The owner deferred backups of
+operator tooling/docs, not runtime authorities. The [matched deployment](reports/readiness-release-20261007.md)
+and real Luna/Cube/browser acceptance are now complete. The owner deferred backups of
 current disposable data; the actual pilot has not started. Fresh-machine delivery,
 fleet capacity and physical-node HA remain separate acceptance items.
 

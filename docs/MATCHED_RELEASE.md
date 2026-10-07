@@ -71,7 +71,7 @@ or edit source while applying a release.
 ## Acceptance and fixture restoration
 
 ```sh
-npm run production:check
+PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
 PI_CLOUD_LIVE_RELEASE_CHECK=1 node --import tsx scripts/run-live-release-acceptance.mjs
 ```
 

@@ -1,0 +1,193 @@
+{
+  "formatVersion": 1,
+  "release": "pilot-ready-81392f7d",
+  "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426",
+  "deployed": true,
+  "checkedAt": "2026-10-07T14:51:23.952Z",
+  "backupCreated": false,
+  "schema": 182,
+  "protocols": {
+    "piDurable": "1.0.0",
+    "guest": 4,
+    "toolWorker": 4,
+    "cubeManagement": 7
+  },
+  "guestIdentity": "1ab0b6a38aa52ff410a7ab8b527f1f32c91a3b89",
+  "completionIdentity": "3b59079823947436b5113d585de528be5c743556",
+  "security": {
+    "images": 11,
+    "fixableHigh": 0,
+    "fixableCritical": 0,
+    "npmVulnerabilities": 0
+  },
+  "production": {
+    "accepted": true,
+    "model": {
+      "provider": "openai-codex",
+      "modelId": "gpt-6-luna"
+    },
+    "modelRequests": 21,
+    "coldWorkspaceRestored": true,
+    "workspaceFileCount": 1025,
+    "backgroundProcessSurvived": true,
+    "previewPassed": true
+  },
+  "browser": {
+    "accepted": true,
+    "draftRemovalPreservesQueuedImage": true,
+    "returnedInput": {
+      "realBrowser": true,
+      "requests": 2,
+      "distinctKeys": 2,
+      "distinctAdmissions": 2,
+      "originalRunCancelled": true,
+      "newRunCompleted": true,
+      "sameUploadId": true,
+      "directVision": true,
+      "activeRunCancelled": true
+    },
+    "read": [
+      {
+        "kind": "wide-ascii.txt",
+        "sourceBytes": 120017,
+        "contentBytes": 51200,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      },
+      {
+        "kind": "wide-unicode.txt",
+        "sourceBytes": 140031,
+        "contentBytes": 51196,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      }
+    ],
+    "cleanup": {
+      "tenantRemoved": true,
+      "imagesRemoved": 1
+    },
+    "scriptSha256": "7e83f905f583c7f8b77ef43b21bfafe3380349fb6cc64f7066550846528512e5"
+  },
+  "provider": {
+    "tests": 2,
+    "passed": 2,
+    "configurationRestored": true
+  },
+  "incidents": [
+    {
+      "kind": "acceptance_driver",
+      "reason": "Global attachment selector included the queued copy; cleanup also used stale pre-Stop Run states",
+      "resolved": true
+    },
+    {
+      "kind": "model_transport",
+      "reason": "CLIProxyAPI upstream TLS handshake EOF",
+      "nativeFailureRetained": true,
+      "freshFixtureRerunPassed": true
+    }
+  ],
+  "final": {
+    "health": 200,
+    "publication": {
+      "status": 200,
+      "availablePartitions": 32
+    },
+    "configurationPreserved": true,
+    "accounts": 29,
+    "tenants": 29,
+    "modelProfiles": 30,
+    "counts": {
+      "sessions": 0,
+      "runs": 0,
+      "workspaces": 0,
+      "projects": 0,
+      "pendingcontrols": 0,
+      "images": 0,
+      "activeruntimes": 0,
+      "writers": 0
+    },
+    "native": {
+      "nodesScanned": "1",
+      "nodesTotal": "1",
+      "vms": 0,
+      "volumes": 0
+    },
+    "helm": [
+      {
+        "name": "cube",
+        "revision": "59",
+        "status": "deployed"
+      },
+      {
+        "name": "pi-cloud",
+        "revision": "30",
+        "status": "deployed"
+      },
+      {
+        "name": "pi-cloud-infrastructure",
+        "revision": "29",
+        "status": "deployed"
+      }
+    ]
+  },
+  "retiredImageTagsRemoved": 21,
+  "images": [
+    {
+      "reference": "pi-cloud/control-plane:pilot-ready-81392f7d",
+      "imageId": "sha256:7c32fd96c1e84ced388ad2756e0eb225a475e0af3ac8ce2bd4dc30685b07f0d7",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "pi-cloud/supervisor-host:pilot-ready-81392f7d",
+      "imageId": "sha256:b0bdec8977e4f24dd4eca1ff3451494be9c097f2e0ad231ceacf484e3178057f",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "pi-cloud/workspace-volume-gateway:pilot-ready-81392f7d",
+      "imageId": "sha256:6d330145851cffe0c83f9349c33496849dfedf440dcc1e353fec0c50701645ed",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "pi-cloud/web-ui:pilot-ready-81392f7d",
+      "imageId": "sha256:88cae77d9726e731240e082f18824162a1c2b8475f3296c90e83c414a624665f",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "pi-cloud/provider-egress-relay:pilot-ready-81392f7d",
+      "imageId": "sha256:f2f3b6165c207d97edad8cf645f0c75431ff656f2c9488212df7c4918ae6390b",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "pi-cloud/ssh-gateway:pilot-ready-81392f7d",
+      "imageId": "sha256:ad4bdc5e20265cc11bfdc36d2df4ea8d098d2675c12a9fb0f83868127a1f15d6",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "pi-cloud/cli-proxy-api:pilot-ready-81392f7d",
+      "imageId": "sha256:a2eff5633ca40ac7e9f1d08384a1fb5182a18c3dab4f7bd96ad3210df4bc05e7",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "pi-cloud/cube-api:pilot-ready-81392f7d",
+      "imageId": "sha256:3e91be8429d316998356cabf0bd1bd5e024fbf67046158ff279ad6489ad25e19",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "pi-cloud/cube-master:pilot-ready-81392f7d",
+      "imageId": "sha256:dfc1629532fe67249204563115484bc0afb7790dad547208cf366faf7e9bb0e0",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "pi-cloud/cubelet:pilot-ready-81392f7d",
+      "imageId": "sha256:29f662030bda77add82d8b236b25489b50a436e4d0e6ee411d2ce3cbc0b3d1e4",
+      "sourceRevision": "81392f7d012b6f5bee16402ec94e33050001c426"
+    },
+    {
+      "reference": "localhost:5000/pi-cloud/cubesandbox-tool:1ab0b6a38aa52ff410a7ab8b527f1f32c91a3b89",
+      "imageId": "sha256:ca51cee4da900fe15ce168eaf70c61a4eacbad6744cad23eecfb8b59e8a82d61",
+      "sourceRevision": "49e9b8ccdc3702603db7d0109a4ed0cc3784e13b",
+      "guestBuildIdentity": "1ab0b6a38aa52ff410a7ab8b527f1f32c91a3b89"
+    }
+  ],
+  "privateEvidence": "dist/releases/pilot-ready-81392f7d"
+}

@@ -18,7 +18,10 @@ import {
 } from "./lib/production-kubernetes.mjs";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
-import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
+import {
+  purgeOwnedAcceptanceTenant,
+  settleOwnedAcceptanceRuns,
+} from "./lib/owned-acceptance-cleanup.mjs";
 import { resolve, dirname } from "node:path";
 if (process.env.PI_CLOUD_LIVE_RELEASE_CHECK !== "1")
   throw new Error(
@@ -74,9 +77,20 @@ async function settled(runId) {
 }
 async function completed(runId) {
   const run = await settled(runId);
-  assert.equal(run.state, "completed", run.failure?.code ?? "Run failed");
   const history = await nativeHistory(db, { runId });
   report.runs.push({ runId, state: run.state, usage: runUsage(history) });
+  if (run.state !== "completed") {
+    // Capture bounded fixture diagnostics before deleting its history. Never
+    // retain prompts, Tool arguments, pixels or request/provider credentials.
+    report.runFailure = {
+      runId,
+      failure: run.failure,
+      modelErrors: nativeMessages(history)
+        .filter((message) => message.role === "assistant" && message.stopReason === "error")
+        .map((message) => String(message.errorMessage ?? "Model request failed").slice(0, 1000)),
+    };
+  }
+  assert.equal(run.state, "completed", run.failure?.code ?? "Run failed");
   return history;
 }
 try {
@@ -134,6 +148,7 @@ try {
   progress("browser lost reply, Stop, return, image resend");
   let calls;
   await withChromePage({}, async (page) => {
+    const composerUpload = ".product-composer-area > .upload-cards .upload-card";
     await page.send("Network.setExtraHTTPHeaders", {
       headers: { Authorization: "Bearer " + tenant.credential.token },
     });
@@ -154,7 +169,7 @@ try {
       `(()=>{const files=new DataTransfer();files.items.add(new File([Uint8Array.from(atob(${JSON.stringify(png.toString("base64"))}),c=>c.charCodeAt(0))],'return-image.png',{type:'image/png'}));const input=document.querySelector('input[type=file]');input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`,
     );
     await page.waitFor(
-      "document.querySelector('.upload-card') && document.querySelector('.product-steer-button')?.disabled===false",
+      `document.querySelector('${composerUpload}') && document.querySelector('.product-steer-button')?.disabled===false`,
     );
     const send = () =>
       page.evaluate(
@@ -167,13 +182,23 @@ try {
     const original = await page.evaluate("releaseCalls[0]");
     assert.equal((await api.getRun(original.runId)).state, "queued");
     assert.equal(original.body.uploadIds.length, 1);
+    // Force the formerly racy layout: both the queued copy and the draft image
+    // must be visible before removing just the draft attachment.
+    await page.waitFor("document.querySelector('.pending-input-queue .upload-card')");
+    await page.waitFor(
+      `document.querySelector('${composerUpload} button[aria-label]')?.disabled===false`,
+    );
     await fill("");
-    await page.evaluate("document.querySelector('.upload-card button:last-child').click()");
-    await page.waitFor("!document.querySelector('.upload-card')");
+    await page.evaluate(`document.querySelector('${composerUpload} button[aria-label]').click()`);
+    await page.waitFor(`!document.querySelector('${composerUpload}')`);
+    assert(
+      await page.evaluate("Boolean(document.querySelector('.pending-input-queue .upload-card'))"),
+    );
+    report.draftRemovalPreservesQueuedImage = true;
     assert.equal((await api.getRun(active.runId)).state, "running");
     await page.evaluate("document.querySelector('.product-stop-button').click()");
     await page.waitFor(
-      `document.querySelector('.product-composer textarea').value===${JSON.stringify(prompt)} && document.querySelector('.upload-card')`,
+      `document.querySelector('.product-composer textarea').value===${JSON.stringify(prompt)} && document.querySelector('${composerUpload}')`,
     );
     const returned = await page.evaluate("releaseReturned");
     assert(
@@ -311,11 +336,7 @@ try {
         .select(["id", "turn_id", "state"])
         .where("session_id", "=", session.sessionId)
         .execute();
-      for (const row of rows)
-        if (!terminal(row)) {
-          await api.cancelTurn(session.sessionId, row.turn_id, newIdempotencyKey("cleanup"));
-          await settled(row.id);
-        }
+      await settleOwnedAcceptanceRuns(api, session.sessionId, rows, settled);
       await until(
         async () =>
           !(

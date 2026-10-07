@@ -47,7 +47,10 @@ rewrite. The owner approved this slice; current source implementation includes:
       replace old execution/resource authority; exact native history and images survive.
 
 The [matched release procedure](MATCHED_RELEASE.md) is maintained in source.
-These changes are operator tools/docs, not a newly deployed runtime release.
+The [matched rollout](reports/readiness-release-20261007.md) now exercises this
+workflow on the existing cluster. Operator driver fixes cover queued-image
+visibility and cleanup after Stop; the final live acceptance passes. No new
+runtime authority or protocol was introduced.
 [Implementation and verification](reports/private-readiness-repair-20261007.md).
 
 The same review proposes a small private-use pilot with agreed outcome/intervention
