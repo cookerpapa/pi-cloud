@@ -1,5 +1,9 @@
 # Documentation map
 
+The [DeepSeek V4.1 Flash smoke check](reports/deepseek-flash-acceptance-20261007.md)
+passes text, real file/Bash execution, multi-round high-thinking and direct image
+input on the deployed readiness release. Search was explicitly not tested.
+
 The [readiness release](reports/readiness-release-20261007.md) is deployed as
 `pilot-ready-81392f7d` through the maintained matched workflow. Full Luna/Cube and
 browser acceptance pass; original accounts/configuration remain, and owned test

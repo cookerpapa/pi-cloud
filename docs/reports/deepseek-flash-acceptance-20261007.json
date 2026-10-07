@@ -1,0 +1,125 @@
+{
+  "checkedAt": "2026-10-07T15:21:17.739Z",
+  "sourceRevision": "fed7a20cd4b1fa6371fa9c75abc90672515cf57a",
+  "deployedImage": "pi-cloud/control-plane:pilot-ready-81392f7d",
+  "scriptSha256": "703c443628c16196b70cd117284e89cfa4983843caa0f7bc4a9df7b4a0561617",
+  "provider": "deepseek",
+  "displayName": "DeepSeek V4.1 Flash",
+  "modelId": "deepseek-v4-flash",
+  "wireApi": "responses",
+  "configuredUpstreamHost": "api.deepseek.com",
+  "accepted": true,
+  "searchTested": false,
+  "checks": [
+    {
+      "name": "text",
+      "state": "completed",
+      "durationMs": 1097,
+      "snapshot": {
+        "provider": "deepseek",
+        "model_id": "deepseek-v4-flash",
+        "thinking_level": "off"
+      },
+      "tools": [],
+      "hostedCalls": 0,
+      "imageReferences": 0,
+      "usage": {
+        "requests": 1,
+        "inputTokens": 264,
+        "outputTokens": 8,
+        "cacheReadTokens": 2432,
+        "cacheWriteTokens": 0
+      }
+    },
+    {
+      "name": "write-and-bash",
+      "state": "completed",
+      "durationMs": 6456,
+      "snapshot": {
+        "provider": "deepseek",
+        "model_id": "deepseek-v4-flash",
+        "thinking_level": "off"
+      },
+      "tools": [
+        {
+          "name": "write",
+          "isError": false
+        },
+        {
+          "name": "bash",
+          "isError": false
+        }
+      ],
+      "hostedCalls": 0,
+      "imageReferences": 0,
+      "usage": {
+        "requests": 3,
+        "inputTokens": 681,
+        "outputTokens": 144,
+        "cacheReadTokens": 7936,
+        "cacheWriteTokens": 0
+      }
+    },
+    {
+      "name": "high-thinking-follow-up",
+      "state": "completed",
+      "durationMs": 4381,
+      "snapshot": {
+        "provider": "deepseek",
+        "model_id": "deepseek-v4-flash",
+        "thinking_level": "high"
+      },
+      "tools": [
+        {
+          "name": "write",
+          "isError": false
+        },
+        {
+          "name": "bash",
+          "isError": false
+        }
+      ],
+      "hostedCalls": 0,
+      "imageReferences": 0,
+      "usage": {
+        "requests": 3,
+        "inputTokens": 3510,
+        "outputTokens": 273,
+        "cacheReadTokens": 6400,
+        "cacheWriteTokens": 0
+      }
+    },
+    {
+      "name": "attached-image",
+      "state": "completed",
+      "durationMs": 1883,
+      "snapshot": {
+        "provider": "deepseek",
+        "model_id": "deepseek-v4-flash",
+        "thinking_level": "off"
+      },
+      "tools": [],
+      "hostedCalls": 0,
+      "imageReferences": 1,
+      "usage": {
+        "requests": 1,
+        "inputTokens": 968,
+        "outputTokens": 2,
+        "cacheReadTokens": 2688,
+        "cacheWriteTokens": 0
+      }
+    }
+  ],
+  "cleanup": {
+    "confirmed": true,
+    "tenantRemoved": true,
+    "imagesRemoved": 1,
+    "accounts": 29,
+    "tenants": 29,
+    "models": 30,
+    "fixture_sessions": 0,
+    "fixture_workspaces": 0,
+    "fixture_images": 0
+  },
+  "scope": "Single-session live smoke test; no search, long-context, load, or availability-SLA claim; existing model configuration unchanged"
+}

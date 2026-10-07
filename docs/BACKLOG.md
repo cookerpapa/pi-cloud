@@ -382,6 +382,11 @@ separate design questions, not an implicit part of the completed query merge.
 
 ## Deliberately deferred capabilities
 
+The [October 7 Flash acceptance](reports/deepseek-flash-acceptance-20261007.md)
+passes ordinary text, file/Bash tools, high-thinking follow-up and image input.
+It leaves the hosted-search investigation below unchanged and adds no runtime
+or model-configuration change.
+
 - [ ] Decide whether large text/structured Tool results need general attachments.
       Current Subagent results use ADR-0196's explicit bounded admission; image
       attachments do not imply unbounded ordinary result storage.
