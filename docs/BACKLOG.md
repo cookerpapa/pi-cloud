@@ -30,6 +30,22 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+The [architecture evidence review](reports/architecture-evidence-review-20261007.md)
+prioritizes one bounded handoff/operability slice over another broad runtime
+rewrite. These findings are recorded for discussion, not implementation approval:
+
+- [ ] D07-01: make the existing matched upgrade and its targeted live acceptance
+      reproducible from maintained sources; remove caller-umask dependence from
+      source verification and make fixture configuration restoration explicit.
+      Preserve artifact checks, scoped cleanup and the serving release on preflight failure.
+- [ ] D07-02: mark superseded Run/Stop/Storage clauses in ADR-0161/0209/0219 and
+      reconcile them with ADR-0229/ARCHITECTURE, without changing runtime behavior.
+
+The same review proposes a small private-use pilot with agreed outcome/intervention
+criteria before expanding infrastructure. Existing fresh-machine, fleet-load and
+coordinated asset-restore items below remain separate claims; the last becomes a
+gate before entrusting irreplaceable history. R07R3-04 remains owner-deferred.
+
 The [recovery and boundary review](reports/repository-review-20261007-r3.md)
 is complete at `1e7e21eb`, covering all 22 workspaces. Its new characterizations
 leave product behavior unchanged. The subsequently approved repairs follow

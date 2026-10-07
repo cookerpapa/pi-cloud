@@ -1,0 +1,310 @@
+{
+  "format": "pi-cloud.architecture-evidence-review.v1",
+  "revision": "4a27d28c50ef40c1f7fda484a499c2cb292fb27b",
+  "runtimeChanged": false,
+  "reviewQuestion": "Does each complexity have a reason and evidence, and what is enough for private use and independent operation?",
+  "coverage": "22 package dependency boundaries, native Harness/storage/remote Tool adapters, publication/effect/recovery paths, current ADRs and revision-scoped deployment/evaluation evidence; not a new line-by-line audit of historical migrations",
+  "workspaces": [
+    {
+      "name": "@pi-cloud/control-plane",
+      "sourceFiles": 67,
+      "sourceLinesIncludingMigrations": 23844,
+      "internalDependencies": [
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/observability",
+        "@pi-cloud/pi-session-postgres",
+        "@pi-cloud/protocol",
+        "@pi-cloud/runtime-core",
+        "@pi-cloud/sandbox-control",
+        "@pi-cloud/session-attachments",
+        "@pi-cloud/subagent-control",
+        "@pi-cloud/workspace-runtime"
+      ]
+    },
+    {
+      "name": "@pi-cloud/cube-api-authorizer",
+      "sourceFiles": 4,
+      "sourceLinesIncludingMigrations": 314,
+      "internalDependencies": []
+    },
+    {
+      "name": "@pi-cloud/cube-completion",
+      "sourceFiles": 3,
+      "sourceLinesIncludingMigrations": 306,
+      "internalDependencies": [
+        "@pi-cloud/database",
+        "@pi-cloud/event-log",
+        "@pi-cloud/protocol",
+        "@pi-cloud/session-attachments"
+      ]
+    },
+    {
+      "name": "@pi-cloud/cube-egress-gateway",
+      "sourceFiles": 5,
+      "sourceLinesIncludingMigrations": 606,
+      "internalDependencies": []
+    },
+    {
+      "name": "@pi-cloud/database",
+      "sourceFiles": 191,
+      "sourceLinesIncludingMigrations": 14990,
+      "internalDependencies": ["@pi-cloud/domain"]
+    },
+    {
+      "name": "@pi-cloud/domain",
+      "sourceFiles": 5,
+      "sourceLinesIncludingMigrations": 309,
+      "internalDependencies": ["@pi-cloud/protocol"]
+    },
+    {
+      "name": "@pi-cloud/event-log",
+      "sourceFiles": 7,
+      "sourceLinesIncludingMigrations": 1651,
+      "internalDependencies": ["@pi-cloud/protocol", "@pi-cloud/observability"]
+    },
+    {
+      "name": "@pi-cloud/fake-model-server",
+      "sourceFiles": 3,
+      "sourceLinesIncludingMigrations": 931,
+      "internalDependencies": []
+    },
+    {
+      "name": "@pi-cloud/observability",
+      "sourceFiles": 7,
+      "sourceLinesIncludingMigrations": 773,
+      "internalDependencies": []
+    },
+    {
+      "name": "@pi-cloud/pi-session-postgres",
+      "sourceFiles": 14,
+      "sourceLinesIncludingMigrations": 2411,
+      "internalDependencies": [
+        "@pi-cloud/database",
+        "@pi-cloud/protocol",
+        "@pi-cloud/session-attachments"
+      ]
+    },
+    {
+      "name": "@pi-cloud/protocol",
+      "sourceFiles": 49,
+      "sourceLinesIncludingMigrations": 7191,
+      "internalDependencies": []
+    },
+    {
+      "name": "@pi-cloud/provider-egress-relay",
+      "sourceFiles": 4,
+      "sourceLinesIncludingMigrations": 445,
+      "internalDependencies": []
+    },
+    {
+      "name": "@pi-cloud/runtime-core",
+      "sourceFiles": 42,
+      "sourceLinesIncludingMigrations": 8692,
+      "internalDependencies": [
+        "@pi-cloud/database",
+        "@pi-cloud/domain",
+        "@pi-cloud/event-log",
+        "@pi-cloud/observability",
+        "@pi-cloud/pi-session-postgres",
+        "@pi-cloud/protocol",
+        "@pi-cloud/session-attachments"
+      ]
+    },
+    {
+      "name": "@pi-cloud/sandbox-control",
+      "sourceFiles": 34,
+      "sourceLinesIncludingMigrations": 18073,
+      "internalDependencies": [
+        "@pi-cloud/event-log",
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "@pi-cloud/protocol",
+        "@pi-cloud/workspace-runtime",
+        "@pi-cloud/session-attachments",
+        "@pi-cloud/domain"
+      ]
+    },
+    {
+      "name": "@pi-cloud/sandbox-supervisor",
+      "sourceFiles": 32,
+      "sourceLinesIncludingMigrations": 7359,
+      "internalDependencies": [
+        "@pi-cloud/observability",
+        "@pi-cloud/protocol",
+        "@pi-cloud/workspace-runtime",
+        "@pi-cloud/domain"
+      ]
+    },
+    {
+      "name": "@pi-cloud/session-attachments",
+      "sourceFiles": 7,
+      "sourceLinesIncludingMigrations": 767,
+      "internalDependencies": ["@pi-cloud/database", "@pi-cloud/protocol"]
+    },
+    {
+      "name": "@pi-cloud/ssh-gateway",
+      "sourceFiles": 5,
+      "sourceLinesIncludingMigrations": 436,
+      "internalDependencies": ["@pi-cloud/database", "@pi-cloud/protocol"]
+    },
+    {
+      "name": "@pi-cloud/subagent-control",
+      "sourceFiles": 3,
+      "sourceLinesIncludingMigrations": 1447,
+      "internalDependencies": ["@pi-cloud/database", "@pi-cloud/protocol", "@pi-cloud/domain"]
+    },
+    {
+      "name": "@pi-cloud/supervisor-host",
+      "sourceFiles": 20,
+      "sourceLinesIncludingMigrations": 5417,
+      "internalDependencies": [
+        "@pi-cloud/event-log",
+        "@pi-cloud/database",
+        "@pi-cloud/observability",
+        "@pi-cloud/pi-session-postgres",
+        "@pi-cloud/protocol",
+        "@pi-cloud/runtime-core",
+        "@pi-cloud/sandbox-control",
+        "@pi-cloud/subagent-control",
+        "@pi-cloud/sandbox-supervisor",
+        "@pi-cloud/workspace-runtime",
+        "@pi-cloud/session-attachments",
+        "@pi-cloud/domain"
+      ]
+    },
+    {
+      "name": "@pi-cloud/tool-sandbox",
+      "sourceFiles": 13,
+      "sourceLinesIncludingMigrations": 2447,
+      "internalDependencies": ["@pi-cloud/protocol", "@pi-cloud/workspace-runtime"]
+    },
+    {
+      "name": "@pi-cloud/web-ui",
+      "sourceFiles": 40,
+      "sourceLinesIncludingMigrations": 11971,
+      "internalDependencies": ["@pi-cloud/protocol"]
+    },
+    {
+      "name": "@pi-cloud/workspace-runtime",
+      "sourceFiles": 7,
+      "sourceLinesIncludingMigrations": 731,
+      "internalDependencies": ["@pi-cloud/protocol"]
+    }
+  ],
+  "declaredRuntimeDependencyGraph": {
+    "edges": 62,
+    "cycles": 0,
+    "limitation": "Manifest graph only, not a proof of zero semantic coupling"
+  },
+  "nativePatchSurface": {
+    "patches": 6,
+    "changedPaths": 80,
+    "addedDiffLinesIncludingGeneratedAndTests": 10694,
+    "testAddedLines": 2498,
+    "generatedPbAddedLines": 3968,
+    "limitation": "Diff-line totals describe maintenance surface, not live source LOC or design quality"
+  },
+  "liveReadOnlySnapshot": {
+    "nodeCount": 1,
+    "declaredWorkloadsInCubeNamespace": 26,
+    "runningPods": 28,
+    "limitation": "Includes upstream Cube components and infrastructure; these are not 26 custom PiCloud services, and no capacity was measured"
+  },
+  "evidenceSources": [
+    {
+      "report": "control-plane-load-latest.json",
+      "piCloudRevision": "e8e565795bb049a085f9676e1e93b7aba4254960",
+      "generatedAt": "2026-09-17T01:02:17.786Z",
+      "methodology": "loopback_http_cold_session_admission_and_tenant_scoped_reads",
+      "activeAgentRunBenchmark": false
+    },
+    {
+      "report": "kafka-accepted-fact-load-latest.json",
+      "revision": "408f78580c587c637edfd81a86c8035ab5b546ca",
+      "generatedAt": "2026-09-17T00:11:08.626Z",
+      "scope": "unsigned Worker record -> Kafka ACK; excludes publication opening, Projector, PostgreSQL, model and Cube"
+    },
+    {
+      "report": "postgres-session-projection-latest.json",
+      "revision": "3cd29f3aca1258efaf4a5c9cc211175aeb39ef7e",
+      "generatedAt": "2026-10-05T21:54:05.704Z",
+      "scope": [
+        "isolated single-node PostgreSQL",
+        "complete pre-stamped 1 KiB Durable native entries, without projection-result receipts",
+        "no token deltas, model calls or Cube execution"
+      ],
+      "workload": {
+        "sessionCount": 8,
+        "mutationsPerSession": 3,
+        "concurrency": 4,
+        "completeMessages": 24,
+        "payloadBytes": 1024
+      }
+    },
+    {
+      "report": "multi-tenant-model-load-latest.json",
+      "piCloudRevision": "6e92e850b116e62269157a5f26bdb0630ee777f5",
+      "checkedAt": "2026-09-17T00:06:21.530Z"
+    },
+    {
+      "report": "review-release-production-20261007-r3.json",
+      "piCloudRevision": "49e9b8ccdc3702603db7d0109a4ed0cc3784e13b",
+      "checkedAt": "2026-10-07T12:09:45.798Z",
+      "totalUsage": {
+        "requests": 21,
+        "inputTokens": 35628,
+        "outputTokens": 2057,
+        "cacheReadTokens": 125184,
+        "cacheWriteTokens": 0
+      }
+    }
+  ],
+  "freshVerification": {
+    "boundaryContractFiles": 5,
+    "boundaryContractTestsPassed": 38,
+    "commands": ["npm run image:closure-check", "npm run runtime-policy:check"],
+    "productionFaultsInjected": false,
+    "paidModelCalls": 0
+  },
+  "reproducedOperatorIssue": {
+    "scope": "isolated Git archive extraction; source checkout and deployment unchanged",
+    "revision": "4a27d28c50ef40c1f7fda484a499c2cb292fb27b",
+    "current": "1ab0b6a38aa52ff410a7ab8b527f1f32c91a3b89",
+    "cases": [
+      {
+        "umask": "022",
+        "archived": "1ab0b6a38aa52ff410a7ab8b527f1f32c91a3b89",
+        "match": true
+      },
+      {
+        "umask": "077",
+        "archived": "f8c13510428ba6598c546e3cf86b865700d6cb87",
+        "match": false
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "D07-01",
+      "kind": "delivery reproducibility gap",
+      "status": "recorded, not implemented"
+    },
+    {
+      "id": "D07-02",
+      "kind": "confirmed current-ADR semantic contradictions",
+      "status": "recorded, not implemented"
+    },
+    {
+      "id": "D07-03",
+      "kind": "current-workload value and acceptance-target evidence gap",
+      "status": "proposed bounded pilot, not an established capacity guarantee"
+    },
+    {
+      "id": "D07-04",
+      "kind": "valuable-asset disaster recovery evidence gap",
+      "status": "already in backlog; development reset policy acknowledged"
+    }
+  ],
+  "deferredKnownIssue": "R07R3-04 remains owner-deferred; no new logging change proposed in this review"
+}

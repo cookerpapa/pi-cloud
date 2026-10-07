@@ -1,5 +1,12 @@
 # Documentation map
 
+The [architecture value and evidence review](reports/architecture-evidence-review-20261007.md)
+examines `4a27d28c` against the owner's question of justified complexity,
+independent operation and a stopping point. It recommends retaining the core,
+making the matched operating procedure reproducible, reconciling current ADR
+semantics and running a bounded private pilot. It separates demonstrated recovery
+from unproved fleet capacity and host-loss asset restoration; no runtime changed.
+
 The [October 7 recovery and boundary review](reports/repository-review-20261007-r3.md)
 covers all 22 workspaces at `1e7e21eb`. It reproduces a failed-Session recovery
 interaction with withdrawn queued input, returned-input submission identity,

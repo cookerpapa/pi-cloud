@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Architecture evidence and private-use readiness
+
+The [October 7 design review](reports/architecture-evidence-review-20261007.md)
+retains the implemented core and proposes a bounded operating-procedure/private-pilot
+cycle. This is a prioritization proposal, not approval for a new architecture.
+Fresh-machine delivery and physical-node HA remain separate from private pilot
+readiness; important-asset retention needs an independently exercised restore boundary.
+
 ## October 7 recovery and boundary review
 
 - [x] Review all 22 workspaces at `1e7e21eb` against pinned Pi Durable 1.0,
