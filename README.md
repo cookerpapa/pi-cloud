@@ -59,6 +59,9 @@ recover abandoned upload staging and preserve EXIF image orientation.
 The [matched rollout](docs/reports/review-release-20261007-r2.md) deploys these
 changes with guest protocol 4 and schema 182. Old development data and superseded
 runtime resources are removed; accounts and provider/model configuration remain.
+The subsequent [recovery and boundary review](docs/reports/repository-review-20261007-r3.md)
+records four confirmed defects and one measured Storage query improvement;
+it completes the full Luna/cold-VM gate without changing product behavior.
 
 Whole file/shell Tools execute in Cube. Replies return through the separate
 Worker-boot Kafka transport; Pi processes them before publishing the canonical

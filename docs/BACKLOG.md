@@ -30,6 +30,26 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+The [recovery and boundary review](reports/repository-review-20261007-r3.md)
+is complete at `1e7e21eb`, covering all 22 workspaces. Its new characterizations
+leave product behavior unchanged:
+
+- [ ] R07R3-01: distinguish cancelled, unstarted queue inputs from later actual
+      executions when recovering a failed Session. Preserve exact exit/seal and
+      stale-owner guards; verify both proof orderings with Stop queue return.
+- [ ] R07R3-02: end the matching uncertain submission identity when stopped input
+      returns to the composer, so resending admits new work. Preserve newer
+      post-Stop intents, unchanged retries, late ACKs and attachments.
+- [ ] R07R3-03: align oversized-line Read content and continuation diagnostics
+      with pinned Pi 1.0 while preserving bounded source reads and image support.
+- [ ] R07R3-04: remove CubeMaster's full configuration dumps and verify that
+      startup/validation/reload logs exclude synthetic credential canaries.
+- [ ] O07R3-01: avoid cold document-revision SQL when the acknowledged overlay
+      contains the complete requested base/suffix. Retain native historical,
+      version, checkpoint and eviction semantics and measure materialization cost.
+- [ ] Remove the unused Pi 0.84 model-stream classifier and simplify overlapping
+      README release narratives while preserving versioned design evidence.
+
 The [October 7 post-release review](reports/repository-review-20261007-r2.md)
 is complete at `59541389`. Its four confirmed findings are implemented and
 source-verified in the [repair record](reports/review-repair-20261007-r2.md),
@@ -48,10 +68,11 @@ following the [approved plan](reports/review-repair-plan-20261007-r2.md).
       draining old uploads. [Release evidence](reports/review-release-20261007-r2.md)
       records destructive development cleanup, preserved configuration, matched
       protocol 7 / Tool Worker 3 artifacts and live acceptance (ADR-0235).
-- [ ] Rerun the additional whole-production multi-Run/cold-VM gate after the
-      model proxy's HTTP 500 failures clear. [Release evidence](reports/review-release-production-gate-20261007-r2.json)
-      records the failed reruns and partial coverage; the targeted browser,
-      elastic/machine image, Worker recovery and native Provider checks passed.
+- [x] Rerun the additional whole-production multi-Run/cold-VM gate. The
+      [new review's live evidence](reports/repository-review-live-20261007-r3.json)
+      passes 21 Luna requests, preview/background reuse and fresh-VM Volume
+      restoration without product changes. The prior model-proxy HTTP 500 cause
+      remains unconfirmed; its historical failed runs are not relabeled as passing.
 
 The same review distinguishes measured same-partition handoff blocking from the
 cross-partition lock defect. Native template restore passed in two owned cases;

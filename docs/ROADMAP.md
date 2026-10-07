@@ -1,5 +1,15 @@
 # Implementation roadmap
 
+## October 7 recovery and boundary review
+
+- [x] Review all 22 workspaces at `1e7e21eb` against pinned Pi Durable 1.0,
+      current cloud authorities and deployment/verification contracts.
+      [Coverage, findings and evidence](reports/repository-review-20261007-r3.md).
+- [x] Complete the previously interrupted real Luna multi-Run/cold-VM gate and
+      isolate new recovery, Read parity, logging and document-query observations.
+- [ ] Implement the confirmed repairs after review acceptance; proposed changes
+      and remaining architectural tradeoffs are recorded in BACKLOG and the report.
+
 ## October 7 post-release review
 
 - [x] Review all 22 workspaces at `59541389`, including recent repairs, pinned

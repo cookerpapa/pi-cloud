@@ -1,5 +1,13 @@
 # Documentation map
 
+The [October 7 recovery and boundary review](reports/repository-review-20261007-r3.md)
+covers all 22 workspaces at `1e7e21eb`. It reproduces a failed-Session recovery
+interaction with withdrawn queued input, returned-input submission identity,
+oversized-line Read drift from Pi 1.0,
+and native configuration logging, and measures avoidable hot-document SQL.
+The previously interrupted full Luna/cold-VM acceptance now passes. Product
+repairs remain pending; the report separates current evidence from limitations.
+
 The [October 7 post-release review](reports/repository-review-20261007-r2.md)
 audits `59541389` across all 22 workspaces. Four reproduced findings cover
 cross-action composer identity, partition commit-lock coupling, upload staging

@@ -1,0 +1,353 @@
+{
+  "checkedAt": "2026-10-07T10:02:50.921Z",
+  "revision": "1e7e21eb170bff0f0699f156bdd6755c59305eb4",
+  "scope": "all22 workspace boundaries and current deployment/test/docs; historical code consulted for current behavior",
+  "trackedFiles": 1667,
+  "productChanges": false,
+  "deploymentChanges": false,
+  "findings": [
+    {
+      "id": "R07R3-01",
+      "severity": "P1",
+      "title": "Unstarted withdrawn input blocks quarantine recovery",
+      "file": "packages/runtime-core/src/quarantined-session-recovery.ts",
+      "line": 33,
+      "evidence": {
+        "scope": "isolated real PostgreSQL; actual admission/cancellation/closure code; controlled Worker exit",
+        "cases": [
+          {
+            "order": "exit-first",
+            "queuedInputWithdrawn": false,
+            "sessionState": "idle",
+            "failedRunState": "failed",
+            "agentExitConfirmed": true,
+            "sealConfirmed": true,
+            "nextInputAccepted": true
+          },
+          {
+            "order": "exit-first",
+            "queuedInputWithdrawn": true,
+            "sessionState": "failed",
+            "failedRunState": "failed",
+            "agentExitConfirmed": true,
+            "sealConfirmed": true,
+            "queuedRow": {
+              "state": "cancelled",
+              "lease_id": null,
+              "started_at": null,
+              "stop_reason": "queued_input_withdrawn"
+            },
+            "nextInputAccepted": false,
+            "rejection": "conflict"
+          },
+          {
+            "order": "seal-first",
+            "queuedInputWithdrawn": false,
+            "sessionState": "idle",
+            "failedRunState": "failed",
+            "agentExitConfirmed": true,
+            "sealConfirmed": true,
+            "nextInputAccepted": true
+          },
+          {
+            "order": "seal-first",
+            "queuedInputWithdrawn": true,
+            "sessionState": "failed",
+            "failedRunState": "failed",
+            "agentExitConfirmed": true,
+            "sealConfirmed": true,
+            "queuedRow": {
+              "state": "cancelled",
+              "lease_id": null,
+              "started_at": null,
+              "stop_reason": "queued_input_withdrawn"
+            },
+            "nextInputAccepted": false,
+            "rejection": "conflict"
+          }
+        ]
+      }
+    },
+    {
+      "id": "R07R3-02",
+      "severity": "P2",
+      "title": "Returned input resubmission can reuse its cancelled admission identity",
+      "file": "packages/web-ui/src/ChatApp.tsx",
+      "line": 2240,
+      "evidence": {
+        "scope": "actual ComposerSubmission, PiCloudApi validation and returned-input recovery; controlled durable-admission/reply-loss fixture; ChatApp wiring checked separately",
+        "controlIsNotAProposedBlindReset": true,
+        "cases": [
+          {
+            "invalidateStoppedIntent": false,
+            "requests": 2,
+            "distinctKeys": 1,
+            "admittedRuns": 1,
+            "replayed": true,
+            "wireState": "queued",
+            "resubmissionRunState": "cancelled",
+            "draftAfterSuccess": ""
+          },
+          {
+            "invalidateStoppedIntent": true,
+            "requests": 2,
+            "distinctKeys": 2,
+            "admittedRuns": 2,
+            "replayed": false,
+            "wireState": "queued",
+            "resubmissionRunState": "queued",
+            "draftAfterSuccess": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "R07R3-03",
+      "severity": "P2",
+      "title": "Long-line Read discards file content unlike pinned Pi",
+      "file": "packages/tool-sandbox/src/native-tools.ts",
+      "line": 173,
+      "evidence": {
+        "bytes": 120017,
+        "native": {
+          "contentBytes": 51200,
+          "containsFilePrefix": true,
+          "diagnostics": [
+            {
+              "severity": "warn",
+              "code": "truncated",
+              "message": "Line 1 is 117.2KB, exceeds the 50.0KB limit; showing its first 50.0KB. Use bash: sed -n '1p' bundle.js | tail -c +51201"
+            }
+          ]
+        },
+        "cloud": {
+          "contentBytes": 102,
+          "containsFilePrefix": false,
+          "isError": false,
+          "text": "[Line 1 is 120017 bytes, exceeds 51200 byte limit. Use bash with sed/head to inspect a bounded slice.]"
+        }
+      }
+    },
+    {
+      "id": "R07R3-04",
+      "severity": "P2",
+      "title": "Shipped CubeMaster logs configuration secrets",
+      "sourcePinFile": "deploy/cubesandbox/runtime-build.json",
+      "upstreamFile": "CubeMaster/pkg/base/config/config.go",
+      "upstreamLine": 725,
+      "evidence": {
+        "checkedAt": "2026-10-07T09:18:28.513Z",
+        "image": "pi-cloud/cube-master:review-release-ad2bdd97",
+        "isolatedNetwork": true,
+        "syntheticCredentialsOnly": true,
+        "configurationDump": true,
+        "fakePasswordLogged": true,
+        "productionCredentialsUsed": false
+      }
+    }
+  ],
+  "optimizations": [
+    {
+      "id": "O07R3-01",
+      "file": "packages/pi-session-postgres/src/durable/published-storage.ts",
+      "line": 486,
+      "evidence": {
+        "scope": "isolated real PostgreSQL; acknowledged publication fixture with PG projection held",
+        "documentReads": 20,
+        "unnecessaryRevisionSqlReads": 20,
+        "projectionHead": 0,
+        "publishedBatches": 21,
+        "allValuesCorrect": true,
+        "completeLocalDocumentFailsWhenProjectionReadFails": true
+      }
+    }
+  ],
+  "upstreamObservation": {
+    "case": "pinned Pi provider classifier; not evidence of prior live failure body",
+    "cases": [
+      {
+        "inputStatus": 500,
+        "message": "Request could not be completed",
+        "requests": 1,
+        "errorMessage": "Request could not be completed",
+        "stopReason": "error",
+        "nativeRetryable": false
+      },
+      {
+        "inputStatus": 500,
+        "message": "Internal server error",
+        "requests": 1,
+        "errorMessage": "Internal server error",
+        "stopReason": "error",
+        "nativeRetryable": true
+      }
+    ]
+  },
+  "cleanupCandidates": [
+    {
+      "path": "packages/sandbox-supervisor/src/model-stream-error.ts",
+      "reason": "unreferenced Pi0.84 classifier; no package export or repository callsite"
+    }
+  ],
+  "coverage": [
+    {
+      "workspace": "control-plane",
+      "sourceFiles": 67,
+      "testFiles": 62
+    },
+    {
+      "workspace": "cube-api-authorizer",
+      "sourceFiles": 4,
+      "testFiles": 2
+    },
+    {
+      "workspace": "cube-completion",
+      "sourceFiles": 3,
+      "testFiles": 2
+    },
+    {
+      "workspace": "cube-egress-gateway",
+      "sourceFiles": 5,
+      "testFiles": 2
+    },
+    {
+      "workspace": "database",
+      "sourceFiles": 191,
+      "testFiles": 16
+    },
+    {
+      "workspace": "domain",
+      "sourceFiles": 5,
+      "testFiles": 2
+    },
+    {
+      "workspace": "event-log",
+      "sourceFiles": 7,
+      "testFiles": 7
+    },
+    {
+      "workspace": "fake-model-server",
+      "sourceFiles": 3,
+      "testFiles": 2
+    },
+    {
+      "workspace": "observability",
+      "sourceFiles": 7,
+      "testFiles": 2
+    },
+    {
+      "workspace": "pi-session-postgres",
+      "sourceFiles": 14,
+      "testFiles": 3
+    },
+    {
+      "workspace": "protocol",
+      "sourceFiles": 49,
+      "testFiles": 19
+    },
+    {
+      "workspace": "provider-egress-relay",
+      "sourceFiles": 4,
+      "testFiles": 1
+    },
+    {
+      "workspace": "runtime-core",
+      "sourceFiles": 42,
+      "testFiles": 19
+    },
+    {
+      "workspace": "sandbox-control",
+      "sourceFiles": 34,
+      "testFiles": 29
+    },
+    {
+      "workspace": "sandbox-supervisor",
+      "sourceFiles": 34,
+      "testFiles": 26
+    },
+    {
+      "workspace": "session-attachments",
+      "sourceFiles": 7,
+      "testFiles": 4
+    },
+    {
+      "workspace": "ssh-gateway",
+      "sourceFiles": 5,
+      "testFiles": 3
+    },
+    {
+      "workspace": "subagent-control",
+      "sourceFiles": 3,
+      "testFiles": 2
+    },
+    {
+      "workspace": "supervisor-host",
+      "sourceFiles": 20,
+      "testFiles": 22
+    },
+    {
+      "workspace": "tool-sandbox",
+      "sourceFiles": 13,
+      "testFiles": 7
+    },
+    {
+      "workspace": "web-ui",
+      "sourceFiles": 41,
+      "testFiles": 23
+    },
+    {
+      "workspace": "workspace-runtime",
+      "sourceFiles": 7,
+      "testFiles": 3
+    }
+  ],
+  "verification": {
+    "typecheckedWorkspaces": 22,
+    "workspaceTestsPassed": 1649,
+    "helperTestsPassed": 45,
+    "optInTransportTestsPassed": 7,
+    "faultCases": 217,
+    "faultCasesPassed": 217,
+    "faultExecutionDurationMs": 418847,
+    "browserPresentation": true,
+    "helm": true,
+    "runtimePolicy": true,
+    "npmAuditRemainingVulnerabilities": 0,
+    "liveModel": {
+      "provider": "openai-codex",
+      "modelId": "gpt-6-luna"
+    },
+    "liveModelRequests": 21,
+    "liveColdVolumeRecovery": true,
+    "liveEvidence": "repository-review-live-20261007-r3.json",
+    "previousWholeProductionGateNowPassed": true,
+    "productionFailureRootCauseEstablished": false
+  },
+  "cleanup": {
+    "checkedAt": "2026-10-07T09:56:49.244Z",
+    "ownedWorkspacesDeleted": 3,
+    "ownedTenantDeleted": 1,
+    "originalAccountsAndModelProfilesPreserved": true,
+    "nativeInventoryEmpty": true,
+    "scope": "only IDs created by this review; no service restart, topic reset or deployment",
+    "after": {
+      "sessions": 0,
+      "workspaces": 0,
+      "users": 29,
+      "models": 30,
+      "pendingOutbox": 0
+    }
+  },
+  "limits": [
+    "No product repair or new deployment in this review",
+    "Single physical compute node; no new physical multi-node HA claim",
+    "Historical post-host-reboot SetGuestDateTime cause remains unconfirmed",
+    "Current package tests for GitLab/SSH are not a new external live integration run",
+    "The model-error text probe is not the unavailable body of earlier live HTTP500s"
+  ],
+  "finalHealth": {
+    "status": 200,
+    "partitions": 32,
+    "total": 32
+  }
+}
