@@ -12,7 +12,10 @@ matched cutover.
 ## Decision
 
 PostgreSQL remains the sole authority for Run and physical-Session ownership.
-A Run is one execution; another execution uses a new Run. RunAttempt stays removed.
+The original one-execution-per-Run clause is superseded by
+[ADR-0229](0229-native-durable-runtime.md): an interrupted logical Run may resume its
+native pending task only after ordered old-owner closure and a fresh PG grant.
+RunAttempt stays removed; a restored native task does not authorize itself.
 Pi, native stamping, after-Tool processing and model context remain in the Worker.
 The deployment treats its infrastructure as trusted private services.
 

@@ -21,6 +21,7 @@ import {
   podFor,
   execIn,
   runtimeImages,
+  imageCatalogPath,
 } from "./lib/production-kubernetes.mjs";
 import { selfHostedValues } from "./lib/self-hosted-values.mjs";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
@@ -109,7 +110,7 @@ async function build() {
       { env: environment },
     );
   }
-  writeFileSync(resolve(directory, "images.json"), JSON.stringify(images, null, 2) + "\n", {
+  writeFileSync(imageCatalogPath, JSON.stringify(images, null, 2) + "\n", {
     mode: 0o600,
   });
 }

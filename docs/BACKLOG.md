@@ -32,19 +32,30 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 The [architecture evidence review](reports/architecture-evidence-review-20261007.md)
 prioritizes one bounded handoff/operability slice over another broad runtime
-rewrite. These findings are recorded for discussion, not implementation approval:
+rewrite. The owner approved this slice; current source implementation includes:
 
-- [ ] D07-01: make the existing matched upgrade and its targeted live acceptance
+- [x] D07-01: make the existing matched upgrade and its targeted live acceptance
       reproducible from maintained sources; remove caller-umask dependence from
       source verification and make fixture configuration restoration explicit.
       Preserve artifact checks, scoped cleanup and the serving release on preflight failure.
-- [ ] D07-02: mark superseded Run/Stop/Storage clauses in ADR-0161/0209/0219 and
+- [x] D07-02: mark superseded Run/Stop/Storage clauses in ADR-0161/0209/0219 and
       reconcile them with ADR-0229/ARCHITECTURE, without changing runtime behavior.
+- [x] D07-03: define [bounded pilot criteria](PRIVATE_PILOT.md), intervention
+      accounting and stop conditions. Actual pilot results remain unmeasured.
+- [x] D07-04: add the optional [cold asset procedure](ASSET_RECOVERY.md) and real
+      PG/two-store restore drill under ADR-0237. New Workspaces and fresh grants
+      replace old execution/resource authority; exact native history and images survive.
+
+The [matched release procedure](MATCHED_RELEASE.md) is maintained in source.
+These changes are operator tools/docs, not a newly deployed runtime release.
+[Implementation and verification](reports/private-readiness-repair-20261007.md).
 
 The same review proposes a small private-use pilot with agreed outcome/intervention
 criteria before expanding infrastructure. Existing fresh-machine, fleet-load and
-coordinated asset-restore items below remain separate claims; the last becomes a
-gate before entrusting irreplaceable history. R07R3-04 remains owner-deferred.
+whole-deployment recovery items below remain separate claims. The owner explicitly
+deferred backups of current disposable data; no backup or pilot was started.
+Off-machine retention remains necessary before relying on irreplaceable history.
+R07R3-04 remains owner-deferred.
 
 The [recovery and boundary review](reports/repository-review-20261007-r3.md)
 is complete at `1e7e21eb`, covering all 22 workspaces. Its new characterizations
@@ -358,7 +369,9 @@ separate design questions, not an implicit part of the completed query merge.
       notification destinations into Alertmanager.
 - [ ] Validate deployment-owned coordinated PG/Kafka/Cube backup and restoration.
       The unsupported whole-system archive CLI is removed, not replaced by a
-      claimed disaster-recovery product.
+      claimed disaster-recovery product. ADR-0237's bounded conversation/image
+      restore is verified separately; it excludes old Kafka work, VMs and Workspace
+      files and does not establish physical-node HA or a full-deployment restore.
 - [ ] Repeat GitLab project credentials, private clone, multi-user non-exclusive
       claims and elastic/machine Issue execution against an external TLS instance.
 - [ ] Design GitHub user authorization before restoring App onboarding; current

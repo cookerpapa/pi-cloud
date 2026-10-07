@@ -1,5 +1,12 @@
 # Documentation map
 
+The approved readiness work adds a [matched release procedure](MATCHED_RELEASE.md),
+an optional [conversation/image recovery drill](ASSET_RECOVERY.md), and a bounded
+[private-use pilot](PRIVATE_PILOT.md). The owner has deferred backups of the current
+disposable data. The pilot has not started; existing runtime authorities are retained.
+The [implementation and verification record](reports/private-readiness-repair-20261007.md)
+separates tested operator boundaries from a new deployment or actual-use evidence.
+
 The [architecture value and evidence review](reports/architecture-evidence-review-20261007.md)
 examines `4a27d28c` against the owner's question of justified complexity,
 independent operation and a stopping point. It recommends retaining the core,

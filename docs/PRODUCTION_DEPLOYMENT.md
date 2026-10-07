@@ -39,6 +39,12 @@ not expose management endpoints. See [configuration](CONFIGURATION.md).
 
 ## Deployment and operations
 
+For an existing cluster's coordinated application/guest/native upgrade, use the
+[matched release procedure](MATCHED_RELEASE.md). It stages and scans artifacts
+before draining the serving release and includes maintained targeted acceptance
+and configuration restoration. `production:deploy` retains its basic installer
+role; it does not independently rebuild the native host protocol.
+
 ```bash
 npm run production:config                    # validate/render private manifests
 npm run production:build                     # build matching application images

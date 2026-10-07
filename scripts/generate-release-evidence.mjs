@@ -154,6 +154,11 @@ function trivyContainerArguments({ cacheDirectory, inputDirectory, outputDirecto
     "--rm",
     "--network",
     network,
+    ...(network === "none"
+      ? []
+      : ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"]
+          .filter((key) => process.env[key])
+          .flatMap((key) => ["--env", key])),
     "--read-only",
     "--cap-drop",
     "ALL",
@@ -207,6 +212,8 @@ async function prepareDestination(path) {
 }
 
 const options = parseArguments(process.argv.slice(2));
+if (!["bridge", "host"].includes(process.env.PI_CLOUD_TRIVY_DOWNLOAD_NETWORK ?? "bridge"))
+  throw new Error("PI_CLOUD_TRIVY_DOWNLOAD_NETWORK must be bridge or host");
 const revision = await capture("git", ["rev-parse", "HEAD"]);
 if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error("Git HEAD is not a full commit SHA");
 const dirty = (await capture("git", ["status", "--porcelain"])).length > 0;
@@ -235,7 +242,7 @@ try {
     cacheDirectory: options.cacheDirectory,
     inputDirectory: temporaryDirectory,
     outputDirectory: stageDirectory,
-    network: "bridge",
+    network: process.env.PI_CLOUD_TRIVY_DOWNLOAD_NETWORK ?? "bridge",
   });
   await run("docker", [...trivyBase, "image", "--cache-dir", "/cache", "--download-db-only"]);
 

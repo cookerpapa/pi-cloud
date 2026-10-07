@@ -11,6 +11,15 @@ implementation verification from deployment and remaining operational limits.
 
 ## One message
 
+Current meanings (older ADR clauses explicitly defer to ADR-0229):
+
+| Question | Current contract |
+| --- | --- |
+| What survives Worker replacement? | The logical Run and native pending progress. A fresh PG grant is required after ordered old-writer closure; there is no RunAttempt. |
+| What does Stop mean? | Native Durable abort plus ordered operation cancellation at the guest Tool/process-group boundary. A cancellation ACK does not prove physical completion; late replies cannot replace a committed native abort. |
+| Where is native history saved? | The Worker uses public Durable `Storage`, publishes through ingress and waits for Kafka ACK. PG materializes exact batches for cold reads. There is no separate Tool ledger or lifetime JSONL replay. |
+| What does an asset restore mean? | A cold PG/image recovery point, with old execution authority removed and new Workspaces. It is separate from resuming an interrupted Run in the same live deployment (ADR-0237). |
+
 ```text
 Browser → Control Plane → PostgreSQL accepted Run
                             ↓ Lane ready → atomic claim + shared Session lease

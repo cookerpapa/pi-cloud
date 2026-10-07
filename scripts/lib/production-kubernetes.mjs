@@ -8,6 +8,9 @@ export const runtimeDirectory = resolve(
   repositoryRoot,
   process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
 );
+export const imageCatalogPath = resolve(
+  process.env.PI_CLOUD_IMAGE_CATALOG ?? resolve(runtimeDirectory, "k3s/images.json"),
+);
 export const namespace = "cube-system";
 export const kubeconfig =
   process.env.KUBECONFIG ?? resolve(runtimeDirectory, "k3s/kubeconfig.yaml");
@@ -83,7 +86,7 @@ export function execIn(service, command, options = {}) {
   return kubectl(["exec", "-i", podFor(service), "--", ...command], options);
 }
 export function runtimeImages() {
-  const path = resolve(runtimeDirectory, "k3s/images.json");
+  const path = imageCatalogPath;
   if (!existsSync(path)) throw new Error("Run npm run production:build before deployment");
   return JSON.parse(readFileSync(path, "utf8"));
 }

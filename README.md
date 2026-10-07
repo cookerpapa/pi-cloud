@@ -17,6 +17,11 @@ Subagent trees or uploaded file sizes/counts. Resource requests, physical VM
 specifications, memory-pressure admission and transport/provider limits remain;
 see [configuration](docs/CONFIGURATION.md) and [uploads](docs/CHAT_ATTACHMENTS.md).
 
+Operators can follow the [matched release procedure](docs/MATCHED_RELEASE.md)
+and optional [conversation/image recovery procedure](docs/ASSET_RECOVERY.md).
+The [private pilot criteria](docs/PRIVATE_PILOT.md) distinguish readiness checks
+from actual-use and fleet-capacity evidence; the pilot has not started.
+
 ## Architecture
 
 ```text

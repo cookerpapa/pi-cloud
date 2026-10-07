@@ -49,7 +49,20 @@ export async function guestBuildIdentityAtRevision(repositoryRoot, revision) {
       ["-C", repositoryRoot, "archive", "--format=tar", `--output=${archive}`, revision],
       { timeout: 30_000 },
     );
-    await run("tar", ["-xf", archive, "-C", directory], { timeout: 30_000 });
+    // Git archives describe checkout modes. The operator's private-artifact
+    // umask must not rewrite those modes and invalidate otherwise identical
+    // source evidence. Change only the child umask, never the release process's.
+    await run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        'import { execFileSync } from "node:child_process"; process.umask(0o022); execFileSync("tar", ["--no-same-owner", "--no-same-permissions", "-xf", process.argv[1], "-C", process.argv[2]]);',
+        archive,
+        directory,
+      ],
+      { timeout: 30_000 },
+    );
     return await guestBuildIdentity(directory);
   } finally {
     await rm(directory, { recursive: true, force: true });

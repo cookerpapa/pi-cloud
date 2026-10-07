@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { chmod, chown, mkdir, mkdtemp, open, rename, rm } from "node:fs/promises";
-import { connect, createServer } from "node:net";
+import { startRegistryForward } from "./lib/cube-registry-forward.mjs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -56,18 +56,6 @@ function directEnvironment() {
     no_proxy: [directNoProxy, environment.no_proxy].filter(Boolean).join(","),
   };
 }
-const dockerProxyBuildArguments = [
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-].flatMap((name) =>
-  typeof environment[name] === "string" && environment[name].length > 0
-    ? ["--build-arg", name]
-    : [],
-);
 
 function capture(command, args, options = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -109,19 +97,6 @@ function run(command, args, options = {}) {
       }
     });
   });
-}
-
-async function repositoryHead() {
-  const revision = await capture("git", [
-    "-c",
-    `safe.directory=${repositoryRoot}`,
-    "rev-parse",
-    "HEAD",
-  ]);
-  if (!/^[a-f0-9]{40}$/.test(revision)) {
-    throw new Error("PiCloud Git revision is invalid");
-  }
-  return revision;
 }
 
 function parseJson(value, label) {
@@ -185,40 +160,6 @@ async function readPrivate(path, maximumBytes, label) {
   } finally {
     await handle.close();
   }
-}
-
-async function startRegistryForward() {
-  const sockets = new Set();
-  const server = createServer((downstream) => {
-    sockets.add(downstream);
-    const upstream = connect({
-      host: directRegistryAddress,
-      port: Number(directRegistryPort),
-    });
-    sockets.add(upstream);
-    downstream.pipe(upstream);
-    upstream.pipe(downstream);
-    const closePair = () => {
-      downstream.destroy();
-      upstream.destroy();
-    };
-    downstream.once("error", closePair);
-    upstream.once("error", closePair);
-    downstream.once("close", () => {
-      sockets.delete(downstream);
-      sockets.delete(upstream);
-    });
-  });
-  await new Promise((resolvePromise, rejectPromise) => {
-    server.once("error", rejectPromise);
-    server.listen(5_000, "127.0.0.1", resolvePromise);
-  });
-  return {
-    async stop() {
-      for (const socket of sockets) socket.destroy();
-      await new Promise((resolvePromise) => server.close(resolvePromise));
-    },
-  };
 }
 
 async function cubeMasterCli(args, timeout) {
@@ -292,8 +233,24 @@ async function pruneCubeTemplates(inventory, protectedTemplateIds, phase) {
   );
 }
 
-const sourceRevision = await repositoryHead();
 const revision = await guestBuildIdentity(repositoryRoot);
+const [preparedOption, preparedImageId, ...extraArguments] = process.argv.slice(2);
+if (
+  preparedOption !== undefined &&
+  (preparedOption !== "--prepared-image-id" ||
+    !/^sha256:[a-f0-9]{64}$/.test(preparedImageId ?? "") ||
+    extraArguments.length)
+)
+  throw new Error(
+    "Usage: register-cubesandbox-tool-template.mjs [--prepared-image-id sha256:CONFIG_DIGEST]",
+  );
+const imageTag = `${registryRepository}:${revision}`;
+const preparedImage =
+  preparedImageId === undefined
+    ? undefined
+    : parseJson(await capture("docker", ["image", "inspect", imageTag]), "Prepared guest image")[0];
+if (preparedImageId !== undefined && preparedImage?.Id !== preparedImageId)
+  throw new Error("Prepared guest image changed after release preflight");
 const dirty = await capture(
   "git",
   ["-c", `safe.directory=${repositoryRoot}`, "status", "--porcelain", "--untracked-files=all"],
@@ -370,6 +327,14 @@ await capture("test", ["-x", directCubeMasterCli]);
 await capture("test", ["-r", "/etc/docker/certs.d/localhost:5000/ca.crt"]);
 
 const previousTemplateEvidence = await currentTemplateEvidence();
+if (
+  preparedImage &&
+  previousTemplateEvidence?.imageRevision === revision &&
+  !preparedImage.RepoDigests?.some((ref) =>
+    ref.endsWith(`@${previousTemplateEvidence.imageDigest}`),
+  )
+)
+  throw new Error("Prepared guest does not match the registered template digest");
 const previousTemplateIds =
   previousTemplateEvidence === undefined
     ? []
@@ -416,33 +381,13 @@ if (
 }
 await pruneCubeTemplates(preBuildInventory, previousTemplateIds, "before-build");
 
-const imageTag = `${registryRepository}:${revision}`;
-await run("docker", [
-  "build",
-  "--network",
-  "host",
-  ...dockerProxyBuildArguments,
-  "--file",
-  "deploy/cubesandbox/Dockerfile.tool",
-  "--build-arg",
-  "PI_CLOUD_VERSION=cube-primary",
-  "--build-arg",
-  `PI_CLOUD_REVISION=${sourceRevision}`,
-  "--build-arg",
-  `PI_CLOUD_IMAGE_REVISION=${revision}`,
-  "--tag",
-  imageTag,
-  ".",
-]);
-await run("npm", ["run", "cubesandbox:template-check"], {
-  environment: {
-    ...environment,
-    PI_CLOUD_CUBESANDBOX_TOOL_IMAGE: imageTag,
-    PI_CLOUD_IMAGE_REVISION: revision,
-  },
-});
+if (preparedImageId === undefined)
+  await run(process.execPath, ["scripts/build-cube-tool-image.mjs"]);
 
-const forward = await startRegistryForward();
+const forward = await startRegistryForward({
+  host: directRegistryAddress,
+  port: directRegistryPort,
+});
 let digest;
 const isolatedDockerConfig = await mkdtemp(join(tmpdir(), "pi-cloud-docker-config-"));
 try {

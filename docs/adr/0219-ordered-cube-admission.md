@@ -32,12 +32,15 @@ Neither removes the destination's responsibility for stale admission.
 
 ## Agent interruption and binding retirement
 
-[ADR-0220](0220-agent-stop-is-not-process-control.md) supersedes this revision's
-Run-to-Cube Stop and lifecycle-ACK design. Chat Stop now interrupts only the
-Worker Agent Loop and reply waits. PG routing revocation and its ordered control
-reference still precede the final seal, without terminating accepted processes.
-The earlier implementation and its acceptance are retained in the revision-bound
-repair report, not as an alternate runtime mode.
+This revision's Run-to-Cube Stop/lifecycle-ACK design was first superseded by
+ADR-0220, then by [ADR-0221](0221-pi-tool-cancellation.md) and the current
+[ADR-0229](0229-native-durable-runtime.md). Chat Stop uses native Durable abort
+and sends operation cancellation through the ordered Session path. The guest
+Tool's process-group boundary applies; accepted cancellation is not proof of
+process exit. Late physical output does not replace an already committed native
+abort. Routing revocation still precedes sealing. Stop does not destroy the VM or
+retrospectively stop completed background launches. Detach-only Stop is historical,
+not an alternate runtime mode.
 
 ## Destination admission
 
@@ -68,19 +71,19 @@ processes. Shutdown and temporary capacity exhaustion are distinct states.
 Read-only probes must never advance the Tool admission position or become effect
 authority; obsolete asynchronous observations remain disposable.
 
-ADR-0220 advances managed Cube transport to version 4 and removes the Stop RPC,
-without an old-wire fallback.
-Native guest Tool wire and Session log remain unchanged. Use the matched pinned
-Cube/app build and a drained cutover; no recreation of user files or automatic
-replay of uncertain operations. Rollback requires the previous matched binaries
-and a drained control state, not mixing protocol versions.
+The transport-version-4 cutover described in ADR-0220 is historical. Current
+versions follow ADR-0229 and subsequent protocol decisions; use their matched
+pinned Cube/app/guest artifacts and a drained cutover. Rollback requires matched
+binaries and control state, not mixing protocol versions or replaying uncertain
+operations.
 
 ## Acceptance
 
 Prove delayed old-owner submit after a later handoff, duplicate/ambiguous
 submission, accepted-command survival, shared-VM siblings, probes without position
 advancement, more than 65,536 completions, bounded retained state, shutdown and
-confirmed VM removal. The Agent Stop contracts are now specified by ADR-0220.
+confirmed VM removal. Current Agent Stop contracts are specified by ADR-0229,
+with the ordered operation transport and process boundary from ADR-0221.
 Missing probes or metadata never authorize VM destruction or quota release.
 
 ## Controller replacement discovered during live acceptance

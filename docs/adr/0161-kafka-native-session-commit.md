@@ -8,19 +8,19 @@ storage representation changes, not the writer or acknowledgement boundary.
 The earlier isolated experiment (archived in Git before this production cutover)
 proved the append boundary but is not the production implementation.
 
-The trusted Worker hosts one native log writer for every active physical Pi
-Session. All Lane operations share its ordered append queue, not an Agent Loop
-thread or a global queue. It assigns native IDs, parents, sequence and timestamps,
-publishes complete semantic records through its direct log writer and
-returns after Kafka ACK. PG materializes exactly those records asynchronously.
-The Pi Harness sees a SessionStorage port, never Kafka or PG polling.
+The retained invariant is one native writer for every active physical Pi Session
+and Kafka acknowledgement before adopting a write. The original direct producer
+and `SessionStorage` implementation are superseded by
+[ADR-0209](0209-control-plane-publication-and-sandbox-authority.md) and
+[ADR-0229](0229-native-durable-runtime.md). The Worker now stamps Durable atomic
+batches through Pi's public `Storage` port and publishes through control-plane
+ingress. All native Conversations share its ordered writer. PG materializes those
+exact batches asynchronously; no ordinary model Step waits for a PG receipt.
 
-Bootstrap loads only the selected Lane's newest compaction and suffix, plus
-the unfinished operation's intent ledger when needed. Pi's public in-memory storage/query APIs may
-be used as a disposable query engine; internal bootstrap positions are never
-published. Canonical stamps remain stable. Compaction and finished-Lane cleanup
-release unreachable payloads. Cold history queries may wait for projection, but
-ordinary model Steps do not. Unique IDs come from the active writer's namespace.
+Current bootstrap reads the selected native head/Compaction and suffix, and indexed
+native task/document recovery state. There is no separate unfinished-Tool operation
+ledger and no lifetime JSONL replay. The bounded acknowledged Storage overlay is
+disposable; canonical IDs and commit sequence remain stable across projection.
 
 Child Lane creation uses the parent's acknowledged execution view and native
 writer before the child Run becomes runnable. It never queries an unprojected

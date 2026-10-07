@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0237](0237-private-pilot-asset-recovery.md) — optional cold conversation/image
+   recovery through PG/S3, with fresh Workspaces and no old execution grants.
+
 1. [ADR-0236](0236-recovery-input-identity-and-tool-diagnostics.md) — execution-based
    recovery, returned-input identity and native Tool diagnostics; verified and deployed.
 1. [ADR-0235](0235-upload-staging-recovery.md) — filesystem-owned upload staging,

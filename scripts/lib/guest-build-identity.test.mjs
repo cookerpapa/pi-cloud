@@ -17,6 +17,10 @@ import { guestBuildIdentity, guestCopyInputs } from "./guest-build-identity.mjs"
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { build } from "esbuild";
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCallback);
 
 const repository = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -130,6 +134,71 @@ it("recognizes multi-line COPY and rejects implicit build-context scans", () => 
   ]);
   expect(() => guestCopyInputs("COPY . /app")).toThrow("explicit local inputs");
   expect(() => guestCopyInputs("COPY src/* /app")).toThrow("explicit local inputs");
+});
+
+it("reconstructs Git source independently of a private caller umask without changing checkout modes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-cloud-guest-archive-"));
+  const originalUmask = process.umask();
+  try {
+    await mkdir(join(root, "deploy/cubesandbox"), { recursive: true });
+    await mkdir(join(root, "src"));
+    await writeFile(
+      join(root, "deploy/cubesandbox/Dockerfile.tool"),
+      "FROM fixture\nCOPY src /app\n",
+    );
+    await writeFile(join(root, "src/run.sh"), "#!/bin/sh\necho fixture\n");
+    await writeFile(join(root, "src/data"), "fixture\n");
+    // The source tree has normal Git checkout permissions, including an
+    // executable and a link. The private temp parent remains private.
+    for (const path of ["deploy", "deploy/cubesandbox", "src", "src/run.sh"])
+      await chmod(join(root, path), 0o755);
+    for (const path of ["deploy/cubesandbox/Dockerfile.tool", "src/data"])
+      await chmod(join(root, path), 0o644);
+    await symlink("run.sh", join(root, "src/link"));
+    await execFile("git", ["init", "--quiet", root]);
+    await execFile("git", ["-C", root, "add", "."]);
+    await execFile("git", [
+      "-C",
+      root,
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "--quiet",
+      "-m",
+      "fixture",
+    ]);
+    const revision = (await execFile("git", ["-C", root, "rev-parse", "HEAD"])).stdout.trim();
+    const expected = await guestBuildIdentity(root);
+    const moduleUrl = new URL("./guest-build-identity.mjs", import.meta.url).href;
+    for (const mask of ["022", "077"]) {
+      const { stdout } = await execFile(process.execPath, [
+        "--input-type=module",
+        "-e",
+        `
+        import { guestBuildIdentityAtRevision } from ${JSON.stringify(moduleUrl)};
+        process.umask(parseInt(process.argv[3], 8));
+        const before = process.umask();
+        const identity = await guestBuildIdentityAtRevision(process.argv[1], process.argv[2]);
+        if (process.umask() !== before) throw new Error("caller umask changed");
+        process.stdout.write(identity);
+      `,
+        root,
+        revision,
+        mask,
+      ]);
+      expect(stdout).toBe(expected);
+    }
+    expect(process.umask()).toBe(originalUmask);
+    expect(await guestBuildIdentity(root)).toBe(expected);
+    const { guestBuildIdentityAtRevision } = await import("./guest-build-identity.mjs");
+    await expect(guestBuildIdentityAtRevision(root, "0".repeat(40))).rejects.toThrow();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 it("changes the completion identity when its protocol or pinned native runtime changes", async () => {
