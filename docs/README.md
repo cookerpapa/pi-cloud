@@ -1,5 +1,11 @@
 # Documentation map
 
+The [sandbox result/portability study](reports/sandbox-result-portability-20261008.md)
+compares current Cube coupling with official E2B, OpenSandbox, OpenShell,
+SandboxFusion and Daytona interfaces. It separates execution, output retention
+and delivery, and records Daytona's private-core transition. This is research,
+not a second runtime implementation or an approved architecture change.
+
 The [DeepSeek V4.1 Flash smoke check](reports/deepseek-flash-acceptance-20261007.md)
 passes text, real file/Bash execution, multi-round high-thinking and direct image
 input on the deployed readiness release. Search was explicitly not tested.

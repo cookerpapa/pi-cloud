@@ -382,6 +382,12 @@ separate design questions, not an implicit part of the completed query merge.
 
 ## Deliberately deferred capabilities
 
+- [ ] If a second sandbox backend is selected, evaluate its public execution,
+      cancellation/output-retention and lifecycle contracts against
+      [the October 8 source study](reports/sandbox-result-portability-20261008.md).
+      Record an ADR and run the same failure/isolation acceptance before enabling
+      it. The study does not authorize a backend migration or new execution authority.
+
 The [October 7 Flash acceptance](reports/deepseek-flash-acceptance-20261007.md)
 passes ordinary text, file/Bash tools, high-thinking follow-up and image input.
 It leaves the hosted-search investigation below unchanged and adds no runtime

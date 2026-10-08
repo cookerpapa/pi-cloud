@@ -1,0 +1,586 @@
+{
+  "date": "2026-10-08",
+  "piCloudRevision": "cf0a4c26b263f6aab778e7f7dbb0b171080388b2",
+  "method": "Official documentation, repository metadata and pinned public source inspection; no alternative runtime deployed or failure-tested",
+  "repositories": [
+    {
+      "repo": "e2b-dev/runtime",
+      "branch": "main",
+      "commit": "f62fa7918b0b53c97b26e8eced3f232d0ccd8b00",
+      "committedAt": "2026-10-07T22:43:08Z",
+      "license": {
+        "key": "apache-2.0",
+        "name": "Apache License 2.0",
+        "spdx_id": "Apache-2.0",
+        "url": "https://api.github.com/licenses/apache-2.0",
+        "node_id": "MDc6TGljZW5zZTI="
+      },
+      "archived": false,
+      "releases": [
+        {
+          "tag": "2026.30",
+          "publishedAt": "2026-09-10T09:26:46Z",
+          "prerelease": false,
+          "url": "https://github.com/e2b-dev/runtime/releases/tag/2026.30"
+        },
+        {
+          "tag": "2026.29",
+          "publishedAt": "2026-07-28T13:17:55Z",
+          "prerelease": false,
+          "url": "https://github.com/e2b-dev/runtime/releases/tag/2026.29"
+        },
+        {
+          "tag": "2026.28",
+          "publishedAt": "2026-07-09T15:18:16Z",
+          "prerelease": false,
+          "url": "https://github.com/e2b-dev/runtime/releases/tag/2026.28"
+        }
+      ],
+      "treeTruncated": false
+    },
+    {
+      "repo": "e2b-dev/E2B",
+      "branch": "main",
+      "commit": "3221e8ec21f093613d104d92c6149cbbcc03d755",
+      "committedAt": "2026-10-07T13:38:06Z",
+      "license": {
+        "key": "apache-2.0",
+        "name": "Apache License 2.0",
+        "spdx_id": "Apache-2.0",
+        "url": "https://api.github.com/licenses/apache-2.0",
+        "node_id": "MDc6TGljZW5zZTI="
+      },
+      "archived": false,
+      "releases": [
+        {
+          "tag": "e2b@2.53.1",
+          "publishedAt": "2026-10-06T20:18:12Z",
+          "prerelease": false,
+          "url": "https://github.com/e2b-dev/E2B/releases/tag/e2b%402.53.1"
+        },
+        {
+          "tag": "@e2b/python-sdk@2.53.1",
+          "publishedAt": "2026-10-06T20:18:09Z",
+          "prerelease": false,
+          "url": "https://github.com/e2b-dev/E2B/releases/tag/%40e2b/python-sdk%402.53.1"
+        },
+        {
+          "tag": "@e2b/code-interpreter@2.8.2",
+          "publishedAt": "2026-10-06T20:18:03Z",
+          "prerelease": false,
+          "url": "https://github.com/e2b-dev/E2B/releases/tag/%40e2b/code-interpreter%402.8.2"
+        }
+      ],
+      "treeTruncated": false
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "branch": "main",
+      "commit": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "committedAt": "2026-10-01T02:21:12Z",
+      "license": {
+        "key": "apache-2.0",
+        "name": "Apache License 2.0",
+        "spdx_id": "Apache-2.0",
+        "url": "https://api.github.com/licenses/apache-2.0",
+        "node_id": "MDc6TGljZW5zZTI="
+      },
+      "archived": false,
+      "releases": [
+        {
+          "tag": "release-1.1.1-rc.1",
+          "publishedAt": "2026-09-28T08:21:29Z",
+          "prerelease": true,
+          "url": "https://github.com/opensandbox-group/OpenSandbox/releases/tag/release-1.1.1-rc.1"
+        },
+        {
+          "tag": "release-1.1.0",
+          "publishedAt": "2026-09-21T07:46:25Z",
+          "prerelease": false,
+          "url": "https://github.com/opensandbox-group/OpenSandbox/releases/tag/release-1.1.0"
+        },
+        {
+          "tag": "python/sandbox/v0.1.17.dev0",
+          "publishedAt": "2026-09-03T03:50:38Z",
+          "prerelease": true,
+          "url": "https://github.com/opensandbox-group/OpenSandbox/releases/tag/python/sandbox/v0.1.17.dev0"
+        }
+      ],
+      "treeTruncated": false
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "branch": "main",
+      "commit": "277f922d6d3b08b16d825cbd97499fe1a50031ac",
+      "committedAt": "2026-10-08T00:33:58Z",
+      "license": {
+        "key": "apache-2.0",
+        "name": "Apache License 2.0",
+        "spdx_id": "Apache-2.0",
+        "url": "https://api.github.com/licenses/apache-2.0",
+        "node_id": "MDc6TGljZW5zZTI="
+      },
+      "archived": false,
+      "releases": [
+        {
+          "tag": "dev",
+          "publishedAt": "2026-03-18T21:11:50Z",
+          "prerelease": true,
+          "url": "https://github.com/NVIDIA/OpenShell/releases/tag/dev"
+        },
+        {
+          "tag": "v0.1.2",
+          "publishedAt": "2026-09-28T03:58:00Z",
+          "prerelease": false,
+          "url": "https://github.com/NVIDIA/OpenShell/releases/tag/v0.1.2"
+        },
+        {
+          "tag": "v0.1.1",
+          "publishedAt": "2026-09-26T03:45:16Z",
+          "prerelease": false,
+          "url": "https://github.com/NVIDIA/OpenShell/releases/tag/v0.1.1"
+        }
+      ],
+      "treeTruncated": false
+    },
+    {
+      "repo": "bytedance/SandboxFusion",
+      "branch": "main",
+      "commit": "469de0845cb7d665bc68044d541aa3aa28c5b30a",
+      "committedAt": "2026-07-14T03:43:19Z",
+      "license": {
+        "key": "apache-2.0",
+        "name": "Apache License 2.0",
+        "spdx_id": "Apache-2.0",
+        "url": "https://api.github.com/licenses/apache-2.0",
+        "node_id": "MDc6TGljZW5zZTI="
+      },
+      "archived": false,
+      "releases": [],
+      "treeTruncated": false
+    },
+    {
+      "repo": "TencentCloud/CubeSandbox",
+      "branch": "master",
+      "commit": "e02976ae54729fb1684c5b51535381e54df1aea2",
+      "committedAt": "2026-09-30T06:17:54Z",
+      "license": {
+        "key": "other",
+        "name": "Other",
+        "spdx_id": "NOASSERTION",
+        "url": null,
+        "node_id": "MDc6TGljZW5zZTA="
+      },
+      "archived": false,
+      "releases": [
+        {
+          "tag": "v0.7.2",
+          "publishedAt": "2026-09-24T06:20:45Z",
+          "prerelease": false,
+          "url": "https://github.com/TencentCloud/CubeSandbox/releases/tag/v0.7.2"
+        },
+        {
+          "tag": "v0.7.2-rc3",
+          "publishedAt": "2026-09-24T03:28:57Z",
+          "prerelease": true,
+          "url": "https://github.com/TencentCloud/CubeSandbox/releases/tag/v0.7.2-rc3"
+        },
+        {
+          "tag": "v0.7.2-rc2",
+          "publishedAt": "2026-09-23T04:03:25Z",
+          "prerelease": true,
+          "url": "https://github.com/TencentCloud/CubeSandbox/releases/tag/v0.7.2-rc2"
+        }
+      ],
+      "treeTruncated": false
+    },
+    {
+      "repo": "daytonaio/daytona",
+      "branch": "main",
+      "commit": "ec4c21b2d597091ac09ecc278f3bcc172575a987",
+      "committedAt": "2026-06-25T11:16:13Z",
+      "license": null,
+      "archived": true,
+      "releases": [
+        {
+          "tag": "v0.190.0",
+          "publishedAt": "2026-06-23T13:25:53Z",
+          "prerelease": false,
+          "url": "https://github.com/daytonaio/daytona/releases/tag/v0.190.0"
+        },
+        {
+          "tag": "v0.189.0",
+          "publishedAt": "2026-06-19T10:18:47Z",
+          "prerelease": false,
+          "url": "https://github.com/daytonaio/daytona/releases/tag/v0.189.0"
+        },
+        {
+          "tag": "v0.188.0",
+          "publishedAt": "2026-06-16T14:04:20Z",
+          "prerelease": false,
+          "url": "https://github.com/daytonaio/daytona/releases/tag/v0.188.0"
+        }
+      ],
+      "treeTruncated": false
+    },
+    {
+      "repo": "daytona/clients",
+      "branch": "main",
+      "commit": "3ae7316646645119af9791629cfb5547d68e6223",
+      "committedAt": "2026-10-07T14:20:46Z",
+      "license": {
+        "key": "other",
+        "name": "Other",
+        "spdx_id": "NOASSERTION",
+        "url": null,
+        "node_id": "MDc6TGljZW5zZTA="
+      },
+      "archived": false
+    }
+  ],
+  "sourceFiles": [
+    {
+      "repo": "e2b-dev/runtime",
+      "ref": "f62fa7918b0b53c97b26e8eced3f232d0ccd8b00",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/e2b-dev/runtime/f62fa7918b0b53c97b26e8eced3f232d0ccd8b00/LICENSE",
+      "sha256": "b4ef1bf811cb4095229fb86b574199e467c78f0ac4078cf8be62189e1fbd0818",
+      "bytes": 11347
+    },
+    {
+      "repo": "e2b-dev/runtime",
+      "ref": "f62fa7918b0b53c97b26e8eced3f232d0ccd8b00",
+      "path": "packages/envd/spec/process/process.proto",
+      "url": "https://raw.githubusercontent.com/e2b-dev/runtime/f62fa7918b0b53c97b26e8eced3f232d0ccd8b00/packages/envd/spec/process/process.proto",
+      "sha256": "8edd9358c7dbfcad96796b3f0ed8d14c262b8b14d6bc7d5e84d468941511b8e0",
+      "bytes": 3299
+    },
+    {
+      "repo": "e2b-dev/runtime",
+      "ref": "f62fa7918b0b53c97b26e8eced3f232d0ccd8b00",
+      "path": "packages/envd/internal/services/process/start.go",
+      "url": "https://raw.githubusercontent.com/e2b-dev/runtime/f62fa7918b0b53c97b26e8eced3f232d0ccd8b00/packages/envd/internal/services/process/start.go",
+      "sha256": "17f5138f0ba4a92b92ebbaa312aa43c418fad51eb83ead905104f469de2ebd4f",
+      "bytes": 6533
+    },
+    {
+      "repo": "e2b-dev/runtime",
+      "ref": "f62fa7918b0b53c97b26e8eced3f232d0ccd8b00",
+      "path": "packages/envd/internal/services/process/connect.go",
+      "url": "https://raw.githubusercontent.com/e2b-dev/runtime/f62fa7918b0b53c97b26e8eced3f232d0ccd8b00/packages/envd/internal/services/process/connect.go",
+      "sha256": "563f2cdac9bbe3d5895b24b9b46049820ef72bdc67bf6f3135475ed476709f87",
+      "bytes": 5483
+    },
+    {
+      "repo": "e2b-dev/runtime",
+      "ref": "f62fa7918b0b53c97b26e8eced3f232d0ccd8b00",
+      "path": "packages/envd/internal/services/process/service.go",
+      "url": "https://raw.githubusercontent.com/e2b-dev/runtime/f62fa7918b0b53c97b26e8eced3f232d0ccd8b00/packages/envd/internal/services/process/service.go",
+      "sha256": "1d0b937d965052fde806ab057d5db0e5caabe10edebd69f76b399a9fa47054fa",
+      "bytes": 7705
+    },
+    {
+      "repo": "e2b-dev/runtime",
+      "ref": "f62fa7918b0b53c97b26e8eced3f232d0ccd8b00",
+      "path": "packages/envd/internal/services/process/handler/multiplex.go",
+      "url": "https://raw.githubusercontent.com/e2b-dev/runtime/f62fa7918b0b53c97b26e8eced3f232d0ccd8b00/packages/envd/internal/services/process/handler/multiplex.go",
+      "sha256": "c8969a925e8970ae6ec5156cdb77300434437bf583107f135241687c3b1b55b4",
+      "bytes": 2962
+    },
+    {
+      "repo": "e2b-dev/E2B",
+      "ref": "3221e8ec21f093613d104d92c6149cbbcc03d755",
+      "path": "packages/python-sdk/e2b/sandbox_async/commands/command.py",
+      "url": "https://raw.githubusercontent.com/e2b-dev/E2B/3221e8ec21f093613d104d92c6149cbbcc03d755/packages/python-sdk/e2b/sandbox_async/commands/command.py",
+      "sha256": "95a99244c76650a739c0ec6074794f164cbab1734b4235b516a3b3e6cc3cf022",
+      "bytes": 15686
+    },
+    {
+      "repo": "e2b-dev/E2B",
+      "ref": "3221e8ec21f093613d104d92c6149cbbcc03d755",
+      "path": "packages/python-sdk/e2b/sandbox_async/commands/command_handle.py",
+      "url": "https://raw.githubusercontent.com/e2b-dev/E2B/3221e8ec21f093613d104d92c6149cbbcc03d755/packages/python-sdk/e2b/sandbox_async/commands/command_handle.py",
+      "sha256": "a96a058f2e20fafd3b910e1518e0626afde25628677bc01c1d189dd283ee8475",
+      "bytes": 10810
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/LICENSE",
+      "sha256": "50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a",
+      "bytes": 11324
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "README.md",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/README.md",
+      "sha256": "6c02b69e5e157204cf64e6de1af0fe64b3bc262589dab3fbd53d7aa7c68f730d",
+      "bytes": 11683
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "specs/execd-api.yaml",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/specs/execd-api.yaml",
+      "sha256": "1a74d77875f2bd81231a74415a376bc9c009654322c0eadcd4bdd9bd337d06f1",
+      "bytes": 117014
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "components/execd/pkg/runtime/command.go",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/components/execd/pkg/runtime/command.go",
+      "sha256": "df651aabc1a462f4a55e3b8e33be04c81248c333bfbcf01847aef91fe86c24f8",
+      "bytes": 14155
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "components/execd/pkg/runtime/command_common.go",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/components/execd/pkg/runtime/command_common.go",
+      "sha256": "39cc4538dbb2daa920ec2d98be49f8d8c4ace22b7764470fe8c2e98ed791511f",
+      "bytes": 8307
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "components/execd/pkg/runtime/command_status.go",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/components/execd/pkg/runtime/command_status.go",
+      "sha256": "20aef2987aa2637ebf3a7c213521c7f227e27ea3d9b9abdba53aad06761ac6d5",
+      "bytes": 4271
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "components/execd/pkg/web/controller/command.go",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/components/execd/pkg/web/controller/command.go",
+      "sha256": "02c777f85186bce133ef0deba6764363f7fd29d9497346679e17de4b1bb284c4",
+      "bytes": 5972
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "components/execd/pkg/web/model/codeinterpreting.go",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/components/execd/pkg/web/model/codeinterpreting.go",
+      "sha256": "1faa037a54cf7a8ac63d7482cebb8342e66b8596c2307eb91f647e691c85bdfe",
+      "bytes": 5533
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "277f922d6d3b08b16d825cbd97499fe1a50031ac",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/277f922d6d3b08b16d825cbd97499fe1a50031ac/LICENSE",
+      "sha256": "d07c0367e2861e7fe70fa1b679f879f4fa2f9138ade4457d44ecf8b2e135bb45",
+      "bytes": 11431
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "277f922d6d3b08b16d825cbd97499fe1a50031ac",
+      "path": "README.md",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/277f922d6d3b08b16d825cbd97499fe1a50031ac/README.md",
+      "sha256": "b28bf8191159a5ceb4800f30f44ba5979e7900e87975f8fbcf81e10f40c88883",
+      "bytes": 8050
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "277f922d6d3b08b16d825cbd97499fe1a50031ac",
+      "path": "docs/about/architecture.mdx",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/277f922d6d3b08b16d825cbd97499fe1a50031ac/docs/about/architecture.mdx",
+      "sha256": "811b91601d97e10c08809a0e835ba9c0ffb6e80f17b83ee4ebdc6df5a969d185",
+      "bytes": 13001
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "277f922d6d3b08b16d825cbd97499fe1a50031ac",
+      "path": "crates/openshell-sandbox/src/boundary_exec.rs",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/277f922d6d3b08b16d825cbd97499fe1a50031ac/crates/openshell-sandbox/src/boundary_exec.rs",
+      "sha256": "579be5e446883be780352bf77aec12e792b7f38a573f5d4f3b4b29f6ab23fe70",
+      "bytes": 39545
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "277f922d6d3b08b16d825cbd97499fe1a50031ac",
+      "path": "crates/openshell-supervisor-process/src/ssh.rs",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/277f922d6d3b08b16d825cbd97499fe1a50031ac/crates/openshell-supervisor-process/src/ssh.rs",
+      "sha256": "f40c691f704bed1792f88a34fb26365a47cbcd2ccf4de111554b7b05c35ac2aa",
+      "bytes": 77719
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "277f922d6d3b08b16d825cbd97499fe1a50031ac",
+      "path": "crates/openshell-cli/src/ssh.rs",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/277f922d6d3b08b16d825cbd97499fe1a50031ac/crates/openshell-cli/src/ssh.rs",
+      "sha256": "04ec7f978ec01b57c271819a4c078089e838f7df8032f61fc61cf898bedb0e87",
+      "bytes": 129611
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "277f922d6d3b08b16d825cbd97499fe1a50031ac",
+      "path": "proto/openshell.proto",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/277f922d6d3b08b16d825cbd97499fe1a50031ac/proto/openshell.proto",
+      "sha256": "3f0f7ca84819725e27b41ce5f603b536db9450c660afc906445b53dc4776c7ea",
+      "bytes": 144840
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "v0.1.2",
+      "path": "crates/openshell-sandbox/src/boundary_exec.rs",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/crates/openshell-sandbox/src/boundary_exec.rs",
+      "sha256": "7dce04526b700137b8e45a897114c058b433711b9475a68945a8a7962f9e7b3e",
+      "bytes": 39002
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "v0.1.2",
+      "path": "proto/openshell.proto",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/proto/openshell.proto",
+      "sha256": "2e31d0faca652b91729f88bd4053447e5d162e74de7dbacdcc06327ed82e5b95",
+      "bytes": 139253
+    },
+    {
+      "repo": "bytedance/SandboxFusion",
+      "ref": "469de0845cb7d665bc68044d541aa3aa28c5b30a",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/bytedance/SandboxFusion/469de0845cb7d665bc68044d541aa3aa28c5b30a/LICENSE",
+      "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
+      "bytes": 11356
+    },
+    {
+      "repo": "bytedance/SandboxFusion",
+      "ref": "469de0845cb7d665bc68044d541aa3aa28c5b30a",
+      "path": "README.md",
+      "url": "https://raw.githubusercontent.com/bytedance/SandboxFusion/469de0845cb7d665bc68044d541aa3aa28c5b30a/README.md",
+      "sha256": "6de1cc50075d318fd11d61173c2052a2b6ae80433832e12d9010f26420c47409",
+      "bytes": 7545
+    },
+    {
+      "repo": "bytedance/SandboxFusion",
+      "ref": "469de0845cb7d665bc68044d541aa3aa28c5b30a",
+      "path": "sandbox/server/sandbox_api.py",
+      "url": "https://raw.githubusercontent.com/bytedance/SandboxFusion/469de0845cb7d665bc68044d541aa3aa28c5b30a/sandbox/server/sandbox_api.py",
+      "sha256": "7cffae4ba7f0f89f22b8542f87371626b2c635b39ee1f94ddc6ecfe87feb28f5",
+      "bytes": 5821
+    },
+    {
+      "repo": "bytedance/SandboxFusion",
+      "ref": "469de0845cb7d665bc68044d541aa3aa28c5b30a",
+      "path": "sandbox/runners/base.py",
+      "url": "https://raw.githubusercontent.com/bytedance/SandboxFusion/469de0845cb7d665bc68044d541aa3aa28c5b30a/sandbox/runners/base.py",
+      "sha256": "5c5359890ed9fb7a5b59f5835fc138b913616cd4d7d56f3f59cb58ccc33d027d",
+      "bytes": 10127
+    },
+    {
+      "repo": "bytedance/SandboxFusion",
+      "ref": "469de0845cb7d665bc68044d541aa3aa28c5b30a",
+      "path": "sandbox/runners/types.py",
+      "url": "https://raw.githubusercontent.com/bytedance/SandboxFusion/469de0845cb7d665bc68044d541aa3aa28c5b30a/sandbox/runners/types.py",
+      "sha256": "511da79e1ad69333e0d0c07961f87b6016c4719bf9678f5885988a2e189afc13",
+      "bytes": 3318
+    },
+    {
+      "repo": "bytedance/SandboxFusion",
+      "ref": "469de0845cb7d665bc68044d541aa3aa28c5b30a",
+      "path": "sandbox/runners/isolation.py",
+      "url": "https://raw.githubusercontent.com/bytedance/SandboxFusion/469de0845cb7d665bc68044d541aa3aa28c5b30a/sandbox/runners/isolation.py",
+      "sha256": "09912ab53221acd697617765355c64d97424194bfe03854c0587c475ea3a9e71",
+      "bytes": 8638
+    },
+    {
+      "repo": "TencentCloud/CubeSandbox",
+      "ref": "e02976ae54729fb1684c5b51535381e54df1aea2",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/TencentCloud/CubeSandbox/e02976ae54729fb1684c5b51535381e54df1aea2/LICENSE",
+      "sha256": "ec4e72bcae6fbd76307517767f046f9c724fbf8aaee735b60310b21e46cd959a",
+      "bytes": 25798
+    },
+    {
+      "repo": "TencentCloud/CubeSandbox",
+      "ref": "e02976ae54729fb1684c5b51535381e54df1aea2",
+      "path": "sdk/node/src/commands.ts",
+      "url": "https://raw.githubusercontent.com/TencentCloud/CubeSandbox/e02976ae54729fb1684c5b51535381e54df1aea2/sdk/node/src/commands.ts",
+      "sha256": "558dce426596af88a5cafafd62843b655f6bf4615cbdea52a053b848fe206e53",
+      "bytes": 11488
+    },
+    {
+      "repo": "TencentCloud/CubeSandbox",
+      "ref": "e02976ae54729fb1684c5b51535381e54df1aea2",
+      "path": "CubeProxy/conf/includes/envd_streaming_host_route.inc",
+      "url": "https://raw.githubusercontent.com/TencentCloud/CubeSandbox/e02976ae54729fb1684c5b51535381e54df1aea2/CubeProxy/conf/includes/envd_streaming_host_route.inc",
+      "sha256": "f7b7eba741b01ba40e62468aaadb0e55d494f1548b356e1b832bc970af9b4980",
+      "bytes": 901
+    },
+    {
+      "repo": "daytonaio/daytona",
+      "ref": "ec4c21b2d597091ac09ecc278f3bcc172575a987",
+      "path": "README.md",
+      "url": "https://raw.githubusercontent.com/daytonaio/daytona/ec4c21b2d597091ac09ecc278f3bcc172575a987/README.md",
+      "sha256": "7e1a14b044fe1bb8f8af50d6de6d8b306d97507a278809184af58af4b1fb8054",
+      "bytes": 11940
+    },
+    {
+      "repo": "daytona/clients",
+      "ref": "3ae7316646645119af9791629cfb5547d68e6223",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/daytona/clients/3ae7316646645119af9791629cfb5547d68e6223/LICENSE",
+      "sha256": "0f511238e5bc5495aecff989ebe599312dfd276c35e2468c887f0dd19639e586",
+      "bytes": 11342
+    },
+    {
+      "repo": "daytona/clients",
+      "ref": "3ae7316646645119af9791629cfb5547d68e6223",
+      "path": "sdk-typescript/src/Process.ts",
+      "url": "https://raw.githubusercontent.com/daytona/clients/3ae7316646645119af9791629cfb5547d68e6223/sdk-typescript/src/Process.ts",
+      "sha256": "d4c9ca9747c209d7677927f8ea27991cdfdcb2ad1a8633ba6dcb08007a7cf5b2",
+      "bytes": 28740
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "components/internal/supervisor/README.md",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/components/internal/supervisor/README.md",
+      "sha256": "5cf8aa69f21c261db0f93e4f979adfbfa0b0ae7a29e849a53dffe4fe2f51d4f8",
+      "bytes": 7526
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "components/nodeagent/README.md",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/components/nodeagent/README.md",
+      "sha256": "7931d61e13ae0a84811232042a62bbd14f77b43087f04e8ebbe08b1f3b866071",
+      "bytes": 3689
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "components/execd/README.md",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/components/execd/README.md",
+      "sha256": "b2ff08997c673359041bfd315f08a0c90d48f6c0051d9230f9cd8b9f0d6f26aa",
+      "bytes": 742
+    },
+    {
+      "repo": "NVIDIA/OpenShell",
+      "ref": "277f922d6d3b08b16d825cbd97499fe1a50031ac",
+      "path": "crates/openshell-sandbox/src/boundary_server.rs",
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/277f922d6d3b08b16d825cbd97499fe1a50031ac/crates/openshell-sandbox/src/boundary_server.rs",
+      "sha256": "3862b7f60615f651f8819ac38b82363750d1c6cce77cb9c3316ae5e7c3fed987",
+      "bytes": 260524
+    },
+    {
+      "repo": "opensandbox-group/OpenSandbox",
+      "ref": "c7dc78a4090e5de2b9119e9bd93952cae24f87bd",
+      "path": "components/execd/pkg/runtime/ctrl.go",
+      "url": "https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/c7dc78a4090e5de2b9119e9bd93952cae24f87bd/components/execd/pkg/runtime/ctrl.go",
+      "sha256": "d9be36c293aae6583fd7e3a02362d1cbbe6373c9760b2eb00c6ebb751cd2039c",
+      "bytes": 2792
+    }
+  ],
+  "limitations": [
+    "main observations are not all claims about the latest stable release",
+    "Daytona current core implementation is private; current SDK/API observed only",
+    "Native process output/exit status is not a canonical Pi Tool Result",
+    "No source inspections imply arbitrary-shell exactly-once execution"
+  ],
+  "runtimeChanged": false
+}
