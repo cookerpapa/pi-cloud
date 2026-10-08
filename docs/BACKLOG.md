@@ -30,6 +30,20 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+The [October 8 Session/Turn/Run review](reports/session-turn-run-review-20261008.md)
+records field-level evidence and isolated checks, without changing schema/runtime.
+
+- [ ] R08T-02/03/04: remove four unused columns, the constant Turn input-kind
+      column and duplicate Run queued timestamp with matched application, index
+      and recovery-script changes. Evaluate first-position-only Run updates after
+      removing the unused projected offset; retain every ownership/seal check.
+- [ ] R08T-01: discuss an ADR making Run the sole stored lifecycle for its input;
+      migrate Turn status/timing readers, active-Lane uniqueness, queue triggers
+      and seal-aware presentation. Turn creation-time deduplication belongs to
+      that query migration. Do not merge input payloads into the queue by default.
+- [ ] R08T-05: clarify the historical Run `sandbox_id` Worker-owner name in a
+      scoped naming change; preserve its lease/fencing identity.
+
 The [architecture evidence review](reports/architecture-evidence-review-20261007.md)
 prioritizes one bounded handoff/operability slice over another broad runtime
 rewrite. The owner approved this slice; current source implementation includes:

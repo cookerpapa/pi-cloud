@@ -1,5 +1,10 @@
 # Documentation map
 
+The [Session/Turn/Run field review](reports/session-turn-run-review-20261008.md)
+covers all 105 columns, current SQL dependencies and isolated acceptance/queue
+checks. It identifies six initial cleanup candidates and duplicated Turn/Run
+lifecycle fields; schema and runtime changes remain proposed.
+
 The [sandbox result/portability study](reports/sandbox-result-portability-20261008.md)
 compares current Cube coupling with official E2B, OpenSandbox, OpenShell,
 SandboxFusion and Daytona interfaces. It separates execution, output retention

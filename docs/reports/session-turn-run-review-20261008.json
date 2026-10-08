@@ -1,0 +1,1105 @@
+{
+  "date": "2026-10-08",
+  "revision": "8f0607f80521bfdef266babfcae102f25e5f998e",
+  "schema": 182,
+  "scope": {
+    "sessions": 31,
+    "turns": 22,
+    "runs": 52
+  },
+  "runtimeChanged": false,
+  "limitations": [
+    "Source and PostgreSQL metadata review; not a deployed schema change.",
+    "Production currently has no business rows in these three tables, so zero mismatches are not evidence of lifecycle consistency.",
+    "No replacement implementation or before/after latency benchmark."
+  ],
+  "decisionCounts": {
+    "retain": 89,
+    "remove_unused": 4,
+    "derive_from_run": 7,
+    "remove_constant": 1,
+    "deduplicate_timestamp_stage_2": 1,
+    "optional_derived_keep_for_now": 1,
+    "deduplicate_timestamp": 1,
+    "rename_only": 1
+  },
+  "columns": [
+    {
+      "table": "sessions",
+      "column": "compute_session_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "pi_session_id",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "pi_conversation_id",
+      "sqlType": "int8",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "title",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "tenant_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "project_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "workspace_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "development_environment_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "desired_model_profile_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "desired_thinking_level",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "desired_service_tier",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "agent_revision_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "created_by_user_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "state",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "execution_mode",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "working_directory",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "sandbox_profile_key",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "session_kind",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "tool_capabilities",
+      "sqlType": "jsonb",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "next_event_seq",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "next_mailbox_position",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "row_version",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "forked_from_session_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "remove_unused",
+      "finding": "R08T-02",
+      "reason": "Old Workspace fork reference; current branches use conversation_parent_session_id and fork anchors."
+    },
+    {
+      "table": "sessions",
+      "column": "conversation_parent_session_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "conversation_fork_turn_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "conversation_fork_entry_id",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "pruned_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "created_at",
+      "sqlType": "timestamptz",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "updated_at",
+      "sqlType": "timestamptz",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "sessions",
+      "column": "last_active_at",
+      "sqlType": "timestamptz",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "input_uploads",
+      "sqlType": "jsonb",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "tenant_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "session_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "state",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "derive_from_run",
+      "finding": "R08T-01",
+      "reason": "Use one Run lifecycle authority; preserve public state mapping, seal visibility and active-Lane uniqueness."
+    },
+    {
+      "table": "turns",
+      "column": "input_kind",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "remove_constant",
+      "finding": "R08T-03",
+      "reason": "Only prompt allowed by current CHECK and both insertion paths."
+    },
+    {
+      "table": "turns",
+      "column": "input_text",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "model_profile_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "provider",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "model_id",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "thinking_level",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "service_tier",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "credential_binding_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "credential_binding_version",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "stop_reason",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "derive_from_run",
+      "finding": "R08T-01",
+      "reason": "Use one Run lifecycle authority; preserve public state mapping, seal visibility and active-Lane uniqueness."
+    },
+    {
+      "table": "turns",
+      "column": "failure_code",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "derive_from_run",
+      "finding": "R08T-01",
+      "reason": "Use one Run lifecycle authority; preserve public state mapping, seal visibility and active-Lane uniqueness."
+    },
+    {
+      "table": "turns",
+      "column": "failure_message",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "derive_from_run",
+      "finding": "R08T-01",
+      "reason": "Use one Run lifecycle authority; preserve public state mapping, seal visibility and active-Lane uniqueness."
+    },
+    {
+      "table": "turns",
+      "column": "failure_retryable",
+      "sqlType": "bool",
+      "nullable": true,
+      "decision": "derive_from_run",
+      "finding": "R08T-01",
+      "reason": "Use one Run lifecycle authority; preserve public state mapping, seal visibility and active-Lane uniqueness."
+    },
+    {
+      "table": "turns",
+      "column": "pruned_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "turns",
+      "column": "created_at",
+      "sqlType": "timestamptz",
+      "nullable": false,
+      "decision": "deduplicate_timestamp_stage_2",
+      "finding": "R08T-04",
+      "reason": "Same acceptance transaction as runs.created_at; remove only with all readers/indexes migrated."
+    },
+    {
+      "table": "turns",
+      "column": "started_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "derive_from_run",
+      "finding": "R08T-01",
+      "reason": "Use one Run lifecycle authority; preserve public state mapping, seal visibility and active-Lane uniqueness."
+    },
+    {
+      "table": "turns",
+      "column": "settled_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "derive_from_run",
+      "finding": "R08T-01",
+      "reason": "Use one Run lifecycle authority; preserve public state mapping, seal visibility and active-Lane uniqueness."
+    },
+    {
+      "table": "runs",
+      "column": "recovery_requested_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "input_return_request_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "queued_steer_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "compute_session_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "tenant_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "project_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "workspace_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "session_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "turn_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "agent_revision_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "environment_version_id",
+      "sqlType": "uuid",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "working_directory",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "sandbox_profile_key",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "agent_system_prompt",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "tool_capability_snapshot",
+      "sqlType": "jsonb",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "conversation_base_seq",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "remove_unused",
+      "finding": "R08T-02",
+      "reason": "Written by human/Subagent acceptance; no production read or SQL dependency."
+    },
+    {
+      "table": "runs",
+      "column": "idempotency_key",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "mailbox_position",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "request_sha256",
+      "sqlType": "bpchar",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "available_at",
+      "sqlType": "timestamptz",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "trace_id",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "optional_derived_keep_for_now",
+      "finding": "D08T-02",
+      "reason": "Derived deterministically from Run ID but used by tracing/API/unique index; low priority."
+    },
+    {
+      "table": "runs",
+      "column": "state",
+      "sqlType": "text",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "ready_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "stop_reason",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "failure_code",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "failure_message",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "failure_retryable",
+      "sqlType": "bool",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "row_version",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "queued_at",
+      "sqlType": "timestamptz",
+      "nullable": false,
+      "decision": "deduplicate_timestamp",
+      "finding": "R08T-04",
+      "reason": "Same now() transaction default as created_at; no current requeue rewrite; migrate ordering/index/API reads."
+    },
+    {
+      "table": "runs",
+      "column": "started_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "settled_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "created_at",
+      "sqlType": "timestamptz",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "updated_at",
+      "sqlType": "timestamptz",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "sandbox_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "rename_only",
+      "finding": "R08T-05",
+      "reason": "Stores trusted Worker ID, not Cube guest VM ID."
+    },
+    {
+      "table": "runs",
+      "column": "lease_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "fencing_token",
+      "sqlType": "int8",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "execution_released_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "agent_exited_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "last_heartbeat_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "remove_unused",
+      "finding": "R08T-02",
+      "reason": "Not consumed or renewed as liveness; Session lease and Worker connection own renewal."
+    },
+    {
+      "table": "runs",
+      "column": "last_event_seq",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "output_seal_id",
+      "sqlType": "uuid",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "output_seal_offset",
+      "sqlType": "int8",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "output_sealed_at",
+      "sqlType": "timestamptz",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "output_first_topic",
+      "sqlType": "text",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "output_first_partition",
+      "sqlType": "int4",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "output_first_offset",
+      "sqlType": "int8",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "output_projected_offset",
+      "sqlType": "int8",
+      "nullable": true,
+      "decision": "remove_unused",
+      "finding": "R08T-02",
+      "reason": "Written per native batch/display coverage; replay reads partition checkpoint plus unsealed first offsets."
+    },
+    {
+      "table": "runs",
+      "column": "output_display_seq",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "output_display_native_seq",
+      "sqlType": "int8",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "output_publication",
+      "sqlType": "jsonb",
+      "nullable": true,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    },
+    {
+      "table": "runs",
+      "column": "native_output_drained",
+      "sqlType": "bool",
+      "nullable": false,
+      "decision": "retain",
+      "reason": "Different scope/snapshot/lifecycle or an active query/fencing/retention boundary; see report retained groups."
+    }
+  ],
+  "sqlDependenciesForUnused": [
+    {
+      "column": "sessions.forked_from_session_id",
+      "views": [],
+      "functions": [],
+      "indexes": []
+    },
+    {
+      "column": "runs.conversation_base_seq",
+      "views": [],
+      "functions": [],
+      "indexes": []
+    },
+    {
+      "column": "runs.output_projected_offset",
+      "views": [],
+      "functions": [],
+      "indexes": []
+    },
+    {
+      "column": "runs.last_heartbeat_at",
+      "views": [],
+      "functions": [],
+      "indexes": []
+    }
+  ],
+  "currentIndexes": [
+    {
+      "table": "runs",
+      "name": "runs_returned_inputs",
+      "definition": "CREATE INDEX runs_returned_inputs ON public.runs USING btree (tenant_id, session_id, input_return_request_id, mailbox_position) WHERE (input_return_request_id IS NOT NULL)"
+    },
+    {
+      "table": "runs",
+      "name": "runs_pkey",
+      "definition": "CREATE UNIQUE INDEX runs_pkey ON public.runs USING btree (id)"
+    },
+    {
+      "table": "runs",
+      "name": "runs_tenant_id_id_unique",
+      "definition": "CREATE UNIQUE INDEX runs_tenant_id_id_unique ON public.runs USING btree (tenant_id, id)"
+    },
+    {
+      "table": "runs",
+      "name": "runs_tenant_turn_unique",
+      "definition": "CREATE UNIQUE INDEX runs_tenant_turn_unique ON public.runs USING btree (tenant_id, turn_id)"
+    },
+    {
+      "table": "runs",
+      "name": "runs_session_idempotency_unique",
+      "definition": "CREATE UNIQUE INDEX runs_session_idempotency_unique ON public.runs USING btree (session_id, idempotency_key)"
+    },
+    {
+      "table": "runs",
+      "name": "runs_tenant_session_created_idx",
+      "definition": "CREATE INDEX runs_tenant_session_created_idx ON public.runs USING btree (tenant_id, session_id, created_at)"
+    },
+    {
+      "table": "runs",
+      "name": "runs_tenant_trace_unique",
+      "definition": "CREATE UNIQUE INDEX runs_tenant_trace_unique ON public.runs USING btree (tenant_id, trace_id)"
+    },
+    {
+      "table": "runs",
+      "name": "runs_tenant_session_turn_id_unique",
+      "definition": "CREATE UNIQUE INDEX runs_tenant_session_turn_id_unique ON public.runs USING btree (tenant_id, session_id, turn_id, id)"
+    },
+    {
+      "table": "runs",
+      "name": "runs_unsealed_prefix",
+      "definition": "CREATE INDEX runs_unsealed_prefix ON public.runs USING btree (output_first_topic, output_first_partition, output_first_offset) WHERE ((output_sealed_at IS NULL) AND (output_first_offset IS NOT NULL))"
+    },
+    {
+      "table": "runs",
+      "name": "runs_active_idx",
+      "definition": "CREATE INDEX runs_active_idx ON public.runs USING btree (state, updated_at) WHERE (state = ANY (ARRAY['queued'::text, 'running'::text, 'settling'::text, 'cancel_requested'::text]))"
+    },
+    {
+      "table": "runs",
+      "name": "runs_ready_queue_idx",
+      "definition": "CREATE INDEX runs_ready_queue_idx ON public.runs USING btree (available_at, queued_at, id) WHERE ((state = 'queued'::text) AND (ready_at IS NOT NULL))"
+    },
+    {
+      "table": "runs",
+      "name": "runs_one_ready_lane",
+      "definition": "CREATE UNIQUE INDEX runs_one_ready_lane ON public.runs USING btree (session_id) WHERE ((state = 'queued'::text) AND (ready_at IS NOT NULL))"
+    },
+    {
+      "table": "runs",
+      "name": "runs_owner_active",
+      "definition": "CREATE INDEX runs_owner_active ON public.runs USING btree (sandbox_id) WHERE ((lease_id IS NOT NULL) AND (execution_released_at IS NULL))"
+    },
+    {
+      "table": "runs",
+      "name": "runs_agent_queue_idx",
+      "definition": "CREATE INDEX runs_agent_queue_idx ON public.runs USING btree (agent_revision_id, available_at, queued_at, id) WHERE ((state = 'queued'::text) AND (ready_at IS NOT NULL))"
+    },
+    {
+      "table": "runs",
+      "name": "runs_active_lease",
+      "definition": "CREATE INDEX runs_active_lease ON public.runs USING btree (lease_id) WHERE ((lease_id IS NOT NULL) AND (execution_released_at IS NULL))"
+    },
+    {
+      "table": "runs",
+      "name": "runs_pending_steer",
+      "definition": "CREATE INDEX runs_pending_steer ON public.runs USING btree (queued_steer_id) WHERE ((state = 'queued'::text) AND (queued_steer_id IS NOT NULL))"
+    },
+    {
+      "table": "runs",
+      "name": "runs_pending_inputs_session",
+      "definition": "CREATE INDEX runs_pending_inputs_session ON public.runs USING btree (tenant_id, session_id, mailbox_position) WHERE (state = 'queued'::text)"
+    },
+    {
+      "table": "runs",
+      "name": "runs_session_mailbox_unique",
+      "definition": "CREATE UNIQUE INDEX runs_session_mailbox_unique ON public.runs USING btree (session_id, mailbox_position)"
+    },
+    {
+      "table": "sessions",
+      "name": "sessions_pkey",
+      "definition": "CREATE UNIQUE INDEX sessions_pkey ON public.sessions USING btree (id)"
+    },
+    {
+      "table": "sessions",
+      "name": "sessions_tenant_id_id_unique",
+      "definition": "CREATE UNIQUE INDEX sessions_tenant_id_id_unique ON public.sessions USING btree (tenant_id, id)"
+    },
+    {
+      "table": "sessions",
+      "name": "sessions_visible_activity_page",
+      "definition": "CREATE INDEX sessions_visible_activity_page ON public.sessions USING btree (tenant_id, last_active_at DESC, id DESC) WHERE ((session_kind = 'conversation'::text) AND (pruned_at IS NULL))"
+    },
+    {
+      "table": "sessions",
+      "name": "sessions_conversation_parent_idx",
+      "definition": "CREATE INDEX sessions_conversation_parent_idx ON public.sessions USING btree (tenant_id, conversation_parent_session_id, created_at) WHERE (conversation_parent_session_id IS NOT NULL)"
+    },
+    {
+      "table": "turns",
+      "name": "turns_pkey",
+      "definition": "CREATE UNIQUE INDEX turns_pkey ON public.turns USING btree (id)"
+    },
+    {
+      "table": "turns",
+      "name": "turns_tenant_session_id_unique",
+      "definition": "CREATE UNIQUE INDEX turns_tenant_session_id_unique ON public.turns USING btree (tenant_id, session_id, id)"
+    },
+    {
+      "table": "turns",
+      "name": "turns_session_id_id_unique",
+      "definition": "CREATE UNIQUE INDEX turns_session_id_id_unique ON public.turns USING btree (session_id, id)"
+    },
+    {
+      "table": "turns",
+      "name": "turns_one_active_per_session",
+      "definition": "CREATE UNIQUE INDEX turns_one_active_per_session ON public.turns USING btree (session_id) WHERE (state = ANY (ARRAY['dispatching'::text, 'running'::text, 'waiting_approval'::text, 'cancelling'::text]))"
+    },
+    {
+      "table": "turns",
+      "name": "turns_queued_mailbox_order",
+      "definition": "CREATE INDEX turns_queued_mailbox_order ON public.turns USING btree (session_id, created_at, id) WHERE (state = 'queued'::text)"
+    },
+    {
+      "table": "turns",
+      "name": "turns_tenant_unsettled",
+      "definition": "CREATE INDEX turns_tenant_unsettled ON public.turns USING btree (tenant_id) WHERE (state = ANY (ARRAY['queued'::text, 'dispatching'::text, 'running'::text, 'waiting_approval'::text, 'cancelling'::text]))"
+    },
+    {
+      "table": "turns",
+      "name": "turns_visible_session_idx",
+      "definition": "CREATE INDEX turns_visible_session_idx ON public.turns USING btree (tenant_id, session_id, created_at) WHERE (pruned_at IS NULL)"
+    }
+  ],
+  "readOnlyProductionAggregate": {
+    "sessions": 0,
+    "turns": 0,
+    "runs": 0,
+    "legacyForkReferences": 0,
+    "runQueuedCreatedDifferences": 0,
+    "paired": {
+      "count": 0,
+      "stateDifferences": 0,
+      "failureDifferences": 0,
+      "stopReasonDifferences": 0,
+      "startedAtDifferences": 0,
+      "settledAtDifferences": 0,
+      "createdAtDifferences": 0
+    }
+  },
+  "isolatedChecks": [
+    {
+      "name": "ordinary acceptance idempotency",
+      "passed": true
+    },
+    {
+      "name": "current acceptance writes three identical creation/queue timestamps",
+      "passed": true
+    },
+    {
+      "name": "real queued-input cancel updates both lifecycle copies",
+      "passed": true,
+      "settledAtEqual": false,
+      "settledAtDeltaMs": 3
+    },
+    {
+      "name": "database has no cross-table lifecycle equality constraint",
+      "passed": true,
+      "note": "Deliberate isolated one-sided write, not a reproduced production path"
+    },
+    {
+      "name": "four unused-column removals have no dependent-view/function blocker",
+      "passed": true,
+      "columns": [
+        "sessions.forked_from_session_id",
+        "runs.conversation_base_seq",
+        "runs.output_projected_offset",
+        "runs.last_heartbeat_at"
+      ],
+      "note": "Each DDL probe rolled back; application writers still require corresponding edits"
+    }
+  ]
+}
