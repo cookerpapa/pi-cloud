@@ -4,7 +4,8 @@ A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harne
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
 - Multi-round chat, model switching, hosted search and Subagents.
-- Editable queued messages, ordering, individual removal and promotion to active steer.
+- Native Pi follow-up/steer within one Run, with editable pending messages,
+  ordering, individual removal and promotion to active steer.
   Stop withdraws pending messages and restores their text and attachments to the
   composer for editing, alongside the existing draft.
 - Persistent conversations, context compaction and interruption recovery.
@@ -39,6 +40,13 @@ Cube completion -> boot-scoped Kafka replies -> original Pi Worker
 Chat upload -> Control Plane -> Cube Workspace Volume
                             `-> S3 (immutable source images)
 ```
+
+The maintained source uses two core business tables: Session configuration/state
+and Run input/configuration/lifecycle. Initial requests are accepted in PG;
+additional messages go to the running Pi native queue and are confirmed after
+its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
+unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) requires
+a matched schema 183/app upgrade; the deployed release below is still schema 182.
 
 Native tasks, submissions, entries and documents use one atomic commit stream.
 Kafka RF3 confirms each prepared commit before the Worker adopts it. PostgreSQL

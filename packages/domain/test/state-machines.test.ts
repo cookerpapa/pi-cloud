@@ -5,21 +5,27 @@ import {
   transitionRun,
   transitionSandbox,
   transitionSession,
-  transitionTurn,
+  turnStateForRun,
   type SessionState,
-  type TurnState,
+  type RunState,
 } from "../src/index.ts";
 
 function walkSession(initial: SessionState, transitions: readonly SessionState[]): SessionState {
   return transitions.reduce((state, next) => transitionSession(state, next), initial);
 }
 
-function walkTurn(initial: TurnState, transitions: readonly TurnState[]): TurnState {
-  return transitions.reduce((state, next) => transitionTurn(state, next), initial);
+function walkRun(initial: RunState, transitions: readonly RunState[]): RunState {
+  return transitions.reduce((state, next) => transitionRun(state, next), initial);
 }
 
 describe("domain state machines", () => {
-  it("admits one execution per Run and never requeues an interrupted Run", () => {
+  it("derives public Turn status from the one Run lifecycle", () => {
+    expect(turnStateForRun("timed_out")).toBe("failed");
+    expect(turnStateForRun("settling")).toBe("running");
+    expect(turnStateForRun("cancel_requested")).toBe("cancelling");
+  });
+
+  it("admits one execution per Run and requires guarded recovery before readmission", () => {
     expect(transitionRun("queued", "running")).toBe("running");
     expect(transitionRun("running", "settling")).toBe("settling");
     expect(transitionRun("settling", "completed")).toBe("completed");
@@ -44,23 +50,23 @@ describe("domain state machines", () => {
   });
 
   it("walks a turn through execution and completion", () => {
-    const state = walkTurn("queued", ["running", "completed"]);
+    const state = walkRun("queued", ["running", "completed"]);
     expect(state).toBe("completed");
-    expect(() => transitionTurn("completed", "running")).toThrow(DomainTransitionError);
+    expect(() => transitionRun("completed", "running")).toThrow(DomainTransitionError);
   });
 
   it.each(["queued", "running"] as const)(
     "cancels a %s turn through an explicit cancelling state",
     (from) => {
-      expect(transitionTurn(transitionTurn(from, "cancelling"), "cancelled")).toBe("cancelled");
+      expect(transitionRun(transitionRun(from, "cancel_requested"), "cancelled")).toBe("cancelled");
     },
   );
 
   it("permits recovery admission while terminal Turns stay closed", () => {
-    expect(transitionTurn("running", "queued")).toBe("queued");
-    expect(transitionTurn("cancelling", "queued")).toBe("queued");
-    expect(() => transitionTurn("completed", "queued")).toThrow(DomainTransitionError);
-    expect(transitionTurn("running", "failed")).toBe("failed");
+    expect(transitionRun("running", "queued")).toBe("queued");
+    expect(transitionRun("cancel_requested", "queued")).toBe("queued");
+    expect(() => transitionRun("completed", "queued")).toThrow(DomainTransitionError);
+    expect(transitionRun("running", "failed")).toBe("failed");
   });
 
   it("retries control requests only before acknowledgement", () => {
@@ -94,6 +100,6 @@ describe("domain state machines", () => {
 
   it("rejects self-transitions so duplicate delivery is handled by idempotency", () => {
     expect(() => transitionSession("idle", "idle")).toThrow(DomainTransitionError);
-    expect(() => transitionTurn("running", "running")).toThrow(DomainTransitionError);
+    expect(() => transitionRun("running", "running")).toThrow(DomainTransitionError);
   });
 });

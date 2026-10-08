@@ -3,7 +3,6 @@ import type {
   EventPublishMessage,
   CancelTurnCommandMessage,
   ExecuteTurnCommandMessage,
-  SteerTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import {
   createExecutionReference,
@@ -128,29 +127,6 @@ function cancellation(target: ExecuteTurnCommandMessage = command()): CancelTurn
   };
 }
 
-function steer(target: ExecuteTurnCommandMessage = command()): SteerTurnCommandMessage {
-  return {
-    protocolVersion: 1,
-    messageId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-    sentAt: "2026-07-18T08:00:01.000Z",
-    type: "command.turn.steer",
-    payload: {
-      controlRequestId: IDS.steer,
-      targetRunId: target.payload.runId,
-      idempotencyKey: "steer-1",
-      tenantId: target.payload.tenantId,
-      projectId: target.payload.projectId,
-      workspaceId: target.payload.workspaceId,
-      sessionId: target.payload.sessionId,
-      runId: target.payload.runId,
-      turnId: target.payload.turnId,
-      agentId: target.payload.agentId,
-      executionReference: target.payload.executionReference,
-      text: "Inspect the boundary condition first.",
-    },
-  };
-}
-
 class RecordingRunner implements SupervisorTurnRunner {
   readonly calls: ExecuteTurnCommandMessage[] = [];
 
@@ -204,19 +180,16 @@ describe("AgentRunSupervisor", () => {
           await finish.promise;
           return { stopReason: "stop" };
         },
-        async steer() {},
       },
     });
     const execute = command();
     const prepared = supervisor.prepare(execute, rejectUnexpectedEvent);
     const run = prepared.run();
-    const steering = supervisor.prepareSteer(steer(execute));
-    await steering.run();
     supervisor.prepareCancellation(cancellation(execute));
     expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(0);
     finish.resolve();
     await run;
-    const retained = { runs: 1, steers: 1, cancellations: 1, families: 1 };
+    const retained = { runs: 1, cancellations: 1, families: 1 };
     expect(supervisor.retainedState).toEqual(retained);
     expect(await supervisor.reapSettled(async () => new Set())).toBe(0);
     await expect(
@@ -230,13 +203,9 @@ describe("AgentRunSupervisor", () => {
     await duplicate.run();
     expect(calls).toBe(1);
     expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(1);
-    expect(supervisor.retainedState).toEqual({ runs: 0, steers: 0, cancellations: 0, families: 0 });
+    expect(supervisor.retainedState).toEqual({ runs: 0, cancellations: 0, families: 0 });
     await prepared.run();
     expect(calls).toBe(1);
-    expect(supervisor.prepareSteer(steer(execute)).ack.payload).toMatchObject({
-      status: "rejected",
-      code: "invalid_state",
-    });
   });
 
   it("does not retire a new family owner while an old retirement check is pending", async () => {
@@ -302,7 +271,7 @@ describe("AgentRunSupervisor", () => {
     expect(JSON.parse(result)).toEqual({
       before: 16,
       after: 0,
-      retained: { runs: 0, steers: 0, cancellations: 0, families: 0 },
+      retained: { runs: 0, cancellations: 0, families: 0 },
     });
   });
 
@@ -584,41 +553,6 @@ describe("AgentRunSupervisor", () => {
     await expect(execution).rejects.toBeInstanceOf(PiTurnCancelledError);
     expect(observedSignal?.aborted).toBe(true);
     expect(supervisor.activeSessionCount).toBe(0);
-  });
-
-  it("delivers a fenced steer only to the exact running assignment", async () => {
-    let settle!: () => void;
-    const observed: Array<{ targetRunId: string; text: string; inputId: string }> = [];
-    const steeringRunner: SupervisorTurnRunner = {
-      async run() {
-        await new Promise<void>((resolvePromise) => {
-          settle = resolvePromise;
-        });
-        return { stopReason: "stop" };
-      },
-      async steer(targetRunId, text, inputId) {
-        observed.push({ targetRunId, text, inputId });
-      },
-    };
-    const supervisor = new AgentRunSupervisor({ runner: steeringRunner });
-    const execute = command();
-    const execution = supervisor.prepare(execute, rejectUnexpectedEvent).run();
-    const preparedSteer = supervisor.prepareSteer(steer(execute));
-
-    expect(preparedSteer.ack.payload.status).toBe("accepted");
-    expect(observed).toEqual([]);
-    await expect(preparedSteer.run()).resolves.toBeUndefined();
-    expect(observed).toEqual([
-      {
-        targetRunId: execute.payload.runId,
-        text: "Inspect the boundary condition first.",
-        inputId: IDS.steer,
-      },
-    ]);
-    await supervisor.prepareSteer(steer(execute)).run();
-    expect(observed).toHaveLength(1);
-    settle();
-    await expect(execution).resolves.toEqual({ stopReason: "stop", lastEventSeq: 0 });
   });
 
   it("reports a running assignment and applies only its exact heartbeat renewal", async () => {
@@ -922,7 +856,6 @@ describe("AgentRunSupervisor", () => {
     expect(supervisor.revokeAllAssignments()).toEqual({
       releasedPreparations: 0,
       releasedCancellations: 0,
-      releasedSteers: 0,
       revokedExecutions: 1,
     });
     await Promise.resolve();

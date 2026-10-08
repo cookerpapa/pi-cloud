@@ -73,8 +73,8 @@ function transcriptText(turn) {
 function turnSnapshot(turnId) {
   const query = [
     "select provider, model_id, thinking_level, coalesce(service_tier, 'standard')",
-    "from turns",
-    `where id = '${turnId}'`,
+    "from runs",
+    `where turn_id = '${turnId}'`,
   ].join(" ");
   const [provider, modelId, thinkingLevel, serviceTier] = execFileSync(
     process.execPath,

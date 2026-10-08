@@ -39,10 +39,10 @@ export async function restoreReturnedInputs(
     if (!page.requestId) return "done";
     recovery.requestId = page.requestId;
     if (page.pending) return "pending";
-    const fresh = page.items.filter((item) => !recovery.restored.has(item.turnId));
+    const fresh = page.items.filter((item) => !recovery.restored.has(item.inputId));
     if (fresh.length) {
       if (append(fresh) === false) throw new Error("Could not restore input attachments");
-      for (const item of fresh) recovery.restored.add(item.turnId);
+      for (const item of fresh) recovery.restored.add(item.inputId);
     }
     const last = page.items.at(-1);
     if (last) recovery.afterPosition = last.mailboxPosition;

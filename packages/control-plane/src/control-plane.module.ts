@@ -24,9 +24,8 @@ import {
 } from "./workspace-browser-service.ts";
 import { WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
-import { TurnSteeringService } from "./turn-steering-service.ts";
 import { QueuedInputService } from "./queued-input-service.ts";
-import type { TurnSteerBackend } from "./turn-steer.ts";
+import type { NativeInputBackendFactory } from "./queued-input-service.ts";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
@@ -47,7 +46,7 @@ export type ControlPlaneModuleOptions = Omit<
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
   cubeEgressConfigToken?: string;
-  turnSteerBackendFactory?: (sandboxId: string) => Promise<TurnSteerBackend>;
+  nativeInputBackendFactory?: NativeInputBackendFactory;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   sshAccessTicketService?: SshAccessTicketService;
   sourceControlService?: SourceControlService;
@@ -62,12 +61,6 @@ export type ControlPlaneEventRuntime = {
 export class ControlPlaneModule {
   static register(options: ControlPlaneModuleOptions): DynamicModule {
     const { eventHub, eventStore } = options.eventRuntime;
-    const turnSteering = new TurnSteeringService({
-      database: options.database,
-      ...(options.turnSteerBackendFactory === undefined
-        ? {}
-        : { backendFactory: options.turnSteerBackendFactory }),
-    });
     const conversationDeletion = new ConversationDeletionService({ database: options.database });
     const workspaceBrowser = new WorkspaceBrowserService({
       database: options.database,
@@ -171,8 +164,9 @@ export class ControlPlaneModule {
           provide: QueuedInputService,
           useValue: new QueuedInputService({
             database: options.database,
-            steering: turnSteering,
-            autoStart: options.turnSteerBackendFactory !== undefined,
+            ...(options.nativeInputBackendFactory
+              ? { backendFactory: options.nativeInputBackendFactory }
+              : {}),
           }),
         },
         {

@@ -6,7 +6,6 @@ import type {
   RunState,
   SandboxState,
   SessionState,
-  TurnState,
 } from "@pi-cloud/domain";
 import type { ColumnType, Generated, JSONColumnType } from "kysely";
 
@@ -603,7 +602,6 @@ export interface SessionTable {
   next_event_seq: GeneratedInt8;
   next_mailbox_position: GeneratedInt8;
   row_version: GeneratedInt8;
-  forked_from_session_id: GeneratedNullable<string>;
   conversation_parent_session_id: GeneratedNullable<string>;
   conversation_fork_turn_id: GeneratedNullable<string>;
   conversation_fork_entry_id: GeneratedNullable<string>;
@@ -696,35 +694,8 @@ export interface ConversationPruneOperationTable {
   created_at: GeneratedTimestamp;
 }
 
-export interface TurnTable {
-  input_uploads: GeneratedJsonArray;
-  id: string;
-  tenant_id: string;
-  session_id: string;
-  state: TurnState;
-  input_kind: TurnInputKind;
-  input_text: string | null;
-  model_profile_id: string;
-  provider: string;
-  model_id: string;
-  thinking_level: ModelThinkingLevel;
-  service_tier: GeneratedNullable<"fast">;
-  credential_binding_id: string;
-  credential_binding_version: Int8;
-  stop_reason: string | null;
-  failure_code: string | null;
-  failure_message: string | null;
-  failure_retryable: boolean | null;
-  pruned_at: NullableTimestamp;
-  created_at: GeneratedTimestamp;
-  started_at: NullableTimestamp;
-  settled_at: NullableTimestamp;
-}
-
 export interface RunTable {
   recovery_requested_at: NullableTimestamp;
-  input_return_request_id: GeneratedNullable<string>;
-  queued_steer_id: GeneratedNullable<string>;
   compute_session_id: GeneratedNullable<string>;
   id: string;
   tenant_id: string;
@@ -738,7 +709,16 @@ export interface RunTable {
   sandbox_profile_key: Generated<SandboxProfileKey>;
   agent_system_prompt: GeneratedNullable<string>;
   tool_capability_snapshot: GeneratedJsonArray;
-  conversation_base_seq: GeneratedInt8;
+  input_text: string;
+  input_uploads: GeneratedJsonArray;
+  model_profile_id: string;
+  provider: string;
+  model_id: string;
+  thinking_level: ModelThinkingLevel;
+  service_tier: GeneratedNullable<"fast">;
+  credential_binding_id: string;
+  credential_binding_version: Int8;
+  pruned_at: NullableTimestamp;
   idempotency_key: string;
   mailbox_position: Int8;
   request_sha256: string;
@@ -751,17 +731,15 @@ export interface RunTable {
   failure_message: string | null;
   failure_retryable: boolean | null;
   row_version: GeneratedInt8;
-  queued_at: GeneratedTimestamp;
   started_at: NullableTimestamp;
   settled_at: NullableTimestamp;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
-  sandbox_id: GeneratedNullable<string>;
+  worker_id: GeneratedNullable<string>;
   lease_id: GeneratedNullable<string>;
   fencing_token: NullableInt8;
   execution_released_at: GeneratedNullable<Date>;
   agent_exited_at: GeneratedNullable<Date>;
-  last_heartbeat_at: NullableTimestamp;
   last_event_seq: GeneratedInt8;
   output_seal_id: GeneratedNullable<string>;
   output_seal_offset: NullableInt8;
@@ -769,7 +747,6 @@ export interface RunTable {
   output_first_topic: GeneratedNullable<string>;
   output_first_partition: GeneratedNullable<number>;
   output_first_offset: NullableInt8;
-  output_projected_offset: NullableInt8;
   output_display_seq: GeneratedInt8;
   output_display_native_seq: GeneratedInt8;
   output_publication: GeneratedNullable<Record<string, unknown>>;
@@ -1054,7 +1031,6 @@ export interface Database {
   subagent_control_commands: SubagentControlCommandTable;
   subagent_supervisor_requests: SubagentSupervisorRequestTable;
   conversation_prune_operations: ConversationPruneOperationTable;
-  turns: TurnTable;
   runs: RunTable;
   run_transitions: RunTransitionTable;
   sandboxes: SandboxTable;

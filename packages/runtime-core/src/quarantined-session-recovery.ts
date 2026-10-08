@@ -82,7 +82,7 @@ export async function confirmStoppedWorkerExecutions(db: Kysely<Database>, sandb
       "a.id as runId",
       "a.lease_id as leaseId",
     ])
-    .where("a.sandbox_id", "=", sandboxId)
+    .where("a.worker_id", "=", sandboxId)
     .where("a.agent_exited_at", "is", null)
     .where("a.state", "in", ["failed", "cancelled", "timed_out"])
     .execute();

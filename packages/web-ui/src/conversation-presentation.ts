@@ -2,6 +2,7 @@ import type { TranscriptItem } from "./session-view.ts";
 import type { ToolTranscriptItem } from "./ToolActivity.tsx";
 
 export type ConversationPresentationRow =
+  | { kind: "user"; key: string; item: Extract<TranscriptItem, { kind: "user" }> }
   | {
       kind: "text";
       key: string;
@@ -32,21 +33,29 @@ export type ConversationPresentationRow =
 export function deriveConversationPresentationRows(
   items: readonly TranscriptItem[],
 ): readonly ConversationPresentationRow[] {
-  const lastToolIndex = items.reduce(
-    (lastIndex, item, index) => (item.kind === "tool" ? index : lastIndex),
-    -1,
-  );
+  const lastTools: number[] = [];
+  let lastTool = -1;
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i]!.kind === "user") lastTool = -1;
+    else if (items[i]!.kind === "tool" && lastTool < 0) lastTool = i;
+    lastTools[i] = lastTool;
+  }
   const rows: ConversationPresentationRow[] = [];
   let index = 0;
   while (index < items.length) {
     const item = items[index]!;
+    if (item.kind === "user") {
+      rows.push({ kind: "user", key: item.key, item });
+      index++;
+      continue;
+    }
     if (item.kind === "text") {
       rows.push({
         kind: "text",
         key: item.key,
         item,
         processNarration:
-          item.phase === "commentary" || (item.phase === undefined && index < lastToolIndex),
+          item.phase === "commentary" || (item.phase === undefined && index < lastTools[index]!),
       });
       index += 1;
       continue;

@@ -70,6 +70,7 @@ it("uploads images before Kafka timing, packs their references, and rejects publ
       ],
     },
     origins: [],
+    inputQueueSessions: [scope.sessionId],
     tools: [],
     cancellations: [],
     events: [],
@@ -80,6 +81,7 @@ it("uploads images before Kafka timing, packs their references, and rejects publ
       ["attachment_prepare", 100],
       ["kafka_publish", 7],
     ]);
+    expect(accepted?.inputQueueSessions).toEqual([scope.sessionId]);
     expect(JSON.stringify(accepted)).not.toContain(data);
     expect(JSON.stringify(accepted)).toContain("pi_cloud_image_v1");
     await publisher.close();

@@ -1,9 +1,9 @@
+import { turnStateForRun, type RunState } from "@pi-cloud/domain";
 import { readDurableEntries } from "@pi-cloud/pi-session-postgres/durable";
 import type { Database } from "@pi-cloud/database";
 import type {
   ConversationDetailResource,
   ConversationListResource,
-  ConversationTurnState,
   ProjectEnvironmentResource,
 } from "@pi-cloud/protocol";
 import {
@@ -37,10 +37,9 @@ type ConversationHistoryRow = {
   originSessionId: string;
   runId: string;
   turnId: string;
-  inputKind: string;
   prompt: string | null;
   uploads: unknown[];
-  turnState: ConversationTurnState;
+  runState: RunState;
   waitingForSeal: boolean;
   mailboxPosition: string | null;
   acceptedAt: Date | string;
@@ -115,13 +114,15 @@ export class ConversationReader {
       .innerJoinLateral(
         (query) =>
           query
-            .selectFrom("turns as turn")
+            .selectFrom("runs as counted_run")
             .select((expression) => expression.fn.countAll<string>().as("count"))
-            .whereRef("turn.tenant_id", "=", "session_row.tenant_id")
-            .whereRef("turn.session_id", "=", "session_row.id")
-            .where("turn.pruned_at", "is", null)
-            .where("turn.state", "!=", "queued")
-            .where(sql<boolean>`not (turn.state='cancelled' and turn.started_at is null)`)
+            .whereRef("counted_run.tenant_id", "=", "session_row.tenant_id")
+            .whereRef("counted_run.session_id", "=", "session_row.id")
+            .where("counted_run.pruned_at", "is", null)
+            .where("counted_run.state", "!=", "queued")
+            .where(
+              sql<boolean>`not (counted_run.state='cancelled' and counted_run.started_at is null)`,
+            )
             .as("turn_count"),
         (join) => join.onTrue(),
       )
@@ -280,11 +281,10 @@ export class ConversationReader {
         ? undefined
         : await this.#database
             .selectFrom("runs as anchor")
-            .innerJoin("turns as anchor_turn", "anchor_turn.id", "anchor.turn_id")
             .select(["anchor.session_id", "anchor.mailbox_position"])
             .where("anchor.tenant_id", "=", this.#tenantId)
             .where("anchor.turn_id", "=", beforeTurnId)
-            .where("anchor_turn.pruned_at", "is", null)
+            .where("anchor.pruned_at", "is", null)
             .executeTakeFirst();
     if (
       beforeTurnId !== undefined &&
@@ -330,17 +330,13 @@ export class ConversationReader {
         );
       const newestRows = await this.#database
         .selectFrom("runs as run")
-        .innerJoin("turns as turn", (join) =>
-          join.onRef("turn.tenant_id", "=", "run.tenant_id").onRef("turn.id", "=", "run.turn_id"),
-        )
         .select([
           "run.session_id as originSessionId",
           "run.id as runId",
-          "turn.id as turnId",
-          "turn.input_kind as inputKind",
-          "turn.input_text as prompt",
-          "turn.input_uploads as uploads",
-          "turn.state as turnState",
+          "run.turn_id as turnId",
+          "run.input_text as prompt",
+          "run.input_uploads as uploads",
+          "run.state as runState",
           sql<boolean>`(run.output_seal_id is not null and run.output_sealed_at is null)`.as(
             "waitingForSeal",
           ),
@@ -349,7 +345,7 @@ export class ConversationReader {
         ])
         .where("run.tenant_id", "=", this.#tenantId)
         .where("run.session_id", "=", node.sessionId)
-        .where("turn.pruned_at", "is", null)
+        .where("run.pruned_at", "is", null)
         .where("run.state", "!=", "queued")
         .where(sql<boolean>`not (run.state='cancelled' and run.started_at is null)`)
         .where("run.mailbox_position", "is not", null)
@@ -374,7 +370,8 @@ export class ConversationReader {
       turnIds,
     });
     const turns = includedRows.map((row) => {
-      if (row.inputKind !== "prompt" || row.prompt === null || row.mailboxPosition === null) {
+      const turnState = turnStateForRun(row.runState);
+      if (row.prompt === null || row.mailboxPosition === null) {
         throw new ControlPlaneStoreError(
           "control_plane_misconfigured",
           "Conversation contains an invalid prompt turn",
@@ -388,12 +385,10 @@ export class ConversationReader {
         ...(row.uploads.length ? { uploads: parseUserUploads(row.uploads) } : {}),
         state:
           row.waitingForSeal &&
-          (row.turnState === "completed" ||
-            row.turnState === "failed" ||
-            row.turnState === "cancelled") &&
+          (turnState === "completed" || turnState === "failed" || turnState === "cancelled") &&
           transcriptByTurnId.get(row.turnId)?.terminalSequence == null
             ? ("running" as const)
-            : row.turnState,
+            : turnState,
         ...(transcriptByTurnId.has(row.turnId)
           ? { transcript: transcriptByTurnId.get(row.turnId)! }
           : {}),

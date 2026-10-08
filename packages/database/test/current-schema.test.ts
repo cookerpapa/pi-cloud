@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(182);
+      expect(firstMigrationPass.rows).toHaveLength(183);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("182_conversation_activity_page");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("183_native_inputs_and_run_record");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -57,6 +57,7 @@ describe("current PiCloud schema", () => {
       `.execute(database);
       const names = new Set(tables.rows.map((row) => row.table_name));
       for (const retired of [
+        "turns",
         "pi_session_entries",
         "pi_session_records",
         "pi_session_entry_refs",
@@ -179,7 +180,7 @@ describe("current PiCloud schema", () => {
       expect(keys.has("subagent_executions.workspace_mode")).toBe(false);
       expect(keys.has("subagent_executions.child_workspace_id")).toBe(false);
       expect(keys.has("subagent_executions.pi_context_base_entry_id")).toBe(true);
-      expect(keys.has("turns.service_tier")).toBe(true);
+      expect(keys.has("runs.service_tier")).toBe(true);
       expect(keys.has("runs.agent_revision_id")).toBe(true);
       expect(keys.has("runs.command_id")).toBe(false);
       expect(keys.has("tenant_runtime_policies.maximum_concurrent_turns")).toBe(false);

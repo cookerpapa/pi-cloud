@@ -556,62 +556,6 @@
       "invariant": "Oversized individual publications fail before entering the bounded publication queue."
     },
     {
-      "id": "queued-edit-claim-race",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "rejects edit when Worker admission holds the affected Run without deadlocking",
-      "invariant": "An admitted/locked Run cannot have its input rewritten by a pending edit."
-    },
-    {
-      "id": "queued-cancel-claim-race",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "rejects cancel when Worker admission holds the affected Run without deadlocking",
-      "invariant": "Pending cancellation cannot retire a Run whose admission already won."
-    },
-    {
-      "id": "queued-reorder-claim-race",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "rejects move when Worker admission holds the affected Run without deadlocking",
-      "invariant": "A locked queue neighbor cannot be reordered under an active admission."
-    },
-    {
-      "id": "queued-steer-lost-reply",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "recovers a consumed promotion after a lost reply and API restart without duplicate delivery",
-      "invariant": "Canonical input consumption resolves a lost HTTP reply without executing the queued source."
-    },
-    {
-      "id": "queued-steer-seal-restore",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "restores unconsumed promotion only after the target seal (reply lost=true)",
-      "invariant": "A missing reply alone cannot restore a queued source; an absent input plus projected seal can."
-    },
-    {
-      "id": "queued-steer-order",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "orders promotions to one Run across API replicas while an earlier reply is pending",
-      "invariant": "Promotions to the same target preserve accepted delivery order across replicas."
-    },
-    {
-      "id": "queued-steer-shutdown",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "stops new promotion deliveries during shutdown and resumes persisted work after restart",
-      "invariant": "Shutdown starts no further deliveries and restart finds the remaining durable controls."
-    },
-    {
-      "id": "queued-mutation-idempotency",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "deduplicates concurrent replicas and rejects a competing stale queue mutation",
-      "invariant": "Concurrent API replicas cannot repeat a queue operation or silently overwrite a stale edit."
-    },
-    {
       "id": "workflow-result-budget",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/workflow-channels.test.ts",
@@ -661,39 +605,11 @@
       "invariant": "An unsettled Session prevents schema cutover; settled cutover retains immutable bodies and never resurrects deleted Turn bindings."
     },
     {
-      "id": "direct-steer-unconsumed-recovery",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "restores direct Steer acknowledged but unconsumed when its target ends (failed=true)",
-      "invariant": "A Worker acknowledgement never retires input; target closure restores unconsumed input without replaying its Run."
-    },
-    {
-      "id": "direct-steer-canonical-consumption",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "retires direct Steer only after canonical consumption even when its HTTP reply is lost",
-      "invariant": "Canonical input evidence wins over missing transport acknowledgement and prevents fallback execution."
-    },
-    {
-      "id": "direct-steer-late-reply",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "preserves direct Steer reconciliation against a late delivery outcome (restored-success)",
-      "invariant": "A late Worker reply cannot overwrite a sealed-target restoration decision."
-    },
-    {
-      "id": "direct-steer-acceptance-race",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "deduplicates simultaneous direct Steer acceptance and rejects locked targets without orphaned input",
-      "invariant": "Direct Steer acceptance is atomic and idempotent under target locks and concurrent API replicas."
-    },
-    {
       "id": "direct-steer-fk-locks",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/steer-admission.postgres.test.ts",
-      "test": "Steer admission remains compatible with concurrent Tool binding foreign keys",
-      "invariant": "Input acceptance does not deadlock with active Tool binding foreign-key checks."
+      "test": "releases cloud admission locks before native delivery and tolerates Tool binding references",
+      "invariant": "Native input RPC holds no cloud admission transaction; concurrent foreign-key references do not deadlock intake."
     },
     {
       "id": "publication-seal-order",
@@ -759,20 +675,6 @@
       "invariant": "Queue presentation never regresses after a newer committed change."
     },
     {
-      "id": "queue-wake-inflight",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-input-wakes.test.ts",
-      "test": "retains one wake arriving during an in-flight Session read",
-      "invariant": "A control change during reconciliation is not lost."
-    },
-    {
-      "id": "queue-known-retry",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-input-wakes.test.ts",
-      "test": "waits for a known retry deadline without polling the database each tick",
-      "invariant": "Idle timers do not scan PG and known retries remain scheduled."
-    },
-    {
       "id": "subagent-view-late-read",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/subagent-read-views.test.ts",
@@ -834,13 +736,6 @@
       "file": "test/control-change-transactions.postgres.test.ts",
       "test": "does not notify duplicate Subagent upserts, but emits actual update and deletion",
       "invariant": "A conflicting no-op INSERT never publishes an imaginary source mutation."
-    },
-    {
-      "id": "steer-acked-scope-recovery",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "recovers acknowledged Steer scopes and wakes them for canonical consumption without idle reads",
-      "invariant": "An HTTP ACK cannot retire pending native input; cold recovery and canonical wakes still reconcile it."
     },
     {
       "id": "control-coalescing-logical-restore",
@@ -925,13 +820,6 @@
       "file": "test/input-queue-view.test.ts",
       "test": "bounds outstanding reads through reset and resynchronizes capacity overflow",
       "invariant": "Owner changes retain read-slot bounds and discard old completions; overflow requests resynchronization."
-    },
-    {
-      "id": "queue-page-version",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "pages unbounded queues without mixing revisions or reading all input bodies",
-      "invariant": "Paging never mixes queue orders or limits the count of durable inputs."
     },
     {
       "id": "presentation-pool-deadline",
@@ -1023,20 +911,6 @@
       "file": "test/native-tools.test.ts",
       "test": "leaves a completed background launch alive when a later Bash is cancelled",
       "invariant": "Esc targets unfinished Tools, never background services left by completed calls."
-    },
-    {
-      "id": "queue-stop-steer-unconsumed",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "settles Stop's in-flight Steer by canonical consumption (consumed=false)",
-      "invariant": "An unconsumed Steer survives Stop as a paused input and cannot execute after service reconstruction."
-    },
-    {
-      "id": "queue-stop-steer-consumed",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "settles Stop's in-flight Steer by canonical consumption (consumed=true)",
-      "invariant": "Canonical consumption wins a Stop race; consumed input is not restored or executed again."
     },
     {
       "id": "allocation-intent-recovery",
@@ -1254,34 +1128,6 @@
       "file": "test/durable-execution-recovery.test.ts",
       "test": "re-admits the same Run after closure and preserves Stop (after_seal)",
       "invariant": "A Stop after recovery closure cannot be lost between queued and admitted native ownership."
-    },
-    {
-      "id": "durable-return-stop-cut",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "withdraws exactly Stop's queue cut, retaining uploads and lost-response recovery",
-      "invariant": "Repeated Stop returns the original unconsumed queue cut with uploads without withdrawing newly accepted messages."
-    },
-    {
-      "id": "durable-return-stop-pages",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "returns every page in edited order and isolates repeated acknowledgements",
-      "invariant": "All withdrawn pages preserve edited order and remain recoverable after lost acknowledgement."
-    },
-    {
-      "id": "durable-stop-steer-consumed",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "settles Stop's in-flight Steer by canonical consumption (consumed=true)",
-      "invariant": "Consumed Steer remains history and is not returned to the composer."
-    },
-    {
-      "id": "durable-stop-steer-unconsumed",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/queued-inputs.test.ts",
-      "test": "settles Stop's in-flight Steer by canonical consumption (consumed=false)",
-      "invariant": "Unconsumed Steer returns only after ordered native closure proves nonconsumption."
     },
     {
       "id": "durable-model-slot-release",
@@ -1522,25 +1368,25 @@
       "invariant": "Cleanup errors do not destroy or quarantine VMs, wake paused runtimes or prevent other cleanup candidates."
     },
     {
-      "id": "quarantine-withdrawn-exit-first",
+      "id": "quarantine-exit-first",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/run-queue.test.ts",
-      "test": "recovers cancellation failure only after exit and seal (exit-first, queue=true)",
-      "invariant": "Unstarted withdrawn and cancelled inputs do not supersede exact execution exit/seal proof; missing or stale proof still cannot recover the Session."
+      "test": "recovers cancellation failure only after exit and seal (exit-first)",
+      "invariant": "Missing or stale execution exit/seal proof never authorizes recovery, independently of native input consumption."
     },
     {
-      "id": "quarantine-withdrawn-seal-first",
+      "id": "quarantine-seal-first",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/run-queue.test.ts",
-      "test": "recovers cancellation failure only after exit and seal (seal-first, queue=true)",
-      "invariant": "Unstarted withdrawn and cancelled inputs do not supersede exact execution exit/seal proof; missing or stale proof still cannot recover the Session."
+      "test": "recovers cancellation failure only after exit and seal (seal-first)",
+      "invariant": "Missing or stale execution exit/seal proof never authorizes recovery, independently of native input consumption."
     },
     {
-      "id": "quarantine-withdrawn-no-exit-proof",
+      "id": "quarantine-no-exit-proof",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/run-queue.test.ts",
-      "test": "recovers cancellation failure only after exit and seal (no-exit-proof, queue=true)",
-      "invariant": "Unstarted withdrawn and cancelled inputs do not supersede exact execution exit/seal proof; missing or stale proof still cannot recover the Session."
+      "test": "recovers cancellation failure only after exit and seal (no-exit-proof)",
+      "invariant": "Missing or stale execution exit/seal proof never authorizes recovery, independently of native input consumption."
     },
     {
       "id": "returned-turn-identity",
@@ -1583,6 +1429,83 @@
       "file": "test/trusted-remote-tools.test.ts",
       "test": "retains Read diagnostics through the Worker and native Harness at the full content budget",
       "invariant": "The canonical Tool result and model context retain continuation guidance after native content bounding."
+    },
+    {
+      "id": "native-input-unavailable",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "keeps failed delivery as a draft, then durably retries the same identity without a placeholder Run",
+      "invariant": "Unconfirmed delivery leaves one cloud execution and no second durable payload queue."
+    },
+    {
+      "id": "native-input-lost-confirmation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "recovers a lost confirmation and edits/promotes the same native submission across API instances",
+      "invariant": "A lost native ACK or edit response cannot duplicate input or restore obsolete text; cold history includes consumed human content."
+    },
+    {
+      "id": "native-input-stale-edit",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rejects stale edits, including moving away and back, and serializes concurrent replicas",
+      "invariant": "Native queue edits and consumption share one commit line; intervening reorder prevents stale overwrite."
+    },
+    {
+      "id": "native-input-page-revision",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "pages native inputs with an edit revision independent of model log progress",
+      "invariant": "Only pending input changes invalidate an edit/pagination revision."
+    },
+    {
+      "id": "native-input-stop-seal",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "returns only unconsumed human inputs after Stop and ordered seal, preserving edited order",
+      "invariant": "Stop restores unconsumed input after closure and rejects premature acknowledgement."
+    },
+    {
+      "id": "native-input-consumed-stop",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "never returns an already consumed human input after Stop",
+      "invariant": "Consumed native submissions cannot be restored as unsent drafts."
+    },
+    {
+      "id": "native-input-return-pages",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "keeps returned pages stable after acknowledgement by another browser",
+      "invariant": "One browser acknowledging a returned batch cannot truncate another browser restoring its pages."
+    },
+    {
+      "id": "initial-input-edit-claim",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rejects initial edit when the claim holds its Run without a lock cycle",
+      "invariant": "An initial-input mutation conflicts with a Worker claim instead of deadlocking or changing admitted input."
+    },
+    {
+      "id": "initial-input-cancel-claim",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rejects initial cancel when the claim holds its Run without a lock cycle",
+      "invariant": "An initial-input mutation conflicts with a Worker claim instead of deadlocking or changing admitted input."
+    },
+    {
+      "id": "initial-input-move-claim",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rejects initial move when the claim holds its Run without a lock cycle",
+      "invariant": "An initial-input mutation conflicts with a Worker claim instead of deadlocking or changing admitted input."
+    },
+    {
+      "id": "native-input-wake-coalescing",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-input-wakes.test.ts",
+      "test": "coalesces native commit wakes without comparing them to PG control versions",
+      "invariant": "Native/control wake namespaces cannot suppress a newer queue view or cause idle database polling."
     }
   ]
 }

@@ -195,7 +195,7 @@ beforeAll(async () => {
     .updateTable("runs")
     .set({
       state: "running",
-      sandbox_id: sandboxId,
+      worker_id: sandboxId,
       lease_id: leaseId,
       fencing_token: 1,
     })
@@ -212,7 +212,7 @@ beforeAll(async () => {
       valid_until: new Date(Date.now() + 600000),
     })
     .execute();
-  await db.updateTable("turns").set({ state: "running" }).where("id", "=", turnId).execute();
+  await db.updateTable("runs").set({ state: "running" }).where("turn_id", "=", turnId).execute();
   family = await durableFamilyFixture(db, tenantId, sessionId);
   await family.bind(1, turnId, lease);
 }, 60000);
@@ -434,7 +434,7 @@ describe("ordered Subagent admission and delivery", () => {
       .set({
         state: "running",
         started_at: new Date(),
-        sandbox_id: original.sandbox_id,
+        worker_id: original.worker_id,
         lease_id: original.lease_id,
         fencing_token: original.fencing_token,
       })

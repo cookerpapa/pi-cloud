@@ -6,46 +6,40 @@ import {
   parseUserUploads,
   type ReturnedInputsResource,
 } from "@pi-cloud/protocol";
+import {
+  readNativeHumanInputs,
+  readHumanInputOutcomes,
+} from "@pi-cloud/pi-session-postgres/durable";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 
-/** The caller owns the Session lock and has persisted the Stop request. Freeze
- * the exact queue cut; held Steers need canonical consumption reconciliation. */
-export async function withdrawStoppedInputs(
+/** Stop's native abort determines which already-admitted human inputs remain unused. */
+export async function requestInputReturn(
   tx: Transaction<Database>,
   tenantId: string,
   sessionId: string,
   requestId: string,
 ): Promise<void> {
-  await sql`
-    with withdrawn as (
-      update runs set input_return_request_id=${requestId}::uuid, ready_at=null,
-        state=case when queued_steer_id is null then 'cancelled' else state end,
-        stop_reason=case when queued_steer_id is null then 'queued_input_withdrawn' else stop_reason end,
-        settled_at=case when queued_steer_id is null then clock_timestamp() else settled_at end,
-        row_version=row_version+1,updated_at=clock_timestamp()
-      where tenant_id=${tenantId}::uuid and session_id=${sessionId}::uuid
-        and state='queued' and lease_id is null and started_at is null and input_return_request_id is null
-      returning id,turn_id,state
-    ), turns_updated as (
-      update turns t set state='cancelled', stop_reason='queued_input_withdrawn', settled_at=clock_timestamp()
-      from withdrawn w where w.state='cancelled' and t.id=w.turn_id and t.tenant_id=${tenantId}::uuid
-    ), transitions as (
-      insert into run_transitions(id,tenant_id,run_id,from_state,to_state,reason,occurred_at)
-      select gen_random_uuid(),${tenantId}::uuid,id,'queued','cancelled','queued_input_withdrawn',clock_timestamp()
-      from withdrawn where state='cancelled'
-    ) update turn_control_requests set payload=payload || '{"inputReturnPending":true}'::jsonb
-      where id=${requestId}::uuid and exists(select 1 from withdrawn)
-  `.execute(tx);
+  await tx
+    .updateTable("turn_control_requests")
+    .set({ payload: sql`payload || '{"inputReturnPending":true}'::jsonb` })
+    .where("tenant_id", "=", tenantId)
+    .where("session_id", "=", sessionId)
+    .where("id", "=", requestId)
+    .where("kind", "=", "cancel")
+    .execute();
 }
 
-/** Each Stop has immutable pages. Acknowledging a recovered batch never hides
- * later pages from another browser already reading that same Stop. */
 export async function readReturnedInputs(
   database: Kysely<Database>,
   tenantId: string,
   sessionId: string,
   page: { requestId?: string; afterPosition?: number } = {},
 ): Promise<ReturnedInputsResource> {
+  if (!database.isTransaction)
+    return database
+      .transaction()
+      .setIsolationLevel("repeatable read")
+      .execute((tx) => readReturnedInputs(tx, tenantId, sessionId, page));
   const afterPosition = page.afterPosition ?? 0;
   if (
     !Number.isSafeInteger(afterPosition) ||
@@ -53,53 +47,83 @@ export async function readReturnedInputs(
     (afterPosition > 0 && !page.requestId)
   )
     throw new ControlPlaneStoreError("invalid_request", "Invalid returned input page");
-  const { rows } = await sql<{
-    requestId: string | null;
-    pending: boolean;
-    items: {
-      turnId: string;
-      idempotencyKey: string;
-      text: string;
-      uploads: unknown;
-      mailboxPosition: number;
-    }[];
-  }>`select batch.id as "requestId",
-    exists(select 1 from runs r where r.tenant_id=s.tenant_id and r.session_id=s.id
-      and r.input_return_request_id=batch.id and r.state='queued') as pending,
-    coalesce((select json_agg(item) from (
-      select r.turn_id as "turnId",r.idempotency_key as "idempotencyKey",
-        t.input_text as text,t.input_uploads as uploads,
-        r.mailbox_position as "mailboxPosition"
-      from runs r join turns t on t.id=r.turn_id and t.tenant_id=r.tenant_id
-      where r.tenant_id=s.tenant_id and r.session_id=s.id
-        and r.input_return_request_id=batch.id and r.state='cancelled'
-        and r.stop_reason='queued_input_withdrawn' and r.mailbox_position>${afterPosition}
-      order by r.mailbox_position limit ${INPUT_QUEUE_PAGE_SIZE + 1}
-    ) item),'[]'::json) as items
-    from sessions s left join lateral (
-      select c.id from turn_control_requests c where c.tenant_id=s.tenant_id and c.session_id=s.id
-        and c.kind='cancel'
-        ${page.requestId ? sql`and c.id=${page.requestId}::uuid` : sql`and c.payload->>'inputReturnPending'='true'`}
-      order by c.created_at,c.id limit 1
-    ) batch on true
-    where s.tenant_id=${tenantId}::uuid and s.id=${sessionId}::uuid and s.pruned_at is null`.execute(
-    database,
-  );
-  const row = rows[0];
-  if (!row || (page.requestId && !row.requestId))
-    throw new ControlPlaneStoreError("not_found", "Session or input return was not found");
+  const session = await database
+    .selectFrom("sessions")
+    .select(["pi_session_id", "pi_conversation_id"])
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", sessionId)
+    .where("pruned_at", "is", null)
+    .executeTakeFirst();
+  if (!session) throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+  const stop = await database
+    .selectFrom("turn_control_requests as c")
+    .innerJoin("runs as r", "r.id", "c.target_run_id")
+    .select(["c.id", "r.id as runId", "r.state", "r.lease_id", "r.output_sealed_at"])
+    .where("c.tenant_id", "=", tenantId)
+    .where("c.session_id", "=", sessionId)
+    .where("c.kind", "=", "cancel")
+    .$if(page.requestId !== undefined, (q) => q.where("c.id", "=", page.requestId!))
+    .$if(page.requestId === undefined, (q) =>
+      q.where(sql<string>`c.payload->>'inputReturnPending'`, "=", "true"),
+    )
+    .orderBy("c.created_at")
+    .orderBy("c.id")
+    .limit(1)
+    .executeTakeFirst();
+  if (page.requestId && !stop)
+    throw new ControlPlaneStoreError("not_found", "Stopped input batch was not found");
+  const pending =
+    stop !== undefined &&
+    (!["completed", "failed", "cancelled", "timed_out"].includes(stop.state) ||
+      (stop.lease_id !== null && stop.output_sealed_at === null));
+  let items: Array<{
+    inputId: string;
+    idempotencyKey: string;
+    text: string;
+    uploads: ReturnType<typeof parseUserUploads>;
+    mailboxPosition: number;
+  }> = [];
+  if (stop && !pending && session.pi_conversation_id !== null) {
+    const scope = {
+      tenantId,
+      sessionId: session.pi_session_id,
+      conversationId: Number(session.pi_conversation_id),
+    };
+    const native = await readNativeHumanInputs(database, { ...scope, runId: stop.runId });
+    const outcomes = await readHumanInputOutcomes(database, scope, native.state);
+    items = native.state.order
+      .flatMap((id, index) => {
+        const input = native.state.inputs[id],
+          outcome = outcomes.get(id);
+        if (
+          !input ||
+          input.cancelled ||
+          !outcome ||
+          outcome.entry !== undefined ||
+          !(
+            outcome.status === "queued" ||
+            (outcome.status === "unanswered" && outcome.reason === "aborted")
+          )
+        )
+          return [];
+        return [
+          {
+            inputId: id,
+            idempotencyKey: input.idempotencyKey,
+            text: input.text,
+            uploads: parseUserUploads(input.uploads),
+            mailboxPosition: index + 1,
+          },
+        ];
+      })
+      .filter((item) => item.mailboxPosition > afterPosition);
+  }
   return parseReturnedInputsResource({
     sessionId,
-    requestId: row.requestId,
+    requestId: stop?.id ?? null,
     afterPosition,
-    pending: row.pending,
-    hasMore: !row.pending && row.items.length > INPUT_QUEUE_PAGE_SIZE,
-    items: row.pending
-      ? []
-      : row.items.slice(0, INPUT_QUEUE_PAGE_SIZE).map((item) => ({
-          ...item,
-          mailboxPosition: Number(item.mailboxPosition),
-          uploads: parseUserUploads(item.uploads),
-        })),
+    pending,
+    hasMore: !pending && items.length > INPUT_QUEUE_PAGE_SIZE,
+    items: items.slice(0, INPUT_QUEUE_PAGE_SIZE),
   });
 }

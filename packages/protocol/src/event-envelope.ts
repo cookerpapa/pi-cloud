@@ -1,6 +1,7 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createSchemaCheck } from "#schema-check";
+import { UserUploadsSchema } from "./user-upload.ts";
 import {
   OpaqueIdSchema,
   PositiveSafeIntegerSchema,
@@ -89,6 +90,23 @@ const AssistantTextDeltaEventSchema = Type.Object(
         messageId: Type.Optional(OpaqueIdSchema),
         replace: Type.Optional(Type.Boolean()),
         phase: Type.Optional(AssistantMessagePhaseSchema),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
+const HumanInputEventSchema = Type.Object(
+  {
+    ...TurnEnvelopeProperties,
+    type: Type.Literal("user.input"),
+    payload: Type.Object(
+      {
+        messageId: OpaqueIdSchema,
+        inputId: Type.String({ minLength: 1, maxLength: 128 }),
+        text: Type.String({ maxLength: 100_000 }),
+        uploads: Type.Optional(UserUploadsSchema),
       },
       { additionalProperties: false },
     ),
@@ -390,6 +408,7 @@ export const PiCloudEventSchema = Type.Union([
   ProviderHostedToolStartedEventSchema,
   ProviderHostedToolCompletedEventSchema,
   AssistantTextDeltaEventSchema,
+  HumanInputEventSchema,
   AssistantToolCallPreparingEventSchema,
   ToolStartedEventSchema,
   ToolCompletedEventSchema,
@@ -410,6 +429,7 @@ export type PiCloudEvent =
   | Static<typeof ProviderHostedToolStartedEventSchema>
   | Static<typeof ProviderHostedToolCompletedEventSchema>
   | Static<typeof AssistantTextDeltaEventSchema>
+  | Static<typeof HumanInputEventSchema>
   | Static<typeof AssistantToolCallPreparingEventSchema>
   | Static<typeof ToolStartedEventSchema>
   | Static<typeof ToolCompletedEventSchema>

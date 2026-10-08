@@ -198,7 +198,6 @@ export class ExecutionStreamProjector {
           .set({
             output_display_seq: sql`greatest(output_display_seq,${fact.event.seq})`,
             output_display_native_seq: sql`greatest(output_display_native_seq,${fact.nativeSequence})`,
-            output_projected_offset: record.offset.toString(),
           })
           .where("tenant_id", "=", fact.scope.tenantId)
           .where("id", "=", fact.scope.runId)
@@ -354,7 +353,7 @@ export class ExecutionStreamProjector {
         await transaction
           .updateTable("runs")
           .set({
-            sandbox_id: null,
+            worker_id: null,
             lease_id: null,
             fencing_token: null,
             execution_released_at: null,
@@ -365,19 +364,12 @@ export class ExecutionStreamProjector {
             output_first_topic: null,
             output_first_partition: null,
             output_first_offset: null,
-            output_projected_offset: null,
             output_publication: null,
             native_output_drained: false,
             ready_at: null,
           })
           .where("tenant_id", "=", fact.scope.tenantId)
           .where("id", "=", fact.scope.runId)
-          .execute();
-        await transaction
-          .updateTable("turns")
-          .set({ state: "queued" })
-          .where("tenant_id", "=", fact.scope.tenantId)
-          .where("id", "=", fact.scope.turnId)
           .execute();
         await transaction
           .updateTable("sessions")

@@ -28,7 +28,7 @@ import {
   type TaskQuery,
   type TaskRecord,
 } from "@earendil-works/pi-durable";
-import { PublicationNotSentError } from "@pi-cloud/protocol";
+import { PublicationNotSentError, NATIVE_HUMAN_INPUT_DOCUMENT } from "@pi-cloud/protocol";
 import { DurablePostgresProjection, materializeNativeDocument } from "./postgres-projection.ts";
 import {
   cloneNative,
@@ -52,10 +52,11 @@ type Prepared = {
   revisions: DocumentRevision[];
   resetRevisions: Set<number>;
   retiredCurrent: Set<number>;
+  inputConversations: number[];
 };
 export type DurableStorageOptions = {
   projection: DurablePostgresProjection;
-  publish(batch: DurableBatch): Promise<void>;
+  publish(batch: DurableBatch, inputConversations?: readonly number[]): Promise<void>;
   waitProjected(through: number): Promise<void>;
   assertCurrent?(): Promise<void>;
   maximumBufferedWrites?: number;
@@ -145,7 +146,7 @@ export class PublishedDurableStorage implements Storage {
       const prepared = await this.#prepare(detached);
       await this.#options.assertCurrent?.();
       try {
-        await this.#options.publish(cloneNative(prepared.batch));
+        await this.#options.publish(cloneNative(prepared.batch), prepared.inputConversations);
       } catch (error) {
         if (error instanceof PublicationNotSentError || error instanceof StorageRejected)
           throw new StorageRejected(error.message, { cause: error });
@@ -626,6 +627,7 @@ export class PublishedDurableStorage implements Storage {
     }
     const records: IndexedRecord[] = [],
       revisions: DocumentRevision[] = [];
+    const inputConversations = new Set<number>();
     const resetRevisions = new Set<number>(),
       retiredCurrent = new Set<number>(),
       liveCounts = new Map<string, number>();
@@ -636,6 +638,11 @@ export class PublishedDurableStorage implements Storage {
       const record: DocumentRecord = action.create
         ? { ...action.create, createdAt: seq, ...(action.retire ? { retiredAt: seq } : {}) }
         : { ...existing!, ...(action.retire ? { retiredAt: seq } : {}) };
+      if (
+        record.scope.kind === "conversation" &&
+        (record.kind === "pi.inbox" || record.kind === NATIVE_HUMAN_INPUT_DOCUMENT)
+      )
+        inputConversations.add(record.scope.conversationId);
       if (action.create || action.retire) {
         const address = documentAddress(record);
         let count = liveCounts.get(address);
@@ -699,6 +706,13 @@ export class PublishedDurableStorage implements Storage {
       throw new Error("Document address already has a current incarnation");
     for (const [ordinal, write] of writes.entries())
       if ("value" in write) records.push(indexNative(write.type, write.value, seq, ordinal));
-    return { batch: { seq, nextId, writes }, records, revisions, resetRevisions, retiredCurrent };
+    return {
+      batch: { seq, nextId, writes },
+      records,
+      revisions,
+      resetRevisions,
+      retiredCurrent,
+      inputConversations: [...inputConversations],
+    };
   }
 }

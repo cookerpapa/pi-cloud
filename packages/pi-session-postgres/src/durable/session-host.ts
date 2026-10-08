@@ -59,6 +59,7 @@ export type DurableSessionHandle = {
   binding: DurableRunBinding;
   storage: import("@earendil-works/pi-durable").Storage;
   recordSequence(id: number): Promise<number | undefined>;
+  committedSequence(): number;
   authority: ActiveExecutionAuthority;
   runtime<T extends ManagedNativeRuntime>(factory: () => Promise<T>): Promise<T>;
   preparePublication(prepare: (commit: DurableSessionCommit) => NativePublicationPreparation): void;
@@ -175,7 +176,7 @@ export class PostgresDurableSessionHost {
         const store = await PublishedDurableStorage.open({
           projection,
           assertCurrent: () => authority.assertCurrent(),
-          publish: async (batch) => {
+          publish: async (batch, inputConversations = []) => {
             await authority.assertCurrent();
             const active = runs.values().next().value as DurableSessionOpen | undefined;
             if (!active)
@@ -201,6 +202,18 @@ export class PostgresDurableSessionHost {
             await active.publish({
               commit,
               origins,
+              ...(inputConversations.length
+                ? {
+                    inputQueueSessions: [
+                      ...new Set(
+                        inputConversations.flatMap((id) => {
+                          const binding = bindings.get(id);
+                          return binding ? [binding.sessionId] : [];
+                        }),
+                      ),
+                    ],
+                  }
+                : {}),
               tools: preparation?.tools ?? [],
               cancellations: preparation?.cancellations ?? [],
               events: [],
@@ -238,6 +251,7 @@ export class PostgresDurableSessionHost {
         binding,
         storage,
         recordSequence: (id) => storage.recordSequence(id),
+        committedSequence: () => storage.committedSequence,
         authority: owner.authority,
         runtime: <T extends ManagedNativeRuntime>(factory: () => Promise<T>): Promise<T> => {
           if (!currentOwner.runtime) currentOwner.runtime = factory();

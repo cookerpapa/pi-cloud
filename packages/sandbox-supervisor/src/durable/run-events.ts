@@ -25,12 +25,19 @@ export class DurableRunEvents {
   readonly #compactions = new Map<number, "manual" | "threshold" | "overflow">();
   #entryThrough = 0;
   readonly #activeTools = new Set<string>();
+  readonly #humanEntries = new Set<number>();
   #assistantEntry: EntryRecord | undefined;
   lastAssistant: AssistantMessage | undefined;
   constructor(
     readonly options: {
       writerId: string;
       emit(body: PiCloudEventBody): Promise<void>;
+      humanInput?(
+        entryId: number,
+      ): Promise<
+        | { inputId: string; text: string; uploads: import("@pi-cloud/protocol").UserUpload[] }
+        | undefined
+      >;
       toolId(
         callId: string,
         assistant?: EntryRecord,
@@ -112,7 +119,9 @@ export class DurableRunEvents {
   }
   async consume(events: readonly AgentEvent[]): Promise<void> {
     for (const event of events) {
-      if (event.type === "snapshot") {
+      if (event.type === "entry_appended" && event.entry.model?.some((m) => m.role === "user")) {
+        await this.#humanEntry(event.entry);
+      } else if (event.type === "snapshot") {
         // Overflow snapshots replace dropped frames. Reconcile complete entries
         // before the current partial; never replay the pre-attachment history.
         for (const entry of event.entries) {
@@ -176,6 +185,10 @@ export class DurableRunEvents {
         if (event.entry.id <= this.#entryThrough) continue;
         this.#entryThrough = Math.max(this.#entryThrough, event.entry.id);
         for (const message of event.entry.model ?? []) {
+          if (message.role === "user") {
+            await this.#humanEntry(event.entry);
+            continue;
+          }
           if (message.role !== "assistant") continue;
           this.lastAssistant = message;
           this.#assistantEntry = event.entry;
@@ -286,5 +299,21 @@ export class DurableRunEvents {
         });
       }
     }
+  }
+
+  async #humanEntry(entry: EntryRecord): Promise<void> {
+    if (this.#humanEntries.has(entry.id)) return;
+    const input = await this.options.humanInput?.(entry.id);
+    if (!input) return;
+    this.#humanEntries.add(entry.id);
+    await this.options.emit({
+      type: "user.input",
+      payload: {
+        messageId: `entry:${entry.id}`,
+        inputId: input.inputId,
+        text: input.text,
+        ...(input.uploads.length ? { uploads: input.uploads } : {}),
+      },
+    });
   }
 }

@@ -165,6 +165,7 @@ describe("control-plane public API schemas", () => {
     ).toMatchObject({ state: "cold" });
     expect(
       parseAcceptedTurnResource({
+        kind: "run",
         runId: "50000000-0000-4000-8000-000000000010",
         turnId: "50000000-0000-4000-8000-000000000001",
         sessionId: "30000000-0000-4000-8000-000000000001",
@@ -382,12 +383,14 @@ describe("control-plane public API schemas", () => {
   it("rejects malformed public resources", () => {
     expect(() =>
       parseAcceptedTurnResource({
+        kind: "run",
         turnId: "not-a-uuid",
         state: "running",
       }),
     ).toThrow(/accepted-turn resource/);
     expect(() =>
       parseAcceptedTurnResource({
+        kind: "run",
         runId: "50000000-0000-4000-8000-000000000010",
         turnId: "50000000-0000-4000-8000-000000000001",
         sessionId: "30000000-0000-4000-8000-000000000001",

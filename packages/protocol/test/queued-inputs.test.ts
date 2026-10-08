@@ -10,11 +10,11 @@ const id = "10000000-0000-4000-8000-000000000001";
 describe("pending input protocol", () => {
   it("represents durable Steer acceptance separately from delivery and consumption", () => {
     const accepted = {
-      controlRequestId: id,
-      targetRunId: id,
-      targetTurnId: id,
-      sourceRunId: id,
-      sourceTurnId: id,
+      kind: "input",
+      inputId: "input-" + "a".repeat(64),
+      turnId: id,
+      runId: id,
+      delivery: "steer",
       sessionId: id,
       state: "accepted",
       acceptedAt: "2026-09-30T00:00:00.000Z",
@@ -24,10 +24,12 @@ describe("pending input protocol", () => {
     expect(() =>
       parseTurnSteerResource({ ...accepted, state: "delivered", deliveredAt: accepted.acceptedAt }),
     ).toThrow();
-    expect(() => parseTurnSteerResource({ ...accepted, sourceTurnId: undefined })).toThrow();
+    expect(() => parseTurnSteerResource({ ...accepted, inputId: undefined })).toThrow();
   });
-  it("accepts atomic edited steer and requires an explicit target and revision", () => {
-    expect(() => parseQueuedInputAction({ action: "send", revision: 4 })).toThrow();
+  it("accepts atomic edited steer and requires an explicit queue revision", () => {
+    expect(() =>
+      parseQueuedInputAction({ action: "send", revision: `${"a".repeat(64)}.${"b".repeat(64)}` }),
+    ).toThrow();
     expect(parseAcknowledgeReturnedInputs({ requestId: id })).toEqual({ requestId: id });
     expect(() => parseAcknowledgeReturnedInputs({ requestId: id, turnIds: [id] })).toThrow();
     expect(() => parseAcknowledgeReturnedInputs({})).toThrow();
@@ -42,25 +44,35 @@ describe("pending input protocol", () => {
       }).pending,
     ).toBe(true);
     expect(
-      parseQueuedInputAction({ action: "steer", revision: 4, targetTurnId: id, text: "updated" }),
+      parseQueuedInputAction({
+        action: "steer",
+        revision: `${"a".repeat(64)}.${"b".repeat(64)}`,
+        text: "updated",
+      }),
     ).toMatchObject({ text: "updated" });
     // Existing attachments are resolved under the queue lock, so an empty
     // caption is valid at the wire boundary.
-    expect(parseQueuedInputAction({ action: "edit", revision: 4, text: "" })).toMatchObject({
+    expect(
+      parseQueuedInputAction({
+        action: "edit",
+        revision: `${"a".repeat(64)}.${"b".repeat(64)}`,
+        text: "",
+      }),
+    ).toMatchObject({
       text: "",
     });
     for (const value of [
-      { action: "steer", revision: 4 },
+      { action: "steer", revision: `${"a".repeat(64)}.${"b".repeat(64)}`, targetTurnId: id },
       { action: "cancel", revision: -1 },
-      { action: "cancel", revision: 4, runId: id },
-      { action: "move", revision: 4, direction: "first" },
+      { action: "cancel", revision: `${"a".repeat(64)}.${"b".repeat(64)}`, runId: id },
+      { action: "move", revision: `${"a".repeat(64)}.${"b".repeat(64)}`, direction: "first" },
     ])
       expect(() => parseQueuedInputAction(value)).toThrow();
   });
 
   it("requires the original admission identity for returned input", () => {
     const input = {
-      turnId: id,
+      inputId: id,
       idempotencyKey: "accepted-input",
       text: "draft",
       uploads: [],
@@ -81,7 +93,7 @@ describe("pending input protocol", () => {
   });
   it("bounds queue snapshots and represents a promotion separately from runnable input", () => {
     const item = {
-      turnId: id,
+      inputId: id,
       runId: id,
       text: "pending",
       mailboxPosition: 1,
@@ -90,7 +102,7 @@ describe("pending input protocol", () => {
     };
     const queue = {
       sessionId: id,
-      revision: 0,
+      revision: `${"a".repeat(64)}.${"b".repeat(64)}`,
       viewVersion: "0",
       afterPosition: 0,
       hasMore: false,

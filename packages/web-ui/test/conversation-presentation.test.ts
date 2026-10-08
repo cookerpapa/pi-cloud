@@ -89,3 +89,26 @@ describe("conversation presentation rows", () => {
     expect(rows.map((row) => row.kind)).toEqual(["activity", "item", "activity"]);
   });
 });
+
+it("keeps successive human inputs between answers without reclassifying earlier answers", () => {
+  const rows = deriveConversationPresentationRows([
+    { kind: "text", key: "first", text: "First answer", firstSequence: 1, lastSequence: 1 },
+    {
+      kind: "user",
+      key: "user:second",
+      messageId: "entry:23",
+      inputId: "second",
+      text: "Now inspect files",
+      firstSequence: 2,
+      lastSequence: 2,
+    },
+    tool("read:3", 3),
+    { kind: "text", key: "second", text: "Second answer", firstSequence: 4, lastSequence: 4 },
+  ]);
+  expect(rows).toMatchObject([
+    { kind: "text", processNarration: false },
+    { kind: "user", item: { text: "Now inspect files" } },
+    { kind: "activity" },
+    { kind: "text", processNarration: false },
+  ]);
+});

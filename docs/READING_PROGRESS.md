@@ -1,0 +1,29 @@
+# Architecture reading checkpoint
+
+Updated: 2026-10-09.
+
+The walkthrough explains one component-to-component hop at a time, including
+its message, acknowledgement boundary, failure behavior and design tradeoffs.
+
+Current checkpoint: **Browser → Control Plane → PostgreSQL input acceptance**.
+Covered HTTP idempotency keys, accepted versus executed input, atomic intake,
+PG queue readiness and the difference between cloud control records and the
+native append-only log. Detailed Worker claim/lease admission has not yet been
+walked through; that is the next hop.
+
+Follow-up discussions established:
+
+- Core Session/Turn/Run fields are consolidated under ADR-0238.
+- A cloud Run can process multiple native human submissions.
+- Native follow-up waits for the final boundary; steer uses the earlier native
+  boundary. Pi Durable persists pending submissions and InboxDoc changes.
+- Pending edits append document changes; they do not rewrite committed history
+  or expose superseded drafts to the model.
+- Current UI model preference remains control state. Actual native Run model
+  configuration is persisted when applied, not for every selector click.
+- During a running Run, an unavailable Worker leaves the new draft unconfirmed
+  in the browser; success requires native Kafka durability acknowledgement.
+
+Resume with: **how an available Pi Worker selects a ready Run from PG, prevents
+another Worker taking the same execution, and obtains the physical-Session lease**.
+Explain that hop before continuing into native Session initialization or Kafka.

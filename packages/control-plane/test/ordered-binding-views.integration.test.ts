@@ -231,7 +231,6 @@ it.skipIf(!postgres || !brokers)(
       const subscription = projector.eventHub.subscribe(tenant.tenantId, session.sessionId);
       const queueService = new QueuedInputService({
         database,
-        steering: { deliverQueued: async () => {} },
       });
       const initialQueue = await queueService.list(tenant.tenantId, session.sessionId);
       await queueService.mutate(

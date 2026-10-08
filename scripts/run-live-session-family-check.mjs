@@ -223,7 +223,7 @@ const succeeded = async (promise) => {
 };
 async function owner(runId) {
   return sql(`select h.supervisor_id from runs r
-  join sandboxes h on h.id=r.sandbox_id where r.id=${quote(runId)}`);
+  join sandboxes h on h.id=r.worker_id where r.id=${quote(runId)}`);
 }
 
 try {

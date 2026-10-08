@@ -66,14 +66,14 @@ it("pages beyond 100 owned Sessions without losing PostgreSQL microseconds or te
       // Include a started cancellation; exclude queued, unstarted cancelled and pruned inputs.
       if (i === count) continue;
       await db
-        .updateTable("turns")
+        .updateTable("runs")
         .set({
           state: i === count + 1 || i === 0 ? "cancelled" : "completed",
           started_at: i === count + 1 ? null : new Date(),
           settled_at: new Date(),
           pruned_at: i === count + 2 ? new Date() : null,
         })
-        .where("id", "=", turn.turnId)
+        .where("turn_id", "=", turn.turnId)
         .execute();
     }
   }

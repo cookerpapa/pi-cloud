@@ -294,10 +294,10 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     turnA = alphaTurn.json<AcceptedTurnResource>();
     await expect(
       database
-        .selectFrom("turns")
+        .selectFrom("runs")
         .select(["thinking_level as thinkingLevel", "service_tier as serviceTier"])
         .where("tenant_id", "=", tenantA.tenantId)
-        .where("id", "=", turnA.turnId)
+        .where("turn_id", "=", turnA.turnId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ thinkingLevel: "medium", serviceTier: "fast" });
     const activeModelChange = await http.inject({
@@ -419,7 +419,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     }
   });
 
-  it("keeps project quotas separate from an unbounded durable Run mailbox", async () => {
+  it("keeps project quotas separate from unconfirmed input delivery", async () => {
     const projectLimit = await http.inject({
       method: "POST",
       url: "/v1/projects",
@@ -450,13 +450,13 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       },
       payload: { prompt: "second unsettled turn" },
     });
-    expect(newTurn.statusCode).toBe(202);
-    expect(newTurn.json()).toMatchObject({ mailboxPosition: 2, replayed: false });
+    expect(newTurn.statusCode).toBe(503);
+    expect(newTurn.json()).toMatchObject({ error: { code: "input_delivery_unavailable" } });
   });
 
   it("switches only an idle conversation default and snapshots the next Turn", async () => {
     await database
-      .updateTable("turns")
+      .updateTable("runs")
       .set({ state: "completed", settled_at: NOW })
       .where("tenant_id", "=", tenantA.tenantId)
       .where("session_id", "=", sessionA.sessionId)
@@ -492,7 +492,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     });
     expect(next.statusCode).toBe(202);
     const persisted = await database
-      .selectFrom("turns")
+      .selectFrom("runs")
       .select([
         "provider",
         "model_id as modelId",
@@ -500,7 +500,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
         "service_tier as serviceTier",
       ])
       .where("tenant_id", "=", tenantA.tenantId)
-      .where("id", "=", next.json<AcceptedTurnResource>().turnId)
+      .where("turn_id", "=", next.json<AcceptedTurnResource>().turnId)
       .executeTakeFirstOrThrow();
     expect(persisted).toEqual({
       provider: "deepseek",
@@ -530,7 +530,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     expect(read.statusCode).toBe(200);
     const queue = read.json();
     expect(queue.items.length).toBeGreaterThan(0);
-    const target = `${path}/${queue.items[0].turnId}/actions`;
+    const target = `${path}/${queue.items[0].inputId}/actions`;
     const payload = { action: "edit", revision: queue.revision, text: "edited pending input" };
     expect(
       (

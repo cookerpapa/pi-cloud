@@ -126,7 +126,6 @@ beforeAll(async () => {
     stop_reason: "stop",
   };
   await source.updateTable("runs").set(terminal).where("id", "=", scope.runId).execute();
-  await source.updateTable("turns").set(terminal).where("id", "=", scope.turnId).execute();
   await source
     .updateTable("sessions")
     .set({ state: "idle" })
@@ -155,7 +154,7 @@ beforeAll(async () => {
   await source
     .updateTable("runs")
     .set({
-      sandbox_id: oldWorker.workerId,
+      worker_id: oldWorker.workerId,
       lease_id: leaseId,
       fencing_token: 1,
       output_seal_id: randomUUID(),
@@ -363,21 +362,14 @@ it("restores after source loss, preserves exact native history/images and admits
   expect(
     await target
       .selectFrom("runs")
-      .select([
-        "lease_id",
-        "sandbox_id",
-        "output_seal_id",
-        "output_first_topic",
-        "output_projected_offset",
-      ])
+      .select(["lease_id", "worker_id", "output_seal_id", "output_first_topic"])
       .where("id", "=", scope.runId)
       .executeTakeFirstOrThrow(),
   ).toEqual({
     lease_id: null,
-    sandbox_id: null,
+    worker_id: null,
     output_seal_id: null,
     output_first_topic: null,
-    output_projected_offset: null,
   });
   for (const table of [
     "session_leases",

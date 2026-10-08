@@ -8,7 +8,6 @@ import {
   type EventAckMessage,
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
-  type SteerTurnCommandMessage,
   type SupervisorHeartbeatAckMessage,
   type SupervisorHeartbeatMessage,
 } from "@pi-cloud/protocol";
@@ -26,12 +25,6 @@ export interface SupervisorTurnRunner {
     publishEvent: PiEventPublisher,
     signal: AbortSignal,
   ): Promise<PiTurnResult>;
-  steer?(
-    targetRunId: string,
-    text: string,
-    inputId: string,
-    uploads?: import("@pi-cloud/protocol").UserUpload[],
-  ): Promise<void>;
 }
 
 export type PreparedTurnExecution = {
@@ -66,16 +59,9 @@ export type PreparedTurnCancellation = {
   releaseBeforeStart(): void;
 };
 
-export type PreparedTurnSteer = {
-  ack: CommandAckMessage;
-  run(): Promise<void>;
-  releaseBeforeStart(): void;
-};
-
 export type RevokedSupervisorAssignments = {
   releasedPreparations: number;
   releasedCancellations: number;
-  releasedSteers: number;
   revokedExecutions: number;
 };
 
@@ -113,15 +99,6 @@ type Cancellation = {
   runPromise?: Promise<SupervisorTurnCancellationResult>;
 };
 
-type SteerState = "prepared" | "running" | "completed" | "failed";
-
-type Steer = {
-  command: SteerTurnCommandMessage;
-  assignment: Assignment;
-  state: SteerState;
-  runPromise?: Promise<void>;
-};
-
 export class AgentRunSupervisorError extends Error {
   readonly code: string;
 
@@ -151,10 +128,6 @@ function sameCancellationIdentity(
   return isDeepStrictEqual(left.payload, right.payload);
 }
 
-function sameSteerIdentity(left: SteerTurnCommandMessage, right: SteerTurnCommandMessage): boolean {
-  return isDeepStrictEqual(left.payload, right.payload);
-}
-
 export class AgentRunSupervisor {
   readonly #runner: SupervisorTurnRunner;
   readonly #maxConcurrentSessions: number | null;
@@ -166,7 +139,6 @@ export class AgentRunSupervisor {
   readonly #currentBySession = new Map<string, Assignment>();
   readonly #byRun = new Map<string, Assignment>();
   readonly #cancellationsByRequest = new Map<string, Cancellation>();
-  readonly #steersByRequest = new Map<string, Steer>();
   readonly #highestEpochByFamily = new Map<
     string,
     { epoch: number; leaseId: string; writerId: string; lastRunId: string }
@@ -198,7 +170,6 @@ export class AgentRunSupervisor {
     return {
       runs: this.#byRun.size,
       cancellations: this.#cancellationsByRequest.size,
-      steers: this.#steersByRequest.size,
       families: this.#highestEpochByFamily.size,
     };
   }
@@ -227,8 +198,6 @@ export class AgentRunSupervisor {
     }
     for (const [key, control] of this.#cancellationsByRequest)
       if (removed.has(control.assignment)) this.#cancellationsByRequest.delete(key);
-    for (const [key, control] of this.#steersByRequest)
-      if (removed.has(control.assignment)) this.#steersByRequest.delete(key);
     const retainedFamilies = new Set(
       [...this.#byRun.values()].map(
         ({ command }) => `${command.payload.tenantId}:${command.payload.piSession.id}`,
@@ -264,13 +233,7 @@ export class AgentRunSupervisor {
   revokeAllAssignments(): RevokedSupervisorAssignments {
     let releasedPreparations = 0;
     let releasedCancellations = 0;
-    let releasedSteers = 0;
     let revokedExecutions = 0;
-    for (const steer of this.#steersByRequest.values()) {
-      if (steer.state !== "prepared") continue;
-      this.#releaseSteerBeforeStart(steer);
-      releasedSteers += 1;
-    }
     for (const cancellation of this.#cancellationsByRequest.values()) {
       if (cancellation.state !== "prepared") continue;
       this.#releaseCancellationBeforeStart(cancellation);
@@ -287,7 +250,7 @@ export class AgentRunSupervisor {
         revokedExecutions += 1;
       }
     }
-    return { releasedPreparations, releasedCancellations, releasedSteers, revokedExecutions };
+    return { releasedPreparations, releasedCancellations, revokedExecutions };
   }
 
   createHeartbeat(
@@ -550,68 +513,6 @@ export class AgentRunSupervisor {
     return this.#preparedCancellation(cancellation, "accepted");
   }
 
-  prepareSteer(value: unknown): PreparedTurnSteer {
-    const parsed = parseControlToSupervisorMessage(value);
-    if (parsed.type !== "command.turn.steer") {
-      throw new AgentRunSupervisorError(
-        "unsupported",
-        "Agent runner only prepares turn.steer commands on this path",
-      );
-    }
-    const command = parsed;
-    const duplicate = this.#steersByRequest.get(command.payload.controlRequestId);
-    if (duplicate !== undefined) {
-      if (!sameSteerIdentity(duplicate.command, command)) {
-        return this.#rejectedSteer(
-          command,
-          "invalid_command",
-          "Steer command identity changed",
-          false,
-        );
-      }
-      return this.#preparedSteer(duplicate, "duplicate");
-    }
-
-    const assignment = this.#byRun.get(command.payload.targetRunId);
-    const current = this.#currentBySession.get(command.payload.sessionId);
-    if (
-      assignment === undefined ||
-      current !== assignment ||
-      assignment.state !== "running" ||
-      assignment.runPromise === undefined
-    ) {
-      return this.#rejectedSteer(
-        command,
-        "invalid_state",
-        "Target execution is not running",
-        false,
-      );
-    }
-    const target = assignment.command.payload;
-    if (
-      command.payload.runId !== command.payload.targetRunId ||
-      command.payload.tenantId !== target.tenantId ||
-      command.payload.projectId !== target.projectId ||
-      command.payload.workspaceId !== target.workspaceId ||
-      command.payload.sessionId !== target.sessionId ||
-      command.payload.runId !== target.runId ||
-      command.payload.turnId !== target.turnId ||
-      command.payload.agentId !== target.agentId ||
-      command.payload.executionReference !== target.executionReference
-    ) {
-      return this.#rejectedSteer(
-        command,
-        "invalid_command",
-        "Steer identity does not match its target assignment",
-        false,
-      );
-    }
-
-    const steer: Steer = { command, assignment, state: "prepared" };
-    this.#steersByRequest.set(command.payload.controlRequestId, steer);
-    return this.#preparedSteer(steer, "accepted");
-  }
-
   #prepared(assignment: Assignment, status: "accepted" | "duplicate"): PreparedTurnExecution {
     return {
       ack: this.#ack(assignment.command, { status }),
@@ -662,29 +563,8 @@ export class AgentRunSupervisor {
     };
   }
 
-  #preparedSteer(steer: Steer, status: "accepted" | "duplicate"): PreparedTurnSteer {
-    return {
-      ack: this.#ack(steer.command, { status }),
-      run: () => this.#runSteer(steer),
-      releaseBeforeStart: () => this.#releaseSteerBeforeStart(steer),
-    };
-  }
-
-  #rejectedSteer(
-    command: SteerTurnCommandMessage,
-    code: "stale_session_lease" | "invalid_state" | "capacity" | "invalid_command" | "unsupported",
-    message: string,
-    retryable: boolean,
-  ): PreparedTurnSteer {
-    return {
-      ack: this.#ack(command, { status: "rejected", code, message, retryable }),
-      run: () => Promise.reject(new AgentRunSupervisorError(code, "Rejected steer cannot run")),
-      releaseBeforeStart: () => undefined,
-    };
-  }
-
   #ack(
-    command: ExecuteTurnCommandMessage | CancelTurnCommandMessage | SteerTurnCommandMessage,
+    command: ExecuteTurnCommandMessage | CancelTurnCommandMessage,
     result:
       | { status: "accepted" | "duplicate" }
       | {
@@ -903,47 +783,6 @@ export class AgentRunSupervisor {
     return cancellation.runPromise;
   }
 
-  #runSteer(steer: Steer): Promise<void> {
-    if (steer.runPromise !== undefined) return steer.runPromise;
-    const assignment = steer.assignment;
-    if (
-      steer.state !== "prepared" ||
-      assignment.state !== "running" ||
-      assignment.runPromise === undefined ||
-      this.#currentBySession.get(assignment.command.payload.sessionId) !== assignment
-    ) {
-      return Promise.reject(
-        new AgentRunSupervisorError("invalid_state", "Steer target is no longer running"),
-      );
-    }
-    steer.state = "running";
-    const deliver = this.#runner.steer;
-    if (deliver === undefined) {
-      steer.state = "failed";
-      return Promise.reject(
-        new AgentRunSupervisorError("unsupported", "Supervisor Runner does not support Pi steer"),
-      );
-    }
-    steer.runPromise = deliver
-      .call(
-        this.#runner,
-        steer.command.payload.targetRunId,
-        steer.command.payload.text,
-        steer.command.payload.controlRequestId,
-        steer.command.payload.uploads,
-      )
-      .then(
-        () => {
-          steer.state = "completed";
-        },
-        (error: unknown) => {
-          steer.state = "failed";
-          throw error;
-        },
-      );
-    return steer.runPromise;
-  }
-
   #releaseBeforeStart(assignment: Assignment): void {
     if (assignment.state !== "prepared") return;
     assignment.publishEvent = undefined;
@@ -958,11 +797,5 @@ export class AgentRunSupervisor {
     if (cancellation.state !== "prepared") return;
     this.#cancellationsByRequest.delete(cancellation.command.payload.controlRequestId);
     cancellation.state = "failed";
-  }
-
-  #releaseSteerBeforeStart(steer: Steer): void {
-    if (steer.state !== "prepared") return;
-    this.#steersByRequest.delete(steer.command.payload.controlRequestId);
-    steer.state = "failed";
   }
 }

@@ -2,12 +2,7 @@ import { readDurableRunUsage } from "@pi-cloud/pi-session-postgres/durable";
 import { resourceLimit } from "@pi-cloud/domain";
 import type { PublicationAvailability } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
-import {
-  transitionSession,
-  transitionTurn,
-  type SessionState,
-  type TurnState,
-} from "@pi-cloud/domain";
+import { transitionSession, type SessionState } from "@pi-cloud/domain";
 import {
   parseCloudToolCapabilitySnapshot,
   parseEnvironmentRuntimeSnapshot,
@@ -241,7 +236,6 @@ type ClaimedTurn = {
 type LifecycleRows = {
   currentLeaseId: string | null;
   recoveryRequestedAt: Date | null;
-  turnState: TurnState;
   sessionState: SessionState;
   runState: import("@pi-cloud/domain").RunState;
   runFailureCode: string | null;
@@ -503,7 +497,7 @@ export class RunExecutor {
         };
       if (
         rows.runState === "cancel_requested" &&
-        rows.turnState === "cancelling" &&
+        rows.runState === "cancel_requested" &&
         rows.sessionState === "cancelling"
       ) {
         return {
@@ -515,7 +509,7 @@ export class RunExecutor {
       }
       if (
         rows.runState === "cancelled" &&
-        rows.turnState === "cancelled" &&
+        rows.runState === "cancelled" &&
         rows.sessionState === "idle"
       ) {
         return {
@@ -527,7 +521,7 @@ export class RunExecutor {
       }
       if (
         rows.runState === "failed" &&
-        rows.turnState === "failed" &&
+        rows.runState === "failed" &&
         rows.sessionState === "failed"
       ) {
         return {
@@ -609,8 +603,6 @@ export class RunExecutor {
         // These code-owned states are also the partial ready-index predicate.
         // Parameters prevent a generic prepared plan from proving that match.
         .where(sql<boolean>`candidate.state = 'queued' and candidate.ready_at is not null`)
-        .where("candidate.queued_steer_id", "is", null)
-        .where("candidate.input_return_request_id", "is", null)
         .where("candidate_session.state", "in", ["cold", "idle"])
         .where("candidate_session.pi_conversation_id", "is not", null)
         .where(this.#familyAdmission("candidate_session", admission))
@@ -625,7 +617,7 @@ export class RunExecutor {
           ),
         )
         .orderBy("candidate.available_at", "asc")
-        .orderBy("candidate.queued_at", "asc")
+        .orderBy("candidate.created_at", "asc")
         .orderBy("candidate.id", "asc")
         .limit(1)
         .forUpdate("candidate")
@@ -638,12 +630,6 @@ export class RunExecutor {
           () => candidate,
         )
         .selectFrom("claim_candidate as run")
-        .innerJoin("turns as turn", (join) =>
-          join
-            .onRef("turn.tenant_id", "=", "run.tenant_id")
-            .onRef("turn.session_id", "=", "run.session_id")
-            .onRef("turn.id", "=", "run.turn_id"),
-        )
         .innerJoin("sessions as session_row", (join) =>
           join
             .onRef("session_row.tenant_id", "=", "run.tenant_id")
@@ -661,17 +647,15 @@ export class RunExecutor {
           "run.project_id as environmentProjectId",
           "run.idempotency_key as idempotencyKey",
           "run.mailbox_position as mailboxPosition",
-          "turn.id as turnId",
-          "turn.state as turnState",
-          "turn.input_kind as inputKind",
+          "run.turn_id as turnId",
           sql<string | null>`null`.as("inputText"),
-          "turn.model_profile_id as modelProfileId",
-          "turn.provider as provider",
-          "turn.model_id as modelId",
-          "turn.thinking_level as thinkingLevel",
-          "turn.service_tier as serviceTier",
-          "turn.credential_binding_id as credentialBindingId",
-          "turn.credential_binding_version as credentialBindingVersion",
+          "run.model_profile_id as modelProfileId",
+          "run.provider as provider",
+          "run.model_id as modelId",
+          "run.thinking_level as thinkingLevel",
+          "run.service_tier as serviceTier",
+          "run.credential_binding_id as credentialBindingId",
+          "run.credential_binding_version as credentialBindingVersion",
           "session_row.id as sessionId",
           "session_row.pi_session_id as piSessionId",
           "session_row.pi_conversation_id as piConversationId",
@@ -693,7 +677,7 @@ export class RunExecutor {
           "run.working_directory as workingDirectory",
           "run.compute_session_id as computeSessionId",
           "run.sandbox_profile_key as sandboxProfileKey",
-          "run.queued_at as runQueuedAt",
+          "run.created_at as runQueuedAt",
           "run.state as runState",
           "run.lease_id as currentLeaseId",
           "run.recovery_requested_at as recoveryRequestedAt",
@@ -704,20 +688,20 @@ export class RunExecutor {
         .whereRef("session_row.project_id", "=", "run.project_id")
         .whereRef("workspace_row.project_id", "=", "run.project_id")
         .whereRef("session_row.agent_revision_id", "=", "run.agent_revision_id")
-        .where("turn.state", "=", "queued")
+        .where("run.state", "=", "queued")
         .executeTakeFirst();
 
       mark("candidate_context");
       if (!context) return undefined;
 
       // The candidate Run lock fences pending-input edits. Its statement's
-      // snapshot may predate a just-committed edit, so read the mutable Turn
+      // snapshot may predate a just-committed edit, so read the mutable Run input
       // text in a new READ COMMITTED statement before freezing execution.
       const input = await transaction
-        .selectFrom("turns")
+        .selectFrom("runs")
         .select(["input_text", "input_uploads"])
         .where("tenant_id", "=", context.tenantId)
-        .where("id", "=", context.turnId)
+        .where("id", "=", context.runId)
         .where("state", "=", "queued")
         .executeTakeFirstOrThrow();
       context.inputText = input.input_text;
@@ -775,7 +759,7 @@ export class RunExecutor {
         row.piSessionId,
       );
 
-      if (row.inputKind !== "prompt" || row.inputText === null) {
+      if (row.inputText === null) {
         throw new RunExecutorInvariantError(
           "The v1 turn dispatcher only accepts durable prompt turns",
         );
@@ -900,13 +884,13 @@ export class RunExecutor {
       const candidate = committedCandidate;
       const recorded = await this.#database
         .selectFrom("runs as a")
-        .select(["a.output_publication", "a.sandbox_id"])
+        .select(["a.output_publication", "a.worker_id"])
         .where("a.id", "=", candidate.request.runId)
         .where("a.tenant_id", "=", candidate.request.tenantId)
         .where("a.state", "=", "running")
         .executeTakeFirst();
       if (
-        recorded?.sandbox_id !== this.#workerId ||
+        recorded?.worker_id !== this.#workerId ||
         !isDeepStrictEqual(recorded.output_publication, candidate.admission!.publication)
       )
         throw error;
@@ -960,27 +944,22 @@ export class RunExecutor {
     if (!isDeepStrictEqual(claim.admission.publication, expected))
       throw new RunExecutorInvariantError("Admission publication does not match its Run");
     const result = await sql<{
-      turns: number;
       sessions: number;
       runs: number;
       transitions: number;
-    }>`with "started_turn" as (
-      update turns set state='running',started_at=coalesce(started_at,${now})
-        where tenant_id=${r.tenantId}::uuid and id=${r.turnId}::uuid and state='queued'
-        returning id
-    ), "started_session" as (
+    }>`with "started_session" as (
       update sessions set state='running',row_version=row_version+1,
         updated_at=${now},last_active_at=${now}
         where tenant_id=${r.tenantId}::uuid and id=${r.sessionId}::uuid and state in ('cold','idle')
         returning id
     ), started_run as (
       update runs set state='running',ready_at=null,started_at=coalesce(started_at,${now}), recovery_requested_at=null,
-        updated_at=${now},last_heartbeat_at=${now},row_version=row_version+1,
-        sandbox_id=${this.#workerId}::uuid,lease_id=${ref.leaseId}::uuid,
+        updated_at=${now},row_version=row_version+1,
+        worker_id=${this.#workerId}::uuid,lease_id=${ref.leaseId}::uuid,
         fencing_token=${ref.fencingToken},last_event_seq=${Math.max(0, Number(r.nextEventSeq) - 1)},
         output_publication=${JSON.stringify(claim.admission.publication)}::jsonb,native_output_drained=false
         where tenant_id=${r.tenantId}::uuid and id=${r.runId}::uuid
-          and state='queued' and ready_at is not null and queued_steer_id is null and input_return_request_id is null
+          and state='queued' and ready_at is not null
           and lease_id is null and row_version=${runVersion}::bigint
           and exists(select 1 from session_leases l where l.lease_id=${ref.leaseId}::uuid
             and l.tenant_id=${r.tenantId}::uuid and l.pi_session_id=${r.piSessionId}
@@ -994,7 +973,7 @@ export class RunExecutor {
           'queued','running','execution_admitted',${now} from started_run
         returning id
     )
-    select (select count(*)::int from "started_turn") as turns,
+    select
       (select count(*)::int from "started_session") as sessions,
       (select count(*)::int from started_run) as runs,
       (select count(*)::int from recorded_transition) as transitions`.execute(transaction);
@@ -1026,14 +1005,9 @@ export class RunExecutor {
         return "recovering";
       // Cancellation may win after admission but before the local Runner exists.
       // Its control request owns settlement; don't overwrite it with success.
-      if (rows.runState === "cancel_requested" && rows.turnState === "cancelling")
-        return "cancellation_pending";
-      if (rows.runState === "cancelled" && rows.turnState === "cancelled") return "cancelled";
-      if (
-        rows.runState !== "running" ||
-        rows.turnState !== "running" ||
-        rows.sessionState !== "running"
-      ) {
+      if (rows.runState === "cancel_requested") return "cancellation_pending";
+      if (rows.runState === "cancelled") return "cancelled";
+      if (rows.runState !== "running" || rows.sessionState !== "running") {
         throw new RunExecutorInvariantError("Only a running Run can complete");
       }
 
@@ -1060,18 +1034,6 @@ export class RunExecutor {
         },
       );
 
-      const turnUpdate = transaction
-        .updateTable("turns")
-        .set({
-          state: transitionTurn(rows.turnState, "completed"),
-          stop_reason: result.stopReason,
-          settled_at: now,
-        })
-        .where("tenant_id", "=", claim.request.tenantId)
-        .where("id", "=", claim.request.turnId)
-        .where("state", "=", rows.turnState)
-        .returning("id");
-
       const sessionUpdate = transaction
         .updateTable("sessions")
         .set({
@@ -1085,14 +1047,9 @@ export class RunExecutor {
         .where("state", "=", rows.sessionState)
         .returning("id");
       const updated = await transaction
-        .with("completed_turn", () => turnUpdate)
         .with("settled_session", () => sessionUpdate)
-        .selectNoFrom([
-          sql<number>`(select count(*)::int from completed_turn)`.as("turns"),
-          sql<number>`(select count(*)::int from settled_session)`.as("sessions"),
-        ])
+        .selectNoFrom([sql<number>`(select count(*)::int from settled_session)`.as("sessions")])
         .executeTakeFirstOrThrow();
-      expectOne(BigInt(updated.turns), "completing a turn");
       expectOne(BigInt(updated.sessions), "settling a session");
       await requestExecutionStreamSeal(transaction, {
         tenantId: claim.request.tenantId,
@@ -1161,7 +1118,7 @@ export class RunExecutor {
     const now = safeDate(this.#clock);
     const cancelled = await retryTransaction(this.#database, async (tx) => {
       const rows = await this.#lockLifecycleRows(tx, claim);
-      if (rows.runState !== "running" || rows.turnState !== "running") return false;
+      if (rows.runState !== "running") return false;
       await this.#executionAuthority.assertCurrentOrExpired(tx, claim.request, grant);
       // Native ownership propagates Esc before every child gets an individual
       // management RPC. The already-persisted ancestor Stop authorizes this
@@ -1191,16 +1148,6 @@ export class RunExecutor {
         now,
         stopReason: "cancelled",
       });
-      await tx
-        .updateTable("turns")
-        .set({
-          state: transitionTurn(transitionTurn(rows.turnState, "cancelling"), "cancelled"),
-          stop_reason: "cancelled",
-          settled_at: now,
-        })
-        .where("tenant_id", "=", identity.tenantId)
-        .where("id", "=", claim.request.turnId)
-        .execute();
       await tx
         .updateTable("sessions")
         .set({
@@ -1253,7 +1200,7 @@ export class RunExecutor {
     await retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
 
-      if (rows.turnState !== "running") {
+      if (rows.runState !== "running") {
         throw new RunExecutorInvariantError(
           "Turn lifecycle does not match the reported execution phase",
         );
@@ -1322,20 +1269,6 @@ export class RunExecutor {
         },
       );
 
-      const turnUpdate = await transaction
-        .updateTable("turns")
-        .set({
-          state: transitionTurn(rows.turnState, "failed"),
-          failure_code: failure.code,
-          failure_message: failure.safeMessage,
-          failure_retryable: failure.retryable,
-          settled_at: now,
-        })
-        .where("tenant_id", "=", claim.request.tenantId)
-        .where("id", "=", claim.request.turnId)
-        .where("state", "=", rows.turnState)
-        .executeTakeFirst();
-      expectOne(turnUpdate.numUpdatedRows, "failing a turn");
       await requestExecutionStreamSeal(transaction, {
         tenantId: claim.request.tenantId,
         sessionId: claim.request.sessionId,
@@ -1421,19 +1354,12 @@ export class RunExecutor {
   ): Promise<LifecycleRows> {
     const row = await transaction
       .selectFrom("runs as run")
-      .innerJoin("turns as turn", (join) =>
-        join
-          .onRef("turn.tenant_id", "=", "run.tenant_id")
-          .onRef("turn.session_id", "=", "run.session_id")
-          .onRef("turn.id", "=", "run.turn_id"),
-      )
       .innerJoin("sessions as session_row", (join) =>
         join
           .onRef("session_row.tenant_id", "=", "run.tenant_id")
           .onRef("session_row.id", "=", "run.session_id"),
       )
       .select([
-        "turn.state as turnState",
         "session_row.state as sessionState",
         "run.state as runState",
         "run.lease_id as currentLeaseId",
@@ -1442,10 +1368,10 @@ export class RunExecutor {
         "run.row_version as runVersion",
       ])
       .where("run.tenant_id", "=", claim.request.tenantId)
-      .where("turn.id", "=", claim.request.turnId)
+      .where("run.turn_id", "=", claim.request.turnId)
       .where("session_row.id", "=", claim.request.sessionId)
       .where("run.id", "=", claim.request.runId)
-      .forNoKeyUpdate(["turn", "session_row", "run"])
+      .forNoKeyUpdate(["session_row", "run"])
       .executeTakeFirst();
 
     if (!row) {

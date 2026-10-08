@@ -21,7 +21,13 @@ export class PostgresDurableCommitProjector {
         // Do not acquire this Run later while holding the physical Session lock.
         const run = await tx
           .selectFrom("runs")
-          .select(["lease_id", "output_seal_offset"])
+          .select([
+            "lease_id",
+            "output_seal_offset",
+            "output_first_topic",
+            "output_first_partition",
+            "output_first_offset",
+          ])
           .where("tenant_id", "=", fact.scope.tenantId)
           .where("id", "=", fact.scope.runId)
           .forNoKeyUpdate()
@@ -49,18 +55,24 @@ export class PostgresDurableCommitProjector {
           sessionId: fact.scope.piSessionId,
         });
         await projection.applyIn(tx, fact.commit as unknown as StoredDurableBatch, fact.origins);
-        await tx
-          .updateTable("runs")
-          .set({
-            output_first_topic: sql`coalesce(output_first_topic,${position.topic})`,
-            output_first_partition: sql`coalesce(output_first_partition,${position.partition})`,
-            output_first_offset: sql`coalesce(output_first_offset,${position.offset.toString()}::bigint)`,
-            output_projected_offset: position.offset.toString(),
-          })
-          .where("tenant_id", "=", fact.scope.tenantId)
-          .where("id", "=", fact.scope.runId)
-          .where("lease_id", "=", fact.scope.writerId)
-          .execute();
+        if (
+          run.output_first_offset !== null &&
+          (run.output_first_topic !== position.topic ||
+            run.output_first_partition !== position.partition)
+        )
+          throw new Error("Native Run publication moved between Kafka streams");
+        if (run.output_first_offset === null)
+          await tx
+            .updateTable("runs")
+            .set({
+              output_first_topic: position.topic,
+              output_first_partition: position.partition,
+              output_first_offset: position.offset.toString(),
+            })
+            .where("tenant_id", "=", fact.scope.tenantId)
+            .where("id", "=", fact.scope.runId)
+            .where("lease_id", "=", fact.scope.writerId)
+            .execute();
         await tx
           .insertInto("accepted_fact_projection_offsets")
           .values({

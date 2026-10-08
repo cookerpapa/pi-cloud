@@ -1,7 +1,7 @@
 # Architecture
 
 PiCloud is a private/self-hosted multi-tenant Coding Agent. Pi Durable 1.0.0 owns the Harness,
-native tasks, model context, input placement, Tool selection and Compaction. PiCloud owns durable input,
+native tasks, model context, input placement, Tool selection and Compaction. PiCloud owns cloud intake confirmation,
 execution authority, distributed placement, output projection and Cube lifetimes.
 CubeSandbox KVM is the only untrusted execution backend.
 
@@ -150,52 +150,49 @@ used to construct Worker model context (ADR-0205).
 
 ## Durable input and scheduling
 
-PostgreSQL is the sole Run and execution authority. The public API authenticates
-the user, persists input/Turn/Run together and deduplicates admission by Session
-and idempotency key. Follow-up remains a queued input. Both direct human Steer
-and queue promotion retain their source Turn/Run in that queue and reference it
-from `turn_control_requests`. Neither becomes a native Pi user Entry until consumed.
-Steer uses the Worker HTTP management endpoint; WebSocket carries registration
-and heartbeats, not an alternative execution or Steer transport.
+PostgreSQL owns cloud execution admission and leases. The two core business
+records are `sessions` (conversation configuration and cloud state) and `runs`
+(initial input, frozen execution configuration and one execution lifecycle).
+The public root `turnId` remains in the Run as a presentation/provenance identity;
+there is no `turns` table or second lifecycle. Session leases, control receipts,
+native log/indexes and Workspace ownership still have their own bounded roles
+([ADR-0238](adr/0238-native-input-queue-and-run-record.md), schema 183).
 
-The Web composer queues a new Turn with Enter while a Run is active; its Steer
-button instead sends the current draft to that Run. Product queued Turns start
-only after predecessor closure and Lane readiness. Native in-Run steer is
-consumed after the current model response/Tool batch, before the next model
-request. Native follow-up is consumed when that Agent would otherwise stop;
-internal verification reminders and Agent messages use this path. These two
-follow-up lifecycles are distinct. Pending ordinary-conversation inputs can be
-edited, reordered by adjacent swaps, individually removed or promoted to the
-active Run. Input text/order freeze at admission. Model/environment/credential
-snapshots remain frozen at acceptance. Started inputs and consumed steer cannot
-be recalled. Stop interrupts the active Run and withdraws its current unowned
-queued inputs for return to the composer (ADR-0229).
+For an idle Session, the API atomically persists the initial input and Run before
+returning `kind:run`. For an active Run, Enter sends native follow-up; Steer sends
+native steer through the Worker's authenticated HTTP management endpoint.
+`kind:input` success means that Pi Storage received its existing RF3 Kafka commit
+acknowledgement. It does not mean consumed or answered. No placeholder Run,
+PG input-payload queue or background redelivery reconciler is created. When the
+Worker cannot confirm acceptance, the browser keeps the draft and idempotency
+key for retry. WebSocket still carries registration and heartbeats.
 
-Queue mutations use the product Session revision and a bounded idempotency
-receipt in `turn_control_requests` (`kind=queue`). They acquire affected queued
-Run/Turn locks with NOWAIT while holding the Session lock, so a concurrent Worker
-claim returns a conflict without a lock cycle. PostgreSQL's deferrable mailbox
-uniqueness permits atomic adjacent swaps. Original acceptance fingerprints remain
-unchanged. Unstarted cancelled rows are retained as audit/idempotency tombstones,
-outside conversation history. Pending inputs have no per-Session count quota (ADR-0215).
-Initial and explicit queue reads return edit revision, view version, active input
-and pending order in one SQL snapshot; steady presentation uses SSE.
+Durable `submission` records and public `pi.inbox` own pending membership and
+consumption. Follow-up is consumed when the Agent would otherwise finish;
+steer enters at the native interruption boundary before another model request.
+Both remain inside the same cloud Run. Code-owned `pi-cloud.human-inputs`
+documents retain original text, upload references, initial request fingerprints
+and mutation receipts, keyed by Run. Native `history:latest` preserves this
+metadata across navigation; a fork starts with fresh metadata. It is not an
+independent execution queue. Pre-submission metadata alone is not acceptance.
 
-Promotion holds the source out of readiness and creates a control request in the
-same transaction. Direct Steer atomically accepts and holds a new source at the
-next mailbox position, inheriting the target's frozen execution settings. Its
-HTTP 202 response means accepted, not delivered or consumed; the browser shows
-the held input and preserves the acceptance key on retry (ADR-0203).
-The control payload references the held Turn text and uploads. A bounded reconciler
-uses the existing HTTP steer transport and stable native input identity; no PG
-transaction spans that RPC. Two local deliveries may run concurrently, while
-Steer inputs to the same Run retain acceptance order through acknowledgements.
-HTTP success records `acknowledged`, never `completed`; acknowledged sources
-remain held without periodic redelivery to that Worker.
-Only a canonical user Entry confirms consumption and retires the queued source.
-A projected target seal plus absent Entry restores the input to its queue position;
-an HTTP error alone cannot restore it. This is input reconciliation, not another
-Run scheduler or a mechanism to replay arbitrary Tools.
+The Worker serializes human input through its existing input line. A stable
+Session/idempotency-derived native request ID resolves lost responses, including
+after later edits or a Worker replacement. Intake saves metadata, calls public
+`Conversation.submit()`, then associates its native submission ID before replying.
+Edits, adjacent moves, individual cancellation and promotion use one public
+`Conversation.commit()` against InboxDoc and metadata. Native consumption and
+queue edits therefore use the same commit boundary. Consumed inputs reject edits;
+promotion changes the existing submission's mode. Original acceptance identity
+never changes, and a retry never restores an obsolete draft over an edit.
+
+An unclaimed initial Run can still be edited or withdrawn in PG, with a bounded
+`kind:queue` control receipt. Session and Run locks retain the existing claim
+race protection. Active-run model/environment/credential configuration remains
+frozen; continuation inputs inherit it. Pending inputs have no product count
+quota. Queue reads combine native state with unclaimed initial Runs in one
+repeatable-read snapshot. Edit revisions cover queue membership, order and
+saved revisions, independently of model-output progress.
 
 The Runner rechecks native queues after a successful Agent continuation and
 closes input admission synchronously with its last empty-queue decision. Final
@@ -204,7 +201,7 @@ target-unavailable error. Input delivery rechecks closure after asynchronous
 authority/deduplication reads (ADR-0193).
 
 `queued` means accepted, not necessarily dispatchable. Input acceptance freezes
-the model/configuration and writes Turn, Run and mailbox advancement together;
+the model/configuration and writes the initial Run and mailbox advancement together;
 `ready_at` is set only for a Lane head whose predecessor has closed. Otherwise
 seal projection promotes it in the closure transaction. Both paths hold the
 product Session row lock, so racing input and closure cannot lose readiness.
@@ -429,27 +426,29 @@ and original acceptance key. A delayed return cannot reset a newer submission.
 Queued inputs and unstarted cancellations do not occupy history pages or Turn
 counts. The composer owns a separate pending-input view. Initial, focus and
 reconnect reads use a current PG snapshot; successful edits reuse their returned
-snapshot. Committed queue changes reach the Session owner through the existing
-Outbox/Kafka path and update watched memory views and unsequenced `input.queue`
+snapshot. Initial-Run changes reach the Session owner through the existing
+Outbox/Kafka path; native queue commits carry affected Session IDs in their existing
+commit envelope. Both paths update watched memory views and unsequenced `input.queue`
 SSE frames. There is no two-second polling. `viewVersion` orders presentation
-snapshots independently of the existing optimistic edit `revision`, including
+snapshots as the tuple (native committed sequence, Session row version), independently
+of the optimistic edit `revision`, including
 Run transitions that change queue membership. Queue changes do not restart the
 execution SSE stream. Optimistic conflicts preserve the editing draft.
 
-Chat Stop withdraws the existing unowned inputs in the cancellation transaction.
-`runs.input_return_request_id` records that exact Stop's queue cut. Unconsumed
-ordinary inputs become cancelled; held Steers wait for canonical consumption or
-the target seal. Consumed input stays in history; only unconsumed input returns
-to the composer. A Stop retry cannot withdraw newly accepted messages.
-Readiness excludes inputs awaiting this decision. New deliveries to a cancelling
-target are rejected. Native submission records distinguish accepted input from
-consumed input. Durable abort settles the native queue; PG returns only inputs
-whose consumption is unconfirmed after ordered closure (ADR-0229).
+Chat Stop closes input admission and uses Durable abort to settle the native
+queue. The existing cancellation receipt holds only `inputReturnPending`.
+After logical terminal settlement and ordered writer closure, the read adapter
+returns human submissions that have no consumed Entry and were aborted (or were
+still queued when an old writer was sealed). Individually withdrawn inputs and
+consumed inputs are excluded. Text/order/uploads come from the native metadata;
+there is no Run return-pointer column or separate queue-cut payload. A Stop retry
+cannot capture later submissions belonging to another Run. Missing physical Tool
+replies are not proof of process termination.
 
 Queue snapshots expose `hasReturnedInputs`. GET
 `/v1/sessions/:sessionId/returned-inputs` waits for consumption reconciliation,
 then returns at most 20 withdrawn inputs in their original order, including each
-Run's original `idempotencyKey`. Subsequent
+input's original `idempotencyKey`. Subsequent
 pages use that Stop's `requestId` and `afterPosition`; their immutable membership
 survives another browser's acknowledgement. The browser appends their text and
 restores attachments without replacing its draft. POST
@@ -457,7 +456,7 @@ restores attachments without replacing its draft. POST
 recovered `requestId` and clears its bounded pending-return marker in the existing
 control receipt. Failed or lost acknowledgements do not duplicate draft text.
 An unacknowledged return survives a browser/Control Plane restart in its original
-Turn. Once recovered, it has the same browser-local lifecycle as an ordinary
+native Run metadata. Acknowledgement before closure is rejected. Once recovered, it has the same browser-local lifecycle as an ordinary
 unsent draft. Text and images never move into a control receipt or second queue.
 The former paused flag, Send action and queue-resume endpoint are removed.
 
@@ -467,16 +466,15 @@ pool isolate it from authority SQL; server statements have a five-second deadlin
 Owner reset discards stale completions without freeing occupied slots early.
 Failures/capacity exhaustion request resynchronization instead of Kafka retries.
 Queue pages contain at most 20 complete inputs, `afterPosition` and `hasMore`.
-Continuation requests require the same `viewVersion`; changed order returns 409.
+Continuation requests require the same queue `revision`; changed order returns 409.
 SSE publishes the first page; loading more is explicit and newer snapshots discard
 obsolete continuation pages while retaining editing drafts. This is a response
 bound, not a total input quota (ADR-0216).
 
-Steer reconciliation wakes only the affected Session on control changes,
-canonical input consumption and seals, or a known PG retry deadline. Startup,
-reassignment and bounded-capacity recovery reload durable pending references;
-idle timer ticks do not scan PG. The existing PG claim/backoff and consumption
-transactions still decide delivery, restoration and cancellation.
+There is no cloud Steer-delivery reconciler. Worker replacement recovers the
+native submissions through the existing ordered closure/new-lease path. Queue
+observations refresh only on relevant commits, control changes or reconnect;
+an unavailable presentation view cannot schedule or replay input.
 Tree jumps load missing pages, and export traverses them. These history anchors
 are not stream recovery cursors.
 

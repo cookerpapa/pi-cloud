@@ -6,12 +6,10 @@ set constraints all immediate;
 -- Lease identities are immutable online. This empty-target restore transaction
 -- explicitly discards them; the source has already proved unsealed_runs=0.
 alter table runs disable trigger runs_count_unsealed;
-update runs set sandbox_id=null, lease_id=null, fencing_token=null,
+update runs set worker_id=null, lease_id=null, fencing_token=null,
   compute_session_id=null, recovery_requested_at=null, output_publication=null,
   output_first_topic=null, output_first_partition=null, output_first_offset=null,
-  output_projected_offset=null, output_seal_id=null, output_seal_offset=null,
-  output_sealed_at=null,
-  input_return_request_id=null, queued_steer_id=null;
+  output_seal_id=null, output_seal_offset=null, output_sealed_at=null;
 set constraints all immediate;
 alter table runs enable trigger runs_count_unsealed;
 update sessions set development_environment_id=null, compute_session_id=null,

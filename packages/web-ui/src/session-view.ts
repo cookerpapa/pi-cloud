@@ -17,6 +17,16 @@ export type TurnViewStatus =
 
 export type TranscriptItem =
   | {
+      kind: "user";
+      key: string;
+      messageId: string;
+      inputId: string;
+      text: string;
+      uploads?: UserUpload[];
+      firstSequence: number;
+      lastSequence: number;
+    }
+  | {
       kind: "text";
       messageId?: string;
       key: string;
@@ -243,6 +253,7 @@ function appendText(
 function transcriptItem(
   item: NonNullable<ConversationDetailResource["turns"][number]["transcript"]>["items"][number],
 ): TranscriptItem {
+  if (item.kind === "user") return { ...item, key: `user:${item.inputId}` };
   if (item.kind === "tool_preparing") return { ...item, key: `tool-preparing:${item.toolCallId}` };
   if (item.kind === "text") {
     return {
@@ -280,6 +291,24 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         startedSequence: event.seq,
         failure: null,
         cancellation: null,
+      };
+    }
+    if (event.type === "user.input") {
+      if (turn.items.some((item) => item.kind === "user" && item.inputId === event.payload.inputId))
+        return turn;
+      return {
+        ...turn,
+        status: "running",
+        items: [
+          ...turn.items,
+          {
+            kind: "user",
+            key: `user:${event.payload.inputId}`,
+            ...event.payload,
+            firstSequence: event.seq,
+            lastSequence: event.seq,
+          },
+        ],
       };
     }
     if (event.type === "assistant.text.delta") {
@@ -758,9 +787,9 @@ export function sessionViewReducer(
     const history = state.turns.filter((turn) => turn.status !== "queued");
     const started = new Set(history.map((turn) => turn.turnId));
     const pending = action.queue.items
-      .filter((item) => !started.has(item.turnId))
+      .filter((item) => !item.inputId.startsWith("input-") && !started.has(item.inputId))
       .map((item) => ({
-        ...unknownTurn(item.turnId),
+        ...unknownTurn(item.inputId),
         runId: item.runId,
         mailboxPosition: item.mailboxPosition,
         prompt: item.text,

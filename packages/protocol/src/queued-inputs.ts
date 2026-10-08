@@ -3,6 +3,7 @@ import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { ControlPlaneApiValidationError, IdempotencyKeySchema } from "./control-plane-api.ts";
 import { UserUploadIdsSchema, UserUploadsSchema } from "./user-upload.ts";
+import { NativeInputIdSchema } from "./native-inputs.ts";
 import {
   NonNegativeSafeIntegerSchema,
   PositiveSafeIntegerSchema,
@@ -11,7 +12,7 @@ import {
 } from "./protocol-primitives.ts";
 
 const Text = Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS });
-const Revision = NonNegativeSafeIntegerSchema;
+const Revision = Type.String({ pattern: "^[0-9a-f]{64}\\.[0-9a-f]{64}$" });
 const options = { additionalProperties: false } as const;
 export const INPUT_QUEUE_PAGE_SIZE = 20;
 export const QueuedInputActionSchema = Type.Union([
@@ -37,7 +38,6 @@ export const QueuedInputActionSchema = Type.Union([
     {
       action: Type.Literal("steer"),
       revision: Revision,
-      targetTurnId: UuidSchema,
       text: Type.Optional(Text),
     },
     options,
@@ -45,7 +45,7 @@ export const QueuedInputActionSchema = Type.Union([
 ]);
 export const QueuedInputResourceSchema = Type.Object(
   {
-    turnId: UuidSchema,
+    inputId: NativeInputIdSchema,
     runId: UuidSchema,
     text: Text,
     uploads: Type.Optional(UserUploadsSchema),
@@ -61,7 +61,7 @@ export const InputQueueResourceSchema = Type.Object(
     revision: Revision,
     activeTurnId: Type.Union([UuidSchema, Type.Null()]),
     hasReturnedInputs: Type.Boolean(),
-    viewVersion: Type.String({ pattern: "^(0|[1-9][0-9]{0,18})$" }),
+    viewVersion: Type.String({ pattern: "^(0|[1-9][0-9]{0,38})$" }),
     afterPosition: NonNegativeSafeIntegerSchema,
     hasMore: Type.Boolean(),
     items: Type.Array(QueuedInputResourceSchema, { maxItems: INPUT_QUEUE_PAGE_SIZE }),
@@ -83,7 +83,7 @@ export type InputQueueObservation = Static<typeof InputQueueObservationSchema>;
 export type QueuedInputActionResult = Static<typeof QueuedInputActionResultSchema>;
 export const ReturnedInputSchema = Type.Object(
   {
-    turnId: UuidSchema,
+    inputId: NativeInputIdSchema,
     idempotencyKey: IdempotencyKeySchema,
     text: Text,
     uploads: UserUploadsSchema,
@@ -113,6 +113,7 @@ function parse<T extends TSchema>(schema: T, value: unknown): Static<T> {
 }
 export const parseQueuedInputAction = (value: unknown): QueuedInputAction =>
   parse(QueuedInputActionSchema, value);
+export const parseQueuedInputId = (value: unknown): string => parse(NativeInputIdSchema, value);
 export const parseInputQueueResource = (value: unknown): InputQueueResource =>
   parse(InputQueueResourceSchema, value);
 export const parseInputQueueObservation = (value: unknown): InputQueueObservation =>

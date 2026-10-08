@@ -44,7 +44,11 @@ afterAll(async () => {
 
 async function fixture(
   options: {
-    publish?: (batch: DurableBatch, projection: DurablePostgresProjection) => Promise<void>;
+    publish?: (
+      batch: DurableBatch,
+      projection: DurablePostgresProjection,
+      inputConversations?: readonly number[],
+    ) => Promise<void>;
     images?: ImageAttachmentCodec;
   } = {},
 ) {
@@ -68,8 +72,10 @@ async function fixture(
   );
   const store = await PublishedDurableStorage.open({
     projection,
-    publish: async (batch) =>
-      options.publish ? options.publish(batch, projection) : void (await projection.apply(batch)),
+    publish: async (batch, inputConversations) =>
+      options.publish
+        ? options.publish(batch, projection, inputConversations)
+        : void (await projection.apply(batch)),
     waitProjected: async (through) => {
       if ((await projection.head()).seq < through)
         throw new Error("Fixture projection is still held");
@@ -865,6 +871,58 @@ it("retains a conservative Run budget floor across duplicate checkpoint and abor
       modelRequests: 2,
       toolCalls: 1,
     });
+  } finally {
+    await f.close();
+  }
+});
+
+it("carries queue wakes on the native commit only for changed queue documents", async () => {
+  const observed: Array<readonly number[]> = [];
+  const f = await fixture({
+    publish: async (batch, projection, conversations) => {
+      observed.push(conversations ?? []);
+      await projection.apply(batch);
+    },
+  });
+  try {
+    await f.store.commit(
+      [
+        { type: "conversation", value: { id: 1 } },
+        ...["pi.inbox", "pi-cloud.human-inputs", "test.other"].map((kind, index) => ({
+          type: "document.create",
+          record: {
+            id: index + 2,
+            kind,
+            scope: { kind: "conversation", conversationId: 1 },
+            history: "latest",
+            fork: "initial",
+          },
+          content: { kind: "base", version: 1, value: { count: 0 } },
+        })),
+      ] as unknown as StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.commit(
+      [
+        {
+          type: "document.change",
+          id: 4,
+          content: { kind: "delta", version: 1, ops: [["s", ["count"], 1]] },
+        },
+      ] as unknown as StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.commit(
+      [
+        {
+          type: "document.change",
+          id: 2,
+          content: { kind: "delta", version: 1, ops: [["s", ["count"], 1]] },
+        },
+      ] as unknown as StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    expect(observed).toEqual([[1], [], [1]]);
   } finally {
     await f.close();
   }

@@ -64,11 +64,9 @@ it.skipIf(!endpoint)(
         .set({ state: "cancelled", settled_at: new Date() })
         .where("id", "=", accepted.runId)
         .execute();
-      await db
-        .updateTable("turns")
-        .set({ state: "cancelled", settled_at: new Date() })
-        .where("id", "=", accepted.turnId)
-        .execute();
+      await sql`update turns set state='cancelled',settled_at=now() where id=${accepted.turnId}::uuid`.execute(
+        db,
+      );
       await migrateDeletion();
       expect(await db.selectFrom("sessions").select(["id", "pruned_at"]).execute()).toEqual([
         { id: visible.sessionId, pruned_at: null },

@@ -7,17 +7,14 @@ import { pathToFileURL } from "node:url";
 import { sql } from "kysely";
 import {
   HttpSupervisorManagementClient,
-  HttpSupervisorSteerBackend,
   RoutedHttpSandboxAssignmentInventory,
   RoutedHttpSupervisorOwnerBoundary,
 } from "./http-supervisor-management.ts";
-import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
 import { kafkaProducerLane } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { SessionControlOutbox } from "@pi-cloud/runtime-core/session-control-outbox";
 import { InputQueueView } from "./input-queue-view.ts";
 import { readInputQueue } from "./input-queue-snapshot.ts";
-import { QueuedInputService } from "./queued-input-service.ts";
 import { createSandboxControl } from "@pi-cloud/sandbox-control/runtime";
 import {
   PostgresSupervisorCredentialAuthorizer,
@@ -89,8 +86,6 @@ export async function startControlPlane(): Promise<void> {
   let agentEvents: SessionProjector | undefined;
   let sandboxControl: Awaited<ReturnType<typeof createSandboxControl>> | undefined;
   let runtime: ControlPlaneRuntime | undefined;
-  let queuedInputOwner: import("./queued-input-service.ts").QueuedInputOwnership | undefined;
-  let queuedInputs: QueuedInputService | undefined;
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
@@ -240,12 +235,14 @@ export async function startControlPlane(): Promise<void> {
           if (current?.() === false) return;
           const fact = record.fact;
           if (fact.kind === "execution_seal")
-            queuedInputs?.notifySession(fact.scope.tenantId, fact.scope.sessionId);
-          if (fact.kind === "durable_commit") {
-            const sessions = new Set(fact.origins.map((origin) => origin.sessionId));
-            for (const sessionId of sessions)
-              queuedInputs?.notifySession(fact.scope.tenantId, sessionId);
-          }
+            inputQueues.notify(
+              fact.scope.tenantId,
+              fact.scope.sessionId,
+              () => current?.() !== false,
+            );
+          if (fact.kind === "durable_commit")
+            for (const sessionId of fact.inputQueueSessions ?? [])
+              inputQueues.notify(fact.scope.tenantId, sessionId, () => current?.() !== false);
         },
         close: () => subagents.close(),
       },
@@ -255,15 +252,9 @@ export async function startControlPlane(): Promise<void> {
         load: async (partitions, current) => {
           await bindingView.load(partitions, current);
           if (current()) await subagents.recover(partitions, current);
-          if (current()) {
-            queuedInputOwner = { partitions, partitionCount: config.kafkaPartitions, current };
-            await queuedInputs?.recoverPending(queuedInputOwner);
-          }
         },
         reset: () => {
           bindingView.reset();
-          queuedInputOwner = undefined;
-          queuedInputs?.reset();
           inputQueues.reset();
           subagents.reset();
         },
@@ -271,12 +262,6 @@ export async function startControlPlane(): Promise<void> {
         consume: async (change, current, position) => {
           await consumeBindingChange(change, current, position);
           await subagents.changed(change, current);
-          if (current() && change.entity === "input_queue")
-            queuedInputs?.notifySession(
-              change.scope.tenantId,
-              change.entityId,
-              change.steerPending === true,
-            );
           inputQueues.consume(change, current);
         },
       },
@@ -347,20 +332,19 @@ export async function startControlPlane(): Promise<void> {
         allowInsecureHttp: config.allowInsecureInternalHttp,
       });
     };
-    const resolveSteerBackend = async (sandboxId: string): Promise<HttpSupervisorSteerBackend> => {
+    const resolveNativeInputBackend = async (
+      sandboxId: string,
+    ): Promise<HttpSupervisorManagementClient> => {
       const identity = await database
         .selectFrom("sandboxes")
         .select(["supervisor_id", "boot_id"])
         .where("id", "=", sandboxId)
         .executeTakeFirst();
       if (identity === undefined) throw new Error("Active Pi Worker identity is unavailable");
-      return new HttpSupervisorSteerBackend({
-        client: await resolveManagementClient({
-          supervisorId: identity.supervisor_id,
-          bootId: identity.boot_id,
-          sandboxId,
-        }),
-        leaseCoordinator: new SessionLeaseCoordinator({ database, sandboxId }),
+      return resolveManagementClient({
+        supervisorId: identity.supervisor_id,
+        bootId: identity.boot_id,
+        sandboxId,
       });
     };
     const provisioner = new SupervisorBootProvisioner({
@@ -490,7 +474,7 @@ export async function startControlPlane(): Promise<void> {
       assignmentInventoryFactory: (identity) =>
         new RoutedHttpSandboxAssignmentInventory(resolveManagementClient, identity),
       supervisorProvisioningGateway: provisioningGateway,
-      turnSteerBackendFactory: resolveSteerBackend,
+      nativeInputBackendFactory: resolveNativeInputBackend,
       productionHttpGateway: httpGateway,
       publicRegistration: registrationConfiguration,
       webAuthentication,
@@ -524,10 +508,6 @@ export async function startControlPlane(): Promise<void> {
       },
     });
     await runtime.listen(config.port, config.host);
-    const activeQueuedInputs = runtime.application.get<QueuedInputService>(QueuedInputService);
-    queuedInputs = activeQueuedInputs;
-    // Cover changes committed/consumed before the application's handler was attached.
-    if (queuedInputOwner) await activeQueuedInputs.recoverPending(queuedInputOwner);
     await sandboxControl.start();
     const sourceControlFailure = (source: string, error: unknown): void =>
       operationalLog({

@@ -14,7 +14,7 @@ import { createExecutionReference, parseExecutionReference } from "@pi-cloud/pro
 const DEFAULT_RECONCILIATION_LIMIT = 100;
 
 const ACTIVE_SESSION_STATES = new Set(["running", "cancelling"]);
-const ACTIVE_TURN_STATES = new Set(["running", "cancelling"]);
+const ACTIVE_RUN_STATES = new Set(["running", "settling", "cancel_requested"]);
 
 export type AssignmentReconcilerOptions = {
   database: Kysely<Database>;
@@ -276,15 +276,14 @@ export class AssignmentReconciler {
     // Match lifecycle lock order before touching the lease. A stale candidate
     // must not hold a new owner's lease while waiting for its Run rows.
     const current = await transaction
-      .selectFrom("turns as turn")
-      .innerJoin("sessions as session", "session.id", "turn.session_id")
-      .innerJoin("runs as run", "run.turn_id", "turn.id")
+      .selectFrom("runs as run")
+      .innerJoin("sessions as session", "session.id", "run.session_id")
       .select(["run.id", "session.tenant_id", "session.pi_session_id"])
-      .where("turn.id", "=", candidate.turnId)
+      .where("run.turn_id", "=", candidate.turnId)
       .where("session.id", "=", candidate.sessionId)
       .where("run.id", "=", candidate.runId)
       .where("run.id", "=", execution.runId)
-      .forNoKeyUpdate(["turn", "session", "run"])
+      .forNoKeyUpdate(["session", "run"])
       .executeTakeFirst();
     if (!current) return "skipped";
     await transaction
@@ -329,55 +328,40 @@ export class AssignmentReconciler {
       .where("id", "=", candidate.sessionId)
       .forUpdate()
       .executeTakeFirstOrThrow();
-    const turns = await transaction
-      .selectFrom("turns")
-      .select(["id", "state"])
+    const run = await transaction
+      .selectFrom("runs")
+      .select([
+        "id as runId",
+        "turn_id as turnId",
+        "state as runState",
+        "row_version as runVersion",
+      ])
+      .where("tenant_id", "=", session.tenant_id)
       .where("session_id", "=", candidate.sessionId)
-      .where("id", "=", candidate.turnId)
-      .where("state", "in", ["queued", "running", "cancelling"])
-      .forUpdate()
-      .execute();
-    if (turns.length > 1) {
-      throw new AssignmentReconcilerError(
-        "assignment_invariant",
-        "Session had multiple active turns while finalizing an assignment",
-        false,
-      );
-    }
-    const turn = turns[0];
-    if (turn === undefined) {
-      if (ACTIVE_SESSION_STATES.has(session.state)) {
+      .where("id", "=", candidate.runId)
+      .where("turn_id", "=", candidate.turnId)
+      .forNoKeyUpdate()
+      .executeTakeFirstOrThrow();
+    if (!ACTIVE_RUN_STATES.has(run.runState)) {
+      if (ACTIVE_SESSION_STATES.has(session.state))
         throw new AssignmentReconcilerError(
           "assignment_invariant",
-          "Active session had no active turn during reconciliation",
+          "Active Session has no active execution during reconciliation",
           false,
         );
-      }
       await this.#deleteLease(transaction, candidate, now);
       return "released";
     }
-
-    const run = await transaction
-      .selectFrom("runs as run")
-      .select(["run.id as runId", "run.state as runState", "run.row_version as runVersion"])
-      .where("run.tenant_id", "=", session.tenant_id)
-      .where("run.session_id", "=", candidate.sessionId)
-      .where("run.turn_id", "=", turn.id)
-      .where("run.id", "=", candidate.runId)
-      .forNoKeyUpdate("run")
-      .executeTakeFirstOrThrow();
-
-    if (!ACTIVE_SESSION_STATES.has(session.state) || !ACTIVE_TURN_STATES.has(turn.state)) {
+    if (!ACTIVE_SESSION_STATES.has(session.state))
       throw new AssignmentReconcilerError(
         "assignment_invariant",
-        "Acknowledged assignment lifecycle was inconsistent",
+        "Execution and Session lifecycle are inconsistent",
         false,
       );
-    }
     await requestExecutionStreamSeal(transaction, {
       tenantId: session.tenant_id,
       sessionId: candidate.sessionId,
-      turnId: turn.id,
+      turnId: run.turnId,
       runId: run.runId,
       agentId: "root",
       recover: true,

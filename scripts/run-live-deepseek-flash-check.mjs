@@ -116,9 +116,9 @@ async function turn(name, prompt, thinkingLevel, uploads = []) {
     messages = nativeMessages(history);
   const tools = messages.filter((m) => m.role === "toolResult");
   const snapshot = await database
-    .selectFrom("turns")
+    .selectFrom("runs")
     .select(["provider", "model_id", "thinking_level"])
-    .where("id", "=", accepted.turnId)
+    .where("turn_id", "=", accepted.turnId)
     .executeTakeFirstOrThrow();
   const hosted = messages
     .flatMap((m) => m.content ?? [])

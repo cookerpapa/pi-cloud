@@ -120,7 +120,7 @@ try {
       .map((item) => item.text)
       .join("");
     const children = query(
-      `select coalesce(json_agg(json_build_object('id',e.id,'state',e.state,'runState',r.state,'failure',r.failure_code,'sameOwner',r.lease_id=p.lease_id and r.sandbox_id=p.sandbox_id,'samePhysical',s.pi_session_id=ps.pi_session_id,'conversation',s.pi_conversation_id)),'[]') from subagent_executions e join runs r on r.id=e.child_run_id join runs p on p.id=e.parent_run_id join sessions s on s.id=e.child_session_id join sessions ps on ps.id=p.session_id where e.parent_run_id='${accepted.runId}'`,
+      `select coalesce(json_agg(json_build_object('id',e.id,'state',e.state,'runState',r.state,'failure',r.failure_code,'sameOwner',r.lease_id=p.lease_id and r.worker_id=p.worker_id,'samePhysical',s.pi_session_id=ps.pi_session_id,'conversation',s.pi_conversation_id)),'[]') from subagent_executions e join runs r on r.id=e.child_run_id join runs p on p.id=e.parent_run_id join sessions s on s.id=e.child_session_id join sessions ps on ps.id=p.session_id where e.parent_run_id='${accepted.runId}'`,
     );
     const errors = turn.transcript.items
       .filter((item) => item.kind === "tool" && item.status !== "completed")

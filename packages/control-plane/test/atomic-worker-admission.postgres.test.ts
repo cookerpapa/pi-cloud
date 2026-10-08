@@ -404,10 +404,10 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       expect(
         await db
           .selectFrom("runs")
-          .select("output_projected_offset")
+          .select("output_first_offset")
           .where("id", "=", scope.runId)
           .executeTakeFirstOrThrow(),
-      ).toEqual({ output_projected_offset: null });
+      ).toEqual({ output_first_offset: null });
       expect(
         await db
           .selectFrom("accepted_fact_projection_offsets")
@@ -568,7 +568,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(
       queries.filter((q) => q.startsWith('select count(*)::int as "count" from "runs"')),
     ).toHaveLength(0);
-    expect(queries.filter((q) => q.startsWith('with "accepted_turn"'))).toHaveLength(1);
+    expect(queries.filter((q) => q.startsWith('with "accepted_run"'))).toHaveLength(1);
     queries.length = 0;
     const backend: TurnExecutionBackend = {
       admit: f.backend.admit.bind(f.backend),
@@ -583,7 +583,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     // The post-lock input snapshot prevents admission from reading a stale edit.
     expect(queries).toHaveLength(9);
     expect(
-      queries.filter((q) => q.startsWith('select "input_text", "input_uploads" from "turns"')),
+      queries.filter((q) => q.startsWith('select "input_text", "input_uploads" from "runs"')),
     ).toHaveLength(1);
     expect(queries.some((q) => q.includes('update "sandboxes"'))).toBe(false);
     expect(queries.some((q) => q.includes("from runs as earlier_run"))).toBe(false);
@@ -729,7 +729,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
           if (
             pause &&
             (order === "input-first"
-              ? query.startsWith('with "accepted_turn"')
+              ? query.startsWith('with "accepted_run"')
               : query.startsWith('update "sessions"') && query.includes('"next_event_seq"'))
           ) {
             pause = false;
@@ -912,9 +912,9 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         release.resolve();
         const [result] = await outcome;
         const completion = statements.slice(
-          statements.findIndex((s) => s.startsWith('with "completed_turn"')),
+          statements.findIndex((s) => s.startsWith('with "settled_session"')),
         );
-        expect(completion.filter((s) => s.startsWith('with "completed_turn"'))).toHaveLength(1);
+        expect(completion.filter((s) => s.startsWith('with "settled_session"'))).toHaveLength(1);
         expect(completion[0]).toContain('"settled_session"');
         expect(
           completion.filter((s) =>
@@ -937,9 +937,9 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
           expect(
             (
               await db
-                .selectFrom("turns")
+                .selectFrom("runs")
                 .select("state")
-                .where("id", "=", f.accepted.turnId)
+                .where("turn_id", "=", f.accepted.turnId)
                 .executeTakeFirstOrThrow()
             ).state,
           ).toBe("running");

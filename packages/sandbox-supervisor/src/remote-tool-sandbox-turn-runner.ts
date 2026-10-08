@@ -247,31 +247,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       );
     }
   }
-
-  async steer(
-    targetRunId: string,
-    text: string,
-    inputId: string,
-    uploads?: import("@pi-cloud/protocol").UserUpload[],
-  ): Promise<void> {
-    const slot = this.#activePiRunners.get(targetRunId);
-    if (slot === undefined) {
-      throw new PiTurnError(
-        "steer_target_unavailable",
-        "Pi Run is not active on this Worker",
-        false,
-      );
-    }
-    const runner = await slot.ready;
-    if (this.#activePiRunners.get(targetRunId) !== slot) {
-      throw new PiTurnError(
-        "steer_target_unavailable",
-        "Pi Run ended before the steer could be delivered",
-        false,
-      );
-    }
-    await runner.steer(text, inputId, uploads);
-  }
   async agentInput(
     runId: string,
     id: string,
@@ -287,6 +262,19 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     if (this.#activePiRunners.get(runId) !== slot)
       throw new Error("Target Agent ended before input delivery");
     await runner.agentInput(id, text, delivery);
+  }
+  async humanInput(command: NativeInputCommand): Promise<NativeInputResult> {
+    const slot = this.#activePiRunners.get(command.runId);
+    if (!slot || slot.executionReference !== command.executionReference)
+      throw new PiTurnError(
+        "input_target_unavailable",
+        "Input target has no current Worker execution",
+        true,
+      );
+    const runner = await slot.ready;
+    if (this.#activePiRunners.get(command.runId) !== slot)
+      throw new PiTurnError("input_target_unavailable", "Input target ended during delivery", true);
+    return runner.humanInput(command);
   }
 
   async #run(
@@ -723,3 +711,4 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
   }
 }
+import type { NativeInputCommand, NativeInputResult } from "@pi-cloud/protocol";

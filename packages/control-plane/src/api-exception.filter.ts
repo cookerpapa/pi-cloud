@@ -86,7 +86,7 @@ export function mappedError(error: unknown): ErrorResponse {
           ? 404
           : error.code === "tenant_quota_exceeded"
             ? 429
-            : error.code === "capacity_exhausted"
+            : error.code === "capacity_exhausted" || error.code === "input_delivery_unavailable"
               ? 503
               : error.code === "conflict" || error.code === "idempotency_conflict"
                 ? 409

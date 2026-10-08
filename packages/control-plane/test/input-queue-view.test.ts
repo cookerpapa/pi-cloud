@@ -9,7 +9,7 @@ function fixture(options: { concurrency?: number; maximumQueues?: number } = {})
     session = randomUUID();
   const value = (viewVersion: string, sessionId: string = session): InputQueueResource => ({
     sessionId,
-    revision: 1,
+    revision: `${"a".repeat(64)}.${"b".repeat(64)}`,
     viewVersion,
     activeTurnId: null,
     hasReturnedInputs: false,
@@ -115,7 +115,7 @@ it.each([new ControlPlaneStoreError("not_found", "removed"), new Error("SQL time
     expect(f.unavailable).toHaveBeenCalledWith(f.tenant, f.session);
     f.view.consume(f.change("4"), () => true);
     await f.view.settle();
-    expect(f.publish).not.toHaveBeenCalled();
-    expect(f.onError).toHaveBeenCalledTimes(2);
+    expect(f.publish).toHaveBeenCalledOnce();
+    expect(f.onError).toHaveBeenCalledTimes(1);
   },
 );

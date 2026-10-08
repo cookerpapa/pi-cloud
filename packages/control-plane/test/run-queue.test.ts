@@ -18,7 +18,6 @@ import { Pool } from "pg";
 import { beforeAll, beforeEach, afterEach, afterAll, describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { createTestWorker } from "./admit-test-execution.ts";
-import { QueuedInputService } from "../src/queued-input-service.ts";
 
 const endpoint = process.env.PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL;
 describe.skipIf(!endpoint).sequential("Run queue authority", () => {
@@ -122,7 +121,7 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     );
     expect(candidates[0]).not.toContain("from runs as earlier_run");
     expect(queries.some((q) => q.includes('update "sandboxes"'))).toBe(false);
-    expect(queries.filter((q) => q.startsWith('with "started_turn"'))).toHaveLength(1);
+    expect(queries.filter((q) => q.startsWith('with "started_session"'))).toHaveLength(1);
     const stages = await metrics.runClaimStageDuration.get();
     const counts = stages.values.filter((v) => v.metricName?.endsWith("_count"));
     expect(counts.map((v) => v.labels.stage).sort()).toEqual([
@@ -203,13 +202,9 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     expect((await store.getRun(accepted.runId)).state).toBe("failed");
   });
 
-  it.each(
-    ["exit-first", "seal-first", "no-exit-proof"].flatMap((order) =>
-      [false, true].map((withQueue) => [order, withQueue] as const),
-    ),
-  )(
-    "recovers cancellation failure only after exit and seal (%s, queue=%s)",
-    async (order, withQueue) => {
+  it.each(["exit-first", "seal-first", "no-exit-proof"])(
+    "recovers cancellation failure only after exit and seal (%s)",
+    async (order) => {
       const s = await conversation(`cancel-${order}`),
         a = await store.acceptTurn(s.sessionId, "first", { prompt: "wait" });
       const worker = await createTestWorker(database),
@@ -233,36 +228,6 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
       void executing.catch(entered.reject);
       await entered.promise;
       try {
-        const queue = new QueuedInputService({
-          database,
-          steering: { deliverQueued: async () => {} },
-        });
-        const upload = {
-          id: crypto.randomUUID(),
-          sessionId: s.sessionId,
-          workspaceId: s.workspaceId,
-          name: "notes.txt",
-          path: "/workspace/notes.txt",
-          mimeType: "text/plain",
-          byteLength: 4,
-          sha256: "a".repeat(64),
-        };
-        if (withQueue) {
-          const withdrawn = await store.acceptTurn(s.sessionId, "withdrawn", {
-            prompt: "return me",
-          });
-          await database
-            .updateTable("turns")
-            .set({ input_uploads: sql`${JSON.stringify([upload])}::jsonb` })
-            .where("id", "=", withdrawn.turnId)
-            .execute();
-          const removed = await store.acceptTurn(s.sessionId, "removed", { prompt: "remove me" });
-          await queue.mutate(tenantId, s.sessionId, removed.turnId, "remove", {
-            action: "cancel",
-            revision: (await queue.list(tenantId, s.sessionId)).revision,
-          });
-          await store.acceptTurnSteer(s.sessionId, a.turnId, "held", { text: "held instruction" });
-        }
         await store.acceptTurnCancellation(s.sessionId, a.turnId, "cancel", {});
         const release = vi.fn(worker.coordinator.releaseCurrent.bind(worker.coordinator));
         const cancellation = new RunCancellationExecutor({
@@ -330,28 +295,6 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
             store.acceptTurn(s.sessionId, "wrong-lease", { prompt: "next" }),
           ).rejects.toMatchObject({ code: "conflict" });
           await confirmAgentExit(database, identity);
-        }
-        if (withQueue) {
-          await queue.reconcileOnce();
-          const returned = await queue.returned(tenantId, s.sessionId);
-          expect(returned.pending).toBe(false);
-          expect(returned.items.map((item) => [item.text, item.idempotencyKey])).toEqual([
-            ["return me", "withdrawn"],
-            ["held instruction", "held"],
-          ]);
-          expect(returned.items[0]?.uploads).toEqual([upload]);
-          const unstarted = await database
-            .selectFrom("runs")
-            .select(["state", "lease_id", "started_at"])
-            .where("session_id", "=", s.sessionId)
-            .where("id", "!=", a.runId)
-            .execute();
-          expect(unstarted).toHaveLength(3);
-          expect(
-            unstarted.every(
-              (r) => r.state === "cancelled" && r.lease_id === null && r.started_at === null,
-            ),
-          ).toBe(true);
         }
         const next = await store.acceptTurn(s.sessionId, "next", { prompt: "next" });
         expect(next.runId).not.toBe(a.runId);

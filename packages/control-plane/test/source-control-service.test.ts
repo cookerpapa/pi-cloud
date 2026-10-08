@@ -887,9 +887,9 @@ describe.sequential("source-control App boundary", () => {
         .where("id", "=", queued.run_id!)
         .executeTakeFirstOrThrow();
       await transaction
-        .updateTable("turns")
+        .updateTable("runs")
         .set({ state: "completed", settled_at: settled })
-        .where("id", "=", run.turn_id)
+        .where("turn_id", "=", run.turn_id)
         .executeTakeFirstOrThrow();
       await transaction
         .updateTable("sessions")

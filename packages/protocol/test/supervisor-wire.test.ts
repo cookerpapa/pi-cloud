@@ -208,8 +208,9 @@ describe("supervisor/control-plane wire protocol", () => {
     } as const;
 
     expect(
-      [execute, cancel, steer].map((message) => parseControlToSupervisorMessage(message).type),
-    ).toEqual(["command.turn.execute", "command.turn.cancel", "command.turn.steer"]);
+      [execute, cancel].map((message) => parseControlToSupervisorMessage(message).type),
+    ).toEqual(["command.turn.execute", "command.turn.cancel"]);
+    expect(() => parseControlToSupervisorMessage(steer)).toThrow();
     const parsedExecute = parseControlToSupervisorMessage(execute);
     if (parsedExecute.type !== "command.turn.execute") throw new Error("Expected execute command");
     expect(parsedExecute.payload.traceContext?.traceparent).toContain(

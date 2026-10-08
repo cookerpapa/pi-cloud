@@ -113,7 +113,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
           stop_reason: "stop",
           ...(state === "failed" ? { failure_code: "worker_lost", failure_retryable: false } : {}),
         };
-        await db.updateTable("turns").set(terminal).where("id", "=", accepted.turnId).execute();
+        await db.updateTable("runs").set(terminal).where("turn_id", "=", accepted.turnId).execute();
         await db.updateTable("runs").set(terminal).where("id", "=", accepted.runId).execute();
         await db
           .updateTable("sessions")

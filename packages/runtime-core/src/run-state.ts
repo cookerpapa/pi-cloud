@@ -11,7 +11,6 @@ export type RunTransitionInput = {
   now: Date;
   failure?: { code: string; message: string; retryable: boolean };
   stopReason?: string;
-  heartbeat?: boolean;
   transitionId?: string;
 };
 
@@ -46,7 +45,6 @@ export async function transitionCurrentRun(
           row_version: sql<string>`row_version+1`,
           updated_at: input.now,
           ...(isTerminalRunState(state) ? { settled_at: input.now } : {}),
-          ...(input.heartbeat ? { last_heartbeat_at: input.now } : {}),
           ...(input.stopReason ? { stop_reason: input.stopReason } : {}),
           ...(input.failure
             ? {

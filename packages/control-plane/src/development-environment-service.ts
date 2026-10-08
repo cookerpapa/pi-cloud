@@ -709,16 +709,16 @@ export class DevelopmentEnvironmentService {
       if (workspace.deleted_at !== null) return;
 
       const activeTurn = await transaction
-        .selectFrom("turns as turn")
+        .selectFrom("runs as run")
         .innerJoin("sessions as session_row", (join) =>
           join
-            .onRef("session_row.tenant_id", "=", "turn.tenant_id")
-            .onRef("session_row.id", "=", "turn.session_id"),
+            .onRef("session_row.tenant_id", "=", "run.tenant_id")
+            .onRef("session_row.id", "=", "run.session_id"),
         )
-        .select("turn.id")
-        .where("turn.tenant_id", "=", identity.tenantId)
+        .select("run.id")
+        .where("run.tenant_id", "=", identity.tenantId)
         .where("session_row.workspace_id", "=", environment.workspace_id)
-        .where("turn.state", "in", ["queued", "running", "cancelling"])
+        .where("run.state", "in", ["queued", "running", "settling", "cancel_requested"])
         .limit(1)
         .executeTakeFirst();
       if (activeTurn !== undefined) {

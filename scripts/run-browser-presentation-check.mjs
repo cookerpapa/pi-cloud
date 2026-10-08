@@ -249,7 +249,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     getSessionModel:async()=>modelResource(),
     getConversation:async(sessionId)=>conversation(sessionId),
     getInputQueue:async(sessionId)=>parseInputQueueResource({...structuredClone(window.fixtureQueue),sessionId,
-      viewVersion:String(window.fixtureQueue.revision),afterPosition:0,hasMore:false,
+      viewVersion:String(window.fixtureQueue.revision),revision:window.fixtureQueue.revision.toString(16).padStart(64,"0")+"."+"a".repeat(64),afterPosition:0,hasMore:false,
       hasReturnedInputs:!!window.returnedInputs,
       items:window.fixtureQueue.items}),
   });
@@ -277,11 +277,11 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     }
     if(String(url).endsWith('/cancellations')) {
       const requestId=crypto.randomUUID();
-      const items=[...window.turnReceipts.entries()].filter(([,r])=>window.turnStates.get(r.runId)==='queued')
-        .map(([key,r])=>{
-          window.turnStates.set(r.runId,'cancelled');
+      const items=[...window.turnReceipts.entries()].filter(([,r])=>window.turnStates.get(r.inputId??r.runId)==='queued')
+        .map(([key,r],index)=>{
+          window.turnStates.set(r.inputId??r.runId,'cancelled');
           const body=window.turnRequests.find(call=>call.key===key).body;
-          return {turnId:r.turnId,idempotencyKey:key,text:body.prompt,mailboxPosition:r.mailboxPosition,
+          return {inputId:r.inputId??r.turnId,idempotencyKey:key,text:body.prompt,mailboxPosition:index+1,
             uploads:(body.uploadIds??[]).map(id=>window.uploadReceipts.find(file=>file.id===id))};
         });
       window.returnedInputs={requestId,items};window.fixtureQueue.revision++;
@@ -302,11 +302,11 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       const body=JSON.parse(init.body),key=new Headers(init.headers).get('idempotency-key');
       window.steerRequests.push({body,key});
       const previous=window.steerReceipts.get(key);
-      const source='50000000-0000-4000-8000-'+String(31+window.steerReceipts.size).padStart(12,'0');
-      const receipt=previous??{controlRequestId:source,targetRunId:'60000000-0000-4000-8000-000000000011',targetTurnId:fixtureTurnId,
-        sourceRunId:source,sourceTurnId:source,sessionId:sid,state:'accepted',acceptedAt:new Date().toISOString(),replayed:false};
+      const source='input-'+String(31+window.steerReceipts.size).padStart(64,'0');
+      const receipt=previous??{kind:'input',inputId:source,runId:'60000000-0000-4000-8000-000000000011',turnId:fixtureTurnId,
+        delivery:'steer',sessionId:sid,state:'accepted',acceptedAt:new Date().toISOString(),replayed:false};
       if(!previous){window.steerReceipts.set(key,receipt);window.fixtureQueue.revision++;
-        window.fixtureQueue.items.push({turnId:source,runId:source,text:body.text,mailboxPosition:2,acceptedAt:receipt.acceptedAt,status:'steering'});}
+        window.fixtureQueue.items.push({inputId:source,runId:receipt.runId,text:body.text,mailboxPosition:2,acceptedAt:receipt.acceptedAt,status:'steering'});}
       if(window.loseSteerReply){window.loseSteerReply=false;throw Error('Fixture lost Steer response');}
       return Response.json({...receipt,replayed:!!previous},{status:202});
     }
@@ -316,17 +316,18 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       window.turnRequests.push({key,body:submitted});
       if(window.deferTurn) return new Promise(resolve=>{
         window.finishTurn=()=>{
-          window.fixtureQueue.revision++;window.fixtureQueue.items=[{turnId:"50000000-0000-4000-8000-000000000001",runId:"60000000-0000-4000-8000-000000000001",text:submitted.prompt,mailboxPosition:1,acceptedAt:new Date().toISOString(),status:"queued"}];
-          resolve(Response.json({turnId:"50000000-0000-4000-8000-000000000001",
+          window.fixtureQueue.revision++;window.fixtureQueue.items=[{inputId:"50000000-0000-4000-8000-000000000001",runId:"60000000-0000-4000-8000-000000000001",text:submitted.prompt,mailboxPosition:1,acceptedAt:new Date().toISOString(),status:"queued"}];
+          resolve(Response.json({kind:"run",turnId:"50000000-0000-4000-8000-000000000001",
           sessionId:sid,runId:"60000000-0000-4000-8000-000000000001",mailboxPosition:1,
           state:"queued",acceptedAt:new Date().toISOString(),replayed:false},{status:202}));
         };
       });
       if(window.acceptTurns) {
         const prior=window.turnReceipts.get(key);
-        const receipt=prior??{turnId:crypto.randomUUID(),sessionId:sid,runId:crypto.randomUUID(),
-          mailboxPosition:window.turnReceipts.size+1,state:'queued',acceptedAt:new Date().toISOString()};
-        if(!prior){window.turnReceipts.set(key,receipt);window.turnStates.set(receipt.runId,'queued');}
+        const receipt=prior??(sessionState==='running'?{kind:'input',inputId:'input-'+crypto.randomUUID().replaceAll('-','').repeat(2),
+          turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',sessionId:sid,delivery:'follow_up',state:'accepted',acceptedAt:new Date().toISOString()}:
+          {kind:'run',turnId:crypto.randomUUID(),sessionId:sid,runId:crypto.randomUUID(),mailboxPosition:window.turnReceipts.size+1,state:'queued',acceptedAt:new Date().toISOString()});
+        if(!prior){window.turnReceipts.set(key,receipt);window.turnStates.set(receipt.inputId??receipt.runId,'queued');}
         if(window.loseTurnReply){window.loseTurnReply=false;throw Error('Fixture lost Turn response after commit');}
         return Response.json({...receipt,replayed:!!prior},{status:202});
       }

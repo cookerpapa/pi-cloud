@@ -296,7 +296,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     expect(pending.json()).toMatchObject({
       items: [
         {
-          turnId: alphaTurn.turnId,
+          inputId: alphaTurn.turnId,
           runId: alphaTurn.runId,
           mailboxPosition: 1,
           text: "alpha private prompt",
@@ -621,10 +621,10 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     const assistantEntryId = "3";
     await database.transaction().execute(async (transaction) => {
       await transaction
-        .updateTable("turns")
+        .updateTable("runs")
         .set({ state: "completed", stop_reason: "stop", settled_at: NOW })
         .where("tenant_id", "=", alpha.tenantId)
-        .where("id", "=", alphaTurn.turnId)
+        .where("turn_id", "=", alphaTurn.turnId)
         .executeTakeFirstOrThrow();
       await transaction
         .updateTable("runs")
@@ -824,10 +824,10 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     const laterAssistantEntryId = "5";
     await database.transaction().execute(async (transaction) => {
       await transaction
-        .updateTable("turns")
+        .updateTable("runs")
         .set({ state: "completed", stop_reason: "stop", settled_at: NOW })
         .where("tenant_id", "=", alpha.tenantId)
-        .where("id", "=", laterTurn.turnId)
+        .where("turn_id", "=", laterTurn.turnId)
         .executeTakeFirstOrThrow();
       await transaction
         .updateTable("runs")
@@ -916,9 +916,9 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     });
     expect(
       await database
-        .selectFrom("turns")
+        .selectFrom("runs")
         .select("pruned_at as prunedAt")
-        .where("id", "=", laterTurn.turnId)
+        .where("turn_id", "=", laterTurn.turnId)
         .executeTakeFirstOrThrow(),
     ).toMatchObject({ prunedAt: expect.anything() });
     const nativeBinding = await database
@@ -1009,6 +1009,17 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       });
       expect(accepted.statusCode, accepted.body).toBe(202);
       ids.push(accepted.json<AcceptedTurnResource>().turnId);
+      await database
+        .updateTable("runs")
+        .set({
+          state: "completed",
+          ready_at: null,
+          started_at: new Date(),
+          settled_at: new Date(),
+          stop_reason: "stop",
+        })
+        .where("id", "=", accepted.json<AcceptedTurnResource>().runId)
+        .execute();
     }
     // This read-model fixture represents finished history. Unstarted inputs
     // have their own queue endpoint and do not consume history page positions.
@@ -1027,7 +1038,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         .where("session_id", "=", session.sessionId)
         .execute();
       await tx
-        .updateTable("turns")
+        .updateTable("runs")
         .set({ state: "completed", started_at: settled, settled_at: settled, stop_reason: "stop" })
         .where("tenant_id", "=", alpha.tenantId)
         .where("session_id", "=", session.sessionId)

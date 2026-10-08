@@ -216,24 +216,6 @@ export const CancelTurnCommandMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SteerTurnCommandMessageSchema = Type.Object(
-  {
-    ...WireEnvelopeProperties,
-    type: Type.Literal("command.turn.steer"),
-    payload: Type.Object(
-      {
-        ...CommandIdentityProperties,
-        controlRequestId: UuidSchema,
-        targetRunId: UuidSchema,
-        text: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
-        uploads: Type.Optional(UserUploadsSchema),
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
 const CommandAckIdentityProperties = {
   requestId: UuidSchema,
   sessionId: OpaqueIdSchema,
@@ -391,7 +373,6 @@ export const ControlToSupervisorMessageSchema = Type.Union([
   SupervisorRegisteredMessageSchema,
   ExecuteTurnCommandMessageSchema,
   CancelTurnCommandMessageSchema,
-  SteerTurnCommandMessageSchema,
   EventAckMessageSchema,
   EventRejectedMessageSchema,
   SupervisorHeartbeatAckMessageSchema,
@@ -401,7 +382,6 @@ export type SupervisorRegisterMessage = Static<typeof SupervisorRegisterMessageS
 export type SupervisorRegisteredMessage = Static<typeof SupervisorRegisteredMessageSchema>;
 export type ExecuteTurnCommandMessage = Static<typeof ExecuteTurnCommandMessageSchema>;
 export type CancelTurnCommandMessage = Static<typeof CancelTurnCommandMessageSchema>;
-export type SteerTurnCommandMessage = Static<typeof SteerTurnCommandMessageSchema>;
 export type CommandAckMessage = Static<typeof CommandAckMessageSchema>;
 export type EventPublishMessage = Static<typeof EventPublishMessageSchema>;
 export type EventAckMessage = Static<typeof EventAckMessageSchema>;
@@ -416,7 +396,6 @@ export type ControlToSupervisorMessage =
   | SupervisorRegisteredMessage
   | ExecuteTurnCommandMessage
   | CancelTurnCommandMessage
-  | SteerTurnCommandMessage
   | EventAckMessage
   | EventRejectedMessage
   | SupervisorHeartbeatAckMessage;

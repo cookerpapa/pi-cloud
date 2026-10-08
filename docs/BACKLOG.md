@@ -30,19 +30,18 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
-The [October 8 Session/Turn/Run review](reports/session-turn-run-review-20261008.md)
-records field-level evidence and isolated checks, without changing schema/runtime.
+[ADR-0238](adr/0238-native-input-queue-and-run-record.md) is implemented and
+verified in source: two core Session/Run records, native follow-up/steer/editing,
+confirmed native intake and removal of holding Runs/reconciliation. R08T-01–05
+are complete in that slice, including unused columns, Worker naming and
+first-position-only native projection writes. See the
+[implementation evidence](reports/native-input-run-consolidation-20261009.md).
 
-- [ ] R08T-02/03/04: remove four unused columns, the constant Turn input-kind
-      column and duplicate Run queued timestamp with matched application, index
-      and recovery-script changes. Evaluate first-position-only Run updates after
-      removing the unused projected offset; retain every ownership/seal check.
-- [ ] R08T-01: discuss an ADR making Run the sole stored lifecycle for its input;
-      migrate Turn status/timing readers, active-Lane uniqueness, queue triggers
-      and seal-aware presentation. Turn creation-time deduplication belongs to
-      that query migration. Do not merge input payloads into the queue by default.
-- [ ] R08T-05: clarify the historical Run `sandbox_id` Worker-owner name in a
-      scoped naming change; preserve its lease/fencing identity.
+- [ ] Deploy schema 183 with matched Control Plane/Worker/Web images. Drain
+      writers and resolve old pending/returned inputs (or perform the already
+      permitted development data cleanup) before cutover. Run the maintained
+      native-input Luna/Cube check after deployment; current serving release is
+      still `pilot-ready-81392f7d`, schema 182.
 
 The [architecture evidence review](reports/architecture-evidence-review-20261007.md)
 prioritizes one bounded handoff/operability slice over another broad runtime

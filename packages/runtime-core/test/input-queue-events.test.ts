@@ -11,7 +11,7 @@ it("coalesces queue snapshots per subscriber, isolates tenants and clears on res
     foreign = hub.subscribe(randomUUID(), session);
   const value = (version: string): InputQueueResource => ({
     sessionId: session,
-    revision: 1,
+    revision: `${"a".repeat(64)}.${"b".repeat(64)}`,
     viewVersion: version,
     afterPosition: 0,
     hasMore: false,

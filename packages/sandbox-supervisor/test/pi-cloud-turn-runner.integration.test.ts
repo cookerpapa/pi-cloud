@@ -108,6 +108,7 @@ async function fixture(
       executionReference: scope.executionReference,
     },
     recordSequence: async (id) => recordSeq.get(id),
+    committedSequence: () => Math.max(0, ...recordSeq.values()),
     authority: {
       signal: authority.signal,
       assertCurrent: async () => {
@@ -427,6 +428,65 @@ it("decides the project verification reminder from native progress and consumes 
       }),
     ).toBeUndefined();
   } finally {
+    await f.close();
+  }
+}, 15000);
+
+it("settles a Run after individual withdrawal and publishes a consumed human input once", async () => {
+  const f = await fixture("tool_hold", true),
+    running = f.run();
+  const scope = command.payload;
+  const submit = (suffix: string, text: string) =>
+    f.runner.humanInput({
+      action: "submit",
+      tenantId: scope.tenantId,
+      sessionId: scope.sessionId,
+      runId: scope.runId,
+      executionReference: scope.executionReference,
+      input: {
+        inputId: `input-${suffix.repeat(64)}`,
+        idempotencyKey: suffix,
+        fingerprint: suffix.repeat(64),
+        text,
+        uploads: [],
+        mode: "follow_up",
+        acceptedAt: new Date().toISOString(),
+      },
+    });
+  try {
+    await f.started.promise;
+    const first = await submit("a", "withdraw this");
+    await f.runner.humanInput({
+      action: "mutate",
+      tenantId: scope.tenantId,
+      sessionId: scope.sessionId,
+      runId: scope.runId,
+      executionReference: scope.executionReference,
+      mutation: {
+        operationId: `edit-${"b".repeat(64)}`,
+        fingerprint: "b".repeat(64),
+        inputId: `input-${"a".repeat(64)}`,
+        revision: first.queue.revision,
+        change: { action: "cancel" },
+      },
+    });
+    await submit("c", "human continuation");
+    f.release();
+    expect((await running).stopReason).toBe("stop");
+    const humans = f.events.map((v) => v.payload.event).filter((e) => e.type === "user.input");
+    expect(humans).toHaveLength(1);
+    expect(humans[0]!.payload).toMatchObject({
+      text: "human continuation",
+      inputId: `input-${"c".repeat(64)}`,
+    });
+    expect(
+      (await f.storage.scanSubmissions({}, 100, undefined, BACKGROUND_CONTEXT)).items.find(
+        (s) => s.requestId === `input-${"a".repeat(64)}`,
+      ),
+    ).toMatchObject({ status: "unanswered", reason: "aborted" });
+  } finally {
+    f.release();
+    await running.catch(() => {});
     await f.close();
   }
 }, 15000);

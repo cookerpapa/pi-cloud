@@ -370,12 +370,12 @@ async function runTurn(lane, prompt, round) {
 async function runEvidence(runId) {
   const row = await psql(
     `select s.supervisor_id || '|' ||
-            round(extract(epoch from (r.started_at - r.queued_at)) * 1000)::text || '|' ||
+            round(extract(epoch from (r.started_at - r.created_at)) * 1000)::text || '|' ||
             r.state || '|' ||
-            round(extract(epoch from (r.settled_at - r.queued_at)) * 1000)::text || '|' ||
-            round(extract(epoch from r.queued_at) * 1000)::text
+            round(extract(epoch from (r.settled_at - r.created_at)) * 1000)::text || '|' ||
+            round(extract(epoch from r.created_at) * 1000)::text
        from runs r
-       join sandboxes s on s.id = r.sandbox_id
+       join sandboxes s on s.id = r.worker_id
       where r.id = ${sqlLiteral(runId)}`,
   );
   const [supervisorId, acceptedToAdmissionMs, runState, serverElapsedMs, queuedWallAt] =

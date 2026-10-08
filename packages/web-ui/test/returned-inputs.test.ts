@@ -4,7 +4,7 @@ import { restoreReturnedInputs, inputReturnRecovery } from "../src/returned-inpu
 
 const signal = () => new AbortController().signal;
 const item = (n: number): ReturnedInput => ({
-  turnId: String(n),
+  inputId: String(n),
   idempotencyKey: `input-${n}`,
   text: `message ${n}`,
   mailboxPosition: n,

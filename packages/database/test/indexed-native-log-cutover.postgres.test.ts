@@ -279,7 +279,7 @@ it.skipIf(!endpoint)(
       ).rejects.toMatchObject({ code: "428C9" });
 
       await db.deleteFrom("runs").where("id", "=", turn.runId).execute();
-      await db.deleteFrom("turns").where("id", "=", turn.turnId).execute();
+      await sql`delete from turns where id=${turn.turnId}::uuid`.execute(db);
       expect(
         await historicalNative(db)
           .selectFrom("pi_session_log")

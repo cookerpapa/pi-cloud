@@ -75,12 +75,6 @@ it.each(["none", "before_seal", "after_seal"] as const)(
     ) as AcceptedExecutionSealFact;
     expect(seal.recover).toBe(true);
     expect(seal.terminal).toBeUndefined();
-    const follow =
-      stop === "none"
-        ? undefined
-        : await store.acceptTurn(session.sessionId, "queued-followup", {
-            prompt: "return this to the composer",
-          });
     const requestStop = () =>
       store.acceptTurnCancellation(session.sessionId, turn.turnId, "stop-recovery", {
         gracePeriodMs: 1000,
@@ -122,20 +116,14 @@ it.each(["none", "before_seal", "after_seal"] as const)(
       ).unsealed_runs,
     ).toBe("0");
     if (stop === "after_seal") await requestStop();
-    if (follow) {
-      const withdrawn = await db
-        .selectFrom("runs")
-        .select(["state", "input_return_request_id"])
-        .where("id", "=", follow.runId)
+    if (stop !== "none") {
+      const control = await db
+        .selectFrom("turn_control_requests")
+        .select("payload")
+        .where("target_run_id", "=", turn.runId)
+        .where("kind", "=", "cancel")
         .executeTakeFirstOrThrow();
-      expect(withdrawn.state).toBe("cancelled");
-      expect(withdrawn.input_return_request_id).not.toBeNull();
-      const original = await db
-        .selectFrom("runs")
-        .select("input_return_request_id")
-        .where("id", "=", turn.runId)
-        .executeTakeFirstOrThrow();
-      expect(original.input_return_request_id).toBeNull();
+      expect(control.payload).toMatchObject({ inputReturnPending: true });
     }
     const running = next.dispatchRun(turn.runId);
     try {
@@ -162,11 +150,11 @@ it.each(["none", "before_seal", "after_seal"] as const)(
       const boundary = new ExecutionStreamBoundary(db);
       expect(await boundary.isOpen(record, true)).toBe(false);
       const count = await db
-        .selectFrom("turns")
+        .selectFrom("runs")
         .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("session_id", "=", session.sessionId)
         .executeTakeFirstOrThrow();
-      expect(count.count).toBe(follow ? "2" : "1");
+      expect(count.count).toBe("1");
     } finally {
       finish.resolve();
       await running;

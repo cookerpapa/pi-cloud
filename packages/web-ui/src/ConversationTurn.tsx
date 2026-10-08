@@ -432,7 +432,32 @@ export function ConversationTurn({
         </div>
         <div className="product-message product-assistant-message">
           <div className="product-assistant-content">
-            {rows.map((row) => {
+            {rows.map((row, index) => {
+              if (row.kind === "user")
+                return (
+                  <div
+                    className="product-message product-user-message"
+                    data-human-input-id={row.item.inputId}
+                    key={row.key}
+                  >
+                    <div className="product-user-message-body">
+                      <UploadCards
+                        {...(api ? { api } : {})}
+                        {...(row.item.uploads ? { uploads: row.item.uploads } : {})}
+                      />
+                      {row.item.text ? (
+                        <div className="product-user-bubble">{row.item.text}</div>
+                      ) : null}
+                      <div className="product-user-message-actions">
+                        <MessageCopyButton
+                          copiedLabel={t("turn.copied")}
+                          label={t("turn.copyUserMessage")}
+                          text={row.item.text}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
               if (row.kind === "text") {
                 return (
                   <AssistantTextItem
@@ -440,7 +465,9 @@ export function ConversationTurn({
                     key={row.key}
                     onPresentationProgress={onPresentationProgress}
                     processNarration={row.processNarration}
-                    streaming={working}
+                    streaming={
+                      working && !rows.slice(index + 1).some((next) => next.kind === "user")
+                    }
                   />
                 );
               }

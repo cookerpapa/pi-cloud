@@ -1084,12 +1084,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           pendingInitialPrompt,
           attached.map((file) => file.id),
         );
-        update({
-          type: "turn.accepted",
-          accepted,
-          prompt: pendingInitialPrompt,
-          uploads: attached,
-        });
+        if (accepted.kind === "run")
+          update({
+            type: "turn.accepted",
+            accepted,
+            prompt: pendingInitialPrompt,
+            uploads: attached,
+          });
         uploads.clear(attached.map((file) => file.id));
         setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       }
@@ -1265,7 +1266,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         text,
         attached.map((file) => file.id),
       );
-      update({ type: "turn.accepted", accepted, prompt: text, uploads: attached });
+      if (accepted.kind === "run")
+        update({ type: "turn.accepted", accepted, prompt: text, uploads: attached });
+      else setQueueRefreshGeneration((generation) => generation + 1);
       uploads.clear(attached.map((file) => file.id));
       followConversationTail(true);
       setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));

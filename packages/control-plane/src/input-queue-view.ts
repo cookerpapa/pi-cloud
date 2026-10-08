@@ -2,15 +2,22 @@ import type { InputQueueResource, SessionControlChange } from "@pi-cloud/protoco
 
 const key = (tenant: string, session: string) => `${tenant}:${session}`;
 type Cached = { tenant: string; value: InputQueueResource; bytes: number };
-type Refresh = { change: SessionControlChange; current(): boolean; generation: number };
+type Refresh = {
+  tenant: string;
+  session: string;
+  version: number;
+  current(): boolean;
+  generation: number;
+};
 
-/** Disposable watched pages. Slow SQL never owns the ordered Projector callback. */
+/** Disposable watched pages; native/control wakes never own an execution or block projection. */
 export class InputQueueView {
   readonly #queues = new Map<string, Cached>();
   readonly #pending = new Map<string, Refresh>();
   readonly #active = new Map<string, Promise<void>>();
   #bytes = 0;
   #generation = 0;
+  #version = 0;
   #closed = false;
   constructor(
     readonly options: {
@@ -29,8 +36,6 @@ export class InputQueueView {
     this.#queues.clear();
     this.#pending.clear();
     this.#bytes = 0;
-    // Old reads retain their slots until they actually settle. Their generation
-    // prevents installation; reassignment cannot multiply outstanding queries.
   }
   #remove(id: string): void {
     const old = this.#queues.get(id);
@@ -41,22 +46,27 @@ export class InputQueueView {
     return this.#queues.get(key(tenant, session))?.value;
   }
   consume(change: SessionControlChange, current: () => boolean): void {
-    if (this.#closed || change.entity !== "input_queue" || !current()) return;
-    const tenant = change.scope.tenantId,
-      session = change.entityId,
-      id = key(tenant, session);
-    for (const [cachedId, cached] of this.#queues)
-      if (!this.options.watched(cached.tenant, cached.value.sessionId)) this.#remove(cachedId);
+    if (change.entity === "input_queue")
+      this.notify(change.scope.tenantId, change.entityId, current);
+  }
+  notify(tenant: string, session: string, current: () => boolean): void {
+    if (this.#closed || !current()) return;
+    for (const [id, cached] of this.#queues)
+      if (!this.options.watched(cached.tenant, cached.value.sessionId)) this.#remove(id);
     if (!this.options.watched(tenant, session)) return;
-    if (BigInt(this.#queues.get(id)?.value.viewVersion ?? "0") >= BigInt(change.version)) return;
-    const pending = this.#pending.get(id);
-    if (pending && BigInt(pending.change.version) >= BigInt(change.version)) return;
-    if (!pending && this.#pending.size >= (this.options.maximumQueues ?? 256)) {
+    const id = key(tenant, session);
+    if (!this.#pending.has(id) && this.#pending.size >= (this.options.maximumQueues ?? 256)) {
       this.#remove(id);
       this.options.unavailable(tenant, session);
       return;
     }
-    this.#pending.set(id, { change, current, generation: this.#generation });
+    this.#pending.set(id, {
+      tenant,
+      session,
+      current,
+      generation: this.#generation,
+      version: ++this.#version,
+    });
     this.#pump();
   }
   #valid(refresh: Refresh): boolean {
@@ -69,7 +79,14 @@ export class InputQueueView {
       if (this.#active.has(id)) continue;
       this.#pending.delete(id);
       const task = Promise.resolve()
-        .then(() => this.#refresh(id, refresh))
+        .then(() => {
+          const latest = this.#pending.get(id);
+          if (latest?.generation === refresh.generation) {
+            this.#pending.delete(id);
+            return this.#refresh(id, latest);
+          }
+          return this.#refresh(id, refresh);
+        })
         .finally(() => {
           this.#active.delete(id);
           this.#pump();
@@ -78,23 +95,20 @@ export class InputQueueView {
     }
   }
   async #refresh(id: string, refresh: Refresh): Promise<void> {
-    const { change } = refresh,
-      tenant = change.scope.tenantId,
-      session = change.entityId;
+    const { tenant, session } = refresh;
     if (!this.#valid(refresh) || !this.options.watched(tenant, session)) return;
-    if (BigInt(this.#queues.get(id)?.value.viewVersion ?? "0") >= BigInt(change.version)) return;
     try {
       const value = await this.options.read(tenant, session);
       if (!this.#valid(refresh) || !this.options.watched(tenant, session)) return;
-      if (value.sessionId !== session || BigInt(value.viewVersion) < BigInt(change.version))
-        throw new Error("Input queue snapshot is behind its committed change");
+      if (value.sessionId !== session) throw new Error("Queue snapshot scope changed");
+      // Control-reference versions and native commit sequences are different
+      // namespaces. Compare snapshots only with snapshots, and coalesce wakes locally.
       const pending = this.#pending.get(id);
-      if (pending && BigInt(pending.change.version) > BigInt(value.viewVersion)) return;
-      if (pending) this.#pending.delete(id);
-      if (BigInt(this.#queues.get(id)?.value.viewVersion ?? "0") > BigInt(value.viewVersion))
-        return;
-      const bytes = Buffer.byteLength(JSON.stringify(value));
-      const maximum = this.options.maximumBytes ?? 64 * 1024 * 1024;
+      if (pending && pending.version > refresh.version) return;
+      const old = this.#queues.get(id)?.value;
+      if (old && BigInt(old.viewVersion) > BigInt(value.viewVersion)) return;
+      const bytes = Buffer.byteLength(JSON.stringify(value)),
+        maximum = this.options.maximumBytes ?? 64 * 1024 * 1024;
       this.#remove(id);
       while (
         this.#queues.size &&
@@ -109,13 +123,11 @@ export class InputQueueView {
     } catch {
       if (!this.#valid(refresh)) return;
       this.#remove(id);
-      // A disconnected observer recovers by a current snapshot, never by
-      // retrying a Kafka record or creating another durable execution queue.
       try {
         this.options.unavailable(tenant, session);
         this.options.onError?.();
       } catch {
-        /* observation only */
+        /* Disposable observation. */
       }
     }
   }

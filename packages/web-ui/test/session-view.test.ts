@@ -75,6 +75,7 @@ const session: SessionResource = {
 };
 
 const accepted: AcceptedTurnResource = {
+  kind: "run",
   turnId: TURN_ID,
   sessionId: SESSION_ID,
   runId: "50000000-0000-4000-8000-000000000002",
@@ -948,7 +949,7 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
   });
   state = sessionViewReducer(state, { type: "turn.accepted", accepted, prompt: "old draft" });
   const item = {
-    turnId: accepted.turnId,
+    inputId: accepted.turnId,
     runId: accepted.runId,
     text: "edited draft",
     mailboxPosition: 2,
@@ -957,7 +958,7 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
   };
   const snapshot = {
     sessionId: SESSION_ID,
-    revision: 1,
+    revision: `${"a".repeat(64)}.${"b".repeat(64)}`,
     viewVersion: "1",
     afterPosition: 0,
     hasMore: false,
@@ -970,7 +971,7 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
   expect(sessionViewReducer(state, { type: "queue.updated", queue: snapshot })).toBe(state);
   state = sessionViewReducer(state, {
     type: "queue.updated",
-    queue: { ...snapshot, revision: 2, items: [] },
+    queue: { ...snapshot, revision: `${"c".repeat(64)}.${"b".repeat(64)}`, items: [] },
   });
   expect(state.turns).toEqual([]);
   state = sessionViewReducer(state, { type: "turn.accepted", accepted, prompt: "started" });
@@ -981,4 +982,19 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
   const after = sessionViewReducer(state, { type: "queue.updated", queue: snapshot });
   expect(after.turns).toHaveLength(1);
   expect(after.turns[0]).toMatchObject({ status: "running", prompt: "started" });
+});
+
+it("keeps consumed human messages in the same Run and deduplicates them on reconnect", () => {
+  let state = preparedState();
+  const first = envelope(1, {
+    type: "user.input",
+    payload: { messageId: "entry:2", inputId: "input-" + "a".repeat(64), text: "follow-up" },
+  });
+  state = sessionViewReducer(state, { type: "stream.event", event: first });
+  expect(state.turns).toHaveLength(1);
+  expect(state.turns[0]?.items.filter((i) => i.kind === "user")).toMatchObject([
+    { text: "follow-up" },
+  ]);
+  state = sessionViewReducer(state, { type: "stream.event", event: { ...first, seq: 2 } });
+  expect(state.turns[0]?.items.filter((i) => i.kind === "user")).toHaveLength(1);
 });

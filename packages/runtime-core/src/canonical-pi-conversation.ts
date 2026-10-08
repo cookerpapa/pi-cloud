@@ -1,12 +1,18 @@
 import type { Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
 import {
+  readHumanInputMetadataBatch,
+  type StoredHumanInputs,
+} from "@pi-cloud/pi-session-postgres/durable";
+import {
   parseConversationTurnTranscriptResource,
   normalizeProviderHostedWebSearchAction,
   toolResultIsUnknown,
   type ConversationTurnTranscriptResource,
   type ConversationTranscriptItemResource,
   type AssistantMessagePhase,
+  parseUserUploads,
+  type UserUpload,
 } from "@pi-cloud/protocol";
 type JsonRecord = Record<string, unknown>;
 type TerminalProjectionMetadata = Pick<
@@ -86,11 +92,14 @@ export type NativeHistoryRow = {
   fields: Record<string, string>;
   body: string;
   committed_at: Date;
+  pi_session_id?: string;
 };
+type HumanEntry = { inputId: string; text: string; uploads: UserUpload[] };
 export function projectDurableTranscript(
   rows: readonly NativeHistoryRow[],
   terminal: TerminalProjectionMetadata,
   proposalOnly: ReadonlySet<string> = new Set(),
+  humanEntries: ReadonlyMap<string, HumanEntry> = new Map(),
 ): ConversationTurnTranscriptResource {
   const items: ConversationTranscriptItemResource[] = [],
     proposals = new Map<string, { name: string; input: unknown }>();
@@ -179,7 +188,19 @@ export function projectDurableTranscript(
       const message = record(raw);
       if (!message) continue;
       const content = Array.isArray(message.content) ? message.content : [];
-      if (message.role === "assistant") {
+      if (message.role === "user") {
+        const human = humanEntries.get(row.id);
+        if (human)
+          items.push({
+            kind: "user",
+            messageId: `entry:${row.id}`,
+            inputId: human.inputId,
+            text: human.text,
+            ...(human.uploads.length ? { uploads: human.uploads } : {}),
+            firstSequence: sequence,
+            lastSequence: sequence,
+          });
+      } else if (message.role === "assistant") {
         proposals.clear();
         for (const [index, part] of content.entries()) {
           const block = record(part);
@@ -282,29 +303,81 @@ export async function readCanonicalPiTurnTranscripts(
   const rows = await sql<NativeHistoryRow>`with own as (
       select r.* from pi_durable_records r
       where r.tenant_id=${input.tenantId}::uuid and r.fields->>'turn'=any(${turnIds}::text[])
-        and (r.kind='entry' or (r.kind='task' and r.fields->>'nativeKind'=any(${["pi.generation", "pi.tool", "pi.compaction"].map((value) => JSON.stringify(value))}::text[])))
-        and exists(select 1 from turns t join sessions s on s.tenant_id=t.tenant_id and s.id=t.session_id
-          where t.tenant_id=r.tenant_id and t.id::text=r.fields->>'turn' and s.pi_session_id=r.session_id)
+        and (r.kind='entry' or r.kind='submission' or (r.kind='task' and r.fields->>'nativeKind'=any(${["pi.generation", "pi.tool", "pi.compaction"].map((value) => JSON.stringify(value))}::text[])))
+        and exists(select 1 from runs t join sessions s on s.tenant_id=t.tenant_id and s.id=t.session_id
+          where t.tenant_id=r.tenant_id and t.turn_id::text=r.fields->>'turn' and s.pi_session_id=r.session_id)
     ), history as (
-      select r.id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,task.fields->>'nativeKind' as task_kind
+      select r.id,r.session_id as pi_session_id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,task.fields->>'nativeKind' as task_kind
       from own r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
         join pi_durable_commits c using(tenant_id,session_id,seq)
         left join pi_durable_records task on task.tenant_id=r.tenant_id and task.session_id=r.session_id
           and task.id=(r.fields->>'task')::bigint and task.kind='task'
-      where r.kind='entry'
+      where r.kind in ('entry','submission')
       union all
-      select r.id,l.seq,l.ordinal,r.fields,l.body,c.committed_at,null::text as task_kind
+      select r.id,r.session_id as pi_session_id,l.seq,l.ordinal,r.fields,l.body,c.committed_at,null::text as task_kind
       from own r join pi_durable_log l on l.tenant_id=r.tenant_id and l.session_id=r.session_id and l.record_id=r.id
         join pi_durable_commits c on c.tenant_id=l.tenant_id and c.session_id=l.session_id and c.seq=l.seq
       where r.kind='task' and l.record_kind='task' and l.phase=${JSON.stringify("retry")}
       union all
-      select r.id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,null::text as task_kind
+      select r.id,r.session_id as pi_session_id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,null::text as task_kind
       from own r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
         join pi_durable_commits c using(tenant_id,session_id,seq)
       where r.kind='task' and (r.fields->>'status'='terminal' or (r.fields->>'nativeKind'=${JSON.stringify("pi.tool")} and r.fields->>'status'='running'))
         and r.fields->>'nativeKind'=any(${["pi.tool", "pi.compaction"].map((value) => JSON.stringify(value))}::text[])
         and not exists(select 1 from own result where result.kind='entry' and result.session_id=r.session_id and result.fields->>'task'=r.id::text)
     ) select * from history order by seq,ordinal`.execute(database);
+  const requests = rows.rows.flatMap((row) => {
+    const write = JSON.parse(row.body) as {
+      type: string;
+      value: { requestId?: string; entry?: number; conversationId?: number };
+    };
+    return write.type === "submission" &&
+      write.value.requestId?.startsWith("input-") &&
+      write.value.entry !== undefined &&
+      row.pi_session_id &&
+      row.fields.run
+      ? [
+          {
+            row,
+            inputId: write.value.requestId,
+            entryId: String(write.value.entry),
+            runId: row.fields.run,
+            piSessionId: row.pi_session_id,
+            conversationId: Number(write.value.conversationId),
+          },
+        ]
+      : [];
+  });
+  const metadata = new Map<string, StoredHumanInputs>();
+  for (const piSessionId of new Set(requests.map((request) => request.piSessionId))) {
+    const group = requests.filter((request) => request.piSessionId === piSessionId);
+    const loaded = await readHumanInputMetadataBatch(
+      database,
+      { tenantId: input.tenantId, sessionId: piSessionId },
+      [
+        ...new Map(
+          group.map((request) => [
+            request.runId,
+            { runId: request.runId, conversationId: request.conversationId },
+          ]),
+        ).values(),
+      ],
+    );
+    for (const [run, value] of loaded) metadata.set(run, value);
+  }
+  const humanEntries = new Map<string, Map<string, HumanEntry>>();
+  for (const request of requests) {
+    const record = metadata.get(request.runId)?.inputs[request.inputId];
+    if (!record) continue;
+    const turn = request.row.fields.turn!;
+    const entries = humanEntries.get(turn) ?? new Map<string, HumanEntry>();
+    entries.set(request.entryId, {
+      inputId: request.inputId,
+      text: record.text,
+      uploads: parseUserUploads(record.uploads),
+    });
+    humanEntries.set(turn, entries);
+  }
   const terminalRows = await database
     .selectFrom("session_terminal_events")
     .select(["turn_id", "seq", "type", "payload", "occurred_at"])
@@ -333,9 +406,14 @@ export async function readCanonicalPiTurnTranscripts(
     if (terminal)
       result.set(
         turn,
-        projectDurableTranscript(grouped.get(turn) ?? [], terminalMetadata(terminal)),
+        projectDurableTranscript(
+          grouped.get(turn) ?? [],
+          terminalMetadata(terminal),
+          new Set(),
+          humanEntries.get(turn),
+        ),
       );
-    else if (current && Number(current.output_display_seq) > 0) {
+    else if (current && (Number(current.output_display_seq) > 0 || humanEntries.get(turn)?.size)) {
       const all = grouped.get(turn) ?? [],
         proposalOnly = new Set<string>();
       const running = new Set(
@@ -363,8 +441,9 @@ export async function readCanonicalPiTurnTranscripts(
               // An already projected execute checkpoint is current native state.
               // It can show a Tool in a plain GET before its lossy/live start is
               // covered. The stable native task ID merges with the SSE start.
-              running.has(row) ||
-              proposalOnly.has(row.id),
+              row.fields.role === "user" ||
+              (Number(current.output_display_seq) > 0 &&
+                (running.has(row) || proposalOnly.has(row.id))),
           ),
           {
             throughSequence: Number(current.output_display_seq),
@@ -375,6 +454,7 @@ export async function readCanonicalPiTurnTranscripts(
             occurredAt: new Date().toISOString(),
           },
           proposalOnly,
+          humanEntries.get(turn),
         ),
       );
     }

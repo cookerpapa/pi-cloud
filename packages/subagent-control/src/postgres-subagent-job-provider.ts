@@ -267,11 +267,6 @@ export class PostgresSubagentJobProvider {
             .onRef("parent_session.tenant_id", "=", "parent_run.tenant_id")
             .onRef("parent_session.id", "=", "parent_run.session_id"),
         )
-        .innerJoin("turns as parent_turn", (join) =>
-          join
-            .onRef("parent_turn.tenant_id", "=", "parent_run.tenant_id")
-            .onRef("parent_turn.id", "=", "parent_run.turn_id"),
-        )
         .innerJoin("workspaces as parent_workspace", (join) =>
           join
             .onRef("parent_workspace.tenant_id", "=", "parent_run.tenant_id")
@@ -300,13 +295,13 @@ export class PostgresSubagentJobProvider {
           "parent_run.compute_session_id as computeSessionId",
           "parent_session.session_kind as sessionKind",
           "parent_workspace.sandbox_domain_id as sandboxDomainId",
-          "parent_turn.model_profile_id as turnModelProfileId",
-          "parent_turn.provider as provider",
-          "parent_turn.model_id as modelId",
-          "parent_turn.thinking_level as thinkingLevel",
-          "parent_turn.service_tier as serviceTier",
-          "parent_turn.credential_binding_id as credentialBindingId",
-          "parent_turn.credential_binding_version as credentialBindingVersion",
+          "parent_run.model_profile_id as turnModelProfileId",
+          "parent_run.provider as provider",
+          "parent_run.model_id as modelId",
+          "parent_run.thinking_level as thinkingLevel",
+          "parent_run.service_tier as serviceTier",
+          "parent_run.credential_binding_id as credentialBindingId",
+          "parent_run.credential_binding_version as credentialBindingVersion",
         ])
         .where("parent_run.tenant_id", "=", input.tenantId)
         .where("parent_run.id", "=", input.parentRunId)
@@ -508,33 +503,10 @@ export class PostgresSubagentJobProvider {
           working_directory: workingDirectory,
           session_kind: "subagent",
           tool_capabilities: sql<unknown[]>`${JSON.stringify(tools)}::jsonb`,
-          forked_from_session_id: null,
           conversation_parent_session_id: null,
           conversation_fork_turn_id: null,
           conversation_fork_entry_id: null,
           pruned_at: null,
-        })
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("turns")
-        .values({
-          id: childTurnId,
-          tenant_id: input.tenantId,
-          session_id: childSessionId,
-          state: "queued",
-          input_kind: "prompt",
-          input_text: input.prompt,
-          model_profile_id: parent.turnModelProfileId,
-          provider: parent.provider,
-          model_id: parent.modelId,
-          thinking_level: parent.thinkingLevel,
-          service_tier: parent.serviceTier,
-          credential_binding_id: parent.credentialBindingId,
-          credential_binding_version: parent.credentialBindingVersion,
-          stop_reason: null,
-          failure_code: null,
-          failure_message: null,
-          failure_retryable: null,
         })
         .executeTakeFirstOrThrow();
       const childRun = await transaction
@@ -547,6 +519,14 @@ export class PostgresSubagentJobProvider {
           workspace_id: childWorkspaceId,
           session_id: childSessionId,
           turn_id: childTurnId,
+          input_text: input.prompt,
+          model_profile_id: parent.turnModelProfileId,
+          provider: parent.provider,
+          model_id: parent.modelId,
+          thinking_level: parent.thinkingLevel,
+          service_tier: parent.serviceTier,
+          credential_binding_id: parent.credentialBindingId,
+          credential_binding_version: parent.credentialBindingVersion,
           compute_session_id: computeSessionId,
           working_directory: workingDirectory,
           sandbox_profile_key: parent.sandboxProfileKey,
@@ -561,7 +541,6 @@ export class PostgresSubagentJobProvider {
               treeContext.depth < this.#treePolicy.maximumDepth,
           ),
           tool_capability_snapshot: sql<unknown[]>`${JSON.stringify(tools)}::jsonb`,
-          conversation_base_seq: 0,
           idempotency_key: idempotencyKey,
           state: "queued",
           stop_reason: null,
@@ -764,12 +743,6 @@ export class PostgresSubagentJobProvider {
         .forUpdate()
         .executeTakeFirst();
       if (execution === undefined || execution.state !== "preparing") return;
-      const run = await transaction
-        .selectFrom("runs")
-        .select("turn_id")
-        .where("tenant_id", "=", tenantId)
-        .where("id", "=", execution.child_run_id)
-        .executeTakeFirstOrThrow();
       await transaction
         .updateTable("subagent_executions")
         .set({
@@ -794,18 +767,6 @@ export class PostgresSubagentJobProvider {
         })
         .where("tenant_id", "=", tenantId)
         .where("id", "=", execution.child_run_id)
-        .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("turns")
-        .set({
-          state: "failed",
-          failure_code: failureCode,
-          failure_message: failureMessage,
-          failure_retryable: false,
-          settled_at: now,
-        })
-        .where("tenant_id", "=", tenantId)
-        .where("id", "=", run.turn_id)
         .executeTakeFirstOrThrow();
       await transaction
         .updateTable("sessions")
@@ -977,12 +938,6 @@ export class PostgresSubagentJobProvider {
           .set({ state: "cancelled", settled_at: now, updated_at: now })
           .where("tenant_id", "=", tenantId)
           .where("id", "=", row.runId)
-          .executeTakeFirstOrThrow();
-        await transaction
-          .updateTable("turns")
-          .set({ state: "cancelled", settled_at: now })
-          .where("tenant_id", "=", tenantId)
-          .where("id", "=", row.turnId)
           .executeTakeFirstOrThrow();
         await transaction
           .updateTable("subagent_executions")

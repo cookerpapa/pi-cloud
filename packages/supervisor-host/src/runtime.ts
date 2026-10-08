@@ -337,24 +337,14 @@ export class PiWorkerRuntime {
           this.#runWorker?.scheduleOwnedSubagent?.(command.runId);
         }
       },
-      steerCommand: async (command) => {
-        const local = this.#runSupervisor;
-        if (local === undefined) {
+      humanInput: async (command) => {
+        if (!this.#nativeSessions?.hasExecution(command.executionReference) || !this.#agentRunner)
           throw new SupervisorManagementServerError(
-            "steer_target_unavailable",
-            "Pi Run is not active on this Worker",
+            "input_target_unavailable",
+            "Native execution is not ready",
             true,
           );
-        }
-        const prepared = local.prepareSteer(command);
-        if (prepared.ack.payload.status === "rejected") {
-          throw new SupervisorManagementServerError(
-            prepared.ack.payload.code,
-            prepared.ack.payload.message,
-            prepared.ack.payload.retryable,
-          );
-        }
-        await prepared.run();
+        return this.#agentRunner.humanInput(command);
       },
     });
     this.#managementServer = managementServer;

@@ -6,9 +6,12 @@ import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { PiCloudMetrics } from "@pi-cloud/observability";
-import { createTestWorker } from "./admit-test-execution.ts";
-import { QueuedInputService } from "../src/queued-input-service.ts";
-import type { TurnSteerResource } from "@pi-cloud/protocol";
+import { startNativeInputAgent } from "./native-input-fixture.ts";
+import type {
+  NativeInputCommand,
+  AcceptedTurnResource,
+  TurnSteerResource,
+} from "@pi-cloud/protocol";
 
 import {
   HashedBearerSupervisorAuthorizer,
@@ -92,10 +95,12 @@ describe.sequential("remote control-plane runtime composition", () => {
     );
     const metrics = new PiCloudMetrics("composition-regression");
     const finishDelivery = Promise.withResolvers<void>();
-    const steer = vi.fn(async () => {
+    let agent: Awaited<ReturnType<typeof startNativeInputAgent>> | undefined;
+    const humanInput = vi.fn(async (command: NativeInputCommand) => {
       await finishDelivery.promise;
+      return agent!.backend.humanInput(command);
     });
-    const backendFactory = vi.fn(async () => ({ steer }));
+    const backendFactory = vi.fn(async () => ({ humanInput }));
     const runtime = await createControlPlaneRuntime({
       database,
       tenantId: tenant.tenantId,
@@ -103,7 +108,7 @@ describe.sequential("remote control-plane runtime composition", () => {
       controlPlaneInstanceId: randomUUID(),
       eventRuntime: emptyEventRuntime(),
       metrics,
-      turnSteerBackendFactory: backendFactory,
+      nativeInputBackendFactory: backendFactory,
       supervisorAuthorizer: new HashedBearerSupervisorAuthorizer({
         token: TOKEN,
         identity: { supervisorId: SUPERVISOR_ID, bootId: IDS.boot, sandboxId: IDS.sandbox },
@@ -122,8 +127,6 @@ describe.sequential("remote control-plane runtime composition", () => {
         },
       }),
     });
-    const finished = Promise.withResolvers<void>();
-    let execution: Promise<unknown> | undefined;
     try {
       const address = await runtime.listen(0, "127.0.0.1");
       const accepted = await fetch(`${address}/v1/sessions/${session.sessionId}/turns`, {
@@ -132,7 +135,7 @@ describe.sequential("remote control-plane runtime composition", () => {
         body: JSON.stringify({ prompt: "Queue only; no model is running in this fixture." }),
       });
       expect(accepted.status).toBe(202);
-      const turn = (await accepted.json()) as { runId: string; turnId: string };
+      const turn = (await accepted.json()) as AcceptedTurnResource;
       const samples = await metrics.turnAdmissionDuration.get();
       expect.soft(samples.values.find((v) => v.metricName?.endsWith("_count"))?.value).toBe(1);
       // Run admission intentionally has no tenant-concurrency lock. Resource
@@ -151,26 +154,13 @@ describe.sequential("remote control-plane runtime composition", () => {
         )
         .toBeGreaterThan(0);
 
-      const worker = await createTestWorker(database);
-      const entered = Promise.withResolvers<void>();
-      execution = worker
-        .executor({
-          execute: async () => {
-            entered.resolve();
-            await finished.promise;
-            return { stopReason: "stop" };
-          },
-        })
-        .dispatchRun(turn.runId);
-      void execution.catch(entered.reject);
-      await entered.promise;
-
-      // Acceptance must persist a held source before reconciliation uses the
-      // supplied transport, even without a local Worker WebSocket connection.
+      agent = await startNativeInputAgent(database, tenant.tenantId, turn);
+      // The HTTP response waits for the native Storage acknowledgement.
       const text = "Change the requested output.";
       const key = randomUUID();
       expect(runtime.gateway.activeConnectionCount).toBe(0);
-      const delivered = await fetch(
+      let confirmed = false;
+      const delivery = fetch(
         `${address}/v1/sessions/${session.sessionId}/turns/${turn.turnId}/steers`,
         {
           method: "POST",
@@ -178,45 +168,35 @@ describe.sequential("remote control-plane runtime composition", () => {
           body: JSON.stringify({ text }),
         },
       );
+      void delivery.then(() => {
+        confirmed = true;
+      });
+      await waitFor(() => humanInput.mock.calls.length === 1);
+      expect(confirmed).toBe(false);
+      finishDelivery.resolve();
+      const delivered = await delivery;
       expect(delivered.status).toBe(202);
       const receipt = (await delivered.json()) as TurnSteerResource;
       expect(receipt).toMatchObject({
-        targetRunId: turn.runId,
+        kind: "input",
+        runId: turn.runId,
         state: "accepted",
         replayed: false,
       });
+      expect(backendFactory).toHaveBeenCalledWith(agent.worker.workerId);
+      expect(humanInput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "submit",
+          input: expect.objectContaining({ text, mode: "steer" }),
+        }),
+      );
       expect(
         await database
           .selectFrom("runs")
-          .select(["state", "queued_steer_id"])
-          .where("id", "=", receipt.sourceRunId)
-          .executeTakeFirstOrThrow(),
-      ).toEqual({ state: "queued", queued_steer_id: receipt.controlRequestId });
-      runtime.application.get(QueuedInputService).recoverPending();
-      await waitFor(() => steer.mock.calls.length === 1);
-      expect(backendFactory).toHaveBeenCalledWith(worker.workerId);
-      expect(steer).toHaveBeenCalledWith(
-        expect.objectContaining({ text, target: expect.objectContaining({ runId: turn.runId }) }),
-      );
-      // HTTP acceptance did not await the deliberately blocked Worker reply.
-      finishDelivery.resolve();
-      await waitFor(
-        async () =>
-          (
-            await database
-              .selectFrom("turn_control_requests")
-              .select("state")
-              .where("id", "=", receipt.controlRequestId)
-              .executeTakeFirst()
-          )?.state === "acknowledged",
-      );
-      expect(
-        await database
-          .selectFrom("turn_control_requests")
-          .select("state")
-          .where("id", "=", receipt.controlRequestId)
-          .executeTakeFirstOrThrow(),
-      ).toEqual({ state: "acknowledged" });
+          .select("id")
+          .where("session_id", "=", session.sessionId)
+          .execute(),
+      ).toHaveLength(1);
       const replay = await fetch(
         `${address}/v1/sessions/${session.sessionId}/turns/${turn.turnId}/steers`,
         {
@@ -227,12 +207,10 @@ describe.sequential("remote control-plane runtime composition", () => {
       );
       expect(replay.status).toBe(202);
       expect(await replay.json()).toMatchObject({ ...receipt, replayed: true });
-      await runtime.application.get(QueuedInputService).reconcileOnce();
-      expect(steer).toHaveBeenCalledOnce();
+      expect(humanInput).toHaveBeenCalledOnce();
     } finally {
       finishDelivery.resolve();
-      finished.resolve();
-      await execution;
+      await agent?.close();
       await runtime.close();
     }
   });

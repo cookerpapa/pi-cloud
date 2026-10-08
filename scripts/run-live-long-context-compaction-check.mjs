@@ -234,7 +234,7 @@ async function usageForRun(runId) {
 async function runEvidence(runId) {
   const row = await psql(
     `select sandbox.supervisor_id || '|' ||
-            coalesce(run.sandbox_id::text, '') || '|' ||
+            coalesce(run.worker_id::text, '') || '|' ||
             coalesce(activation.workspace_runtime_id::text, '') || '|' ||
             coalesce(activation.runtime_id, '') || '|' ||
             coalesce(pi.total_bytes, 0) || '|' ||
@@ -243,7 +243,7 @@ async function runEvidence(runId) {
             coalesce(pi.active_entries, 0)
        from runs run
        join sessions product_session on product_session.id = run.session_id
-       join sandboxes sandbox on sandbox.id = run.sandbox_id
+       join sandboxes sandbox on sandbox.id = run.worker_id
        left join workspace_runtimes activation
         on activation.tenant_id = run.tenant_id
         and activation.workspace_id = run.workspace_id
@@ -458,8 +458,8 @@ async function turnModelSnapshot(turnId) {
   const row = await psql(
     `select json_build_object('provider',provider,'modelId',model_id,
                               'thinkingLevel',thinking_level,'serviceTier',service_tier)::text
-       from turns
-      where id = ${sqlLiteral(turnId)}`,
+       from runs
+      where turn_id = ${sqlLiteral(turnId)}`,
   );
   return JSON.parse(row);
 }

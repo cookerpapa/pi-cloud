@@ -45,7 +45,7 @@ export function PendingInputQueue({
     "queue.loadError" | "queue.actionError" | "queue.changed" | "queue.noActive" | null
   >(null);
   const [editing, setEditing] = useState<{
-    turnId: string;
+    inputId: string;
     text: string;
     uploads: UserUpload[];
   } | null>(null);
@@ -65,18 +65,20 @@ export function PendingInputQueue({
       if (page.afterPosition > 0) {
         if (
           !current.current ||
-          current.current.viewVersion !== page.viewVersion ||
+          current.current.revision !== page.revision ||
           current.current.items.at(-1)?.mailboxPosition !== page.afterPosition
         )
           return;
         next = { ...page, afterPosition: 0, items: [...current.current.items, ...page.items] };
       } else if (
-        current.current?.viewVersion === page.viewVersion &&
+        current.current?.revision === page.revision &&
         current.current.items.length > page.items.length
-      )
-        return;
+      ) {
+        next = { ...page, items: current.current.items, hasMore: current.current.hasMore };
+      }
       const same =
         current.current?.revision === next.revision &&
+        current.current.viewVersion === next.viewVersion &&
         current.current.activeTurnId === next.activeTurnId &&
         current.current.hasReturnedInputs === next.hasReturnedInputs &&
         current.current.hasMore === next.hasMore &&
@@ -84,7 +86,7 @@ export function PendingInputQueue({
         current.current.items.every((item, index) => {
           const other = next.items[index]!;
           return (
-            item.turnId === other.turnId &&
+            item.inputId === other.inputId &&
             item.text === other.text &&
             JSON.stringify(item.uploads ?? []) === JSON.stringify(other.uploads ?? []) &&
             item.status === other.status &&
@@ -153,7 +155,7 @@ export function PendingInputQueue({
     try {
       const page = await api.getInputQueue(sessionId, controller.signal, {
         afterPosition: last.mailboxPosition,
-        viewVersion: snapshot.viewVersion,
+        revision: snapshot.revision,
       });
       if (mounted.current && request === sequence.current) apply(page);
     } catch (cause) {
@@ -171,25 +173,22 @@ export function PendingInputQueue({
     }
   }
 
-  async function perform(turnId: string, action: Action): Promise<boolean> {
+  async function perform(inputId: string, action: Action): Promise<boolean> {
     const snapshot = current.current;
     if (!snapshot || inFlight.current || !canMutate) return false;
     if (action.action === "steer" && !snapshot.activeTurnId) {
       setError("queue.noActive");
       return false;
     }
-    const request: QueuedInputAction =
-      action.action === "steer"
-        ? { ...action, revision: snapshot.revision, targetTurnId: snapshot.activeTurnId! }
-        : { ...action, revision: snapshot.revision };
+    const request: QueuedInputAction = { ...action, revision: snapshot.revision };
     const key = newIdempotencyKey("turn");
     inFlight.current = true;
     sequence.current++;
     readAbort.current?.abort();
-    setBusy(turnId);
+    setBusy(inputId);
     setError(null);
     let succeeded = false;
-    const send = () => api.mutateQueuedInput(sessionId, turnId, request, key);
+    const send = () => api.mutateQueuedInput(sessionId, inputId, request, key);
     try {
       let result;
       try {
@@ -271,7 +270,7 @@ export function PendingInputQueue({
     refresh,
   ]);
 
-  const editingItem = editing && queue?.items.find((item) => item.turnId === editing.turnId);
+  const editingItem = editing && queue?.items.find((item) => item.inputId === editing.inputId);
   const editable = editingItem?.status === "queued";
   if (!queue?.items.length && !editing && !error && returnStatus === "idle") return null;
   return (
@@ -304,9 +303,9 @@ export function PendingInputQueue({
       <div className="pending-input-list">
         {queue?.items.map((item, index) => (
           <div
-            className={`pending-input-row${editing?.turnId === item.turnId ? " editing" : ""}`}
-            data-turn-id={item.turnId}
-            key={item.turnId}
+            className={`pending-input-row${editing?.inputId === item.inputId ? " editing" : ""}`}
+            data-turn-id={item.inputId}
+            key={item.inputId}
           >
             <span className="pending-input-number">{index + 1}</span>
             <div className="pending-input-content">
@@ -331,7 +330,7 @@ export function PendingInputQueue({
                   item.status !== "queued" ||
                   queue.items[index - 1]?.status !== "queued"
                 }
-                onClick={() => void perform(item.turnId, { action: "move", direction: "up" })}
+                onClick={() => void perform(item.inputId, { action: "move", direction: "up" })}
               >
                 ↑
               </button>
@@ -346,7 +345,7 @@ export function PendingInputQueue({
                   item.status !== "queued" ||
                   (index < queue.items.length - 1 && queue.items[index + 1]?.status !== "queued")
                 }
-                onClick={() => void perform(item.turnId, { action: "move", direction: "down" })}
+                onClick={() => void perform(item.inputId, { action: "move", direction: "down" })}
               >
                 ↓
               </button>
@@ -354,7 +353,11 @@ export function PendingInputQueue({
                 type="button"
                 disabled={!canMutate || busy !== null || item.status !== "queued"}
                 onClick={() => {
-                  setEditing({ turnId: item.turnId, text: item.text, uploads: item.uploads ?? [] });
+                  setEditing({
+                    inputId: item.inputId,
+                    text: item.text,
+                    uploads: item.uploads ?? [],
+                  });
                   setError(null);
                 }}
               >
@@ -368,14 +371,14 @@ export function PendingInputQueue({
                   item.status !== "queued" ||
                   queue.activeTurnId === null
                 }
-                onClick={() => void perform(item.turnId, { action: "steer" })}
+                onClick={() => void perform(item.inputId, { action: "steer" })}
               >
                 {t("queue.steer")}
               </button>
               <button
                 type="button"
                 disabled={!canMutate || busy !== null || item.status !== "queued"}
-                onClick={() => void perform(item.turnId, { action: "cancel" })}
+                onClick={() => void perform(item.inputId, { action: "cancel" })}
               >
                 {t("queue.remove")}
               </button>
@@ -394,7 +397,7 @@ export function PendingInputQueue({
           onSubmit={(event) => {
             event.preventDefault();
             if (editable)
-              void perform(editing.turnId, { action: "edit", text: editing.text }).then((ok) => {
+              void perform(editing.inputId, { action: "edit", text: editing.text }).then((ok) => {
                 if (ok) setEditing(null);
               });
           }}
@@ -403,7 +406,7 @@ export function PendingInputQueue({
           <strong className="pending-input-edit-title">
             {t("queue.editLabel")}
             {editingItem
-              ? ` ${queue!.items.findIndex((item) => item.turnId === editing.turnId) + 1}`
+              ? ` ${queue!.items.findIndex((item) => item.inputId === editing.inputId) + 1}`
               : ""}
           </strong>
           <textarea
@@ -437,9 +440,11 @@ export function PendingInputQueue({
                 (!editing.text.trim() && !editing.uploads.length)
               }
               onClick={() =>
-                void perform(editing.turnId, { action: "steer", text: editing.text }).then((ok) => {
-                  if (ok) setEditing(null);
-                })
+                void perform(editing.inputId, { action: "steer", text: editing.text }).then(
+                  (ok) => {
+                    if (ok) setEditing(null);
+                  },
+                )
               }
             >
               {t("queue.steer")}

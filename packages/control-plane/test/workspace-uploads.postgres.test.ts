@@ -1,5 +1,6 @@
-import { createTestWorker } from "./admit-test-execution.ts";
-import type { TurnSteerRequest } from "../src/turn-steer.ts";
+import { startNativeInputAgent } from "./native-input-fixture.ts";
+import type { NativeInputAccepted } from "@pi-cloud/protocol";
+let nativeAgent: Awaited<ReturnType<typeof startNativeInputAgent>> | undefined;
 import { createHash, randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -23,7 +24,6 @@ import {
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { WorkspaceUploadService, type WorkspaceUploader } from "../src/workspace-upload-service.ts";
 import { QueuedInputService } from "../src/queued-input-service.ts";
-import { TurnSteeringService } from "../src/turn-steering-service.ts";
 import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 
 function content(bytes: Buffer) {
@@ -106,6 +106,7 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
     app = await createControlPlaneApplication({
       database: db,
       eventRuntime: emptyEventRuntime(),
+      nativeInputBackendFactory: async () => nativeAgent!.backend,
       workspaceUploader: { uploadWorkspaceFile: place },
       imageAttachmentStore: images,
       productionHttpGateway: new ProductionHttpGateway({
@@ -114,7 +115,6 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       }),
     });
     await app.listen(0, "127.0.0.1");
-    await app.get(QueuedInputService).onApplicationShutdown();
     http = app.getHttpAdapter().getInstance() as FastifyInstance;
   }, 60000);
   afterAll(async () => {
@@ -211,19 +211,15 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       uploadIds: [image.id],
     });
     const row = await db
-      .selectFrom("turns")
+      .selectFrom("runs")
       .select(["input_text", "input_uploads"])
-      .where("id", "=", accepted.turnId)
+      .where("turn_id", "=", accepted.turnId)
       .executeTakeFirstOrThrow();
     expect(row.input_text).toBe("");
     expect(row.input_uploads).toEqual([image]);
     expect(JSON.stringify(row)).not.toContain(png.toString("base64"));
     const queue = new QueuedInputService({
       database: db,
-      steering: new TurnSteeringService({
-        database: db,
-        backendFactory: async () => ({ steer: async () => {} }),
-      }),
     });
     const before = await queue.list(tenant.tenantId, s.sessionId);
     expect(before.items[0]?.uploads).toEqual([image]);
@@ -268,38 +264,13 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       prompt: "",
       uploadIds: [image.id],
     });
-    const second = await store.acceptTurn(s.sessionId, "queued-image", {
-      prompt: "",
-      uploadIds: [image.id],
-    });
-    const entered = Promise.withResolvers<void>(),
-      finish = Promise.withResolvers<void>();
-    const worker = await createTestWorker(db);
-    let captured: unknown;
-    const execution = worker
-      .executor({
-        execute: async (request) => {
-          captured = request.input;
-          entered.resolve();
-          await finish.promise;
-          return { stopReason: "stop" };
-        },
-      })
-      .dispatchRun(first.runId);
-    void execution.catch((error) => entered.reject(error));
-    const delivered: TurnSteerRequest[] = [];
-    const steering = new TurnSteeringService({
-      database: db,
-      backendFactory: async () => ({
-        steer: async (request) => {
-          delivered.push(request);
-        },
-      }),
-    });
-    const queue = new QueuedInputService({ database: db, steering });
+    nativeAgent = await startNativeInputAgent(db, tenant.tenantId, first);
+    const queue = app.get(QueuedInputService);
     try {
-      await entered.promise;
-      expect(captured).toMatchObject({ prompt: "", uploads: [image] });
+      const second = (await queue.accept(store, tenant.tenantId, s.sessionId, "queued-image", {
+        prompt: "",
+        uploadIds: [image.id],
+      })) as NativeInputAccepted;
       const conversation = await http.inject({
         method: "GET",
         url: `/v1/conversations/${s.sessionId}`,
@@ -308,14 +279,13 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       expect(conversation.statusCode, conversation.body).toBe(200);
       expect(conversation.json().turns[0]).toMatchObject({ prompt: "", uploads: [image] });
       const q = await queue.list(tenant.tenantId, s.sessionId);
-      await queue.mutate(tenant.tenantId, s.sessionId, second.turnId, "promote-image", {
+      await queue.mutate(tenant.tenantId, s.sessionId, second.inputId, "promote-image", {
         action: "steer",
         revision: q.revision,
-        targetTurnId: first.turnId,
       });
-      await queue.reconcileOnce();
-      expect(delivered).toHaveLength(1);
-      expect(delivered[0]).toMatchObject({ text: "", uploads: [image] });
+      expect((await queue.list(tenant.tenantId, s.sessionId)).items).toMatchObject([
+        { inputId: second.inputId, text: "", uploads: [image], status: "steering" },
+      ]);
       const viewer = await issuePrivateTenantCredential(db, {
         tenant: tenant.tenantId,
         userId: tenant.ownerUserId,
@@ -346,21 +316,21 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       });
       expect(accepted.statusCode, accepted.body).toBe(202);
       const direct = parseTurnSteerResource(accepted.json());
-      expect(direct).toMatchObject({ state: "accepted", targetTurnId: first.turnId });
-      expect(delivered).toHaveLength(1);
-      await queue.reconcileOnce();
-      expect(delivered).toHaveLength(2);
-      expect(delivered[1]).toMatchObject({ text: "", uploads: [image] });
-      expect(
-        await db
-          .selectFrom("turns")
-          .select("input_uploads")
-          .where("id", "=", direct.sourceTurnId)
-          .executeTakeFirst(),
-      ).toMatchObject({ input_uploads: [image] });
+      expect(direct).toMatchObject({
+        kind: "input",
+        state: "accepted",
+        turnId: first.turnId,
+        runId: first.runId,
+      });
+      expect((await queue.list(tenant.tenantId, s.sessionId)).items).toMatchObject([
+        { inputId: second.inputId, uploads: [image] },
+        { inputId: direct.inputId, uploads: [image] },
+      ]);
+      await store.acceptTurnCancellation(s.sessionId, first.turnId, "stop-images", {});
+      await nativeAgent.abort();
     } finally {
-      finish.resolve();
-      await execution;
+      await nativeAgent.close();
+      nativeAgent = undefined;
     }
   });
 
@@ -416,9 +386,9 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       uploadIds: files.map((file) => file.id),
     });
     const turn = await db
-      .selectFrom("turns")
+      .selectFrom("runs")
       .select("input_uploads")
-      .where("id", "=", accepted.turnId)
+      .where("turn_id", "=", accepted.turnId)
       .executeTakeFirstOrThrow();
     expect(turn.input_uploads).toHaveLength(5);
     const original = images.putStream.bind(images);

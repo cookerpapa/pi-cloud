@@ -40,7 +40,7 @@ POST   /v1/sessions/:sessionId/turns
 POST   /v1/sessions/:sessionId/turns/:turnId/cancellations
 POST   /v1/sessions/:sessionId/turns/:turnId/steers
 GET    /v1/sessions/:sessionId/queued-inputs
-POST   /v1/sessions/:sessionId/queued-inputs/:turnId/actions
+POST   /v1/sessions/:sessionId/queued-inputs/:inputId/actions
 GET    /v1/sessions/:sessionId/events
 
 GET    /v1/sessions/:sessionId/workspace/directory
@@ -50,53 +50,48 @@ GET    /v1/sessions/:sessionId/workspace/file
 Mutations use tenant authorization and idempotency keys where they can produce
 durable side effects.
 
-### Pending input protocol
+### Input and pending queue protocol
 
-Queue reads return `{ sessionId, revision, viewVersion, activeTurnId, items }`. Items contain
-`turnId`, `runId`, `text`, `mailboxPosition`, `acceptedAt` and `status` (`queued`
-or `steering`). Reads share a consistent PostgreSQL snapshot; pending input is
-separate from conversation history pagination and its Turn count.
-`viewVersion` is a bigint string ordering presentation snapshots independently of
-the numeric edit `revision`. The initial/reconnect/focus GET reads PG; subsequent
-changes arrive as `input.queue` on the existing SSE connection. Successful edits
-reuse their returned snapshot. There is no periodic queue GET.
-
-Actions require `Idempotency-Key` and the `revision` from the last queue read:
-
-```json
-{ "action": "edit", "revision": 12, "text": "Revised instruction" }
-```
-
-Other variants are `cancel`, `move` with `direction: "up" | "down"`, and `steer`
-with the active `targetTurnId` UUID. Steer accepts optional `text` to edit and
-promote atomically. The HTTP 200 response is `{ queue, replayed }`; promotion can
-still be `steering` until consumed. Retrying the same command identity returns
-the current queue without repeating its mutation. A changed body under the same
-key conflicts. Stale revisions, started inputs and admission-lock races return
-409; foreign Sessions return 404 and viewers cannot mutate.
-
-The queue is bounded to 64 inputs, each using the existing 100,000-character
-prompt limit. Queue actions do not change accepted model or environment settings.
-Promotion uses the active Run's settings; a non-consumed input retains its original
-queued Run settings on restoration. A delivered/consumed steer cannot be recalled.
-
-Direct `POST /v1/sessions/:sessionId/turns/:turnId/steers` accepts `{ text,
-uploadIds? }` with an `Idempotency-Key` and returns HTTP 202:
+An idle conversation request returns `kind:run` after one PG transaction records
+its initial input and execution. A running conversation's ordinary message uses
+native Pi follow-up; explicit `/turns/:turnId/steers` uses native steer. Both
+return only after the Worker's native Storage/Kafka acknowledgement:
 
 ```text
-{ controlRequestId, targetRunId, targetTurnId, sourceRunId, sourceTurnId,
-  sessionId, state: "accepted", acceptedAt, replayed }
+{ kind:"input", inputId, runId, turnId, sessionId,
+  delivery:"follow_up"|"steer", state:"accepted", acceptedAt, replayed }
 ```
 
-Acceptance creates and holds its source input in the same transaction. The
-source inherits the active target's frozen model/environment/credentials and
-reserves the next mailbox position. It appears as `steering` in the ordinary
-queue until canonical consumption removes it. A sealed target without its input
-Entry restores that source as an ordinary queued input, including after Worker
-loss or cancellation. An HTTP delivery acknowledgement alone never retires it.
-The old `delivered` response and `deliveredAt` field are removed. A repeated
-accepted key remains valid after the target closes; different input or target
-under the same key returns 409. The queue limit and tenant/viewer rules apply.
+`runId` and root `turnId` identify the current execution. `inputId` identifies
+the individual native submission; no second Run or PG input payload is created.
+503 `input_delivery_unavailable` leaves the browser draft unconfirmed. Reuse
+the same idempotency key on retry, even if the first native ACK was lost.
+
+Queue reads return `{ sessionId, revision, viewVersion, activeTurnId,
+hasReturnedInputs, afterPosition, hasMore, items }`. Each item has `inputId`,
+`runId`, `text`, optional `uploads`, `mailboxPosition`, `acceptedAt` and status
+`queued|steering`. Pages contain at most 20 inputs, without a total queue quota.
+Use the opaque string `revision` plus `afterPosition` to continue a page.
+`viewVersion` is a decimal bigint encoding native sequence and Session row
+version; compare it only with other view versions, never control-reference IDs.
+
+Actions require `Idempotency-Key` and the latest opaque queue revision. Edit
+accepts `{action:"edit",revision,text,uploadIds?}`. Other variants are `cancel`,
+`move` with `direction:"up"|"down"`, and `steer` with optional edited `text`.
+Promotion keeps the original input identity and inherits the active Run's
+settings. A successful mutation returns `{queue,replayed}`. Stale revisions,
+consumed inputs and claim races return 409; foreign Sessions return 404 and
+viewers cannot mutate. Unsaved edits remain local. Repeated saves append native
+document changes through public Pi APIs.
+
+Initial/reconnect/focus reads materialize one current PG/native snapshot.
+Relevant native commits and PG control changes wake `input.queue` SSE updates;
+there is no background delivery reconciler or periodic queue GET.
+Stop returns only unconsumed human inputs after native abort and ordered closure.
+`GET /returned-inputs` under the Session path pages by `requestId/afterPosition`;
+`POST /returned-inputs/acknowledgements` clears the pending marker after recovery.
+Text/uploads stay in native metadata, and pages remain stable for another browser
+that is still restoring the same acknowledged batch.
 
 ## State
 

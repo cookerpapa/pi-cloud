@@ -492,7 +492,7 @@ try {
        from pi_durable_records
       where kind='entry' and tenant_id = ${sqlLiteral(bootstrapTenantId)}
         and session_id = (select pi_session_id from sessions where id = ${sqlLiteral(session.sessionId)})
-        and fields->>'turn' in (select id::text from turns where session_id=${sqlLiteral(session.sessionId)})
+        and fields->>'turn' in (select turn_id::text from runs where session_id=${sqlLiteral(session.sessionId)})
         and fields->>'nativeKind' = '"pi-cloud.sandbox_reset"'`,
     ),
     "0",

@@ -16,3 +16,13 @@ export {
   type StoredHistoryEntry,
 } from "./history.ts";
 export { readDurableRunUsage } from "./run-usage.ts";
+export {
+  readNativeHumanInputs,
+  readNativeHumanSubmission,
+  readHumanInputOutcomes,
+  readHumanInputMetadataBatch,
+  nativeHumanQueueRevision,
+  emptyHumanInputs,
+  type StoredHumanInputs,
+  type StoredHumanInput,
+} from "./human-inputs.ts";

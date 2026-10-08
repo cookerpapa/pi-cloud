@@ -116,6 +116,9 @@ export class DurableSessionPublisher {
             scope,
             commit,
             origins: publication.origins,
+            ...(publication.inputQueueSessions?.length
+              ? { inputQueueSessions: publication.inputQueueSessions }
+              : {}),
             tools,
             cancellations,
             events: publication.events,

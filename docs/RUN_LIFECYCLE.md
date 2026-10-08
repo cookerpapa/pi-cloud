@@ -2,36 +2,35 @@
 
 ## Admission
 
-`POST /v1/sessions/{id}/turns` authenticates tenant ownership and writes the
-user message, Turn and accepted Run row in one PostgreSQL transaction. The Run's
-unique Session/idempotency key prevents a retry from creating another Run.
-Same-Lane Runs remain serialized by mailbox position. A queued Run is dispatchable
-only when `ready_at` is non-null. Acceptance readies the initial head; committed
-predecessor closure readies its successor under the same Session row lock.
+`POST /v1/sessions/{id}/turns` authenticates tenant ownership. For an idle
+Session it writes the initial user text/uploads, frozen configuration and Run
+identity in one PG transaction, returning `kind:run`. There is no `turns` table;
+`turn_id` in Run remains the public root presentation/provenance ID. The unique
+Session/idempotency key prevents a repeated initial request from creating a new Run.
 
-Pending human inputs are editable before admission (ADR-0194). Queue actions use
-the Session revision and an idempotent control receipt. Adjacent swaps are atomic;
-cancelled unstarted Runs retain their identity without a native execution/seal.
-Model, credential, environment and Tool snapshots remain fixed at acceptance.
-The Worker locks the Run, then reads current input text in a fresh statement;
-queue edits acquire that lock with NOWAIT and cannot change admitted context.
+For an active Run, ordinary input becomes native follow-up and explicit Steer
+becomes native steer. The Worker submits through Pi's public API and returns
+`kind:input` only after its existing Kafka-backed Storage commit is acknowledged.
+One Run can therefore consume several user messages. Follow-up waits for Pi's
+final boundary; steer uses Pi's earlier continuation boundary. No holding Run or
+PG payload queue is created. An unavailable Worker leaves the browser draft
+unconfirmed, with the same request key for retry (ADR-0238).
 
-Queued Follow-up is a persisted input/Run, not yet a Pi user Entry or Kafka
-Session mutation. Direct Steer also creates a source Turn/Run and holds it with
-a queue control request in the same transaction (ADR-0203). Its HTTP 202
-`accepted` response confirms durability. Delivery to the running Pi queue records
-acknowledgement; only native consumption creates its user Entry through the
-Fact path. The held source inherits the target's frozen execution settings.
-Delivery uses the HTTP management backend. WebSocket registration/heartbeat
-has no Steer prepare/commit/release fallback.
+Native InboxDoc and submission state own membership, order and consumption.
+The Worker's code-owned metadata DocFamily stores human text/upload references,
+original fingerprints and mutation receipts in that same native log. Edit,
+move, individual cancel and promotion are atomic public document transactions;
+consumption winning the race rejects the change. Promotion keeps the same input
+identity. Local unsaved edits do not enter the log. Repeated saves append document
+changes, and retries never restore an earlier version over a later edit.
 
-Both direct Steer and promotion hold their source out of dispatch until consumption is
-confirmed. Its control ID is the stable Agent-input identity. HTTP retries cannot
-append a second input. A lost acknowledgement does not cause queue re-execution:
-the reconciler checks the canonical input Entry and the target's projected seal.
-Only a sealed target with no consumed Entry restores the source's queued position.
-Steer inputs to the same Run are sent in acceptance order; different Sessions can
-deliver concurrently. An optional edited text is committed with promotion.
+Unclaimed initial Run inputs remain editable in PG. Queue edits acquire the Run
+lock with NOWAIT; a competing Worker claim produces a conflict. Model, credential,
+environment and Tool snapshots stay fixed at acceptance. The Worker reads the
+latest saved initial text in a fresh statement after locking the Run. A queued
+Run is dispatchable only with non-null `ready_at`; closure and acceptance update
+readiness under the Session lock. Native queued follow-up is not another Run
+waiting for cloud scheduling.
 
 ## Claim and execution
 
@@ -59,7 +58,7 @@ owner can run another Lane before its siblings finish. KEDA counts active leases
 and ready cold families, not waiting follow-ups or unbound startup claims.
 
 It binds the Run to the physical Session's owner lease, records publication scope
-and marks Run/Turn/Session running in one transaction. Locked facts are reused;
+and marks Run/Session running in one transaction. Locked facts are reused;
 there is no Attempt, startup deadline or separate claimed phase. Worker-local
 pending reservations protect capacity; PG retains no occupancy counter. The
 Worker renews its Session owner once per heartbeat. Each task carries an

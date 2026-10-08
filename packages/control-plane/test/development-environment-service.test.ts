@@ -645,9 +645,9 @@ describe("user-owned development environments", () => {
         .where("id", "=", accepted.runId)
         .execute();
       await database
-        .updateTable("turns")
+        .updateTable("runs")
         .set({ state: "cancelled", settled_at: new Date() })
-        .where("id", "=", accepted.turnId)
+        .where("turn_id", "=", accepted.turnId)
         .execute();
       await service.action(identity, machine.environmentId, "cleanup-queued", {
         action: "release",
@@ -773,7 +773,7 @@ describe("user-owned development environments", () => {
           .where("session_id", "=", session.sessionId)
           .execute();
         await database
-          .updateTable("turns")
+          .updateTable("runs")
           .set({ state: "cancelled", settled_at: new Date() })
           .where("session_id", "=", session.sessionId)
           .execute();

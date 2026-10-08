@@ -125,11 +125,6 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     });
     const queue = new QueuedInputService({
       database,
-      steering: {
-        async deliverQueued() {
-          throw new Error("No steer expected");
-        },
-      },
     });
     await queue.mutate(scope.tenantId, session.sessionId, accepted.turnId, "cancel-old-input", {
       action: "cancel",
@@ -351,7 +346,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     const selected = new WeakSet<QueryId>();
     // Run insertion now completes in the input/Run/mailbox statement, not an
     // independently executed INSERT whose builder also has a query ID.
-    const prefix = table === "runs" ? 'with "accepted_turn"' : `insert into "${table}"`;
+    const prefix = table === "runs" ? 'with "accepted_run"' : `insert into "${table}"`;
     const paused = database.withPlugin({
       transformQuery({ node, queryId }) {
         const query = database.getExecutor().compileQuery(node, queryId);
@@ -425,9 +420,9 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       .where("id", "=", session.sessionId)
       .execute();
     await database
-      .updateTable("turns")
+      .updateTable("runs")
       .set({ state: "running" })
-      .where("id", "=", turn.turnId)
+      .where("turn_id", "=", turn.turnId)
       .execute();
     await database
       .updateTable("runs")
@@ -482,8 +477,8 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     expect(await admission).toMatchObject({ rejected: { code: "conflict" } });
     expect(
       await database
-        .selectFrom("turns")
-        .select("id")
+        .selectFrom("runs")
+        .select("turn_id as id")
         .where("session_id", "=", session.sessionId)
         .execute(),
     ).toHaveLength(0);
@@ -546,9 +541,9 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       .where("id", "=", anchor.runId)
       .execute();
     await database
-      .updateTable("turns")
+      .updateTable("runs")
       .set({ state: "completed", settled_at: new Date() })
-      .where("id", "=", anchor.turnId)
+      .where("turn_id", "=", anchor.turnId)
       .execute();
     const child = await store.createSession(
       project.projectId,
@@ -601,9 +596,9 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       .where("id", "=", anchor.runId)
       .execute();
     await database
-      .updateTable("turns")
+      .updateTable("runs")
       .set({ state: "completed", settled_at: new Date() })
-      .where("id", "=", anchor.turnId)
+      .where("turn_id", "=", anchor.turnId)
       .execute();
     const child = await store.createSession(
       project.projectId,
@@ -791,9 +786,9 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       .where("id", "=", accepted.runId)
       .execute();
     await database
-      .updateTable("turns")
+      .updateTable("runs")
       .set({ state: "completed", settled_at: new Date() })
-      .where("id", "=", accepted.turnId)
+      .where("turn_id", "=", accepted.turnId)
       .execute();
     await database
       .insertInto("outbox")
@@ -817,7 +812,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     ).toEqual(entry);
     await deletion.delete(scope.tenantId, session.sessionId);
     await deletion.delete(scope.tenantId, session.sessionId);
-    for (const table of ["sessions", "turns", "runs"] as const) {
+    for (const table of ["sessions", "runs"] as const) {
       const count =
         table === "sessions"
           ? await database

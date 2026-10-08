@@ -8,7 +8,7 @@ import { ControlPlaneModule, type ControlPlaneEventRuntime } from "./control-pla
 import type { ControlPlaneStoreOptions } from "./control-plane-store.ts";
 import type { SessionEventStreamOptions } from "@pi-cloud/runtime-core/session-event-stream";
 import type { SupervisorWebSocketGateway } from "./supervisor-websocket-gateway.ts";
-import type { TurnSteerBackend } from "./turn-steer.ts";
+import type { NativeInputBackendFactory } from "./queued-input-service.ts";
 import type { SupervisorProvisioningGateway } from "./supervisor-boot-provisioner.ts";
 import type { ProductionHttpGateway } from "./production-http-gateway.ts";
 import type { PublicTenantRegistrationConfiguration } from "./public-tenant-registration.ts";
@@ -31,7 +31,7 @@ export type ControlPlaneApplicationOptions = Omit<
   tenantId?: string;
   defaultModelProfileId?: string;
   supervisorWebSocketGateway?: SupervisorWebSocketGateway;
-  turnSteerBackendFactory?: (sandboxId: string) => Promise<TurnSteerBackend>;
+  nativeInputBackendFactory?: NativeInputBackendFactory;
   supervisorProvisioningGateway?: SupervisorProvisioningGateway;
   productionHttpGateway?: ProductionHttpGateway;
   sessionEventStreamOptions?: SessionEventStreamOptions;

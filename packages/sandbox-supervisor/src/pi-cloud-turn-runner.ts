@@ -21,6 +21,7 @@ import {
   createPiCloudEventFactory,
   inputWithUploads,
   assertUserInputBudget,
+  parseUserUploads,
   assertPreparedUserInputBudget,
   MAX_INPUT_IMAGE_HINT_BYTES,
   MODEL_STEP_SEQUENCE_HEADER,
@@ -216,6 +217,8 @@ export class PiCloudTurnRunner {
   #ended = false;
   #inputVersion = 0;
   #inputLine: Promise<unknown> = Promise.resolve();
+  #humanInputs: DurableHumanInputs | undefined;
+  #identity: { tenantId: string; sessionId: string; runId: string } | undefined;
   constructor(options: PiCloudTurnRunnerOptions) {
     this.#options = options;
     void this.#ready.promise.catch(() => undefined);
@@ -253,8 +256,25 @@ export class PiCloudTurnRunner {
     assertPreparedUserInputBudget(described + hints, prepared.images.length);
     return [{ type: "text", text: described + hints }, ...prepared.images];
   }
-  steer(text: string, inputId: string, uploads?: readonly UserUpload[]): Promise<void> {
-    return this.agentInput(inputId, text, "steer", uploads);
+  async humanInput(command: NativeInputCommand): Promise<NativeInputResult> {
+    await this.#ready.promise;
+    if (
+      !this.#identity ||
+      command.tenantId !== this.#identity.tenantId ||
+      command.sessionId !== this.#identity.sessionId ||
+      command.runId !== this.#identity.runId
+    )
+      throw new PiTurnError("input_target_unavailable", "Input target changed", false);
+    return this.#onInputLine(async () => {
+      if (!this.#humanInputs)
+        throw new PiTurnError("input_target_unavailable", "Input runtime is unavailable", true);
+      const result =
+        command.action === "submit"
+          ? await this.#humanInputs.submit(command.input)
+          : await this.#humanInputs.mutate(command.mutation);
+      this.#inputVersion++;
+      return result;
+    });
   }
   async agentInput(
     id: string,
@@ -290,6 +310,7 @@ export class PiCloudTurnRunner {
   ): Promise<PiTurnResult> {
     const options = this.#options,
       p = command.payload;
+    this.#identity = { tenantId: p.tenantId, sessionId: p.sessionId, runId: p.runId };
     if (p.input.kind !== "prompt")
       throw new PiTurnError("unsupported_input", "Pi supports prompt input", false);
     const clock = options.clock ?? (() => new Date()),
@@ -385,9 +406,37 @@ export class PiCloudTurnRunner {
         sampling = new DurableSampling();
       let observedEntry = 0,
         wakeObserved: (() => void) | undefined;
+      const humanEntries = new Map<number, string>();
+      cleanup.push(
+        runtime.harness.subscribeCommits((publication) => {
+          for (const change of publication.changes)
+            if (
+              change.type === "submission" &&
+              change.value.conversationId === p.piSession.conversationId &&
+              change.value.requestId?.startsWith("input-") &&
+              "entry" in change.value &&
+              change.value.entry !== undefined
+            )
+              humanEntries.set(change.value.entry, change.value.requestId);
+        }),
+      );
       const events = new DurableRunEvents({
         writerId: p.piSession.writerId,
         emit,
+        humanInput: async (entryId) => {
+          const inputId = humanEntries.get(entryId);
+          if (!inputId) return;
+          const metadata = await runtime.harness.snapshot(
+            HumanInputDocument,
+            p.piSession.conversationId as ConversationId,
+            p.runId,
+            BACKGROUND_CONTEXT,
+          );
+          const input = metadata?.inputs[inputId];
+          return input
+            ? { inputId, text: input.text, uploads: parseUserUploads(input.uploads) }
+            : undefined;
+        },
         toolId: (callId, assistant, result) => invocations.resolve(callId, assistant, result),
         ...(options.resolveAssistantTextPhase ? { phase: options.resolveAssistantTextPhase } : {}),
         maximumToolOutputBytes: p.budgets?.maximumToolOutputBytes ?? 65536,
@@ -587,7 +636,7 @@ export class PiCloudTurnRunner {
             const bodies: PiCloudEventBody[] = [];
             await frameBodies.run(bodies, () => events.consume([event]));
             const entry =
-              event.type === "message_end"
+              event.type === "message_end" || event.type === "entry_appended"
                 ? event.entry
                 : event.type === "tool_execution_end"
                   ? event.entry
@@ -618,6 +667,7 @@ export class PiCloudTurnRunner {
       });
       let aborting: Promise<void> | undefined;
       const abort = () => {
+        this.#ended = true;
         if (!["user_request", "timeout"].includes(cancellationReason(combined))) {
           owner.interrupt(new PiTurnError("worker_shutdown", "The native owner is stopping", true));
           return;
@@ -671,6 +721,15 @@ export class PiCloudTurnRunner {
           );
         } else runtime.harness.resume();
       }
+      this.#humanInputs = new DurableHumanInputs({
+        conversation,
+        runId: p.runId,
+        storage: owner.storage,
+        sequence: () => owner.committedSequence(),
+        assertCurrent: () => owner.authority.assertCurrent(),
+        accepting: () => !this.#ended && !combined.aborted,
+        prepare: (text, uploads) => this.#prepareInput(text, uploads, combined),
+      });
       this.#ready.resolve(conversation);
       const waitContext = withAbortSignal(owner.authority.signal, BACKGROUND_CONTEXT);
       for (;;) {
@@ -701,28 +760,47 @@ export class PiCloudTurnRunner {
         p.runId,
         BACKGROUND_CONTEXT,
       );
-      const unanswered = rootInput
-        ? await owner.storage.scanSubmissions(
-            { conversationId: conversation.id, status: "unanswered" },
-            1,
-            { after: rootInput.id - 1 },
-            BACKGROUND_CONTEXT,
-          )
+      const humanInputs = await runtime.harness.snapshot(
+        HumanInputDocument,
+        conversation.id,
+        p.runId,
+        BACKGROUND_CONTEXT,
+      );
+      let cursor: import("@earendil-works/pi-durable").Cursor | undefined = rootInput
+        ? { after: rootInput.id - 1 }
         : undefined;
-      if (unanswered?.items.length) {
-        const input = unanswered.items[0]!;
-        if (input.status === "unanswered" && input.reason === "aborted")
-          throw new PiTurnError(
-            "native_task_aborted",
-            "The native task was cancelled through its ownership scope",
-            false,
+      if (rootInput)
+        for (;;) {
+          const page = await owner.storage.scanSubmissions(
+            { conversationId: conversation.id, status: "unanswered" },
+            64,
+            cursor,
+            BACKGROUND_CONTEXT,
           );
-        throw new PiTurnError(
-          "native_task_failed",
-          "The native task did not complete its accepted input",
-          false,
-        );
-      }
+          const input = page.items.find(
+            (item) =>
+              !(
+                item.requestId &&
+                humanInputs?.inputs[item.requestId]?.cancelled === true &&
+                item.entry === undefined
+              ),
+          );
+          if (input?.status === "unanswered") {
+            if (input.reason === "aborted")
+              throw new PiTurnError(
+                "native_task_aborted",
+                "The native task was cancelled through its ownership scope",
+                false,
+              );
+            throw new PiTurnError(
+              "native_task_failed",
+              "The native task did not complete its accepted input",
+              false,
+            );
+          }
+          if (!page.next) break;
+          cursor = page.next;
+        }
       // The model context intentionally omits some failed/aborted messages.
       // Settlement reads the raw receipt; an older successful answer cannot
       // make a failed new request look completed.
@@ -761,3 +839,5 @@ export class PiCloudTurnRunner {
     }
   }
 }
+import type { NativeInputCommand, NativeInputResult } from "@pi-cloud/protocol";
+import { DurableHumanInputs, HumanInputDocument } from "./durable/human-inputs.ts";

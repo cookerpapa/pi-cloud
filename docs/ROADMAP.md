@@ -1,5 +1,22 @@
 # Implementation roadmap
 
+## Native human input and Session/Run consolidation
+
+- [x] Implement [ADR-0238](adr/0238-native-input-queue-and-run-record.md): merge
+      Turn storage into Run and remove reviewed unused fields without a compatibility view.
+- [x] Route running-session follow-up/steer to the native durable inbox with
+      confirmed submission identity; no placeholder Run or cloud payload queue.
+- [x] Preserve durable edit/order/cancel/promotion, Stop/return, attachments and
+      multiple consumed user messages inside one cloud Run.
+- [x] Complete native, PG, API/browser and recovery verification; document
+      deployment status separately from source completion.
+
+[Source verification](reports/native-input-run-consolidation-20261009.md) is complete;
+matched deployment remains a separate backlog item.
+
+The [reading checkpoint](READING_PROGRESS.md) remains at PG input acceptance;
+the next walkthrough hop is Worker claim and Session-lease admission.
+
 ## Architecture evidence and private-use readiness
 
 The [October 7 design review](reports/architecture-evidence-review-20261007.md)

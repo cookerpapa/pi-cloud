@@ -75,7 +75,6 @@ export {
   type AgentRunSupervisorOptions,
   type PreparedTurnCancellation,
   type PreparedTurnExecution,
-  type PreparedTurnSteer,
   type RevokedSupervisorAssignments,
   type SupervisorTurnCancellationResult,
   type SupervisorTurnRunner,

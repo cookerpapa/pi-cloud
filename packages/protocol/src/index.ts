@@ -325,6 +325,7 @@ export {
   CreateTurnSteerRequestSchema,
   TurnSteerResourceSchema,
   AcceptedTurnResourceSchema,
+  AcceptedConversationInputResourceSchema,
   AuthSessionResourceSchema,
   ConversationDetailResourceSchema,
   SessionViewSnapshotResourceSchema,
@@ -402,6 +403,7 @@ export {
   parseAcceptedTurnCancellationResource,
   parseTurnSteerResource,
   parseAcceptedTurnResource,
+  parseAcceptedConversationInputResource,
   parseConversationDetailResource,
   parseSessionViewSnapshotResource,
   parseConversationTurnTranscriptResource,
@@ -451,6 +453,7 @@ export {
   type CreateTurnSteerRequest,
   type TurnSteerResource,
   type AcceptedTurnResource,
+  type AcceptedConversationInputResource,
   type AuthSessionResource,
   type ConversationDetailResource,
   type SessionViewSnapshotResource,
@@ -532,7 +535,6 @@ export {
   EventPublishMessageSchema,
   EventRejectedMessageSchema,
   ExecuteTurnCommandMessageSchema,
-  SteerTurnCommandMessageSchema,
   SupervisorHeartbeatAckMessageSchema,
   SupervisorHeartbeatMessageSchema,
   SupervisorRegisterMessageSchema,
@@ -542,7 +544,6 @@ export {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
   type CancelTurnCommandMessage,
-  type SteerTurnCommandMessage,
   type CommandAckMessage,
   type ControlToSupervisorMessage,
   type EventAckMessage,
@@ -635,3 +636,22 @@ export * from "./tool-execution-failure.ts";
 
 export * from "./durable-session.ts";
 export { PublicationNotSentError } from "./publication-error.ts";
+export type {
+  NativeHumanInput,
+  NativeInputAction,
+  NativeInputMutation,
+  NativeInputItem,
+  NativeInputSnapshot,
+  NativeInputResult,
+  NativeInputCommand,
+  NativeInputAccepted,
+} from "./native-inputs.ts";
+export {
+  NATIVE_HUMAN_INPUT_DOCUMENT,
+  humanInputQueueRevisionMaterial,
+  NativeInputCommandSchema,
+  NativeInputResultSchema,
+  NativeInputSnapshotSchema,
+  NativeInputAcceptedSchema,
+  NativeInputIdSchema,
+} from "./native-inputs.ts";

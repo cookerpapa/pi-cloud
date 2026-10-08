@@ -236,7 +236,7 @@ async function runEvidence(runId) {
   const row = await psql(
     `select s.supervisor_id
        from runs r
-       join sandboxes s on s.id = r.sandbox_id
+       join sandboxes s on s.id = r.worker_id
       where r.id = ${sqlLiteral(runId)}`,
   );
   const supervisorId = row;

@@ -133,7 +133,7 @@ async function activateChildRun(childSessionId: string, childRunId: string): Pro
       .updateTable("runs")
       .set({
         state: "running",
-        sandbox_id: parentSandboxId,
+        worker_id: parentSandboxId,
         lease_id: grantId,
         fencing_token: generation,
         started_at: new Date(),
@@ -142,10 +142,10 @@ async function activateChildRun(childSessionId: string, childRunId: string): Pro
       .where("id", "=", childRunId)
       .executeTakeFirstOrThrow();
     await transaction
-      .updateTable("turns")
+      .updateTable("runs")
       .set({ state: "running", started_at: new Date() })
       .where("tenant_id", "=", tenantId)
-      .where("id", "=", run.turn_id)
+      .where("turn_id", "=", run.turn_id)
       .executeTakeFirstOrThrow();
     await transaction
       .updateTable("sessions")
@@ -245,9 +245,9 @@ beforeAll(async () => {
   });
   await appendFixtureMessage(parentPi, assistant("Earlier answer"));
   await database
-    .updateTable("turns")
+    .updateTable("runs")
     .set({ state: "completed", settled_at: new Date(), stop_reason: "stop" })
-    .where("id", "=", earlier.turnId)
+    .where("turn_id", "=", earlier.turnId)
     .execute();
   await database
     .updateTable("runs")
@@ -277,7 +277,7 @@ beforeAll(async () => {
     .updateTable("runs")
     .set({
       state: "running",
-      sandbox_id: parentSandboxId,
+      worker_id: parentSandboxId,
       lease_id: PARENT_GRANT_ID,
       fencing_token: FENCE,
 
@@ -285,7 +285,6 @@ beforeAll(async () => {
       failure_message: null,
       failure_retryable: null,
       started_at: new Date(),
-      last_heartbeat_at: new Date(),
       settled_at: null,
     })
     .where("id", "=", parentRunId)
@@ -324,9 +323,9 @@ beforeAll(async () => {
       .where("id", "=", parentRunId)
       .executeTakeFirstOrThrow();
     await transaction
-      .updateTable("turns")
+      .updateTable("runs")
       .set({ state: "running", started_at: new Date() })
-      .where("id", "=", run.turn_id)
+      .where("turn_id", "=", run.turn_id)
       .executeTakeFirstOrThrow();
     await transaction
       .updateTable("sessions")
@@ -1014,7 +1013,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         .updateTable("runs")
         .set({
           state,
-          sandbox_id: parentSandboxId,
+          worker_id: parentSandboxId,
           lease_id: PARENT_GRANT_ID,
           fencing_token: FENCE,
           started_at: new Date(),
@@ -1214,7 +1213,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         .where("id", "=", started.childRunId)
         .executeTakeFirstOrThrow();
       await transaction
-        .updateTable("turns")
+        .updateTable("runs")
         .set({ state: "cancelled", stop_reason: "cancelled", settled_at: now })
         .where("tenant_id", "=", tenantId)
         .where("session_id", "=", started.childSessionId)

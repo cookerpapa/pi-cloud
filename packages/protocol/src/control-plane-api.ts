@@ -1,4 +1,5 @@
 import { MAX_AGENT_INPUT_CHARACTERS, assertUserInputBudget } from "./agent-input-budget.ts";
+import { NativeInputAcceptedSchema } from "./native-inputs.ts";
 import {
   MAX_INHERITED_CONTEXT_ENTRIES,
   MAX_INHERITED_CONTEXT_TEXT_CHARACTERS,
@@ -665,6 +666,18 @@ export const DevelopmentEnvironmentListResourceSchema = Type.Object(
 export const ConversationTranscriptItemResourceSchema = Type.Union([
   Type.Object(
     {
+      kind: Type.Literal("user"),
+      messageId: OpaqueIdSchema,
+      inputId: Type.String({ minLength: 1, maxLength: 128 }),
+      text: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
+      uploads: Type.Optional(UserUploadsSchema),
+      firstSequence: NonNegativeSafeIntegerSchema,
+      lastSequence: NonNegativeSafeIntegerSchema,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
       kind: Type.Literal("tool_preparing"),
       toolCallId: Type.String({ minLength: 1, maxLength: 1024 }),
       toolName: Type.String({ minLength: 1, maxLength: 1024 }),
@@ -765,7 +778,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
 export const ConversationTurnTranscriptResourceSchema = Type.Object(
   {
     schemaVersion: Type.Literal(1),
-    throughSequence: PositiveSafeIntegerSchema,
+    throughSequence: NonNegativeSafeIntegerSchema,
     items: Type.Array(ConversationTranscriptItemResourceSchema, { maxItems: 10_000 }),
     startedSequence: Type.Union([PositiveSafeIntegerSchema, Type.Null()]),
     terminalSequence: Type.Union([PositiveSafeIntegerSchema, Type.Null()]),
@@ -948,6 +961,7 @@ export const AcceptTurnRequestSchema = Type.Object(
 
 export const AcceptedTurnResourceSchema = Type.Object(
   {
+    kind: Type.Literal("run"),
     runId: UuidSchema,
     turnId: UuidSchema,
     sessionId: UuidSchema,
@@ -958,6 +972,11 @@ export const AcceptedTurnResourceSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const AcceptedConversationInputResourceSchema = Type.Union([
+  AcceptedTurnResourceSchema,
+  NativeInputAcceptedSchema,
+]);
 
 export const RunStateSchema = Type.Union([
   Type.Literal("queued"),
@@ -1061,20 +1080,7 @@ export const CreateTurnSteerRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const TurnSteerResourceSchema = Type.Object(
-  {
-    controlRequestId: UuidSchema,
-    targetRunId: UuidSchema,
-    targetTurnId: UuidSchema,
-    sourceRunId: UuidSchema,
-    sourceTurnId: UuidSchema,
-    sessionId: UuidSchema,
-    state: Type.Literal("accepted"),
-    acceptedAt: UtcTimestampSchema,
-    replayed: Type.Boolean(),
-  },
-  { additionalProperties: false },
-);
+export const TurnSteerResourceSchema = NativeInputAcceptedSchema;
 
 export const ControlPlaneApiErrorSchema = Type.Object(
   {
@@ -1180,6 +1186,9 @@ export type CreateConversationPruneRequest = Static<typeof CreateConversationPru
 export type ConversationPruneResource = Static<typeof ConversationPruneResourceSchema>;
 export type AcceptTurnRequest = Static<typeof AcceptTurnRequestSchema>;
 export type AcceptedTurnResource = Static<typeof AcceptedTurnResourceSchema>;
+export type AcceptedConversationInputResource = Static<
+  typeof AcceptedConversationInputResourceSchema
+>;
 export type RunState = Static<typeof RunStateSchema>;
 export type RunTransitionResource = Static<typeof RunTransitionResourceSchema>;
 export type RunResource = Static<typeof RunResourceSchema>;
@@ -1557,6 +1566,15 @@ export function parseConversationTurnTranscriptResource(
 
 export function parseAcceptedTurnResource(value: unknown): AcceptedTurnResource {
   return parseSchema(AcceptedTurnResourceSchema, value, "accepted-turn resource");
+}
+export function parseAcceptedConversationInputResource(
+  value: unknown,
+): AcceptedConversationInputResource {
+  return parseSchema(
+    AcceptedConversationInputResourceSchema,
+    value,
+    "accepted-conversation-input resource",
+  );
 }
 
 export function parseRunResource(value: unknown): RunResource {

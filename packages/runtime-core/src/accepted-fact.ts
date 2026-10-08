@@ -48,6 +48,7 @@ export type AcceptedDurableCommitFact = Readonly<{
   scope: AcceptedFactScope;
   commit: DurableSessionCommit;
   origins: readonly DurableRecordOrigin[];
+  inputQueueSessions?: readonly string[];
   tools: readonly DurableToolDispatch[];
   cancellations: readonly import("@pi-cloud/protocol").AcceptedToolCancellation[];
   events: readonly PiCloudEvent[];

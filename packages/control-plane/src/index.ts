@@ -106,14 +106,7 @@ export {
 export type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 export { projectConversationTurnTranscript } from "@pi-cloud/runtime-core/conversation-turn-projection";
 
-export {
-  TurnSteerBackendError,
-  type TurnSteerBackend,
-  type TurnSteerRequest,
-  type TurnSteerTarget,
-} from "./turn-steer.ts";
-
-export { TurnSteeringService } from "./turn-steering-service.ts";
+export type { NativeInputBackend, NativeInputBackendFactory } from "./queued-input-service.ts";
 export {
   createControlPlaneRuntime,
   ControlPlaneRuntime,
@@ -186,7 +179,6 @@ export {
   HttpSandboxAssignmentInventory,
   HttpSupervisorManagementClient,
   HttpSupervisorManagementError,
-  HttpSupervisorSteerBackend,
   HttpSupervisorOwnerBoundary,
   RoutedHttpSandboxAssignmentInventory,
   RoutedHttpSupervisorOwnerBoundary,

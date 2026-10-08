@@ -10,7 +10,7 @@ import {
   parseReturnedInputsResource,
   type ReturnedInputsResource,
   parseAcceptedTurnCancellationResource,
-  parseAcceptedTurnResource,
+  parseAcceptedConversationInputResource,
   parseTurnSteerResource,
   parseAuthSessionResource,
   parseAuthenticationConfigurationResource,
@@ -51,7 +51,7 @@ import {
   type ConversationForkResource,
   type ConversationPruneResource,
   type AcceptedTurnCancellationResource,
-  type AcceptedTurnResource,
+  type AcceptedConversationInputResource,
   type TurnSteerResource,
   type ProjectResource,
   type RunResource,
@@ -803,8 +803,8 @@ export class PiCloudApi {
     idempotencyKey: string,
     thinkingLevel?: TurnThinkingLevel,
     uploadIds?: string[],
-  ): Promise<AcceptedTurnResource> {
-    return parseAcceptedTurnResource(
+  ): Promise<AcceptedConversationInputResource> {
+    return parseAcceptedConversationInputResource(
       await request(
         this.#fetch,
         `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
@@ -824,10 +824,10 @@ export class PiCloudApi {
   async getInputQueue(
     sessionId: string,
     signal?: AbortSignal,
-    page?: { afterPosition: number; viewVersion: string },
+    page?: { afterPosition: number; revision: string },
   ): Promise<InputQueueResource> {
     const query = page
-      ? `?${new URLSearchParams({ afterPosition: String(page.afterPosition), viewVersion: page.viewVersion })}`
+      ? `?${new URLSearchParams({ afterPosition: String(page.afterPosition), revision: page.revision })}`
       : "";
     return parseInputQueueResource(
       await request(
@@ -846,14 +846,14 @@ export class PiCloudApi {
 
   async mutateQueuedInput(
     sessionId: string,
-    turnId: string,
+    inputId: string,
     action: QueuedInputAction,
     idempotencyKey: string,
   ): Promise<QueuedInputActionResult> {
     return parseQueuedInputActionResult(
       await request(
         this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs/${encodeURIComponent(turnId)}/actions`,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs/${encodeURIComponent(inputId)}/actions`,
         { ...jsonRequest(action, idempotencyKey), signal: AbortSignal.timeout(10_000) },
         this.#authorizationToken,
       ),

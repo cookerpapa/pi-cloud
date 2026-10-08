@@ -392,7 +392,7 @@ export class PostgresPiWorker {
       .where("cancellation.kind", "=", "cancel")
       .where("run.id", "in", [...runIds])
       .where("cancellation.state", "in", ["pending", "dispatched"])
-      .where("run.sandbox_id", "=", this.#identity)
+      .where("run.worker_id", "=", this.#identity)
       .where("run.state", "in", ["running", "settling"])
       .$if(this.#activeCancellations.size > 0, (query) =>
         query.where("run.id", "not in", [...this.#activeCancellations.keys()]),

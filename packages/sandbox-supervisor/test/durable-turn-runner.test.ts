@@ -60,6 +60,7 @@ it.each(["complete", "stop_on_resume"] as const)(
         writerId: command.payload.piSession.writerId,
       },
       recordSequence: async (id) => recordSequences.get(id),
+      committedSequence: () => Math.max(0, ...recordSequences.values()),
       interrupt: (reason) => controller.abort(reason),
       storage,
       authority: {

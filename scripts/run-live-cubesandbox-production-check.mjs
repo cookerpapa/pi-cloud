@@ -454,7 +454,7 @@ async function destroyCubeSession(sessionId) {
 
 async function logicalSandboxIdForRun(runId) {
   const value = await psql(
-    `select r.sandbox_id
+    `select r.worker_id
        from runs r
       where r.id = ${sqlLiteral(runId)}`,
   );
@@ -789,7 +789,7 @@ async function runTurn(sessionId, prompt, expectTools) {
 
 async function runLatencyEvidence(runId) {
   const transitionEvidence = await psql(
-    `select round(extract(epoch from (started_at - queued_at)) * 1000)::text || '|' ||
+    `select round(extract(epoch from (started_at - created_at)) * 1000)::text || '|' ||
             round(extract(epoch from (settled_at - started_at)) * 1000)::text
        from runs where id = ${sqlLiteral(runId)}`,
   );

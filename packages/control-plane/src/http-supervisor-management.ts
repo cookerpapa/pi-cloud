@@ -2,11 +2,11 @@ import { SUBAGENT_HOST_PATH, type SubagentHostRequest } from "@pi-cloud/protocol
 import { Agent, fetch as internalFetch } from "undici";
 import {
   parseInternalServiceError,
-  parseControlToSupervisorMessage,
   parseSupervisorManagementResponse,
   type SupervisorManagementRequest,
   type SupervisorRuntimeAssignment,
-  type SteerTurnCommandMessage,
+  type NativeInputCommand,
+  type NativeInputResult,
 } from "@pi-cloud/protocol";
 import {
   SandboxAssignmentInventoryError,
@@ -17,12 +17,6 @@ import type {
   SupervisorBootIdentity,
   SupervisorOwnerBoundary,
 } from "./supervisor-connection-manager.ts";
-import type { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
-import {
-  TurnSteerBackendError,
-  type TurnSteerBackend,
-  type TurnSteerRequest,
-} from "./turn-steer.ts";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_MANAGEMENT_PATH = "/internal/v1/supervisor/manage";
@@ -221,112 +215,33 @@ export class HttpSupervisorManagementClient {
     }
   }
 
-  async steer(command: SteerTurnCommandMessage): Promise<void> {
+  async humanInput(command: NativeInputCommand): Promise<NativeInputResult> {
     const requestId = this.requestId();
+    const request = {
+      protocolVersion: 1 as const,
+      type: "native.input" as const,
+      requestId,
+      command,
+    };
     let response;
     try {
-      response = await this.request({
-        protocolVersion: 1,
-        type: "turn.steer",
-        requestId,
-        command,
-      });
-    } catch (first: unknown) {
-      if (!(first instanceof HttpSupervisorManagementError) || !first.retryable) throw first;
-      // The Worker deduplicates by controlRequestId, so retrying the same request is
-      // safe even when the first HTTP response was lost after delivery.
-      response = await this.request({
-        protocolVersion: 1,
-        type: "turn.steer",
-        requestId,
-        command,
-      }).catch(() => {
-        throw new TurnSteerBackendError(
-          "supervisor_management_unavailable",
-          "Steer delivery outcome is temporarily unknown",
-          false,
-          true,
-        );
-      });
+      response = await this.request(request);
+    } catch (error) {
+      if (!(error instanceof HttpSupervisorManagementError) || !error.retryable) throw error;
+      // The same native submission/mutation identity is safe after a lost reply.
+      response = await this.request(request);
     }
     if (
-      response.type !== "turn.steered" ||
+      response.type !== "native.input.applied" ||
       response.requestId !== requestId ||
-      response.controlRequestId !== command.payload.controlRequestId
-    ) {
-      throw new TurnSteerBackendError(
+      response.result.queue.runId !== command.runId
+    )
+      throw new HttpSupervisorManagementError(
         "backend_protocol_violation",
-        "Supervisor steer response did not match",
-        false,
-        true,
-      );
-    }
-  }
-}
-
-export class HttpSupervisorSteerBackend implements TurnSteerBackend {
-  readonly #client: HttpSupervisorManagementClient;
-  readonly #leaseCoordinator: SessionLeaseCoordinator;
-  readonly #idGenerator: () => string;
-  readonly #clock: () => Date;
-
-  constructor(options: {
-    client: HttpSupervisorManagementClient;
-    leaseCoordinator: SessionLeaseCoordinator;
-    idGenerator?: () => string;
-    clock?: () => Date;
-  }) {
-    this.#client = options.client;
-    this.#leaseCoordinator = options.leaseCoordinator;
-    this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
-    this.#clock = options.clock ?? (() => new Date());
-  }
-
-  async steer(request: TurnSteerRequest): Promise<void> {
-    const grant = await this.#leaseCoordinator.currentAssignment(request.target);
-    const sentAt = this.#clock();
-    if (Number.isNaN(sentAt.valueOf())) throw new TypeError("steer clock returned an invalid date");
-    const command = parseControlToSupervisorMessage({
-      protocolVersion: 1,
-      messageId: this.#idGenerator(),
-      sentAt: sentAt.toISOString(),
-      type: "command.turn.steer",
-      payload: {
-        controlRequestId: request.controlRequestId,
-        targetRunId: request.target.runId,
-        idempotencyKey: request.idempotencyKey,
-        tenantId: request.target.tenantId,
-        projectId: request.target.projectId,
-        workspaceId: request.target.workspaceId,
-        sessionId: request.target.sessionId,
-        runId: request.target.runId,
-        turnId: request.target.turnId,
-        agentId: "root",
-        executionReference: grant.executionReference,
-        text: request.text,
-        ...(request.uploads?.length ? { uploads: request.uploads } : {}),
-      },
-    });
-    if (command.type !== "command.turn.steer") {
-      throw new TurnSteerBackendError(
-        "backend_protocol_violation",
-        "Constructed supervisor steer command was invalid",
+        "Native input response did not match",
         false,
       );
-    }
-    try {
-      await this.#client.steer(command);
-    } catch (error: unknown) {
-      if (error instanceof TurnSteerBackendError) throw error;
-      if (error instanceof HttpSupervisorManagementError) {
-        throw new TurnSteerBackendError(error.code, error.message, error.retryable);
-      }
-      throw new TurnSteerBackendError(
-        "supervisor_management_unavailable",
-        "Supervisor steer delivery failed",
-        true,
-      );
-    }
+    return response.result;
   }
 }
 

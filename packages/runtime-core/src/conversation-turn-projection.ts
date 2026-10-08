@@ -54,6 +54,16 @@ export function projectConversationTurnTranscript(
       startedSequence = event.seq;
       continue;
     }
+    if (event.type === "user.input") {
+      if (!items.some((item) => item.kind === "user" && item.inputId === event.payload.inputId))
+        items.push({
+          kind: "user",
+          ...event.payload,
+          firstSequence: event.seq,
+          lastSequence: event.seq,
+        });
+      continue;
+    }
     if (event.type === "assistant.text.delta") {
       if (event.payload.messageId !== undefined) {
         const at = items.findIndex(

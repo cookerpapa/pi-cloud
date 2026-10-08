@@ -3,7 +3,7 @@ import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { OpaqueIdSchema, UtcTimestampSchema, UuidSchema } from "./protocol-primitives.ts";
 import { ExecutionReferenceSchema } from "./execution-reference.ts";
-import { SteerTurnCommandMessageSchema } from "./supervisor-wire.ts";
+import { NativeInputCommandSchema, NativeInputResultSchema } from "./native-inputs.ts";
 
 const Sha256Schema = Type.String({ pattern: "^[0-9a-f]{64}$" });
 
@@ -106,9 +106,9 @@ export const SupervisorManagementRequestSchema = Type.Union([
   Type.Object(
     {
       protocolVersion: Type.Literal(1),
-      type: Type.Literal("turn.steer"),
+      type: Type.Literal("native.input"),
       requestId: UuidSchema,
-      command: SteerTurnCommandMessageSchema,
+      command: NativeInputCommandSchema,
     },
     { additionalProperties: false },
   ),
@@ -147,9 +147,9 @@ export const SupervisorManagementResponseSchema = Type.Union([
   Type.Object(
     {
       protocolVersion: Type.Literal(1),
-      type: Type.Literal("turn.steered"),
+      type: Type.Literal("native.input.applied"),
       requestId: UuidSchema,
-      controlRequestId: UuidSchema,
+      result: NativeInputResultSchema,
     },
     { additionalProperties: false },
   ),

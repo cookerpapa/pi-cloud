@@ -45,7 +45,9 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
         await sql`update model_profiles set model_id=${oldModel} where tenant_id=${tenant.tenantId}::uuid`.execute(
           db,
         );
-        await sql`update turns set model_id=${oldModel} where id=${run.turnId}::uuid`.execute(db);
+        await sql`update runs set model_id=${oldModel} where turn_id=${run.turnId}::uuid`.execute(
+          db,
+        );
         await appendNativeFixture(db, { tenantId: tenant.tenantId, sessionId: session.sessionId }, [
           {
             kind: "pi-cloud.accepted-model",
@@ -64,9 +66,9 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
           .where("id", "=", run.runId)
           .executeTakeFirstOrThrow();
         const beforeTurn = await db
-          .selectFrom("turns")
+          .selectFrom("runs")
           .selectAll()
-          .where("id", "=", run.turnId)
+          .where("turn_id", "=", run.turnId)
           .executeTakeFirstOrThrow();
         const history = await historyRows();
         await up(db as unknown as Parameters<typeof up>[0]);
@@ -88,9 +90,9 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
         ).toEqual(beforeRun);
         expect(
           await db
-            .selectFrom("turns")
+            .selectFrom("runs")
             .selectAll()
-            .where("id", "=", run.turnId)
+            .where("turn_id", "=", run.turnId)
             .executeTakeFirstOrThrow(),
         ).toEqual(beforeTurn);
         expect(await historyRows()).toEqual(history);

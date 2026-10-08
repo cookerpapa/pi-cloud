@@ -35,7 +35,15 @@ export type SandboxState = Static<typeof SandboxStateSchema>;
 export type TurnControlRequestState = Static<typeof TurnControlRequestStateSchema>;
 export type RunState = Static<typeof RunStateSchema>;
 
-export type DomainEntityKind = "session" | "turn" | "sandbox" | "control_request" | "run";
+/** Public conversation status is derived from the sole stored Run lifecycle. */
+export function turnStateForRun(state: RunState): TurnState {
+  if (state === "cancel_requested") return "cancelling";
+  if (state === "timed_out") return "failed";
+  if (state === "settling") return "running";
+  return state;
+}
+
+export type DomainEntityKind = "session" | "sandbox" | "control_request" | "run";
 
 type TransitionTable<State extends string> = Readonly<Record<State, readonly State[]>>;
 
@@ -47,15 +55,6 @@ const sessionTransitions = {
   cancelling: ["idle", "failed"],
   failed: ["idle"],
 } as const satisfies TransitionTable<SessionState>;
-
-const turnTransitions = {
-  queued: ["running", "cancelling", "failed", "cancelled"],
-  running: ["queued", "cancelling", "completed", "failed"],
-  cancelling: ["queued", "cancelled", "failed"],
-  completed: [],
-  failed: [],
-  cancelled: [],
-} as const satisfies TransitionTable<TurnState>;
 
 const sandboxTransitions = {
   provisioning: ["ready", "failed", "terminated"],
@@ -120,10 +119,6 @@ function transition<State extends string>(
 
 export function transitionSession(from: SessionState, to: SessionState): SessionState {
   return transition("session", sessionTransitions, from, to);
-}
-
-export function transitionTurn(from: TurnState, to: TurnState): TurnState {
-  return transition("turn", turnTransitions, from, to);
 }
 
 export function transitionSandbox(from: SandboxState, to: SandboxState): SandboxState {

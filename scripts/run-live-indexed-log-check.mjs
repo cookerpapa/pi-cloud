@@ -134,9 +134,9 @@ try {
   assert.equal(children[0].state, "completed");
   assert.equal(children[0].pi_session_id, scope.pi_session_id);
   const childModel = await db
-    .selectFrom("turns")
+    .selectFrom("runs")
     .select("model_id")
-    .where("id", "=", children[0].turn_id)
+    .where("turn_id", "=", children[0].turn_id)
     .executeTakeFirstOrThrow();
   assert.equal(childModel.model_id, report.model);
   report.child = {

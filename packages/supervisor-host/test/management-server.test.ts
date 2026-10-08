@@ -2,11 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  createExecutionReference,
-  parseControlToSupervisorMessage,
-  type SteerTurnCommandMessage,
-} from "@pi-cloud/protocol";
+import { createExecutionReference, type NativeInputCommand } from "@pi-cloud/protocol";
 
 import {
   HttpSandboxAssignmentInventory,
@@ -71,7 +67,7 @@ async function harness() {
   let stopCalls = 0;
   let assignments = [PROTOCOL_ASSIGNMENT];
   let terminationCalls = 0;
-  const steerCommands: SteerTurnCommandMessage[] = [];
+  const inputCommands: NativeInputCommand[] = [];
   const server = new SupervisorManagementServer({
     host: "127.0.0.1",
     port: 0,
@@ -82,8 +78,19 @@ async function harness() {
     stopCurrentBoot: async () => {
       stopCalls += 1;
     },
-    steerCommand: async (command) => {
-      steerCommands.push(command);
+    humanInput: async (command) => {
+      inputCommands.push(command);
+      return {
+        replayed: false,
+        acceptedAt: new Date().toISOString(),
+        queue: {
+          runId: command.runId,
+          revision: "a".repeat(64),
+          nativeSequence: 1,
+          hasMore: false,
+          items: [],
+        },
+      };
     },
     assignmentInventory: {
       async listAssignments(sandboxId) {
@@ -125,8 +132,8 @@ async function harness() {
     terminationCalls() {
       return terminationCalls;
     },
-    steerCommands() {
-      return [...steerCommands];
+    inputCommands() {
+      return [...inputCommands];
     },
   };
 }
@@ -209,30 +216,25 @@ describe("trusted Supervisor management boundary", () => {
 
   it("routes steer to the exact active Worker through the authenticated management channel", async () => {
     const value = await harness();
-    const command = parseControlToSupervisorMessage({
-      protocolVersion: 1,
-      messageId: "10000000-0000-4000-8000-000000000010",
-      sentAt: "2026-08-09T08:00:00.000Z",
-      type: "command.turn.steer",
-      payload: {
-        controlRequestId: "10000000-0000-4000-8000-000000000011",
-        targetRunId: "10000000-0000-4000-8000-000000000013",
-        idempotencyKey: "steer-management-test",
-        tenantId: "tenant-1",
-        projectId: "project-1",
-        workspaceId: "workspace-1",
-        sessionId: ASSIGNMENT.sessionId,
-        runId: "10000000-0000-4000-8000-000000000013",
-        turnId: ASSIGNMENT.turnId,
-        agentId: "root",
-        executionReference: ASSIGNMENT.executionReference,
+    const command: NativeInputCommand = {
+      action: "submit",
+      tenantId: "10000000-0000-4000-8000-000000000001",
+      sessionId: ASSIGNMENT.sessionId,
+      runId: "10000000-0000-4000-8000-000000000013",
+      executionReference: ASSIGNMENT.executionReference,
+      input: {
+        inputId: "input-" + "a".repeat(64),
+        idempotencyKey: "input-management-test",
+        fingerprint: "b".repeat(64),
         text: "Inspect the current failure before continuing.",
+        uploads: [],
+        mode: "steer",
+        acceptedAt: new Date().toISOString(),
       },
-    });
-    if (command.type !== "command.turn.steer") throw new Error("Expected steer command");
+    };
     try {
-      await expect(value.client.steer(command)).resolves.toBeUndefined();
-      expect(value.steerCommands()).toEqual([command]);
+      await expect(value.client.humanInput(command)).resolves.toMatchObject({ replayed: false });
+      expect(value.inputCommands()).toEqual([command]);
     } finally {
       await value.server.close();
     }

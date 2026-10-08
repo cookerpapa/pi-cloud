@@ -190,20 +190,16 @@ it("shares one owner lease, renews once, and releases ownership only after the f
     expect(await f.db.selectFrom("active_execution_scopes").selectAll().execute()).toHaveLength(2);
     // Quiet child progress is not the shared owner's liveness.
     const past = new Date(Date.now() - 120_000);
-    await f.db
-      .updateTable("runs")
-      .set({ last_heartbeat_at: past })
-      .where("id", "=", b.runId)
-      .execute();
+    await f.db.updateTable("runs").set({ updated_at: past }).where("id", "=", b.runId).execute();
     expect((await f.renew()).payload.familyLeaseRenewals).toHaveLength(1);
     expect(
       (
         await f.db
           .selectFrom("runs")
-          .select("last_heartbeat_at")
+          .select("updated_at")
           .where("id", "=", b.runId)
           .executeTakeFirstOrThrow()
-      ).last_heartbeat_at,
+      ).updated_at,
     ).toEqual(past);
     await f.coordinator.assertCurrentGrant(child.request, { executionReference: child.reference });
     const foreign = await f.store.acceptTurn(f.foreign.sessionId, "blocked", { prompt: "blocked" });

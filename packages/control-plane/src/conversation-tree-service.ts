@@ -273,18 +273,15 @@ async function completedTurns(
   if (sessionIds.length === 0) return new Map();
   const rows = await database
     .selectFrom("runs as run")
-    .innerJoin("turns as turn", (join) =>
-      join.onRef("turn.tenant_id", "=", "run.tenant_id").onRef("turn.id", "=", "run.turn_id"),
-    )
     .select([
       "run.session_id as sessionId",
-      "turn.id as turnId",
+      "run.turn_id as turnId",
       "run.mailbox_position as mailboxPosition",
     ])
     .where("run.tenant_id", "=", tenantId)
     .where("run.session_id", "in", sessionIds)
-    .where("turn.pruned_at", "is", null)
-    .where("turn.state", "=", "completed")
+    .where("run.pruned_at", "is", null)
+    .where("run.state", "=", "completed")
     .orderBy("run.session_id")
     .orderBy("run.mailbox_position")
     .execute();
@@ -742,12 +739,12 @@ export class ConversationTreeService {
           );
         }
         const unsettled = await transaction
-          .selectFrom("turns")
+          .selectFrom("runs")
           .select("id")
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sessionId)
           .where("pruned_at", "is", null)
-          .where("state", "in", ["queued", "running", "cancelling"])
+          .where("state", "in", ["queued", "running", "settling", "cancel_requested"])
           .limit(1)
           .executeTakeFirst();
         const pendingSeal = await transaction
@@ -802,14 +799,11 @@ export class ConversationTreeService {
 
         const prunedTurns = await transaction
           .selectFrom("runs as run")
-          .innerJoin("turns as turn", (join) =>
-            join.onRef("turn.tenant_id", "=", "run.tenant_id").onRef("turn.id", "=", "run.turn_id"),
-          )
-          .select("turn.id")
+          .select("run.turn_id as id")
           .where("run.tenant_id", "=", tenantId)
           .where("run.session_id", "=", sessionId)
           .where("run.mailbox_position", ">", anchorRun.mailboxPosition)
-          .where("turn.pruned_at", "is", null)
+          .where("run.pruned_at", "is", null)
           .execute();
         const prunedTurnIds = prunedTurns.map((turn) => turn.id);
 
@@ -847,12 +841,12 @@ export class ConversationTreeService {
             .limit(1)
             .executeTakeFirst();
           const unsettledDescendant = await transaction
-            .selectFrom("turns")
+            .selectFrom("runs")
             .select("id")
             .where("tenant_id", "=", tenantId)
             .where("session_id", "in", descendantIds)
             .where("pruned_at", "is", null)
-            .where("state", "in", ["queued", "running", "cancelling"])
+            .where("state", "in", ["queued", "running", "settling", "cancel_requested"])
             .limit(1)
             .executeTakeFirst();
           if (activeDescendant !== undefined || unsettledDescendant !== undefined) {
@@ -917,10 +911,10 @@ export class ConversationTreeService {
         const now = new Date();
         if (prunedTurnIds.length > 0) {
           await transaction
-            .updateTable("turns")
+            .updateTable("runs")
             .set({ pruned_at: now })
             .where("tenant_id", "=", tenantId)
-            .where("id", "in", prunedTurnIds)
+            .where("turn_id", "in", prunedTurnIds)
             .execute();
         }
         if (sessionsToPrune.length > 0) {
@@ -1106,11 +1100,11 @@ export class ConversationTreeService {
           );
         }
         const unsettled = await transaction
-          .selectFrom("turns")
+          .selectFrom("runs")
           .select("id")
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sourceSessionId)
-          .where("state", "in", ["queued", "running", "cancelling"])
+          .where("state", "in", ["queued", "running", "settling", "cancel_requested"])
           .executeTakeFirst();
         if (unsettled !== undefined) {
           throw new ControlPlaneStoreError(

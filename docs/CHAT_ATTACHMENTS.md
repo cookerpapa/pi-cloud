@@ -88,8 +88,8 @@ All paths require the ordinary tenant authentication and mutation authorization.
 | `PUT /v1/sessions/:sessionId/uploads/:uploadId?name=<encoded-filename>` | Binary `application/octet-stream` body with `Content-Length` and RFC 9530 `Content-Digest: sha-256=:BASE64:`; `200 UserUpload` after Workspace placement and image pinning |
 | `DELETE /v1/sessions/:sessionId/uploads/:uploadId` | `204`; remove an unaccepted draft reference, leaving Workspace bytes intact; accepted references remain |
 | `GET /v1/sessions/:sessionId/uploads/:uploadId/image` | Source image bytes, tenant scoped, private/no-store |
-| `POST /v1/sessions/:sessionId/turns` | Existing request plus optional `uploadIds`; empty `prompt` requires an attachment |
-| `POST /v1/sessions/:sessionId/turns/:turnId/steers` | Existing request plus optional `uploadIds`; empty `text` requires an attachment |
+| `POST /v1/sessions/:sessionId/turns` | Optional `uploadIds`; empty `prompt` requires an attachment. Idle: `kind:run` after PG acceptance; active: `kind:input` after native Kafka durability |
+| `POST /v1/sessions/:sessionId/turns/:turnId/steers` | Optional `uploadIds`; empty `text` requires an attachment. Returns `kind:input` after native Kafka durability |
 | Queued input `edit` action | Optional `uploadIds` replaces attachments atomically; omission preserves them |
 
 Upload IDs are UUIDs chosen by the caller. Retry uses the same ID, filename,

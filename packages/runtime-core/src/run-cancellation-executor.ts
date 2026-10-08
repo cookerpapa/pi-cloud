@@ -2,10 +2,8 @@ import { databaseTime, retryTransaction, type Database } from "@pi-cloud/databas
 import {
   transitionTurnControlRequest,
   transitionSession,
-  transitionTurn,
   type TurnControlRequestState,
   type SessionState,
-  type TurnState,
 } from "@pi-cloud/domain";
 import {
   parseCloudToolCapabilitySnapshot,
@@ -127,7 +125,6 @@ type ClaimedCancellation = {
 
 type CancellationLifecycleRows = {
   cancellationTurnControlRequestState: TurnControlRequestState;
-  turnState: TurnState;
   sessionState: SessionState;
   controlAttempts: number;
   runState: import("@pi-cloud/domain").RunState;
@@ -309,12 +306,6 @@ export class RunCancellationExecutor {
     return this.#database.transaction().execute(async (transaction) => {
       const row = await transaction
         .selectFrom("turn_control_requests as cancellation")
-        .innerJoin("turns as turn", (join) =>
-          join
-            .onRef("turn.tenant_id", "=", "cancellation.tenant_id")
-            .onRef("turn.session_id", "=", "cancellation.session_id")
-            .onRef("turn.id", "=", "cancellation.turn_id"),
-        )
         .innerJoin("sessions as session_row", (join) =>
           join
             .onRef("session_row.tenant_id", "=", "cancellation.tenant_id")
@@ -362,16 +353,15 @@ export class RunCancellationExecutor {
           "agent_revision.runtime_version as agentRuntimeVersion",
           "agent_revision.harness_version as agentHarnessVersion",
           "agent_revision.session_storage_kind as agentSessionStorageKind",
-          "turn.id as turnId",
-          "turn.input_kind as inputKind",
-          "turn.input_text as inputText",
-          "turn.model_profile_id as modelProfileId",
-          "turn.provider as provider",
-          "turn.model_id as modelId",
-          "turn.thinking_level as thinkingLevel",
-          "turn.service_tier as serviceTier",
-          "turn.credential_binding_id as credentialBindingId",
-          "turn.credential_binding_version as credentialBindingVersion",
+          "run.turn_id as turnId",
+          "run.input_text as inputText",
+          "run.model_profile_id as modelProfileId",
+          "run.provider as provider",
+          "run.model_id as modelId",
+          "run.thinking_level as thinkingLevel",
+          "run.service_tier as serviceTier",
+          "run.credential_binding_id as credentialBindingId",
+          "run.credential_binding_version as credentialBindingVersion",
           "session_row.id as sessionId",
           "session_row.pi_session_id as piSessionId",
           "session_row.pi_conversation_id as piConversationId",
@@ -406,13 +396,13 @@ export class RunCancellationExecutor {
         .orderBy("cancellation.created_at", "asc")
         .orderBy("cancellation.id", "asc")
         .limit(1)
-        .forNoKeyUpdate(["cancellation", "turn", "session_row", "run"])
+        .forNoKeyUpdate(["cancellation", "session_row", "run"])
         .skipLocked()
         .executeTakeFirst();
       if (row === undefined) return undefined;
 
       const commandPayload = parseCancellationPayload(row.cancellationPayload);
-      if (row.inputKind !== "prompt" || row.inputText === null) {
+      if (row.inputText === null) {
         throw new RunCancellationExecutorInvariantError(
           "The v1 cancellation dispatcher only targets durable prompt turns",
         );
@@ -514,7 +504,7 @@ export class RunCancellationExecutor {
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
       const now = await databaseTime(transaction);
-      const activePair = rows.turnState === "running" && rows.sessionState === "running";
+      const activePair = rows.runState === "running" && rows.sessionState === "running";
       if (
         rows.cancellationTurnControlRequestState !== "dispatched" ||
         !["running", "settling"].includes(rows.runState) ||
@@ -556,7 +546,6 @@ export class RunCancellationExecutor {
           runState: "cancel_requested",
           reason: `cancellation_${claim.request.reason}`,
           now,
-          heartbeat: true,
         },
       );
 
@@ -574,15 +563,6 @@ export class RunCancellationExecutor {
         .where("state", "=", rows.cancellationTurnControlRequestState)
         .executeTakeFirst();
       expectOne(cancellationUpdate.numUpdatedRows, "acknowledging a cancellation command");
-
-      const turnUpdate = await transaction
-        .updateTable("turns")
-        .set({ state: transitionTurn(rows.turnState, "cancelling") })
-        .where("tenant_id", "=", claim.request.target.tenantId)
-        .where("id", "=", claim.request.target.turnId)
-        .where("state", "=", rows.turnState)
-        .executeTakeFirst();
-      expectOne(turnUpdate.numUpdatedRows, "cancelling a turn");
 
       const sessionUpdate = await transaction
         .updateTable("sessions")
@@ -618,7 +598,7 @@ export class RunCancellationExecutor {
       const now = await databaseTime(transaction);
       if (
         rows.cancellationTurnControlRequestState !== "acknowledged" ||
-        rows.turnState !== "cancelling" ||
+        rows.runState !== "cancel_requested" ||
         rows.sessionState !== "cancelling" ||
         rows.runState !== "cancel_requested"
       ) {
@@ -683,19 +663,6 @@ export class RunCancellationExecutor {
         .where("state", "=", rows.cancellationTurnControlRequestState)
         .executeTakeFirst();
       expectOne(cancellationUpdate.numUpdatedRows, "completing a cancellation command");
-
-      const turnUpdate = await transaction
-        .updateTable("turns")
-        .set({
-          state: transitionTurn(rows.turnState, "cancelled"),
-          stop_reason: "cancelled",
-          settled_at: now,
-        })
-        .where("tenant_id", "=", claim.request.target.tenantId)
-        .where("id", "=", claim.request.target.turnId)
-        .where("state", "=", rows.turnState)
-        .executeTakeFirst();
-      expectOne(turnUpdate.numUpdatedRows, "settling a cancelled turn");
 
       const sessionUpdate = await transaction
         .updateTable("sessions")
@@ -793,7 +760,7 @@ export class RunCancellationExecutor {
         }
         if (
           rows.runState !== "cancel_requested" ||
-          rows.turnState !== "cancelling" ||
+          rows.runState !== "cancel_requested" ||
           rows.sessionState !== "cancelling"
         ) {
           throw new RunCancellationExecutorInvariantError(
@@ -817,20 +784,6 @@ export class RunCancellationExecutor {
             },
           },
         );
-        const turnUpdate = await transaction
-          .updateTable("turns")
-          .set({
-            state: transitionTurn(rows.turnState, "failed"),
-            failure_code: failure.code,
-            failure_message: failure.safeMessage,
-            failure_retryable: false,
-            settled_at: now,
-          })
-          .where("tenant_id", "=", claim.request.target.tenantId)
-          .where("id", "=", claim.request.target.turnId)
-          .where("state", "=", rows.turnState)
-          .executeTakeFirst();
-        expectOne(turnUpdate.numUpdatedRows, "failing a cancelling turn");
 
         const sessionUpdate = await transaction
           .updateTable("sessions")
@@ -904,12 +857,6 @@ export class RunCancellationExecutor {
   ): Promise<CancellationLifecycleRows> {
     const row = await transaction
       .selectFrom("turn_control_requests as cancellation")
-      .innerJoin("turns as turn", (join) =>
-        join
-          .onRef("turn.tenant_id", "=", "cancellation.tenant_id")
-          .onRef("turn.session_id", "=", "cancellation.session_id")
-          .onRef("turn.id", "=", "cancellation.turn_id"),
-      )
       .innerJoin("sessions as session_row", (join) =>
         join
           .onRef("session_row.tenant_id", "=", "cancellation.tenant_id")
@@ -924,17 +871,16 @@ export class RunCancellationExecutor {
       )
       .select([
         "cancellation.state as cancellationTurnControlRequestState",
-        "turn.state as turnState",
         "session_row.state as sessionState",
         "cancellation.attempts as controlAttempts",
         "run.state as runState",
       ])
       .where("cancellation.tenant_id", "=", claim.request.target.tenantId)
       .where("cancellation.id", "=", claim.request.controlRequestId)
-      .where("turn.id", "=", claim.request.target.turnId)
+      .where("run.turn_id", "=", claim.request.target.turnId)
       .where("session_row.id", "=", claim.request.target.sessionId)
       .where("run.id", "=", claim.request.target.runId)
-      .forNoKeyUpdate(["cancellation", "turn", "session_row", "run"])
+      .forNoKeyUpdate(["cancellation", "session_row", "run"])
       .executeTakeFirst();
     if (row === undefined) {
       throw new RunCancellationExecutorInvariantError(

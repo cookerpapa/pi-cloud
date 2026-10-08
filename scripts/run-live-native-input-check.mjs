@@ -1,0 +1,220 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import { serviceAddress } from "./lib/production-kubernetes.mjs";
+import { createDatabase } from "../packages/database/src/index.ts";
+import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
+import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+
+if (process.env.PI_CLOUD_LIVE_NATIVE_INPUT_CHECK !== "1")
+  throw new Error(
+    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 183 matched Luna/Cube acceptance",
+  );
+const runtime = "deploy/production/runtime",
+  env = await readFile(`${runtime}/.env`, "utf8");
+const base = `http://127.0.0.1:${env.match(/^PI_CLOUD_HTTP_PORT=(\d+)$/m)?.[1]}`;
+const pg = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
+pg.hostname = serviceAddress("postgres");
+const db = createDatabase({ connectionString: pg.toString(), maxConnections: 2 });
+const report = {
+  checkedAt: new Date().toISOString(),
+  model: "gpt-6-luna",
+  accepted: false,
+  cases: [],
+};
+const sessions = [];
+let tenant, api, project, failure;
+const terminal = (state) => ["completed", "failed", "cancelled", "timed_out"].includes(state);
+async function until(read, label, timeout = 180000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    const value = await read();
+    if (value) return value;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`${label} timed out`);
+}
+const finished = (id) =>
+  until(async () => {
+    const run = await api.getRun(id);
+    return terminal(run.state) && run;
+  }, "Run settlement");
+try {
+  const schema = await db
+    .selectFrom("kysely_migration")
+    .select("name")
+    .orderBy("name", "desc")
+    .limit(1)
+    .executeTakeFirstOrThrow();
+  assert.equal(
+    schema.name,
+    "183_native_inputs_and_run_record",
+    "Deploy the matched schema/app first",
+  );
+  tenant = await createPrivateTenant(db, {
+    slug: `native-input-${randomUUID()}`,
+    ownerDisplayName: "Native input acceptance",
+    initialModel: { provider: "openai-codex", modelId: report.model },
+  });
+  api = new PiCloudApi((url, init = {}) =>
+    fetch(new URL(String(url), base), {
+      ...init,
+      headers: {
+        ...Object.fromEntries(new Headers(init.headers)),
+        authorization: `Bearer ${tenant.credential.token}`,
+      },
+    }),
+  );
+  project = await api.createProject("Native input acceptance", { kind: "empty" });
+  for (const scenario of ["consume", "stop"]) {
+    const session = await api.createSession(
+      project.projectId,
+      project.workspaceId,
+      `Native ${scenario}`,
+      "elastic",
+      "starter",
+      "/workspace",
+      { provider: "openai-codex", modelId: report.model, thinkingLevel: "low", fastMode: false },
+    );
+    sessions.push(session);
+    const root = await api.acceptTurn(
+      session.sessionId,
+      "Run bash exactly once: sleep 20. After that, answer briefly. Subsequent messages may change your instructions.",
+      newIdempotencyKey("turn"),
+    );
+    assert.equal(root.kind, "run");
+    await until(
+      async () =>
+        (await api.getConversation(session.sessionId)).turns
+          .find((t) => t.runId === root.runId)
+          ?.transcript?.items.some((i) => i.kind === "tool" && i.status === "running"),
+      "Bash started",
+    );
+    const key = newIdempotencyKey("turn"),
+      text = "Without using tools, reply ORIGINAL_INPUT_MARKER.";
+    const input = await api.acceptTurn(session.sessionId, text, key);
+    assert.equal(input.kind, "input");
+    assert.equal(input.runId, root.runId);
+    // Retry as if the preceding HTTP confirmation was lost.
+    const replay = await api.acceptTurn(session.sessionId, text, key);
+    assert.equal(replay.inputId, input.inputId);
+    assert.equal(replay.replayed, true);
+    let queue = await api.getInputQueue(session.sessionId);
+    await api.mutateQueuedInput(
+      session.sessionId,
+      input.inputId,
+      {
+        action: "edit",
+        text: "Without using tools, reply EDITED_INPUT_MARKER.",
+        revision: queue.revision,
+      },
+      newIdempotencyKey("edit"),
+    );
+    const second = await api.acceptTurn(
+      session.sessionId,
+      "Without using tools, reply SECOND_INPUT_MARKER.",
+      newIdempotencyKey("turn"),
+    );
+    assert.equal(second.kind, "input");
+    queue = await api.getInputQueue(session.sessionId);
+    await api.mutateQueuedInput(
+      session.sessionId,
+      second.inputId,
+      { action: "move", direction: "up", revision: queue.revision },
+      newIdempotencyKey("move"),
+    );
+    queue = await api.getInputQueue(session.sessionId);
+    await api.mutateQueuedInput(
+      session.sessionId,
+      second.inputId,
+      { action: "steer", revision: queue.revision },
+      newIdempotencyKey("steer"),
+    );
+    assert.equal((await api.getInputQueue(session.sessionId)).items[0].inputId, second.inputId);
+    if (scenario === "stop") {
+      await api.cancelTurn(session.sessionId, root.turnId, newIdempotencyKey("cancel"));
+      await finished(root.runId);
+      const returned = await until(async () => {
+        const page = await api.getReturnedInputs(session.sessionId);
+        return page.requestId && !page.pending && page;
+      }, "Returned inputs");
+      assert.deepEqual(
+        returned.items.map((i) => i.inputId),
+        [second.inputId, input.inputId],
+      );
+      assert.equal(returned.items[1].text, "Without using tools, reply EDITED_INPUT_MARKER.");
+      await api.acknowledgeReturnedInputs(session.sessionId, returned.requestId);
+    } else {
+      assert.equal((await finished(root.runId)).state, "completed");
+      const history = await api.getConversation(session.sessionId);
+      assert.equal(history.turns.length, 1);
+      assert.deepEqual(
+        history.turns[0].transcript.items.filter((i) => i.kind === "user").map((i) => i.inputId),
+        [second.inputId, input.inputId],
+      );
+      assert.equal((await api.getInputQueue(session.sessionId)).items.length, 0);
+      const replayAfter = await api.acceptTurn(session.sessionId, text, key);
+      assert.equal(replayAfter.runId, root.runId);
+      assert.equal(replayAfter.replayed, true);
+    }
+    const runs = await db
+      .selectFrom("runs")
+      .select("id")
+      .where("tenant_id", "=", tenant.tenantId)
+      .where("session_id", "=", session.sessionId)
+      .execute();
+    assert.equal(runs.length, 1);
+    report.cases.push({
+      scenario,
+      oneRun: true,
+      stableRetryIdentity: true,
+      editedNativeInput: true,
+    });
+  }
+  report.accepted = true;
+} catch (error) {
+  failure = error;
+} finally {
+  const errors = [];
+  const clean = async (work) => {
+    try {
+      await work();
+    } catch (error) {
+      errors.push(error);
+    }
+  };
+  for (const session of sessions)
+    await clean(async () => {
+      const q = await api.getInputQueue(session.sessionId);
+      if (q.activeTurnId) {
+        await api.cancelTurn(session.sessionId, q.activeTurnId, newIdempotencyKey("cleanup"));
+        await until(
+          async () => !(await api.getInputQueue(session.sessionId)).activeTurnId,
+          "Cleanup stop",
+        );
+      }
+      await api.deleteConversation(session.sessionId);
+    });
+  if (project)
+    await clean(() => api.deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup")));
+  if (tenant)
+    await clean(() =>
+      db
+        .updateTable("tenant_api_credentials")
+        .set({ revoked_at: new Date() })
+        .where("credential_id", "=", tenant.credential.credentialId)
+        .execute(),
+    );
+  report.cleanupRequested = errors.length === 0;
+  await writeFile(
+    process.argv[2] ?? "/tmp/pi-cloud-native-input-live.json",
+    JSON.stringify(report, null, 2) + "\n",
+  );
+  await db.destroy();
+  if (failure || errors.length)
+    throw new AggregateError(
+      [failure, ...errors].filter(Boolean),
+      "Native input acceptance failed",
+    );
+}
+console.log(JSON.stringify(report));

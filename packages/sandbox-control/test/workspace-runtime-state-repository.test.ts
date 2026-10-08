@@ -905,14 +905,43 @@ describe("PostgreSQL Sandbox control ownership", () => {
         })),
       )
       .execute();
+    const parentRunId = "20000000-0000-4000-8000-000000000032";
+    const environmentId = "20000000-0000-4000-8000-000000000030";
+    const childTurnId = "20000000-0000-4000-8000-000000000033";
+    const childRunId = "20000000-0000-4000-8000-000000000035";
     await database
-      .insertInto("turns")
+      .insertInto("environment_versions")
       .values({
-        id: forkTurnId,
+        id: environmentId,
+        tenant_id: tenantId,
+        project_id: projectId,
+        version_number: 1,
+        profile_key: "pi-cloud-fullstack",
+        profile_version: "1",
+        image_revision: "test",
+        spec_sha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+        recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+        recipe_sha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+        state: "validated",
+        active: true,
+        validated_at: new Date(),
+      })
+      .executeTakeFirstOrThrow();
+    await database
+      .insertInto("runs")
+      .values({
+        id: parentRunId,
+        turn_id: forkTurnId,
+        project_id: projectId,
+        workspace_id: workspaceId,
+        environment_version_id: environmentId,
+        mailbox_position: 1,
+        request_sha256: "a".repeat(64),
+        available_at: new Date(),
+        idempotency_key: "delegated-parent",
         tenant_id: tenantId,
         session_id: rootSessionId,
         state: "completed",
-        input_kind: "prompt",
         input_text: "seed",
         model_profile_id: profileId,
         provider: "test",
@@ -980,7 +1009,6 @@ describe("PostgreSQL Sandbox control ownership", () => {
     resources.push(async () => repository.close());
     await repository.start();
 
-    const parentRunId = "20000000-0000-4000-8000-000000000032";
     const activation = {
       sandboxProfileKey: "standard" as const,
       activationId: "20000000-0000-4000-8000-000000000005",
@@ -1048,27 +1076,6 @@ describe("PostgreSQL Sandbox control ownership", () => {
     ).resolves.toEqual({ state: "released" });
 
     const delegatedSessionId = "20000000-0000-4000-8000-000000000017";
-    const environmentId = "20000000-0000-4000-8000-000000000030";
-    const childTurnId = "20000000-0000-4000-8000-000000000033";
-    const childRunId = "20000000-0000-4000-8000-000000000035";
-    await database
-      .insertInto("environment_versions")
-      .values({
-        id: environmentId,
-        tenant_id: tenantId,
-        project_id: projectId,
-        version_number: 1,
-        profile_key: "pi-cloud-fullstack",
-        profile_version: "1",
-        image_revision: "test",
-        spec_sha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
-        recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
-        recipe_sha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-        state: "validated",
-        active: true,
-        validated_at: new Date(),
-      })
-      .executeTakeFirstOrThrow();
     await database
       .insertInto("sessions")
       .values({
@@ -1083,44 +1090,19 @@ describe("PostgreSQL Sandbox control ownership", () => {
         session_kind: "subagent",
       })
       .executeTakeFirstOrThrow();
-    await database
-      .insertInto("turns")
-      .values({
-        id: childTurnId,
-        tenant_id: tenantId,
-        session_id: delegatedSessionId,
-        state: "running",
-        input_kind: "prompt",
-        input_text: "Inspect the shared Workspace",
-        model_profile_id: profileId,
-        provider: "test",
-        model_id: "test-model",
-        thinking_level: "off",
-        credential_binding_id: credentialId,
-        credential_binding_version: 1,
-        started_at: new Date(),
-      })
-      .executeTakeFirstOrThrow();
+
     await database
       .insertInto("runs")
       .values([
         {
-          id: parentRunId,
-          tenant_id: tenantId,
-          project_id: projectId,
-          workspace_id: workspaceId,
-          session_id: rootSessionId,
-          turn_id: forkTurnId,
-          mailbox_position: 1,
-          request_sha256: "a".repeat(64),
-          available_at: new Date(),
-          environment_version_id: environmentId,
-          idempotency_key: "delegated-parent",
-          state: "running" as const,
-          started_at: new Date(),
-        },
-        {
           id: childRunId,
+          input_text: "Inspect the shared Workspace",
+          model_profile_id: profileId,
+          provider: "test",
+          model_id: "test-model",
+          thinking_level: "off",
+          credential_binding_id: credentialId,
+          credential_binding_version: 1,
           tenant_id: tenantId,
           project_id: projectId,
           workspace_id: workspaceId,
@@ -1137,6 +1119,11 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .executeTakeFirstOrThrow();
     await database
       .updateTable("runs")
+      .set({ state: "running", started_at: new Date(), settled_at: null, stop_reason: null })
+      .where("id", "=", parentRunId)
+      .execute();
+    await database
+      .updateTable("runs")
       .set({
         state: "running",
         started_at: new Date(),
@@ -1147,7 +1134,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .updateTable("runs")
       .set({
         lease_id: "20000000-0000-4000-8000-000000000009",
-        sandbox_id: activation.assignment.sandboxId,
+        worker_id: activation.assignment.sandboxId,
         fencing_token: 1,
       })
       .where("id", "in", [parentRunId, childRunId])

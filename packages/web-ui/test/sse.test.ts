@@ -20,7 +20,7 @@ it("parses a large pushed input queue without consuming transcript sequence", as
     onEvent = vi.fn();
   const queue = {
     sessionId: SESSION_ID,
-    revision: 1,
+    revision: `${"a".repeat(64)}.${"b".repeat(64)}`,
     viewVersion: "19",
     afterPosition: 0,
     hasMore: false,
@@ -28,7 +28,7 @@ it("parses a large pushed input queue without consuming transcript sequence", as
     hasReturnedInputs: false,
     items: [
       {
-        turnId: TURN_ID,
+        inputId: TURN_ID,
         runId: TURN_ID,
         text: "x".repeat(90000),
         mailboxPosition: 1,

@@ -18,6 +18,8 @@ export type DurableRecordOrigin = Readonly<{
 export type DurableCommitPublication = Readonly<{
   commit: DurableSessionCommit;
   origins: readonly DurableRecordOrigin[];
+  /** Native queue documents changed; a disposable view wake after projection. */
+  inputQueueSessions?: readonly string[];
   tools: readonly Readonly<{ taskId: number; command: CandidateToolCommand }>[];
   cancellations: readonly CandidateToolCancellation[];
   events: readonly PiCloudEvent[];

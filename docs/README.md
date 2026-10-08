@@ -1,9 +1,16 @@
 # Documentation map
 
+The [reading checkpoint](READING_PROGRESS.md) records the architecture walkthrough
+at PG input acceptance. [ADR-0238](adr/0238-native-input-queue-and-run-record.md)
+is the approved native follow-up/editing and Session/Run consolidation slice;
+implementation and deployment status are tracked separately.
+
 The [Session/Turn/Run field review](reports/session-turn-run-review-20261008.md)
 covers all 105 columns, current SQL dependencies and isolated acceptance/queue
 checks. It identifies six initial cleanup candidates and duplicated Turn/Run
-lifecycle fields; schema and runtime changes remain proposed.
+lifecycle fields. Its approved implementation is recorded in the
+[native input and Run consolidation report](reports/native-input-run-consolidation-20261009.md);
+source verification is separate from the pending matched deployment.
 
 The [sandbox result/portability study](reports/sandbox-result-portability-20261008.md)
 compares current Cube coupling with official E2B, OpenSandbox, OpenShell,

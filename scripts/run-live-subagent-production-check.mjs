@@ -246,9 +246,9 @@ async function executionEvidence(parentRunId, executionId) {
       'computeSessionId', child_run.compute_session_id,
       'cwd', child_run.working_directory,
       'childRunState', child_run.state,
-      'parentWorker', parent_run.sandbox_id,
-      'childWorker', child_run.sandbox_id,
-      'sameWorker', parent_run.sandbox_id = child_run.sandbox_id,
+      'parentWorker', parent_run.worker_id,
+      'childWorker', child_run.worker_id,
+      'sameWorker', parent_run.worker_id = child_run.worker_id,
       'sameOwnerLease', parent_run.lease_id = child_run.lease_id
         and parent_run.fencing_token = child_run.fencing_token,
       'piSessionId', child.pi_session_id,
@@ -273,8 +273,8 @@ async function executionEvidence(parentRunId, executionId) {
         where entry.kind='entry' and entry.tenant_id = execution.tenant_id
           and entry.session_id = child.pi_session_id
           and entry.fields->>'turn' in (
-            select turn.id::text
-            from turns turn
+            select turn.turn_id::text
+            from runs turn
             where turn.tenant_id = execution.tenant_id
               and turn.session_id = execution.child_session_id
           )
@@ -316,12 +316,12 @@ async function recursiveTreeEvidence(rootRunId) {
       'childSessionId', execution.child_session_id,
       'childRunId', execution.child_run_id,
       'childRunState', child_run.state,
-      'rootWorker', root_run.sandbox_id,
+      'rootWorker', root_run.worker_id,
       'computeSessionId', child_run.compute_session_id,
       'cwd', child_run.working_directory,
       'runtimeId', (select runtime_id from workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child_run.workspace_id and compute_session_id is not distinct from child_run.compute_session_id order by created_at desc limit 1),
-      'childWorker', child_run.sandbox_id,
-      'sameWorker', root_run.sandbox_id = child_run.sandbox_id,
+      'childWorker', child_run.worker_id,
+      'sameWorker', root_run.worker_id = child_run.worker_id,
       'sameOwnerLease', root_run.lease_id = child_run.lease_id
         and root_run.fencing_token = child_run.fencing_token,
       'piSessionId', child.pi_session_id,
@@ -346,9 +346,9 @@ async function parallelExecutionEvidence(parentRunId) {
       'childSessionId', execution.child_session_id,
       'childRunId', execution.child_run_id,
       'childRunState', child_run.state,
-      'parentWorker', parent_run.sandbox_id,
-      'childWorker', child_run.sandbox_id,
-      'sameWorker', parent_run.sandbox_id = child_run.sandbox_id,
+      'parentWorker', parent_run.worker_id,
+      'childWorker', child_run.worker_id,
+      'sameWorker', parent_run.worker_id = child_run.worker_id,
       'piSessionId', child.pi_session_id,
       'sameOwnerLease', parent_run.lease_id = child_run.lease_id
         and parent_run.fencing_token = child_run.fencing_token,
@@ -370,7 +370,7 @@ async function parallelExecutionEvidence(parentRunId) {
         where entry.kind='entry' and entry.tenant_id = execution.tenant_id
           and entry.session_id = child.pi_session_id
           and entry.fields->>'turn' in (
-            select turn.id::text from turns turn
+            select turn.turn_id::text from runs turn
             where turn.tenant_id = execution.tenant_id
               and turn.session_id = execution.child_session_id
           )

@@ -68,7 +68,7 @@ describe("tenant-aware browser API", () => {
       hasMore: false,
       items: [
         {
-          turnId,
+          inputId: turnId,
           idempotencyKey: "returned-input",
           text: "draft",
           uploads: [],
@@ -94,7 +94,7 @@ describe("tenant-aware browser API", () => {
     const turnId = "20000000-0000-4000-8000-000000000001";
     const queue = {
       sessionId,
-      revision: 7,
+      revision: `${"a".repeat(64)}.${"b".repeat(64)}`,
       viewVersion: "19",
       afterPosition: 0,
       hasMore: false,
@@ -102,7 +102,11 @@ describe("tenant-aware browser API", () => {
       hasReturnedInputs: false,
       items: [],
     };
-    const action = { action: "steer" as const, revision: 7, targetTurnId: turnId, text: "edited" };
+    const action = {
+      action: "steer" as const,
+      revision: `${"a".repeat(64)}.${"b".repeat(64)}`,
+      text: "edited",
+    };
     const transport = vi.fn<typeof fetch>(async (input, init) => {
       if (init?.method === "GET") {
         expect(input).toBe(`/v1/sessions/${sessionId}/queued-inputs`);

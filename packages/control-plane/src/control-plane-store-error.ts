@@ -5,6 +5,7 @@ export type ControlPlaneStoreErrorCode =
   | "idempotency_conflict"
   | "tenant_quota_exceeded"
   | "capacity_exhausted"
+  | "input_delivery_unavailable"
   | "control_plane_misconfigured";
 
 export class ControlPlaneStoreError extends Error {

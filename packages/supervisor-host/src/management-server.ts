@@ -3,7 +3,8 @@ import {
   type InternalServiceError,
   type SupervisorManagementResponse,
   type SupervisorRuntimeAssignment,
-  type SteerTurnCommandMessage,
+  type NativeInputCommand,
+  type NativeInputResult,
   SUBAGENT_HOST_PATH,
   MAX_TOOL_RESPONSE_BYTES,
   type SubagentHostRequest,
@@ -20,7 +21,7 @@ export const SUPERVISOR_MANAGEMENT_PATH = "/internal/v1/supervisor/manage";
 export const SUPERVISOR_HOST_LIVE_PATH = "/health/live";
 export const SUPERVISOR_HOST_READY_PATH = "/health/ready";
 
-const DEFAULT_BODY_LIMIT = 64 * 1_024;
+const DEFAULT_BODY_LIMIT = 1024 * 1024;
 
 export type SupervisorManagementServerOptions = {
   host: string;
@@ -31,7 +32,7 @@ export type SupervisorManagementServerOptions = {
   stopCurrentBoot: () => Promise<void>;
   readiness: () => boolean;
   assignmentInventory: SupervisorAssignmentInventory;
-  steerCommand?: (command: SteerTurnCommandMessage) => Promise<void>;
+  humanInput?: (command: NativeInputCommand) => Promise<NativeInputResult>;
   subagentCommand?: (command: SubagentHostRequest) => Promise<unknown>;
   bodyLimit?: number;
 };
@@ -79,6 +80,18 @@ function digest(value: string): Buffer {
 
 function safeFailure(error: unknown): SupervisorManagementServerError {
   if (error instanceof SupervisorManagementServerError) return error;
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    ["input_conflict", "input_closed", "idempotency_conflict"].includes(String(error.code))
+  )
+    return new SupervisorManagementServerError(
+      String(error.code),
+      error instanceof Error ? error.message : "Native input cannot be changed",
+      false,
+    );
+
   if (error instanceof SupervisorBootLedgerError) {
     return new SupervisorManagementServerError(error.code, error.message, false);
   }
@@ -113,7 +126,7 @@ export class SupervisorManagementServer {
   readonly #stopCurrentBoot: () => Promise<void>;
   readonly #readiness: () => boolean;
   readonly #assignmentInventory: SupervisorAssignmentInventory;
-  readonly #steerCommand: ((command: SteerTurnCommandMessage) => Promise<void>) | undefined;
+  readonly #humanInput: ((command: NativeInputCommand) => Promise<NativeInputResult>) | undefined;
   readonly #subagentCommand: ((command: SubagentHostRequest) => Promise<unknown>) | undefined;
   #stopOperation: Promise<void> | undefined;
   #address: string | undefined;
@@ -131,7 +144,7 @@ export class SupervisorManagementServer {
     this.#stopCurrentBoot = options.stopCurrentBoot;
     this.#readiness = options.readiness;
     this.#assignmentInventory = options.assignmentInventory;
-    this.#steerCommand = options.steerCommand;
+    this.#humanInput = options.humanInput;
     this.#subagentCommand = options.subagentCommand;
     this.#server = Fastify({
       logger: false,
@@ -245,20 +258,20 @@ export class SupervisorManagementServer {
       };
     }
 
-    if (message.type === "turn.steer") {
-      if (this.#steerCommand === undefined) {
+    if (message.type === "native.input") {
+      if (this.#humanInput === undefined) {
         throw new SupervisorManagementServerError(
-          "steer_target_unavailable",
-          "Supervisor steer endpoint is unavailable",
+          "input_target_unavailable",
+          "Native input endpoint is unavailable",
           true,
         );
       }
-      await this.#steerCommand(message.command);
+      const result = await this.#humanInput(message.command);
       return {
         protocolVersion: 1,
-        type: "turn.steered",
+        type: "native.input.applied",
         requestId: message.requestId,
-        controlRequestId: message.command.payload.controlRequestId,
+        result,
       };
     }
 

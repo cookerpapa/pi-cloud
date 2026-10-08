@@ -82,11 +82,13 @@ The stream-independence and interrupted-prefix fault cases verify that a public
 stream outage cannot roll back a complete Pi message, while a visible failed
 prefix still survives Worker replacement.
 
-The [direct Steer acceptance](reports/direct-steer-acceptance-20260930.md) adds
-real-PG input races and a Luna/Cube process-fault script:
-`PI_CLOUD_LIVE_DIRECT_STEER_CHECK=1 node --import tsx scripts/run-live-direct-steer-check.mjs`.
-Canonical input consumption, including consumption during cancellation, decides
-retirement versus restoration; an HTTP acknowledgement alone never does.
+Native input integration tests use the real Pi Harness and PostgreSQL to cover
+lost acknowledgements, edits, ordering, promotion, tenant isolation and Stop
+restoration. The current matched deployment check is
+`PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 node --import tsx scripts/run-live-native-input-check.mjs`.
+It requires schema 183 and matched images; it checks Luna/Cube native consumption
+and Stop with one Run per scenario. HTTP confirmation follows native persistence;
+restoration waits for native abort settlement and ordered writer closure.
 
 ## Live-event durability
 
@@ -383,13 +385,6 @@ creation window. It confirms physical absence on the recorded node.
 uses Luna and an owned Workspace, SIGKILLs Control Plane after creation intent but
 before capsule persistence, and requires adoption of the original allocation.
 It refuses unrelated pending/active Runs and open terminals before the fault.
-
-Run `PI_CLOUD_LIVE_PAUSED_QUEUE_CHECK=1 node --import tsx scripts/run-live-paused-input-check.mjs`
-against schema 173 and matched app images for Luna/Cube paused-input acceptance.
-It checks Stop, unconsumed Steer, browser reload, Worker replacement, independent
-new input, edited individual Send, Continue queue and executed history order.
-Worker replacement refuses unrelated pending/active work. The fixture removes
-its owned Sessions/Workspace; credentials and transcript content are not reports.
 
 Run `PI_CLOUD_LIVE_AGENT_STOP_CHECK=1 node --import tsx scripts/run-live-agent-stop-check.mjs`
 against the matched deployment to test two Luna Sessions sharing one VM. Chat

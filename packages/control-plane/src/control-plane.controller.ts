@@ -46,7 +46,8 @@ import {
   parseUpdateSessionModelRequest,
   parseReplaceCubeProxyConfigurationRequest,
   parseUuidPathParameter,
-  type AcceptedTurnResource,
+  type AcceptedConversationInputResource,
+  parseQueuedInputId,
   type AuthSessionResource,
   type AcceptedTurnCancellationResource,
   type TurnSteerResource,
@@ -832,14 +833,18 @@ export class ControlPlaneController {
     @Param("sessionId") sessionIdValue: unknown,
     @Headers("idempotency-key") idempotencyKeyValue: unknown,
     @Body() body: unknown,
-  ): Promise<AcceptedTurnResource> {
+  ): Promise<AcceptedConversationInputResource> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const idempotencyKey = parseIdempotencyKey(idempotencyKeyValue);
     const request = parseAcceptTurnRequest(body);
     const identity = this.tenantRequestContext.requireMutation(httpRequest);
-    return this.controlPlaneStores
-      .forIdentity(identity)
-      .acceptTurn(sessionId, idempotencyKey, request);
+    return this.queuedInputs.accept(
+      this.controlPlaneStores.forIdentity(identity),
+      identity.tenantId,
+      sessionId,
+      idempotencyKey,
+      request,
+    );
   }
 
   @Post("sessions/:sessionId/turns/:turnId/cancellations")
@@ -875,10 +880,16 @@ export class ControlPlaneController {
     const idempotencyKey = parseIdempotencyKey(idempotencyKeyValue);
     const request = parseCreateTurnSteerRequest(body);
     const identity = this.tenantRequestContext.requireMutation(httpRequest);
-    const accepted = await this.controlPlaneStores
-      .forIdentity(identity)
-      .acceptTurnSteer(sessionId, turnId, idempotencyKey, request);
-    this.queuedInputs.notifySession(identity.tenantId, sessionId, true);
+    const accepted = await this.queuedInputs.accept(
+      this.controlPlaneStores.forIdentity(identity),
+      identity.tenantId,
+      sessionId,
+      idempotencyKey,
+      { prompt: request.text, ...(request.uploadIds ? { uploadIds: request.uploadIds } : {}) },
+      "steer",
+      turnId,
+    );
+    if (accepted.kind !== "input") throw new Error("Steer did not resolve to native input");
     return accepted;
   }
 
@@ -887,13 +898,13 @@ export class ControlPlaneController {
     @Req() request: FastifyRequest,
     @Param("sessionId") sessionId: unknown,
     @Query("afterPosition") afterPosition: unknown,
-    @Query("viewVersion") viewVersion: unknown,
+    @Query("revision") revision: unknown,
   ) {
     const identity = this.tenantRequestContext.resolve(request);
     if (
       (afterPosition !== undefined &&
         (typeof afterPosition !== "string" || !/^(0|[1-9][0-9]*)$/.test(afterPosition))) ||
-      (viewVersion !== undefined && typeof viewVersion !== "string")
+      (revision !== undefined && typeof revision !== "string")
     )
       throw new ControlPlaneApiValidationError("Invalid queue page");
     return this.queuedInputs.list(
@@ -901,17 +912,17 @@ export class ControlPlaneController {
       parseUuidPathParameter(sessionId, "sessionId"),
       {
         ...(afterPosition === undefined ? {} : { afterPosition: Number(afterPosition) }),
-        ...(viewVersion === undefined ? {} : { viewVersion: viewVersion as string }),
+        ...(revision === undefined ? {} : { revision: revision as string }),
       },
     );
   }
 
-  @Post("sessions/:sessionId/queued-inputs/:turnId/actions")
+  @Post("sessions/:sessionId/queued-inputs/:inputId/actions")
   @HttpCode(200)
   async mutateQueuedInput(
     @Req() request: FastifyRequest,
     @Param("sessionId") sessionId: unknown,
-    @Param("turnId") turnId: unknown,
+    @Param("inputId") inputId: unknown,
     @Headers("idempotency-key") key: unknown,
     @Body() body: unknown,
   ) {
@@ -919,7 +930,7 @@ export class ControlPlaneController {
     return this.queuedInputs.mutate(
       identity.tenantId,
       parseUuidPathParameter(sessionId, "sessionId"),
-      parseUuidPathParameter(turnId, "turnId"),
+      parseQueuedInputId(inputId),
       parseIdempotencyKey(key),
       parseQueuedInputAction(body),
     );
