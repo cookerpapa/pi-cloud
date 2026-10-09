@@ -30,6 +30,11 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+- [ ] Deploy [ADR-0239](adr/0239-projection-query-and-replay-writes.md)'s projection
+      SQL optimization, now [source-verified](reports/projection-sql-20261009.md): one combined Run/writer read,
+      unchanged replay without Run/progress tuple rewrites, existing authority
+      locks retained. Schema remains 183; no data cleanup is required.
+
 - [ ] Deploy the commentary text animation UI. Source now shares the existing
       final-answer animation path; recovered history remains immediate and
       reduced-motion preferences remain respected. This is a presentation-only

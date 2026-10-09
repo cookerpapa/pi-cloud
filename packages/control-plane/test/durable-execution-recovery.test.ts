@@ -9,7 +9,11 @@ import {
   ExecutionStreamBoundary,
 } from "../../runtime-core/src/execution-stream-projection.ts";
 import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fact.ts";
-import type { AcceptedExecutionSealFact } from "../../runtime-core/src/accepted-fact.ts";
+import type {
+  AcceptedDurableCommitFact,
+  AcceptedExecutionSealFact,
+} from "../../runtime-core/src/accepted-fact.ts";
+import { PostgresDurableCommitProjector } from "../../runtime-core/src/postgres-durable-commit-projector.ts";
 import { confirmAgentExit } from "../../runtime-core/src/quarantined-session-recovery.ts";
 
 let db: Kysely<Database>, store: ControlPlaneStore, tenantId: string;
@@ -95,8 +99,23 @@ it.each(["none", "before_seal", "after_seal"] as const)(
       },
     });
     expect(await next.dispatchRun(turn.runId)).toEqual({ status: "idle" });
+    const native: AcceptedDurableCommitFact = {
+      kind: "durable_commit",
+      factId: crypto.randomUUID(),
+      scope: seal.scope,
+      occurredAt: seal.occurredAt,
+      commit: { seq: 1, nextId: 2, writes: [{ type: "conversation", value: { id: 1 } }] },
+      origins: [],
+      tools: [],
+      cancellations: [],
+      events: [],
+    };
+    const prefix = { fact: native, topic: "recovery-test", partition: 0, offset: 0n };
+    const displaced = new ExecutionStreamProjector(db);
+    await displaced.project(prefix);
     const projector = new ExecutionStreamProjector(db);
-    const record = { fact: seal, topic: "recovery-test", partition: 0, offset: 0n };
+    await projector.project(prefix);
+    const record = { fact: seal, topic: "recovery-test", partition: 0, offset: 2n };
     await projector.project(record);
     const queued = await db
       .selectFrom("runs")
@@ -134,6 +153,45 @@ it.each(["none", "before_seal", "after_seal"] as const)(
         .where("id", "=", turn.runId)
         .executeTakeFirstOrThrow();
       expect(current.lease_id).not.toBe(seal.scope.writerId);
+      // This handler cached OPEN before replacement and resumes after the new
+      // grant. Both native and already-covered display writes must recheck PG.
+      const late = { ...native, commit: { seq: 2, nextId: 2, writes: [] } };
+      await new PostgresDurableCommitProjector(db).project(late, { ...prefix, offset: 1n });
+      expect(
+        (
+          await sql`select seq from pi_durable_commits where tenant_id=${tenantId}::uuid
+        and session_id=${seal.scope.piSessionId} order by seq`.execute(db)
+        ).rows,
+      ).toEqual([{ seq: "1" }]);
+      await db
+        .updateTable("runs")
+        .set({ output_display_seq: "100", output_display_native_seq: "1" })
+        .where("id", "=", turn.runId)
+        .execute();
+      await expect(
+        displaced.project({
+          ...prefix,
+          offset: 1n,
+          fact: {
+            kind: "agent_event",
+            factId: crypto.randomUUID(),
+            scope: seal.scope,
+            occurredAt: seal.occurredAt,
+            nativeSequence: 1,
+            event: {
+              schemaVersion: 1,
+              eventId: crypto.randomUUID(),
+              sessionId: session.sessionId,
+              turnId: turn.turnId,
+              agentId: "root",
+              seq: 1,
+              occurredAt: seal.occurredAt,
+              type: "assistant.text.delta",
+              payload: { text: "stale coverage" },
+            },
+          },
+        }),
+      ).rejects.toThrow("Display checkpoint preceded its native commit");
       await projector.project(record);
       await confirmAgentExit(db, {
         tenantId,

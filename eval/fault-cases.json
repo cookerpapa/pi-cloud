@@ -3,6 +3,41 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "projection-replay-stable-tuples",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "replays native and display progress without rewriting unchanged tuples",
+      "invariant": "Replayed coverage and partition progress preserve tuple versions, native bytes, monotonic cursors and the first recovery floor."
+    },
+    {
+      "id": "projection-display-missing-native",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "does not accept already-covered display replay without its native commit",
+      "invariant": "A no-op coverage replay still requires the referenced canonical native commit."
+    },
+    {
+      "id": "projection-run-cutoff-wait",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "rechecks the run cutoff after waiting for its authority lock",
+      "invariant": "Native projection locks the Run before the shared writer and rechecks the Run cutoff after waiting."
+    },
+    {
+      "id": "projection-writer-cutoff-wait",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "rechecks the writer cutoff after waiting for its authority lock",
+      "invariant": "Native projection rechecks a concurrently committed writer cutoff before writing history or advancing recovery progress."
+    },
+    {
+      "id": "projection-display-concurrent-advance",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "keeps concurrent higher display coverage without rewriting it after a lock wait",
+      "invariant": "A waiting coverage statement sees the current locked Run and neither regresses nor rewrites a newer cursor."
+    },
+    {
       "id": "durable-tool-draft-publication",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/durable-tool-call-publication.test.ts",

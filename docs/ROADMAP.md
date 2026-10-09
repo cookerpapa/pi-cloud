@@ -1,5 +1,17 @@
 # Implementation roadmap
 
+## Projection query and replay writes
+
+- [x] Implement [ADR-0239](adr/0239-projection-query-and-replay-writes.md): one
+      combined Run/writer read with ordered locks, conditional display coverage
+      and shared monotonic partition-progress writes.
+- [x] Verify real PG lock waits, replay tuple stability, stale-owner rejection,
+      native-byte conflicts, deletion and unchanged recovery floors.
+- [x] Complete the source regression gates and record their
+      [results and limits](reports/projection-sql-20261009.md).
+- [ ] Deploy the source optimization; the serving release remains schema 183
+      `native-input-a71a4807` until a separate rollout.
+
 ## Native human input and Session/Run consolidation
 
 - [x] Implement [ADR-0238](adr/0238-native-input-queue-and-run-record.md): merge

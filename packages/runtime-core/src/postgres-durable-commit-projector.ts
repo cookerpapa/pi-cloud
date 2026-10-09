@@ -5,7 +5,7 @@ import {
   type StoredDurableBatch,
 } from "@pi-cloud/pi-session-postgres/durable";
 import type { AcceptedDurableCommitFact } from "./accepted-fact.ts";
-import type { FactPosition } from "./accepted-fact-recovery.ts";
+import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
 import { projectionTransaction, type ProjectionBudget } from "./projection-transaction.ts";
 
 export class PostgresDurableCommitProjector {
@@ -17,37 +17,32 @@ export class PostgresDurableCommitProjector {
     await projectionTransaction(
       this.database,
       async (tx) => {
-        // Lifecycle mutations take the Run before its shared lease/native Session.
-        // Do not acquire this Run later while holding the physical Session lock.
-        const run = await tx
-          .selectFrom("runs")
-          .select([
-            "lease_id",
-            "output_seal_offset",
-            "output_first_topic",
-            "output_first_partition",
-            "output_first_offset",
-          ])
-          .where("tenant_id", "=", fact.scope.tenantId)
-          .where("id", "=", fact.scope.runId)
-          .forNoKeyUpdate()
-          .executeTakeFirst();
+        // Materialize the locked Run before locking the shared lease. Keep this
+        // append path's Run -> lease -> native order; a plain join can reorder locks.
+        // Both locking reads recheck changed tuples after a concurrent lock wait.
+        const {
+          rows: [run],
+        } = await sql<{
+          lease_id: string | null;
+          output_seal_offset: string | null;
+          output_first_topic: string | null;
+          output_first_partition: number | null;
+          output_first_offset: string | null;
+          writer_seal_offset: string | null;
+        }>`with locked_run as materialized (
+          select lease_id,output_seal_offset,output_first_topic,output_first_partition,output_first_offset
+          from runs where tenant_id=${fact.scope.tenantId}::uuid and id=${fact.scope.runId}::uuid
+          for no key update
+        ) select r.*,l.writer_seal_offset from locked_run r
+          join session_leases l on l.tenant_id=${fact.scope.tenantId}::uuid
+            and l.lease_id=r.lease_id
+          where r.lease_id=${fact.scope.writerId}::uuid
+          for no key update of l`.execute(tx);
         if (
           !run ||
           run.lease_id !== fact.scope.writerId ||
-          (run.output_seal_offset !== null && position.offset >= BigInt(run.output_seal_offset))
-        )
-          return;
-        const lease = await tx
-          .selectFrom("session_leases")
-          .select("writer_seal_offset")
-          .where("tenant_id", "=", fact.scope.tenantId)
-          .where("lease_id", "=", fact.scope.writerId)
-          .forNoKeyUpdate()
-          .executeTakeFirst();
-        if (
-          !lease ||
-          (lease.writer_seal_offset !== null && position.offset > BigInt(lease.writer_seal_offset))
+          (run.output_seal_offset !== null && position.offset >= BigInt(run.output_seal_offset)) ||
+          (run.writer_seal_offset !== null && position.offset > BigInt(run.writer_seal_offset))
         )
           return;
         const projection = new DurablePostgresProjection(tx, {
@@ -73,19 +68,7 @@ export class PostgresDurableCommitProjector {
             .where("id", "=", fact.scope.runId)
             .where("lease_id", "=", fact.scope.writerId)
             .execute();
-        await tx
-          .insertInto("accepted_fact_projection_offsets")
-          .values({
-            topic: position.topic,
-            partition: position.partition,
-            next_offset: (position.offset + 1n).toString(),
-          })
-          .onConflict((conflict) =>
-            conflict.columns(["topic", "partition"]).doUpdateSet({
-              next_offset: sql`greatest(accepted_fact_projection_offsets.next_offset,excluded.next_offset)`,
-            }),
-          )
-          .execute();
+        await recordFactProjection(tx, position);
       },
       this.budget,
     );

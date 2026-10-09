@@ -193,21 +193,24 @@ export class ExecutionStreamProjector {
       return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
     } else {
       if (fact.kind === "agent_event" && fact.nativeSequence !== undefined) {
-        const covered = await this.#database
-          .updateTable("runs")
-          .set({
-            output_display_seq: sql`greatest(output_display_seq,${fact.event.seq})`,
-            output_display_native_seq: sql`greatest(output_display_native_seq,${fact.nativeSequence})`,
-          })
-          .where("tenant_id", "=", fact.scope.tenantId)
-          .where("id", "=", fact.scope.runId)
-          .where("lease_id", "=", fact.scope.writerId)
-          .where(
-            sql<boolean>`exists(select 1 from pi_durable_commits c where c.tenant_id=${fact.scope.tenantId}::uuid
-            and c.session_id=${fact.scope.piSessionId} and c.seq=${fact.nativeSequence})`,
-          )
-          .executeTakeFirst();
-        if (covered.numUpdatedRows !== 1n)
+        // A replay is valid only under the same authority/native-commit checks.
+        // Lock before deciding: a concurrent advance or owner change must be
+        // rechecked, even when this statement would otherwise be a no-op.
+        const covered = await sql`with covered_run as materialized (
+          select id,output_display_seq,output_display_native_seq from runs
+          where tenant_id=${fact.scope.tenantId}::uuid and id=${fact.scope.runId}::uuid
+            and lease_id=${fact.scope.writerId}::uuid
+            and exists(select 1 from pi_durable_commits c where c.tenant_id=${fact.scope.tenantId}::uuid
+              and c.session_id=${fact.scope.piSessionId} and c.seq=${fact.nativeSequence})
+          for no key update
+        ), advanced as (
+          update runs r set output_display_seq=greatest(r.output_display_seq,${fact.event.seq}),
+            output_display_native_seq=greatest(r.output_display_native_seq,${fact.nativeSequence})
+          from covered_run c where r.id=c.id
+            and (c.output_display_seq<${fact.event.seq} or c.output_display_native_seq<${fact.nativeSequence})
+          returning r.id
+        ) select id from covered_run`.execute(this.#database);
+        if (covered.rows.length !== 1)
           throw new Error("Display checkpoint preceded its native commit");
         prefix.cover(fact.event.seq);
         this.#prefixes.set(`${fact.scope.writerId}:${fact.scope.runId}`, prefix);

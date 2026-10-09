@@ -11,8 +11,8 @@ export async function recordFactProjection(
 ): Promise<void> {
   await sql`insert into accepted_fact_projection_offsets(topic,partition,next_offset)
     values(${position.topic},${position.partition},${(position.offset + 1n).toString()}::bigint)
-    on conflict(topic,partition) do update set next_offset=greatest(
-      accepted_fact_projection_offsets.next_offset,excluded.next_offset)`.execute(db);
+    on conflict(topic,partition) do update set next_offset=excluded.next_offset
+    where accepted_fact_projection_offsets.next_offset<excluded.next_offset`.execute(db);
 }
 
 /** Caller captures Kafka bounds BEFORE this query, so a concurrent new Run or

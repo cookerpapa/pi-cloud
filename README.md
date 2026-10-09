@@ -84,6 +84,9 @@ or known deadlines. Worker admission uses the available publication partitions;
 binding bootstrap pages only the owner’s state. Transaction-local queue/state
 notifications are coalesced, and independent Outbox sends prevent a slow request
 from holding an entire batch. Lifecycle mutations and recovery retain PG checks.
+The source projection path combines Run/writer validation into one SQL read and
+skips unchanged replay updates while retaining authority locks
+([ADR-0239](docs/adr/0239-projection-query-and-replay-writes.md), rollout pending).
 Chat Stop interrupts the Worker Agent and sends operation-scoped cancellation
 through the same Session Kafka path. Durable records the native abort; a late
 physical reply does not replace it. Worker replacement preserves the logical Run,

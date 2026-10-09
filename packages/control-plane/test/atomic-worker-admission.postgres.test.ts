@@ -298,7 +298,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     };
     const projector = new PostgresDurableCommitProjector(measured);
     await projector.project(first, { topic: f.worker, partition: 0, offset: 10n });
-    expect(queries.length).toBeLessThanOrEqual(14);
+    expect(queries).toHaveLength(10);
     expect(queries[0]!.sql).toContain("set_config('lock_timeout'");
     queries.length = 0;
     await projector.project(
@@ -330,7 +330,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       },
       { topic: f.worker, partition: 0, offset: 11n },
     );
-    expect(queries.length).toBeLessThanOrEqual(14);
+    expect(queries).toHaveLength(10);
     queries.length = 0;
     const view = await new ConversationReader(measured, f.tenant.tenantId).getConversationView(
       f.session.sessionId,
@@ -354,6 +354,242 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       visit(plan.rows);
       expect(indexes.length, JSON.stringify(plan.rows)).toBeGreaterThan(0);
     });
+  });
+
+  async function nativeProjectionFixture() {
+    const f = await fixture();
+    await f.executor().dispatchRun(f.accepted.runId);
+    const fact: Extract<AcceptedFact, { kind: "durable_commit" }> = {
+      kind: "durable_commit",
+      factId: randomUUID(),
+      scope: f.facts[0]!.scope,
+      occurredAt: new Date().toISOString(),
+      commit: { seq: 1, nextId: 2, writes: [{ type: "conversation", value: { id: 1 } }] },
+      origins: [],
+      tools: [],
+      cancellations: [],
+      events: [],
+    };
+    const position = { topic: f.worker, partition: 0, offset: 10n };
+    const checkpoint: Extract<AcceptedFact, { kind: "agent_event" }> = {
+      ...(f.facts[0]! as Extract<AcceptedFact, { kind: "agent_event" }>),
+      nativeSequence: 1,
+    };
+    const versions = async () =>
+      (
+        await sql<Record<string, string>>`
+      select r.ctid::text as run_tuple,r.xmin::text as run_version,
+        r.output_first_offset,r.output_display_seq,r.output_display_native_seq,
+        p.ctid::text as progress_tuple,p.xmin::text as progress_version,p.next_offset
+      from runs r join accepted_fact_projection_offsets p on p.topic=${position.topic}
+        and p.partition=${position.partition} where r.id=${fact.scope.runId}::uuid`.execute(db)
+      ).rows[0]!;
+    return { ...f, fact, position, checkpoint, versions };
+  }
+
+  it("replays native and display progress without rewriting unchanged tuples", async () => {
+    const f = await nativeProjectionFixture();
+    const projector = new ExecutionStreamProjector(db);
+    const record = { ...f.position, fact: f.fact };
+    const checkpoint = { ...f.position, offset: 11n, fact: f.checkpoint };
+    await projector.project(record);
+    expect(await projector.project(checkpoint)).toEqual({ canonicalThroughSequence: 1 });
+    const before = await f.versions();
+    expect(before).toMatchObject({
+      output_display_seq: "1",
+      output_display_native_seq: "1",
+      next_offset: "11",
+    });
+    // Rebuild an owner's disposable view and replay overlapping older offsets.
+    const replacement = new ExecutionStreamProjector(db);
+    await replacement.project(record);
+    expect(await replacement.project(checkpoint)).toEqual({ canonicalThroughSequence: 1 });
+    await db.transaction().execute((tx) => recordFactProjection(tx, { ...f.position, offset: 9n }));
+    expect(await f.versions()).toEqual(before);
+    await expect(
+      new PostgresDurableCommitProjector(db).project(
+        {
+          ...f.fact,
+          commit: { ...f.fact.commit, nextId: 3 },
+        },
+        f.position,
+      ),
+    ).rejects.toThrow("Native commit position changed bytes");
+    expect(await f.versions()).toEqual(before);
+
+    const second = { ...f.fact, factId: randomUUID(), commit: { seq: 2, nextId: 2, writes: [] } };
+    await projector.project({ ...f.position, offset: 12n, fact: second });
+    expect(await f.versions()).toMatchObject({
+      run_tuple: before.run_tuple,
+      run_version: before.run_version,
+    });
+    // Either field can advance; neither may regress when the other moves ahead.
+    await projector.project({
+      ...checkpoint,
+      offset: 13n,
+      fact: { ...f.checkpoint, nativeSequence: 2 },
+    });
+    const advanced = {
+      ...f.checkpoint,
+      event: { ...f.checkpoint.event, eventId: randomUUID(), seq: 2 },
+    };
+    await projector.project({ ...checkpoint, offset: 14n, fact: advanced });
+    const after = await f.versions();
+    expect(after).toMatchObject({
+      output_first_offset: "10",
+      output_display_seq: "2",
+      output_display_native_seq: "2",
+      next_offset: "13",
+    });
+    await projector.project(checkpoint);
+    expect(await f.versions()).toEqual(after);
+  });
+
+  it("does not accept already-covered display replay without its native commit", async () => {
+    const f = await nativeProjectionFixture();
+    const projector = new ExecutionStreamProjector(db);
+    await projector.project({ ...f.position, fact: f.fact });
+    await db
+      .updateTable("runs")
+      .set({ output_display_seq: "100", output_display_native_seq: "100" })
+      .where("id", "=", f.accepted.runId)
+      .execute();
+    const before = await f.versions();
+    await expect(
+      projector.project({
+        ...f.position,
+        offset: 11n,
+        fact: { ...f.checkpoint, nativeSequence: 99 },
+      }),
+    ).rejects.toThrow("Display checkpoint preceded its native commit");
+    expect(await f.versions()).toEqual(before);
+  });
+
+  it.each(["run", "writer"] as const)(
+    "rechecks the %s cutoff after waiting for its authority lock",
+    async (boundary) => {
+      const f = await nativeProjectionFixture();
+      const held = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const holder = db.transaction().execute(async (tx) => {
+        if (boundary === "run")
+          await tx
+            .updateTable("runs")
+            .set({ output_sealed_at: new Date(), output_seal_offset: "9" })
+            .where("id", "=", f.accepted.runId)
+            .execute();
+        else
+          await tx
+            .updateTable("session_leases")
+            .set({ writer_sealed_at: new Date(), writer_seal_offset: "9" })
+            .where("lease_id", "=", f.fact.scope.writerId)
+            .execute();
+        held.resolve();
+        await release.promise;
+      });
+      void holder.catch(held.reject);
+      let projection: Promise<void> | undefined;
+      try {
+        await held.promise;
+        const started = Promise.withResolvers<number>();
+        projection = db.connection().execute(async (connection) => {
+          const pid = await sql<{ pid: number }>`select pg_backend_pid() as pid`.execute(
+            connection,
+          );
+          started.resolve(pid.rows[0]!.pid);
+          await new PostgresDurableCommitProjector(connection).project(f.fact, f.position);
+        });
+        void projection.catch(started.reject);
+        const pid = await started.promise;
+        await vi.waitFor(async () => {
+          const waiting = await sql<{ waiting: boolean }>`select wait_event_type='Lock' as waiting
+            from pg_stat_activity where pid=${pid}`.execute(db);
+          expect(waiting.rows[0]?.waiting).toBe(true);
+        });
+        if (boundary === "run")
+          // A blocked Run read must not acquire the shared writer first.
+          await db.transaction().execute((tx) =>
+            sql`select lease_id from session_leases
+            where lease_id=${f.fact.scope.writerId}::uuid for no key update nowait`.execute(tx),
+          );
+        release.resolve();
+        await holder;
+        await projection;
+        expect(
+          (
+            await sql`select seq from pi_durable_commits
+          where session_id=${f.fact.scope.piSessionId}`.execute(db)
+          ).rows,
+        ).toEqual([]);
+        expect(
+          (
+            await db
+              .selectFrom("runs")
+              .select("output_first_offset")
+              .where("id", "=", f.accepted.runId)
+              .executeTakeFirstOrThrow()
+          ).output_first_offset,
+        ).toBeNull();
+        expect(
+          await db
+            .selectFrom("accepted_fact_projection_offsets")
+            .selectAll()
+            .where("topic", "=", f.position.topic)
+            .execute(),
+        ).toEqual([]);
+      } finally {
+        release.resolve();
+        await Promise.allSettled([holder, ...(projection ? [projection] : [])]);
+      }
+    },
+  );
+
+  it("keeps concurrent higher display coverage without rewriting it after a lock wait", async () => {
+    const f = await nativeProjectionFixture();
+    const projector = new ExecutionStreamProjector(db);
+    await projector.project({ ...f.position, fact: f.fact });
+    const held = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const holder = db.transaction().execute(async (tx) => {
+      await tx
+        .updateTable("runs")
+        .set({ output_display_seq: "10", output_display_native_seq: "1" })
+        .where("id", "=", f.accepted.runId)
+        .execute();
+      const row = await sql`select ctid::text as tuple,xmin::text as version from runs
+        where id=${f.accepted.runId}::uuid`.execute(tx);
+      held.resolve();
+      await release.promise;
+      return row.rows;
+    });
+    void holder.catch(held.reject);
+    let projection: ReturnType<ExecutionStreamProjector["project"]> | undefined;
+    try {
+      await held.promise;
+      projection = projector.project({ ...f.position, offset: 11n, fact: f.checkpoint });
+      void projection.catch(held.reject);
+      await vi.waitFor(async () => {
+        const locks = await sql<{ n: number }>`select count(*)::int n from pg_stat_activity
+          where datname=${name} and wait_event_type='Lock'`.execute(db);
+        expect(locks.rows[0]!.n).toBeGreaterThan(0);
+      });
+      release.resolve();
+      const before = await holder;
+      expect(await projection).toEqual({ canonicalThroughSequence: 1 });
+      expect(
+        (
+          await sql`select ctid::text as tuple,xmin::text as version from runs
+        where id=${f.accepted.runId}::uuid`.execute(db)
+        ).rows,
+      ).toEqual(before);
+      expect(await f.versions()).toMatchObject({
+        output_display_seq: "10",
+        output_display_native_seq: "1",
+      });
+    } finally {
+      release.resolve();
+      await Promise.allSettled([holder, ...(projection ? [projection] : [])]);
+    }
   });
 
   it("rolls back a timed-out native Session lock and replays the same offset once", async () => {
@@ -473,8 +709,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
   });
 
   it("deletes retired owner evidence only with quiescent native history", async () => {
-    const f = await fixture();
-    await f.executor().dispatchRun(f.accepted.runId);
+    const f = await nativeProjectionFixture();
     const remove = () =>
       db
         .transaction()
@@ -487,6 +722,14 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const deletion = new ConversationDeletionService({ database: db });
     await deletion.delete(f.tenant.tenantId, f.session.sessionId);
     await deletion.delete(f.tenant.tenantId, f.session.sessionId);
+    await new PostgresDurableCommitProjector(db).project(f.fact, f.position);
+    expect(
+      await db
+        .selectFrom("accepted_fact_projection_offsets")
+        .selectAll()
+        .where("topic", "=", f.position.topic)
+        .execute(),
+    ).toEqual([]);
     expect(
       await db
         .selectFrom("session_leases")

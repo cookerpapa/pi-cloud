@@ -353,6 +353,14 @@ second transcript or a per-delta PG write.
 
 PG transaction-time closure checks remain: a stale Projector handler cannot
 overwrite a successor merely because it cached an older OPEN state.
+The maintained source combines Run and writer validation into one SQL statement
+with an explicit Run-before-lease locking dependency, then takes the native
+Session lock. This saves one database round trip per native batch without
+removing lifecycle synchronization. Display coverage still validates the Run
+and native commit on replay, but updates only when either cursor advances.
+Partition projection progress likewise updates only to a larger offset; unchanged
+replays create no new progress tuple ([ADR-0239](adr/0239-projection-query-and-replay-writes.md)).
+This source change does not require a schema migration and is not yet deployed.
 
 Publication and dispatch/progress commits share a guard for their own partition.
 Periodic progress tracks in-flight work per partition; waiting for one guard
