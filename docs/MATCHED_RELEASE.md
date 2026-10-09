@@ -72,8 +72,13 @@ or edit source while applying a release.
 
 ```sh
 PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
+PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 node --import tsx scripts/run-live-native-input-check.mjs
 PI_CLOUD_LIVE_RELEASE_CHECK=1 node --import tsx scripts/run-live-release-acceptance.mjs
 ```
+
+The native-input driver checks same-Run continuation, durable edits and promotion,
+retry identity, and Stop restoration against the current schema. It waits for
+projected queue visibility after native ACK and for terminal seals before cleanup.
 
 The targeted driver uses GPT-6 Luna and a new private tenant/Workspace. It checks
 lost admission reply → Stop → returned text/image → fresh input identity/direct

@@ -1,0 +1,328 @@
+{
+  "release": "native-input-a71a4807",
+  "deployedRevision": "a71a4807a884190325b1a8230625f0a46a858ee1",
+  "schema": 183,
+  "piDurable": "1.0.0",
+  "guestProtocol": 4,
+  "toolWorkerProtocol": 4,
+  "cubeManagementProtocol": 7,
+  "imageCount": 11,
+  "artifacts": [
+    {
+      "reference": "pi-cloud/control-plane:native-input-a71a4807",
+      "imageId": "sha256:7c34549cb9988f2d842041255999a8dd543cb04eec2c95c33b1e75bbac85d672"
+    },
+    {
+      "reference": "pi-cloud/supervisor-host:native-input-a71a4807",
+      "imageId": "sha256:05d26cb97928327ccb3dbd349252e77e89b03d1d86e91378961ad66336e4199f"
+    },
+    {
+      "reference": "pi-cloud/workspace-volume-gateway:native-input-a71a4807",
+      "imageId": "sha256:a7881e344e6126025d0040b8ea2e738255def121dd0e8ca9db5e4339ef1938f9"
+    },
+    {
+      "reference": "pi-cloud/web-ui:native-input-a71a4807",
+      "imageId": "sha256:69f852fecf9f7b5469d7fb043a73f88c413b03a09a55b84324d379a9da31b12b"
+    },
+    {
+      "reference": "pi-cloud/provider-egress-relay:native-input-a71a4807",
+      "imageId": "sha256:6a84a2ef32ce6b5e6a2170fd2c694b9b5dc42b729411ceb1db59de2d967ebe81"
+    },
+    {
+      "reference": "pi-cloud/ssh-gateway:native-input-a71a4807",
+      "imageId": "sha256:b814cae1ecc7600d20022172a772d04007bca139a29bfb23ac680b6d7453a20e"
+    },
+    {
+      "reference": "pi-cloud/cli-proxy-api:native-input-a71a4807",
+      "imageId": "sha256:282e1849f41897307958050d1b36f7c17c560a95daa29bd8b655838b02a76a63"
+    },
+    {
+      "reference": "pi-cloud/cube-api:native-input-a71a4807",
+      "imageId": "sha256:c6d08a72846c9b7bfbe367b9a450c91147d837be3cdbe84254f07caf38f7366b"
+    },
+    {
+      "reference": "pi-cloud/cube-master:native-input-a71a4807",
+      "imageId": "sha256:2b4e6c7e01f3e27b93502718d41fb3633a5a789cf265a5185e8f66b2e3cbe091"
+    },
+    {
+      "reference": "pi-cloud/cubelet:native-input-a71a4807",
+      "imageId": "sha256:0a9900f9a9a45bc1fd3c7ff515e8b3ee11d04738c9daa54ae47fbe87abeb5aca"
+    },
+    {
+      "reference": "localhost:5000/pi-cloud/cubesandbox-tool:1ab0b6a38aa52ff410a7ab8b527f1f32c91a3b89",
+      "imageId": "sha256:ca51cee4da900fe15ce168eaf70c61a4eacbad6744cad23eecfb8b59e8a82d61"
+    }
+  ],
+  "nativeInput": {
+    "accepted": true,
+    "cases": [
+      {
+        "scenario": "consume",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true
+      },
+      {
+        "scenario": "stop",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true
+      }
+    ]
+  },
+  "browser": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "returnedInput": {
+      "nativeInputInOriginalRun": true,
+      "realBrowser": true,
+      "requests": 2,
+      "distinctKeys": 2,
+      "distinctAdmissions": 2,
+      "originalRunCancelled": true,
+      "newRunCompleted": true,
+      "sameUploadId": true,
+      "directVision": true,
+      "activeRunCancelled": true
+    },
+    "read": [
+      {
+        "kind": "wide-ascii.txt",
+        "sourceBytes": 120017,
+        "contentBytes": 51200,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      },
+      {
+        "kind": "wide-unicode.txt",
+        "sourceBytes": 140031,
+        "contentBytes": 51196,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      }
+    ]
+  },
+  "production": {
+    "accepted": true,
+    "piCloudRevision": "a71a4807a884190325b1a8230625f0a46a858ee1",
+    "deployedControlPlaneImage": "sha256:b8213871c638181cbff42bddd8db43b5cd1355ce91fcb05b948ef33f453fde4d",
+    "testRevision": "a71a4807a884190325b1a8230625f0a46a858ee1",
+    "checkedAt": "2026-10-08T23:44:41.609Z",
+    "upstream": "TencentCloud/CubeSandbox@v0.6.0",
+    "model": {
+      "provider": "openai-codex",
+      "modelId": "gpt-6-luna"
+    },
+    "pureChat": {
+      "acceptedMs": 31,
+      "firstDurableActivityMs": 1811,
+      "firstToolStartedMs": null,
+      "firstAssistantTextMs": 1811,
+      "settledMs": 2040,
+      "toolCalls": 0,
+      "cubeActivations": 0,
+      "latency": {
+        "acceptedToExecutionMs": 30,
+        "executionToSettlementMs": 1854,
+        "modelRequests": 1,
+        "toolOperations": 0,
+        "toolBoundaryMs": 0
+      },
+      "usage": {
+        "requests": 1,
+        "inputTokens": 3155,
+        "outputTokens": 7,
+        "cacheReadTokens": 3328,
+        "cacheWriteTokens": 0
+      }
+    },
+    "firstCoding": {
+      "acceptedMs": 54,
+      "firstDurableActivityMs": 7190,
+      "firstToolStartedMs": 7190,
+      "firstAssistantTextMs": 23051,
+      "settledMs": 23935,
+      "toolCalls": 3,
+      "cubeActivations": 1,
+      "workspaceFileBytes": 951,
+      "latency": {
+        "acceptedToExecutionMs": 58,
+        "executionToSettlementMs": 23778,
+        "modelRequests": 4,
+        "toolOperations": 3,
+        "toolBoundaryMs": 4502.449
+      },
+      "usage": {
+        "requests": 4,
+        "inputTokens": 2996,
+        "outputTokens": 528,
+        "cacheReadTokens": 24576,
+        "cacheWriteTokens": 0
+      }
+    },
+    "followUpCoding": {
+      "acceptedMs": 26,
+      "firstDurableActivityMs": 3964,
+      "firstToolStartedMs": 3964,
+      "firstAssistantTextMs": 14287,
+      "settledMs": 16346,
+      "toolCalls": 3,
+      "cubeActivations": 1,
+      "workspaceFileBytes": 1032,
+      "latency": {
+        "acceptedToExecutionMs": 32,
+        "executionToSettlementMs": 16194,
+        "modelRequests": 4,
+        "toolOperations": 3,
+        "toolBoundaryMs": 1391.234
+      },
+      "usage": {
+        "requests": 4,
+        "inputTokens": 8460,
+        "outputTokens": 281,
+        "cacheReadTokens": 25600,
+        "cacheWriteTokens": 0
+      }
+    },
+    "multiRound": {
+      "sameCubeMicroVm": true,
+      "runningWorkspaceRuntimeReuse": true,
+      "elasticSandboxPolicy": true,
+      "agentPreviewPublished": true,
+      "backgroundProcessSurvived": true,
+      "authenticatedHttpPreviewPassed": true,
+      "workspaceRestored": true,
+      "finalWorkspaceFileBytes": 1032
+    },
+    "workspaceIsolation": {
+      "volumeId": "pcw-e2691a34847c98608474afc76025dcce77e113180919650d",
+      "platformGitMetadataAbsent": true,
+      "userGitPresent": false
+    },
+    "multiTenant": {
+      "crossTenantConversationHidden": true,
+      "lowerLevelCubeTenantGate": 2
+    },
+    "largeWorkspace": {
+      "source": "deterministic 1024-file local fixture",
+      "firstRunId": "b2f638a6-1aea-4048-b70b-b4aee187d1cf",
+      "followUpRunId": "1d5be92f-2983-4bd6-8858-1e64d2e7ff20",
+      "firstFileCount": 1025,
+      "restoredFileCount": 1026,
+      "sourceSandboxDestroyed": true,
+      "persistentVolumeRetained": true,
+      "volumeId": "pcw-6822e52b73ef87ce651e616f399973eedd1b1e608f77f24a",
+      "restoredFromPersistentVolume": true,
+      "freshCubeMicroVm": true,
+      "higherRuntimeGeneration": true,
+      "firstUsage": {
+        "requests": 2,
+        "inputTokens": 1570,
+        "outputTokens": 241,
+        "cacheReadTokens": 11776,
+        "cacheWriteTokens": 0
+      },
+      "followUpUsage": {
+        "requests": 2,
+        "inputTokens": 2386,
+        "outputTokens": 236,
+        "cacheReadTokens": 11776,
+        "cacheWriteTokens": 0
+      }
+    },
+    "canonicalConversation": {
+      "terminalCount": 5,
+      "piEntryCount": 35,
+      "canonicalPayloadBytes": 34953,
+      "terminalThroughSequence": 102
+    },
+    "eventPlane": {
+      "authority": "Kafka acks=all",
+      "postgresHotEventTableAbsent": true,
+      "projectedSessionMutations": 180,
+      "publishedTerminalEvents": 5,
+      "kafka": {
+        "topic": "pi-cloud.execution-log.v14",
+        "logEndOffsetSum": 4070
+      }
+    },
+    "scheduler": {
+      "authority": "PostgreSQL",
+      "queue": "runs",
+      "workerPool": "shared"
+    },
+    "totalUsage": {
+      "requests": 21,
+      "inputTokens": 24286,
+      "outputTokens": 1869,
+      "cacheReadTokens": 135424,
+      "cacheWriteTokens": 0
+    },
+    "cleanup": {
+      "retainedRunningWorkspaceMicroVmCount": 0,
+      "foreignSessionMicroVmCount": 0,
+      "conversationDeletionReleasedWorkspaceRuntime": true,
+      "confirmedAllocationClosureVerified": true
+    }
+  },
+  "preservation": {
+    "users": {
+      "before": 29,
+      "after": 29,
+      "unchanged": true
+    },
+    "tenants": {
+      "before": 29,
+      "after": 29,
+      "unchanged": true
+    },
+    "user_password_credentials": {
+      "before": 4,
+      "after": 4,
+      "unchanged": true
+    },
+    "credential_bindings": {
+      "before": 30,
+      "after": 30,
+      "unchanged": true
+    },
+    "model_profiles": {
+      "before": 30,
+      "after": 30,
+      "unchanged": true
+    },
+    "platform_runtime_settings": {
+      "before": 1,
+      "after": 1,
+      "unchanged": true
+    },
+    "tenant_api_credentials": {
+      "before": 29,
+      "after": 29,
+      "unchanged": true
+    }
+  },
+  "cleanup": {
+    "ownedTenantsRemoved": 6,
+    "foreignFixtureMetadataRemoved": true,
+    "sessions": 0,
+    "runs": 0,
+    "workspaces": 0,
+    "projects": 0,
+    "imageObjects": 0,
+    "openWriters": 0,
+    "nativeVms": 0
+  },
+  "health": {
+    "web": 200,
+    "admin": 200,
+    "controlPlane": 200,
+    "readyWorkers": 2,
+    "nodesScanned": 1
+  },
+  "operatorCorrections": [
+    "Persistent provider egress pointed at an unavailable loopback proxy; corrected through private configuration and Helm after an explicit connectivity comparison.",
+    "Acceptance now waits for native queue projection and ordered Run seals, and uses the current inputId / same-Run response contract."
+  ],
+  "scope": "Matched deployment and bounded real Luna/Cube/browser acceptance; not a private-pilot or multi-node HA claim."
+}

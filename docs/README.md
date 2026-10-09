@@ -1,5 +1,10 @@
 # Documentation map
 
+The [native input release](reports/native-input-release-20261009.md) is deployed
+as `native-input-a71a4807`, schema 183. Real Luna/Cube and browser checks pass;
+owned fixtures are removed and original accounts/configuration/credentials remain.
+The report records the corrected model-egress endpoint and updated operator drivers.
+
 The [reading checkpoint](READING_PROGRESS.md) records the architecture walkthrough
 at PG input acceptance. [ADR-0238](adr/0238-native-input-queue-and-run-record.md)
 is the approved native follow-up/editing and Session/Run consolidation slice;
@@ -10,7 +15,7 @@ covers all 105 columns, current SQL dependencies and isolated acceptance/queue
 checks. It identifies six initial cleanup candidates and duplicated Turn/Run
 lifecycle fields. Its approved implementation is recorded in the
 [native input and Run consolidation report](reports/native-input-run-consolidation-20261009.md);
-source verification is separate from the pending matched deployment.
+source verification is followed by the matched deployment above.
 
 The [sandbox result/portability study](reports/sandbox-result-portability-20261008.md)
 compares current Cube coupling with official E2B, OpenSandbox, OpenShell,
@@ -22,7 +27,7 @@ The [DeepSeek V4.1 Flash smoke check](reports/deepseek-flash-acceptance-20261007
 passes text, real file/Bash execution, multi-round high-thinking and direct image
 input on the deployed readiness release. Search was explicitly not tested.
 
-The [readiness release](reports/readiness-release-20261007.md) is deployed as
+The previous [readiness release](reports/readiness-release-20261007.md) was deployed as
 `pilot-ready-81392f7d` through the maintained matched workflow. Full Luna/Cube and
 browser acceptance pass; original accounts/configuration remain, and owned test
 resources are removed. The report records driver corrections and one upstream

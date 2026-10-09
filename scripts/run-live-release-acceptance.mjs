@@ -153,7 +153,7 @@ try {
       headers: { Authorization: "Bearer " + tenant.credential.token },
     });
     await page.send("Page.addScriptToEvaluateOnNewDocument", {
-      source: `const original=window.fetch.bind(window);window.releaseCalls=[];window.releaseReturned=[];let lose=true;window.fetch=async(input,init)=>{const response=await original(input,init);if(String(input).includes('/returned-inputs')&&!String(input).endsWith('/acknowledgements')&&response.ok){const p=await response.clone().json();window.releaseReturned.push(...p.items);}if(String(input).endsWith('/turns')&&init?.method==='POST'&&response.ok){const r=await response.clone().json();window.releaseCalls.push({key:new Headers(init.headers).get('idempotency-key'),runId:r.runId,turnId:r.turnId,replayed:r.replayed,body:JSON.parse(init.body)});if(lose){lose=false;throw new TypeError('Release fixture discarded a committed admission reply');}}return response;};`,
+      source: `const original=window.fetch.bind(window);window.releaseCalls=[];window.releaseReturned=[];let lose=true;window.fetch=async(input,init)=>{const response=await original(input,init);if(String(input).includes('/returned-inputs')&&!String(input).endsWith('/acknowledgements')&&response.ok){const p=await response.clone().json();window.releaseReturned.push(...p.items);}if(String(input).endsWith('/turns')&&init?.method==='POST'&&response.ok){const r=await response.clone().json();window.releaseCalls.push({key:new Headers(init.headers).get('idempotency-key'),kind:r.kind,inputId:r.inputId,runId:r.runId,turnId:r.turnId,replayed:r.replayed,body:JSON.parse(init.body)});if(lose){lose=false;throw new TypeError('Release fixture discarded a committed admission reply');}}return response;};`,
     });
     await page.navigate(baseUrl + "/?session=" + session.sessionId);
     await page.waitFor(
@@ -180,7 +180,9 @@ try {
       "releaseCalls.length===1 && (document.querySelector('.product-steer-button')??document.querySelector('.product-send-button'))?.disabled===false",
     );
     const original = await page.evaluate("releaseCalls[0]");
-    assert.equal((await api.getRun(original.runId)).state, "queued");
+    assert.equal(original.kind, "input");
+    assert.equal(original.runId, active.runId);
+    assert.equal((await api.getRun(original.runId)).state, "running");
     assert.equal(original.body.uploadIds.length, 1);
     // Force the formerly racy layout: both the queued copy and the draft image
     // must be visible before removing just the draft attachment.
@@ -204,7 +206,7 @@ try {
     assert(
       returned.some(
         (i) =>
-          i.turnId === original.turnId &&
+          i.inputId === original.inputId &&
           i.idempotencyKey === original.key &&
           i.uploads.some((u) => u.id === original.body.uploadIds[0]),
       ),
@@ -243,9 +245,10 @@ try {
   assert.equal(
     (await db.selectFrom("runs").select("id").where("session_id", "=", session.sessionId).execute())
       .length,
-    3,
+    2,
   );
   report.returnedInput = {
+    nativeInputInOriginalRun: true,
     realBrowser: true,
     requests: 2,
     distinctKeys: 2,

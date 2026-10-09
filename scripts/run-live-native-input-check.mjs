@@ -4,6 +4,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
+import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
+import {
+  settleOwnedAcceptanceRuns,
+  purgeOwnedAcceptanceTenant,
+} from "./lib/owned-acceptance-cleanup.mjs";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_NATIVE_INPUT_CHECK !== "1")
@@ -34,11 +39,22 @@ async function until(read, label, timeout = 180000) {
   }
   throw new Error(`${label} timed out`);
 }
-const finished = (id) =>
-  until(async () => {
-    const run = await api.getRun(id);
-    return terminal(run.state) && run;
+async function finished(id) {
+  const run = await until(async () => {
+    const r = await api.getRun(id);
+    return terminal(r.state) && r;
   }, "Run settlement");
+  await until(async () => {
+    const r = await db
+      .selectFrom("runs")
+      .select(["output_seal_id", "output_sealed_at"])
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    return !r.output_seal_id || r.output_sealed_at;
+  }, "Native output seal");
+  return run;
+}
+
 try {
   const schema = await db
     .selectFrom("kysely_migration")
@@ -56,17 +72,19 @@ try {
     ownerDisplayName: "Native input acceptance",
     initialModel: { provider: "openai-codex", modelId: report.model },
   });
-  api = new PiCloudApi((url, init = {}) =>
-    fetch(new URL(String(url), base), {
-      ...init,
-      headers: {
-        ...Object.fromEntries(new Headers(init.headers)),
-        authorization: `Bearer ${tenant.credential.token}`,
-      },
-    }),
-  );
+  api = new PiCloudApi(async (url, init) => {
+    try {
+      return await fetch(new URL(String(url), base), init);
+    } catch (error) {
+      report.transportFailure = { name: error.name, code: error.cause?.code };
+      throw error;
+    }
+  }, tenant.credential.token);
+  report.tenantId = tenant.tenantId;
   project = await api.createProject("Native input acceptance", { kind: "empty" });
+  report.workspaceId = project.workspaceId;
   for (const scenario of ["consume", "stop"]) {
+    console.log(JSON.stringify({ phase: "native-input", scenario }));
     const session = await api.createSession(
       project.projectId,
       project.workspaceId,
@@ -83,13 +101,14 @@ try {
       newIdempotencyKey("turn"),
     );
     assert.equal(root.kind, "run");
-    await until(
-      async () =>
-        (await api.getConversation(session.sessionId)).turns
-          .find((t) => t.runId === root.runId)
-          ?.transcript?.items.some((i) => i.kind === "tool" && i.status === "running"),
-      "Bash started",
-    );
+    await until(async () => {
+      const r = await api.getRun(root.runId);
+      if (terminal(r.state))
+        throw new Error(`Run ended before Bash: ${r.state} ${r.failure?.code ?? ""}`);
+      return (await api.getConversation(session.sessionId)).turns
+        .find((t) => t.runId === root.runId)
+        ?.transcript?.items.some((i) => i.kind === "tool" && i.status === "running");
+    }, "Bash started");
     const key = newIdempotencyKey("turn"),
       text = "Without using tools, reply ORIGINAL_INPUT_MARKER.";
     const input = await api.acceptTurn(session.sessionId, text, key);
@@ -99,7 +118,10 @@ try {
     const replay = await api.acceptTurn(session.sessionId, text, key);
     assert.equal(replay.inputId, input.inputId);
     assert.equal(replay.replayed, true);
-    let queue = await api.getInputQueue(session.sessionId);
+    let queue = await until(async () => {
+      const q = await api.getInputQueue(session.sessionId);
+      return q.items.some((i) => i.inputId === input.inputId) && q;
+    }, "First native input projection");
     await api.mutateQueuedInput(
       session.sessionId,
       input.inputId,
@@ -116,21 +138,33 @@ try {
       newIdempotencyKey("turn"),
     );
     assert.equal(second.kind, "input");
-    queue = await api.getInputQueue(session.sessionId);
-    await api.mutateQueuedInput(
-      session.sessionId,
-      second.inputId,
-      { action: "move", direction: "up", revision: queue.revision },
-      newIdempotencyKey("move"),
-    );
-    queue = await api.getInputQueue(session.sessionId);
-    await api.mutateQueuedInput(
-      session.sessionId,
-      second.inputId,
-      { action: "steer", revision: queue.revision },
-      newIdempotencyKey("steer"),
-    );
-    assert.equal((await api.getInputQueue(session.sessionId)).items[0].inputId, second.inputId);
+    queue = await until(async () => {
+      const q = await api.getInputQueue(session.sessionId);
+      return (
+        q.items.some((i) => i.inputId === second.inputId) &&
+        q.items.some(
+          (i) => i.inputId === input.inputId && i.text.includes("EDITED_INPUT_MARKER"),
+        ) &&
+        q
+      );
+    }, "Second native input projection");
+    queue = (
+      await api.mutateQueuedInput(
+        session.sessionId,
+        second.inputId,
+        { action: "move", direction: "up", revision: queue.revision },
+        newIdempotencyKey("move"),
+      )
+    ).queue;
+    queue = (
+      await api.mutateQueuedInput(
+        session.sessionId,
+        second.inputId,
+        { action: "steer", revision: queue.revision },
+        newIdempotencyKey("steer"),
+      )
+    ).queue;
+    assert.equal(queue.items[0].inputId, second.inputId);
     if (scenario === "stop") {
       await api.cancelTurn(session.sessionId, root.turnId, newIdempotencyKey("cancel"));
       await finished(root.runId);
@@ -185,18 +219,33 @@ try {
   };
   for (const session of sessions)
     await clean(async () => {
-      const q = await api.getInputQueue(session.sessionId);
-      if (q.activeTurnId) {
-        await api.cancelTurn(session.sessionId, q.activeTurnId, newIdempotencyKey("cleanup"));
-        await until(
-          async () => !(await api.getInputQueue(session.sessionId)).activeTurnId,
-          "Cleanup stop",
-        );
-      }
+      const runs = await db
+        .selectFrom("runs")
+        .select(["id", "turn_id"])
+        .where("tenant_id", "=", tenant.tenantId)
+        .where("session_id", "=", session.sessionId)
+        .execute();
+      await settleOwnedAcceptanceRuns(api, session.sessionId, runs, finished);
+      for (const run of runs) await finished(run.id);
       await api.deleteConversation(session.sessionId);
     });
   if (project)
-    await clean(() => api.deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup")));
+    await clean(async () => {
+      await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup"));
+      await until(
+        async () =>
+          Boolean(
+            (
+              await db
+                .selectFrom("workspaces")
+                .select("storage_purged_at")
+                .where("id", "=", project.workspaceId)
+                .executeTakeFirst()
+            )?.storage_purged_at,
+          ),
+        "Physical Workspace cleanup",
+      );
+    });
   if (tenant)
     await clean(() =>
       db
@@ -205,6 +254,19 @@ try {
         .where("credential_id", "=", tenant.credential.credentialId)
         .execute(),
     );
+  if (tenant && errors.length === 0)
+    await clean(async () => {
+      const blobs = new S3ImageBlobStore({
+        endpoint: `http://${serviceAddress("session-images")}:8333`,
+        region: "us-east-1",
+        bucket: "pi-cloud-session-images",
+        ...JSON.parse(
+          await readFile(`${runtime}/secrets/session-image-s3-credentials.json`, "utf8"),
+        ),
+      });
+      report.cleanup = await purgeOwnedAcceptanceTenant(db, tenant, blobs);
+      report.cleanupConfirmed = true;
+    });
   report.cleanupRequested = errors.length === 0;
   await writeFile(
     process.argv[2] ?? "/tmp/pi-cloud-native-input-live.json",

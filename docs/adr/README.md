@@ -11,7 +11,7 @@ revision-bound reports, not as alternate production backends.
 Read the documents in this order:
 
 1. [ADR-0238](0238-native-input-queue-and-run-record.md) — approved native human
-   input queue, durable edits and Session/Run record consolidation; implementation in progress.
+   input queue, durable edits and Session/Run record consolidation; deployed with schema 183.
 
 1. [ADR-0237](0237-private-pilot-asset-recovery.md) — optional cold conversation/image
    recovery through PG/S3, with fresh Workspaces and no old execution grants.

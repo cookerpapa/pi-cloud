@@ -175,37 +175,40 @@ it("refuses installation when an administrator edited settings after the snapsho
   });
 });
 
-it("only purges the owned fixture after physical Workspace cleanup and preserves the operator", async () => {
-  const tenant = await createPrivateTenant(database, {
-    slug: `release-acceptance-${randomUUID()}`,
-    ownerDisplayName: "Owned fixture",
-  });
-  const store = new ControlPlaneStore({ database, ...tenant });
-  const project = await store.createProject({ name: "Owned fixture", source: { kind: "empty" } });
-  const blobs = {
-    async delete() {
-      throw new Error("Fixture has no image objects");
-    },
-  };
-  await expect(purgeOwnedAcceptanceTenant(database, tenant, blobs)).rejects.toThrow(
-    "settled/purged",
-  );
-  await database
-    .updateTable("workspaces")
-    .set({ deleted_at: new Date(), storage_purged_at: new Date() })
-    .where("id", "=", project.workspaceId)
-    .execute();
-  expect(await purgeOwnedAcceptanceTenant(database, tenant, blobs)).toMatchObject({
-    tenantRemoved: true,
-  });
-  expect(
-    await database.selectFrom("tenants").select("id").where("id", "=", tenant.tenantId).execute(),
-  ).toEqual([]);
-  expect(
+it.each(["release-acceptance-", "native-input-", "cube-check-"])(
+  "only purges the owned %s fixture after physical Workspace cleanup and preserves the operator",
+  async (prefix) => {
+    const tenant = await createPrivateTenant(database, {
+      slug: `${prefix}${randomUUID()}`,
+      ownerDisplayName: "Owned fixture",
+    });
+    const store = new ControlPlaneStore({ database, ...tenant });
+    const project = await store.createProject({ name: "Owned fixture", source: { kind: "empty" } });
+    const blobs = {
+      async delete() {
+        throw new Error("Fixture has no image objects");
+      },
+    };
+    await expect(purgeOwnedAcceptanceTenant(database, tenant, blobs)).rejects.toThrow(
+      "settled/purged",
+    );
     await database
-      .selectFrom("tenants")
-      .select("id")
-      .where("id", "=", actor.tenantId)
-      .executeTakeFirst(),
-  ).toBeDefined();
-});
+      .updateTable("workspaces")
+      .set({ deleted_at: new Date(), storage_purged_at: new Date() })
+      .where("id", "=", project.workspaceId)
+      .execute();
+    expect(await purgeOwnedAcceptanceTenant(database, tenant, blobs)).toMatchObject({
+      tenantRemoved: true,
+    });
+    expect(
+      await database.selectFrom("tenants").select("id").where("id", "=", tenant.tenantId).execute(),
+    ).toEqual([]);
+    expect(
+      await database
+        .selectFrom("tenants")
+        .select("id")
+        .where("id", "=", actor.tenantId)
+        .executeTakeFirst(),
+    ).toBeDefined();
+  },
+);

@@ -12,7 +12,8 @@
       deployment status separately from source completion.
 
 [Source verification](reports/native-input-run-consolidation-20261009.md) is complete;
-matched deployment remains a separate backlog item.
+the [matched deployment](reports/native-input-release-20261009.md) and real
+Luna/Cube/browser acceptance are also complete.
 
 The [reading checkpoint](READING_PROGRESS.md) remains at PG input acceptance;
 the next walkthrough hop is Worker claim and Session-lease admission.

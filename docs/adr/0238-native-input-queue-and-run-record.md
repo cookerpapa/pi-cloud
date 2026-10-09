@@ -3,7 +3,8 @@
 Status: accepted for implementation, 2026-10-08. The owner approved native
 follow-up, durable pending-input editing, Session/Run consolidation, and the
 intake acknowledgement boundary below. Implemented in source on 2026-10-09;
-[verification](../reports/native-input-run-consolidation-20261009.md) does not claim deployment.
+[source verification](../reports/native-input-run-consolidation-20261009.md) is followed
+by the [matched deployment](../reports/native-input-release-20261009.md) on the same date.
 
 ## Execution and input identity
 

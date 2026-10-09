@@ -37,11 +37,9 @@ are complete in that slice, including unused columns, Worker naming and
 first-position-only native projection writes. See the
 [implementation evidence](reports/native-input-run-consolidation-20261009.md).
 
-- [ ] Deploy schema 183 with matched Control Plane/Worker/Web images. Drain
-      writers and resolve old pending/returned inputs (or perform the already
-      permitted development data cleanup) before cutover. Run the maintained
-      native-input Luna/Cube check after deployment; current serving release is
-      still `pilot-ready-81392f7d`, schema 182.
+The [schema 183 matched release](reports/native-input-release-20261009.md) is
+deployed as `native-input-a71a4807`; native queue, real Luna/Cube/browser and
+configuration-preservation checks pass. Owned fixtures are physically cleaned.
 
 The [architecture evidence review](reports/architecture-evidence-review-20261007.md)
 prioritizes one bounded handoff/operability slice over another broad runtime

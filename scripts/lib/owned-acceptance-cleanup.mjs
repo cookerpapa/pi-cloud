@@ -36,7 +36,12 @@ export async function settleOwnedAcceptanceRuns(api, sessionId, rows, settled) {
 /** Only newly created acceptance tenants. Physical deletion must have completed
  * through the product API first; this never deletes a VM or releases quota. */
 export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
-  assert(tenant.tenantSlug.startsWith("release-acceptance-"), "Not an owned release fixture");
+  assert(
+    ["release-acceptance-", "native-input-", "cube-check-"].some((prefix) =>
+      tenant.tenantSlug.startsWith(prefix),
+    ),
+    "Not an owned release fixture",
+  );
   const row = await database
     .selectFrom("tenants")
     .selectAll()
