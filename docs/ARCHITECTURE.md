@@ -506,6 +506,12 @@ stream. Tool argument drafts and thinking are not public text streams. Tool
 preparation is a payload-free, disposable Working observation, replaced by complete
 native Tool start/result events.
 
+The browser progressively reveals newly received assistant text for both
+commentary and final answers. Both phases share the existing animation path;
+recovered snapshot prefixes appear immediately, and reduced-motion/background
+views show received text directly. Presentation pacing does not change native
+persistence, Kafka publication or the history/display coverage boundary.
+
 Every active browser turn also has a persistent runtime status. The trusted
 Runner maps native lifecycle/stream events into PiCloud phases and last-activity
 time. Worker sends bounded, coalesced HTTP observations to the existing Projector

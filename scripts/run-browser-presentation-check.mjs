@@ -473,12 +473,54 @@ try {
     );
     await page.waitFor('document.querySelector("#panel").dataset.width === "320"');
     const target = "Durable text with live animation. ".repeat(300);
-    const commentary = "Complete progress update without a typing animation.";
+    const commentary = "正在查看入口逻辑和配置，接着检查相关测试。".repeat(12);
     await page.evaluate(`renderTurn(${JSON.stringify(commentary)},0,'running',null,'commentary')`);
+    await page.waitFor("document.querySelector('.product-agent-stage')");
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-agent-stage').textContent"),
+      "",
+    );
+    assert((await page.evaluate("advanceFrame()")) > 0);
+    await page.waitFor("document.querySelector('.product-agent-stage').textContent.length > 0");
+    const commentaryPrefix = await page.evaluate(
+      "document.querySelector('.product-agent-stage').textContent",
+    );
+    assert(commentary.startsWith(commentaryPrefix));
+    assert(commentaryPrefix.length < commentary.length, "One frame flushed the entire commentary");
+
+    // A reconnect must reveal already-seen commentary immediately on the same item.
+    await page.evaluate(
+      `renderTurn(${JSON.stringify(commentary)},${commentary.length},'running',null,'commentary')`,
+    );
     await page.waitFor(
       `document.querySelector('.product-agent-stage')?.textContent===${JSON.stringify(commentary)}`,
     );
-    // No advanceFrame(): a whole commentary must be immediately visible.
+    const commentaryWithSuffix = commentary + "继续检查后续行为，并确认输出正确。".repeat(8);
+    await page.evaluate(
+      `renderTurn(${JSON.stringify(commentaryWithSuffix)},${commentary.length},'running',null,'commentary')`,
+    );
+    // React may not have applied the new props when the CDP render call returns.
+    // Pump the controlled clock until the newly scheduled suffix frame runs.
+    await page.waitFor(
+      `(advanceFrame(), document.querySelector('.product-agent-stage').textContent.length > ${commentary.length})`,
+    );
+    const continuedCommentary = await page.evaluate(
+      "document.querySelector('.product-agent-stage').textContent",
+    );
+    assert(continuedCommentary.startsWith(commentary));
+    assert(continuedCommentary.length < commentaryWithSuffix.length);
+
+    await page.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+    const reducedMotionCommentary = commentaryWithSuffix + "已完成检查。";
+    await page.evaluate(
+      `renderTurn(${JSON.stringify(reducedMotionCommentary)},${commentary.length},'running',null,'commentary')`,
+    );
+    await page.waitFor(
+      `document.querySelector('.product-agent-stage').textContent===${JSON.stringify(reducedMotionCommentary)}`,
+    );
+    await page.send("Emulation.setEmulatedMedia", { features: [] });
     assert.equal(await page.evaluate("document.querySelector('.product-agent-answer')"), null);
     // Working survives already-rendered commentary and silent model intervals.
     await page.waitFor("document.querySelector('.product-run-status')");
@@ -1226,6 +1268,8 @@ try {
       uploadIdentityOnRetry: true,
       debuggerDisconnect: true,
       strictModeAnimation: true,
+      commentaryAnimation: true,
+      commentaryReconnectAndReducedMotion: true,
       outputLimitVisible: true,
       reconnectSnapshotImmediate: true,
       initialPanelWidth: true,

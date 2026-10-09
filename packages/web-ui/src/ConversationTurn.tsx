@@ -141,17 +141,13 @@ function AssistantTextItem({
 }) {
   const visibleText = useProgressiveText(
     item.text,
-    streaming && item.phase !== "commentary",
+    streaming,
     onPresentationProgress,
     item.recoveredTextLength,
   );
   return (
     <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>
-      <Markdown
-        streaming={
-          (streaming && item.phase !== "commentary") || visibleText.length < item.text.length
-        }
-      >
+      <Markdown streaming={streaming || visibleText.length < item.text.length}>
         {visibleText}
       </Markdown>
     </div>

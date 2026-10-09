@@ -30,6 +30,11 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+- [ ] Deploy the commentary text animation UI. Source now shares the existing
+      final-answer animation path; recovered history remains immediate and
+      reduced-motion preferences remain respected. This is a presentation-only
+      change after the schema 183 release.
+
 [ADR-0238](adr/0238-native-input-queue-and-run-record.md) is implemented and
 verified in source: two core Session/Run records, native follow-up/steer/editing,
 confirmed native intake and removal of holding Runs/reconciliation. R08T-01–05
@@ -299,8 +304,9 @@ separate design questions, not an implicit part of the completed query merge.
       deadlines. [Current acceptance](reports/execution-probes-20261002.md) proves
       160-target scheduling and single-host real execution, not physical fleet scale.
 - [ ] Separate provider first-token latency from phase-aware first-display latency
-      in future timing comparisons. Complete commentary waits for its provider
-      text block; that interval must not be labelled entirely as internal relay time.
+      in future timing comparisons. Native partial-commit coalescing, transport
+      and browser animation contribute separate delays; they must not all be
+      labelled as internal relay time.
 
 - [ ] Audit historical untracked Cube Volume references independently. ADR-0226
       repairs managed cleanup-reply loss using durable node state; it cannot
