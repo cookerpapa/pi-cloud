@@ -3,6 +3,55 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "input-admission-wait-retry",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rechecks initial idempotency after a replica waits for the Session (changed=false)",
+      "invariant": "A waiting replica reads the committed idempotency record after acquiring the Session lock and returns the same Run."
+    },
+    {
+      "id": "input-admission-wait-conflict",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rechecks initial idempotency after a replica waits for the Session (changed=true)",
+      "invariant": "A waiting request with changed content cannot reuse an input key or allocate another Run."
+    },
+    {
+      "id": "input-admission-model-first",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "retains model-change ordering while reusing admission state (model-first)",
+      "invariant": "Input waiting for a model change freezes the newly committed Session selection."
+    },
+    {
+      "id": "input-admission-input-first",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "retains model-change ordering while reusing admission state (input-first)",
+      "invariant": "A model change waiting behind admission cannot change the model of an accepted queued Run."
+    },
+    {
+      "id": "input-admission-rollback-lifetime",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rolls intake back and rejects admission actions after their transaction ends",
+      "invariant": "Rollback removes Run and mailbox advancement; escaped actions cannot reuse ended transaction authority."
+    },
+    {
+      "id": "input-admission-workspace-deletion",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "checks Workspace availability after acquiring the reusable Session snapshot",
+      "invariant": "Reusing the Session read does not bypass a subsequent Workspace availability check."
+    },
+    {
+      "id": "input-admission-tenant-scope",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/queued-inputs.test.ts",
+      "test": "rejects mismatched tenant scope before initial or native input acceptance",
+      "invariant": "The reused admission scope cannot create or deliver an input for a mismatched tenant."
+    },
+    {
       "id": "projection-replay-stable-tuples",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",

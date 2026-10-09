@@ -44,7 +44,7 @@ import {
   validMachineDirectory,
   assertUserInputBudget,
 } from "@pi-cloud/protocol";
-import { sql, type Kysely, type Transaction } from "kysely";
+import { sql, type Kysely, type Transaction, type Selectable } from "kysely";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import {
   SUPPORTED_MODEL_CATALOG,
@@ -84,6 +84,38 @@ type AcceptedTurnRow = {
   sessionId: string;
   acceptedAt: Date | string;
   requestSha256: string;
+};
+
+const inputSessionColumns = [
+  "id",
+  "pi_session_id",
+  "pi_conversation_id",
+  "row_version",
+  "project_id",
+  "workspace_id",
+  "desired_model_profile_id",
+  "desired_thinking_level",
+  "desired_service_tier",
+  "agent_revision_id",
+  "session_kind",
+  "state",
+  "execution_mode",
+  "development_environment_id",
+  "working_directory",
+  "compute_session_id",
+  "sandbox_profile_key",
+  "next_event_seq",
+  "next_mailbox_position",
+  "tool_capabilities",
+  "pruned_at",
+] as const;
+type InputSession = Pick<Selectable<Database["sessions"]>, (typeof inputSessionColumns)[number]>;
+type InputAdmissionSession = InputSession & {
+  replayRunId: string | null;
+  replayTurnId: string | null;
+  replayMailboxPosition: string | null;
+  replayAcceptedAt: Date | string | null;
+  replayRequestSha256: string | null;
 };
 
 type AcceptedTurnCancellationRow = {
@@ -1262,6 +1294,59 @@ export class ControlPlaneStore {
     return this.#loadRunResource(runId);
   }
 
+  /** The router and initial writer share one locked Session and fresh replay
+   * lookup. This snapshot/action belongs only to the enclosing transaction. */
+  async withInputAdmission<T>(
+    sessionId: string,
+    key: string,
+    request: AcceptTurnRequest,
+    decide: (admission: {
+      transaction: Transaction<Database>;
+      tenantId: string;
+      session: Readonly<InputSession>;
+      hasAcceptedRun: boolean;
+      acceptInitial(): Promise<AcceptedTurnResource>;
+    }) => Promise<T>,
+  ): Promise<T> {
+    const fingerprint = turnRequestFingerprint(request);
+    return this.#database.transaction().execute(async (transaction) => {
+      const session = await this.#inputSessionQuery(transaction, sessionId).executeTakeFirst();
+      if (!session || session.session_kind !== "conversation" || session.pruned_at !== null)
+        throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+      // A separate statement sees a Run committed while the Session lock waited.
+      const previous = await transaction
+        .selectFrom("runs")
+        .select(["id", "turn_id", "mailbox_position", "created_at", "request_sha256"])
+        .where("tenant_id", "=", this.#tenantId)
+        .where("session_id", "=", sessionId)
+        .where("idempotency_key", "=", key)
+        .executeTakeFirst();
+      const known: InputAdmissionSession = {
+        ...session,
+        replayRunId: previous?.id ?? null,
+        replayTurnId: previous?.turn_id ?? null,
+        replayMailboxPosition: previous?.mailbox_position ?? null,
+        replayAcceptedAt: previous?.created_at ?? null,
+        replayRequestSha256: previous?.request_sha256 ?? null,
+      };
+      let active = true;
+      try {
+        return await decide({
+          transaction,
+          tenantId: this.#tenantId,
+          session,
+          hasAcceptedRun: previous !== undefined,
+          acceptInitial: async () => {
+            if (!active) throw new Error("Input admission transaction has ended");
+            return this.#acceptInput(sessionId, key, request, fingerprint, transaction, known);
+          },
+        });
+      } finally {
+        active = false;
+      }
+    });
+  }
+
   async acceptTurn(
     sessionId: string,
     idempotencyKey: string,
@@ -1283,6 +1368,7 @@ export class ControlPlaneStore {
     request: AcceptTurnRequest,
     fingerprint: string,
     existingTransaction?: Transaction<Database>,
+    knownSession?: InputAdmissionSession,
   ): Promise<AcceptedInput> {
     const startedAt = performance.now();
     let outcome = "accepted";
@@ -1294,6 +1380,7 @@ export class ControlPlaneStore {
           request,
           fingerprint,
           existingTransaction,
+          knownSession,
         );
       } catch (error) {
         if (
@@ -1416,56 +1503,46 @@ export class ControlPlaneStore {
     };
   }
 
+  #inputSessionQuery(transaction: Transaction<Database>, sessionId: string) {
+    return (
+      transaction
+        .selectFrom("sessions as session_row")
+        .select(inputSessionColumns.map((column) => `session_row.${column}` as const))
+        .where("session_row.tenant_id", "=", this.#tenantId)
+        .where("session_row.id", "=", sessionId)
+        // Acceptance changes no referenced keys; Tool binding FK checks may coexist.
+        .forNoKeyUpdate("session_row")
+    );
+  }
+
   async #acceptNewTurn(
     sessionId: string,
     idempotencyKey: string,
     request: AcceptTurnRequest,
     fingerprint: string,
     existingTransaction?: Transaction<Database>,
+    knownSession?: InputAdmissionSession,
   ): Promise<AcceptedInput> {
     const turnId = this.#idGenerator();
     const runId = this.#idGenerator();
     const accept = async (transaction: Transaction<Database>): Promise<AcceptedInput> => {
-      const session = await transaction
-        .selectFrom("sessions as session_row")
-        .leftJoin("runs as replay_run", (join) =>
-          join
-            .onRef("replay_run.tenant_id", "=", "session_row.tenant_id")
-            .onRef("replay_run.session_id", "=", "session_row.id")
-            .on("replay_run.idempotency_key", "=", idempotencyKey),
-        )
-        .select([
-          "session_row.id",
-          "session_row.pi_session_id",
-          "session_row.row_version",
-          "session_row.project_id",
-          "session_row.workspace_id",
-          "session_row.desired_model_profile_id",
-          "session_row.desired_thinking_level",
-          "session_row.desired_service_tier",
-          "session_row.agent_revision_id",
-          "session_row.session_kind",
-          "session_row.state",
-          "session_row.execution_mode",
-          "session_row.development_environment_id",
-          "session_row.working_directory",
-          "session_row.compute_session_id",
-          "session_row.sandbox_profile_key",
-          "session_row.next_event_seq",
-          "session_row.next_mailbox_position",
-          "session_row.tool_capabilities",
-          "session_row.pruned_at",
-          "replay_run.id as replayRunId",
-          "replay_run.turn_id as replayTurnId",
-          "replay_run.mailbox_position as replayMailboxPosition",
-          "replay_run.created_at as replayAcceptedAt",
-          "replay_run.request_sha256 as replayRequestSha256",
-        ])
-        .where("session_row.tenant_id", "=", this.#tenantId)
-        .where("session_row.id", "=", sessionId)
-        // Acceptance changes no referenced keys; Tool binding FK checks may coexist.
-        .forNoKeyUpdate("session_row")
-        .executeTakeFirst();
+      const session =
+        knownSession ??
+        (await this.#inputSessionQuery(transaction, sessionId)
+          .leftJoin("runs as replay_run", (join) =>
+            join
+              .onRef("replay_run.tenant_id", "=", "session_row.tenant_id")
+              .onRef("replay_run.session_id", "=", "session_row.id")
+              .on("replay_run.idempotency_key", "=", idempotencyKey),
+          )
+          .select([
+            "replay_run.id as replayRunId",
+            "replay_run.turn_id as replayTurnId",
+            "replay_run.mailbox_position as replayMailboxPosition",
+            "replay_run.created_at as replayAcceptedAt",
+            "replay_run.request_sha256 as replayRequestSha256",
+          ])
+          .executeTakeFirst());
       if (!session) {
         throw new ControlPlaneStoreError("not_found", "Session was not found");
       }

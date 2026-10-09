@@ -1,5 +1,9 @@
 # Documentation map
 
+[ADR-0240](adr/0240-transaction-scoped-input-admission.md) scopes input-read reuse
+to its existing PG transaction. [Source checks and the authorized rollout](reports/input-admission-20261010.md)
+are tracked separately; no cross-request cache is introduced.
+
 The [projection and commentary release](reports/projection-release-20261009.md)
 is deployed as `projection-b14c3777`, schema 183. It combines Run/writer reads,
 avoids unchanged replay updates and animates commentary text. Existing authority

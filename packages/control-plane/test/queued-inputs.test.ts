@@ -91,6 +91,261 @@ describe.sequential("native human inputs and cloud execution records", () => {
       offset: offset++,
     });
   }
+
+  function queryGate(matches: (query: string) => boolean) {
+    const held = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const selected = new WeakSet<object>();
+    let used = false;
+    const database = db.withPlugin({
+      transformQuery({ node, queryId }) {
+        if (!used && matches(db.getExecutor().compileQuery(node, queryId).sql)) {
+          used = true;
+          selected.add(queryId);
+        }
+        return node;
+      },
+      async transformResult({ result, queryId }) {
+        if (selected.has(queryId)) {
+          held.resolve();
+          await release.promise;
+        }
+        return result;
+      },
+    });
+    return { database, held, release };
+  }
+  async function waitForLock() {
+    await vi.waitFor(async () => {
+      const { rows } = await admin.query(
+        "select count(*)::int n from pg_stat_activity where datname=$1 and wait_event_type='Lock'",
+        [name],
+      );
+      expect(rows[0].n).toBeGreaterThan(0);
+    });
+  }
+
+  it("uses eight intake queries and two retry queries without rereading the locked Session", async () => {
+    const f = await fixture(),
+      queries: string[] = [];
+    const statements = new WeakMap<object, string>();
+    const measured = db.withPlugin({
+      transformQuery({ node, queryId }) {
+        statements.set(queryId, db.getExecutor().compileQuery(node, queryId).sql);
+        return node;
+      },
+      async transformResult({ result, queryId }) {
+        queries.push(statements.get(queryId)!);
+        return result;
+      },
+    });
+    const store = new ControlPlaneStore({ database: measured, ...f.tenant });
+    const queue = new QueuedInputService({ database: measured });
+    const accept = () =>
+      queue.accept(store, f.tenant.tenantId, f.session.sessionId, "budget", {
+        prompt: "one input",
+      });
+    const first = await accept();
+    expect(first.kind).toBe("run");
+    // Driver BEGIN/COMMIT are separate; these are completed business statements.
+    expect(queries).toHaveLength(8);
+    expect(queries.filter((q) => q.includes('from "sessions" as "session_row"'))).toHaveLength(1);
+    expect(queries.filter((q) => q.startsWith('with "accepted_run"'))).toHaveLength(1);
+    queries.length = 0;
+    expect(await accept()).toEqual({ ...first, replayed: true });
+    expect(queries).toHaveLength(2);
+  });
+
+  it.each([false, true])(
+    "rechecks initial idempotency after a replica waits for the Session (changed=%s)",
+    async (changed) => {
+      const f = await fixture();
+      const gate = queryGate(
+        (q) => q.includes('from "sessions" as "session_row"') && q.includes("for no key update"),
+      );
+      const firstStore = new ControlPlaneStore({ database: gate.database, ...f.tenant });
+      const first = f.queue.accept(firstStore, f.tenant.tenantId, f.session.sessionId, "race", {
+        prompt: "original",
+      });
+      void first.catch(gate.held.reject);
+      let second: ReturnType<typeof f.accept> | undefined;
+      try {
+        await gate.held.promise;
+        second = f.accept(changed ? "changed" : "original", "race");
+        const both = Promise.allSettled([first, second]);
+        await waitForLock();
+        gate.release.resolve();
+        const [a, b] = await both;
+        expect(a.status).toBe("fulfilled");
+        if (a.status !== "fulfilled") throw a.reason;
+        if (changed)
+          expect(b).toMatchObject({ status: "rejected", reason: { code: "idempotency_conflict" } });
+        else expect(b).toEqual({ status: "fulfilled", value: { ...a.value, replayed: true } });
+        expect(
+          await db
+            .selectFrom("runs")
+            .select("id")
+            .where("session_id", "=", f.session.sessionId)
+            .execute(),
+        ).toHaveLength(1);
+        expect(
+          (
+            await db
+              .selectFrom("sessions")
+              .select("next_mailbox_position")
+              .where("id", "=", f.session.sessionId)
+              .executeTakeFirstOrThrow()
+          ).next_mailbox_position,
+        ).toBe("2");
+      } finally {
+        gate.release.resolve();
+        await Promise.allSettled([first, ...(second ? [second] : [])]);
+      }
+    },
+  );
+
+  it.each(["model-first", "input-first"] as const)(
+    "retains model-change ordering while reusing admission state (%s)",
+    async (order) => {
+      const f = await fixture();
+      const gate = queryGate((q) =>
+        order === "model-first"
+          ? q.startsWith('update "sessions"')
+          : q.includes('from "sessions" as "session_row"') && q.includes("for no key update"),
+      );
+      const measured = new ControlPlaneStore({ database: gate.database, ...f.tenant });
+      const model = (store: ControlPlaneStore) =>
+        store.updateSessionModel(f.session.sessionId, {
+          provider: "openai-codex",
+          modelId: "gpt-6-luna",
+          thinkingLevel: "low",
+          fastMode: false,
+        });
+      const input = (store: ControlPlaneStore) =>
+        f.queue.accept(store, f.tenant.tenantId, f.session.sessionId, "model-race", {
+          prompt: "frozen model",
+        });
+      const first = order === "model-first" ? model(measured) : input(measured);
+      void first.catch(gate.held.reject);
+      let second: Promise<unknown> | undefined;
+      try {
+        await gate.held.promise;
+        second = order === "model-first" ? input(f.store) : model(f.store);
+        const both = Promise.allSettled([first, second]);
+        await waitForLock();
+        gate.release.resolve();
+        const [a, b] = await both;
+        expect(a.status).toBe("fulfilled");
+        if (order === "model-first") expect(b.status).toBe("fulfilled");
+        else expect(b).toMatchObject({ status: "rejected", reason: { code: "conflict" } });
+        const rows = await db
+          .selectFrom("runs")
+          .select(["provider", "model_id", "thinking_level"])
+          .where("session_id", "=", f.session.sessionId)
+          .execute();
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject(
+          order === "model-first"
+            ? { provider: "openai-codex", model_id: "gpt-6-luna", thinking_level: "low" }
+            : { provider: "pi-cloud-fake", model_id: "pi-cloud-fake" },
+        );
+      } finally {
+        gate.release.resolve();
+        await Promise.allSettled([first, ...(second ? [second] : [])]);
+      }
+    },
+  );
+
+  it("rolls intake back and rejects admission actions after their transaction ends", async () => {
+    const f = await fixture();
+    let escaped!: () => Promise<AcceptedTurnResource>;
+    await expect(
+      f.store.withInputAdmission(
+        f.session.sessionId,
+        "rollback",
+        { prompt: "retry" },
+        async (admission) => {
+          escaped = admission.acceptInitial;
+          await admission.acceptInitial();
+          throw new Error("injected intake rollback");
+        },
+      ),
+    ).rejects.toThrow("injected intake rollback");
+    await expect(escaped()).rejects.toThrow("Input admission transaction has ended");
+    expect(
+      await db
+        .selectFrom("runs")
+        .select("id")
+        .where("session_id", "=", f.session.sessionId)
+        .execute(),
+    ).toEqual([]);
+    expect(
+      (
+        await db
+          .selectFrom("sessions")
+          .select("next_mailbox_position")
+          .where("id", "=", f.session.sessionId)
+          .executeTakeFirstOrThrow()
+      ).next_mailbox_position,
+    ).toBe("1");
+    const accepted = await f.accept("retry", "rollback");
+    expect(accepted).toMatchObject({ kind: "run", replayed: false });
+    const replay = await f.store.withInputAdmission(
+      f.session.sessionId,
+      "rollback",
+      { prompt: "retry" },
+      async (admission) => {
+        escaped = admission.acceptInitial;
+        return admission.acceptInitial();
+      },
+    );
+    expect(replay).toEqual({ ...accepted, replayed: true });
+    await expect(escaped()).rejects.toThrow("Input admission transaction has ended");
+  });
+
+  it("checks Workspace availability after acquiring the reusable Session snapshot", async () => {
+    const f = await fixture();
+    await expect(
+      f.store.withInputAdmission(
+        f.session.sessionId,
+        "deleted-workspace",
+        { prompt: "reject" },
+        async (admission) => {
+          await db
+            .updateTable("workspaces")
+            .set({ deleted_at: new Date() })
+            .where("id", "=", f.project.workspaceId)
+            .execute();
+          return admission.acceptInitial();
+        },
+      ),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(
+      await db
+        .selectFrom("runs")
+        .select("id")
+        .where("session_id", "=", f.session.sessionId)
+        .execute(),
+    ).toEqual([]);
+  });
+
+  it("rejects mismatched tenant scope before initial or native input acceptance", async () => {
+    const f = await fixture();
+    await expect(
+      f.queue.accept(f.store, randomUUID(), f.session.sessionId, "wrong-tenant", {
+        prompt: "reject",
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect(
+      await db
+        .selectFrom("runs")
+        .select("id")
+        .where("session_id", "=", f.session.sessionId)
+        .execute(),
+    ).toEqual([]);
+    expect(f.deliver).not.toHaveBeenCalled();
+  });
+
   it("stores an idle request in one Run, and edits it without changing original idempotency", async () => {
     const f = await fixture();
     const first = (await f.accept("original", "root")) as AcceptedTurnResource;

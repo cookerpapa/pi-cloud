@@ -167,6 +167,16 @@ PG input-payload queue or background redelivery reconciler is created. When the
 Worker cannot confirm acceptance, the browser keeps the draft and idempotency
 key for retry. WebSocket still carries registration and heartbeats.
 
+Initial intake now reuses the locked Session and freshly read Run idempotency
+metadata inside one Store-owned transaction. Routing and insertion share those
+facts; the bound insertion action expires when its callback ends. The Run lookup
+remains a separate statement after the Session lock, so a concurrent committed
+request is visible after waiting. Normal initial intake uses eight business SQL
+statements, and same-key retry uses two, excluding authentication and BEGIN/COMMIT.
+Workspace/model/environment checks and post-transaction Worker authority checks
+remain. No cross-request cache is introduced
+([ADR-0240](adr/0240-transaction-scoped-input-admission.md), source rollout pending).
+
 Durable `submission` records and public `pi.inbox` own pending membership and
 consumption. Follow-up is consumed when the Agent would otherwise finish;
 steer enters at the native interruption boundary before another model request.

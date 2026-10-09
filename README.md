@@ -48,6 +48,11 @@ its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is
 deployed with matched schema 183 and application images.
 
+The source intake path shares its locked Session and request lookup between
+routing and Run creation: eight ordinary business SQL statements, two on an
+initial-request retry, with no cross-request cache
+([ADR-0240](docs/adr/0240-transaction-scoped-input-admission.md), rollout pending).
+
 Native tasks, submissions, entries and documents use one atomic commit stream.
 Kafka RF3 confirms each prepared commit before the Worker adopts it. PostgreSQL
 stores the native body once, with rebuildable record/document indexes for cold

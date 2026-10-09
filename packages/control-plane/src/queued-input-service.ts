@@ -201,76 +201,81 @@ export class QueuedInputService {
       uploadIds: request.uploadIds ?? [],
       thinkingLevel: request.thinkingLevel ?? null,
     });
-    const decision = await this.options.database.transaction().execute(async (tx) => {
-      const session = await this.#session(tx, tenantId, sessionId, true);
-      const previousRun = await tx
-        .selectFrom("runs")
-        .select("id")
-        .where("tenant_id", "=", tenantId)
-        .where("session_id", "=", sessionId)
-        .where("idempotency_key", "=", key)
-        .executeTakeFirst();
-      if (previousRun) {
-        if (delivery !== "follow_up")
-          throw new ControlPlaneStoreError(
-            "idempotency_conflict",
-            "Identity already belongs to an initial request",
-          );
-        return { accepted: await store.acceptTurn(sessionId, key, request, tx) };
-      }
-      if (session.pi_conversation_id !== null) {
-        const scope = {
-          tenantId,
-          sessionId: session.pi_session_id,
-          conversationId: Number(session.pi_conversation_id),
-        };
-        const previous = await readNativeHumanSubmission(tx, scope, inputId);
-        if (previous?.runId) {
-          const state = await readNativeHumanInputs(tx, { ...scope, runId: previous.runId });
-          const record = state.state.inputs[inputId];
-          if (!record || record.fingerprint !== fingerprint)
-            throw new ControlPlaneStoreError("idempotency_conflict", "Input identity was reused");
-          const run = await this.#run(tx, tenantId, sessionId, previous.runId);
-          if (!run) throw new Error("Native input lost its Run");
-          return {
-            accepted: {
-              kind: "input",
-              inputId,
-              sessionId,
-              runId: run.id,
-              turnId: run.turn_id,
-              delivery,
-              state: "accepted",
-              acceptedAt: record.acceptedAt,
-              replayed: true,
-            } as NativeInputAccepted,
-          };
+    const decision = await store.withInputAdmission(
+      sessionId,
+      key,
+      request,
+      async ({
+        transaction: tx,
+        tenantId: admittedTenantId,
+        session,
+        hasAcceptedRun,
+        acceptInitial,
+      }) => {
+        if (admittedTenantId !== tenantId)
+          throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+        if (hasAcceptedRun) {
+          if (delivery !== "follow_up")
+            throw new ControlPlaneStoreError(
+              "idempotency_conflict",
+              "Identity already belongs to an initial request",
+            );
+          return { accepted: await acceptInitial() };
         }
-      }
-      const target = await this.#run(tx, tenantId, sessionId);
-      if (
-        !target ||
-        (["completed", "failed", "cancelled", "timed_out"].includes(target.state) &&
-          (target.lease_id === null || target.output_sealed_at !== null))
-      ) {
-        if (delivery === "steer") conflict("There is no running Agent to steer");
-        return { accepted: await store.acceptTurn(sessionId, key, request, tx) };
-      }
-      await this.#assertReceiving(tx, target);
-      if (targetTurnId !== undefined && target.turn_id !== targetTurnId)
-        conflict("The target Run changed");
-      if (request.thinkingLevel !== undefined && request.thinkingLevel !== target.thinking_level)
-        conflict("An additional input uses the current Run's model settings");
-      const uploads = await bindInputUploads(tx, {
-        tenantId,
-        sessionId,
-        workspaceId: target.workspace_id,
-        workingDirectory: target.working_directory,
-        ids: request.uploadIds ?? [],
-      });
-      this.#validate(request.prompt, uploads, target);
-      return { target, uploads };
-    });
+        if (session.pi_conversation_id !== null) {
+          const scope = {
+            tenantId,
+            sessionId: session.pi_session_id,
+            conversationId: Number(session.pi_conversation_id),
+          };
+          const previous = await readNativeHumanSubmission(tx, scope, inputId);
+          if (previous?.runId) {
+            const state = await readNativeHumanInputs(tx, { ...scope, runId: previous.runId });
+            const record = state.state.inputs[inputId];
+            if (!record || record.fingerprint !== fingerprint)
+              throw new ControlPlaneStoreError("idempotency_conflict", "Input identity was reused");
+            const run = await this.#run(tx, tenantId, sessionId, previous.runId);
+            if (!run) throw new Error("Native input lost its Run");
+            return {
+              accepted: {
+                kind: "input",
+                inputId,
+                sessionId,
+                runId: run.id,
+                turnId: run.turn_id,
+                delivery,
+                state: "accepted",
+                acceptedAt: record.acceptedAt,
+                replayed: true,
+              } as NativeInputAccepted,
+            };
+          }
+        }
+        const target = await this.#run(tx, tenantId, sessionId);
+        if (
+          !target ||
+          (["completed", "failed", "cancelled", "timed_out"].includes(target.state) &&
+            (target.lease_id === null || target.output_sealed_at !== null))
+        ) {
+          if (delivery === "steer") conflict("There is no running Agent to steer");
+          return { accepted: await acceptInitial() };
+        }
+        await this.#assertReceiving(tx, target);
+        if (targetTurnId !== undefined && target.turn_id !== targetTurnId)
+          conflict("The target Run changed");
+        if (request.thinkingLevel !== undefined && request.thinkingLevel !== target.thinking_level)
+          conflict("An additional input uses the current Run's model settings");
+        const uploads = await bindInputUploads(tx, {
+          tenantId,
+          sessionId,
+          workspaceId: target.workspace_id,
+          workingDirectory: target.working_directory,
+          ids: request.uploadIds ?? [],
+        });
+        this.#validate(request.prompt, uploads, target);
+        return { target, uploads };
+      },
+    );
     if (decision.accepted) return decision.accepted;
     const acceptedAt = new Date().toISOString();
     const result = await this.#deliver(decision.target!, {

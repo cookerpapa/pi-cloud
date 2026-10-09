@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Input-admission read reuse
+
+- [x] Implement [ADR-0240](adr/0240-transaction-scoped-input-admission.md): reuse
+      Session and initial-request facts only while their intake transaction remains open.
+- [x] Verify eight initial-intake queries, two retry queries, concurrent duplicate
+      requests, model-change ordering, rollback, Workspace deletion and tenant isolation.
+- [ ] Complete repository regression/fault gates and the authorized matched deployment.
+
 ## Projection query and replay writes
 
 - [x] Implement [ADR-0239](adr/0239-projection-query-and-replay-writes.md): one
