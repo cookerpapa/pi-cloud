@@ -15,6 +15,12 @@ provider configuration, and credentials unless their removal is explicitly in
 scope. Drain writers and confirm physical cleanup before discarding ownership
 records; destructive development updates do not weaken runtime fencing.
 
+The owner authorizes routine deployment after changes pass the required checks.
+Complete the maintained matched release and relevant live acceptance without
+asking for another rollout confirmation, unless source-only work is requested.
+This does not waive writer draining, fencing or preservation of accounts,
+configuration and credentials.
+
 ## Before changing code
 
 Read these files first:
