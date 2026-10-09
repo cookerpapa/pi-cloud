@@ -1,13 +1,13 @@
 # Documentation map
 
-[ADR-0239](adr/0239-projection-query-and-replay-writes.md) reduces native
-projection by one SQL round trip and avoids unchanged replay updates. It keeps
-the current transaction-time authority locks. Source verification and rollout
-are tracked separately in the [verification record](reports/projection-sql-20261009.md)
-and [roadmap](ROADMAP.md).
+The [projection and commentary release](reports/projection-release-20261009.md)
+is deployed as `projection-b14c3777`, schema 183. It combines Run/writer reads,
+avoids unchanged replay updates and animates commentary text. Existing authority
+locks remain. [Source verification](reports/projection-sql-20261009.md) and real
+Luna/Cube/browser acceptance pass; fixtures are cleaned and configuration preserved.
 
-The [native input release](reports/native-input-release-20261009.md) is deployed
-as `native-input-a71a4807`, schema 183. Real Luna/Cube and browser checks pass;
+The preceding [native input release](reports/native-input-release-20261009.md) deployed
+`native-input-a71a4807`, schema 183. Real Luna/Cube and browser checks passed;
 owned fixtures are removed and original accounts/configuration/credentials remain.
 The report records the corrected model-egress endpoint and updated operator drivers.
 

@@ -54,7 +54,7 @@ stores the native body once, with rebuildable record/document indexes for cold
 reads. Native Conversations share one physical Session lease and writer.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
-The [current deployed release](docs/reports/native-input-release-20261009.md) uses
+The [current deployed release](docs/reports/projection-release-20261009.md) uses
 schema 183, guest input protocol 4, Tool Worker protocol 4 and Cube management
 protocol 7. It exercises the maintained matched release workflow and preserves
 the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which
@@ -84,9 +84,10 @@ or known deadlines. Worker admission uses the available publication partitions;
 binding bootstrap pages only the owner’s state. Transaction-local queue/state
 notifications are coalesced, and independent Outbox sends prevent a slow request
 from holding an entire batch. Lifecycle mutations and recovery retain PG checks.
-The source projection path combines Run/writer validation into one SQL read and
+The projection path combines Run/writer validation into one SQL read and
 skips unchanged replay updates while retaining authority locks
-([ADR-0239](docs/adr/0239-projection-query-and-replay-writes.md), rollout pending).
+([ADR-0239](docs/adr/0239-projection-query-and-replay-writes.md)). Commentary and
+final-answer text share the typing animation; restored history displays immediately.
 Chat Stop interrupts the Worker Agent and sends operation-scoped cancellation
 through the same Session Kafka path. Durable records the native abort; a late
 physical reply does not replace it. Worker replacement preserves the logical Run,

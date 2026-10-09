@@ -3,7 +3,8 @@
 Status: accepted and implemented in source, 2026-10-09. The owner approved
 reducing redundant Run writes and investigating native projection lock
 consolidation. [Source verification](../reports/projection-sql-20261009.md) passes;
-deployment remains pending.
+the [matched deployment and live acceptance](../reports/projection-release-20261009.md)
+are complete on the same date.
 
 ## Boundary and decision
 
@@ -49,7 +50,7 @@ PostgreSQL documents [row locking and consistent lock order](https://www.postgre
 and [materialized/data-modifying CTEs](https://www.postgresql.org/docs/17/queries-with.html).
 These primitives fit the current PG adapter without a new dependency.
 
-This is a source-only SQL change on schema 183. Rollback uses the preceding
+This SQL change uses schema 183. Rollback uses the preceding
 application version; there is no data conversion or compatibility path. The
 existing native storage export/recovery and Kafka replay contracts remain.
 

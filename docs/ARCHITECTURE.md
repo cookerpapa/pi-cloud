@@ -360,7 +360,7 @@ removing lifecycle synchronization. Display coverage still validates the Run
 and native commit on replay, but updates only when either cursor advances.
 Partition projection progress likewise updates only to a larger offset; unchanged
 replays create no new progress tuple ([ADR-0239](adr/0239-projection-query-and-replay-writes.md)).
-This source change does not require a schema migration and is not yet deployed.
+This change is [deployed on schema 183](reports/projection-release-20261009.md).
 
 Publication and dispatch/progress commits share a guard for their own partition.
 Periodic progress tracks in-flight work per partition; waiting for one guard

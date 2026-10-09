@@ -9,8 +9,8 @@
       native-byte conflicts, deletion and unchanged recovery floors.
 - [x] Complete the source regression gates and record their
       [results and limits](reports/projection-sql-20261009.md).
-- [ ] Deploy the source optimization; the serving release remains schema 183
-      `native-input-a71a4807` until a separate rollout.
+- [x] Deploy the optimization and commentary animation as schema 183
+      `projection-b14c3777`; [Luna/Cube/browser acceptance and fixture cleanup](reports/projection-release-20261009.md) pass.
 
 ## Native human input and Session/Run consolidation
 

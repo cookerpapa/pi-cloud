@@ -30,15 +30,10 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
-- [ ] Deploy [ADR-0239](adr/0239-projection-query-and-replay-writes.md)'s projection
-      SQL optimization, now [source-verified](reports/projection-sql-20261009.md): one combined Run/writer read,
-      unchanged replay without Run/progress tuple rewrites, existing authority
-      locks retained. Schema remains 183; no data cleanup is required.
-
-- [ ] Deploy the commentary text animation UI. Source now shares the existing
-      final-answer animation path; recovered history remains immediate and
-      reduced-motion preferences remain respected. This is a presentation-only
-      change after the schema 183 release.
+The [projection and commentary release](reports/projection-release-20261009.md)
+is deployed as `projection-b14c3777` on schema 183. ADR-0239's SQL optimization
+and shared text animation pass source and real Luna/Cube/browser acceptance;
+owned fixtures are cleaned and original accounts/configuration remain intact.
 
 [ADR-0238](adr/0238-native-input-queue-and-run-record.md) is implemented and
 verified in source: two core Session/Run records, native follow-up/steer/editing,

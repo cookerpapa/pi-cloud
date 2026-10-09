@@ -11,7 +11,8 @@ revision-bound reports, not as alternate production backends.
 Read the documents in this order:
 
 1. [ADR-0239](0239-projection-query-and-replay-writes.md) — combine native projection
-   authority reads and avoid unchanged replay writes, preserving PG locking and cutoffs.
+   authority reads and avoid unchanged replay writes, preserving PG locking and cutoffs;
+   deployed with real Luna/Cube/browser acceptance.
 
 1. [ADR-0238](0238-native-input-queue-and-run-record.md) — approved native human
    input queue, durable edits and Session/Run record consolidation; deployed with schema 183.

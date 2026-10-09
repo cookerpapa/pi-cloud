@@ -2,7 +2,9 @@
 
 Date: 2026-10-09. Baseline: `387c6807`, schema 183. Scope: the approved Run
 projection optimization in [ADR-0239](../adr/0239-projection-query-and-replay-writes.md).
-This report describes source changes; production remains `native-input-a71a4807`.
+This report describes source verification while production still served
+`native-input-a71a4807`. The subsequent [matched release](projection-release-20261009.md)
+deploys these changes and records live acceptance.
 
 ## Implementation and bounded measurements
 
@@ -69,6 +71,6 @@ The fault report names baseline `387c6807` with the source patch present,
 not an already-deployed release. These are deterministic source/PG checks;
 no new live RF3 or fleet-throughput measurement is claimed.
 
-No live model requests, VM changes, production-data cleanup or deployment were
-performed. The previously committed commentary-animation UI also remains pending
-deployment. The walkthrough checkpoint remains PG initial-input acceptance.
+This source verification performed no live model requests, VM changes or
+production-data cleanup. The subsequent release above includes the commentary
+animation UI. The walkthrough checkpoint remains PG initial-input acceptance.

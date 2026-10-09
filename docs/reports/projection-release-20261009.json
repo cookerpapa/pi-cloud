@@ -1,0 +1,333 @@
+{
+  "release": "projection-b14c3777",
+  "deployedRevision": "b14c3777f5d78317e50a36516578c8a6a0000366",
+  "checkedAt": "2026-10-09T11:40:07.680Z",
+  "schema": 183,
+  "piDurable": "1.0.0",
+  "guestProtocol": 4,
+  "toolWorkerProtocol": 4,
+  "cubeManagementProtocol": 7,
+  "artifacts": [
+    {
+      "reference": "pi-cloud/control-plane:projection-b14c3777",
+      "imageId": "sha256:dc77e56086072f34c35765ab7f08392642c69e01d9d355452f38faa27e4be08e",
+      "policyFindings": {
+        "HIGH": {
+          "total": 48,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 1,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "pi-cloud/supervisor-host:projection-b14c3777",
+      "imageId": "sha256:0fb1f6b47f1d152e2a054595f132b6335bfae844bd7cd169457739b66f3831e2",
+      "policyFindings": {
+        "HIGH": {
+          "total": 48,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 1,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "pi-cloud/workspace-volume-gateway:projection-b14c3777",
+      "imageId": "sha256:9394a4f5adcccb56274ff701bb61baa54db507b536a655b0129fe29ae5d43a8b",
+      "policyFindings": {
+        "HIGH": {
+          "total": 59,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 1,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "pi-cloud/web-ui:projection-b14c3777",
+      "imageId": "sha256:558273f325d647543c3463e9c988197f0bb3a109934dd27431f268806f22f376",
+      "policyFindings": {
+        "HIGH": {
+          "total": 0,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 0,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "pi-cloud/provider-egress-relay:projection-b14c3777",
+      "imageId": "sha256:acb051c76f4f082ff1172e8840cd1e9bf4527a87c8131d034f830727eff8f993",
+      "policyFindings": {
+        "HIGH": {
+          "total": 48,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 1,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "pi-cloud/ssh-gateway:projection-b14c3777",
+      "imageId": "sha256:f123dcdd5ab227b3cb694ca4ae62c83fb72c9d264aba4d62c3c7636e8b7e1d03",
+      "policyFindings": {
+        "HIGH": {
+          "total": 48,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 1,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "pi-cloud/cli-proxy-api:projection-b14c3777",
+      "imageId": "sha256:dcdc607e7a31876aab567a6f3ca43276055612b79b316f127a00c4843649fd74",
+      "policyFindings": {
+        "HIGH": {
+          "total": 50,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 1,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "pi-cloud/cube-api:projection-b14c3777",
+      "imageId": "sha256:56687de37b6194613d52fff77b805cc4f1520038a47c20cf787d8719366ec61b",
+      "policyFindings": {
+        "HIGH": {
+          "total": 0,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 0,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "pi-cloud/cube-master:projection-b14c3777",
+      "imageId": "sha256:17790ac2afea091f1d4ea08769bf1eef30d77c8817c61a573f0d7f7628ad8266",
+      "policyFindings": {
+        "HIGH": {
+          "total": 0,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 0,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "pi-cloud/cubelet:projection-b14c3777",
+      "imageId": "sha256:fb062cc11d821a76dec29d964a7294eec587d307ea575f6d82c940cc9763f116",
+      "policyFindings": {
+        "HIGH": {
+          "total": 0,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 0,
+          "fixable": 0
+        }
+      }
+    },
+    {
+      "reference": "localhost:5000/pi-cloud/cubesandbox-tool:1ab0b6a38aa52ff410a7ab8b527f1f32c91a3b89",
+      "imageId": "sha256:ca51cee4da900fe15ce168eaf70c61a4eacbad6744cad23eecfb8b59e8a82d61",
+      "policyFindings": {
+        "HIGH": {
+          "total": 0,
+          "fixable": 0
+        },
+        "CRITICAL": {
+          "total": 0,
+          "fixable": 0
+        }
+      }
+    }
+  ],
+  "scan": {
+    "imageCount": 11,
+    "maximumFixableFindings": 0,
+    "passed": true,
+    "unfixedFindingsRetained": true
+  },
+  "presentation": {
+    "accepted": true,
+    "commentaryAnimation": true,
+    "commentaryReconnectAndReducedMotion": true
+  },
+  "nativeInput": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "cases": [
+      {
+        "scenario": "consume",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true
+      },
+      {
+        "scenario": "stop",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true
+      }
+    ]
+  },
+  "browser": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "returnedInput": {
+      "nativeInputInOriginalRun": true,
+      "realBrowser": true,
+      "requests": 2,
+      "distinctKeys": 2,
+      "distinctAdmissions": 2,
+      "originalRunCancelled": true,
+      "newRunCompleted": true,
+      "sameUploadId": true,
+      "directVision": true,
+      "activeRunCancelled": true
+    },
+    "read": [
+      {
+        "kind": "wide-ascii.txt",
+        "sourceBytes": 120017,
+        "contentBytes": 51200,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      },
+      {
+        "kind": "wide-unicode.txt",
+        "sourceBytes": 140031,
+        "contentBytes": 51196,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      }
+    ]
+  },
+  "production": {
+    "accepted": true,
+    "model": {
+      "provider": "openai-codex",
+      "modelId": "gpt-6-luna"
+    },
+    "totalUsage": {
+      "requests": 22,
+      "inputTokens": 29925,
+      "outputTokens": 1893,
+      "cacheReadTokens": 137728,
+      "cacheWriteTokens": 0
+    },
+    "pureChatWithoutVm": true,
+    "workspaceIsolation": {
+      "volumeId": "pcw-999ad033ac9341ca6cbcf882215faefaa1a4fb8aab9c0d0f",
+      "platformGitMetadataAbsent": true,
+      "userGitPresent": false
+    },
+    "largeWorkspace": {
+      "firstFileCount": 1025,
+      "restoredFileCount": 1026,
+      "sourceSandboxDestroyed": true,
+      "persistentVolumeRetained": true,
+      "freshCubeMicroVm": true
+    },
+    "cleanup": {
+      "retainedRunningWorkspaceMicroVmCount": 0,
+      "foreignSessionMicroVmCount": 0,
+      "conversationDeletionReleasedWorkspaceRuntime": true,
+      "confirmedAllocationClosureVerified": true
+    }
+  },
+  "preservation": {
+    "users": {
+      "before": 29,
+      "after": 29,
+      "unchanged": true
+    },
+    "tenants": {
+      "before": 29,
+      "after": 29,
+      "unchanged": true
+    },
+    "model_profiles": {
+      "before": 30,
+      "after": 30,
+      "unchanged": true
+    },
+    "credential_bindings": {
+      "before": 30,
+      "after": 30,
+      "unchanged": true
+    },
+    "tenant_api_credentials": {
+      "before": 29,
+      "after": 29,
+      "unchanged": true
+    },
+    "platform_runtime_settings": {
+      "before": 1,
+      "after": 1,
+      "unchanged": true
+    },
+    "user_password_credentials": {
+      "before": 4,
+      "after": 4,
+      "unchanged": true
+    }
+  },
+  "cleanup": {
+    "ownedTenantRemoved": true,
+    "foreignProjectRemoved": true,
+    "ownedCleanup": {
+      "tenantRemoved": true,
+      "imagesRemoved": 0
+    },
+    "business": {
+      "runs": 0,
+      "projects": 0,
+      "sessions": 0,
+      "workspaces": 0
+    },
+    "active": {
+      "vms": 0,
+      "runs": 0,
+      "writers": 0,
+      "machines": 0,
+      "unsealed": 0,
+      "terminals": 0
+    },
+    "imageObjects": 0,
+    "pendingControls": 0,
+    "nativeInventory": {
+      "scanned": 1,
+      "total": 1,
+      "vms": 0
+    }
+  },
+  "health": {
+    "web": 200,
+    "admin": 200,
+    "controlPlane": 200,
+    "readyWorkers": 2
+  },
+  "scope": "Matched single-host deployment and bounded real GPT-6 Luna/Cube/browser acceptance; not a fleet-capacity or HA measurement."
+}
