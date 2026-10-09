@@ -175,7 +175,8 @@ request is visible after waiting. Normal initial intake uses eight business SQL
 statements, and same-key retry uses two, excluding authentication and BEGIN/COMMIT.
 Workspace/model/environment checks and post-transaction Worker authority checks
 remain. No cross-request cache is introduced
-([ADR-0240](adr/0240-transaction-scoped-input-admission.md), source rollout pending).
+([ADR-0240](adr/0240-transaction-scoped-input-admission.md),
+[deployed acceptance](reports/input-admission-20261010.md)).
 
 Durable `submission` records and public `pi.inbox` own pending membership and
 consumption. Follow-up is consumed when the Agent would otherwise finish;

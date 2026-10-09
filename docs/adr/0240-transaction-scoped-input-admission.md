@@ -2,8 +2,8 @@
 
 Status: accepted on 2026-10-09; implemented in source on 2026-10-10. The owner
 approved removing duplicate input-acceptance reads before introducing any
-additional caching. [Verification and rollout](../reports/input-admission-20261010.md)
-are tracked separately.
+additional caching. [Source verification and matched rollout](../reports/input-admission-20261010.md)
+are complete on 2026-10-10, including real HTTP retry and Luna/Cube/browser acceptance.
 
 ## Decision
 

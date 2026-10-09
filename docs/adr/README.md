@@ -11,7 +11,8 @@ revision-bound reports, not as alternate production backends.
 Read the documents in this order:
 
 1. [ADR-0240](0240-transaction-scoped-input-admission.md) — reuse locked Session
-   and fresh idempotency reads within a single input-admission transaction.
+   and fresh idempotency reads within a single input-admission transaction;
+   deployed with real HTTP/Luna/Cube/browser acceptance.
 
 1. [ADR-0239](0239-projection-query-and-replay-writes.md) — combine native projection
    authority reads and avoid unchanged replay writes, preserving PG locking and cutoffs;

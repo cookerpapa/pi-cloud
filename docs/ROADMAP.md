@@ -6,7 +6,8 @@
       Session and initial-request facts only while their intake transaction remains open.
 - [x] Verify eight initial-intake queries, two retry queries, concurrent duplicate
       requests, model-change ordering, rollback, Workspace deletion and tenant isolation.
-- [ ] Complete repository regression/fault gates and the authorized matched deployment.
+- [x] Complete all repository gates and deploy `input-admission-db0548b8`;
+      [real HTTP retry, Luna/Cube/browser and preservation checks](reports/input-admission-20261010.md) pass.
 
 ## Projection query and replay writes
 

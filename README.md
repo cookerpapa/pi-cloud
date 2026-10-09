@@ -48,10 +48,10 @@ its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is
 deployed with matched schema 183 and application images.
 
-The source intake path shares its locked Session and request lookup between
+The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
 initial-request retry, with no cross-request cache
-([ADR-0240](docs/adr/0240-transaction-scoped-input-admission.md), rollout pending).
+([ADR-0240](docs/adr/0240-transaction-scoped-input-admission.md)).
 
 Native tasks, submissions, entries and documents use one atomic commit stream.
 Kafka RF3 confirms each prepared commit before the Worker adopts it. PostgreSQL
@@ -59,7 +59,7 @@ stores the native body once, with rebuildable record/document indexes for cold
 reads. Native Conversations share one physical Session lease and writer.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
-The [current deployed release](docs/reports/projection-release-20261009.md) uses
+The [current deployed release](docs/reports/input-admission-20261010.md) uses
 schema 183, guest input protocol 4, Tool Worker protocol 4 and Cube management
 protocol 7. It exercises the maintained matched release workflow and preserves
 the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which

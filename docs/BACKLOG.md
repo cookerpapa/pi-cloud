@@ -30,12 +30,13 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
-- [ ] Complete source gates and deploy [ADR-0240](adr/0240-transaction-scoped-input-admission.md).
-      Targeted PG tests pass: eight ordinary intake statements and two on retry,
-      with fresh post-lock idempotency reads and existing admission authority retained.
+The [input-admission release](reports/input-admission-20261010.md) is deployed as
+`input-admission-db0548b8` on schema 183. Initial intake uses eight business SQL
+statements, and same-key retry uses two. Source/fault and real HTTP/Luna/Cube/browser
+checks pass; original configuration is preserved and owned fixtures are removed.
 
-The [projection and commentary release](reports/projection-release-20261009.md)
-is deployed as `projection-b14c3777` on schema 183. ADR-0239's SQL optimization
+The preceding [projection and commentary release](reports/projection-release-20261009.md)
+deployed `projection-b14c3777` on schema 183. ADR-0239's SQL optimization
 and shared text animation pass source and real Luna/Cube/browser acceptance;
 owned fixtures are cleaned and original accounts/configuration remain intact.
 

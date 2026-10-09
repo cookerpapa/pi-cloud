@@ -1,6 +1,6 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-09.
+Updated: 2026-10-10.
 
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
@@ -23,6 +23,11 @@ Follow-up discussions established:
   configuration is persisted when applied, not for every selector click.
 - During a running Run, an unavailable Worker leaves the new draft unconfirmed
   in the browser; success requires native Kafka durability acknowledgement.
+- ADR-0240 reuses Session/idempotency reads inside the same locked transaction:
+  ordinary initial intake is eight business SQL statements and same-key retry
+  is two. Normal authentication plus BEGIN/COMMIT bring initial intake to eleven.
+- Ordered Kafka views speed downstream routing/display; mutable PG admission
+  decisions still use current authority. This change adds no cross-request cache.
 
 Resume with: **how an available Pi Worker selects a ready Run from PG, prevents
 another Worker taking the same execution, and obtains the physical-Session lease**.
