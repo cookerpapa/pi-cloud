@@ -59,13 +59,15 @@ stores the native body once, with rebuildable record/document indexes for cold
 reads. Native Conversations share one physical Session lease and writer.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
-The [current deployed release](docs/reports/input-admission-20261010.md) uses
+The [current deployed release](docs/reports/working-directory-20261010.md) uses
 schema 183, guest input protocol 4, Tool Worker protocol 4 and Cube management
 protocol 7. It exercises the maintained matched release workflow and preserves
 the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which
 correct quarantine recovery, returned-input identity and oversized-line Read,
-and remove unnecessary document-revision queries. Real browser, native VM and
-Luna multi-Run/cold-VM acceptance pass. Earlier releases, reviews and
+and remove unnecessary document-revision queries. Confirmed loss of a user-selected
+working directory now returns a native Tool error so the Agent can continue the dialogue.
+Real Luna directory restoration, native input/Stop and browser/image/Read checks
+pass. Earlier cold-VM/preview acceptance, releases, reviews and
 the Durable migration remain indexed in [the documentation map](docs/README.md).
 
 Whole file/shell Tools execute in Cube. Replies return through the separate

@@ -30,10 +30,16 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
-- [ ] Finish source gates and deploy [ADR-0241](adr/0241-missing-working-directory-tool-errors.md).
-      The guest now returns confirmed user-directory loss as an ordinary Tool error;
-      targeted tests pass. Preserve infrastructure UNKNOWN and prove real same-Run
-      continuation, unchanged VM identity and owned physical cleanup before completion.
+[ADR-0241](adr/0241-missing-working-directory-tool-errors.md) is deployed as
+`working-directory-889279b2`. [Source, fault and live acceptance](reports/working-directory-20261010.md)
+verify known directory errors, same-Run continuation, explicit restoration and
+preserved VM identity. The matched images include required Go/x-net security
+updates; owned resources are cleaned and original configuration is preserved.
+
+- [ ] If the October 10 large-Read model wait recurs, capture provider/request
+      stage evidence before changing timeout or retry policy. One Responses request
+      remained open about 3m54s until acceptance cancellation; the unchanged rerun
+      passed. The underlying cause is not established.
 
 The [input-admission release](reports/input-admission-20261010.md) is deployed as
 `input-admission-db0548b8` on schema 183. Initial intake uses eight business SQL
@@ -366,6 +372,11 @@ separate design questions, not an implicit part of the completed query merge.
       Lane counts; unlimited product defaults do not establish sustainable capacity.
 
 ## Deployment operations
+
+- [ ] Reconcile the build host's Docker daemon proxy with its current proxy
+      endpoint. October 10 uncached pulls needed a temporary loopback relay;
+      it was removed after building and is not a runtime component. Host service
+      configuration was not changed by that release.
 
 - [ ] Investigate Cube standard-template snapshot restoration returning
       `reset guest time failed` despite READY status. Recreating the same-image

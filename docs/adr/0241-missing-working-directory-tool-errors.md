@@ -1,7 +1,7 @@
 # ADR-0241: Missing working directories are native Tool errors
 
-Status: implemented with targeted source verification, 2026-10-10.
-Full source/fault gates and matched live acceptance remain pending.
+Status: implemented, source-verified and [deployed](../reports/working-directory-20261010.md),
+2026-10-10. Runtime, native input and browser/image/Read acceptance pass.
 
 The owner approved repairing the error classification found during the input
 admission walkthrough. PG Workspace admission and its deletion lock remain

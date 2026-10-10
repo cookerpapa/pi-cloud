@@ -1,0 +1,174 @@
+{
+  "format": "pi-cloud.working-directory-acceptance.v1",
+  "runtimeRevision": "f1b3feed6d1a63f1b92027ed39ab3fcd6a060d2c",
+  "releaseRevision": "889279b24a8fc364510641a2e2d02295387c8895",
+  "version": "working-directory-889279b2",
+  "schemaVersion": 183,
+  "toolWorkerProtocolVersion": 4,
+  "guestProtocolVersion": 4,
+  "cubeProtocolVersion": 7,
+  "source": {
+    "runtimeRevision": "f1b3feed6d1a63f1b92027ed39ab3fcd6a060d2c",
+    "releaseRevision": "889279b24a8fc364510641a2e2d02295387c8895",
+    "typecheckWorkspaces": 22,
+    "workspacePassedTests": 1668,
+    "workspacePassedFiles": 254,
+    "workspaceSkippedTests": 9,
+    "workspaceSkippedFiles": 7,
+    "helpers": {
+      "passed": 64,
+      "files": 15,
+      "initialRun": "operator umask 077 changed temporary fixture modes; rerun under normal checkout umask passed without test or product changes"
+    },
+    "faults": {
+      "cases": 235,
+      "passed": 235,
+      "groups": 72,
+      "report": "faults.json"
+    },
+    "transport": {
+      "passed": 7,
+      "files": 6
+    },
+    "updatedCubeContracts": ["cube-admission-updated.log", "cube-allocation-updated.log"],
+    "otherPassingChecks": [
+      "dependencies",
+      "format",
+      "docs",
+      "install",
+      "policy",
+      "helm",
+      "observability",
+      "image-closure",
+      "build",
+      "audit",
+      "format-updated",
+      "docs-updated",
+      "image-closure-updated"
+    ],
+    "imageGate": "updated candidate: 11 matched images, zero fixable HIGH/CRITICAL"
+  },
+  "images": {
+    "count": 11,
+    "fixableHighCritical": 0
+  },
+  "directory": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "sameRunContinuation": true,
+    "noCommandEffectOrDirectoryRecreation": true,
+    "sameVmAfterError": true,
+    "chatAfterDeletion": true,
+    "explicitRestorationWorks": true
+  },
+  "nativeInput": {
+    "accepted": true,
+    "cases": [
+      {
+        "scenario": "consume",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true
+      },
+      {
+        "scenario": "stop",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true
+      }
+    ],
+    "cleanupConfirmed": true
+  },
+  "browser": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "draftRemovalPreservesQueuedImage": true,
+    "returnedInput": {
+      "nativeInputInOriginalRun": true,
+      "realBrowser": true,
+      "requests": 2,
+      "distinctKeys": 2,
+      "distinctAdmissions": 2,
+      "originalRunCancelled": true,
+      "newRunCompleted": true,
+      "sameUploadId": true,
+      "directVision": true,
+      "activeRunCancelled": true
+    },
+    "read": [
+      {
+        "kind": "wide-ascii.txt",
+        "sourceBytes": 120017,
+        "contentBytes": 51200,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      },
+      {
+        "kind": "wide-unicode.txt",
+        "sourceBytes": 140031,
+        "contentBytes": 51196,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      }
+    ]
+  },
+  "firstBrowserAttempt": {
+    "accepted": false,
+    "cleanupConfirmed": true,
+    "failure": "Read Run settlement exceeded 240 seconds; Responses request remained open about 3m54s until cancellation. Cause unproven; unchanged rerun passed."
+  },
+  "final": {
+    "business": {
+      "runs": 0,
+      "projects": 0,
+      "sessions": 0,
+      "workspaces": 0
+    },
+    "active": {
+      "vms": 0,
+      "runs": 0,
+      "writers": 0,
+      "machines": 0,
+      "unsealed": 0,
+      "terminals": 0
+    },
+    "preservationMatches": true,
+    "preservedCounts": {
+      "users": 29,
+      "tenants": 29,
+      "model_profiles": 30,
+      "credential_bindings": 30,
+      "tenant_api_credentials": 29,
+      "platform_runtime_settings": 1,
+      "user_password_credentials": 4
+    },
+    "native": {
+      "nodesScanned": 1,
+      "nodesTotal": 1,
+      "vms": 0
+    },
+    "readyWorkers": 2,
+    "http": [
+      {
+        "name": "web",
+        "status": 200
+      },
+      {
+        "name": "admin",
+        "status": 200
+      },
+      {
+        "name": "control-plane",
+        "status": 200
+      }
+    ],
+    "extra": {
+      "imageObjects": 0,
+      "pendingControls": 0,
+      "nativeSessions": 0,
+      "releasedMachineRows": 0,
+      "schema": "183_native_inputs_and_run_record"
+    }
+  },
+  "scope": "Single installed host; targeted directory, native input and browser/image/Read acceptance. Broader coding/preview/cold-VM suite and host failure were not repeated."
+}

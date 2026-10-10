@@ -1,9 +1,10 @@
 # Documentation map
 
-[ADR-0241](adr/0241-missing-working-directory-tool-errors.md) repairs confirmed
-user-directory loss being classified as an unknown execution outcome. Guest,
-completion and native Harness tests pass; full gates and matched live acceptance
-remain tracked in [the roadmap](ROADMAP.md).
+[ADR-0241](adr/0241-missing-working-directory-tool-errors.md) is deployed as
+`working-directory-889279b2`. [Source, fault and real Luna/Cube/browser evidence](reports/working-directory-20261010.md)
+confirms native Tool errors and continued dialogue after directory loss, explicit
+restoration and unchanged VM identity. Required Go security pins, one unreproduced
+model wait, fixture cleanup and preserved configuration are recorded separately.
 
 [ADR-0240](adr/0240-transaction-scoped-input-admission.md) scopes input-read reuse
 to its existing PG transaction. The [source checks and matched rollout](reports/input-admission-20261010.md)
@@ -22,8 +23,8 @@ The preceding [native input release](reports/native-input-release-20261009.md) d
 owned fixtures are removed and original accounts/configuration/credentials remain.
 The report records the corrected model-egress endpoint and updated operator drivers.
 
-The [reading checkpoint](READING_PROGRESS.md) records the architecture walkthrough
-at PG input acceptance. [ADR-0238](adr/0238-native-input-queue-and-run-record.md)
+The [reading checkpoint](READING_PROGRESS.md) records PG input acceptance and
+Worker queue-change notification. [ADR-0238](adr/0238-native-input-queue-and-run-record.md)
 is the approved native follow-up/editing and Session/Run consolidation slice;
 implementation and deployment status are tracked separately.
 

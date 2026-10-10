@@ -6,8 +6,9 @@
       classify confirmed user-directory loss before execution as a native Tool error.
 - [x] Reproduce the old guest failure and verify directory replacement, running
       command survival, explicit restoration, completion and Harness continuation.
-- [ ] Complete full source/fault gates and matched release with real Luna/Cube
-      directory deletion, continued chat, restoration and physical fixture cleanup.
+- [x] Complete full source/fault gates and deploy `working-directory-889279b2`.
+      [Real Luna/Cube, native input and browser acceptance](reports/working-directory-20261010.md)
+      verify continuation, restoration, unchanged VM identity and physical cleanup.
 
 ## Input-admission read reuse
 
@@ -45,8 +46,8 @@
 the [matched deployment](reports/native-input-release-20261009.md) and real
 Luna/Cube/browser acceptance are also complete.
 
-The [reading checkpoint](READING_PROGRESS.md) remains at PG input acceptance;
-the next walkthrough hop is Worker claim and Session-lease admission.
+The [reading checkpoint](READING_PROGRESS.md) covers PG input acceptance and
+queue-change notification; the next hop is atomic Worker claim and Session-lease admission.
 
 ## Architecture evidence and private-use readiness
 

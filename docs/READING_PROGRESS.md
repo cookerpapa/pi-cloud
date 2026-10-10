@@ -5,11 +5,13 @@ Updated: 2026-10-10.
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **Browser → Control Plane → PostgreSQL input acceptance**.
+Current checkpoint: **PostgreSQL → Worker queue-change notification**.
 Covered HTTP idempotency keys, accepted versus executed input, atomic intake,
 PG queue readiness and the difference between cloud control records and the
-native append-only log. Detailed Worker claim/lease admission has not yet been
-walked through; that is the next hop.
+native append-only log. PG notifications wake Workers; they are hints, not task
+payloads or execution ownership. The persisted Run survives a missed notification,
+and periodic queries cover missed wakes. Detailed atomic Worker claim/lease
+admission has not yet been walked through; that is the next hop.
 
 Follow-up discussions established:
 
@@ -35,7 +37,8 @@ Follow-up discussions established:
   and recovery guards; it does not replace new-Run Workspace admission.
 - The directory-deletion discussion found a separate guest classification bug.
   ADR-0241 returns known pre-execution user-directory failures as native Tool errors;
-  deployment/acceptance is tracked in ROADMAP. No intake SQL changes are required.
+  it is deployed with same-Run Luna continuation, explicit directory restoration
+  and unchanged VM identity. No intake SQL changes were required.
 
 Resume with: **how an available Pi Worker selects a ready Run from PG, prevents
 another Worker taking the same execution, and obtains the physical-Session lease**.
