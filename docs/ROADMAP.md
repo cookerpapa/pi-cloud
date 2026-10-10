@@ -46,8 +46,11 @@
 the [matched deployment](reports/native-input-release-20261009.md) and real
 Luna/Cube/browser acceptance are also complete.
 
-The [reading checkpoint](READING_PROGRESS.md) covers PG input acceptance and
-queue-change notification; the next hop is atomic Worker claim and Session-lease admission.
+The [reading checkpoint](READING_PROGRESS.md) covers PG input acceptance, queue
+notification and atomic Worker claim/Session-lease admission. The focused
+[claim-table review](reports/worker-claim-schema-review-20261010.md) is complete;
+its proposed repairs remain in the backlog. The next hop is opening the native
+Session under the committed grant and loading its conversation state.
 
 ## Architecture evidence and private-use readiness
 

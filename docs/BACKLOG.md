@@ -30,6 +30,18 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+The [Worker-claim table review](reports/worker-claim-schema-review-20261010.md)
+preserves current Run/physical-Session ownership. Its 59 isolated PG tests pass;
+the following findings are proposals, not implemented repairs:
+
+- [ ] R10C-01: include the candidate tenant in the child-Run ownership lookup,
+      using its existing composite index without changing liveness checks.
+- [ ] R10C-02: index `run_transitions` by tenant, Run and stable history order.
+- [ ] R10C-03: remove the three unused legacy `pi_sessions` metadata columns
+      and their creation/Fork/fixture writes in a matched schema change.
+- [ ] R10C-04: consistently name the Worker registry and its ownership references;
+      retain the separate Worker boot, connection and Cube identities.
+
 [ADR-0241](adr/0241-missing-working-directory-tool-errors.md) is deployed as
 `working-directory-889279b2`. [Source, fault and live acceptance](reports/working-directory-20261010.md)
 verify known directory errors, same-Run continuation, explicit restoration and

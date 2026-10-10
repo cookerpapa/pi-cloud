@@ -23,8 +23,11 @@ The preceding [native input release](reports/native-input-release-20261009.md) d
 owned fixtures are removed and original accounts/configuration/credentials remain.
 The report records the corrected model-egress endpoint and updated operator drivers.
 
-The [reading checkpoint](READING_PROGRESS.md) records PG input acceptance and
-Worker queue-change notification. [ADR-0238](adr/0238-native-input-queue-and-run-record.md)
+The [reading checkpoint](READING_PROGRESS.md) now covers atomic Worker claim and
+Session-lease admission. The [claim-table review](reports/worker-claim-schema-review-20261010.md)
+preserves this ownership design and records two index-access issues, unused
+physical-Session metadata and Worker naming debt; repairs are not implemented.
+[ADR-0238](adr/0238-native-input-queue-and-run-record.md)
 is the approved native follow-up/editing and Session/Run consolidation slice;
 implementation and deployment status are tracked separately.
 

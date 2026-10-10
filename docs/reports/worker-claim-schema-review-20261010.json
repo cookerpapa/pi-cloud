@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-10",
+  "sourceCommit": "7542a964",
+  "schema": 183,
+  "scope": "Worker -> PostgreSQL atomic Run claim and related table consumers",
+  "productionMutations": false,
+  "productRepairs": false,
+  "database": "PostgreSQL 17.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 14.2.0) 14.2.0, 64-bit",
+  "tests": {
+    "files": 3,
+    "passed": 59,
+    "failed": 0
+  },
+  "probes": {
+    "childOwnerLookup": {
+      "syntheticHistoryRows": 50000,
+      "before": {
+        "node": "Index Scan",
+        "index": "subagent_executions_tenant_id_child_run_id_key",
+        "rows": 0,
+        "removedByFilter": 0,
+        "sharedBuffers": 391,
+        "indexCondition": "(child_run_id = candidate.id)"
+      },
+      "withCandidateTenant": {
+        "node": "Index Scan",
+        "index": "subagent_executions_tenant_id_child_run_id_key",
+        "rows": 0,
+        "removedByFilter": 0,
+        "sharedBuffers": 3,
+        "indexCondition": "((tenant_id = candidate.tenant_id) AND (child_run_id = candidate.id))"
+      }
+    },
+    "runTransitionHistory": {
+      "syntheticHistoryRows": 100005,
+      "before": {
+        "node": "Seq Scan",
+        "index": null,
+        "rows": 5,
+        "removedByFilter": 100000,
+        "sharedBuffers": 1539,
+        "indexCondition": null
+      },
+      "withRunHistoryIndex": {
+        "node": "Index Scan",
+        "index": "review_transition_run",
+        "rows": 5,
+        "removedByFilter": 0,
+        "sharedBuffers": 4,
+        "indexCondition": "((tenant_id = '<synthetic-uuid>'::uuid) AND (run_id = '<synthetic-uuid>'::uuid))"
+      }
+    },
+    "unusedColumnDropRestrict": [
+      {
+        "column": "created_at_ms",
+        "restrict": "passed"
+      },
+      {
+        "column": "parent_session_id",
+        "restrict": "passed"
+      },
+      {
+        "column": "name",
+        "restrict": "passed"
+      }
+    ]
+  },
+  "limits": [
+    "Synthetic LIKE clones preserve columns, checks and indexes but omit foreign keys and triggers.",
+    "Candidate SQL is captured from the real RunExecutor; only its child relation and proposed predicate are replaced for EXPLAIN.",
+    "Buffer counts are isolated query-plan evidence, not production latency, throughput or fleet capacity.",
+    "No model, Cube, browser or full-repository acceptance was run for this read-only product review."
+  ],
+  "reproduce": "node --import tsx scripts/experiments/review-worker-claim-20261010/probe.mjs"
+}

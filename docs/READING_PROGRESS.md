@@ -17,6 +17,13 @@ Runner execution. Claim locks last only for the transaction, while leases/fencin
 govern the subsequent execution. A pre-commit rollback leaves work queued;
 post-commit loss requires the existing closure/recovery path, not blind replay.
 
+Normal fresh-lease admission is 9 business SQL statements, plus BEGIN/COMMIT;
+reusing the physical family's current lease skips its creation statement.
+The [focused table review](reports/worker-claim-schema-review-20261010.md) retains
+Run, physical-Session and lease boundaries. It records two query/index issues,
+three unused physical-Session metadata columns and Worker naming debt; none is
+implemented by the review. Relevant isolated PG tests pass (59 cases).
+
 Follow-up discussions established:
 
 - Core Session/Turn/Run fields are consolidated under ADR-0238.
