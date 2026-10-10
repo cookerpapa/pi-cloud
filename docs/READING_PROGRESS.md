@@ -5,13 +5,17 @@ Updated: 2026-10-10.
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **PostgreSQL → Worker queue-change notification**.
+Current checkpoint: **Worker → PostgreSQL atomic Run claim**.
 Covered HTTP idempotency keys, accepted versus executed input, atomic intake,
 PG queue readiness and the difference between cloud control records and the
 native append-only log. PG notifications wake Workers; they are hints, not task
 payloads or execution ownership. The persisted Run survives a missed notification,
-and periodic queries cover missed wakes. Detailed atomic Worker claim/lease
-admission has not yet been walked through; that is the next hop.
+and periodic queries cover missed wakes. The Worker pulls eligible ready Runs;
+`FOR UPDATE SKIP LOCKED` separates competing claims. Physical-Session ownership,
+lease issuance/reuse and the Run's transition to running commit together before
+Runner execution. Claim locks last only for the transaction, while leases/fencing
+govern the subsequent execution. A pre-commit rollback leaves work queued;
+post-commit loss requires the existing closure/recovery path, not blind replay.
 
 Follow-up discussions established:
 
@@ -40,6 +44,6 @@ Follow-up discussions established:
   it is deployed with same-Run Luna continuation, explicit directory restoration
   and unchanged VM identity. No intake SQL changes were required.
 
-Resume with: **how an available Pi Worker selects a ready Run from PG, prevents
-another Worker taking the same execution, and obtains the physical-Session lease**.
-Explain that hop before continuing into native Session initialization or Kafka.
+Resume with: **how the Worker uses its committed execution grant to prepare/open
+the native Pi Session and load the conversation state before the Agent runs**.
+Keep later model requests and native Kafka publication as separate walkthrough hops.
