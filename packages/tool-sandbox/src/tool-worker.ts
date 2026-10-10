@@ -823,21 +823,22 @@ export async function initializeToolExecution(
 
 async function selectToolRoot(toolRoot: string): Promise<void> {
   const requestedToolRoot = resolve("/", toolRoot);
-  const canonicalToolRoot = await realpath(requestedToolRoot).catch(() => undefined);
-  const toolRootMetadata =
-    canonicalToolRoot === undefined
-      ? undefined
-      : await lstat(canonicalToolRoot).catch(() => undefined);
-  if (
-    canonicalToolRoot === undefined ||
-    toolRootMetadata === undefined ||
-    !toolRootMetadata.isDirectory()
-  ) {
-    throw new ToolWorkerError(
+  const unavailable = () =>
+    new ToolWorkerError(
       "tool_root_unavailable",
-      "Selected machine working directory was unavailable",
+      "Selected working directory does not exist or is not a directory. This Tool did not run.",
       false,
     );
+  let canonicalToolRoot: string;
+  try {
+    canonicalToolRoot = await realpath(requestedToolRoot);
+    if (!(await lstat(canonicalToolRoot)).isDirectory()) throw unavailable();
+  } catch (error) {
+    // Only known path failures are ordinary Tool errors. Do not disguise I/O,
+    // permission or attachment failures as a deleted user directory.
+    if (isMissing(error) || (error as NodeJS.ErrnoException)?.code === "ENOTDIR")
+      throw unavailable();
+    throw error;
   }
   TOOL_WORKSPACE_DIRECTORY = canonicalToolRoot;
 }

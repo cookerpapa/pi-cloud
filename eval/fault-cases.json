@@ -3,6 +3,62 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "guest-deleted-working-directory",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/envd-tool-exec.test.ts",
+      "test": "returns a native Tool error after cwd deletion without starting the command",
+      "invariant": "A confirmed missing user directory returns a native Tool error without command effects or implicit directory repair; explicit restoration permits new work."
+    },
+    {
+      "id": "guest-working-directory-replaced-by-file",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/envd-tool-exec.test.ts",
+      "test": "returns a native Tool error when the selected directory becomes a file",
+      "invariant": "Non-directory paths fail before Tool execution without changing existing bytes or choosing another cwd."
+    },
+    {
+      "id": "guest-working-directory-unexpected-failure",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/envd-tool-exec.test.ts",
+      "test": "does not reinterpret unexpected directory resolution failure as a native Tool result",
+      "invariant": "Only known missing-path failures are ordinary results; other filesystem preparation failures retain infrastructure classification."
+    },
+    {
+      "id": "guest-running-command-directory-deletion",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/envd-tool-exec.test.ts",
+      "test": "finishes a started command after cwd deletion and rejects only the next Tool",
+      "invariant": "Directory deletion does not retroactively cancel a running command or permit a later command to start in a missing cwd."
+    },
+    {
+      "id": "completion-directory-native-error",
+      "workspace": "@pi-cloud/cube-completion",
+      "file": "test/adapter.test.ts",
+      "test": "preserves a known directory failure as a final native Tool result",
+      "invariant": "Completion retains the original native Tool error and callback identity rather than manufacturing an UNKNOWN transport failure."
+    },
+    {
+      "id": "completion-attachment-remains-unknown",
+      "workspace": "@pi-cloud/cube-completion",
+      "file": "test/adapter.test.ts",
+      "test": "keeps guest infrastructure failure uncertain: workspace_attach_invalid",
+      "invariant": "Workspace attachment failure is not downgraded into an ordinary directory error."
+    },
+    {
+      "id": "completion-guest-failure-remains-unknown",
+      "workspace": "@pi-cloud/cube-completion",
+      "file": "test/adapter.test.ts",
+      "test": "keeps guest infrastructure failure uncertain: tool_worker_failed",
+      "invariant": "An unexpected guest execution failure retains uncertain effects and the existing sampling guard."
+    },
+    {
+      "id": "native-harness-directory-error-continuation",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "test": "continues native sampling after a confirmed missing-directory Tool result",
+      "invariant": "Pi Harness persists the directory Tool error and makes the next model request without marking the executor unavailable."
+    },
+    {
       "id": "input-admission-wait-retry",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/queued-inputs.test.ts",

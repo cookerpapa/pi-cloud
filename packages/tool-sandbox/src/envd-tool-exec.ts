@@ -5,17 +5,12 @@ import {
   type NativeToolUpdate,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol/guest";
-import { executeNativeTool } from "./native-tools.ts";
+import { executeAttachedNativeTool } from "./native-tools.ts";
 import { toolCancellationInput } from "./tool-cancellation-input.ts";
 import { once } from "node:events";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import {
-  initializeToolExecution,
-  attachToolExecution,
-  toolOperationFailure,
-  ToolWorkerError,
-} from "./tool-worker.ts";
+import { initializeToolExecution, toolOperationFailure, ToolWorkerError } from "./tool-worker.ts";
 
 const MAXIMUM_INPUT_BYTES = 16 * 1_024 * 1_024;
 
@@ -96,7 +91,6 @@ async function main(): Promise<ToolWorkerOutput> {
   const request = input.operation.request;
   const control = toolCancellationInput(process.stdin, request.operationId);
   try {
-    const toolRoot = await attachToolExecution(input.initialization);
     if (request.operation !== "tool.execute")
       throw new ToolWorkerError(
         "workflow_transport_required",
@@ -127,12 +121,11 @@ async function main(): Promise<ToolWorkerOutput> {
     };
     const timeout = AbortSignal.timeout(request.timeoutMs);
     const signal = AbortSignal.any([timeout, control.signal]);
-    const execution: Promise<ToolSandboxOperationResponse> = executeNativeTool(
+    const execution: Promise<ToolSandboxOperationResponse> = executeAttachedNativeTool(
       request,
-      toolRoot,
+      input.initialization,
       signal,
       progress,
-      input.initialization.webProxy,
     ).then((event) => ({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.operation_result",

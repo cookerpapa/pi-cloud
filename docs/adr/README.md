@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0241](0241-missing-working-directory-tool-errors.md) — report confirmed
+   user-directory loss as a native Tool error, retaining infrastructure UNKNOWN.
+
 1. [ADR-0240](0240-transaction-scoped-input-admission.md) — reuse locked Session
    and fresh idempotency reads within a single input-admission transaction;
    deployed with real HTTP/Luna/Cube/browser acceptance.

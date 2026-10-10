@@ -80,6 +80,13 @@ The native-input driver checks same-Run continuation, durable edits and promotio
 retry identity, and Stop restoration against the current schema. It waits for
 projected queue visibility after native ACK and for terminal seals before cleanup.
 
+For guest working-directory changes, also run
+`PI_CLOUD_LIVE_MISSING_DIRECTORY_CHECK=1 node --import tsx scripts/run-live-missing-directory-check.mjs /private/cwd-check.json`.
+It uses an owned development machine and Luna to remove its selected directory,
+confirm a native Tool error and same-Run reply, continue chat, and execute again
+after explicit directory restoration. VM identity must remain unchanged. Cleanup
+releases the machine and confirms Volume purge before deleting fixture metadata.
+
 The targeted driver uses GPT-6 Luna and a new private tenant/Workspace. It checks
 lost admission reply → Stop → returned text/image → fresh input identity/direct
 vision, plus large ASCII/Unicode Read prefixes and canonical diagnostics. It

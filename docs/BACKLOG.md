@@ -30,6 +30,11 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+- [ ] Finish source gates and deploy [ADR-0241](adr/0241-missing-working-directory-tool-errors.md).
+      The guest now returns confirmed user-directory loss as an ordinary Tool error;
+      targeted tests pass. Preserve infrastructure UNKNOWN and prove real same-Run
+      continuation, unchanged VM identity and owned physical cleanup before completion.
+
 The [input-admission release](reports/input-admission-20261010.md) is deployed as
 `input-admission-db0548b8` on schema 183. Initial intake uses eight business SQL
 statements, and same-key retry uses two. Source/fault and real HTTP/Luna/Cube/browser

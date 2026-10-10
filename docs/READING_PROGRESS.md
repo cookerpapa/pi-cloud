@@ -28,6 +28,14 @@ Follow-up discussions established:
   is two. Normal authentication plus BEGIN/COMMIT bring initial intake to eleven.
 - Ordered Kafka views speed downstream routing/display; mutable PG admission
   decisions still use current authority. This change adds no cross-request cache.
+- The Workspace admission SELECT checks the PG resource and keeps its shared
+  lock until Run registration commits. It does not stat a directory or probe a VM;
+  concurrent deletion and Run intake remain serialized by the existing PG locks.
+- Projector's binding view serves ordered Tool routing, with synchronous closure
+  and recovery guards; it does not replace new-Run Workspace admission.
+- The directory-deletion discussion found a separate guest classification bug.
+  ADR-0241 returns known pre-execution user-directory failures as native Tool errors;
+  deployment/acceptance is tracked in ROADMAP. No intake SQL changes are required.
 
 Resume with: **how an available Pi Worker selects a ready Run from PG, prevents
 another Worker taking the same execution, and obtains the physical-Session lease**.

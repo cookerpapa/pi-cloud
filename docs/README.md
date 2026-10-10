@@ -1,5 +1,10 @@
 # Documentation map
 
+[ADR-0241](adr/0241-missing-working-directory-tool-errors.md) repairs confirmed
+user-directory loss being classified as an unknown execution outcome. Guest,
+completion and native Harness tests pass; full gates and matched live acceptance
+remain tracked in [the roadmap](ROADMAP.md).
+
 [ADR-0240](adr/0240-transaction-scoped-input-admission.md) scopes input-read reuse
 to its existing PG transaction. The [source checks and matched rollout](reports/input-admission-20261010.md)
 are complete: `input-admission-db0548b8`, schema 183. Ordinary intake is eight

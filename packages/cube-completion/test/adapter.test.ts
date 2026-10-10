@@ -169,6 +169,44 @@ it("keeps progress lossy and outside the final-result channel", async () => {
   expect(f.put).not.toHaveBeenCalled();
 });
 
+it("preserves a known directory failure as a final native Tool result", async () => {
+  const f = fixture();
+  const output = f.packet.result!.output as any;
+  output.response.event = {
+    type: "tool_execution_end",
+    toolCallId: "native-call",
+    toolName: "read",
+    isError: true,
+    result: { content: [{ type: "text", text: "tool_root_unavailable: This Tool did not run." }] },
+  };
+  await f.adapter.accept(f.packet);
+  expect(f.publish.mock.calls[0]![1]).toMatchObject({
+    kind: "tool_result",
+    operationId: f.packet.operationId,
+    event: { toolCallId: "native-call", isError: true, result: output.response.event.result },
+  });
+  expect(f.put).not.toHaveBeenCalled();
+});
+
+it.each(["workspace_attach_invalid", "tool_worker_failed"])(
+  "keeps guest infrastructure failure uncertain: %s",
+  async (code) => {
+    const f = fixture();
+    f.packet.result!.output = {
+      toolWorkerProtocolVersion: 4,
+      type: "worker.failed",
+      code,
+      message: "Guest preparation failed",
+      retryable: false,
+    };
+    await f.adapter.accept(f.packet);
+    expect(f.publish.mock.calls[0]![1]).toMatchObject({
+      kind: "execution_failure",
+      failure: { code, effect: "unknown" },
+    });
+  },
+);
+
 it("rejects mismatched operation identity and an old guest wire before publication", async () => {
   const f = fixture();
   const raw = f.packet.result!.output as any;

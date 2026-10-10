@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Missing working-directory Tool results
+
+- [x] Implement [ADR-0241](adr/0241-missing-working-directory-tool-errors.md):
+      classify confirmed user-directory loss before execution as a native Tool error.
+- [x] Reproduce the old guest failure and verify directory replacement, running
+      command survival, explicit restoration, completion and Harness continuation.
+- [ ] Complete full source/fault gates and matched release with real Luna/Cube
+      directory deletion, continued chat, restoration and physical fixture cleanup.
+
 ## Input-admission read reuse
 
 - [x] Implement [ADR-0240](adr/0240-transaction-scoped-input-admission.md): reuse

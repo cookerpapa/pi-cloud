@@ -759,6 +759,13 @@ Explicit before-start cancellation is distinct from interrupted execution.
 Confirmed `not_started` survives Stop; fixed Tools and Workflow share typed
 infrastructure failure policy, blocking further sampling on UNKNOWN while
 ordinary native/business errors stay on Pi's normal Tool error path (ADR-0227).
+Confirmed loss of a user-selected working directory before a fixed Tool starts
+also returns a native Tool error, allowing the Harness to continue the dialogue.
+The guest classifies missing/non-directory paths at preparation; it never repairs
+the directory or chooses another cwd. Unexpected filesystem and Volume attachment
+failures retain infrastructure handling, including the fixed `/workspace` mount
+boundary. The completion adapter does not infer outcome from Tool text
+([ADR-0241](adr/0241-missing-working-directory-tool-errors.md)).
 Kafka Tool replies accept only the final result; typed observation probe replies
 share that mailbox without resolving native Tool callbacks. Guest updates use the separate HTTP
 observation path. The Worker observes its reply Promise before awaiting command

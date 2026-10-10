@@ -529,6 +529,42 @@ describe("whole-tool Worker adapter", () => {
     expect(unavailable).toHaveBeenCalledOnce();
   });
 
+  it("continues native sampling after a confirmed missing-directory Tool result", async () => {
+    const unavailable = vi.fn();
+    const { value } = configuration({
+      onToolOperationUnavailable: unavailable,
+      publishToolCommand: async (command) => ({
+        operationId: command.request.operationId,
+        accepted: true,
+      }),
+      waitForToolReply: async (request) => ({
+        type: "tool_execution_end",
+        toolCallId: (request as { toolCallId: string }).toolCallId,
+        toolName: request.toolName,
+        isError: true,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: "tool_root_unavailable: Selected working directory does not exist. This Tool did not run.",
+            },
+          ],
+        },
+      }),
+    });
+    const result = await runNativeRemote(createTrustedRemoteAgentTools(value));
+    expect(result.requests).toBe(2);
+    expect(unavailable).not.toHaveBeenCalled();
+    expect(result.messages.find((message) => message.role === "toolResult")).toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: expect.stringContaining("tool_root_unavailable") }],
+    });
+    expect(result.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "done" }],
+    });
+  });
+
   it.each([
     "reply timed out",
     "reply Worker stopped",

@@ -11,22 +11,68 @@ import {
   type NativeToolUpdate,
   type ToolSandboxOperationRequest,
   type ToolWebProxyBootstrap,
+  type ToolWorkerInput,
 } from "@pi-cloud/protocol/guest";
 import { spawn } from "node:child_process";
 import { open } from "node:fs/promises";
 import { constants } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
   readWorkspaceFile,
   readWorkspaceFileRange,
   safeToolEnvironment,
   waitForShellProcess,
   terminateProcessGroup,
+  attachToolExecution,
+  ToolWorkerError,
 } from "./tool-worker.ts";
 import { NativeToolOutput, redactToolText } from "./native-tool-output.ts";
 import { processImageSource } from "./image-processor.ts";
 
 export type NativeToolRequest = Extract<ToolSandboxOperationRequest, { operation: "tool.execute" }>;
+
+/** Preparation failures stay at their origin. Only a known user-directory
+ * failure before execution can become an ordinary native Tool result. */
+export async function executeAttachedNativeTool(
+  request: NativeToolRequest,
+  initialization: Extract<ToolWorkerInput, { type: "worker.initialize" }>,
+  signal: AbortSignal,
+  onUpdate: (event: NativeToolUpdate) => void,
+): Promise<NativeToolEnd> {
+  let cwd: string;
+  try {
+    cwd = await attachToolExecution(initialization);
+  } catch (error) {
+    // /workspace is the fixed Volume mount. Losing that attachment still needs
+    // infrastructure handling, even when its path is absent.
+    if (
+      error instanceof ToolWorkerError &&
+      error.code === "tool_root_unavailable" &&
+      resolve(initialization.toolRoot) !== "/workspace"
+    )
+      return nativeToolError(request, new Error(`${error.code}: ${error.message}`));
+    throw error;
+  }
+  return executeNativeTool(request, cwd, signal, onUpdate, initialization.webProxy);
+}
+
+function nativeToolError(request: NativeToolRequest, error: unknown): NativeToolEnd {
+  return {
+    type: "tool_execution_end",
+    toolCallId: request.toolCallId,
+    toolName: request.toolName,
+    isError: true,
+    result: {
+      content: [
+        {
+          type: "text",
+          text: redactToolText(error instanceof Error ? error.message : String(error)),
+        },
+      ],
+      details: undefined,
+    },
+  };
+}
 
 /** Only fixed native Tool bodies run here. Never construct an Agent or a Session. */
 export async function executeNativeTool(
@@ -196,20 +242,7 @@ export async function executeNativeTool(
     signal.throwIfAborted();
     return { type: "tool_execution_end", ...identity, result, isError: false };
   } catch (error) {
-    return {
-      type: "tool_execution_end",
-      ...identity,
-      isError: true,
-      result: {
-        content: [
-          {
-            type: "text",
-            text: redactToolText(error instanceof Error ? error.message : String(error)),
-          },
-        ],
-        details: undefined,
-      },
-    };
+    return nativeToolError(request, error);
   }
 }
 
