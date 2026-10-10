@@ -1,6 +1,6 @@
 ARG CLI_PROXY_BASE_IMAGE=eceasy/cli-proxy-api@sha256:238691ac26ce55e4d1c5219d72e3ad74838f81eda26359912eeb415e2820d163
 
-FROM golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 AS builder
+FROM golang:1.26.9-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS builder
 
 ARG CLI_PROXY_SOURCE_REPOSITORY=https://github.com/cookerpapa/CLIProxyAPI.git
 ARG CLI_PROXY_SOURCE_REVISION=48549e65b86d17648029190331807b89e7fd65f4
@@ -23,7 +23,7 @@ RUN git -c http.version=HTTP/1.1 clone --no-checkout --filter=blob:none https://
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \
-      go get github.com/go-git/go-git/v6@v6.0.0-alpha.5 golang.org/x/crypto@v0.55.0 \
+      go get github.com/go-git/go-git/v6@v6.0.0-alpha.5 golang.org/x/crypto@v0.57.0 golang.org/x/net@v0.60.0 \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go mod download \
     && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
       GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \

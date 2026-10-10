@@ -51,3 +51,12 @@ guest and application source identities still require a matched drained release.
   physical fixture cleanup and preserved accounts/model/provider configuration.
 
 Implementation, source checks and deployed acceptance are recorded separately.
+
+The first image gate found newly published Go HTTP/TLS vulnerabilities in four
+images. Matched publication therefore also requires Go 1.26.9 and x/net 0.60.0
+(with its required x/crypto, x/sys and x/text dependencies), pinned builders and
+regenerated Cube security dependency checksums. These are existing build inputs;
+the scanner threshold and protocol versions do not change. Official fixes:
+[HTTP/2](https://pkg.go.dev/vuln/GO-2026-6611),
+[HTTP Range](https://pkg.go.dev/vuln/GO-2026-6609) and
+[TLS](https://pkg.go.dev/vuln/GO-2026-6607).

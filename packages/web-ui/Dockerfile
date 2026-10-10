@@ -17,7 +17,7 @@ COPY packages/web-ui/tsconfig.json packages/web-ui/tsconfig.json
 COPY packages/web-ui/vite.config.ts packages/web-ui/vite.config.ts
 RUN npm run build --workspace @pi-cloud/web-ui
 
-FROM golang:1.26.6-alpine3.23@sha256:5978cc992ad5ef96a7469713c8af849c1433824761ce3be2c56381403cd8d9a3 AS caddy-builder
+FROM golang:1.26.9-alpine3.23@sha256:96123126ac58e910f4dd3619a8901e2fb6d1ad84b59b1232cac7c9ea65a8f888 AS caddy-builder
 
 ARG PI_CLOUD_GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org|direct
@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && export GOPROXY="${PI_CLOUD_GOPROXY}" \
     && downloaded=0 \
     && for attempt in 1 2 3; do \
-      if go get google.golang.org/grpc@v1.83.2 golang.org/x/crypto@v0.55.0 golang.org/x/text@v0.41.0 \
+      if go get google.golang.org/grpc@v1.83.2 golang.org/x/crypto@v0.57.0 golang.org/x/net@v0.60.0 golang.org/x/text@v0.42.0 \
         && go mod download; then downloaded=1; break; fi; \
     done \
     && test "$downloaded" = 1 \

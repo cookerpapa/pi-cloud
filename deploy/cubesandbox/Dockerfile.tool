@@ -1,7 +1,7 @@
 ARG CUBE_BASE_IMAGE=ghcr.io/tencentcloud/cubesandbox-base:2026.16@sha256:34ea312a63a5534e66ab17005c23d7fbaf33c38bccd5411ee402d901e63a3193
 ARG PYTHON_BASE_IMAGE=python:3.11.13-slim-bookworm@sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1
 ARG NODE_BASE_IMAGE=node:24.18.0-bullseye-slim@sha256:aca89821b1f09df223227ff2abe075fc3161f05604d3b61309f46820a5938020
-ARG GO_BASE_IMAGE=golang:1.26.6-alpine3.23@sha256:5978cc992ad5ef96a7469713c8af849c1433824761ce3be2c56381403cd8d9a3
+ARG GO_BASE_IMAGE=golang:1.26.9-alpine3.23@sha256:96123126ac58e910f4dd3619a8901e2fb6d1ad84b59b1232cac7c9ea65a8f888
 ARG ENVD_COMMIT=6392356aaab9ed07e2f7df0c84c8d9ad8bac1327
 
 FROM ${GO_BASE_IMAGE} AS envd-builder
@@ -20,7 +20,7 @@ RUN git clone --filter=blob:none https://github.com/e2b-dev/infra.git infra \
 WORKDIR /src/infra/packages/envd
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     --mount=type=cache,target=/go/pkg/mod,sharing=locked \
-    go get golang.org/x/crypto@v0.55.0 \
+    go get golang.org/x/crypto@v0.57.0 golang.org/x/net@v0.60.0 \
     && go mod download \
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
       go build -a -trimpath \

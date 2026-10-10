@@ -92,7 +92,8 @@ and rationale are recorded in `manifest.json`. CI deliberately performs the
 unrestricted image scan, including language packages.
 
 The Web runtime compiles Caddy 2.11.4 from its verified release commit with a
-pinned Go 1.26.6 builder and the fixed `google.golang.org/grpc@v1.83.2`, then
+pinned Go 1.26.9 builder, `golang.org/x/net@v0.60.0` and the fixed
+`google.golang.org/grpc@v1.83.2`, then
 copies the static binary into a pinned minimal Alpine runtime. This avoids
 inheriting stale packages from an older prebuilt Caddy image while preserving
 the standard Caddy module set. The actual final image, not either build stage,
