@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(183);
+      expect(firstMigrationPass.rows).toHaveLength(184);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("183_native_inputs_and_run_record");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("184_worker_claim_schema");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -57,6 +57,8 @@ describe("current PiCloud schema", () => {
       `.execute(database);
       const names = new Set(tables.rows.map((row) => row.table_name));
       for (const retired of [
+        "sandboxes",
+        "sandbox_retirements",
         "turns",
         "pi_session_entries",
         "pi_session_records",
@@ -78,6 +80,8 @@ describe("current PiCloud schema", () => {
       ])
         expect(names.has(retired)).toBe(false);
       for (const required of [
+        "workers",
+        "worker_retirements",
         "runs",
         "run_transitions",
         "subagent_control_commands",
@@ -143,7 +147,7 @@ describe("current PiCloud schema", () => {
           from information_schema.columns
          where table_schema = 'public'
          and table_name in (
-           'workspaces', 'sessions', 'subagent_executions', 'turns', 'runs', 'sandboxes',
+           'workspaces', 'sessions', 'subagent_executions', 'turns', 'runs', 'workers',
            'tenant_runtime_policies', 'pi_sessions'
          )
       `.execute(database);
@@ -159,7 +163,11 @@ describe("current PiCloud schema", () => {
       expect(keys.has("runs.ready_at")).toBe(true);
       expect(keys.has("runs.current_attempt_id")).toBe(false);
       expect(keys.has("runs.attempt_count")).toBe(false);
-      expect(keys.has("sandboxes.active_sessions")).toBe(false);
+      expect(keys.has("workers.active_sessions")).toBe(false);
+      for (const name of ["created_at_ms", "parent_session_id", "name"])
+        expect(keys.has(`pi_sessions.${name}`)).toBe(false);
+      expect(leaseColumns.rows.map((r) => r.column_name)).toContain("worker_id");
+      expect(leaseColumns.rows.map((r) => r.column_name)).not.toContain("sandbox_id");
       expect(keys.has("pi_sessions.active_writer_id")).toBe(false);
       expect(leaseColumns.rows.map((r) => r.column_name)).toEqual(
         expect.arrayContaining(["released_at", "writer_failed_at", "writer_seal_offset"]),

@@ -981,9 +981,6 @@ describe("PostgreSQL Sandbox control ownership", () => {
         [rootSessionId, childSessionId, unrelatedSessionId].map((id) => ({
           tenant_id: tenantId,
           id,
-          created_at_ms: Date.now(),
-          parent_session_id: null,
-          name: null,
         })),
       )
       .execute();
@@ -1033,7 +1030,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       environmentSha256: "d".repeat(64),
     } as const;
     await database
-      .insertInto("sandboxes")
+      .insertInto("workers")
       .values({
         id: activation.assignment.sandboxId,
         supervisor_id: activation.assignment.supervisorId,
@@ -1150,7 +1147,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
         tenant_id: tenantId,
         pi_session_id: rootSessionId,
         lease_id: "20000000-0000-4000-8000-000000000009",
-        sandbox_id: activation.assignment.sandboxId,
+        worker_id: activation.assignment.sandboxId,
         fencing_token: 1,
         valid_until: new Date(Date.now() + 60000),
       })

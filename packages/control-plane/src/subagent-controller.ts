@@ -129,7 +129,7 @@ export class SubagentController {
     const route = await this.#routes.read(identity.leaseId, lease, () =>
       this.options.database
         .selectFrom("runs as a")
-        .innerJoin("sandboxes as s", "s.id", "a.worker_id")
+        .innerJoin("workers as s", "s.id", "a.worker_id")
         .innerJoin("supervisor_hosts as h", "h.supervisor_id", "s.supervisor_id")
         .select("h.management_base_url")
         .where("a.id", "=", identity.runId)

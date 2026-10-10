@@ -21,8 +21,9 @@ Normal fresh-lease admission is 9 business SQL statements, plus BEGIN/COMMIT;
 reusing the physical family's current lease skips its creation statement.
 The [focused table review](reports/worker-claim-schema-review-20261010.md) retains
 Run, physical-Session and lease boundaries. It records two query/index issues,
-three unused physical-Session metadata columns and Worker naming debt; none is
-implemented by the review. Relevant isolated PG tests pass (59 cases).
+three unused physical-Session metadata columns and Worker naming debt.
+The owner approved their repair under ADR-0242; verification and deployment are
+in progress. The walkthrough remains at this hop until those repairs are verified.
 
 Follow-up discussions established:
 

@@ -149,7 +149,7 @@ export async function createControlPlaneRuntime(
     assignmentRetirerFactory: (identity) =>
       new AssignmentReconciler({
         database: options.database,
-        sandboxId: identity.sandboxId,
+        workerId: identity.sandboxId,
         inventory: assignmentInventoryFactory(identity),
       }),
   });

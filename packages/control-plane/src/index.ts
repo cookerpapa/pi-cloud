@@ -83,7 +83,7 @@ export {
   AssignmentReconcilerError,
   type AssignmentReconcilerOptions,
   type AssignmentReconciliationResult,
-  type SandboxRetirementResult,
+  type WorkerRetirementResult,
 } from "./assignment-reconciler.ts";
 export {
   RunCancellationExecutor,

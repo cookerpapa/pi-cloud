@@ -132,13 +132,13 @@ describe("PiWorkerRuntime", () => {
             settledAssignments: 0,
           };
         },
-        async retireSandbox() {
+        async retireWorker() {
           return {
             inspectedRuntimes: 0,
             terminatedRuntimes: 0,
             orphanRuntimes: 0,
             settledAssignments: 0,
-            sandboxState: "terminated" as const,
+            workerState: "terminated" as const,
           };
         },
       }),
@@ -373,7 +373,7 @@ describe("PiWorkerRuntime", () => {
       expect(runWorkerOptions[1]?.identity).toBe(secondIdentity.sandboxId);
 
       const oldSandbox = await database
-        .selectFrom("sandboxes")
+        .selectFrom("workers")
         .select("state")
         .where("id", "=", firstIdentity.sandboxId)
         .executeTakeFirstOrThrow();

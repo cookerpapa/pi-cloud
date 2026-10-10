@@ -261,7 +261,7 @@ beforeAll(async () => {
   parentSandboxId = crypto.randomUUID();
 
   await database
-    .insertInto("sandboxes")
+    .insertInto("workers")
     .values({
       id: parentSandboxId,
       supervisor_id: "test-worker",
@@ -308,7 +308,7 @@ beforeAll(async () => {
       tenant_id: tenantId,
       pi_session_id: parentSessionId,
       lease_id: PARENT_GRANT_ID,
-      sandbox_id: parentSandboxId,
+      worker_id: parentSandboxId,
       fencing_token: FENCE,
       valid_until: new Date(Date.now() + 60000),
     })
@@ -452,7 +452,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     expect(queuedRun.availableAt.valueOf()).toBeGreaterThan(queuedRun.createdAt.valueOf());
     const dispatched: string[] = [];
     const dispatchedPiBindings: Array<{ id: string; conversationId: number }> = [];
-    const coordinator = new SessionLeaseCoordinator({ database, sandboxId: parentSandboxId });
+    const coordinator = new SessionLeaseCoordinator({ database, workerId: parentSandboxId });
     const dispatcher = new RunExecutor({
       database,
       workerId: parentSandboxId,
@@ -593,7 +593,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     expect(child.agent_system_prompt).toContain("Execute only this delegated task.");
     expect(child.agent_system_prompt).toContain("PiCloud delegated execution boundary");
     const dispatched: string[] = [];
-    const coordinator = new SessionLeaseCoordinator({ database, sandboxId: parentSandboxId });
+    const coordinator = new SessionLeaseCoordinator({ database, workerId: parentSandboxId });
     const dispatcher = new RunExecutor({
       database,
       workerId: parentSandboxId,

@@ -179,9 +179,6 @@ it("claims bounded Session heads without holding a connection during delivery an
       .values({
         tenant_id: tenant,
         id: sessionA,
-        created_at_ms: String(Date.now()),
-        parent_session_id: null,
-        name: null,
       })
       .execute();
     for (const version of [1, 2, 3]) {

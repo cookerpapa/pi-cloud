@@ -223,7 +223,7 @@ const succeeded = async (promise) => {
 };
 async function owner(runId) {
   return sql(`select h.supervisor_id from runs r
-  join sandboxes h on h.id=r.worker_id where r.id=${quote(runId)}`);
+  join workers h on h.id=r.worker_id where r.id=${quote(runId)}`);
 }
 
 try {
@@ -350,7 +350,7 @@ try {
       "Refusing to interrupt unrelated work",
     );
     const owner = await sql(
-      `select h.supervisor_id from runs r join sandboxes h on h.id=r.worker_id where r.id=${quote(crash.accepted.runId)}`,
+      `select h.supervisor_id from runs r join workers h on h.id=r.worker_id where r.id=${quote(crash.accepted.runId)}`,
     );
     assert(/^pi-cloud-pi-worker-primary-v1-[01]$/.test(owner));
     await kubectlAsync(["delete", "pod", owner, "--grace-period=0", "--force", "--wait=true"]);

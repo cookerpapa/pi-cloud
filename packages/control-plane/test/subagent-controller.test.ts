@@ -180,7 +180,7 @@ beforeAll(async () => {
   const leaseId = crypto.randomUUID();
   lease = createExecutionReference(leaseId, runId, 1);
   await db
-    .insertInto("sandboxes")
+    .insertInto("workers")
     .values({
       id: sandboxId,
       supervisor_id: "test-worker",
@@ -207,7 +207,7 @@ beforeAll(async () => {
       tenant_id: tenantId,
       pi_session_id: sessionId,
       lease_id: leaseId,
-      sandbox_id: sandboxId,
+      worker_id: sandboxId,
       fencing_token: 1,
       valid_until: new Date(Date.now() + 600000),
     })

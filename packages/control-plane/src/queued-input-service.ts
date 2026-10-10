@@ -153,7 +153,7 @@ export class QueuedInputService {
     try {
       const grant = await new SessionLeaseCoordinator({
         database: this.options.database,
-        sandboxId: workerId,
+        workerId: workerId,
       }).currentAssignment({
         tenantId: target.tenant_id,
         projectId: target.project_id,

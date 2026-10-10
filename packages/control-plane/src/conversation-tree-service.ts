@@ -1166,7 +1166,6 @@ export class ConversationTreeService {
         }
         const childSessionId = this.#idGenerator();
         const title = request.title ?? `${source.title} · 分支`;
-        const createdAt = new Date();
 
         const child = await transaction
           .insertInto("sessions")
@@ -1198,9 +1197,6 @@ export class ConversationTreeService {
           .values({
             tenant_id: tenantId,
             id: childSessionId,
-            created_at_ms: createdAt.valueOf(),
-            parent_session_id: sourceSessionId,
-            name: title,
           })
           .executeTakeFirstOrThrow();
         await copyDurableHistory(

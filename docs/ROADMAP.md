@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Worker claim schema cleanup
+
+- [x] Implement approved R10C-01–04 under
+      [ADR-0242](adr/0242-worker-claim-schema-cleanup.md), retaining all ownership boundaries.
+- [x] Verify indexed history reads, migration guards and identities, shared-family
+      admission, Worker registration/retirement, native recovery and repository gates.
+- [ ] Deploy matching schema 184/application artifacts and complete live acceptance.
+
 ## Missing working-directory Tool results
 
 - [x] Implement [ADR-0241](adr/0241-missing-working-directory-tool-errors.md):

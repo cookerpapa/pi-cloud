@@ -12,7 +12,7 @@ export const TurnStateSchema = Type.Union([
   Type.Literal("cancelled"),
 ]);
 
-export const SandboxStateSchema = Type.Union([
+export const WorkerStateSchema = Type.Union([
   Type.Literal("provisioning"),
   Type.Literal("ready"),
   Type.Literal("draining"),
@@ -31,7 +31,7 @@ export const TurnControlRequestStateSchema = Type.Union([
 export { RunStateSchema } from "@pi-cloud/protocol";
 
 export type TurnState = Static<typeof TurnStateSchema>;
-export type SandboxState = Static<typeof SandboxStateSchema>;
+export type WorkerState = Static<typeof WorkerStateSchema>;
 export type TurnControlRequestState = Static<typeof TurnControlRequestStateSchema>;
 export type RunState = Static<typeof RunStateSchema>;
 
@@ -43,7 +43,7 @@ export function turnStateForRun(state: RunState): TurnState {
   return state;
 }
 
-export type DomainEntityKind = "session" | "sandbox" | "control_request" | "run";
+export type DomainEntityKind = "session" | "worker" | "control_request" | "run";
 
 type TransitionTable<State extends string> = Readonly<Record<State, readonly State[]>>;
 
@@ -56,13 +56,13 @@ const sessionTransitions = {
   failed: ["idle"],
 } as const satisfies TransitionTable<SessionState>;
 
-const sandboxTransitions = {
+const workerTransitions = {
   provisioning: ["ready", "failed", "terminated"],
   ready: ["draining", "failed"],
   draining: ["terminated", "failed"],
   failed: ["terminated"],
   terminated: [],
-} as const satisfies TransitionTable<SandboxState>;
+} as const satisfies TransitionTable<WorkerState>;
 
 const controlRequestTransitions = {
   pending: ["dispatched", "failed"],
@@ -121,8 +121,8 @@ export function transitionSession(from: SessionState, to: SessionState): Session
   return transition("session", sessionTransitions, from, to);
 }
 
-export function transitionSandbox(from: SandboxState, to: SandboxState): SandboxState {
-  return transition("sandbox", sandboxTransitions, from, to);
+export function transitionWorker(from: WorkerState, to: WorkerState): WorkerState {
+  return transition("worker", workerTransitions, from, to);
 }
 
 export function transitionTurnControlRequest(

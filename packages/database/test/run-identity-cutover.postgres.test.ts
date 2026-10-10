@@ -76,16 +76,8 @@ describe.skipIf(!endpoint)("one-Run identity cutover", () => {
     oldAttemptId = randomUUID();
     const workerId = randomUUID(),
       leaseId = randomUUID();
-    await db
-      .insertInto("sandboxes")
-      .values({
-        id: workerId,
-        supervisor_id: workerId,
-        boot_id: randomUUID(),
-        state: "ready",
-        max_concurrent_sessions: 1,
-      })
-      .execute();
+    await sql`insert into sandboxes(id,supervisor_id,boot_id,state,max_concurrent_sessions)
+      values(${workerId}::uuid,${workerId},${randomUUID()}::uuid,'ready',1)`.execute(db);
     await sql`insert into run_attempts(id,tenant_id,run_id,attempt_number,state,claim_owner_id,
       claim_expires_at,sandbox_id,lease_id,fencing_token,settled_at,execution_released_at,
       native_output_drained,output_seal_id,output_sealed_at,output_seal_offset,

@@ -654,7 +654,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       this.#onUnexpectedError?.(error);
       const failure = this.#leaseRenewalFailure();
       this.#heartbeatFailure = failure;
-      await this.#leaseCoordinator.quarantineSandbox().catch(() => undefined);
+      await this.#leaseCoordinator.quarantineWorker().catch(() => undefined);
       const trackedExecutions = [...this.#trackedExecutions.values()];
       for (const tracked of trackedExecutions) {
         tracked.failure = failure;

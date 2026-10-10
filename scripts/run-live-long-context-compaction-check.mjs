@@ -243,7 +243,7 @@ async function runEvidence(runId) {
             coalesce(pi.active_entries, 0)
        from runs run
        join sessions product_session on product_session.id = run.session_id
-       join sandboxes sandbox on sandbox.id = run.worker_id
+       join workers sandbox on sandbox.id = run.worker_id
        left join workspace_runtimes activation
         on activation.tenant_id = run.tenant_id
         and activation.workspace_id = run.workspace_id

@@ -119,9 +119,6 @@ try {
           chunk.map((sessionId) => ({
             tenant_id: tenantId,
             id: sessionId,
-            created_at_ms: Date.now(),
-            parent_session_id: null,
-            name: null,
           })),
         )
         .execute();

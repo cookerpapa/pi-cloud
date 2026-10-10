@@ -4,7 +4,7 @@ import type {
   TurnControlRequestState as DomainTurnControlRequestState,
   ModelThinkingLevel,
   RunState,
-  SandboxState,
+  WorkerState,
   SessionState,
 } from "@pi-cloud/domain";
 import type { ColumnType, Generated, JSONColumnType } from "kysely";
@@ -54,8 +54,8 @@ export type TurnControlRequestKind = "cancel" | "steer" | "queue";
 export type TurnControlRequestState = DomainTurnControlRequestState;
 export type SupervisorConnectionState = "active" | "superseded" | "fenced";
 export type SupervisorConnectionCloseReason = "reconnected" | "heartbeat_timeout" | "new_boot";
-export type SandboxRetirementReason = "heartbeat_timeout" | "new_boot";
-export type SandboxRetirementState = "pending" | "claimed" | "blocked" | "completed";
+export type WorkerRetirementReason = "heartbeat_timeout" | "new_boot";
+export type WorkerRetirementState = "pending" | "claimed" | "blocked" | "completed";
 export type TenantApiCredentialRole = "owner" | "member" | "viewer";
 export type WorkspaceSeedKind = "empty" | "sample_java";
 export type EnvironmentVersionState = "pending" | "validated" | "failed";
@@ -763,11 +763,11 @@ export interface RunTransitionTable {
   occurred_at: GeneratedTimestamp;
 }
 
-export interface SandboxTable {
+export interface WorkerTable {
   id: string;
   supervisor_id: string;
   boot_id: string;
-  state: SandboxState;
+  state: WorkerState;
   max_concurrent_sessions: number | null;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
@@ -777,7 +777,7 @@ export interface SandboxTable {
 export interface ActiveExecutionScopeTable {
   session_id: string;
   lease_id: string;
-  sandbox_id: string;
+  worker_id: string;
   fencing_token: Int8;
   tenant_id: string;
   project_id: string;
@@ -797,7 +797,7 @@ export interface SessionLeaseTable {
   tenant_id: string;
   pi_session_id: string;
   lease_id: string;
-  sandbox_id: string;
+  worker_id: string;
   fencing_token: Int8;
   valid_until: Timestamp;
   acquired_at: GeneratedTimestamp;
@@ -813,7 +813,7 @@ export interface SupervisorConnectionTable {
   transport_id: string;
   registration_message_id: string;
   registered_message_id: string;
-  sandbox_id: string;
+  worker_id: string;
   supervisor_id: string;
   boot_id: string;
   control_plane_instance_id: string;
@@ -839,7 +839,7 @@ export interface SupervisorBootCredentialTable {
   credential_id: string;
   credential_sha256: string;
   provision_request_id: string;
-  sandbox_id: string;
+  worker_id: string;
   supervisor_id: string;
   boot_id: string;
   created_at: Timestamp;
@@ -855,12 +855,12 @@ export interface SupervisorHostTable {
   updated_at: Timestamp;
 }
 
-export interface SandboxRetirementTable {
-  sandbox_id: string;
+export interface WorkerRetirementTable {
+  worker_id: string;
   supervisor_id: string;
   boot_id: string;
-  reason: SandboxRetirementReason;
-  state: SandboxRetirementState;
+  reason: WorkerRetirementReason;
+  state: WorkerRetirementState;
   attempts: GeneratedInteger;
   available_at: GeneratedTimestamp;
   claim_id: string | null;
@@ -961,9 +961,6 @@ export interface PiSessionTable {
   session_hash: GeneratedInt8;
   tenant_id: string;
   id: string;
-  created_at_ms: Int8;
-  parent_session_id: string | null;
-  name: string | null;
   lease_epoch: GeneratedInt8;
   unsealed_runs: GeneratedInt8;
 }
@@ -1033,11 +1030,11 @@ export interface Database {
   conversation_prune_operations: ConversationPruneOperationTable;
   runs: RunTable;
   run_transitions: RunTransitionTable;
-  sandboxes: SandboxTable;
+  workers: WorkerTable;
   supervisor_connections: SupervisorConnectionTable;
   supervisor_boot_credentials: SupervisorBootCredentialTable;
   supervisor_hosts: SupervisorHostTable;
-  sandbox_retirements: SandboxRetirementTable;
+  worker_retirements: WorkerRetirementTable;
   session_leases: SessionLeaseTable;
   active_execution_scopes: ActiveExecutionScopeTable;
   turn_control_requests: TurnControlRequestTable;

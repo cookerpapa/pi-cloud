@@ -1,6 +1,6 @@
 import { databaseTime, type Database } from "@pi-cloud/database";
 import { releaseExecutionScope } from "./session-lease-release.ts";
-import { transitionSandbox } from "@pi-cloud/domain";
+import { transitionWorker } from "@pi-cloud/domain";
 import {
   parseControlToSupervisorMessage,
   createExecutionReference,
@@ -20,7 +20,7 @@ const DEFAULT_LEASE_DURATION_MS = 60_000;
 
 export type SessionLeaseCoordinatorOptions = {
   database: Kysely<Database>;
-  sandboxId: string;
+  workerId: string;
   clock?: () => Date;
   idGenerator?: () => string;
   leaseDurationMs?: number;
@@ -93,7 +93,7 @@ type CurrentAssignmentRequest = Pick<
 
 export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   readonly #database: Kysely<Database>;
-  readonly #sandboxId: string;
+  readonly #workerId: string;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
   readonly #leaseDurationMs: number;
@@ -102,7 +102,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
 
   constructor(options: SessionLeaseCoordinatorOptions) {
     this.#database = options.database;
-    this.#sandboxId = options.sandboxId;
+    this.#workerId = options.workerId;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
     this.#leaseDurationMs = positiveInteger(
@@ -137,21 +137,21 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   }
 
   async heartbeatIdentity(): Promise<SupervisorHeartbeatIdentity> {
-    const sandbox = await this.#database
-      .selectFrom("sandboxes")
+    const worker = await this.#database
+      .selectFrom("workers")
       .select(["supervisor_id", "boot_id", "state"])
-      .where("id", "=", this.#sandboxId)
+      .where("id", "=", this.#workerId)
       .executeTakeFirst();
-    if (sandbox === undefined || sandbox.state === "terminated") {
+    if (worker === undefined || worker.state === "terminated") {
       throw new SessionLeaseCoordinatorError(
         "sandbox_unavailable",
-        "Heartbeat sandbox identity is unavailable",
+        "Heartbeat worker identity is unavailable",
         false,
       );
     }
     return {
-      supervisorId: sandbox.supervisor_id,
-      bootId: sandbox.boot_id,
+      supervisorId: worker.supervisor_id,
+      bootId: worker.boot_id,
       connectionId: this.#heartbeatConnectionId,
     };
   }
@@ -172,9 +172,9 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       );
     const { renewals, now } = await this.#database.transaction().execute(async (tx) => {
       const worker = await tx
-        .selectFrom("sandboxes")
+        .selectFrom("workers")
         .selectAll()
-        .where("id", "=", this.#sandboxId)
+        .where("id", "=", this.#workerId)
         .executeTakeFirst();
       if (
         !worker ||
@@ -199,7 +199,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         await tx
           .selectFrom("session_leases")
           .select("lease_id")
-          .where("sandbox_id", "=", this.#sandboxId)
+          .where("worker_id", "=", this.#workerId)
           .where("released_at", "is", null)
           .where(
             "lease_id",
@@ -244,11 +244,11 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
             as x("tenantId" uuid,"piSessionId" text,"leaseId" uuid,"writerId" uuid,"fencingToken" bigint)
         )
         update session_leases l set valid_until=d.at + ${this.#leaseDurationMs} * interval '1 millisecond', renewed_at=d.at
-          from reported p,decision d,sandboxes owner
+          from reported p,decision d,workers owner
          where l.lease_id=p."leaseId" and l.tenant_id=p."tenantId" and l.pi_session_id=p."piSessionId"
-           and l.lease_id=p."writerId" and l.fencing_token=p."fencingToken" and l.sandbox_id=${this.#sandboxId}::uuid
+           and l.lease_id=p."writerId" and l.fencing_token=p."fencingToken" and l.worker_id=${this.#workerId}::uuid
            and l.valid_until>d.at and l.released_at is null
-           and owner.id=l.sandbox_id and owner.state='ready'
+           and owner.id=l.worker_id and owner.state='ready'
            and l.writer_failed_at is null and l.writer_sealed_at is null
         returning l.lease_id,l.fencing_token,l.valid_until,l.renewed_at
       `.execute(tx)
@@ -279,23 +279,23 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     return ack;
   }
 
-  async quarantineSandbox(): Promise<void> {
+  async quarantineWorker(): Promise<void> {
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
-      const sandbox = await transaction
-        .selectFrom("sandboxes")
+      const worker = await transaction
+        .selectFrom("workers")
         .select(["state"])
-        .where("id", "=", this.#sandboxId)
+        .where("id", "=", this.#workerId)
         .forNoKeyUpdate()
         .executeTakeFirst();
-      if (sandbox === undefined || sandbox.state === "failed" || sandbox.state === "terminated") {
+      if (worker === undefined || worker.state === "failed" || worker.state === "terminated") {
         return;
       }
       await transaction
-        .updateTable("sandboxes")
-        .set({ state: transitionSandbox(sandbox.state, "failed"), updated_at: now })
-        .where("id", "=", this.#sandboxId)
-        .where("state", "=", sandbox.state)
+        .updateTable("workers")
+        .set({ state: transitionWorker(worker.state, "failed"), updated_at: now })
+        .where("id", "=", this.#workerId)
+        .where("state", "=", worker.state)
         .executeTakeFirstOrThrow();
     });
   }
@@ -334,9 +334,9 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     mark("lease_session_lock");
     const physical = facts.physical;
     const worker = await tx
-      .selectFrom("sandboxes")
+      .selectFrom("workers")
       .selectAll()
-      .where("id", "=", this.#sandboxId)
+      .where("id", "=", this.#workerId)
       .forShare()
       .executeTakeFirst();
     if (!worker || worker.state !== "ready")
@@ -358,7 +358,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       .executeTakeFirst();
     if (
       lease &&
-      (lease.sandbox_id !== worker.id ||
+      (lease.worker_id !== worker.id ||
         lease.writer_failed_at !== null ||
         lease.writer_sealed_at !== null)
     )
@@ -385,7 +385,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         update pi_sessions set lease_epoch=${epoch}
           where tenant_id=${request.tenantId}::uuid and id=${request.piSessionId}
             and lease_epoch=${physical.leaseEpoch}::bigint returning id
-      ) insert into session_leases(tenant_id,pi_session_id,lease_id,sandbox_id,
+      ) insert into session_leases(tenant_id,pi_session_id,lease_id,worker_id,
           fencing_token,valid_until,acquired_at,renewed_at)
         select ${request.tenantId}::uuid,id,${this.#idGenerator()}::uuid,${worker.id}::uuid,
           ${epoch},
@@ -475,7 +475,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           : safeInteger(grant.fencing_token, "ExecutionReference fencing token");
       if (
         grant === undefined ||
-        grant.sandbox_id !== this.#sandboxId ||
+        grant.worker_id !== this.#workerId ||
         grant.tenant_id !== request.tenantId ||
         grant.project_id !== request.projectId ||
         grant.workspace_id !== request.workspaceId ||
@@ -548,7 +548,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       grant.run_id !== request.runId ||
       grant.turn_id !== request.turnId ||
       grant.run_id !== request.runId ||
-      grant.sandbox_id !== this.#sandboxId
+      grant.worker_id !== this.#workerId
     ) {
       throw new SessionLeaseCoordinatorError(
         "stale_session_lease",
@@ -568,7 +568,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     const connection = await transaction
       .selectFrom("supervisor_connections")
       .select([
-        "sandbox_id",
+        "worker_id",
         "supervisor_id",
         "boot_id",
         "control_plane_instance_id",
@@ -583,7 +583,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     const now = await databaseTime(transaction);
     if (
       connection === undefined ||
-      connection.sandbox_id !== this.#sandboxId ||
+      connection.worker_id !== this.#workerId ||
       connection.supervisor_id !== identity.supervisorId ||
       connection.boot_id !== identity.bootId ||
       connection.control_plane_instance_id !== this.#connectionGuard.controlPlaneInstanceId ||

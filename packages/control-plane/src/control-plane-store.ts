@@ -598,9 +598,6 @@ export class ControlPlaneStore {
         .values({
           tenant_id: this.#tenantId,
           id: session.id,
-          created_at_ms: new Date(session.created_at).valueOf(),
-          parent_session_id: null,
-          name: title,
         })
         .executeTakeFirstOrThrow();
       return {

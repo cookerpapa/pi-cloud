@@ -41,7 +41,7 @@ export async function admitTestExecution(
 export async function createTestWorker(database: Kysely<Database>, capacity = 16) {
   const workerId = crypto.randomUUID();
   await database
-    .insertInto("sandboxes")
+    .insertInto("workers")
     .values({
       id: workerId,
       supervisor_id: workerId,
@@ -50,7 +50,7 @@ export async function createTestWorker(database: Kysely<Database>, capacity = 16
       max_concurrent_sessions: capacity,
     })
     .execute();
-  const coordinator = new SessionLeaseCoordinator({ database, sandboxId: workerId });
+  const coordinator = new SessionLeaseCoordinator({ database, workerId: workerId });
   return {
     workerId,
     coordinator,

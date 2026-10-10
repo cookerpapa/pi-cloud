@@ -4,7 +4,7 @@ import {
   releaseIdleSessionLease,
 } from "@pi-cloud/runtime-core/session-lease-release";
 import { databaseTime, retryTransaction } from "@pi-cloud/database";
-import { transitionSandbox, type SandboxState } from "@pi-cloud/domain";
+import { transitionWorker, type WorkerState } from "@pi-cloud/domain";
 import type { SandboxAssignmentInventory, SandboxRuntimeAssignment } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
@@ -18,7 +18,7 @@ const ACTIVE_RUN_STATES = new Set(["running", "settling", "cancel_requested"]);
 
 export type AssignmentReconcilerOptions = {
   database: Kysely<Database>;
-  sandboxId: string;
+  workerId: string;
   inventory: SandboxAssignmentInventory;
   clock?: () => Date;
 };
@@ -30,8 +30,8 @@ export type AssignmentReconciliationResult = {
   settledAssignments: number;
 };
 
-export type SandboxRetirementResult = AssignmentReconciliationResult & {
-  sandboxState: "terminated";
+export type WorkerRetirementResult = AssignmentReconciliationResult & {
+  workerState: "terminated";
 };
 
 export class AssignmentReconcilerError extends Error {
@@ -109,22 +109,22 @@ function emptyResult(inspectedRuntimes: number): AssignmentReconciliationResult 
 }
 
 /**
- * Reconciles a sandbox only after its owning supervisor boot has been fenced
+ * Reconciles a worker only after its owning supervisor boot has been fenced
  * by the caller and can no longer create a runtime for an observed command.
  * Runtime absence is not a substitute for that supervisor-liveness decision.
  */
 export class AssignmentReconciler {
   readonly #database: Kysely<Database>;
-  readonly #sandboxId: string;
+  readonly #workerId: string;
   readonly #inventory: SandboxAssignmentInventory;
   readonly #clock: () => Date;
 
   constructor(options: AssignmentReconcilerOptions) {
-    if (options.sandboxId.trim().length === 0) {
-      throw new TypeError("sandboxId must not be empty");
+    if (options.workerId.trim().length === 0) {
+      throw new TypeError("workerId must not be empty");
     }
     this.#database = options.database;
-    this.#sandboxId = options.sandboxId;
+    this.#workerId = options.workerId;
     this.#inventory = options.inventory;
     this.#clock = options.clock ?? (() => new Date());
   }
@@ -158,13 +158,13 @@ export class AssignmentReconciler {
     return result;
   }
 
-  async retireSandbox(): Promise<SandboxRetirementResult> {
+  async retireWorker(): Promise<WorkerRetirementResult> {
     const now = validDate(this.#clock);
     try {
       await this.#beginRetirement(now);
       const runtimes = await this.#inventory.listAssignments();
-      const sandbox = await this.#loadSandboxIdentity();
-      this.#assertRuntimeScope(runtimes, sandbox);
+      const worker = await this.#loadWorkerIdentity();
+      this.#assertRuntimeScope(runtimes, worker);
       const durableAssignments = await this.#loadDurableAssignments();
       const orphans = runtimes.filter(
         (runtime) => !durableAssignments.some((assignment) => sameAssignment(runtime, assignment)),
@@ -178,7 +178,7 @@ export class AssignmentReconciler {
       result.orphanRuntimes = orphans.length;
       return await this.#finalizeRetirement(durableAssignments, result, now);
     } catch (error: unknown) {
-      await this.#quarantineSandbox(now).catch(() => undefined);
+      await this.#quarantineWorker(now).catch(() => undefined);
       throw this.#normalizeError(error);
     }
   }
@@ -188,7 +188,7 @@ export class AssignmentReconciler {
    * have already been fenced but the dead/partitioned process has no reachable
    * management endpoint. No runtime is adopted or assumed to be reusable.
    */
-  async retireFencedSandbox(): Promise<SandboxRetirementResult> {
+  async retireFencedWorker(): Promise<WorkerRetirementResult> {
     const now = validDate(this.#clock);
     try {
       await this.#beginRetirement(now);
@@ -198,48 +198,48 @@ export class AssignmentReconciler {
         now,
       );
     } catch (error: unknown) {
-      await this.#quarantineSandbox(now).catch(() => undefined);
+      await this.#quarantineWorker(now).catch(() => undefined);
       throw this.#normalizeError(error);
     }
   }
 
-  async #loadSandboxIdentity(): Promise<{
+  async #loadWorkerIdentity(): Promise<{
     supervisorId: string;
     bootId: string;
-    state: SandboxState;
+    state: WorkerState;
   }> {
-    const sandbox = await this.#database
-      .selectFrom("sandboxes")
+    const worker = await this.#database
+      .selectFrom("workers")
       .select(["supervisor_id", "boot_id", "state"])
-      .where("id", "=", this.#sandboxId)
+      .where("id", "=", this.#workerId)
       .executeTakeFirst();
-    if (sandbox === undefined) {
+    if (worker === undefined) {
       throw new AssignmentReconcilerError(
         "sandbox_unavailable",
-        "Reconciliation sandbox was unavailable",
+        "Reconciliation worker was unavailable",
         false,
       );
     }
     return {
-      supervisorId: sandbox.supervisor_id,
-      bootId: sandbox.boot_id,
-      state: sandbox.state,
+      supervisorId: worker.supervisor_id,
+      bootId: worker.boot_id,
+      state: worker.state,
     };
   }
 
   #assertRuntimeScope(
     runtimes: readonly SandboxRuntimeAssignment[],
-    sandbox: { supervisorId: string; bootId: string },
+    worker: { supervisorId: string; bootId: string },
   ): void {
     for (const runtime of runtimes) {
       if (
-        runtime.sandboxId !== this.#sandboxId ||
-        runtime.supervisorId !== sandbox.supervisorId ||
-        runtime.bootId !== sandbox.bootId
+        runtime.sandboxId !== this.#workerId ||
+        runtime.supervisorId !== worker.supervisorId ||
+        runtime.bootId !== worker.bootId
       ) {
         throw new AssignmentReconcilerError(
           "runtime_identity_mismatch",
-          "Observed runtime identity did not match its durable sandbox",
+          "Observed runtime identity did not match its durable worker",
           false,
         );
       }
@@ -250,7 +250,7 @@ export class AssignmentReconciler {
     const grants = await this.#database
       .selectFrom("active_execution_scopes")
       .select(["session_id", "lease_id", "run_id", "fencing_token", "valid_until", "turn_id"])
-      .where("sandbox_id", "=", this.#sandboxId)
+      .where("worker_id", "=", this.#workerId)
       .where(sql<boolean>`(${!expiredOnly} or valid_until <= clock_timestamp())`)
       .orderBy("valid_until", "asc")
       .execute();
@@ -294,9 +294,9 @@ export class AssignmentReconciler {
       .forUpdate()
       .executeTakeFirstOrThrow();
     await transaction
-      .selectFrom("sandboxes")
+      .selectFrom("workers")
       .select("id")
-      .where("id", "=", this.#sandboxId)
+      .where("id", "=", this.#workerId)
       .forNoKeyUpdate()
       .executeTakeFirstOrThrow();
     await transaction
@@ -307,7 +307,7 @@ export class AssignmentReconciler {
       .execute();
     const grant = await transaction
       .selectFrom("active_execution_scopes")
-      .select(["lease_id", "run_id", "sandbox_id", "fencing_token", "valid_until"])
+      .select(["lease_id", "run_id", "worker_id", "fencing_token", "valid_until"])
       .where("session_id", "=", candidate.sessionId)
       .where(sql<boolean>`(${!requireExpired} or valid_until <= clock_timestamp())`)
       .executeTakeFirst();
@@ -315,7 +315,7 @@ export class AssignmentReconciler {
       grant === undefined ||
       grant.lease_id !== execution.leaseId ||
       grant.run_id !== execution.runId ||
-      grant.sandbox_id !== this.#sandboxId ||
+      grant.worker_id !== this.#workerId ||
       safeInteger(grant.fencing_token, "final fencing token") !== execution.fencingToken
     ) {
       return "skipped";
@@ -396,7 +396,7 @@ export class AssignmentReconciler {
     const leases = await this.#database
       .selectFrom("session_leases")
       .selectAll()
-      .where("sandbox_id", "=", this.#sandboxId)
+      .where("worker_id", "=", this.#workerId)
       .where("released_at", "is", null)
       .execute();
     for (const lease of leases)
@@ -416,7 +416,7 @@ export class AssignmentReconciler {
     assignments: readonly DurableAssignment[],
     result: AssignmentReconciliationResult,
     now: Date,
-  ): Promise<SandboxRetirementResult> {
+  ): Promise<WorkerRetirementResult> {
     await this.#database.transaction().execute(async (transaction) => {
       for (const assignment of assignments) {
         const finalized = await this.#finalizeLease(transaction, assignment, false);
@@ -427,9 +427,9 @@ export class AssignmentReconciler {
       const remaining = await transaction
         .selectFrom("active_execution_scopes")
         .select((expression) => expression.fn.countAll<string>().as("count"))
-        .where("sandbox_id", "=", this.#sandboxId)
+        .where("worker_id", "=", this.#workerId)
         .executeTakeFirstOrThrow();
-      if (safeInteger(remaining.count, "remaining sandbox lease count") !== 0) {
+      if (safeInteger(remaining.count, "remaining worker lease count") !== 0) {
         throw new AssignmentReconcilerError(
           "assignment_reconciliation_incomplete",
           "Sandbox retirement retained an assignment",
@@ -437,9 +437,9 @@ export class AssignmentReconciler {
         );
       }
       const row = await transaction
-        .selectFrom("sandboxes")
+        .selectFrom("workers")
         .select("state")
-        .where("id", "=", this.#sandboxId)
+        .where("id", "=", this.#workerId)
         .forNoKeyUpdate()
         .executeTakeFirstOrThrow();
       if (row.state === "terminated") return;
@@ -451,70 +451,70 @@ export class AssignmentReconciler {
         );
       }
       await transaction
-        .updateTable("sandboxes")
+        .updateTable("workers")
         .set({
-          state: transitionSandbox(row.state, "terminated"),
+          state: transitionWorker(row.state, "terminated"),
           updated_at: now,
           terminated_at: now,
         })
-        .where("id", "=", this.#sandboxId)
+        .where("id", "=", this.#workerId)
         .where("state", "=", row.state)
         .executeTakeFirstOrThrow();
     });
-    return { ...result, sandboxState: "terminated" };
+    return { ...result, workerState: "terminated" };
   }
 
   async #beginRetirement(now: Date): Promise<void> {
     await this.#database.transaction().execute(async (transaction) => {
-      const sandbox = await transaction
-        .selectFrom("sandboxes")
+      const worker = await transaction
+        .selectFrom("workers")
         .select(["state"])
-        .where("id", "=", this.#sandboxId)
+        .where("id", "=", this.#workerId)
         .forNoKeyUpdate()
         .executeTakeFirst();
-      if (sandbox === undefined) {
+      if (worker === undefined) {
         throw new AssignmentReconcilerError(
           "sandbox_unavailable",
-          "Retirement sandbox was unavailable",
+          "Retirement worker was unavailable",
           false,
         );
       }
       if (
-        sandbox.state === "terminated" ||
-        sandbox.state === "draining" ||
-        sandbox.state === "failed"
+        worker.state === "terminated" ||
+        worker.state === "draining" ||
+        worker.state === "failed"
       ) {
         return;
       }
       const nextState =
-        sandbox.state === "provisioning"
-          ? transitionSandbox(sandbox.state, "failed")
-          : transitionSandbox(sandbox.state, "draining");
+        worker.state === "provisioning"
+          ? transitionWorker(worker.state, "failed")
+          : transitionWorker(worker.state, "draining");
       await transaction
-        .updateTable("sandboxes")
+        .updateTable("workers")
         .set({ state: nextState, updated_at: now })
-        .where("id", "=", this.#sandboxId)
-        .where("state", "=", sandbox.state)
+        .where("id", "=", this.#workerId)
+        .where("state", "=", worker.state)
         .executeTakeFirstOrThrow();
     });
   }
 
-  async #quarantineSandbox(now: Date): Promise<void> {
+  async #quarantineWorker(now: Date): Promise<void> {
     await this.#database.transaction().execute(async (transaction) => {
-      const sandbox = await transaction
-        .selectFrom("sandboxes")
+      const worker = await transaction
+        .selectFrom("workers")
         .select(["state"])
-        .where("id", "=", this.#sandboxId)
+        .where("id", "=", this.#workerId)
         .forNoKeyUpdate()
         .executeTakeFirst();
-      if (sandbox === undefined || sandbox.state === "failed" || sandbox.state === "terminated") {
+      if (worker === undefined || worker.state === "failed" || worker.state === "terminated") {
         return;
       }
       await transaction
-        .updateTable("sandboxes")
-        .set({ state: transitionSandbox(sandbox.state, "failed"), updated_at: now })
-        .where("id", "=", this.#sandboxId)
-        .where("state", "=", sandbox.state)
+        .updateTable("workers")
+        .set({ state: transitionWorker(worker.state, "failed"), updated_at: now })
+        .where("id", "=", this.#workerId)
+        .where("state", "=", worker.state)
         .executeTakeFirstOrThrow();
     });
   }

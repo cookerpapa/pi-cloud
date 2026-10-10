@@ -156,7 +156,7 @@ export class KafkaSafeRetention {
     }
     if (retiredCandidates.size) {
       const retired = await this.#database
-        .selectFrom("sandbox_retirements")
+        .selectFrom("worker_retirements")
         .select("boot_id")
         .where("boot_id", "in", [...retiredCandidates])
         .where("state", "=", "completed")

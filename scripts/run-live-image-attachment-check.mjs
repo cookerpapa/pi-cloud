@@ -164,10 +164,10 @@ try {
   const owner = report.runs.at(-1).workerId;
   const {
     rows: [old],
-  } = await sql`select boot_id from sandboxes where id=${owner}::uuid`.execute(db);
+  } = await sql`select boot_id from workers where id=${owner}::uuid`.execute(db);
   const {
     rows: [sandbox],
-  } = await sql`select supervisor_id from sandboxes where id=${owner}::uuid`.execute(db);
+  } = await sql`select supervisor_id from workers where id=${owner}::uuid`.execute(db);
   await kubectlAsync(["delete", "pod", sandbox.supervisor_id, "--wait=true", "--timeout=120s"]);
   const recalled = await turn(
     "不要调用任何工具、不要读取文件。只根据前面三张柱状图，按图片显示顺序分别输出每张图的柱子从高到低的颜色名称。每张图一行，只用 BLUE、ORANGE、GREEN 三个英文大写名称并用逗号分隔。",
@@ -189,7 +189,7 @@ try {
   );
   const {
     rows: [newOwner],
-  } = await sql`select boot_id from sandboxes where id=${recalled.run.workerId}::uuid`.execute(db);
+  } = await sql`select boot_id from workers where id=${recalled.run.workerId}::uuid`.execute(db);
   assert(old.boot_id !== newOwner.boot_id || recalled.run.workerId !== owner);
   report.coldRecovery = {
     previousWorker: owner,

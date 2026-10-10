@@ -43,7 +43,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
       second = await store.acceptTurn(b.sessionId, "b", { prompt: "B" });
     const workerId = crypto.randomUUID();
     await db
-      .insertInto("sandboxes")
+      .insertInto("workers")
       .values({
         id: workerId,
         supervisor_id: "expiry-worker",
@@ -56,7 +56,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
     const clock = () => new Date(now),
       coordinator = new SessionLeaseCoordinator({
         database: db,
-        sandboxId: workerId,
+        workerId: workerId,
         clock,
         leaseDurationMs: 60000,
       });
@@ -88,7 +88,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
     now += 600;
     const reconciler = new AssignmentReconciler({
       database: db,
-      sandboxId: workerId,
+      workerId: workerId,
       clock,
       inventory: {
         async listAssignments() {
@@ -123,7 +123,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
     });
     expect(
       await db
-        .selectFrom("sandboxes")
+        .selectFrom("workers")
         .select(["state"])
         .where("id", "=", workerId)
         .executeTakeFirst(),
@@ -132,7 +132,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
       await db
         .selectFrom("session_leases")
         .select("pi_session_id")
-        .where("sandbox_id", "=", workerId)
+        .where("worker_id", "=", workerId)
         .where("released_at", "is", null)
         .execute(),
     ).toEqual([{ pi_session_id: b.sessionId }]);

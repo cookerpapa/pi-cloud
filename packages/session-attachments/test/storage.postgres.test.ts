@@ -112,9 +112,6 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       .values({
         tenant_id: tenantId,
         id: sessionId,
-        created_at_ms: Date.now(),
-        name: null,
-        parent_session_id: null,
       })
       .onConflict((conflict) => conflict.columns(["tenant_id", "id"]).doNothing())
       .execute();

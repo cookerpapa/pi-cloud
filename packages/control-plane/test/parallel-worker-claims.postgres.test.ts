@@ -67,7 +67,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
     });
     const workerId = randomUUID();
     await db
-      .insertInto("sandboxes")
+      .insertInto("workers")
       .values({
         id: workerId,
         supervisor_id: workerId,
@@ -76,7 +76,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
         max_concurrent_sessions: 2,
       })
       .execute();
-    const coordinator = new SessionLeaseCoordinator({ database: db, sandboxId: workerId });
+    const coordinator = new SessionLeaseCoordinator({ database: db, workerId: workerId });
     const facts: AcceptedFact[] = [],
       started: string[] = [],
       entered = new Set<string>(),

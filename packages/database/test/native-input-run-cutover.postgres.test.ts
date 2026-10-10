@@ -6,7 +6,10 @@ import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
-import { insertHistoricalPrompt } from "./fixtures/historical-turn.ts";
+import {
+  insertHistoricalPrompt,
+  insertHistoricalDurableSession,
+} from "./fixtures/historical-turn.ts";
 
 it("requires drained ownership, consolidates frozen input and preserves tenant/FK boundaries", async () => {
   const admin = createDatabase({
@@ -34,12 +37,7 @@ it("requires drained ownership, consolidates frozen input and preserves tenant/F
     });
     const store = new ControlPlaneStore({ database: db, ...tenant });
     const project = await store.createProject({ name: "Cutover", source: { kind: "empty" } });
-    const session = await store.createSession(
-      project.projectId,
-      project.workspaceId,
-      "Cutover",
-      "elastic",
-    );
+    const session = await insertHistoricalDurableSession(db, { ...tenant, ...project });
     const old = await insertHistoricalPrompt(db, {
       ...tenant,
       ...project,

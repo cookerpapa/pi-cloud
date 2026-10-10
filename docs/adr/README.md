@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0242](0242-worker-claim-schema-cleanup.md) — indexed Worker admission and
+   control history, removal of unused physical-Session metadata, and Worker table naming.
+
 1. [ADR-0241](0241-missing-working-directory-tool-errors.md) — report confirmed
    user-directory loss as a native Tool error, retaining infrastructure UNKNOWN.
 

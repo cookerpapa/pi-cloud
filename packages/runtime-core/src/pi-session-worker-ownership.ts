@@ -19,7 +19,7 @@ export function piSessionWorkerAvailable(
     left join session_leases l on l.tenant_id=p.tenant_id and l.pi_session_id=p.id and l.released_at is null
     where p.tenant_id=${tenantId} and p.id=${piSessionId}
       and ((l.lease_id is null and p.unsealed_runs=0)
-        or (l.valid_until>clock_timestamp() and l.sandbox_id=${expectedWorkerId}::uuid
+        or (l.valid_until>clock_timestamp() and l.worker_id=${expectedWorkerId}::uuid
           and l.writer_failed_at is null and l.writer_sealed_at is null))
   )`;
 }

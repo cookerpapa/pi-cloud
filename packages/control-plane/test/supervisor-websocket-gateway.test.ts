@@ -41,7 +41,7 @@ function identity(): SupervisorBootIdentity {
 
 async function provision(value: SupervisorBootIdentity): Promise<void> {
   await database
-    .insertInto("sandboxes")
+    .insertInto("workers")
     .values({
       id: value.sandboxId,
       supervisor_id: value.supervisorId,
@@ -92,7 +92,7 @@ async function startGateway(options: {
     assignmentRetirerFactory: (retirementIdentity) =>
       new AssignmentReconciler({
         database,
-        sandboxId: retirementIdentity.sandboxId,
+        workerId: retirementIdentity.sandboxId,
         inventory: emptyInventory(),
         clock,
       }),
@@ -320,7 +320,7 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
         await database
           .selectFrom("supervisor_connections")
           .select("connection_id")
-          .where("sandbox_id", "=", supervisorIdentity.sandboxId)
+          .where("worker_id", "=", supervisorIdentity.sandboxId)
           .execute(),
       ).toEqual([]);
     } finally {
@@ -371,7 +371,7 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
       ).toEqual({ state: "active" });
       expect(
         await database
-          .selectFrom("sandboxes")
+          .selectFrom("workers")
           .select("state")
           .where("id", "=", supervisorIdentity.sandboxId)
           .executeTakeFirstOrThrow(),
@@ -392,7 +392,7 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
       expect(ownerStops).toBe(0);
       expect(
         await database
-          .selectFrom("sandboxes")
+          .selectFrom("workers")
           .select("state")
           .where("id", "=", supervisorIdentity.sandboxId)
           .executeTakeFirstOrThrow(),
@@ -429,7 +429,7 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
       const connections = await database
         .selectFrom("supervisor_connections")
         .select(["connection_id", "control_plane_instance_id", "state", "close_reason"])
-        .where("sandbox_id", "=", supervisorIdentity.sandboxId)
+        .where("worker_id", "=", supervisorIdentity.sandboxId)
         .orderBy("registered_at", "asc")
         .execute();
       expect(connections).toEqual([

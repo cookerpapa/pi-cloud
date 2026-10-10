@@ -52,7 +52,7 @@ async function fixture(capacity = 1, leaseMs = 60000) {
     .execute();
   const workerId = crypto.randomUUID();
   await db
-    .insertInto("sandboxes")
+    .insertInto("workers")
     .values({
       id: workerId,
       supervisor_id: "family-worker",
@@ -64,7 +64,7 @@ async function fixture(capacity = 1, leaseMs = 60000) {
   const metrics = new PiCloudMetrics("lease-timing-test");
   const coordinator = new SessionLeaseCoordinator({
     database: db,
-    sandboxId: workerId,
+    workerId: workerId,
     leaseDurationMs: leaseMs,
   });
   const tasks = new Map<
@@ -261,7 +261,7 @@ it("retires every task of an expired Session, even with a one-family recovery li
       .execute();
     const reconciler = new AssignmentReconciler({
       database: f.db,
-      sandboxId: f.workerId,
+      workerId: f.workerId,
       inventory: {
         listAssignments: async () => {
           throw new Error("Semantic retirement must not kill a healthy Worker");

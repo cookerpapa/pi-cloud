@@ -691,9 +691,6 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       .values({
         tenant_id: scope.tenantId,
         id: independentId,
-        created_at_ms: Date.now(),
-        name: null,
-        parent_session_id: null,
       })
       .execute();
     await database
@@ -716,9 +713,6 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       .values({
         tenant_id: otherTenant.tenantId,
         id: session.sessionId,
-        created_at_ms: Date.now(),
-        name: null,
-        parent_session_id: null,
       })
       .execute();
     const childConversation = await database
@@ -928,7 +922,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         tenant_id: scope.tenantId,
         pi_session_id: session.sessionId,
         lease_id: leaseId,
-        sandbox_id: worker.workerId,
+        worker_id: worker.workerId,
         fencing_token: "1",
         acquired_at: new Date(Date.now() - 60000),
         valid_until: new Date(Date.now() - 1000),

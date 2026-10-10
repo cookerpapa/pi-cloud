@@ -283,7 +283,7 @@ try {
     await alone();
     const current = await api.getRun(active.runId);
     const { rows: workers } =
-      await sql`select supervisor_id from sandboxes where id=${current.workerId}::uuid`.execute(db);
+      await sql`select supervisor_id from workers where id=${current.workerId}::uuid`.execute(db);
     await kubectlAsync([
       "delete",
       "pod",

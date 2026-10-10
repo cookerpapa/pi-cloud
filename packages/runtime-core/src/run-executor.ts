@@ -556,7 +556,8 @@ export class RunExecutor {
     // Delegated work belongs to a live parent task, not merely to historical
     // Session ancestry. A departed parent's queued child cannot start a new owner.
     return sql<boolean>`not exists(select 1 from subagent_executions e
-      where e.child_run_id=${sql.ref(`${runAlias}.id`)} and not exists(
+      where e.tenant_id=${sql.ref(`${runAlias}.tenant_id`)}
+        and e.child_run_id=${sql.ref(`${runAlias}.id`)} and not exists(
         select 1 from active_execution_scopes parent where parent.run_id=e.parent_run_id
           and parent.accepting_effects and parent.valid_until>clock_timestamp()
       ))`;
@@ -963,7 +964,7 @@ export class RunExecutor {
           and lease_id is null and row_version=${runVersion}::bigint
           and exists(select 1 from session_leases l where l.lease_id=${ref.leaseId}::uuid
             and l.tenant_id=${r.tenantId}::uuid and l.pi_session_id=${r.piSessionId}
-            and l.sandbox_id=${this.#workerId}::uuid and l.fencing_token=${ref.fencingToken}
+            and l.worker_id=${this.#workerId}::uuid and l.fencing_token=${ref.fencingToken}
             and l.released_at is null and l.valid_until>clock_timestamp()
             and l.writer_failed_at is null and l.writer_sealed_at is null)
         returning id

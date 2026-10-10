@@ -3,7 +3,7 @@ import {
   DomainTransitionError,
   transitionTurnControlRequest,
   transitionRun,
-  transitionSandbox,
+  transitionWorker,
   transitionSession,
   turnStateForRun,
   type SessionState,
@@ -86,16 +86,16 @@ describe("domain state machines", () => {
   });
 
   it("readies, drains, and permanently terminates a Worker", () => {
-    expect(transitionSandbox("provisioning", "ready")).toBe("ready");
-    expect(transitionSandbox("ready", "draining")).toBe("draining");
-    expect(transitionSandbox("draining", "terminated")).toBe("terminated");
-    expect(() => transitionSandbox("terminated", "ready")).toThrow(DomainTransitionError);
+    expect(transitionWorker("provisioning", "ready")).toBe("ready");
+    expect(transitionWorker("ready", "draining")).toBe("draining");
+    expect(transitionWorker("draining", "terminated")).toBe("terminated");
+    expect(() => transitionWorker("terminated", "ready")).toThrow(DomainTransitionError);
   });
 
-  it("allows failed sandbox cleanup without allowing reuse", () => {
-    expect(transitionSandbox("ready", "failed")).toBe("failed");
-    expect(transitionSandbox("failed", "terminated")).toBe("terminated");
-    expect(() => transitionSandbox("failed", "ready")).toThrow(DomainTransitionError);
+  it("allows failed Worker cleanup without allowing reuse", () => {
+    expect(transitionWorker("ready", "failed")).toBe("failed");
+    expect(transitionWorker("failed", "terminated")).toBe("terminated");
+    expect(() => transitionWorker("failed", "ready")).toThrow(DomainTransitionError);
   });
 
   it("rejects self-transitions so duplicate delivery is handled by idempotency", () => {

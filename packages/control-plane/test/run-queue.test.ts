@@ -120,7 +120,7 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
       "candidate.state = 'queued' and candidate.ready_at is not null",
     );
     expect(candidates[0]).not.toContain("from runs as earlier_run");
-    expect(queries.some((q) => q.includes('update "sandboxes"'))).toBe(false);
+    expect(queries.some((q) => q.includes('update "workers"'))).toBe(false);
     expect(queries.filter((q) => q.startsWith('with "started_session"'))).toHaveLength(1);
     const stages = await metrics.runClaimStageDuration.get();
     const counts = stages.values.filter((v) => v.metricName?.endsWith("_count"));

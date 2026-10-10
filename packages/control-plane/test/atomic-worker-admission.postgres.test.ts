@@ -92,7 +92,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     );
     const worker = randomUUID();
     await db
-      .insertInto("sandboxes")
+      .insertInto("workers")
       .values({
         id: worker,
         supervisor_id: worker,
@@ -101,7 +101,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         max_concurrent_sessions: capacity,
       })
       .execute();
-    const coordinator = new SessionLeaseCoordinator({ database: db, sandboxId: worker });
+    const coordinator = new SessionLeaseCoordinator({ database: db, workerId: worker });
     const facts: AcceptedFact[] = [];
     const append = vi.fn(async (fact: AcceptedFact) => {
       // Kafka is called only after the single admission transaction commits.
@@ -179,7 +179,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         .where("id", "=", session.sessionId)
         .executeTakeFirstOrThrow(),
       worker: await db
-        .selectFrom("sandboxes")
+        .selectFrom("workers")
         .select(["state"])
         .where("id", "=", worker)
         .executeTakeFirstOrThrow(),
@@ -690,7 +690,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
           async (tx) => {
             await tx
               .updateTable("pi_sessions")
-              .set({ name: "must-rollback" })
+              .set({ lease_epoch: sql`lease_epoch+1` })
               .where("id", "=", f.session.sessionId)
               .execute();
             await sql`select pg_sleep(1)`.execute(tx);
@@ -701,10 +701,10 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       expect((await settings()).rows).toEqual(before);
       const row = await connection
         .selectFrom("pi_sessions")
-        .select("name")
+        .select("lease_epoch")
         .where("id", "=", f.session.sessionId)
         .executeTakeFirstOrThrow();
-      expect(row.name).not.toBe("must-rollback");
+      expect(row.lease_epoch).toBe("0");
     });
   });
 
@@ -828,7 +828,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(
       queries.filter((q) => q.startsWith('select "input_text", "input_uploads" from "runs"')),
     ).toHaveLength(1);
-    expect(queries.some((q) => q.includes('update "sandboxes"'))).toBe(false);
+    expect(queries.some((q) => q.includes('update "workers"'))).toBe(false);
     expect(queries.some((q) => q.includes("from runs as earlier_run"))).toBe(false);
     expect(
       queries.filter(
@@ -1944,6 +1944,87 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     }
     expect((await f.state()).leases).toHaveLength(0);
   });
+  it.each(["active", "closed"])(
+    "scopes child admission to its tenant and %s parent",
+    async (parentState) => {
+      const f = await fixture(1);
+      const child = await f.store.createSession(
+        f.workspace.projectId,
+        f.workspace.workspaceId,
+        "child",
+        "elastic",
+      );
+      await db
+        .updateTable("sessions")
+        .set({ pi_session_id: f.session.sessionId, pi_conversation_id: "2" })
+        .where("id", "=", child.sessionId)
+        .execute();
+      const childRun = await f.store.acceptTurn(child.sessionId, randomUUID(), { prompt: "child" });
+      await db
+        .insertInto("subagent_executions")
+        .values({
+          id: randomUUID(),
+          tenant_id: f.tenant.tenantId,
+          parent_session_id: f.session.sessionId,
+          parent_run_id: f.accepted.runId,
+          root_session_id: f.session.sessionId,
+          root_run_id: f.accepted.runId,
+          parent_tool_call_id: "delegate",
+          workflow_run_id: "test",
+          step_index: 0,
+          request_sha256: "a".repeat(64),
+          child_session_id: child.sessionId,
+          child_run_id: childRun.runId,
+          agent_name: "child",
+          context_mode: "fresh",
+          sandbox_mode: "shared",
+          state: "queued",
+          depth: 1,
+        })
+        .execute();
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      f.runner.mockImplementation(async (command) => {
+        if (command.payload.runId === f.accepted.runId) {
+          entered.resolve();
+          await release.promise;
+        }
+        return { stopReason: "stop" };
+      });
+      const parent = f.executor().dispatchRun(f.accepted.runId);
+      try {
+        await entered.promise;
+        if (parentState === "closed") {
+          release.resolve();
+          await parent;
+          await f.project();
+        }
+        const result = await f.executor().dispatchRun(childRun.runId);
+        if (parentState === "active") {
+          expect(result.status).toBe("completed");
+          const grants = await db
+            .selectFrom("runs")
+            .select("lease_id")
+            .where("id", "in", [f.accepted.runId, childRun.runId])
+            .execute();
+          expect(new Set(grants.map((r) => r.lease_id)).size).toBe(1);
+        } else {
+          expect(result.status).toBe("idle");
+          expect(
+            await db
+              .selectFrom("runs")
+              .select(["state", "lease_id"])
+              .where("id", "=", childRun.runId)
+              .executeTakeFirst(),
+          ).toEqual({ state: "queued", lease_id: null });
+        }
+      } finally {
+        release.resolve();
+        await parent;
+      }
+    },
+  );
+
   it("competing claims start the same Run once without a PG slot reservation", async () => {
     const f = await fixture(1),
       entered = Promise.withResolvers<void>(),
@@ -2034,7 +2115,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       .execute();
     const reconciler = new AssignmentReconciler({
       database: db,
-      sandboxId: f.worker,
+      workerId: f.worker,
       inventory: { listAssignments: async () => [], terminateAndConfirmAbsent: async () => {} },
     });
     await reconciler.retireExpiredAssignments();

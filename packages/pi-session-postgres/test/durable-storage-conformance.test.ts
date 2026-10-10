@@ -60,9 +60,6 @@ async function fixture(
     .values({
       tenant_id: tenantId,
       id: sessionId,
-      created_at_ms: Date.now(),
-      parent_session_id: null,
-      name: null,
     })
     .execute();
   const projection = new DurablePostgresProjection(

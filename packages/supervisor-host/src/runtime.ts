@@ -577,7 +577,7 @@ export class PiWorkerRuntime {
     this.#assertStarting();
     const leaseCoordinator = new SessionLeaseCoordinator({
       database: this.#database,
-      sandboxId: identity.sandboxId,
+      workerId: identity.sandboxId,
     });
     const runBackend = new AgentRunExecutionBackend({
       supervisor: runSupervisor,

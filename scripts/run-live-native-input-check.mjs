@@ -13,7 +13,7 @@ import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_NATIVE_INPUT_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 183 matched Luna/Cube acceptance",
+    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 184 matched Luna/Cube acceptance",
   );
 const runtime = "deploy/production/runtime",
   env = await readFile(`${runtime}/.env`, "utf8");
@@ -62,11 +62,7 @@ try {
     .orderBy("name", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
-  assert.equal(
-    schema.name,
-    "183_native_inputs_and_run_record",
-    "Deploy the matched schema/app first",
-  );
+  assert.equal(schema.name, "184_worker_claim_schema", "Deploy the matched schema/app first");
   tenant = await createPrivateTenant(db, {
     slug: `native-input-${randomUUID()}`,
     ownerDisplayName: "Native input acceptance",

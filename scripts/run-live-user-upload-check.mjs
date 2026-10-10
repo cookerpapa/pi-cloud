@@ -375,7 +375,7 @@ try {
       );
     assert.equal(counts[0].n, 0, "Cannot restart a Worker while another Run is active");
     const { rows: owners } =
-      await sql`select supervisor_id,boot_id from sandboxes where id=${fileTurn.run.workerId}::uuid`.execute(
+      await sql`select supervisor_id,boot_id from workers where id=${fileTurn.run.workerId}::uuid`.execute(
         db,
       );
     await kubectlAsync(["delete", "pod", owners[0].supervisor_id, "--wait=true", "--timeout=120s"]);

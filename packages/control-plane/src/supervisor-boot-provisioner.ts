@@ -44,7 +44,7 @@ type CredentialRow = {
   credential_id: string;
   credential_sha256: string;
   provision_request_id: string;
-  sandbox_id: string;
+  worker_id: string;
   supervisor_id: string;
   boot_id: string;
   expires_at: Date;
@@ -174,7 +174,7 @@ function sameProvision(
     credential.credential_id === request.credentialId &&
     credential.credential_sha256 === request.credentialSha256 &&
     credential.provision_request_id === request.requestId &&
-    credential.sandbox_id === request.sandboxId &&
+    credential.worker_id === request.sandboxId &&
     credential.supervisor_id === request.supervisorId &&
     credential.boot_id === request.bootId &&
     sandbox?.max_concurrent_sessions === request.maxConcurrentSessions &&
@@ -312,9 +312,9 @@ export class SupervisorBootProvisioner {
       const conflict = await this.#findConflict(transaction, request);
       if (conflict !== undefined) {
         const sandbox = await transaction
-          .selectFrom("sandboxes")
+          .selectFrom("workers")
           .select(["max_concurrent_sessions"])
-          .where("id", "=", conflict.sandbox_id)
+          .where("id", "=", conflict.worker_id)
           .executeTakeFirst();
         const conflictingHost = await transaction
           .selectFrom("supervisor_hosts")
@@ -337,7 +337,7 @@ export class SupervisorBootProvisioner {
       }
 
       await transaction
-        .insertInto("sandboxes")
+        .insertInto("workers")
         .values({
           id: request.sandboxId,
           supervisor_id: request.supervisorId,
@@ -363,7 +363,7 @@ export class SupervisorBootProvisioner {
           credential_id: request.credentialId,
           credential_sha256: request.credentialSha256,
           provision_request_id: request.requestId,
-          sandbox_id: request.sandboxId,
+          worker_id: request.sandboxId,
           supervisor_id: request.supervisorId,
           boot_id: request.bootId,
           created_at: now,
@@ -385,7 +385,7 @@ export class SupervisorBootProvisioner {
         "credential_id",
         "credential_sha256",
         "provision_request_id",
-        "sandbox_id",
+        "worker_id",
         "supervisor_id",
         "boot_id",
         "expires_at",
@@ -395,7 +395,7 @@ export class SupervisorBootProvisioner {
         expression.or([
           expression("credential_id", "=", request.credentialId),
           expression("provision_request_id", "=", request.requestId),
-          expression("sandbox_id", "=", request.sandboxId),
+          expression("worker_id", "=", request.sandboxId),
           expression.and([
             expression("supervisor_id", "=", request.supervisorId),
             expression("boot_id", "=", request.bootId),
@@ -446,7 +446,7 @@ export class PostgresSupervisorCredentialAuthorizer implements SupervisorUpgrade
               "credential_sha256",
               "supervisor_id",
               "boot_id",
-              "sandbox_id",
+              "worker_id",
               "expires_at",
               "revoked_at",
             ])
@@ -474,7 +474,7 @@ export class PostgresSupervisorCredentialAuthorizer implements SupervisorUpgrade
     return {
       supervisorId: row.supervisor_id,
       bootId: row.boot_id,
-      sandboxId: row.sandbox_id,
+      sandboxId: row.worker_id,
     };
   }
 }

@@ -1,4 +1,4 @@
-// Review evidence only. Always creates and destroys an isolated PostgreSQL container.
+// Indexed-read regression evidence. Creates and destroys an isolated PostgreSQL container.
 // LIKE clones retain columns/checks/indexes, but omit FKs/triggers for synthetic history.
 // Run from a clean checkout: node --import tsx scripts/experiments/review-worker-claim-20261010/probe.mjs
 import { randomUUID } from "node:crypto";
@@ -41,7 +41,7 @@ try {
   });
   const worker = randomUUID();
   await db
-    .insertInto("sandboxes")
+    .insertInto("workers")
     .values({
       id: worker,
       supervisor_id: worker,
@@ -105,45 +105,43 @@ try {
     (await pool.query("explain (analyze,buffers,format json) " + query, parameters)).rows[0][
       "QUERY PLAN"
     ][0];
-  const claim = candidate.sql.replace(
+  const indexedClaim = candidate.sql.replace(
     "from subagent_executions e",
     "from review_plan.subagent_executions e",
   );
-  const narrowed = claim.replace(
-    "where e.child_run_id=",
-    "where e.tenant_id=candidate.tenant_id and e.child_run_id=",
-  );
-  if (claim === candidate.sql || narrowed === claim)
+  const claim = indexedClaim.replace(/e\.tenant_id="candidate"\."tenant_id"\s+and /, "");
+  if (indexedClaim === candidate.sql || claim === indexedClaim)
     throw new Error("probe SQL replacement failed");
   report.claim = {
     rows: 50000,
     before: await plan(claim, candidate.parameters),
-    after: await plan(narrowed, candidate.parameters),
+    after: await plan(indexedClaim, candidate.parameters),
   };
   assert.equal(report.claim.before.Plan["Actual Rows"], 1);
   assert.equal(report.claim.after.Plan["Actual Rows"], 1);
   const history =
     "select id,run_id,from_state,to_state,reason,occurred_at from review_plan.run_transitions where tenant_id=$1 and run_id=$2 order by occurred_at,id";
+  const indexedHistory = await plan(history, [tenant.tenantId, accepted.runId]);
+  const clonedIndexes = await pool.query(
+    "select format('drop index %I.%I',schemaname,indexname) as ddl from pg_indexes where schemaname='review_plan' and tablename='run_transitions' and indexdef like '%(tenant_id, run_id, occurred_at, id)%'",
+  );
+  assert.equal(clonedIndexes.rows.length, 1);
+  await pool.query(clonedIndexes.rows[0].ddl);
   report.transitions = {
     rows: 100005,
     before: await plan(history, [tenant.tenantId, accepted.runId]),
   };
-  await pool.query(
-    "create index review_transition_run on review_plan.run_transitions(tenant_id,run_id,occurred_at,id)",
-  );
-  report.transitions.after = await plan(history, [tenant.tenantId, accepted.runId]);
+  report.transitions.after = indexedHistory;
   assert.equal(report.transitions.before.Plan["Actual Rows"], 5);
   assert.equal(report.transitions.after.Plan["Actual Rows"], 5);
-  report.unusedColumnDrop = [];
-  for (const column of ["created_at_ms", "parent_session_id", "name"]) {
-    await pool.query("begin");
-    try {
-      await pool.query(`alter table pi_sessions drop column ${column} restrict`);
-      report.unusedColumnDrop.push({ column, restrict: "passed" });
-    } finally {
-      await pool.query("rollback");
-    }
-  }
+  const columns = await pool.query(
+    "select column_name from information_schema.columns where table_schema='public' and table_name='pi_sessions'",
+  );
+  report.removedMetadata = ["created_at_ms", "parent_session_id", "name"].map((column) => ({
+    column,
+    absent: !columns.rows.some((row) => row.column_name === column),
+  }));
+  assert.ok(report.removedMetadata.every((row) => row.absent));
   const output = new URL("../../../dist/reviews/worker-claim-20261010/probe.json", import.meta.url);
   fs.mkdirSync(new URL(".", output), { recursive: true });
   fs.writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
@@ -161,6 +159,16 @@ try {
     for (const p of node.Plans ?? []) scans(p, out);
     return out;
   };
+  const childRead = scans(report.claim.after.Plan).find(
+    (row) => row.table === "subagent_executions",
+  );
+  const historyRead = scans(report.transitions.after.Plan).find(
+    (row) => row.table === "run_transitions",
+  );
+  assert.match(childRead.indexCondition, /tenant_id.*child_run_id/);
+  assert.ok(childRead.blocks < 32, "Child lookup must stay bounded as unrelated history grows");
+  assert.equal(historyRead.rows, 5);
+  assert.ok(historyRead.blocks < 32, "Run history lookup must avoid unrelated history");
   for (const [name, pair] of Object.entries({
     claim: report.claim,
     transitions: report.transitions,
@@ -174,7 +182,7 @@ try {
           scans: scans(pair[label].Plan),
         }),
       );
-  console.log(JSON.stringify({ version: report.version, dropProbes: report.unusedColumnDrop }));
+  console.log(JSON.stringify({ version: report.version, removedMetadata: report.removedMetadata }));
 } finally {
   await db.destroy();
   await pool.end();

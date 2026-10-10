@@ -366,9 +366,11 @@ export const migrationProvider: MigrationProvider = {
       "181_durable_navigation_index": durableNavigationIndex,
       "182_conversation_activity_page": conversationActivityPage,
       "183_native_inputs_and_run_record": nativeInputsAndRunRecord,
+      "184_worker_claim_schema": workerClaimSchema,
     };
   },
 };
 import * as durableNavigationIndex from "./181_durable_navigation_index.ts";
 import * as conversationActivityPage from "./182_conversation_activity_page.ts";
 import * as nativeInputsAndRunRecord from "./183_native_inputs_and_run_record.ts";
+import * as workerClaimSchema from "./184_worker_claim_schema.ts";

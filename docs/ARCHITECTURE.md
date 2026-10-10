@@ -272,6 +272,18 @@ once; released or expired owners cannot revive. Each Run carries an
 The read-only `active_execution_scopes` view combines Run state with current owner
 authority for executor checks. Task cancellation closes that task; lost ownership retires
 the family, and a successor waits for all affected ordered closures to project.
+
+[ADR-0242](adr/0242-worker-claim-schema-cleanup.md) names the trusted Worker registry
+`workers` and its cleanup records `worker_retirements`; leases, connections,
+boot credentials and the execution-scope view use `worker_id`. These identities
+are distinct from Cube sandbox IDs and physical allocation bootstrap context.
+`pi_sessions` retains only physical identity, lease epoch, unsealed count and
+partition hash; product metadata stays in `sessions` and native ancestry in Durable.
+The child-Run eligibility lookup includes its tenant to bound the existing
+composite index; cloud Run transition history has a tenant/Run/time/ID index.
+Normal new-owner admission remains nine business SQL statements. Schema 184
+requires the matching drained application release; it adds no compatibility view.
+
 Workspace access across different Sessions is deliberately ordinary user-managed
 Linux concurrency, not a scheduling lock or tenant concurrency quota.
 

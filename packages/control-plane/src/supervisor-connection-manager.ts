@@ -1,9 +1,9 @@
 import type {
   Database,
-  SandboxRetirementReason,
+  WorkerRetirementReason,
   SupervisorConnectionCloseReason,
 } from "@pi-cloud/database";
-import { transitionSandbox, type SandboxState } from "@pi-cloud/domain";
+import { transitionWorker, type WorkerState } from "@pi-cloud/domain";
 import {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { databaseTime } from "@pi-cloud/database";
 import type {
-  SandboxRetirementResult,
+  WorkerRetirementResult,
   AssignmentReconciliationResult,
 } from "./assignment-reconciler.ts";
 import {
@@ -59,9 +59,9 @@ export interface SupervisorOwnerBoundary {
 }
 
 export interface SupervisorAssignmentRetirer {
-  retireSandbox(): Promise<SandboxRetirementResult>;
+  retireWorker(): Promise<WorkerRetirementResult>;
   retireExpiredAssignments(limit?: number): Promise<AssignmentReconciliationResult>;
-  retireFencedSandbox?(): Promise<SandboxRetirementResult>;
+  retireFencedWorker?(): Promise<WorkerRetirementResult>;
 }
 
 export type SupervisorConnectionManagerOptions = {
@@ -94,7 +94,7 @@ export type SupervisorRetirementWorkResult =
       kind: "retired";
       identity: SupervisorBootIdentity;
       attempt: number;
-      reconciliation: SandboxRetirementResult;
+      reconciliation: WorkerRetirementResult;
     }
   | {
       kind: "retry_scheduled" | "blocked";
@@ -132,11 +132,11 @@ export class SupervisorOwnerBoundaryError extends Error {
   }
 }
 
-type SandboxIdentityRow = {
+type WorkerIdentityRow = {
   id: string;
   supervisor_id: string;
   boot_id: string;
-  state: SandboxState;
+  state: WorkerState;
   max_concurrent_sessions: number | null;
 };
 
@@ -145,7 +145,7 @@ type ConnectionRow = {
   transport_id: string;
   registration_message_id: string;
   registered_message_id: string;
-  sandbox_id: string;
+  worker_id: string;
   supervisor_id: string;
   boot_id: string;
   control_plane_instance_id: string;
@@ -329,14 +329,14 @@ export class SupervisorConnectionManager {
     const result = await this.#database
       .transaction()
       .execute(async (transaction): Promise<RegistrationTransactionResult> => {
-        const sandboxes = await transaction
-          .selectFrom("sandboxes")
+        const workers = await transaction
+          .selectFrom("workers")
           .select(["id", "supervisor_id", "boot_id", "state", "max_concurrent_sessions"])
           .where("supervisor_id", "=", authority.supervisorId)
           .orderBy("id", "asc")
           .forUpdate()
           .execute();
-        const current = sandboxes.find((sandbox) => sandbox.id === authority.sandboxId);
+        const current = workers.find((sandbox) => sandbox.id === authority.sandboxId);
         if (
           current === undefined ||
           current.supervisor_id !== authority.supervisorId ||
@@ -349,7 +349,7 @@ export class SupervisorConnectionManager {
           );
         }
         if (
-          sandboxes.some(
+          workers.some(
             (sandbox) => sandbox.id !== current.id && sandbox.boot_id === authority.bootId,
           )
         ) {
@@ -367,7 +367,7 @@ export class SupervisorConnectionManager {
           );
         }
 
-        const sandboxIds = sandboxes.map((sandbox) => sandbox.id);
+        const sandboxIds = workers.map((sandbox) => sandbox.id);
         const connections =
           sandboxIds.length === 0
             ? []
@@ -378,7 +378,7 @@ export class SupervisorConnectionManager {
                   "transport_id",
                   "registration_message_id",
                   "registered_message_id",
-                  "sandbox_id",
+                  "worker_id",
                   "supervisor_id",
                   "boot_id",
                   "control_plane_instance_id",
@@ -390,7 +390,7 @@ export class SupervisorConnectionManager {
                   "registered_at",
                   "expires_at",
                 ])
-                .where("sandbox_id", "in", sandboxIds)
+                .where("worker_id", "in", sandboxIds)
                 .orderBy("connection_id", "asc")
                 .forUpdate()
                 .execute();
@@ -404,7 +404,7 @@ export class SupervisorConnectionManager {
             transportConnection.registration_fingerprint !== fingerprint ||
             transportConnection.supervisor_id !== authority.supervisorId ||
             transportConnection.boot_id !== authority.bootId ||
-            transportConnection.sandbox_id !== authority.sandboxId ||
+            transportConnection.worker_id !== authority.sandboxId ||
             transportConnection.control_plane_instance_id !== this.#controlPlaneInstanceId
           ) {
             return this.#registrationRejection(
@@ -444,7 +444,7 @@ export class SupervisorConnectionManager {
         }
 
         const currentConnections = connections.filter(
-          (connection) => connection.sandbox_id === current.id,
+          (connection) => connection.worker_id === current.id,
         );
         const currentActive = currentConnections.find(
           (connection) => connection.state === "active",
@@ -494,9 +494,9 @@ export class SupervisorConnectionManager {
         }
 
         this.#validateRegistrationPolicy(message);
-        for (const oldSandbox of sandboxes) {
-          if (oldSandbox.id === current.id || oldSandbox.state === "terminated") continue;
-          await this.#fenceSandbox(transaction, oldSandbox, "new_boot", now);
+        for (const oldWorker of workers) {
+          if (oldWorker.id === current.id || oldWorker.state === "terminated") continue;
+          await this.#fenceSandbox(transaction, oldWorker, "new_boot", now);
         }
         if (currentActive !== undefined) {
           const superseded = await transaction
@@ -509,8 +509,8 @@ export class SupervisorConnectionManager {
         }
         if (current.state === "provisioning") {
           await transaction
-            .updateTable("sandboxes")
-            .set({ state: transitionSandbox(current.state, "ready"), updated_at: now })
+            .updateTable("workers")
+            .set({ state: transitionWorker(current.state, "ready"), updated_at: now })
             .where("id", "=", current.id)
             .where("state", "=", current.state)
             .executeTakeFirstOrThrow();
@@ -528,7 +528,7 @@ export class SupervisorConnectionManager {
             transport_id: authority.transportId,
             registration_message_id: message.messageId,
             registered_message_id: registeredMessageId,
-            sandbox_id: authority.sandboxId,
+            worker_id: authority.sandboxId,
             supervisor_id: authority.supervisorId,
             boot_id: authority.bootId,
             control_plane_instance_id: this.#controlPlaneInstanceId,
@@ -558,7 +558,7 @@ export class SupervisorConnectionManager {
             transport_id: authority.transportId,
             registration_message_id: message.messageId,
             registered_message_id: registeredMessageId,
-            sandbox_id: authority.sandboxId,
+            worker_id: authority.sandboxId,
             supervisor_id: authority.supervisorId,
             boot_id: authority.bootId,
             control_plane_instance_id: this.#controlPlaneInstanceId,
@@ -607,7 +607,7 @@ export class SupervisorConnectionManager {
             expires_at: sql<Date>`clock_timestamp() + ${this.#heartbeatTimeoutMs} * interval '1 millisecond'`,
           })
           .where("connection_id", "=", parsed.payload.connectionId)
-          .where("sandbox_id", "=", authority.sandboxId)
+          .where("worker_id", "=", authority.sandboxId)
           .where("supervisor_id", "=", authority.supervisorId)
           .where("boot_id", "=", authority.bootId)
           .where("transport_id", "=", authority.transportId)
@@ -681,7 +681,7 @@ export class SupervisorConnectionManager {
     };
     return new SessionLeaseCoordinator({
       database: this.#database,
-      sandboxId: authority.sandboxId,
+      workerId: authority.sandboxId,
       clock: this.#clock,
       idGenerator: this.#idGenerator,
       leaseDurationMs: this.#leaseDurationMs,
@@ -699,7 +699,7 @@ export class SupervisorConnectionManager {
     const connection = await this.#database
       .selectFrom("supervisor_connections")
       .select([
-        "sandbox_id",
+        "worker_id",
         "supervisor_id",
         "boot_id",
         "transport_id",
@@ -713,7 +713,7 @@ export class SupervisorConnectionManager {
       .executeTakeFirst();
     if (
       connection === undefined ||
-      connection.sandbox_id !== authority.sandboxId ||
+      connection.worker_id !== authority.sandboxId ||
       connection.supervisor_id !== authority.supervisorId ||
       connection.boot_id !== authority.bootId ||
       connection.transport_id !== authority.transportId ||
@@ -757,18 +757,18 @@ export class SupervisorConnectionManager {
     if (claim === undefined) return { kind: "idle" };
     try {
       const retirer = this.#assignmentRetirerFactory(claim.identity);
-      let reconciliation: SandboxRetirementResult;
+      let reconciliation: WorkerRetirementResult;
       let ownerStopConfirmed = false;
       try {
         await this.#ownerBoundary.stopAndConfirm(claim.identity);
         ownerStopConfirmed = true;
         await confirmStoppedWorkerExecutions(this.#database, claim.identity.sandboxId);
         await this.#renewRetirementClaim(claim, validDate(this.#clock));
-        reconciliation = await retirer.retireSandbox();
+        reconciliation = await retirer.retireWorker();
       } catch (error: unknown) {
         const normalized = safeErrorCode(error);
         if (
-          retirer.retireFencedSandbox === undefined ||
+          retirer.retireFencedWorker === undefined ||
           (!ownerStopConfirmed &&
             normalized.code !== "supervisor_management_unavailable" &&
             normalized.code !== "boot_generation_unknown") ||
@@ -782,7 +782,7 @@ export class SupervisorConnectionManager {
         // race with its management endpoint disappearing. Either proof is
         // sufficient to settle durable state without stranding the Session.
         await this.#renewRetirementClaim(claim, validDate(this.#clock));
-        reconciliation = await retirer.retireFencedSandbox();
+        reconciliation = await retirer.retireFencedWorker();
       }
       await this.#completeRetirementClaim(claim, validDate(this.#clock));
       return {
@@ -819,7 +819,7 @@ export class SupervisorConnectionManager {
     );
     const expired = await this.#database
       .selectFrom("session_leases as lease")
-      .innerJoin("sandboxes as worker", "worker.id", "lease.sandbox_id")
+      .innerJoin("workers as worker", "worker.id", "lease.worker_id")
       .select([
         "worker.id as sandboxId",
         "worker.supervisor_id as supervisorId",
@@ -961,30 +961,30 @@ export class SupervisorConnectionManager {
 
   async #fenceSandbox(
     transaction: Transaction<Database>,
-    sandbox: SandboxIdentityRow,
-    reason: SandboxRetirementReason,
+    sandbox: WorkerIdentityRow,
+    reason: WorkerRetirementReason,
     now: Date,
   ): Promise<void> {
     const closeReason: SupervisorConnectionCloseReason = reason;
     await transaction
       .updateTable("supervisor_connections")
       .set({ state: "fenced", close_reason: closeReason, closed_at: now })
-      .where("sandbox_id", "=", sandbox.id)
+      .where("worker_id", "=", sandbox.id)
       .where("state", "=", "active")
       .execute();
     if (sandbox.state === "terminated") return;
     if (sandbox.state !== "failed") {
       await transaction
-        .updateTable("sandboxes")
-        .set({ state: transitionSandbox(sandbox.state, "failed"), updated_at: now })
+        .updateTable("workers")
+        .set({ state: transitionWorker(sandbox.state, "failed"), updated_at: now })
         .where("id", "=", sandbox.id)
         .where("state", "=", sandbox.state)
         .executeTakeFirstOrThrow();
     }
     await transaction
-      .insertInto("sandbox_retirements")
+      .insertInto("worker_retirements")
       .values({
-        sandbox_id: sandbox.id,
+        worker_id: sandbox.id,
         supervisor_id: sandbox.supervisor_id,
         boot_id: sandbox.boot_id,
         reason,
@@ -999,22 +999,22 @@ export class SupervisorConnectionManager {
         updated_at: now,
         completed_at: null,
       })
-      .onConflict((conflict) => conflict.column("sandbox_id").doNothing())
+      .onConflict((conflict) => conflict.column("worker_id").doNothing())
       .executeTakeFirst();
   }
 
   async #expireConnection(connectionId: string): Promise<boolean> {
     const candidate = await this.#database
       .selectFrom("supervisor_connections")
-      .select(["sandbox_id"])
+      .select(["worker_id"])
       .where("connection_id", "=", connectionId)
       .executeTakeFirst();
     if (candidate === undefined) return false;
     return this.#database.transaction().execute(async (transaction) => {
       const sandbox = await transaction
-        .selectFrom("sandboxes")
+        .selectFrom("workers")
         .select(["id", "supervisor_id", "boot_id", "state", "max_concurrent_sessions"])
-        .where("id", "=", candidate.sandbox_id)
+        .where("id", "=", candidate.worker_id)
         .forUpdate()
         .executeTakeFirst();
       if (sandbox === undefined) {
@@ -1063,7 +1063,7 @@ export class SupervisorConnectionManager {
     const lease = await database
       .selectFrom("session_leases")
       .select("lease_id")
-      .where("sandbox_id", "=", sandboxId)
+      .where("worker_id", "=", sandboxId)
       .where("released_at", "is", null)
       .where("valid_until", ">", sql<Date>`clock_timestamp()`)
       .where(
@@ -1078,8 +1078,8 @@ export class SupervisorConnectionManager {
   async #claimRetirement(now: Date): Promise<RetirementClaim | undefined> {
     return this.#database.transaction().execute(async (transaction) => {
       const row = await transaction
-        .selectFrom("sandbox_retirements")
-        .select(["sandbox_id", "supervisor_id", "boot_id", "attempts"])
+        .selectFrom("worker_retirements")
+        .select(["worker_id", "supervisor_id", "boot_id", "attempts"])
         .where((expression) =>
           expression.or([
             expression.and([
@@ -1093,7 +1093,7 @@ export class SupervisorConnectionManager {
           ]),
         )
         .orderBy("created_at", "asc")
-        .orderBy("sandbox_id", "asc")
+        .orderBy("worker_id", "asc")
         .forUpdate()
         .skipLocked()
         .limit(1)
@@ -1102,7 +1102,7 @@ export class SupervisorConnectionManager {
       const claimId = requireUuid(this.#idGenerator(), "generated retirement claimId");
       const attempt = row.attempts + 1;
       const updated = await transaction
-        .updateTable("sandbox_retirements")
+        .updateTable("worker_retirements")
         .set({
           state: "claimed",
           attempts: attempt,
@@ -1111,14 +1111,14 @@ export class SupervisorConnectionManager {
           claim_until: new Date(now.valueOf() + this.#retirementClaimDurationMs),
           updated_at: now,
         })
-        .where("sandbox_id", "=", row.sandbox_id)
+        .where("worker_id", "=", row.worker_id)
         .executeTakeFirst();
       expectOne(updated.numUpdatedRows, "claiming sandbox retirement");
       return {
         identity: {
           supervisorId: row.supervisor_id,
           bootId: row.boot_id,
-          sandboxId: row.sandbox_id,
+          sandboxId: row.worker_id,
         },
         claimId,
         attempt,
@@ -1128,12 +1128,12 @@ export class SupervisorConnectionManager {
 
   async #renewRetirementClaim(claim: RetirementClaim, now: Date): Promise<void> {
     const updated = await this.#database
-      .updateTable("sandbox_retirements")
+      .updateTable("worker_retirements")
       .set({
         claim_until: new Date(now.valueOf() + this.#retirementClaimDurationMs),
         updated_at: now,
       })
-      .where("sandbox_id", "=", claim.identity.sandboxId)
+      .where("worker_id", "=", claim.identity.sandboxId)
       .where("state", "=", "claimed")
       .where("claim_id", "=", claim.claimId)
       .where("claim_owner_id", "=", this.#controlPlaneInstanceId)
@@ -1145,7 +1145,7 @@ export class SupervisorConnectionManager {
   async #completeRetirementClaim(claim: RetirementClaim, now: Date): Promise<void> {
     await this.#database.transaction().execute(async (transaction) => {
       const sandbox = await transaction
-        .selectFrom("sandboxes")
+        .selectFrom("workers")
         .select(["supervisor_id", "boot_id", "state"])
         .where("id", "=", claim.identity.sandboxId)
         .forUpdate()
@@ -1163,7 +1163,7 @@ export class SupervisorConnectionManager {
         );
       }
       const updated = await transaction
-        .updateTable("sandbox_retirements")
+        .updateTable("worker_retirements")
         .set({
           state: "completed",
           claim_id: null,
@@ -1173,7 +1173,7 @@ export class SupervisorConnectionManager {
           updated_at: now,
           completed_at: now,
         })
-        .where("sandbox_id", "=", claim.identity.sandboxId)
+        .where("worker_id", "=", claim.identity.sandboxId)
         .where("state", "=", "claimed")
         .where("claim_id", "=", claim.claimId)
         .where("claim_owner_id", "=", this.#controlPlaneInstanceId)
@@ -1189,7 +1189,7 @@ export class SupervisorConnectionManager {
     now: Date,
   ): Promise<void> {
     const updated = await this.#database
-      .updateTable("sandbox_retirements")
+      .updateTable("worker_retirements")
       .set({
         state,
         available_at:
@@ -1200,7 +1200,7 @@ export class SupervisorConnectionManager {
         last_error: errorCode,
         updated_at: now,
       })
-      .where("sandbox_id", "=", claim.identity.sandboxId)
+      .where("worker_id", "=", claim.identity.sandboxId)
       .where("state", "=", "claimed")
       .where("claim_id", "=", claim.claimId)
       .where("claim_owner_id", "=", this.#controlPlaneInstanceId)

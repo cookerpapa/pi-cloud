@@ -2,6 +2,25 @@ import { randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "../../src/index.ts";
 
+/** Pre-184 Durable schema, whose required metadata current writes no longer carry. */
+export async function insertHistoricalDurableSession(
+  db: Kysely<Database>,
+  input: {
+    tenantId: string;
+    defaultModelProfileId: string;
+    projectId: string;
+    workspaceId: string;
+  },
+) {
+  const sessionId = randomUUID();
+  await sql`insert into sessions(id,tenant_id,project_id,workspace_id,desired_model_profile_id,pi_session_id)
+    values(${sessionId}::uuid,${input.tenantId}::uuid,${input.projectId}::uuid,${input.workspaceId}::uuid,
+      ${input.defaultModelProfileId}::uuid,${sessionId})`.execute(db);
+  await sql`insert into pi_sessions(tenant_id,id,created_at_ms,parent_session_id,name)
+    values(${input.tenantId}::uuid,${sessionId},1,null,'Historical Session')`.execute(db);
+  return { sessionId };
+}
+
 /** Seed the old storage contract directly. Current admission must never contain
  * compatibility branches merely to manufacture pre-cutover test fixtures. */
 export async function insertHistoricalPrompt(

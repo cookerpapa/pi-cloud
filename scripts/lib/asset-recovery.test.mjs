@@ -140,7 +140,7 @@ beforeAll(async () => {
       tenant_id: scope.tenantId,
       pi_session_id: scope.sessionId,
       lease_id: leaseId,
-      sandbox_id: oldWorker.workerId,
+      worker_id: oldWorker.workerId,
       fencing_token: 1,
       acquired_at: now,
       renewed_at: now,
@@ -240,10 +240,10 @@ it("rejects open writers and nonempty target stores", async () => {
 it("rolls back an actual post-restore cleanup failure instead of exposing old execution authority", async () => {
   // A foreign-key guard makes the authority reset fail AFTER pg_restore copied
   // all history. This tests the real transaction, not a mocked restore command.
-  await sql`create table recovery_failure_guard(worker uuid references sandboxes(id))`.execute(
+  await sql`create table recovery_failure_guard(worker uuid references workers(id))`.execute(
     source,
   );
-  await sql`insert into recovery_failure_guard select id from sandboxes limit 1`.execute(source);
+  await sql`insert into recovery_failure_guard select id from workers limit 1`.execute(source);
   const broken = join(directory, "reset-failure");
   const manifest = await backupAssets({
     databaseUrl: url(names[0]),
@@ -377,7 +377,7 @@ it("restores after source loss, preserves exact native history/images and admits
     "outbox",
     "workspace_runtimes",
     "sandbox_tool_bindings",
-    "sandboxes",
+    "workers",
     "accepted_fact_projection_offsets",
   ])
     expect(

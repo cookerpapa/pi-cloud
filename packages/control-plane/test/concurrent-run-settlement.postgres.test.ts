@@ -53,7 +53,7 @@ it.skipIf(!external)(
       );
       const sandboxId = randomUUID();
       await db
-        .insertInto("sandboxes")
+        .insertInto("workers")
         .values({
           id: sandboxId,
           supervisor_id: "settlement-worker",
@@ -79,7 +79,7 @@ it.skipIf(!external)(
       });
       const coordinator = new SessionLeaseCoordinator({
         database: measured,
-        sandboxId,
+        workerId: sandboxId,
         leaseDurationMs: 60_000,
       });
       let executions = 0;
@@ -109,7 +109,7 @@ it.skipIf(!external)(
       expect(arrivals).toBe(2);
       expect(
         await db
-          .selectFrom("sandboxes")
+          .selectFrom("workers")
           .select(["state"])
           .where("id", "=", sandboxId)
           .executeTakeFirst(),

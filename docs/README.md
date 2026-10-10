@@ -26,7 +26,10 @@ The report records the corrected model-egress endpoint and updated operator driv
 The [reading checkpoint](READING_PROGRESS.md) now covers atomic Worker claim and
 Session-lease admission. The [claim-table review](reports/worker-claim-schema-review-20261010.md)
 preserves this ownership design and records two index-access issues, unused
-physical-Session metadata and Worker naming debt; repairs are not implemented.
+physical-Session metadata and Worker naming debt. The owner-approved repairs follow
+[ADR-0242](adr/0242-worker-claim-schema-cleanup.md).
+[Full source verification](reports/worker-claim-repair-20261010.md) passes;
+matched schema 184 rollout and live acceptance remain pending.
 [ADR-0238](adr/0238-native-input-queue-and-run-record.md)
 is the approved native follow-up/editing and Session/Run consolidation slice;
 implementation and deployment status are tracked separately.

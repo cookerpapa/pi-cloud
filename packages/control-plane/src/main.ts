@@ -315,7 +315,7 @@ export async function startControlPlane(): Promise<void> {
     }): Promise<HttpSupervisorManagementClient> => {
       const host = await database
         .selectFrom("supervisor_hosts as host")
-        .innerJoin("sandboxes as sandbox", "sandbox.supervisor_id", "host.supervisor_id")
+        .innerJoin("workers as sandbox", "sandbox.supervisor_id", "host.supervisor_id")
         .select("host.management_base_url")
         .where("sandbox.id", "=", identity.sandboxId)
         .where("sandbox.supervisor_id", "=", identity.supervisorId)
@@ -336,7 +336,7 @@ export async function startControlPlane(): Promise<void> {
       sandboxId: string,
     ): Promise<HttpSupervisorManagementClient> => {
       const identity = await database
-        .selectFrom("sandboxes")
+        .selectFrom("workers")
         .select(["supervisor_id", "boot_id"])
         .where("id", "=", sandboxId)
         .executeTakeFirst();

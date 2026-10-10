@@ -623,7 +623,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "session_id",
           "run_id",
           "turn_id",
-          "sandbox_id",
+          "worker_id",
         ])
         .where("lease_id", "=", execution.leaseId)
         .where("accepting_effects", "=", true)
@@ -639,7 +639,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         authority.session_id !== input.assignment.sessionId ||
         authority.run_id !== input.assignment.runId ||
         authority.turn_id !== input.assignment.turnId ||
-        authority.sandbox_id !== input.assignment.sandboxId ||
+        authority.worker_id !== input.assignment.sandboxId ||
         authority.compute_session_id !== (input.computeSessionId ?? null)
       ) {
         throw new WorkspaceRuntimeStateRepositoryError(

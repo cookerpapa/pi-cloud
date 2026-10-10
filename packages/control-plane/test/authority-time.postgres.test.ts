@@ -82,7 +82,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     );
     const workerId = randomUUID();
     await db
-      .insertInto("sandboxes")
+      .insertInto("workers")
       .values({
         id: workerId,
         supervisor_id: workerId,
@@ -93,7 +93,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       .execute();
     const coordinator = new SessionLeaseCoordinator({
       database: db,
-      sandboxId: workerId,
+      workerId: workerId,
       clock: () => new Date(Date.now() + skewMs),
       leaseDurationMs: 60000,
     });
@@ -130,7 +130,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     const lease = await db
       .selectFrom("session_leases")
       .selectAll()
-      .where("sandbox_id", "=", workerId)
+      .where("worker_id", "=", workerId)
       .executeTakeFirstOrThrow();
     const identity = await coordinator.heartbeatIdentity();
     const heartbeat = {
@@ -270,7 +270,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     const reaper = (skew: number) =>
       new AssignmentReconciler({
         database: db,
-        sandboxId: f.workerId,
+        workerId: f.workerId,
         clock: () => new Date(Date.now() + skew),
         inventory: {
           listAssignments: async () => {
@@ -330,7 +330,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       );
       const reaper = new AssignmentReconciler({
         database: db,
-        sandboxId: f.workerId,
+        workerId: f.workerId,
         inventory: {
           listAssignments: async () => {
             throw new Error("Not a physical retirement");
