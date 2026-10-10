@@ -1,69 +1,69 @@
 {
   "accepted": true,
-  "testRevision": "9a3742d3005b15c529c87a543bcf0b6cddf81c71",
+  "testRevision": "5c803cc536b1718af5a03b6fe003b073671bbb2b",
   "workerImages": [
     {
-      "name": "pi-cloud-pi-worker-local-v1-0",
-      "image": "pi-cloud/supervisor-host:kubernetes-6e92e850b116"
+      "name": "pi-cloud-pi-worker-primary-v1-0",
+      "image": "pi-cloud/supervisor-host:worker-claim-5c803cc5"
     },
     {
-      "name": "pi-cloud-pi-worker-local-v1-1",
-      "image": "pi-cloud/supervisor-host:kubernetes-6e92e850b116"
+      "name": "pi-cloud-pi-worker-primary-v1-1",
+      "image": "pi-cloud/supervisor-host:worker-claim-5c803cc5"
     }
   ],
-  "checkedAt": "2026-09-17T00:18:57.445Z",
+  "checkedAt": "2026-10-10T10:41:36.905Z",
   "model": {
-    "provider": "deepseek",
-    "modelId": "deepseek-v4-pro",
+    "provider": "openai-codex",
+    "modelId": "gpt-6-luna",
     "thinkingLevel": "off",
     "fastMode": false
   },
   "workerDeployment": "kubernetes",
-  "workers": ["pi-cloud-pi-worker-local-v1-0", "pi-cloud-pi-worker-local-v1-1"],
+  "workers": ["pi-cloud-pi-worker-primary-v1-0", "pi-cloud-pi-worker-primary-v1-1"],
   "failover": {
-    "firstWorker": "pi-cloud-pi-worker-local-v1-1",
-    "followUpWorker": "pi-cloud-pi-worker-local-v1-0",
+    "firstWorker": "pi-cloud-pi-worker-primary-v1-1",
+    "followUpWorker": "pi-cloud-pi-worker-primary-v1-0",
     "differentWorker": true,
     "postgresSessionRestored": true,
     "markerRecovered": true,
-    "firstSettledMs": 1527,
-    "followUpSettledMs": 1272,
+    "firstSettledMs": 3117,
+    "followUpSettledMs": 3434,
     "candidateRuns": 2
   },
   "activeCrashRecovery": {
     "injection": {
       "mode": "kubernetes-crash",
-      "supervisorId": "pi-cloud-pi-worker-local-v1-0",
+      "supervisorId": "pi-cloud-pi-worker-primary-v1-0",
       "exitCode": 137,
-      "restartCount": 1
+      "restartCount": 3
     },
-    "killedWorker": "pi-cloud-pi-worker-local-v1-0",
-    "terminalState": "failed",
+    "killedWorker": "pi-cloud-pi-worker-primary-v1-0",
+    "terminalState": "completed",
     "firstVisibleSequence": 3,
-    "terminalSequence": 32,
-    "acceptedPrefixProjected": true,
-    "exactVisiblePrefixPreservedInContext": true,
-    "minimalInterruptionFact": true,
-    "sealedPredecessors": 1,
-    "replacementRunId": "1107061f-c2ba-40b6-af66-1facab5f8a84"
+    "terminalSequence": 255,
+    "recoveredAdmissions": 1,
+    "sameLogicalRun": true,
+    "originalInputCount": 1,
+    "recoveredRunId": "9c691d8f-fea6-4ab4-895d-450437e49ed0",
+    "followUpRunId": "5ac1f12f-28f4-4440-9831-aec8399f0e2b"
   },
   "concurrency": {
     "runs": 4,
     "workerIds": [
-      "pi-cloud-pi-worker-local-v1-0",
-      "pi-cloud-pi-worker-local-v1-1",
-      "pi-cloud-pi-worker-local-v1-1",
-      "pi-cloud-pi-worker-local-v1-0"
+      "pi-cloud-pi-worker-primary-v1-1",
+      "pi-cloud-pi-worker-primary-v1-0",
+      "pi-cloud-pi-worker-primary-v1-0",
+      "pi-cloud-pi-worker-primary-v1-0"
     ],
     "distinctWorkers": 2,
-    "observedWorkerIds": ["pi-cloud-pi-worker-local-v1-0", "pi-cloud-pi-worker-local-v1-1"],
-    "settledMs": [4312, 4095, 4123, 5266]
+    "observedWorkerIds": ["pi-cloud-pi-worker-primary-v1-0", "pi-cloud-pi-worker-primary-v1-1"],
+    "settledMs": [6207, 6232, 6179, 6225]
   },
   "totalUsage": {
     "requests": 8,
-    "inputTokens": 1031,
-    "outputTokens": 1191,
-    "cacheReadTokens": 22528,
+    "inputTokens": 22898,
+    "outputTokens": 571,
+    "cacheReadTokens": 30720,
     "cacheWriteTokens": 0
   },
   "cleanupCompleted": true

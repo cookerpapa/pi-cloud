@@ -34,9 +34,10 @@ The owner approved R10C-01–04 from the
 [Worker-claim table review](reports/worker-claim-schema-review-20261010.md).
 [ADR-0242](adr/0242-worker-claim-schema-cleanup.md) implements bounded index access,
 Run history indexing, removal of unused physical-Session metadata and Worker
-database naming. [Full source verification](reports/worker-claim-repair-20261010.md)
-passes; matched schema 184 deployment and live acceptance remain in progress.
-Existing Run/lease/closure authorities remain.
+database naming. [Source verification and matched deployment](reports/worker-claim-repair-20261010.md)
+are complete as `worker-claim-5c803cc5`, schema 184. Real Luna/native-input/browser
+and Worker failover/crash recovery pass; owned fixtures are cleaned and original
+configuration fingerprints are preserved. Existing Run/lease/closure authorities remain.
 
 [ADR-0241](adr/0241-missing-working-directory-tool-errors.md) is deployed as
 `working-directory-889279b2`. [Source, fault and live acceptance](reports/working-directory-20261010.md)

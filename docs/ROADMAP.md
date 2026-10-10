@@ -6,7 +6,8 @@
       [ADR-0242](adr/0242-worker-claim-schema-cleanup.md), retaining all ownership boundaries.
 - [x] Verify indexed history reads, migration guards and identities, shared-family
       admission, Worker registration/retirement, native recovery and repository gates.
-- [ ] Deploy matching schema 184/application artifacts and complete live acceptance.
+- [x] Deploy matching schema 184/application artifacts and complete
+      [Luna/native-input/browser/Worker-recovery acceptance](reports/worker-claim-repair-20261010.md).
 
 ## Missing working-directory Tool results
 
@@ -57,7 +58,7 @@ Luna/Cube/browser acceptance are also complete.
 The [reading checkpoint](READING_PROGRESS.md) covers PG input acceptance, queue
 notification and atomic Worker claim/Session-lease admission. The focused
 [claim-table review](reports/worker-claim-schema-review-20261010.md) is complete;
-its proposed repairs remain in the backlog. The next hop is opening the native
+its approved repairs are implemented and deployed under ADR-0242. The next hop is opening the native
 Session under the committed grant and loading its conversation state.
 
 ## Architecture evidence and private-use readiness

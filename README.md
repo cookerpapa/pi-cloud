@@ -45,8 +45,9 @@ The maintained source uses two core business tables: Session configuration/state
 and Run input/configuration/lifecycle. Initial requests are accepted in PG;
 additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
-unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is
-deployed with matched schema 183 and application images.
+unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
+the current [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) uses
+matched schema 184 and application images.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
@@ -59,15 +60,20 @@ stores the native body once, with rebuildable record/document indexes for cold
 reads. Native Conversations share one physical Session lease and writer.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
-The [current deployed release](docs/reports/working-directory-20261010.md) uses
-schema 183, guest input protocol 4, Tool Worker protocol 4 and Cube management
+The [current deployed release](docs/reports/worker-claim-repair-20261010.md) uses
+schema 184, guest input protocol 4, Tool Worker protocol 4 and Cube management
 protocol 7. It exercises the maintained matched release workflow and preserves
 the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which
 correct quarantine recovery, returned-input identity and oversized-line Read,
 and remove unnecessary document-revision queries. Confirmed loss of a user-selected
 working directory now returns a native Tool error so the Agent can continue the dialogue.
 Real Luna directory restoration, native input/Stop and browser/image/Read checks
-pass. Earlier cold-VM/preview acceptance, releases, reviews and
+pass in the preceding [directory release](docs/reports/working-directory-20261010.md).
+The current release verifies indexed Worker admission/history reads, removes unused
+physical-Session metadata and gives Worker registry/lease references consistent names.
+Real Luna native-input/browser tests, cross-Worker restoration and same-Run crash
+recovery pass; normal claim still uses nine business SQL statements.
+Earlier cold-VM/preview acceptance, releases, reviews and
 the Durable migration remain indexed in [the documentation map](docs/README.md).
 
 Whole file/shell Tools execute in Cube. Replies return through the separate

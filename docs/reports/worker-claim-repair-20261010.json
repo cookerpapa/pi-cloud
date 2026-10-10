@@ -1,0 +1,164 @@
+{
+  "format": "pi-cloud.worker-claim-repair.v1",
+  "sourceRevision": "5c803cc536b1718af5a03b6fe003b073671bbb2b",
+  "version": "worker-claim-5c803cc5",
+  "schema": 184,
+  "deployed": true,
+  "protocols": {
+    "guestInput": 4,
+    "toolWorker": 4,
+    "cubeManagement": 7
+  },
+  "source": {
+    "ciPassed": true,
+    "workspaces": 22,
+    "tests": 1671,
+    "testFiles": 255,
+    "skippedTests": 9,
+    "skippedFiles": 7,
+    "helperTests": 64,
+    "transportTests": 7,
+    "faultCases": 235,
+    "faultGroups": 72
+  },
+  "images": {
+    "count": 11,
+    "fixableHighCritical": 0
+  },
+  "nativeInputs": {
+    "accepted": true,
+    "cases": [
+      {
+        "scenario": "consume",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true
+      },
+      {
+        "scenario": "stop",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true
+      }
+    ],
+    "cleanupConfirmed": true
+  },
+  "browser": {
+    "accepted": true,
+    "returnedInput": {
+      "nativeInputInOriginalRun": true,
+      "realBrowser": true,
+      "requests": 2,
+      "distinctKeys": 2,
+      "distinctAdmissions": 2,
+      "originalRunCancelled": true,
+      "newRunCompleted": true,
+      "sameUploadId": true,
+      "directVision": true,
+      "activeRunCancelled": true
+    },
+    "read": [
+      {
+        "kind": "wide-ascii.txt",
+        "sourceBytes": 120017,
+        "contentBytes": 51200,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      },
+      {
+        "kind": "wide-unicode.txt",
+        "sourceBytes": 140031,
+        "contentBytes": 51196,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      }
+    ],
+    "cleanupConfirmed": true
+  },
+  "workerPool": {
+    "accepted": true,
+    "failover": {
+      "firstWorker": "pi-cloud-pi-worker-primary-v1-1",
+      "followUpWorker": "pi-cloud-pi-worker-primary-v1-0",
+      "differentWorker": true,
+      "postgresSessionRestored": true,
+      "markerRecovered": true,
+      "firstSettledMs": 3117,
+      "followUpSettledMs": 3434,
+      "candidateRuns": 2
+    },
+    "activeCrashRecovery": {
+      "injection": {
+        "mode": "kubernetes-crash",
+        "supervisorId": "pi-cloud-pi-worker-primary-v1-0",
+        "exitCode": 137,
+        "restartCount": 3
+      },
+      "killedWorker": "pi-cloud-pi-worker-primary-v1-0",
+      "terminalState": "completed",
+      "firstVisibleSequence": 3,
+      "terminalSequence": 255,
+      "recoveredAdmissions": 1,
+      "sameLogicalRun": true,
+      "originalInputCount": 1,
+      "recoveredRunId": "9c691d8f-fea6-4ab4-895d-450437e49ed0",
+      "followUpRunId": "5ac1f12f-28f4-4440-9831-aec8399f0e2b"
+    },
+    "concurrency": {
+      "runs": 4,
+      "workerIds": [
+        "pi-cloud-pi-worker-primary-v1-1",
+        "pi-cloud-pi-worker-primary-v1-0",
+        "pi-cloud-pi-worker-primary-v1-0",
+        "pi-cloud-pi-worker-primary-v1-0"
+      ],
+      "distinctWorkers": 2,
+      "observedWorkerIds": ["pi-cloud-pi-worker-primary-v1-0", "pi-cloud-pi-worker-primary-v1-1"],
+      "settledMs": [6207, 6232, 6179, 6225]
+    },
+    "ownedTenantPurged": true
+  },
+  "preservation": {
+    "matchedPreReleaseFingerprints": true,
+    "counts": {
+      "users": 29,
+      "tenants": 29,
+      "model_profiles": 30,
+      "credential_bindings": 30,
+      "tenant_api_credentials": 29,
+      "platform_runtime_settings": 1,
+      "user_password_credentials": 4
+    }
+  },
+  "final": {
+    "readiness": {
+      "control-plane": 1,
+      "pi-workers": 2,
+      "web": 1
+    },
+    "active": {
+      "vms": 0,
+      "runs": 0,
+      "writers": 0,
+      "machines": 0,
+      "unsealed": 0,
+      "terminals": 0
+    },
+    "business": {
+      "runs": 0,
+      "projects": 0,
+      "sessions": 0,
+      "workspaces": 0
+    },
+    "nativeInventory": {
+      "nodes": "NODES_SCANNED    1/1",
+      "sandboxes": 0
+    }
+  },
+  "limitations": [
+    "Synthetic plan buffers do not establish production latency or fleet capacity.",
+    "First image preparation hit an Ubuntu package HTTP 502; identical-source retry passed.",
+    "Image evidence retains unfixed findings under the maintained fixable HIGH/CRITICAL policy.",
+    "Live delegated-Agent, full coding/preview/cold-VM and multi-node-HA suites were not rerun."
+  ]
+}

@@ -3,7 +3,9 @@
 Date: 2026-10-10. Implements R10C-01–04 under
 [ADR-0242](../adr/0242-worker-claim-schema-cleanup.md), following the
 [focused review](worker-claim-schema-review-20261010.md).
-Source verification is complete; matched deployment and live acceptance are pending.
+Source verification, matched deployment and live acceptance are complete.
+Deployed `worker-claim-5c803cc5`, source `5c803cc536b1718af5a03b6fe003b073671bbb2b`,
+schema 184. [Structured results](worker-claim-repair-20261010.json).
 
 ## Changes
 
@@ -56,8 +58,42 @@ Private source logs and the pre-release preservation fingerprint are in
 `dist/releases/worker-claim-checks/`. The fault report records the pre-commit
 worktree provenance explicitly; release artifacts will identify the committed source.
 
-## Deployment
+## Deployment and live acceptance
 
-Pending matched schema 184/application rollout, followed by real Luna native-input,
-browser/Tool checks and controlled Worker replacement/recovery. Accounts,
-model/provider configuration and credentials must retain their pre-release fingerprints.
+The maintained prepare/apply workflow built and verified 11 matched images,
+drained writers, confirmed native VM absence, applied schema 184 and restored
+the application. Image policy found zero fixable HIGH/CRITICAL findings; unfixed
+findings remain recorded in the private image evidence. Guest input protocol 4,
+Tool Worker protocol 4 and Cube management protocol 7 remain unchanged.
+
+The first preparation failed when an Ubuntu package download returned HTTP 502.
+The identical committed source/version passed on retry. The temporary local build
+proxy was closed before apply; no permanent proxy or runtime service was added.
+
+Real GPT-6 Luna acceptance passes:
+
+- Native same-Run input consumption, edits, promotion, retry identity and Stop.
+- Browser lost-response recovery, Stop/returned draft/image resend, direct vision,
+  and large ASCII/Unicode Read through Cube completion and canonical history.
+- Cold conversation restoration on another Worker.
+- A confirmed Worker process crash (exit 137), ordered recovery of the same logical
+  Run, exactly one original native submission, successful completion and a later Run.
+- Four concurrent Runs completed across both Workers. This is bounded functional
+  evidence, not a fleet-capacity or multi-node-HA measurement.
+
+The [Worker-pool report](pi-worker-pool-acceptance-latest.json) records the live
+execution evidence. Native-input/browser drivers purge their own fixtures; the
+Worker-pool fixture's remaining account/configuration rows were removed only after
+its Session deletion and Workspace Volume purge were confirmed.
+
+Final checks: Control Plane and Web ready, two Workers ready, native inventory
+**1/1 nodes scanned and zero VMs**; no Runs, current leases, unsealed writers,
+machines, terminals, Sessions, projects or Workspaces remain from acceptance.
+The original 29 tenants/users, 30 model profiles/credential bindings, 29 API
+credentials, four password-credential rows and platform settings retain their
+pre-release configuration fingerprints. No backup was created or requested.
+
+Private evidence is under `dist/releases/worker-claim-5c803cc5/`, with prepare/apply
+logs beside that directory. The broader coding/preview/cold-VM and live delegated
+Agent suites were not rerun; child-owner/shared-lease and Fork behavior are covered
+by the passing source suite. Reading resumes at native Session opening/context loading.

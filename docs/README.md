@@ -1,5 +1,11 @@
 # Documentation map
 
+[ADR-0242](adr/0242-worker-claim-schema-cleanup.md) is deployed as
+`worker-claim-5c803cc5`, schema 184. [Source and live verification](reports/worker-claim-repair-20261010.md)
+cover indexed claim/history reads, metadata cleanup, Worker naming, native input,
+browser/Tool paths and same-Run recovery after Worker failure. Owned fixtures are
+removed and original accounts/configuration are preserved.
+
 [ADR-0241](adr/0241-missing-working-directory-tool-errors.md) is deployed as
 `working-directory-889279b2`. [Source, fault and real Luna/Cube/browser evidence](reports/working-directory-20261010.md)
 confirms native Tool errors and continued dialogue after directory loss, explicit
@@ -28,8 +34,8 @@ Session-lease admission. The [claim-table review](reports/worker-claim-schema-re
 preserves this ownership design and records two index-access issues, unused
 physical-Session metadata and Worker naming debt. The owner-approved repairs follow
 [ADR-0242](adr/0242-worker-claim-schema-cleanup.md).
-[Full source verification](reports/worker-claim-repair-20261010.md) passes;
-matched schema 184 rollout and live acceptance remain pending.
+[Full source verification, schema 184 rollout and live acceptance](reports/worker-claim-repair-20261010.md)
+are complete.
 [ADR-0238](adr/0238-native-input-queue-and-run-record.md)
 is the approved native follow-up/editing and Session/Run consolidation slice;
 implementation and deployment status are tracked separately.

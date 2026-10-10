@@ -1,6 +1,6 @@
 # ADR-0242: Worker claim schema and indexed control reads
 
-Status: implemented and source-verified, 2026-10-10; matched deployment pending.
+Status: implemented, source-verified and deployed, 2026-10-10, as `worker-claim-5c803cc5`.
 See the [verification record](../reports/worker-claim-repair-20261010.md).
 The owner approved all four
 findings in the [focused review](../reports/worker-claim-schema-review-20261010.md).

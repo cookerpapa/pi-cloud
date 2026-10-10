@@ -22,8 +22,10 @@ reusing the physical family's current lease skips its creation statement.
 The [focused table review](reports/worker-claim-schema-review-20261010.md) retains
 Run, physical-Session and lease boundaries. It records two query/index issues,
 three unused physical-Session metadata columns and Worker naming debt.
-The owner approved their repair under ADR-0242; verification and deployment are
-in progress. The walkthrough remains at this hop until those repairs are verified.
+The owner-approved repairs under ADR-0242 are verified and deployed as
+`worker-claim-5c803cc5`, schema 184. Source/transport/fault tests and real Luna
+input/browser/Worker-recovery acceptance pass. The walkthrough can continue from
+the committed grant to native Session opening and context loading.
 
 Follow-up discussions established:
 
