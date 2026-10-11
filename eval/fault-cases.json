@@ -3,6 +3,41 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "publication-known-closed-registration",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "rejects a known closed Run before touching PG during registration",
+      "invariant": "A known closed Run is rejected without a database dependency or a new Kafka write."
+    },
+    {
+      "id": "publication-known-old-registration",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "rejects a known older epoch before touching PG during registration",
+      "invariant": "A replaced writer cannot reopen its Run and is rejected from the current owner's memory."
+    },
+    {
+      "id": "publication-positive-cache-needs-pg",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "still requires PG for current registration; memory never grants admission",
+      "invariant": "An open cached identity cannot bypass current PG authorization when registering again."
+    },
+    {
+      "id": "publication-replacement-registration-needs-pg",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "still requires PG for replacement owner registration; memory never grants admission",
+      "invariant": "A replacement ingress with empty memory cannot grant admission while PG is unavailable."
+    },
+    {
+      "id": "publication-evicted-registration-needs-pg",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "still requires PG for evicted registration; memory never grants admission",
+      "invariant": "Evicting a closed identity cannot turn an old grant into permission to reopen it."
+    },
+    {
       "id": "guest-deleted-working-directory",
       "workspace": "@pi-cloud/tool-sandbox",
       "file": "test/envd-tool-exec.test.ts",

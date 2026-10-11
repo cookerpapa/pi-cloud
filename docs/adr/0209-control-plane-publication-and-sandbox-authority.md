@@ -34,6 +34,9 @@ modules in the existing service, not three new services or schedulers.
   appends check this memory, without a PG query or lease renewal. Unknown scopes
   cannot open themselves by presenting a larger epoch. PG/control recovery runs
   at admission, closure and ownership replacement, outside the append hot path.
+  Registration may reject an already-known stale or closed identity before the
+  PG read. This negative check grants no authority: all potentially successful
+  registrations still verify PG, then recheck memory and the admission ticket.
 - A closure immediately stops new admission for its Run, or every Lane of a failed
   writer. It drains already accepted appends before publishing the seal through
   the same partition writer. New ownership still waits for all required seals to

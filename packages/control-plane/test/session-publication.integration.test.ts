@@ -33,11 +33,14 @@ it.skipIf(!postgres || !brokers)(
     const database = createDatabase({ connectionString: endpoint.toString(), maxConnections: 8 });
     const kafka = new Admin({ clientId: topic, bootstrapBrokers: brokers! });
     const requestScope = new AsyncLocalStorage<string>(),
-      queries: string[] = [];
+      queries: string[] = [],
+      openQueries: string[] = [];
     const measured = database.withPlugin({
       transformQuery({ node, queryId }) {
         if (requestScope.getStore()?.endsWith("/append"))
           queries.push(database.getExecutor().compileQuery(node, queryId).sql);
+        if (requestScope.getStore()?.endsWith("/open"))
+          openQueries.push(database.getExecutor().compileQuery(node, queryId).sql);
         return node;
       },
       async transformResult({ result }) {
@@ -151,6 +154,11 @@ it.skipIf(!postgres || !brokers)(
           writerId: first.publication.scope.writerId,
         },
       });
+      expect(openQueries).toHaveLength(1);
+      openQueries.length = 0;
+      // Even a matching open cache cannot replace current PG authorization.
+      await client.open(first.publication);
+      expect(openQueries).toHaveLength(1);
       await expect(
         database.transaction().execute((transaction) => publicationCutover<Database>(transaction)),
       ).rejects.toThrow("Drain Runs, Session leases and seals");
@@ -239,11 +247,13 @@ it.skipIf(!postgres || !brokers)(
       await projector.start();
       await eventually(() => projector.ownsPartition(0));
       const resumed = probe();
+      openQueries.length = 0;
       await client.append(resumed);
       // The first request was explicitly rejected before enqueue; only then may
       // the client restore the PG grant on a replacement's empty soft state.
       expect(appendRequests.filter((id) => id === resumed.factId)).toHaveLength(2);
       expect(queries).toEqual([]);
+      expect(openQueries).toHaveLength(1);
       await channel.close();
       first.finish.resolve();
       await first.execution;
@@ -257,6 +267,9 @@ it.skipIf(!postgres || !brokers)(
               .executeTakeFirst()
           )?.output_sealed_at != null,
       );
+      openQueries.length = 0;
+      await expect(client.open(first.publication)).rejects.toThrow("closed");
+      expect(openQueries).toEqual([]);
       const second = await admit("replacement");
       const sealed = await database
         .selectFrom("outbox as o")
@@ -274,10 +287,13 @@ it.skipIf(!postgres || !brokers)(
         first.publication.scope.fencingToken,
       );
       await client.open(second.publication);
+      expect(openQueries).toHaveLength(1);
+      openQueries.length = 0;
       await expect(client.append({ ...fact, factId: randomUUID() })).rejects.toBeInstanceOf(Error);
       const wrong = { ...fact, scope: { ...fact.scope, runId: second.runId, fencingToken: 999 } };
       await expect(client.append(wrong)).rejects.toBeInstanceOf(Error);
       await expect(client.open(first.publication)).rejects.toBeInstanceOf(Error);
+      expect(openQueries).toEqual([]);
       second.finish.resolve();
       await second.execution;
       await eventually(
@@ -290,6 +306,15 @@ it.skipIf(!postgres || !brokers)(
               .executeTakeFirst()
           )?.output_sealed_at != null,
       );
+      // Losing the negative cache requires a PG read, which still rejects the
+      // old grant; absence from memory is never permission to reopen it.
+      await projector.close();
+      projector = createProjector();
+      await projector.start();
+      await eventually(() => projector.ownsPartition(0));
+      openQueries.length = 0;
+      await expect(client.open(first.publication)).rejects.toThrow("scope");
+      expect(openQueries).toHaveLength(1);
       expect(
         (
           await sql`select id from pi_durable_records where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId} and kind='entry'`.execute(

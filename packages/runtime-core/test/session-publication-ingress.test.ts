@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { Database } from "@pi-cloud/database";
+import type { Kysely } from "kysely";
 import {
   MAX_EXECUTION_FACT_BYTES,
   createExecutionReference,
@@ -15,12 +17,13 @@ import {
   type PartitionPublicationWriter,
   type PublicationRecord,
 } from "../src/session-publication-ingress.ts";
+import { PostgresPublicationControl } from "../src/postgres-publication-control.ts";
 
 const deferred = <T>() => Promise.withResolvers<T>();
 function permit(
   epoch = 7,
   prior?: ExecutionPublication,
-  run = randomUUID(),
+  run: string = randomUUID(),
   lane = 1,
 ): ExecutionPublication {
   const writer = prior && prior.scope.fencingToken === epoch ? prior.scope.writerId : randomUUID();
@@ -76,7 +79,10 @@ function seal(p: ExecutionPublication, closesWriter = true): AcceptedExecutionSe
     occurredAt: new Date().toISOString(),
   };
 }
-function fixture(capacity?: { maximumPendingBytes: number; maximumPendingFacts: number }) {
+function fixture(
+  capacity?: { maximumPendingBytes: number; maximumPendingFacts: number },
+  maximumWriters?: number,
+) {
   const records: PublicationRecord[] = [],
     gates: Array<ReturnType<typeof deferred<void>>> = [];
   const writer: PartitionPublicationWriter = {
@@ -88,12 +94,94 @@ function fixture(capacity?: { maximumPendingBytes: number; maximumPendingFacts: 
     }),
     close: vi.fn(async () => {}),
   };
-  const ingress = new SessionPublicationIngress(capacity);
+  const ingress = new SessionPublicationIngress(capacity, maximumWriters);
   const owner = ingress.installPartition(0, writer);
   const p = permit();
   ingress.installRun(owner, p);
   return { ingress, owner, writer, p, records, gates };
 }
+
+function unavailablePostgres(ingress: SessionPublicationIngress) {
+  const selectFrom = vi.fn(() => {
+    throw new Error("PG admission required");
+  });
+  const database = { selectFrom } as unknown as Kysely<Database>;
+  return { control: new PostgresPublicationControl(database, ingress), selectFrom };
+}
+
+it.each(["closed Run", "closed writer", "older epoch", "different writer"] as const)(
+  "rejects a known %s before touching PG during registration",
+  async (kind) => {
+    const f = fixture(),
+      pg = unavailablePostgres(f.ingress);
+    let p = f.p;
+    try {
+      if (kind === "closed Run") await f.ingress.seal(f.owner, seal(p, false));
+      if (kind === "closed writer") {
+        await f.ingress.seal(f.owner, seal(p));
+        p = permit(7, p, randomUUID(), 2);
+      }
+      if (kind === "older epoch") {
+        await f.ingress.seal(f.owner, seal(p));
+        f.ingress.installRun(f.owner, permit(8, p, p.scope.runId));
+      }
+      if (kind === "different writer") {
+        const writerId = randomUUID();
+        p = { scope: { ...p.scope, writerId, leaseId: writerId } };
+      }
+      const published = f.records.length;
+      await expect(pg.control.open(f.owner, p)).rejects.toMatchObject({
+        reason: kind.startsWith("closed") ? "closed" : "scope",
+      });
+      expect(pg.selectFrom).not.toHaveBeenCalled();
+      expect(f.records).toHaveLength(published);
+    } finally {
+      await f.ingress.close();
+    }
+  },
+);
+
+it.each([
+  "current",
+  "new Session",
+  "new Run",
+  "next epoch",
+  "replacement owner",
+  "evicted",
+] as const)(
+  "still requires PG for %s registration; memory never grants admission",
+  async (kind) => {
+    const f = fixture(undefined, 1),
+      pg = unavailablePostgres(f.ingress);
+    let p = f.p,
+      owner = f.owner;
+    try {
+      if (kind === "new Session") p = permit();
+      if (kind === "new Run") {
+        await f.ingress.seal(owner, seal(p, false));
+        p = permit(7, p, randomUUID(), 2);
+      }
+      if (kind === "next epoch") {
+        await f.ingress.seal(owner, seal(p));
+        p = permit(8, p, p.scope.runId);
+      }
+      if (kind === "replacement owner") {
+        await f.ingress.revoke(owner.partition);
+        owner = f.ingress.installPartition(owner.partition, f.writer);
+      }
+      if (kind === "evicted") {
+        await f.ingress.seal(owner, seal(p));
+        f.ingress.installRun(owner, permit());
+      }
+      const published = f.records.length;
+      await expect(pg.control.open(owner, p)).rejects.toThrow("PG admission required");
+      expect(pg.selectFrom).toHaveBeenCalledExactlyOnceWith("runs as r");
+      expect(f.records).toHaveLength(published);
+    } finally {
+      await f.ingress.close();
+    }
+  },
+);
 
 function controlChange(p: ExecutionPublication, version: string): SessionControlChange {
   return {
@@ -185,6 +273,9 @@ it("closes admission before draining and emits the seal before opening a new wri
   await expect(f.ingress.append(f.owner, entry(f.p, "late"))).rejects.toMatchObject({
     reason: "closed",
   });
+  const pg = unavailablePostgres(f.ingress);
+  await expect(pg.control.open(f.owner, f.p)).rejects.toMatchObject({ reason: "closed" });
+  expect(pg.selectFrom).not.toHaveBeenCalled();
   expect(f.records).toHaveLength(1);
   expect(closed).toBe(false);
   const next = permit(8, f.p);

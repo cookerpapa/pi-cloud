@@ -315,8 +315,13 @@ delay between completed scans, not a one-second failure-detection guarantee.
 Atomic PG admission freezes one Run's physical-Session lease, epoch and Lane.
 The Worker stamps native records and sends them to the control-plane publication
 module. The existing Projector group assignment selects one ingress owner per
-partition; private HTTP requests redirect to that owner. Installing a scope reads
-its committed PG grant once. Ordinary appends check only installed memory state,
+partition; private HTTP requests redirect to that owner. Registration first rejects
+identities that installed memory already proves stale or closed, without querying PG.
+Every registration that could succeed still reads its committed PG grant once,
+including a matching open identity, a newer epoch and a cache miss after eviction
+or owner replacement. Memory can reject but cannot grant registration. The same
+identity checks run again after the PG read, retaining in-flight closure guards.
+Ordinary appends check only installed memory state,
 with bounded pending bytes/records and no PG query. Opening creates no log record.
 A closure or ownership change invalidates admission reads already in flight.
 

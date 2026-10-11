@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Publication registration rejection
+
+- [x] Reuse the existing in-memory identity/closure checks before PG registration
+      reads; preserve PG authorization and post-read checks under ADR-0209.
+- [x] Verify zero queries for known rejected identities, ordinary/cold registration,
+      sealing races and owner replacement in repository and RF3/PG checks.
+- [ ] Complete matched deployment and live recovery acceptance.
+      [Evidence](reports/publication-admission-20261011.md).
+
 ## Worker claim schema cleanup
 
 - [x] Implement approved R10C-01–04 under
@@ -56,10 +65,11 @@ the [matched deployment](reports/native-input-release-20261009.md) and real
 Luna/Cube/browser acceptance are also complete.
 
 The [reading checkpoint](READING_PROGRESS.md) covers PG input acceptance, queue
-notification and atomic Worker claim/Session-lease admission. The focused
+notification, atomic Worker claim/Session-lease admission and publication registration.
+The focused
 [claim-table review](reports/worker-claim-schema-review-20261010.md) is complete;
 its approved repairs are implemented and deployed under ADR-0242. The next hop is opening the native
-Session under the committed grant and loading its conversation state.
+Session after publication registration and loading its conversation state.
 
 ## Architecture evidence and private-use readiness
 

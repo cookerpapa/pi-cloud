@@ -1,11 +1,11 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-10.
+Updated: 2026-10-11.
 
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **Worker → PostgreSQL atomic Run claim**.
+Current checkpoint: **Worker → Control Plane publication registration**.
 Covered HTTP idempotency keys, accepted versus executed input, atomic intake,
 PG queue readiness and the difference between cloud control records and the
 native append-only log. PG notifications wake Workers; they are hints, not task
@@ -24,8 +24,17 @@ Run, physical-Session and lease boundaries. It records two query/index issues,
 three unused physical-Session metadata columns and Worker naming debt.
 The owner-approved repairs under ADR-0242 are verified and deployed as
 `worker-claim-5c803cc5`, schema 184. Source/transport/fault tests and real Luna
-input/browser/Worker-recovery acceptance pass. The walkthrough can continue from
-the committed grant to native Session opening and context loading.
+input/browser/Worker-recovery acceptance pass.
+
+After claim commits, the Worker registers its publication identity at the
+Control Plane ingress before opening the native Session. Registration verifies
+the PG grant and installs disposable memory; ordinary appends check that memory.
+Opening emits no Kafka/native record. A seal closes the old incarnation without
+incrementing its epoch; PG issues the higher epoch only during a new lease claim
+after ordered closure. Kafka seal durability and PG-projected closure are distinct.
+The owner approved rejecting already-known stale/closed registration requests
+before their PG query, while all potentially successful registrations retain PG
+checks. [Implementation and rollout](reports/publication-admission-20261011.md).
 
 Follow-up discussions established:
 
@@ -54,6 +63,6 @@ Follow-up discussions established:
   it is deployed with same-Run Luna continuation, explicit directory restoration
   and unchanged VM identity. No intake SQL changes were required.
 
-Resume with: **how the Worker uses its committed execution grant to prepare/open
+Resume with: **how the Worker uses its registered publication identity to prepare/open
 the native Pi Session and load the conversation state before the Agent runs**.
 Keep later model requests and native Kafka publication as separate walkthrough hops.

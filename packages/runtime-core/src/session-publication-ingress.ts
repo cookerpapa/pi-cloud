@@ -153,6 +153,29 @@ export class SessionPublicationIngress {
     this.#writerCount++;
   }
 
+  /** Negative evidence only: a cache miss or an open writer still needs PG admission. */
+  #checkAdmission(partition: Partition, scope: ExecutionPublication["scope"]): Writer | undefined {
+    if (
+      scope.writerId !== scope.leaseId ||
+      !Number.isSafeInteger(scope.fencingToken) ||
+      scope.fencingToken < 1
+    )
+      throw new PublicationIngressRejected("scope");
+    const writer = partition.writers.get(this.#key(scope));
+    if (
+      writer &&
+      (scope.fencingToken < writer.epoch ||
+        (scope.fencingToken === writer.epoch && scope.writerId !== writer.id))
+    )
+      throw new PublicationIngressRejected("scope");
+    if (writer && scope.fencingToken === writer.epoch) {
+      const run = writer.runs.get(scope.runId);
+      if (writer.closing || run?.closed || run?.seal)
+        throw new PublicationIngressRejected("closed");
+    }
+    return writer;
+  }
+
   /** Track only in-flight PG reads. Unrelated Sessions never invalidate them. */
   beginAdmission(
     owner: PublicationOwnership,
@@ -161,6 +184,7 @@ export class SessionPublicationIngress {
     const partition = this.#owned(owner),
       key = this.#key(scope),
       ticket = { current: true };
+    this.#checkAdmission(partition, scope);
     let readers = partition.admissions.get(key);
     if (!readers) partition.admissions.set(key, (readers = new Set()));
     readers.add(ticket);
@@ -196,20 +220,8 @@ export class SessionPublicationIngress {
       (admission.owner !== owner || admission.key !== this.#key(scope) || !admission.current())
     )
       throw new PublicationIngressRejected("not_open");
-    if (
-      scope.writerId !== scope.leaseId ||
-      !Number.isSafeInteger(scope.fencingToken) ||
-      scope.fencingToken < 1
-    )
-      throw new PublicationIngressRejected("scope");
     const key = this.#key(scope);
-    let writer = partition.writers.get(key);
-    if (
-      writer &&
-      (scope.fencingToken < writer.epoch ||
-        (scope.fencingToken === writer.epoch && scope.writerId !== writer.id))
-    )
-      throw new PublicationIngressRejected("scope");
+    let writer = this.#checkAdmission(partition, scope);
     if (!writer || scope.fencingToken > writer.epoch) {
       if (writer && [...writer.runs.values()].some((run) => !run.sealed))
         throw new PublicationIngressRejected("not_open");
@@ -225,12 +237,10 @@ export class SessionPublicationIngress {
       partition.writers.set(key, writer);
       this.#invalidateAdmissions(partition, key);
     }
-    if (writer.closing) throw new PublicationIngressRejected("closed");
     const existing = writer.runs.get(scope.runId);
     if (existing) {
       if (!isDeepStrictEqual(existing.permit, permit))
         throw new PublicationIngressRejected("scope");
-      if (existing.closed || existing.seal) throw new PublicationIngressRejected("closed");
       return;
     }
     if (writer.runs.size >= 4096) {

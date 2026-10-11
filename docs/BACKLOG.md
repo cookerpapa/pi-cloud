@@ -30,6 +30,12 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+- [ ] Complete matched rollout and live acceptance of the approved publication
+      registration optimization: reject known stale/closed identities before PG,
+      preserve PG authorization for every potentially successful registration,
+      and retain closure/replacement races. Source and RF3/PG checks pass. Track
+      [source and release evidence](reports/publication-admission-20261011.md).
+
 The owner approved R10C-01–04 from the
 [Worker-claim table review](reports/worker-claim-schema-review-20261010.md).
 [ADR-0242](adr/0242-worker-claim-schema-cleanup.md) implements bounded index access,
