@@ -66,11 +66,12 @@ the [matched deployment](reports/native-input-release-20261009.md) and real
 Luna/Cube/browser acceptance are also complete.
 
 The [reading checkpoint](READING_PROGRESS.md) covers PG input acceptance, queue
-notification, atomic Worker claim/Session-lease admission and publication registration.
+notification, atomic Worker claim/Session-lease admission, publication registration,
+and native Harness opening/indexed context loading.
 The focused
 [claim-table review](reports/worker-claim-schema-review-20261010.md) is complete;
-its approved repairs are implemented and deployed under ADR-0242. The next hop is opening the native
-Session after publication registration and loading its conversation state.
+its approved repairs are implemented and deployed under ADR-0242. The next hop is
+native Storage submission through ingress and Kafka confirmation, before provider requests.
 
 ## Architecture evidence and private-use readiness
 

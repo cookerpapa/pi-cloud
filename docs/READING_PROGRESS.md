@@ -5,7 +5,7 @@ Updated: 2026-10-11.
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **Worker → Control Plane publication registration**.
+Current checkpoint: **Worker → native Pi Harness/Storage → PG context reads**.
 Covered HTTP idempotency keys, accepted versus executed input, atomic intake,
 PG queue readiness and the difference between cloud control records and the
 native append-only log. PG notifications wake Workers; they are hints, not task
@@ -36,8 +36,20 @@ The owner approved rejecting already-known stale/closed registration requests
 before their PG query, while all potentially successful registrations retain PG
 checks. The [implementation and rollout](reports/publication-admission-20261011.md)
 are complete as `publication-admission-c39a78f8`, with real SQL counts, Luna
-input/Stop and Control Plane restart acceptance. Reading remains at this handoff;
-native Session opening/context loading is the next hop.
+input/Stop and Control Plane restart acceptance.
+
+Native opening is Worker-local. A live physical Session lease incarnation shares
+one Harness/Storage; a new incarnation opens fresh, and the last attached Run
+closes the owner. Storage first reads PG's latest native commit sequence/next ID,
+then serves indexed records/documents as Pi requests them. Harness.open restores
+live tasks before scheduling; cloud binding applies the admitted model/tools/cwd.
+The initial native submission uses the logical Run ID for deduplication.
+Pi derives model context at the sampling boundary from the visible tail and latest
+Compaction/reset head, paging only that active range. With no head marker, the
+whole visible history remains eligible. PG indexes locate the canonical native
+log bodies; the cloud adapter does not invent its own transcript semantics.
+Old-writer seal projection precedes cold replacement, while an active writer's
+acknowledged overlay covers its own not-yet-projected commits.
 
 Follow-up discussions established:
 
@@ -66,6 +78,6 @@ Follow-up discussions established:
   it is deployed with same-Run Luna continuation, explicit directory restoration
   and unchanged VM identity. No intake SQL changes were required.
 
-Resume with: **how the Worker uses its registered publication identity to prepare/open
-the native Pi Session and load the conversation state before the Agent runs**.
-Keep later model requests and native Kafka publication as separate walkthrough hops.
+Resume with: **how a native Storage commit submits the initial input/runtime
+progress through the registered publication ingress and receives Kafka confirmation**.
+Keep the later provider/model request as a separate walkthrough hop.

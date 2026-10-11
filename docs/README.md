@@ -36,7 +36,7 @@ owned fixtures are removed and original accounts/configuration/credentials remai
 The report records the corrected model-egress endpoint and updated operator drivers.
 
 The [reading checkpoint](READING_PROGRESS.md) now covers atomic Worker claim,
-Session-lease admission and publication registration/closure. The
+Session-lease admission, publication registration/closure and native Harness/context opening. The
 [claim-table review](reports/worker-claim-schema-review-20261010.md)
 preserves this ownership design and records two index-access issues, unused
 physical-Session metadata and Worker naming debt. The owner-approved repairs follow
