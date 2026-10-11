@@ -6,7 +6,8 @@
       reads; preserve PG authorization and post-read checks under ADR-0209.
 - [x] Verify zero queries for known rejected identities, ordinary/cold registration,
       sealing races and owner replacement in repository and RF3/PG checks.
-- [ ] Complete matched deployment and live recovery acceptance.
+- [x] Deploy `publication-admission-c39a78f8` and complete native-input/Stop and
+      Control Plane SIGKILL acceptance with preserved configuration and cleanup.
       [Evidence](reports/publication-admission-20261011.md).
 
 ## Worker claim schema cleanup

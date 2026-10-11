@@ -3,6 +3,8 @@
 Date: 2026-10-11. Approved while reading the Worker-to-ingress handoff.
 Implementation retains ADR-0209's PG authorization and ordered closure; it changes
 neither authority, storage, protocol nor schema 184.
+Deployed as `publication-admission-c39a78f8`, source
+`c39a78f8d5e4d4755cfa82784b94cf1cc8ccb8ed`.
 
 ## Behavior and acceptance
 
@@ -56,4 +58,40 @@ typecheck and all remaining CI gates then passed. Already-passing native Cube
 checks were not rerun. Private logs are in
 `dist/releases/publication-admission-checks/`.
 
-Matched deployment and live acceptance are pending.
+## Deployment and live acceptance
+
+The maintained prepare/apply procedure verified 11 matched images, drained
+writers, confirmed native VM absence and deployed the matching application/Cube
+artifacts. Schema 184, guest input protocol 4, Tool Worker protocol 4 and Cube
+management protocol 7 are unchanged. The image gate passes with zero fixable
+HIGH/CRITICAL findings under the existing policy; raw unfixed findings remain
+in the private evidence.
+
+The first preparation was interrupted during a slow Trivy database download.
+The same pinned scanner fetched a fresh database from the
+[official ECR distribution](https://trivy.dev/docs/dev/configuration/db/) over a
+direct connection, then the unchanged source/version passed the maintained
+prepare procedure. No scan or freshness check was disabled. The temporary local
+Docker build-proxy relay was closed before apply; host proxy configuration was
+not changed.
+
+Real GPT-6 Luna acceptance passes:
+
+- Native same-Run input consumption, stable retry identity, editing, ordering,
+  promotion and Stop restoration.
+- Control Plane process SIGKILL, confirmed exit 137 and restart, while one
+  already-started Cube Bash operation finishes. The original Worker completes
+  the Run, with exactly one invocation of that test command.
+
+The deployed ingress file hash matches the verified source. Control Plane and
+Web return HTTP 200, and both Workers are ready. Final native inventory scans
+1/1 nodes and reports zero VMs. There are no remaining owned Sessions, Runs,
+projects, Workspaces, active leases, unsealed writers, machines or terminals.
+The handoff fixture's metadata was removed only after Workspace byte purge and
+physical VM absence were confirmed.
+
+The original 29 tenants/users, 30 model profiles/credential bindings, 29 API
+credentials, four password-credential rows and platform settings retain their
+pre-release configuration fingerprints. No business-data reset or backup was
+performed. Private release and live evidence is in
+`dist/releases/publication-admission-c39a78f8/`, with prepare/apply logs beside it.

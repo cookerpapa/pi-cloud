@@ -34,7 +34,10 @@ incrementing its epoch; PG issues the higher epoch only during a new lease claim
 after ordered closure. Kafka seal durability and PG-projected closure are distinct.
 The owner approved rejecting already-known stale/closed registration requests
 before their PG query, while all potentially successful registrations retain PG
-checks. [Implementation and rollout](reports/publication-admission-20261011.md).
+checks. The [implementation and rollout](reports/publication-admission-20261011.md)
+are complete as `publication-admission-c39a78f8`, with real SQL counts, Luna
+input/Stop and Control Plane restart acceptance. Reading remains at this handoff;
+native Session opening/context loading is the next hop.
 
 Follow-up discussions established:
 

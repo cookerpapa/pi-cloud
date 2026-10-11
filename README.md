@@ -60,7 +60,7 @@ stores the native body once, with rebuildable record/document indexes for cold
 reads. Native Conversations share one physical Session lease and writer.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
-The [current deployed release](docs/reports/worker-claim-repair-20261010.md) uses
+The [current deployed release](docs/reports/publication-admission-20261011.md) uses
 schema 184, guest input protocol 4, Tool Worker protocol 4 and Cube management
 protocol 7. It exercises the maintained matched release workflow and preserves
 the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which
@@ -69,10 +69,14 @@ and remove unnecessary document-revision queries. Confirmed loss of a user-selec
 working directory now returns a native Tool error so the Agent can continue the dialogue.
 Real Luna directory restoration, native input/Stop and browser/image/Read checks
 pass in the preceding [directory release](docs/reports/working-directory-20261010.md).
-The current release verifies indexed Worker admission/history reads, removes unused
+The [preceding Worker-claim release](docs/reports/worker-claim-repair-20261010.md)
+verifies indexed Worker admission/history reads, removes unused
 physical-Session metadata and gives Worker registry/lease references consistent names.
 Real Luna native-input/browser tests, cross-Worker restoration and same-Run crash
 recovery pass; normal claim still uses nine business SQL statements.
+The current release rejects already-known stale/closed publication registrations
+without SQL; every registration that could succeed still verifies PG. Real Luna
+native-input/Stop and Control Plane process-restart acceptance pass.
 Earlier cold-VM/preview acceptance, releases, reviews and
 the Durable migration remain indexed in [the documentation map](docs/README.md).
 

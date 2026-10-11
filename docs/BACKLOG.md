@@ -30,11 +30,12 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
-- [ ] Complete matched rollout and live acceptance of the approved publication
-      registration optimization: reject known stale/closed identities before PG,
-      preserve PG authorization for every potentially successful registration,
-      and retain closure/replacement races. Source and RF3/PG checks pass. Track
-      [source and release evidence](reports/publication-admission-20261011.md).
+The approved [publication-registration optimization](reports/publication-admission-20261011.md)
+is deployed as `publication-admission-c39a78f8`: known stale/closed identities
+are rejected before PG, while potentially successful registration retains PG
+authorization and closure/replacement guards. Source, RF3/PG, real Luna input/Stop
+and Control Plane SIGKILL acceptance pass; owned fixtures are physically cleaned
+and original accounts/configuration are preserved.
 
 The owner approved R10C-01–04 from the
 [Worker-claim table review](reports/worker-claim-schema-review-20261010.md).

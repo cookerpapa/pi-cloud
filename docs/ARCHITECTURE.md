@@ -330,7 +330,7 @@ admission, drains earlier accepted records, then enters that same queue. A norma
 Run seal leaves sibling Lanes open. Uncertain semantic publication retires the
 writer and prevents queued semantic records from starting; its closing seals can
 still drain. A replacement owner waits for projected closure, acquires a new lease and
-resumes the same logical Run/Turn/native submission (ADR-0229). The HTTP success receipt is Kafka durable commit, not volatile acceptance.
+resumes the same logical Run/Turn/native submission (ADR-0229). An append's HTTP success receipt is Kafka durable commit, not volatile acceptance.
 Lost commit responses never trigger automatic semantic publication replay.
 
 The code-owned topic is `pi-cloud.execution-log.v14`. Physical Session ID remains

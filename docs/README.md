@@ -1,5 +1,11 @@
 # Documentation map
 
+The [publication-registration optimization](reports/publication-admission-20261011.md)
+is deployed as `publication-admission-c39a78f8`, retaining schema 184 and current
+protocols. Known stale/closed registrations use zero SQL; potentially successful
+registrations still verify PG. Repository, RF3/PG and real Luna/native-input/Control
+Plane restart checks pass, with owned fixtures removed and configuration preserved.
+
 [ADR-0242](adr/0242-worker-claim-schema-cleanup.md) is deployed as
 `worker-claim-5c803cc5`, schema 184. [Source and live verification](reports/worker-claim-repair-20261010.md)
 cover indexed claim/history reads, metadata cleanup, Worker naming, native input,
@@ -29,8 +35,9 @@ The preceding [native input release](reports/native-input-release-20261009.md) d
 owned fixtures are removed and original accounts/configuration/credentials remain.
 The report records the corrected model-egress endpoint and updated operator drivers.
 
-The [reading checkpoint](READING_PROGRESS.md) now covers atomic Worker claim and
-Session-lease admission. The [claim-table review](reports/worker-claim-schema-review-20261010.md)
+The [reading checkpoint](READING_PROGRESS.md) now covers atomic Worker claim,
+Session-lease admission and publication registration/closure. The
+[claim-table review](reports/worker-claim-schema-review-20261010.md)
 preserves this ownership design and records two index-access issues, unused
 physical-Session metadata and Worker naming debt. The owner-approved repairs follow
 [ADR-0242](adr/0242-worker-claim-schema-cleanup.md).
